@@ -32,6 +32,7 @@
 #cmakedefine INC_MOD_XML
 #cmakedefine INC_MOD_XPATH
 #cmakedefine INC_MOD_XRANDR
+#cmakedefine INC_MOD_XSLT
 #endif
 
 // Standard data types.

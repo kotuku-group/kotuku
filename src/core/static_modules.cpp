@@ -19,6 +19,7 @@ extern "C" ModHeader * register_svg_module();
 extern "C" ModHeader * register_vector_module();
 extern "C" ModHeader * register_xml_module();
 extern "C" ModHeader * register_xpath_module();
+extern "C" ModHeader * register_xslt_module();
 
 //********************************************************************************************************************
 // Register all static modules that were compiled into this build.
@@ -95,6 +96,10 @@ static void register_static_modules(void)
 
    #ifdef INC_MOD_XPATH
    glStaticModules["xpath"] = register_xpath_module();
+   #endif
+
+   #ifdef INC_MOD_XSLT
+   glStaticModules["xslt"] = register_xslt_module();
    #endif
 }
 

@@ -668,6 +668,11 @@ if (NOT DISABLE_VECTOR AND NOT DISABLE_DISPLAY AND NOT DISABLE_FONT)
    list (APPEND LIB_LIST vector)
 endif ()
 
+if (NOT DISABLE_XSLT)
+   add_subdirectory (src/xslt)
+   list (APPEND LIB_LIST xslt)
+endif ()
+
 list (APPEND LIB_LIST ${REQUIRED_MODS})
 
 add_subdirectory (src/link)

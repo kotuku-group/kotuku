@@ -1,0 +1,31 @@
+--$FLUID:Include
+
+module({ name="XSLT", copyright="Paul Manias © 2025", version=1.0, timestamp=20240611 }, function()
+
+  enum("XSO", { type="int", start=0, comment="XSL Output Format" },
+    "XML:  Output format of XML document.",
+    "HTML: Output format of HTML document.",
+    "TEXT: Output format of plain text.",
+    "AUTO: Default to XML unless hinted otherwise.")
+
+  methods("xslt", "XSLT", {
+    { id=1, name="RegisterFunction" },
+    { id=2, name="DeregisterFunction" },
+    { id=3, name="ResolveIncludes" },
+  })
+
+  class("XSLT", { src="xslt_class.cpp", output="xslt_class_def.cpp" }, [[
+   str Stylesheet          # Path or content of XSLT stylesheet
+   str Source              # Path or content of source XML document
+   obj Output              # Output object (optional)
+   str OutputEncoding      # Character encoding (default: UTF-8)
+   str ErrorMsg            # Detailed error description
+   str BaseURI             # Base URI for resolving relative references
+   obj(xml) XML            # Reference to source XML object
+   obj(xml) StylesheetXML  # Reference to stylesheet XML object
+   double Version          # XSLT version (1.0 or 2.0)
+   int(XSO) OutputMethod   # XML, HTML, TEXT, or AUTO
+   int IndentLevel         # Indentation for formatted output (-1 = auto)
+   int WarningCount        # Number of warnings from last transform
+  ]])
+end)
