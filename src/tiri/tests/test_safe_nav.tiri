@@ -635,33 +635,125 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-@Test function testSafeNavAssignUnsupportedCompound()
-   try
-      exec([[
-         store = { value = 1 }
-         store?.value += 1
-      ]])
-   except ex
-      assert(ex.message:find("Phase 1") != nil, "Expected Phase 1 safe assignment error, got: " .. ex.message)
-      return
-   end
-
-   error("Safe navigation compound assignment should remain unsupported in Phase 1")
+@Test function testSafeNavAssignCompoundAdd()
+   store = { value = 1 }
+   store?.value += 2
+   assert(store.value is 3, "Safe navigation compound assignment should update non-nil target")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-@Test function testSafeNavAssignUnsupportedMultiTarget()
-   try
-      exec([[
-         a = { value = 1 }
-         b = { value = 2 }
-         a?.value, b = 3, 4
-      ]])
-   except ex
-      assert(ex.message:find("Phase 1") != nil, "Expected Phase 1 safe assignment error, got: " .. ex.message)
-      return
+@Test function testSafeNavAssignMultiTargetMixed()
+   a = { value = 1 }
+   b = 0
+   a?.value, b = 3, 4
+   assert(a.value is 3, "Safe navigation target should store first mapped value in multi-target assignment")
+   assert(b is 4, "Non-safe later target should still store its mapped value")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignCompoundSkip()
+   calls = 0
+   function delta()
+      calls++
+      return 5
    end
 
-   error("Safe navigation multi-target assignment should remain unsupported in Phase 1")
+   store = nil
+   store?.value += delta()
+   assert(calls is 0, "Compound safe-nav assignment should not evaluate RHS when base is nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignIfNil()
+   store = { value = nil, present = 8 }
+   store?.value ?= 42
+   store?.present ?= 99
+   assert(store.value is 42, "Safe-nav ?= should assign when terminal field is nil")
+   assert(store.present is 8, "Safe-nav ?= should skip when terminal field is non-nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignIfNilSkipBase()
+   calls = 0
+   function fallback()
+      calls++
+      return 12
+   end
+
+   store = nil
+   store?.value ?= fallback()
+   assert(calls is 0, "Safe-nav ?= should skip RHS when a safe hop is nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignIfEmpty()
+   store = { value = '', flag = false, present = 'ready' }
+   store?.value ??= 'filled'
+   store?.flag ??= true
+   store?.present ??= 'ignored'
+   assert(store.value is 'filled', "Safe-nav ??= should assign on empty string")
+   assert(store.flag is true, "Safe-nav ??= should assign on false")
+   assert(store.present is 'ready', "Safe-nav ??= should skip on truthy value")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignIfEmptyShortCircuitRhs()
+   calls = 0
+   function fallback()
+      calls++
+      return 'filled'
+   end
+
+   store = { value = 'present' }
+   store?.value ??= fallback()
+   assert(calls is 0, "Safe-nav ??= should not evaluate RHS when terminal value is already truthy")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignMultiTargetWithCall()
+   function values()
+      return 10, 20, 30
+   end
+
+   safe_store = nil
+   second = 0
+   third = 0
+   safe_store?.value, second, third = values()
+   assert(second is 20, "Multi-target call assignment should preserve value mapping after skipped safe target")
+   assert(third is 30, "Multi-target call assignment should preserve later mapped values")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignMultiTargetPartialSkip()
+   a = nil
+   b = { value = 1 }
+   c = 0
+   a?.value, b.value, c = 10, 11, 12
+   assert(b.value is 11, "Later non-safe target should still store when earlier safe target skips")
+   assert(c is 12, "Final target should still receive its mapped value when earlier safe target skips")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignCompoundArray()
+   holder = { items = array<int> { 1, 2, 3 } }
+   holder?.items?[1] += 8
+   assert(holder.items[1] is 10, "Compound safe-nav assignment should preserve array store behaviour")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignCompoundObjectField()
+   clock = obj.new('time')
+   clock.year = 2020
+   clock?.year += 3
+   assert(clock.year is 2023, "Compound safe-nav assignment should preserve object field stores")
 end

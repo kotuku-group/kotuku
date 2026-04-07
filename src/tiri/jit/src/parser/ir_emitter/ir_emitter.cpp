@@ -1580,29 +1580,16 @@ ParserResult<IrEmitUnit> IrEmitter::emit_assignment_stmt(const AssignmentStmtPay
       }
    }
 
-   if (has_safe_nav_target) {
-      const ExprNodePtr& node = Payload.targets.front();
-      SourceSpan span = node ? node->span : SourceSpan{};
-
-      if (Payload.op != AssignmentOperator::Plain) {
-         return ParserResult<IrEmitUnit>::failure(this->make_error(
-            ParserErrorCode::InternalInvariant,
-            "safe navigation assignment supports only plain '=' assignments in Phase 1", span));
-      }
-
-      if (Payload.targets.size() != 1) {
-         return ParserResult<IrEmitUnit>::failure(this->make_error(
-            ParserErrorCode::InternalInvariant,
-            "safe navigation assignment supports only a single target in Phase 1", span));
-      }
-   }
-
    // For compound assignments (+=, -=, etc.), do NOT create new locals for unscoped variables.
    // The variable must already exist - we should modify the existing storage.
    // For plain (=) and if-empty/if-nil (?=/??=) assignments, allow new local creation.
    // If-empty/if-nil on an undeclared variable creates a local and assigns (since undefined is empty/nil).
 
    bool AllocNewLocal = (Payload.op IS AssignmentOperator::Plain or Payload.op IS AssignmentOperator::IfEmpty or Payload.op IS AssignmentOperator::IfNil);
+
+   if (Payload.op IS AssignmentOperator::Plain and has_safe_nav_target and Payload.targets.size() > 1) {
+      return this->emit_plain_assignment_safe_multi(Payload.targets, Payload.values);
+   }
 
    auto targets_result = this->prepare_assignment_targets(Payload.targets, AllocNewLocal, has_safe_nav_target);
    if (not targets_result.ok()) return ParserResult<IrEmitUnit>::failure(targets_result.error_ref());

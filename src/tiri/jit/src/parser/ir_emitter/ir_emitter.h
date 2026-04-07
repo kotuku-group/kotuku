@@ -169,6 +169,7 @@ private:
    ParserResult<IrEmitUnit> emit_with_stmt(const WithStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_assignment_stmt(const AssignmentStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_plain_assignment(std::vector<PreparedAssignment> targets, const ExprNodeList& values);
+   ParserResult<IrEmitUnit> emit_plain_assignment_safe_multi(const ExprNodeList& targets, const ExprNodeList& values);
    ParserResult<IrEmitUnit> emit_compound_assignment(AssignmentOperator op, PreparedAssignment target, const ExprNodeList& values);
    ParserResult<IrEmitUnit> emit_if_empty_assignment(PreparedAssignment target, const ExprNodeList& values);
    ParserResult<IrEmitUnit> emit_if_nil_assignment(PreparedAssignment target, const ExprNodeList& values);
