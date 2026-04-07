@@ -119,6 +119,7 @@ struct PreparedAssignment {
    GCstr* pending_symbol = nullptr;  // Symbol name for deferred var_add
    BCLine pending_line = 0;      // Line number for deferred variable declaration
    BCLine pending_column = 0;    // Column number for deferred variable declaration
+   ControlFlowEdge safe_nav_skip;
 };
 
 //********************************************************************************************************************
@@ -199,10 +200,12 @@ private:
    ParserResult<ExpDesc> emit_function_expr(const FunctionExprPayload& payload, GCstr* funcname = nullptr);
    ParserResult<IrEmitUnit> emit_annotation_registration(BCReg func_reg, const std::vector<AnnotationEntry>& annotations, GCstr* funcname);
    ParserResult<ExpDesc> emit_expression_list(const ExprNodeList& expressions, BCReg& count);
-   ParserResult<ExpDesc> emit_lvalue_expr(const ExprNode& expr, bool allow_new_local = true);
+   ParserResult<ExpDesc> emit_lvalue_expr(
+      const ExprNode& expr, bool allow_new_local = true, ControlFlowEdge* safe_nav_skip = nullptr);
    ParserResult<ControlFlowEdge> emit_condition_jump(const ExprNode& expr);
    ParserResult<ExpDesc> emit_function_lvalue(const FunctionNamePath& path);
-   ParserResult<std::vector<PreparedAssignment>> prepare_assignment_targets(const ExprNodeList& targets, bool allow_new_local = true);
+   ParserResult<std::vector<PreparedAssignment>> prepare_assignment_targets(
+      const ExprNodeList& targets, bool allow_new_local = true, bool allow_safe_nav = false);
    void materialise_to_next_reg(ExpDesc& expression, std::string_view usage);
    void materialise_to_reg(ExpDesc& expression, BCReg slot, std::string_view usage);
    void ensure_register_floor(std::string_view usage);

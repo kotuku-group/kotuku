@@ -2,6 +2,28 @@
 // IR emitter implementation: assignment emission
 // #included from ir_emitter.cpp
 
+static bool contains_safe_nav_target(const ExprNode& Expr)
+{
+   switch (Expr.kind) {
+      case AstNodeKind::SafeMemberExpr:
+      case AstNodeKind::SafeIndexExpr:
+         return true;
+
+      case AstNodeKind::MemberExpr: {
+         const auto& payload = std::get<MemberExprPayload>(Expr.data);
+         return payload.table and contains_safe_nav_target(*payload.table);
+      }
+
+      case AstNodeKind::IndexExpr: {
+         const auto& payload = std::get<IndexExprPayload>(Expr.data);
+         return payload.table and contains_safe_nav_target(*payload.table);
+      }
+
+      default:
+         return false;
+   }
+}
+
 //********************************************************************************************************************
 // Emit bytecode for a plain assignment, storing values into one or more target lvalues.  NB: This generic function
 // exists over the local/global specific implementations because of the need to handle complex scenarios
@@ -11,6 +33,49 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
 {
    auto nvars = BCReg(BCREG(targets.size()));
    if (not nvars) return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
+
+   if (nvars IS BCReg(1) and targets.front().safe_nav_skip.valid()) {
+      PreparedAssignment& target = targets.front();
+      ExpDesc tail(ExpKind::Void);
+      auto nexps = BCReg(0);
+      if (not values.empty()) {
+         auto list = this->emit_expression_list(values, nexps);
+         if (not list.ok()) return ParserResult<IrEmitUnit>::failure(list.error_ref());
+         tail = list.value_ref();
+      }
+
+      if (nexps IS BCReg(1)) {
+         if (tail.k IS ExpKind::Call) {
+            if (bc_op(*ir_bcptr(&this->func_state, &tail)) IS BC_VARG) {
+               this->func_state.freereg--;
+               tail.k = ExpKind::Relocable;
+            }
+            else {
+               tail.u.s.info = tail.u.s.aux;
+               tail.k = ExpKind::NonReloc;
+            }
+         }
+
+         if (not is_blank_target(target.storage)) {
+            bcemit_store(&this->func_state, &target.storage, &tail);
+         }
+      }
+      else {
+         this->lex_state.assign_adjust(1, nexps.raw(), &tail);
+         if (not is_blank_target(target.storage)) {
+            ExpDesc stack_value;
+            stack_value.init(ExpKind::NonReloc, this->func_state.freereg - 1);
+            bcemit_store(&this->func_state, &target.storage, &stack_value);
+         }
+      }
+
+      target.safe_nav_skip.patch_to(BCPos(this->func_state.pc));
+
+      RegisterAllocator allocator(&this->func_state);
+      allocator.release(target.reserved);
+      this->func_state.reset_freereg();
+      return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
+   }
 
    // Count pending locals that need to be created after expression evaluation
    BCReg pending_locals = BCReg(0);
@@ -465,7 +530,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_if_nil_assignment(PreparedAssignment ta
 // is true. This is used for compound assignments (+=, -=) and if-empty assignments (??=) where the variable
 // must already exist - we should modify the existing storage, not create a new local.
 
-ParserResult<std::vector<PreparedAssignment>> IrEmitter::prepare_assignment_targets(const ExprNodeList &Targets, bool AllocNewLocal)
+ParserResult<std::vector<PreparedAssignment>> IrEmitter::prepare_assignment_targets(
+   const ExprNodeList &Targets, bool AllocNewLocal, bool AllowSafeNav)
 {
    std::vector<PreparedAssignment> lhs;
    lhs.reserve(Targets.size());
@@ -480,11 +546,11 @@ ParserResult<std::vector<PreparedAssignment>> IrEmitter::prepare_assignment_targ
             ParserErrorCode::InternalInvariant, "assignment target missing"));
       }
 
-      auto lvalue = this->emit_lvalue_expr(*node, AllocNewLocal);
+      PreparedAssignment prepared;
+      auto lvalue = this->emit_lvalue_expr(*node, AllocNewLocal, AllowSafeNav ? &prepared.safe_nav_skip : nullptr);
       if (not lvalue.ok()) return ParserResult<std::vector<PreparedAssignment>>::failure(lvalue.error_ref());
 
       ExpDesc slot = lvalue.value_ref();
-      PreparedAssignment prepared;
 
       // Check if this is an Unscoped variable that needs a new local
       // Keep it as Unscoped and defer local creation until after expression evaluation

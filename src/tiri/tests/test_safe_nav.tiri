@@ -517,3 +517,151 @@ end
    assert(arr?[1]?.name is "Bob", "Safe navigation through array to table field should work")
    assert(arr?[5]?.name is nil, "Safe navigation with out-of-bounds array should return nil")
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Safe navigation assignment tests
+
+@Test function testSafeNavAssignBasic()
+   obj = { }
+   obj?.field = 42
+   assert(obj.field is 42, "Safe field assignment should store value on non-nil base")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignNilBase()
+   obj = nil
+   obj?.field = 42
+   assert(obj is nil, "Safe field assignment should skip when base is nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignChained()
+   data = { toolbar = { items = { false, false, false } } }
+   data?.toolbar?.items?[1] = true
+   assert(data.toolbar.items[1] is true, "Safe chained assignment should reach final element")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignMiddleNil()
+   data = { toolbar = nil }
+   data?.toolbar?.items?[0] = true
+   assert(data.toolbar is nil, "Safe chained assignment should skip when middle hop is nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignShortCircuitValue()
+   calls = 0
+   function computeValue()
+      calls++
+      return 42
+   end
+
+   obj = nil
+   obj?.field = computeValue()
+   assert(calls is 0, "RHS should not be evaluated when safe assignment is skipped")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignMixed()
+   data = { inner = { value = 1 } }
+   data.inner?.value = 99
+   assert(data.inner.value is 99, "Mixed safe/non-safe chain should assign through final field")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignIndex()
+   arr = array<int> { 10, 20, 30 }
+   arr?[2] = 99
+   assert(arr[2] is 99, "Safe index assignment should store through array-specialised path")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignNestedIndex()
+   data = { items = array<int> { 5, 6, 7 } }
+   data?.items?[0] = 88
+   assert(data.items[0] is 88, "Safe member/index assignment should update nested array value")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignTiriArray()
+   holder = { values = array<int> { 1, 2, 3 } }
+   holder?.values?[1] = 77
+   assert(holder.values[1] is 77, "Safe assignment into Tiri array should preserve array semantics")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignObjectField()
+   clock = obj.new('time')
+   clock?.year = 2032
+   assert(clock.year is 2032, "Safe assignment should preserve object field stores")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignSelfAliasingRhs()
+   state = {
+      users = {
+         { count = 1 },
+         { count = 2 }
+      }
+   }
+
+   state?.users?[1].count = state.users[1].count + 5
+   assert(state.users[1].count is 7, "Safe assignment should preserve LHS operands while evaluating RHS")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignIndexExprShortCircuit()
+   calls = 0
+   function nextIndex()
+      calls++
+      return 0
+   end
+
+   data = nil
+   data?.items?[nextIndex()] = 10
+   assert(calls is 0, "Index expression should not be evaluated when earlier safe hop is nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignUnsupportedCompound()
+   try
+      exec([[
+         store = { value = 1 }
+         store?.value += 1
+      ]])
+   except ex
+      assert(ex.message:find("Phase 1") != nil, "Expected Phase 1 safe assignment error, got: " .. ex.message)
+      return
+   end
+
+   error("Safe navigation compound assignment should remain unsupported in Phase 1")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignUnsupportedMultiTarget()
+   try
+      exec([[
+         a = { value = 1 }
+         b = { value = 2 }
+         a?.value, b = 3, 4
+      ]])
+   except ex
+      assert(ex.message:find("Phase 1") != nil, "Expected Phase 1 safe assignment error, got: " .. ex.message)
+      return
+   end
+
+   error("Safe navigation multi-target assignment should remain unsupported in Phase 1")
+end
