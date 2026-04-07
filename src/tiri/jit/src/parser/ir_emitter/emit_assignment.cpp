@@ -36,6 +36,19 @@ static void release_prepared_assignment(RegisterAllocator& Allocator, FuncState&
    release_indexed_original(State, Target.storage);
 }
 
+static ParserResult<IrEmitUnit> assignment_value_count_error(
+   IrEmitter* Emitter, const ExprNodeList& Values, std::string_view Message)
+{
+   const ExprNode* raw = nullptr;
+   if (not Values.empty()) {
+      const ExprNodePtr& first = Values.front();
+      raw = first ? first.get() : nullptr;
+   }
+   SourceSpan span = raw ? raw->span : SourceSpan{};
+   return ParserResult<IrEmitUnit>::failure(
+      ParserError(ParserErrorCode::InternalInvariant, Token::from_span(span, TokenKind::Unknown), Message));
+}
+
 //********************************************************************************************************************
 // Emit bytecode for a plain assignment, storing values into one or more target lvalues.  NB: This generic function
 // exists over the local/global specific implementations because of the need to handle complex scenarios
@@ -45,6 +58,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment_safe_multi(const ExprN
 {
    auto nvars = BCReg(BCREG(targets.size()));
    if (not nvars) return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
+
+   // Multi-target safe-nav assignment cannot use the Phase 1 single-target shortcut where a failed
+   // safe-nav hop skips RHS evaluation entirely. Later targets still need their mapped values, so we
+   // evaluate the RHS list once using the normal assignment rules, then guard each individual store.
 
    ExpDesc tail(ExpKind::Void);
    auto nexps = BCReg(0);
@@ -98,6 +115,9 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment_safe_multi(const ExprN
       prepared.storage = copies.duplicated;
       prepared.reserved = std::move(copies.reserved);
       prepared.target = LValue::from_expdesc(&prepared.storage);
+
+      // `value_base` is computed before we rebuild each target. That keeps multi-return and assign_adjust
+      // behaviour identical to normal assignment while allowing each target to independently skip its store.
       BCReg value_slot = value_base + BCReg(i);
 
       if (is_blank_target(prepared.storage)) {
@@ -144,6 +164,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
 
    if (nvars IS BCReg(1) and targets.front().safe_nav_skip.valid()) {
       PreparedAssignment& target = targets.front();
+      // Single-target safe-nav assignment keeps the stronger short-circuit semantics: if the guarded
+      // target failed during preparation, execution jumps past both RHS evaluation and the final store.
       ExpDesc tail(ExpKind::Void);
       auto nexps = BCReg(0);
       if (not values.empty()) {
@@ -393,7 +415,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_compound_assignment(AssignmentOperator 
    ExpDesc working = copies.duplicated;
 
    ExpDesc rhs;
-   if (mapped.value() IS BinOpr::Concat) {
+      if (mapped.value() IS BinOpr::Concat) {
       ExpDesc infix = working;
       // CONCAT compound assignment: use OperatorEmitter for BC_CAT chaining
       this->operator_emitter.prepare_concat(ExprValue(&infix));
@@ -401,9 +423,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_compound_assignment(AssignmentOperator 
       if (not list.ok()) return ParserResult<IrEmitUnit>::failure(list.error_ref());
 
       if (count != 1) {
-         const ExprNodePtr& node = values.front();
-         SourceSpan span = node ? node->span : SourceSpan{};
-         return this->unsupported_stmt(AstNodeKind::AssignmentStmt, span);
+         return assignment_value_count_error(this, values,
+            "compound assignment expects exactly one RHS value");
       }
 
       rhs = list.value_ref();
@@ -416,9 +437,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_compound_assignment(AssignmentOperator 
       if (not list.ok()) return ParserResult<IrEmitUnit>::failure(list.error_ref());
 
       if (count != 1) {
-         const ExprNodePtr& node = values.front();
-         SourceSpan span = node ? node->span : SourceSpan{};
-         return this->unsupported_stmt(AstNodeKind::AssignmentStmt, span);
+         return assignment_value_count_error(this, values,
+            "compound assignment expects exactly one RHS value");
       }
 
       rhs = list.value_ref();
@@ -508,6 +528,9 @@ ParserResult<IrEmitUnit> IrEmitter::emit_if_empty_assignment(PreparedAssignment 
    bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQS, lhs_reg, const_str(&this->func_state, &emptyv)));
    ControlFlowEdge check_empty = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
 
+   // Safe-nav targets may already carry a skip edge from target preparation. Those jumps bypass this
+   // whole conditional-assignment block. The checks below are only for the terminal lvalue once the
+   // guarded chain has resolved successfully.
    ControlFlowEdge skip_assign = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
    BCPos assign_pos = BCPos(this->func_state.pc);
 
@@ -515,9 +538,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_if_empty_assignment(PreparedAssignment 
    if (not list.ok()) return ParserResult<IrEmitUnit>::failure(list.error_ref());
 
    if (count != 1) {
-      const ExprNodePtr& node = values.front();
-      SourceSpan span = node ? node->span : SourceSpan{};
-      return this->unsupported_stmt(AstNodeKind::AssignmentStmt, span);
+      return assignment_value_count_error(this, values,
+         "??= assignment expects exactly one RHS value");
    }
 
    ExpDesc rhs = list.value_ref();
@@ -597,6 +619,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_if_nil_assignment(PreparedAssignment ta
    bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQP, lhs_reg, const_pri(&nilv)));
    ControlFlowEdge check_nil = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
 
+   // As with ??= above, any safe-nav skip edge lands after this emitter's store path. The nil check here
+   // runs only when target preparation proved that the guarded chain itself was non-nil.
    ControlFlowEdge skip_assign = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
    BCPos assign_pos = BCPos(this->func_state.pc);
 
@@ -604,9 +628,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_if_nil_assignment(PreparedAssignment ta
    if (not list.ok()) return ParserResult<IrEmitUnit>::failure(list.error_ref());
 
    if (count != 1) {
-      const ExprNodePtr& node = values.front();
-      SourceSpan span = node ? node->span : SourceSpan{};
-      return this->unsupported_stmt(AstNodeKind::AssignmentStmt, span);
+      return assignment_value_count_error(this, values,
+         "?= assignment expects exactly one RHS value");
    }
 
    ExpDesc rhs = list.value_ref();
