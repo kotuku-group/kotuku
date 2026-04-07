@@ -7,10 +7,10 @@ Documentation is available in the Kotuku Wiki.
 
    namespace 'gui'
 
-   mGfx <const> ?= mod.load('display')
+   global mGfx <const> ?= mod.load('display')
 
-GAP <const> = 6
-HALF_GAP <const> = GAP / 2
+GAP <const> = gui.sizing.widget.gap
+HALF_GAP <const> = gui.sizing.widget.gap / 2
 
 ----------------------------------------------------------------------------------------------------------------------
 
@@ -76,9 +76,7 @@ gui.divider = function(Options:table)
       self._length      = 'width'
 
       sd = self._secondary.dimensions
-      if not (sd has DMF_FIXED_X and sd has DMF_FIXED_X_OFFSET) then
-         error('The opposing viewport must use fixed x and xOffset coordinates.')
-      end
+      assert((sd has DMF_FIXED_X and sd has DMF_FIXED_X_OFFSET), 'The opposing viewport must use fixed x and xOffset coordinates.')
    elseif Options.top and Options.bottom then
       self._orientation = 'v'
       self._primary     = Options.top
@@ -97,9 +95,11 @@ gui.divider = function(Options:table)
 
    theme = gui.getTheme(self._vp)
 
-   div_name = 'divider-bkgd-' .. self._vp.id
+   div_name = f'divider-bkgd-{self._vp.id}'
    if Options.style != 'none' then
-      opacity = 0.25
+      colour = gui.strToRGB(theme.window.stroke):interpolate(gui.strToRGB(theme.window.bkgd), 0.85)
+      colour.a = 255
+
       if self._orientation is 'h' then -- Top to bottom tiling
          self._pattern = self._vp.scene.new('VectorPattern', {
             name = 'div_pattern', x = 0, y = 0, pageWidth = GAP, pageHeight = GAP*4, width = GAP, height = GAP*4,
@@ -107,7 +107,7 @@ gui.divider = function(Options:table)
          })
 
          pt = string.format('%d,%d, %d,%d, %d,%d %d,%d', 0, 0, GAP, GAP*2, GAP, GAP*4, 0, GAP*2)
-         self._pattern.viewport.new('VectorPolygon', { points = pt, fill = theme.page.stroke, opacity = opacity })
+         self._pattern.viewport.new('VectorPolygon', { points = pt, fill = tostring(colour) })
       else -- Left to right tiling
          self._pattern = self._vp.scene.new('VectorPattern', {
             name = 'div_pattern', x = 0, y = 0, pageWidth = GAP*4, pageHeight=GAP, width=GAP*4, height=GAP,
@@ -115,7 +115,7 @@ gui.divider = function(Options:table)
          })
 
          pt = string.format('%d,%d, %d,%d, %d,%d %d,%d', GAP*2, 0, GAP*4, 0, GAP*2, GAP, 0, GAP)
-         self._pattern.viewport.new('VectorPolygon', { points = pt, fill = theme.page.stroke, opacity = opacity })
+         self._pattern.viewport.new('VectorPolygon', { points = pt, fill = tostring(colour) })
       end
 
       check self._vp.scene.mtAddDef(div_name, self._pattern)
@@ -135,9 +135,11 @@ gui.divider = function(Options:table)
       })
    end
 
+   self._dividerVP.acMoveToBack()
+
    if Options.style != 'none' then
       self._dividerVP.new('VectorRectangle', {
-         name='div_fill', x='1%', y='1%', width='98%', height='98%', fill=f'url(#{div_name})'
+         name='div_fill', x='0', y='0', width='100%', height='100%', fill=f'url(#{div_name})'
       })
    end
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env origo
--- Demonstrates the functionality provided by the divider interface.
+-- Demonstrates how to correctly utilise the divider interface when arranging multiple viewports.
 
    import 'gui'
    import 'gui/divider'
@@ -16,7 +16,7 @@
    })
    leftVP.new('VectorRectangle', { -- Red
       name = 'left_fill', x = 0, y = 0, width = '100%', height = '100%',
-      strokeWidth = 2, stroke = 'rgb(128,0,0)', roundX = 8, roundY = 8
+      strokeWidth = 2, stroke = 'rgb(128,0,0)', fill=win.theme.page.bkgd, roundX = 8, roundY = 8
    })
 
    rightVP = viewport.new('VectorViewport', { -- This viewport is transparent because it contains rightA and rightB
@@ -29,12 +29,12 @@
 
    rightA = rightVP.new('VectorViewport', { x=0, y=0, xOffset=0, height=(rightVP.height / 2) })
    rightA.new('VectorRectangle', {  -- Blue
-      x=0, y=0, width='100%', height='100%', strokeWidth=2, stroke='rgb(0,0,128)', roundX=8, roundY=8
+      x=0, y=0, width='100%', height='100%', strokeWidth=2, stroke='rgb(0,0,128)', fill=win.theme.page.bkgd, roundX=8, roundY=8
    })
 
    rightB = rightVP.new('VectorViewport', { x=0, xOffset=0, y=rightA.y + rightA.height, yOffset=0 })
    rightB.new('VectorRectangle', { -- Green
-      x=0, y=0, width='100%', height='100%', strokeWidth=2, stroke='rgb(0,128,0)', roundX=8, roundY=8
+      x=0, y=0, width='100%', height='100%', strokeWidth=2, stroke='rgb(0,128,0)', fill=win.theme.page.bkgd, roundX=8, roundY=8
    })
 
    gui.divider({ top = rightA, bottom = rightB, minA = 40, minB = 20 })

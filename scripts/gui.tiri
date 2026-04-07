@@ -485,6 +485,43 @@ gui.createIcon = function(Scene:obj, Path:str, Size:num, Theme:any, Name:str):ta
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- For rendering a separating line between widgets or delineating the end of a widget area.
+-- Pos & MarginX can be numbers or proportional values, e.g. 100%
+-- Negative positions, including -0.0, are interpreted as offsets from the end
+
+gui.separator = function(Viewport:obj, Orientation:str, Pos:any, MarginA:any, MarginB:any):num
+   local o = Orientation:substr(0, 1)
+   local options = { fill=gui.getTheme(Viewport).window.stroke }
+   if o is 'h' or o is 'H' then
+      options.x       = MarginA ?? 0
+      options.xOffset = MarginB ?? 0
+      options.height  = gui.sizing.widget.strokeWidth
+
+      if type(Pos) is 'number' and (Pos < 0 or (Pos is 0 and (1/Pos) < 0)) then -- Include negative zero
+         options.yOffset = -Pos
+         subvp = Viewport.new('VectorViewport', options)
+         subvp.new('VectorRectangle', { fill=options.fill, width='100%', height='100%' })
+      else
+         options.y = Pos
+         Viewport.new('VectorRectangle', options)
+      end
+   else
+      options.y       = MarginA ?? 0
+      options.yOffset = MarginB ?? 0
+      options.width   = gui.sizing.widget.strokeWidth
+      if type(Pos) is 'number' and (Pos < 0 or (Pos is 0 and (1/Pos) < 0)) then
+         options.xOffset = -Pos
+         subvp = Viewport.new('VectorViewport', options)
+         subvp.new('VectorRectangle', { fill=options.fill, width='100%', height='100%' })
+      else
+         options.x = Pos
+         Viewport.new('VectorRectangle', options)
+      end
+   end
+   return gui.sizing.widget.strokeWidth
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Return the localised theme table for a given Viewport or vector Scene (effectively the theme assigned to the
 -- display Window).  NB: If a viewport is provided then the nearest parent scene is queried.
 

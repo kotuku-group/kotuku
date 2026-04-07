@@ -194,7 +194,7 @@ end
       glFileView = gui.fileview({
          viewOptions = {
             x          = glWindow.margins.left,
-            y          = glWindow.margins.top,
+            y          = 0,
             width      = 200,
             yOffset    = glWindow.margins.top,
             sensitive  = true,
@@ -224,7 +224,7 @@ end
       -- Document viewer on the right
 
       glViewManager = glViewport.new('VectorViewport', {
-        x=glFileView.view.viewport.x + glFileView.view.viewport.width + 6, y=glWindow.margins.top,
+        x=glFileView.view.viewport.x + glFileView.view.viewport.width + 6, y=0,
         xOffset=glWindow.margins.right, yOffset=glWindow.margins.top
       })
 
@@ -273,13 +273,15 @@ end
 
       bkgd.height = glAppBar.viewport.height
 
+      advance = gui.separator(glViewManager, 'h', glAppBar.viewport.height)
+
       glViewArea = glViewManager.new('VectorViewport', {
-         x = 0, xOffset = 0, y = glAppBar.viewport.height, yOffset = 0,
+         x = 0, xOffset = 0, y = glAppBar.viewport.height + advance, yOffset = 0,
          buffered = true
       })
 
       gui.divider({
-         left = glFileView.view.viewport, right = glViewManager, offsetA = bkgd.height,
+         left = glFileView.view.viewport, right = glViewManager,
          minA = 100, maxA = glWindow.surface.width * 0.4, minB = 100
       })
    end

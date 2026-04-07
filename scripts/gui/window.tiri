@@ -311,7 +311,7 @@ gui.window = function(Options:table)
       self.events?.hide(self)
    end
 
-   self.setTitle = function(self:table, Title)
+   self.setTitle = function(self:table, Title:str)
       if hosted(self) then
          self.surface.display.title = Title
       end

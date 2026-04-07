@@ -182,15 +182,15 @@ function updateFileAttributes(Item:table, Info)
    end
 end
 
-function defineViewColumns(Path:str)
+function defineViewColumns(Path:str):array
    if not Path then
-      return {
+      return array<table> {
          { attrib='name',      title='Name',       width=16, showIcons=true },
          { attrib='freespace', title='Free Space', width=7, type='bytesize', align='right' },
          { attrib='totalsize', title='Total Size', width=7, type='bytesize', align='right' }
       }
    elseif (glState.platform is 'Linux') or (glState.platform is 'Native') then
-      return {
+      return array<table> {
          { attrib='name',        title='Name',        width=16, showIcons=true },
          { attrib='size',        title='Size',        width=7, type='bytesize', align='right' },
          { attrib='date',        title='Date',        width=8, type='date' },
@@ -199,7 +199,7 @@ function defineViewColumns(Path:str)
          { attrib='group',       title='Group',       width=5 }
       }
    else
-      return {
+      return array<table> {
          { attrib='name', title='Name', width=16, showIcons=true },
          { attrib='size', title='Size', width=7, type='bytesize', align='right' },
          { attrib='date', title='Date', width=8, type='date' }
@@ -209,7 +209,7 @@ end
 
 -- Return allowed file extensions as a string list, which is cached.
 
-function getFilters(self)
+function getFilters(self):array
    if self._filters then return self._filters end
    self._filters = array<string>
    if self.filterList then
@@ -254,14 +254,14 @@ function applyFilters(self)
    filters = getFilters(self)
    redraw = false
    if #filters is 0 then -- No filter, all files will be visible
-      for _, item in ipairs(self.view.items) do
+      for item in values(self.view.items) do
          if item.hidden then
             item.hidden = nil
             redraw = true
          end
       end
    else
-      for _, item in ipairs(self.view.items) do
+      for item in values(self.view.items) do
          if item.type is 'file' then
             if filterCheck(self, item.filename) then
                if item.hidden then
@@ -353,9 +353,7 @@ function displayFilters(self)
 
       self.filterViewport.height = height + descent
 
-      self.filterViewport.new('VectorRectangle', {
-         x=0, y=self.filterViewport.height, height=1, width='100%', fill=self.theme.window.stroke
-      })
+      gui.separator(self.filterViewport, 'h', self.filterViewport.height)
    end
 
    -- Toggle the filter list
@@ -610,7 +608,7 @@ gui.fileview = function(Options)
    end
 
    function deleteItem(File)
-      for _, item in pairs(self.view.items) do
+      for item in values(self.view.items) do
          if File is rxStripFolder.extract(item.name.value ?? '') then
             self.view.removeItem(item)
             return true
@@ -1523,11 +1521,9 @@ gui.fileview = function(Options)
             end
          })
 
-         self.toolbar.viewport.new('VectorRectangle', {
-            x=0, y=self.toolbar.viewport.height, height=1, width='100%', fill=self.theme.window.stroke
-         })
+         advance = gui.separator(self.view.viewport, 'h', self.toolbar.viewport.height)
 
-         self.view.reserveTop('FileView', self.toolbar.viewport.height)
+         self.view.reserveTop('FileView', self.toolbar.viewport.height + advance)
       end
    end
 
@@ -1651,14 +1647,14 @@ gui.fileview = function(Options)
          if Datatypes[0] is DATA_FILE then
             items = self.view.dragItems
             if #items > 0 then
-               files = { }
-               for i=0,#items-1 do
-                  table.insert(files, { file = { path=self.path .. items[i].name.value } })
+               files = array<table> { }
+               for item in values(items) do
+                  files:push({ file = { path=self.path .. item.name.value } })
                end
 
                xml = {
                   receipt = {
-                     totalitems = #items,
+                     totalItems = #items,
                      id = Item,
                      files
                   }
@@ -1697,7 +1693,7 @@ gui.fileview = function(Options)
             dev_dest = obj.new('storagedevice', { volume = dest })
             dest_device_id = dev_dest.deviceID
             count = 0
-            for _, item in pairs(Items) do
+            for item in values(Items) do
                if 'file' is item.item then
                   if item.path != dest then
                      dev_src = obj.new('storagedevice', { volume = item.path })

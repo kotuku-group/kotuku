@@ -108,6 +108,8 @@ gui.dropdown = function(Options)
                   if theme.dropdown.iconHighlight and theme.dropdown.iconHighlight != theme.dropdown.icon then
                      local info = gui.createIcon(self.viewport.scene, item.icon, ICON_SIZE, theme.dropdown.iconHighlight)
                      mi.iconHighlightFill = info.fill
+                  else
+                     mi.iconHighlightFill = mi.iconFill
                   end
 
                   mi.iconView = self.viewport.new('VectorRectangle', {
@@ -132,7 +134,7 @@ gui.dropdown = function(Options)
    -- menu visibility can be avoided.
 
    lastTime = 0
-   self.toggle = function(TimeLapse)
+   self.toggle = function(TimeLapse:num)
       timelapse = TimeLapse and TimeLapse >= 0 ? TimeLapse * 1000 :> 5000
 
       currentTime = mSys.PreciseTime()
