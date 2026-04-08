@@ -828,7 +828,7 @@ end
          page = {
             bkgd              = gui.palette.light.bkgd,
             stroke            = gui.palette.light.mid,
-            strokeFocus       = gui.palette.light.contrast
+            strokeFocus       = gui.palette.light.contrast,
             icon              = 'carbon',
             iconHighlight     = 'pearl',
             text              = gui.palette.light.text,
@@ -883,9 +883,9 @@ end
             bkgd            = gui.palette.light.mid,
             fore            = gui.palette.light.inverse,
             foreStroke      = 'none',
-            foreHighlight   = gui.palette.dark.contrast,
+            foreHighlight   = gui.palette.light.contrast,
             foreStrokeFocus = gui.palette.light.contrast,
-            highlight       = gui.palette.dark.face,
+            highlight       = gui.palette.light.face,
             stroke          = 'none',
             strokeFocus     = gui.palette.light.contrast
          },
