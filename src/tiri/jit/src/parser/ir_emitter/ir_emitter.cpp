@@ -136,6 +136,11 @@ private:
 };
 
 //********************************************************************************************************************
+// Assignment helpers implemented in emit_assignment.cpp, which is included later in this translation unit.
+
+static bool contains_safe_nav_target(const ExprNode& Expr);
+
+//********************************************************************************************************************
 // Check if any active local variables have the <close> attribute.
 // Close handlers use temporary registers that could clobber return values.
 
@@ -1567,6 +1572,14 @@ ParserResult<IrEmitUnit> IrEmitter::emit_assignment_stmt(const AssignmentStmtPay
 {
    if (Payload.targets.empty()) return this->unsupported_stmt(AstNodeKind::AssignmentStmt, SourceSpan{});
 
+   bool has_safe_nav_target = false;
+   for (const ExprNodePtr& node : Payload.targets) {
+      if (node and contains_safe_nav_target(*node)) {
+         has_safe_nav_target = true;
+         break;
+      }
+   }
+
    // For compound assignments (+=, -=, etc.), do NOT create new locals for unscoped variables.
    // The variable must already exist - we should modify the existing storage.
    // For plain (=) and if-empty/if-nil (?=/??=) assignments, allow new local creation.
@@ -1574,7 +1587,11 @@ ParserResult<IrEmitUnit> IrEmitter::emit_assignment_stmt(const AssignmentStmtPay
 
    bool AllocNewLocal = (Payload.op IS AssignmentOperator::Plain or Payload.op IS AssignmentOperator::IfEmpty or Payload.op IS AssignmentOperator::IfNil);
 
-   auto targets_result = this->prepare_assignment_targets(Payload.targets, AllocNewLocal);
+   if (Payload.op IS AssignmentOperator::Plain and has_safe_nav_target and Payload.targets.size() > 1) {
+      return this->emit_plain_assignment_safe_multi(Payload.targets, Payload.values);
+   }
+
+   auto targets_result = this->prepare_assignment_targets(Payload.targets, AllocNewLocal, has_safe_nav_target);
    if (not targets_result.ok()) return ParserResult<IrEmitUnit>::failure(targets_result.error_ref());
 
    std::vector<PreparedAssignment> targets = std::move(targets_result.value_ref());

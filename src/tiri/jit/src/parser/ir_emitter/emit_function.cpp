@@ -231,8 +231,14 @@ ParserResult<ExpDesc> IrEmitter::emit_function_lvalue(const FunctionNamePath &pa
 // AllocNewLocal must be false when dealing with update operators like compound assignments (+=, -=) and (++, --)
 // where the variable must already exist.
 
-ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool AllocNewLocal)
+ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool AllocNewLocal, ControlFlowEdge* SafeNavSkip)
 {
+   auto append_safe_nav_skip = [&](BCPos SkipPos) {
+      if (not SafeNavSkip) return;
+      if (SafeNavSkip->valid()) SafeNavSkip->append(SkipPos);
+      else *SafeNavSkip = this->control_flow.make_unconditional(SkipPos);
+   };
+
    switch (Expr.kind) {
       case AstNodeKind::IdentifierExpr: {
          const NameRef& name_ref = std::get<NameRef>(Expr.data);
@@ -286,7 +292,9 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          const auto &payload = std::get<MemberExprPayload>(Expr.data);
          if (not payload.table or not payload.member.symbol) return this->unsupported_expr(Expr.kind, Expr.span);
 
-         auto table_result = this->emit_expression(*payload.table);
+         auto table_result = SafeNavSkip
+            ? this->emit_lvalue_expr(*payload.table, false, SafeNavSkip)
+            : this->emit_expression(*payload.table);
          if (not table_result.ok()) return table_result;
          ExpDesc table = table_result.value_ref();
 
@@ -323,7 +331,9 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          const auto &payload = std::get<IndexExprPayload>(Expr.data);
          if (not payload.table or not payload.index) return this->unsupported_expr(Expr.kind, Expr.span);
 
-         auto table_result = this->emit_expression(*payload.table);
+         auto table_result = SafeNavSkip
+            ? this->emit_lvalue_expr(*payload.table, false, SafeNavSkip)
+            : this->emit_expression(*payload.table);
          if (not table_result.ok()) return table_result;
 
          ExpDesc table = table_result.value_ref();
@@ -369,10 +379,96 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          return ParserResult<ExpDesc>::success(table);
       }
 
-      case AstNodeKind::SafeMemberExpr:
-      case AstNodeKind::SafeIndexExpr:
-         return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::InternalInvariant,
-            "Safe navigation operators (?. and ?[]) cannot be used as assignment targets"));
+      case AstNodeKind::SafeMemberExpr: {
+         if (not SafeNavSkip) {
+            return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::InternalInvariant,
+               "Safe navigation operators (?. and ?[]) cannot be used as assignment targets"));
+         }
+
+         const auto &payload = std::get<SafeMemberExprPayload>(Expr.data);
+         if (not payload.table or not payload.member.symbol) return this->unsupported_expr(Expr.kind, Expr.span);
+
+         auto table_result = this->emit_lvalue_expr(*payload.table, false, SafeNavSkip);
+         if (not table_result.ok()) return table_result;
+         ExpDesc table = table_result.value_ref();
+
+         TiriType emitted_base_type = table.result_type;
+
+         ExpressionValue table_toval(&this->func_state, table);
+         table_toval.to_val();
+         table = table_toval.legacy();
+         RegisterAllocator allocator(&this->func_state);
+         ExpressionValue table_value(&this->func_state, table);
+         BCREG table_reg = table_value.discharge_to_any_reg(allocator);
+         table = table_value.legacy();
+
+         ExpDesc nilv(ExpKind::Nil);
+         bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQP, table_reg, const_pri(&nilv)));
+         append_safe_nav_skip(BCPos(bcemit_jmp(&this->func_state)));
+
+         ExpDesc key(ExpKind::Str);
+         key.u.sval = payload.member.symbol;
+         expr_index(&this->func_state, &table, &key);
+
+         if (payload.base_type IS TiriType::Object or emitted_base_type IS TiriType::Object) {
+            table.result_type = TiriType::Object;
+            if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+               table.k = ExpKind::IndexedObject;
+            }
+         }
+
+         return ParserResult<ExpDesc>::success(table);
+      }
+
+      case AstNodeKind::SafeIndexExpr: {
+         if (not SafeNavSkip) {
+            return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::InternalInvariant,
+               "Safe navigation operators (?. and ?[]) cannot be used as assignment targets"));
+         }
+
+         const auto &payload = std::get<SafeIndexExprPayload>(Expr.data);
+         if (not payload.table or not payload.index) return this->unsupported_expr(Expr.kind, Expr.span);
+
+         auto table_result = this->emit_lvalue_expr(*payload.table, false, SafeNavSkip);
+         if (not table_result.ok()) return table_result;
+         ExpDesc table = table_result.value_ref();
+
+         TiriType emitted_base_type = table.result_type;
+
+         ExpressionValue table_toval_idx(&this->func_state, table);
+         table_toval_idx.to_val();
+         table = table_toval_idx.legacy();
+         RegisterAllocator allocator(&this->func_state);
+         ExpressionValue table_value(&this->func_state, table);
+         BCREG table_reg = table_value.discharge_to_any_reg(allocator);
+         table = table_value.legacy();
+
+         ExpDesc nilv(ExpKind::Nil);
+         bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQP, table_reg, const_pri(&nilv)));
+         append_safe_nav_skip(BCPos(bcemit_jmp(&this->func_state)));
+
+         auto key_result = this->emit_expression(*payload.index);
+         if (not key_result.ok()) return key_result;
+
+         ExpDesc key = key_result.value_ref();
+         ExpressionValue key_toval_idx(&this->func_state, key);
+         key_toval_idx.to_val();
+         key = key_toval_idx.legacy();
+         expr_index(&this->func_state, &table, &key);
+
+         if (payload.base_type IS TiriType::Array or emitted_base_type IS TiriType::Array) {
+            if (int32_t(table.u.s.aux) >= 0) {
+               table.k = ExpKind::IndexedArray;
+            }
+         }
+         else if (payload.base_type IS TiriType::Object or emitted_base_type IS TiriType::Object) {
+            if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+               table.k = ExpKind::IndexedObject;
+            }
+         }
+
+         return ParserResult<ExpDesc>::success(table);
+      }
 
       default:
          return this->unsupported_expr(Expr.kind, Expr.span);
