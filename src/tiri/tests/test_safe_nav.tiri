@@ -517,3 +517,301 @@ end
    assert(arr?[1]?.name is "Bob", "Safe navigation through array to table field should work")
    assert(arr?[5]?.name is nil, "Safe navigation with out-of-bounds array should return nil")
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Safe navigation assignment tests
+
+@Test function testSafeNavAssignBasic()
+   obj = { }
+   obj?.field = 42
+   assert(obj.field is 42, "Safe field assignment should store value on non-nil base")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignNilBase()
+   obj = nil
+   obj?.field = 42
+   assert(obj is nil, "Safe field assignment should skip when base is nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignChained()
+   data = { toolbar = { items = { false, false, false } } }
+   data?.toolbar?.items?[1] = true
+   assert(data.toolbar.items[1] is true, "Safe chained assignment should reach final element")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignMiddleNil()
+   data = { toolbar = nil }
+   data?.toolbar?.items?[0] = true
+   assert(data.toolbar is nil, "Safe chained assignment should skip when middle hop is nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignShortCircuitValue()
+   calls = 0
+   function computeValue()
+      calls++
+      return 42
+   end
+
+   obj = nil
+   obj?.field = computeValue()
+   assert(calls is 0, "RHS should not be evaluated when safe assignment is skipped")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignMixed()
+   data = { inner = { value = 1 } }
+   data.inner?.value = 99
+   assert(data.inner.value is 99, "Mixed safe/non-safe chain should assign through final field")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignIndex()
+   arr = array<int> { 10, 20, 30 }
+   arr?[2] = 99
+   assert(arr[2] is 99, "Safe index assignment should store through array-specialised path")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignNestedIndex()
+   data = { items = array<int> { 5, 6, 7 } }
+   data?.items?[0] = 88
+   assert(data.items[0] is 88, "Safe member/index assignment should update nested array value")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignTiriArray()
+   holder = { values = array<int> { 1, 2, 3 } }
+   holder?.values?[1] = 77
+   assert(holder.values[1] is 77, "Safe assignment into Tiri array should preserve array semantics")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignObjectField()
+   clock = obj.new('time')
+   clock?.year = 2032
+   assert(clock.year is 2032, "Safe assignment should preserve object field stores")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignSelfAliasingRhs()
+   state = {
+      users = {
+         { count = 1 },
+         { count = 2 }
+      }
+   }
+
+   state?.users?[1].count = state.users[1].count + 5
+   assert(state.users[1].count is 7, "Safe assignment should preserve LHS operands while evaluating RHS")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignIndexExprShortCircuit()
+   calls = 0
+   function nextIndex()
+      calls++
+      return 0
+   end
+
+   data = nil
+   data?.items?[nextIndex()] = 10
+   assert(calls is 0, "Index expression should not be evaluated when earlier safe hop is nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignCompoundAdd()
+   store = { value = 1 }
+   store?.value += 2
+   assert(store.value is 3, "Safe navigation compound assignment should update non-nil target")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignMultiTargetMixed()
+   a = { value = 1 }
+   b = 0
+   a?.value, b = 3, 4
+   assert(a.value is 3, "Safe navigation target should store first mapped value in multi-target assignment")
+   assert(b is 4, "Non-safe later target should still store its mapped value")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignCompoundSkip()
+   calls = 0
+   function delta()
+      calls++
+      return 5
+   end
+
+   store = nil
+   store?.value += delta()
+   assert(calls is 0, "Compound safe-nav assignment should not evaluate RHS when base is nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignIfNil()
+   store = { value = nil, present = 8 }
+   store?.value ?= 42
+   store?.present ?= 99
+   assert(store.value is 42, "Safe-nav ?= should assign when terminal field is nil")
+   assert(store.present is 8, "Safe-nav ?= should skip when terminal field is non-nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignIfNilSkipBase()
+   calls = 0
+   function fallback()
+      calls++
+      return 12
+   end
+
+   store = nil
+   store?.value ?= fallback()
+   assert(calls is 0, "Safe-nav ?= should skip RHS when a safe hop is nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignIfEmpty()
+   store = { value = '', flag = false, present = 'ready' }
+   store?.value ??= 'filled'
+   store?.flag ??= true
+   store?.present ??= 'ignored'
+   assert(store.value is 'filled', "Safe-nav ??= should assign on empty string")
+   assert(store.flag is true, "Safe-nav ??= should assign on false")
+   assert(store.present is 'ready', "Safe-nav ??= should skip on truthy value")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignIfEmptyShortCircuitRhs()
+   calls = 0
+   function fallback()
+      calls++
+      return 'filled'
+   end
+
+   store = { value = 'present' }
+   store?.value ??= fallback()
+   assert(calls is 0, "Safe-nav ??= should not evaluate RHS when terminal value is already truthy")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignMultiTargetWithCall()
+   function values()
+      return 10, 20, 30
+   end
+
+   safe_store = nil
+   second = 0
+   third = 0
+   safe_store?.value, second, third = values()
+   assert(second is 20, "Multi-target call assignment should preserve value mapping after skipped safe target")
+   assert(third is 30, "Multi-target call assignment should preserve later mapped values")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignMultiTargetPartialSkip()
+   a = nil
+   b = { value = 1 }
+   c = 0
+   a?.value, b.value, c = 10, 11, 12
+   assert(b.value is 11, "Later non-safe target should still store when earlier safe target skips")
+   assert(c is 12, "Final target should still receive its mapped value when earlier safe target skips")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignCompoundArray()
+   holder = { items = array<int> { 1, 2, 3 } }
+   holder?.items?[1] += 8
+   assert(holder.items[1] is 10, "Compound safe-nav assignment should preserve array store behaviour")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignCompoundObjectField()
+   clock = obj.new('time')
+   clock.year = 2020
+   clock?.year += 3
+   assert(clock.year is 2023, "Compound safe-nav assignment should preserve object field stores")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignFunctionValue()
+   obj = { }
+   obj?.method = function()
+      return 123
+   end
+
+   assert(type(obj.method) is 'function', "Safe-nav function assignment should store a function value")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignFunctionValueSkip()
+   created = 0
+   function makeMethod()
+      created++
+      return function()
+         return 'skipped'
+      end
+   end
+
+   obj = nil
+   obj?.method = makeMethod()
+   assert(created is 0, "Function-valued RHS should not be evaluated when safe-nav assignment skips")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignFunctionValueCall()
+   obj = { }
+   obj?.method = function()
+      return 'callable'
+   end
+
+   result = obj.method()
+   assert(result is 'callable', "Stored function from safe-nav assignment should be callable")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavFunctionStmtUnsupported()
+   try
+      exec([[
+         obj = { }
+         function obj?.method()
+            return 1
+         end
+      ]])
+   except ex
+      assert(ex.message:find('Parsing failed') != nil or ex.message:find('Unsupported') != nil or ex.message:find('Unexpected') != nil or ex.message:find('Expected Token') != nil,
+         'Expected function-statement safe-nav form to remain unsupported, got: ' .. ex.message)
+      return
+   end
+
+   error('function obj?.method() ... end should remain unsupported')
+end

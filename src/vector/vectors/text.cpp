@@ -585,7 +585,7 @@ static ERR TEXT_GET_DisplaySize(extVectorText *Self, int *Value)
       if (auto error = reset_font(Self); error != ERR::Okay) return error;
    }
 
-   *Value = F2T(Self->txFontSize * 72.0 / DISPLAY_DPI);
+   *Value = int(Self->txFontSize * 72.0 / DISPLAY_DPI);
    return ERR::Okay;
 }
 

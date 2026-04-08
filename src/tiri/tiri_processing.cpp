@@ -116,10 +116,10 @@ static int processing_sleep(lua_State *Lua)
    int timeout;
 
    auto fp = (fprocessing *)get_meta(Lua, lua_upvalueindex(1), "Tiri.processing");
-   if (fp) timeout = F2T(fp->Timeout * 1000.0);
+   if (fp) timeout = int(fp->Timeout * 1000.0);
    else timeout = -1;
 
-   if (lua_type(Lua, 1) IS LUA_TNUMBER) timeout = F2T(lua_tonumber(Lua, 1) * 1000.0);
+   if (lua_type(Lua, 1) IS LUA_TNUMBER) timeout = int(lua_tonumber(Lua, 1) * 1000.0);
    if (timeout < 0) timeout = -1; // Wait indefinitely
 
    bool wake_on_signal;

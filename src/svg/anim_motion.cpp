@@ -93,7 +93,7 @@ void anim_motion::perform()
          }
       }
       else { // CMODE::LINEAR: Interpolate between the two values
-         int i = F2T((std::ssize(points)-1) * seek);
+         int i = int((std::ssize(points)-1) * seek);
          if (i >= std::ssize(points)-1) i = std::ssize(points) - 2;
 
          a = points[i];
@@ -127,7 +127,7 @@ void anim_motion::perform()
             // When no timing is specified, the 'values' are distributed evenly.  This determines
             // what spline-path we are going to use.
 
-            i = std::clamp<int>(F2T(seek * std::ssize(spline_paths)), 0, std::ssize(spline_paths) - 1);
+            i = std::clamp<int>(int(seek * std::ssize(spline_paths)), 0, std::ssize(spline_paths) - 1);
          }
 
          auto &sp = spline_paths[i]; // sp = The spline we're going to use
@@ -146,7 +146,7 @@ void anim_motion::perform()
          seek_to = std::clamp(sp.points[si].point.y + std::sqrt((c * c) - (mod_x * mod_x)), 0.0, 1.0);
       }
       else { // CMODE::LINEAR: Interpolate between the two values
-         i = F2T((std::ssize(values)-1) * seek);
+         i = int((std::ssize(values)-1) * seek);
          if (i >= std::ssize(values)-1) i = values.size() - 2;
          const double mod = 1.0 / double(values.size() - 1);
          seek_to = (seek >= 1.0) ? 1.0 : fmod(seek, mod) / mod;

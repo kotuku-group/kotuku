@@ -206,8 +206,8 @@ ERR read_path(std::vector<PathCommand> &Path, CSTRING Value)
          case 'A': case 'a': { // Arc
             double largearc, sweep;
             read_numseq_zero(Value, { &path.X2, &path.Y2, &path.Angle, &largearc, &sweep, &path.X, &path.Y });
-            path.LargeArc = F2T(largearc);
-            path.Sweep = F2T(sweep);
+            path.LargeArc = int(largearc);
+            path.Sweep = int(sweep);
             if ((path.LargeArc != 1) and (path.LargeArc != 0)) return ERR::InvalidValue;
             if ((path.Sweep != 1) and (path.Sweep != 0)) return ERR::InvalidValue;
             if (cmd IS 'A') path.Type = PE::Arc;

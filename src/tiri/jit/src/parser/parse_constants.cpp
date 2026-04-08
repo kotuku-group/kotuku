@@ -43,11 +43,11 @@
 
 GCstr* LexState::keepstr(std::string_view str)
 {
-   // NOBARRIER: the key is new or kept alive.
    lua_State* L = this->L;
    GCstr* s = lj_str_new(L, str.data(), str.size());
    TValue* tv = lj_tab_setstr(L, this->fs->kt, s);
    if (tvisnil(tv)) setboolV(tv, 1);
+   lj_gc_objbarriert(L, this->fs->kt, s);
    lj_gc_check(L);
    return s;
 }

@@ -396,9 +396,9 @@ static ERR ARCHIVE_Seek(extFile *Self, struct acSeek *Args)
 
    log.traceBranch("Seek to offset %.2f from seek position %d", Args->Offset, int(Args->Position));
 
-   if (Args->Position IS SEEK::START) pos = F2T(Args->Offset);
-   else if (Args->Position IS SEEK::END) pos = Self->Size - F2T(Args->Offset);
-   else if (Args->Position IS SEEK::CURRENT) pos = Self->Position + F2T(Args->Offset);
+   if (Args->Position IS SEEK::START) pos = int(Args->Offset);
+   else if (Args->Position IS SEEK::END) pos = Self->Size - int(Args->Offset);
+   else if (Args->Position IS SEEK::CURRENT) pos = Self->Position + int(Args->Offset);
    else return log.warning(ERR::Args);
 
    if (pos < 0) return log.warning(ERR::OutOfRange);

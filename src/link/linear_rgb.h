@@ -10,14 +10,14 @@ private:
    inline static uint8_t conv_r2l(double Value) {
       if (Value <= 0.04045) Value /= 12.92;
       else Value = std::pow((Value + 0.055) / 1.055, 2.4);
-      return pf::F2T((Value * 255.0) + 0.5);
+      return int((Value * 255.0) + 0.5);
    }
 
    inline static uint8_t conv_l2r(double Value) {
       int ix;
 
-      if (Value < 0.0031308) ix = pf::F2T(((Value * 12.92) * 255.0) + 0.5);
-      else ix = pf::F2T(((std::pow(Value, 1.0 / 2.4) * 1.055 - 0.055) * 255.0) + 0.5);
+      if (Value < 0.0031308) ix = int(((Value * 12.92) * 255.0) + 0.5);
+      else ix = int(((std::pow(Value, 1.0 / 2.4) * 1.055 - 0.055) * 255.0) + 0.5);
 
       return (ix < 0) ? 0 : (ix > 255) ? 255 : ix;
    }

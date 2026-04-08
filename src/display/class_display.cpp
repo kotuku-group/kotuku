@@ -1032,18 +1032,18 @@ static ERR DISPLAY_MoveToPoint(extDisplay *Self, struct acMoveToPoint *Args)
 
    if (!Args) return ERR::NullArgs;
 
-   log.traceBranch("Moving display to %dx%d", F2T(Args->X), F2T(Args->Y));
+   log.traceBranch("Moving display to %dx%d", int(Args->X), int(Args->Y));
 
 #ifdef _WIN32
 
    // winMoveWindow() treats the coordinates as being indicative of the client area.
 
    if (!winMoveWindow(Self->WindowHandle,
-         ((Args->Flags & MTF::X) != MTF::NIL) ? Args->X : F2T(Self->X) + Self->LeftMargin,
-         ((Args->Flags & MTF::Y) != MTF::NIL) ? Args->Y : F2T(Self->Y) + Self->TopMargin)) return ERR::SystemCall;
+         ((Args->Flags & MTF::X) != MTF::NIL) ? Args->X : int(Self->X) + Self->LeftMargin,
+         ((Args->Flags & MTF::Y) != MTF::NIL) ? Args->Y : int(Self->Y) + Self->TopMargin)) return ERR::SystemCall;
 
-   if ((Args->Flags & MTF::X) != MTF::NIL) Self->X = F2T(Args->X) + Self->LeftMargin;
-   if ((Args->Flags & MTF::Y) != MTF::NIL) Self->Y = F2T(Args->Y) + Self->TopMargin;
+   if ((Args->Flags & MTF::X) != MTF::NIL) Self->X = int(Args->X) + Self->LeftMargin;
+   if ((Args->Flags & MTF::Y) != MTF::NIL) Self->Y = int(Args->Y) + Self->TopMargin;
    return ERR::Okay;
 
 #elif __xwindows__
@@ -1051,11 +1051,11 @@ static ERR DISPLAY_MoveToPoint(extDisplay *Self, struct acMoveToPoint *Args)
    // Handling margins isn't necessary as the window manager will take that into account when it receives the move request.
 
    XMoveWindow(XDisplay, Self->XWindowHandle,
-      ((Args->Flags & MTF::X) != MTF::NIL) ? F2T(Args->X) : Self->X,
-      ((Args->Flags & MTF::Y) != MTF::NIL) ? F2T(Args->Y) : Self->Y);
+      ((Args->Flags & MTF::X) != MTF::NIL) ? int(Args->X) : Self->X,
+      ((Args->Flags & MTF::Y) != MTF::NIL) ? int(Args->Y) : Self->Y);
 
-   if ((Args->Flags & MTF::X) != MTF::NIL) Self->X = F2T(Args->X);
-   if ((Args->Flags & MTF::Y) != MTF::NIL) Self->Y = F2T(Args->Y);
+   if ((Args->Flags & MTF::X) != MTF::NIL) Self->X = int(Args->X);
+   if ((Args->Flags & MTF::Y) != MTF::NIL) Self->Y = int(Args->Y);
    return ERR::Okay;
 
 #else
@@ -1555,9 +1555,9 @@ static ERR DISPLAY_SetGamma(extDisplay *Self, gfx::SetGamma *Args)
 
    for (int i=0; i < std::ssize(palette); i++) {
       intensity = (double)i / 255.0;
-      palette[i].Red   = F2T(pow(intensity, 1.0 / red)   * 255.0);
-      palette[i].Green = F2T(pow(intensity, 1.0 / green) * 255.0);
-      palette[i].Blue  = F2T(pow(intensity, 1.0 / blue)  * 255.0);
+      palette[i].Red   = int(pow(intensity, 1.0 / red)   * 255.0);
+      palette[i].Green = int(pow(intensity, 1.0 / green) * 255.0);
+      palette[i].Blue  = int(pow(intensity, 1.0 / blue)  * 255.0);
    }
 
    SetGammaCorrectData(palette, std::ssize(palette), 0, TRUE);
@@ -1617,14 +1617,14 @@ static ERR DISPLAY_SetGammaLinear(extDisplay *Self, gfx::SetGammaLinear *Args)
    for (int16_t i=0; i < std::ssize(palette); i++) {
       double intensity = (double)i / 255.0;
 
-      if (red > 1.0) palette[i].Red = F2T(pow(intensity, 1.0 / red) * 255.0);
-      else palette[i].Red = F2T((double)i * red);
+      if (red > 1.0) palette[i].Red = int(pow(intensity, 1.0 / red) * 255.0);
+      else palette[i].Red = int((double)i * red);
 
-      if (green > 1.0) palette[i].Green = F2T(pow(intensity, 1.0 / green) * 255.0);
-      else palette[i].Green = F2T((double)i * green);
+      if (green > 1.0) palette[i].Green = int(pow(intensity, 1.0 / green) * 255.0);
+      else palette[i].Green = int((double)i * green);
 
-      if (blue > 1.0) palette[i].Blue = F2T(pow(intensity, 1.0 / blue) * 255.0);
-      else palette[i].Blue = F2T((double)i * blue);
+      if (blue > 1.0) palette[i].Blue = int(pow(intensity, 1.0 / blue) * 255.0);
+      else palette[i].Blue = int((double)i * blue);
    }
 
    glSNAP->Driver.SetGammaCorrectData(palette, std::ssize(palette), 0, TRUE);

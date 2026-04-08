@@ -113,9 +113,9 @@ Special operators include:
 
 static std::string write_calc(double Value, int16_t Precision)
 {
-   if (!Precision) return std::to_string(F2T(Value));
+   if (!Precision) return std::to_string(int(Value));
 
-   int64_t wholepart = F2T(Value);
+   int64_t wholepart = int(Value);
    auto out = std::to_string(wholepart);
 
    double fraction = std::abs(Value) - std::abs(wholepart);
@@ -124,7 +124,7 @@ static std::string write_calc(double Value, int16_t Precision)
       fraction *= 10;
       auto px = std::abs(Precision);
       while ((fraction > 0.00001) and (px > 0)) {
-         auto ival = F2T(fraction);
+         auto ival = int(fraction);
          out += char(ival) + '0';
          fraction = (fraction - ival) * 10;
          px--;

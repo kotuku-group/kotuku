@@ -500,8 +500,8 @@ static ERR VECTORSCENE_Redimension(extVectorScene *Self, struct acRedimension *A
 {
    if (!Args) return ERR::NullArgs;
 
-   if (Args->Width >= 1.0)  Self->PageWidth  = F2T(Args->Width);
-   if (Args->Height >= 1.0) Self->PageHeight = F2T(Args->Height);
+   if (Args->Width >= 1.0)  Self->PageWidth  = int(Args->Width);
+   if (Args->Height >= 1.0) Self->PageHeight = int(Args->Height);
 
    return ERR::Okay;
 }
@@ -529,8 +529,8 @@ Resize: Redefines the size of the page.
 static ERR VECTORSCENE_Resize(extVectorScene *Self, struct acResize *Args)
 {
    if (!Args) return ERR::NullArgs;
-   if (Args->Width >= 1.0)  Self->PageWidth  = F2T(Args->Width);
-   if (Args->Height >= 1.0) Self->PageHeight = F2T(Args->Height);
+   if (Args->Width >= 1.0)  Self->PageWidth  = int(Args->Width);
+   if (Args->Height >= 1.0) Self->PageHeight = int(Args->Height);
    return ERR::Okay;
 }
 

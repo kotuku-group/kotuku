@@ -105,11 +105,11 @@ GradientColours::GradientColours(const std::vector<GradientStop> &Stops, VCS Col
    int stop, i1, i2, i;
 
    for (stop=0; stop < std::ssize(Stops)-1; stop++) {
-      i1 = F2T(255.0 * Stops[stop].Offset);
+      i1 = int(255.0 * Stops[stop].Offset);
       if (i1 < 0) i1 = 0;
       else if (i1 > 255) i1 = 255;
 
-      i2 = F2T(255.0 * Stops[stop+1].Offset);
+      i2 = int(255.0 * Stops[stop+1].Offset);
       if (i2 < 0) i2 = 0;
       else if (i2 > 255) i2 = 255;
 
@@ -292,10 +292,10 @@ static ERR VECTORGRADIENT_SET_Colour(extVectorGradient *Self, float *Value, int 
          Self->Colour.Blue  = Value[2];
          Self->Colour.Alpha = (Elements >= 4) ? Value[3] : 1.0;
 
-         Self->ColourRGB.Red   = F2T(Self->Colour.Red * 255.0);
-         Self->ColourRGB.Green = F2T(Self->Colour.Green * 255.0);
-         Self->ColourRGB.Blue  = F2T(Self->Colour.Blue * 255.0);
-         Self->ColourRGB.Alpha = F2T(Self->Colour.Alpha * 255.0);
+         Self->ColourRGB.Red   = int(Self->Colour.Red * 255.0);
+         Self->ColourRGB.Green = int(Self->Colour.Green * 255.0);
+         Self->ColourRGB.Blue  = int(Self->Colour.Blue * 255.0);
+         Self->ColourRGB.Alpha = int(Self->Colour.Alpha * 255.0);
       }
       else return log.warning(ERR::InvalidValue);
    }

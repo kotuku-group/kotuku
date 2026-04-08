@@ -81,7 +81,9 @@ void SceneRenderer::ClipBuffer::draw_clips(SceneRenderer &Render, extVector *Sha
 
                if ((m_clip->Flags & VCLF::APPLY_STROKES) != VCLF::NIL) {
                   if (node->StrokeRaster) {
-                     double value = (node->Stroke.Colour.Red * 0.2126) + (node->Stroke.Colour.Green * 0.7152) + (node->Stroke.Colour.Blue * 0.0722);
+                     double value = (std::clamp<float>(node->Stroke.Colour.Red, 0, 1) * 0.2126) + 
+                        (std::clamp<float>(node->Stroke.Colour.Green, 0, 1) * 0.7152) + 
+                        (std::clamp<float>(node->Stroke.Colour.Blue, 0, 1) * 0.0722);
                      value *= node->StrokeOpacity;
                      solid.color(agg::gray8(value * 0xff, 0xff));
 
@@ -146,7 +148,7 @@ void SceneRenderer::ClipBuffer::draw_viewport(SceneRenderer &Render)
    auto vp = (extVectorViewport *)m_shape;
    if (vp->dirty()) gen_vector_path(vp);
 
-   resize_bitmap(F2T(vp->vpBounds.left), F2T(vp->vpBounds.top), F2T(vp->vpBounds.right) + 2, F2T(vp->vpBounds.bottom) + 2);
+   resize_bitmap(int(vp->vpBounds.left), int(vp->vpBounds.top), int(vp->vpBounds.right) + 2, int(vp->vpBounds.bottom) + 2);
 
    m_renderer.attach(m_bitmap.data(), m_width-1, m_height-1, m_width);
    agg::pixfmt_gray8 pixf(m_renderer);
@@ -226,8 +228,8 @@ void SceneRenderer::ClipBuffer::draw_userspace(SceneRenderer &Scene)
    agg::path_storage clip_bound_path = m_clip->Bounds.as_path();
    auto clip_bound_final = get_bounds(clip_bound_path);
 
-   resize_bitmap(F2T(clip_bound_final.left), F2T(clip_bound_final.top),
-      F2T(clip_bound_final.right) + 2, F2T(clip_bound_final.bottom) + 2);
+   resize_bitmap(int(clip_bound_final.left), int(clip_bound_final.top),
+      int(clip_bound_final.right) + 2, int(clip_bound_final.bottom) + 2);
 
    // Every child vector of the VectorClip that exports a path will be rendered to the mask.
 
@@ -267,7 +269,7 @@ void SceneRenderer::ClipBuffer::draw_bounding_box(SceneRenderer &Render)
    auto clip_bound_path = m_clip->Bounds.as_path(m_shape->Transform);
    auto clip_bound_final = get_bounds(clip_bound_path);
 
-   resize_bitmap(F2T(clip_bound_final.left), F2T(clip_bound_final.top), F2T(clip_bound_final.right) + 2, F2T(clip_bound_final.bottom) + 2);
+   resize_bitmap(int(clip_bound_final.left), int(clip_bound_final.top), int(clip_bound_final.right) + 2, int(clip_bound_final.bottom) + 2);
 
    // Every child vector of the VectorClip that exports a path will be rendered to the mask.
 

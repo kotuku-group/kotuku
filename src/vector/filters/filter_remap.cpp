@@ -75,7 +75,7 @@ class Component {
       Intercept = pIntercept;
 
       for (size_t i=0; i < sizeof(Lookup); i++) {
-         uint32_t c = F2T((double(i) * pSlope) + pIntercept * 255.0);
+         uint32_t c = int((double(i) * pSlope) + pIntercept * 255.0);
          Lookup[i] = c;
          ILookup[i] = glLinearRGB.invert(c);
       }
@@ -89,7 +89,7 @@ class Component {
 
       for (size_t i=0; i < sizeof(Lookup); i++) {
          double pe = pow(double(i) * (1.0/255.0), pExponent);
-         uint32_t c = F2T(((pAmplitude * pe) + pOffset) * 255.0);
+         uint32_t c = int(((pAmplitude * pe) + pOffset) * 255.0);
          Lookup[i]  = (c < 255) ? c : 255;
          ILookup[i] = glLinearRGB.invert((c < 255) ? c : 255);
       }
@@ -119,7 +119,7 @@ class Component {
           double c = double(i) / 255.0;
           auto k = uint32_t(c * (n - 1));
           double v = Table[std::min((k + 1), (n - 1))];
-          int val = F2T(255.0 * (Table[k] + (c * (n - 1) - k) * (v - Table[k])));
+          int val = int(255.0 * (Table[k] + (c * (n - 1) - k) * (v - Table[k])));
           Lookup[i] = std::max(0, std::min(255, val));
           ILookup[i] = glLinearRGB.invert(Lookup[i]);
       }

@@ -259,9 +259,9 @@ inline void extLightingFX::diffuse_light(const point3 &Normal, const point3 &STL
 {
    double scale = std::clamp((Constant * Normal.dot(STL)) * 255.0, 0.0, 255.0);
 
-   Output[R] = glLinearRGB.invert(F2T(Colour.Red * scale));
-   Output[G] = glLinearRGB.invert(F2T(Colour.Green * scale));
-   Output[B] = glLinearRGB.invert(F2T(Colour.Blue * scale));
+   Output[R] = glLinearRGB.invert(int(Colour.Red * scale));
+   Output[G] = glLinearRGB.invert(int(Colour.Green * scale));
+   Output[B] = glLinearRGB.invert(int(Colour.Blue * scale));
    Output[A] = 255;
 }
 
@@ -273,9 +273,9 @@ inline void extLightingFX::specular_light(const point3 &Normal, const point3 &ST
 
    double scale = std::clamp((Constant * std::pow(Normal.dot(halfDir), SpecularExponent)) * 255.0, 0.0, 255.0);
 
-   const uint8_t r = F2T(Colour.Red * scale);
-   const uint8_t g = F2T(Colour.Green * scale);
-   const uint8_t b = F2T(Colour.Blue * scale);
+   const uint8_t r = int(Colour.Red * scale);
+   const uint8_t g = int(Colour.Green * scale);
+   const uint8_t b = int(Colour.Blue * scale);
 
    Output[R] = glLinearRGB.invert(r);
    Output[G] = glLinearRGB.invert(g);

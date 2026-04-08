@@ -118,7 +118,7 @@ static ERR WAVEFUNCTIONFX_Draw(extWaveFunctionFX *Self, struct acDraw *Args)
       auto bottom_right = (uint32_t *)(bottom + (((half_res<<1) - 1)));
 
       for (int x = 0; x < half_res; ++x, top++, bottom++, top_right--, bottom_right--) {
-         uint8_t grey = F2T(Self->psi[x][y] / Self->Max * 255.0);
+         uint8_t grey = int(Self->psi[x][y] / Self->Max * 255.0);
          uint32_t col;
          if (Self->Colours) {
             auto &rgb = Self->Colours->table[grey];

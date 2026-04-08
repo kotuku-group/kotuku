@@ -1368,6 +1368,9 @@ struct HSV {
    double Alpha;         // Alpha blending value from 0 to 1.0
 };
 
+// Forward declarations
+struct RGB8;
+
 struct FRGB {
    float Red;    // Red component value
    float Green;  // Green component value
@@ -1379,6 +1382,8 @@ struct FRGB {
 
    constexpr FRGB() noexcept = default;
    constexpr FRGB(float R, float G, float B, float A = 1.0) noexcept : Red(R), Green(G), Blue(B), Alpha(A) { };
+
+   constexpr RGB8 toRGB8() const noexcept;
 };
 
 typedef struct RGB8 {
@@ -1389,17 +1394,28 @@ typedef struct RGB8 {
    constexpr RGB8() noexcept = default;
    constexpr RGB8(uint8_t r, uint8_t g, uint8_t b, uint8_t a = 255) noexcept
       : Red(r), Green(g), Blue(b), Alpha(a) { }
-   constexpr RGB8(FRGB frgb) noexcept {
-      Red   = frgb.Red * 255;
-      Green = frgb.Green * 255;
-      Blue  = frgb.Blue * 255;
-      Alpha = frgb.Alpha * 255;
-   }
+   constexpr RGB8(FRGB frgb) noexcept;
 
    inline FRGB toFRGB() const noexcept {
       return FRGB(Red / 255.0, Green / 255.0, Blue / 255.0, Alpha / 255.0);
    }
 } RGB8;
+
+constexpr RGB8 FRGB::toRGB8() const noexcept {
+   return RGB8 {
+      uint8_t((Red   >= 1.0f) ? 255 : (Red   < 0.0f ? 0 : Red   * 255.0)),
+      uint8_t((Green >= 1.0f) ? 255 : (Green < 0.0f ? 0 : Green * 255.0)),
+      uint8_t((Blue  >= 1.0f) ? 255 : (Blue  < 0.0f ? 0 : Blue  * 255.0)),
+      uint8_t((Alpha >= 1.0f) ? 255 : (Alpha < 0.0f ? 0 : Alpha * 255.0))
+   };
+}
+
+constexpr RGB8::RGB8(FRGB frgb) noexcept {
+   Red   = uint8_t((frgb.Red   >= 1.0f) ? 255 : (frgb.Red   < 0.0f) ? 0 : frgb.Red   * 255.0);
+   Green = uint8_t((frgb.Green >= 1.0f) ? 255 : (frgb.Green < 0.0f) ? 0 : frgb.Green * 255.0);
+   Blue  = uint8_t((frgb.Blue  >= 1.0f) ? 255 : (frgb.Blue  < 0.0f) ? 0 : frgb.Blue  * 255.0);
+   Alpha = uint8_t((frgb.Alpha >= 1.0f) ? 255 : (frgb.Alpha < 0.0f) ? 0 : frgb.Alpha * 255.0);
+}
 
 struct CIEXYZ {
    float X;        // X is a mix of the three CIE RGB curves chosen to be non-negative
@@ -1442,8 +1458,8 @@ struct CIEXYZ {
 
    inline FRGB toFRGB() const {
       auto linear_to_srgb = [](double V) -> float {
-         if (V < 0.0) V = 0.0; else if (V > 1.0) V = 1.0;
-         return float((V <= 0.0031308) ? 12.92 * V : 1.055 * pow(V, 1.0 / 2.4) - 0.055);
+         if (V >= 0.0) return float((V <= 0.0031308) ? 12.92 * V : 1.055 * pow(V, 1.0 / 2.4) - 0.055);
+         return float(-1.055 * pow(-V, 1.0 / 2.4) + 0.055);
       };
       double lr =  (3.2404542 * X) - (1.5371385 * Y) - (0.4985314 * Z);
       double lg = (-0.9692660 * X) + (1.8760108 * Y) + (0.0415560 * Z);
@@ -1633,7 +1649,7 @@ template <class T> T roundup(T Num, int Alignment) {
  #define DEBUG_BREAK
 #endif
 
-// Fast float-2-int conversion, with rounding to the nearest integer (F2I) and truncation (F2T)
+// Fast float-2-int conversion, with rounding to the nearest integer (F2I)
 
 #if defined(__GNUC__) && defined(__x86__)
 
@@ -1653,10 +1669,6 @@ inline int F2I(double val) {
 }
 
 #endif
-
-constexpr int F2T(double val) noexcept {
-   return int(val); // Expected to compile to a cvttsd2si instruction or equivalent
-}
 
 } // namespace
 

@@ -585,7 +585,7 @@ static ERR SET_Opacity(extFont *Self, double Value)
 {
    if (Value >= 100) Self->Colour.Alpha = 255;
    else if (Value <= 0) Self->Colour.Alpha = 0;
-   else Self->Colour.Alpha = F2T(Value * (255.0 / 100.0));
+   else Self->Colour.Alpha = int(Value * (255.0 / 100.0));
    return ERR::Okay;
 }
 

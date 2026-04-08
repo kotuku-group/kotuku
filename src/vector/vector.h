@@ -393,7 +393,6 @@ class extPainter : public VectorPainter {
 public:
    GRADIENT_TABLE *GradientTable;
    double GradientAlpha;
-   RGB8   RGB;
 };
 
 class extVector : public objVector {
@@ -563,7 +562,7 @@ class GradientColours {
 
          // For a given block of colours, compute the average colour and apply it to the entire block.
 
-         int block_size = F2T(resolution * table.size());
+         int block_size = int(resolution * table.size());
          for (int i = 0; i < table.size(); i += block_size) {
 
             int red = 0, green = 0, blue = 0, alpha = 0, total = 0;

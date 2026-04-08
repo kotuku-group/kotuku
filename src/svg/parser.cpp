@@ -772,7 +772,7 @@ ERR svgState::parse_fe_convolve_matrix(objVectorFilter *Filter, XTag &Tag) noexc
             read_numseq(val, { &ox, &oy });
             if (ox < 1) ox = 3;
             if (oy < 1) oy = ox;
-            fx->setFields(fl::MatrixColumns(F2T(ox)), fl::MatrixRows(F2T(oy)));
+            fx->setFields(fl::MatrixColumns(int(ox)), fl::MatrixRows(int(oy)));
             break;
          }
 
@@ -1385,8 +1385,8 @@ ERR svgState::parse_fe_morphology(objVectorFilter *Filter, XTag &Tag) noexcept
          case SVF_RADIUS: {
             double x = -1, y = -1;
             read_numseq(val, { &x, &y });
-            if (x > 0) fx->set(FID_RadiusX, F2T(x));
-            if (y > 0) fx->set(FID_RadiusY, F2T(y));
+            if (x > 0) fx->set(FID_RadiusX, int(x));
+            if (y > 0) fx->set(FID_RadiusY, int(y));
             break;
          }
 
@@ -1610,7 +1610,7 @@ void svgState::proc_filter(XTag &Tag) noexcept
             case SVF_FILTERRES: {
                double x = 0, y = 0;
                read_numseq(val, { &x, &y });
-               filter->setFields(fl::ResX(F2T(x)), fl::ResY(F2T(y)));
+               filter->setFields(fl::ResX(int(x)), fl::ResY(int(y)));
                break;
             }
 

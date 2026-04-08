@@ -114,13 +114,13 @@ static ERR view_path_changed(objVectorViewport *Viewport, FM Event, APTR EventOb
    if (p_x + p_width < view_width) {
       double x = view_width - p_width;
       if (x > 0) x = 0;
-      if (p_x != x) Scroll->m_page->setFields(fl::X(F2T(x)));
+      if (p_x != x) Scroll->m_page->setFields(fl::X(int(x)));
    }
 
    if (p_y + p_height < view_height) {
       double y = view_height - p_height;
       if (y > 0) y = 0;
-      if (p_y != y) Scroll->m_page->setFields(fl::Y(F2T(y)));
+      if (p_y != y) Scroll->m_page->setFields(fl::Y(int(y)));
    }
 
    Scroll->recalc_sliders_from_view();

@@ -132,6 +132,12 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
    set(JIT_LIBRARY_DEFS -DLUA_USE_ASSERT)
 endif ()
 
+if (WIN32)
+   # Convert paths to forward slashes for safe use in C string literals.
+   file(TO_CMAKE_PATH "${CMAKE_BINARY_DIR}" LJ_PDB_BUILD_PATH)
+   file(TO_CMAKE_PATH "${CMAKE_INSTALL_PREFIX}" LJ_PDB_INSTALL_PATH)
+endif ()
+
 # Common host tool sources (used by both MSVC and non-MSVC builds)
 set (JIT_HOST_DIR "${JIT_SRC}/host")
 set (JIT_DYNASM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/jit/dynasm")
@@ -287,10 +293,16 @@ if (MSVC)
       OUTPUT_NAME "lua51"
       ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/jit/lib"
    )
+   # Convert paths to forward slashes for safe use in C string literals
+   file(TO_CMAKE_PATH "${CMAKE_BINARY_DIR}" LJ_PDB_BUILD_PATH)
+   file(TO_CMAKE_PATH "${CMAKE_INSTALL_PREFIX}" LJ_PDB_INSTALL_PATH)
+
    target_compile_definitions(jit_lib PRIVATE
       ${JIT_COMMON_DEFS}
       _CRT_SECURE_NO_DEPRECATE
-      $<$<CONFIG:Debug>:LUA_USE_ASSERT>)
+      $<$<CONFIG:Debug>:LUA_USE_ASSERT>
+      LJ_PDB_BUILD_DIR="${LJ_PDB_BUILD_PATH}"
+      LJ_PDB_INSTALL_DIR="${LJ_PDB_INSTALL_PATH}")
 
    target_include_directories(jit_lib PRIVATE
       "${JIT_SRC}"
@@ -536,6 +548,12 @@ else ()
    list(FILTER JIT_LIB_SOURCES EXCLUDE REGEX "lib_.*\\.cpp$")
    list(FILTER JIT_CORE_SOURCES EXCLUDE REGEX "lib\\.cpp$|load\\.cpp$|lj_parse\\.cpp$|lj_lex\\.cpp$|parser_unit_tests\\.cpp$")
 
+   if (WIN32)
+      list(APPEND JIT_LIBRARY_DEFS
+         -DLJ_PDB_BUILD_DIR=\"${LJ_PDB_BUILD_PATH}\"
+         -DLJ_PDB_INSTALL_DIR=\"${LJ_PDB_INSTALL_PATH}\")
+   endif ()
+
    # Generate list of object files from source files
    set(JIT_OBJECT_FILES "")
    foreach(SOURCE_FILE ${JIT_CORE_SOURCES} ${JIT_LIB_SOURCES})
@@ -683,6 +701,10 @@ target_link_libraries (${MOD} PRIVATE
    ${FFI_LINK}
    ${JIT_LINK}
    ${MATH_LINK}) # The link order matters, math must come last
+
+if (WIN32 AND NOT MSVC)
+   target_link_libraries(${MOD} PRIVATE dbghelp)
+endif ()
 
 target_compile_definitions(${MOD} PRIVATE
    PRV_METACLASS

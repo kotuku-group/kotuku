@@ -102,18 +102,18 @@ static ERR BLURFX_Draw(extBlurFX *Self, struct acDraw *Args)
       if (Self->Filter->AspectRatio IS VFA::NONE) {
          // Scaling is applied evenly on both axis.  Uses the same formula as a scaled stroke-width.
          double diag = dist(0, 0, Self->Filter->BoundWidth, Self->Filter->BoundHeight) * INV_SQRT2;
-         rx = F2T(Self->SX * diag * 2 * scale);
-         ry = F2T(Self->SY * diag * 2 * scale);
+         rx = int(Self->SX * diag * 2 * scale);
+         ry = int(Self->SY * diag * 2 * scale);
       }
       else {
          // Scaling is stretched independently of each axis
-         rx = F2T(Self->SX * Self->Filter->BoundWidth * 2 * scale);
-         ry = F2T(Self->SY * Self->Filter->BoundHeight * 2 * scale);
+         rx = int(Self->SX * Self->Filter->BoundWidth * 2 * scale);
+         ry = int(Self->SY * Self->Filter->BoundHeight * 2 * scale);
       }
    }
    else {
-      rx = F2T(Self->SX * 2 * scale);
-      ry = F2T(Self->SY * 2 * scale);
+      rx = int(Self->SX * 2 * scale);
+      ry = int(Self->SY * 2 * scale);
    }
 
    objBitmap *inBmp;

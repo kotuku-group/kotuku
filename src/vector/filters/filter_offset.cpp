@@ -24,8 +24,8 @@ class extOffsetFX : public extFilterEffect {
 static ERR OFFSETFX_Draw(extOffsetFX *Self, struct acDraw *Args)
 {
    objBitmap *inBmp;
-   int dx = F2T((double)Self->XOffset * Self->Filter->ClientVector->Transform.sx);
-   int dy = F2T((double)Self->YOffset * Self->Filter->ClientVector->Transform.sy);
+   int dx = int((double)Self->XOffset * Self->Filter->ClientVector->Transform.sx);
+   int dy = int((double)Self->YOffset * Self->Filter->ClientVector->Transform.sy);
    if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) IS ERR::Okay) {
       gfx::CopyArea(inBmp, Self->Target, BAF::NIL, 0, 0, inBmp->Width, inBmp->Height, dx, dy);
       return ERR::Okay;

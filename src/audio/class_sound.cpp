@@ -1046,9 +1046,9 @@ static ERR SOUND_Seek(extSound *Self, struct acSeek *Args)
    if (!Args) return log.warning(ERR::NullArgs);
    if (!Self->initialised()) return log.warning(ERR::NotInitialised);
 
-   if (Args->Position IS SEEK::START)         Self->Position = F2T(Args->Offset);
-   else if (Args->Position IS SEEK::END)      Self->Position = Self->Length - F2T(Args->Offset);
-   else if (Args->Position IS SEEK::CURRENT)  Self->Position += F2T(Args->Offset);
+   if (Args->Position IS SEEK::START)         Self->Position = int(Args->Offset);
+   else if (Args->Position IS SEEK::END)      Self->Position = Self->Length - int(Args->Offset);
+   else if (Args->Position IS SEEK::CURRENT)  Self->Position += int(Args->Offset);
    else if (Args->Position IS SEEK::RELATIVE) Self->Position = Self->Length * Args->Offset;
    else return log.warning(ERR::Args);
 

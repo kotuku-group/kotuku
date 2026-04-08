@@ -428,6 +428,48 @@ err_xesc:
 
 static LexToken lex_scan(LexState *, TValue *);
 
+[[nodiscard]] static constexpr bool token_has_payload(LexToken token) noexcept
+{
+   // Reserved keywords may be used contextually as names and need their string payload.
+   // Named/operator tokens (e.g. concat, eq) do not carry payload.
+   if (token > TK_OFS) {
+      size_t idx = size_t(token - TK_OFS - 1);
+      if (idx < TOKEN_DEFINITIONS.size() and TOKEN_DEFINITIONS[idx].is_reserved()) return true;
+   }
+
+   switch (token) {
+      case TK_name:
+      case TK_number:
+      case TK_string:
+      case TK_array_typed:
+      case TK_defer_typed:
+      case TK_pipe:
+         return true;
+      default:
+         return false;
+   }
+}
+
+static inline void assign_token_payload(lua_State* L, TValue* dst, const TValue* src, LexToken token)
+{
+   if (token_has_payload(token)) copyTV(L, dst, src);
+   else setnilV(dst);
+}
+
+#if LUA_USE_ASSERT
+static inline void assert_token_payload_contract(lua_State* L, LexToken token, const TValue* payload, const char* context)
+{
+   if (token_has_payload(token)) {
+      lj_assertL(not tvisnil(payload), "%s: token %d must have payload", context, token);
+   }
+   else lj_assertL(tvisnil(payload), "%s: token %d must not carry payload", context, token);
+}
+#else
+static inline void assert_token_payload_contract(lua_State* L, LexToken token, const TValue* payload, const char* context)
+{
+}
+#endif
+
 // Create a buffered token with no value
 
 LexState::BufferedToken make_buffered_token(LexState *State, LexToken Tok, BCLine Line, BCLine Col, size_t Offset) {
@@ -937,6 +979,7 @@ static LexToken lex_array_typed(LexState *State, TValue *tv)
 static LexToken lex_scan(LexState *State, TValue *tv)
 {
    lj_buf_reset(&State->sb);
+   setnilV(tv);
 
    while (true) {
       // In diagnose mode, if a lexer error occurred, reset and continue scanning
@@ -1326,6 +1369,8 @@ LexState::LexState(lua_State* L, std::string_view Source, std::string_view Chunk
    , active_context(nullptr)
 {
    lj_buf_init(L, &this->sb);
+   setnilV(&this->tokval);
+   setnilV(&this->lookaheadval);
 
 #ifdef INCLUDE_TIPS
    // Initialise tip system from JIT options
@@ -1417,6 +1462,8 @@ LexState::LexState(lua_State* L, const char* BytecodePtr, GCstr* ChunkName)
    , active_context(nullptr)
 {
    lj_buf_init(L, &this->sb);
+   setnilV(&this->tokval);
+   setnilV(&this->lookaheadval);
 }
 
 //********************************************************************************************************************
@@ -1463,6 +1510,8 @@ LexState::LexState(lua_State* L, lua_Reader Rfunc, void* Rdata, std::string_view
    , active_context(nullptr)
 {
    lj_buf_init(L, &this->sb);
+   setnilV(&this->tokval);
+   setnilV(&this->lookaheadval);
 
    // For streaming, read the first chunk to set up source for lex_next
    size_t sz;
@@ -1506,12 +1555,14 @@ void LexState::next()
    // Consume lookahead token if available
    if (this->lookahead != TK_eof) {
       this->tok = this->lookahead;
-      copyTV(this->L, &this->tokval, &this->lookaheadval);
+      assign_token_payload(this->L, &this->tokval, &this->lookaheadval, this->tok);
+      assert_token_payload_contract(this->L, this->tok, &this->tokval, "LexState::next(lookahead)");
       this->current_token_line = this->lookahead_line;
       this->current_token_column = this->lookahead_column;
       this->current_token_offset = this->lookahead_offset;
       this->lastline = this->current_token_line;
       this->lookahead = TK_eof;
+      setnilV(&this->lookaheadval);
       return;
    }
 
@@ -1525,6 +1576,7 @@ void LexState::next()
 
    // Scan next token from input
    this->tok = lex_scan(this, &this->tokval);
+   assert_token_payload_contract(this->L, this->tok, &this->tokval, "LexState::next(scan)");
    this->current_token_line = this->pending_token_line;
    this->current_token_column = this->pending_token_column;
    this->current_token_offset = this->pending_token_offset;
@@ -1541,7 +1593,8 @@ LexToken LexState::lookahead_token()
       auto buffered = this->buffered_tokens.front();
       this->buffered_tokens.pop_front();
       this->lookahead = buffered.token;
-      copyTV(this->L, &this->lookaheadval, &buffered.value);
+      assign_token_payload(this->L, &this->lookaheadval, &buffered.value, this->lookahead);
+      assert_token_payload_contract(this->L, this->lookahead, &this->lookaheadval, "LexState::lookahead_token(buffered)");
       this->lookahead_line = buffered.line;
       this->lookahead_column = buffered.column;
       this->lookahead_offset = buffered.offset;
@@ -1549,6 +1602,7 @@ LexToken LexState::lookahead_token()
    }
 
    this->lookahead = lex_scan(this, &this->lookaheadval);
+   assert_token_payload_contract(this->L, this->lookahead, &this->lookaheadval, "LexState::lookahead_token(scan)");
    this->lookahead_line = this->pending_token_line;
    this->lookahead_column = this->pending_token_column;
    this->lookahead_offset = this->pending_token_offset;
@@ -1586,7 +1640,8 @@ void LexState::mark_token_start()
 void LexState::apply_buffered_token(const BufferedToken& token)
 {
    this->tok = token.token;
-   copyTV(this->L, &this->tokval, &token.value);
+   assign_token_payload(this->L, &this->tokval, &token.value, this->tok);
+   assert_token_payload_contract(this->L, this->tok, &this->tokval, "LexState::apply_buffered_token");
    this->current_token_line = token.line;
    this->current_token_column = token.column;
    this->current_token_offset = token.offset;

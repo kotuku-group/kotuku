@@ -1478,6 +1478,192 @@ extern void luaL_where(lua_State *L, int level)
 #include <cstdio>
 #include <cstdarg>
 
+#ifdef _WIN32
+// Minimal Win32 declarations to avoid including <windows.h> which clashes with LuaJIT types.
+extern "C" {
+   typedef void* HANDLE;
+   typedef unsigned long DWORD;
+   typedef unsigned long long DWORD64;
+   typedef unsigned short WORD;
+
+   __declspec(dllimport) HANDLE __stdcall GetCurrentProcess(void);
+   __declspec(dllimport) DWORD __stdcall GetLastError(void);
+   __declspec(dllimport) unsigned short __stdcall RtlCaptureStackBackTrace(DWORD, DWORD, void**, DWORD*);
+
+   // DbgHelp types and functions
+   #pragma pack(push, 8)
+   struct SYMBOL_INFO_W {
+      DWORD SizeOfStruct;
+      DWORD TypeIndex;
+      DWORD64 Reserved[2];
+      DWORD Index;
+      DWORD Size;
+      DWORD64 ModBase;
+      DWORD Flags;
+      DWORD64 Value;
+      DWORD64 Address;
+      DWORD Register;
+      DWORD Scope;
+      DWORD Tag;
+      DWORD NameLen;
+      DWORD MaxNameLen;
+      char Name[1]; // Variable-length
+   };
+   struct IMAGEHLP_LINE64_W {
+      DWORD SizeOfStruct;
+      void* Key;
+      DWORD LineNumber;
+      char* FileName;
+      DWORD64 Address;
+   };
+   #pragma pack(pop)
+
+   struct MODULEINFO_W {
+      void* lpBaseOfDll;
+      DWORD SizeOfImage;
+      void* EntryPoint;
+   };
+
+   __declspec(dllimport) DWORD __stdcall SymSetOptions(DWORD);
+   __declspec(dllimport) int __stdcall SymInitialize(HANDLE, const char*, int);
+   __declspec(dllimport) int __stdcall SymSetSearchPath(HANDLE, const char*);
+   __declspec(dllimport) DWORD64 __stdcall SymLoadModuleEx(HANDLE, HANDLE, const char*, const char*, DWORD64, DWORD, void*, DWORD);
+   __declspec(dllimport) int __stdcall SymFromAddr(HANDLE, DWORD64, DWORD64*, SYMBOL_INFO_W*);
+   __declspec(dllimport) int __stdcall SymGetLineFromAddr64(HANDLE, DWORD64, DWORD*, IMAGEHLP_LINE64_W*);
+   __declspec(dllimport) int __stdcall SymCleanup(HANDLE);
+
+   // kernel32
+   typedef struct { unsigned long unused; } *HMODULE_W;
+   __declspec(dllimport) HMODULE_W __stdcall GetModuleHandleA(const char*);
+   __declspec(dllimport) DWORD __stdcall GetModuleFileNameA(HMODULE_W, char*, DWORD);
+   __declspec(dllimport) int __stdcall K32GetModuleInformation(HANDLE, HMODULE_W, MODULEINFO_W*, DWORD);
+}
+#pragma comment(lib, "dbghelp.lib")
+
+static void lj_assert_native_backtrace()
+{
+   void* stack[32];
+   unsigned short frames = RtlCaptureStackBackTrace(2, 32, stack, NULL);
+
+   HANDLE process = GetCurrentProcess();
+   SymSetOptions(0x00000002 | 0x00000004 | 0x00000200); // SYMOPT_UNDNAME | SYMOPT_LOAD_LINES | SYMOPT_NO_PROMPTS
+   SymInitialize(process, NULL, 1);
+   // Set search path to include the build output directory where PDBs live.
+   // LJ_PDB_BUILD_DIR and LJ_PDB_INSTALL_DIR are set by CMake.
+#ifdef _DEBUG
+   #define LJ_PDB_CONFIG "Debug"
+#else
+   #define LJ_PDB_CONFIG "Release"
+#endif
+
+#ifndef LJ_PDB_BUILD_DIR
+   #define LJ_PDB_BUILD_DIR "."
+#endif
+
+#ifndef LJ_PDB_INSTALL_DIR
+   #define LJ_PDB_INSTALL_DIR "."
+#endif
+
+   SymSetSearchPath(process, LJ_PDB_BUILD_DIR "/lib/" LJ_PDB_CONFIG ";"
+                             LJ_PDB_BUILD_DIR "/" LJ_PDB_CONFIG ";"
+                             LJ_PDB_INSTALL_DIR "/lib");
+
+   // Explicitly load tiri.dll symbols if the auto-load failed.
+   HMODULE_W tiri_mod = GetModuleHandleA("tiri.dll");
+   if (tiri_mod) {
+      MODULEINFO_W mod_info = {};
+      K32GetModuleInformation(process, tiri_mod, &mod_info, sizeof(mod_info));
+      char mod_path[512] = {};
+      GetModuleFileNameA(tiri_mod, mod_path, sizeof(mod_path));
+      SymLoadModuleEx(process, NULL, mod_path, NULL, (DWORD64)mod_info.lpBaseOfDll, mod_info.SizeOfImage, NULL, 0);
+   }
+
+   fprintf(stderr, "  Native call stack:\n");
+   char symbol_buf[sizeof(SYMBOL_INFO_W) + 256];
+   auto* symbol = (SYMBOL_INFO_W*)symbol_buf;
+   symbol->MaxNameLen = 255;
+   symbol->SizeOfStruct = sizeof(SYMBOL_INFO_W);
+
+   IMAGEHLP_LINE64_W line_info;
+   line_info.SizeOfStruct = sizeof(IMAGEHLP_LINE64_W);
+
+   for (unsigned short i = 0; i < frames; i++) {
+      DWORD64 address = (DWORD64)stack[i];
+      DWORD64 sym_displacement = 0;
+      DWORD line_displacement = 0;
+      if (SymFromAddr(process, address, &sym_displacement, symbol)) {
+         if (SymGetLineFromAddr64(process, address, &line_displacement, &line_info)) {
+            fprintf(stderr, "    #%d: %s (%s:%lu)\n", i, symbol->Name, line_info.FileName, line_info.LineNumber);
+         }
+         else {
+            fprintf(stderr, "    #%d: %s+0x%llx\n", i, symbol->Name, (unsigned long long)sym_displacement);
+         }
+      }
+      else {
+         fprintf(stderr, "    #%d: 0x%llx (SymFromAddr error %lu)\n", i, (unsigned long long)address, GetLastError());
+      }
+   }
+   SymCleanup(process);
+}
+#else
+static void lj_assert_native_backtrace()
+{
+   fprintf(stderr, "  (native backtrace not available on this platform)\n");
+}
+#endif
+
+// Allocation-free Lua stack trace for assert diagnostics.
+// Walks frames directly without using lua_getstack/lua_getinfo (which allocate GC strings).
+
+static void lj_assert_stacktrace(global_State *g)
+{
+   if (!g) return;
+   lua_State *L = gco_to_thread(gcref(g->cur_L));
+   if (!L or !L->base or !tvref(L->stack)) return;
+
+   fprintf(stderr, "  Tiri stack trace:\n");
+   cTValue *nextframe = NULL;
+   cTValue *frame = L->base - 1;
+   cTValue *bot = tvref(L->stack) + LJ_FR2;
+   int depth = 0;
+
+   for (; frame > bot and depth < 16; depth++) {
+      GCobj *gc = frame_gc(frame);
+      if (gc and gc->gch.gct IS ~LJ_TFUNC) {
+         GCfunc *fn = &gc->fn;
+         if (isluafunc(fn)) {
+            GCproto *pt = funcproto(fn);
+            GCstr *cname = proto_chunk_name(pt);
+            if (pt and cname) {
+               int ln = 0;
+               if (nextframe) {
+                  const BCIns *pc = frame_pc(nextframe);
+                  if (pc > proto_bc(pt) and pc <= proto_bc(pt) + pt->sizebc)
+                     ln = lj_debug_line(pt, proto_bcpos(pt, pc - 1)).lineNumber();
+               }
+               fprintf(stderr, "    #%d: %s:%d", depth, strdata(cname), ln);
+               if (pt->firstline.lineNumber()) fprintf(stderr, " (function defined at line %d)", pt->firstline.lineNumber());
+               fprintf(stderr, "\n");
+            }
+            else {
+               fprintf(stderr, "    #%d: [Lua function, no proto info]\n", depth);
+            }
+         }
+         else {
+            fprintf(stderr, "    #%d: [C function %p, ffid=%d]\n", depth, (void*)fn->c.f, fn->c.ffid);
+         }
+      }
+      else {
+         fprintf(stderr, "    #%d: [non-function frame, gct=%d]\n", depth, gc ? gc->gch.gct : -1);
+      }
+
+      nextframe = frame;
+      if (frame_islua(frame)) frame = frame_prevl(frame);
+      else frame = frame_prevd(frame);
+   }
+   if (depth IS 0) fprintf(stderr, "    (no frames)\n");
+}
+
 LJ_NOINLINE void lj_assert_fail(global_State *g, CSTRING file, int line, CSTRING func, CSTRING fmt, ...)
 {
    va_list argp;
@@ -1486,6 +1672,8 @@ LJ_NOINLINE void lj_assert_fail(global_State *g, CSTRING file, int line, CSTRING
    vfprintf(stderr, fmt, argp);
    fprintf(stderr, "\n");
    va_end(argp);
+   lj_assert_stacktrace(g);
+   lj_assert_native_backtrace();
    fflush(stderr);
    abort();
 }

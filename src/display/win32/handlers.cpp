@@ -218,20 +218,20 @@ void CheckWindowSize(OBJECTID SurfaceID, int &Width, int &Height, int CurrentWid
          if (Axis IS AXIS_BOTH) {
             if (min_width > min_height) {
                auto scale = (double)min_height / (double)min_width;
-               Height = F2T(Width * scale);
+               Height = int(Width * scale);
             }
             else {
                auto scale = (double)min_width / (double)min_height;
-               Width = F2T(Height * scale);
+               Width = int(Height * scale);
             }
          }
          else if (Axis IS AXIS_HORIZONTAL) {
             auto scale = (double)min_height / (double)min_width;
-            Height = F2T(Width * scale);
+            Height = int(Width * scale);
          }
          else if (Axis IS AXIS_VERTICAL) {
             auto scale = (double)min_width / (double)min_height;
-            Width = F2T(Height * scale);
+            Width = int(Height * scale);
          }
       }
    }

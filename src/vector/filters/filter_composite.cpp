@@ -665,9 +665,9 @@ static ERR COMPOSITEFX_Draw(extCompositeFX *Self, struct acDraw *Args)
                            if (dA > 1.0) dA = 1.0;
 
                            double demul = 1.0 / dA;
-                           int dr = F2T(((Self->K1 * sR * mR) + (Self->K2 * sR) + (Self->K3 * mR) + Self->K4) * demul * DESCALE);
-                           int dg = F2T(((Self->K1 * sG * mG) + (Self->K2 * sG) + (Self->K3 * mG) + Self->K4) * demul * DESCALE);
-                           int db = F2T(((Self->K1 * sB * mB) + (Self->K2 * sB) + (Self->K3 * mB) + Self->K4) * demul * DESCALE);
+                           int dr = int(((Self->K1 * sR * mR) + (Self->K2 * sR) + (Self->K3 * mR) + Self->K4) * demul * DESCALE);
+                           int dg = int(((Self->K1 * sG * mG) + (Self->K2 * sG) + (Self->K3 * mG) + Self->K4) * demul * DESCALE);
+                           int db = int(((Self->K1 * sB * mB) + (Self->K2 * sB) + (Self->K3 * mB) + Self->K4) * demul * DESCALE);
 
                            if (dr > 0xff) dp[R] = 0xff;
                            else if (dr < 0) dp[R] = 0;
@@ -681,7 +681,7 @@ static ERR COMPOSITEFX_Draw(extCompositeFX *Self, struct acDraw *Args)
                            else if (db < 0) dp[B] = 0;
                            else dp[B] = glLinearRGB.invert(db);
 
-                           dp[A] = F2T(dA * DESCALE);
+                           dp[A] = int(dA * DESCALE);
                         }
                      }
 

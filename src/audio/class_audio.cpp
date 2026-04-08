@@ -128,7 +128,7 @@ static ERR AUDIO_Activate(extAudio *Self)
 
    const int mixbitsize = Self->Stereo ? sizeof(float) * 2 : sizeof(float);
 
-   Self->MixBufferSize = BYTELEN((F2T((mixbitsize * Self->OutputRate) * (MIX_INTERVAL * 1.5)) + 15) & (~15));
+   Self->MixBufferSize = BYTELEN((int((mixbitsize * Self->OutputRate) * (MIX_INTERVAL * 1.5)) + 15) & (~15));
    Self->MixElements   = SAMPLE(Self->MixBufferSize / mixbitsize);
 
    if (AllocMemory(Self->MixBufferSize, MEM::DATA, &Self->MixBuffer) IS ERR::Okay) {
@@ -953,7 +953,7 @@ static ERR AUDIO_SetVolume(extAudio *Self, struct snd::SetVolume *Args)
 
       double vol = Args->Volume;
       if (vol > 1.0) vol = 1.0;
-      int lvol = F2T(double(pmin) + (double(pmax - pmin) * vol));
+      int lvol = int(double(pmin) + (double(pmax - pmin) * vol));
 
       if ((Self->Volumes[index].Flags & VCF::CAPTURE) != VCF::NIL) {
          snd_mixer_selem_set_capture_volume_all(elem, lvol);

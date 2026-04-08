@@ -85,7 +85,7 @@ ERR layout::position_widget(widget_mgr &Widget, doc_segment &Segment, objVectorV
          else Widget.viewport.set(vp);
       }
 
-      Widget.viewport->setFields(fl::X(F2T(X)), fl::Y(F2T(Y)), fl::Width(width), fl::Height(Widget.final_height));
+      Widget.viewport->setFields(fl::X(int(X)), fl::Y(int(Y)), fl::Width(width), fl::Height(Widget.final_height));
    }
    else {
       // Using a rectangle with a pattern reference will keep the pattern bitmap cached.
@@ -100,7 +100,7 @@ ERR layout::position_widget(widget_mgr &Widget, doc_segment &Segment, objVectorV
          else Widget.rect = rect;
       }
 
-      Widget.rect->setFields(fl::X(F2T(X)), fl::Y(F2T(Y)), fl::Width(width), fl::Height(Widget.final_height));
+      Widget.rect->setFields(fl::X(int(X)), fl::Y(int(Y)), fl::Width(width), fl::Height(Widget.final_height));
    }
 
    if (!Widget.floating_x()) XAdvance += Widget.final_pad.left + Widget.final_pad.right + width;
@@ -308,8 +308,8 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                       (stack_list.top()->type IS bc_list::ORDERED)) {
                      if (!para.icon.empty()) {
                         para.icon->setFields(
-                           fl::X(F2T(x - para.item_indent.px(*this))),
-                           fl::Y(F2T(y))
+                           fl::X(int(x - para.item_indent.px(*this))),
+                           fl::Y(int(y))
                         );
                      }
                   }
@@ -528,7 +528,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                         }
 
                         if (!checkbox.label_text.empty()) {
-                           checkbox.label_text->setFields(fl::X(F2T(x)), fl::Y(F2T(y)));
+                           checkbox.label_text->setFields(fl::X(int(x)), fl::Y(int(y)));
                         }
                      }
                   }
@@ -555,7 +555,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                         }
 
                         if (!checkbox.label_text.empty()) {
-                           checkbox.label_text->setFields(fl::X(F2T(x_label)), fl::Y(F2T(y)));
+                           checkbox.label_text->setFields(fl::X(int(x_label)), fl::Y(int(y)));
                         }
                      }
                   }
@@ -598,7 +598,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                         });
                      }
 
-                     combo.label_text->setFields(fl::X(F2T(x_advance + combo.label_pad.px(*this))), fl::Y(F2T(y)));
+                     combo.label_text->setFields(fl::X(int(x_advance + combo.label_pad.px(*this))), fl::Y(int(y)));
 
                      x_advance += combo.label_width + combo.label_pad.px(*this);
                   }
@@ -622,7 +622,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                         });
                      }
 
-                     combo.label_text->setFields(fl::X(F2T(x_label)), fl::Y(F2T(y)));
+                     combo.label_text->setFields(fl::X(int(x_label)), fl::Y(int(y)));
                   }
                }
                else position_widget(combo, segment, Viewport, stack_style.top(), x_advance, 0, true, wx, wy);
@@ -651,7 +651,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                   combo.input = objVectorText::create::global({
                      fl::Name(combo.name.empty() ? "combo_input" : combo.name), // Required for notify_combo_onchange()
                      fl::Owner(combo.clip_vp->UID),
-                     fl::X(0), fl::Y(F2T(y)),
+                     fl::X(0), fl::Y(int(y)),
                      fl::String(combo.value),
                      fl::Cursor(PTC::TEXT),
                      fl::Face(font->face),
@@ -711,7 +711,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                         });
                      }
 
-                     input.label_text->setFields(fl::X(F2T(x_advance + input.label_pad.px(*this))), fl::Y(F2T(y)));
+                     input.label_text->setFields(fl::X(int(x_advance + input.label_pad.px(*this))), fl::Y(int(y)));
 
                      x_advance += input.label_width + input.label_pad.px(*this);
                   }
@@ -735,7 +735,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                         });
                      }
 
-                     input.label_text->setFields(fl::X(F2T(x_label)), fl::Y(F2T(y)));
+                     input.label_text->setFields(fl::X(int(x_label)), fl::Y(int(y)));
                   }
                }
                else position_widget(input, segment, Viewport, stack_style.top(), x_advance, 0, true, wx, wy);
@@ -755,7 +755,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                   auto vt = objVectorText::create::global({
                      fl::Name(input.name.empty() ? "input_text" : input.name), // Required for notify_input_onchange()
                      fl::Owner(input.clip_vp->UID),
-                     fl::X(0), fl::Y(F2T(y)),
+                     fl::X(0), fl::Y(int(y)),
                      fl::String(input.value),
                      fl::Cursor(PTC::TEXT),
                      fl::Face(font->face),
@@ -793,7 +793,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                   if (auto vt = objVectorText::create::global({
                         fl::Name("doc_text"),
                         fl::Owner(Viewport->UID),
-                        fl::X(F2T(x)), fl::Y(F2T(y)),
+                        fl::X(int(x)), fl::Y(int(y)),
                         fl::String(str),
                         fl::Cursor(PTC::TEXT),
                         fl::Face(font->face),

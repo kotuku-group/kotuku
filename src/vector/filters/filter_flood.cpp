@@ -49,7 +49,7 @@ static ERR FLOODFX_Draw(extFloodFX *Self, struct acDraw *Args)
    // linear RGB space when blending.  This is indicated in the formal test results, but
    // W3C documentation has no mention of it.
 
-   const auto col = agg::rgba8(Self->ColourRGB, F2T(Self->Colour.Alpha * Self->Opacity * 255.0));
+   const auto col = agg::rgba8(Self->ColourRGB, int(Self->Colour.Alpha * Self->Opacity * 255.0));
 
    agg::rasterizer_scanline_aa<> raster;
    agg::renderer_base<agg::pixfmt_psl> renderBase;
@@ -102,10 +102,10 @@ static ERR FLOODFX_SET_Colour(extFloodFX *Self, float *Value, int Elements)
          Self->Colour.Blue  = Value[2];
          Self->Colour.Alpha = (Elements >= 4) ? Value[3] : 1.0;
 
-         Self->ColourRGB.Red   = F2T(Self->Colour.Red * 255.0);
-         Self->ColourRGB.Green = F2T(Self->Colour.Green * 255.0);
-         Self->ColourRGB.Blue  = F2T(Self->Colour.Blue * 255.0);
-         Self->ColourRGB.Alpha = F2T(Self->Colour.Alpha * 255.0);
+         Self->ColourRGB.Red   = int(Self->Colour.Red * 255.0);
+         Self->ColourRGB.Green = int(Self->Colour.Green * 255.0);
+         Self->ColourRGB.Blue  = int(Self->Colour.Blue * 255.0);
+         Self->ColourRGB.Alpha = int(Self->Colour.Alpha * 255.0);
       }
       else return log.warning(ERR::InvalidValue);
    }

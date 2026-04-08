@@ -239,10 +239,10 @@ static ERR VECTOR_Draw(extVector *Self, struct acDraw *Args)
       // TODO: Would need to account for client defined brush stroke widths and stroke scaling.
 
       const auto stroke_width = Self->fixed_stroke_width() + 1;
-      const int bx1 = F2T(Self->BX1 - stroke_width);
-      const int by1 = F2T(Self->BY1 - stroke_width);
-      const int bx2 = F2T(Self->BX2 + stroke_width);
-      const int by2 = F2T(Self->BY2 + stroke_width);
+      const int bx1 = int(Self->BX1 - stroke_width);
+      const int by1 = int(Self->BY1 - stroke_width);
+      const int bx2 = int(Self->BX2 + stroke_width);
+      const int by2 = int(Self->BY2 + stroke_width);
 
       struct drwScheduleRedraw area = { .X = bx1, .Y = by1, .Width = bx2 - bx1, .Height = by2 - by1 };
 #endif
@@ -1423,8 +1423,8 @@ static ERR VECTOR_SET_Fill(extVector *Self, CSTRING Value)
 FillColour: Defines a solid colour for filling the vector path.
 
 Set the FillColour field to define a solid colour for filling the vector path.  The colour is defined as an array
-of four 32-bit floating point values between 0 and 1.0.  The array elements consist of Red, Green, Blue and Alpha
-values in that order.
+of four 32-bit floating point values between 0 and 1.0 if restricted to sRGB colourspace.  The array elements 
+consist of Red, Green, Blue and Alpha values in that order.
 
 If the Alpha component is set to zero then the FillColour will be ignored by the renderer.
 
@@ -2231,7 +2231,8 @@ static ERR VECTOR_SET_Stroke(extVector *Self, STRING Value)
 StrokeColour: Defines the colour of the path stroke in RGB float format.
 
 This field defines the colour that will be used in stroking a path, and is comprised of floating point RGBA values.
-The intensity of each component is measured from 0 - 1.0.  Stroking is disabled if the alpha value is 0.
+The intensity of each component is measured from 0 - 1.0 if restricted to sRGB colourspace, but may otherwise exceed
+these limits.  Stroking is disabled if the alpha value is 0.
 
 This field is complemented by the #StrokeOpacity and #Stroke fields.
 

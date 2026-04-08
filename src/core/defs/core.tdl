@@ -599,7 +599,7 @@ template <class T> T roundup(T Num, int Alignment) {
  #define DEBUG_BREAK
 #endif
 
-// Fast float-2-int conversion, with rounding to the nearest integer (F2I) and truncation (F2T)
+// Fast float-2-int conversion, with rounding to the nearest integer (F2I)
 
 #if defined(__GNUC__) && defined(__x86__)
 
@@ -619,10 +619,6 @@ inline int F2I(double val) {
 }
 
 #endif
-
-constexpr int F2T(double val) noexcept {
-   return int(val); // Expected to compile to a cvttsd2si instruction or equivalent
-}
 
 } // namespace
 

@@ -434,8 +434,8 @@ static uint32_t RGBToValue(RGB8 *RGB, RGBPalette *Palette)
 inline static uint8_t conv_l2r(double X) {
    int ix;
 
-   if (X < 0.0031308) ix = F2T(((X * 12.92) * 255.0) + 0.5);
-   else ix = F2T(((std::pow(X, 1.0 / 2.4) * 1.055 - 0.055) * 255.0) + 0.5);
+   if (X < 0.0031308) ix = int(((X * 12.92) * 255.0) + 0.5);
+   else ix = int(((std::pow(X, 1.0 / 2.4) * 1.055 - 0.055) * 255.0) + 0.5);
 
    if (ix < 0) return 0;
    else if (ix > 255) return 255;

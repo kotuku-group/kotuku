@@ -194,7 +194,7 @@ double anim_base::get_numeric_value(objVector &Vector, FIELD Field)
          seek_to = (seek - timing[i]) / delta;
       }
       else {
-         i = std::clamp<int>(F2T((values.size()-1) * seek), 0, values.size() - 2);
+         i = std::clamp<int>(int((values.size()-1) * seek), 0, values.size() - 2);
          // Recompute the seek position to fit between the two values
          const double mod = 1.0 / double(values.size() - 1);
          seek_to = (seek >= 1.0) ? 1.0 : fmod(seek, mod) / mod;
@@ -297,7 +297,7 @@ double anim_base::get_dimension(objVector &Vector, FIELD Field)
             // When no timing is specified, the 'values' are distributed evenly.  This determines
             // what spline-path we are going to use.
 
-            i = std::clamp<int>(F2T(seek * std::ssize(spline_paths)), 0, std::ssize(spline_paths) - 1);
+            i = std::clamp<int>(int(seek * std::ssize(spline_paths)), 0, std::ssize(spline_paths) - 1);
          }
 
          auto &sp = spline_paths[i]; // sp = The spline we're going to use
@@ -325,7 +325,7 @@ double anim_base::get_dimension(objVector &Vector, FIELD Field)
             seek_to = (seek - timing[i]) / delta;
          }
          else {
-            i = std::clamp<int>(F2T((values.size()-1) * seek), 0, values.size() - 2);
+            i = std::clamp<int>(int((values.size()-1) * seek), 0, values.size() - 2);
             const double mod = 1.0 / double(values.size() - 1);
             seek_to = (seek >= 1.0) ? 1.0 : fmod(seek, mod) / mod;
          }
@@ -393,7 +393,7 @@ FRGB anim_base::get_colour_value(objVector &Vector, FIELD Field)
 
    if (not values.empty()) {
       if (values.size() >= 2) {
-         int vi = F2T((values.size()-1) * seek);
+         int vi = int((values.size()-1) * seek);
          if (vi >= int(values.size())-1) vi = values.size() - 2;
          vec::ReadPainter(nullptr, values[vi].c_str(), &from_col, nullptr);
          vec::ReadPainter(nullptr, values[vi+1].c_str(), &to_col, nullptr);

@@ -222,10 +222,10 @@ static bool read_rgb8(CSTRING Value, RGB8 *RGB)
 {
    VectorPainter painter;
    if (vec::ReadPainter(nullptr, Value, &painter, nullptr) IS ERR::Okay) {
-      RGB->Red   = F2T(painter.Colour.Red   * 255.0);
-      RGB->Green = F2T(painter.Colour.Green * 255.0);
-      RGB->Blue  = F2T(painter.Colour.Blue  * 255.0);
-      RGB->Alpha = F2T(painter.Colour.Alpha * 255.0);
+      RGB->Red   = int(painter.Colour.Red   * 255.0);
+      RGB->Green = int(painter.Colour.Green * 255.0);
+      RGB->Blue  = int(painter.Colour.Blue  * 255.0);
+      RGB->Alpha = int(painter.Colour.Alpha * 255.0);
       return true;
    }
    else return false;
@@ -360,13 +360,13 @@ static void notify_redimension(OBJECTPTR Object, ACTIONID ActionID, ERR Result, 
 
    auto Self = (extScintilla *)CurrentContext();
    bool resized;
-   if ((Self->Surface.Width != F2T(Args->Width)) or (Self->Surface.Height != F2T(Args->Height))) resized = true;
+   if ((Self->Surface.Width != int(Args->Width)) or (Self->Surface.Height != int(Args->Height))) resized = true;
    else resized = false;
 
-   Self->Surface.X = F2T(Args->X);
-   Self->Surface.Y = F2T(Args->Y);
-   Self->Surface.Width  = F2T(Args->Width);
-   Self->Surface.Height = F2T(Args->Height);
+   Self->Surface.X = int(Args->X);
+   Self->Surface.Y = int(Args->Y);
+   Self->Surface.Width  = int(Args->Width);
+   Self->Surface.Height = int(Args->Height);
 
    if (resized) Self->API->panResized();
 }
