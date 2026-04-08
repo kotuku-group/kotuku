@@ -139,6 +139,13 @@ a, b = b, a                     -- swap two existing variables
 local x, y, z = f()             -- f() may return multiple values
 ----
 
+Targets may use safe navigation on the left-hand side.  When a safe-nav target encounters `nil` during the target walk, only that target's store is skipped; the rest of the assignment proceeds normally.
+
+[source,tiri]
+----
+a?.x, b = 10, 20                -- if a is nil, b still becomes 20
+----
+
 ==== Compound Assignment
 
 Compound assignment operators evaluate the right-hand side exactly once and apply the operation to the target.  If the RHS is a function call or vararg, only the first return value is used.  Using a non-assignable LHS (a constant or a function call result) is an error.
@@ -162,6 +169,50 @@ Compound assignment operators evaluate the right-hand side exactly once and appl
 count += 1
 name ..= ' Jr.'
 config ?= load_defaults()
+settings?.timeout ?= 30
+----
+
+Safe navigation is permitted on assignment targets.  The assignment is skipped when a guarded hop yields `nil`.
+
+[source,tiri]
+----
+config?.theme = 'dark'          -- plain assignment
+stats?.count += 1               -- compound assignment
+opts?.timeout ?= 30             -- if-nil assignment
+opts?.label ??= 'untitled'      -- if-empty assignment
+----
+
+For a single target, a failed safe-nav hop short-circuits both the store and the RHS evaluation:
+
+[source,tiri]
+----
+config?.theme = load_theme()    -- load_theme() is not called if config is nil
+----
+
+For multi-target assignment, the RHS value list is still evaluated using the normal assignment rules so that later targets receive their mapped values:
+
+[source,tiri]
+----
+config?.theme, retries = load_theme(), 3
+----
+
+If `config` is `nil`, the first store is skipped but `retries` still receives `3`.
+
+Assigning a function value through safe navigation is supported because it is an ordinary assignment:
+
+[source,tiri]
+----
+obj?.method = function()
+   return 123
+end
+----
+
+The function-statement form is not supported:
+
+[source,tiri]
+----
+function obj?.method()          -- parse error
+end
 ----
 
 Bitwise compound variants (`&=`, `|=`, `^=`) do not exist.  Use `x = x & y` instead.

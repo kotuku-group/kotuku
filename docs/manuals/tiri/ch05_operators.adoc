@@ -225,6 +225,30 @@ Compound assignment operators evaluate the right-hand side exactly once and appl
 
 Compound assignment on an undeclared variable is an error.  The variable must exist before a compound operator can modify it.
 
+Safe navigation may appear on the left-hand side of any assignment form listed above.  If a guarded hop yields `nil`, the assignment is skipped.
+
+[source,tiri]
+----
+config?.theme = 'dark'
+stats?.count += 1
+opts?.timeout ?= 30
+opts?.label ??= 'untitled'
+----
+
+For single-target assignments, a failed safe-nav hop also short-circuits RHS evaluation:
+
+[source,tiri]
+----
+config?.theme = load_theme()    -- load_theme() is not called if config is nil
+----
+
+For multi-target plain assignment, the RHS list is still evaluated once using the normal assignment rules so that later targets keep their mapped values:
+
+[source,tiri]
+----
+config?.theme, retries = load_theme(), 3
+----
+
 Bitwise compound assignment (`&=`, `|=`, `^=`) does not exist.  Use `x = x & y` instead.
 
 [source,tiri]
@@ -359,6 +383,18 @@ city = user?.profile?.address?.city
 ----
 
 If `user`, `profile`, or `address` is `nil` at any point, the entire expression evaluates to `nil`.
+
+Safe navigation also applies on the left-hand side of assignments.  In assignment context, a safe-nav hop guards the store instead of producing a read result:
+
+[source,tiri]
+----
+user?.profile?.name = 'Guest'
+user?.stats?.count += 1
+user?.profile?.nickname ?= 'Anonymous'
+user?.profile?.tag ??= 'new'
+----
+
+If any guarded hop in the target chain is `nil`, the assignment is skipped without raising an error.
 
 Safe navigation combines naturally with the `??` operator for default values:
 

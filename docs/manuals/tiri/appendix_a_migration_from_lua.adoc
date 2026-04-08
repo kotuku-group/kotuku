@@ -785,6 +785,18 @@ end
 city = user?.profile?.address?.city
 ----
 
+The same safe-nav operators may also guard assignments:
+
+[source,tiri]
+----
+user?.profile?.name = 'Guest'
+user?.stats?.count += 1
+user?.profile?.nickname ?= 'Anonymous'
+user?.profile?.tag ??= 'new'
+----
+
+If a guarded hop is `nil`, that assignment is skipped.  For a single target, the RHS is not evaluated when the guarded store is skipped.
+
 [discrete]
 ==== If-Empty Operator
 
