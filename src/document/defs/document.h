@@ -416,6 +416,10 @@ struct font_entry {
       return *this;
    }
 
+   // NB: FontMetrics are not reported identically by all backends.
+   // Bitmap fonts expose Height as the full region above the baseline, while FreeType-backed fonts may expose Ascent
+   // for that role instead.
+
    double descent() const {
       auto gap = metrics.LineSpacing - metrics.Height - metrics.Descent;
       return metrics.Descent + gap;

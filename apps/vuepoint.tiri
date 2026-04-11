@@ -20,13 +20,13 @@ glIntroduction = [[
 
 <svg xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <image id="logo" xlink:href="vuepoint:data/vuepoint.svg" width="50" height="50"/>
+    <image id="logo" xlink:href="vuepoint:data/vuepoint.svg" width="50px" height="50px"/>
   </defs>
 </svg>
 
 <page name="Index">
 
-<p><font font-face="Noto Serif" font-size="3em"><image src="url(#logo)" width="1em" height="1em" align="left" v-align="middle"/> <i>VuePoint</i></font></p>
+<p><font face="Noto Serif" size="3em"><image src="url(#logo)" align="left" v-align="bottom"/> <i>VuePoint</i></font></p>
 
 <p>VuePoint is a simple file browser that supports the following file types:</p>
 

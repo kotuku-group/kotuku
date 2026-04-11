@@ -1168,6 +1168,72 @@ static void emit_nested_stream_identity(std::ostringstream &Out, INDEX ParentInd
    emit_attr(Out, "nested-stream-index", int(Index));
 }
 
+static std::string segment_codes_to_string(const doc_segment &Segment)
+{
+   std::ostringstream out;
+
+   for (auto i = Segment.start; i < Segment.stop; i.next_code()) {
+      auto code = Segment.stream[0][i.index].code;
+      if (code IS SCODE::FONT) {
+         auto &style = Segment.stream->lookup<bc_font>(i.index);
+         out << "[E:Font:#" << style.index() << ']';
+      }
+      else if (code IS SCODE::PARAGRAPH_START) {
+         auto &para = Segment.stream->lookup<bc_paragraph>(i.index);
+         if (para.list_item) out << "[E:LI]";
+         else out << "[E:PS]";
+      }
+      else if (code IS SCODE::PARAGRAPH_END) out << "[E:PE]";
+      else out << "[E:" << strCodes[int(code)] << ']';
+   }
+
+   return out.str();
+}
+
+static bool segment_in_range(const doc_segment &Segment, INDEX Start, INDEX End)
+{
+   stream_char range_start(Start, 0), range_end(End, 0);
+   return (Segment.stop > range_start) and (Segment.start < range_end);
+}
+
+static void write_segments_xml(const std::vector<doc_segment> &Segments, INDEX Start, INDEX End,
+   std::ostringstream &Out, INDEX ParentIndex = -1)
+{
+   bool has_segments = false;
+
+   for (SEGINDEX si = 0; si < SEGINDEX(Segments.size()); si++) {
+      auto &segment = Segments[si];
+      if (!segment_in_range(segment, Start, End)) continue;
+
+      if (!has_segments) {
+         Out << "\n<segments>\n";
+         has_segments = true;
+      }
+
+      Out << "<segment";
+      if (ParentIndex >= 0) emit_attr(Out, "parent-stream-index", int(ParentIndex));
+      emit_attr(Out, "index", int(si));
+      emit_attr(Out, "start-index", int(segment.start.index));
+      emit_attr(Out, "start-offset", int(segment.start.offset));
+      emit_attr(Out, "stop-index", int(segment.stop.index));
+      emit_attr(Out, "stop-offset", int(segment.stop.offset));
+      emit_attr(Out, "trim-stop-index", int(segment.trim_stop.index));
+      emit_attr(Out, "trim-stop-offset", int(segment.trim_stop.offset));
+      emit_attr(Out, "x", segment.area.X);
+      emit_attr(Out, "y", segment.area.Y);
+      emit_attr(Out, "width", segment.area.Width);
+      emit_attr(Out, "height", segment.area.Height);
+      emit_attr(Out, "descent", segment.descent);
+      emit_attr(Out, "align-width", segment.align_width);
+      emit_attr(Out, "edit", segment.edit);
+      emit_attr(Out, "allow-merge", segment.allow_merge);
+      emit_attr(Out, "codes", segment_codes_to_string(segment));
+      Out << "/>\n";
+   }
+
+   if (has_segments) Out << "</segments>\n";
+}
+
 //********************************************************************************************************************
 // Emit attributes for widget_mgr-derived bytecodes (bc_image, bc_button, bc_checkbox, bc_combobox, bc_input).
 
@@ -1356,7 +1422,8 @@ static void write_stream_xml(
             if (ExpandNested and (cell.stream) and (!cell.stream->data.empty())) {
                Out << '>';
                write_stream_xml(*cell.stream, 0, INDEX(cell.stream->size()), Out, HasContent, false, i);
-               Out << "</" << name << '>';
+               write_segments_xml(cell.segments, 0, INDEX(cell.stream->size()), Out, i);
+               Out << "</" << name << ">\n";
             }
             else Out << "/>";
             break;
@@ -1421,6 +1488,7 @@ static void write_stream_xml(
             if (ExpandNested and (button.stream) and (!button.stream->data.empty())) {
                Out << '>';
                write_stream_xml(*button.stream, 0, INDEX(button.stream->size()), Out, HasContent, false, i);
+               write_segments_xml(button.segments, 0, INDEX(button.stream->size()), Out, i);
                Out << "</" << name << '>';
             }
             else Out << "/>";
@@ -1546,9 +1614,10 @@ static ERR DOCUMENT_ReadContent(extDocument *Self, doc::ReadContent *Args)
       bool has_content = false;
       bool expand_nested = (Args->Start IS 0) and (end IS INDEX(std::ssize(Self->Stream)));
 
-      buffer << "<stream>";
+      buffer << "<stream>\n";
       write_stream_xml(Self->Stream, Args->Start, end, buffer, has_content, expand_nested);
-      buffer << "</stream>";
+      write_segments_xml(Self->Segments, Args->Start, end, buffer);
+      buffer << "</stream>\n";
 
       if (!has_content) return ERR::NoData;
 

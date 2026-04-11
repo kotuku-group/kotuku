@@ -838,7 +838,7 @@ void layout::lay_paragraph()
 
    // Paragraph management variables
 
-   if (!m_stack_list.empty()) para.leading = m_stack_list.top()->v_spacing.px(*this);
+   if (!m_stack_list.empty()) para.leading = m_stack_list.top()->v_spacing;
 
    m_font = para.font.layout_font(*this);
 
@@ -851,7 +851,25 @@ void layout::lay_paragraph()
 
    apply_style(para.font);
 
-   if (m_line_count > 0) m_cursor_y += para.leading.px(*this);
+   if (m_line_count > 0) {
+      double para_leading;
+      if (para.leading.type IS DU::LINE_HEIGHT) {
+         // Paragraph leading is block spacing, so resolve it against the document's default line height
+         // rather than the paragraph's own font metrics.  This keeps headings from inflating pre-spacing.
+         bc_font root_style;
+         root_style.face = Self->FontFace;
+         root_style.style = Self->FontStyle;
+         root_style.req_size = DUNIT(Self->FontSize, DU::PIXEL);
+
+         if (auto root_font = root_style.layout_font(*this)) {
+            para_leading = std::trunc(para.leading.value * root_font->metrics.LineSpacing);
+         }
+         else para_leading = para.leading.px(*this);
+      }
+      else para_leading = para.leading.px(*this);
+
+      m_cursor_y += para_leading;
+   }
 
    para.y = m_cursor_y;
    para.height = 0;

@@ -3,7 +3,7 @@ static const int MAXLOOP = 1000;
 
 static const char glDefaultStyles[] =
 "<template name=\"h1\"><p leading=\"1.5\" font-size=\"2em\" font-style=\"bold\"><inject/></p></template>\n\
-<template name=\"h2\"><p leading=\"1.5\"  font-size=\"1.8em\" font-style=\"bold\"><inject/></p></template>\n\
+<template name=\"h2\"><p leading=\"1.25\" font-size=\"1.8em\" font-style=\"bold\"><inject/></p></template>\n\
 <template name=\"h3\"><p leading=\"1.25\" font-size=\"1.6em\" font-style=\"bold\"><inject/></p></template>\n\
 <template name=\"h4\"><p leading=\"1.25\" font-size=\"1.4em\"><inject/></p></template>\n\
 <template name=\"h5\"><p leading=\"1.0\"  font-size=\"1.2em\"><inject/></p></template>\n\

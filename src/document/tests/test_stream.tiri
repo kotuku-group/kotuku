@@ -53,7 +53,7 @@ end
    assert(text_count > 0, 'paragraphs.rpl XML must contain at least one <text> element')
 
    -- Every emitted element except the root must carry a stream-index for byte-code correlation.
-   missing_idx = xpathNum(xml, 'count(//*[not(self::stream) and not(@stream-index)])')
+   missing_idx = xpathNum(xml, 'count(//*[not(self::stream) and not(self::segments) and not(self::segment) and not(@stream-index)])')
    assert(missing_idx is 0, 'Every emitted element except <stream> must expose stream-index')
 
    -- Every paragraph must preserve DUNIT type information for leading and line-height.
@@ -210,12 +210,19 @@ end
    xml = parseXML(xml_str)
 
    nested_missing = xpathNum(xml,
-      'count(//cell//*[not(@parent-stream-index) or not(@nested-stream-index)]) + count(//button//*[not(@parent-stream-index) or not(@nested-stream-index)])')
+      'count(//cell//*[not(self::segments) and not(self::segment) and (not(@parent-stream-index) or not(@nested-stream-index))]) + count(//button//*[not(self::segments) and not(self::segment) and (not(@parent-stream-index) or not(@nested-stream-index))])')
    assert(nested_missing is 0, 'Nested XML nodes must expose parent-stream-index and nested-stream-index')
 
    nested_conflicts = xpathNum(xml,
       'count(//cell//*[@stream-index]) + count(//button//*[@stream-index])')
    assert(nested_conflicts is 0, 'Nested XML nodes must not expose misleading document stream-index attributes')
+
+   nested_segment_count = xpathNum(xml, 'count(//cell/segments/segment) + count(//button/segments/segment)')
+   assert(nested_segment_count > 0, 'Nested cell/button XML must include nested segments when substreams are expanded')
+
+   nested_segment_missing = xpathNum(xml,
+      'count(//cell/segments/segment[not(@parent-stream-index) or not(@index) or not(@start-index) or not(@stop-index) or not(@codes)]) + count(//button/segments/segment[not(@parent-stream-index) or not(@index) or not(@start-index) or not(@stop-index) or not(@codes)])')
+   assert(nested_segment_missing is 0, 'Nested segments must expose parent linkage and core debug attributes')
 end
 
 @Test function ZeroDunitPreserved()
@@ -238,6 +245,19 @@ end
    assert(xpath(xml, 'string((//table/@min-width-unit)[1])') is '%', 'Explicit zero table min-width unit must be preserved')
    assert(xpath(xml, 'string((//table/@min-height)[1])') is '0', 'Explicit zero table min-height must be preserved')
    assert(xpath(xml, 'string((//table/@min-height-unit)[1])') is 'px', 'Explicit zero table min-height unit must be preserved')
+end
+
+@Test function Segments()
+   err, xml_str = loadXML('paragraphs.rpl')
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for segment test, err=' .. err)
+
+   xml = parseXML(xml_str)
+   segment_count = xpathNum(xml, 'count(/stream/segments/segment)')
+   assert(segment_count > 0, 'XML output must include a segments block with at least one segment')
+
+   missing_segment_attrs = xpathNum(xml,
+      'count(/stream/segments/segment[not(@index) or not(@start-index) or not(@start-offset) or not(@stop-index) or not(@stop-offset) or not(@trim-stop-index) or not(@trim-stop-offset) or not(@x) or not(@y) or not(@width) or not(@height) or not(@descent) or not(@align-width) or not(@edit) or not(@allow-merge) or not(@codes)])')
+   assert(missing_segment_attrs is 0, 'Every segment must expose span, geometry, and debug code attributes')
 end
 
 @Test function OutOfRange()
