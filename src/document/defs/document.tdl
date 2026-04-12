@@ -51,7 +51,7 @@ module({ name="Document", copyright="Paul Manias © 2005-2026", version=1.0, tim
     "UNDERLINE: Draw a line under the text.",
     "PREFORMAT: All white-space is taken into account.",
     "ALIGN_RIGHT: Align to the right.",
-    "ALIGN_CENTER: Align to the left.",
+    "ALIGN_CENTER: Align to the centre.",
     "NO_WRAP: Do not wrap the text.",
     { STYLES = "UNDERLINE" })
 

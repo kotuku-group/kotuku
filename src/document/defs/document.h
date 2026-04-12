@@ -329,7 +329,7 @@ public:
    }
 
    docresource& operator=(docresource &&other) noexcept { // Move assignment
-      if (this == &other) return *this;
+      if (this IS &other) return *this;
       object_id = other.object_id;
       class_id  = other.class_id;
       type      = other.type;
@@ -339,7 +339,7 @@ public:
    }
 
    docresource& operator=(const docresource& other) { // Copy assignment
-      if (this == &other) return *this;
+      if (this IS &other) return *this;
       object_id = other.object_id;
       class_id  = other.class_id;
       type      = other.type;
@@ -363,7 +363,7 @@ struct font_entry {
    APTR handle;
    std::string face;
    std::string style;
-   FontMetrics metrics;
+   FontMetrics metrics; // Derived from vec::GetFontMetrics() at the time of caching
    int font_size; // 72 DPI pixel size
    ALIGN align;
 
@@ -394,7 +394,7 @@ struct font_entry {
    }
 
    font_entry& operator=(font_entry &&other) noexcept { // Move assignment
-      if (this == &other) return *this;
+      if (this IS &other) return *this;
       handle   = other.handle;
       font_size = other.font_size;
       metrics   = other.metrics;
@@ -406,7 +406,7 @@ struct font_entry {
    }
 
    font_entry& operator=(const font_entry& other) { // Copy assignment
-      if (this == &other) return *this;
+      if (this IS &other) return *this;
       handle    = other.handle;
       font_size = other.font_size;
       metrics   = other.metrics;
@@ -414,6 +414,15 @@ struct font_entry {
       style     = other.style;
       align     = other.align;
       return *this;
+   }
+
+   // NB: FontMetrics are not reported identically by all backends.
+   // Bitmap fonts expose Height as the full region above the baseline, while FreeType-backed fonts may expose Ascent
+   // for that role instead.
+
+   double descent() const {
+      auto gap = metrics.LineSpacing - metrics.Height - metrics.Descent;
+      return metrics.Descent + gap;
    }
 };
 
@@ -484,7 +493,7 @@ struct stream_char {
    stream_char(INDEX pIndex) : index(pIndex), offset(0) { }
 
    bool operator==(const stream_char &Other) const {
-      return (this->index == Other.index) and (this->offset == Other.offset);
+      return (this->index IS Other.index) and (this->offset IS Other.offset);
    }
 
    bool operator<(const stream_char &Other) const {
@@ -557,7 +566,7 @@ struct doc_segment {
    stream_char stop;        // Stop at this index/character
    stream_char trim_stop;   // The stopping point when whitespace is removed
    FloatRect area;          // Dimensions of the segment.
-   double  descent;         // The largest descent value after taking into account all fonts used on the line.
+   double  descent;         // The largest descent (gutter) value in pixels after taking into account all fonts used on the line
    double  align_width;     // Full width of this segment if it were non-breaking
    RSTREAM *stream;         // The stream that this segment refers to
    bool    edit;            // true if this segment represents content that can be edited
@@ -573,7 +582,7 @@ struct doc_segment {
       if ((VAlign & ALIGN::TOP) != ALIGN::NIL) return area.Y + Font->metrics.Ascent;
       else if ((VAlign & ALIGN::VERTICAL) != ALIGN::NIL) {
          const double avail_space = area.Height - descent;
-         return area.Y + avail_space - ((avail_space - Font->metrics.Height) * 0.5);
+         return area.Y + avail_space - ((avail_space - Font->metrics.Ascent) * 0.5);
       }
       else return area.Y + area.Height - descent;
    }
@@ -684,7 +693,7 @@ struct bc_list : public entity {
    int   item_num     = 0;
    int   order_insert = 0;
    DUNIT v_spacing    = DUNIT(0.5, DU::LINE_HEIGHT);  // Spacing between list items, equivalent to paragraph leading, expressed as a ratio
-   uint8_t type         = BULLET;
+   uint8_t type       = BULLET;
    bool  repass       = false;
 
    bc_list() { code = SCODE::LIST_START; }
@@ -980,12 +989,20 @@ struct bc_input : public entity, widget_mgr {
    GuardedObject<objVectorViewport> clip_vp;
    bool secret = false;
 
-   bc_input() { code = SCODE::INPUT; align_to_text = true; }
+   bc_input() { 
+      code = SCODE::INPUT; 
+      align_to_text = true;
+   }
 };
 
 struct bc_image : public entity, widget_mgr {
    // Images inherit from widget graphics management since the rules are identical
-   bc_image() { code = SCODE::IMAGE; }
+   // Images are inline by default and aligned to the text baseline (matches HTML)
+   bc_image() { 
+      code = SCODE::IMAGE; 
+      align_to_text = true; 
+      align = ALIGN::BOTTOM; 
+   }
 };
 
 //********************************************************************************************************************

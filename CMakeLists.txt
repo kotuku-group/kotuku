@@ -38,6 +38,8 @@ if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
    set (CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
 endif ()
 
+add_compile_definitions($<$<CONFIG:Release>:KOTUKU_RELEASE_BUILD>)
+
 include (CheckIncludeFiles)
 include (CheckTypeSize)
 include (CheckFunctionExists)

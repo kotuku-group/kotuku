@@ -276,7 +276,7 @@
 <span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span></code></pre></div>
 <p>If you require deeper insight on how a certain aspect of a widget works, don&#39;t hesitate to view the source code for the API. The state information for widgets isn&#39;t typically documented, but can be learned from the code. All code is available in its original form and includes comments where needed.</p>
 <h2 id="events">Events</h2>
-<p>Many widgets support event triggers through an optional <code>event</code> setting. This can be leveraged to receive notification of events such as user hovering and focus changes. Here&#39;s an example that would work for almost any widget:</p>
+<p>Many widgets support event triggers through an optional <code>events</code> setting. This can be leveraged to receive notification of events such as user hovering and focus changes. Here&#39;s an example that would work for many widgets:</p>
 <pre><code>events = {
    activate = function(Widget, Event)
       print(&#39;The widget has been actived.&#39;)
@@ -285,11 +285,11 @@
       print(&#39;User gave focus to this widget.&#39;)
    end
 }</code></pre>
-<p>Events are standardised, and follow the function protoype <code>function(Widget, { Event })</code> where <code>Event</code> contains key values relating to what occurred, if applicable. Standardisation means you are free to use the same function across many different widget types if desired.</p>
+<p>The first event argument is normally the widget itself. The remaining arguments are widget-specific. For example, some widgets send an event table, while others send a string or numeric value. Check the relevant widget section if the callback shape matters for your usage.</p>
 <h1 id="index">Index</h1>
 <p><a href="#button">Button</a> | <a href="#checkbox">Checkbox</a> | <a href="#colourdialog">Colour Dialog</a> | <a href="#combobox">Combobox</a> | <a href="#dialog">Dialog</a> | <a href="#divider">Divider</a> | <a href="#filedialog">File Dialog</a> | <a href="#fileview">File View</a> | <a href="#fontdialog">Font Dialog</a> | <a href="#icon">Icon</a> | <a href="#input">Input</a> | <a href="#menu">Menu</a> | <a href="#menubar">Menubar</a> | <a href="#scrollbar">Scrollbar</a> | <a href="#toolbar">Toolbar</a> | <a href="#tooltip">Tooltip</a> | <a href="#window">Window</a> | <a href="#views">Views</a></p>
 <h1 id="widget-interfaces">Widget Interfaces</h1>
-<h2 id="button">button</h2>
+<h2 id="button">Button</h2>
 <p><code>gui.button({ Options... })</code></p>
 <p>The <code>gui.button()</code> interface creates and manages buttons in the UI.</p>
 <p>Valid options are:</p>
@@ -350,7 +350,7 @@
 </tr>
 </tbody>
 </table>
-<h2 id="checkbox">checkbox</h2>
+<h2 id="checkbox">Checkbox</h2>
 <p><code>gui.checkbox({ Options... })</code></p>
 <p>The <code>gui.checkbox()</code> interface creates and manages checkboxes in the UI.</p>
 <p>Valid options are:</p>
@@ -415,7 +415,7 @@
 </tr>
 </tbody>
 </table>
-<h2 id="colourdialog">colourdialog</h2>
+<h2 id="colour-dialog">Colour Dialog</h2>
 <p><code>gui.dialog.colour({ Options... })</code></p>
 <p>The colour dialog interface standardises user colour selection. On activation, it presents the user with a small window containing common colours, personal colours and a rainbow palette. The dialog will close once the user selects a colour, or cancels the dialog window.</p>
 <p>If the dialog box is modal, the call will not return until the user has responded to the dialog.</p>
@@ -441,16 +441,12 @@
 <td style="text-align: left;">Set to <code>true</code> if the dialog box needs to be modal (prevents interaction with other windows).</td>
 </tr>
 <tr>
-<td style="text-align: left;">path</td>
-<td style="text-align: left;">The initial selection path.</td>
-</tr>
-<tr>
 <td style="text-align: left;">feedback</td>
-<td style="text-align: left;">A callback to receive the user&#39;s response to the dialog, using the prototype <code>function(Colour)</code>. The Colour will refer to the user&#39;s selected colour in RGB string format, e.g. <code>128,255,64</code>. In the event that the dialog is cancelled, the <code>Colour</code> is set to <code>nil</code>.</td>
+<td style="text-align: left;">A callback to receive the user&#39;s response to the dialog, using the prototype <code>function(Colour)</code>. <code>Colour</code> is a GUI RGB table. If the dialog is cancelled, <code>Colour</code> is set to <code>nil</code>.</td>
 </tr>
 <tr>
 <td style="text-align: left;">colour</td>
-<td style="text-align: left;">The default colour in <code>R,G,B</code> format.</td>
+<td style="text-align: left;">The default colour, accepts a CSS compatible colour string.</td>
 </tr>
 <tr>
 <td style="text-align: left;">title</td>
@@ -458,7 +454,7 @@
 </tr>
 </tbody>
 </table>
-<h2 id="combobox">combobox</h2>
+<h2 id="combobox">Combobox</h2>
 <p><code>gui.combobox({ Options... })</code></p>
 <p>The <code>gui.combobox()</code> interface creates and manages comboboxes in the UI.</p>
 <p>Valid options are:</p>
@@ -539,7 +535,7 @@
 </tr>
 </tbody>
 </table>
-<h2 id="dialog">dialog</h2>
+<h2 id="dialog">Dialog</h2>
 <p><code>gui.dialog.message({ Options... })</code></p>
 <p>The <code>gui.dialog.message()</code> interface displays message boxes in the UI. If the dialog box is modal, the call will not return until the user has responded to the dialog. The dialog box should be managed as a dynamic resource, i.e. created as necessary and deallocated once the user has responded (i.e. set all references to <code>nil</code>). Retaining dialog boxes in memory will provide no descernible speed improvement to the user.</p>
 <p>Valid options are:</p>
@@ -703,7 +699,7 @@
       print(&#39;Response received.&#39;)
    end
 })</code></pre>
-<h2 id="divider">divider</h2>
+<h2 id="divider">Divider</h2>
 <p><code>gui.divider({ Options... })</code></p>
 <p>The <code>gui.divider()</code> interface is used to break up the space between viewports and allow them to be user adjustable.</p>
 <p>For a horizontal split, the configuration must specify two viewports that are positioned to the left and right of the divider, or top and bottom for a vertical split. For the viewport on the far side of the divider, define (x, xOffset) and (y, yOffset) pairs as necessary to ensure that the viewport is correctly anchored.</p>
@@ -756,7 +752,7 @@
 </tr>
 </tbody>
 </table>
-<h2 id="filedialog">filedialog</h2>
+<h2 id="file-dialog">File Dialog</h2>
 <p><code>gui.dialog.file({ Options... })</code></p>
 <p>Use the file dialog interface to prompt the user into selecting an existing file, or declaring a new one. The dialog will return the user&#39;s choice via the <code>feedback</code> function.</p>
 <p>If the dialog box is modal, the call will not return until the user has responded to the dialog.</p>
@@ -803,16 +799,12 @@
 <td style="text-align: left;">The initial selection path.</td>
 </tr>
 <tr>
-<td style="text-align: left;">selectFolder</td>
-<td style="text-align: left;">Set to <code>true</code> if folders can be selected.</td>
-</tr>
-<tr>
 <td style="text-align: left;">multiSelect</td>
 <td style="text-align: left;">Set to <code>true</code> if more than one item can be selected.</td>
 </tr>
 <tr>
-<td style="text-align: left;">userInput</td>
-<td style="text-align: left;">Set to <code>true</code> if the user can enter custom text.</td>
+<td style="text-align: left;">allowNew</td>
+<td style="text-align: left;">If <code>true</code>, show a filename input box so the dialog can be used for save-style workflows.</td>
 </tr>
 <tr>
 <td style="text-align: left;">warnExists</td>
@@ -820,11 +812,11 @@
 </tr>
 <tr>
 <td style="text-align: left;">feedback</td>
-<td style="text-align: left;">Refers to a function that will receive the user&#39;s response to the dialog. Use the format <code>function(Dialog, Files)</code>. <code>Files</code> refers to an array of the selected file names (full path is not included, refer to <code>currentPath</code> for the folder). If the dialog is cancelled, <code>Files</code> will be set to <code>nil</code>.</td>
+<td style="text-align: left;">Refers to a function that will receive the user&#39;s response to the dialog. Use the format <code>function(Dialog, Path, Files)</code>. <code>Path</code> is the selected folder path. <code>Files</code> is an array of selected file entries, or <code>nil</code> if the dialog is cancelled. When <code>allowNew</code> is enabled, the filename entered by the user is returned through <code>Files</code>.</td>
 </tr>
 </tbody>
 </table>
-<h2 id="fileview">fileview</h2>
+<h2 id="file-view">File View</h2>
 <p><code>gui.fileview(View, { Options... })</code></p>
 <p>The <code>fileview</code> interface will populate a target viewport with elements that present the user with a file system browser. The following example illustrates basic usage:</p>
 <pre><code>gui.fileview(view, {
@@ -1016,8 +1008,8 @@
 </tr>
 </tbody>
 </table>
-<h2 id="fontdialog">fontdialog</h2>
-<p><code>gui.dialog.fontdialog({ Options... })</code></p>
+<h2 id="font-dialog">Font Dialog</h2>
+<p><code>gui.dialog.font({ Options... })</code></p>
 <p>The font dialog interface provides a standardised way of asking the user to select a font, and/or choosing font style information. If the dialog box is modal, the call will not return until the user has responded to the dialog.</p>
 <p>Valid options are:</p>
 <table>
@@ -1030,7 +1022,7 @@
 <tbody>
 <tr>
 <td style="text-align: left;">colour</td>
-<td style="text-align: left;">Preset the font colour. The default is black.</td>
+<td style="text-align: left;">Preset the font colour.</td>
 </tr>
 <tr>
 <td style="text-align: left;">example</td>
@@ -1057,10 +1049,6 @@
 <td style="text-align: left;">Set to <code>true</code> if the dialog box needs to be modal (prevents interaction with other windows).</td>
 </tr>
 <tr>
-<td style="text-align: left;">path</td>
-<td style="text-align: left;">The initial selection path.</td>
-</tr>
-<tr>
 <td style="text-align: left;">style</td>
 <td style="text-align: left;">Preset the font&#39;s style, e.g. <code>Bold Italic</code>. The default is <code>Regular</code>.</td>
 </tr>
@@ -1085,7 +1073,7 @@
 <tbody>
 <tr>
 <td style="text-align: left;">colour</td>
-<td style="text-align: left;">The font colour, expressed as an rgba table.</td>
+<td style="text-align: left;">The font colour, expressed as an RGBA table.</td>
 </tr>
 <tr>
 <td style="text-align: left;">compactFace</td>
@@ -1105,7 +1093,7 @@
 </tr>
 </tbody>
 </table>
-<h2 id="icon">icon</h2>
+<h2 id="icon">Icon</h2>
 <p><code>gui.icon({ Options... })</code></p>
 <p>The icon interface provides a convenient way of creating and managing interactive icons. The following example illustrates typical usage:</p>
 <pre><code>gui.icon({
@@ -1153,13 +1141,9 @@
 <td style="text-align: left;">events</td>
 <td style="text-align: left;">A table of event triggers. Supported events are <code>activate</code> and <code>show</code>, in the format <code>function(Icon, { Parameters... })</code>. When the <code>activate</code> event is called, A <code>name</code> key will be defined that can be one of <code>click</code>, <code>dblclick</code> and <code>altclick</code> (e.g. right mouse button).</td>
 </tr>
-<tr>
-<td style="text-align: left;">theme</td>
-<td style="text-align: left;">Set to <code>light</code> or <code>dark</code> for an appropriately coloured icon.</td>
-</tr>
 </tbody>
 </table>
-<h2 id="input">input</h2>
+<h2 id="input">Input</h2>
 <p><code>gui.input({ Options... })</code></p>
 <p>The input interface creates and manages input boxes in the UI.</p>
 <p>Valid options are:</p>
@@ -1185,11 +1169,15 @@
 </tr>
 <tr>
 <td style="text-align: left;">inputMask</td>
-<td style="text-align: left;">Restrict input with a pattern that is compliant with Lua 5.1&#39;s <code>string.find()</code>.</td>
+<td style="text-align: left;">Restrict input with a regular expression.</td>
 </tr>
 <tr>
 <td style="text-align: left;">label</td>
 <td style="text-align: left;">A text label for the widget.</td>
+</tr>
+<tr>
+<td style="text-align: left;">shadowLabel</td>
+<td style="text-align: left;">Optional placeholder text shown while the input is empty.</td>
 </tr>
 <tr>
 <td style="text-align: left;">secret</td>
@@ -1250,9 +1238,13 @@
 <td style="text-align: left;">:enable()</td>
 <td style="text-align: left;">Enable user interactivity.</td>
 </tr>
+<tr>
+<td style="text-align: left;">:setText(Text)</td>
+<td style="text-align: left;">Replace the current input text.</td>
+</tr>
 </tbody>
 </table>
-<h2 id="menu">menu</h2>
+<h2 id="menu">Menu</h2>
 <p><code>gui.menu({ Options... })</code></p>
 <p>The menu interface provides a convenient interface for creating and managing menus.</p>
 <p>The following example illustrates typical usage:</p>
@@ -1339,7 +1331,7 @@
 </tbody>
 </table>
 <p>Custom key values are permitted in the config items and will be ignored by the menu interface. It is recommended that they are prefixed with <code>c_</code> to differentiate them from reserved key values.</p>
-<h2 id="menubar">menubar</h2>
+<h2 id="menubar">Menubar</h2>
 <p><code>gui.menubar({ Options... })</code></p>
 <p>The MenuBar interface creates and manages the use of items and groups of items in the UI, typically using icons, text or both for item representation. Each item performs a specific application function that is activated via a callback mechanism.</p>
 <p>The following example illustrates typical usage:</p>
@@ -1414,7 +1406,7 @@
 </tr>
 </tbody>
 </table>
-<h2 id="scrollbar">scrollbar</h2>
+<h2 id="scrollbar">Scrollbar</h2>
 <p><code>gui.scrollbar({ Options... })</code></p>
 <p>The Scrollbar interface creates horizontal and vertical scrollbars for moving content within a viewport.</p>
 <p>The following example illustrates typical usage:</p>
@@ -1501,7 +1493,7 @@
 </tr>
 </tbody>
 </table>
-<h2 id="slider">slider</h2>
+<h2 id="slider">Slider</h2>
 <p><code>gui.slider({ Options... })</code></p>
 <p>The Slider interface creates a horizontal or vertical slider that controls a value range.</p>
 <p>The following example illustrates typical usage:</p>
@@ -1618,7 +1610,7 @@
 </tr>
 </tbody>
 </table>
-<h2 id="toolbar">toolbar</h2>
+<h2 id="toolbar">Toolbar</h2>
 <p><code>gui.toolbar({ Options... })</code></p>
 <p>The toolbar interface creates and manages the use of items and groups of items in the UI, typically using icons, text or both for item representation. Each item performs a specific application function that is activated via a callback mechanism.</p>
 <p>The following example illustrates basic usage:</p>
@@ -1669,8 +1661,24 @@
 <td style="text-align: left;">Defaults to <code>horizontal</code> (left to right item arrangement). Set to <code>vertical</code> for top to bottom.</td>
 </tr>
 <tr>
-<td style="text-align: left;">theme</td>
-<td style="text-align: left;">Set to <code>light</code> or <code>dark</code> for appropriately coloured icons.</td>
+<td style="text-align: left;">iconTheme</td>
+<td style="text-align: left;">Override the icon theme used for toolbar items.</td>
+</tr>
+<tr>
+<td style="text-align: left;">iconHighlight</td>
+<td style="text-align: left;">Override the icon theme used for highlighted toolbar items.</td>
+</tr>
+<tr>
+<td style="text-align: left;">hoverFill</td>
+<td style="text-align: left;">Override the background used when hovering toolbar items.</td>
+</tr>
+<tr>
+<td style="text-align: left;">selectFill</td>
+<td style="text-align: left;">Override the background used for selected toolbar items.</td>
+</tr>
+<tr>
+<td style="text-align: left;">groupBorder</td>
+<td style="text-align: left;">Override the stroke used around toolbar groups.</td>
 </tr>
 <tr>
 <td style="text-align: left;">x, y</td>
@@ -1745,7 +1753,7 @@
 </tr>
 </tbody>
 </table>
-<h2 id="tooltip">tooltip</h2>
+<h2 id="tooltip">Tooltip</h2>
 <p><code>gui.tooltip({ Options... })</code></p>
 <p>The tooltip interface creates a tooltip on the display that vanishes when the user moves the mouse cursor.</p>
 <p>Valid options are:</p>
@@ -1768,7 +1776,7 @@
 </tbody>
 </table>
 <p>The surface representing the tooltip will be readable from the <code>surface</code> field. Early termination of the tooltip is possible by calling the <code>free()</code> method.</p>
-<h2 id="window">window</h2>
+<h2 id="window">Window</h2>
 <p><code>gui.window({ Options... })</code></p>
 <p>The window interface creates and manages windows in the UI. The table returned by this interface is tracked as a resource, and will need to be stored in at least one variable to keep the window active. If all references to the window are cleared, the window will be closed during garbage collection.</p>
 <p>Valid options are:</p>
@@ -1805,8 +1813,8 @@
 <td style="text-align: left;">Alternative to width and height; defines the internal size of the window.</td>
 </tr>
 <tr>
-<td style="text-align: left;">invertPalette</td>
-<td style="text-align: left;">If <code>true</code> the palette scheme will be inverted. Thus if the current scheme is light, the window will adopt a dark background.</td>
+<td style="text-align: left;">theme</td>
+<td style="text-align: left;">Sets the theme to apply to the window scene. If not specified, the current global GUI theme is used.</td>
 </tr>
 <tr>
 <td style="text-align: left;">maximise</td>
@@ -1955,7 +1963,7 @@
 </tr>
 <tr>
 <td style="text-align: left;">colour</td>
-<td style="text-align: left;">An rgba table that declares the colour to use when printing the item&#39;s name.</td>
+<td style="text-align: left;">An RGB/RGBA colour table that declares the colour to use when printing the item&#39;s name.</td>
 </tr>
 </tbody>
 </table>
@@ -2162,7 +2170,7 @@
 </tr>
 </tbody>
 </table>
-<h2 id="columnview">columnview</h2>
+<h2 id="column-view">Column View</h2>
 <p><code>gui.columnView({ Options... })</code></p>
 <p>The <code>gui.columnView()</code> interface is used to display data to the user in the form of tabulated items.</p>
 <p>The following initialisation options are specific to this interface:</p>
@@ -2239,8 +2247,8 @@
 </tr>
 </tbody>
 </table>
-<h2 id="listview">listview</h2>
-<p><code>gui.listview({ Options... })</code></p>
+<h2 id="list-view">List View</h2>
+<p><code>gui.listView({ Options... })</code></p>
 <p>The following initialisation options are specific to this interface:</p>
 <table>
 <thead>

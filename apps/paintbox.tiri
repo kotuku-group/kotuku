@@ -11,7 +11,7 @@ end
 
 function normaliseHue(Hue)
    Hue = Hue % 360
-   if Hue < 0 then Hue = Hue + 360 end
+   if Hue < 0 then Hue += 360 end
    return Hue
 end
 
@@ -338,10 +338,10 @@ end
          col = buffer:substr(start, stop)
          err = mVec.ReadPainter(nil, col, painter)
          nrgb = painter.Colour -- Normalised RGB
-         out = out .. segment .. convert(gui.nrgb(nrgb.Red, nrgb.Green, nrgb.Blue, nrgb.Alpha))
+         out ..= segment .. convert(gui.nrgb(nrgb.Red, nrgb.Green, nrgb.Blue, nrgb.Alpha))
          index = stop
       end
-      out = out .. buffer:substr(index)
+      out ..= buffer:substr(index)
 
       buffer = out
       out = ''
@@ -352,10 +352,10 @@ end
          col = buffer:substr(start, stop)
          err = mVec.ReadPainter(nil, col, painter)
          nrgb = painter.Colour -- Normalised RGB
-         out = out .. segment .. convert(gui.nrgb(nrgb.Red, nrgb.Green, nrgb.Blue, nrgb.Alpha))
+         out ..= segment .. convert(gui.nrgb(nrgb.Red, nrgb.Green, nrgb.Blue, nrgb.Alpha))
          index = stop
       end
-      out = out .. buffer:substr(index)
+      out ..= buffer:substr(index)
 
       print(out)
    elseif colour then

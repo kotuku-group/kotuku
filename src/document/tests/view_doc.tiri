@@ -4,23 +4,26 @@
 
    glScript = obj.find('self')
 
-   local win = gui.window({ title='Document Test', insideWidth=1024, insideHeight=800, center=true })
+   win = gui.window({ title='Document Test', insideWidth=1024, insideHeight=800, center=true })
 
-   local src_file = arg('file', 'test.rpl')
+   src_file = arg('file', 'test.rpl')
 
-   local doc = win:clientViewport().new('document', {
+   doc = win:clientViewport().new('document', {
       path = glScript.workingPath .. src_file .. '#Index'
    })
 
-   local page_height = doc.pageHeight
+   page_height = doc.pageHeight
    if (page_height < 800) then win:resizeClientArea(nil, doc.pageHeight) end
 
-   local scrollbar = gui.scrollbar({
+   scrollbar = gui.scrollbar({
       target = win:clientViewport(),
       view   = doc.view,
       page   = doc.page,
       direction = 'all'
    })
+
+   _, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   print(xml_str)
 
    win:show()
    processing.sleep()

@@ -309,6 +309,7 @@
       <const name="PRIVILEGED">This is set to <code>true</code> if the process has elevated privileges (such as superuser or administrative rights).</const>
       <const name="PRIVILEGED_USER">If this value is set to 1, the process will operate in privileged mode (typically this enables full administrator rights).  This feature will only work for Unix processes that are granted admin rights when launched.  Setting the Value to 0 reverts to the user's permission settings.  SetResource() will return an error code indicating the level of success.</const>
       <const name="PROCESS_STATE">Life-cycle stage of the running process</const>
+      <const name="RELEASE_BUILD">Returns true if the runtime is a release build.</const>
       <const name="STATIC_BUILD">Returns true if the runtime is a statically linked build.</const>
       <const name="THREAD_ID">Return the ID of the current thread.</const>
       <const name="TOTAL_MEMORY">The total amount of installed memory.</const>

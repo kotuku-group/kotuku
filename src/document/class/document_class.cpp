@@ -121,8 +121,8 @@ static ERR feedback_view(objVectorViewport *View, FM Event)
 
    auto width  = View->get<double>(FID_ViewWidth);
    auto height = View->get<double>(FID_ViewHeight);
-   if (!width) width = View->get<double>(FID_Width);
-   if (!height) height = View->get<double>(FID_Height);
+   if (not width) width = View->get<double>(FID_Width);
+   if (not height) height = View->get<double>(FID_Height);
 
    if ((Self->VPWidth IS width) and (Self->VPHeight IS height)) return ERR::Okay;
 
@@ -224,7 +224,7 @@ NullArgs
 
 static ERR DOCUMENT_AddListener(extDocument *Self, doc::AddListener *Args)
 {
-   if ((!Args) or (Args->Trigger IS DRT::NIL) or (!Args->Function)) return ERR::NullArgs;
+   if ((not Args) or (Args->Trigger IS DRT::NIL) or (not Args->Function)) return ERR::NullArgs;
 
    Self->Triggers[int(Args->Trigger)].push_back(*Args->Function);
 
@@ -266,7 +266,7 @@ static ERR DOCUMENT_CallFunction(extDocument *Self, doc::CallFunction *Args)
 {
    pf::Log log;
 
-   if ((!Args) or (!Args->Function)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Function)) return log.warning(ERR::NullArgs);
 
    // Function is in the format 'function()' or 'script.function()'
 
@@ -310,7 +310,7 @@ static ERR DOCUMENT_Clipboard(extDocument *Self, struct acClipboard *Args)
 {
    pf::Log log;
 
-   if ((!Args) or (Args->Mode IS CLIPMODE::NIL)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (Args->Mode IS CLIPMODE::NIL)) return log.warning(ERR::NullArgs);
 
    if ((Args->Mode IS CLIPMODE::CUT) or (Args->Mode IS CLIPMODE::COPY)) {
       if (Args->Mode IS CLIPMODE::CUT) log.branch("Operation: Cut");
@@ -395,7 +395,7 @@ static ERR DOCUMENT_DataFeed(extDocument *Self, struct acDataFeed *Args)
 {
    pf::Log log;
 
-   if ((!Args) or (!Args->Buffer)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Buffer)) return log.warning(ERR::NullArgs);
 
    if ((Args->Datatype IS DATA::TEXT) or (Args->Datatype IS DATA::XML)) {
       // Incoming data is translated on the fly and added to the end of the current document page.  The original XML
@@ -403,7 +403,7 @@ static ERR DOCUMENT_DataFeed(extDocument *Self, struct acDataFeed *Args)
       //
       // NOTE: Content identified by DATA::TEXT is assumed to be in a serialised XML format.
 
-      if (!Self->initialised()) return log.warning(ERR::NotInitialised);
+      if (not Self->initialised()) return log.warning(ERR::NotInitialised);
       if (Self->Processing) return log.warning(ERR::Recursion);
 
       objXML::create xml = {
@@ -486,10 +486,10 @@ Search: The cell was not found.
 
 static ERR DOCUMENT_Edit(extDocument *Self, doc::Edit *Args)
 {
-   if (!Args) return ERR::NullArgs;
+   if (not Args) return ERR::NullArgs;
 
-   if (!Args->Name) {
-      if ((!Self->CursorIndex.valid()) or (!Self->ActiveEditDef)) return ERR::Okay;
+   if (not Args->Name) {
+      if ((not Self->CursorIndex.valid()) or (not Self->ActiveEditDef)) return ERR::Okay;
       deactivate_edit(Self, true);
       return ERR::Okay;
    }
@@ -531,9 +531,9 @@ static ERR DOCUMENT_FeedParser(extDocument *Self, doc::FeedParser *Args)
 {
    pf::Log log;
 
-   if ((!Args) or (!Args->String)) return ERR::NullArgs;
+   if ((not Args) or (not Args->String)) return ERR::NullArgs;
 
-   if (!Self->Processing) return log.warning(ERR::Failed);
+   if (not Self->Processing) return log.warning(ERR::Failed);
 
 
 
@@ -572,7 +572,7 @@ static ERR DOCUMENT_FindIndex(extDocument *Self, doc::FindIndex *Args)
 {
    pf::Log log;
 
-   if ((!Args) or (!Args->Name)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Name)) return log.warning(ERR::NullArgs);
 
    log.trace("Name: %s", Args->Name);
 
@@ -658,7 +658,7 @@ key-value will be given the same name as that specified in the widget's element.
 
 static ERR DOCUMENT_GetKey(extDocument *Self, struct acGetKey *Args)
 {
-   if ((!Args) or (!Args->Value) or (!Args->Key) or (Args->Size < 2)) return ERR::Args;
+   if ((not Args) or (not Args->Value) or (not Args->Key) or (Args->Size < 2)) return ERR::Args;
 
    if (Self->Vars.contains(Args->Key)) {
       strcopy(Self->Vars[Args->Key], Args->Value, Args->Size);
@@ -700,7 +700,7 @@ static ERR DOCUMENT_HideIndex(extDocument *Self, doc::HideIndex *Args)
    pf::Log log(__FUNCTION__);
    int tab;
 
-   if ((!Args) or (!Args->Name)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Name)) return log.warning(ERR::NullArgs);
 
    log.msg("Index: %s", Args->Name);
 
@@ -710,7 +710,7 @@ static ERR DOCUMENT_HideIndex(extDocument *Self, doc::HideIndex *Args)
       if (stream[i].code IS SCODE::INDEX_START) {
          auto &index = Self->Stream.lookup<bc_index>(i);
          if (name_hash IS index.name_hash) {
-            if (!index.visible) return ERR::Okay; // It's already invisible!
+            if (not index.visible) return ERR::Okay; // It's already invisible!
 
             index.visible = false;
 
@@ -732,7 +732,7 @@ static ERR DOCUMENT_HideIndex(extDocument *Self, doc::HideIndex *Args)
                }
                else if (code IS SCODE::IMAGE) {
                   auto &vec = Self->Stream.lookup<bc_image>(i);
-                  if (!vec.rect.empty()) {
+                  if (not vec.rect.empty()) {
                      pf::ScopedObjectLock obj(vec.rect->UID);
                      if (obj.granted()) acHide(*obj);
                   }
@@ -768,14 +768,14 @@ static ERR DOCUMENT_Init(extDocument *Self)
 {
    pf::Log log;
 
-   if (!Self->Viewport) {
+   if (not Self->Viewport) {
       if ((Self->Owner) and (Self->Owner->classID() IS CLASSID::VECTORVIEWPORT)) {
          Self->Viewport = (objVectorViewport *)Self->Owner;
       }
       else return log.warning(ERR::UnsupportedOwner);
    }
 
-   if (!Self->Focus) Self->Focus = Self->Viewport;
+   if (not Self->Focus) Self->Focus = Self->Viewport;
 
    if (Self->Focus->classID() != CLASSID::VECTORVIEWPORT) {
       return log.warning(ERR::WrongObjectType);
@@ -795,8 +795,8 @@ static ERR DOCUMENT_Init(extDocument *Self)
 
    Self->VPWidth  = Self->Viewport->get<double>(FID_ViewWidth);
    Self->VPHeight = Self->Viewport->get<double>(FID_ViewHeight);
-   if (!Self->VPWidth) Self->VPWidth = Self->Viewport->get<double>(FID_Width);
-   if (!Self->VPHeight) Self->VPHeight = Self->Viewport->get<double>(FID_Height);
+   if (not Self->VPWidth) Self->VPWidth = Self->Viewport->get<double>(FID_Width);
+   if (not Self->VPHeight) Self->VPHeight = Self->Viewport->get<double>(FID_Height);
 
    float bkgd[4] = { 1.0, 1.0, 1.0, 1.0 };
    Self->Viewport->setFillColour(bkgd, 4);
@@ -851,7 +851,7 @@ static ERR DOCUMENT_Init(extDocument *Self)
    // Load a document file into the line array if required
 
    Self->UpdatingLayout = true;
-   if (!Self->Path.empty()) {
+   if (not Self->Path.empty()) {
       if ((Self->Path[0] != '#') and (Self->Path[0] != '?')) {
          if (auto error = load_doc(Self, Self->Path, false); error != ERR::Okay) {
             return error;
@@ -901,7 +901,7 @@ static ERR DOCUMENT_InsertXML(extDocument *Self, doc::InsertXML *Args)
 {
    pf::Log log;
 
-   if ((!Args) or (!Args->XML)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->XML)) return log.warning(ERR::NullArgs);
    if ((Args->Index < -1) or (Args->Index > int(Self->Stream.size()))) return log.warning(ERR::OutOfRange);
 
    if (Self->Stream.data.empty()) return ERR::NoData;
@@ -911,7 +911,7 @@ static ERR DOCUMENT_InsertXML(extDocument *Self, doc::InsertXML *Args)
       fl::Statement(Args->XML)
    };
 
-   if (!xml.ok()) {
+   if (not xml.ok()) {
       Self->UpdatingLayout = true;
 
       ERR error = insert_xml(Self, &Self->Stream, *xml, xml->Tags, (Args->Index IS -1) ? Self->Stream.size() : Args->Index, STYLE::NIL);
@@ -955,7 +955,7 @@ static ERR DOCUMENT_InsertText(extDocument *Self, doc::InsertText *Args)
 {
    pf::Log log(__FUNCTION__);
 
-   if ((!Args) or (!Args->Text)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Text)) return log.warning(ERR::NullArgs);
    if ((Args->Index < -1) or (Args->Index > std::ssize(Self->Stream))) return log.warning(ERR::OutOfRange);
 
    log.traceBranch("Index: %d, Preformat: %d", Args->Index, Args->Preformat);
@@ -989,20 +989,622 @@ static ERR DOCUMENT_NewPlacement(extDocument *Self)
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
+// XML-safe element names for every SCODE entry.  Kept parallel to strCodes in document.cpp, but uses lowercase,
+// hyphenated tokens that are valid XML identifiers.  Used by the DATA::XML branch of ReadContent().
+
+static constexpr std::array<std::string_view, size_t(SCODE::END)> xmlCodes = {
+   "nil", "text", "font", "font-end", "link", "tab-def", "p-end", "p", "link-end", "advance", "list", "list-end",
+   "table", "table-end", "row", "cell", "row-end", "index", "index-end", "xml", "image", "use", "button", "checkbox",
+   "combobox", "input"
+};
+
+static_assert(xmlCodes.size() IS size_t(SCODE::END),
+   "xmlCodes must contain one entry per SCODE value");
+
+//********************************************************************************************************************
+// Append Text to Out with XML escaping applied to the characters that are unsafe in element content or
+// double-quoted attribute values.  The document module cannot share the xml module's private escape table without
+// breaking module layering, so a small local helper is used instead.
+
+static void append_xml_escaped(std::ostringstream &Out, std::string_view Text)
+{
+   size_t last_pos = 0;
+   for (size_t i = 0; i < Text.size(); i++) {
+      std::string_view escape;
+      switch (Text[i]) {
+         case '&':  escape = "&amp;"; break;
+         case '<':  escape = "&lt;"; break;
+         case '>':  escape = "&gt;"; break;
+         case '"':  escape = "&quot;"; break;
+         default: continue;
+      }
+
+      if (i > last_pos) Out.write(Text.data() + last_pos, i - last_pos);
+      Out << escape;
+      last_pos = i + 1;
+   }
+
+   if (last_pos < Text.size()) Out.write(Text.data() + last_pos, Text.size() - last_pos);
+}
+
+//********************************************************************************************************************
+// Attribute emitters for the DATA::XML serialisation.  Each overload writes ` name="value"` to Out; string values are
+// XML-escaped on the way through.  Overloads are kept tiny to keep the per-code switch in write_stream_xml tidy.
+
+static inline void emit_attr(std::ostringstream &Out, std::string_view Name, std::string_view Value)
+{
+   Out << ' ' << Name << "=\"";
+   append_xml_escaped(Out, Value);
+   Out << '"';
+}
+
+static inline void emit_attr(std::ostringstream &Out, std::string_view Name, int Value)
+{
+   Out << ' ' << Name << "=\"" << Value << '"';
+}
+
+static inline void emit_attr(std::ostringstream &Out, std::string_view Name, double Value)
+{
+   Out << ' ' << Name << "=\"" << Value << '"';
+}
+
+static inline void emit_attr(std::ostringstream &Out, std::string_view Name, bool Value)
+{
+   Out << ' ' << Name << "=\"" << (Value ? "true" : "false") << '"';
+}
+
+//********************************************************************************************************************
+// Enum-to-string helpers for the attribute emitters.
+
+static constexpr std::string_view du_to_sv(DU Type)
+{
+   switch (Type) {
+      case DU::PIXEL:            return "px";
+      case DU::SCALED:           return "%";
+      case DU::FONT_SIZE:        return "em";
+      case DU::CHAR:             return "ch";
+      case DU::LINE_HEIGHT:      return "lh";
+      case DU::TRUE_LINE_HEIGHT: return "true-lh";
+      case DU::ROOT_FONT_SIZE:   return "rem";
+      case DU::ROOT_LINE_HEIGHT: return "rlh";
+      case DU::VP_WIDTH:         return "vw";
+      case DU::VP_HEIGHT:        return "vh";
+      case DU::VP_MIN:           return "vmin";
+      case DU::VP_MAX:           return "vmax";
+      default:                   return "nil";
+   }
+}
+
+static constexpr std::string_view align_to_sv(ALIGN Value)
+{
+   if ((Value & ALIGN::LEFT) != ALIGN::NIL) return "left";
+   if ((Value & ALIGN::RIGHT) != ALIGN::NIL) return "right";
+   if ((Value & ALIGN::HORIZONTAL) != ALIGN::NIL) return "center";
+   if ((Value & ALIGN::TOP) != ALIGN::NIL) return "top";
+   if ((Value & ALIGN::BOTTOM) != ALIGN::NIL) return "bottom";
+   if ((Value & ALIGN::VERTICAL) != ALIGN::NIL) return "middle";
+   return {};
+}
+
+static constexpr std::string_view valign_to_sv(ALIGN Value)
+{
+   if ((Value & ALIGN::TOP) != ALIGN::NIL) return "top";
+   if ((Value & ALIGN::BOTTOM) != ALIGN::NIL) return "bottom";
+   if ((Value & ALIGN::VERTICAL) != ALIGN::NIL) return "middle";
+   return {};
+}
+
+static constexpr std::string_view link_type_to_sv(LINK Type)
+{
+   switch (Type) {
+      case LINK::HREF:     return "href";
+      case LINK::FUNCTION: return "function";
+      default:             return "nil";
+   }
+}
+
+static constexpr std::string_view list_type_to_sv(uint8_t Type)
+{
+   switch (Type) {
+      case bc_list::ORDERED: return "ordered";
+      case bc_list::CUSTOM:  return "custom";
+      default:               return "bullet";
+   }
+}
+
+static constexpr std::string_view fso_align_to_sv(FSO Options)
+{
+   if ((Options & FSO::ALIGN_CENTER) != FSO::NIL) return "center";
+   if ((Options & FSO::ALIGN_RIGHT) != FSO::NIL) return "right";
+   return {};
+}
+
+static std::string border_to_string(CB Border)
+{
+   if (Border IS CB::NIL) return {};
+   if (Border IS CB::ALL) return "all";
+
+   std::string out;
+   if ((Border & CB::TOP) != CB::NIL) out += "top,";
+   if ((Border & CB::BOTTOM) != CB::NIL) out += "bottom,";
+   if ((Border & CB::LEFT) != CB::NIL) out += "left,";
+   if ((Border & CB::RIGHT) != CB::NIL) out += "right,";
+   if (not out.empty()) out.pop_back();
+   return out;
+}
+
+//********************************************************************************************************************
+// Compound attribute emitters for layout-related data structures.
+
+static void emit_dunit_attrs(std::ostringstream &Out, std::string_view Name, const DUNIT &Value)
+{
+   if (Value.type IS DU::NIL) return;
+
+   double value = Value.value;
+   if ((value > 0) and (value <= std::numeric_limits<double>::min())) value = 0;
+
+   std::string unit_name(Name);
+   emit_attr(Out, unit_name, value);
+   unit_name += "-unit";
+   emit_attr(Out, unit_name, du_to_sv(Value.type));
+}
+
+static void emit_padding_attrs(std::ostringstream &Out, std::string_view Prefix, const padding &Padding)
+{
+   if (not Padding.configured) return;
+
+   std::string base(Prefix);
+   emit_attr(Out, base + "-left", Padding.left);
+   emit_attr(Out, base + "-top", Padding.top);
+   emit_attr(Out, base + "-right", Padding.right);
+   emit_attr(Out, base + "-bottom", Padding.bottom);
+   if (Padding.left_scl) emit_attr(Out, base + "-left-scaled", true);
+   if (Padding.top_scl) emit_attr(Out, base + "-top-scaled", true);
+   if (Padding.right_scl) emit_attr(Out, base + "-right-scaled", true);
+   if (Padding.bottom_scl) emit_attr(Out, base + "-bottom-scaled", true);
+}
+
+static void emit_stream_identity(std::ostringstream &Out, INDEX Index)
+{
+   emit_attr(Out, "stream-index", int(Index));
+}
+
+static void emit_nested_stream_identity(std::ostringstream &Out, INDEX ParentIndex, INDEX Index)
+{
+   emit_attr(Out, "parent-stream-index", int(ParentIndex));
+   emit_attr(Out, "nested-stream-index", int(Index));
+}
+
+static std::string segment_codes_to_string(const doc_segment &Segment)
+{
+   std::ostringstream out;
+
+   for (auto i = Segment.start; i < Segment.stop; i.next_code()) {
+      auto code = Segment.stream[0][i.index].code;
+      if (code IS SCODE::FONT) {
+         auto &style = Segment.stream->lookup<bc_font>(i.index);
+         out << "[E:Font:#" << style.index() << ']';
+      }
+      else if (code IS SCODE::PARAGRAPH_START) {
+         auto &para = Segment.stream->lookup<bc_paragraph>(i.index);
+         if (para.list_item) out << "[E:LI]";
+         else out << "[E:PS]";
+      }
+      else if (code IS SCODE::PARAGRAPH_END) out << "[E:PE]";
+      else out << "[E:" << strCodes[int(code)] << ']';
+   }
+
+   return out.str();
+}
+
+static bool segment_in_range(const doc_segment &Segment, INDEX Start, INDEX End)
+{
+   stream_char range_start(Start, 0), range_end(End, 0);
+   return (Segment.stop > range_start) and (Segment.start < range_end);
+}
+
+static void write_segments_xml(const std::vector<doc_segment> &Segments, INDEX Start, INDEX End,
+   std::ostringstream &Out, INDEX ParentIndex = -1)
+{
+   bool has_segments = false;
+
+   for (SEGINDEX si = 0; si < SEGINDEX(Segments.size()); si++) {
+      auto &segment = Segments[si];
+      if (not segment_in_range(segment, Start, End)) continue;
+
+      if (not has_segments) {
+         Out << "\n<segments>\n";
+         has_segments = true;
+      }
+
+      Out << "<segment";
+      if (ParentIndex >= 0) emit_attr(Out, "parent-stream-index", int(ParentIndex));
+      emit_attr(Out, "index", int(si));
+      emit_attr(Out, "start-index", int(segment.start.index));
+      emit_attr(Out, "start-offset", int(segment.start.offset));
+      emit_attr(Out, "stop-index", int(segment.stop.index));
+      emit_attr(Out, "stop-offset", int(segment.stop.offset));
+      emit_attr(Out, "trim-stop-index", int(segment.trim_stop.index));
+      emit_attr(Out, "trim-stop-offset", int(segment.trim_stop.offset));
+      emit_attr(Out, "x", segment.area.X);
+      emit_attr(Out, "y", segment.area.Y);
+      emit_attr(Out, "width", segment.area.Width);
+      emit_attr(Out, "height", segment.area.Height);
+      emit_attr(Out, "descent", segment.descent);
+      emit_attr(Out, "align-width", segment.align_width);
+      emit_attr(Out, "edit", segment.edit);
+      emit_attr(Out, "allow-merge", segment.allow_merge);
+      emit_attr(Out, "codes", segment_codes_to_string(segment));
+      Out << "/>\n";
+   }
+
+   if (has_segments) Out << "</segments>\n";
+}
+
+//********************************************************************************************************************
+// Emit the shared font cache after the stream fragment so inspection tools can correlate requested font runs with the
+// resolved cached fonts and metrics actually used by layout.
+
+static void write_fonts_xml(std::ostringstream &Out)
+{
+   std::deque<font_entry> fonts;
+
+   {
+      std::lock_guard lk(glFontsMutex);
+      fonts = glFonts;
+   }
+
+   Out << "<fonts>\n";
+   for (size_t i = 0; i < fonts.size(); i++) {
+      auto &font = fonts[i];
+
+      Out << "<font";
+      emit_attr(Out, "cache-index", int(i));
+      if (not font.face.empty())  emit_attr(Out, "face", font.face);
+      if (not font.style.empty()) emit_attr(Out, "style", font.style);
+      if (font.font_size > 0)  emit_attr(Out, "pixel-size", font.font_size);
+      if (font.align != ALIGN::NIL) emit_attr(Out, "align", align_to_sv(font.align));
+      emit_attr(Out, "height", font.metrics.Height);
+      emit_attr(Out, "line-spacing", font.metrics.LineSpacing);
+      emit_attr(Out, "ascent", font.metrics.Ascent);
+      emit_attr(Out, "descent", font.metrics.Descent);
+      emit_attr(Out, "baseline-descent", font.descent());
+      Out << "/>\n";
+   }
+   Out << "</fonts>\n";
+}
+
+//********************************************************************************************************************
+// Emit attributes for widget_mgr-derived bytecodes (bc_image, bc_button, bc_checkbox, bc_combobox, bc_input).
+
+static void emit_widget_attrs(std::ostringstream &Out, const widget_mgr &Widget)
+{
+   if (not Widget.name.empty())  emit_attr(Out, "name", Widget.name);
+   if (not Widget.label.empty()) emit_attr(Out, "label", Widget.label);
+   if (not Widget.fill.empty())  emit_attr(Out, "fill", Widget.fill);
+   if (not Widget.alt_fill.empty()) emit_attr(Out, "alt-fill", Widget.alt_fill);
+   if (not Widget.font_fill.empty()) emit_attr(Out, "font-fill", Widget.font_fill);
+   emit_dunit_attrs(Out, "width", Widget.width);
+   emit_dunit_attrs(Out, "height", Widget.height);
+   emit_dunit_attrs(Out, "default-size", Widget.def_size);
+   emit_dunit_attrs(Out, "label-pad", Widget.label_pad);
+   emit_padding_attrs(Out, "padding", Widget.pad);
+   if (auto align = align_to_sv(Widget.align); not align.empty()) emit_attr(Out, "align", align);
+   if (auto valign = valign_to_sv(Widget.align); not valign.empty()) emit_attr(Out, "v-align", valign);
+   if (Widget.align_to_text) emit_attr(Out, "align-to-text", true);
+   if (Widget.alt_state) emit_attr(Out, "alt-state", true);
+   if (Widget.internal_page) emit_attr(Out, "internal-page", true);
+   if (Widget.label_pos != 1) emit_attr(Out, "label-pos", int(Widget.label_pos));
+}
+
+//********************************************************************************************************************
+// Walk a stream range and emit one XML element per byte code to Out.  SCODE::TEXT codes are emitted as <text>...</text>
+// with escaped content; SCODE::CELL codes recurse into their nested stream; all other codes are emitted as
+// self-closing elements with selected attributes from the backing bc_* struct.  HasText is set to true if at
+// least one SCODE::TEXT code was encountered, so the caller can decide whether to return ERR::NoData.
+
+static void write_stream_xml(
+   RSTREAM &Stream,
+   INDEX Start,
+   INDEX End,
+   std::ostringstream &Out,
+   bool &HasContent,
+   bool ExpandNested,
+   INDEX ParentIndex = -1)
+{
+   for (INDEX i = Start; i < End; i++) {
+      auto code = Stream[i].code;
+      int idx = int(code);
+      std::string_view name = ((idx >= 0) and (idx < int(SCODE::END))) ? xmlCodes[idx] : std::string_view("unknown");
+      HasContent = true;
+
+      auto emit_identity = [&Out, ParentIndex, i]() {
+         if (ParentIndex >= 0) emit_nested_stream_identity(Out, ParentIndex, i);
+         else emit_stream_identity(Out, i);
+      };
+
+      switch (code) {
+         case SCODE::TEXT: {
+            auto &text = Stream.lookup<bc_text>(i);
+            Out << '<' << name;
+            emit_identity();
+            emit_attr(Out, "length", int(text.text.size()));
+            if (text.formatted) emit_attr(Out, "formatted", true);
+            if (text.segment >= 0) emit_attr(Out, "segment", int(text.segment));
+            Out << '>';
+            append_xml_escaped(Out, text.text);
+            Out << "</" << name << '>';
+            break;
+         }
+
+         case SCODE::FONT: {
+            auto &font = Stream.lookup<bc_font>(i);
+            Out << '<' << name;
+            emit_identity();
+            if (font.index() >= 0) emit_attr(Out, "index", int(font.index()));
+            if (not font.face.empty())  emit_attr(Out, "face", font.face);
+            if (not font.style.empty()) emit_attr(Out, "style", font.style);
+            if (not font.fill.empty())  emit_attr(Out, "fill", font.fill);
+            emit_dunit_attrs(Out, "size", font.req_size);
+            if (font.pixel_size > 0) emit_attr(Out, "pixel-size", font.pixel_size);
+            auto align = fso_align_to_sv(font.options);
+            if (not align.empty()) emit_attr(Out, "align", align);
+            Out << "/>";
+            break;
+         }
+
+         case SCODE::LINK: {
+            auto &link = Stream.lookup<bc_link>(i);
+            Out << '<' << name;
+            emit_identity();
+            emit_attr(Out, "type", link_type_to_sv(link.type));
+            if (not link.ref.empty())  emit_attr(Out, "ref", link.ref);
+            if (not link.hint.empty()) emit_attr(Out, "hint", link.hint);
+            if (not link.fill.empty()) emit_attr(Out, "fill", link.fill);
+            if (not link.hooks.on_click.empty()) emit_attr(Out, "on-click", link.hooks.on_click);
+            if (not link.hooks.on_motion.empty()) emit_attr(Out, "on-motion", link.hooks.on_motion);
+            if (not link.hooks.on_crossing.empty()) emit_attr(Out, "on-crossing", link.hooks.on_crossing);
+            Out << "/>";
+            break;
+         }
+
+         case SCODE::PARAGRAPH_START: {
+            auto &para = Stream.lookup<bc_paragraph>(i);
+            Out << '<' << name;
+            emit_identity();
+            if (para.list_item)            emit_attr(Out, "list-item", true);
+            if (not para.font.face.empty())  emit_attr(Out, "face", para.font.face);
+            if (not para.font.style.empty()) emit_attr(Out, "style", para.font.style);
+            if (not para.font.fill.empty())  emit_attr(Out, "fill", para.font.fill);
+            emit_dunit_attrs(Out, "size", para.font.req_size);
+            if (auto align = fso_align_to_sv(para.font.options); not align.empty()) emit_attr(Out, "align", align);
+            if (auto valign = valign_to_sv(para.font.valign); not valign.empty()) emit_attr(Out, "v-align", valign);
+            emit_dunit_attrs(Out, "block-indent", para.block_indent);
+            emit_dunit_attrs(Out, "item-indent", para.item_indent);
+            emit_dunit_attrs(Out, "indent", para.indent);
+            emit_dunit_attrs(Out, "line-height", para.line_height);
+            emit_dunit_attrs(Out, "leading", para.leading);
+            if (para.trim)      emit_attr(Out, "trim", true);
+            if (para.aggregate) emit_attr(Out, "aggregate", true);
+            Out << "/>";
+            break;
+         }
+
+         case SCODE::ADVANCE: {
+            auto &adv = Stream.lookup<bc_advance>(i);
+            Out << '<' << name;
+            emit_identity();
+            emit_dunit_attrs(Out, "x", adv.x);
+            emit_dunit_attrs(Out, "y", adv.y);
+            Out << "/>";
+            break;
+         }
+
+         case SCODE::LIST_START: {
+            auto &list = Stream.lookup<bc_list>(i);
+            Out << '<' << name;
+            emit_identity();
+            emit_attr(Out, "type", list_type_to_sv(list.type));
+            if (list.start != 1)     emit_attr(Out, "start", list.start);
+            if (not list.fill.empty())  emit_attr(Out, "fill", list.fill);
+            emit_dunit_attrs(Out, "item-indent", list.item_indent);
+            emit_dunit_attrs(Out, "block-indent", list.block_indent);
+            emit_dunit_attrs(Out, "v-spacing", list.v_spacing);
+            Out << "/>";
+            break;
+         }
+
+         case SCODE::TABLE_START: {
+            auto &table = Stream.lookup<bc_table>(i);
+            Out << '<' << name;
+            emit_identity();
+            emit_attr(Out, "columns", int(table.columns.size()));
+            if (table.rows > 0)        emit_attr(Out, "rows", table.rows);
+            if (not table.fill.empty())   emit_attr(Out, "fill", table.fill);
+            if (not table.stroke.empty()) emit_attr(Out, "stroke", table.stroke);
+            emit_dunit_attrs(Out, "stroke-width", table.stroke_width);
+            emit_dunit_attrs(Out, "min-width", table.min_width);
+            emit_dunit_attrs(Out, "min-height", table.min_height);
+            emit_dunit_attrs(Out, "cell-h-spacing", table.cell_h_spacing);
+            emit_dunit_attrs(Out, "cell-v-spacing", table.cell_v_spacing);
+            emit_padding_attrs(Out, "cell-padding", table.cell_padding);
+            if (table.align != ALIGN::NIL) emit_attr(Out, "align", align_to_sv(table.align));
+            if (table.collapsed) emit_attr(Out, "collapsed", true);
+            if (table.wrap)      emit_attr(Out, "wrap", true);
+            Out << "/>";
+            break;
+         }
+
+         case SCODE::ROW: {
+            auto &row = Stream.lookup<bc_row>(i);
+            Out << '<' << name;
+            emit_identity();
+            if (not row.fill.empty())   emit_attr(Out, "fill", row.fill);
+            if (not row.stroke.empty()) emit_attr(Out, "stroke", row.stroke);
+            if (row.min_height != 0) emit_attr(Out, "min-height", row.min_height);
+            if (row.vertical_repass) emit_attr(Out, "vertical-repass", true);
+            Out << "/>";
+            break;
+         }
+
+         case SCODE::CELL: {
+            auto &cell = Stream.lookup<bc_cell>(i);
+            Out << '<' << name;
+            emit_identity();
+            emit_attr(Out, "cell-id", int(cell.cell_id));
+            emit_attr(Out, "column", cell.column);
+            if (cell.col_span != 1) emit_attr(Out, "col-span", cell.col_span);
+            if (cell.row_span != 1) emit_attr(Out, "row-span", cell.row_span);
+            if (not cell.edit_def.empty()) emit_attr(Out, "edit-def", cell.edit_def);
+            if (not cell.fill.empty())     emit_attr(Out, "fill", cell.fill);
+            if (not cell.stroke.empty())   emit_attr(Out, "stroke", cell.stroke);
+            emit_dunit_attrs(Out, "stroke-width", cell.stroke_width);
+            auto border = border_to_string(cell.border);
+            if (not border.empty()) emit_attr(Out, "border", border);
+            if (cell.modified) emit_attr(Out, "modified", true);
+            if (not cell.hooks.on_click.empty()) emit_attr(Out, "on-click", cell.hooks.on_click);
+            if (not cell.hooks.on_motion.empty()) emit_attr(Out, "on-motion", cell.hooks.on_motion);
+            if (not cell.hooks.on_crossing.empty()) emit_attr(Out, "on-crossing", cell.hooks.on_crossing);
+
+            if (ExpandNested and (cell.stream) and (not cell.stream->data.empty())) {
+               Out << '>';
+               write_stream_xml(*cell.stream, 0, INDEX(cell.stream->size()), Out, HasContent, false, i);
+               write_segments_xml(cell.segments, 0, INDEX(cell.stream->size()), Out, i);
+               Out << "</" << name << ">\n";
+            }
+            else Out << "/>";
+            break;
+         }
+
+         case SCODE::INDEX_START: {
+            auto &index = Stream.lookup<bc_index>(i);
+            Out << '<' << name;
+            emit_identity();
+            emit_attr(Out, "name-hash", int(index.name_hash));
+            emit_attr(Out, "id", index.id);
+            emit_attr(Out, "visible", index.visible);
+            emit_attr(Out, "parent-visible", index.parent_visible);
+            Out << "/>";
+            break;
+         }
+
+         case SCODE::INDEX_END: {
+            auto &index_end = Stream.lookup<bc_index_end>(i);
+            Out << '<' << name;
+            emit_identity();
+            emit_attr(Out, "id", index_end.id);
+            Out << "/>";
+            break;
+         }
+
+         case SCODE::XML: {
+            auto &xml = Stream.lookup<bc_xml>(i);
+            Out << '<' << name;
+            emit_identity();
+            emit_attr(Out, "object-id", int(xml.object_id));
+            if (xml.owned) emit_attr(Out, "owned", true);
+            Out << "/>";
+            break;
+         }
+
+         case SCODE::IMAGE: {
+            auto &image = Stream.lookup<bc_image>(i);
+            Out << '<' << name;
+            emit_identity();
+            emit_widget_attrs(Out, image);
+            Out << "/>";
+            break;
+         }
+
+         case SCODE::USE: {
+            auto &use = Stream.lookup<bc_use>(i);
+            Out << '<' << name;
+            emit_identity();
+            if (not use.id.empty()) emit_attr(Out, "id", use.id);
+            if (use.processed) emit_attr(Out, "processed", true);
+            Out << "/>";
+            break;
+         }
+
+         case SCODE::BUTTON: {
+            auto &button = Stream.lookup<bc_button>(i);
+            Out << '<' << name;
+            emit_identity();
+            emit_widget_attrs(Out, button);
+            emit_padding_attrs(Out, "inner-padding", button.inner_padding);
+            if (ExpandNested and (button.stream) and (not button.stream->data.empty())) {
+               Out << '>';
+               write_stream_xml(*button.stream, 0, INDEX(button.stream->size()), Out, HasContent, false, i);
+               write_segments_xml(button.segments, 0, INDEX(button.stream->size()), Out, i);
+               Out << "</" << name << '>';
+            }
+            else Out << "/>";
+            break;
+         }
+
+         case SCODE::CHECKBOX: {
+            auto &checkbox = Stream.lookup<bc_checkbox>(i);
+            Out << '<' << name;
+            emit_identity();
+            emit_widget_attrs(Out, checkbox);
+            if (checkbox.processed) emit_attr(Out, "processed", true);
+            Out << "/>";
+            break;
+         }
+
+         case SCODE::COMBOBOX: {
+            auto &combobox = Stream.lookup<bc_combobox>(i);
+            Out << '<' << name;
+            emit_identity();
+            emit_widget_attrs(Out, combobox);
+            if (not combobox.style.empty()) emit_attr(Out, "style", combobox.style);
+            if (not combobox.value.empty()) emit_attr(Out, "value", combobox.value);
+            Out << "/>";
+            break;
+         }
+
+         case SCODE::INPUT: {
+            auto &input = Stream.lookup<bc_input>(i);
+            Out << '<' << name;
+            emit_identity();
+            emit_widget_attrs(Out, input);
+            if (not input.value.empty()) emit_attr(Out, "value", input.value);
+            if (input.secret) emit_attr(Out, "secret", true);
+            Out << "/>";
+            break;
+         }
+
+         default:
+            Out << '<' << name;
+            emit_identity();
+            Out << "/>";
+            break;
+      }
+   }
+}
+
 /*********************************************************************************************************************
 
 -METHOD-
-ReadContent: Returns selected content from the document, either as plain text or original byte code.
+ReadContent: Returns selected content from the document, either as plain text, original byte code or XML.
 
-The ReadContent() method extracts content from the document stream, covering a specific area.  It can return the data as
-a RIPL binary stream, or translate the content into plain-text (control codes are removed).
+The ReadContent() method extracts content from the document stream, covering a specific area.  It can return the data
+as a RIPL binary stream, translated into plain-text (control codes are removed), or serialised as an XML document
+describing the byte stream.
 
-If data is extracted in its original format, no post-processing is performed to fix validity errors that may arise from
-an invalid data range.  For instance, if an opening paragraph code is not closed with a matching paragraph end point,
-this will remain the case in the resulting data.
+The XML format is a linear, non-nested serialisation of the byte stream intended for inspection, diffing and tooling.
+Each byte code becomes one XML element wrapped in a `<extract>` root, followed by the requested content in a `<stream>`
+element, and text content appears inside `<text>` elements with the usual XML escaping applied.  Start/end markers
+such as paragraphs and font runs are emitted as sibling self-closing elements rather than nested, reflecting the
+underlying linear storage model.  A trailing `<fonts>` section lists information for the shared cached fonts.
+
+No post-processing is performed to fix validity errors that may arise from an invalid data range.  For instance, if
+an opening paragraph code is not closed with a matching paragraph end point, this will remain the case in the
+resulting data.
 
 -INPUT-
-int(DATA) Format: Set to `TEXT` to receive plain-text, or `RAW` to receive the original byte-code.
+int(DATA) Format: Set to `TEXT` to receive plain-text, `RAW` to receive the original byte-code, or `XML` to receive a textual XML serialisation of the stream.
 int Start:  An index in the document stream from which data will be extracted.
 int End:    An index in the document stream at which extraction will stop.
 !str Result: The data is returned in this parameter as an allocated string.
@@ -1010,7 +1612,7 @@ int End:    An index in the document stream at which extraction will stop.
 -ERRORS-
 Okay
 NullArgs
-OutOfRange: The Start and/or End indexes are not within the stream.
+OutOfRange: The Start index is not within the stream.
 Args
 NoData: Operation successful, but no data was present for extraction.
 
@@ -1020,18 +1622,22 @@ static ERR DOCUMENT_ReadContent(extDocument *Self, doc::ReadContent *Args)
 {
    pf::Log log(__FUNCTION__);
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
    Args->Result = nullptr;
 
    if ((Args->Start < 0) or (Args->Start >= std::ssize(Self->Stream))) return log.warning(ERR::OutOfRange);
-   if ((Args->End < 0) or (Args->End >= std::ssize(Self->Stream))) return log.warning(ERR::OutOfRange);
    if (Args->End <= Args->Start) return log.warning(ERR::Args);
+
+   // End is a soft upper bound - callers may pass a large sentinel value to mean "to end of stream".
+
+   INDEX end = Args->End;
+   if (end > INDEX(std::ssize(Self->Stream))) end = INDEX(std::ssize(Self->Stream));
 
    if (Args->Format IS DATA::TEXT) {
       std::ostringstream buffer;
 
-      for (INDEX i=Args->Start; i < Args->End; i++) {
+      for (INDEX i=Args->Start; i < end; i++) {
          if (Self->Stream[i].code IS SCODE::TEXT) {
             buffer << Self->Stream.lookup<bc_text>(i).text;
          }
@@ -1044,12 +1650,30 @@ static ERR DOCUMENT_ReadContent(extDocument *Self, doc::ReadContent *Args)
    }
    else if (Args->Format IS DATA::RAW) {
       STRING output;
-      if (AllocMemory(Args->End - Args->Start + 1, MEM::NO_CLEAR, &output) IS ERR::Okay) {
-         copymem(Self->Stream.data.data() + Args->Start, output, Args->End - Args->Start);
-         output[Args->End - Args->Start] = 0;
+      if (AllocMemory(end - Args->Start + 1, MEM::NO_CLEAR, &output) IS ERR::Okay) {
+         copymem(Self->Stream.data.data() + Args->Start, output, end - Args->Start);
+         output[end - Args->Start] = 0;
          Args->Result = output;
          return ERR::Okay;
       }
+      else return log.warning(ERR::AllocMemory);
+   }
+   else if (Args->Format IS DATA::XML) {
+      std::ostringstream buffer;
+      bool has_content = false;
+      bool expand_nested = (Args->Start IS 0) and (end IS INDEX(std::ssize(Self->Stream)));
+
+      buffer << "<extract>\n<stream>\n";
+      write_stream_xml(Self->Stream, Args->Start, end, buffer, has_content, expand_nested);
+      write_segments_xml(Self->Segments, Args->Start, end, buffer);
+      buffer << "</stream>\n";
+      write_fonts_xml(buffer);
+      buffer << "</extract>\n";
+
+      if (not has_content) return ERR::NoData;
+
+      auto str = buffer.str();
+      if ((Args->Result = strclone(str))) return ERR::Okay;
       else return log.warning(ERR::AllocMemory);
    }
    else return log.warning(ERR::Args);
@@ -1093,7 +1717,7 @@ static ERR DOCUMENT_Refresh(extDocument *Self)
    }
 
    ERR error = ERR::Okay;
-   if ((!Self->Path.empty()) and (Self->Path[0] != '#') and (Self->Path[0] != '?')) {
+   if ((not Self->Path.empty()) and (Self->Path[0] != '#') and (Self->Path[0] != '?')) {
       log.branch("Refreshing from path '%s'", Self->Path.c_str());
       error = load_doc(Self, Self->Path, true, ULD::REFRESH);
    }
@@ -1128,14 +1752,19 @@ static ERR DOCUMENT_RemoveContent(extDocument *Self, doc::RemoveContent *Args)
 {
    pf::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
    if ((Args->Start < 0) or (Args->Start >= std::ssize(Self->Stream))) return log.warning(ERR::OutOfRange);
-   if ((Args->End < 0) or (Args->End >= std::ssize(Self->Stream))) return log.warning(ERR::OutOfRange);
+   if (Args->End < 0) return log.warning(ERR::OutOfRange);
    if (Args->End <= Args->Start) return log.warning(ERR::Args);
 
-   copymem(Self->Stream.data.data() + Args->End, Self->Stream.data.data() + Args->Start, Self->Stream.data.size() - Args->End);
-   Self->Stream.data.resize(Self->Stream.data.size() - Args->End - Args->Start);
+   // End is a soft upper bound - callers may pass a large sentinel value to mean "to end of stream".
+
+   INDEX end = Args->End;
+   if (end > INDEX(std::ssize(Self->Stream))) end = INDEX(std::ssize(Self->Stream));
+
+   copymem(Self->Stream.data.data() + end, Self->Stream.data.data() + Args->Start, Self->Stream.data.size() - end);
+   Self->Stream.data.resize(Self->Stream.data.size() - end - Args->Start);
 
    Self->UpdatingLayout = true;
    return ERR::Okay;
@@ -1161,7 +1790,7 @@ NullArgs
 
 static ERR DOCUMENT_RemoveListener(extDocument *Self, doc::RemoveListener *Args)
 {
-   if ((!Args) or (!Args->Trigger) or (!Args->Function)) return ERR::NullArgs;
+   if ((not Args) or (not Args->Trigger) or (not Args->Function)) return ERR::NullArgs;
 
    if (Args->Function->isC()) {
       for (auto it = Self->Triggers[Args->Trigger].begin(); it != Self->Triggers[Args->Trigger].end(); it++) {
@@ -1195,7 +1824,7 @@ static ERR DOCUMENT_SaveToObject(extDocument *Self, struct acSaveToObject *Args)
 {
    pf::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
    log.branch("Destination: %d", Args->Dest->UID);
    acWrite(Args->Dest, "Save not supported.", 0, nullptr);
@@ -1233,7 +1862,7 @@ static ERR DOCUMENT_SelectLink(extDocument *Self, doc::SelectLink *Args)
 {
    pf::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
    if ((Args->Name) and (Args->Name[0])) {
 /*
@@ -1271,8 +1900,8 @@ static ERR DOCUMENT_SetKey(extDocument *Self, struct acSetKey *Args)
 {
    // Note: Zero-length parameter values are permitted.
 
-   if ((!Args) or (!Args->Key)) return ERR::NullArgs;
-   if (!Args->Key[0]) return ERR::Args;
+   if ((not Args) or (not Args->Key)) return ERR::NullArgs;
+   if (not Args->Key[0]) return ERR::Args;
 
    Self->Vars[Args->Key] = Args->Value;
 
@@ -1305,7 +1934,7 @@ static ERR DOCUMENT_ShowIndex(extDocument *Self, doc::ShowIndex *Args)
 {
    pf::Log log;
 
-   if ((!Args) or (!Args->Name)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Name)) return log.warning(ERR::NullArgs);
 
    log.branch("Index: %s", Args->Name);
 
@@ -1336,7 +1965,7 @@ static ERR DOCUMENT_ShowIndex(extDocument *Self, doc::ShowIndex *Args)
                }
                else if (code IS SCODE::IMAGE) {
                   auto &img = Self->Stream.lookup<bc_image>(i);
-                  if (!img.rect.empty()) acShow(*img.rect);
+                  if (not img.rect.empty()) acShow(*img.rect);
 
                   if (auto tab = find_tabfocus(Self, TT::VECTOR, img.rect->UID); tab >= 0) {
                      Self->Tabs[tab].active = true;
@@ -1351,7 +1980,7 @@ static ERR DOCUMENT_ShowIndex(extDocument *Self, doc::ShowIndex *Args)
                   auto &index = Self->Stream.lookup<bc_index>(i);
                   index.parent_visible = true;
 
-                  if (!index.visible) {
+                  if (not index.visible) {
                      for (++i; i < INDEX(stream.size()); i++) {
                         if (stream[i].code IS SCODE::INDEX_END) {
                            if (index.id IS Self->Stream.lookup<bc_index_end>(i).id) break;

@@ -270,8 +270,7 @@
 <div class="docs-content" style="display:none;" id="struct-VectorPainter"><h1>VectorPainter Structure</h1><p class="lead">Deserialised painter information; compliant with SVG painter definitions.</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Pattern</th><td><span class="text-nowrap">objVectorPattern *</span></td><td>A <a href="vectorpattern.html">VectorPattern</a> object, suitable for pattern based fills.</td></tr>
 <tr><th>Image</th><td><span class="text-nowrap">objVectorImage *</span></td><td>A <a href="vectorimage.html">VectorImage</a> object, suitable for image fills.</td></tr>
 <tr><th>Gradient</th><td><span class="text-nowrap">objVectorGradient *</span></td><td>A <a href="vectorgradient.html">VectorGradient</a> object, suitable for gradient fills.</td></tr>
-<tr><th>CIE</th><td><span class="text-nowrap">struct CIEXYZ</span></td><td>CIE colour representation</td></tr>
-<tr><th>Colour</th><td><span class="text-nowrap">struct FRGB</span></td><td>A single RGB colour definition, suitable for block colour fills.</td></tr>
+<tr><th>Colour</th><td><span class="text-nowrap">struct FRGB</span></td><td>A single RGB colour definition, suitable for block colour fills.  Colour values are unclamped to support all possible colour spaces.</td></tr>
 </tbody></table><div class="footer copyright text-right">VectorViewport class documentation © Paul Manias © 2010-2026</div></div>
 </div></div></div><script type="text/javascript" src="../../js/bootstrap.bundle.min.js"></script><script type="text/javascript" src="../../js/base.js"></script><script type="text/javascript">
 const ready = fn => document.readyState !== 'loading' ? fn() : document.addEventListener('DOMContentLoaded', fn);

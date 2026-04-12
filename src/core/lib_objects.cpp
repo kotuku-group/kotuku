@@ -1166,7 +1166,8 @@ ERR CheckAction(OBJECTPTR Object, ACTIONID ActionID)
 -FUNCTION-
 CheckObjectExists: Checks if a particular object is still available in the system.
 
-The CheckObjectExists() function verifies the presence of any object created by ~NewObject().
+The CheckObjectExists() function verifies the presence of any object created by ~NewObject(). Objects that are marked
+for termination are considered to no longer exist for the purposes of this function, and will return `ERR::False`.
 
 -INPUT-
 oid Object: The object identity to verify.
@@ -1181,17 +1182,12 @@ LockFailed:
 ERR CheckObjectExists(OBJECTID ObjectID)
 {
    if (auto lock = std::unique_lock{glmMemory}) {
-      ERR result = ERR::False;
       if (auto mem = glPrivateMemory.find(ObjectID); (mem != glPrivateMemory.end()) and (mem->second.Object)) {
-         if (mem->second.Object->defined(NF::FREE_ON_UNLOCK));
-         else result = ERR::True;
+         return mem->second.Object->defined(NF::FREE_ON_UNLOCK) ? ERR::False : ERR::True;
       }
-      return result;
+      return ERR::False;
    }
-   else {
-      pf::Log log(__FUNCTION__);
-      return log.warning(ERR::LockFailed);
-   }
+   else return pf::Log(__FUNCTION__).warning(ERR::LockFailed);
 }
 
 /*********************************************************************************************************************

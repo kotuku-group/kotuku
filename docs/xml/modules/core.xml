@@ -455,7 +455,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
       <param type="OBJECTID" name="Object">The object identity to verify.</param>
     </input>
     <description>
-<p>The CheckObjectExists() function verifies the presence of any object created by <function>NewObject</function>.</p>
+<p>The CheckObjectExists() function verifies the presence of any object created by <function>NewObject</function>. Objects that are marked for termination are considered to no longer exist for the purposes of this function, and will return <code>ERR::False</code>.</p>
     </description>
     <result type="ERR">
       <error code="True">The object exists.</error>
@@ -850,7 +850,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
       <param type="RES" name="Resource" lookup="RES">The ID of the resource that you want to obtain.</param>
     </input>
     <description>
-<p>The GetResource() function is used to retrieve miscellaneous resource information from the system core.  Refer to the Resource identifier for the full list of available resource codes and their meaning.</p>
+<p>The GetResource() function is used to retrieve miscellaneous resource and state information from the system core.  Refer to the Resource identifier for the full list of available resource codes and their meaning.</p>
 <p>C++ developers should use the <code>GetResourcePtr()</code> macro if a resource identifier is known to return a pointer.</p>
     </description>
     <result type="INT64">Returns the value of the resource that you have requested.  If the resource ID is not known by the Core, <code>NULL</code> is returned.</result>
@@ -2777,6 +2777,7 @@ static ResourceManager glNodeManager = {
       <const name="PRIVILEGED">This is set to <code>true</code> if the process has elevated privileges (such as superuser or administrative rights).</const>
       <const name="PRIVILEGED_USER">If this value is set to 1, the process will operate in privileged mode (typically this enables full administrator rights).  This feature will only work for Unix processes that are granted admin rights when launched.  Setting the Value to 0 reverts to the user's permission settings.  SetResource() will return an error code indicating the level of success.</const>
       <const name="PROCESS_STATE">Life-cycle stage of the running process</const>
+      <const name="RELEASE_BUILD">Returns true if the runtime is a release build.</const>
       <const name="STATIC_BUILD">Returns true if the runtime is a statically linked build.</const>
       <const name="THREAD_ID">Return the ID of the current thread.</const>
       <const name="TOTAL_MEMORY">The total amount of installed memory.</const>

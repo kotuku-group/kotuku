@@ -3,7 +3,7 @@ static const int MAXLOOP = 1000;
 
 static const char glDefaultStyles[] =
 "<template name=\"h1\"><p leading=\"1.5\" font-size=\"2em\" font-style=\"bold\"><inject/></p></template>\n\
-<template name=\"h2\"><p leading=\"1.5\"  font-size=\"1.8em\" font-style=\"bold\"><inject/></p></template>\n\
+<template name=\"h2\"><p leading=\"1.25\" font-size=\"1.8em\" font-style=\"bold\"><inject/></p></template>\n\
 <template name=\"h3\"><p leading=\"1.25\" font-size=\"1.6em\" font-style=\"bold\"><inject/></p></template>\n\
 <template name=\"h4\"><p leading=\"1.25\" font-size=\"1.4em\"><inject/></p></template>\n\
 <template name=\"h5\"><p leading=\"1.0\"  font-size=\"1.2em\"><inject/></p></template>\n\
@@ -393,11 +393,11 @@ static ERR unload_doc(extDocument *Self, ULD Flags)
 
    Self->Highlight = glHighlight;
 
-   Self->CursorStroke   = "rgba(102,102,204,1.0)";
-   Self->FontFill       = "rgb(0,0,0)";
-   Self->LinkFill       = "rgb(0,0,255)";
-   Self->LinkSelectFill = "rgb(255,0,0)";
-   Self->Background     = "rgba(255,255,255,1.0)";
+   Self->CursorStroke   = "rgb(102 102 204 / 1)";
+   Self->FontFill       = "rgb(0 0 0)";
+   Self->LinkFill       = "rgb(0 0 255)";
+   Self->LinkSelectFill = "rgb(255 0 0)";
+   Self->Background     = "rgb(255 255 255 / 1)";
 
    Self->LeftMargin    = 10;
    Self->RightMargin   = 10;
@@ -425,10 +425,10 @@ static ERR unload_doc(extDocument *Self, ULD Flags)
 
    Self->Links.clear();
 
-   Self->FontFace = DEFAULT_FONTFACE;
-   Self->FontSize = DEFAULT_FONTSIZE;
+   Self->FontFace  = DEFAULT_FONTFACE;
+   Self->FontSize  = DEFAULT_FONTSIZE;
    Self->FontStyle = DEFAULT_FONTSTYLE;
-   Self->PageTag = nullptr;
+   Self->PageTag   = nullptr;
 
    Self->EditCells.clear();
    Self->Stream.clear();

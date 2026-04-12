@@ -196,7 +196,7 @@ public:
    PTC cursor; // This value buffers the Vector.Cursor field for optimisation purposes.
    TClipRectangle<double> bounds; // Collision boundary
    double x, y; // Absolute X,Y without collision
-   bool pass_through; // True if input events should be passed through (the cursor will still apply)
+   bool pass_through; // True if input events should drop through (the cursor will still apply, if defined)
 
    InputBoundary(OBJECTID pV, PTC pC, TClipRectangle<double> &pBounds, double p5, double p6, bool pPass = false) :
       vector_id(pV), cursor(pC), bounds(pBounds), x(p5), y(p6), pass_through(pPass) {};
@@ -505,6 +505,7 @@ class extVectorViewport : public extVector {
    objBitmap *vpBuffer;
    uint8_t *vpBufferData;
    int vpBufferSize; // Size of the vpBufferData in bytes
+   std::unique_ptr<std::vector<class InputBoundary>> vpInputBounds; // Cached boundaries for buffered viewports; allocated on first use only.
    bool  vpClip; // Viewport requires non-rectangular clipping, e.g. because it is rotated or sheared.
    DMF   vpDimensions;
    ARF   vpAspectRatio;
@@ -704,6 +705,42 @@ static void mark_buffers_for_refresh(extVector *Vector)
 
       parent_view = parent_view->ParentView;
    }
+}
+
+//********************************************************************************************************************
+// Input boundaries are generated during scene drawing.  If their source state changes without a visual path change,
+// buffered parent viewports still need to redraw once so that their cached input-boundary list stays current.
+
+inline static bool has_input_subscriptions(const extVector *Vector)
+{
+   return (Vector->InputSubscriptions) and (not Vector->InputSubscriptions->empty());
+}
+
+inline static bool has_input_boundary(const extVector *Vector)
+{
+   return has_input_subscriptions(Vector) or ((Vector->Cursor != PTC::NIL) and (Vector->Cursor != PTC::DEFAULT));
+}
+
+inline static void update_input_subscription_state(extVector *Vector)
+{
+   JTYPE mask = JTYPE::NIL;
+   if (Vector->InputSubscriptions) {
+      for (auto &sub : *Vector->InputSubscriptions) mask |= sub.Mask;
+   }
+
+   Vector->InputMask = mask;
+
+   if ((Vector->Scene) and (!Vector->Scene->collecting())) {
+      auto scene = (extVectorScene *)Vector->Scene;
+      if (mask != JTYPE::NIL) scene->InputSubscriptions[Vector] = mask;
+      else scene->InputSubscriptions.erase(Vector);
+   }
+}
+
+inline static void mark_input_boundary_dirty(extVector *Vector)
+{
+   mark_buffers_for_refresh(Vector);
+   if (Vector->Scene) ((extVectorScene *)Vector->Scene)->RefreshCursor = true;
 }
 
 //********************************************************************************************************************

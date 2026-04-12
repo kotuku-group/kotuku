@@ -228,12 +228,12 @@ end
 @Test global function W3Transfer()         hashTestSVG('filters/w3-filters-comptran-01-b.svg', 0x060263af) end
 @Test global function W3Transfer2()        hashTestSVG('filters/w3-filters-color-02-b.svg', 0x49928379) end
 @Test global function W3Filters()          hashTestSVG('filters/w3-filters.svg', 0x3fdd817f) end
-@Test global function W3Filters2()         hashTestSVG('filters/w3-filters2.svg', 0xe2bc7036) end
+@Test global function W3Filters2()         hashTestSVG('filters/w3-filters2.svg', 0x64d8ac49) end
 @Test global function W3Gauss1()           hashTestSVG('filters/w3-filters-gauss-01-b.svg', 0x3c531bc1) end
 @Test global function W3Gauss2()           hashTestSVG('filters/w3-filters-gauss-02-f.svg', 0xb6b88740) end
 @Test global function W3Gauss3()           hashTestSVG('filters/w3-filters-gauss-03-f.svg', 0xd4cc8f68) end
 @Test global function W3Image()            hashTestSVG('filters/w3-image.svg', 0x2f1cdd18) end
-@Test global function W3Morphology()       hashTestSVG('filters/w3-morphology.svg', 0x15f5dbf3) end
+@Test global function W3Morphology()       hashTestSVG('filters/w3-morphology.svg', 0xf4350a95) end
 @Test global function W3Offset()           hashTestSVG('filters/w3-offset.svg', 0xa61dcfe3) end
 @Test global function W3Lighting1()        hashTestSVG('filters/w3-filters-light-01-f.svg', 0x36f34b64) end
 @Test global function W3Lighting2()        hashTestSVG('filters/w3-filters-light-02-f.svg', -1) end

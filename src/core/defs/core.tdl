@@ -340,6 +340,7 @@ constexpr bool defined(T flags, T test_flag) noexcept {
     "PRIVILEGED: This is set to `true` if the process has elevated privileges (such as superuser or administrative rights).",
     "CORE_IDL: Refers to the Core module's compressed IDL string.",
     "STATIC_BUILD: Returns true if the runtime is a statically linked build.",
+    "RELEASE_BUILD: Returns true if the runtime is a release build.",
     "LOG_LEVEL: The current level of log detail (larger numbers indicate more detail).",
     "TOTAL_SHARED_MEMORY: The total amount of shared memory in use (system wide).",
     "LOG_DEPTH: The current depth of log messages.",

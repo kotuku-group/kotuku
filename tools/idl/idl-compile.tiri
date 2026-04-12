@@ -6,21 +6,21 @@
 -- Usage: origo sdk:scripts/idl-tiri.tiri src=source.tdl
 -- Example: origo sdk:scripts/idl-tiri.tiri src=sdk:core/modules/core/core.tdl
 
-   global glSelf = obj.find('self')
-   global glPath = glSelf.workingPath
-   global glOutput = array<string>
-   global glHeader = array<string>
+global glSelf = obj.find('self')
+global glPath = glSelf.workingPath
+global glOutput = array<string>
+global glHeader = array<string>
 
-   global glProgram    = 'idl-compile'
-   global glSource     = arg('src')
-   global glOutputPath = arg('output')
-   global glFeedback   = arg('feedback')
-   global glFormat     = arg('format')
-   global glAppend     = arg('append')
+global glProgram    = 'idl-compile'
+global glSource     = arg('src')
+global glOutputPath = arg('output')
+global glFeedback   = arg('feedback')
+global glFormat     = arg('format')
+global glAppend     = arg('append')
 
-   global glOrderedStructures = { }
-   global glStructures = { }
-   global glConstants = { }
+global glOrderedStructures = { }
+global glStructures = { }
+global glConstants = { }
 
 -- Dummy functions for loaded TDL files to prevent errors.
 
@@ -34,36 +34,37 @@ global function privateNames(List:table) end
 
    import './include/utils'
 
-   -- Regex patterns for parsing
-   local rx_key_comment     = <{ regex.new([[^(.+):\s+(.+)$]]) }>
-   local rx_key_comment_ng  = <{ regex.new([[^(.*?):\s+(.+)$]]) }>
-   local rx_value_only      = <{ regex.new([[^(.*?):\s+.+$]]) }>
-   local rx_hex_num         = <{ regex.new([[^0x[0-9a-fA-F]+$]]) }>
-   local rx_signed_int      = <{ regex.new([[^[+\-]?\d+$]]) }>
-   local rx_cpp_type        = <{ regex.new([[^cpp\((.+)\)$]]) }>
-   local rx_struct_type     = <{ regex.new([[^(c?)struct\((.+)\)$]]) }>
-   local rx_ptr_extract     = <{ regex.new([[\*(.+)]]) }>
-   local rx_obj_type        = <{ regex.new([[^obj\((.+)\)$]]) }>
-   local rx_bit_type        = <{ regex.new([[^bit\((.+)\)$]]) }>
-   local rx_char_flag       = <{ regex.new([[^char\(([A-Za-z]+)\)]]) }>
-   local rx_non_word        = <{ regex.new([[\W]]) }>
-   local rx_short_flag      = <{ regex.new([[^short\(([A-Za-z]+)\)]]) }>
-   local rx_int_flag        = <{ regex.new([[^int\(([A-Za-z]+)\)]]) }>
-   local rx_large_flag      = <{ regex.new([[^large\(([A-Za-z]+)\)]]) }>
-   local rx_uchar_array     = <{ regex.new([[^(u?)char\((.+)\)$]]) }>
-   local rx_uint_array      = <{ regex.new([[^(u?)int\((\d+)\)]]) }>
-   local rx_double_count    = <{ regex.new([[^double\((.+)\)]]) }>
-   local rx_float_count     = <{ regex.new([[^float\((.+)\)]]) }>
-   local rx_ptr_type        = <{ regex.new([[^(c?)ptr\((.+)\)]]) }>
-   local rx_array_sized     = <{ regex.new([[^array\((.+),(\d+)\)$]]) }>
-   local rx_array_unsized   = <{ regex.new([[^array\((.+)\)$]]) }>
-   local rx_fptr_type       = <{ regex.new([[^fptr\((.+)\)$]]) }>
-   local rx_hash_comment    = <{ regex.new([[^.+#\s*(.+)$]]) }>
-   local rx_hash_content    = <{ regex.new([[^(.+)#\s*.+$]]) }>
-   local rx_colon_comment   = <{ regex.new([[^.+:\s*(.+)$]]) }>
-   local rx_colon_content   = <{ regex.new([[^(.+):\s*.+$]]) }>
-   local rx_type_name       = <{ regex.new([[^\s*(.+)\s+(\S+)\s*$]]) }>
-   local rx_field_extract   = <{ regex.new([[^(.+?)[:#]\s*(.+)$]]) }> -- "type FieldName # Comment", also accepts ":"
+-- Regex patterns for parsing
+
+local rx_key_comment     = <{ regex.new([[^(.+):\s+(.+)$]]) }>
+local rx_key_comment_ng  = <{ regex.new([[^(.*?):\s+(.+)$]]) }>
+local rx_value_only      = <{ regex.new([[^(.*?):\s+.+$]]) }>
+local rx_hex_num         = <{ regex.new([[^0x[0-9a-fA-F]+$]]) }>
+local rx_signed_int      = <{ regex.new([[^[+\-]?\d+$]]) }>
+local rx_cpp_type        = <{ regex.new([[^cpp\((.+)\)$]]) }>
+local rx_struct_type     = <{ regex.new([[^(c?)struct\((.+)\)$]]) }>
+local rx_ptr_extract     = <{ regex.new([[\*(.+)]]) }>
+local rx_obj_type        = <{ regex.new([[^obj\((.+)\)$]]) }>
+local rx_bit_type        = <{ regex.new([[^bit\((.+)\)$]]) }>
+local rx_char_flag       = <{ regex.new([[^char\(([A-Za-z]+)\)]]) }>
+local rx_non_word        = <{ regex.new([[\W]]) }>
+local rx_short_flag      = <{ regex.new([[^short\(([A-Za-z]+)\)]]) }>
+local rx_int_flag        = <{ regex.new([[^int\(([A-Za-z]+)\)]]) }>
+local rx_large_flag      = <{ regex.new([[^large\(([A-Za-z]+)\)]]) }>
+local rx_uchar_array     = <{ regex.new([[^(u?)char\((.+)\)$]]) }>
+local rx_uint_array      = <{ regex.new([[^(u?)int\((\d+)\)]]) }>
+local rx_double_count    = <{ regex.new([[^double\((.+)\)]]) }>
+local rx_float_count     = <{ regex.new([[^float\((.+)\)]]) }>
+local rx_ptr_type        = <{ regex.new([[^(c?)ptr\((.+)\)]]) }>
+local rx_array_sized     = <{ regex.new([[^array\((.+),(\d+)\)$]]) }>
+local rx_array_unsized   = <{ regex.new([[^array\((.+)\)$]]) }>
+local rx_fptr_type       = <{ regex.new([[^fptr\((.+)\)$]]) }>
+local rx_hash_comment    = <{ regex.new([[^.+#\s*(.+)$]]) }>
+local rx_hash_content    = <{ regex.new([[^(.+)#\s*.+$]]) }>
+local rx_colon_comment   = <{ regex.new([[^.+:\s*(.+)$]]) }>
+local rx_colon_content   = <{ regex.new([[^(.+):\s*.+$]]) }>
+local rx_type_name       = <{ regex.new([[^\s*(.+)\s+(\S+)\s*$]]) }>
+local rx_field_extract   = <{ regex.new([[^(.+?)[:#]\s*(.+)$]]) }> -- "type FieldName # Comment", also accepts ":"
 
 ----------------------------------------------------------------------------------------------------------------------
 -- TDL function

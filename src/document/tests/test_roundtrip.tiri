@@ -1,0 +1,708 @@
+-- $TIRI
+-- Round-trip / serialisation fidelity tests for the Document class.
+--
+-- These tests feed known content into a Document via acDataFeed(), then read it back via ReadContent(DATA_XML)
+-- and verify that the semantic content survives the parse-serialise cycle.  This catches silent data loss in the
+-- parser or serialiser without depending on bitmap CRCs or layout geometry.
+
+@BeforeAll function init(State)
+   global glDocFolder = State.folder
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Helpers
+
+function feedAndRead(Content:str, PageWidth:num)
+   scene = obj.new('VectorScene', { pageWidth=PageWidth ?? 1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp })
+   check doc.acDataFeed(nil, DATA_XML, Content)
+   err, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed: ' .. mSys.GetErrorMsg(err))
+   assert(xml_str, 'ReadContent(DATA_XML) returned nil')
+   return xml_str
+end
+
+function parseXML(XmlStr:str)
+   xml = obj.new('xml', { statement = XmlStr })
+   assert(xml, 'Generated XML failed to parse')
+   return xml
+end
+
+function xpath(Xml, Expr:str)
+   err_xp, result = Xml.mtEvaluate(Expr)
+   assert(err_xp is ERR_Okay, 'XPath failed: ' .. Expr .. ', err=' .. tostring(err_xp))
+   return result
+end
+
+function xpathNum(Xml, Expr:str)
+   value = tonumber(xpath(Xml, Expr))
+   assert(value != nil, 'XPath did not return a number for: ' .. Expr)
+   return value
+end
+
+function loadAndRead(Path:str)
+   scene = obj.new('VectorScene', { pageWidth=1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp, path=glDocFolder .. Path })
+   err, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for ' .. Path .. ': ' .. mSys.GetErrorMsg(err))
+   return parseXML(xml_str)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Plain text content
+
+@Test function PlainText()
+   xml_str = feedAndRead('<body/><page><p>Hello world</p></page>')
+   print(xml_str)
+   xml = parseXML(xml_str)
+
+   text_count = xpathNum(xml, 'count(/extract/stream//text)')
+   assert(text_count > 0, 'Plain text must produce at least one <text> element')
+
+   content = xpath(xml, 'string((/extract/stream//text)[1])')
+   assert(content:find('Hello world'), 'Text content must survive round-trip, got: ' .. tostring(content))
+end
+
+@Test function MultiParagraphText()
+   xml_str = feedAndRead(
+      '<body/><page><p>First paragraph</p><p>Second paragraph</p><p>Third paragraph</p></page>')
+   xml = parseXML(xml_str)
+
+   p_count = xpathNum(xml, 'count(/extract/stream//p)')
+   assert(p_count >= 3, 'Three input paragraphs must produce at least 3 <p> elements, got ' .. p_count)
+
+   text1 = xpath(xml, 'string((/extract/stream//text)[1])')
+   text2 = xpath(xml, 'string((/extract/stream//text)[2])')
+   text3 = xpath(xml, 'string((/extract/stream//text)[3])')
+
+   assert(text1:find('First'),  'Paragraph 1 text must survive, got: ' .. tostring(text1))
+   assert(text2:find('Second'), 'Paragraph 2 text must survive, got: ' .. tostring(text2))
+   assert(text3:find('Third'),  'Paragraph 3 text must survive, got: ' .. tostring(text3))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Inline styling: bold, italic, nested
+
+@Test function BoldItalicRoundTrip()
+   xml_str = feedAndRead('<body/><page><p>Normal <b>bold</b> <i>italic</i> <b><i>both</i></b></p></page>')
+   print(xml_str)
+   xml = parseXML(xml_str)
+
+   -- At least one font byte-code with style="Bold" must appear
+   bold_count = xpathNum(xml, 'count(/extract/stream//font[@style="Bold"])')
+   assert(bold_count > 0, 'Bold styling must produce a font byte-code with style="Bold"')
+
+   italic_count = xpathNum(xml, 'count(/extract/stream//font[@style="Italic"])')
+   assert(italic_count > 0, 'Italic styling must produce a font byte-code with style="Italic"')
+
+   -- Nested <b><i> produces two stacked font byte-codes rather than a single combined style.
+   -- Verify that both Bold and Italic font byte-codes appear for the nested region.
+   assert(bold_count >= 2, 'Nested <b><i> must produce at least 2 Bold font byte-codes, got ' .. bold_count)
+   assert(italic_count >= 2, 'Nested <b><i> must produce at least 2 Italic font byte-codes, got ' .. italic_count)
+
+   -- All text runs must be present (normal, bold, spaces, italic, both)
+   text_count = xpathNum(xml, 'count(/extract/stream//text)')
+   assert(text_count >= 4, 'At least four text runs expected, got ' .. text_count)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Font attributes
+
+@Test function FontFaceAndSize()
+   xml_str = feedAndRead(
+      '<body/><page><p>Before <font face="Courier Prime" size="20">Courier text</font> after</p></page>')
+   print(xml_str)
+   xml = parseXML(xml_str)
+
+   face = xpath(xml, 'string((/extract/stream//font[@face="Courier Prime"]/@face)[1])')
+   assert(face is 'Courier Prime', 'Font face must round-trip as "Courier Prime", got: ' .. tostring(face))
+
+   size = xpath(xml, 'string((/extract/stream//font[@face="Courier Prime"]/@size)[1])')
+   assert(size is '20', 'Font size must round-trip as "20", got: ' .. tostring(size))
+end
+
+@Test function FontFillColour()
+   xml_str = feedAndRead(
+      '<body/><page><p><font fill="rgb(200,100,50)">Coloured text</font></p></page>')
+   xml = parseXML(xml_str)
+
+   -- The second font byte-code carries the explicit fill (the first is the document default)
+   fill = xpath(xml, 'string((/extract/stream//font[@fill="rgb(200,100,50)"]/@fill)[1])')
+   assert(fill:find('200'), 'Font fill colour must preserve red channel, got: ' .. tostring(fill))
+   assert(fill:find('100'), 'Font fill colour must preserve green channel, got: ' .. tostring(fill))
+   assert(fill:find('50'),  'Font fill colour must preserve blue channel, got: ' .. tostring(fill))
+end
+
+@Test function FontSizeUnits()
+   xml_str = feedAndRead('<body/><page><p><font size="14pt">Points</font></p></page>')
+   xml = parseXML(xml_str)
+
+   size = xpath(xml, 'string((/extract/stream//font/@size)[1])')
+   assert(size != '', 'Font size value must be preserved')
+
+   -- Check pixel-size was resolved (indicates the pt unit was processed)
+   px = xpath(xml, 'string((/extract/stream//font/@pixel-size)[1])')
+   assert(px != '' and px != '0', 'Font pixel-size must be resolved from pt input, got: ' .. tostring(px))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Hyperlinks
+
+@Test function HyperlinkRef()
+   xml_str = feedAndRead(
+      '<body/><page><p><a href="tables.rpl">Click here</a></p></page>')
+   print(xml_str)
+   xml = parseXML(xml_str)
+
+   link_count = xpathNum(xml, 'count(/extract/stream//link)')
+   assert(link_count > 0, 'Hyperlink must produce a <link> byte-code')
+
+   ref = xpath(xml, 'string((/extract/stream//link/@ref)[1])')
+   assert(ref is 'tables.rpl', 'Link ref must be "tables.rpl", got: ' .. tostring(ref))
+
+   link_type = xpath(xml, 'string((/extract/stream//link/@type)[1])')
+   assert(link_type is 'href', 'Link type must be "href", got: ' .. tostring(link_type))
+
+   -- link-end must close it
+   link_end_count = xpathNum(xml, 'count(/extract/stream//link-end)')
+   assert(link_end_count > 0, 'Hyperlink must produce a closing <link-end> byte-code')
+
+   -- The linked text must appear between link and link-end
+   text = xpath(xml, 'string((/extract/stream//text)[1])')
+   assert(text:find('Click here'), 'Linked text must survive round-trip')
+end
+
+@Test function HyperlinkHintAndFill()
+   xml_str = feedAndRead(
+      '<body/><page><p><a href="test.rpl" hint="Tooltip text" fill="rgb(200,100,200)">Styled link</a></p></page>')
+   xml = parseXML(xml_str)
+
+   hint = xpath(xml, 'string((/extract/stream//link/@hint)[1])')
+   assert(hint is 'Tooltip text', 'Link hint must round-trip, got: ' .. tostring(hint))
+
+   fill = xpath(xml, 'string((/extract/stream//link/@fill)[1])')
+   assert(fill:find('200'), 'Link fill colour must survive round-trip, got: ' .. tostring(fill))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Paragraph attributes
+
+@Test function ParagraphAlignment()
+   xml_str = feedAndRead(
+      '<body/><page>'
+      .. '<p align="left">Left</p>'
+      .. '<p align="center">Centre</p>'
+      .. '<p align="right">Right</p>'
+      .. '</page>')
+   print(xml_str)
+   xml = parseXML(xml_str)
+
+   left = xpathNum(xml, 'count(/extract/stream//p[@align="left"])')
+   centre = xpathNum(xml, 'count(/extract/stream//p[@align="center"])')
+   right = xpathNum(xml, 'count(/extract/stream//p[@align="right"])')
+
+   -- At least the explicitly set centre and right must survive (left may be the default and omitted)
+   assert(centre > 0, 'Centre alignment must round-trip')
+   assert(right > 0,  'Right alignment must round-trip')
+end
+
+@Test function ParagraphVerticalAlignment()
+   xml_str = feedAndRead(
+      '<body/><page><p v-align="middle">Vertically centred</p><p v-align="bottom">Bottom aligned</p></page>')
+   xml = parseXML(xml_str)
+
+   middle = xpathNum(xml, 'count(/extract/stream//p[@v-align="middle"])')
+   bottom = xpathNum(xml, 'count(/extract/stream//p[@v-align="bottom"])')
+
+   assert(middle > 0, 'v-align="middle" must round-trip')
+   assert(bottom > 0, 'v-align="bottom" must round-trip')
+end
+
+@Test function ParagraphLineHeight()
+   xml_str = feedAndRead(
+      '<body/><page><p line-height="24px">Fixed line height</p><p line-height="150%">Proportional</p></page>')
+   xml = parseXML(xml_str)
+
+   -- Fixed px
+   lh_px = xpath(xml, 'string((/extract/stream//p[@line-height="24"]/@line-height-unit)[1])')
+   assert(lh_px is 'px', 'Line-height 24px unit must be "px", got: ' .. tostring(lh_px))
+
+   -- Percentage values are stored as ratios (150% -> 1.5)
+   lh_pct = xpath(xml, 'string((/extract/stream//p[@line-height="1.5"]/@line-height-unit)[1])')
+   assert(lh_pct is '%', 'Line-height 150% unit must be "%", got: ' .. tostring(lh_pct))
+end
+
+@Test function ParagraphLeading()
+   xml_str = feedAndRead('<body/><page><p leading="50%">Half leading</p></page>')
+   xml = parseXML(xml_str)
+
+   -- Percentage values are stored as ratios (50% -> 0.5)
+   val = xpath(xml, 'string((/extract/stream//p/@leading)[1])')
+   assert(val is '0.5', 'Leading value must be "0.5" (50% as ratio), got: ' .. tostring(val))
+
+   unit = xpath(xml, 'string((/extract/stream//p/@leading-unit)[1])')
+   assert(unit is '%', 'Leading unit must be "%", got: ' .. tostring(unit))
+end
+
+@Test function ParagraphIndent()
+   xml_str = feedAndRead('<body/><page><p indent="30px">Indented paragraph</p></page>')
+   xml = parseXML(xml_str)
+
+   val = xpath(xml, 'string((/extract/stream//p/@indent)[1])')
+   assert(val is '30', 'Indent value must be "30", got: ' .. tostring(val))
+
+   unit = xpath(xml, 'string((/extract/stream//p/@indent-unit)[1])')
+   assert(unit is 'px', 'Indent unit must be "px", got: ' .. tostring(unit))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Tables: structure and attributes
+
+@Test function TableStructure()
+   xml_str = feedAndRead(
+      '<body/><page><table><row><cell>A</cell><cell>B</cell></row>'
+      .. '<row><cell>C</cell><cell>D</cell></row></table></page>')
+   print(xml_str)
+   xml = parseXML(xml_str)
+
+   tbl = xpathNum(xml, 'count(/extract/stream//table)')
+   assert(tbl is 1, 'One table expected, got ' .. tbl)
+
+   cols = xpath(xml, 'string((/extract/stream//table/@columns)[1])')
+   assert(cols is '2', 'Table must have 2 columns, got: ' .. tostring(cols))
+
+   rows = xpathNum(xml, 'count(/extract/stream//row)')
+   assert(rows is 2, 'Two rows expected, got ' .. rows)
+
+   cells = xpathNum(xml, 'count(/extract/stream//cell)')
+   assert(cells is 4, 'Four cells expected, got ' .. cells)
+
+   -- Verify cell text content survives
+   t1 = xpath(xml, 'string((/extract/stream//cell//text)[1])')
+   t2 = xpath(xml, 'string((/extract/stream//cell//text)[2])')
+   t3 = xpath(xml, 'string((/extract/stream//cell//text)[3])')
+   t4 = xpath(xml, 'string((/extract/stream//cell//text)[4])')
+   assert(t1:find('A'), 'Cell 1 text "A" must survive, got: ' .. tostring(t1))
+   assert(t2:find('B'), 'Cell 2 text "B" must survive, got: ' .. tostring(t2))
+   assert(t3:find('C'), 'Cell 3 text "C" must survive, got: ' .. tostring(t3))
+   assert(t4:find('D'), 'Cell 4 text "D" must survive, got: ' .. tostring(t4))
+end
+
+@Test function TableStyling()
+   xml_str = feedAndRead(
+      '<body/><page><table fill="rgb(255,255,255)" stroke="rgb(128,0,0)" stroke-width="2" '
+      .. 'width="400" align="center" cell-padding="8" spacing="4">'
+      .. '<row fill="rgb(240,240,240)"><cell border="all" fill="rgb(200,200,255)">Styled</cell></row></table></page>')
+   print(xml_str)
+   xml = parseXML(xml_str)
+
+   -- Table-level attributes
+   tbl_fill = xpath(xml, 'string((/extract/stream//table/@fill)[1])')
+   assert(tbl_fill:find('255'), 'Table fill must survive, got: ' .. tostring(tbl_fill))
+
+   tbl_stroke = xpath(xml, 'string((/extract/stream//table/@stroke)[1])')
+   assert(tbl_stroke:find('128'), 'Table stroke must survive, got: ' .. tostring(tbl_stroke))
+
+   tbl_align = xpath(xml, 'string((/extract/stream//table/@align)[1])')
+   assert(tbl_align is 'center', 'Table align must be "center", got: ' .. tostring(tbl_align))
+
+   -- Row fill
+   row_fill = xpath(xml, 'string((/extract/stream//row/@fill)[1])')
+   assert(row_fill:find('240'), 'Row fill must survive, got: ' .. tostring(row_fill))
+
+   -- Cell attributes
+   cell_border = xpath(xml, 'string((/extract/stream//cell/@border)[1])')
+   assert(cell_border != '', 'Cell border attribute must survive round-trip')
+
+   cell_fill = xpath(xml, 'string((/extract/stream//cell/@fill)[1])')
+   assert(cell_fill:find('200'), 'Cell fill must survive, got: ' .. tostring(cell_fill))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Lists
+
+@Test function OrderedList()
+   xml_str = feedAndRead(
+      '<body/><page><list type="ordered" fill="rgb(0,0,190)" v-spacing="1.5">'
+      .. '<li>First item</li><li>Second item</li><li>Third item</li></list></page>')
+   print(xml_str)
+   xml = parseXML(xml_str)
+
+   list_count = xpathNum(xml, 'count(/extract/stream//list)')
+   assert(list_count > 0, 'Must contain a <list> element')
+
+   list_type = xpath(xml, 'string((/extract/stream//list/@type)[1])')
+   assert(list_type is 'ordered', 'List type must be "ordered", got: ' .. tostring(list_type))
+
+   list_fill = xpath(xml, 'string((/extract/stream//list/@fill)[1])')
+   assert(list_fill:find('190'), 'List fill colour must survive, got: ' .. tostring(list_fill))
+
+   -- List items produce paragraphs with list-item=true
+   li_count = xpathNum(xml, 'count(/extract/stream//p[@list-item="true"])')
+   assert(li_count >= 3, 'Three list items expected, got ' .. li_count)
+end
+
+@Test function BulletList()
+   xml_str = feedAndRead(
+      '<body/><page><list type="bullet"><li>Alpha</li><li>Beta</li></list></page>')
+   xml = parseXML(xml_str)
+
+   list_type = xpath(xml, 'string((/extract/stream//list/@type)[1])')
+   assert(list_type is 'bullet', 'List type must be "bullet", got: ' .. tostring(list_type))
+
+   -- Verify list-end closure
+   list_end = xpathNum(xml, 'count(/extract/stream//list-end)')
+   assert(list_end > 0, 'List must produce a closing <list-end> byte-code')
+end
+
+@Test function CustomList()
+   xml_str = feedAndRead(
+      '<body/><page><list type="custom" fill="rgb(0,128,0)">'
+      .. '<li value="Apple">Item A</li><li value="Banana">Item B</li></list></page>')
+   xml = parseXML(xml_str)
+
+   list_type = xpath(xml, 'string((/extract/stream//list/@type)[1])')
+   assert(list_type is 'custom', 'List type must be "custom", got: ' .. tostring(list_type))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Widgets: input, checkbox, button, combobox
+
+@Test function InputWidget()
+   xml_str = feedAndRead(
+      '<body/><page><p><input name="field1" width="200" value="Hello" label="My Label"/></p></page>')
+   print(xml_str)
+   xml = parseXML(xml_str)
+
+   input_count = xpathNum(xml, 'count(/extract/stream//input)')
+   assert(input_count > 0, 'Must contain an <input> element')
+
+   val = xpath(xml, 'string((/extract/stream//input/@value)[1])')
+   assert(val is 'Hello', 'Input value must be "Hello", got: ' .. tostring(val))
+
+   name = xpath(xml, 'string((/extract/stream//input/@name)[1])')
+   assert(name is 'field1', 'Input name must be "field1", got: ' .. tostring(name))
+
+   label = xpath(xml, 'string((/extract/stream//input/@label)[1])')
+   assert(label is 'My Label', 'Input label must be "My Label", got: ' .. tostring(label))
+end
+
+@Test function CheckboxWidget()
+   xml_str = feedAndRead(
+      '<body/><page><p><checkbox name="opt1" label="Enable feature" value="true"/></p></page>')
+   xml = parseXML(xml_str)
+
+   cb_count = xpathNum(xml, 'count(/extract/stream//checkbox)')
+   assert(cb_count > 0, 'Must contain a <checkbox> element')
+
+   name = xpath(xml, 'string((/extract/stream//checkbox/@name)[1])')
+   assert(name is 'opt1', 'Checkbox name must be "opt1", got: ' .. tostring(name))
+
+   label = xpath(xml, 'string((/extract/stream//checkbox/@label)[1])')
+   assert(label is 'Enable feature', 'Checkbox label must survive, got: ' .. tostring(label))
+end
+
+@Test function ButtonWidget()
+   xml_str = feedAndRead('<body/><page><p><button>Click me</button></p></page>')
+   print(xml_str)
+   xml = parseXML(xml_str)
+
+   btn_count = xpathNum(xml, 'count(/extract/stream//button)')
+   assert(btn_count > 0, 'Must contain a <button> element')
+
+   -- Button text appears in the nested stream
+   btn_text = xpath(xml, 'string((/extract/stream//button//text)[1])')
+   assert(btn_text:find('Click me'), 'Button text must survive, got: ' .. tostring(btn_text))
+end
+
+@Test function ComboboxWidget()
+   xml_str = feedAndRead(
+      '<body/><page><p><combobox name="cars" width="200" value="saab">'
+      .. '<option value="volvo">Volvo</option><option value="saab">Saab</option>'
+      .. '</combobox></p></page>')
+   xml = parseXML(xml_str)
+
+   cb_count = xpathNum(xml, 'count(/extract/stream//combobox)')
+   assert(cb_count > 0, 'Must contain a <combobox> element')
+
+   val = xpath(xml, 'string((/extract/stream//combobox/@value)[1])')
+   assert(val is 'saab', 'Combobox value must be "saab", got: ' .. tostring(val))
+
+   name = xpath(xml, 'string((/extract/stream//combobox/@name)[1])')
+   assert(name is 'cars', 'Combobox name must be "cars", got: ' .. tostring(name))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Image widget
+
+@Test function ImageWidget()
+   xml_str = feedAndRead(
+      '<body/><page><p><image src="url(#icon)" width="32" height="32" align="center" v-align="top"/></p></page>')
+   print(xml_str)
+   xml = parseXML(xml_str)
+
+   img_count = xpathNum(xml, 'count(/extract/stream//image)')
+   assert(img_count > 0, 'Must contain an <image> element')
+
+   img_align = xpath(xml, 'string((/extract/stream//image/@align)[1])')
+   assert(img_align is 'center', 'Image align must be "center", got: ' .. tostring(img_align))
+
+   img_valign = xpath(xml, 'string((/extract/stream//image/@v-align)[1])')
+   assert(img_valign is 'top', 'Image v-align must be "top", got: ' .. tostring(img_valign))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Body-level attributes inherited into paragraphs
+
+@Test function BodyFontInheritance()
+   xml_str = feedAndRead(
+      '<body face="Courier Prime" font-size="16pt" font-style="Italic"/><page><p>Inherited styling</p></page>')
+   print(xml_str)
+   xml = parseXML(xml_str)
+
+   -- The paragraph should carry the inherited style from the body
+   style = xpath(xml, 'string((/extract/stream//p/@style)[1])')
+   assert(style is 'Italic', 'Paragraph must inherit body font-style="Italic", got: ' .. tostring(style))
+end
+
+@Test function BodyFillInheritance()
+   xml_str = feedAndRead(
+      '<body font-fill="rgb(128,0,0)"/><page><p>Red text</p></page>')
+   xml = parseXML(xml_str)
+
+   -- The font fill should be inherited.  Check that the font cache reflects it.
+   cached_fonts = xpathNum(xml, 'count(/extract/fonts/font)')
+   assert(cached_fonts > 0, 'Font cache must contain at least one entry')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Nested structures
+
+@Test function TableInParagraph()
+   xml_str = feedAndRead(
+      '<body/><page><p>Before <table><row><cell>Inside</cell></row></table> After</p></page>')
+   print(xml_str)
+   xml = parseXML(xml_str)
+
+   -- Both text runs and the table must appear
+   tbl_count = xpathNum(xml, 'count(/extract/stream//table)')
+   assert(tbl_count is 1, 'Inline table must survive round-trip')
+
+   text_count = xpathNum(xml, 'count(/extract/stream//text)')
+   assert(text_count >= 2, 'Text before and after the table must survive, got ' .. text_count)
+end
+
+@Test function NestedListInListItem()
+   xml_str = feedAndRead(
+      '<body/><page><list type="ordered">'
+      .. '<li>Parent item<li>Nested item one</li><li>Nested item two</li></li>'
+      .. '<li>Second parent</li></list></page>')
+   xml = parseXML(xml_str)
+
+   -- Nested lists are flattened into the stream; all list items must appear as paragraphs
+   li_count = xpathNum(xml, 'count(/extract/stream//p[@list-item="true"])')
+   assert(li_count >= 4, 'Four list item paragraphs expected (2 parent + 2 nested), got ' .. li_count)
+end
+
+@Test function ButtonWithNestedContent()
+   xml_str = feedAndRead(
+      '<body/><page><p><button width="300" height="50">'
+      .. '<font size="20">Large <i>styled</i> button</font></button></p></page>')
+   xml = parseXML(xml_str)
+
+   btn_count = xpathNum(xml, 'count(/extract/stream//button)')
+   assert(btn_count > 0, 'Button must be present')
+
+   -- Verify nested font change within the button's sub-stream
+   btn_text_count = xpathNum(xml, 'count(/extract/stream//button//text)')
+   assert(btn_text_count >= 2, 'Button sub-stream must contain styled text runs, got ' .. btn_text_count)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- XML special characters in content and attributes
+
+@Test function SpecialCharsInText()
+   xml_str = feedAndRead(
+      '<body/><page><p>Maths: 5 &lt; 10 &amp; 3 &gt; 2</p></page>')
+   xml = parseXML(xml_str)
+
+   content = xpath(xml, 'string((/extract/stream//text)[1])')
+   assert(content:find('<'),  'Less-than must round-trip through XML escaping')
+   assert(content:find('>'),  'Greater-than must round-trip through XML escaping')
+   assert(content:find('&'),  'Ampersand must round-trip through XML escaping')
+end
+
+@Test function SpecialCharsInAttributes()
+   xml_str = feedAndRead(
+      '<body/><page><p><a href="test.rpl?a=1&amp;b=2" hint="&quot;quoted&quot; &amp; special">Link</a></p></page>')
+   xml = parseXML(xml_str)
+
+   ref = xpath(xml, 'string((/extract/stream//link/@ref)[1])')
+   assert(ref:find('&'), 'Ampersand in href must round-trip, got: ' .. tostring(ref))
+
+   hint = xpath(xml, 'string((/extract/stream//link/@hint)[1])')
+   assert(hint:find('"'), 'Quotes in hint must round-trip, got: ' .. tostring(hint))
+   assert(hint:find('&'), 'Ampersand in hint must round-trip, got: ' .. tostring(hint))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Div element styling
+
+@Test function DivStyling()
+   xml_str = feedAndRead(
+      '<body/><page><div fill="rgb(0,128,255)" font-size="18" style="Bold" align="center">Styled div</div></page>')
+   xml = parseXML(xml_str)
+
+   -- Div styling is emitted through font byte-codes
+   styled_fonts = xpathNum(xml,
+      'count(/extract/stream//font[@fill and @style="Bold" and @size="18" and @align="center"])')
+   assert(styled_fonts > 0, 'Div attributes must emit through a font byte-code')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Advance element
+
+@Test function AdvanceElement()
+   xml_str = feedAndRead('<body/><page><p><advance x="50px" y="20px"/>Advanced content</p></page>')
+   print(xml_str)
+   xml = parseXML(xml_str)
+
+   adv_count = xpathNum(xml, 'count(/extract/stream//advance)')
+   assert(adv_count > 0, 'Must contain an <advance> element')
+
+   x_val = xpath(xml, 'string((/extract/stream//advance/@x)[1])')
+   assert(x_val is '50', 'Advance x must be "50", got: ' .. tostring(x_val))
+
+   x_unit = xpath(xml, 'string((/extract/stream//advance/@x-unit)[1])')
+   assert(x_unit is 'px', 'Advance x-unit must be "px", got: ' .. tostring(x_unit))
+
+   y_val = xpath(xml, 'string((/extract/stream//advance/@y)[1])')
+   assert(y_val is '20', 'Advance y must be "20", got: ' .. tostring(y_val))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Index (show/hide) elements
+
+@Test function IndexElement()
+   xml_str = feedAndRead(
+      '<body/><page><index name="section1">Hidden content</index><p>Visible content</p></page>')
+   print(xml_str)
+   xml = parseXML(xml_str)
+
+   idx_count = xpathNum(xml, 'count(/extract/stream//index)')
+   assert(idx_count > 0, 'Must contain an <index> element')
+
+   idx_end = xpathNum(xml, 'count(/extract/stream//index-end)')
+   assert(idx_end > 0, 'Index must have a closing <index-end>')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Structure completeness: every open element has a matching close
+
+@Test function MatchedOpenClose()
+   xml_str = feedAndRead(
+      '<body/><page>'
+      .. '<p>Text with <b>bold</b> and <a href="test.rpl">a link</a></p>'
+      .. '<list type="bullet"><li>Item</li></list>'
+      .. '<table><row><cell>Data</cell></row></table>'
+      .. '</page>')
+   xml = parseXML(xml_str)
+
+   -- Every open marker must have a matching close
+   p_open = xpathNum(xml, 'count(/extract/stream//p)')
+   p_close = xpathNum(xml, 'count(/extract/stream//p-end)')
+   assert(p_open is p_close, 'Paragraph open/close count must match: ' .. p_open .. ' vs ' .. p_close)
+
+   font_open = xpathNum(xml, 'count(/extract/stream//font)')
+   font_close = xpathNum(xml, 'count(/extract/stream//font-end)')
+   assert(font_open is font_close, 'Font open/close count must match: ' .. font_open .. ' vs ' .. font_close)
+
+   link_open = xpathNum(xml, 'count(/extract/stream//link)')
+   link_close = xpathNum(xml, 'count(/extract/stream//link-end)')
+   assert(link_open is link_close, 'Link open/close count must match: ' .. link_open .. ' vs ' .. link_close)
+
+   list_open = xpathNum(xml, 'count(/extract/stream//list)')
+   list_close = xpathNum(xml, 'count(/extract/stream//list-end)')
+   assert(list_open is list_close, 'List open/close count must match: ' .. list_open .. ' vs ' .. list_close)
+
+   tbl_open = xpathNum(xml, 'count(/extract/stream//table)')
+   tbl_close = xpathNum(xml, 'count(/extract/stream//table-end)')
+   assert(tbl_open is tbl_close, 'Table open/close count must match: ' .. tbl_open .. ' vs ' .. tbl_close)
+
+   row_open = xpathNum(xml, 'count(/extract/stream//row)')
+   row_close = xpathNum(xml, 'count(/extract/stream//row-end)')
+   assert(row_open is row_close, 'Row open/close count must match: ' .. row_open .. ' vs ' .. row_close)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- File-based round-trip: load .rpl files and verify key content survives
+
+@Test function FileBasedParagraphs()
+   xml = loadAndRead('paragraphs.rpl')
+
+   p_count = xpathNum(xml, 'count(/extract/stream//p)')
+   text_count = xpathNum(xml, 'count(/extract/stream//text)')
+   assert(p_count > 0, 'File-loaded paragraphs.rpl must produce paragraph byte-codes')
+   assert(text_count > 0, 'File-loaded paragraphs.rpl must produce text byte-codes')
+
+   -- Verify well-formedness: output parses as valid XML
+   assert(xpath(xml, 'name(/extract/*[1])') is 'stream', 'XML must start with <stream>')
+end
+
+@Test function FileBasedLists()
+   xml = loadAndRead('lists.rpl')
+
+   -- lists.rpl defines ordered, custom, and bullet lists
+   ordered = xpathNum(xml, 'count(/extract/stream//list[@type="ordered"])')
+   bullet = xpathNum(xml, 'count(/extract/stream//list[@type="bullet"])')
+   custom = xpathNum(xml, 'count(/extract/stream//list[@type="custom"])')
+
+   assert(ordered > 0, 'lists.rpl must contain an ordered list')
+   assert(bullet > 0,  'lists.rpl must contain a bullet list')
+   assert(custom > 0,  'lists.rpl must contain a custom list')
+end
+
+@Test function FileBasedLinks()
+   xml = loadAndRead('links.rpl')
+
+   link_count = xpathNum(xml, 'count(/extract/stream//link)')
+   assert(link_count >= 5, 'links.rpl must contain multiple hyperlinks, got ' .. link_count)
+
+   -- Verify specific link targets from the fixture
+   tables_ref = xpathNum(xml, 'count(/extract/stream//link[@ref="tables.rpl"])')
+   assert(tables_ref > 0, 'links.rpl must contain a link to tables.rpl')
+
+   fonts_ref = xpathNum(xml, 'count(/extract/stream//link[@ref="fonts.rpl"])')
+   assert(fonts_ref > 0, 'links.rpl must contain a link to fonts.rpl')
+end
+
+@Test function FileBasedTables()
+   xml = loadAndRead('tables.rpl')
+
+   tbl_count = xpathNum(xml, 'count(/extract/stream//table)')
+   assert(tbl_count >= 3, 'tables.rpl must contain multiple tables, got ' .. tbl_count)
+
+   cell_count = xpathNum(xml, 'count(/extract/stream//cell)')
+   assert(cell_count > 0, 'tables.rpl must contain cells')
+
+   -- Verify a specific styled element from the fixture
+   centered = xpathNum(xml, 'count(/extract/stream//table[@align="center"])')
+   assert(centered > 0, 'tables.rpl must have at least one centred table')
+end
+
+@Test function FileBasedFonts()
+   xml = loadAndRead('fonts.rpl')
+
+   -- fonts.rpl applies bold, italic, and face/size changes
+   bold = xpathNum(xml, 'count(/extract/stream//font[@style="Bold"])')
+   assert(bold > 0, 'fonts.rpl must contain bold font byte-codes')
+
+   italic = xpathNum(xml, 'count(/extract/stream//font[@style="Italic"])')
+   assert(italic > 0, 'fonts.rpl must contain italic font byte-codes')
+
+   -- Verify the Courier Prime face from the fixture
+   courier = xpathNum(xml, 'count(/extract/stream//font[@face="Courier Prime"])')
+   assert(courier > 0, 'fonts.rpl must preserve the Courier Prime font face')
+end

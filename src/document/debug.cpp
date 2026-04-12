@@ -95,7 +95,7 @@ static void print_segments(extDocument *Self)
          else if (code IS SCODE::PARAGRAPH_END) {
             out << "[E:PE]\n";
          }
-         else out << "[E:" <<  strCodes[LONG(code)] << "]";
+         else out << "[E:" <<  strCodes[int(code)] << "]";
          i.next_code();
       }
 

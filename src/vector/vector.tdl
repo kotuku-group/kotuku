@@ -370,10 +370,10 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
      "SVG-TRANSFORM")
 
   struct("FontMetrics", { comment="Font metrics, measured in pixels relative to the display" }, [[
-    int Height       # Capitalised font height
-    int LineSpacing  # Vertical advance from one line to the next
-    int Ascent       # Height from the baseline to the top of the font, including accents.
-    int Descent      # Height from the baseline to the bottom of the font
+    int Height       # Full font height equivalent to `Ascent (cap-height) + Descent (gutter)`.  Does NOT include accents.
+    int LineSpacing  # Vertical advance from one line to the next.  Includes coverage for accents and additional whitespace.
+    int Ascent       # Height from the baseline to the top (cap-height) of the font.  Does NOT include accents.
+    int Descent      # Height from the baseline to the bottom of the font (gutter)
   ]])
 
   // Use SET_VECTOR_COLOUR() to configure the RGB values in VectorColour

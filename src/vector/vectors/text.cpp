@@ -864,6 +864,10 @@ Standard unit measurements such as `px`, `em` and `pt` are supported by appendin
 
 When retrieving the font size, the resulting string must be freed by the client when no longer in use.
 
+NOTE: The FontSize is derived from information defined by the font author.  Due to opinionated views on how font
+height is determined, the value is not transferrable between fonts.  The primary difference is that some fonts will
+include the space for accents in the FontSize value, while others will not.
+
 *********************************************************************************************************************/
 
 static ERR TEXT_GET_FontSize(extVectorText *Self, CSTRING *Value)

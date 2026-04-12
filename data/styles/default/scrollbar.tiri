@@ -18,13 +18,13 @@ return {
       State.slider = { viewport = Viewport }
 
       State.slider.bkRect = Viewport.new('VectorRectangle', {
-         width = '100%', height = '100%', fill = button_face, opacity = 0.5
+         name='SliderRect', width = '100%', height = '100%', fill = button_face, opacity = 0.5
       })
 
       -- Decoration
 
       State.slider.decoration = Viewport.new('VectorViewport', {
-         aspectRatio = 'XMid|YMid|Meet', x = 0, y = 0, viewX = 0, viewY = 0,
+         name='SliderDec', aspectRatio = 'XMid|YMid|Meet', x = 0, y = 0, viewX = 0, viewY = 0,
       })
 
       dec = State.slider.decoration

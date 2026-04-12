@@ -192,6 +192,7 @@
 <p>The default unit value of FontSize is in pixels at a resolution of 72 DPI.  This means that if the display is configured to a more common 96 DPI for instance, the actual pixel size on the display will be <code>FontSize * 72 / 96</code>. Point sizes are also measured at a constant ratio of <code>1/72</code> irrespective of display settings, and this may need to factor into precise size calculations.</p>
 <p>Standard unit measurements such as <code>px</code>, <code>em</code> and <code>pt</code> are supported by appending them after the numeric value. 1em is equivalent to the 'default font size', which is typically 16px unless modified.</p>
 <p>When retrieving the font size, the resulting string must be freed by the client when no longer in use.</p>
+<p>NOTE: The FontSize is derived from information defined by the font author.  Due to opinionated views on how font height is determined, the value is not transferrable between fonts.  The primary difference is that some fonts will include the space for accents in the FontSize value, while others will not.</p>
       </description>
     </field>
 

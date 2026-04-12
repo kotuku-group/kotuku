@@ -300,23 +300,29 @@
 
     <method>
       <name>ReadContent</name>
-      <comment>Returns selected content from the document, either as plain text or original byte code.</comment>
+      <comment>Returns selected content from the document, either as plain text, original byte code or XML.</comment>
       <prototype>ERR doc::ReadContent(OBJECTPTR Object, DATA Format, INT Start, INT End, STRING * Result)</prototype>
       <input>
-        <param type="DATA" name="Format" lookup="DATA">Set to <code>TEXT</code> to receive plain-text, or <code>RAW</code> to receive the original byte-code.</param>
+        <param type="DATA" name="Format" lookup="DATA">Set to <code>TEXT</code> to receive plain-text, <code>RAW</code> to receive the original byte-code, or <code>XML</code> to receive a textual XML serialisation of the stream.</param>
         <param type="INT" name="Start">An index in the document stream from which data will be extracted.</param>
         <param type="INT" name="End">An index in the document stream at which extraction will stop.</param>
         <param type="STRING *" name="Result">The data is returned in this parameter as an allocated string.</param>
       </input>
       <description>
-<p>The ReadContent() method extracts content from the document stream, covering a specific area.  It can return the data as a RIPL binary stream, or translate the content into plain-text (control codes are removed).</p>
-<p>If data is extracted in its original format, no post-processing is performed to fix validity errors that may arise from an invalid data range.  For instance, if an opening paragraph code is not closed with a matching paragraph end point, this will remain the case in the resulting data.</p>
+<p>The ReadContent() method extracts content from the document stream, covering a specific area.  It can return the data as a RIPL binary stream, translated into plain-text (control codes are removed), or serialised as an XML document describing the byte stream.</p>
+<p>The XML format is a linear, non-nested serialisation of the byte stream intended for inspection, diffing and tooling. Each byte code becomes one XML element wrapped in a <code>
+<extract/> root, followed by the requested content in a <code>
+<stream/> element, and text content appears inside <code>
+<text/> elements with the usual XML escaping applied.  Start/end markers such as paragraphs and font runs are emitted as sibling self-closing elements rather than nested, reflecting the underlying linear storage model.  A trailing <code>
+<fonts/> section lists information for the shared cached fonts.</code>
+<p>No post-processing is performed to fix validity errors that may arise from an invalid data range.  For instance, if an opening paragraph code is not closed with a matching paragraph end point, this will remain the case in the resulting data.</p>
+</code></code></code></p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="Args">Invalid arguments passed to function.</error>
         <error code="NoData">Operation successful, but no data was present for extraction.</error>
-        <error code="OutOfRange">The Start and/or End indexes are not within the stream.</error>
+        <error code="OutOfRange">The Start index is not within the stream.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>

@@ -326,7 +326,7 @@ ERR FreeResource(MEMORYID MemoryID)
                   // Another thread may have mutated or removed this block while the memory mutex was unlocked.
                   it = glPrivateMemory.find(MemoryID);
                   if ((it IS glPrivateMemory.end()) or (!it->second.Address)) {
-                     log.traceWarning("Memory ID #%d does not exist.", MemoryID);
+                     log.trace("Memory ID #%d does not exist.", MemoryID);
                      return ERR::MemoryDoesNotExist;
                   }
 
@@ -386,7 +386,7 @@ ERR FreeResource(MEMORYID MemoryID)
 
          return error;
       }
-      log.traceWarning("Memory ID #%d does not exist.", MemoryID);
+      log.trace("Memory ID #%d does not exist.", MemoryID);
       return ERR::MemoryDoesNotExist;
    }
    else return log.warning(ERR::SystemLocked);

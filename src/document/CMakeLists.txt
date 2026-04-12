@@ -21,6 +21,15 @@ target_precompile_headers(${MOD} PRIVATE
    <kotuku/modules/document.h>
    <kotuku/modules/font.h>
    <kotuku/modules/display.h>
-   <kotuku/modules/svg.h>)
+   <kotuku/modules/svg.h>
+   <array>
+   <variant>
+   <stack>
+   <cmath>
+   <mutex>
+   <charconv>)
 
-flute_test (doc_output "tests/test_doc.tiri")
+flute_test (doc_layout "tests/test_layout.tiri")
+flute_test (doc_stream "tests/test_stream.tiri")
+flute_test (doc_roundtrip "tests/test_roundtrip.tiri")
+

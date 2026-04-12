@@ -137,7 +137,7 @@ end
 
 function selectPrev(View, Filter)
    if not View.sItem then
-      for i=0, #View.items-1 do
+      for i=1, #View.items do
          item = View.items[#View.items - i]
          if (not item.hidden) and Filter(item) then
             simpleSelect(View, item)
@@ -146,7 +146,7 @@ function selectPrev(View, Filter)
       end
    else
       found = false
-      for i=0, #View.items-1 do
+      for i=1, #View.items do
          item = View.items[#View.items - i]
          if item is View.sItem then
             found = true

@@ -94,7 +94,7 @@
 <tr data-bs-toggle="collapse" data-bs-target="#fl-FillColour" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-FillColour"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i>
                            
                           <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">FillColour</th><td class="col-md-1"><span class="text-nowrap">FLOAT []</span></td><td>Defines a solid colour for filling the vector path.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-FillColour" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
-<p>Set the FillColour field to define a solid colour for filling the vector path.  The colour is defined as an array of four 32-bit floating point values between 0 and 1.0.  The array elements consist of Red, Green, Blue and Alpha values in that order.</p>
+<p>Set the FillColour field to define a solid colour for filling the vector path.  The colour is defined as an array of four 32-bit floating point values between 0 and 1.0 if restricted to sRGB colourspace.  The array elements consist of Red, Green, Blue and Alpha values in that order.</p>
 <p>If the Alpha component is set to zero then the FillColour will be ignored by the renderer.</p>
       
 </div></div></td></tr>
@@ -304,7 +304,7 @@ Z: Close Path
 <tr data-bs-toggle="collapse" data-bs-target="#fl-StrokeColour" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-StrokeColour"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i>
                            
                           <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">StrokeColour</th><td class="col-md-1"><span class="text-nowrap">FLOAT []</span></td><td>Defines the colour of the path stroke in RGB float format.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-StrokeColour" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
-<p>This field defines the colour that will be used in stroking a path, and is comprised of floating point RGBA values. The intensity of each component is measured from 0 - 1.0.  Stroking is disabled if the alpha value is 0.</p>
+<p>This field defines the colour that will be used in stroking a path, and is comprised of floating point RGBA values. The intensity of each component is measured from 0 - 1.0 if restricted to sRGB colourspace, but may otherwise exceed these limits.  Stroking is disabled if the alpha value is 0.</p>
 <p>This field is complemented by the <a data-bs-toggle="tooltip" title="Defines the opacity of the path stroke." href="#tf-StrokeOpacity">StrokeOpacity</a> and <a data-bs-toggle="tooltip" title="Defines the stroke of a path using SVG's IRI format." href="#tf-Stroke">Stroke</a> fields.</p>
       
 </div></div></td></tr>

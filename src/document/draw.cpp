@@ -58,13 +58,22 @@ ERR layout::position_widget(widget_mgr &Widget, doc_segment &Segment, objVectorV
          Y = (Segment.area.Height - Widget.full_height()) * 0.5;
       }
       else {
-         // Bottom alignment.  Aligning to the base-line is preferable, but if the widget is tall then we take up the descent space too.
+         // Bottom alignment.  This tries to take an intelligent approach:
+         // * widget height <= font ascent, align the bottom of the widget to the baseline or the gutter (widget preference).
+         // * widget height <= line-height, set Y to 0.
+         // * else align to the bottom of area height.
          auto h = Widget.final_height - Widget.final_pad.bottom;
-         if (h > Segment.area.Height - Segment.descent) {
-            if (Widget.align_to_text) Y = Segment.area.Height - h + Segment.descent;
-            else Y = Segment.area.Height - h;
+         if (h >= Segment.area.Height) { // Widget is larger than segment, align to bottom of area height
+            Y = Segment.area.Height - h;
          }
-         else Y = Segment.area.Height - Segment.descent - h;
+         else if (h > (Segment.area.Height - Segment.descent)) { // Widget is taller than font ascent
+            if (Widget.align_to_text) Y = 0; // Align to baseline not possible, align to top of area instead
+            else Y = Segment.area.Height - h; // Align to bottom of area height
+         }
+         else {
+            if (Widget.align_to_text) Y = (Segment.area.Height - Segment.descent) - h; // Align to text baseline
+            else Y = Segment.area.Height - h; // Align to bottom of area height
+         }
       }
 
       Y += Segment.area.Y;
@@ -117,6 +126,29 @@ ERR layout::position_widget(widget_mgr &Widget, doc_segment &Segment, objVectorV
 // relating to things like the obscuration of graphics elements are considered to be the job of the VectorScene's
 // drawing functionality.
 
+void layout::render_segments(OBJECTID Target, std::vector<doc_segment> &Segments)
+{
+#ifdef GUIDELINES
+   for (unsigned si=0; si < Segments.size(); si++) {
+      if (Segments[si].area.Width <= 0) continue;
+      if (Segments[si].area.Height <= 0) continue;
+
+      auto rect = objVectorRectangle::create::global({
+         fl::Owner(Target),
+         fl::Name(std::string("segment_") + std::to_string(si)),
+         fl::X(Segments[si].area.X),
+         fl::Y(Segments[si].area.Y),
+         fl::Width(Segments[si].area.Width),
+         fl::Height(Segments[si].area.Height),
+         fl::Stroke("rgb(200 255 0)") 
+      });
+      Self->UIObjects.push_back(rect->UID);
+   }
+#endif
+}
+
+//********************************************************************************************************************
+
 ERR layout::gen_scene_init(objVectorViewport *Viewport)
 {
    pf::Log log(__FUNCTION__);
@@ -145,11 +177,13 @@ ERR layout::gen_scene_init(objVectorViewport *Viewport)
    #ifdef GUIDELINES // Make clip regions visible
       for (unsigned i=0; i < m_clips.size(); i++) {
          auto rect = objVectorRectangle::create::global({
-               fl::Owner(Viewport->UID),
-               fl::X(m_clips[i].Clip.left), fl::Y(m_clips[i].Clip.top),
-               fl::Width(m_clips[i].Clip.right - m_clips[i].Clip.left),
-               fl::Height(m_clips[i].Clip.bottom - m_clips[i].Clip.top),
-               fl::Fill("rgb(255,200,200,64)") });
+            fl::Owner(Viewport->UID),
+            fl::X(m_clips[i].left), fl::Y(m_clips[i].top),
+            fl::Width(m_clips[i].right - m_clips[i].left),
+            fl::Height(m_clips[i].bottom - m_clips[i].top),
+            fl::Stroke("rgb(255 200 200)") 
+         });
+         Self->UIObjects.push_back(rect->UID);
       }
    #endif
 
@@ -176,6 +210,9 @@ ERR layout::gen_scene_init(objVectorViewport *Viewport)
 
    return ERR::Okay;
 }
+
+//********************************************************************************************************************
+// Main layout loop. NB: Can be called recursively, e.g. for cells, buttons, and anything acting like a document viewport
 
 void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segment> &Segments)
 {
@@ -263,7 +300,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                };
 
                auto vp = objVectorPath::create::global({
-                  fl::Owner(Viewport->UID), fl::Stroke("rgb(255,0,0,255)"), fl::StrokeWidth(2)
+                  fl::Owner(Viewport->UID), fl::Stroke("rgb(255 0 0 / 1)"), fl::StrokeWidth(2)
                });
 
                vp->setCommand(seq.size(), seq.data(), seq.size() * sizeof(PathCommand));
@@ -316,7 +353,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                   else if (stack_list.top()->type IS bc_list::BULLET) {
                      if (!para.icon.empty()) {
                         const double radius = segment.area.Height * 0.2;
-                        const double cy = y - (font->metrics.Ascent * 0.5);
+                        const double cy = y - (std::ceil(font->metrics.Ascent) * 0.5);
 
                         para.icon->setFields(
                            fl::CenterX(x - para.item_indent.px(*this) + radius),
@@ -367,8 +404,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
 
             case SCODE::TABLE_END: {
                auto &table = stack_table.top();
-               table->path->setCommand(table->seq.size(), table->seq.data(),
-                  table->seq.size() * sizeof(PathCommand));
+               table->path->setCommand(table->seq.size(), table->seq.data(), table->seq.size() * sizeof(PathCommand));
                table->seq.clear();
 
                Viewport = stack_vp.top();
@@ -824,4 +860,6 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
       }
 
    } // for segment
+
+   render_segments(Viewport->UID, Segments);
 }

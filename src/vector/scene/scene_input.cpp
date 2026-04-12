@@ -1,59 +1,61 @@
 // Input event handling for VectorScene
 
 //********************************************************************************************************************
-// Build a list of all child viewports that have a bounding box intersecting with (X,Y).  Transforms
-// are taken into account through use of BX1,BY1,BX2,BY2.  The list is sorted starting from the background to the
-// foreground.
+// Return the front-most viewport at (X,Y) by recursively scanning the scene graph from front to back.
+// Clipping paths are taken into account for non-rectangular viewports.
 
 extVectorViewport * get_viewport_at_xy(extVectorScene *Scene, double X, double Y)
 {
    //pf::Log log(__FUNCTION__);
    //log.branch("Scene: %d", Scene->UID);
 
-   std::vector<std::vector<extVectorViewport *>> viewports;
-
-   auto inspect_xy = [](auto &Self, extVector *Vector, std::vector<std::vector<extVectorViewport *>> &Collection, double X, double Y, int Branch) -> void {
+   auto inspect_xy = [](auto &Self, extVector *Vector, double X, double Y) -> extVectorViewport * {
       //pf::Log log("get_viewport_node");
-      //log.branch("Vector: %d", Vector->UID);
+      //log.branch("Vector: %d %s", Vector->UID, Vector->Name);
 
-      if ((size_t)Branch >= Collection.size()) Collection.resize(Branch+1);
+      // Always scan backwards since the last vector in the branch is top-most in its stack.
+      extVector *last = Vector;
+      while (last->Next) last = (extVector *)last->Next;
+      extVectorViewport *hit_vp = nullptr;
 
-      for (auto node=Vector; node; node=(extVector *)node->Next) {
-         if (not (node->Visibility IS VIS::HIDDEN)) { // Checking for HIDDEN ensures that INHERIT is handled correctly
-            if (node->classID() IS CLASSID::VECTORVIEWPORT) {
-               auto vp = (extVectorViewport *)node;
+      for (auto node=last; node; node=(extVector *)node->Prev) {
+         if (node->Visibility IS VIS::HIDDEN) continue; // Checking for HIDDEN ensures that INHERIT is handled correctly
 
-               if (vp->dirty()) gen_vector_path(vp);
+         if (node->classID() IS CLASSID::VECTORVIEWPORT) {
+            auto vp = (extVectorViewport *)node;
 
-               if (vp->vpBounds.hit_test(X, Y)) {
-                  Collection[Branch].emplace_back(vp);
-               }
-               else continue; // No point in checking children of a non-hitting viewport
+            if (vp->dirty()) gen_vector_path(vp);
+
+            bool hit = vp->vpBounds.hit_test(X, Y);
+            if ((hit) and (vp->vpClip)) {
+               // Hit-test could drop through due to a non-rectangular clipping path
+               agg::rasterizer_scanline_aa<> raster;
+               raster.add_path(vp->BasePath); // NB: Path is already transformed
+               hit = raster.hit_test(X, Y);
             }
 
-            if (node->Child) Self(Self, (extVector *)node->Child, Collection, X, Y, Branch + 1);
+            if (hit) {
+               hit_vp = vp;
+               if (node->Child) {
+                  auto child_hit = Self(Self, (extVector *)node->Child, X, Y);
+                  return child_hit ? child_hit : hit_vp;
+               }
+            }
+         }
+         else if (node->Child) { // For VectorGroup and similar class types
+            auto child_hit = Self(Self, (extVector *)node->Child, X, Y);
+            if (child_hit) return child_hit;
          }
       }
+
+      return hit_vp;
    };
 
-   inspect_xy(inspect_xy, (extVector *)Scene->Viewport, viewports, X, Y, 0);
+   // Recursively inspect the scene graph
 
-   // From front to back, determine the first path that the (X,Y) point resides in.
+   auto hit_vp = inspect_xy(inspect_xy, (extVector *)Scene->Viewport, X, Y);
 
-   for (auto branch = viewports.rbegin(); branch != viewports.rend(); branch++) {
-      for (auto const vp : *branch) {
-         if (vp->vpClip) { // A non-rectangular clipping path applies.
-            agg::rasterizer_scanline_aa<> raster;
-            raster.add_path(vp->BasePath); // NB: Path is already transformed
-            if (raster.hit_test(X, Y)) return vp;
-         }
-         else return vp; // If no complex transforms are present, the hit-test is passed
-      }
-   }
-
-   // No child viewports were hit, revert to main
-
-   return (extVectorViewport *)Scene->Viewport;
+   return hit_vp ? hit_vp : (extVectorViewport *)Scene->Viewport;
 }
 
 //********************************************************************************************************************
@@ -61,7 +63,7 @@ extVectorViewport * get_viewport_at_xy(extVectorScene *Scene, double X, double Y
 
 static void send_input_events(extVector *Vector, InputEvent *Event, bool Propagate = false)
 {
-   if (!Vector->InputSubscriptions) {
+   if (not Vector->InputSubscriptions) {
       if ((Propagate) and (Vector->Parent) and (Vector->Parent->Class->BaseClassID IS CLASSID::VECTOR)) {
          send_input_events((extVector *)Vector->Parent, Event, true);
       }
@@ -92,7 +94,11 @@ static void send_input_events(extVector *Vector, InputEvent *Event, bool Propaga
             }), result);
          }
 
-         if (result IS ERR::Terminate) it = Vector->InputSubscriptions->erase(it);
+         if (result IS ERR::Terminate) {
+            it = Vector->InputSubscriptions->erase(it);
+            update_input_subscription_state(Vector);
+            mark_input_boundary_dirty(Vector);
+         }
          else it++;
       }
       else it++;
@@ -100,7 +106,7 @@ static void send_input_events(extVector *Vector, InputEvent *Event, bool Propaga
 
    // Some events can bubble-up if they are not intercepted by the target vector.
 
-   if ((!consumed) and (Event->Type IS JET::WHEEL)) {
+   if ((not consumed) and (Event->Type IS JET::WHEEL)) {
       if ((Vector->Parent) and (Vector->Parent->Class->BaseClassID IS CLASSID::VECTOR)) {
          send_input_events((extVector *)Vector->Parent, Event, true);
       }
@@ -182,7 +188,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
    pf::Log log(__FUNCTION__);
 
    auto Self = (extVectorScene *)CurrentContext();
-   if (!Self->SurfaceID) return ERR::Okay; // Sanity check
+   if (not Self->SurfaceID) return ERR::Okay; // Sanity check
 
    auto cursor = PTC::NIL;
 
@@ -244,7 +250,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
                }
             }
 
-            if (!Self->ButtonLock) {
+            if (not Self->ButtonLock) {
                // If the button has been released then we need to compute the correct cursor and check if
                // an enter event is required.  This code has been pulled from the JTYPE::MOVEMENT handler
                // and reduced appropriately.
@@ -256,15 +262,15 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
 
                   if ((processed) and (bounds.cursor IS PTC::NIL)) continue;
 
-                  if (!bounds.bounds.hit_test(input->X, input->Y)) continue;
+                  if (not bounds.bounds.hit_test(input->X, input->Y)) continue;
 
                   pf::ScopedObjectLock<extVector> lock(bounds.vector_id);
-                  if (!lock.granted()) continue;
+                  if (not lock.granted()) continue;
                   auto vector = lock.obj;
 
                   if (vector->pointInPath(input->X, input->Y) != ERR::Okay) continue;
 
-                  if ((!Self->ButtonLock) and (vector->Cursor != PTC::NIL)) cursor = vector->Cursor;
+                  if ((not Self->ButtonLock) and (vector->Cursor != PTC::NIL)) cursor = vector->Cursor;
 
                   if (bounds.pass_through) {
                      // For pass-through subscriptions input events are ignored, but cursor changes still apply.
@@ -275,7 +281,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
                      send_enter_event(vector, input, bounds.x, bounds.y);
                   }
 
-                  if (!processed) {
+                  if (not processed) {
                      double tx = input->X, ty = input->Y; // Invert the coordinates to pass localised coords to the vector.
                      auto invert = ~vector->Transform; // Presume that prior path generation has configured the transform.
                      invert.transform(&tx, &ty);
@@ -299,7 +305,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
                // If no vectors received a hit for a movement message, we may need to inform the last active vector that the
                // cursor left its area.
 
-               if ((Self->ActiveVector) and (!processed)) {
+               if ((Self->ActiveVector) and (not processed)) {
                   pf::ScopedObjectLock<extVector> lock(Self->ActiveVector);
                   Self->ActiveVector = 0;
                   if (lock.granted()) send_left_event(lock.obj, input, Self->ActiveVectorX, Self->ActiveVectorY);
@@ -323,11 +329,14 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
             else if ((Self->ButtonLock) and (Self->ButtonLock != bounds.vector_id)) continue;
             else { // No button lock, perform a simple bounds check
                in_bounds = bounds.bounds.hit_test(input->X, input->Y);
-               if (!in_bounds) continue;
+               if (not in_bounds) continue;
             }
 
             pf::ScopedObjectLock<extVector> lock(bounds.vector_id);
-            if (!lock.granted()) continue;
+            if (not lock.granted()) {
+               log.warning("Unable to lock vector #%d", bounds.vector_id);
+               continue;
+            }
             auto vector = lock.obj;
 
             // Additional bounds check to cater for transforms, clip masks etc.
@@ -340,14 +349,14 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
                send_enter_event(vector, input, bounds.x, bounds.y);
             }
 
-            if ((!Self->ButtonLock) and (vector->Cursor != PTC::NIL)) cursor = vector->Cursor;
+            if ((not Self->ButtonLock) and (vector->Cursor != PTC::NIL)) cursor = vector->Cursor;
 
             if (bounds.pass_through) {
                // For pass-through subscriptions, input events are ignored, but cursor changes still apply.
                continue;
             }
 
-            if (!processed) {
+            if (not processed) {
                double tx = input->X, ty = input->Y; // Invert the coordinates to pass localised coords to the vector.
                auto invert = ~vector->Transform; // Presume that prior path generation has configured the transform.
                invert.transform(&tx, &ty);
@@ -385,7 +394,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
          // If no vectors received a hit for a movement message, we may need to inform the last active vector that the
          // cursor left its area.
 
-         if ((Self->ActiveVector) and (!processed)) {
+         if ((Self->ActiveVector) and (not processed)) {
             pf::ScopedObjectLock<extVector> lock(Self->ActiveVector);
             Self->ActiveVector = 0;
             if (lock.granted()) send_left_event(lock.obj, input, Self->ActiveVectorX, Self->ActiveVectorY);
@@ -394,7 +403,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
       else log.warning("Unrecognised movement type %d", int(input->Type));
    }
 
-   if (!Self->ButtonLock) {
+   if (not Self->ButtonLock) {
       if (cursor IS PTC::NIL) cursor = PTC::DEFAULT; // Revert the cursor to the default if nothing is defined
 
       if (Self->Cursor != cursor) {

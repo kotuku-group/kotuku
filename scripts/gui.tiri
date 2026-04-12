@@ -7,10 +7,10 @@ local lVec = mVec
 
 _LIB[_NS] = {
    theme = nil,
-   dpi = 160,
    _counter = 0,
    configureScene = function(Window, Scene)
-      -- A custom configure function can be defined that adds definitions to the window scene, e.g. images and patterns for fills.
+      -- Themes can set a custom configuration function that adds definitions to all window scenes, e.g. images
+      -- and patterns for fills.
    end
 }
 
@@ -90,7 +90,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-gui.mtRGB = { -- RGB8 metatable
+gui.mtRGB = { -- sRGB metatable
    __newindex = function(Self, Key, Value)
       error(f'Table structure is immutable: Cannot set {Key}')
    end,
@@ -329,10 +329,10 @@ gui.pixel = function(val:str):num
    assert(num, f'Invalid graphics unit \'{val}\'')
    return choose alpha from
       'px' -> num
-      'in' -> gui.dpi * num
-      'mm' -> gui.dpi * (num / 25.4) -- 25.4 units per inch
-      'pt' -> gui.dpi * (num / 72) -- 72 units per inch
-      'dp' -> num * (gui.dpi * 0.00625) -- 160dpi relative value
+      'in' -> gui.interface.dpi * num
+      'mm' -> gui.interface.dpi * (num / 25.4) -- 25.4 units per inch
+      'pt' -> gui.interface.dpi * (num / 72) -- 72 units per inch
+      'dp' -> num * (gui.interface.dpi * 0.00625) -- 160dpi relative value
       else -> num
    end
 end
@@ -472,7 +472,7 @@ gui.createIcon = function(Scene:obj, Path:str, Size:num, Theme:any, Name:str):ta
 
    icon.pattern  = Scene.new('VectorPattern', { pageWidth=Size, pageHeight=Size, spreadMethod=VSPREAD_PAD })
    icon.gradient = gui.simpleGradient(icon.pattern.scene, gname, { lGradient.first, lGradient.last }, 0, 0, 0, 1, 'boundingbox', true)
-   if not string.startsWith(Path, 'icons:') then
+   if not Path:startsWith('icons:') then
       Path = f'icons:{Path}.svg'
    end
    icon.svg = obj.new('svg', { target=icon.pattern.viewport, path=Path })
@@ -615,96 +615,112 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-   gui.fonts = {
-     -- Use percentages for scalable sizes, where 100% is equivalent to the value of gui.interface.fontSize
-     default  = { face='Noto Sans,Source Sans Pro', size='100%' },
-     window   = { face='Noto Sans,Source Sans Pro', style='medium', size='100%' }, -- For non-widget text
-     button   = { face='Noto Sans,Source Sans Pro', size='12' }, -- Text inside buttons
-     filesys  = { face='Inconsolata', size='12', style='medium' }, -- Text for files, folders
-     icon     = { face='Noto Sans,Source Sans Pro', size='10', size='100%' }, -- Labeling for icons
-     menu     = { face='Noto Sans,Source Sans Pro', style='medium', size='12' }, -- Menu & dropdown item text
-     page     = { face='Noto Sans,Source Sans Pro', size='12' }, -- Multiple lines of text
-     titlebar = { face='Noto Sans', size='100%' }, -- Window titlebar text
-     small    = { face='Tiny', size='60%' }, -- Recommended text for small sizes
-     large    = { face='Noto Sans,Source Sans Pro', size='130%' }, -- Recommended text for headers
-     input    = { face='Noto Sans,Source Sans Pro', style='medium', size='12' }, -- Text inside input widgets (e.g. combobox)
-     widget   = { face='Noto Sans,Source Sans Pro', style='medium', size='12' }, -- Text inside non-input widgets (e.g. button)
-     label    = { face='Noto Sans,Source Sans Pro', style='medium', size='100%' } -- Text for labels and outside widgets
+gui.sizing = {
+   widget = {
+      width  = 160, -- Default width for common widgets (px)
+      gap    = 6,   -- Recommended gap between widgets (px)
+      margin = 6,   -- Recommended internal margin for widgets (px)
+      strokeWidth = 2
+   },
+   page = {
+      strokeWidth = 2
    }
+}
 
-   gui.iconThemes = {
-     default = { first=gui.strToRGB('oklch(0.468 0.000 89.876)'),  last=gui.strToRGB('oklch(0.412 0.066 283.103)') },
-     carbon  = { first=gui.strToRGB('oklch(0.468 0.000 89.876)'),  last=gui.strToRGB('oklch(0.412 0.066 283.103)') },
-     yellow  = { first=gui.strToRGB('oklch(0.841 0.173 111.771)'), last=gui.strToRGB('oklch(0.690 0.148 68.131)'), stroke=gui.strToRGB('oklch(0.276 0.047 20.527)') },
-     orange  = { first=gui.strToRGB('oklch(0.857 0.164 87.613)'),  last=gui.strToRGB('oklch(0.698 0.174 43.865)') },
-     blue    = { first=gui.strToRGB('oklch(0.543 0.124 264.706)'), last=gui.strToRGB('oklch(0.281 0.063 262.910)') },
-     ocean   = { first=gui.strToRGB('oklch(0.813 0.093 268.180)'), last=gui.strToRGB('oklch(0.385 0.165 284.067)') },
-     green   = { first=gui.strToRGB('oklch(0.649 0.154 122.868)'), last=gui.strToRGB('oklch(0.444 0.116 152.499)') },
-     red     = { first=gui.strToRGB('oklch(0.800 0.162 78.770)'),  last=gui.strToRGB('oklch(0.615 0.235 30.433)') },
-     indigo  = { first=gui.strToRGB('oklch(0.570 0.134 345.216)'), last=gui.strToRGB('oklch(0.284 0.117 311.021)') },
-     rose    = { first=gui.strToRGB('oklch(0.863 0.083 51.527)'),  last=gui.strToRGB('oklch(0.834 0.095 7.824)') },
-     pink    = { first=gui.strToRGB('oklch(0.927 0.038 9.810)'),   last=gui.strToRGB('oklch(0.777 0.099 10.847)') },
-     grey    = { first=gui.strToRGB('oklch(0.503 0.000 89.876)'),  last=gui.strToRGB('oklch(0.394 0.000 89.876)') },
-     pearl   = { first=gui.strToRGB('oklch(0.983 0.002 67.803)'),  last=gui.strToRGB('oklch(0.804 0.002 247.844)') }
-   }
+gui.fonts = {
+   -- Use percentages for scalable sizes, where 100% is equivalent to the value of gui.interface.fontSize
+   default  = { face='Noto Sans,Source Sans Pro', size='100%' },
+   window   = { face='Noto Sans,Source Sans Pro', style='medium', size='100%' }, -- For non-widget text
+   button   = { face='Noto Sans,Source Sans Pro', size='12' }, -- Text inside buttons
+   filesys  = { face='Inconsolata', size='12', style='medium' }, -- Text for files, folders
+   icon     = { face='Noto Sans,Source Sans Pro', size='10', size='100%' }, -- Labeling for icons
+   menu     = { face='Noto Sans,Source Sans Pro', style='medium', size='12' }, -- Menu & dropdown item text
+   page     = { face='Noto Sans,Source Sans Pro', size='12' }, -- Multiple lines of text
+   titlebar = { face='Noto Sans', size='100%' }, -- Window titlebar text
+   small    = { face='Tiny', size='60%' }, -- Recommended text for small sizes
+   large    = { face='Noto Sans,Source Sans Pro', size='130%' }, -- Recommended text for headers
+   input    = { face='Noto Sans,Source Sans Pro', style='medium', size='12' }, -- Text inside input widgets (e.g. combobox)
+   widget   = { face='Noto Sans,Source Sans Pro', style='medium', size='12' }, -- Text inside non-input widgets (e.g. button)
+   label    = { face='Noto Sans,Source Sans Pro', style='medium', size='100%' } -- Text for labels and outside widgets
+}
 
-   gui.palettes = {
-     -- bkgd is the standard background colour for large amounts of text (documents & code).  In a light theme it should be near-white.
-     -- inverse is the inverse light value of bkgd (or must contrast significantly). Useful for heavy contrast against bkgd, e.g. stroking menu borders.
-     -- prime (primary) should have a strong chroma and is used for drawing attention, like for highlighting and selection.
-     -- contrast is a suitable complement to prime and should be of a strongly contrasting hue
-     -- neutral is a default background colour for undefined areas (e.g. window background), usually a light grey tone
-     -- mid is used for separating an area from bkgd without drawing attention.  E.g. scrollbar and slider tracks
-     -- face is a midtone colour for widgets, normally drawn over 'mid'.  Chroma must be weaker than 'prime'
-     -- text is the default colour for text drawn over 'bkgd'
-     -- altText is the default colour for text drawn over 'prime' when highlighted or selected.  Can be same as 'text'
-     ocean        = { light = { type = 'light', bkgd = 'oklch(0.952 0.004 214.329)', inverse = 'oklch(0.356 0.039 248.975)',
-                                prime = 'oklch(0.653 0.135 242.687)', contrast = 'oklch(0.631 0.194 29.442)',
-                                neutral = 'oklch(0.894 0 89.876)', mid='oklch(0.804 0 89.876)', face='oklch(0.6214 0.0994 288.29)',
-                                text='black', altText='white', invText='white' },
-                      dark =  { type = 'dark', bkgd = 'oklch(0.406 0.026 246.349)', inverse = 'oklch(0.9135 0.0087 247.92)',
-                                prime = 'oklch(0.653 0.135 242.687)', contrast = 'oklch(0.631 0.194 29.442)',
-                                neutral = 'oklch(0.356 0.039 248.975)', mid='oklch(0.506 0.026 276.349)', face='oklch(0.6033 0.0764 327.27)',
-                                text='white', altText='white', invText='black' },
-                    },
-     orangeApples = { light = { type = 'light', bkgd = 'white', inverse = 'oklch(0.289 0.030 185.119)',
-                                prime = 'oklch(0.652 0.166 127.067)', contrast = 'oklch(0.732 0.157 67.580)',
-                                neutral = 'oklch(0.894 0 89.876)', mid='none', face='none',
-                                text='black', altText='white', invText='none' },
-                      dark =  { type = 'dark', bkgd = 'oklch(0.289 0.030 185.119)', inverse = 'white',
-                                prime = 'oklch(0.652 0.166 127.067)', contrast = 'oklch(0.732 0.157 67.580)',
-                                neutral = 'oklch(0.277 0 89.876)', mid='none', face='none',
-                                text='white', altText='white', invText='none' }
-                    },
-     greenland    = { light = { type = 'light', bkgd = 'oklch(0.994 0.008 157.097)', inverse = 'oklch(0.309 0.093 136.720)',
-                                prime = 'oklch(0.584 0.162 46.883)', contrast = 'oklch(0.532 0.138 127.325)',
-                                neutral = 'oklch(0.932 0.012 106.630)', mid='none', face='none',
-                                text='black', altText='white', invText='none' },
-                      dark  = { type = 'dark', bkgd = 'oklch(0.309 0.093 136.720)', inverse = 'white',
-                                prime = 'oklch(0.584 0.162 46.883)', contrast = 'oklch(0.532 0.138 127.325)',
-                                neutral = 'oklch(0.402 0.015 107.041)', mid='none', face='none',
-                                text='white', altText='white', invText='none' }
-                    },
-     sunrise      = { light = { type = 'light', bkgd = 'oklch(0.995 0.007 164.946)', inverse = 'oklch(0.560 0.019 196.622)',
-                                prime = 'oklch(0.634 0.185 40.533)', contrast = 'oklch(0.740 0.161 69.169)',
-                                neutral = 'oklch(0.894 0 89.876)', mid='none', face='none',
-                                text='black', altText='white', invText='none' },
-                      dark=   { type = 'dark', bkgd = 'black', inverse = 'oklch(0.560 0.019 196.622)',
-                                prime = 'oklch(0.634 0.185 40.533)', contrast = 'oklch(0.740 0.161 69.169)',
-                                neutral = 'oklch(0.277 0 89.876)', mid='none', face='none',
-                                text='white', altText='white', invText='none' }
-                    },
-     candyfloss   = { light = { type = 'light', bkgd = 'oklch(0.988 0.007 53.450)', inverse = 'oklch(0.443 0.041 204.992)',
-                                prime = 'oklch(0.768 0.105 167.447)', contrast = 'oklch(0.690 0.130 15.681)',
-                                neutral = 'oklch(0.894 0 89.876)',  mid='none', face='none',
-                                text='black', altText='white', invText='none' },
-                      dark  = { type = 'dark', bkgd = 'oklch(0.443 0.041 204.992)', inverse = 'white',
-                                prime = 'oklch(0.768 0.105 167.447)', contrast = 'oklch(0.690 0.130 15.681)',
-                                neutral = 'oklch(0.277 0 89.876)', mid='none', face='none',
-                                text='white', altText='white', invText='none' }
-                    },
-     template     = { light = { type = '', bkgd = '', inverse = '', prime = '', contrast = '', neutral = '', mid = '', text = '', altText = '', invText = '' } }
+gui.iconThemes = {
+   default = { first=gui.strToRGB('oklch(0.468 0.000 89.876)'),  last=gui.strToRGB('oklch(0.412 0.066 283.103)') },
+   carbon  = { first=gui.strToRGB('oklch(0.468 0.000 89.876)'),  last=gui.strToRGB('oklch(0.412 0.066 283.103)') },
+   yellow  = { first=gui.strToRGB('oklch(0.841 0.173 111.771)'), last=gui.strToRGB('oklch(0.690 0.148 68.131)'), stroke=gui.strToRGB('oklch(0.276 0.047 20.527)') },
+   orange  = { first=gui.strToRGB('oklch(0.857 0.164 87.613)'),  last=gui.strToRGB('oklch(0.698 0.174 43.865)') },
+   blue    = { first=gui.strToRGB('oklch(0.543 0.124 264.706)'), last=gui.strToRGB('oklch(0.281 0.063 262.910)') },
+   ocean   = { first=gui.strToRGB('oklch(0.813 0.093 268.180)'), last=gui.strToRGB('oklch(0.385 0.165 284.067)') },
+   green   = { first=gui.strToRGB('oklch(0.649 0.154 122.868)'), last=gui.strToRGB('oklch(0.444 0.116 152.499)') },
+   red     = { first=gui.strToRGB('oklch(0.800 0.162 78.770)'),  last=gui.strToRGB('oklch(0.615 0.235 30.433)') },
+   indigo  = { first=gui.strToRGB('oklch(0.570 0.134 345.216)'), last=gui.strToRGB('oklch(0.284 0.117 311.021)') },
+   rose    = { first=gui.strToRGB('oklch(0.863 0.083 51.527)'),  last=gui.strToRGB('oklch(0.834 0.095 7.824)') },
+   pink    = { first=gui.strToRGB('oklch(0.927 0.038 9.810)'),   last=gui.strToRGB('oklch(0.777 0.099 10.847)') },
+   grey    = { first=gui.strToRGB('oklch(0.503 0.000 89.876)'),  last=gui.strToRGB('oklch(0.394 0.000 89.876)') },
+   pearl   = { first=gui.strToRGB('oklch(0.983 0.002 67.803)'),  last=gui.strToRGB('oklch(0.804 0.002 247.844)') }
+}
+
+gui.palettes = {
+   -- bkgd is the standard background colour for large amounts of text (documents & code).  In a light theme it should be near-white.
+   -- inverse is the inverse light value of bkgd (or must contrast significantly). Useful for heavy contrast against bkgd, e.g. stroking menu borders.
+   -- prime (primary) should have a strong chroma and is used for drawing attention, like for highlighting and selection.
+   -- contrast is a suitable complement to prime and should be of a strongly contrasting hue
+   -- neutral is a default background colour for undefined areas (e.g. window background), usually a light grey tone
+   -- mid is used for separating an area from bkgd without drawing attention.  E.g. scrollbar and slider tracks
+   -- face is a midtone colour for widgets, normally drawn over 'mid'.  Chroma must be weaker than 'prime'
+   -- text is the default colour for text drawn over 'bkgd'
+   -- altText is the default colour for text drawn over 'prime' when highlighted or selected.  Can be same as 'text'
+   ocean = {
+      light = { type = 'light', bkgd = 'oklch(0.952 0.004 214.329)', inverse = 'oklch(0.356 0.039 248.975)',
+                prime = 'oklch(0.653 0.135 242.687)', contrast = 'oklch(0.631 0.194 29.442)',
+                neutral = 'oklch(0.894 0 89.876)', mid='oklch(0.804 0 89.876)',
+                text='black', altText='white' },
+      dark =  { type = 'dark', bkgd = 'oklch(0.406 0.026 246.349)', inverse = 'oklch(0.9135 0.0087 247.92)',
+                prime = 'oklch(0.653 0.135 242.687)', contrast = 'oklch(0.631 0.194 29.442)',
+                neutral = 'oklch(0.356 0.039 248.975)', mid='oklch(0.506 0.026 276.349)',
+                text='white', altText='white' },
+   },
+   orangeApples = {
+      light = { type = 'light', bkgd = 'white', inverse = 'oklch(0.289 0.030 185.119)',
+                prime = 'oklch(0.652 0.166 127.067)', contrast = 'oklch(0.732 0.157 67.580)',
+                neutral = 'oklch(0.894 0 89.876)', mid='none',
+                text='black', altText='white' },
+      dark =  { type = 'dark', bkgd = 'oklch(0.289 0.030 185.119)', inverse = 'white',
+                prime = 'oklch(0.652 0.166 127.067)', contrast = 'oklch(0.732 0.157 67.580)',
+                neutral = 'oklch(0.277 0 89.876)', mid='none',
+                text='white', altText='white' }
+   },
+   greenland = {
+      light = { type = 'light', bkgd = 'oklch(0.994 0.008 157.097)', inverse = 'oklch(0.309 0.093 136.720)',
+                prime = 'oklch(0.584 0.162 46.883)', contrast = 'oklch(0.532 0.138 127.325)',
+                neutral = 'oklch(0.932 0.012 106.630)', mid='none',
+                text='black', altText='white' },
+      dark  = { type = 'dark', bkgd = 'oklch(0.309 0.093 136.720)', inverse = 'white',
+                prime = 'oklch(0.584 0.162 46.883)', contrast = 'oklch(0.532 0.138 127.325)',
+                neutral = 'oklch(0.402 0.015 107.041)', mid='none',
+                text='white', altText='white' }
+   },
+   sunrise = {
+      light = { type = 'light', bkgd = 'oklch(0.995 0.007 164.946)', inverse = 'oklch(0.560 0.019 196.622)',
+                prime = 'oklch(0.634 0.185 40.533)', contrast = 'oklch(0.740 0.161 69.169)',
+                neutral = 'oklch(0.894 0 89.876)', mid='none',
+                text='black', altText='white' },
+      dark=   { type = 'dark', bkgd = 'black', inverse = 'oklch(0.560 0.019 196.622)',
+                prime = 'oklch(0.634 0.185 40.533)', contrast = 'oklch(0.740 0.161 69.169)',
+                neutral = 'oklch(0.277 0 89.876)', mid='none',
+                text='white', altText='white' }
+   },
+   candyfloss = {
+      light = { type = 'light', bkgd = 'oklch(0.988 0.007 53.450)', inverse = 'oklch(0.443 0.041 204.992)',
+                prime = 'oklch(0.768 0.105 167.447)', contrast = 'oklch(0.690 0.130 15.681)',
+                neutral = 'oklch(0.894 0 89.876)',  mid='none',
+                text='black', altText='white' },
+      dark  = { type = 'dark', bkgd = 'oklch(0.443 0.041 204.992)', inverse = 'white',
+                prime = 'oklch(0.768 0.105 167.447)', contrast = 'oklch(0.690 0.130 15.681)',
+                neutral = 'oklch(0.277 0 89.876)', mid='none',
+                text='white', altText='white' }
    }
+}
 
    if not gui.theme then
       msg('No theme set, loading default from configuration file.')
@@ -715,9 +731,9 @@ end
       if mSys.AnalysePath(glStyleConfig) is ERR_Okay then
          try
             local cfg = obj.new('config', { path=glStyleConfig })
-            _, theme = cfg.mtReadValue('Style', 'Theme')
-            _, palette = cfg.mtReadValue('Style', 'Palette')
-            _, paletteTheme = cfg.mtReadValue('Style', 'PaletteTheme')
+            theme = [_*]cfg.mtReadValue('Style', 'Theme')
+            palette = [_*]cfg.mtReadValue('Style', 'Palette')
+            paletteTheme = [_*]cfg.mtReadValue('Style', 'PaletteTheme')
             gui.theme = theme
             if gui.palettes[palette] then
                gui.paletteTheme = gui.palettes?[palette]?[paletteTheme] ? paletteTheme :> 'light'
@@ -733,191 +749,180 @@ end
       end
    end
 
-   gui.sizing = {
-      widget = {
-         width  = 160, -- Default width for common widgets (px)
-         gap    = 6,   -- Recommended gap between widgets (px)
-         margin = 6,   -- Recommended internal margin for widgets (px)
-         strokeWidth = 2
-      },
+gui.themes = {
+   -- All colour values are fills, so gradient and pattern references are also permitted.
+   dark = {
+      palette = gui.palette.dark,
       page = {
-         strokeWidth = 2
-      }
-   }
-
-   gui.themes = {
-      -- All colour values are fills, so gradient and pattern references are also permitted.
-      dark = {
-         palette = gui.palette.dark,
-         page = {
-            bkgd              = gui.palette.dark.bkgd,     -- Background for hosting text & paper-based layouts
-            stroke            = gui.palette.dark.mid,      -- Border stroke for any area surrounding 'bkgd'
-            strokeFocus       = gui.palette.dark.contrast, -- Stroke to use when 'border' has the user's focus
-            text              = gui.palette.dark.text,     -- Default colour for text drawn over 'bkgd'
-            icon              = 'pearl',                   -- Default icon theme for icons drawn over 'bkgd'
-            iconHighlight     = 'pearl',                   -- Recommended icon theme when highlighted or selected
-            textHighlight     = gui.palette.dark.altText,  -- Colour for 'text' during user hover
-            textHighlightBkgd = gui.palette.dark.contrast, -- Background fill for 'text' during user hover
-            textSelect        = gui.palette.dark.altText,  -- Colour for 'text' when selected
-            textSelectBkgd    = gui.palette.dark.prime     -- Background fill for 'text' when selected
-         },
-         widget = { -- Non-input widgets only (exc. checkbox, combobox, etc.)
-            text        = gui.palette.dark.text,
-            bkgd        = gui.palette.dark.prime,
-            stroke      = 'rgba(255,255,255,.25)',
-            strokeFocus = gui.palette.dark.contrast
-         },
-         input = {
-            text        = gui.palette.dark.text,
-            bkgd        = gui.palette.dark.prime,
-            stroke      = 'rgba(255,255,255,.25)',
-            strokeFocus = gui.palette.dark.contrast
-         },
-         window = {
-            bkgd = gui.palette.dark.neutral,
-            icon = 'pearl',
-            text = gui.palette.dark.text,
-            stroke = modifyAlpha(gui.palette.dark.text, 0.25) -- Stroking of lines/paths (not borders of widgets)
-         },
-         button = {
-            bkgd      = gui.palette.dark.neutral,
-            highlight = gui.palette.dark.contrast
-         },
-         menubar = {
-            bkgd      = 'rgba(0,0,0,0.5)',
-            text      = gui.palette.dark.text,
-            highlight = gui.palette.dark.contrast
-         },
-         menu = {
-            bkgd      = gui.palette.dark.bkgd,
-            stroke    = gui.palette.dark.inverse,
-            highlight = gui.palette.dark.contrast,
-            text      = gui.palette.dark.text,
-            icon      = 'pearl'
-         },
-         dropdown = {
-            bkgd          = gui.palette.dark.bkgd,
-            stroke        = gui.palette.dark.inverse,
-            icon          = 'pearl',
-            iconHighlight = 'pearl',
-            text          = gui.palette.dark.text,
-            textHighlight = gui.palette.dark.altText
-         },
-         slider = {
-            bkgd            = gui.palette.dark.mid,
-            fore            = gui.palette.dark.inverse,
-            foreStroke      = 'none',
-            foreHighlight   = gui.palette.dark.contrast,
-            foreStrokeFocus = gui.palette.dark.contrast,
-            highlight       = 'none',
-            stroke          = 'none',
-            strokeFocus     = gui.palette.dark.contrast
-         },
-         toolbar = {
-            bkgd          = gui.palette.dark.bkgd,
-            groupStroke   = 'rgba(255,255,255,.25)', -- Match input stroke
-            icon          = 'pearl',
-            iconHighlight = 'pearl'
-         },
-         desktop = {
-            bkgd = 'rgb(160,160,160)'
-         }
+         bkgd              = gui.palette.dark.bkgd,     -- Background for hosting text & paper-based layouts
+         stroke            = gui.palette.dark.mid,      -- Border stroke for any area surrounding 'bkgd'
+         strokeFocus       = gui.palette.dark.contrast, -- Stroke to use when 'border' has the user's focus
+         text              = gui.palette.dark.text,     -- Default colour for text drawn over 'bkgd'
+         icon              = 'pearl',                   -- Default icon theme for icons drawn over 'bkgd'
+         iconHighlight     = 'pearl',                   -- Recommended icon theme when highlighted or selected
+         textHighlight     = gui.palette.dark.altText,  -- Colour for 'text' during user hover
+         textHighlightBkgd = gui.palette.dark.contrast, -- Background fill for 'text' during user hover
+         textSelect        = gui.palette.dark.altText,  -- Colour for 'text' when selected
+         textSelectBkgd    = gui.palette.dark.prime     -- Background fill for 'text' when selected
       },
-      light = {
-         palette = gui.palette.light,
-         page = {
-            bkgd              = gui.palette.light.bkgd,
-            stroke            = gui.palette.light.mid,
-            strokeFocus       = gui.palette.light.contrast,
-            icon              = 'carbon',
-            iconHighlight     = 'pearl',
-            text              = gui.palette.light.text,
-            textHighlight     = gui.palette.light.altText,
-            textHighlightBkgd = gui.palette.light.contrast,
-            textSelect        = gui.palette.light.altText,
-            textSelectBkgd    = gui.palette.light.prime
-         },
-         widget = {
-            text        = gui.palette.light.altText,
-            bkgd        = gui.palette.light.prime,
-            stroke      = 'rgba(0,0,0,.35)',
-            strokeFocus = gui.palette.light.contrast
-         },
-         input = {
-            text        = gui.palette.light.altText,
-            bkgd        = gui.palette.light.prime,
-            stroke      = 'rgba(0,0,0,.35)',
-            strokeFocus = gui.palette.light.contrast
-         },
-         window = {
-            bkgd   = gui.palette.light.neutral,
-            icon   = 'carbon',
-            text   = gui.palette.light.text,
-            stroke = modifyAlpha(gui.palette.light.inverse, 0.5)
-         },
-         button = {
-            bkgd = gui.palette.light.inverse,
-            highlight = gui.palette.light.contrast
-         },
-         menubar = {
-            bkgd = gui.palette.light.inverse,
-            text = gui.palette.light.altText,
-            highlight = gui.palette.light.contrast
-         },
-         menu = {
-            bkgd      = gui.palette.light.inverse,
-            stroke    = gui.palette.light.neutral,
-            highlight = gui.palette.light.contrast,
-            text      = gui.palette.light.altText,
-            icon      = 'pearl'
-         },
-         dropdown = {
-            bkgd   = gui.palette.light.bkgd,
-            stroke = gui.palette.light.inverse,
-            icon   = 'carbon',
-            iconHighlight = 'pearl',
-            text          = gui.palette.light.text,
-            textHighlight = gui.palette.light.altText
-         },
-         slider = {
-            bkgd            = gui.palette.light.mid,
-            fore            = gui.palette.light.inverse,
-            foreStroke      = 'none',
-            foreHighlight   = gui.palette.light.contrast,
-            foreStrokeFocus = gui.palette.light.contrast,
-            highlight       = gui.palette.light.face,
-            stroke          = 'none',
-            strokeFocus     = gui.palette.light.contrast
-         },
-         toolbar = {
-            bkgd          = gui.palette.light.bkgd,
-            groupStroke   = gui.palette.light.inverse,
-            icon          = 'carbon',
-            iconHighlight = 'pearl'
-         },
-         desktop = {
-            bkgd = 'rgb(160,160,160)'
-         }
+      widget = { -- Non-input widgets only (exc. checkbox, combobox, etc.)
+         text        = gui.palette.dark.text,
+         bkgd        = gui.palette.dark.prime,
+         stroke      = 'rgb(255 255 255 / .25)',
+         strokeFocus = gui.palette.dark.contrast
+      },
+      input = {
+         text        = gui.palette.dark.text,
+         bkgd        = gui.palette.dark.prime,
+         stroke      = 'rgb(255 255 255 / .25)',
+         strokeFocus = gui.palette.dark.contrast
+      },
+      window = {
+         bkgd = gui.palette.dark.neutral,
+         icon = 'pearl',
+         text = gui.palette.dark.text,
+         stroke = modifyAlpha(gui.palette.dark.text, 0.25) -- Stroking of lines/paths (not borders of widgets)
+      },
+      button = {
+         bkgd      = gui.palette.dark.neutral,
+         highlight = gui.palette.dark.contrast
+      },
+      menubar = {
+         bkgd      = 'rgb(0 0 0 / .5)',
+         text      = gui.palette.dark.text,
+         highlight = gui.palette.dark.contrast
+      },
+      menu = {
+         bkgd      = gui.palette.dark.bkgd,
+         stroke    = gui.palette.dark.inverse,
+         highlight = gui.palette.dark.contrast,
+         text      = gui.palette.dark.text,
+         icon      = 'pearl'
+      },
+      dropdown = {
+         bkgd          = gui.palette.dark.bkgd,
+         stroke        = gui.palette.dark.inverse,
+         icon          = 'pearl',
+         iconHighlight = 'pearl',
+         text          = gui.palette.dark.text,
+         textHighlight = gui.palette.dark.altText
+      },
+      slider = {
+         bkgd            = gui.palette.dark.mid,
+         fore            = gui.palette.dark.inverse,
+         foreStroke      = 'none',
+         foreHighlight   = gui.palette.dark.contrast,
+         foreStrokeFocus = gui.palette.dark.contrast,
+         highlight       = 'none',
+         stroke          = 'none',
+         strokeFocus     = gui.palette.dark.contrast
+      },
+      toolbar = {
+         bkgd          = gui.palette.dark.bkgd,
+         groupStroke   = 'rgb(255 255 255 / .25)', -- Match input stroke
+         icon          = 'pearl',
+         iconHighlight = 'pearl'
+      },
+      desktop = {
+         bkgd = 'rgb(160 160 160)'
+      }
+   },
+   light = {
+      palette = gui.palette.light,
+      page = {
+         bkgd              = gui.palette.light.bkgd,
+         stroke            = gui.palette.light.mid,
+         strokeFocus       = gui.palette.light.contrast,
+         icon              = 'carbon',
+         iconHighlight     = 'pearl',
+         text              = gui.palette.light.text,
+         textHighlight     = gui.palette.light.altText,
+         textHighlightBkgd = gui.palette.light.contrast,
+         textSelect        = gui.palette.light.altText,
+         textSelectBkgd    = gui.palette.light.prime
+      },
+      widget = {
+         text        = gui.palette.light.altText,
+         bkgd        = gui.palette.light.prime,
+         stroke      = 'rgb(0 0 0 / .35)',
+         strokeFocus = gui.palette.light.contrast
+      },
+      input = {
+         text        = gui.palette.light.altText,
+         bkgd        = gui.palette.light.prime,
+         stroke      = 'rgb(0 0 0 / .35)',
+         strokeFocus = gui.palette.light.contrast
+      },
+      window = {
+         bkgd   = gui.palette.light.neutral,
+         icon   = 'carbon',
+         text   = gui.palette.light.text,
+         stroke = modifyAlpha(gui.palette.light.inverse, 0.5)
+      },
+      button = {
+         bkgd = gui.palette.light.inverse,
+         highlight = gui.palette.light.contrast
+      },
+      menubar = {
+         bkgd = gui.palette.light.inverse,
+         text = gui.palette.light.altText,
+         highlight = gui.palette.light.contrast
+      },
+      menu = {
+         bkgd      = gui.palette.light.inverse,
+         stroke    = gui.palette.light.neutral,
+         highlight = gui.palette.light.contrast,
+         text      = gui.palette.light.altText,
+         icon      = 'pearl'
+      },
+      dropdown = {
+         bkgd   = gui.palette.light.bkgd,
+         stroke = gui.palette.light.inverse,
+         icon   = 'carbon',
+         iconHighlight = 'pearl',
+         text          = gui.palette.light.text,
+         textHighlight = gui.palette.light.altText
+      },
+      slider = {
+         bkgd            = gui.palette.light.mid,
+         fore            = gui.palette.light.inverse,
+         foreStroke      = 'none',
+         foreHighlight   = gui.palette.light.contrast,
+         foreStrokeFocus = gui.palette.light.contrast,
+         highlight       = gui.palette.light.face,
+         stroke          = 'none',
+         strokeFocus     = gui.palette.light.contrast
+      },
+      toolbar = {
+         bkgd          = gui.palette.light.bkgd,
+         groupStroke   = gui.palette.light.inverse,
+         icon          = 'carbon',
+         iconHighlight = 'pearl'
+      },
+      desktop = {
+         bkgd = 'rgb(160 160 160)'
       }
    }
+}
 
-   gui.style = gui.themes[gui.theme] -- Default user theme; but using gui.setTheme() is the preferred approach
+gui.style = gui.themes[gui.theme] -- Default user theme; but using gui.setTheme() is the preferred approach
 
-   gui.interface = {
-     fontSize  = 12,        -- Default font-size for everything (pt)
-     iconTheme = 'Default', -- Named folder to load the icons from
-     iconSize  = 20         -- Recommended default size for icons (px) and should be linked to fontSize
-   }
+gui.interface = {
+   dpi       = 160,       -- Default DPI baseline
+   fontSize  = 12,        -- Default font-size for everything (pt)
+   iconTheme = 'Default', -- Named folder to load the icons from
+   iconSize  = 20         -- Recommended default size for icons (px) and should be related to fontSize
+}
 
    -- Convert font percentage sizes to their px size
 
-   for k,v in pairs(gui.fonts) do
-      if gui.fonts[k].size then
-         if rxFontSize.test(gui.fonts[k].size) then
-            pct = tonumber(rxFontSize.extract(gui.fonts[k].size))
-            gui.fonts[k].size = math.floor(gui.interface.fontSize * (pct / 100))
+   for font in values(gui.fonts) do
+      if font.size then
+         if rxFontSize.test(font.size) then
+            pct = tonumber(rxFontSize.extract(font.size))
+            font.size = math.floor(gui.interface.fontSize * (pct / 100))
          end
       end
 
-      gui.fonts[k].style ??= 'Regular'
+      font.style ??= 'Regular'
    end

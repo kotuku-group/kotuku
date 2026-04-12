@@ -1071,5 +1071,6 @@ end
 -- TDL Function
 
 global function c_insert(Raw)
+   if glRestrict then return end
    output(Raw)
 end

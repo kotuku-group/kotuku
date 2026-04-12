@@ -1,7 +1,7 @@
 
-static const char *glSliderBkgd = "rgb(225,225,225)";
-static const char *glSliderColour = "rgb(185,195,215)";
-static const char *glSliderHighlight = "rgb(245,175,155)";
+static const char *glSliderBkgd = "rgb(225 225 225)";
+static const char *glSliderColour = "rgb(185 195 215)";
+static const char *glSliderHighlight = "rgb(245 175 155)";
 
 //********************************************************************************************************************
 // Subscription to the slider's drag events.  Moving the page is all that is necessary; this

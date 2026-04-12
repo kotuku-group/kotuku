@@ -1394,7 +1394,7 @@ gui.fileview = function(Options)
                   self.parentFolder()
                end)
 
-               if self.filterList then
+               if self.filterList?? then
                   Bar.addItem(TBID.FILTER, 'Filter', 'Filter', 'tools/filter', function()
                      displayFilters(self)
                   end)

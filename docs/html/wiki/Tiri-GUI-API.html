@@ -256,136 +256,282 @@
 <div class="docs-content" id="default-page">
 
 <h1>Tiri GUI API</h1>
-<p>The GUI API provides a number of functions to perform common tasks like colour conversion and simplifying interaction with the scene graph.</p>
-<p>It can be loaded with the line:</p>
+<p>The GUI API provides shared helpers, theme state, sizing defaults and colour utilities that sit underneath the widget modules in <code>scripts/gui/</code>.</p>
+<p>Load it with:</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>import <span class="st">&#39;gui&#39;</span></span></code></pre></div>
-<h2 id="constants">Constants</h2>
-<p>When the GUI API is initialised for the first time, it will construct a set of constants that are particular to the user&#39;s environment. Some values may be adjustable by the user directly, while others may be inherited by the user&#39;s choice of theme.</p>
-<p>To give you a direct insight into the variables in the gui table, the following is cut straight from the API code:</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="va">gui</span><span class="op">.</span><span class="va">fonts</span> <span class="op">=</span> <span class="op">{</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  <span class="co">-- Use percentages for scalable sizes, where 100% is equivalent to the value of gui.interface.fontSize</span></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>  <span class="va">default</span>  <span class="op">=</span> <span class="op">{</span> <span class="va">face</span><span class="op">=</span><span class="st">&#39;Noto Sans,Source Sans Pro&#39;</span><span class="op">,</span> <span class="va">size</span><span class="op">=</span><span class="st">&#39;100%&#39;</span> <span class="op">},</span></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>  <span class="va">window</span>   <span class="op">=</span> <span class="op">{</span> <span class="va">face</span><span class="op">=</span><span class="st">&#39;Noto Sans,Source Sans Pro&#39;</span><span class="op">,</span> <span class="va">size</span><span class="op">=</span><span class="st">&#39;100%&#39;</span> <span class="op">},</span> <span class="co">-- For text that is not inside a widget</span></span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>  <span class="va">button</span>   <span class="op">=</span> <span class="op">{</span> <span class="va">face</span><span class="op">=</span><span class="st">&#39;Noto Sans,Source Sans Pro&#39;</span><span class="op">,</span> <span class="va">size</span><span class="op">=</span><span class="st">&#39;100%&#39;</span> <span class="op">},</span> <span class="co">-- Text inside buttons</span></span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>  <span class="va">icon</span>     <span class="op">=</span> <span class="op">{</span> <span class="va">face</span><span class="op">=</span><span class="st">&#39;Noto Sans,Source Sans Pro&#39;</span><span class="op">,</span> <span class="va">size</span><span class="op">=</span><span class="st">&#39;100%&#39;</span> <span class="op">},</span> <span class="co">-- Text at the bottom of icons</span></span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>  <span class="va">menu</span>     <span class="op">=</span> <span class="op">{</span> <span class="va">face</span><span class="op">=</span><span class="st">&#39;Noto Sans,Source Sans Pro&#39;</span><span class="op">,</span> <span class="va">size</span><span class="op">=</span><span class="st">&#39;100%&#39;</span> <span class="op">},</span> <span class="co">-- Menu item text</span></span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>  <span class="va">titlebar</span> <span class="op">=</span> <span class="op">{</span> <span class="va">face</span><span class="op">=</span><span class="st">&#39;Noto Sans&#39;</span><span class="op">,</span> <span class="va">size</span><span class="op">=</span><span class="st">&#39;100%&#39;</span> <span class="op">},</span> <span class="co">-- Window titlebar text</span></span>
-<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>  <span class="va">small</span>    <span class="op">=</span> <span class="op">{</span> <span class="va">face</span><span class="op">=</span><span class="st">&#39;Tiny&#39;</span><span class="op">,</span> <span class="va">size</span><span class="op">=</span><span class="st">&#39;60%&#39;</span> <span class="op">},</span> <span class="co">-- Recommended text for small sizes</span></span>
-<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>  <span class="va">large</span>    <span class="op">=</span> <span class="op">{</span> <span class="va">face</span><span class="op">=</span><span class="st">&#39;Noto Sans,Source Sans Pro&#39;</span><span class="op">,</span> <span class="va">size</span><span class="op">=</span><span class="st">&#39;130%&#39;</span> <span class="op">},</span> <span class="co">-- Recommended text for headers</span></span>
-<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>  <span class="va">widget</span>   <span class="op">=</span> <span class="op">{</span> <span class="va">face</span><span class="op">=</span><span class="st">&#39;Noto Sans,Source Sans Pro&#39;</span><span class="op">,</span> <span class="va">size</span><span class="op">=</span><span class="st">&#39;100%&#39;</span> <span class="op">},</span> <span class="co">-- Text inside widgets (e.g. combobox)</span></span>
-<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>  <span class="va">label</span>    <span class="op">=</span> <span class="op">{</span> <span class="va">face</span><span class="op">=</span><span class="st">&#39;Noto Sans,Source Sans Pro::bold&#39;</span><span class="op">,</span> <span class="va">size</span><span class="op">=</span><span class="st">&#39;100%&#39;</span> <span class="op">}</span> <span class="co">-- Text for labels and outside widgets</span></span>
-<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a><span class="va">gui</span><span class="op">.</span><span class="va">style</span> <span class="op">=</span> <span class="op">{</span></span>
-<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>  <span class="co">-- All colour values are fills, so gradient and pattern references are also permitted for &#39;colours&#39;.</span></span>
-<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>  <span class="va">page</span> <span class="op">=</span> <span class="op">{</span></span>
-<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>    <span class="va">bkgd</span>        <span class="op">=</span> <span class="va">gui</span><span class="op">.</span><span class="va">palette</span><span class="op">.</span><span class="va">bkgd</span><span class="op">,</span>     <span class="co">-- Background for hosting text &amp; paper-based layouts</span></span>
-<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>    <span class="va">stroke</span>      <span class="op">=</span> <span class="va">gui</span><span class="op">.</span><span class="va">palette</span><span class="op">.</span><span class="va">prime</span><span class="op">,</span>    <span class="co">-- Border stroke for any area surrounding &#39;bkgd&#39;</span></span>
-<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>    <span class="va">strokeFocus</span> <span class="op">=</span> <span class="va">gui</span><span class="op">.</span><span class="va">palette</span><span class="op">.</span><span class="va">contrast</span><span class="op">,</span> <span class="co">-- Stroke to use when &#39;border&#39; has the user&#39;s focus</span></span>
-<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>    <span class="va">strokeWidth</span> <span class="op">=</span> <span class="dv">2</span><span class="op">,</span></span>
-<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a>    <span class="va">text</span>        <span class="op">=</span> <span class="va">gui</span><span class="op">.</span><span class="va">palette</span><span class="op">.</span><span class="va">text</span><span class="op">,</span>   <span class="co">-- Default colour for text drawn over &#39;bkgd&#39;</span></span>
-<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>    <span class="va">icon</span>        <span class="op">=</span> <span class="kw">nil</span><span class="op">,</span>                <span class="co">-- Default icon theme for icons drawn over &#39;bkgd&#39;</span></span>
-<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a>    <span class="va">textHighlight</span>     <span class="op">=</span> <span class="va">gui</span><span class="op">.</span><span class="va">palette</span><span class="op">.</span><span class="va">altText</span><span class="op">,</span>  <span class="co">-- Colour for &#39;text&#39; during user hover</span></span>
-<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>    <span class="va">textHighlightBkgd</span> <span class="op">=</span> <span class="va">gui</span><span class="op">.</span><span class="va">palette</span><span class="op">.</span><span class="va">prime</span><span class="op">,</span>    <span class="co">-- Background fill for &#39;text&#39; during user hover</span></span>
-<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a>    <span class="va">iconHighlight</span>     <span class="op">=</span> <span class="kw">nil</span><span class="op">,</span>                  <span class="co">-- Recommended icon theme when highlighted</span></span>
-<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a>    <span class="va">textSelect</span>        <span class="op">=</span> <span class="va">gui</span><span class="op">.</span><span class="va">palette</span><span class="op">.</span><span class="va">altText</span><span class="op">,</span>  <span class="co">-- Colour for &#39;text&#39; when selected</span></span>
-<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a>    <span class="va">textSelectBkgd</span>    <span class="op">=</span> <span class="va">gui</span><span class="op">.</span><span class="va">palette</span><span class="op">.</span><span class="va">contrast</span><span class="op">,</span> <span class="co">-- Background fill for &#39;text&#39; when selected</span></span>
-<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a>    <span class="va">iconSelect</span>        <span class="op">=</span> <span class="kw">nil</span>                   <span class="co">-- Recommended icon theme when selected</span></span>
-<span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a>  <span class="op">},</span></span>
-<span id="cb2-31"><a href="#cb2-31" aria-hidden="true" tabindex="-1"></a>  <span class="va">widget</span> <span class="op">=</span> <span class="op">{</span></span>
-<span id="cb2-32"><a href="#cb2-32" aria-hidden="true" tabindex="-1"></a>    <span class="va">text</span>   <span class="op">=</span> <span class="va">gui</span><span class="op">.</span><span class="va">palette</span><span class="op">.</span><span class="va">altText</span><span class="op">,</span></span>
-<span id="cb2-33"><a href="#cb2-33" aria-hidden="true" tabindex="-1"></a>    <span class="va">bkgd</span>   <span class="op">=</span> <span class="va">gui</span><span class="op">.</span><span class="va">palette</span><span class="op">.</span><span class="va">prime</span><span class="op">,</span></span>
-<span id="cb2-34"><a href="#cb2-34" aria-hidden="true" tabindex="-1"></a>    <span class="va">stroke</span> <span class="op">=</span> <span class="st">&#39;rgb(255,255,255,60)&#39;</span><span class="op">,</span></span>
-<span id="cb2-35"><a href="#cb2-35" aria-hidden="true" tabindex="-1"></a>    <span class="va">strokeFocus</span>    <span class="op">=</span> <span class="st">&#39;rgb(255,255,255,160)&#39;</span><span class="op">,</span></span>
-<span id="cb2-36"><a href="#cb2-36" aria-hidden="true" tabindex="-1"></a>    <span class="va">strokeDisabled</span> <span class="op">=</span> <span class="st">&#39;rgb(255,255,255,60)&#39;</span><span class="op">,</span></span>
-<span id="cb2-37"><a href="#cb2-37" aria-hidden="true" tabindex="-1"></a>    <span class="va">strokeWidth</span> <span class="op">=</span> <span class="dv">2</span><span class="op">,</span></span>
-<span id="cb2-38"><a href="#cb2-38" aria-hidden="true" tabindex="-1"></a>    <span class="va">width</span>  <span class="op">=</span> <span class="dv">160</span><span class="op">,</span> <span class="co">-- Default width for common widgets (px)</span></span>
-<span id="cb2-39"><a href="#cb2-39" aria-hidden="true" tabindex="-1"></a>    <span class="va">gap</span>    <span class="op">=</span> <span class="dv">6</span><span class="op">,</span>   <span class="co">-- Recommended gap between widgets (px)</span></span>
-<span id="cb2-40"><a href="#cb2-40" aria-hidden="true" tabindex="-1"></a>    <span class="va">margin</span> <span class="op">=</span> <span class="dv">6</span>    <span class="co">-- Recommended internal margin for widgets (px)</span></span>
-<span id="cb2-41"><a href="#cb2-41" aria-hidden="true" tabindex="-1"></a>  <span class="op">},</span></span>
-<span id="cb2-42"><a href="#cb2-42" aria-hidden="true" tabindex="-1"></a>  <span class="va">window</span> <span class="op">=</span> <span class="op">{</span></span>
-<span id="cb2-43"><a href="#cb2-43" aria-hidden="true" tabindex="-1"></a>    <span class="va">bkgd</span> <span class="op">=</span> <span class="va">gui</span><span class="op">.</span><span class="va">palette</span><span class="op">.</span><span class="va">neutral</span><span class="op">,</span></span>
-<span id="cb2-44"><a href="#cb2-44" aria-hidden="true" tabindex="-1"></a>    <span class="va">text</span> <span class="op">=</span> <span class="st">&#39;rgb(0,0,0)&#39;</span>        <span class="co">-- Colour for text that is drawn directly to the window</span></span>
-<span id="cb2-45"><a href="#cb2-45" aria-hidden="true" tabindex="-1"></a>  <span class="op">},</span></span>
-<span id="cb2-46"><a href="#cb2-46" aria-hidden="true" tabindex="-1"></a>  <span class="va">button</span> <span class="op">=</span> <span class="op">{</span></span>
-<span id="cb2-47"><a href="#cb2-47" aria-hidden="true" tabindex="-1"></a>    <span class="va">bkgd</span> <span class="op">=</span> <span class="va">gui</span><span class="op">.</span><span class="va">palette</span><span class="op">.</span><span class="va">invBkgd</span><span class="op">,</span>       <span class="co">-- Default background</span></span>
-<span id="cb2-48"><a href="#cb2-48" aria-hidden="true" tabindex="-1"></a>    <span class="va">bkgdActive</span> <span class="op">=</span> <span class="va">gui</span><span class="op">.</span><span class="va">palette</span><span class="op">.</span><span class="va">contrast</span> <span class="co">-- Background when temporarily clicked (depressed)</span></span>
-<span id="cb2-49"><a href="#cb2-49" aria-hidden="true" tabindex="-1"></a>  <span class="op">},</span></span>
-<span id="cb2-50"><a href="#cb2-50" aria-hidden="true" tabindex="-1"></a>  <span class="va">menubar</span> <span class="op">=</span> <span class="op">{</span></span>
-<span id="cb2-51"><a href="#cb2-51" aria-hidden="true" tabindex="-1"></a>    <span class="va">bkgd</span> <span class="op">=</span> <span class="va">gui</span><span class="op">.</span><span class="va">palette</span><span class="op">.</span><span class="va">invBkgd</span><span class="op">,</span></span>
-<span id="cb2-52"><a href="#cb2-52" aria-hidden="true" tabindex="-1"></a>    <span class="va">text</span> <span class="op">=</span> <span class="va">gui</span><span class="op">.</span><span class="va">palette</span><span class="op">.</span><span class="va">altText</span><span class="op">,</span></span>
-<span id="cb2-53"><a href="#cb2-53" aria-hidden="true" tabindex="-1"></a>    <span class="va">highlight</span> <span class="op">=</span> <span class="va">gui</span><span class="op">.</span><span class="va">palette</span><span class="op">.</span><span class="va">contrast</span></span>
-<span id="cb2-54"><a href="#cb2-54" aria-hidden="true" tabindex="-1"></a>  <span class="op">},</span></span>
-<span id="cb2-55"><a href="#cb2-55" aria-hidden="true" tabindex="-1"></a>  <span class="va">menu</span> <span class="op">=</span> <span class="op">{</span></span>
-<span id="cb2-56"><a href="#cb2-56" aria-hidden="true" tabindex="-1"></a>    <span class="va">bkgd</span>   <span class="op">=</span> <span class="va">gui</span><span class="op">.</span><span class="va">palette</span><span class="op">.</span><span class="va">bkgd</span><span class="op">,</span></span>
-<span id="cb2-57"><a href="#cb2-57" aria-hidden="true" tabindex="-1"></a>    <span class="va">border</span> <span class="op">=</span> <span class="st">&#39;rgb(200,200,200)&#39;</span>  <span class="co">-- Stroke for menu border</span></span>
-<span id="cb2-58"><a href="#cb2-58" aria-hidden="true" tabindex="-1"></a>  <span class="op">},</span></span>
-<span id="cb2-59"><a href="#cb2-59" aria-hidden="true" tabindex="-1"></a>  <span class="va">desktop</span> <span class="op">=</span> <span class="op">{</span></span>
-<span id="cb2-60"><a href="#cb2-60" aria-hidden="true" tabindex="-1"></a>    <span class="va">bkgd</span> <span class="op">=</span> <span class="st">&#39;rgb(160,160,160)&#39;</span></span>
-<span id="cb2-61"><a href="#cb2-61" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
-<span id="cb2-62"><a href="#cb2-62" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
-<span id="cb2-63"><a href="#cb2-63" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-64"><a href="#cb2-64" aria-hidden="true" tabindex="-1"></a><span class="va">gui</span><span class="op">.</span><span class="va">iconThemes</span> <span class="op">=</span> <span class="op">{</span></span>
-<span id="cb2-65"><a href="#cb2-65" aria-hidden="true" tabindex="-1"></a>  <span class="va">default</span> <span class="op">=</span> <span class="op">{</span> <span class="va">first</span><span class="op">={</span> <span class="va">r</span><span class="op">=</span><span class="dv">90</span><span class="op">,</span><span class="va">g</span><span class="op">=</span><span class="dv">90</span><span class="op">,</span><span class="va">b</span><span class="op">=</span><span class="dv">90</span> <span class="op">},</span> <span class="va">last</span><span class="op">={</span> <span class="va">r</span><span class="op">=</span><span class="dv">70</span><span class="op">,</span><span class="va">g</span><span class="op">=</span><span class="dv">70</span><span class="op">,</span><span class="va">b</span><span class="op">=</span><span class="dv">110</span> <span class="op">}</span> <span class="op">},</span></span>
-<span id="cb2-66"><a href="#cb2-66" aria-hidden="true" tabindex="-1"></a>  <span class="va">carbon</span>  <span class="op">=</span> <span class="op">{</span> <span class="va">first</span><span class="op">={</span> <span class="va">r</span><span class="op">=</span><span class="dv">90</span><span class="op">,</span><span class="va">g</span><span class="op">=</span><span class="dv">90</span><span class="op">,</span><span class="va">b</span><span class="op">=</span><span class="dv">90</span> <span class="op">},</span> <span class="va">last</span><span class="op">={</span> <span class="va">r</span><span class="op">=</span><span class="dv">70</span><span class="op">,</span><span class="va">g</span><span class="op">=</span><span class="dv">70</span><span class="op">,</span><span class="va">b</span><span class="op">=</span><span class="dv">110</span> <span class="op">}</span> <span class="op">},</span></span>
-<span id="cb2-67"><a href="#cb2-67" aria-hidden="true" tabindex="-1"></a>  <span class="va">yellow</span>  <span class="op">=</span> <span class="op">{</span> <span class="va">first</span><span class="op">={</span> <span class="va">r</span><span class="op">=</span><span class="dv">0xec</span><span class="op">,</span><span class="va">g</span><span class="op">=</span><span class="dv">0xef</span><span class="op">,</span><span class="va">b</span><span class="op">=</span><span class="dv">0x9e</span> <span class="op">},</span> <span class="va">last</span><span class="op">={</span> <span class="va">r</span><span class="op">=</span><span class="dv">0xd6</span><span class="op">,</span><span class="va">g</span><span class="op">=</span><span class="dv">0x87</span><span class="op">,</span><span class="va">b</span><span class="op">=</span><span class="dv">0x10</span> <span class="op">},</span> <span class="va">stroke</span><span class="op">={</span> <span class="va">r</span><span class="op">=</span><span class="dv">60</span><span class="op">,</span> <span class="va">g</span><span class="op">=</span><span class="dv">30</span><span class="op">,</span> <span class="va">b</span><span class="op">=</span><span class="dv">30</span><span class="op">,</span> <span class="va">a</span><span class="op">=</span><span class="dv">90</span> <span class="op">}</span> <span class="op">},</span></span>
-<span id="cb2-68"><a href="#cb2-68" aria-hidden="true" tabindex="-1"></a>  <span class="va">orange</span>  <span class="op">=</span> <span class="op">{</span> <span class="va">first</span><span class="op">={</span> <span class="va">r</span><span class="op">=</span><span class="dv">0xFD</span><span class="op">,</span><span class="va">g</span><span class="op">=</span><span class="dv">0xC8</span><span class="op">,</span><span class="va">b</span><span class="op">=</span><span class="dv">0x30</span> <span class="op">},</span> <span class="va">last</span><span class="op">={</span> <span class="va">r</span><span class="op">=</span><span class="dv">0xF3</span><span class="op">,</span><span class="va">g</span><span class="op">=</span><span class="dv">0x73</span><span class="op">,</span><span class="va">b</span><span class="op">=</span><span class="dv">0x35</span> <span class="op">}</span> <span class="op">},</span></span>
-<span id="cb2-69"><a href="#cb2-69" aria-hidden="true" tabindex="-1"></a>  <span class="va">blue</span>    <span class="op">=</span> <span class="op">{</span> <span class="va">first</span><span class="op">={</span> <span class="va">r</span><span class="op">=</span><span class="dv">0x4b</span><span class="op">,</span><span class="va">g</span><span class="op">=</span><span class="dv">0x6c</span><span class="op">,</span><span class="va">b</span><span class="op">=</span><span class="dv">0xb7</span> <span class="op">},</span> <span class="va">last</span><span class="op">={</span> <span class="va">r</span><span class="op">=</span><span class="dv">0x18</span><span class="op">,</span><span class="va">g</span><span class="op">=</span><span class="dv">0x28</span><span class="op">,</span><span class="va">b</span><span class="op">=</span><span class="dv">0x48</span> <span class="op">}</span> <span class="op">},</span></span>
-<span id="cb2-70"><a href="#cb2-70" aria-hidden="true" tabindex="-1"></a>  <span class="va">ocean</span>   <span class="op">=</span> <span class="op">{</span> <span class="va">first</span><span class="op">={</span> <span class="va">r</span><span class="op">=</span><span class="dv">0xA8</span><span class="op">,</span><span class="va">g</span><span class="op">=</span><span class="dv">0xC0</span><span class="op">,</span><span class="va">b</span><span class="op">=</span><span class="dv">0xFF</span> <span class="op">},</span> <span class="va">last</span><span class="op">={</span> <span class="va">r</span><span class="op">=</span><span class="dv">0x3F</span><span class="op">,</span><span class="va">g</span><span class="op">=</span><span class="dv">0x2B</span><span class="op">,</span><span class="va">b</span><span class="op">=</span><span class="dv">0x96</span> <span class="op">}</span> <span class="op">},</span></span>
-<span id="cb2-71"><a href="#cb2-71" aria-hidden="true" tabindex="-1"></a>  <span class="va">green</span>   <span class="op">=</span> <span class="op">{</span> <span class="va">first</span><span class="op">={</span> <span class="va">r</span><span class="op">=</span><span class="dv">0x7e</span><span class="op">,</span><span class="va">g</span><span class="op">=</span><span class="dv">0x9d</span><span class="op">,</span><span class="va">b</span><span class="op">=</span><span class="dv">0x13</span> <span class="op">},</span> <span class="va">last</span><span class="op">={</span> <span class="va">r</span><span class="op">=</span><span class="dv">0x00</span><span class="op">,</span><span class="va">g</span><span class="op">=</span><span class="dv">0x65</span><span class="op">,</span><span class="va">b</span><span class="op">=</span><span class="dv">0x32</span> <span class="op">}</span> <span class="op">},</span></span>
-<span id="cb2-72"><a href="#cb2-72" aria-hidden="true" tabindex="-1"></a>  <span class="va">red</span>     <span class="op">=</span> <span class="op">{</span> <span class="va">first</span><span class="op">={</span> <span class="va">r</span><span class="op">=</span><span class="dv">0xf5</span><span class="op">,</span><span class="va">g</span><span class="op">=</span><span class="dv">0xaf</span><span class="op">,</span><span class="va">b</span><span class="op">=</span><span class="dv">0x19</span> <span class="op">},</span> <span class="va">last</span><span class="op">={</span> <span class="va">r</span><span class="op">=</span><span class="dv">0xf1</span><span class="op">,</span><span class="va">g</span><span class="op">=</span><span class="dv">0x27</span><span class="op">,</span><span class="va">b</span><span class="op">=</span><span class="dv">0x11</span> <span class="op">}</span> <span class="op">},</span></span>
-<span id="cb2-73"><a href="#cb2-73" aria-hidden="true" tabindex="-1"></a>  <span class="va">indigo</span>  <span class="op">=</span> <span class="op">{</span> <span class="va">first</span><span class="op">={</span> <span class="va">r</span><span class="op">=</span><span class="dv">0xad</span><span class="op">,</span><span class="va">g</span><span class="op">=</span><span class="dv">0x53</span><span class="op">,</span><span class="va">b</span><span class="op">=</span><span class="dv">0x89</span> <span class="op">},</span> <span class="va">last</span><span class="op">={</span> <span class="va">r</span><span class="op">=</span><span class="dv">0x3c</span><span class="op">,</span><span class="va">g</span><span class="op">=</span><span class="dv">0x10</span><span class="op">,</span><span class="va">b</span><span class="op">=</span><span class="dv">0x53</span> <span class="op">}</span> <span class="op">},</span></span>
-<span id="cb2-74"><a href="#cb2-74" aria-hidden="true" tabindex="-1"></a>  <span class="va">rose</span>    <span class="op">=</span> <span class="op">{</span> <span class="va">first</span><span class="op">={</span> <span class="va">r</span><span class="op">=</span><span class="dv">0xff</span><span class="op">,</span><span class="va">g</span><span class="op">=</span><span class="dv">0xc3</span><span class="op">,</span><span class="va">b</span><span class="op">=</span><span class="dv">0xa0</span> <span class="op">},</span> <span class="va">last</span><span class="op">={</span> <span class="va">r</span><span class="op">=</span><span class="dv">0xFF</span><span class="op">,</span><span class="va">g</span><span class="op">=</span><span class="dv">0xAF</span><span class="op">,</span><span class="va">b</span><span class="op">=</span><span class="dv">0xBD</span> <span class="op">}</span> <span class="op">},</span></span>
-<span id="cb2-75"><a href="#cb2-75" aria-hidden="true" tabindex="-1"></a>  <span class="va">pink</span>    <span class="op">=</span> <span class="op">{</span> <span class="va">first</span><span class="op">={</span> <span class="va">r</span><span class="op">=</span><span class="dv">0xff</span><span class="op">,</span><span class="va">g</span><span class="op">=</span><span class="dv">0xdd</span><span class="op">,</span><span class="va">b</span><span class="op">=</span><span class="dv">0xe1</span> <span class="op">},</span> <span class="va">last</span><span class="op">={</span> <span class="va">r</span><span class="op">=</span><span class="dv">0xee</span><span class="op">,</span><span class="va">g</span><span class="op">=</span><span class="dv">0x9c</span><span class="op">,</span><span class="va">b</span><span class="op">=</span><span class="dv">0xa7</span> <span class="op">}</span> <span class="op">},</span></span>
-<span id="cb2-76"><a href="#cb2-76" aria-hidden="true" tabindex="-1"></a>  <span class="va">grey</span>    <span class="op">=</span> <span class="op">{</span> <span class="va">first</span><span class="op">={</span> <span class="va">r</span><span class="op">=</span><span class="dv">100</span><span class="op">,</span><span class="va">g</span><span class="op">=</span><span class="dv">100</span><span class="op">,</span><span class="va">b</span><span class="op">=</span><span class="dv">100</span> <span class="op">},</span> <span class="va">last</span><span class="op">={</span> <span class="va">r</span><span class="op">=</span><span class="dv">70</span><span class="op">,</span><span class="va">g</span><span class="op">=</span><span class="dv">70</span><span class="op">,</span><span class="va">b</span><span class="op">=</span><span class="dv">70</span> <span class="op">}</span> <span class="op">},</span></span>
-<span id="cb2-77"><a href="#cb2-77" aria-hidden="true" tabindex="-1"></a>  <span class="va">pearl</span>   <span class="op">=</span> <span class="op">{</span> <span class="va">first</span><span class="op">={</span> <span class="va">r</span><span class="op">=</span><span class="dv">250</span><span class="op">,</span><span class="va">g</span><span class="op">=</span><span class="dv">249</span><span class="op">,</span><span class="va">b</span><span class="op">=</span><span class="dv">248</span> <span class="op">},</span> <span class="va">last</span><span class="op">={</span> <span class="va">r</span><span class="op">=</span><span class="dv">210</span><span class="op">,</span><span class="va">g</span><span class="op">=</span><span class="dv">211</span><span class="op">,</span><span class="va">b</span><span class="op">=</span><span class="dv">212</span> <span class="op">}</span> <span class="op">}</span></span>
-<span id="cb2-78"><a href="#cb2-78" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
-<h2 id="functions">Functions</h2>
-<h3 id="guiapplyfill">gui.applyFill()</h3>
-<p><code>gui.applyFill(Vector, Fill)</code></p>
-<p>Apply <code>Fill</code> to every fill attribute for <code>Vector</code>, its siblings and children, except in cases where the fill is already set to <code>none</code>. If a vector has a stroke defined, that is also changed to match <code>Fill</code>.</p>
-<h3 id="guicreateicon">gui.createIcon()</h3>
-<p><code>Info = gui.createIcon(Scene, Path, Size, Theme, [Name])</code></p>
-<p>Build an icon sourced from <code>Path</code>, styled with the given <code>Theme</code>, and register it as a VectorPattern under <code>Name</code>. The <code>Size</code> is applied to the VectorPattern&#39;s PageWidth and PageHeight values, and affects the size of the pre-rendered bitmap cache. If <code>Name</code> is not given, the <code>Path</code> is used to name the pattern.</p>
-<p>The generated pattern can be used as a fill, i.e. <code>url(#Name)</code>. The pattern can be used in two ways: As a fill in a VectorRectangle, which is akin to a cached bitmap (fast); or applied to a VectorViewport for live rendering (higher quality transforms).</p>
-<p>If the function succeeds, a table is returned that contains values for <code>name</code>, <code>theme</code>, <code>size</code>, <code>path</code> and <code>fill</code>. Use <code>fill</code> to set the <code>Fill</code> vector field wherever the icon is to be used.</p>
-<p>This function is designed to throw an exception if an error occurs.</p>
-<h3 id="guiforvector">gui.forVector()</h3>
-<p><code>gui.forVector(Vector, Function)</code></p>
-<p>Call <code>Function</code> for each vector in a tree under the provided <code>Vector</code>.</p>
-<p>The synopsis for <code>Function</code> is <code>Function(Vector)</code> where <code>Vector</code> is a direct <code>obj</code> reference to the new vector that has been discovered.</p>
+<p>This page documents the current public surface of <code>scripts/gui.tiri</code> as of 2026-04-09.</p>
+<h2 id="overview">Overview</h2>
+<p>When imported, <code>gui</code> initialises these publicly accessible fields:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>theme</code></td>
+<td>The default theme name, read from <code>user:config/style.cfg</code> when available.</td>
+</tr>
+<tr>
+<td><code>palette</code></td>
+<td>The selected palette family name.</td>
+</tr>
+<tr>
+<td><code>paletteTheme</code></td>
+<td>Either <code>light</code> or <code>dark</code>.</td>
+</tr>
+<tr>
+<td><code>style</code></td>
+<td>Refers to the default theme, initialised from <code>gui.themes[gui.theme]</code>. Prefer <code>gui.getTheme()</code> for the active theme.</td>
+</tr>
+<tr>
+<td><code>fonts</code></td>
+<td>Shared font presets used by the GUI modules.</td>
+</tr>
+<tr>
+<td><code>iconThemes</code></td>
+<td>Named presets for styling icons.</td>
+</tr>
+<tr>
+<td><code>sizing</code></td>
+<td>Sizing recommendations for the layout of widgets and pages.</td>
+</tr>
+<tr>
+<td><code>interface</code></td>
+<td>Base interface settings such as default font size and icon size.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="colour-types">Colour Types</h2>
+<p>The API provides immutable colour tables that are backed by metatable functionality.</p>
+<h3 id="rgb-colours">RGB colours</h3>
+<p>Create RGB values in the sRGB colourspace with either:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="va">rgb</span> <span class="op">=</span> <span class="va">gui</span><span class="op">.</span>srgb<span class="op">(</span><span class="dv">255</span><span class="op">,</span> <span class="dv">128</span><span class="op">,</span> <span class="dv">64</span><span class="op">,</span> <span class="dv">255</span><span class="op">)</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="va">rgb</span> <span class="op">=</span> <span class="va">gui</span><span class="op">.</span>nrgb<span class="op">(</span><span class="dv">1.0</span><span class="op">,</span> <span class="dv">0.5</span><span class="op">,</span> <span class="dv">0.25</span><span class="op">,</span> <span class="dv">1.0</span><span class="op">)</span></span></code></pre></div>
+<ul>
+<li><code>gui.srgb(R, G, B, A, KV)</code> accepts 8-bit channel values and stores them internally as normalised <code>0..1</code> values.</li>
+<li><code>gui.nrgb(R, G, B, A, KV)</code> accepts normalised channel values directly.</li>
+<li><code>KV</code> is an optional table that is merged into the returned table before the metatable is applied.</li>
+<li><code>tostring(rgb)</code> returns an SVG/CSS-style <code>rgb(...)</code> string, including alpha when present.</li>
+</ul>
+<p>Available methods:</p>
+<ul>
+<li><code>rgb:interpolate(New, Ratio)</code> returns a new RGB colour between <code>rgb</code> and <code>New</code>.</li>
+<li><code>rgb:toHSV()</code> converts to an HSV colour table.</li>
+<li><code>rgb:brightness()</code> returns the maximum RGB channel value, equivalent to the <code>V</code> component in HSV.</li>
+<li><code>rgb:withAlpha(Alpha)</code> returns a copy with alpha multiplied by <code>Alpha</code>.</li>
+<li><code>rgb:linearise()</code> converts to linear sRGB.</li>
+<li><code>rgb:toHSL()</code> returns <code>{ h, s, l }</code>.</li>
+<li><code>rgb:luminance()</code> returns WCAG relative luminance in the range <code>0..1</code>.</li>
+<li><code>rgb:toDisplayP3()</code> returns a Display P3 <code>{ r, g, b }</code> table.</li>
+<li><code>rgb:toOKLab()</code> returns <code>{ okl, oka, okb, a }</code>.</li>
+<li><code>rgb:toOKLCH()</code> returns <code>{ okl, okc, okh, a }</code> and formats as <code>oklch(...)</code> when converted to string.</li>
+</ul>
+<p>Note: The sRGB colour values are unclamped in order to support extended colourspaces like Display P3. Clients are expected to clamp values to the 0 - 1.0 range when strict sRGB values are required.</p>
+<h3 id="hsv-colours">HSV colours</h3>
+<p>Create HSV values with:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="va">hsv</span> <span class="op">=</span> <span class="va">gui</span><span class="op">.</span>hsv<span class="op">(</span><span class="dv">210</span><span class="op">,</span> <span class="dv">0.5</span><span class="op">,</span> <span class="dv">0.75</span><span class="op">,</span> <span class="dv">1.0</span><span class="op">)</span></span></code></pre></div>
+<ul>
+<li><code>gui.hsv(H, S, V, A)</code> creates an immutable HSV table.</li>
+<li><code>tostring(hsv)</code> returns an <code>hsv(...)</code> string.</li>
+</ul>
+<p>Available methods:</p>
+<ul>
+<li><code>hsv:interpolate(New, Ratio)</code> returns a new HSV colour between <code>hsv</code> and <code>New</code>.</li>
+<li><code>hsv:toRGB()</code> converts to an RGB colour table.</li>
+</ul>
+<h3 id="parsing-colour-strings">Parsing colour strings</h3>
+<p><code>gui.strToRGB(Value)</code> parses a CSS colour string using the vector painter parser and returns an <code>RGB</code> table.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="va">gui</span><span class="op">.</span>strToRGB<span class="op">(</span><span class="st">&#39;#336699&#39;</span><span class="op">)</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="va">gui</span><span class="op">.</span>strToRGB<span class="op">(</span><span class="st">&#39;rgb(51 102 153 / 0.5)&#39;</span><span class="op">)</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="va">gui</span><span class="op">.</span>strToRGB<span class="op">(</span><span class="st">&#39;oklch(0.653 0.135 242.687)&#39;</span><span class="op">)</span></span></code></pre></div>
+<h2 id="theme-and-style-state">Theme And Style State</h2>
+<p>Themes are layered on top of named palettes.</p>
+<h3 id="palettes">Palettes</h3>
+<p><code>gui.palettes</code> contains named palette families such as <code>ocean</code>, <code>orangeApples</code>, <code>greenland</code>, <code>sunrise</code> and <code>candyfloss</code>.</p>
+<p>Each palette family is required to define <code>light</code> and <code>dark</code> variants of the palette.</p>
+<p>Each light or dark palette entry must contain these CSS colour fields:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bkgd</code></td>
+<td>The standard background colour for large amounts of text (documents &amp; code). In a light theme it should be near-white.</td>
+</tr>
+<tr>
+<td><code>inverse</code></td>
+<td>The inverse light value of <code>bkgd</code> (or must contrast significantly). Useful for heavy contrast against bkgd, e.g. stroking menu borders.</td>
+</tr>
+<tr>
+<td><code>prime</code></td>
+<td>Prime (primary) should have a strong chroma and is used for drawing attention, like for highlighting and selection.</td>
+</tr>
+<tr>
+<td><code>contrast</code></td>
+<td>Complements <code>prime</code> and should be of a strongly contrasting hue.</td>
+</tr>
+<tr>
+<td><code>neutral</code></td>
+<td>Default background colour for undefined areas (e.g. window background).</td>
+</tr>
+<tr>
+<td><code>mid</code></td>
+<td>Separates an area from <code>bkgd</code> without drawing attention. E.g. scrollbar and slider tracks.</td>
+</tr>
+<tr>
+<td><code>text</code></td>
+<td>Default colour for text drawn over <code>bkgd</code>.</td>
+</tr>
+<tr>
+<td><code>altText</code></td>
+<td>The default colour for text drawn over &#39;prime&#39; when highlighted or selected. Can be same as &#39;text&#39;</td>
+</tr>
+</tbody>
+</table>
+<p>These palette values are used to build the actual theme tables.</p>
+<h3 id="themes">Themes</h3>
+<p><code>gui.themes.light</code> and <code>gui.themes.dark</code> are the current resolved themes. Each contains sections used by the widget modules:</p>
+<ul>
+<li><code>page</code></li>
+<li><code>widget</code></li>
+<li><code>input</code></li>
+<li><code>window</code></li>
+<li><code>button</code></li>
+<li><code>menubar</code></li>
+<li><code>menu</code></li>
+<li><code>dropdown</code></li>
+<li><code>slider</code></li>
+<li><code>toolbar</code></li>
+<li><code>desktop</code></li>
+</ul>
+<p>All colour fields are fill values, so plain colours, gradients and pattern references are permitted.</p>
+<h3 id="accessors">Accessors</h3>
+<h3 id="guigettheme">gui.getTheme()</h3>
+<p><code>gui.getTheme(Object)</code></p>
+<p>Returns the active theme table. Themes are tracked at the <code>VectorScene</code> level, so the theme returned depends on the type of <code>Object</code> supplied:</p>
+<ul>
+<li>If <code>Object</code> is a <code>VectorViewport</code>, the nearest parent scene is used.</li>
+<li>If <code>Object</code> is a <code>VectorScene</code>, that scene is used directly.</li>
+<li>If <code>Object</code> is <code>nil</code>, the current global default theme is returned.</li>
+</ul>
+<p>Note: To get the theme for a window, access its <code>theme</code> field directly, which is set at window creation time.</p>
+<h3 id="guisettheme">gui.setTheme()</h3>
+<p><code>gui.setTheme(Object, Theme)</code></p>
+<p>Sets the active theme and returns the resolved theme table.</p>
+<ul>
+<li>Passing <code>nil</code> for <code>Object</code> changes the global default theme.</li>
+<li>Passing a viewport or scene applies the theme to that scene state only.</li>
+<li>If <code>Theme</code> is not already loaded, <code>gui.setTheme()</code> looks for <code>config:themes/&lt;Theme&gt;.tiri</code>.</li>
+<li>If the custom theme cannot be found, the theme falls back to <code>light</code>.</li>
+</ul>
+<h2 id="fonts-icons-and-sizing">Fonts, Icons And Sizing</h2>
+<h3 id="fonts">Fonts</h3>
+<p><code>gui.fonts</code> provides shared font presets for common GUI roles: <code>default</code>, <code>window</code>, <code>button</code>, <code>filesys</code>, <code>icon</code>, <code>menu</code>, <code>page</code>, <code>titlebar</code>, <code>small</code>, <code>large</code>, <code>input</code>, <code>widget</code>, <code>label</code>. Each preset can define the following field values:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>face</code></td>
+<td>The font family name. Multiple families separated by commas is permitted.</td>
+</tr>
+<tr>
+<td><code>style</code></td>
+<td>The font style, e.g. <code>Medium</code>, <code>Italic</code>, <code>Bold</code>, <code>Bold Italic</code>.</td>
+</tr>
+<tr>
+<td><code>size</code></td>
+<td>The font size in pixels. May also be a percentage string,</td>
+</tr>
+</tbody>
+</table>
+<p>Font sizes may be declared as percentages inside <code>gui.tiri</code>, but after initialisation they are converted to numeric sizes based on <code>gui.interface.fontSize</code>.</p>
 <h3 id="guigetfontheight">gui.getFontHeight()</h3>
-<p><code>LineSpacing, Height = gui.getFontHeight({ face=&#39;Face&#39;, size=PointSize })</code></p>
-<p>Returns the line spacing and height values for a given font, which is identified by <code>face</code> and <code>size</code> values.</p>
+<p><code>gui.getFontHeight(Font)</code></p>
+<p>For a given preset from <code>gui.fonts</code>, returns the font&#39;s recommended line spacing and height in pixels.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="va">line_spacing</span><span class="op">,</span> <span class="va">height</span> <span class="op">=</span> <span class="va">gui</span><span class="op">.</span>getFontHeight<span class="op">(</span><span class="va">gui</span><span class="op">.</span><span class="va">fonts</span><span class="op">.</span><span class="va">window</span><span class="op">)</span></span></code></pre></div>
+<h3 id="guirgbtoicontheme">gui.rgbToIconTheme()</h3>
+<p><code>gui.rgbToIconTheme(Value)</code></p>
+<p>Returns either <code>pearl</code> or <code>carbon</code> based on the brightness of the colour supplied. <code>Value</code> may be an RGB table or a string that <code>gui.strToRGB()</code> can parse.</p>
+<h3 id="sizing">Sizing</h3>
+<p>The <code>gui.sizing</code> table currently exposes:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="va">gui</span><span class="op">.</span><span class="va">sizing</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">widget</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>      <span class="va">width</span>       <span class="op">=</span> <span class="dv">160</span><span class="op">,</span> <span class="co">-- Minimum recommended width for buttons, comboboxes, etc.</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>      <span class="va">gap</span>         <span class="op">=</span> <span class="dv">6</span><span class="op">,</span> <span class="co">-- Pixel gap between widgets in a layout</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>      <span class="va">margin</span>      <span class="op">=</span> <span class="dv">6</span><span class="op">,</span> <span class="co">-- Margins applicable to inner text and icons within widgets</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>      <span class="va">strokeWidth</span> <span class="op">=</span> <span class="dv">2</span>  <span class="co">-- Standard width of strokes used for widget borders</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>   <span class="op">},</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>   <span class="va">page</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>      <span class="va">strokeWidth</span> <span class="op">=</span> <span class="dv">2</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>   <span class="op">}</span></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>These are shared defaults used by the widget modules and by helper functions such as <code>gui.separator()</code>.</p>
 <h3 id="guipixel">gui.pixel()</h3>
 <p><code>gui.pixel(Value)</code></p>
-<p>Reads a style value such as <code>60pt</code> and returns it as a number of pixel units. Supported units are <code>px</code>, <code>in</code>, <code>mm</code>, <code>pt</code> and <code>dp</code>.</p>
+<p>Converts a size string into pixels. Supported units are: <code>px</code>, <code>in</code>, <code>mm</code>, <code>pt</code>, <code>dp</code></p>
+<p>Examples:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="va">gui</span><span class="op">.</span>pixel<span class="op">(</span><span class="st">&#39;16px&#39;</span><span class="op">)</span>  <span class="co">-- 16</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="va">gui</span><span class="op">.</span>pixel<span class="op">(</span><span class="st">&#39;12pt&#39;</span><span class="op">)</span>  <span class="co">-- converted using gui.interface.dpi</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="va">gui</span><span class="op">.</span>pixel<span class="op">(</span><span class="st">&#39;24dp&#39;</span><span class="op">)</span>  <span class="co">-- density-independent pixels at 160 DPI baseline</span></span></code></pre></div>
+<h2 id="scene-and-vector-helpers">Scene And Vector Helpers</h2>
+<h3 id="guiforvector">gui.forVector()</h3>
+<p><code>gui.forVector(Vector, Function)</code></p>
+<p>Walks a vector tree depth-first, visiting the supplied vector, then its children and siblings. <code>Function</code> is called as:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="va">gui</span><span class="op">.</span>forVector<span class="op">(</span><span class="va">viewport</span><span class="op">,</span> <span class="kw">function</span><span class="op">(</span><span class="va">Vector</span><span class="op">)</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>   <span class="fu">print</span><span class="op">(</span><span class="va">Vector</span><span class="op">)</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span><span class="op">)</span></span></code></pre></div>
+<h3 id="guiapplyfill">gui.applyFill()</h3>
+<p><code>gui.applyFill(Vector, Fill)</code></p>
+<p>Recursively applies <code>Fill</code> to every vector in the tree whose fill is not <code>none</code>. If a vector has a stroke, the stroke is also updated to match.</p>
 <h3 id="guisimplegradient">gui.simpleGradient()</h3>
-<p><code>gui.simpleGradient(Scene, Name, Colours, X1, Y1, X2, Y2, [Units], [IgnoreClashes])</code></p>
-<p>Generate a simple linear gradient fill for vectors belonging to <code>Scene</code>. The fill will start at <code>(X1,Y1)</code> and stop at <code>(X2,Y2)</code>. The <code>Units</code> will default to <code>boundingbox</code> if not set to <code>userspace</code>. The resulting fill can be referenced as <code>url(#Name)</code>.</p>
-<p>The <code>Colours</code> table must consist of at least two RGB table entries, for instance <code>{ { r=176,g=178,b=183,a=255 }, { r=212,g=211,b=215,a=255 } }</code>. The colour stops will be evenly distributed through the gradient if there are more than two.</p>
-<h2 id="colour-management">Colour Management</h2>
-<h3 id="guihsvtorgb">gui.hsvToRGB()</h3>
-<p><code>RGB = gui.hsvToRGB(HSV)</code></p>
-<p>Convert an HSV table to RGB.</p>
-<h3 id="guiinterpolatergb">gui.interpolateRGB()</h3>
-<p><code>RGB = gui.interpolateRGB(RGB1, RGB2, [Ratio])</code></p>
-<p>Interpolate two RGB colours, returning a new RGB table. <code>Ratio</code> is a value between 0.0 and 1.0 that determines the strength of <code>RGB2</code> over <code>RGB1</code>.</p>
-<h3 id="guiinterpolatehsv">gui.interpolateHSV()</h3>
-<p><code>HSV = gui.interpolateHSV(HSV1, HSV2, [Ratio])</code></p>
-<p>Interpolate two HSV colours, returning a new HSV table. <code>Ratio</code> is a value between 0.0 and 1.0 that determines the strength of <code>RGB2</code> over <code>RGB1</code>.</p>
-<h3 id="guirgbtosvg">gui.rgbToSVG()</h3>
-<p><code>svgColour = gui.rgbToSVG(RGB)</code></p>
-<p>Convert an RGB table to a SVG colour string in the format <code>rgb(r,g,b,a)</code>.</p>
-<h3 id="guistrtorgb">gui.strToRGB()</h3>
-<p><code>gui.strToRGB(Value)</code></p>
-<p>Convert an RGB string to an RGB table. <code>Value</code> can be in the format <code>#RRGGBBAA</code></p>
-<h3 id="guirgbvalue">gui.rgbValue()</h3>
-<p><code>V = gui.rgbValue(RGB)</code></p>
-<p>Returns the light value of an RGB colour (i.e. the V in HSV)</p>
-<h3 id="guirgbtohsv">gui.rgbToHSV()</h3>
-<p><code>HSV = gui.rgbToHSV(RGB)</code></p>
-<p>Convert an RGB table to HSV table.</p>
+<p><code>gradient = gui.simpleGradient(Scene, Name, Colours, X1, Y1, X2, Y2, Units, IgnoreClashes)</code></p>
+<p>Creates and registers a linear <code>VectorGradient</code> in <code>Scene</code>.</p>
+<ul>
+<li><code>Colours</code> is an array of RGB tables. Each item may also include an explicit <code>offset</code>.</li>
+<li><code>Units</code> defaults to <code>boundingbox</code>.</li>
+<li>If <code>IgnoreClashes</code> is true and a definition with <code>Name</code> already exists, the function returns <code>nil</code> instead of failing.</li>
+</ul>
+<p>The result can be used as <code>url(#Name)</code>.</p>
+<p>Example:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="va">gui</span><span class="op">.</span>simpleGradient<span class="op">(</span><span class="va">scene</span><span class="op">,</span> <span class="st">&#39;accent_fill&#39;</span><span class="op">,</span> <span class="op">{</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">gui</span><span class="op">.</span>strToRGB<span class="op">(</span><span class="st">&#39;oklch(0.653 0.135 242.687)&#39;</span><span class="op">),</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">gui</span><span class="op">.</span>strToRGB<span class="op">(</span><span class="st">&#39;oklch(0.631 0.194 29.442)&#39;</span><span class="op">)</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="op">},</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">1</span><span class="op">,</span> <span class="dv">0</span><span class="op">)</span></span></code></pre></div>
+<h3 id="guicreateicon">gui.createIcon()</h3>
+<p><code>Info = gui.createIcon(Scene, Path, Size, Theme, Name)</code></p>
+<p>Builds an icon pattern from an SVG resource and registers it in <code>Scene</code>.</p>
+<ul>
+<li><code>Path</code> is an icon path relative to the <code>icons:</code> volume unless it already starts with <code>icons:</code>.</li>
+<li><code>Size</code> defaults to <code>16</code>.</li>
+<li><code>Theme</code> may be either a theme name from <code>gui.iconThemes</code> or a custom theme table.</li>
+<li><code>Name</code> defaults to the icon path, or to a derived <code>theme/path</code> name when a built-in icon theme name is used.</li>
+</ul>
+<p>The returned table contains: <code>name</code>, <code>theme</code>, <code>size</code>, <code>path</code>, <code>fill</code></p>
+<p>Use <code>fill</code> as the vector fill reference:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="va">icon</span> <span class="op">=</span> <span class="va">gui</span><span class="op">.</span>createIcon<span class="op">(</span><span class="va">scene</span><span class="op">,</span> <span class="st">&#39;items/help&#39;</span><span class="op">,</span> <span class="dv">20</span><span class="op">,</span> <span class="st">&#39;pearl&#39;</span><span class="op">)</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="va">viewport</span><span class="op">.</span>new<span class="op">(</span><span class="st">&#39;VectorRectangle&#39;</span><span class="op">,</span> <span class="op">{</span> <span class="va">width</span><span class="op">=</span><span class="dv">20</span><span class="op">,</span> <span class="va">height</span><span class="op">=</span><span class="dv">20</span><span class="op">,</span> <span class="va">fill</span><span class="op">=</span><span class="va">icon</span><span class="op">.</span><span class="va">fill</span> <span class="op">})</span></span></code></pre></div>
+<h3 id="guiseparator">gui.separator()</h3>
+<p><code>Thickness = gui.separator(Viewport, Orientation, Pos, MarginA, MarginB)</code></p>
+<p>Draws a horizontal or vertical separator line using the current window stroke colour.</p>
+<ul>
+<li>Set <code>Orientation</code> to <code>H</code> (horizontal) or <code>V</code> (vertical).</li>
+<li><code>Pos</code> is the horizontal or vertical coordinate. Providing a negative position, including negative zero, is treated as an offset from the far edge.</li>
+<li><code>MarginA</code> and <code>MarginB</code> are optional offsets for either side of the separator.</li>
+<li><code>Pos</code>, <code>MarginA</code> and <code>MarginB</code> may be numeric values or proportional values such as <code>100%</code>.</li>
+<li>The return value is the width of the separator.</li>
+</ul>
 </div></div></div></div>
 
 <script src="../js/bootstrap.bundle.min.js"></script>

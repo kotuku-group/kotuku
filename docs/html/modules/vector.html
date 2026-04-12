@@ -199,8 +199,11 @@ Z: Close Path
 <table class="table"><thead><tr><th>Name</th><th>Description</th></tr></thead><tbody><tr><th class="col-md-1">Named colour</th><td>Standard SVG colour names such as <code>orange</code> and <code>red</code> are accepted.  Application-defined
 colour names are also supported.</td></tr>
 <tr><th class="col-md-1">#RRGGBB / #RRGGBBAA</th><td>Hexadecimal formats.  Alpha defaults to fully opaque when omitted.</td></tr>
-<tr><th class="col-md-1">rgb(R,G,B) / rgba(R,G,B,A)</th><td>Component values range from <code>0</code> to <code>255</code>, or from <code>0%</code> to <code>100%</code>.  The
-alpha component ranges from <code>0.0</code> to <code>1.0</code> (or <code>0%</code> to <code>100%</code>).</td></tr>
+<tr><th class="col-md-1">rgb(R,G,B) / rgba(R,G,B,A)</th><td>Legacy comma-separated format.  Component values range from <code>0</code> to <code>255</code>,
+or from <code>0%</code> to <code>100%</code>.  The alpha component ranges from <code>0.0</code> to <code>1.0</code> (or <code>0%</code> to <code>100%</code>).</td></tr>
+<tr><th class="col-md-1">rgb(R G B) / rgb(R G B / A)</th><td>Modern CSS space-separated format.  Component values range from <code>0</code> to
+<code>255</code>, or from <code>0%</code> to <code>100%</code>.  Alpha is optional, preceded by <code>/</code>, and ranges from <code>0.0</code> to <code>1.0</code> (or <code>0%</code> to
+<code>100%</code>).</td></tr>
 <tr><th class="col-md-1">hsl(H,S,L) / hsla(H,S,L,A)</th><td>Hue is expressed in degrees (<code>0</code>-<code>360</code>).  Saturation and lightness are
 percentages.  Alpha ranges from <code>0.0</code> to <code>1.0</code>.</td></tr>
 <tr><th class="col-md-1">hsv(H,S,V)</th><td>Hue in degrees (<code>0</code>-<code>360</code>), saturation and value as percentages.  An optional alpha
@@ -222,7 +225,7 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
 <p>A Gradient, Image or Pattern can be referenced using the <code>url(#name)</code> format, where <code>name</code> is a definition registered with the provided <code>Scene</code> object.  If <code>Scene</code> is <code>NULL</code> then it will not be possible to find the reference.  Any failure to look up a reference will result in an error.  The <code>Scene</code> parameter accepts either a <a href="classes/vectorscene.html">VectorScene</a> or a <a href="classes/vector.html">Vector</a> object if its Scene field value is defined.</p>
 <p>To access one of the pre-defined colourmaps, use the format <code>url(#cmap:name)</code>.  The colourmap will be accessible as a linear gradient that belongs to the <code>Scene</code>.  Valid colourmap names are <code>cmap:crest</code>, <code>cmap:flare</code>, <code>cmap:icefire</code>, <code>cmap:inferno</code>, <code>cmap:magma</code>, <code>cmap:mako</code>, <code>cmap:plasma</code>, <code>cmap:rocket</code>, <code>cmap:viridis</code>.</p>
 <p>A <a data-toggle="tooltip" title="" href="?page=struct-VectorPainter">VectorPainter</a> structure must be provided by the client and will be used to store the final result.  All pointers that are returned will remain valid as long as the provided Scene exists with its registered painter definitions.  An optional <code>Result</code> string can store a reference to the character position up to which the IRI was parsed.</p>
-<p>Note: To ensure that colour values are never clipped, colours are stored in CIE XYZ format irrespective of the referenced colour space.</p>
+<p>Note: To ensure that colour values are never clipped, values stored in the Colour field are unclamped from the sRGB colour space (colours may be negative or exceed 1.0).  Clients must clamp colours as necessary when converting to their target colour space.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">Failed</th><td>General failure.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
@@ -649,8 +652,7 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
 <div class="docs-content" style="display:none;" id="struct-VectorPainter"><h1>VectorPainter Structure</h1><p class="lead">Deserialised painter information; compliant with SVG painter definitions.</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Pattern</th><td><span class="text-nowrap">objVectorPattern *</span></td><td>A <a href="classes/vectorpattern.html">VectorPattern</a> object, suitable for pattern based fills.</td></tr>
 <tr><th>Image</th><td><span class="text-nowrap">objVectorImage *</span></td><td>A <a href="classes/vectorimage.html">VectorImage</a> object, suitable for image fills.</td></tr>
 <tr><th>Gradient</th><td><span class="text-nowrap">objVectorGradient *</span></td><td>A <a href="classes/vectorgradient.html">VectorGradient</a> object, suitable for gradient fills.</td></tr>
-<tr><th>CIE</th><td><span class="text-nowrap">struct CIEXYZ</span></td><td>CIE colour representation</td></tr>
-<tr><th>Colour</th><td><span class="text-nowrap">struct FRGB</span></td><td>A single RGB colour definition, suitable for block colour fills.</td></tr>
+<tr><th>Colour</th><td><span class="text-nowrap">struct FRGB</span></td><td>A single RGB colour definition, suitable for block colour fills.  Colour values are unclamped to support all possible colour spaces.</td></tr>
 </tbody></table><div class="footer copyright text-right">Vector module documentation © Paul Manias © 2010-2026</div></div>
 <div class="docs-content" style="display:none;" id="struct-VectorPoint"><h1>VectorPoint Structure</h1><p class="lead">Structure for the VectorPolygon PointsArray field.</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>X</th><td><span class="text-nowrap">DOUBLE</span></td><td>The X coordinate of this point.</td></tr>
 <tr><th>Y</th><td><span class="text-nowrap">DOUBLE</span></td><td>The Y coordinate of this point.</td></tr>

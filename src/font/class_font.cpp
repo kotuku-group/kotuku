@@ -35,7 +35,7 @@ To clarify the terminology used in this documentation, please note the definitio
 
 <list type="bullet">
 <li>'Point' determines the size of a font.  The value is relative only to other point sizes of the same font face, i.e. two faces at the same point size are not necessarily the same height.</li>
-<li>'Height' represents the 'vertical bearing' or point of the font, expressed as a pixel value.  The height does not cover for any leading at the top of the font, or the gutter space used for the tails on characters like 'g' and 'y'.</li>
+<li>'Height' represents the 'vertical bearing' or point of the font, expressed as a pixel value.  The height does not cover any leading at the top of the font, or the gutter space used for the tails on characters like 'g' and 'y'.</li>
 <li>'Gutter' is the amount of space that a character can descend below the base line.  Characters like 'g' and 'y' are examples of characters that utilise the gutter space.  The gutter is also sometimes known as the 'external leading' or 'descent' of a character.</li>
 <li>'LineSpacing' is the recommended pixel distance between each line that is printed with the font.</li>
 <li>'Glyph' refers to a single font character.</li>

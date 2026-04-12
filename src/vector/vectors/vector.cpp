@@ -921,8 +921,9 @@ static ERR VECTOR_SubscribeInput(extVector *Self, struct vec::SubscribeInput *Ar
       auto mask = Args->Mask;
 
       Self->InputMask |= mask;
-      ((extVectorScene *)Self->Scene)->InputSubscriptions[Self] = Self->InputMask;
       Self->InputSubscriptions->emplace_back(*Args->Callback, mask);
+      update_input_subscription_state(Self);
+      mark_input_boundary_dirty(Self);
    }
    else if (Self->InputSubscriptions) { // Remove existing subscriptions for this callback
       for (auto it=Self->InputSubscriptions->begin(); it != Self->InputSubscriptions->end(); ) {
@@ -930,11 +931,8 @@ static ERR VECTOR_SubscribeInput(extVector *Self, struct vec::SubscribeInput *Ar
          else it++;
       }
 
-      if (Self->InputSubscriptions->empty()) {
-         if ((Self->Scene) and (!Self->Scene->collecting())) {
-            ((extVectorScene *)Self->Scene)->InputSubscriptions.erase(Self);
-         }
-      }
+      update_input_subscription_state(Self);
+      mark_input_boundary_dirty(Self);
    }
 
    return ERR::Okay;
@@ -1204,6 +1202,7 @@ It is a pre-requisite that the associated @VectorScene has been linked to a @Sur
 static ERR VECTOR_SET_Cursor(extVector *Self, PTC Value)
 {
    Self->Cursor = Value;
+   mark_input_boundary_dirty(Self);
 
    if (Self->initialised()) {
       // Send a dummy input event to refresh the cursor

@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<!DOCTYPE rpl PUBLIC "-//ROCKLYTE//DTD RPL 1.0//EN">
+
+<body face="[@font:courier]" font-size="14pt"/>
+
+<page>
+<p>Pound: £ Yen: ¥ Copyright: ©</p>
+
+<p>Umlaut Vowels: Ä Ë Ï Ö Ü</p>
+
+<p font-face="Noto Sans">Pound: £ Yen: ¥ Copyright: ©</p>
+
+<p font-face="Noto Sans">Umlaut Vowels: Ä Ë Ï Ö Ü</p>
+
+</page>

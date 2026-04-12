@@ -288,8 +288,8 @@ uint32_t GenCRC32(uint32_t CRC, APTR Data, uint32_t Length)
 -FUNCTION-
 GetResource: Retrieves miscellaneous resource identifiers.
 
-The GetResource() function is used to retrieve miscellaneous resource information from the system core.  Refer to the
-Resource identifier for the full list of available resource codes and their meaning.
+The GetResource() function is used to retrieve miscellaneous resource and state information from the system
+core.  Refer to the Resource identifier for the full list of available resource codes and their meaning.
 
 C++ developers should use the `GetResourcePtr()` macro if a resource identifier is known to return a pointer.
 
@@ -335,6 +335,13 @@ int64_t GetResource(RES Resource)
             return -1;
          #endif
       }
+
+      case RES::RELEASE_BUILD:
+         #ifdef KOTUKU_RELEASE_BUILD
+            return 1;
+         #else
+            return 0;
+         #endif
 
       case RES::STATIC_BUILD:
          #ifdef KOTUKU_STATIC

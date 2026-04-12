@@ -85,11 +85,11 @@ private:
    bool m_edit_mode    = false;   // Set to true when inside an area that allows user editing of the content.
 
    struct {
-      stream_char index;   // Stream position for the line's content.
-      double descent;      // Vertical spacing accommodated for glyph tails.  Inclusive within the height value, not additive
-      double height;       // The complete height of the line, including inline vectors/images/tables.  Text is drawn so that the text descent is aligned to the base line
-      double x;            // Starting horizontal position
-      double word_height;  // Height of the current word (including inline graphics), utilised for word wrapping
+      stream_char index;       // Stream position for the line's content.
+      double descent = 0;      // Vertical spacing accommodated for glyph tails.  Inclusive within the height value, not additive
+      double height = 0;       // The complete height of the line, including inline vectors/images/tables.  Text is drawn so that the text descent is aligned to the base line
+      double x = 0;            // Starting horizontal position
+      double word_height = 0;  // Height of the current word (including inline graphics), utilised for word wrapping
 
       void reset(double LeftMargin) {
          x       = LeftMargin;
@@ -152,9 +152,16 @@ private:
       reset_broken_segment(idx+1, m_cursor_x);
    }
 
-   // When lines are segmented, the last segment will store the final height of the line whilst the earlier segments
-   // will have the wrong height.  This function ensures that all segments for a line have the same height and descent
-   // values.
+   // Line Management
+   // * The LineSpacing of the font determines how tall the segment needs to be.
+   // * LineSpacing covers the max height of the font's glyphs, including accents, gutter space and additional 
+   //   whitespace for clearance.
+   // * descent() is used to determine the baseline of the text from the bottom of the segment. It includes both the 
+   //   gutter and additional whitespace for clearance.
+
+   // When a single line is segmented multiple times, the last segment will store the final height of the line whilst 
+   // the earlier segments will have the wrong height.  This function ensures that all segments for a line have the 
+   // same height and descent values.
 
    inline void sanitise_line_height() {
       auto end = SEGINDEX(m_segments.size());
@@ -180,7 +187,7 @@ private:
    inline void check_line_height() {
       if (m_font->metrics.LineSpacing >= m_line.height) {
          m_line.height  = m_font->metrics.LineSpacing;
-         m_line.descent = m_font->metrics.Descent;
+         m_line.descent = m_font->descent();
       }
    }
 
@@ -220,6 +227,7 @@ public:
    ERR do_layout(font_entry **, double &, double &, bool &);
    void gen_scene_graph(objVectorViewport *, std::vector<doc_segment> &);
    ERR gen_scene_init(objVectorViewport *);
+   void render_segments(OBJECTID, std::vector<doc_segment> &);
 };
 
 //********************************************************************************************************************
@@ -586,7 +594,7 @@ void layout::lay_font()
 {
    auto &style = m_stream->lookup<bc_font>(idx);
 
-   if ((m_font = style.layout_font(*this))) {
+   if (m_font = style.layout_font(*this)) {
       apply_style(style);
 
       // Setting m_word_index ensures that the font code appears in the current segment.
@@ -602,7 +610,7 @@ void layout::lay_font_end()
    if ((m_word_width > 0) and (m_line.height < m_font->metrics.LineSpacing)) {
       // We need to record the line-height for the active word now, in case we revert to a smaller font.
       m_line.height  = m_font->metrics.LineSpacing;
-      m_line.descent = m_font->metrics.Descent;
+      m_line.descent = m_font->descent();
    }
 
    m_stack_font.pop();
@@ -838,7 +846,7 @@ void layout::lay_paragraph()
 
    // Paragraph management variables
 
-   if (!m_stack_list.empty()) para.leading = m_stack_list.top()->v_spacing.px(*this);
+   if (!m_stack_list.empty()) para.leading = m_stack_list.top()->v_spacing;
 
    m_font = para.font.layout_font(*this);
 
@@ -851,7 +859,25 @@ void layout::lay_paragraph()
 
    apply_style(para.font);
 
-   if (m_line_count > 0) m_cursor_y += para.leading.px(*this);
+   if (m_line_count > 0) {
+      double para_leading;
+      if (para.leading.type IS DU::LINE_HEIGHT) {
+         // Paragraph leading is block spacing, so resolve it against the document's default line height
+         // rather than the paragraph's own font metrics.  This keeps headings from inflating pre-spacing.
+         bc_font root_style;
+         root_style.face = Self->FontFace;
+         root_style.style = Self->FontStyle;
+         root_style.req_size = DUNIT(Self->FontSize, DU::PIXEL);
+
+         if (auto root_font = root_style.layout_font(*this)) {
+            para_leading = std::trunc(para.leading.value * root_font->metrics.LineSpacing);
+         }
+         else para_leading = para.leading.px(*this);
+      }
+      else para_leading = para.leading.px(*this);
+
+      m_cursor_y += para_leading;
+   }
 
    para.y = m_cursor_y;
    para.height = 0;
@@ -979,7 +1005,7 @@ TE layout::lay_table_end(bc_table &Table, double TopMargin, double BottomMargin,
       // If the table height is expressed as a percentage, it is calculated against the line width
       // so that it remains proportional.
 
-      min_height = (wrap_edge() - m_margins.left) * Table.min_width.value;
+      min_height = (wrap_edge() - m_margins.left) * Table.min_height.value;
       if (min_height < 0) min_height = 0;
    }
    else min_height = Table.min_height.px(*this);
@@ -1084,7 +1110,7 @@ void layout::new_segment(const stream_char Start, const stream_char Stop, double
    pf::Log log(__FUNCTION__);
 
    if (Width > AlignWidth) {
-      log.traceWarning("Content width exceeds align width: %g > %g", Width, AlignWidth);
+      log.trace("Content width of %g exceeds align width of %g", Width, AlignWidth);
    }
 
    // Process trailing whitespace at the end of the line.  This helps to prevent situations such as underlining
@@ -1129,11 +1155,11 @@ void layout::new_segment(const stream_char Start, const stream_char Stop, double
       if (line_height <= 0) {
          // Use the most recent font to determine the line height
          line_height = m_font->metrics.LineSpacing;
-         descent     = m_font->metrics.Descent;
+         descent     = m_font->descent();
       }
 
       if (!descent) { // Sanity check: In case descent is missing for some reason
-         descent = m_font->metrics.Descent;
+         descent = m_font->descent();
       }
    }
 
@@ -1185,7 +1211,7 @@ void layout::new_segment(const stream_char Start, const stream_char Stop, double
          .stop        = Stop,
          .trim_stop   = trim_stop,
          .area        = { m_line.x, Y, Width, line_height },
-         .descent      = descent,
+         .descent     = descent,
          .align_width = AlignWidth,
          .stream      = m_stream,
          .edit        = m_edit_mode,
@@ -1820,8 +1846,8 @@ void layout::end_line(NL NewLine, stream_char Next)
 
    if ((!m_line.height) and (m_word_width)) {
       // If this is a one-word line, the line height will not have been defined yet
-      m_line.height = m_font->metrics.LineSpacing;
-      m_line.descent = m_font->metrics.Descent;
+      m_line.height  = m_font->metrics.LineSpacing;
+      m_line.descent = m_font->descent();
    }
 
    m_line.apply_word_height();

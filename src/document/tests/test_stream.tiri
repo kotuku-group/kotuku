@@ -1,0 +1,357 @@
+-- ReadContent() with DATA::XML tests.  These tests exercise the XML serialisation branch and do not depend on
+-- bitmap CRCs.  Each test loads a document, calls ReadContent with DATA_XML, and asserts on the textual result.
+
+@BeforeAll function init(State)
+   global glDocFolder = State.folder
+end
+
+function loadXML(Path:str)
+   scene = obj.new('VectorScene', { pageWidth=1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp, path=glDocFolder .. Path })
+   err, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   return err, xml_str
+end
+
+function parseXML(XmlStr:str)
+   xml = obj.new('xml', { statement = XmlStr })
+   assert(xml, 'Generated XML failed to parse')
+   return xml
+end
+
+function xpath(Xml, Expr:str)
+   err_xp, result = Xml.mtEvaluate(Expr)
+   assert(err_xp is ERR_Okay, 'XPath failed: ' .. Expr .. ', err=' .. tostring(err_xp))
+   return result
+end
+
+function xpathNum(Xml, Expr:str)
+   value = tonumber(xpath(Xml, Expr))
+   assert(value != nil, 'XPath did not return a number for: ' .. Expr)
+   return value
+end
+
+@Test function Paragraphs()
+   err, xml_str = loadXML('paragraphs.rpl')
+   print(xml_str)
+
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for paragraphs.rpl, err=' .. err)
+   assert(xml_str, 'ReadContent(DATA_XML) returned no string for paragraphs.rpl')
+
+   xml = parseXML(xml_str)
+
+   -- The first fragment element must be <stream>
+   root_name = xpath(xml, 'name(/extract/*[1])')
+   assert(root_name is 'stream', 'First XML fragment element must be <stream>, got ' .. tostring(root_name))
+
+   -- Must contain at least one <p> element
+   p_count = xpathNum(xml, 'count(/extract/stream//p)')
+   assert(p_count > 0, 'paragraphs.rpl XML must contain at least one <p> element')
+
+   -- Must contain at least one <text> element
+   text_count = xpathNum(xml, 'count(/extract/stream//text)')
+   assert(text_count > 0, 'paragraphs.rpl XML must contain at least one <text> element')
+
+   -- Every emitted element except the root must carry a stream-index for byte-code correlation.
+   missing_idx = xpathNum(xml,
+      'count(/extract/stream//*[not(self::segments) and not(self::segment) and not(@stream-index)])')
+   assert(missing_idx is 0, 'Every emitted element except <stream> must expose stream-index')
+
+   -- Every paragraph must preserve DUNIT type information for leading and line-height.
+   missing_para_units = xpathNum(xml, 'count(/extract/stream//p[not(@leading-unit) or not(@line-height-unit)])')
+   assert(missing_para_units is 0, 'Every paragraph must preserve leading-unit and line-height-unit')
+end
+
+@Test function WellFormed()
+   -- For several .rpl files the output must parse cleanly as an XML document, proving it is well formed
+   -- and the escape helper is correct.
+   files = array<string> { 'paragraphs.rpl', 'tables.rpl', 'lists.rpl', 'fonts.rpl', 'links.rpl' }
+   for path in values(files) do
+      err, xml_str = loadXML(path)
+      assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for ' .. path .. ', err=' .. err)
+      parsed = parseXML(xml_str)
+      assert(xpath(parsed, 'name(/extract/*[1])') is 'stream', 'Generated XML must start with <stream> for ' .. path)
+   end
+end
+
+@Test function Escaping()
+   -- Construct a document whose text payload contains XML meta-characters and confirm they round-trip as
+   -- escaped entities rather than literal characters in the XML serialisation.
+   scene = obj.new('VectorScene', { pageWidth=1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp })
+   check doc.acDataFeed(nil, DATA_XML,
+      '<body/><page><p>5 &lt; 10 &amp; 3 &gt; 2 <a href="test.rpl" hint="A &lt; B &amp; &quot;quoted&quot;">link</a></p></page>')
+   err, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   print(xml_str)
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed: ' .. mSys.GetErrorMsg(err))
+   assert(xml_str:find('&lt;'),  'XML output must contain &lt;, got: ' .. xml_str)
+   assert(xml_str:find('&gt;'),  'XML output must contain &gt;, got: ' .. xml_str)
+   assert(xml_str:find('&amp;'), 'XML output must contain &amp;, got: ' .. xml_str)
+   assert(xml_str:find('&quot;'), 'XML output must contain &quot; for escaped attribute values, got: ' .. xml_str)
+
+   xml = parseXML(xml_str)
+   assert(xpath(xml, 'string((/extract/stream//text)[1])') is '5 < 10 & 3 > 2 ', 'Escaped text content must round-trip after XML parse')
+   assert(xpath(xml, 'string((/extract/stream//link/@hint)[1])') is 'A < B & "quoted"', 'Escaped attribute content must round-trip after XML parse')
+end
+
+@Test function Tables()
+   err, xml_str = loadXML('tables.rpl')
+   print(xml_str)
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for tables.rpl, err=' .. err)
+
+   xml = parseXML(xml_str)
+
+   tbl_count = xpathNum(xml, 'count(/extract/stream//table)')
+   assert(tbl_count > 0, 'tables.rpl XML must contain at least one <table> element')
+
+   row_count = xpathNum(xml, 'count(/extract/stream//row)')
+   assert(row_count > 0, 'tables.rpl XML must contain at least one <row> element')
+
+   cell_count = xpathNum(xml, 'count(/extract/stream//cell)')
+   assert(cell_count > 0, 'tables.rpl XML must contain at least one <cell> element')
+
+   -- Every table must expose structural debug attributes.
+   missing_table_attrs = xpathNum(xml,
+      'count(/extract/stream//table[not(@columns) or not(@stream-index) or not(@min-width-unit) or not(@min-height-unit)])')
+   assert(missing_table_attrs is 0, 'Every table must expose core structural debug attributes')
+
+   -- Every row and cell must expose stream identity, and every cell must expose a cell-id.
+   missing_row_idx = xpathNum(xml, 'count(/extract/stream//row[not(@stream-index)])')
+   assert(missing_row_idx is 0, 'Every row must expose stream-index')
+   missing_cell_attrs = xpathNum(xml, 'count(/extract/stream//cell[not(@cell-id) or not(@stream-index)])')
+   assert(missing_cell_attrs is 0, 'Every cell must expose cell-id and stream-index')
+
+   -- The fixture contains a floating inline table and border customisation; pin both to catch regressions.
+   centered_tables = xpathNum(xml, 'count(/extract/stream//table[@align="center"])')
+   assert(centered_tables >= 1, 'tables.rpl must expose at least one centred table')
+   bordered_cells = xpathNum(xml, 'count(/extract/stream//cell[@border])')
+   assert(bordered_cells >= 1, 'tables.rpl must expose cell border debug attributes')
+end
+
+@Test function FontAttrs()
+   err, xml_str = loadXML('fonts.rpl')
+   print(xml_str)
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for fonts.rpl, err=' .. err)
+
+   xml = parseXML(xml_str)
+
+   -- Must contain stream <font> elements that carry attributes
+   font_count = xpathNum(xml, 'count(/extract/stream//font)')
+   assert(font_count > 0, 'fonts.rpl XML must contain <font> elements')
+
+   missing_font_attrs = xpathNum(xml,
+      'count(/extract/stream//font[not(@face) or not(@pixel-size) or not(@size) or not(@size-unit)])')
+   assert(missing_font_attrs is 0, 'Every font must expose face, pixel-size, size, and size-unit')
+
+   varied_faces = xpathNum(xml, 'count(/extract/stream//font[@face="Courier Prime"])')
+   assert(varied_faces > 0, 'fonts.rpl must preserve the expected font face')
+
+   large_fonts = xpathNum(xml, 'count(/extract/stream//font[@size="20" and @size-unit="px"])')
+   assert(large_fonts > 0, 'fonts.rpl must preserve the expected 20px font request')
+
+   fragment_order = xpath(xml, 'name(/extract/*[2])')
+   assert(fragment_order is 'fonts', 'The fragment after </stream> must be <fonts>')
+
+   cached_fonts = xpathNum(xml, 'count(/extract/fonts/font)')
+   assert(cached_fonts > 0, 'The trailing <fonts> section must contain cached font entries')
+
+   missing_cache_attrs = xpathNum(xml,
+      'count(/extract/fonts/font[not(@cache-index) or not(@face) or not(@pixel-size) or not(@height) or not(@line-spacing) or not(@ascent) or not(@descent) or not(@baseline-descent)])')
+   assert(missing_cache_attrs is 0, 'Every cached font must expose core metrics and cache identity')
+end
+
+@Test function NonTextContent()
+   -- XML serialisation must remain available even when the selected stream contains no text byte-codes.
+   -- Discover the first table byte-code dynamically, then extract that table-only range.
+   scene = obj.new('VectorScene', { pageWidth=1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp, path=glDocFolder .. 'tables.rpl' })
+   err_all, xml_all = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   assert(err_all is ERR_Okay, 'Full XML read failed while preparing non-text test, err=' .. err_all)
+   parsed_all = parseXML(xml_all)
+   table_start = xpath(parsed_all, 'string((/extract/stream//table/@stream-index)[1])')
+   assert(table_start != nil and table_start != '', 'Could not locate a table stream-index in tables.rpl')
+
+   start_index = tonumber(table_start)
+   assert(start_index != nil, 'Table stream-index must be numeric, got ' .. tostring(table_start))
+
+   err, xml_str = doc.mtReadContent(DATA_XML, start_index, start_index + 1)
+   print(xml_str)
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) must not reject non-text content, err=' .. err)
+
+   xml = parseXML(xml_str)
+
+   tbl_count = xpathNum(xml, 'count(/extract/stream//table)')
+   assert(tbl_count is 1, 'Non-text XML output must contain exactly one table byte-code')
+
+   text_count = xpathNum(xml, 'count(/extract/stream//text)')
+   assert(text_count is 0, 'Non-text XML output must not contain text byte-codes')
+end
+
+@Test function NestedRangeIsolation()
+   scene = obj.new('VectorScene', { pageWidth=1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp, path=glDocFolder .. 'tables.rpl' })
+
+   err_all, xml_all = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   assert(err_all is ERR_Okay, 'Full XML read failed while preparing nested range test, err=' .. err_all)
+   parsed_all = parseXML(xml_all)
+   cell_start = xpath(parsed_all, 'string((/extract/stream//cell/@stream-index)[1])')
+   assert(cell_start != nil and cell_start != '', 'Could not locate a cell stream-index in tables.rpl')
+
+   start_index = tonumber(cell_start)
+   assert(start_index != nil, 'Cell stream-index must be numeric, got ' .. tostring(cell_start))
+
+   err, xml_str = doc.mtReadContent(DATA_XML, start_index, start_index + 1)
+   print(xml_str)
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for isolated cell range, err=' .. err)
+
+   xml = parseXML(xml_str)
+   cell_count = xpathNum(xml, 'count(/extract/stream/cell)')
+   assert(cell_count is 1, 'Isolated cell range must contain exactly one top-level cell element')
+
+   nested_count = xpathNum(xml, 'count(/extract/stream/cell/*)')
+   assert(nested_count is 0, 'Isolated cell range must not serialise nested stream content outside the requested range')
+end
+
+@Test function NestedIdentity()
+   err, xml_str = loadXML('tables.rpl')
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for nested identity test, err=' .. err)
+
+   xml = parseXML(xml_str)
+
+   nested_missing = xpathNum(xml,
+      'count(/extract/stream//cell//*[not(self::segments) and not(self::segment) and (not(@parent-stream-index) or not(@nested-stream-index))]) + count(/extract/stream//button//*[not(self::segments) and not(self::segment) and (not(@parent-stream-index) or not(@nested-stream-index))])')
+   assert(nested_missing is 0, 'Nested XML nodes must expose parent-stream-index and nested-stream-index')
+
+   nested_conflicts = xpathNum(xml,
+      'count(/extract/stream//cell//*[@stream-index]) + count(/extract/stream//button//*[@stream-index])')
+   assert(nested_conflicts is 0, 'Nested XML nodes must not expose misleading document stream-index attributes')
+
+   nested_segment_count = xpathNum(xml, 'count(/extract/stream//cell/segments/segment) + count(/extract/stream//button/segments/segment)')
+   assert(nested_segment_count > 0, 'Nested cell/button XML must include nested segments when substreams are expanded')
+
+   nested_segment_missing = xpathNum(xml,
+      'count(/extract/stream//cell/segments/segment[not(@parent-stream-index) or not(@index) or not(@start-index) or not(@stop-index) or not(@codes)]) + count(/extract/stream//button/segments/segment[not(@parent-stream-index) or not(@index) or not(@start-index) or not(@stop-index) or not(@codes)])')
+   assert(nested_segment_missing is 0, 'Nested segments must expose parent linkage and core debug attributes')
+end
+
+@Test function ZeroDunitPreserved()
+   scene = obj.new('VectorScene', { pageWidth=1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp })
+   check doc.acDataFeed(nil, DATA_XML,
+      '<body/><page><p line-height="0px" leading="0%"><table width="0%" height="0px"><row><cell>Zero</cell></row></table></p></page>')
+
+   err, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   print(xml_str)
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for zero DUNIT test, err=' .. err)
+
+   xml = parseXML(xml_str)
+   assert(xpath(xml, 'string((/extract/stream//p/@line-height)[1])') is '0', 'Explicit zero line-height must be preserved')
+   assert(xpath(xml, 'string((/extract/stream//p/@line-height-unit)[1])') is 'px', 'Explicit zero line-height unit must be preserved')
+   assert(xpath(xml, 'string((/extract/stream//p/@leading)[1])') is '0', 'Explicit zero leading must be preserved')
+   assert(xpath(xml, 'string((/extract/stream//p/@leading-unit)[1])') is '%', 'Explicit zero leading unit must be preserved')
+   assert(xpath(xml, 'string((/extract/stream//table/@min-width)[1])') is '0', 'Explicit zero table min-width must be preserved')
+   assert(xpath(xml, 'string((/extract/stream//table/@min-width-unit)[1])') is '%', 'Explicit zero table min-width unit must be preserved')
+   assert(xpath(xml, 'string((/extract/stream//table/@min-height)[1])') is '0', 'Explicit zero table min-height must be preserved')
+   assert(xpath(xml, 'string((/extract/stream//table/@min-height-unit)[1])') is 'px', 'Explicit zero table min-height unit must be preserved')
+end
+
+@Test function ParagraphStyleAttrs()
+   scene = obj.new('VectorScene', { pageWidth=1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp })
+   check doc.acDataFeed(nil, DATA_XML,
+      '<body font-style="Italic"/><page><p align="right" v-align="middle">Styled paragraph</p></page>')
+
+   err, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for paragraph style attrs, err=' .. err)
+
+   xml = parseXML(xml_str)
+   assert(xpath(xml, 'string((/extract/stream//p/@style)[1])') is 'Italic', 'Paragraph XML must expose inherited body font-style')
+   assert(xpath(xml, 'string((/extract/stream//p/@align)[1])') is 'right', 'Paragraph XML must expose paragraph alignment')
+   assert(xpath(xml, 'string((/extract/stream//p/@v-align)[1])') is 'middle', 'Paragraph XML must expose paragraph vertical alignment')
+end
+
+@Test function DivStyleAttrs()
+   scene = obj.new('VectorScene', { pageWidth=1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp })
+   check doc.acDataFeed(nil, DATA_XML,
+      '<body/><page><div fill="rgb(255,0,0)" font-size="18" style="Bold" align="center">Styled div</div></page>')
+
+   err, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for div style attrs, err=' .. err)
+
+   xml = parseXML(xml_str)
+   styled_fonts = xpathNum(xml, 'count(/extract/stream//font[@fill="rgb(255,0,0)" and @style="Bold" and @size="18" and @align="center"])')
+   assert(styled_fonts > 0, 'Div font attributes must be emitted through a font byte-code')
+end
+
+@Test function AlignmentOverride()
+   scene = obj.new('VectorScene', { pageWidth=1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp })
+   check doc.acDataFeed(nil, DATA_XML,
+      '<body/><page><p align="right" v-align="top">Outer<p align="center" v-align="bottom">Inner</p></p></page>')
+
+   err, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for alignment override, err=' .. err)
+
+   xml = parseXML(xml_str)
+   assert(xpath(xml, 'string((/extract/stream//p[@align="right"]/@v-align)[1])') is 'top', 'Outer paragraph alignment must be preserved')
+   assert(xpath(xml, 'string((/extract/stream//p[@align="center"]/@v-align)[1])') is 'bottom', 'Inner paragraph alignment must override the outer paragraph')
+end
+
+@Test function ImageAxisAlignment()
+   scene = obj.new('VectorScene', { pageWidth=1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp })
+   check doc.acDataFeed(nil, DATA_XML,
+      '<body/><page><p><image src="url(#demo)" align="center" v-align="top"/></p></page>')
+
+   err, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for image axis alignment, err=' .. err)
+
+   xml = parseXML(xml_str)
+   assert(xpath(xml, 'string((/extract/stream//image/@align)[1])') is 'center', 'Image horizontal alignment must survive parsing')
+   assert(xpath(xml, 'string((/extract/stream//image/@v-align)[1])') is 'top', 'Image vertical alignment must survive parsing')
+end
+
+@Test function Segments()
+   err, xml_str = loadXML('paragraphs.rpl')
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for segment test, err=' .. err)
+
+   xml = parseXML(xml_str)
+   segment_count = xpathNum(xml, 'count(/extract/stream/segments/segment)')
+   assert(segment_count > 0, 'XML output must include a segments block with at least one segment')
+
+   missing_segment_attrs = xpathNum(xml,
+      'count(/extract/stream/segments/segment[not(@index) or not(@start-index) or not(@start-offset) or not(@stop-index) or not(@stop-offset) or not(@trim-stop-index) or not(@trim-stop-offset) or not(@x) or not(@y) or not(@width) or not(@height) or not(@descent) or not(@align-width) or not(@edit) or not(@allow-merge) or not(@codes)])')
+   assert(missing_segment_attrs is 0, 'Every segment must expose span, geometry, and debug code attributes')
+end
+
+@Test function OutOfRange()
+   scene = obj.new('VectorScene', { pageWidth=1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp, path=glDocFolder .. 'paragraphs.rpl' })
+
+   -- Negative Start rejected
+   err, _ = doc.mtReadContent(DATA_XML, -1, 100)
+   assert(err is ERR_OutOfRange, 'Expected ERR_OutOfRange for negative Start, got ' .. err)
+
+   -- End <= Start rejected
+   err2, _ = doc.mtReadContent(DATA_XML, 10, 10)
+   assert(err2 is ERR_Args, 'Expected ERR_Args for End <= Start, got ' .. err2)
+
+   -- Oversized End is tolerated and clamped internally
+   err3, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   assert(err3 is ERR_Okay, 'Expected ERR_Okay for oversized End, got ' .. err3)
+
+   xml = parseXML(xml_str)
+
+   root_name = xpath(xml, 'name(/extract/*[1])')
+   assert(root_name is 'stream', 'Clamped XML output must start with <stream>, got ' .. tostring(root_name))
+end

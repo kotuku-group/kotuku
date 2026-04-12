@@ -1015,10 +1015,10 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
   </types>
   <structs>
     <struct name="FontMetrics" comment="Font metrics, measured in pixels relative to the display">
-      <field name="Height" type="INT">Capitalised font height</field>
-      <field name="LineSpacing" type="INT">Vertical advance from one line to the next</field>
-      <field name="Ascent" type="INT">Height from the baseline to the top of the font, including accents.</field>
-      <field name="Descent" type="INT">Height from the baseline to the bottom of the font</field>
+      <field name="Height" type="INT">Full font height equivalent to <code>Ascent (cap-height) + Descent (gutter)</code>.  Does NOT include accents.</field>
+      <field name="LineSpacing" type="INT">Vertical advance from one line to the next.  Includes coverage for accents and additional whitespace.</field>
+      <field name="Ascent" type="INT">Height from the baseline to the top (cap-height) of the font.  Does NOT include accents.</field>
+      <field name="Descent" type="INT">Height from the baseline to the bottom of the font (gutter)</field>
     </struct>
 
     <struct name="GradientStop" comment="Describes a colour stop for the VectorGradient Stops field.">
