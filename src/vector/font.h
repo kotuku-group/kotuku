@@ -105,7 +105,11 @@ class freetype_font {
                   }
                   else line_spacing = std::trunc(int26p6_to_dbl(ft_size->metrics.height + std::abs(ft_size->metrics.descender)) * 72.0 / glDisplayVDPI * 1.15);
 
-                  // Check if the client has applied a line spacing modifier for this font.
+                  ascent  = int26p6_to_dbl(ft_size->metrics.ascender) * (72.0 / glDisplayVDPI);
+                  descent = std::abs(int26p6_to_dbl(ft_size->metrics.descender)) * (72.0 / glDisplayVDPI);
+
+                  // Check if the client has applied metrics modifiers for this font.  The font module
+                  // comes with a tool, font_metrics.tiri, for helping with these modifiers.
 
                   if (glFontConfig) {
                      pf::ScopedObjectLock<objConfig> config(glFontConfig, 500);
@@ -117,12 +121,24 @@ class freetype_font {
                                  if (auto it = keys.find("LineSpacing"); it != keys.end()) {
                                     line_spacing *= std::stod(it->second);
                                  }
+                                 if (auto it = keys.find("Descent"); it != keys.end()) {
+                                    descent *= std::stod(it->second);
+                                 }
+                                 if (auto it = keys.find("Ascent"); it != keys.end()) {
+                                    ascent *= std::stod(it->second);
+                                 }
                                  break;
                               }
                               else if (auto it = keys.find("Name"); it != keys.end()) {
                                  if (pf::iequals(it->second, font->face->family_name)) {
                                     if (auto it = keys.find("LineSpacing"); it != keys.end()) {
                                        line_spacing *= std::stod(it->second);
+                                    }
+                                    if (auto it = keys.find("Descent"); it != keys.end()) {
+                                       descent *= std::stod(it->second);
+                                    }
+                                    if (auto it = keys.find("Ascent"); it != keys.end()) {
+                                       ascent *= std::stod(it->second);
                                     }
                                     break;
                                  }
@@ -132,9 +148,7 @@ class freetype_font {
                      }
                   }
 
-                  height  = int26p6_to_dbl(ft_size->metrics.height) * (72.0 / glDisplayVDPI);
-                  ascent  = int26p6_to_dbl(ft_size->metrics.ascender) * (72.0 / glDisplayVDPI);
-                  descent = std::abs(int26p6_to_dbl(ft_size->metrics.descender)) * (72.0 / glDisplayVDPI);
+                  height  = ascent + descent; // int26p6_to_dbl(ft_size->metrics.height) * (72.0 / glDisplayVDPI);
                }
             }
 

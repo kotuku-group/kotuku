@@ -86,7 +86,9 @@ end
    err, list = mFont.GetList()
 
    while list do
-      items:push({ item=list.name })
+      if list.hidden != 1 then
+         items:push({ item=list.name })
+      end
       list = list.next
    end
 

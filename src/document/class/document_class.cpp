@@ -121,8 +121,8 @@ static ERR feedback_view(objVectorViewport *View, FM Event)
 
    auto width  = View->get<double>(FID_ViewWidth);
    auto height = View->get<double>(FID_ViewHeight);
-   if (!width) width = View->get<double>(FID_Width);
-   if (!height) height = View->get<double>(FID_Height);
+   if (not width) width = View->get<double>(FID_Width);
+   if (not height) height = View->get<double>(FID_Height);
 
    if ((Self->VPWidth IS width) and (Self->VPHeight IS height)) return ERR::Okay;
 
@@ -224,7 +224,7 @@ NullArgs
 
 static ERR DOCUMENT_AddListener(extDocument *Self, doc::AddListener *Args)
 {
-   if ((!Args) or (Args->Trigger IS DRT::NIL) or (!Args->Function)) return ERR::NullArgs;
+   if ((not Args) or (Args->Trigger IS DRT::NIL) or (not Args->Function)) return ERR::NullArgs;
 
    Self->Triggers[int(Args->Trigger)].push_back(*Args->Function);
 
@@ -266,7 +266,7 @@ static ERR DOCUMENT_CallFunction(extDocument *Self, doc::CallFunction *Args)
 {
    pf::Log log;
 
-   if ((!Args) or (!Args->Function)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Function)) return log.warning(ERR::NullArgs);
 
    // Function is in the format 'function()' or 'script.function()'
 
@@ -310,7 +310,7 @@ static ERR DOCUMENT_Clipboard(extDocument *Self, struct acClipboard *Args)
 {
    pf::Log log;
 
-   if ((!Args) or (Args->Mode IS CLIPMODE::NIL)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (Args->Mode IS CLIPMODE::NIL)) return log.warning(ERR::NullArgs);
 
    if ((Args->Mode IS CLIPMODE::CUT) or (Args->Mode IS CLIPMODE::COPY)) {
       if (Args->Mode IS CLIPMODE::CUT) log.branch("Operation: Cut");
@@ -395,7 +395,7 @@ static ERR DOCUMENT_DataFeed(extDocument *Self, struct acDataFeed *Args)
 {
    pf::Log log;
 
-   if ((!Args) or (!Args->Buffer)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Buffer)) return log.warning(ERR::NullArgs);
 
    if ((Args->Datatype IS DATA::TEXT) or (Args->Datatype IS DATA::XML)) {
       // Incoming data is translated on the fly and added to the end of the current document page.  The original XML
@@ -403,7 +403,7 @@ static ERR DOCUMENT_DataFeed(extDocument *Self, struct acDataFeed *Args)
       //
       // NOTE: Content identified by DATA::TEXT is assumed to be in a serialised XML format.
 
-      if (!Self->initialised()) return log.warning(ERR::NotInitialised);
+      if (not Self->initialised()) return log.warning(ERR::NotInitialised);
       if (Self->Processing) return log.warning(ERR::Recursion);
 
       objXML::create xml = {
@@ -486,10 +486,10 @@ Search: The cell was not found.
 
 static ERR DOCUMENT_Edit(extDocument *Self, doc::Edit *Args)
 {
-   if (!Args) return ERR::NullArgs;
+   if (not Args) return ERR::NullArgs;
 
-   if (!Args->Name) {
-      if ((!Self->CursorIndex.valid()) or (!Self->ActiveEditDef)) return ERR::Okay;
+   if (not Args->Name) {
+      if ((not Self->CursorIndex.valid()) or (not Self->ActiveEditDef)) return ERR::Okay;
       deactivate_edit(Self, true);
       return ERR::Okay;
    }
@@ -531,9 +531,9 @@ static ERR DOCUMENT_FeedParser(extDocument *Self, doc::FeedParser *Args)
 {
    pf::Log log;
 
-   if ((!Args) or (!Args->String)) return ERR::NullArgs;
+   if ((not Args) or (not Args->String)) return ERR::NullArgs;
 
-   if (!Self->Processing) return log.warning(ERR::Failed);
+   if (not Self->Processing) return log.warning(ERR::Failed);
 
 
 
@@ -572,7 +572,7 @@ static ERR DOCUMENT_FindIndex(extDocument *Self, doc::FindIndex *Args)
 {
    pf::Log log;
 
-   if ((!Args) or (!Args->Name)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Name)) return log.warning(ERR::NullArgs);
 
    log.trace("Name: %s", Args->Name);
 
@@ -658,7 +658,7 @@ key-value will be given the same name as that specified in the widget's element.
 
 static ERR DOCUMENT_GetKey(extDocument *Self, struct acGetKey *Args)
 {
-   if ((!Args) or (!Args->Value) or (!Args->Key) or (Args->Size < 2)) return ERR::Args;
+   if ((not Args) or (not Args->Value) or (not Args->Key) or (Args->Size < 2)) return ERR::Args;
 
    if (Self->Vars.contains(Args->Key)) {
       strcopy(Self->Vars[Args->Key], Args->Value, Args->Size);
@@ -700,7 +700,7 @@ static ERR DOCUMENT_HideIndex(extDocument *Self, doc::HideIndex *Args)
    pf::Log log(__FUNCTION__);
    int tab;
 
-   if ((!Args) or (!Args->Name)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Name)) return log.warning(ERR::NullArgs);
 
    log.msg("Index: %s", Args->Name);
 
@@ -710,7 +710,7 @@ static ERR DOCUMENT_HideIndex(extDocument *Self, doc::HideIndex *Args)
       if (stream[i].code IS SCODE::INDEX_START) {
          auto &index = Self->Stream.lookup<bc_index>(i);
          if (name_hash IS index.name_hash) {
-            if (!index.visible) return ERR::Okay; // It's already invisible!
+            if (not index.visible) return ERR::Okay; // It's already invisible!
 
             index.visible = false;
 
@@ -732,7 +732,7 @@ static ERR DOCUMENT_HideIndex(extDocument *Self, doc::HideIndex *Args)
                }
                else if (code IS SCODE::IMAGE) {
                   auto &vec = Self->Stream.lookup<bc_image>(i);
-                  if (!vec.rect.empty()) {
+                  if (not vec.rect.empty()) {
                      pf::ScopedObjectLock obj(vec.rect->UID);
                      if (obj.granted()) acHide(*obj);
                   }
@@ -768,14 +768,14 @@ static ERR DOCUMENT_Init(extDocument *Self)
 {
    pf::Log log;
 
-   if (!Self->Viewport) {
+   if (not Self->Viewport) {
       if ((Self->Owner) and (Self->Owner->classID() IS CLASSID::VECTORVIEWPORT)) {
          Self->Viewport = (objVectorViewport *)Self->Owner;
       }
       else return log.warning(ERR::UnsupportedOwner);
    }
 
-   if (!Self->Focus) Self->Focus = Self->Viewport;
+   if (not Self->Focus) Self->Focus = Self->Viewport;
 
    if (Self->Focus->classID() != CLASSID::VECTORVIEWPORT) {
       return log.warning(ERR::WrongObjectType);
@@ -795,8 +795,8 @@ static ERR DOCUMENT_Init(extDocument *Self)
 
    Self->VPWidth  = Self->Viewport->get<double>(FID_ViewWidth);
    Self->VPHeight = Self->Viewport->get<double>(FID_ViewHeight);
-   if (!Self->VPWidth) Self->VPWidth = Self->Viewport->get<double>(FID_Width);
-   if (!Self->VPHeight) Self->VPHeight = Self->Viewport->get<double>(FID_Height);
+   if (not Self->VPWidth) Self->VPWidth = Self->Viewport->get<double>(FID_Width);
+   if (not Self->VPHeight) Self->VPHeight = Self->Viewport->get<double>(FID_Height);
 
    float bkgd[4] = { 1.0, 1.0, 1.0, 1.0 };
    Self->Viewport->setFillColour(bkgd, 4);
@@ -851,7 +851,7 @@ static ERR DOCUMENT_Init(extDocument *Self)
    // Load a document file into the line array if required
 
    Self->UpdatingLayout = true;
-   if (!Self->Path.empty()) {
+   if (not Self->Path.empty()) {
       if ((Self->Path[0] != '#') and (Self->Path[0] != '?')) {
          if (auto error = load_doc(Self, Self->Path, false); error != ERR::Okay) {
             return error;
@@ -901,7 +901,7 @@ static ERR DOCUMENT_InsertXML(extDocument *Self, doc::InsertXML *Args)
 {
    pf::Log log;
 
-   if ((!Args) or (!Args->XML)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->XML)) return log.warning(ERR::NullArgs);
    if ((Args->Index < -1) or (Args->Index > int(Self->Stream.size()))) return log.warning(ERR::OutOfRange);
 
    if (Self->Stream.data.empty()) return ERR::NoData;
@@ -911,7 +911,7 @@ static ERR DOCUMENT_InsertXML(extDocument *Self, doc::InsertXML *Args)
       fl::Statement(Args->XML)
    };
 
-   if (!xml.ok()) {
+   if (not xml.ok()) {
       Self->UpdatingLayout = true;
 
       ERR error = insert_xml(Self, &Self->Stream, *xml, xml->Tags, (Args->Index IS -1) ? Self->Stream.size() : Args->Index, STYLE::NIL);
@@ -955,7 +955,7 @@ static ERR DOCUMENT_InsertText(extDocument *Self, doc::InsertText *Args)
 {
    pf::Log log(__FUNCTION__);
 
-   if ((!Args) or (!Args->Text)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Text)) return log.warning(ERR::NullArgs);
    if ((Args->Index < -1) or (Args->Index > std::ssize(Self->Stream))) return log.warning(ERR::OutOfRange);
 
    log.traceBranch("Index: %d, Preformat: %d", Args->Index, Args->Preformat);
@@ -1122,7 +1122,7 @@ static std::string border_to_string(CB Border)
    if ((Border & CB::BOTTOM) != CB::NIL) out += "bottom,";
    if ((Border & CB::LEFT) != CB::NIL) out += "left,";
    if ((Border & CB::RIGHT) != CB::NIL) out += "right,";
-   if (!out.empty()) out.pop_back();
+   if (not out.empty()) out.pop_back();
    return out;
 }
 
@@ -1144,7 +1144,7 @@ static void emit_dunit_attrs(std::ostringstream &Out, std::string_view Name, con
 
 static void emit_padding_attrs(std::ostringstream &Out, std::string_view Prefix, const padding &Padding)
 {
-   if (!Padding.configured) return;
+   if (not Padding.configured) return;
 
    std::string base(Prefix);
    emit_attr(Out, base + "-left", Padding.left);
@@ -1203,9 +1203,9 @@ static void write_segments_xml(const std::vector<doc_segment> &Segments, INDEX S
 
    for (SEGINDEX si = 0; si < SEGINDEX(Segments.size()); si++) {
       auto &segment = Segments[si];
-      if (!segment_in_range(segment, Start, End)) continue;
+      if (not segment_in_range(segment, Start, End)) continue;
 
-      if (!has_segments) {
+      if (not has_segments) {
          Out << "\n<segments>\n";
          has_segments = true;
       }
@@ -1253,8 +1253,8 @@ static void write_fonts_xml(std::ostringstream &Out)
 
       Out << "<font";
       emit_attr(Out, "cache-index", int(i));
-      if (!font.face.empty())  emit_attr(Out, "face", font.face);
-      if (!font.style.empty()) emit_attr(Out, "style", font.style);
+      if (not font.face.empty())  emit_attr(Out, "face", font.face);
+      if (not font.style.empty()) emit_attr(Out, "style", font.style);
       if (font.font_size > 0)  emit_attr(Out, "pixel-size", font.font_size);
       if (font.align != ALIGN::NIL) emit_attr(Out, "align", align_to_sv(font.align));
       emit_attr(Out, "height", font.metrics.Height);
@@ -1272,11 +1272,11 @@ static void write_fonts_xml(std::ostringstream &Out)
 
 static void emit_widget_attrs(std::ostringstream &Out, const widget_mgr &Widget)
 {
-   if (!Widget.name.empty())  emit_attr(Out, "name", Widget.name);
-   if (!Widget.label.empty()) emit_attr(Out, "label", Widget.label);
-   if (!Widget.fill.empty())  emit_attr(Out, "fill", Widget.fill);
-   if (!Widget.alt_fill.empty()) emit_attr(Out, "alt-fill", Widget.alt_fill);
-   if (!Widget.font_fill.empty()) emit_attr(Out, "font-fill", Widget.font_fill);
+   if (not Widget.name.empty())  emit_attr(Out, "name", Widget.name);
+   if (not Widget.label.empty()) emit_attr(Out, "label", Widget.label);
+   if (not Widget.fill.empty())  emit_attr(Out, "fill", Widget.fill);
+   if (not Widget.alt_fill.empty()) emit_attr(Out, "alt-fill", Widget.alt_fill);
+   if (not Widget.font_fill.empty()) emit_attr(Out, "font-fill", Widget.font_fill);
    emit_dunit_attrs(Out, "width", Widget.width);
    emit_dunit_attrs(Out, "height", Widget.height);
    emit_dunit_attrs(Out, "default-size", Widget.def_size);
@@ -1334,13 +1334,13 @@ static void write_stream_xml(
             Out << '<' << name;
             emit_identity();
             if (font.index() >= 0) emit_attr(Out, "index", int(font.index()));
-            if (!font.face.empty())  emit_attr(Out, "face", font.face);
-            if (!font.style.empty()) emit_attr(Out, "style", font.style);
-            if (!font.fill.empty())  emit_attr(Out, "fill", font.fill);
+            if (not font.face.empty())  emit_attr(Out, "face", font.face);
+            if (not font.style.empty()) emit_attr(Out, "style", font.style);
+            if (not font.fill.empty())  emit_attr(Out, "fill", font.fill);
             emit_dunit_attrs(Out, "size", font.req_size);
             if (font.pixel_size > 0) emit_attr(Out, "pixel-size", font.pixel_size);
             auto align = fso_align_to_sv(font.options);
-            if (!align.empty()) emit_attr(Out, "align", align);
+            if (not align.empty()) emit_attr(Out, "align", align);
             Out << "/>";
             break;
          }
@@ -1350,12 +1350,12 @@ static void write_stream_xml(
             Out << '<' << name;
             emit_identity();
             emit_attr(Out, "type", link_type_to_sv(link.type));
-            if (!link.ref.empty())  emit_attr(Out, "ref", link.ref);
-            if (!link.hint.empty()) emit_attr(Out, "hint", link.hint);
-            if (!link.fill.empty()) emit_attr(Out, "fill", link.fill);
-            if (!link.hooks.on_click.empty()) emit_attr(Out, "on-click", link.hooks.on_click);
-            if (!link.hooks.on_motion.empty()) emit_attr(Out, "on-motion", link.hooks.on_motion);
-            if (!link.hooks.on_crossing.empty()) emit_attr(Out, "on-crossing", link.hooks.on_crossing);
+            if (not link.ref.empty())  emit_attr(Out, "ref", link.ref);
+            if (not link.hint.empty()) emit_attr(Out, "hint", link.hint);
+            if (not link.fill.empty()) emit_attr(Out, "fill", link.fill);
+            if (not link.hooks.on_click.empty()) emit_attr(Out, "on-click", link.hooks.on_click);
+            if (not link.hooks.on_motion.empty()) emit_attr(Out, "on-motion", link.hooks.on_motion);
+            if (not link.hooks.on_crossing.empty()) emit_attr(Out, "on-crossing", link.hooks.on_crossing);
             Out << "/>";
             break;
          }
@@ -1392,7 +1392,7 @@ static void write_stream_xml(
             emit_identity();
             emit_attr(Out, "type", list_type_to_sv(list.type));
             if (list.start != 1)     emit_attr(Out, "start", list.start);
-            if (!list.fill.empty())  emit_attr(Out, "fill", list.fill);
+            if (not list.fill.empty())  emit_attr(Out, "fill", list.fill);
             emit_dunit_attrs(Out, "item-indent", list.item_indent);
             emit_dunit_attrs(Out, "block-indent", list.block_indent);
             emit_dunit_attrs(Out, "v-spacing", list.v_spacing);
@@ -1406,8 +1406,8 @@ static void write_stream_xml(
             emit_identity();
             emit_attr(Out, "columns", int(table.columns.size()));
             if (table.rows > 0)        emit_attr(Out, "rows", table.rows);
-            if (!table.fill.empty())   emit_attr(Out, "fill", table.fill);
-            if (!table.stroke.empty()) emit_attr(Out, "stroke", table.stroke);
+            if (not table.fill.empty())   emit_attr(Out, "fill", table.fill);
+            if (not table.stroke.empty()) emit_attr(Out, "stroke", table.stroke);
             emit_dunit_attrs(Out, "stroke-width", table.stroke_width);
             emit_dunit_attrs(Out, "min-width", table.min_width);
             emit_dunit_attrs(Out, "min-height", table.min_height);
@@ -1425,8 +1425,8 @@ static void write_stream_xml(
             auto &row = Stream.lookup<bc_row>(i);
             Out << '<' << name;
             emit_identity();
-            if (!row.fill.empty())   emit_attr(Out, "fill", row.fill);
-            if (!row.stroke.empty()) emit_attr(Out, "stroke", row.stroke);
+            if (not row.fill.empty())   emit_attr(Out, "fill", row.fill);
+            if (not row.stroke.empty()) emit_attr(Out, "stroke", row.stroke);
             if (row.min_height != 0) emit_attr(Out, "min-height", row.min_height);
             if (row.vertical_repass) emit_attr(Out, "vertical-repass", true);
             Out << "/>";
@@ -1441,18 +1441,18 @@ static void write_stream_xml(
             emit_attr(Out, "column", cell.column);
             if (cell.col_span != 1) emit_attr(Out, "col-span", cell.col_span);
             if (cell.row_span != 1) emit_attr(Out, "row-span", cell.row_span);
-            if (!cell.edit_def.empty()) emit_attr(Out, "edit-def", cell.edit_def);
-            if (!cell.fill.empty())     emit_attr(Out, "fill", cell.fill);
-            if (!cell.stroke.empty())   emit_attr(Out, "stroke", cell.stroke);
+            if (not cell.edit_def.empty()) emit_attr(Out, "edit-def", cell.edit_def);
+            if (not cell.fill.empty())     emit_attr(Out, "fill", cell.fill);
+            if (not cell.stroke.empty())   emit_attr(Out, "stroke", cell.stroke);
             emit_dunit_attrs(Out, "stroke-width", cell.stroke_width);
             auto border = border_to_string(cell.border);
-            if (!border.empty()) emit_attr(Out, "border", border);
+            if (not border.empty()) emit_attr(Out, "border", border);
             if (cell.modified) emit_attr(Out, "modified", true);
-            if (!cell.hooks.on_click.empty()) emit_attr(Out, "on-click", cell.hooks.on_click);
-            if (!cell.hooks.on_motion.empty()) emit_attr(Out, "on-motion", cell.hooks.on_motion);
-            if (!cell.hooks.on_crossing.empty()) emit_attr(Out, "on-crossing", cell.hooks.on_crossing);
+            if (not cell.hooks.on_click.empty()) emit_attr(Out, "on-click", cell.hooks.on_click);
+            if (not cell.hooks.on_motion.empty()) emit_attr(Out, "on-motion", cell.hooks.on_motion);
+            if (not cell.hooks.on_crossing.empty()) emit_attr(Out, "on-crossing", cell.hooks.on_crossing);
 
-            if (ExpandNested and (cell.stream) and (!cell.stream->data.empty())) {
+            if (ExpandNested and (cell.stream) and (not cell.stream->data.empty())) {
                Out << '>';
                write_stream_xml(*cell.stream, 0, INDEX(cell.stream->size()), Out, HasContent, false, i);
                write_segments_xml(cell.segments, 0, INDEX(cell.stream->size()), Out, i);
@@ -1506,7 +1506,7 @@ static void write_stream_xml(
             auto &use = Stream.lookup<bc_use>(i);
             Out << '<' << name;
             emit_identity();
-            if (!use.id.empty()) emit_attr(Out, "id", use.id);
+            if (not use.id.empty()) emit_attr(Out, "id", use.id);
             if (use.processed) emit_attr(Out, "processed", true);
             Out << "/>";
             break;
@@ -1518,7 +1518,7 @@ static void write_stream_xml(
             emit_identity();
             emit_widget_attrs(Out, button);
             emit_padding_attrs(Out, "inner-padding", button.inner_padding);
-            if (ExpandNested and (button.stream) and (!button.stream->data.empty())) {
+            if (ExpandNested and (button.stream) and (not button.stream->data.empty())) {
                Out << '>';
                write_stream_xml(*button.stream, 0, INDEX(button.stream->size()), Out, HasContent, false, i);
                write_segments_xml(button.segments, 0, INDEX(button.stream->size()), Out, i);
@@ -1543,8 +1543,8 @@ static void write_stream_xml(
             Out << '<' << name;
             emit_identity();
             emit_widget_attrs(Out, combobox);
-            if (!combobox.style.empty()) emit_attr(Out, "style", combobox.style);
-            if (!combobox.value.empty()) emit_attr(Out, "value", combobox.value);
+            if (not combobox.style.empty()) emit_attr(Out, "style", combobox.style);
+            if (not combobox.value.empty()) emit_attr(Out, "value", combobox.value);
             Out << "/>";
             break;
          }
@@ -1554,7 +1554,7 @@ static void write_stream_xml(
             Out << '<' << name;
             emit_identity();
             emit_widget_attrs(Out, input);
-            if (!input.value.empty()) emit_attr(Out, "value", input.value);
+            if (not input.value.empty()) emit_attr(Out, "value", input.value);
             if (input.secret) emit_attr(Out, "secret", true);
             Out << "/>";
             break;
@@ -1607,7 +1607,7 @@ static ERR DOCUMENT_ReadContent(extDocument *Self, doc::ReadContent *Args)
 {
    pf::Log log(__FUNCTION__);
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
    Args->Result = nullptr;
 
@@ -1655,7 +1655,7 @@ static ERR DOCUMENT_ReadContent(extDocument *Self, doc::ReadContent *Args)
       write_fonts_xml(buffer);
       buffer << "</extract>\n";
 
-      if (!has_content) return ERR::NoData;
+      if (not has_content) return ERR::NoData;
 
       auto str = buffer.str();
       if ((Args->Result = strclone(str))) return ERR::Okay;
@@ -1702,7 +1702,7 @@ static ERR DOCUMENT_Refresh(extDocument *Self)
    }
 
    ERR error = ERR::Okay;
-   if ((!Self->Path.empty()) and (Self->Path[0] != '#') and (Self->Path[0] != '?')) {
+   if ((not Self->Path.empty()) and (Self->Path[0] != '#') and (Self->Path[0] != '?')) {
       log.branch("Refreshing from path '%s'", Self->Path.c_str());
       error = load_doc(Self, Self->Path, true, ULD::REFRESH);
    }
@@ -1737,14 +1737,19 @@ static ERR DOCUMENT_RemoveContent(extDocument *Self, doc::RemoveContent *Args)
 {
    pf::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
    if ((Args->Start < 0) or (Args->Start >= std::ssize(Self->Stream))) return log.warning(ERR::OutOfRange);
-   if ((Args->End < 0) or (Args->End >= std::ssize(Self->Stream))) return log.warning(ERR::OutOfRange);
+   if (Args->End < 0) return log.warning(ERR::OutOfRange);
    if (Args->End <= Args->Start) return log.warning(ERR::Args);
 
-   copymem(Self->Stream.data.data() + Args->End, Self->Stream.data.data() + Args->Start, Self->Stream.data.size() - Args->End);
-   Self->Stream.data.resize(Self->Stream.data.size() - Args->End - Args->Start);
+   // End is a soft upper bound - callers may pass a large sentinel value to mean "to end of stream".
+
+   INDEX end = Args->End;
+   if (end > INDEX(std::ssize(Self->Stream))) end = INDEX(std::ssize(Self->Stream));
+
+   copymem(Self->Stream.data.data() + end, Self->Stream.data.data() + Args->Start, Self->Stream.data.size() - end);
+   Self->Stream.data.resize(Self->Stream.data.size() - end - Args->Start);
 
    Self->UpdatingLayout = true;
    return ERR::Okay;
@@ -1770,7 +1775,7 @@ NullArgs
 
 static ERR DOCUMENT_RemoveListener(extDocument *Self, doc::RemoveListener *Args)
 {
-   if ((!Args) or (!Args->Trigger) or (!Args->Function)) return ERR::NullArgs;
+   if ((not Args) or (not Args->Trigger) or (not Args->Function)) return ERR::NullArgs;
 
    if (Args->Function->isC()) {
       for (auto it = Self->Triggers[Args->Trigger].begin(); it != Self->Triggers[Args->Trigger].end(); it++) {
@@ -1804,7 +1809,7 @@ static ERR DOCUMENT_SaveToObject(extDocument *Self, struct acSaveToObject *Args)
 {
    pf::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
    log.branch("Destination: %d", Args->Dest->UID);
    acWrite(Args->Dest, "Save not supported.", 0, nullptr);
@@ -1842,7 +1847,7 @@ static ERR DOCUMENT_SelectLink(extDocument *Self, doc::SelectLink *Args)
 {
    pf::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
    if ((Args->Name) and (Args->Name[0])) {
 /*
@@ -1880,8 +1885,8 @@ static ERR DOCUMENT_SetKey(extDocument *Self, struct acSetKey *Args)
 {
    // Note: Zero-length parameter values are permitted.
 
-   if ((!Args) or (!Args->Key)) return ERR::NullArgs;
-   if (!Args->Key[0]) return ERR::Args;
+   if ((not Args) or (not Args->Key)) return ERR::NullArgs;
+   if (not Args->Key[0]) return ERR::Args;
 
    Self->Vars[Args->Key] = Args->Value;
 
@@ -1914,7 +1919,7 @@ static ERR DOCUMENT_ShowIndex(extDocument *Self, doc::ShowIndex *Args)
 {
    pf::Log log;
 
-   if ((!Args) or (!Args->Name)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Name)) return log.warning(ERR::NullArgs);
 
    log.branch("Index: %s", Args->Name);
 
@@ -1945,7 +1950,7 @@ static ERR DOCUMENT_ShowIndex(extDocument *Self, doc::ShowIndex *Args)
                }
                else if (code IS SCODE::IMAGE) {
                   auto &img = Self->Stream.lookup<bc_image>(i);
-                  if (!img.rect.empty()) acShow(*img.rect);
+                  if (not img.rect.empty()) acShow(*img.rect);
 
                   if (auto tab = find_tabfocus(Self, TT::VECTOR, img.rect->UID); tab >= 0) {
                      Self->Tabs[tab].active = true;
@@ -1960,7 +1965,7 @@ static ERR DOCUMENT_ShowIndex(extDocument *Self, doc::ShowIndex *Args)
                   auto &index = Self->Stream.lookup<bc_index>(i);
                   index.parent_visible = true;
 
-                  if (!index.visible) {
+                  if (not index.visible) {
                      for (++i; i < INDEX(stream.size()); i++) {
                         if (stream[i].code IS SCODE::INDEX_END) {
                            if (index.id IS Self->Stream.lookup<bc_index_end>(i).id) break;

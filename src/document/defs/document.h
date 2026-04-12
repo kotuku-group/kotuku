@@ -989,12 +989,20 @@ struct bc_input : public entity, widget_mgr {
    GuardedObject<objVectorViewport> clip_vp;
    bool secret = false;
 
-   bc_input() { code = SCODE::INPUT; align_to_text = true; }
+   bc_input() { 
+      code = SCODE::INPUT; 
+      align_to_text = true;
+   }
 };
 
 struct bc_image : public entity, widget_mgr {
    // Images inherit from widget graphics management since the rules are identical
-   bc_image() { code = SCODE::IMAGE; }
+   // Images are inline by default and aligned to the text baseline (matches HTML)
+   bc_image() { 
+      code = SCODE::IMAGE; 
+      align_to_text = true; 
+      align = ALIGN::BOTTOM; 
+   }
 };
 
 //********************************************************************************************************************

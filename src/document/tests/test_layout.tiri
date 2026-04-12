@@ -24,7 +24,7 @@ end
 function renderDocToBitmap(Path:str, Width:num)
    scene = obj.new('VectorScene', { pageWidth=Width ?? 1024, pageHeight=768 })
    vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
-   vp.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='rgb(255,255,255)' })
+   vp.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='rgb(255 255 255)' })
 
    doc = vp.new('document', { viewport=vp, path=Path })
    scene.pageHeight = doc.pageHeight
@@ -72,15 +72,14 @@ end
 -----------------------------------------------------------------------------------------------------------------------
 
 @Test(priority=1) function Alignment()   crcTest('Alignment', 'alignment.rpl', { [1024] = 0x85bb7d83, [600] = 0x13d66263, [400] = 0xe26c5e2e }) end
-@Test(priority=4) function Dialog()      crcTest('Dialog', 'dialog.rpl', 0xfd783083) end
+@Test(priority=4) function Dialog()      crcTest('Dialog', 'dialog.rpl', 0x3f1ed354) end
 @Test(priority=4) function Fonts()       crcTest('Fonts', 'fonts.rpl', 0x829d5302) end
 @Test(priority=4) function Images()      crcTest('Images', 'images.rpl', 0xeed1ff8e) end
 @Test(priority=4) function Layout()      crcTest('Layout', 'layout.rpl', 0x3042638c) end
 @Test(priority=4) function Links1()      crcTest('Links1', 'links.rpl', 0x8de8dbec) end
-@Test(priority=4) function Links2()      crcTest('Links2', 'links.rpl?font=Noto Sans&font-size=16', 0x7a14df25) end
-@Test(priority=4) function Lists()       crcTest('Lists', 'lists.rpl', 0x91890a14) end
+@Test(priority=4) function Links2()      crcTest('Links2', 'links.rpl?font=Noto Sans&font-size=16', 0x0f242431) end
+@Test(priority=4) function Lists()       crcTest('Lists', 'lists.rpl', 0x8e0f76e2) end
 @Test(priority=4) function Logic()       crcTest('Logic', 'logic.rpl', 0x18a87849) end
 @Test(priority=4) function Paragraphs()  crcTest('Paragraphs', 'paragraphs.rpl', 0x1d1921c5) end
-@Test(priority=2) function Tables()      crcTest('Tables', 'tables.rpl', 0x5af62a40) end
-@Test(priority=2) function Vuepoint()    crcTest('Vuepoint', 'tables.rpl', 0x5af62a40) end
+@Test(priority=2) function Tables()      crcTest('Tables', 'tables.rpl', 0x7ebd53e7) end
 --@Test(priority=3) function Widgets()     crcTest('Widgets', 'widgets.rpl', 0xbf1021d5) end

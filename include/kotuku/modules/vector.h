@@ -579,7 +579,7 @@ struct VectorMatrix {
 
 struct FontMetrics {
    int Height;         // Full font height equivalent to Ascent (cap-height) + Descent (gutter).  Does NOT include accents.
-   int LineSpacing;    // Vertical advance from one line to the next
+   int LineSpacing;    // Vertical advance from one line to the next.  Includes coverage for accents and additional whitespace.
    int Ascent;         // Height from the baseline to the top (cap-height) of the font.  Does NOT include accents.
    int Descent;        // Height from the baseline to the bottom of the font (gutter)
 };
