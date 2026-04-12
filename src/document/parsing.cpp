@@ -10,6 +10,8 @@ hyperlink etc.  When a type is instantiated it will be assigned a UID and stored
 
 */
 
+#include <cfloat>
+
 // State machine for the parser.  This information is discarded after parsing.
 
 struct parser {
