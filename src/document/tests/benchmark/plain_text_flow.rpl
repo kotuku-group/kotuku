@@ -1,0 +1,40 @@
+<?xml version="1.0"?>
+<!DOCTYPE rpl PUBLIC "-//ROCKLYTE//DTD RPL 1.0//EN">
+
+<body face="Noto Sans" font-size="11pt" margins="28"/>
+
+<page name="Index">
+   <h1>Plain Text Flow Benchmark</h1>
+
+   <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Vestibulum pellentesque, sem sed feugiat maximus, est
+   arcu luctus nisi, a porttitor mauris arcu at neque. Donec et magna sit amet leo malesuada tristique. Integer sed
+   magna non lorem pretium interdum. In varius lectus in lectus luctus, in tempor nunc dignissim. Nulla facilisi.
+   Praesent ornare, lectus non dapibus vulputate, purus mi malesuada velit, vel volutpat mauris libero sed lacus.</p>
+
+   <p line-height="1.35">Aliquam cursus lacinia est, nec sodales justo cursus id. Mauris ac diam eget augue viverra
+   molestie. Suspendisse quis turpis eu lectus iaculis imperdiet. Donec a feugiat mauris. Morbi sit amet neque sit
+   amet magna convallis posuere. Etiam et nibh a ipsum pharetra iaculis. Integer volutpat pulvinar neque, sed
+   condimentum nisi efficitur sit amet. Donec porta, arcu et vulputate consequat, arcu metus viverra est, quis
+   tincidunt ipsum odio quis risus.</p>
+
+   <p>Quisque pulvinar dictum turpis, sit amet semper neque pellentesque non. Nulla facilisi. Sed vitae vestibulum
+   eros. Curabitur scelerisque ante vel vulputate cursus. Aenean dapibus libero et sem aliquet, ut malesuada nibh
+   hendrerit. Nam et nunc eget nibh scelerisque iaculis. Pellentesque habitant morbi tristique senectus et netus et
+   malesuada fames ac turpis egestas. Cras aliquam eros id leo viverra, in tempor nisl faucibus.</p>
+
+   <p>Nam tristique massa ut magna luctus, id pretium arcu vulputate. Sed volutpat scelerisque vestibulum. Duis sed
+   justo lacus. Aenean consequat lacus quis neque feugiat, vitae mattis nibh rutrum. Morbi efficitur aliquet magna,
+   vitae feugiat purus ultrices eget. Mauris id odio vel magna mattis faucibus. Integer ac nisl quis lectus aliquam
+   luctus in sit amet nibh. Aenean eu neque ac est posuere dictum nec nec justo.</p>
+
+   <p>Morbi tincidunt, neque eget efficitur pellentesque, nulla velit ultrices mauris, sit amet posuere erat est sit
+   amet lacus. Sed at est nec nibh accumsan hendrerit. Integer vulputate lacus in fermentum feugiat. Cras efficitur
+   tellus velit, ac tincidunt lacus laoreet quis. Donec tincidunt suscipit lectus, sit amet semper arcu posuere vel.
+   Maecenas lacinia quam quis pretium mattis. Donec pharetra ullamcorper tortor, vitae lacinia lorem.</p>
+
+   <p line-height="1.5">Pellentesque non nisi volutpat, tristique lectus non, aliquam turpis. Fusce porta dignissim
+   elit, vitae luctus velit viverra eu. Etiam finibus auctor purus, vitae dictum orci sodales a. Duis blandit velit
+   lorem, eu porta nunc facilisis non. Ut blandit dui non tristique pretium. Integer at elit nec ipsum faucibus
+   pellentesque. Integer vitae ligula nec turpis tincidunt feugiat non eget ligula. Vestibulum id purus sed mauris
+   dignissim pellentesque.</p>
+</page>

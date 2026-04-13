@@ -1,0 +1,53 @@
+<?xml version="1.0"?>
+<!DOCTYPE rpl PUBLIC "-//ROCKLYTE//DTD RPL 1.0//EN">
+
+<body face="Noto Sans" font-size="10pt" margins="24"/>
+
+<editdef name="bench_edit" on-change="bench_change"/>
+<editdef name="bench_min" min-width="80"/>
+
+<page name="Index">
+   <script persistent type="fluid" name="flProject" @doc="[%self]">
+<![NDATA[
+
+function bench_change()
+end
+
+]]>
+   </script>
+
+   <h1>Edit Cell Benchmark</h1>
+
+   <p>The table below uses editable cells of varying content density so benchmark runs exercise edit-cell layout,
+   minimum-size enforcement, and nested content placement.</p>
+
+   <p><table width="100%" stroke="rgb(150,150,150)" cell-padding="6" spacing="4">
+      <row fill="rgb(245,245,245)">
+         <cell edit="bench_edit"><b>Title</b></cell>
+         <cell edit="bench_edit"><b>Content</b></cell>
+      </row>
+      <row>
+         <cell edit="bench_min"><p>Short</p></cell>
+         <cell edit="bench_edit"><p>This editable cell contains a moderate amount of paragraph text for standard
+         wrapping.</p></cell>
+      </row>
+      <row>
+         <cell edit="bench_min"><p>Empty target follows</p></cell>
+         <cell edit="bench_edit"></cell>
+      </row>
+      <row>
+         <cell edit="bench_min"><p>Nested paragraph block</p></cell>
+         <cell edit="bench_edit"><p>First paragraph inside the edit cell.</p><p>Second paragraph inside the edit
+         cell.</p></cell>
+      </row>
+      <row>
+         <cell edit="bench_min"><p>Long token</p></cell>
+         <cell edit="bench_edit"><p>editable_cell_probe_token_with_no_break_positions_to_stress_width_management</p></cell>
+      </row>
+      <row>
+         <cell edit="bench_edit"><p>Trailing</p></cell>
+         <cell edit="bench_edit"><p>The final editable cell closes the table with normal content so row height and edit
+         area bookkeeping can be compared against previous runs.</p></cell>
+      </row>
+   </table></p>
+</page>

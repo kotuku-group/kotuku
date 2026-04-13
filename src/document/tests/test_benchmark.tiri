@@ -1,0 +1,84 @@
+-- $TIRI
+-- Benchmark-oriented regression suite for document layout.
+--
+-- The intent of this suite is to provide stable end-to-end timing coverage for the main layout hot paths called out
+-- in the document layout refactoring plan.  Each test renders a representative document and performs light sanity
+-- checks so the suite can be used repeatedly while refactoring for performance.
+
+@BeforeAll function init(State)
+   global glDocFolder = State.folder
+end
+
+------------------------------------------------------------------------------------------------------------------------
+-- Helpers
+
+function renderDocToBitmap(Path:str, Width:num)
+   scene = obj.new('VectorScene', { pageWidth = Width, pageHeight = 768 })
+   vp = scene.new('VectorViewport', { x = 0, y = 0, width = '100%', height = '100%' })
+   vp.new('VectorRectangle', { x = 0, y = 0, width = '100%', height = '100%', fill = 'rgb(255 255 255)' })
+
+   doc = vp.new('document', { viewport = vp, path = glDocFolder .. Path })
+   assert(doc.pageHeight > 0, 'Document pageHeight must be greater than zero for ' .. Path)
+
+   scene.pageHeight = doc.pageHeight
+
+   bmp = obj.new('bitmap', { width = scene.pageWidth, height = doc.pageHeight, bitsPerPixel = 32 })
+   bmp.acClear()
+
+   scene.bitmap = bmp
+   scene.acDraw()
+
+   return { doc = doc, bmp = bmp }
+end
+
+function benchmarkDoc(Name:str, Path:str, Widths, MinHeight:num)
+   assert(#Widths > 0, 'Benchmark width list must not be empty')
+
+   for width in values(Widths) do
+      print(f'Testing at {width}px width')
+
+      start_time = mSys.PreciseTime()
+      result = renderDocToBitmap(Path, width)
+      elapsed = (mSys.PreciseTime() - start_time) / 1000000
+
+      assert(result.doc.pageHeight >= MinHeight,
+         f'{Name} produced pageHeight {result.doc.pageHeight} at {width}px, expected at least {MinHeight}')
+      assert(result.bmp.width is width,
+         f'{Name} bitmap width mismatch at {width}px, got {result.bmp.width}')
+      assert(result.bmp.height >= result.doc.pageHeight,
+         f'{Name} bitmap height mismatch at {width}px, got {result.bmp.height}, pageHeight {result.doc.pageHeight}')
+      assert(result.bmp.size > 0, f'{Name} bitmap must contain pixel data at {width}px')
+
+      crc = mSys.GenCRC32(0, result.bmp.data, result.bmp.size)
+      assert(crc >= 0, f'{Name} CRC generation failed at {width}px')
+
+      print(f'pageHeight={result.doc.pageHeight}, render={elapsed}s')
+   end
+end
+
+------------------------------------------------------------------------------------------------------------------------
+-- Benchmarks
+
+@Test(priority=1) function PlainTextFlow()
+   benchmarkDoc('PlainTextFlow', 'benchmark/plain_text_flow.rpl', array<int> { 1024, 720, 480 }, 250)
+end
+
+@Test(priority=1) function ManyParagraphs()
+   benchmarkDoc('ManyParagraphs', 'benchmark/many_paragraphs.rpl', array<int> { 1024, 720, 480 }, 700)
+end
+
+@Test(priority=2) function LongWords()
+   benchmarkDoc('LongWords', 'benchmark/long_words.rpl', array<int> { 1024, 640, 420 }, 180)
+end
+
+@Test(priority=2) function FloatingWidgets()
+   benchmarkDoc('FloatingWidgets', 'benchmark/floating_widgets.rpl', array<int> { 1024, 700, 520 }, 260)
+end
+
+@Test(priority=3) function NestedTables()
+   benchmarkDoc('NestedTables', 'benchmark/nested_tables.rpl', array<int> { 1024, 760, 560 }, 260)
+end
+
+--@Test(priority=3) function EditCells()
+--   benchmarkDoc('EditCells', 'benchmark/edit_cells.rpl', array<int> { 1024, 720, 520 }, 220)
+--end

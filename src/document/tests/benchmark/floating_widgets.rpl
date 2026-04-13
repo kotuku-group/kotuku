@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<!DOCTYPE rpl PUBLIC "-//ROCKLYTE//DTD RPL 1.0//EN">
+
+<svg xmlns="http://www.w3.org/2000/svg">
+   <defs>
+      <image id="add" xlink:href="icons:items/add" width="64" height="64"/>
+      <image id="cancel" xlink:href="icons:items/cancel" width="32" height="32"/>
+   </defs>
+</svg>
+
+<body face="Noto Sans" font-size="10pt" margins="24"/>
+
+<page name="Index">
+   <h1>Floating Widget Benchmark</h1>
+
+   <p>Before the first floating widget there is a normal run of text that should establish the current line and margin
+   state correctly. <image align="right" src="url(#add)" width="64" height="64" padding="8 0 12 12"/> After the
+   floating widget is placed, the following text must wrap around the occupied clip region rather than overlap it.
+   Donec sed ligula vel risus pellentesque placerat. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices
+   posuere cubilia curae; Donec sit amet luctus ipsum. Suspendisse porttitor tristique mauris.</p>
+
+   <p>This paragraph uses a centred floating widget. <image align="center" src="url(#cancel)" width="48" height="48"
+   padding="10 0 10 0"/> The text on either side should interact with the clip region and continue wrapping naturally
+   after the occupied space has been traversed. Integer sodales ante at risus ullamcorper, ut luctus tortor feugiat.
+   Cras ut lectus eu turpis imperdiet pulvinar. Nulla facilisi. Sed feugiat varius suscipit.</p>
+
+   <p>The final paragraph mixes inline and floating widgets together: start_<image src="url(#cancel)"/>_end and then a
+   right-aligned floating image follows. <image align="right" src="url(#cancel)" width="40" height="40" padding="8 0
+   8 10"/> Morbi in viverra felis. Maecenas ultrices est non metus faucibus, vitae tincidunt ipsum interdum. Aenean
+   congue volutpat erat, a tristique sem dapibus quis.</p>
+</page>
