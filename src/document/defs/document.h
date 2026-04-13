@@ -1080,9 +1080,43 @@ public:
 //********************************************************************************************************************
 
 class sorted_segment { // Efficient lookup to the doc_segment array, sorted by vertical position
-public:
+   public:
    SEGINDEX segment;
    double y;
+};
+
+//********************************************************************************************************************
+
+struct doc_layout_metrics {
+   uint32_t root_passes = 0;
+   uint32_t do_layout_calls = 0;
+   uint32_t page_extend_restarts = 0;
+   uint32_t page_extend_requests = 0;
+   uint32_t vertical_repasses = 0;
+   uint32_t table_wrap_restarts = 0;
+   uint32_t row_repasses = 0;
+   uint32_t cell_layouts = 0;
+   uint32_t check_wordwrap_calls = 0;
+   uint32_t wrap_through_clips_calls = 0;
+   uint32_t new_segment_calls = 0;
+   uint32_t clip_count_peak = 0;
+   uint32_t segment_count_peak = 0;
+
+   inline void reset() {
+      root_passes = 0;
+      do_layout_calls = 0;
+      page_extend_restarts = 0;
+      page_extend_requests = 0;
+      vertical_repasses = 0;
+      table_wrap_restarts = 0;
+      row_repasses = 0;
+      cell_layouts = 0;
+      check_wordwrap_calls = 0;
+      wrap_through_clips_calls = 0;
+      new_segment_calls = 0;
+      clip_count_peak = 0;
+      segment_count_peak = 0;
+   }
 };
 
 //********************************************************************************************************************
@@ -1102,6 +1136,7 @@ class extDocument : public objDocument {
    std::vector<docresource>    Resources; // Tracks resources that are page related.  Terminated on page unload.
    std::vector<tab>            Tabs;
    std::vector<edit_cell>      EditCells;
+   doc_layout_metrics          LayoutMetrics;
    ankerl::unordered_dense::map<std::string_view, doc_edit> EditDefs;
    std::array<std::vector<FUNCTION>, size_t(DRT::END)> Triggers;
    std::vector<const XTag *> TemplateArgs; // If a template is called, the tag is referred here so that args can be pulled from it

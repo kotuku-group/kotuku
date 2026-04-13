@@ -1243,6 +1243,30 @@ static void write_segments_xml(const std::vector<doc_segment> &Segments, INDEX S
 }
 
 //********************************************************************************************************************
+static void write_layout_metrics_xml(extDocument *Self, std::ostringstream &Out)
+{
+   if (!Self) return;
+
+   auto &metrics = Self->LayoutMetrics;
+
+   Out << "<layout-metrics";
+   emit_attr(Out, "root-passes", int(metrics.root_passes));
+   emit_attr(Out, "do-layout-calls", int(metrics.do_layout_calls));
+   emit_attr(Out, "page-extend-restarts", int(metrics.page_extend_restarts));
+   emit_attr(Out, "page-extend-requests", int(metrics.page_extend_requests));
+   emit_attr(Out, "vertical-repasses", int(metrics.vertical_repasses));
+   emit_attr(Out, "table-wrap-restarts", int(metrics.table_wrap_restarts));
+   emit_attr(Out, "row-repasses", int(metrics.row_repasses));
+   emit_attr(Out, "cell-layouts", int(metrics.cell_layouts));
+   emit_attr(Out, "check-wordwrap-calls", int(metrics.check_wordwrap_calls));
+   emit_attr(Out, "wrap-through-clips-calls", int(metrics.wrap_through_clips_calls));
+   emit_attr(Out, "new-segment-calls", int(metrics.new_segment_calls));
+   emit_attr(Out, "segment-count-peak", int(metrics.segment_count_peak));
+   emit_attr(Out, "clip-count-peak", int(metrics.clip_count_peak));
+   Out << "/>\n";
+}
+
+//********************************************************************************************************************
 // Emit the shared font cache after the stream fragment so inspection tools can correlate requested font runs with the
 // resolved cached fonts and metrics actually used by layout.
 
@@ -1666,6 +1690,7 @@ static ERR DOCUMENT_ReadContent(extDocument *Self, doc::ReadContent *Args)
       buffer << "<extract>\n<stream>\n";
       write_stream_xml(Self->Stream, Args->Start, end, buffer, has_content, expand_nested);
       write_segments_xml(Self->Segments, Args->Start, end, buffer);
+      write_layout_metrics_xml(Self, buffer);
       buffer << "</stream>\n";
       write_fonts_xml(buffer);
       buffer << "</extract>\n";

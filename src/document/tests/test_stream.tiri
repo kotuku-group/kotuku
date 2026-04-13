@@ -13,6 +13,14 @@ function loadXML(Path:str)
    return err, xml_str
 end
 
+function loadXMLWidth(Path:str, PageWidth:num)
+   scene = obj.new('VectorScene', { pageWidth=PageWidth, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp, path=glDocFolder .. Path })
+   err, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   return err, xml_str
+end
+
 function parseXML(XmlStr:str)
    xml = obj.new('xml', { statement = XmlStr })
    assert(xml, 'Generated XML failed to parse')
@@ -54,7 +62,7 @@ end
 
    -- Every emitted element except the root must carry a stream-index for byte-code correlation.
    missing_idx = xpathNum(xml,
-      'count(/extract/stream//*[not(self::segments) and not(self::segment) and not(@stream-index)])')
+      'count(/extract/stream//*[not(self::segments) and not(self::segment) and not(self::layout-metrics) and not(@stream-index)])')
    assert(missing_idx is 0, 'Every emitted element except <stream> must expose stream-index')
 
    -- Every paragraph must preserve DUNIT type information for leading and line-height.
@@ -331,6 +339,59 @@ end
    missing_segment_attrs = xpathNum(xml,
       'count(/extract/stream/segments/segment[not(@index) or not(@start-index) or not(@start-offset) or not(@stop-index) or not(@stop-offset) or not(@trim-stop-index) or not(@trim-stop-offset) or not(@x) or not(@y) or not(@width) or not(@height) or not(@descent) or not(@align-width) or not(@edit) or not(@allow-merge) or not(@codes)])')
    assert(missing_segment_attrs is 0, 'Every segment must expose span, geometry, and debug code attributes')
+end
+
+@Test function LayoutMetrics()
+   err, xml_str = loadXML('tables.rpl')
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for layout metrics test, err=' .. err)
+
+   xml = parseXML(xml_str)
+
+   metrics_count = xpathNum(xml, 'count(/extract/stream/layout-metrics)')
+   assert(metrics_count is 1, 'XML output must include exactly one <layout-metrics> block')
+
+   missing_metrics_attrs = xpathNum(xml,
+      'count(/extract/stream/layout-metrics[not(@root-passes) or not(@do-layout-calls) or not(@page-extend-restarts) or not(@page-extend-requests) or not(@vertical-repasses) or not(@table-wrap-restarts) or not(@row-repasses) or not(@cell-layouts) or not(@check-wordwrap-calls) or not(@wrap-through-clips-calls) or not(@new-segment-calls) or not(@segment-count-peak) or not(@clip-count-peak)])')
+   assert(missing_metrics_attrs is 0, 'Layout metrics must expose all expected counter attributes')
+
+   assert(xpathNum(xml, 'number(/extract/stream/layout-metrics/@root-passes)') >= 1, 'Layout metrics root-passes must be >= 1')
+   assert(xpathNum(xml, 'number(/extract/stream/layout-metrics/@do-layout-calls)') >= 1, 'Layout metrics do-layout-calls must be >= 1')
+   assert(xpathNum(xml, 'number(/extract/stream/layout-metrics/@check-wordwrap-calls)') >= 1, 'Layout metrics check-wordwrap-calls must be >= 1')
+   assert(xpathNum(xml, 'number(/extract/stream/layout-metrics/@new-segment-calls)') >= 1, 'Layout metrics new-segment-calls must be >= 1')
+   assert(xpathNum(xml, 'number(/extract/stream/layout-metrics/@segment-count-peak)') >= 1, 'Layout metrics segment-count-peak must be >= 1')
+end
+
+@Test function FloatingWidgetMetrics()
+   err, xml_str = loadXML('benchmark/floating_widgets.rpl')
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for floating widget metrics test, err=' .. err)
+
+   xml = parseXML(xml_str)
+   assert(xpathNum(xml, 'number(/extract/stream/layout-metrics/@clip-count-peak)') >= 1,
+      'Floating widget benchmark must register at least one clip region')
+   assert(xpathNum(xml, 'number(/extract/stream/layout-metrics/@wrap-through-clips-calls)') >= 1,
+      'Floating widget benchmark must exercise clip collision checks')
+end
+
+@Test function NestedTableMetrics()
+   err, xml_str = loadXML('benchmark/nested_tables.rpl')
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for nested table metrics test, err=' .. err)
+
+   xml = parseXML(xml_str)
+   assert(xpathNum(xml, 'number(/extract/stream/layout-metrics/@cell-layouts)') >= 1,
+      'Nested table benchmark must record recursive cell layouts')
+   assert(xpathNum(xml, 'count(/extract/stream//cell/segments/segment)') >= 1,
+      'Nested table benchmark must emit nested cell segments')
+end
+
+@Test function LongWordMetrics()
+   err, xml_str = loadXMLWidth('benchmark/long_words.rpl', 420)
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for long word metrics test, err=' .. err)
+
+   xml = parseXML(xml_str)
+   assert(xpathNum(xml, 'number(/extract/stream/layout-metrics/@page-extend-requests)') >= 1,
+      'Long word benchmark must trigger at least one page width extension request')
+   assert(xpathNum(xml, 'number(/extract/stream/layout-metrics/@root-passes)') >= 1,
+      'Long word benchmark must complete at least one root layout pass')
 end
 
 @Test function OutOfRange()

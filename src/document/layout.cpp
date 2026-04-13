@@ -231,6 +231,20 @@ public:
 };
 
 //********************************************************************************************************************
+static inline void update_layout_metrics(extDocument *Self, size_t SegmentCount, size_t ClipCount)
+{
+   if (!Self) return;
+
+   if (SegmentCount > Self->LayoutMetrics.segment_count_peak) {
+      Self->LayoutMetrics.segment_count_peak = (uint32_t)SegmentCount;
+   }
+
+   if (ClipCount > Self->LayoutMetrics.clip_count_peak) {
+      Self->LayoutMetrics.clip_count_peak = (uint32_t)ClipCount;
+   }
+}
+
+//********************************************************************************************************************
 // In the first pass, the size of each cell is calculated with respect to its content.  When SCODE::TABLE_END is
 // reached, the max height and width for each row/column will be calculated and a subsequent pass will be made to
 // fill out the cells.
@@ -316,6 +330,8 @@ CELL layout::lay_cell(bc_table *Table)
 
    if (!cell.stream->data.empty()) {
       m_edit_mode = (!cell.edit_def.empty()) ? true : false;
+
+      Self->LayoutMetrics.cell_layouts++;
 
       layout sl(Self, cell.stream, *cell.viewport, Table->cell_padding);
       sl.m_depth = m_depth + 1;
@@ -497,6 +513,7 @@ WRAP layout::place_widget(widget_mgr &Widget)
 
       m_clips.emplace_back(Widget.x, m_cursor_y, Widget.x + full_width(), m_cursor_y + Widget.full_height(),
          idx, false, "Widget");
+      update_layout_metrics(Self, m_segments.size(), m_clips.size());
    }
    else { // Widget is inline and must be treated like a text character.
       if (!m_word_width) m_word_index.set(idx); // Save the index of the new word
@@ -1091,6 +1108,7 @@ TE layout::lay_table_end(bc_table &Table, double TopMargin, double BottomMargin,
    // other content.
 
    m_clips.emplace_back(Table.x, Table.y, Table.x + Table.width, Table.y + Table.height, idx, false, "Table");
+   update_layout_metrics(Self, m_segments.size(), m_clips.size());
 
    m_cursor_x = Table.x + Table.width;
    m_cursor_y = Table.y;
@@ -1108,6 +1126,7 @@ TE layout::lay_table_end(bc_table &Table, double TopMargin, double BottomMargin,
 void layout::new_segment(const stream_char Start, const stream_char Stop, double Y, double Width, double AlignWidth)
 {
    pf::Log log(__FUNCTION__);
+   Self->LayoutMetrics.new_segment_calls++;
 
    if (Width > AlignWidth) {
       log.trace("Content width of %g exceeds align width of %g", Width, AlignWidth);
@@ -1218,6 +1237,8 @@ void layout::new_segment(const stream_char Start, const stream_char Stop, double
          .allow_merge = allow_merge
       });
    }
+
+   update_layout_metrics(Self, m_segments.size(), m_clips.size());
 }
 
 //********************************************************************************************************************
@@ -1275,11 +1296,14 @@ static void layout_doc(extDocument *Self)
 
    padding margins { Self->LeftMargin, Self->TopMargin, Self->RightMargin, Self->BottomMargin };
 
+   Self->LayoutMetrics.reset();
+
    layout l(Self, &Self->Stream, Self->Page, margins);
    bool repeat = true;
    while (repeat) {
       repeat = false;
       l.m_break_loop--;
+      Self->LayoutMetrics.root_passes++;
 
       double page_width;
 
@@ -1322,6 +1346,15 @@ static void layout_doc(extDocument *Self)
    Self->UpdatingLayout = false;
 
    print_segments(Self);
+
+   DLAYOUT("Layout metrics: root_passes=%d do_layout_calls=%d page_extend_restarts=%d page_extend_requests=%d vertical_repasses=%d table_wrap_restarts=%d row_repasses=%d cell_layouts=%d check_wordwrap_calls=%d wrap_through_clips_calls=%d new_segment_calls=%d segment_peak=%d clip_peak=%d",
+      int(Self->LayoutMetrics.root_passes), int(Self->LayoutMetrics.do_layout_calls),
+      int(Self->LayoutMetrics.page_extend_restarts), int(Self->LayoutMetrics.page_extend_requests),
+      int(Self->LayoutMetrics.vertical_repasses), int(Self->LayoutMetrics.table_wrap_restarts),
+      int(Self->LayoutMetrics.row_repasses), int(Self->LayoutMetrics.cell_layouts),
+      int(Self->LayoutMetrics.check_wordwrap_calls), int(Self->LayoutMetrics.wrap_through_clips_calls),
+      int(Self->LayoutMetrics.new_segment_calls), int(Self->LayoutMetrics.segment_count_peak),
+      int(Self->LayoutMetrics.clip_count_peak));
 
    // If an error occurred during layout processing, unload the document and display an error dialog.  (NB: While it is
    // possible to display a document up to the point at which the error occurred, we want to maintain a strict approach
@@ -1376,6 +1409,7 @@ static void layout_doc(extDocument *Self)
 ERR layout::do_layout(font_entry **Font, double &Width, double &Height, bool &VerticalRepass)
 {
    pf::Log log(__FUNCTION__);
+   Self->LayoutMetrics.do_layout_calls++;
 
    if ((m_stream->data.empty()) or (!Font) or (!Font[0])) {
       return log.traceWarning(ERR::NoData);
@@ -1474,8 +1508,9 @@ extend_page:
          case SCODE::TABLE_END: {
             auto &table = m_stream->lookup<bc_table>(idx);
             auto wrap_result = check_wordwrap(m_word_index.index, m_cursor_x, m_cursor_y, m_word_width, (m_line.height < 1) ? 1 : m_line.height, table.floating_x());
-            if (wrap_result IS WRAP::EXTEND_PAGE) {
+           if (wrap_result IS WRAP::EXTEND_PAGE) {
                DLAYOUT("Expanding page width on wordwrap request.");
+               Self->LayoutMetrics.page_extend_restarts++;
                goto extend_page;
             }
             break;
@@ -1483,8 +1518,9 @@ extend_page:
 
          case SCODE::ADVANCE: {
             auto wrap_result = check_wordwrap(m_word_index.index, m_cursor_x, m_cursor_y, m_word_width, (m_line.height < 1) ? 1 : m_line.height);
-            if (wrap_result IS WRAP::EXTEND_PAGE) {
+           if (wrap_result IS WRAP::EXTEND_PAGE) {
                DLAYOUT("Expanding page width on wordwrap request.");
+               Self->LayoutMetrics.page_extend_restarts++;
                goto extend_page;
             }
             break;
@@ -1507,6 +1543,7 @@ extend_page:
             auto wrap_result = lay_text();
             if (wrap_result IS WRAP::EXTEND_PAGE) { // A word in the text string is too big for the available space.
                DLAYOUT("Expanding page width on wordwrap request.");
+               Self->LayoutMetrics.page_extend_restarts++;
                goto extend_page;
             }
             else if (wrap_result IS WRAP::WRAPPED) { // A wrap occurred during text processing.
@@ -1585,7 +1622,10 @@ extend_page:
          case SCODE::BUTTON: {
             auto &button = m_stream->lookup<bc_button>(idx);
             auto ww = lay_button(button);
-            if (ww IS WRAP::EXTEND_PAGE) goto extend_page;
+            if (ww IS WRAP::EXTEND_PAGE) {
+               Self->LayoutMetrics.page_extend_restarts++;
+               goto extend_page;
+            }
             break;
          }
 
@@ -1593,7 +1633,10 @@ extend_page:
             auto &checkbox = m_stream->lookup<bc_checkbox>(idx);
             size_widget(checkbox, false);
             auto ww = place_widget(checkbox);
-            if (ww IS WRAP::EXTEND_PAGE) goto extend_page;
+            if (ww IS WRAP::EXTEND_PAGE) {
+               Self->LayoutMetrics.page_extend_restarts++;
+               goto extend_page;
+            }
             break;
          }
 
@@ -1601,7 +1644,10 @@ extend_page:
             auto &combobox = m_stream->lookup<bc_combobox>(idx);
             size_widget(combobox, true);
             auto ww = place_widget(combobox);
-            if (ww IS WRAP::EXTEND_PAGE) goto extend_page;
+            if (ww IS WRAP::EXTEND_PAGE) {
+               Self->LayoutMetrics.page_extend_restarts++;
+               goto extend_page;
+            }
             break;
          }
 
@@ -1609,7 +1655,10 @@ extend_page:
             auto &image = m_stream->lookup<bc_image>(idx);
             size_widget(image, false);
             auto ww = place_widget(image);
-            if (ww IS WRAP::EXTEND_PAGE) goto extend_page;
+            if (ww IS WRAP::EXTEND_PAGE) {
+               Self->LayoutMetrics.page_extend_restarts++;
+               goto extend_page;
+            }
             break;
          }
 
@@ -1617,7 +1666,10 @@ extend_page:
             auto &input = m_stream->lookup<bc_input>(idx);
             size_widget(input, true);
             auto ww = place_widget(input);
-            if (ww IS WRAP::EXTEND_PAGE) goto extend_page;
+            if (ww IS WRAP::EXTEND_PAGE) {
+               Self->LayoutMetrics.page_extend_restarts++;
+               goto extend_page;
+            }
             break;
          }
 
@@ -1720,6 +1772,7 @@ wrap_table_cell:
             auto ww = check_wordwrap(idx, table->x, table->y, table->width, table->height, table->floating_x());
             if (ww IS WRAP::EXTEND_PAGE) {
                DLAYOUT("Expanding page width due to table size.");
+               Self->LayoutMetrics.page_extend_restarts++;
                goto extend_page;
             }
             else if (ww IS WRAP::WRAPPED) {
@@ -1728,6 +1781,7 @@ wrap_table_cell:
 
                DLAYOUT("Restarting table calculation due to page wrap to position %gx%g.", m_cursor_x, m_cursor_y);
                table->compute_columns = 1;
+               Self->LayoutMetrics.table_wrap_restarts++;
                goto wrap_table_start;
             }
 
@@ -1743,9 +1797,18 @@ wrap_table_cell:
                auto req_width = m_page_width;
                *this = tablestate;
                m_page_width = req_width;
-               if (action IS TE::WRAP_TABLE) goto wrap_table_end;
-               else if (action IS TE::REPASS_ROW_HEIGHT) goto repass_row_height;
-               else if (action IS TE::EXTEND_PAGE) goto extend_page;
+               if (action IS TE::WRAP_TABLE) {
+                  Self->LayoutMetrics.table_wrap_restarts++;
+                  goto wrap_table_end;
+               }
+               else if (action IS TE::REPASS_ROW_HEIGHT) {
+                  Self->LayoutMetrics.row_repasses++;
+                  goto repass_row_height;
+               }
+               else if (action IS TE::EXTEND_PAGE) {
+                  Self->LayoutMetrics.page_extend_restarts++;
+                  goto extend_page;
+               }
             }
             break;
          }
@@ -1785,10 +1848,12 @@ repass_row_height:
 
                case CELL::WRAP_TABLE_CELL:
                   *this = tablestate;
+                  Self->LayoutMetrics.table_wrap_restarts++;
                   goto wrap_table_cell;
 
                case CELL::REPASS_ROW_HEIGHT:
                   *this = rowstate;
+                  Self->LayoutMetrics.row_repasses++;
                   goto repass_row_height;
 
                default:
@@ -1826,6 +1891,8 @@ exit:
    if ((!m_depth) and (VerticalRepass) and (last_height < page_height)) {
       DLAYOUT("============================================================");
       DLAYOUT("SECOND PASS: Root page height increased from %g to %g", last_height, page_height);
+      Self->LayoutMetrics.vertical_repasses++;
+      Self->LayoutMetrics.page_extend_restarts++;
       goto extend_page;
    }
 
@@ -1917,6 +1984,7 @@ void layout::end_line(NL NewLine, stream_char Next)
 WRAP layout::check_wordwrap(stream_char Cursor, double &X, double &Y, double Width, double Height, bool Floating)
 {
    pf::Log log(__FUNCTION__);
+   Self->LayoutMetrics.check_wordwrap_calls++;
 
    if (m_break_loop <= 0) return WRAP::DO_NOTHING;
    if (Width < 1) Width = 1;
@@ -1974,6 +2042,7 @@ WRAP layout::check_wordwrap(stream_char Cursor, double &X, double &Y, double Wid
             DWRAP("Forcing an extension of the page width to %g", min_width);
          }
          else m_page_width += 1;
+         Self->LayoutMetrics.page_extend_requests++;
          return WRAP::EXTEND_PAGE;
       }
 
@@ -2033,6 +2102,8 @@ WRAP layout::check_wordwrap(stream_char Cursor, double &X, double &Y, double Wid
 
 WTC layout::wrap_through_clips(double X, double Y, double Width, double Height, double &AdvanceTo)
 {
+   Self->LayoutMetrics.wrap_through_clips_calls++;
+
    for (auto &clip : m_clips) {
       if (clip.transparent) continue;
       if ((Y + Height < clip.top) or (Y >= clip.bottom)) continue; // Ignore clips above or below the line.
