@@ -29,9 +29,9 @@ end
 
 function saveBitmap(Bitmap, Path)
    folder, filename = io.splitPath(Path)
-   split = string.split(filename, '\\.')
+   split = string.split(filename, '.')
    if split?? then
-      filename = split[#split-1] .. '.png'
+      filename = split[0] .. '.png'
 
       pic = obj.new('picture', { width = Bitmap.width, height = Bitmap.height, bitsPerPixel = Bitmap.bitsPerPixel, flags='NEW' })
       Bitmap.acCopyData(pic.bitmap)

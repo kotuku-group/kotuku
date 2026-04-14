@@ -893,7 +893,7 @@ public:
    typedef typename agg::rgba8::value_type value_type;
    typedef agg::rgba8 color_type;
 
-   span_once(Source & src, unsigned offset_x, unsigned offset_y) :
+   span_once(Source & src, int offset_x, int offset_y) :
        m_src(&src), m_offset_x(offset_x), m_offset_y(offset_y)
    {
       m_bk_buf[0] = m_bk_buf[1] = m_bk_buf[2] = m_bk_buf[3] = 0;
@@ -953,8 +953,8 @@ public:
    Source *m_src;
 
 private:
-   unsigned m_offset_x;
-   unsigned m_offset_y;
+   int m_offset_x;
+   int m_offset_y;
    uint8_t m_bk_buf[4];
    int m_x, m_x0, m_y;
    uint8_t *m_pix_ptr;

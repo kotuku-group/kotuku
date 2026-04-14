@@ -15,8 +15,8 @@ ITEM_HEIGHT  <const> = math.floor(FONT_MAX_HEIGHT * 1.5)
 VMARGIN      <const> = math.floor(ITEM_HEIGHT * 0.33)
 HMARGIN      <const> = 6
 ICON_SIZE    <const> = math.floor(ITEM_HEIGHT * 0.8)
-KB_HIGHLIGHT <const> = 'rgba(0,0,0,.5)'
-ICON_STRIP   <const> = 'rgba(255,255,255,.15)'
+KB_HIGHLIGHT <const> = 'rgb(0 0 0 / .5)'
+ICON_STRIP   <const> = 'rgb(255 255 255 / .15)'
 
 gui.menu = function(Options)
    local theme = Options.theme ? Options.theme :> gui.getTheme()
@@ -144,7 +144,7 @@ gui.menu = function(Options)
 
             vText.y = mi.textY
             mi.height = ITEM_HEIGHT
-            y += mi.height
+            y = math.ceil(y + mi.height)
 
             self.items:push(mi)
          end
@@ -328,7 +328,7 @@ gui.menu = function(Options)
                if self.parentMenu then -- Child menu
                   y -= surface.height
                else
-                  y = y - surface.height - (Options.y ?? 0)
+                  y -= surface.height + (Options.y ?? 0)
                end
             end
 

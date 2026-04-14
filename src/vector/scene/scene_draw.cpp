@@ -122,7 +122,7 @@ public:
    typedef typename agg::rgba8::value_type value_type;
    typedef agg::rgba8 color_type;
 
-   span_reflect_y(agg::pixfmt_psl & pixf, unsigned offset_x, unsigned offset_y) :
+   span_reflect_y(agg::pixfmt_psl & pixf, int offset_x, int offset_y) :
        m_src(&pixf),
        m_wrap_x(pixf.mWidth),
        m_wrap_y(pixf.mHeight),
@@ -170,8 +170,8 @@ private:
    wrap_mode_repeat_auto_pow2 m_wrap_x;
    wrap_mode_reflect_auto_pow2 m_wrap_y;
    uint8_t *m_row_ptr;
-   unsigned m_offset_x;
-   unsigned m_offset_y;
+   int m_offset_x;
+   int m_offset_y;
    uint8_t m_bk_buf[4];
    int m_x;
 };
@@ -186,7 +186,7 @@ public:
    typedef typename agg::rgba8::value_type value_type;
    typedef agg::rgba8 color_type;
 
-   span_reflect_x(agg::pixfmt_psl & pixf, unsigned offset_x, unsigned offset_y) :
+   span_reflect_x(agg::pixfmt_psl & pixf, int offset_x, int offset_y) :
        m_src(&pixf), m_wrap_x(pixf.mWidth), m_wrap_y(pixf.mHeight),
        m_offset_x(offset_x), m_offset_y(offset_y)
    {
@@ -231,8 +231,8 @@ private:
    wrap_mode_reflect_auto_pow2 m_wrap_x;
    wrap_mode_repeat_auto_pow2 m_wrap_y;
    uint8_t *m_row_ptr;
-   unsigned m_offset_x;
-   unsigned m_offset_y;
+   int m_offset_x;
+   int m_offset_y;
    uint8_t m_bk_buf[4];
    int m_x;
 };
@@ -247,7 +247,7 @@ public:
    typedef typename agg::rgba8::value_type value_type;
    typedef agg::rgba8 color_type;
 
-   span_repeat_pf(agg::pixfmt_psl & pixf, unsigned offset_x, unsigned offset_y) :
+   span_repeat_pf(agg::pixfmt_psl & pixf, int offset_x, int offset_y) :
        m_src(&pixf), m_wrap_x(pixf.mWidth), m_wrap_y(pixf.mHeight),
        m_offset_x(offset_x), m_offset_y(offset_y) {
       m_bk_buf[0] = m_bk_buf[1] = m_bk_buf[2] = m_bk_buf[3] = 0;
@@ -290,7 +290,7 @@ public:
 private:
    wrap_mode_repeat_auto_pow2 m_wrap_x, m_wrap_y;
    uint8_t *m_row_ptr;
-   unsigned m_offset_x, m_offset_y;
+   int m_offset_x, m_offset_y;
    uint8_t m_bk_buf[4];
    int m_x;
 };
@@ -369,8 +369,11 @@ template <class T> void drawBitmap(T &Scanline, VSM SampleMethod, agg::renderer_
    objBitmap *SrcBitmap, VSPREAD SpreadMethod, double Opacity, agg::trans_affine *Transform = nullptr, double XOffset = 0, double YOffset = 0)
 {
    agg::pixfmt_psl pixels(*SrcBitmap);
+   const bool requires_interpolation = (std::floor(XOffset) != XOffset) or (std::floor(YOffset) != YOffset) or
+      ((Transform) and ((Transform->is_complex()) or (std::floor(Transform->tx) != Transform->tx) or
+         (std::floor(Transform->ty) != Transform->ty)));
 
-   if ((Transform) and (Transform->is_complex())) {
+   if (requires_interpolation) {
       agg::span_interpolator_linear interpolator(*Transform);
       agg::image_filter_lut filter;
       set_filter(filter, SampleMethod, *Transform);  // Set the interpolation filter to use.
@@ -404,20 +407,23 @@ template <class T> void drawBitmap(T &Scanline, VSM SampleMethod, agg::renderer_
          YOffset += Transform->ty;
       }
 
+      const int x_offset = int(XOffset);
+      const int y_offset = int(YOffset);
+
       if (SpreadMethod IS VSPREAD::REFLECT_X) {
-         agg::span_reflect_x source(pixels, XOffset, YOffset);
+         agg::span_reflect_x source(pixels, x_offset, y_offset);
          drawBitmapRender(Scanline, RenderBase, Raster, source, Opacity);
       }
       else if (SpreadMethod IS VSPREAD::REFLECT_Y) {
-         agg::span_reflect_y source(pixels, XOffset, YOffset);
+         agg::span_reflect_y source(pixels, x_offset, y_offset);
          drawBitmapRender(Scanline, RenderBase, Raster, source, Opacity);
       }
       else if (SpreadMethod IS VSPREAD::REPEAT) {
-         agg::span_repeat_pf source(pixels, XOffset, YOffset);
+         agg::span_repeat_pf source(pixels, x_offset, y_offset);
          drawBitmapRender(Scanline, RenderBase, Raster, source, Opacity);
       }
       else { // VSPREAD::PAD and VSPREAD::CLIP modes.
-         agg::span_once<agg::pixfmt_psl> source(pixels, XOffset, YOffset);
+         agg::span_once<agg::pixfmt_psl> source(pixels, x_offset, y_offset);
          drawBitmapRender(Scanline, RenderBase, Raster, source, Opacity);
       }
    }
