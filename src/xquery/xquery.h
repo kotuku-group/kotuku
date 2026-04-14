@@ -1351,6 +1351,7 @@ class XPathEvaluator : public XPathErrorReporter {
    extXML *xml;
    const XPathNode * query_root = nullptr;
    CompiledXQuery * parse_context = nullptr;
+   XTag * absolute_root_node = nullptr;
    XPathContext context;
    XPathArena arena;
    AxisEvaluator axis_evaluator;
@@ -1539,6 +1540,7 @@ class XPathEvaluator : public XPathErrorReporter {
 
    // Entry point for compiled XPath evaluation
    ERR find_tag(const XPathNode &, uint32_t);
+   void set_absolute_root_node(XTag *Node);
 
    inline bool is_trace_enabled() const { return trace_xpath_enabled; }
 

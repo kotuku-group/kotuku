@@ -306,11 +306,13 @@ or booleans.
 
 -INPUT-
 obj(XML) XML: Targeted XML document to query.  Can be NULL for XQuery expressions that do not require a context.
+int Index: Optional tag index that establishes the initial context and absolute root scope for the query.
 
 -ERRORS-
 Okay
 NullArgs
 AllocMemory
+NotFound
 
 *********************************************************************************************************************/
 
@@ -341,12 +343,29 @@ static ERR XQUERY_Evaluate(extXQuery *Self, struct xq::Evaluate *Args)
    auto xml = (extXML *)Args->XML;
    Self->XML = xml;
 
+   if ((Args->Index != 0) and (not xml)) {
+      Self->ErrorMsg = "An XML object is required when Index is specified.";
+      return log.warning(ERR::NullArgs);
+   }
+
    if (xml) {
       pf::ScopedObjectLock lock(xml);
+      XTag *root_tag = nullptr;
 
       if (Self->Path.empty() and (xml->Path)) Self->Path = xml->Path;
+      if (Args->Index != 0) {
+         root_tag = xml->getTag(Args->Index);
+         if (not root_tag) {
+            Self->ErrorMsg = std::format("The target XML tag index %d was not found.", Args->Index);
+            return log.warning(ERR::NotFound);
+         }
+      }
 
       XPathEvaluator eval(Self, xml, Self->ParseResult.expression.get(), &Self->ParseResult);
+      if (root_tag) {
+         eval.set_absolute_root_node(root_tag);
+         eval.push_context(root_tag, 1, 1);
+      }
       auto err = eval.evaluate_xpath_expression(*(Self->ParseResult.expression.get()), &Self->Result);
       Self->ErrorMsg = Self->ParseResult.error_msg;
       return err;
@@ -624,6 +643,7 @@ The C++ prototype for Callback is `ERR Function(*XML, int TagID, CSTRING Attrib,
 -INPUT-
 obj(XML) XML: Target XML document to search.
 ptr(func) Callback: Optional callback function to invoke for each matching node.
+int Index: Optional tag index that establishes the initial context and absolute root scope for the query.
 
 -ERRORS-
 Okay: At least one matching node was found and processed.
@@ -631,6 +651,7 @@ NullArgs: At least one required parameter was not provided.
 Syntax: The provided query expression has syntax errors.
 Search: No matching node was found.
 Terminate: The callback function requested termination of the search.
+NotFound: The specified Index does not correspond to a valid XML tag.
 
 *********************************************************************************************************************/
 
@@ -660,16 +681,33 @@ static ERR XQUERY_Search(extXQuery *Self, struct xq::Search *Args)
    auto xml = (extXML *)Args->XML;
    Self->XML = xml;
 
+   if ((Args->Index != 0) and (not xml)) {
+      Self->ErrorMsg = "An XML object is required when Index is specified.";
+      return log.warning(ERR::NullArgs);
+   }
+
    if (xml) {
       pf::ScopedObjectLock lock(xml);
+      XTag *root_tag = nullptr;
 
       if (Self->Path.empty() and (xml->Path)) Self->Path = xml->Path;
+      if (Args->Index != 0) {
+         root_tag = xml->getTag(Args->Index);
+         if (not root_tag) {
+            Self->ErrorMsg = std::format("The target XML tag index %d was not found.", Args->Index);
+            return log.warning(ERR::NotFound);
+         }
+      }
 
       if ((Args->Callback) and (Args->Callback->defined())) Self->Callback = *Args->Callback;
       else Self->Callback.Type = CALL::NIL;
 
       (void)xml->getMap(); // Ensure the tag ID and ParentID values are defined
       XPathEvaluator eval(Self, xml, Self->ParseResult.expression.get(), &Self->ParseResult);
+      if (root_tag) {
+         eval.set_absolute_root_node(root_tag);
+         eval.push_context(root_tag, 1, 1);
+      }
       auto error = eval.find_tag(*Self->ParseResult.expression.get(), 0); // Returns ERR:Search if no match
       Self->ErrorMsg = Self->ParseResult.error_msg;
       return error;
