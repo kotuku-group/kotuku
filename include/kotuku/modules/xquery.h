@@ -127,8 +127,8 @@ DEFINE_ENUM_FLAG_OPERATORS(XIF)
 // XQuery methods
 
 namespace xq {
-struct Evaluate { objXML * XML; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Search { objXML * XML; FUNCTION * Callback; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Evaluate { objXML * XML; int Index; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Search { objXML * XML; FUNCTION * Callback; int Index; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct RegisterFunction { CSTRING FunctionName; FUNCTION * Callback; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct InspectFunctions { CSTRING Name; XIF ResultFlags; CSTRING Result; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
@@ -157,12 +157,12 @@ class objXQuery : public Object {
       struct acSetKey args = { FieldName, Value };
       return Action(AC::SetKey, this, &args);
    }
-   inline ERR evaluate(objXML * XML) noexcept {
-      struct xq::Evaluate args = { XML };
+   inline ERR evaluate(objXML * XML, int Index = 0) noexcept {
+      struct xq::Evaluate args = { XML, Index };
       return(Action(AC(-1), this, &args));
    }
-   inline ERR search(objXML * XML, FUNCTION Callback) noexcept {
-      struct xq::Search args = { XML, &Callback };
+   inline ERR search(objXML * XML, FUNCTION Callback, int Index = 0) noexcept {
+      struct xq::Search args = { XML, &Callback, Index };
       return(Action(AC(-2), this, &args));
    }
    inline ERR registerFunction(CSTRING FunctionName, FUNCTION Callback) noexcept {

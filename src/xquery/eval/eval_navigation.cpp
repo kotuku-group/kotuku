@@ -28,6 +28,7 @@ std::vector<XPathEvaluator::AxisMatch> XPathEvaluator::dispatch_axis(AxisType Ax
    XTag *ContextNode, const XMLAttrib *ContextAttribute)
 {
    std::vector<AxisMatch> matches;
+   XTag *root_scope = absolute_root_node;
 
    size_t estimated_capacity = axis_evaluator.estimate_result_size(Axis, ContextNode);
    matches.reserve(estimated_capacity);
@@ -47,7 +48,10 @@ std::vector<XPathEvaluator::AxisMatch> XPathEvaluator::dispatch_axis(AxisType Ax
          if (attribute_context) break;
 
          if (not ContextNode) {
-            if (xml) {
+            if (root_scope) {
+               matches.push_back({ root_scope, nullptr });
+            }
+            else if (xml) {
                for (auto &tag : xml->Tags) {
                   if (not tag.isTag()) continue;
                   matches.push_back({ &tag, nullptr });
@@ -66,7 +70,13 @@ std::vector<XPathEvaluator::AxisMatch> XPathEvaluator::dispatch_axis(AxisType Ax
          if (attribute_context) break;
 
          if (not ContextNode) {
-            if (xml) {
+            if (root_scope) {
+               matches.push_back({ root_scope, nullptr });
+               auto &desc_buffer = arena.acquire_node_vector();
+               axis_evaluator.evaluate_axis(AxisType::DESCENDANT, root_scope, desc_buffer);
+               append_nodes(desc_buffer);
+            }
+            else if (xml) {
                for (auto &tag : xml->Tags) {
                   if (not tag.isTag()) continue;
                   matches.push_back({ &tag, nullptr });
@@ -92,7 +102,13 @@ std::vector<XPathEvaluator::AxisMatch> XPathEvaluator::dispatch_axis(AxisType Ax
 
          if (not ContextNode) {
             matches.push_back({ nullptr, nullptr });
-            if (xml) {
+            if (root_scope) {
+               matches.push_back({ root_scope, nullptr });
+               auto &desc_buffer = arena.acquire_node_vector();
+               axis_evaluator.evaluate_axis(AxisType::DESCENDANT, root_scope, desc_buffer);
+               append_nodes(desc_buffer);
+            }
+            else if (xml) {
                for (auto &tag : xml->Tags) {
                   if (not tag.isTag()) continue;
                   matches.push_back({ &tag, nullptr });
