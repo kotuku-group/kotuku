@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="Compression" mod="Core" c="Compresses data into archives, supporting a variety of compression formats." cat="Data" id="700c0197" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="Compression" mod="Core" c="Compresses data into archives, supporting a variety of compression formats." cat="Data" id="700c0197" v="1">
   <ai:a n="Flush" c="Flushes all pending actions." p="ERR acFlush(*Object)"/>
   <ai:m n="CompressBuffer" c="Compresses a plain memory area into an empty buffer." p="ERR cmp::CompressBuffer(OBJECTPTR Object, APTR Input, INT InputSize, APTR Output, INT OutputSize, INT * Result)">
     <ai:i n="Input" t="APTR" c="Pointer to the source data."/>

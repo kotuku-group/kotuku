@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol Framework is made publicly available under the terms described in the LICENSE.TXT file
+The source code for Kōtuku is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 -CATEGORY-
@@ -10,7 +10,7 @@ Name: Fields
 *********************************************************************************************************************/
 
 #include "defs.h"
-#include <parasol/main.h>
+#include <kotuku/main.h>
 
 #include <stdarg.h>
 #include <stdlib.h>
@@ -114,7 +114,9 @@ ERR writeval_default(OBJECTPTR Object, Field *Field, int flags, CPTR Data, int E
       else if (Field->Flags & (FD_POINTER|FD_STRING)) error = writeval_ptr(Object, Field, flags, Data, 0);
       else log.warning("Unrecognised field flags $%.8x.", Field->Flags);
 
-      if (error != ERR::Okay) log.warning("An error occurred writing to field %s (field type $%.8x, source type $%.8x).", Field->Name, Field->Flags, flags);
+      if (error != ERR::Okay) {
+         log.warning("Error %d on writing to field %s (field type $%.8x, source type $%.8x).", int(error), Field->Name, Field->Flags, flags);
+      }
       return error;
    }
    else {
@@ -138,6 +140,8 @@ static ERR writeval_array(OBJECTPTR Object, Field *Field, int SrcType, CPTR Sour
 {
    pf::Log log("WriteField");
 
+   if (not Field->writeable()) return ERR::NoFieldAccess;
+
    // Direct writing to field arrays without a SET function is only supported for the RGB type.  The client should
    // define a SET function for all other cases.
 
@@ -159,7 +163,7 @@ static ERR writeval_array(OBJECTPTR Object, Field *Field, int SrcType, CPTR Sour
       return ERR::Okay;
    }
 
-   log.warning("Field array '%s' is poorly defined.", Field->Name);
+   log.warning("Field array '%s.%s' needs a SET function.", Object->className(), Field->Name);
    return ERR::SanityCheckFailed;
 }
 
@@ -551,6 +555,8 @@ static ERR setval_large(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, in
 void optimise_write_field(Field &Field)
 {
    pf::Log log(__FUNCTION__);
+
+   if (!Field.writeable()) return;
 
    if (Field.Flags & FD_FLAGS)       Field.WriteValue = writeval_flags;
    else if (Field.Flags & FD_LOOKUP) Field.WriteValue = writeval_lookup;

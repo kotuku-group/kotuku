@@ -1211,7 +1211,7 @@ ERR GetSurfaceCoords(OBJECTID SurfaceID, int *X, int *Y, int *AbsX, int *AbsY, i
          if (Height) *Height = display->Height;
          return ERR::Okay;
       }
-      else return ERR::Failed;
+      else return ERR::SystemCall;
    }
 
    int i;
@@ -1390,7 +1390,7 @@ ERR GetVisibleArea(OBJECTID SurfaceID, int *X, int *Y, int *AbsX, int *AbsY, int
          if (AbsY)   *AbsY = 0;
          return ERR::Okay;
       }
-      else return ERR::Failed;
+      else return ERR::SystemCall;
    }
 
    const std::lock_guard<std::recursive_mutex> lock(glSurfaceLock);

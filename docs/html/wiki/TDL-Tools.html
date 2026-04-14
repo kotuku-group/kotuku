@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-8254DG7MT6"> </script><script>
+	   window.dataLayer = window.dataLayer || [];
+	   function gtag(){dataLayer.push(arguments);}
+	   gtag('js', new Date());
+      gtag('config', 'G-8254DG7MT6');</script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Kōtuku documentation, machine generated from source">
+<meta name="author" content="Paul Manias">
+<link rel="icon" href="/favicon.ico">
+<title>Kōtuku Wiki - TDL Tools</title>
+<link href="../css/bootstrap.min.css" rel="stylesheet">
+<link href="../css/module-template.css" rel="stylesheet">
+<link href="../css/github-markdown.css" rel="stylesheet">
+</head>
+
+<body>
+<nav class="navbar navbar-expand-sm navbar-dark bg-dark">
+  <div class="container-fluid">
+    <div class="navbar-header"><a class="navbar-brand" href="../index.html">Kōtuku</a></div>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div id="navbar" class="collapse navbar-collapse">
+      <ul class="nav navbar-nav"><li class="nav-item">
+        <li class="nav-item"><a class="nav-link" href="../gallery.html">Gallery</a></li>
+        <li class="nav-item"><a class="nav-link" href="../modules/api.html">API</a></li>
+        <li class="nav-item"><a class="nav-link" href="Home.html">Wiki</a></li>
+        <li class="nav-item"><a class="nav-link" href="https://github.com/parasol-framework/kotuku">GitHub</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<div class="container-fluid">
+  <div class="row">
+    <div class="d-sm-block d-none col-3 sidebar" style="max-width: 230px;">
+      <div class="flex-shrink-1 pt-2 pe-2 sticky-top overflow-auto vh-100 b-shadow">
+
+<ul class="list-unstyled">
+  <li>
+    <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#wiki-collapse" aria-expanded="true">Wiki</button>
+    <div class="collapse show" id="wiki-collapse">
+      <ul class="btn-toggle-nav list-unstyled fw-normal pb-1 ps-3">
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#bp-collapse" aria-expanded="false">Build Process</button>
+         <div class="collapse" id="bp-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="Linux-Builds.html">Linux Builds</a></li>
+              <li class="api-ref"><a class="rounded" href="Windows-Builds.html">Windows Builds</a></li>
+              <li class="api-ref"><a class="rounded" href="Customising-Your-Build.html">Customising Your Build</a></li>
+            </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#tm-collapse" aria-expanded="false">Technical Manuals</button>
+         <div class="collapse" id="tm-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+             <li class="api-ref"><a class="rounded" href="Kotuku-Objects.html">Kōtuku Objects</a></li>
+             <li class="api-ref"><a class="rounded" href="Kotuku-In-Depth.html">Kōtuku In Depth</a></li>
+             <li class="api-ref"><a class="rounded" href="Coding-With-AI.html">Coding With AI</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#fg-collapse" aria-expanded="false">Tiri</button>
+         <div class="collapse" id="fg-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+            <li class="api-ref"><a class="rounded" href="Tiri-Reference-Manual.html">Tiri Reference Manual</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-GUI-API.html">GUI API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-HTTPServer-API.html">HTTPServer API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-IO-API.html">I/O API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-JSON-API.html">JSON API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-URL-API.html">URL API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-VFX-API.html">VFX API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-Widgets.html">Widgets</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#rrm-collapse" aria-expanded="false">RIPL</button>
+         <div class="collapse" id="rrm-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="RIPL-Reference-Manual.html">RIPL Reference Manual</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#tools-collapse" aria-expanded="false">Tools</button>
+         <div class="collapse" id="tools-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="Origo.html">Origo</a></li>
+              <li class="api-ref"><a class="rounded" href="Unit-Testing.html">Flute / Unit Testing</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#doc-collapse" aria-expanded="false">Doc Generation</button>
+         <div class="collapse" id="doc-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="Embedded-Document-Formatting.html">Embedded Document Format</a></li>
+              <li class="api-ref"><a class="rounded" href="TDL-Reference-Manual.html">TDL Reference Manual</a></li>
+              <li class="api-ref"><a class="rounded" href="TDL-Tools.html">TDL Tools</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#app-collapse" aria-expanded="false">Appendix</button>
+         <div class="collapse" id="app-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+             <li class="api-ref"><a class="rounded" href="Action-Reference-Manual.html">Action Reference Manual</a></li>
+             <li class="api-ref"><a class="rounded" href="System-Error-Codes.html">System Error Codes</a></li>
+           </ul>
+         </div></li>
+      </ul>
+    </div>
+  </li>
+</ul>
+
+<ul class="list-unstyled">
+  <li class="border-top my-3"></li>
+  <li>
+    <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#mod-collapse" aria-expanded="false">Modules</button>
+    <div class="collapse" id="mod-collapse">
+      <ul class="btn-toggle-nav list-unstyled fw-normal">
+      <li class="api-ref"><a href="../modules/audio.html" class="rounded">Audio</a></li>
+      <li class="api-ref"><a href="../modules/core.html" class="rounded">Core</a></li>
+      <li class="api-ref"><a href="../modules/display.html" class="rounded">Display</a></li>
+      <li class="api-ref"><a href="../modules/font.html" class="rounded">Font</a></li>
+      <li class="api-ref"><a href="../modules/network.html" class="rounded">Network</a></li>
+      <li class="api-ref"><a href="../modules/regex.html" class="rounded">Regex</a></li>
+      <li class="api-ref"><a href="../modules/tiri.html" class="rounded">Tiri</a></li>
+      <li class="api-ref"><a href="../modules/vector.html" class="rounded">Vector</a></li>
+      <li class="api-ref"><a href="../modules/xml.html" class="rounded">XML</a></li>
+      <li class="api-ref"><a href="../modules/xpath.html" class="rounded">XPath</a></li>
+      </ul>
+    </div>
+  </li>
+</ul>
+
+<ul class="list-unstyled">
+  <li class="border-top my-3"></li>
+  <li>
+    <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#class-collapse" aria-expanded="false">Classes</button>
+    <div class="collapse" id="class-collapse">
+      <ul class="btn-toggle-nav list-unstyled fw-normal pb-1 ps-3">
+        <li>
+          <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#audio-collapse" aria-expanded="false">Audio</button>
+          <div class="collapse" id="audio-collapse">
+            <ul class="btn-toggle-nav list-unstyled fw-normal pb-1">
+            <li><a href="../modules/classes/audio.html" class="rounded">Audio</a></li>
+            <li><a href="../modules/classes/sound.html" class="rounded">Sound</a></li>
+            </ul>
+          </div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#core-collapse" aria-expanded="false">Core</button><div class="collapse" id="core-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a href="../modules/classes/file.html" class="rounded">File</a></li>
+        <li><a href="../modules/classes/metaclass.html" class="rounded">MetaClass</a></li>
+        <li><a href="../modules/classes/module.html" class="rounded">Module</a></li>
+        <li><a href="../modules/classes/storagedevice.html" class="rounded">StorageDevice</a></li>
+        <li><a href="../modules/classes/task.html" class="rounded">Task</a></li>
+        <li><a href="../modules/classes/thread.html" class="rounded">Thread</a></li>
+        <li><a href="../modules/classes/time.html" class="rounded">Time</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#data-collapse" aria-expanded="false">Data</button><div class="collapse" id="data-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a href="../modules/classes/compression.html" class="rounded">Compression</a></li>
+        <li><a href="../modules/classes/compressedstream.html" class="rounded">CompressedStream</a></li>
+        <li><a href="../modules/classes/config.html" class="rounded">Config</a></li>
+        <li><a href="../modules/classes/script.html" class="rounded">Script</a></li>
+        <li><a href="../modules/classes/xml.html" class="rounded">XML</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#devices-collapse" aria-expanded="false">Devices</button><div class="collapse" id="devices-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li><a href="../modules/classes/controller.html" class="rounded">Controller</a></li></ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#effects-collapse" aria-expanded="false">Effects</button><div class="collapse" id="effects-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/blurfx.html">BlurFX</a></li>
+        <li><a class="rounded" href="../modules/classes/colourfx.html">ColourFX</a></li>
+        <li><a class="rounded" href="../modules/classes/compositefx.html">CompositeFX</a></li>
+        <li><a class="rounded" href="../modules/classes/convolvefx.html">ConvolveFX</a></li>
+        <li><a class="rounded" href="../modules/classes/displacementfx.html">DisplacementFX</a></li>
+        <li><a class="rounded" href="../modules/classes/filtereffect.html">FilterEffect</a></li>
+        <li><a class="rounded" href="../modules/classes/floodfx.html">FloodFX</a></li>
+        <li><a class="rounded" href="../modules/classes/imagefx.html">ImageFX</a></li>
+        <li><a class="rounded" href="../modules/classes/lightingfx.html">LightingFX</a></li>
+        <li><a class="rounded" href="../modules/classes/mergefx.html">MergeFX</a></li>
+        <li><a class="rounded" href="../modules/classes/morphologyfx.html">MorphologyFX</a></li>
+        <li><a class="rounded" href="../modules/classes/offsetfx.html">OffsetFX</a></li>
+        <li><a class="rounded" href="../modules/classes/remapfx.html">RemapFX</a></li>
+        <li><a class="rounded" href="../modules/classes/sourcefx.html">SourceFX</a></li>
+        <li><a class="rounded" href="../modules/classes/turbulencefx.html">TurbulenceFX</a></li>
+        <li><a class="rounded" href="../modules/classes/wavefunctionfx.html">WaveFunctionFX</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#ext-collapse" aria-expanded="false">Extensions</button><div class="collapse" id="ext-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/scintilla.html">Scintilla</a></li>
+        <li><a class="rounded" href="../modules/classes/scintillasearch.html">ScintillaSearch</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#gfx-collapse" aria-expanded="false">Graphics</button><div class="collapse" id="gfx-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/bitmap.html">Bitmap</a></li>
+        <li><a class="rounded" href="../modules/classes/clipboard.html">Clipboard</a></li>
+        <li><a class="rounded" href="../modules/classes/display.html">Display</a></li>
+        <li><a class="rounded" href="../modules/classes/document.html">Document</a></li>
+        <li><a class="rounded" href="../modules/classes/font.html">Font</a></li>
+        <li><a class="rounded" href="../modules/classes/picture.html">Picture</a></li>
+        <li><a class="rounded" href="../modules/classes/pointer.html">Pointer</a></li>
+        <li><a class="rounded" href="../modules/classes/surface.html">Surface</a></li>
+        <li><a class="rounded" href="../modules/classes/svg.html">SVG</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#net-collapse" aria-expanded="false">Network</button><div class="collapse" id="net-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/clientsocket.html">ClientSocket</a></li>
+        <li><a class="rounded" href="../modules/classes/http.html">HTTP</a></li>
+        <li><a class="rounded" href="../modules/classes/netclient.html">NetClient</a></li>
+        <li><a class="rounded" href="../modules/classes/netlookup.html">NetLookup</a></li>
+        <li><a class="rounded" href="../modules/classes/netsocket.html">NetSocket</a></li>
+        <li><a class="rounded" href="../modules/classes/proxy.html">Proxy</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#vectors-collapse" aria-expanded="false">Vectors</button><div class="collapse" id="vectors-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/vector.html">Vector</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorclip.html">VectorClip</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorcolour.html">VectorColour</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorellipse.html">VectorEllipse</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorfilter.html">VectorFilter</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorgradient.html">VectorGradient</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorgroup.html">VectorGroup</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorimage.html">VectorImage</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorpath.html">VectorPath</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorpattern.html">VectorPattern</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorpolygon.html">VectorPolygon</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorrectangle.html">VectorRectangle</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorscene.html">VectorScene</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorshape.html">VectorShape</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorspiral.html">VectorSpiral</a></li>
+        <li><a class="rounded" href="../modules/classes/vectortext.html">VectorText</a></li>
+        <li><a class="rounded" href="../modules/classes/vectortransition.html">VectorTransition</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorviewport.html">VectorViewport</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorwave.html">VectorWave</a></li>
+        </ul></div>
+        </li>
+      </ul>
+    </div>
+  </li>
+</ul>
+
+</div>
+</div>
+
+<div class="col-sm-9" style="max-width: 1200px;">
+<div class="docs-content" id="default-page">
+
+<h1>TDL Tools</h1>
+<h1 id="idl-c">idl-c</h1>
+<p>The idl-c script is the primary parser for TDL files, producing essential C++ headers and auto-generating interface definitions based on class and module specs. It also generates XML documentation by way of the idl-doc extension.</p>
+<p>The idl-c script is located in Kōtuku&#39;s <code>scripts/dev/</code> folder. The following command-line parameters are accepted:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Arg</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">src</td>
+<td style="text-align: left;">The source TDL file (required).</td>
+</tr>
+<tr>
+<td style="text-align: left;">output</td>
+<td style="text-align: left;">Output path for the C++ header. Not required if the TDL defines a named module.</td>
+</tr>
+<tr>
+<td style="text-align: left;">feedback</td>
+<td style="text-align: left;">Feedback level, can be set to <code>verbose</code> for extra log messages.</td>
+</tr>
+<tr>
+<td style="text-align: left;">output-defs</td>
+<td style="text-align: left;">C++ interface definitions (e.g. the module function table) will be output to this file if specified.</td>
+</tr>
+<tr>
+<td style="text-align: left;">output-proto</td>
+<td style="text-align: left;">Function prototypes will be output to this file if specified.</td>
+</tr>
+<tr>
+<td style="text-align: left;">prototypes</td>
+<td style="text-align: left;">Can be set to <code>static</code> to output static prototype functions in conjunction with <code>output-proto</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;">sdk</td>
+<td style="text-align: left;">Refers to the path of the Kōtuku SDK. Not normally required as it can be inferred.</td>
+</tr>
+<tr>
+<td style="text-align: left;">files</td>
+<td style="text-align: left;">A list of source files that need to be processed in conjunction with the TDL file.</td>
+</tr>
+</tbody>
+</table>
+<p>This example from the Core API parses <code>errors.tdl</code> as a straight header file with no interface definitions:</p>
+<pre><code>origo scripts/dev/idl-c src=defs/errors.tdl output=sdk:include/system/errors.h</code></pre>
+<p>This example parses every function interface for the Core API, and auto-generates C prototypes according to their definitions:</p>
+<pre><code>origo scripts/dev/idl-c src=defs/core.tdl
+  output-proto=prototypes.h
+  output-defs=data_functions.c
+  files={ &quot;core.cpp&quot; &quot;lib_objects.cpp&quot; &quot;lib_base64.cpp&quot; &quot;lib_events.cpp&quot; &quot;lib_fields_read.cpp&quot;
+   &quot;lib_fields_write.cpp&quot; &quot;lib_filesystem.cpp&quot; &quot;lib_functions.cpp&quot; &quot;lib_locking.cpp&quot;
+   &quot;lib_log.cpp&quot; &quot;lib_messages.cpp&quot; &quot;lib_memory.cpp&quot; &quot;lib_strings.cpp&quot; &quot;lib_unicode.cpp&quot;
+   &quot;fs_folders.cpp&quot; &quot;fs_identify.cpp&quot; &quot;fs_resolution.cpp&quot; &quot;fs_volumes.cpp&quot;
+  }</code></pre>
+<hr>
+<h1 id="idl-doc">idl-doc</h1>
+<p>The idl-doc script is an extension of idl-c and cannot be run independently. XML documentation is automatically generated as part of idl-c&#39;s process, and document files are saved to the <code>sdk:docs/xml/</code> path.</p>
+<p>We use XML style-sheets to process the XML documents into HTML. An automated script that will process every manual is located at <code>sdk:docs/generate.tiri</code> and requires <code>xsltproc</code> to be installed.</p>
+<hr>
+<h1 id="idl-compile">idl-compile</h1>
+<p>idl-compile will parse an TDL file and produce compiled IDL data that is in a universal format. The IDL describes all classes, structs and constants defined in the TDL source.</p>
+<p>The compiled IDL is expected to be compiled into the module binary and referenced from its <code>KOTUKU_MOD()</code> definition, which will make it available in the module header. Run-time languages like Tiri will be able to read the IDL at run-time and bind to it, guaranteeing that the language header and the compiled binary are correctly matched.</p>
+<p>The idl-compile script is located in Kōtuku&#39;s <code>scripts/dev/</code> folder. The following command-line parameters are accepted:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Arg</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">src</td>
+<td style="text-align: left;">The source TDL file (required).</td>
+</tr>
+<tr>
+<td style="text-align: left;">output</td>
+<td style="text-align: left;">Output path for the C++ header. Not required if the TDL defines a named module.</td>
+</tr>
+<tr>
+<td style="text-align: left;">feedback</td>
+<td style="text-align: left;">Feedback level, can be set to <code>verbose</code> for extra log messages.</td>
+</tr>
+<tr>
+<td style="text-align: left;">sdk</td>
+<td style="text-align: left;">Refers to the path of the Kōtuku SDK. Not normally required as it can be inferred.</td>
+</tr>
+<tr>
+<td style="text-align: left;">format</td>
+<td style="text-align: left;">Set to &#39;c&#39; if the IDL should be output as a C char string named <code>glIDL</code>. It is otherwise generated as a constant for a <code>.h</code> C header, and named <code>MOD_IDL</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;">append</td>
+<td style="text-align: left;">If true, the generated output will be appended to the target output file.</td>
+</tr>
+</tbody>
+</table>
+<p>Example:</p>
+<pre><code>origo scripts/dev/idl-compile src=defs/core.tdl output=idl.h format=c</code></pre>
+<h1 id="cmake-support">CMake Support</h1>
+<p>The IDL scripts are not intended for direct use from the command-line, and should instead be integrated as part of a module&#39;s build process. Kōtuku&#39;s <code>CMakeLists.txt</code> file has a number of pre-defined functions to help with integrating TDL processing into your build.</p>
+<p>They are as follows:</p>
+<h3 id="idl_gen">idl_gen()</h3>
+<p><code>idl_gen(&quot;{TDL_PATH}&quot; NAME &quot;{NAME}&quot; OUTPUT &quot;{OUTPUT}&quot; ...)</code></p>
+<p><code>idl_gen()</code> is used to generate C/C++ headers from TDL files, and produces XML document files as a by-product. It can also produce IDL output in C-format if <code>APPEND_IDL</code> is specified.</p>
+<p>The following options are available:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Option</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">NAME</td>
+<td style="text-align: left;">Required. Defines the CMake target name for add_custom_target().</td>
+</tr>
+<tr>
+<td style="text-align: left;">OUTPUT</td>
+<td style="text-align: left;">Required. Defines the <code>output</code> parameter for idl-c and also acts as a CMake dependency. <em>Must be a full path</em>.</td>
+</tr>
+<tr>
+<td style="text-align: left;">FILES</td>
+<td style="text-align: left;">A list of C/C++ source files to be passed to the idl-c <code>files</code> parameter.</td>
+</tr>
+<tr>
+<td style="text-align: left;">ARGS</td>
+<td style="text-align: left;">Additional arguments to be passed directly to the idl-c script.</td>
+</tr>
+<tr>
+<td style="text-align: left;">APPEND_IDL</td>
+<td style="text-align: left;">Run the idl-compile script and <em>append</em> the output to the given path.</td>
+</tr>
+</tbody>
+</table>
+<pre><code>idl_gen (&quot;${MOD}.tdl&quot; NAME ${MOD}_defs
+   OUTPUT &quot;${INCLUDE_OUTPUT}/modules/${MOD}.h&quot;
+   FILES &quot;class_rsvg.cpp&quot; &quot;class_svg.cpp&quot;)</code></pre>
+<h3 id="idl_compile">idl_compile()</h3>
+<p><code>idl_compile(&quot;{TDL_PATH}&quot;) NAME &quot;{NAME}&quot; OUTPUT &quot;{OUTPUT_PATH}&quot;)</code></p>
+<p>Calls the idl-compile script with <code>TDL_PATH</code> as the source and <code>OUTPUT_PATH</code> as the target C file, which will be <em>overwritten</em>. The <code>NAME</code> must be a unique target name for CMake.</p>
+<p>Example of typical usage:</p>
+<pre><code>idl_compile (&quot;svg.tdl&quot; NAME svg_idl OUTPUT &quot;${CMAKE_CURRENT_SOURCE_DIR}/svg_def.c&quot;)</code></pre>
+</div></div></div></div>
+
+<script src="../js/bootstrap.bundle.min.js"></script>
+<script src="../js/base.js"></script>
+<script>
+
+   // Auto-open the relevant sidebar branch
+
+   var url = window.location.pathname;
+   var filename = url.substring(url.lastIndexOf('/')+1);
+   var el = document.querySelector('li[class="api-ref"] > a[href="' + filename + '"]');
+   if (el) {
+      var parent = getParentNode(el, '[class="collapse"]');
+      if (parent) new bootstrap.Collapse(parent, { show: true }); // Causes animation
+
+      el.style.backgroundColor = '#d2f4ea';
+   }
+
+   cancelAnimations();
+    </script>
+  </body>
+</html>

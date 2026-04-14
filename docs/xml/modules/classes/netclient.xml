@@ -11,7 +11,7 @@
     <id>05bdfa0b</id>
     <idstring>NETCLIENT</idstring>
     <category>Network</category>
-    <copyright>Paul Manias © 2005-2025</copyright>
+    <copyright>Paul Manias © 2005-2026</copyright>
     <description>
 <p>When a connection is opened between a client IP and a <class name="NetSocket">NetSocket</class> object, a new NetClient object will be created for the client's IP address if one does not already exist.  All <class name="ClientSocket">ClientSocket</class> connections to that IP address are then tracked under the single NetClient object.</p>
 <p>NetClient objects are intended to be created from the network interfacing code exclusively.</p></description>

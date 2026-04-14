@@ -1,0 +1,104 @@
+-- Flute regression tests for import scope upvalue handling
+--
+-- Tests that locals captured by closures in imported modules remain valid after
+-- the import scope ends and registers are freed. This validates the "close and free"
+-- strategy for import scopes: BC_UCLO is emitted to close upvalues at scope end,
+-- then registers are freed normally for reuse.
+
+import './import_scope_helper'
+
+@Test function UpvalueCaptureBasic()
+   -- After import, allocate some locals to reuse registers
+   local d, e, f = 1, 2, 3
+   local sum = d + e + f
+
+   -- The imported get_x() should return 42 (the value after modification in the helper)
+   result = get_x()
+   assert(result is 42, f"Expected get_x() to return 42, got {result}")
+
+   -- Verify our local variables weren't corrupted
+   assert(sum is 6, f"Expected local sum to be 6, got {sum}")
+end
+
+@Test function UpvalueCaptureMultiple()
+   -- Allocate locals that would reuse the a, b, c registers from the import
+   local x, y, z = 10, 20, 30
+   local result = x * y * z
+
+   -- The imported get_sum() should return 660 (110 + 220 + 330)
+   imported_sum = get_sum()
+   assert(imported_sum is 660, f"Expected get_sum() to return 660, got {imported_sum}")
+
+   -- Verify our local variables weren't corrupted
+   assert(result is 6000, f"Expected local result to be 6000, got {result}")
+end
+
+@Test function NestedClosureCapture()
+   -- Test that the incrementer closure still works (order-independent: just verify increment works)
+   local r1 = incrementer()
+
+   -- Allocate more locals
+   local a, b, c, d = 1, 2, 3, 4
+
+   local r2 = incrementer()
+   assert(r2 is r1 + 1, f"Expected r2 ({r2}) to be r1 ({r1}) + 1")
+
+   -- Verify locals are intact
+   assert(a + b + c + d is 10, "Local variables corrupted after incrementer call")
+end
+
+@Test function ClosureFactoryAfterImport()
+   -- Create a new incrementer after the import
+   local new_inc = make_incrementer()
+
+   -- Use the same underlying counter (shared state across tests)
+   local r1 = new_inc()
+   local r2 = new_inc()
+
+   -- Just verify it increments correctly (order-independent)
+   assert(r2 is r1 + 1, f"Expected r2 ({r2}) to be r1 ({r1}) + 1")
+end
+
+@Test function HeavyRegisterReuse()
+   -- Allocate many locals to stress-test register reuse
+   local a1, a2, a3, a4, a5 = 1, 2, 3, 4, 5
+   local b1, b2, b3, b4, b5 = 6, 7, 8, 9, 10
+   local c1, c2, c3, c4, c5 = 11, 12, 13, 14, 15
+
+   -- All imported functions should still work
+   assert(get_x() is 42, "get_x() failed after heavy register allocation")
+   assert(get_sum() is 660, "get_sum() failed after heavy register allocation")
+
+   -- Verify all locals
+   local total = a1+a2+a3+a4+a5 + b1+b2+b3+b4+b5 + c1+c2+c3+c4+c5
+   assert(total is 120, f"Expected total 120, got {total}")
+end
+
+@Test function LoopAfterImport()
+   -- Test register reuse in loops after import
+   local sum = 0
+   for i = 1, 10 do
+      local temp = get_x()
+      sum += temp
+   end
+   assert(sum is 420, f"Expected sum 420 (42*10), got {sum}")
+end
+
+@Test function NestedFunctionsAfterImport()
+   -- Define nested functions after import to ensure import's upvalues are independent
+   local outer_val = 999
+
+   function outer()
+      local inner_val = 888
+      function inner()
+         return outer_val + inner_val
+      end
+      return inner
+   end
+
+   local fn = outer()
+   assert(fn() is 1887, "Nested function captures failed after import")
+
+   -- Import functions should still work
+   assert(get_x() is 42, "Import function failed after nested function definition")
+end

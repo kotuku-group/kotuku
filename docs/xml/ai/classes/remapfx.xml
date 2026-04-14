@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="RemapFX" mod="Vector" c="Provides pixel remapping; equivalent to feComponentTransfer in SVG." cat="Graphics" id="3eb33c98" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="RemapFX" mod="Vector" c="Provides pixel remapping; equivalent to feComponentTransfer in SVG." cat="Graphics" id="3eb33c98" v="1">
   <ai:a n="Draw" c="Render the effect to the target bitmap." p="ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)">
     <ai:i n="X" t="INT" c="The X position of the region to be drawn."/>
     <ai:i n="Y" t="INT" c="The Y position of the region to be drawn."/>

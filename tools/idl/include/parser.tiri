@@ -1,0 +1,462 @@
+
+local rx_doc_name        = <{ regex.new("^[Nn]ame:\\s+(.+?)\\n", regex.MULTILINE) }>
+local rx_doc_combo       = <{ regex.new("^(\\w+):\\s+(.+)\\n", regex.MULTILINE) }>
+local rx_doc_comment     = <{ regex.new("^[Cc]omment:\\s+(.+?)\\n", regex.MULTILINE) }>
+local rx_doc_category    = <{ regex.new("^[Cc]ategory:\\s+(.+?)\\n", regex.MULTILINE) }>
+local rx_doc_extproto    = <{ regex.new("^[Ee]xtPrototype:\\s+(.+?)\\n", regex.MULTILINE) }>
+local rx_doc_attrib      = <{ regex.new("^[Aa]ttribute:\\s+(.+?)\\n", regex.MULTILINE) }>
+local rx_doc_status      = <{ regex.new("^[Ss]tatus:\\s+(.+?)\\n", regex.MULTILINE) }>
+local rx_doc_lookup      = <{ regex.new("^[Ll]ookup:\\s+(.+?)\\n", regex.MULTILINE) }>
+local rx_doc_desc        = <{ regex.new("\\n\\n(.+?)\\n-[A-Z]+-\\n", regex.DOT_ALL) }>
+local rx_strip_ws        = <{ regex.new("^(.*\\S)") }>
+local rx_errors_section  = <{ regex.new("^-ERRORS-\\n+(.+?)-END-", regex.DOT_ALL|regex.MULTILINE) }>
+local rx_input_section   = <{ regex.new("^-INPUT-\\n+(.+?)\\n+-[A-Z]+-\\n", regex.DOT_ALL|regex.MULTILINE) }>
+local rx_result_section  = <{ regex.new("^-RESULT-\\n+(.+?)\\n+-END-", regex.DOT_ALL|regex.MULTILINE) }>
+local rx_ecode_comment   = <{ regex.new("^([A-Za-z]+):\\s+(.+)") }>
+local rx_ecode_only      = <{ regex.new("^([A-Za-z]+):?") }>
+local rx_private         = <{ regex.new("^[Pp]rivate") }>
+local rx_param           = <{ regex.new("^\\s*(.+)\\s+(\\S+)\\s*:\\s*(.+)$") }>
+local rx_result_type     = <{ regex.new("^(.+?):\\s+(.+)$") }>
+local rx_idl_section     = <{ regex.new("--IDL_BEGIN--(.+?)--IDL_END--", regex.DOT_ALL) }>
+local rx_extract_comment = <{ regex.new([[^\/\*+(.*?)\*+\/]], regex.MULTILINE|regex.DOT_ALL) }>
+
+----------------------------------------------------------------------------------------------------------------------
+
+global function parseClassEntry(Class, Type, Extract)
+   choose Type from
+      '-CLASS-'  -> parseClassHeader(Class, Extract)
+      '-METHOD-' -> parseMethod(Class, Extract)
+      '-ACTION-' -> parseAction(Class, Extract)
+      '-FIELD-'  -> parseField(Class, Extract)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+global function parseClassHeader(Class:table, Extract:str)
+   Extract = f'-CLASS-\n{Extract:trim()}\n-END-\n'
+
+   local name
+   name, Class.comment = rx_doc_combo.extract(Extract)
+   Class.status = rx_doc_status.extract(Extract)
+
+   assert(name:lower() is Class.name:lower(), f"The name specified in the -CLASS- header '{name}' does not match the name specified in the class() call '{Class.name}'")
+
+   Class.description = rx_doc_desc.extract(Extract)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+global function parseAction(Class:table, Extract:str)
+   Extract = '-ACTION-\n' .. Extract:trim() .. '\n-END-\n'
+
+   local name = rx_doc_name.extract(Extract)
+   local comment = rx_doc_comment.extract(Extract)
+   if not name then
+      name, comment = rx_doc_combo.extract(Extract)
+   end
+
+   local action = Class.actions[name] ?? { }
+   action.name = name
+   action.comment = comment
+   action.description = rx_doc_desc.extract(Extract)
+
+   local errors = rx_errors_section.extract(Extract)
+   if errors?? then
+      local error_list = glCoreConstants['ERR']
+      action.results = { }
+
+      for line in values(errors:split('\n')) do
+         line ?? break -- A double line-break forces a premature end to error processing.
+
+         local ecode, emsg = rx_ecode_comment.extract(line)
+         if ecode then
+            table.insert(action.results, { code = error_list[ecode], codeName = ecode, msg = emsg })
+         else
+            ecode = rx_ecode_only.extract(line)
+            if ecode then
+               table.insert(action.results, { code = error_list[ecode], codeName = ecode, msg = mSys.GetErrorMsg(error_list[ecode]) })
+            end
+        end
+      end
+
+      table.sort(action.results, function(a,b) return a.code < b.code end)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+global function parseField(class:table, Extract:str)
+   Extract = '-FIELD-\n' .. Extract:trim() .. '\n-END-\n'
+
+   local lookup = rx_doc_lookup.extract(Extract)
+   local status = rx_doc_status.extract(Extract)
+   local name, comment = rx_doc_combo.extract(Extract)
+   local description = rx_doc_desc.extract(Extract)
+
+   if not name then
+      print('Name not defined for -FIELD- definition.')
+      return
+   end
+
+   local f = findClassField(class, name)
+   if f then
+      if comment?? then f.comment = comment end
+      if lookup?? then
+         if glCustomTypes[lookup] then
+            f.lookup = lookup
+            class.references['TYPE:' .. lookup] = 1
+         else
+            print('Requested lookup "' .. lookup .. '" is not known.')
+         end
+      end
+      if rx_private.test(status ?? '') or rx_private.test(comment ?? '') then
+         f.private = true
+         f.access = 'Private'
+      end
+      f.description = description
+   elseif class.meta then
+      print("Field '" .. class.name .. "." .. tostring(name) .. "' is not defined in the TDL or compiled class spec.")
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Convert a parameter string such as "int width: The width of the image"
+
+global function parseParameterString(Parameter:str):table
+   local type, name, comment = rx_param.extract(Parameter)
+   if type then
+      return {
+         type = type:trim(),
+         name = name:trim(),
+         comment = comment:trim()
+      }
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+global function parseMethod(Class:table, Extract:str)
+   Extract = f'-METHOD-\n{Extract:trim()}\n-END-\n'
+
+   local name = rx_doc_name.extract(Extract)
+   local comment = rx_doc_comment.extract(Extract)
+
+   if not name then
+      name, comment = rx_doc_combo.extract(Extract)
+   end
+
+   local status = rx_doc_status.extract(Extract)
+   local description = rx_doc_desc.extract(Extract)
+
+   if name and name:endsWith('()') then
+      name = name:pop(2)
+   end
+
+   assert(name??, 'Failed to extract a name tag from -METHOD- definition.')
+   assert(comment??, "Failed to extract a comment tag from -METHOD- definition of '" .. name .. "'")
+   assert(description??, "Failed to extract a description from -METHOD- definition of '" .. name .. "'")
+
+   if glFeedback is 'verbose' then print('Processing method ' .. name) end
+
+   local method -- Retrieve the definition for this method
+   if Class.methods then
+      method = Class.lookupMethods[name]
+      assert(method, "Method '" .. name .. "' is not registered in the TDL.")
+   else
+      error("Methods need to be pre-defined for class '" .. tostring(Class.name) .. "' with methods()")
+   end
+
+   method.params = { }
+   method.description = description
+   method.comment = comment
+   method.status = status
+
+   local input = rx_input_section.extract(Extract)
+   local errors = rx_errors_section.extract(Extract)
+
+   if errors?? then
+      local error_list = glCoreConstants['ERR']
+      method.results = { }
+
+      for line in values(errors:split('\n')) do
+         line ?? break -- A double line-break forces a premature end to error processing.
+
+         local ecode, emsg = rx_ecode_comment.extract(line)
+         if ecode then
+            table.insert(method.results, { code = error_list[ecode], codeName = ecode, msg = emsg })
+         else
+            ecode = rx_ecode_only.extract(line)
+            if ecode then
+               table.insert(method.results, { code = error_list[ecode], codeName = ecode, msg = mSys.GetErrorMsg(error_list[ecode]) })
+            end
+         end
+      end
+
+      table.sort(method.results, function(a,b) return (a.code ?? -1) < (b.code ?? -1) end)
+   end
+
+   if input?? then
+      for content in values(input:split('\n')) do
+         local param = parseParameterString(content)
+         if param then
+            cType(param, name)
+            table.insert(method.params, param)
+         elseif content:trim()?? then
+            error("Unable to process line '" .. (content ?? "NULL") .. "' for method '" .. name .. "'")
+         end
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Process the formal field definitions in a class spec.
+
+global function parseClassFields(Class:table, ClientSpec:str)
+   cdef = ''
+
+   -- Parse fields defined in the TDL
+
+   Class.fields = extractFields(ClientSpec, Class.name)
+
+   -- Add compiled fields into the field definitions.  NB: Technically this relies on a circular reference, so such
+   -- information can only be taken advantage of for phase 2 processing (class documentation).
+
+   if Class.meta then
+      newFields = {}
+
+      -- NB: Some classes don't output any fields (which is permissable)
+
+      metaFields = Class.meta.subFields
+      if (not metaFields or #metaFields is 0) and (Class.meta.classID is Class.meta.baseClassID) then
+         metaFields = Class.meta.fields
+      end
+
+      if metaFields then
+         for i=0,#metaFields-1 do
+            f = metaFields[i]
+            def = getMetaFieldDefinition(f)
+            if def and def.synonym != true then
+               f = findClassField(Class, def.name) -- Retrieve field parsed from TDL, if defined
+               if f then
+                  f.write   = def.write
+                  f.read    = def.read
+                  f.flags   = def.flags
+                  f.access  ?= def.access
+                  f.private ?= def.private
+                  f.type    ?= tostring(def.type)
+               else
+                  def.virtual = true
+                  def.fullType = glTypes.void -- Dummy
+                  table.insert(newFields, def)
+               end
+            end
+         end
+      end
+
+      for f in values(newFields) do
+         table.insert(Class.fields, f)
+      end
+   end
+
+   Class.lookupFields = { }
+   if Class.fields then
+      for f in values(Class.fields) do
+         Class.lookupFields[f.name] = f
+      end
+   end
+
+   -- NB: FieldArray is not output because as yet fields (including virtual fields) cannot be accurately
+   -- described without the developer writing a custom field configuration in C.
+
+   fdef = f'static const struct FieldArray cl{Class.name}Fields[] = {{\n'
+   Class.longestType = 0
+   name_len = 0
+   Class.longestFieldType = 0  -- Holds the longest field + type string
+   for f in values(Class.fields) do
+      if not f.virtual then
+         field_name = cName(f)
+
+         if #field_name > name_len then name_len = #field_name end
+
+         if #f.type > Class.longestType then
+            if #f.type < 10 then
+               Class.longestType = #f.type
+            end
+         end
+
+         if #f.type + #field_name > Class.longestFieldType then
+            Class.longestFieldType = #f.type + 2 + #field_name
+         end
+
+         if f.ref then
+            cdef ..= outputLookup(Class.name .. f.name, f.ref.list)
+         end
+
+         assert(f.fullType??, 'The fullType is not defined for field ' .. tostring(f.name))
+
+         fdef ..= f"   {{ \"{f.name}\", {f.fullType.fd}, 0, nullptr, nullptr }},\n"
+      end
+   end
+   fdef ..= '};\n\n'
+
+   return cdef
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Load and process an TDL file source, then process raw source files containing -FUNCTION- definitions.
+
+global function parseSourceFiles()
+   if glFeedback is 'verbose' then print('Processing source files...') end
+
+   srcFiles = array<string>
+
+   for i=0, arg('files:size', 0)-1 do
+      srcFiles:push(arg('files(' .. i .. ')'))
+   end
+
+   if #srcFiles < 1 then
+      if glFeedback is 'verbose' then print('No source files were detected.') end
+      return
+   end
+
+   for path in values(srcFiles) do
+      -- Process --IDL_BEGIN/END-- sections, which allow the developer to embed TDL functions in the source code.
+
+      local idlExtract
+      local content = io.readAll(path)
+      content = '\n' .. content:replace('\r\n', '\n')
+      for start, len, cap in rx_idl_section.findAll(content) do
+         idlExtract = (idlExtract ?? '') .. cap[0]
+      end
+
+      if idlExtract then
+         exec(idlExtract)
+      end
+
+      -- Process -FUNCTION- definitions
+
+      if glFeedback is 'verbose' then
+         print()
+         print('File: ' .. path)
+      end
+
+      -- Extract possible content from within comments so that we don't get interference from the code while parsing.
+
+      local extracted_content = ''
+      for _, _, cap in rx_extract_comment.findAll(content) do
+         extracted_content ..= '\n' .. cap[0]
+      end
+      content = extracted_content
+
+      -- Parse each line individually
+
+      local currentExtract, proc
+      for line in values(content:split('\n')) do
+         if line?? then
+            line = rx_strip_ws.extract(line) ?? '' -- Capture non-whitespace
+            if (line is '-CATEGORY-') or (line is '-FUNCTION-') then
+               if proc is '-CATEGORY-' then parseCategory(currentExtract) end
+               if proc is '-FUNCTION-' then parseFunction(currentExtract) end
+               currentExtract = ''
+               proc = line
+            elseif (line is '-END-') or (line is '-INTERNAL-') then
+               if proc is '-CATEGORY-' then parseCategory(currentExtract) end
+               if proc is '-FUNCTION-' then parseFunction(currentExtract) end
+               currentExtract = nil
+               proc = nil
+            elseif proc then
+               currentExtract ..= line .. '\n'
+            end
+         elseif proc then
+            currentExtract ..= '\n'
+         end
+      end
+
+      if proc is '-CATEGORY-' then parseCategory(currentExtract) end
+      if proc is '-FUNCTION-' then parseFunction(currentExtract) end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+global function parseCategory(Extract:str)
+   Extract = f'-CATEGORY-\n{Extract:trim()}\n-END-\n'
+   global glCategory = rx_doc_name.extract(Extract)
+   glCategories[glCategory] = { name=glCategory }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Used by processSourceFiles() to process -FUNCTION- descriptions in self-documenting source code.
+
+global function parseFunction(Extract:str)
+   if not Extract?? then return end
+
+   Extract = f'-FUNCTION-\n{Extract:trim()}\n-END-\n'
+
+   local name, comment = rx_doc_combo.extract(Extract)
+   local status = rx_doc_status.extract(Extract)
+   local category = rx_doc_category.extract(Extract)
+   local ext_proto = rx_doc_extproto.extract(Extract)
+   local attrib = rx_doc_attrib.extract(Extract)
+   local description = rx_doc_desc.extract(Extract)
+
+   if name and name:endsWith('()') then
+      name = name:pop(2)
+   end
+
+   assert(name??, 'Failed to extract a name tag from -FUNCTION- definition.')
+   assert(comment??, "Failed to extract a comment tag from -FUNCTION- definition of '" .. name .. "'")
+   assert(description??, "Failed to extract a description from -FUNCTION- definition of '" .. name .. "'")
+
+   if glFeedback is "verbose" then
+      print("Processing function " .. name .. "()")
+   end
+
+   local def = {
+      input     = rx_input_section.extract(Extract),
+      ext_proto = ext_proto,
+      attrib    = attrib
+   }
+
+   local errors = rx_errors_section.extract(Extract)
+   if errors?? then
+      local error_list = glCoreConstants['ERR']
+      def.result = cType({ type="error", values={ }, isFunction=true }, "Function " .. name)
+
+      for line in values(errors:split('\n')) do
+         line ?? break -- A double line-break forces a premature end to error processing.
+
+         local ecode, emsg = rx_ecode_comment.extract(line)
+         if ecode then
+            local code_value = error_list[ecode]
+            if not code_value then
+               print('Error code "' .. ecode .. '" referenced in function ' .. name .. '() is invalid.')
+            else
+               table.insert(def.result.values, { code = code_value, codeName = ecode, msg = emsg })
+            end
+         else
+            ecode = rx_ecode_only.extract(line)
+            if ecode then
+               local code_value = error_list[ecode]
+               if not code_value then
+                  print('Error code "' .. ecode .. '" referenced in function ' .. name .. '() is invalid.')
+               else
+                  table.insert(def.result.values, { code = code_value, codeName = ecode, msg = mSys.GetErrorMsg(code_value) })
+               end
+            end
+         end
+      end
+
+      table.sort(def.result.values, function(a,b) return a.code < b.code end)
+   else
+      local result = rx_result_section.extract(Extract)
+      if result?? then
+         local ext_type, res_comment = rx_result_type.extract(result)
+         assert(ext_type, "Incorrectly defined result section in function '" .. name .. "'")
+         def.result = cType({ type=ext_type, comment=res_comment:trim(), isFunction=true, isResponse=true }, "Function " .. name)
+      end
+   end
+
+   idlFunction(name, (category ?? glCategory), comment, status, description, def)
+end

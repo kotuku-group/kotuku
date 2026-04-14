@@ -1,0 +1,27 @@
+#!/usr/bin/env origo
+
+   import 'gui/filedialog'
+
+   gui.dialog.file({
+      filterList  = { { name='All Files', ext='' }, { name='MP3 Audio Files', ext='.mp3' }, { name='Text Files', ext='.txt' } },
+      okText      = 'Select File',
+      cancelText  = 'Exit',
+      warnExists  = true,
+      multiSelect = true,
+      allowNew    = arg('save'),
+      path        = arg('path'),
+      feedback = function(Dialog, Path, Files)
+         mSys.SendMessage(MSGID_QUIT)
+
+         if not Files then
+            print('Dialog was cancelled.')
+            return
+         end
+
+         for k, v in ipairs(Files) do
+             print(f'{k} = {Path}{v.filename}')
+         end
+      end
+   })
+
+   processing.sleep()

@@ -11,7 +11,7 @@
     <id>b15cfb8e</id>
     <idstring>SURFACE</idstring>
     <category>GUI</category>
-    <copyright>Paul Manias 2003-2025</copyright>
+    <copyright>Paul Manias © 2003-2026</copyright>
     <description>
 <p>The Surface class is used to manage the positioning, drawing and interaction with layered display interfaces.  It works in conjunction with the <class name="Bitmap">Bitmap</class> class for rendering graphics, and the <class name="Pointer">Pointer</class> class for user interaction.</p>
 <p>On a platform such as Windows or Linux, the top-level surface will typically be hosted in an application window.  On Android or when a full screen display is required, a surface can cover the entire display and be window-less.  The top-level surface can act as a host to additional surfaces, which are referred to as children. Placing more surface objects inside of these children will create a hierarchy of many objects that requires sophisticated management that is provisioned by the Surface class.</p>
@@ -183,7 +183,7 @@ the surface area first).</li>
       </input>
       <description>
 <p>The AddCallback() method provides a hook for custom functions to draw directly to a surface.  Whenever a surface object performs a redraw event, all functions inserted by this method will be called in their original subscription order with a direct reference to the Surface's target bitmap.  The C/C++ prototype is <code>Function(APTR Context, *Surface, *Bitmap, APTR Meta)</code>.</p>
-<p>The Fluid prototype is <code>function draw(Surface, Bitmap)</code></p>
+<p>The Tiri prototype is <code>function draw(Surface, Bitmap)</code></p>
 <p>The subscriber can draw to the bitmap surface as it would with any freshly allocated bitmap object (refer to the <class name="Bitmap">Bitmap</class> class).  To get the width and height of the available drawing space, please read the Width and Height fields from the Surface object.  If writing to the bitmap directly, please observe the bitmap's clipping region and the XOffset and YOffset values.</p>
       </description>
       <result>
@@ -321,8 +321,8 @@ the surface area first).</li>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Failed">General failure.</error>
         <error code="Args">Invalid arguments passed to function.</error>
+        <error code="InvalidState">The surface is not a top-level surface object.</error>
       </result>
     </method>
 
@@ -927,7 +927,7 @@ the surface area first).</li>
       <const name="DEVICE_TILT_XY">Controller tilted on the X/Y axis.  Value indicates angle, -ve = left, +ve = right</const>
       <const name="DEVICE_TILT_Z">Controller is rising or falling.  Value expressed as 'speed',</const>
       <const name="DISPLAY_EDGE">Recently supplied input occurred at the edge of the display.</const>
-      <const name="PEN_TILT_XY">For pen-based input, this type indicates the vertical tilt of the pen device.  A value of 0 indicates that the pen is laid flat with nib at the bottom, 0.5 is 90 degrees, 1.0 is laid flat with nib at the top.</const>
+      <const name="PEN_TILT_XY">Pen tilt angle.  0 is pointing down directly with nib at bottom, 0.5 is 90 degrees, 1.0 is inversed (eraser at bottom)</const>
       <const name="PRESSURE">Amount of pressure applied, ranges from 0 (none) to 1.0 (normal) and possibly higher if user presses hard enough</const>
       <const name="WHEEL">Mouse wheel rotation - the value generally reflects the number of 'clicks' rotated on the wheel.</const>
       <const name="WHEEL_TILT">Some mouse wheels can be tilted to the left or right.  Ranges from -1.0 to +1.0</const>

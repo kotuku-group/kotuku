@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -10,9 +10,9 @@ This program tests the locking of private objects between threads.
 *********************************************************************************************************************/
 
 #include <pthread.h>
-#include <parasol/startup.h>
-#include <parasol/vector.hpp>
-#include <parasol/strings.hpp>
+#include <kotuku/startup.h>
+#include <kotuku/vector.hpp>
+#include <kotuku/strings.hpp>
 
 using namespace pf;
 
@@ -96,7 +96,7 @@ int main(int argc, CSTRING *argv)
    pf::Log log;
    pf::vector<std::string> *args;
 
-   if (auto msg = init_parasol(argc, argv)) {
+   if (auto msg = init_kotuku(argc, argv)) {
       printf("%s\n", msg);
       return -1;
    }
@@ -148,5 +148,5 @@ int main(int argc, CSTRING *argv)
 
    printf("Testing complete.\n");
 
-   close_parasol();
+   close_kotuku();
 }

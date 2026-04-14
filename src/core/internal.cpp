@@ -21,7 +21,7 @@ struct sockaddr_un * get_socket_path(int ProcessID, socklen_t *Size)
    // OSX doesn't support anonymous sockets, so we use /tmp instead.
    static thread_local struct sockaddr_un tlSocket;
    tlSocket.sun_family = AF_UNIX;
-   *Size = sizeof(sa_family_t) + snprintf(tlSocket.sun_path, sizeof(tlSocket.sun_path), "/tmp/parasol.%d", ProcessID) + 1;
+   *Size = sizeof(sa_family_t) + snprintf(tlSocket.sun_path, sizeof(tlSocket.sun_path), "/tmp/kotuku.%d", ProcessID) + 1;
    return &tlSocket;
 }
 #elif __unix__

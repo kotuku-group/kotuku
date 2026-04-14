@@ -1,5 +1,5 @@
 #!/bin/sh
-# prerm script for parasol
+# prerm script for Kōtuku
 #
 # see: dh_installdeb(1)
 
@@ -18,13 +18,13 @@ set -e
 
 case "$1" in
     remove|upgrade|deconfigure)
-        # Stop any running Parasol processes if they exist
-        # (This would be customized based on Parasol's daemon/service needs)
-        
+        # Stop any running Origo processes if they exist
+        # (This would be customized based on Kōtuku's daemon/service needs)
+
         # Remove any alternatives if we registered them
-        # update-alternatives --remove parasol /usr/bin/parasol || true
+        # update-alternatives --remove kotuku /usr/bin/origo || true
         ;;
-        
+
     failed-upgrade)
         ;;
 

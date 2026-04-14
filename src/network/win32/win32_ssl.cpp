@@ -18,9 +18,9 @@ template <class T> void sslDisconnect(T *Self)
 }
 
 //********************************************************************************************************************
-// SSL Debug callback - forwards debug messages from the Windows wrapper to Parasol log system
+// SSL Debug callback - forwards debug messages from the Windows wrapper to Kotuku log system
 
-extern "C" void ssl_debug_to_parasol_log(const char* message, int level)
+extern "C" void ssl_debug_to_kotuku_log(const char* message, int level)
 {
    pf::Log log("SSL");
 

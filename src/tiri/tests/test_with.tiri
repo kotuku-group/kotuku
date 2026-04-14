@@ -1,0 +1,214 @@
+-- Tests for the `with` statement: with obj1, obj2 do ... end
+-- The `with` statement auto-locks Kotuku objects for the duration of a block,
+-- automatically unlocking when the scope exits.
+
+@BeforeEach(hotpath=false)
+function enforce_hotpath() end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Basic with statement with a single object
+
+@Test function BasicWith()
+   t = obj.new('time', { })
+   with t do
+      val = t.hour
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- With statement with multiple objects
+
+@Test function MultipleObjects()
+   t1 = obj.new('time', { })
+   t2 = obj.new('time', { })
+   with t1, t2 do
+      val1 = t1.hour
+      val2 = t2.hour
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Verify that the object can be used after with block exits (unlock happened)
+
+@Test function UnlockAfterScope()
+   t = obj.new('time', { })
+   with t do
+      t.hour = 5
+   end
+   -- Object should still be accessible after the with block
+   val = t.hour
+   assert(val is 5, 'Expected hour to be 5 after with block, got ' .. tostring(val))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Nested with blocks
+
+@Test function NestedWith()
+   t1 = obj.new('time', { })
+   t2 = obj.new('time', { })
+   with t1 do
+      t1.hour = 10
+      with t2 do
+         t2.hour = 20
+      end
+      -- t2 should be unlocked here, t1 still locked
+      val2 = t2.hour
+      assert(val2 is 20, 'Expected t2.hour to be 20, got ' .. tostring(val2))
+   end
+   val1 = t1.hour
+   assert(val1 is 10, 'Expected t1.hour to be 10, got ' .. tostring(val1))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- With inside a loop with break
+
+@Test function WithBreak()
+   t = obj.new('time', { })
+   for i = 0, 9 do
+      with t do
+         t.hour = i
+         if i is 3 then break end
+      end
+   end
+   -- Object must be unlocked and accessible after the break
+   val = t.hour
+   assert(val is 3, 'Expected hour to be 3 after break, got ' .. tostring(val))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- With inside a loop with continue
+
+@Test function WithContinue()
+   t = obj.new('time', { })
+   for i = 0, 4 do
+      with t do
+         if i is 2 then continue end
+         t.hour = i
+      end
+   end
+   -- Last written value should be 4 (i=2 was skipped)
+   val = t.hour
+   assert(val is 4, 'Expected hour to be 4 after continue, got ' .. tostring(val))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- With inside a function with early return
+
+@Test function WithReturn()
+   t = obj.new('time', { })
+
+   function inner()
+      with t do
+         t.hour = 7
+         return t.hour
+      end
+   end
+
+   result = inner()
+   assert(result is 7, 'Expected return value to be 7, got ' .. tostring(result))
+   -- Object should be unlocked after function returned
+   t.hour = 8
+   assert(t.hour is 8, 'Expected hour to be 8 after function return')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- With inside try-except (error unwinding unlocks)
+
+@Test function WithTryExcept()
+   t = obj.new('time', { })
+
+   function inner()
+      with t do
+         t.hour = 11
+         error('test error inside with')
+      end
+   end
+
+   caught = false
+   try
+      inner()
+   except e
+      caught = true
+   end
+
+   assert(caught, 'Expected error to be caught')
+   -- Object must be unlocked after error unwinding
+   t.hour = 12
+   assert(t.hour is 12, 'Expected hour to be 12 after error recovery')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- With inside try-except with multiple objects
+
+@Test function WithTryExceptMultiple()
+   t1 = obj.new('time', { })
+   t2 = obj.new('time', { })
+
+   function inner()
+      with t1, t2 do
+         t1.hour = 1
+         t2.hour = 2
+         error('multi-object error')
+      end
+   end
+
+   caught = false
+   try
+      inner()
+   except e
+      caught = true
+   end
+
+   assert(caught, 'Expected error to be caught')
+   -- Both objects must be unlocked
+   t1.hour = 3
+   t2.hour = 4
+   assert(t1.hour is 3, 'Expected t1.hour to be 3')
+   assert(t2.hour is 4, 'Expected t2.hour to be 4')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- With statement performance: verify it works with tight loops
+
+@Test(hotpath=true) function WithPerformance()
+   t = obj.new('time', { })
+   t.acQuery()
+   with t do
+      for i = 0, 10000 do
+         val = t.hour
+      end
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- With statement with expressions (not just plain variables)
+
+@Test function WithExpression()
+   function createTime()
+      return obj.new('time', { })
+   end
+
+   with createTime() do
+      -- The locked object is stored in a hidden local; scope exit unlocks it
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Verify LIFO unlock order with multiple objects
+
+@Test function LIFOOrder()
+   t1 = obj.new('time', { })
+   t2 = obj.new('time', { })
+   t3 = obj.new('time', { })
+
+   with t1, t2, t3 do
+      t1.hour = 1
+      t2.hour = 2
+      t3.hour = 3
+   end
+
+   -- All objects should be accessible (unlocked)
+   assert(t1.hour is 1, 'Expected t1.hour to be 1')
+   assert(t2.hour is 2, 'Expected t2.hour to be 2')
+   assert(t3.hour is 3, 'Expected t3.hour to be 3')
+end

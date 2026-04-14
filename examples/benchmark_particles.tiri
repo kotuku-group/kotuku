@@ -1,0 +1,281 @@
+#!/usr/bin/env origo
+--[[
+Particle Benchmark
+
+Parameters:
+  mode: primitive; directvector; vector
+--]]
+
+   import 'gui'
+   import 'gui/window'
+   include 'display'
+   include 'vector'
+
+   lVec = mVec
+
+   local glWinWidth, glWinHeight, glColours, glMode, glWindow, glSurface, glParticles, glViewport, glScene
+   local glTimerHandle, glFPS, glPrinted
+   glFrameStats = { avg = 0, best = 0, times = array<int> }
+
+   MODE_PRIMITIVE    = 1 -- Tests the speed of drawing primitive rectangles (this will be much faster than drawVector() but is useful for comparative purposes)
+   MODE_VECTOR       = 2 -- Tests the speed of drawing circles via the scene graph and VectorEllipse objects
+   MODE_DIRECTVECTOR = 3 -- Tests the drawing speed of DrawPath() and bypasses the scene graph.
+
+----------------------------------------------------------------------------------------------------------------------
+-- Render vector paths directly, bypassing the scene graph.
+
+function drawDirectVector(Surface, Bitmap)
+   glWinWidth, glWinHeight = Surface.width, Surface.height
+
+   start = mSys.PreciseTime()
+   for p in values(glParticles) do
+      lVec.DrawPath(Bitmap, p.path, 0, nil, p.colour)
+   end
+
+   glFrameStats.times:push(mSys.PreciseTime() - start)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Render plain rectangles
+
+function drawPrimitive(Surface, Bitmap)
+   glWinWidth, glWinHeight = Surface.width, Surface.height
+
+   start = mSys.PreciseTime()
+   for p in values(glParticles) do
+      col = p.colour
+      err, pixel = Bitmap.mtGetColour(col.r, col.g, col.b, 255)
+      Bitmap.mtDrawRectangle(p.x-p.radius, p.y-p.radius, p.radius*2, p.radius*2, pixel, BAF_FILL)
+   end
+
+   glFrameStats.times:push(mSys.PreciseTime() - start)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function newParticle()
+   particle = {
+      angle    = math.pi * 2 * math.random(),
+      velocity = 1 + math.random() * 3,
+      radius   = 6,
+      x        = (glWinWidth / 2) - 6,
+      y        = (glWinHeight / 2) - 6
+   }
+
+   if glMode is MODE_VECTOR then
+      colour = glColours[(math.floor(math.random() * #glColours))]
+      particle.vector = glViewport.new('VectorEllipse', {
+         fill    = string.format('rgb(%f,%f,%f)', colour.r, colour.g, colour.b),
+         centerX = particle.x,
+         centerY = particle.y,
+         radius  = particle.radius
+      })
+   elseif glMode is MODE_DIRECTVECTOR then
+      particle.colour = glColours[(math.floor(math.random() * #glColours))]
+      err, particle.path = lVec.GenerateEllipse(particle.x, particle.y, particle.radius, particle.radius, 0)
+   elseif glMode is MODE_PRIMITIVE then
+      particle.colour = glColours[(math.floor(math.random() * #glColours))]
+   else
+      error('Unknown benchmark mode')
+   end
+
+   return particle
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function timer(Subscriber, Elapsed, Current)
+   moveflag = MTF_X | MTF_Y
+   glWinWidth  = glSurface.width ?? 1
+   glWinHeight = glSurface.height ?? 1
+
+   calc_start = mSys.PreciseTime()
+   for i,p in pairs(glParticles) do
+      -- Calculate next position of particle
+
+      tx = math.cos(p.angle) * p.velocity
+      ty = math.sin(p.angle) * p.velocity
+
+      nextX = p.x + tx
+      nextY = p.y + ty
+
+      -- If particle is going to move off right side of screen
+
+      if nextX + p.radius * 2 > glWinWidth then
+         if ((p.angle >= 0) and (p.angle < math.pi * 0.5)) then
+            p.angle = math.pi - p.angle
+         elseif p.angle > math.pi / 2 * 3 then
+            p.angle = p.angle - (p.angle - math.pi / 2 * 3) * 2
+         end
+      end
+
+      -- If particle is going to move off left side of screen
+
+      if nextX < 0 then  -- If angle is between 6 o'clock and 9 o'clock
+         if ((p.angle > math.pi / 2) and (p.angle < math.pi)) then
+            p.angle = math.pi - p.angle
+         elseif (p.angle > math.pi) and (p.angle < math.pi * 0.5 * 3) then
+            p.angle = p.angle + (math.pi * 0.5 * 3 - p.angle) * 2
+         end
+      end
+
+      -- If particle is going to move off bottom side of screen
+
+      if nextY + p.radius * 2 > glWinHeight then
+         if p.angle > 0 and p.angle < math.pi then
+            p.angle = math.pi * 2 - p.angle
+         end
+      end
+
+      -- If particle is going to move off top side of screen
+
+      if nextY < 0 then
+         if p.angle > math.pi and p.angle < math.pi * 2 then
+            p.angle = p.angle - (p.angle - math.pi) * 2
+         end
+      end
+
+      choose glMode from
+         MODE_VECTOR -> p.vector.acMoveToPoint(nextX + p.radius, nextY + p.radius, 0, moveflag)
+         MODE_DIRECTVECTOR -> lVec.TranslatePath(p.path, tx, ty)
+      end
+
+      p.x = nextX
+      p.y = nextY
+   end
+   calc_time = mSys.PreciseTime() - calc_start
+
+   glViewport.acDraw()
+   if glScene.renderTime then glFrameStats.times:push(glScene.renderTime) end
+
+   if math.round(Current / 1000000) % 2 is 0 then
+      if not glPrinted then
+         local fps
+         totalTime = 0
+         bestTime = 0x7ffffff
+         for frame=0,#glFrameStats.times-1 do
+            time = glFrameStats.times[frame]
+
+            if time < bestTime then bestTime = time end
+
+            if totalTime < 1000000 then
+               totalTime += time
+            else
+               totalTime = totalTime / frame
+               fps = frame
+               break
+            end
+         end
+
+         if fps then
+            glFrameStats.avg = fps
+            glFrameStats.best = math.round(1 / (bestTime / 1000000))
+            if glFPS then glFPS.string = string.format('FPS: %.0f', fps) end
+
+            print(f'Avg frame rate: {math.round(glFrameStats.avg)}; Best rate: {glFrameStats.best}; Calc time: {calc_time}ms')
+
+            glFrameStats.avg = 0
+            glFrameStats.best = 0
+            glFrameStats.times:clear()
+            glPrinted = true
+         end
+      end
+   else
+      glPrinted = false
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function createWindow()
+   glWindow = gui.window({
+      title        = 'Particle Benchmark',
+      insideWidth  = 800,
+      insideHeight = 800,
+      events = {
+         close = function(Window)
+            mSys.UpdateTimer(glTimerHandle, 0)
+            glWindow = nil
+            mSys.SendMessage(MSGID_QUIT)
+         end
+      }
+   })
+
+   glSurface  = glWindow.surface
+   glViewport = glWindow:clientViewport({ aspectRatio = ARF_MEET })
+   glScene    = glViewport.scene
+   glScene.flags = glScene.flags | VPF_RENDER_TIME
+   --glViewport.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='rgb(255,255,255)' })
+   --glFPS = glViewport.new('VectorText', { x=10, y = 30, string='FPS:', fill='rgb(0,0,0)' })
+
+   glWinWidth  = glViewport.width
+   glWinHeight = glViewport.height
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- There are three versions of this benchmark:
+
+function setBenchmarkMode()
+   glMode = choose arg('mode', 'vector') from
+      'primitive' -> MODE_PRIMITIVE
+      'directvector' -> MODE_DIRECTVECTOR
+      else -> MODE_VECTOR
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+   createWindow()
+
+   setBenchmarkMode()
+
+   processing.task().affinityMask = 6
+
+   if glMode is MODE_PRIMITIVE then
+      print('Drawing Mode: Primitive')
+
+      glSurface.mtAddCallback(drawPrimitive)
+
+      glColours = array<table> {
+        { r=0xcc, g=0, b=0 }, { r=0xff, g=0xcc, b=0 }, { r=0xaa, g=0xff, b=0 },
+        { r=0, g=0x99, b=0xcc }, { r=0x19, g=0x4c, b=0x99 }, { r=0x66, g=0x19, b=0x99 }
+      }
+   elseif (glMode is MODE_VECTOR) then
+      print('Drawing Mode: Vector')
+
+      glColours = array<table> {
+        { r=0xcc, g=0, b=0 }, { r=0xff, g=0xcc, b=0 }, { r=0xaa, g=0xff, b=0 },
+        { r=0, g=0x99, b=0xcc }, { r=0x19, g=0x4c, b=0x99 }, { r=0x66, g=0x19, b=0x99 }
+      }
+
+   elseif (glMode is MODE_DIRECTVECTOR) then
+      print('Drawing Mode: Direct Vector')
+
+      glSurface.mtAddCallback(drawDirectVector)
+
+      glColours = array<table> {
+        obj.new('VectorColour', { red=0.8,   green=0,   blue=0 }),
+        obj.new('VectorColour', { red=1.0,   green=0.8, blue=0 }),
+        obj.new('VectorColour', { red=0.666, green=1.0, blue=0 }),
+        obj.new('VectorColour', { red=0,     green=0.6, blue=0.8 }),
+        obj.new('VectorColour', { red=0.1,   green=0.3, blue=0.6 }),
+        obj.new('VectorColour', { red=0.4,   green=0.1, blue=0.6 })
+      }
+   else
+      error('Unknown benchmark mode')
+   end
+
+   max = tonumber(arg('maxParticles',500))
+   if max < 100 then max = 100 end
+   glParticles = array<table, max>
+   for i=0,#glParticles-1 do
+      glParticles[i] = newParticle()
+   end
+
+   processing.task().set('AffinityMask', 6)
+
+   -- Run at a high frequency to ensure that the CPU performance is not scaled back
+   err, glTimerHandle = mSys.SubscribeTimer(0.001, timer)
+
+   glWindow:show()
+   processing.sleep()

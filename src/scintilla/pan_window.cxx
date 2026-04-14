@@ -1,6 +1,6 @@
 // Window class (see include/Platform.h)
 //
-// The 'id' member of the Window class references the Parasol Scintilla object.
+// The 'id' member of the Window class references the Kotuku Scintilla object.
 //
 // The Window class is not the application window, but the target surface for scintilla draw operations.
 

@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -10,7 +10,7 @@ MetaClass: The MetaClass is used to manage all classes supported by the system c
 
 The MetaClass is responsible for managing the construction of new classes.  Each MetaClass object remains active for
 the lifetime of the running program, and provides the benefit of run-time introspection so that detailed class
-information can be retrieved at any time.  This enables scripting languages such as Fluid to interact with all
+information can be retrieved at any time.  This enables scripting languages such as Tiri to interact with all
 class types without needing active knowledge of their capabilities.
 
 A number of additional functions are available in the Core for the purpose of class management and introspection.
@@ -20,7 +20,7 @@ supported by a class.  ~FindField() confirms if a specific field is declared in 
 Classes are typically declared in modules, but if a class is intended to be private for an executable then declaring
 it within the application code is feasible also.
 
-Further discussion on classes and their technical aspects can be found in the Parasol Wiki.
+Further discussion on classes and their technical aspects can be found in the Kotuku Wiki.
 
 -END-
 
@@ -32,6 +32,7 @@ static ERR OBJECT_GetClass(OBJECTPTR, extMetaClass **);
 static ERR OBJECT_GetClassID(OBJECTPTR, CLASSID *);
 static ERR OBJECT_GetName(OBJECTPTR, STRING *);
 static ERR OBJECT_GetOwner(OBJECTPTR, OBJECTID *);
+static ERR OBJECT_GetID(OBJECTPTR, OBJECTID *);
 static ERR OBJECT_SetOwner(OBJECTPTR, OBJECTID);
 static ERR OBJECT_SetName(OBJECTPTR, CSTRING);
 
@@ -85,31 +86,32 @@ static const FieldDef CategoryTable[] = {
 
 static const std::vector<Field> glMetaFieldsPreset = {
    // If you adjust this table, remember to adjust the index numbers and the byte offsets into the structure.
-   { 0, nullptr, nullptr,                writeval_default, "ClassVersion",    FID_ClassVersion, sizeof(Object), 0, FDF_DOUBLE|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "ClassVersion",    FID_ClassVersion, sizeof(Object), 0, FDF_DOUBLE|FDF_RI },
    { MAXINT("FieldArray"), (ERR (*)(APTR, APTR))GET_Fields, (APTR)SET_Fields, writeval_default, "Fields", FID_Fields, sizeof(Object)+8, 1, FDF_ARRAY|FD_STRUCT|FDF_RI },
    { MAXINT("Field"),      (ERR (*)(APTR, APTR))GET_Dictionary, nullptr, writeval_default, "Dictionary", FID_Dictionary, sizeof(Object)+8+(sizeof(APTR)*1), 2, FDF_ARRAY|FD_STRUCT|FDF_R },
-   { 0, nullptr, nullptr,                writeval_default, "ClassName",       FID_ClassName,       sizeof(Object)+8+(sizeof(APTR)*2),  3,  FDF_STRING|FDF_RI },
-   { 0, nullptr, nullptr,                writeval_default, "FileExtension",   FID_FileExtension,   sizeof(Object)+8+(sizeof(APTR)*3),  4,  FDF_STRING|FDF_RI },
-   { 0, nullptr, nullptr,                writeval_default, "FileDescription", FID_FileDescription, sizeof(Object)+8+(sizeof(APTR)*4),  5,  FDF_STRING|FDF_RI },
-   { 0, nullptr, nullptr,                writeval_default, "FileHeader",      FID_FileHeader,      sizeof(Object)+8+(sizeof(APTR)*5),  6,  FDF_STRING|FDF_RI },
-   { 0, nullptr, nullptr,                writeval_default, "Path",            FID_Path,            sizeof(Object)+8+(sizeof(APTR)*6),  7,  FDF_STRING|FDF_RI },
-   { 0, nullptr, nullptr,                writeval_default, "Icon",            FID_Icon,            sizeof(Object)+8+(sizeof(APTR)*7),  8,  FDF_STRING|FDF_RI },
-   { 0, nullptr, nullptr,                writeval_default, "Size",            FID_Size,            sizeof(Object)+8+(sizeof(APTR)*8),  9,  FDF_INT|FDF_RI },
-   { 0, nullptr, nullptr,                writeval_default, "Flags",           FID_Flags,           sizeof(Object)+12+(sizeof(APTR)*8), 10, FDF_INT|FDF_RI },
-   { 0, nullptr, nullptr,                writeval_default, "ClassID",         FID_ClassID,         sizeof(Object)+16+(sizeof(APTR)*8), 11, FDF_INT|FDF_UNSIGNED|FDF_RI },
-   { 0, nullptr, nullptr,                writeval_default, "BaseClassID",     FID_BaseClassID,     sizeof(Object)+20+(sizeof(APTR)*8), 12, FDF_INT|FDF_UNSIGNED|FDF_RI },
-   { 0, nullptr, nullptr,                writeval_default, "OpenCount",       FID_OpenCount,       sizeof(Object)+24+(sizeof(APTR)*8), 13, FDF_INT|FDF_R },
+   { 0, nullptr, nullptr, writeval_default, "ClassName",       FID_ClassName,       sizeof(Object)+8+(sizeof(APTR)*2),  3,  FDF_STRING|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "FileExtension",   FID_FileExtension,   sizeof(Object)+8+(sizeof(APTR)*3),  4,  FDF_STRING|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "FileDescription", FID_FileDescription, sizeof(Object)+8+(sizeof(APTR)*4),  5,  FDF_STRING|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "FileHeader",      FID_FileHeader,      sizeof(Object)+8+(sizeof(APTR)*5),  6,  FDF_STRING|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "Path",            FID_Path,            sizeof(Object)+8+(sizeof(APTR)*6),  7,  FDF_STRING|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "Icon",            FID_Icon,            sizeof(Object)+8+(sizeof(APTR)*7),  8,  FDF_STRING|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "Size",            FID_Size,            sizeof(Object)+8+(sizeof(APTR)*8),  9,  FDF_INT|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "Flags",           FID_Flags,           sizeof(Object)+12+(sizeof(APTR)*8), 10, FDF_INT|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "ClassID",         FID_ClassID,         sizeof(Object)+16+(sizeof(APTR)*8), 11, FDF_INT|FDF_UNSIGNED|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "BaseClassID",     FID_BaseClassID,     sizeof(Object)+20+(sizeof(APTR)*8), 12, FDF_INT|FDF_UNSIGNED|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "OpenCount",       FID_OpenCount,       sizeof(Object)+24+(sizeof(APTR)*8), 13, FDF_INT|FDF_R },
    { MAXINT(&CategoryTable), nullptr, nullptr, writeval_default, "Category",  FID_Category,        sizeof(Object)+28+(sizeof(APTR)*8), 14, FDF_INT|FDF_LOOKUP|FDF_RI },
    // Virtual fields
    { MAXINT("MethodEntry"), (ERR (*)(APTR, APTR))GET_Methods, (APTR)SET_Methods, writeval_default, "Methods", FID_Methods, sizeof(Object), 15, FDF_ARRAY|FD_STRUCT|FDF_RI },
-   { 0, nullptr, (APTR)SET_Actions,                  writeval_default,   "Actions",           FID_Actions,         sizeof(Object), 16, FDF_POINTER|FDF_I },
+   { 0, nullptr, (APTR)SET_Actions,               writeval_default,   "Actions",           FID_Actions,         sizeof(Object), 16, FDF_POINTER|FDF_I },
    { 0, (ERR (*)(APTR, APTR))GET_ActionTable, 0,  writeval_default,   "ActionTable",       FID_ActionTable,     sizeof(Object), 17, FDF_ARRAY|FDF_POINTER|FDF_R },
    { 0, (ERR (*)(APTR, APTR))GET_Location, 0,     writeval_default,   "Location",          FID_Location,        sizeof(Object), 18, FDF_STRING|FDF_R },
    { 0, (ERR (*)(APTR, APTR))GET_ClassName, (APTR)SET_ClassName, writeval_default, "Name", FID_Name,            sizeof(Object), 19, FDF_STRING|FDF_SYSTEM|FDF_RI },
    { 0, (ERR (*)(APTR, APTR))GET_Module, 0,       writeval_default,   "Module",            FID_Module,          sizeof(Object), 20, FDF_STRING|FDF_R },
    { 0, (ERR (*)(APTR, APTR))GET_Objects, 0,      writeval_default,   "Objects",           FID_Objects,         sizeof(Object), 21, FDF_ARRAY|FDF_INT|FDF_ALLOC|FDF_R },
    { MAXINT("FieldArray"), (ERR (*)(APTR, APTR))GET_SubFields, 0, writeval_default, "SubFields", FID_SubFields, sizeof(Object), 22, FDF_ARRAY|FD_STRUCT|FDF_SYSTEM|FDF_R },
-   { MAXINT(CLASSID::ROOTMODULE), (ERR (*)(APTR, APTR))GET_RootModule, 0, writeval_default, "RootModule", FID_RootModule,     sizeof(Object), 23, FDF_OBJECT|FDF_R },
+   { MAXINT(CLASSID::ROOTMODULE), (ERR (*)(APTR, APTR))GET_RootModule, 0, writeval_default, "RootModule", FID_RootModule, sizeof(Object), 23, FDF_OBJECT|FDF_R },
+   { 0, (ERR (*)(APTR, APTR))OBJECT_GetID, 0,     writeval_default,   "ID",                FID_ID,              sizeof(Object), 24, FDF_INT|FDF_SYSTEM|FDF_R },
    { 0, 0, 0, nullptr, "", 0, 0, 0,  0 }
 };
 
@@ -138,6 +140,7 @@ static const FieldArray glMetaFields[] = {
    { "Objects",         FDF_ARRAY|FDF_INT|FDF_ALLOC|FDF_R, GET_Objects },
    { "SubFields",       FDF_ARRAY|FD_STRUCT|FDF_SYSTEM|FDF_R, GET_SubFields, nullptr, "FieldArray" },
    { "RootModule",      FDF_OBJECT|FDF_R, GET_RootModule, nullptr, CLASSID::ROOTMODULE },
+   { "ID",              FDF_INT|FDF_SYSTEM|FDF_R, OBJECT_GetID },
    END_FIELD
 };
 
@@ -155,7 +158,7 @@ extMetaClass glMetaClass;
 
 static ERR DEFAULT_Signal(OBJECTPTR Object, APTR Void)
 {
-   Object->Flags |= NF::SIGNALLED;
+   Object->setFlag(NF::SIGNALLED);
    return ERR::Okay;
 }
 
@@ -165,7 +168,7 @@ void init_metaclass(void)
 {
    glMetaClass.Object::Class   = &glMetaClass;
    glMetaClass.Object::UID     = 123;
-   glMetaClass.Object::Flags   = NF::INITIALISED;
+   glMetaClass.setFlag(NF::INITIALISED);
 
    glMetaClass.ClassVersion       = 1;
    glMetaClass.Fields             = glMetaFields;
@@ -176,7 +179,7 @@ void init_metaclass(void)
    glMetaClass.Category           = CCF::SYSTEM;
    glMetaClass.FieldLookup        = glMetaFieldsPreset;
    glMetaClass.OriginalFieldTotal = std::ssize(glMetaFields)-1;
-   glMetaClass.Local[0]        = 0xff;
+   glMetaClass.Local[0]           = 0xff;
 
    glMetaClass.Methods.resize(2);
    glMetaClass.Methods[1] = { AC(-1), (APTR)CLASS_FindField, "FindField", argsFindField, sizeof(struct mc::FindField) };
@@ -201,11 +204,11 @@ FindField: Search a class definition for a specific field.
 This method checks if a class has defined a given field by scanning its blueprint for a matching `ID`.  If found,
 a direct pointer to the `Field` struct will be returned to the client.
 
-In some clases the field might not be present in the main class spec, but does appear in an integral class.  In that
+In some classes the field might not be present in the main class spec, but does appear in an integral class.  In that
 case, a reference to the class will be returned in the `Source` parameter.
 
 -INPUT-
-int ID: The field ID to search for.  Field names can be converted to ID's by using the `strihash()` function.
+int ID: The field ID to search for.  Field names can be converted to ID's by using the `fieldhash()` function.
 &struct(*Field) Field: Pointer to the !Field if discovered, otherwise `NULL`.
 &obj(MetaClass) Source: Pointer to the class that is associated with the `Field` (which can match the caller), or `NULL` if the field was not found.
 
@@ -236,12 +239,12 @@ ERR CLASS_Free(extMetaClass *Self)
    if (Self->ClassID != CLASSID::NIL) glClassMap.erase(Self->ClassID);
    if (Self->Location) { FreeResource(Self->Location); Self->Location = nullptr; }
 
-#ifndef PARASOL_STATIC
+#ifndef KOTUKU_STATIC
    if (!Self->SubClasses.empty()) {
       // Sanity check - if a base has sub-classes present then there is an issue that requires resolution.
       // Note that for static builds there is no way to control termination order, so these controls are disabled.
       pf::Log log;
-      log.warning("Out-of-order termination: Base-class %s has active sub-classes.", Self->Name);
+      log.warning("Out-of-order termination: Base-class %s has %d active sub-classes.", Self->ClassName, int(Self->SubClasses.size()));
    }
 
    if (Self->Base) {
@@ -358,7 +361,7 @@ ERR CLASS_Init(extMetaClass *Self)
       }();
    }
 
-#ifndef PARASOL_STATIC
+#ifndef KOTUKU_STATIC
    if (save) {
       // Saving is only necessary if this is a new dictionary entry.
       if (auto lock = std::unique_lock{glmClassDB, 3s}) {
@@ -432,7 +435,7 @@ Note: Never refer to method ID's in an action list - the #Methods field is provi
 
 static ERR SET_Actions(extMetaClass *Self, const ActionArray *Actions)
 {
-   if (!Actions) return ERR::Failed;
+   if (!Actions) return ERR::NullArgs;
 
    Self->ActionTable[int(AC::Signal)].PerformAction = &DEFAULT_Signal;
 
@@ -535,7 +538,7 @@ This field points to an array that describes the structure of objects that will 
 compulsory that base classes define this array.  Sub-classes will inherit the structure of their base, but they may
 set Fields with additional virtual fields if desired.
 
-Refer to the Parasol Wiki on class development for more information.
+Refer to the Kotuku Wiki on class development for more information.
 
 *********************************************************************************************************************/
 
@@ -548,7 +551,7 @@ static ERR GET_Fields(extMetaClass *Self, const FieldArray **Fields, int *Elemen
 
 static ERR SET_Fields(extMetaClass *Self, const FieldArray *Fields, int Elements)
 {
-   if (!Fields) return ERR::Failed;
+   if (!Fields) return ERR::NullArgs;
 
    Self->Fields = Fields;
    if (Elements > 0) {
@@ -635,7 +638,7 @@ static ERR GET_Location(extMetaClass *Self, CSTRING *Value)
    }
 
    if ((*Value = Self->Location)) return ERR::Okay;
-   else return ERR::Failed;
+   else return ERR::MissingPath;
 }
 
 /*********************************************************************************************************************
@@ -838,7 +841,7 @@ static void field_setup(extMetaClass *Class)
          uint16_t offset = 0;
          for (unsigned i=0; Class->SubFields[i].Name; i++) {
             bool found = false;
-            auto hash = strihash(Class->SubFields[i].Name);
+            auto hash = fieldhash(Class->SubFields[i].Name);
             for (unsigned j=0; j < Class->FieldLookup.size(); j++) {
                if (Class->FieldLookup[j].FieldID IS hash) {
                   if (Class->SubFields[i].GetField) {
@@ -873,7 +876,7 @@ static void field_setup(extMetaClass *Class)
       bool name_field   = true;
       bool owner_field  = true;
       auto class_fields = Class->Fields;
-      uint16_t offset      = sizeof(Object);
+      uint16_t offset   = sizeof(Object);
       for (unsigned i=0; class_fields[i].Name; i++) {
          add_field(Class, Class->FieldLookup, class_fields[i], offset);
 
@@ -911,7 +914,19 @@ static void field_setup(extMetaClass *Class)
          });
       }
 
-      // Add the Class field.  This is provided primarily to help scripting languages like Fluid.
+      Class->FieldLookup.push_back({
+         .Arg        = 0,
+         .GetValue   = (ERR (*)(APTR, APTR))&OBJECT_GetID,
+         .SetValue   = nullptr,
+         .WriteValue = &writeval_default,
+         .Name       = "ID",
+         .FieldID    = FID_ID,
+         .Offset     = 0,
+         .Index      = 0,
+         .Flags      = FDF_INT|FDF_R|FDF_SYSTEM
+      });
+
+      // Add the Class field.  This is provided primarily to help scripting languages like Tiri.
 
       Class->FieldLookup.push_back({
          .Arg        = 0,
@@ -1000,7 +1015,7 @@ static void add_field(extMetaClass *Class, std::vector<Field> &Fields, const Fie
       Source.SetField,
       writeval_default,
       Source.Name,
-      strihash(Source.Name),
+      fieldhash(Source.Name),
       Offset,
       0,
       Source.Flags
@@ -1058,15 +1073,17 @@ static ERR OBJECT_GetClass(OBJECTPTR Self, extMetaClass **Value)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
+static ERR OBJECT_GetID(OBJECTPTR Self, OBJECTID *Value)
+{
+   *Value = Self->UID;
+   return ERR::Okay;
+}
 
 static ERR OBJECT_GetClassID(OBJECTPTR Self, CLASSID *Value)
 {
    *Value = Self->classID();
    return ERR::Okay;
 }
-
-//********************************************************************************************************************
 
 static ERR OBJECT_GetOwner(OBJECTPTR Self, OBJECTID *OwnerID)
 {
@@ -1089,8 +1106,6 @@ static ERR OBJECT_SetOwner(OBJECTPTR Self, OBJECTID OwnerID)
    else return log.warning(ERR::NullArgs);
 }
 
-//********************************************************************************************************************
-
 static ERR OBJECT_GetName(OBJECTPTR Self, STRING *Name)
 {
    *Name = Self->Name;
@@ -1109,7 +1124,7 @@ static ERR OBJECT_SetName(OBJECTPTR Self, CSTRING Name)
 // If the classes.bin file is missing or incomplete, this code will scan for every module installed in the system and
 // initialise it so that all classes can be registered in the class database.
 
-#ifndef PARASOL_STATIC
+#ifndef KOTUKU_STATIC
 void scan_classes(void)
 {
    pf::Log log("Core");

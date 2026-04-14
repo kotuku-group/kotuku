@@ -1,7 +1,7 @@
 // type_checker.cpp - Contains the runtime validation engine that applies schema-derived type and
 // element descriptors to concrete XML instance data.  The implementation cross-references the
 // registry, performs value coercion checks, and surfaces detailed diagnostic messages so that
-// callers can enforce XSD constraints when loading or manipulating documents through Parasol's XML
+// callers can enforce XSD constraints when loading or manipulating documents through Kōtuku's XML
 // facilities.
 
 #include "type_checker.h"
@@ -79,6 +79,22 @@ namespace xml::schema
       auto effective = resolve_effective_descriptor(Descriptor);
       auto target_type = effective->schema_type;
 
+      if (Value.has_schema_info())
+      {
+         auto annotated_type = Value.get_schema_type();
+         auto &registry_ref = registry();
+         auto annotated_descriptor = registry_ref.find_descriptor(annotated_type);
+
+         if (annotated_descriptor)
+         {
+            if ((annotated_type IS target_type) or annotated_descriptor->is_derived_from(target_type) or
+                effective->is_derived_from(annotated_type))
+            {
+               return true;
+            }
+         }
+      }
+
       if (is_numeric(target_type)) {
          auto coerced = effective->coerce_value(Value, target_type);
          if (!std::isnan(coerced.to_number())) return true;
@@ -131,7 +147,7 @@ namespace xml::schema
    }
 
    // Validates that the tag node satisfies the structural requirements of the descriptor.
-   bool TypeChecker::validate_node(const XMLTag &Tag, const SchemaTypeDescriptor &Descriptor) const
+   bool TypeChecker::validate_node(const XTag &Tag, const SchemaTypeDescriptor &Descriptor) const
    {
       if (Descriptor.schema_type IS SchemaType::XPathNodeSet) return true;
       if (Descriptor.can_coerce_to(SchemaType::XPathString)) {
@@ -149,7 +165,7 @@ namespace xml::schema
    }
 
    // Validates an element against the descriptor, recursively checking child elements as required.
-   bool TypeChecker::validate_element(const XMLTag &Tag, const ElementDescriptor &Descriptor) const
+   bool TypeChecker::validate_element(const XTag &Tag, const ElementDescriptor &Descriptor) const
    {
       if (Descriptor.type and Descriptor.children.empty()) {
          XPathVal value(Tag.getContent());

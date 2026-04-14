@@ -692,7 +692,7 @@ server.  Refer to the #Error field for more information.
 -FIELD-
 UserAgent: Specifies the name of the user-agent string that is sent in HTTP requests.
 
-This field describes the `user-agent` value that will be sent in HTTP requests.  The default value is `Parasol Client`.
+This field describes the `user-agent` value that will be sent in HTTP requests.  The default value is `Kotuku Client`.
 
 *********************************************************************************************************************/
 

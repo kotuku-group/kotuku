@@ -1,22 +1,22 @@
 #!/bin/bash
-# Library dependencies test for Parasol package
+# Library dependencies test for Kōtuku package
 
 set -e
 
-echo "Testing Parasol library dependencies..."
+echo "Testing Kōtuku library dependencies..."
 
-# Check if all required libraries are available for the parasol binary
-PARASOL_BIN="/usr/bin/parasol"
+# Check if all required libraries are available for the origo binary
+ORIGO_BIN="/usr/bin/origo"
 
-if [ ! -x "$PARASOL_BIN" ]; then
-    echo "FAIL: Parasol executable not found"
+if [ ! -x "$ORIGO_BIN" ]; then
+    echo "FAIL: Origo executable not found"
     exit 1
 fi
 
-echo "Checking library dependencies for $PARASOL_BIN..."
+echo "Checking library dependencies for $ORIGO_BIN..."
 
 # Use ldd to check dependencies
-if ! ldd_output=$(ldd "$PARASOL_BIN" 2>&1); then
+if ! ldd_output=$(ldd "$ORIGO_BIN" 2>&1); then
     echo "FAIL: Could not check library dependencies"
     echo "ldd output: $ldd_output"
     exit 1

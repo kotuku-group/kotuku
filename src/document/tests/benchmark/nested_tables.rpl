@@ -1,0 +1,57 @@
+<?xml version="1.0"?>
+<!DOCTYPE rpl PUBLIC "-//ROCKLYTE//DTD RPL 1.0//EN">
+
+<body face="Noto Sans" font-size="10pt" margins="24"/>
+
+<page name="Index">
+   <h1>Nested Table Benchmark</h1>
+
+   <p>The outer table below contains multiple rows, variable-width content, and nested tables to exercise recursive
+   layout and repass behaviour.</p>
+
+   <p><table width="100%" stroke="rgb(120,120,120)" spacing="6" cell-padding="6">
+      <row fill="rgb(245,245,245)">
+         <cell border="all"><b>Section</b></cell>
+         <cell border="all"><b>Nested Content</b></cell>
+      </row>
+      <row>
+         <cell border="all">Alpha</cell>
+         <cell border="all">
+            <p>The first inner table contains short values.</p>
+            <table width="60%" stroke="rgb(0,120,0)" cell-padding="4">
+               <row><cell>1</cell><cell>2</cell></row>
+               <row><cell>3</cell><cell>4</cell></row>
+            </table>
+         </cell>
+      </row>
+      <row>
+         <cell border="all">Beta</cell>
+         <cell border="all">
+            <p>The second inner table contains longer text to increase the chance of width growth and row-height
+            repasses during layout.</p>
+            <table width="80%" stroke="rgb(0,0,160)" cell-padding="4" spacing="4">
+               <row>
+                  <cell>Donec ut lectus nisl. Pellentesque sed augue vestibulum turpis volutpat pretium.</cell>
+                  <cell>Vestibulum quis tempor ligula. Praesent varius facilisis tortor in volutpat.</cell>
+               </row>
+               <row>
+                  <cell>Single_word_inner_table_probe_value_that_is_deliberately_long</cell>
+                  <cell>Compact</cell>
+               </row>
+            </table>
+         </cell>
+      </row>
+      <row>
+         <cell border="all">Gamma</cell>
+         <cell border="all">
+            <p>A final nested table is placed after normal paragraph content to ensure the parent cell must lay out both
+            flows correctly.</p>
+            <table width="50%" stroke="rgb(160,80,0)" cell-padding="4">
+               <row><cell>A</cell><cell>B</cell></row>
+               <row><cell>C</cell><cell>D</cell></row>
+               <row><cell>E</cell><cell>F</cell></row>
+            </table>
+         </cell>
+      </row>
+   </table></p>
+</page>

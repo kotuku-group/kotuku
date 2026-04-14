@@ -1,0 +1,254 @@
+--[[
+The gui.combobox API creates and manages combobox boxes in the user interface.
+
+Documentation is available in the Kotuku Wiki.
+--]]
+
+   import 'gui'
+   import 'gui/dropdown'
+
+   namespace 'gui'
+
+FONT_MAX_HEIGHT, FONT_HEIGHT = gui.getFontHeight(gui.fonts.widget)
+BOX_HEIGHT <const> = math.floor(FONT_MAX_HEIGHT * 1.35) + 1
+MARGIN     <const> = math.floor(FONT_HEIGHT * 0.5) + 1
+
+function iconTheme(Widget:table):str
+   if gui.strToRGB(Widget.theme.page.text):brightness() > 0.5 then
+      return 'pearl'
+   else
+      return 'default' -- The default theme is dark
+   end
+end
+
+function reportFeedback(self:table)
+   self.events.activate ?? return
+   text = self.text.string
+   hash = string.hash(text)
+   if hash != self.hash then
+      self.hash = hash
+      self.events.activate(self, text)
+   end
+end
+
+function toggleMenu(self:table)
+   err, bx, by, bw, bh = self.viewport.mtGetBoundary(0)
+
+   self.menu.x = bx + self.labelSize
+   self.menu.y = by + BOX_HEIGHT
+   if not self.unlockMenuWidth then
+      self.menu.surface.width = self.viewport.width - self.labelSize
+   end
+
+   self.menu.toggle()
+end
+
+gui.combobox = function(Options)
+   self = { -- Public variables
+      events         = Options.events ?? { },
+      label          = Options.label,
+      parentViewport = Options.target,
+      allowCustom    = Options.allowCustom,
+      text           = nil, -- A VectorText that represents the string
+      viewport       = nil  -- The primary viewport
+   }
+
+   -- Change the active state of the combobox box to disabled or enabled
+
+   self.disable = function(self)
+      self.disabled = true
+      self.viewport.acDisable()
+      self.text.opacity = 0.5
+      self.bkgd.fill = self.theme.page.bkgd
+      self.events?.disable(self)
+      self.viewport.acDraw()
+   end
+
+   self.enable = function(self)
+      self.disabled = false
+      self.viewport.acDisable()
+      self.text.opacity = 1.0
+      self.bkgd.fill = self.theme.page.bkgd
+      self.events?.enable(self)
+      self.viewport.acDraw()
+   end
+
+   -- Main entry point --
+
+   assert(Options.target, 'A target viewport is required.')
+   assert(Options.items and #Options.items > 0, 'A list of items is required.')
+
+   self.theme = gui.getTheme(self.parentViewport)
+
+   vps = { -- Viewport settings
+      x       = Options.x,
+      y       = Options.y,
+      width   = Options.width,
+      height  = BOX_HEIGHT,
+      xOffset = Options.xOffset,
+      yOffset = Options.yOffset
+   }
+
+   if not vps.x and not vps.xOffset then vps.x = 0 end
+   if not vps.y and not vps.yOffset then vps.y = 0 end
+   if not vps.width and not vps.xOffset then
+      vps.width = gui.sizing.widget.width
+      self.unlockMenuWidth = true
+   end
+
+   self.viewport = self.parentViewport.new('VectorViewport', vps)
+
+   self.inputViewport = self.viewport.new('VectorViewport', {
+      x = 0,
+      y = 0,
+      width = self.viewport.width,
+      yOffset = 0,
+      resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
+         new_width = Width - self.labelSize
+         if Vector.width != new_width then
+            Vector.width = new_width
+         end
+
+         if Vector.height != Height then
+            Vector.height = Height
+         end
+      end
+   })
+
+   if self.label then
+      self.labelText = self.viewport.new('VectorText', {
+         name      = 'Label',
+         x         = 0,
+         y         = FONT_HEIGHT + math.floor((BOX_HEIGHT - FONT_HEIGHT) * 0.5),
+         face      = gui.fonts.label.face,
+         fontSize  = string.format('%.2fpt', gui.fonts.label.size),
+         fontStyle = gui.fonts.label.style,
+         fill      = self.theme.window.text,
+         string    = self.label,
+         lineLimit = 1
+      })
+
+      self.labelSize = self.labelText.textWidth + MARGIN
+      self.inputViewport.x = self.labelText.x + self.labelSize
+      self.inputViewport.width = self.viewport.width - self.labelSize
+   else
+      self.labelSize = 0
+   end
+
+   self.bkgd = self.inputViewport.new('VectorRectangle', {
+      fill = self.theme.page.bkgd, x = 0, y = 0, width = '100%', height = '100%'
+   })
+
+   ICON_SIZE = FONT_HEIGHT
+   down_icon = gui.createIcon(self.viewport.scene, 'arrows/down', ICON_SIZE, iconTheme(self))
+
+   self.iconRender = self.viewport.new('VectorViewport', {
+      xOffset = MARGIN,
+      y       = (self.viewport.height - ICON_SIZE) * 0.5,
+      width   = ICON_SIZE,
+      height  = ICON_SIZE,
+      fill    = down_icon.fill
+   })
+
+   if not Options.flushEdges then
+      self.bkgd.stroke      = self.theme.input.stroke
+      self.bkgd.strokeWidth = gui.sizing.page.strokeWidth
+      self.bkgd.roundX      = gui.sizing.page.strokeWidth * 2
+      self.bkgd.roundY      = gui.sizing.page.strokeWidth * 2
+   end
+
+   self._textClip = self.inputViewport.new('VectorViewport', {
+      cursor = (function()
+         if self.allowCustom then return 'text' end
+      end)(),
+      x=gui.sizing.widget.strokeWidth, y=gui.sizing.widget.strokeWidth,
+      xOffset=self.iconRender.width + MARGIN + MARGIN, yOffset=gui.sizing.widget.strokeWidth, overflow=VOF_HIDDEN
+   })
+
+   defaultText = Options.text
+   if not Options.allowCustom and not defaultText then
+      defaultText = Options.items[1].item
+   end
+
+   self.text = self._textClip.new('VectorText', {
+      x         = 4,
+      y         = FONT_HEIGHT + math.floor((BOX_HEIGHT - FONT_HEIGHT - (gui.sizing.widget.strokeWidth * 2)) * 0.5),
+      face      = gui.fonts.input.face,
+      fontSize  = string.format('%.2fpt', gui.fonts.input.size),
+      fontStyle = gui.fonts.input.style,
+      fill      = self.theme.page.text,
+      string    = defaultText,
+      lineLimit = 1,
+      textFlags = (function()
+         flags = 0
+         if self.allowCustom then
+            flags = flags | VTXF_EDITABLE
+         end
+         return flags
+      end)()
+   })
+
+   if Options.selected then self.text.mtSelectArea(0, 20000) end
+
+   self.viewport.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, function(Viewport, Event)
+      if (Event is FM_LOST_FOCUS) then
+         self.bkgd.stroke = self.theme.input.stroke
+         self.events?.lostFocus(self)
+         if self.allowCustom then
+            reportFeedback(self)
+         end
+
+         self.menu.hide()
+      else
+         self._lastGoodInput = self.text.string
+         if self.disabled then
+            self.bkgd.stroke = self.theme.input.stroke
+         else
+            self.bkgd.stroke = self.theme.input.strokeFocus
+            self.events?.focus(self)
+         end
+      end
+
+      Viewport.acDraw()
+   end)
+
+   self._textClip.mtSubscribeKeyboard(function(Viewport, Qualifiers, Value, Unicode)
+      if not (Qualifiers has KQ_PRESSED) then return end
+
+      if (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) or ((not self.allowCustom) and (Value is KEY_SPACE)) then
+         toggleMenu(self)
+         if self.allowCustom then
+            reportFeedback(self)
+         end
+      end
+   end)
+
+   self.inputViewport.mtSubscribeInput(JTYPE_BUTTON, function(Viewport, Msg)
+      repeat
+         if (Msg.type is JET_LMB) and (Msg.value > 0) then
+            toggleMenu(self)
+         end
+         Msg = Msg.next
+      until Msg is nil
+   end)
+
+   self.menu = gui.dropdown({
+      relative  = self.viewport,
+      client    = self.inputViewport,
+      config    = Options.items,
+      lineLimit = 8,
+      feedback = function(Menu, Item)
+         self.text.string = Item.item
+         reportFeedback(self)
+         self.viewport.acDraw()
+      end
+   })
+
+   if self.unlockMenuWidth then -- Set combobox size to the width of the menu
+      self.viewport.width = self.menu.surface.width + self.labelSize
+   end
+
+   self.events?.show(self)
+
+   return self
+end

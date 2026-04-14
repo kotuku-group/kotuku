@@ -106,8 +106,8 @@ namespace agg
       double x1, y1, x2, y2;
       if (!agg::bounding_rect_single(conv, 0, &x1, &y1, &x2, &y2)) return nullptr;
 
-      const auto width  = F2T(ceil(x2 - x1)) + 1;
-      const auto height = F2T(ceil(y2 - y1)) + 1;
+      const auto width  = int(ceil(x2 - x1)) + 1;
+      const auto height = int(ceil(y2 - y1)) + 1;
       m_buffer.resize(width * height);
       std::fill(m_buffer.begin(), m_buffer.end(), 255);
 
@@ -193,7 +193,7 @@ namespace agg
       else {
          double scale = 255.0 / (max - min);
          for (int y=0, l=0; y < height; y++) {
-            for (int x=0; x < width; x++, l++) m_buffer[l] = int8u(F2T((image[l] - min) * scale));
+            for (int x=0; x < width; x++, l++) m_buffer[l] = int8u(int((image[l] - min) * scale));
          }
       }
 

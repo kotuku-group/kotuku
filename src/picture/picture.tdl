@@ -1,0 +1,32 @@
+--$TIRI:Include
+
+module({ name="Picture", copyright="Paul Manias © 2001-2026", version=1.0, timestamp=20240611 }, function()
+  c_include("<kotuku/modules/display.h>")
+
+  flags("PCF", { comment="Flags for the Picture class." },
+    "NO_PALETTE: Automatically upgrade palette based images to 32 bit colour.",
+    "SCALABLE: This read-only flag is automatically set if the image source is scalable (such as SVG).",
+    "NEW: Indicates that the picture image will be created from scratch.",
+    "MASK: A mask has been generated for the image.",
+    "ALPHA: If a picture supports an alpha channel, this field will be set (if you will be saving a Picture with an alpha channel, set this flag prior to initialisation and build the channel using the object provided in the #Mask field).",
+    "LAZY: Prevents automatic loading of the picture image.  Use the Query action to process the picture header or Activate to load the image data.",
+    "FORCE_ALPHA_32: If the picture source includes an alpha channel mask, it will normally be separated out and stored in the #Mask field.  If you set the `FORCE_ALPHA_32` option before loading, the image will be forced into 32-bit graphics mode with alpha channel.  The mask information will be stored in the alpha byte and the #Mask field will not be set.")
+
+  class("Picture", { src="picture.cpp", output="picture_def.c" }, [[
+    obj(Bitmap) Bitmap  # Bitmap details
+    obj(Bitmap) Mask    # Monochrome bit mask or alpha channel
+    int(PCF) Flags      # Optional flags
+    int DisplayHeight   # Preferred display height
+    int DisplayWidth    # Preferred display width
+    int Quality         # Quality rating when saving image (0% low, 100% high)
+    int FrameRate       # Refresh & redraw the picture X times per second.  Used by pictures that have an animation refresh rate
+  ]])
+
+  c_insert([[
+namespace fl {
+   using namespace pf;
+constexpr FieldValue DisplayWidth(int Value) { return FieldValue(FID_DisplayWidth, Value); }
+constexpr FieldValue DisplayHeight(int Value) { return FieldValue(FID_DisplayHeight, Value); }
+}
+  ]])
+end)

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="VectorPath" mod="Vector" c="Extends the Vector class with support for generating custom paths." cat="Graphics" id="51b8d205" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="VectorPath" mod="Vector" c="Extends the Vector class with support for generating custom paths." cat="Graphics" id="51b8d205" v="1">
   <ai:a n="Clear" c="Clears an object's data." p="ERR acClear(*Object)"/>
   <ai:a n="Flush" c="Flush buffered data from an object." p="ERR acFlush(*Object)"/>
   <ai:m n="AddCommand" c="Add one or more commands to the end of the path sequence." p="ERR vp::AddCommand(OBJECTPTR Object, struct PathCommand * Commands, INT Size)">

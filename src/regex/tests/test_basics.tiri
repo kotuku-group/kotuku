@@ -1,0 +1,37 @@
+-- Core construction and metadata behaviour for Tiri regex bindings
+
+@Test function ConstructionMetadata()
+   matcher = regex.new("abc")
+   assert(matcher.pattern is "abc", "Pattern property should mirror constructor input")
+   assert(matcher.flags is 0, "Flags should default to zero when omitted")
+   assert(matcher.error is nil, "Error property should be nil on successful compilation")
+end
+
+@Test function FlagPersistence()
+   combined = regex.new("abc", regex.ICASE | regex.MULTILINE)
+   assert(combined.flags is (regex.ICASE | regex.MULTILINE), "Combined flags should be preserved")
+   assert(combined.test("A\nB\nABC"), "Case insensitive test should succeed")
+end
+
+@Test function ToStringOutput()
+   matcher = regex.new("words?", regex.ICASE)
+   description = tostring(matcher)
+   assert(description:startsWith("regex(words?"), "Description should contain pattern, got: " .. description)
+   assert(description:find("flags="), "Description should include flag summary when flags are set")
+end
+
+@Test function InvalidPatternRaises()
+   try
+     regex.new("(broken")
+   except ex
+      assert(ex.message:find("Regex compilation failed"), "Error message should mention compilation failure, got: " .. ex.message)
+   success
+      error("Invalid pattern should raise an exception")
+   end
+end
+
+@Test function MatchWholeEnforcement()
+   matcher = regex.new("foo")
+   assert(matcher.match("foo") != nil, "match() should succeed for an exact string")
+   assert(matcher.match("foobar") is nil, "match() should enforce whole-string semantics")
+end

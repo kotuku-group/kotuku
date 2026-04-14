@@ -11,7 +11,7 @@
     <id>ac2f506d</id>
     <idstring>VECTORRECTANGLE</idstring>
     <category>Graphics</category>
-    <copyright>Paul Manias © 2010-2025</copyright>
+    <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>VectorRectangle extends the <class name="Vector">Vector</class> class with the ability to generate rectangular paths.</p></description>
     <source>

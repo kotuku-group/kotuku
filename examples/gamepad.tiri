@@ -1,0 +1,61 @@
+#!/usr/bin/env origo
+--[[
+Gamepad demonstration
+--]]
+
+   import 'gui'
+   import 'gui/window'
+
+   glSelf = obj.find('self')
+   glPath = glSelf.workingPath
+
+   win = gui.window({ title='Gamepad Demo', insideWidth=600, insideHeight=400, enableControllers=true })
+   viewport = win:clientViewport({ aspectRatio = ARF_MEET })
+
+   text = viewport.new('vectortext', {
+      x=win.margins.left, y=20, string='Use a gamepad to control the football.', face='Noto Sans', fontSize=20, fill='rgb(0,0,0)'
+   })
+
+   txtLeftStick = viewport.new('vectortext', {
+      x=win.margins.left, y=50, string='Left Stick:', face='Noto Sans', fontSize=20, fill='rgb(0,0,0)'
+   })
+
+   txtRightStick = viewport.new('vectortext', {
+      x=win.margins.left, y=80, string='Right Stick:', face='Noto Sans', fontSize=20, fill='rgb(0,0,0)'
+   })
+
+   txtButtons = viewport.new('vectortext', {
+      x=win.margins.left, y=110, string='Buttons:', face='Noto Sans', fontSize=20, fill='rgb(0,0,0)'
+   })
+
+   ballVP = viewport.new('VectorViewport', {
+      x = 260, y = 260, width = 60, height = 60
+   })
+
+   svg = obj.new('svg', { target=ballVP, path=glPath .. 'data/football.svg' })
+
+   MAX_SPEED = 3
+   ctrl = obj.new('controller', { port=0 })
+   err, controllerTimer = mSys.SubscribeTimer(1/60, function(Subscriber, Elapsed, CurrentTime)
+      ctrl.acQuery()
+
+      txtLeftStick.string  = 'Left Stick: ' .. string.format('%.2f %.2f', ctrl.leftStickX, ctrl.leftStickY)
+      txtRightStick.string = 'Right Stick: ' .. string.format('%.2f %.2f', ctrl.rightStickX, ctrl.rightStickY)
+      txtButtons.string    = 'Buttons: ' .. string.format('%.8x', ctrl.buttons)
+
+      speed = MAX_SPEED
+      if (ctrl.buttons & CON_GAMEPAD_S)?? then
+         speed = speed * 2
+      end
+
+      ballVP.x = ballVP.x + (ctrl.leftStickX * speed)
+      ballVP.y = ballVP.y - (ctrl.leftStickY * speed)
+
+      ballVP.width = ballVP.width + ctrl.rightStickY
+      ballVP.height = ballVP.height + ctrl.rightStickY
+
+      viewport.scene.surface.mtScheduleRedraw()
+   end)
+
+   win:show(true)
+   processing.sleep()

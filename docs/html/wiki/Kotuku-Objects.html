@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-8254DG7MT6"> </script><script>
+	   window.dataLayer = window.dataLayer || [];
+	   function gtag(){dataLayer.push(arguments);}
+	   gtag('js', new Date());
+      gtag('config', 'G-8254DG7MT6');</script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Kōtuku documentation, machine generated from source">
+<meta name="author" content="Paul Manias">
+<link rel="icon" href="/favicon.ico">
+<title>Kōtuku Wiki - Kotuku Objects</title>
+<link href="../css/bootstrap.min.css" rel="stylesheet">
+<link href="../css/module-template.css" rel="stylesheet">
+<link href="../css/github-markdown.css" rel="stylesheet">
+</head>
+
+<body>
+<nav class="navbar navbar-expand-sm navbar-dark bg-dark">
+  <div class="container-fluid">
+    <div class="navbar-header"><a class="navbar-brand" href="../index.html">Kōtuku</a></div>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div id="navbar" class="collapse navbar-collapse">
+      <ul class="nav navbar-nav"><li class="nav-item">
+        <li class="nav-item"><a class="nav-link" href="../gallery.html">Gallery</a></li>
+        <li class="nav-item"><a class="nav-link" href="../modules/api.html">API</a></li>
+        <li class="nav-item"><a class="nav-link" href="Home.html">Wiki</a></li>
+        <li class="nav-item"><a class="nav-link" href="https://github.com/parasol-framework/kotuku">GitHub</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<div class="container-fluid">
+  <div class="row">
+    <div class="d-sm-block d-none col-3 sidebar" style="max-width: 230px;">
+      <div class="flex-shrink-1 pt-2 pe-2 sticky-top overflow-auto vh-100 b-shadow">
+
+<ul class="list-unstyled">
+  <li>
+    <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#wiki-collapse" aria-expanded="true">Wiki</button>
+    <div class="collapse show" id="wiki-collapse">
+      <ul class="btn-toggle-nav list-unstyled fw-normal pb-1 ps-3">
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#bp-collapse" aria-expanded="false">Build Process</button>
+         <div class="collapse" id="bp-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="Linux-Builds.html">Linux Builds</a></li>
+              <li class="api-ref"><a class="rounded" href="Windows-Builds.html">Windows Builds</a></li>
+              <li class="api-ref"><a class="rounded" href="Customising-Your-Build.html">Customising Your Build</a></li>
+            </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#tm-collapse" aria-expanded="false">Technical Manuals</button>
+         <div class="collapse" id="tm-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+             <li class="api-ref"><a class="rounded" href="Kotuku-Objects.html">Kōtuku Objects</a></li>
+             <li class="api-ref"><a class="rounded" href="Kotuku-In-Depth.html">Kōtuku In Depth</a></li>
+             <li class="api-ref"><a class="rounded" href="Coding-With-AI.html">Coding With AI</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#fg-collapse" aria-expanded="false">Tiri</button>
+         <div class="collapse" id="fg-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+            <li class="api-ref"><a class="rounded" href="Tiri-Reference-Manual.html">Tiri Reference Manual</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-GUI-API.html">GUI API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-HTTPServer-API.html">HTTPServer API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-IO-API.html">I/O API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-JSON-API.html">JSON API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-URL-API.html">URL API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-VFX-API.html">VFX API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-Widgets.html">Widgets</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#rrm-collapse" aria-expanded="false">RIPL</button>
+         <div class="collapse" id="rrm-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="RIPL-Reference-Manual.html">RIPL Reference Manual</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#tools-collapse" aria-expanded="false">Tools</button>
+         <div class="collapse" id="tools-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="Origo.html">Origo</a></li>
+              <li class="api-ref"><a class="rounded" href="Unit-Testing.html">Flute / Unit Testing</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#doc-collapse" aria-expanded="false">Doc Generation</button>
+         <div class="collapse" id="doc-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="Embedded-Document-Formatting.html">Embedded Document Format</a></li>
+              <li class="api-ref"><a class="rounded" href="TDL-Reference-Manual.html">TDL Reference Manual</a></li>
+              <li class="api-ref"><a class="rounded" href="TDL-Tools.html">TDL Tools</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#app-collapse" aria-expanded="false">Appendix</button>
+         <div class="collapse" id="app-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+             <li class="api-ref"><a class="rounded" href="Action-Reference-Manual.html">Action Reference Manual</a></li>
+             <li class="api-ref"><a class="rounded" href="System-Error-Codes.html">System Error Codes</a></li>
+           </ul>
+         </div></li>
+      </ul>
+    </div>
+  </li>
+</ul>
+
+<ul class="list-unstyled">
+  <li class="border-top my-3"></li>
+  <li>
+    <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#mod-collapse" aria-expanded="false">Modules</button>
+    <div class="collapse" id="mod-collapse">
+      <ul class="btn-toggle-nav list-unstyled fw-normal">
+      <li class="api-ref"><a href="../modules/audio.html" class="rounded">Audio</a></li>
+      <li class="api-ref"><a href="../modules/core.html" class="rounded">Core</a></li>
+      <li class="api-ref"><a href="../modules/display.html" class="rounded">Display</a></li>
+      <li class="api-ref"><a href="../modules/font.html" class="rounded">Font</a></li>
+      <li class="api-ref"><a href="../modules/network.html" class="rounded">Network</a></li>
+      <li class="api-ref"><a href="../modules/regex.html" class="rounded">Regex</a></li>
+      <li class="api-ref"><a href="../modules/tiri.html" class="rounded">Tiri</a></li>
+      <li class="api-ref"><a href="../modules/vector.html" class="rounded">Vector</a></li>
+      <li class="api-ref"><a href="../modules/xml.html" class="rounded">XML</a></li>
+      <li class="api-ref"><a href="../modules/xpath.html" class="rounded">XPath</a></li>
+      </ul>
+    </div>
+  </li>
+</ul>
+
+<ul class="list-unstyled">
+  <li class="border-top my-3"></li>
+  <li>
+    <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#class-collapse" aria-expanded="false">Classes</button>
+    <div class="collapse" id="class-collapse">
+      <ul class="btn-toggle-nav list-unstyled fw-normal pb-1 ps-3">
+        <li>
+          <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#audio-collapse" aria-expanded="false">Audio</button>
+          <div class="collapse" id="audio-collapse">
+            <ul class="btn-toggle-nav list-unstyled fw-normal pb-1">
+            <li><a href="../modules/classes/audio.html" class="rounded">Audio</a></li>
+            <li><a href="../modules/classes/sound.html" class="rounded">Sound</a></li>
+            </ul>
+          </div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#core-collapse" aria-expanded="false">Core</button><div class="collapse" id="core-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a href="../modules/classes/file.html" class="rounded">File</a></li>
+        <li><a href="../modules/classes/metaclass.html" class="rounded">MetaClass</a></li>
+        <li><a href="../modules/classes/module.html" class="rounded">Module</a></li>
+        <li><a href="../modules/classes/storagedevice.html" class="rounded">StorageDevice</a></li>
+        <li><a href="../modules/classes/task.html" class="rounded">Task</a></li>
+        <li><a href="../modules/classes/thread.html" class="rounded">Thread</a></li>
+        <li><a href="../modules/classes/time.html" class="rounded">Time</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#data-collapse" aria-expanded="false">Data</button><div class="collapse" id="data-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a href="../modules/classes/compression.html" class="rounded">Compression</a></li>
+        <li><a href="../modules/classes/compressedstream.html" class="rounded">CompressedStream</a></li>
+        <li><a href="../modules/classes/config.html" class="rounded">Config</a></li>
+        <li><a href="../modules/classes/script.html" class="rounded">Script</a></li>
+        <li><a href="../modules/classes/xml.html" class="rounded">XML</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#devices-collapse" aria-expanded="false">Devices</button><div class="collapse" id="devices-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li><a href="../modules/classes/controller.html" class="rounded">Controller</a></li></ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#effects-collapse" aria-expanded="false">Effects</button><div class="collapse" id="effects-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/blurfx.html">BlurFX</a></li>
+        <li><a class="rounded" href="../modules/classes/colourfx.html">ColourFX</a></li>
+        <li><a class="rounded" href="../modules/classes/compositefx.html">CompositeFX</a></li>
+        <li><a class="rounded" href="../modules/classes/convolvefx.html">ConvolveFX</a></li>
+        <li><a class="rounded" href="../modules/classes/displacementfx.html">DisplacementFX</a></li>
+        <li><a class="rounded" href="../modules/classes/filtereffect.html">FilterEffect</a></li>
+        <li><a class="rounded" href="../modules/classes/floodfx.html">FloodFX</a></li>
+        <li><a class="rounded" href="../modules/classes/imagefx.html">ImageFX</a></li>
+        <li><a class="rounded" href="../modules/classes/lightingfx.html">LightingFX</a></li>
+        <li><a class="rounded" href="../modules/classes/mergefx.html">MergeFX</a></li>
+        <li><a class="rounded" href="../modules/classes/morphologyfx.html">MorphologyFX</a></li>
+        <li><a class="rounded" href="../modules/classes/offsetfx.html">OffsetFX</a></li>
+        <li><a class="rounded" href="../modules/classes/remapfx.html">RemapFX</a></li>
+        <li><a class="rounded" href="../modules/classes/sourcefx.html">SourceFX</a></li>
+        <li><a class="rounded" href="../modules/classes/turbulencefx.html">TurbulenceFX</a></li>
+        <li><a class="rounded" href="../modules/classes/wavefunctionfx.html">WaveFunctionFX</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#ext-collapse" aria-expanded="false">Extensions</button><div class="collapse" id="ext-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/scintilla.html">Scintilla</a></li>
+        <li><a class="rounded" href="../modules/classes/scintillasearch.html">ScintillaSearch</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#gfx-collapse" aria-expanded="false">Graphics</button><div class="collapse" id="gfx-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/bitmap.html">Bitmap</a></li>
+        <li><a class="rounded" href="../modules/classes/clipboard.html">Clipboard</a></li>
+        <li><a class="rounded" href="../modules/classes/display.html">Display</a></li>
+        <li><a class="rounded" href="../modules/classes/document.html">Document</a></li>
+        <li><a class="rounded" href="../modules/classes/font.html">Font</a></li>
+        <li><a class="rounded" href="../modules/classes/picture.html">Picture</a></li>
+        <li><a class="rounded" href="../modules/classes/pointer.html">Pointer</a></li>
+        <li><a class="rounded" href="../modules/classes/surface.html">Surface</a></li>
+        <li><a class="rounded" href="../modules/classes/svg.html">SVG</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#net-collapse" aria-expanded="false">Network</button><div class="collapse" id="net-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/clientsocket.html">ClientSocket</a></li>
+        <li><a class="rounded" href="../modules/classes/http.html">HTTP</a></li>
+        <li><a class="rounded" href="../modules/classes/netclient.html">NetClient</a></li>
+        <li><a class="rounded" href="../modules/classes/netlookup.html">NetLookup</a></li>
+        <li><a class="rounded" href="../modules/classes/netsocket.html">NetSocket</a></li>
+        <li><a class="rounded" href="../modules/classes/proxy.html">Proxy</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#vectors-collapse" aria-expanded="false">Vectors</button><div class="collapse" id="vectors-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/vector.html">Vector</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorclip.html">VectorClip</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorcolour.html">VectorColour</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorellipse.html">VectorEllipse</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorfilter.html">VectorFilter</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorgradient.html">VectorGradient</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorgroup.html">VectorGroup</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorimage.html">VectorImage</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorpath.html">VectorPath</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorpattern.html">VectorPattern</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorpolygon.html">VectorPolygon</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorrectangle.html">VectorRectangle</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorscene.html">VectorScene</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorshape.html">VectorShape</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorspiral.html">VectorSpiral</a></li>
+        <li><a class="rounded" href="../modules/classes/vectortext.html">VectorText</a></li>
+        <li><a class="rounded" href="../modules/classes/vectortransition.html">VectorTransition</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorviewport.html">VectorViewport</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorwave.html">VectorWave</a></li>
+        </ul></div>
+        </li>
+      </ul>
+    </div>
+  </li>
+</ul>
+
+</div>
+</div>
+
+<div class="col-sm-9" style="max-width: 1200px;">
+<div class="docs-content" id="default-page">
+
+<h1>Kotuku Objects</h1>
+<h1 id="table-of-contents">Table of Contents</h1>
+<ol type="1">
+<li><a href="#introduction">Introduction</a></li>
+<li><a href="#object-identity">Object Identity</a></li>
+<li><a href="#the-local-object-tree">The Local Object Tree</a></li>
+<li><a href="#object-tree-resource-management">Object Tree Resource Management</a></li>
+<li><a href="#the-importance-of-context">The Importance of Context</a></li>
+<li><a href="#access-management">Access Management</a></li>
+<li><a href="#object-locking">Object Locking</a></li>
+<li><a href="#introspection">Introspection</a></li>
+<li><a href="#threads">Threads</a></li>
+<li><a href="#a-closer-look-at-the-object-structure">A Closer Look at the Object Structure</a></li>
+</ol>
+<h2 id="introduction">Introduction</h2>
+<p>Kōtuku objects are run-time instances of class interfaces. They carry state in the form of a C <code>struct</code> and are all backed by a common C++ <code>class</code> definition named <code>Object</code>. Kōtuku&#39;s objects have inherent features that go beyond those typically found in OO languages. This includes:</p>
+<ul>
+<li>An ownership model - an object is <em>always</em> owned by another object.</li>
+<li>Locking - any object can be locked to prevent conflict with other threads.</li>
+<li>Identification - all objects have a UID and can optionally be given a name.</li>
+<li>Discoverability - objects can be found using their names.</li>
+<li>Resolvability - the pointer to any object can be resolved through their UID.</li>
+<li>Independent processing - object functions can be run in their own thread, independent from the caller.</li>
+<li>Messaging - non-urgent object functions can be executed via messages.</li>
+<li>Context - all operations are carried out in the context of an object, i.e. the equivalent of <code>this</code> is tracked at all times, and can be referenced in regular functions.</li>
+<li>Resource tracking - the ownership model ensures that an object can never be left dangling as a resource leak.</li>
+</ul>
+<p>The creation of an object can be achieved in numerous ways depending on the programming language, but ultimately all objects are processed through a single Core API function known as <code>NewObject()</code>. For instance:</p>
+<pre><code>objAudio *audio;
+auto error = NewObject(ID_AUDIO, NF::NIL, &amp;audio);</code></pre>
+<p>After configuring an object, it is initialised using <code>InitObject()</code>:</p>
+<pre><code>error = InitObject(audio);</code></pre>
+<p>The entire process of creating, configuring and initialising an object can be simplified using decorators, and C++ includes the <code>Create</code> class for this purpose. The basic interface can be used as follows:</p>
+<pre><code>pf::Create&lt;objFile&gt; file = {
+   fl::Path(&quot;temp:new_file.txt&quot;),
+   fl::Flags(FL::WRITE|FL::NEW),
+   fl::Permissions(PERMIT::READ|PERMIT::WRITE)
+};
+
+if (file.ok()) {
+   ...
+}</code></pre>
+<p>Note the use of the <code>ok()</code> call to confirm that object was initialised successfully. An <code>error</code> field is also provided that will be set to a value other than <code>ERR::Okay</code> if a problem occurred. The object will be collected when it goes out of scope.</p>
+<p>Kōtuku classes in C++ also implement alternative means of creation that are more concise, with the addition of <code>global()</code>, <code>local()</code> and <code>untracked()</code> variants:</p>
+<pre><code>objFile *file = objFile::create { fl::Path(glClassBinPath), fl::Flags(FL::READ) };
+
+extFile *file = extFile::create::global(fl::Path(path));
+
+extVectorScene *scene = extVectorScene::create::local(fl::PageWidth(1024), fl::PageHeight(768));
+
+extbitmap *bmp = extBitmap::create::untracked(fl::Width(1024), fl::Height(768));</code></pre>
+<p>Note that these variations will return a direct pointer to the object if successful, or <code>nullptr</code> if an error occurs. The original <code>ERR</code> code is irretrievable when these simpler interfaces are used.</p>
+<h2 id="object-identity">Object Identity</h2>
+<p>All objects are given a unique ID on creation, which is directly readable from the <code>UID</code> field. A useful benefit of UIDs is that they can be stored as object references instead of pointers. UID&#39;s have a safety advantage over pointers because they need to be resolved with <code>GetObjectPtr()</code> or <code>AccessObject()</code> prior to use. Successful resolution guarantees that the object exists. A pointer on the other hand can carry the risk of the object being collected, leaving a now invalid pointer reference. Always give consideration to this risk when storing naked pointers.</p>
+<p>Objects can also be given a name identifier on their creation by the client. Named objects are easier to track in debug logs and can be searched for by <code>FindObject()</code>. The name of an object can be read from its <code>Name</code> field.</p>
+<h2 id="the-local-object-tree">The Local Object Tree</h2>
+<p>All programs written in Kōtuku have their own local object tree (OT) that is self-managed. The tree itself is a side-effect of Kōtuku&#39;s ownership model, which is a straight-forward guarantee that every resource will be owned by an object. This makes it impossible for an object to be left as a dangling resource - even an object that has been globally scoped will be tracked back to its process, which is represented as a Task object. The ownership model works both ways - an object not only has an owner, but it can also own many children. An event system also exists whereby changes in the ownership model will trigger callbacks.</p>
+<p>The OT is frequently leveraged as an asset because it can build meaningful structures of parent-child relationships. The vector scene graph is one such example of a complex structure that we use to represent each program&#39;s entire user interface.</p>
+<h2 id="object-tree-resource-management">Object Tree Resource Management</h2>
+<p>The OT is more than just a representative structure, it also enforces resource tracking constraints on the program. Terminating an object will also terminate the child objects that are associated with it. This enforced collection process is both convenient and powerful, resulting in immediate resource collection without the unpredictability of a garbage collector.</p>
+<p>It is important to bear in mind that Kōtuku&#39;s ownership model applies to all <em>resources</em> and not just objects. This means that memory allocations are also affected. Whenever a class allocates memory, it will be owned by the object that created it. When the object is terminated, all memory allocations will be removed with it. This is extremely convenient, but be aware that this is not considered an excuse to leave memory allocations completely orphaned. Failing to terminate memory resources appropriately will still be reported to the debug log.</p>
+<h2 id="the-importance-of-context">The Importance of Context</h2>
+<p>As stated previously, Kōtuku guarantees that resources are always tracked to an object. It does this in the background and without involving client code. This is achieved by maintaining a persistent <em>context</em> at all times, which is a direct reference to the <em>currently active object</em>. Conceptually this bears a similarity to the C++ <code>this</code> keyword, but unlike C++, the context is accessible at all times, from any part of the program. The context is managed with a stack, much like a function stack. When an object makes a call to another object, a new context is pushed onto the context stack and this will be popped when the interface returns. The context stack gives rise to features like Kōtuku&#39;s context-based debug log:</p>
+<pre><code>Show()             [systemdisplay:713]
+ NewObject()       [systemdisplay:713] Pointer #1725, Flags: $1
+  CreateObject()   [Pointer:1725] Config
+   Init()          [Pointer:1725] Config #1726, Owner: 1725
+    CreateObject() [Config:1726] File
+     Init()        [Config:1726] File #1728, Owner: 1726
+      Init:        [File:1728] File not found &quot;user:config/pointer.cfg/&quot;.
+     Free()        [File:1728] Owner: 1726
+  SetField:        [Pointer:1725] 123456789ABCDEF
+  Free()           [Config:1726] Owner: 1725
+ Init()            [systemdisplay:713] Pointer #1725, Name: systempointer, Owner: 512
+  CreateObject()   [systempointer:1725] Bitmap
+   Init()          [systempointer:1725] Bitmap #1731, Name: customcursor, Owner: 1725
+    Init()         [customcursor:1731] Size: 32x32 @ 32 bit, 4 bytes, Mem: $00000000, Flags: $00000840
+ Show()            [systempointer:1725]
+Free()             [Module:710] vector, Owner: 676</code></pre>
+<p>As seen here, the use of an operating context in conjunction with the function stack tells us the exact object that made each call.</p>
+<p>The current context can be retrieved using the Core&#39;s <code>CurrentContext()</code> function, and it will always return an object that supports the C++ <code>Object</code> interface and the Core&#39;s generic object functions. <code>CurrentContext()</code> is often used in callback functions where recalling the active object is necessary to interact with it.</p>
+<h2 id="access-management">Access Management</h2>
+<p>When writing code that involves managing objects and their references, it is important to ensure that the code is operating safely. This primarily means that i) retained object pointers do not go stale; ii) there are no conflicts between threads using the same object(s).</p>
+<p>Storing direct pointers to objects is generally safe. Direct object pointers can even be shared between threads safely if they are locked correctly with the provided methods. However, <em>if there is a chance that an object can be collected via means outside of client control</em>, pointer access could be deemed unsafe. In such cases, store the object reference as a UID instead and resolve the UID to its pointer form as needed.</p>
+<p>Resolving an object UID to its pointer can be achieved with <code>GetObjectPtr()</code>. This is the fastest means of pointer resolution but comes with the caveat that there is no protection from race conditions involving other threads that could terminate the object.</p>
+<h2 id="object-locking">Object Locking</h2>
+<p>If your code prevents the possibility of an object being involved in an unscheduled termination, C++ threads can take advantage of using the object pointer directly and lock the object using in-built atomic operations. The <code>Object.lock()</code> and <code>Object.unlock()</code> C++ methods are available for this:</p>
+<hr>
+<h3 id="err-objectlock">ERR Object.lock()</h3>
+<p>Gains direct access to an object with an atomic operation. If the operation fails because the object is already in use, the function reverts to using <code>LockObject()</code> and the thread will sleep until the object becomes available.</p>
+<p>Note that this call can fail if the object is marked for collection, as objects in a collecting state are considered unsafe for active use.</p>
+<h3 id="objectunlock">Object.unlock()</h3>
+<p>Reverses an earlier call to <code>Object.lock()</code>. If there are threads waiting on the object&#39;s availability, the function will defer to <code>ReleaseObject()</code> so that the next thread in the queue is woken correctly.</p>
+<hr>
+<p>To lock an object that is referenced via its UID, use the <code>AccessObject()</code> and <code>ReleaseObject()</code> functions. These functions guarantee safety from all potential race conditions.</p>
+<h3 id="scopedobjectlock">ScopedObjectLock</h3>
+<p>The <code>ScopedObjectLock</code> C++ class provides an interface for both UID and direct pointer locks. It guarantees that the lock is released when its instance goes out of scope. Available constructors are:</p>
+<pre><code>ScopedObjectLock(OBJECTID ObjectID, int TimeOut = -1)
+ScopedObjectLock(OBJECTPTR Object, int TimeOut = -1)
+ScopedObjectLock(T *Object, int TimeOut = -1)</code></pre>
+<p>It is possible for lock attempts to fail. The client must call the <code>granted()</code> method to confirm that the object was locked successfully. To access the object fields and methods, use the <code>-&gt;</code> operator. A direct pointer to the object can also be gained by using the <code>*</code> operator.</p>
+<h2 id="introspection">Introspection</h2>
+<p>Kōtuku supports the run-time introspection of classes. This is achieved by gaining access to the relevant <code>MetaClass</code> object, which can be achieved by either i) Retrieving the class directly from an object of interest; ii) Calling the <code>FindClass()</code> function. Detailed information is available in the <code>MetaClass</code> manual, but in summary the following features are supported:</p>
+<ul>
+<li>Read the field table to retrieve name and type information for all publicly accessible fields, both physical and virtual.</li>
+<li>Read the action table to determine the level of support for contract interfaces.</li>
+<li>Read the method table to learn all available method names and their parameters.</li>
+<li>List all currently active run-time objects for the class.</li>
+<li>Read additional meta information such as file associations, optional flags and unique identifiers.</li>
+</ul>
+<h2 id="threads">Threads</h2>
+<p>Kōtuku integrates threads as a key element of its object oriented design. Conventional threads will typically be written for a very specific purpose that can be executed in isolation. In Kōtuku it is possible to go further and call object interfaces in their own thread, with minimal overhead in your code. This can be very efficient for off-loading simple tasks in parallel, like decompressing an archive, processing an image or parsing a file.</p>
+<p>Executing an object interface via its own thread is managed by one functon, <code>AsyncAction()</code>, and will work for both action and method interfaces. The call is largely identical to <code>Action()</code> but for the addition of a callback feature that is executed after the thread has finished. This example calls the <code>Activate</code> action asynchronously and receives a callback once the process is complete:</p>
+<pre><code>auto callback = C_FUNCTION(activate_completed);
+AsyncAction(AC::Activate, object, nullptr, callback);</code></pre>
+<h3 id="signaling">Signaling</h3>
+<p>Sending message packets in an application is common practice, and is particularly useful for managing non-urgent activities that can be delayed until the next message processing cycle. Application complexity can lead to messages needing to be handled in conjunction with other events and queues, an issue which is handled in POSIX with the <code>select()</code> function for instance. Kōtuku&#39;s equivalent is the <code>WaitForObjects()</code> function, which accepts a list of objects and will not return until they are all signalled.</p>
+<p>An object enters a signalled state when it is either destroyed or it is manually signalled with the <code>Signal()</code> action. Some classes have signalling built in for certain conditions being met; for instance threads will enter a signalled state when they are finished executing.</p>
+<p>Because signals are thread-safe, <code>WaitForObjects()</code> can be used to turn the main thread into a message processor while a set of threads perform their tasks. <code>WaitForObjects()</code> will not break until all of the child threads have finished.</p>
+<h2 id="a-closer-look-at-the-object-structure">A Closer Look at the Object Structure</h2>
+<p>The <code>Object</code> structure is Kōtuku&#39;s most critical type structure, forming the basis of all instantiated objects no matter the originating class. Because the <code>Object</code> interface is universal, developing a familiarity of its
+public variables and methods is helpful in accelerating development for new users. The following table lists the publicly declared fields:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Field</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Class</td>
+<td style="text-align: left;"><code>objMetaClass *</code></td>
+<td style="text-align: left;">A direct reference to the class that manages the object, this is defined on creation.</td>
+</tr>
+<tr>
+<td style="text-align: left;">ChildPrivate</td>
+<td style="text-align: left;"><code>APTR</code></td>
+<td style="text-align: left;">For sub-classes only, allows private storage to be allocated and referenced here.</td>
+</tr>
+<tr>
+<td style="text-align: left;">CreatorMeta</td>
+<td style="text-align: left;"><code>APTR</code></td>
+<td style="text-align: left;">For client use only, allows custom data of any kind to be stored. This is the only field that can be written directly by the client.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Owner</td>
+<td style="text-align: left;"><code>Object *</code></td>
+<td style="text-align: left;">A direct reference to the object that has ownership, this is defined on creation.</td>
+</tr>
+<tr>
+<td style="text-align: left;">UID</td>
+<td style="text-align: left;"><code>OBJECTID</code></td>
+<td style="text-align: left;">The unique identifier for this object.</td>
+</tr>
+</tbody>
+</table>
+<p>The following C++ methods are available for reading <code>Object</code> state information.</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Method</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>bool initialised()</code></td>
+<td style="text-align: left;">Returns <code>true</code> if the object has been initialised.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>bool defined(NF Flags)</code></td>
+<td style="text-align: left;">Returns <code>true</code> if any of the <code>NF</code> type <code>Flags</code> are currently defined for this object.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>bool isSubClass()</code></td>
+<td style="text-align: left;">Returns <code>true</code> if the object is the member of a sub-class.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>OBJECTID ownerID()</code></td>
+<td style="text-align: left;">Returns the ID of the owner.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>CLASSID classID()</code></td>
+<td style="text-align: left;">Returns the ID of the object&#39;s class (can be a sub-class).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>CLASSID baseClassID()</code></td>
+<td style="text-align: left;">Returns the ID of the object&#39;s base-class (never a sub-class).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>NF flags()</code></td>
+<td style="text-align: left;">Return all <code>NF</code> state flags currently defined for this object.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>CSTRING className()</code></td>
+<td style="text-align: left;">Return the name of the class that this object belongs to.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>bool collecting()</code></td>
+<td style="text-align: left;">Returns <code>true</code> if the object is being collected, or otherwise marked for collection.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>bool terminating()</code></td>
+<td style="text-align: left;">Returns <code>true</code> if the object is being terminated.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>bool hasOwner(OBJECTID ID)</code></td>
+<td style="text-align: left;">Return true if the referenced object <code>ID</code> has ownership.</td>
+</tr>
+</tbody>
+</table>
+<p>The following C++ methods control object locking.</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Method</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>ERR lock(int Timeout)</code></td>
+<td style="text-align: left;">Efficiently obtains an object lock without a call to <code>LockObject()</code>, keeping overhead to the bare minimum. Will fail if the object is being collected.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>void unlock()</code></td>
+<td style="text-align: left;">Reverse a previous call to <code>lock()</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>The following C++ methods simplify the process of getting and setting fields via virtual accessors.</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Method</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>ERR set(FIELD UID, T Value)</code></td>
+<td style="text-align: left;">Set a field of type T. All primitive types are supported, while special types include <code>FRGB</code>, <code>FUNCTION</code>, <code>std::string</code> and <code>Unit</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ERR setFields(Args&amp;&amp;... pFields)</code></td>
+<td style="text-align: left;">Set one or more field values using field initialisers (same technique as <code>create()</code>).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ERR set(FIELD UID, T *Value, size_t Elements, int Type [Optional])</code></td>
+<td style="text-align: left;">Set an array of type T, pointed to by Value and consisting of total Elements.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ERR set(FIELD UID, ARRAY &amp;Value, int Type [Optional])</code></td>
+<td style="text-align: left;">Set an array of any type, where ARRAY can be a std::array<T>, std::vector<T> or pf::vector<T>. An FD descriptor can be defined in Type if the array type cannot be discerned at compile time.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ERR get(FIELD UID, T *Value)</code></td>
+<td style="text-align: left;">Retrieve a field value of type <code>T</code>, which can be an integral, pointer, Unit or CSTRING.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ERR get(FIELD UID, std::string &amp;Value)</code></td>
+<td style="text-align: left;">Copy a field value to a string buffer. Supports in-built type conversion and array fields are converted to CSV lists.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ERR get(FIELD UID, T * &amp;Result, int &amp;Elements, bool TypeCheck = true)</code></td>
+<td style="text-align: left;">Retrieve a direct pointer to the contents of an array field with elements of type <code>T</code>. The total number of items will be stored in <code>Elements</code>. Set <code>TypeCheck</code> to false if <code>T</code> is abstracted.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>T get(FIELD UID)</code></td>
+<td style="text-align: left;">Retrieve a field value of type <code>T</code>. No error checking is supported, and the value will be zero on failure.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="auto-generated-interfaces-for-objects">Auto-Generated Interfaces for Objects</h3>
+<p>During Kōtuku&#39;s build process, C++ interfaces are automatically generated for classes so that our framework is more closely integrated with the C++ language itself. These interfaces are not directly documented, but they are intended to be browsed via your IDE, e.g. via the <code>CTRL + SPACE</code> convention.</p>
+<p>All actions and methods listed for a class get their own C++ stub. For instance, the <code>GetKey</code> action is supported with a stub of <code>ERR getKey(CSTRING Key, STRING Value, int Size)</code>. The parameters will always match those documented for the given action or method.</p>
+<p>Stubs are also generated for setting fields. The use of these stubs is encouraged as they are type-checked and eliminate the question of whether to set a field virtually or through a direct write. Additionally, if the field is virtual then the stub will use an approach that eliminates much of the overhead that result from setting a field by its identifier. The template generated for each field will be in the format <code>ERR setName(T Value)</code>.</p>
+</div></div></div></div>
+
+<script src="../js/bootstrap.bundle.min.js"></script>
+<script src="../js/base.js"></script>
+<script>
+
+   // Auto-open the relevant sidebar branch
+
+   var url = window.location.pathname;
+   var filename = url.substring(url.lastIndexOf('/')+1);
+   var el = document.querySelector('li[class="api-ref"] > a[href="' + filename + '"]');
+   if (el) {
+      var parent = getParentNode(el, '[class="collapse"]');
+      if (parent) new bootstrap.Collapse(parent, { show: true }); // Causes animation
+
+      el.style.backgroundColor = '#d2f4ea';
+   }
+
+   cancelAnimations();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,257 @@
+--[[
+Documentation is available in the Kotuku Wiki.
+--]]
+
+   import 'gui'
+   import 'gui/fileview'
+   import 'gui/columnview'
+   import 'gui/button'
+   import 'gui/combobox'
+   import 'gui/input'
+   import 'gui/window'
+
+   namespace 'gui'
+
+   gui.dialog ?= { }
+
+GAP <const> = 8
+
+gui.dialog.file = function(Options)
+   local target_path, target_file
+   if Options.path then target_path, target_file = io.splitPath(Options.path) end
+
+   self = { -- Public variables
+      windowID    = nil,
+      currentPath = target_path,
+      multiSelect = Options.multiSelect ?? false,
+      warnExists  = Options.warnExists ?? false,
+      feedback    = Options.feedback,
+      target      = Options.target,
+      allowNew    = Options.allowNew
+   }
+
+   function processFeedback()
+      list = self.fileview.view.selectedItems()
+      if not list?? and self.filebox then
+         local file = self.filebox.text.string
+         if file?? then
+            list:push({ filename = file })
+         end
+      end
+
+      if (self.warnExists is true) and (#list > 0) then
+         _, type = mSys.AnalysePath((self.fileview.path ?? '') .. list[0].filename)
+         if type is LOC_FILE then
+            local msg
+
+            if #list is 1 then
+               msg = f"You are about to overwrite the file '{list[0].filename}'.  Do you want to continue?"
+            else
+               msg = f'You are about to overwrite {#list} files.  Do you want to continue?'
+            end
+
+            confirm = gui.dialog.message({
+               target  = self.target,
+               modal   = true,
+               options = { { id=-1, text='No', icon='items/cancel' },
+                           { id=1, text='Yes', icon='items/checkmark' } },
+               title   = 'Confirmation Required',
+               type    = 'warning',
+               message = msg,
+               popOver = windowID,
+               feedback = function(Dialog, Response, State)
+                  if Response?.id is 1 then
+                     self?.feedback(self, self.fileview.path, list)
+                     self.window = nil
+                  end
+               end
+            })
+
+            return true
+         end
+      end
+
+      self?.feedback(self, self.fileview.path, #list > 0 ? list :> nil)
+
+      table.clear(self)
+      return true
+   end
+
+   self.window = gui.window({
+      insideWidth  = 500,
+      insideHeight = 550,
+      minWidth     = 250,
+      minHeight    = 150,
+      quit         = false,
+      center       = true,
+      popOver      = Options.popOver,
+      parent       = Options.target,
+      icon         = Options.icon ?? 'icons:folders/folder',
+      title        = Options.title ?? 'Select a file',
+      modal        = Options.modal ?? false,
+      events = {
+         close = function(Window)
+            Options?.feedback(self, nil)
+            table.clear(self)
+            processing.collect()
+         end
+      }
+   })
+
+   theme = self.window.theme
+
+   self.scene = self.window.scene
+
+   self.viewport = self.window:clientViewport({ })
+
+   self.pathbox = gui.input({
+      target     = self.viewport,
+      x          = 0,
+      y          = 0,
+      xOffset    = 0,
+      text       = self.currentPath,
+      textFace   = gui.fonts.filesys.face,
+      flushEdges = true,
+      bkgd       = 'none',
+      events = {
+         activate = function(Input, Event)
+            self.fileview.browse(Event.text)
+         end
+      }
+   })
+
+   y = self.pathbox.viewport.y + self.pathbox.viewport.height
+   y += gui.separator(self.window.viewport, 'H', y)
+
+   -- Okay and cancel buttons
+
+   footer = self.window.margins.bottom
+
+   lCancelButton = gui.button({
+      target  = self.viewport,
+      text    = Options.cancelText ?? 'Cancel',
+      xOffset = GAP,
+      yOffset = footer,
+      icon    = 'items/cancel',
+      events = {
+         activate = function(Button)
+            Options?.feedback(self, nil)
+            table.clear(self)
+            processing.collect()
+         end
+      }
+   })
+
+   lOkayButton = gui.button({
+      target     = self.viewport,
+      text       = Options.okText ?? 'Okay',
+      xOffset    = lCancelButton.viewport.width + (GAP * 2),
+      yOffset    = footer,
+      icon       = 'items/checkmark',
+      events = {
+         activate = processFeedback
+      }
+   })
+
+   footer += lOkayButton.viewport.height + GAP
+
+   if Options.allowNew then
+      self.filebox = gui.input({
+         target      = self.viewport,
+         x           = 0,
+         yOffset     = footer,
+         xOffset     = 0,
+         shadowLabel = 'Enter file name',
+         textFace    = gui.fonts.filesys.face,
+         flushEdges  = true,
+         text        = target_file,
+         events = {
+            activate = function(Widget:table, Event:table)
+               if Event.state is 'activated' then
+                  processFeedback()
+               end
+            end
+         }
+      })
+
+      advance = gui.separator(self.filebox.viewport, 'H', '100%', nil, nil)
+
+      footer += self.filebox.viewport.height + advance
+   end
+
+   -- Populate filter selection
+
+   fv_filters = array<table>
+   if Options.filterList and (#Options.filterList > 0) then
+      -- Pick the first item as being selected if none other is chosen.
+
+      selection = false
+      for item in values(Options.filterList) do
+         if item.selected then
+            selection = true
+            break
+         end
+      end
+
+      if not selection then Options.filterList[0].selected = true end
+
+      for filter in values(Options.filterList) do
+         fv_filters:push(filter)
+      end
+   end
+
+   -- File view area
+
+   viewRegion = self.viewport.new('VectorViewport', {
+      x        = 0,
+      y        = y,
+      width    = '100%',
+      yOffset  = footer,
+      overflow = VOF_HIDDEN
+   })
+
+   self.fileview = gui.fileview({
+      target        = viewRegion,
+      path          = self.currentPath,
+      filterList    = fv_filters,
+      sysKeys       = true,
+      fileSelected  = processFeedback,
+      style         = 'column', -- column, list, tree
+      toolBar       = { clipboard=true, settings=true },
+      viewOptions   = { },
+      pathChanged = function(FileView:table, Path:str)
+         self.currentPath = Path
+         self.pathbox.text.string = self.currentPath
+      end
+   })
+
+   self.currentPath = self.fileview.path -- Ensure consistency
+
+   gui.separator(self.window.viewport, 'H', -footer)
+
+   self.window:moveToFront()
+   self.window:show()
+
+   return self
+end
+
+-- This sub-routine is provided for languages other than Tiri to utilise the module.
+
+@if(imported=false)
+   dlg = gui.dialog.file({
+      popOver      = arg('popOver'),
+      target       = arg('target'),
+      modal        = arg('modal'),
+      okText       = arg('okText'),
+      cancelText   = arg('cancelText'),
+      filterList   = arg('filterList'),
+      icon         = arg('icon'),
+      path         = arg('path'),
+      selectFolder = arg('selectFolder'),
+      multiSelect  = arg('multiSelect'),
+      userInput    = arg('userInput'),
+      allowNew     = arg('allowNew')
+   })
+
+   return dlg.windowID
+@end

@@ -1,0 +1,53 @@
+-- $TIRI
+-- Flute tests for the table.toXML() method
+
+
+   rx_file_tag = regex.new('<file.*?\\/>')
+
+@Test function Basic()
+   item = table.toXML({
+      file = {
+         icon = 'my_icon',
+         name = 'my_name',
+         { 'filename.jpg',
+           size = { sort = 123, { 123 } },
+           date = { sort = 'F' .. 456, 'ABC' },
+           owner = { 123 },
+           group = { nil },
+           permissions = { 'RWX' }
+         }
+      }
+   })
+
+   -- <file icon="my_icon" name="my_name">filename.jpg<owner>123</><size sort=123>123</><group/>
+   --   <date sort="F456">ABC</><permissions>RWX</></>
+
+   assert(regex.new('^<file.*>filename\\.jpg.+</>$').test(item), 'The file tag does not match the expected pattern.')
+   assert(string.find(item, '<owner>123</>'), 'The owner tag is not defined correctly.')
+   assert(string.find(item, '<size sort=123>123</>'), 'The size tag is not defined correctly.')
+   assert(string.find(item, '<group/>'), 'The group tag is not defined correctly.')
+   assert(string.find(item, '<date sort="F456">ABC</>'), 'The date tag is not defined correctly.')
+   assert(string.find(item, '<permissions>RWX</>'), 'The date tag is not defined correctly.')
+
+   print(item .. '\n')
+end
+
+-- If sequential XML tags will share the same name, it is essential to place each of them in a separate table
+-- as seen in this test.
+
+@Test function Duplicates()
+   files = table.toXML({
+      receipt = {
+         totalitems = 2,
+         id = 'my_files',
+         { file = { path='volume:file' } },
+         'random receipt content',
+         { file = { path='volume:file2.txt' } }
+      }
+   })
+
+   -- <receipt totalitems=2 id="my_files"><file path="volume:file"/><file path="volume:file2.txt"/></>
+
+   cap = rx_file_tag.search(files)
+   assert(#cap is 2, 'Expected 2 file tags, got ' .. #cap)
+end

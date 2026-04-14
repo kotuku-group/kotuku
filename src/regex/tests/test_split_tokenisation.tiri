@@ -1,0 +1,40 @@
+-- Splitting and tokenisation behaviour for regex.split
+
+@Test function SimpleSplit()
+   local matcher = regex.new(",\\s*")
+   local result = matcher.split("apple, banana,carrot")
+   assert(#result is 3, "Comma split should produce three tokens")
+   assert(result[1] is "banana", "Whitespace should be trimmed by pattern")
+end
+
+@Test function ConsecutiveDelimiters()
+   local matcher = regex.new(",")
+   local result = matcher.split("a,,b")
+   assert(#result is 3, "Consecutive delimiters should yield empty field")
+   assert(result[1] is "", "Empty field should be preserved between delimiters")
+end
+
+@Test function LeadingTrailingDelimiters()
+   -- Expecting [ "", "start", "end", "" ]
+   local matcher = regex.new("\\|")
+   local result = matcher.split("|start|end|")
+   assert(result[0] is "", "Leading separator should produce empty string")
+   assert(result[1] is "start", "Expected 'start' at index 2")
+   assert(result[2] is "end", "Expected 'end' at index 3")
+   assert(result[3] is "", "Trailing separator should produce empty string")
+   assert(#result is 4, "Expected 4 tokens, got " .. #result)
+end
+
+@Test function WhitespaceSplit()
+   local matcher = regex.new("\\s+")
+   local result = matcher.split("line1\nline2\tline3")
+   assert(#result is 3, "Whitespace split should separate newline and tab delimited tokens")
+end
+
+@Test function SplitContinuousFlag()
+   local matcher = regex.new(",")
+   local regular = matcher.split("a,b,c")
+   local continuous = matcher.split("a,b,c", regex.CONTINUOUS)
+   assert(#regular is 3, "Baseline split should return all parts")
+   assert(#continuous is 1 and continuous[0] is "a,b,c", "CONTINUOUS flag should suppress matches away from start")
+end

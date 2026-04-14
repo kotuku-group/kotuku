@@ -1,0 +1,133 @@
+-- Internally, assert() silently transforms assert() calls so that the message is deferred.
+-- This avoids evaluating the message when the assertion passes.
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Basic assert that passes (message should not be evaluated)
+
+@Test(priority=1) function AssertPassesNoEval()
+   message_evaluated = false
+   function get_message()
+      message_evaluated = true
+      return 'This should not be evaluated'
+   end
+
+   assert(true, get_message())
+   assert(message_evaluated is false, 'Message was evaluated when assertion passed')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Basic assert that fails
+
+@Test(priority=2) function AssertFails()
+   try
+      assert(false, 'Custom error message')
+   except ex
+      assert(ex.message:find('Custom error message'), 'Error message should contain custom message')
+   success
+      error('Assert should have failed')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Assert with no message (uses default)
+
+@Test(priority=3) function AssertDefaultMessage()
+   try
+      assert(false)
+   except ex
+      assert(ex.message:find('Assertion failed'), 'Error should contain default message, got ' .. ex.message)
+   success
+      error('Assert should have failed')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Assert with complex condition
+
+@Test(priority=4) function AssertComplexCondition()
+   x = 10
+   y = 20
+   assert(x < y, 'x should be less than y')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Assert with expression that has side effects in condition
+
+@Test(priority=5) function AssertConditionSideEffects()
+   counter = 0
+   function increment()
+      counter++
+      return true
+   end
+
+   assert(increment(), 'Should not fail')
+   assert(counter is 1, 'Condition should be evaluated once')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Multiple asserts in sequence
+
+@Test(priority=6) function MultipleAsserts()
+   assert(1 is 1)
+   assert(2 is 2, 'two is two')
+   assert(true)
+   assert(not false, 'not false is true')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Assert with string concatenation in message (lazy evaluation test)
+
+@Test(priority=7) function AssertExpensiveMessage()
+   expensive_called = false
+   function expensive_operation()
+      expensive_called = true
+      return 'expensive result'
+   end
+
+   assert(true, 'Error: ' .. expensive_operation())
+   assert(expensive_called is false, 'Expensive operation should not be called when assertion passes')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Assert with nil condition
+
+@Test(priority=8) function AssertNil()
+   try
+      assert(nil, 'nil is falsey')
+   success
+      error('Assert on nil should fail')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Assert with 0 (which is truthy in Lua)
+
+@Test(priority=9) function AssertZero()
+   assert(0, 'zero is truthy')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Assert with empty string (which is truthy in Lua)
+
+@Test(priority=10) function AssertEmptyString()
+   assert('', 'empty string is truthy')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Assert does NOT return values (shadow optimization always applies)
+
+@Test(priority=11) function AssertNoReturn()
+   -- Shadow function: assert() returns no values in all contexts.
+   -- Unlike standard Lua where assert returns all its arguments, the shadow
+   -- assert is optimised to never evaluate or return the message.
+
+   a, b = assert(true, 'message')
+
+   -- Both a and b should be nil since shadow assert() returns nothing
+   if type(a) != 'nil' or type(b) != 'nil' then
+      error('Shadow assert() should return no values, got ' .. tostring(a) .. ' and ' .. tostring(b))
+   end
+end

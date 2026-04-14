@@ -1,0 +1,207 @@
+--[[
+Documentation is available in the Kotuku Wiki.
+--]]
+
+   import 'gui'
+
+   namespace 'gui'
+
+LINE_SPACING, FONT_HEIGHT = gui.getFontHeight(gui.fonts.button)
+HEIGHT    <const> = math.floor(LINE_SPACING * 1.75) + 1
+ICON_SIZE <const> = HEIGHT * 0.56
+GAP       <const> = HEIGHT * 0.35
+
+gui.button = function(Options)
+   self = { -- Public variables
+      events         = Options.events ?? { },
+      parentViewport = Options.target,
+      text           = nil, -- A VectorText that represents the string
+      viewport       = nil, -- The button's primary viewport
+   }
+
+   theme = gui.getTheme(self.parentViewport)
+
+   -- Change the active state of the button to disabled or enabled
+
+   self.disable = function(self)
+      self.disabled = true
+      self.viewport.acDisable()
+      self.text?.opacity = 0.5
+      self.bkgd.fill = theme.button.bkgd
+      self.events?.disable(self)
+      self.viewport.acDraw()
+   end
+
+   self.enable = function(self)
+      self.disabled = false
+      self.viewport.acDisable()
+      self.text?.opacity = 1.0
+      self.bkgd.fill = theme.button.bkgd
+      self.events?.enable(self)
+      self.viewport.acDraw()
+   end
+
+   -- Main entry point --
+
+   assert(Options.target, 'A target viewport is required.')
+   if Options.feedback then -- Backwards compatibility
+      print('Replace the use of button feedback with the event equivalent.')
+      self.events.activate = Options.feedback
+   end
+
+   label_offset = 0
+
+   vps = { -- Viewport settings
+      x       = Options.x,
+      y       = Options.y,
+      width   = Options.width,
+      height  = HEIGHT,
+      xOffset = Options.xOffset,
+      yOffset = Options.yOffset
+   }
+
+   calc_width = false
+   if not vps.x and not vps.xOffset then vps.x = 0 end
+   if not vps.y and not vps.yOffset then vps.y = 0 end
+   if not vps.width and not (vps.xOffset and vps.x) then
+      vps.width = gui.sizing.widget.width
+      calc_width = true
+   end
+
+   self.viewport = self.parentViewport.new('VectorViewport', vps)
+
+   self.bkgd = self.viewport.new('VectorRectangle', {
+      fill   = theme.button.bkgd,
+      x      = gui.sizing.widget.strokeWidth * 0.5,
+      y      = gui.sizing.widget.strokeWidth * 0.5,
+      width  = self.viewport.width - gui.sizing.widget.strokeWidth,
+      height = HEIGHT - gui.sizing.widget.strokeWidth,
+      roundX = gui.sizing.widget.strokeWidth * 2,
+      roundY = gui.sizing.widget.strokeWidth * 2,
+      stroke = theme.widget.stroke,
+      strokeWidth = gui.sizing.widget.strokeWidth,
+      resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
+         if Vector.width != Width then
+            Vector.width = Width - gui.sizing.widget.strokeWidth
+         end
+
+         if Vector.height != Height then
+            Vector.height = Height - gui.sizing.widget.strokeWidth
+         end
+      end
+   })
+
+   if Options.icon then
+      try
+         icon = gui.createIcon(self.viewport.scene, Options.icon, ICON_SIZE, gui.rgbToIconTheme(theme.widget.text))
+
+         if icon then
+            self.iconRender = self.viewport.new('VectorViewport', {
+               x      = GAP,
+               y      = (self.viewport.height - icon.size) * 0.5,
+               width  = icon.size,
+               height = icon.size,
+               fill   = icon.fill
+            })
+
+            label_offset = (GAP * 0.5) + ICON_SIZE
+         end
+      end
+   end
+
+   self._textClip = self.viewport.new('VectorViewport', {
+      x = gui.sizing.widget.strokeWidth, y = gui.sizing.widget.strokeWidth,
+      xOffset = gui.sizing.widget.strokeWidth, yOffset = gui.sizing.widget.strokeWidth,
+      overflow = VOF_HIDDEN
+   })
+
+   if Options.text then
+      self.text = self._textClip.new('VectorText', {
+         x         = GAP + label_offset,
+         y         = FONT_HEIGHT + math.floor((HEIGHT - FONT_HEIGHT - (gui.sizing.widget.strokeWidth * 2)) * 0.5),
+         face      = gui.fonts.button.face,
+         fontSize  = string.format('%.2fpt', gui.fonts.button.size),
+         fontStyle = gui.fonts.button.style,
+         fill      = theme.widget.text,
+         string    = Options.text,
+         lineLimit = 1
+      })
+   end
+
+   if calc_width then
+      if Options.text then
+         self.viewport.width = GAP + label_offset + self.text.textWidth + GAP
+      else
+         self.viewport.width = (HEIGHT - ICON_SIZE) + ICON_SIZE
+         self.iconRender.x = (HEIGHT - ICON_SIZE) * 0.5
+      end
+   end
+
+   self.viewport.mtSubscribeFeedback(FM_HAS_FOCUS|FM_CHILD_HAS_FOCUS|FM_LOST_FOCUS, function(Viewport:obj, Event)
+      if Event is FM_LOST_FOCUS then
+         self.bkgd.stroke = theme.widget.stroke
+         self.events?.lostFocus(self)
+      else
+         if self.disabled then
+            self.bkgd.stroke = theme.widget.stroke
+         else
+            self.bkgd.stroke = theme.widget.strokeFocus
+            self.events?.focus(self)
+         end
+      end
+
+      Viewport.acDraw()
+   end)
+
+   self.viewport.mtSubscribeKeyboard(function(Viewport:obj, Qualifiers:num, Value:num, Unicode)
+      if not (Qualifiers has KQ_PRESSED) then return end
+
+      if (Value is KEY_ENTER) or (Value is KEY_SPACE) or (Value is KEY_NP_ENTER) then
+         self.events?.activate(self)
+      end
+   end)
+
+   self.viewport.mtSubscribeInput(JTYPE_CROSSING|JTYPE_BUTTON|JTYPE_REPEATED, function(Viewport:obj, Msg)
+      repeat
+         if Msg.type is JET_CROSSED_IN then
+            self.bkgd.fill = theme.button.highlight
+            self.events?.cursorEntry(self)
+         elseif Msg.type is JET_CROSSED_OUT then
+            self.bkgd.fill = theme.button.bkgd
+            self.events?.cursorExit(self)
+         elseif Msg.type is JET_LMB then
+            if Msg.value > 0 then
+               if not self.disabled then
+                  -- Click event is triggered on release unless the button is set to pulse
+                  if Msg.flags has JTYPE_REPEATED then
+                     if self.pulse then
+                        self.events?.activate(self)
+                     end
+                  else
+                     self.clicked = true
+                     self.clickX  = Msg.x
+                     self.clickY  = Msg.y
+                  end
+               end
+            elseif self.clicked then
+               self.clicked = false
+               clickX = Msg.x - self.clickX
+               clickY = Msg.y - self.clickY
+               if clickX < 0 then clickX = -clickX end
+               if clickY < 0 then clickY = -clickY end
+
+               if ((clickX < 4) and (clickY < 4)) or self.pulse then
+                  self.events?.activate(self)
+               end
+            end
+         end
+         Msg = Msg.next
+      until not Msg
+
+      Viewport.acDraw()
+   end)
+
+   self.events?.show(self)
+
+   return self
+end

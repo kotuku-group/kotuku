@@ -13,7 +13,7 @@
     <id>7c96e4fc</id>
     <idstring>FONT</idstring>
     <category>Graphics</category>
-    <copyright>Paul Manias © 1998-2025</copyright>
+    <copyright>Paul Manias © 1998-2026</copyright>
     <description>
 <p>The Font class is provided for the purpose of bitmap font rendering and querying font meta information.  It supports styles such as bold, italic and underlined text, along with extra features such as adjustable spacing and word alignment. Fixed-point bitmap fonts are supported through the Windows .fon file format.  Truetype fonts are not supported (refer to the <class name="VectorText">VectorText</class> class for this feature).</p>
 <p>Bitmap fonts must be stored in the <code>fonts:fixed/</code> directory in order to be recognised.  The process of font installation and file management is managed by functions supplied in the Font module.</p>

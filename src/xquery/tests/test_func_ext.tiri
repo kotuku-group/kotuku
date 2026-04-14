@@ -1,0 +1,182 @@
+-- XPath 2.0 function extensions smoke tests
+
+   include 'xml'
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Verify string casing helpers
+
+@Test function StringCaseFunctions()
+   local xml = obj.new("xml", {
+      statement = '<root><item>Alpha Beta</item><item attr="MixedCase"/></root>'
+   })
+
+   local err, uppercaseId = xml.mtSearch('/root/item[upper-case(.) = "ALPHA BETA"]')
+   assert(err is ERR_Okay, "upper-case(.) should transform content to uppercase: " .. mSys.GetErrorMsg(err))
+
+   local err2, attributeId = xml.mtSearch('/root/item[@attr and lower-case(@attr) = "mixedcase"]')
+   assert(err2 is ERR_Okay, "lower-case(@attr) should normalise attribute values")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Check URI encoding helpers
+
+@Test function UriEncodingFunctions()
+   local xml = obj.new("xml", {
+      statement = '<root><item path="docs/file one" link="a&b?c"/></root>'
+   })
+
+   local err, nodeId = xml.mtSearch('/root/item[encode-for-uri(@path) = "docs%2Ffile%20one"]')
+   assert(err is ERR_Okay, "encode-for-uri(@path) should percent-encode separators")
+
+   local err2, nodeId2 = xml.mtSearch('/root/item[escape-html-uri(@link) = "a&amp;b%3Fc"]')
+   assert(err2 is ERR_Okay, "escape-html-uri(@link) should provide HTML safe output")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Validate regular expression helpers
+
+@Test function RegexFunctions()
+   local xml = obj.new("xml", {
+      statement = '<root><code>id123</code><code>ALPHA-001</code><csv>alpha,beta,gamma</csv></root>'
+   })
+
+   local err, firstCode = xml.mtSearch('/root/code[matches(., "^id[0-9]+$", "i")]')
+   assert(err is ERR_Okay, "matches() should support case-insensitive matching")
+
+   local err2, secondCode = xml.mtSearch('/root/code[replace(., "-", "") = "ALPHA001"]')
+   assert(err2 is ERR_Okay, "replace() should rewrite substrings")
+
+   local err3, csvNode = xml.mtSearch('/root/csv[tokenize(., ",")[2] = "beta" and count(tokenize(., ",")) = 3]')
+   assert(err3 is ERR_Okay, "tokenize() should expose individual fields")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Exercise numeric helper functions
+
+@Test function MathFunctions()
+   local xml = obj.new("xml", {
+      statement = '<root><value amount="10" delta="-5"/><value amount="20" delta="5"/><value amount="30" delta="0"/></root>'
+   })
+
+   local err, absNode = xml.mtSearch('/root/value[abs(number(@delta)) = 5]')
+   assert(err is ERR_Okay, "abs() should return absolute numeric value")
+
+   local err2, minNode = xml.mtSearch('/root/value[@amount = min(/root/value/@amount)]')
+   assert(err2 is ERR_Okay, "min() should locate the smallest attribute value")
+
+   local err3, maxNode = xml.mtSearch('/root/value[@amount = max(/root/value/@amount)]')
+   assert(err3 is ERR_Okay, "max() should locate the largest attribute value")
+
+   local err4, avgNode = xml.mtSearch('/root/value[@amount = round(avg(/root/value/@amount))]')
+   assert(err4 is ERR_Okay, "avg() should locate the middle item")
+
+   local xmlRound = obj.new("xml", {
+      statement = '<root><case id="tie-low" value="0.5"/><case id="tie-high" value="1.5"/><case id="tie-upper" value="2.5"/><case id="negative" value="-1.5"/><case id="precision" value="123.455"/><case id="precision-even" value="123.445"/><case id="neg-precision" value="1250"/></root>'
+   })
+
+   local errTieLow, tieLowId = xmlRound.mtSearch('/root/case[@id = "tie-low" and round-half-to-even(number(@value)) = 0]')
+   assert(errTieLow is ERR_Okay, 'round-half-to-even() should round 0.5 to the even integer 0')
+
+   local errTieHigh, tieHighId = xmlRound.mtSearch('/root/case[@id = "tie-high" and round-half-to-even(number(@value)) = 2]')
+   assert(errTieHigh is ERR_Okay, 'round-half-to-even() should round 1.5 up to the even integer 2')
+
+   local errTieUpper, tieUpperId = xmlRound.mtSearch('/root/case[@id = "tie-upper" and round-half-to-even(number(@value)) = 2]')
+   assert(errTieUpper is ERR_Okay, 'round-half-to-even() should round 2.5 down to the even integer 2')
+
+   local errNegative, negativeId = xmlRound.mtSearch('/root/case[@id = "negative" and round-half-to-even(number(@value)) = -2]')
+   assert(errNegative is ERR_Okay, 'round-half-to-even() should honour even rounding for negative ties')
+
+   local errPrecision, precisionId = xmlRound.mtSearch('/root/case[@id = "precision" and round-half-to-even(number(@value), 2) = 123.46]')
+   assert(errPrecision is ERR_Okay, 'round-half-to-even() should round fractional precision ties upward when the preceding digit is odd')
+
+   local errPrecisionEven, precisionEvenId = xmlRound.mtSearch('/root/case[@id = "precision-even" and round-half-to-even(number(@value), 2) = 123.44]')
+   assert(errPrecisionEven is ERR_Okay, 'round-half-to-even() should leave even fractional digits unchanged when exactly halfway')
+
+   local errNegPrecision, negPrecisionId = xmlRound.mtSearch('/root/case[@id = "neg-precision" and round-half-to-even(number(@value), -2) = 1200]')
+   assert(errNegPrecision is ERR_Okay, 'round-half-to-even() should support negative precision arguments')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Ensure trace() produces pass-through results while emitting diagnostics
+
+@Test function TraceFunction()
+   local xml = obj.new("xml", {
+      statement = '<root><item id="a">Alpha</item><item id="b">Beta</item></root>'
+   })
+
+   local err, nodeId = xml.mtSearch('/root/item[trace(@id, "ids") = "a"]')
+   assert(err is ERR_Okay, 'trace() should preserve attribute values during predicates: ' .. mSys.GetErrorMsg(err))
+   assert(nodeId != nil, 'trace() predicate should locate the first matching item')
+
+   local err2, contentId = xml.mtSearch('/root/item[trace(., "content") = "Beta"]')
+   assert(err2 is ERR_Okay, 'trace() should expose node string values: ' .. mSys.GetErrorMsg(err2))
+   local _, attrValue = xml.mtGetAttrib(contentId, 'id')
+   assert(attrValue is 'b', 'trace() should return the original node-set without modification')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Verify error() reports diagnostics and halts XPath evaluation
+
+@Test function ErrorFunction()
+   local xml = obj.new("xml", {
+      statement = '<root><item code="A">Alpha</item></root>'
+   })
+
+   local err = xml.mtSearch('/root/item[error("err:TEST0001", "Forced failure", @code)]')
+   assert(err != ERR_Okay, 'error() should signal a failing predicate evaluation')
+
+   local message = xml.errorMsg ?? ''
+   assert(message is 'XPath error err:TEST0001: Forced failure [A]',
+      'error() should populate the XML error message with detail, got ' .. message)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Validate date and time helper functions
+
+@Test function DateTimeFunctions()
+   local xml = obj.new("xml", {
+      statement = '<root><item id="a"/></root>'
+   })
+
+   local errDate, dateNode = xml.mtSearch('/root/item[matches(current-date(), "^[0-9]{4}-[0-9]{2}-[0-9]{2}$")]')
+   assert(errDate is ERR_Okay, 'current-date() should yield an ISO8601 date string: ' .. mSys.GetErrorMsg(errDate))
+
+   local errTime, timeNode = xml.mtSearch('/root/item[matches(current-time(), "^[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")]')
+   assert(errTime is ERR_Okay, 'current-time() should yield an ISO8601 time with Z suffix: ' .. mSys.GetErrorMsg(errTime))
+
+   local errDateTime, dateTimeNode = xml.mtSearch('/root/item[matches(current-dateTime(), "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")]')
+   assert(errDateTime is ERR_Okay, 'current-dateTime() should yield a combined timestamp: ' .. mSys.GetErrorMsg(errDateTime))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Check value comparison operators (eq, ne, lt, le, gt, ge)
+
+@Test function ValueComparisonOperators()
+   local xml = obj.new("xml", {
+      statement = '<root><value amount="10"/><value amount="20"/><value amount="30"/></root>'
+   })
+
+   local errEq, eqId = xml.mtSearch('/root/value[@amount eq 20]')
+   assert(errEq is ERR_Okay, 'eq should match the exact attribute value: ' .. mSys.GetErrorMsg(errEq))
+
+   local errNe, neId = xml.mtSearch('/root/value[@amount ne 20][@amount = 10]')
+   assert(errNe is ERR_Okay and neId != nil, 'ne should exclude the middle value while leaving the first entry')
+
+   local errLt, ltId = xml.mtSearch('/root/value[@amount lt 15]')
+   assert(errLt is ERR_Okay, 'lt should identify nodes smaller than the threshold: ' .. mSys.GetErrorMsg(errLt))
+   local _, ltAmount = xml.mtGetAttrib(ltId, 'amount')
+   assert(ltAmount is '10', 'lt should select the smallest amount')
+
+   local errLe, leId = xml.mtSearch('/root/value[@amount le 20][@amount = 20]')
+   assert(errLe is ERR_Okay, 'le should include boundary values: ' .. mSys.GetErrorMsg(errLe))
+
+   local errGt, gtId = xml.mtSearch('/root/value[@amount gt 20]')
+   assert(errGt is ERR_Okay, 'gt should locate the largest entry: ' .. mSys.GetErrorMsg(errGt))
+   local _, gtAmount = xml.mtGetAttrib(gtId, 'amount')
+   assert(gtAmount is '30', 'gt should select the highest amount')
+
+   local errGe, geId = xml.mtSearch('/root/value[@amount ge 30]')
+   assert(errGe is ERR_Okay, 'ge should accept values equal to the boundary: ' .. mSys.GetErrorMsg(errGe))
+   local _, geAmount = xml.mtGetAttrib(geId, 'amount')
+   assert(geAmount is '30', 'ge should return the maximum amount when equal to the comparison value')
+end

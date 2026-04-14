@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -204,7 +204,7 @@ static ERR VECTORSCENE_AddDef(extVectorScene *Self, struct sc::AddDef *Args)
 
    if ((!Args) or (!Args->Name) or (!Args->Def)) return log.warning(ERR::NullArgs);
 
-   if (Self->HostScene) { // Defer all definitions if a hosting scene is active.
+   if (Self->HostScene) { // Forward all definitions if a hosting scene is active.
       return Self->HostScene->addDef(Args->Name, Args->Def);
    }
 
@@ -349,16 +349,14 @@ static ERR VECTORSCENE_FindDef(extVectorScene *Self, struct sc::FindDef *Args)
       std::string lookup;
       lookup.assign(name, 5, i-5);
 
-      auto def = Self->Defs.find(lookup);
-      if (def != Self->Defs.end()) {
+      if (auto def = Self->Defs.find(lookup); def != Self->Defs.end()) {
          Args->Def = def->second;
          return ERR::Okay;
       }
       else return ERR::Search;
    }
 
-   auto def = Self->Defs.find(name);
-   if (def != Self->Defs.end()) {
+   if (auto def = Self->Defs.find(name); def != Self->Defs.end()) {
       Args->Def = def->second;
       return ERR::Okay;
    }
@@ -502,8 +500,8 @@ static ERR VECTORSCENE_Redimension(extVectorScene *Self, struct acRedimension *A
 {
    if (!Args) return ERR::NullArgs;
 
-   if (Args->Width >= 1.0)  Self->PageWidth  = F2T(Args->Width);
-   if (Args->Height >= 1.0) Self->PageHeight = F2T(Args->Height);
+   if (Args->Width >= 1.0)  Self->PageWidth  = int(Args->Width);
+   if (Args->Height >= 1.0) Self->PageHeight = int(Args->Height);
 
    return ERR::Okay;
 }
@@ -531,8 +529,8 @@ Resize: Redefines the size of the page.
 static ERR VECTORSCENE_Resize(extVectorScene *Self, struct acResize *Args)
 {
    if (!Args) return ERR::NullArgs;
-   if (Args->Width >= 1.0)  Self->PageWidth  = F2T(Args->Width);
-   if (Args->Height >= 1.0) Self->PageHeight = F2T(Args->Height);
+   if (Args->Width >= 1.0)  Self->PageWidth  = int(Args->Width);
+   if (Args->Height >= 1.0) Self->PageHeight = int(Args->Height);
    return ERR::Okay;
 }
 

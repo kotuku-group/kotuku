@@ -1,0 +1,85 @@
+-- Test script for XML SetVariable method
+
+   include 'xml'
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test basic variable setting and XPath variable reference
+
+@Test function BasicVariableReference()
+   xml = obj.new("xml", {
+      statement = '<root><item name="first">Hello</item><item name="second">World</item></root>'
+   })
+
+   xq = obj.new('xquery', { statement= '//item[@name=$myvar]' })
+   assert(xq.acSetKey('myvar', 'first') is ERR_Okay, "Failed to set variable: " .. mSys.GetErrorMsg(err))
+   assert(xq.mtEvaluate(xml) is ERR_Okay, "Failed to find item using variable reference")
+   assert(xq.resultString is 'Hello', "Expected 'Hello', got '" .. xq.resultString .. "'")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test updating variable value
+
+@Test function VariableUpdate()
+   xml = obj.new("xml", {
+      statement = '<root><item name="first">Hello</item><item name="second">World</item></root>'
+   })
+
+   xq = obj.new('xquery', { statement= '//item[@name=$myvar]' })
+   assert(xq.acSetKey('myvar', 'first') is ERR_Okay, "Failed to set variable: " .. mSys.GetErrorMsg(err))
+   assert(xq.acSetKey('myvar', 'second') is ERR_Okay, "Failed to update variable: " .. mSys.GetErrorMsg(err))
+   assert(xq.mtEvaluate(xml) is ERR_Okay, "Failed to find item using updated variable")
+   assert(xq.resultString is 'World', "Expected 'World', got '" .. xq.resultString .. "'")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test non-existent variable behavior
+
+@Test function NonExistentVariable()
+   xml = obj.new("xml", {
+      statement = '<root><item name="first">Hello</item><item name="second">World</item></root>'
+   })
+
+   -- Test with non-existent variable (should return no results)
+   xq = obj.new('xquery', { statement= '//item[@name=$nonexistent]' })
+   err = xq.mtEvaluate(xml)
+   assert(err is ERR_Okay or err is ERR_Search, "Evaluate should succeed even with non-existent variable")
+   assert(not xq.resultString??, "Non-existent variable should not match anything")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test removing variable
+
+@Test function VariableRemoval()
+   xml = obj.new("xml", {
+      statement = '<root><item name="first">Hello</item><item name="second">World</item></root>'
+   })
+
+   xq = obj.new('xquery', { statement= '//item[@name=$myvar]' })
+   assert(xq.acSetKey('myvar', 'first') is ERR_Okay, "Failed to set variable")
+   assert(xq.mtEvaluate(xml) is ERR_Okay, "Variable should work before removal")
+   -- Remove variable by setting to nil
+   assert(xq.acSetKey('myvar', nil) is ERR_Okay, "Failed to remove variable")
+
+   -- Verify variable no longer works
+   err = xq.mtEvaluate(xml)
+   assert(err is ERR_Okay or err is ERR_Search, "Evaluation should succeed after variable removal")
+   assert(not xq.resultString??, "Non-existent variable should not match anything")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test multiple variables
+
+@Test function MultipleVariables()
+   xml = obj.new("xml", {
+      statement = '<root><item type="book" name="first">Hello</item><item type="magazine" name="second">World</item></root>'
+   })
+
+   xq = obj.new('xquery', { statement= '//item[@name=$namevar and @type=$typevar]' })
+
+   -- Set multiple variables
+   assert(xq.acSetKey('namevar', 'first') is ERR_Okay, "Failed to set namevar: " .. mSys.GetErrorMsg(err))
+   assert(xq.acSetKey('typevar', 'book') is ERR_Okay, "Failed to set typevar: " .. mSys.GetErrorMsg(err))
+
+   assert(xq.mtEvaluate(xml) is ERR_Okay, "Failed to find item using multiple variables")
+   assert(xq.resultString is 'Hello', "Expected 'Hello', got '" .. tostring(xq.resultString) .. "'")
+end

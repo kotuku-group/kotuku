@@ -9,11 +9,11 @@ Guy Eric Schalnat.
 -MODULE-
 Backstage: Provides a REST backend for interacting with the process over the network.
 
-Backstage provides a REST backend for users and applications to interact with a Parasol program while it is running.
+Backstage provides a REST backend for users and applications to interact with a Kōtuku program while it is running.
 The module does not expose any API functionality, and is instead enabled by the user by specifying
 `--backstage [port]` on the commandline.  If the command is omitted then backstage will do nothing.
 
-The REST API and documentation on how to use Backstage is documented in the Parasol Wiki.
+The REST API and documentation on how to use Backstage is documented in the Kotuku Wiki.
 
 -END-
 
@@ -21,10 +21,10 @@ The REST API and documentation on how to use Backstage is documented in the Para
 
 #define PRV_BACKSTAGE
 
-#include <parasol/main.h>
-#include <parasol/modules/backstage.h>
-#include <parasol/modules/network.h>
-#include <parasol/strings.hpp>
+#include <kotuku/main.h>
+#include <kotuku/modules/backstage.h>
+#include <kotuku/modules/network.h>
+#include <kotuku/strings.hpp>
 
 using namespace pf;
 
@@ -127,6 +127,6 @@ ERR init_backstage(int Port)
 
 //********************************************************************************************************************
 
-PARASOL_MOD(MODInit, nullptr, nullptr, MODExpunge, MOD_IDL, nullptr)
+KOTUKU_MOD(MODInit, nullptr, nullptr, MODExpunge, nullptr, MOD_IDL, nullptr)
 extern "C" struct ModHeader * register_backstage_module() { return &ModHeader; }
 

@@ -11,7 +11,7 @@
     <id>85db786c</id>
     <idstring>VECTORCOLOUR</idstring>
     <category>Graphics</category>
-    <copyright>Paul Manias © 2010-2025</copyright>
+    <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>VectorColour is a stub class for exclusive use with the Vector module's <function module="Vector">DrawPath</function> function, for use in either the <code>StrokeStyle</code> or <code>FillStyle</code> parameters.  VectorColour allows the path to be drawn with a solid colour, as specified in the <fl>Red</fl>, <fl>Green</fl>, <fl>Blue</fl> and <fl>Alpha</fl> fields.</p></description>
     <source>

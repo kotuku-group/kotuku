@@ -1,0 +1,37 @@
+-- Validation for character classes, escapes, and custom ranges
+
+@Test function DigitClass()
+   local matcher = regex.new("\\d+")
+   local match = matcher.search("abc123def")
+   assert(match, "\\d+ should capture digits")
+   assert(#match is 1, "Should find one match, got " .. tostring(#match))
+   assert(match[0][0] is "123", "Digit capture should equal the numeric run, got " .. tostring(match[0]))
+end
+
+@Test function WordClass()
+   local matcher = regex.new("(\\w+)")
+   local results = matcher.search("mix_of words42")
+   assert(results and #results >= 2, "search should capture multiple words")
+   assert(results[0][0] is "mix_of", "Word class should include underscore")
+   assert(results[1][0] is "words42", "Word class should include trailing digits")
+end
+
+@Test function WhitespaceClass()
+   local matcher = regex.new("^foo\\s+bar$")
+   assert(matcher.test("foo\t bar"), "\\s should consume tabs")
+   assert(not matcher.test("foo bar baz"), "Anchors should enforce full match with whitespace class")
+end
+
+@Test function NegatedClass()
+   local matcher = regex.new("[^aeiou]+")
+   local match = matcher.search("strength")
+   -- Expecting [ "str", "ngth" ]
+   assert(match, "No match found for negated vowel class")
+   assert(match[0][0] is "str", "Negated vowel class should consume consonant prefix, got " .. tostring(match[0][0]))
+end
+
+@Test function EscapedDot()
+   local matcher = regex.new("a\\.b")
+   assert(matcher.test("a.b"), "Escaped dot should match literal period")
+   assert(not matcher.test("acb"), "Escaped dot should not behave as wildcard")
+end

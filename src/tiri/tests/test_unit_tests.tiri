@@ -1,0 +1,9 @@
+-- Call integrated unit tests in the Tiri module
+
+   tiri = mod.load('tiri')
+
+@Test function UnitTests()
+   passed, total = mod.test(tiri)
+   assert(passed is total, "Passed " .. passed .. " of " .. total .. " Tiri unit tests.  Use --log-api for details.")
+   print('Passed all ' .. total .. ' embedded unit tests.')
+end

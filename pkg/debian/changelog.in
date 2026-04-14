@@ -1,6 +1,6 @@
-parasol (@VERSION@-1) unstable; urgency=medium
+kotuku (@VERSION@-1) unstable; urgency=medium
 
   * Release version @VERSION@
   @CHANGELOG_ENTRIES@
 
- -- Parasol Framework Team <team@parasol-framework.org>  @BUILD_DATE@
+ -- Kotuku Open Group <team@kotuku.dev>  @BUILD_DATE@

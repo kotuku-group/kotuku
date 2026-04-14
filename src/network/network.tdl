@@ -1,0 +1,194 @@
+--$TIRI:Include
+
+module({ name="Network", copyright="Paul Manias © 2005-2026", version=1.0, prefix="net", status="stable", timestamp=20240611 }, function()
+  restrict(function()
+    loadFile(glPath .. 'common.tdl')
+  end)
+
+  cpp_include("<unordered_set>", "<map>", "<mutex>")
+
+  c_insert([[
+
+#if defined(ENABLE_SSL) && !defined(_WIN32)
+ #include "openssl/ssl.h"
+#endif
+
+#ifdef __linux__
+typedef int SOCKET_HANDLE;
+#elif _WIN32
+typedef uint32_t SOCKET_HANDLE; // NOTE: declared as uint32 instead of SOCKET for now to avoid including winsock.h
+#elif __APPLE__
+typedef int SOCKET_HANDLE;
+#else
+#error "No support for this platform"
+#endif
+  ]])
+
+  enum("IPADDR", { type="int", start=0, comment="Address types for the IPAddress structure." }, "V4", "V6")
+
+  struct("IPAddress", { }, [[
+    uint(4) Data        # 128-bit array for supporting both V4 (32-bit host order) and V6 (8-bit byte order) IP addresses.
+    int(IPADDR) Type    # Identifies the address Data value as a V4 or V6 address type.
+    int Port            # For UDP packets, identifies the client port number in host byte order.
+  ]])
+
+  flags("NSF", { },
+    "SERVER: Puts the socket into server mode.  In this state the netsocket object will wait for incoming connections from clients.",
+    "SSL: Use Secure Sockets Layer for all communication.",
+    "DISABLE_SERVER_VERIFY: Disable SSL certificate verification (for testing only).",
+    "MULTI_CONNECT: Allow multiple connections from the same IP when in server mode.",
+    "SYNCHRONOUS: Use synchronous (blocking) network calls.",
+    "LOG_ALL: Print extra log messages.",
+    "BROADCAST: Enable broadcast (UDP only).",
+    "UDP: Use UDP (connectionless datagram protocol) instead of TCP.")
+
+  flags("NLF", { comment="Options for NetLookup" },
+    "NO_CACHE: Contact the name service and do not use the local DNS cache.")
+
+  enum("NTC", { type="int", start=0, comment="NetSocket states" },
+    "DISCONNECTED: There is no connection.",
+    "RESOLVING: The host name is being resolved.",
+    "CONNECTING: A connection is being established.",
+    "HANDSHAKING: An SSL connection is being established.",
+    "CONNECTED: There is an active connection at present.",
+    "MULTISTATE: In server mode the NetSocket will be set to MULTISTATE to indicate one or more client connections."
+  )
+
+  class("NetClient", { src="netclient/netclient.cpp", output="netclient/netclient_def.c", comment="Simple data storage class utilised by NetSocket to represent a client machine/IP." }, [[
+    char(8) IP                     # IP address in 4/8-byte format
+    obj(NetClient) Next            # Next client in the chain
+    obj(NetClient) Prev            # Previous client in the chain
+    obj(ClientSocket) Connections  # Pointer to a list of connections opened by this client.
+    ptr ClientData                 # Free for user data storage.
+    int TotalConnections           # Count of all socket-based connections
+  ]])
+
+  class("ClientSocket", {
+      src="clientsocket/clientsocket.cpp",
+      output="clientsocket/clientsocket_def.c",
+      comment="Simple data storage class utilised by NetClient to represent a single client socket connection."
+  },
+  [[
+    large ConnectTime        # System time for the creation of this socket
+    obj(ClientSocket) Prev   # Previous socket in the chain
+    obj(ClientSocket) Next   # Next socket in the chain
+    obj(NetClient) Client    # Parent client object
+    ptr  ClientData          # Available for user data storage.
+    int(NTC) State           # The current connection state of the socket
+  ]])
+
+  methods("proxy", "prx", {
+    { id=1, name="DeleteRecord" },
+    { id=2, name="Find" },
+    { id=3, name="FindNext" }
+  })
+
+  class("Proxy", { src="class_proxy.cpp", output="class_proxy_def.c" }, [[
+    str NetworkFilter
+    str GatewayFilter
+    str Username
+    str Password
+    str ProxyName
+    str Server
+    int Port
+    int ServerPort
+    int Enabled
+    int Record
+    int Host
+  ]]) -- If adding further fields, you must update get_record() and clear_values()
+
+  methods("NetLookup", "nl", {
+    { id=1, name="ResolveName" },
+    { id=2, name="ResolveAddress" },
+    { id=3, name="BlockingResolveName" },
+    { id=4, name="BlockingResolveAddress" }
+  })
+
+  class("NetLookup", { src="class_netlookup.cpp", output="class_netlookup_def.c" }, [[
+    large ClientData # Optional user data storage
+    int(NLF) Flags   # Optional flags
+  ]])
+
+  methods("NetSocket", "ns", {
+    { id=1, name="Connect" },
+    { id=2, name="GetLocalIPAddress" },
+    { id=3, name="DisconnectClient" },
+    { id=4, name="DisconnectSocket" },
+    { id=5, name="SendTo" },
+    { id=6, name="RecvFrom" },
+    { id=7, name="JoinMulticastGroup" },
+    { id=8, name="LeaveMulticastGroup" }
+  })
+
+  class("NetSocket", { src={ "netsocket/netsocket.cpp", "netsocket/netsocket_fields.cpp" }, output="netsocket/netsocket_def.c" }, [[
+    obj(NetClient) Clients # ServerMode - Attached clients
+    ptr ClientData        # Pointer to user data that can be used during events
+    str Address           # Server: bind to this local address, Client: connect to this remote address
+    str SSLCertificate    # Path to SSL certificate file (PEM/P12 format, for SSL servers)
+    str SSLPrivateKey     # Path to SSL private key file (PEM format, optional if using P12)
+    str SSLKeyPassword    # Optional password for encrypted private keys
+    int(NTC) State        # Connection state
+    error Error           # The last NetSocket error can be read from this field
+    int Port              # Connect socket to this remote port if client, or local port if server
+    int(NSF) Flags        # Optional flags
+    int TotalClients      # Total number of clients registered (if socket is a server)
+    int Backlog           # Server connection backlog if in server mode
+    int ClientLimit       # Limits the number of connected client IP addresses
+    int SocketLimit       # Limits the number of connected sockets per client IP address.
+    int MsgLimit          # Limits the size of messages, in bytes.
+    int MaxPacketSize     # Maximum size for UDP packets (default 65507 bytes)
+    int MulticastTTL      # Time-to-live for multicast packets (UDP only)
+  ]])
+
+  constants("SCV", { comment="These error codes for certificate validation match the OpenSSL error codes (X509 definitions)" }, {
+    OK                                  = 0,
+    UNABLE_TO_GET_ISSUER_CERT           = 2,
+    UNABLE_TO_GET_CRL                   = 3,
+    UNABLE_TO_DECRYPT_CERT_SIGNATURE    = 4,
+    UNABLE_TO_DECRYPT_CRL_SIGNATURE     = 5,
+    UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY  = 6,
+    CERT_SIGNATURE_FAILURE              = 7,
+    CRL_SIGNATURE_FAILURE               = 8,
+    CERT_NOT_YET_VALID                  = 9,
+    CERT_HAS_EXPIRED                    = 10,
+    CRL_NOT_YET_VALID                   = 11,
+    CRL_HAS_EXPIRED                     = 12,
+    ERROR_IN_CERT_NOT_BEFORE_FIELD      = 13,
+    ERROR_IN_CERT_NOT_AFTER_FIELD       = 14,
+    ERROR_IN_CRL_LAST_UPDATE_FIELD      = 15,
+    ERROR_IN_CRL_NEXT_UPDATE_FIELD      = 16,
+    OUT_OF_MEM                          = 17,
+    DEPTH_ZERO_SELF_SIGNED_CERT         = 18,
+    SELF_SIGNED_CERT_IN_CHAIN           = 19,
+    UNABLE_TO_GET_ISSUER_CERT_LOCALLY   = 20,
+    UNABLE_TO_VERIFY_LEAF_SIGNATURE     = 21,
+    CERT_CHAIN_TOO_LONG                 = 22,
+    CERT_REVOKED                        = 23,
+    INVALID_CA                          = 24,
+    PATH_LENGTH_EXCEEDED                = 25,
+    INVALID_PURPOSE                     = 26,
+    CERT_UNTRUSTED                      = 27,
+    CERT_REJECTED                       = 28,
+    SUBJECT_ISSUER_MISMATCH             = 29,
+    AKID_SKID_MISMATCH                  = 30,
+    AKID_ISSUER_SERIAL_MISMATCH         = 31,
+    KEYUSAGE_NO_CERTSIGN                = 32,
+    APPLICATION_VERIFICATION            = 50
+  })
+
+  c_insert([[
+inline ERR nsCreate(objNetSocket **NewNetSocketOut, OBJECTID ListenerID, APTR ClientData) {
+   if ((*NewNetSocketOut = objNetSocket::create::global(fl::Listener(ListenerID), fl::ClientData(ClientData)))) return ERR::Okay;
+   else return ERR::CreateObject;
+}
+  ]])
+
+  functionNames("net",
+    "StrToAddress",
+    "AddressToStr",
+    "HostToShort",
+    "HostToLong",
+    "ShortToHost",
+    "LongToHost",
+    "SetSSL")
+end)

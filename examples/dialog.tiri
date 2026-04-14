@@ -1,0 +1,39 @@
+#!/usr/bin/env origo
+-- Dialog test
+
+   import 'gui/dialog'
+
+   show_error = false
+
+   if show_error then
+      gui.dialog.error('Simple Error Dialog', 'Something went very wrong!', { quit = true })
+   else
+      gui.dialog.message({
+         type          = 'question',
+         title         = 'Hamlet has a question',
+         fmtMessage    = 'To <b>be</b> or <i>not to be?</i>',
+         userInput     = 'That is the question',
+         checkboxLabel = '\'Tis nobler to suffer',
+         quit          = true,
+         options = {
+            { id=1, text='To be', icon='items/checkmark' },
+            { id=2, text='Not to be', icon='items/cancel' }
+         },
+         feedback = function(Dialog, Response, State)
+            if Response then
+               print('User selected option ' .. Response.id)
+            end
+            if State then
+               if State.input then
+                  print('User entered string: ' .. State.input)
+               end
+               if State.checkbox then
+                  print('User activated the checkbox')
+               end
+            end
+         end
+      })
+   end
+
+   processing.sleep() -- Will sleep until the window sends MSGID_QUIT
+

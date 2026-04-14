@@ -1,0 +1,1378 @@
+-- Tests for array mutation
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test array.push() functionality
+
+@Test function ArrayPushBasic()
+   arr = array<int>
+   assert(#arr is 0, 'Initial array length should be 0')
+
+   len = arr:push(10)
+   assert(len is 1, 'push() should return new length 1')
+   assert(#arr is 1, 'Array length should be 1 after push')
+   assert(arr[0] is 10, 'arr[0] should be 10')
+
+   len = arr:push(20)
+   assert(len is 2, 'push() should return new length 2')
+   assert(arr[1] is 20, 'arr[1] should be 20')
+
+   len = arr:push(30)
+   assert(len is 3, 'push() should return new length 3')
+   assert(arr[2] is 30, 'arr[2] should be 30')
+end
+
+@Test function ArrayPushMultiple()
+   arr = array<int>
+
+   len = arr:push(1, 2, 3, 4, 5)
+   assert(len is 5, 'push() with 5 values should return 5')
+   assert(#arr is 5, 'Array length should be 5')
+   assert(arr[0] is 1, 'arr[0] should be 1')
+   assert(arr[4] is 5, 'arr[4] should be 5')
+end
+
+@Test function ArrayPushGrowth()
+   arr = array<int, 2>
+   arr[0] = 100
+   arr[1] = 200
+
+   -- Push beyond initial capacity
+   arr:push(300)
+   arr:push(400)
+   arr:push(500)
+
+   assert(#arr is 5, 'Array should grow to length 5')
+   assert(arr[0] is 100, 'Original arr[0] should be preserved')
+   assert(arr[1] is 200, 'Original arr[1] should be preserved')
+   assert(arr[2] is 300, 'arr[2] should be 300')
+   assert(arr[3] is 400, 'arr[3] should be 400')
+   assert(arr[4] is 500, 'arr[4] should be 500')
+end
+
+@Test function ArrayPushFloat()
+   arr = array<float>
+   arr:push(1.5)
+   arr:push(2.7)
+   arr:push(3.14)
+
+   assert(#arr is 3, 'Float array length should be 3')
+   assert(math.abs(arr[0] - 1.5) < 0.0001, 'arr[0] should be 1.5')
+   assert(math.abs(arr[1] - 2.7) < 0.0001, 'arr[1] should be 2.7')
+   assert(math.abs(arr[2] - 3.14) < 0.0001, 'arr[2] should be 3.14')
+end
+
+@Test function ArrayPushDouble()
+   arr = array<double>
+   arr:push(3.141592653589793)
+   arr:push(2.718281828459045)
+
+   assert(#arr is 2, 'Double array length should be 2')
+   assert(math.abs(arr[0] - 3.141592653589793) < 0.000000001, 'arr[0] should be pi')
+   assert(math.abs(arr[1] - 2.718281828459045) < 0.000000001, 'arr[1] should be e')
+end
+
+@Test function ArrayPushInt64()
+   arr = array<int64>
+   arr:push(1234567890123)
+   arr:push(-9876543210987)
+
+   assert(#arr is 2, 'Int64 array length should be 2')
+   assert(arr[0] is 1234567890123, 'arr[0] should be large positive')
+   assert(arr[1] is -9876543210987, 'arr[1] should be large negative')
+end
+
+@Test function ArrayPushByte()
+   arr = array<byte>
+   arr:push(65, 66, 67, 68)  -- A, B, C, D
+
+   assert(#arr is 4, 'Byte array length should be 4')
+   assert(arr:getString() is 'ABCD', 'getString should return ABCD')
+end
+
+@Test function ArrayPushString()
+   arr = array<string>
+   arr:push('hello')
+   arr:push('world')
+   arr:push('!')
+
+   assert(#arr is 3, 'String array length should be 3')
+   assert(arr[0] is 'hello', 'arr[0] should be hello')
+   assert(arr[1] is 'world', 'arr[1] should be world')
+   assert(arr[2] is '!', 'arr[2] should be !')
+end
+
+@Test function ArrayPushTable()
+   arr = array<table>
+   arr:push({x = 10})
+   arr:push({y = 20})
+
+   assert(#arr is 2, 'Table array length should be 2')
+   assert(arr[0].x is 10, 'arr[0].x should be 10')
+   assert(arr[1].y is 20, 'arr[1].y should be 20')
+end
+
+@Test function ArrayPushObject()
+   obj_one = obj.new('time')
+   obj_two = obj.new('file')
+   arr = array<object>
+   arr:push(obj_one)
+   arr:push(obj_two)
+
+   assert(#arr is 2, 'Object array length should be 2')
+   assert(arr[0].id is obj_one.id, 'arr[0] should be obj_one')
+   assert(arr[1].id is obj_two.id, 'arr[1] should be obj_two')
+
+   obj_one.free()
+   obj_two.free()
+end
+
+@Test function ArrayPushNoArgs()
+   arr = array<int, 3>
+   arr[0] = 1
+   arr[1] = 2
+   arr[2] = 3
+
+   len = arr:push()
+   assert(len is 3, 'push() with no args should return current length')
+   assert(#arr is 3, 'Array length should be unchanged')
+end
+
+@Test function ArrayPushReadOnlyRejected()
+   -- We can't easily create a read-only array from Tiri, but we can test the error path
+   -- by checking that push works on normal arrays
+   arr = array<int>
+   arr:push(42)
+   assert(arr[0] is 42, 'push on normal array should work')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test array.pop() functionality
+
+@Test function ArrayPopBasic()
+   arr = array<int> { 10, 20, 30 }
+   assert(#arr is 3, 'Initial array length should be 3')
+
+   val = arr:pop()
+   assert(val is 30, 'pop() should return 30')
+   assert(#arr is 2, 'Array length should be 2 after pop')
+
+   val = arr:pop()
+   assert(val is 20, 'pop() should return 20')
+   assert(#arr is 1, 'Array length should be 1 after pop')
+
+   val = arr:pop()
+   assert(val is 10, 'pop() should return 10')
+   assert(#arr is 0, 'Array length should be 0 after pop')
+end
+
+@Test function ArrayPopEmpty()
+   arr = array<int>
+   val = arr:pop()
+   assert(val is nil, 'pop() on empty array should return nil')
+   assert(#arr is 0, 'Array length should still be 0')
+end
+
+@Test function ArrayPopMultiple()
+   arr = array<int> { 1, 2, 3, 4, 5 }
+
+   a, b = arr:pop(2)
+   assert(a is 5, 'First pop value should be 5')
+   assert(b is 4, 'Second pop value should be 4')
+   assert(#arr is 3, 'Array length should be 3 after pop(2)')
+end
+
+@Test function ArrayPopExhaust()
+   arr = array<int> { 1, 2, 3 }
+
+   -- Pop more than available
+   a, b, c, d = arr:pop(5)
+   assert(a is 3, 'First pop value should be 3')
+   assert(b is 2, 'Second pop value should be 2')
+   assert(c is 1, 'Third pop value should be 1')
+   assert(d is nil, 'Fourth pop value should be nil (exhausted)')
+   assert(#arr is 0, 'Array should be empty')
+end
+
+@Test function ArrayPopFloat()
+   arr = array<float> { 1.5, 2.5, 3.5 }
+   val = arr:pop()
+   assert(math.abs(val - 3.5) < 0.0001, 'pop() should return 3.5')
+   assert(#arr is 2, 'Array length should be 2')
+end
+
+@Test function ArrayPopString()
+   arr = array<string> { 'hello', 'world', '!' }
+   val = arr:pop()
+   assert(val is '!', 'pop() should return !')
+   assert(#arr is 2, 'Array length should be 2')
+   assert(arr[0] is 'hello', 'arr[0] should still be hello')
+   assert(arr[1] is 'world', 'arr[1] should still be world')
+end
+
+@Test function ArrayPopTable()
+   arr = array<table, 2>
+   arr[0] = {x = 10}
+   arr[1] = {y = 20}
+
+   val = arr:pop()
+   assert(val.y is 20, 'pop() should return table with y=20')
+   assert(#arr is 1, 'Array length should be 1')
+   assert(arr[0].x is 10, 'arr[0].x should still be 10')
+end
+
+@Test function ArrayPopObject()
+   obj_one = obj.new('time')
+   obj_two = obj.new('file')
+   arr = array<object> { obj_one, obj_two }
+
+   val = arr:pop()
+   assert(val.id is obj_two.id, 'pop() should return obj_two')
+   assert(#arr is 1, 'Array length should be 1')
+   assert(arr[0].id is obj_one.id, 'arr[0] should be obj_one')
+
+   obj_one.free()
+   obj_two.free()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test array.clear() functionality (updated behavior - resets length, preserves capacity)
+
+@Test function ArrayClearBasic()
+   arr = array<int> { 1, 2, 3, 4, 5 }
+   assert(#arr is 5, 'Initial array length should be 5')
+
+   arr:clear()
+   assert(#arr is 0, 'Array length should be 0 after clear')
+end
+
+@Test function ArrayClearAndPush()
+   arr = array<int> { 10, 20, 30 }
+   arr:clear()
+   assert(#arr is 0, 'Array should be empty after clear')
+
+   -- Capacity should be preserved, so push should work without reallocation
+   arr:push(100)
+   arr:push(200)
+   assert(#arr is 2, 'Array length should be 2 after pushes')
+   assert(arr[0] is 100, 'arr[0] should be 100')
+   assert(arr[1] is 200, 'arr[1] should be 200')
+end
+
+@Test function ArrayClearString()
+   arr = array<string> { 'hello', 'world' }
+   arr:clear()
+   assert(#arr is 0, 'String array should be empty after clear')
+
+   -- Push new strings
+   arr:push('new')
+   arr:push('strings')
+   assert(#arr is 2, 'Array should have 2 elements')
+   assert(arr[0] is 'new', 'arr[0] should be new')
+end
+
+@Test function ArrayClearTable()
+   arr = array<table, 3>
+   arr[0] = {x = 1}
+   arr[1] = {x = 2}
+   arr[2] = {x = 3}
+
+   arr:clear()
+   assert(#arr is 0, 'Table array should be empty after clear')
+end
+
+@Test function ArrayClearObject()
+   obj_one = obj.new('time')
+   obj_two = obj.new('file')
+   arr = array<object> { obj_one, obj_two }
+
+   arr:clear()
+   assert(#arr is 0, 'Object array should be empty after clear')
+
+   obj_one.free()
+   obj_two.free()
+end
+
+@Test function ArrayClearEmpty()
+   arr = array<int>
+   arr:clear()  -- Should not error
+   assert(#arr is 0, 'Empty array should still be empty after clear')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test push/pop/clear integration
+
+@Test function ArrayPushPopClearIntegration()
+   arr = array<int>
+
+   -- Build up array
+   for i = 0, 9 do
+      arr:push(i * 10)
+   end
+   assert(#arr is 10, 'Array should have 10 elements')
+
+   -- Pop half
+   for i = 0, 4 do
+      arr:pop()
+   end
+   assert(#arr is 5, 'Array should have 5 elements after pops')
+
+   -- Push more
+   arr:push(100, 200, 300)
+   assert(#arr is 8, 'Array should have 8 elements')
+
+   -- Clear and rebuild
+   arr:clear()
+   assert(#arr is 0, 'Array should be empty after clear')
+
+   arr:push(1, 2, 3)
+   assert(#arr is 3, 'Array should have 3 elements')
+   assert(arr[0] is 1 and arr[1] is 2 and arr[2] is 3, 'Values should be 1, 2, 3')
+end
+
+@Test function ArrayPushPopStack()
+   -- Use array as a stack
+   stack = array<int>
+
+   stack:push(10)
+   stack:push(20)
+   stack:push(30)
+
+   assert(stack:pop() is 30, 'LIFO: first pop should be 30')
+   assert(stack:pop() is 20, 'LIFO: second pop should be 20')
+
+   stack:push(40)
+   assert(stack:pop() is 40, 'LIFO: pop after push should be 40')
+   assert(stack:pop() is 10, 'LIFO: last pop should be 10')
+   assert(stack:pop() is nil, 'LIFO: pop on empty should be nil')
+end
+
+@Test function ArrayLargePushPop()
+   arr = array<int>
+
+   -- Push many elements
+   for i = 0, 999 do
+      arr:push(i)
+   end
+   assert(#arr is 1000, 'Array should have 1000 elements')
+
+   -- Verify contents
+   for i = 0, 999 do
+      assert(arr[i] is i, 'arr[' .. i .. '] should be ' .. i)
+   end
+
+   -- Pop all
+   sum = 0
+   while #arr > 0 do
+      sum += arr:pop()
+   end
+   -- Sum of 0..999 = 499500
+   assert(sum is 499500, 'Sum of popped values should be 499500')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test array.insert() functionality
+
+@Test function ArrayInsertBasic()
+   arr = array<int> { 1, 2, 4, 5 }
+   len = arr:insert(2, 3)
+   assert(len is 5, "insert() should return new length 5")
+   assert(#arr is 5, "Array length should be 5")
+   assert(arr[0] is 1, "arr[0] should be 1")
+   assert(arr[1] is 2, "arr[1] should be 2")
+   assert(arr[2] is 3, "arr[2] should be 3 (inserted)")
+   assert(arr[3] is 4, "arr[3] should be 4")
+   assert(arr[4] is 5, "arr[4] should be 5")
+end
+
+@Test function ArrayInsertAtStart()
+   arr = array<int> { 2, 3, 4 }
+   arr:insert(0, 1)
+   assert(#arr is 4, "Array length should be 4")
+   assert(arr[0] is 1, "arr[0] should be 1 (inserted at start)")
+   assert(arr[1] is 2, "arr[1] should be 2")
+   assert(arr[2] is 3, "arr[2] should be 3")
+   assert(arr[3] is 4, "arr[3] should be 4")
+end
+
+@Test function ArrayInsertAtEnd()
+   arr = array<int> { 1, 2, 3 }
+   arr:insert(3, 4)  -- Insert at length = append
+   assert(#arr is 4, "Array length should be 4")
+   assert(arr[0] is 1, "arr[0] should be 1")
+   assert(arr[1] is 2, "arr[1] should be 2")
+   assert(arr[2] is 3, "arr[2] should be 3")
+   assert(arr[3] is 4, "arr[3] should be 4 (inserted at end)")
+end
+
+@Test function ArrayInsertMultiple()
+   arr = array<int> { 1, 5 }
+   arr:insert(1, 2, 3, 4)  -- Insert multiple values
+   assert(#arr is 5, "Array length should be 5")
+   assert(arr[0] is 1, "arr[0] should be 1")
+   assert(arr[1] is 2, "arr[1] should be 2")
+   assert(arr[2] is 3, "arr[2] should be 3")
+   assert(arr[3] is 4, "arr[3] should be 4")
+   assert(arr[4] is 5, "arr[4] should be 5")
+end
+
+@Test function ArrayInsertString()
+   arr = array<string> { 'a', 'c', 'd' }
+   arr:insert(1, 'b')
+   assert(#arr is 4, "String array length should be 4")
+   assert(arr[0] is 'a', "arr[0] should be 'a'")
+   assert(arr[1] is 'b', "arr[1] should be 'b' (inserted)")
+   assert(arr[2] is 'c', "arr[2] should be 'c'")
+   assert(arr[3] is 'd', "arr[3] should be 'd'")
+end
+
+@Test function ArrayInsertFloat()
+   arr = array<float> { 1.0, 3.0 }
+   arr:insert(1, 2.0)
+   assert(#arr is 3, "Float array length should be 3")
+   assert(math.abs(arr[0] - 1.0) < 0.0001, "arr[0] should be 1.0")
+   assert(math.abs(arr[1] - 2.0) < 0.0001, "arr[1] should be 2.0 (inserted)")
+   assert(math.abs(arr[2] - 3.0) < 0.0001, "arr[2] should be 3.0")
+end
+
+@Test function ArrayInsertDouble()
+   arr = array<double> { 1.1, 3.3 }
+   arr:insert(1, 2.2)
+   assert(#arr is 3, "Double array length should be 3")
+   assert(math.abs(arr[1] - 2.2) < 0.0001, "arr[1] should be 2.2")
+end
+
+@Test function ArrayInsertByte()
+   arr = array<byte> { 65, 67 }  -- A, C
+   arr:insert(1, 66)  -- Insert B
+   assert(#arr is 3, "Byte array length should be 3")
+   assert(arr:getString() is 'ABC', "getString should return 'ABC'")
+end
+
+@Test function ArrayInsertInt64()
+   arr = array<int64> { 1000000000000, 3000000000000 }
+   arr:insert(1, 2000000000000)
+   assert(#arr is 3, "Int64 array length should be 3")
+   assert(arr[0] is 1000000000000, "arr[0] should be correct")
+   assert(arr[1] is 2000000000000, "arr[1] should be inserted value")
+   assert(arr[2] is 3000000000000, "arr[2] should be correct")
+end
+
+@Test function ArrayInsertTable()
+   arr = array<table, 2>
+   arr[0] = {x = 1}
+   arr[1] = {x = 3}
+   arr:insert(1, {x = 2})
+   assert(#arr is 3, "Table array length should be 3")
+   assert(arr[0].x is 1, "arr[0].x should be 1")
+   assert(arr[1].x is 2, "arr[1].x should be 2 (inserted)")
+   assert(arr[2].x is 3, "arr[2].x should be 3")
+end
+
+@Test function ArrayInsertObject()
+   obj_one = obj.new('time')
+   obj_two = obj.new('file')
+   obj_three = obj.new('time')
+   arr = array<object> { obj_one, obj_three }
+   arr:insert(1, obj_two)
+   assert(#arr is 3, "Object array length should be 3")
+   assert(arr[0].id is obj_one.id, "arr[0] should be obj_one")
+   assert(arr[1].id is obj_two.id, "arr[1] should be obj_two")
+   assert(arr[2].id is obj_three.id, "arr[2] should be obj_three")
+   obj_one.free()
+   obj_two.free()
+   obj_three.free()
+end
+
+@Test function ArrayInsertGrowth()
+   arr = array<int, 2>
+   arr[0] = 1
+   arr[1] = 2
+   -- Insert beyond initial capacity
+   arr:insert(1, 10, 20, 30, 40)
+   assert(#arr is 6, "Array should grow to length 6")
+   assert(arr[0] is 1, "arr[0] should be 1")
+   assert(arr[1] is 10, "arr[1] should be 10")
+   assert(arr[4] is 40, "arr[4] should be 40")
+   assert(arr[5] is 2, "arr[5] should be 2 (shifted)")
+end
+
+@Test function ArrayInsertEmpty()
+   arr = array<int>
+   arr:insert(0, 42)
+   assert(#arr is 1, "Empty array should have 1 element after insert")
+   assert(arr[0] is 42, "arr[0] should be 42")
+end
+
+@Test function ArrayInsertNoValues()
+   arr = array<int> { 1, 2, 3 }
+   len = arr:insert(1)  -- No value to insert
+   assert(len is 3, "insert() with no value should return current length")
+   assert(#arr is 3, "Array length should be unchanged")
+end
+
+@Test function ArrayInsertBoundsCheck()
+   arr = array<int> { 1, 2, 3 }
+
+   -- Test negative index
+   try
+      arr:insert(-1, 0)
+   success
+      error("Should reject negative index")
+   end
+
+   -- Test index beyond length
+   try
+      arr:insert(5, 0)
+   success
+      error("Should reject index beyond array length")
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test array.remove() functionality
+
+@Test function ArrayRemoveBasic()
+   arr = array<int> { 1, 2, 3, 4, 5 }
+   len = arr:remove(2)
+   assert(len is 4, "remove(2) should return new length 4")
+   assert(#arr is 4, "Array length should be 4")
+   assert(arr[0] is 1, "arr[0] should be 1")
+   assert(arr[1] is 2, "arr[1] should be 2")
+   assert(arr[2] is 4, "arr[2] should be 4 (shifted)")
+   assert(arr[3] is 5, "arr[3] should be 5")
+end
+
+@Test function ArrayRemoveFirst()
+   arr = array<int> { 1, 2, 3 }
+   len = arr:remove(0)
+   assert(len is 2, "remove(0) should return new length 2")
+   assert(#arr is 2, "Array length should be 2")
+   assert(arr[0] is 2, "arr[0] should be 2")
+   assert(arr[1] is 3, "arr[1] should be 3")
+end
+
+@Test function ArrayRemoveLast()
+   arr = array<int> { 1, 2, 3 }
+   len = arr:remove(2)
+   assert(len is 2, "remove(2) should return new length 2")
+   assert(#arr is 2, "Array length should be 2")
+   assert(arr[0] is 1, "arr[0] should be 1")
+   assert(arr[1] is 2, "arr[1] should be 2")
+end
+
+@Test function ArrayRemoveMultiple()
+   arr = array<int> { 1, 2, 3, 4, 5 }
+   len = arr:remove(1, 3)
+   assert(len is 2, "remove(1, 3) should return new length 2")
+   assert(#arr is 2, "Array length should be 2")
+   assert(arr[0] is 1, "arr[0] should be 1")
+   assert(arr[1] is 5, "arr[1] should be 5")
+end
+
+@Test function ArrayRemoveString()
+   arr = array<string> { 'a', 'b', 'c', 'd' }
+   len = arr:remove(1)
+   assert(len is 3, "remove(1) should return new length 3")
+   assert(#arr is 3, "Array length should be 3")
+   assert(arr[0] is 'a', "arr[0] should be 'a'")
+   assert(arr[1] is 'c', "arr[1] should be 'c'")
+   assert(arr[2] is 'd', "arr[2] should be 'd'")
+end
+
+@Test function ArrayRemoveFloat()
+   arr = array<float> { 1.5, 2.5, 3.5 }
+   len = arr:remove(1)
+   assert(len is 2, "remove(1) should return new length 2")
+   assert(#arr is 2, "Array length should be 2")
+end
+
+@Test function ArrayRemoveDouble()
+   arr = array<double> { 1.1, 2.2, 3.3 }
+   len = arr:remove(1)
+   assert(len is 2, "remove(1) should return new length 2")
+   assert(#arr is 2, "Array length should be 2")
+end
+
+@Test function ArrayRemoveByte()
+   arr = array<byte> { 65, 66, 67, 68 }  -- ABCD
+   len = arr:remove(1)  -- Remove B
+   assert(len is 3, "remove(1) should return new length 3")
+   assert(#arr is 3, "Array length should be 3")
+   assert(arr:getString() is 'ACD', "getString should return 'ACD'")
+end
+
+@Test function ArrayRemoveInt64()
+   arr = array<int64> { 1000000000000, 2000000000000, 3000000000000 }
+   len = arr:remove(1)
+   assert(len is 2, "remove(1) should return new length 2")
+   assert(#arr is 2, "Array length should be 2")
+end
+
+@Test function ArrayRemoveTable()
+   arr = array<table, 3>
+   arr[0] = {x = 1}
+   arr[1] = {x = 2}
+   arr[2] = {x = 3}
+   len = arr:remove(1)
+   assert(len is 2, "remove(1) should return new length 2")
+   assert(#arr is 2, "Array length should be 2")
+   assert(arr[0].x is 1, "arr[0].x should be 1")
+   assert(arr[1].x is 3, "arr[1].x should be 3")
+end
+
+@Test function ArrayRemoveObject()
+   obj_one = obj.new('time')
+   obj_two = obj.new('file')
+   obj_three = obj.new('time')
+   arr = array<object> { obj_one, obj_two, obj_three }
+   len = arr:remove(1)
+   assert(len is 2, "remove(1) should return new length 2")
+   assert(#arr is 2, "Array length should be 2")
+   assert(arr[0].id is obj_one.id, "arr[0] should be obj_one")
+   assert(arr[1].id is obj_three.id, "arr[1] should be obj_three")
+   obj_one.free()
+   obj_two.free()
+   obj_three.free()
+end
+
+@Test function ArrayRemoveStringGC()
+   -- Verify that removed strings can be garbage collected
+   arr = array<string> { 'alpha', 'beta', 'gamma', 'delta' }
+   arr:remove(1, 2)  -- Remove 'beta' and 'gamma'
+   assert(#arr is 2, "Array should have 2 elements")
+   assert(arr[0] is 'alpha', "arr[0] should be 'alpha'")
+   assert(arr[1] is 'delta', "arr[1] should be 'delta'")
+
+   -- Force GC and verify array still works
+   processing.collect()
+   assert(arr[0] is 'alpha', "arr[0] should still be 'alpha' after GC")
+   assert(arr[1] is 'delta', "arr[1] should still be 'delta' after GC")
+end
+
+@Test function ArrayRemoveTableGC()
+   -- Verify that removed tables can be garbage collected
+   arr = array<table, 4>
+   arr[0] = {name = 'first'}
+   arr[1] = {name = 'second'}
+   arr[2] = {name = 'third'}
+   arr[3] = {name = 'fourth'}
+
+   arr:remove(1, 2)  -- Remove 'second' and 'third'
+   assert(#arr is 2, "Array should have 2 elements")
+   assert(arr[0].name is 'first', "arr[0].name should be 'first'")
+   assert(arr[1].name is 'fourth', "arr[1].name should be 'fourth'")
+
+   -- Force GC and verify array still works
+   processing.collect()
+   assert(arr[0].name is 'first', "arr[0].name should still be 'first' after GC")
+   assert(arr[1].name is 'fourth', "arr[1].name should still be 'fourth' after GC")
+end
+
+@Test function ArrayRemoveAllStringsGC()
+   -- Remove all elements from a string array
+   arr = array<string> { 'one', 'two', 'three' }
+   arr:remove(0, 3)
+   assert(#arr is 0, "Array should be empty")
+
+   processing.collect()
+   assert(#arr is 0, "Array should still be empty after GC")
+
+   -- Verify we can add new elements
+   arr:push('new')
+   assert(arr[0] is 'new', "Should be able to push after removing all")
+end
+
+@Test function ArrayRemoveAllTablesGC()
+   -- Remove all elements from a table array
+   arr = array<table, 3>
+   arr[0] = {id = 1}
+   arr[1] = {id = 2}
+   arr[2] = {id = 3}
+
+   arr:remove(0, 3)
+   assert(#arr is 0, "Array should be empty")
+
+   processing.collect()
+   assert(#arr is 0, "Array should still be empty after GC")
+
+   -- Verify we can add new elements
+   arr:push({id = 99})
+   assert(arr[0].id is 99, "Should be able to push after removing all")
+end
+
+@Test function ArrayRemoveCountExceedsAvailable()
+   arr = array<int> { 1, 2, 3, 4, 5 }
+   len = arr:remove(3, 10)  -- Only 2 elements from index 3
+   assert(len is 3, "remove should return new length 3")
+   assert(#arr is 3, "Array length should be 3")
+   assert(arr[0] is 1, "arr[0] should be 1")
+   assert(arr[1] is 2, "arr[1] should be 2")
+   assert(arr[2] is 3, "arr[2] should be 3")
+end
+
+@Test function ArrayRemoveZeroCount()
+   arr = array<int> { 1, 2, 3 }
+   result = arr:remove(1, 0)
+   assert(result is 3, "remove with count=0 should return current length")
+   assert(#arr is 3, "Array length should be unchanged")
+end
+
+@Test function ArrayRemoveAll()
+   arr = array<int> { 1, 2, 3 }
+   len = arr:remove(0, 3)
+   assert(len is 0, "remove all should return 0")
+   assert(#arr is 0, "Array should be empty")
+end
+
+@Test function ArrayRemoveBoundsCheck()
+   arr = array<int> { 1, 2, 3 }
+
+   -- Test negative index
+   try
+      arr:remove(-1)
+   success
+      error("Should reject negative index")
+   end
+
+   -- Test index at or beyond length
+   try
+      arr:remove(3)
+   success
+      error("Should reject index at array length")
+   end
+
+   try
+      arr:remove(5)
+   success
+      error("Should reject index beyond array length")
+   end
+end
+
+@Test function ArrayRemoveNegativeCount()
+   arr = array<int> { 1, 2, 3 }
+   try
+      arr:remove(0, -1)
+   success
+      error("Should reject negative count")
+   end
+end
+
+@Test function ArrayRemoveSingle()
+   arr = array<int> { 42 }
+   len = arr:remove(0)
+   assert(len is 0, "remove(0) should return 0")
+   assert(#arr is 0, "Array should be empty")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test array.clone() functionality
+
+@Test function ArrayCloneInt()
+   original = array<int> { 1, 2, 3, 4, 5 }
+   copy = original:clone()
+
+   assert(#copy is 5, "Clone should have same length")
+   for i = 0, 4 do
+      assert(copy[i] is original[i], "Clone should have same values at index " .. i)
+   end
+
+   -- Modify copy, original should be unchanged
+   copy[0] = 100
+   assert(original[0] is 1, "Original should be unchanged after modifying clone")
+   assert(copy[0] is 100, "Clone should have new value")
+end
+
+@Test function ArrayCloneString()
+   original = array<string> { 'hello', 'world', '!' }
+   copy = original:clone()
+
+   assert(#copy is 3, "Clone should have same length")
+   assert(copy[0] is 'hello', "copy[0] should be 'hello'")
+   assert(copy[1] is 'world', "copy[1] should be 'world'")
+   assert(copy[2] is '!', "copy[2] should be '!'")
+
+   -- Modify copy
+   copy[0] = 'goodbye'
+   assert(original[0] is 'hello', "Original should be unchanged")
+   assert(copy[0] is 'goodbye', "Clone should have new value")
+end
+
+@Test function ArrayCloneFloat()
+   original = array<float> { 1.5, 2.5, 3.5 }
+   copy = original:clone()
+
+   assert(#copy is 3, "Clone should have same length")
+   for i = 0, 2 do
+      assert(math.abs(copy[i] - original[i]) < 0.0001, "Clone should have same float values")
+   end
+end
+
+@Test function ArrayCloneDouble()
+   original = array<double> { 3.14159, 2.71828 }
+   copy = original:clone()
+
+   assert(#copy is 2, "Clone should have same length")
+   assert(math.abs(copy[0] - 3.14159) < 0.00001, "copy[0] should be pi")
+   assert(math.abs(copy[1] - 2.71828) < 0.00001, "copy[1] should be e")
+end
+
+@Test function ArrayCloneByte()
+   original = array<byte> { 65, 66, 67, 68 }
+   copy = original:clone()
+
+   assert(#copy is 4, "Clone should have same length")
+   assert(copy:getString() is 'ABCD', "Clone getString should return 'ABCD'")
+end
+
+@Test function ArrayCloneInt16()
+   original = array<int16> { 100, 200, 300 }
+   copy = original:clone()
+
+   assert(#copy is 3, "Clone should have same length")
+   assert(copy[0] is 100, "copy[0] should be 100")
+   assert(copy[1] is 200, "copy[1] should be 200")
+   assert(copy[2] is 300, "copy[2] should be 300")
+end
+
+@Test function ArrayCloneInt64()
+   original = array<int64> { 1234567890123, -9876543210987 }
+   copy = original:clone()
+
+   assert(#copy is 2, "Clone should have same length")
+   assert(copy[0] is 1234567890123, "copy[0] should be large positive")
+   assert(copy[1] is -9876543210987, "copy[1] should be large negative")
+end
+
+@Test function ArrayCloneTable()
+   original = array<table, 2>
+   original[0] = {x = 10, y = 20}
+   original[1] = {name = 'test'}
+   copy = original:clone()
+
+   assert(#copy is 2, "Clone should have same length")
+   assert(copy[0].x is 10, "copy[0].x should be 10")
+   assert(copy[0].y is 20, "copy[0].y should be 20")
+   assert(copy[1].name is 'test', "copy[1].name should be 'test'")
+
+   -- Note: For tables, it's a shallow copy (same table references)
+   original[0].x = 100
+   assert(copy[0].x is 100, "Table clone is shallow - same reference")
+end
+
+@Test function ArrayCloneObject()
+   obj_one = obj.new('file')
+   obj_one.path = 'temp:clone-object.txt'
+   original = array<object> { obj_one }
+   copy = original:clone()
+
+   assert(#copy is 1, "Clone should have same length")
+   assert(copy[0].id is obj_one.id, "Clone should copy object references")
+
+   obj_one.path = 'temp:clone-object-updated.txt'
+   assert(copy[0].path is 'temp:clone-object-updated.txt', "Object clone should be shallow")
+
+   obj_one.free()
+end
+
+@Test function ArrayCloneEmpty()
+   original = array<int>
+   copy = original:clone()
+
+   assert(#copy is 0, "Clone of empty array should be empty")
+   assert(copy:type() is 'int', "Clone should preserve type")
+end
+
+@Test function ArrayCloneSingle()
+   original = array<int> { 42 }
+   copy = original:clone()
+
+   assert(#copy is 1, "Clone should have length 1")
+   assert(copy[0] is 42, "copy[0] should be 42")
+end
+
+@Test function ArrayClonePreservesType()
+   -- Test that clone preserves element type
+   int_arr = array<int> { 1, 2, 3 }
+   int_clone = int_arr:clone()
+   assert(int_clone:type() is 'int', "Clone should preserve int type")
+
+   float_arr = array<float> { 1.5, 2.5 }
+   float_clone = float_arr:clone()
+   assert(float_clone:type() is 'float', "Clone should preserve float type")
+
+   string_arr = array<string> { 'a', 'b' }
+   string_clone = string_arr:clone()
+   assert(string_clone:type() is 'string', "Clone should preserve string type")
+end
+
+@Test function ArrayCloneIndependence()
+   original = array<int> { 10, 20, 30 }
+   copy = original:clone()
+
+   -- Modify both arrays differently
+   original:push(40)
+   copy:push(50)
+   copy:push(60)
+
+   assert(#original is 4, "Original should have 4 elements")
+   assert(#copy is 5, "Copy should have 5 elements")
+   assert(original[3] is 40, "Original[3] should be 40")
+   assert(copy[3] is 50, "Copy[3] should be 50")
+   assert(copy[4] is 60, "Copy[4] should be 60")
+end
+
+@Test function ArrayCloneAndModify()
+   original = array<int> { 1, 2, 3, 4, 5 }
+   copy = original:clone()
+
+   -- Remove from copy
+   copy:remove(2)
+   assert(#copy is 4, "Copy should have 4 elements after remove")
+   assert(#original is 5, "Original should still have 5 elements")
+
+   -- Insert into copy
+   copy:insert(0, 0)
+   assert(#copy is 5, "Copy should have 5 elements after insert")
+   assert(copy[0] is 0, "Copy[0] should be 0")
+   assert(original[0] is 1, "Original[0] should still be 1")
+end
+
+@Test function ArrayCloneLarge()
+   original = array<int, 1000>
+   for i = 0, 999 do
+      original[i] = i * 2
+   end
+
+   copy = original:clone()
+
+   assert(#copy is 1000, "Clone should have 1000 elements")
+
+   -- Verify some values
+   assert(copy[0] is 0, "copy[0] should be 0")
+   assert(copy[500] is 1000, "copy[500] should be 1000")
+   assert(copy[999] is 1998, "copy[999] should be 1998")
+
+   -- Modify original
+   original[500] = 9999
+   assert(copy[500] is 1000, "Clone should be independent of original modification")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test insert/remove/clone integration
+
+@Test function ArrayInsertRemoveIntegration()
+   arr = array<int> { 1, 5 }
+
+   -- Insert in middle
+   arr:insert(1, 2, 3, 4)
+   assert(#arr is 5, "Should have 5 elements")
+   assert(arr[2] is 3, "arr[2] should be 3")
+
+   -- Remove from middle
+   arr:remove(2, 2)  -- Remove 3 and 4
+   assert(#arr is 3, "Should have 3 elements")
+   assert(arr[0] is 1, "arr[0] should be 1")
+   assert(arr[1] is 2, "arr[1] should be 2")
+   assert(arr[2] is 5, "arr[2] should be 5")
+end
+
+@Test function ArrayCloneInsertRemove()
+   original = array<int> { 1, 2, 3 }
+   copy = original:clone()
+
+   -- Insert into original
+   original:insert(1, 10)
+   assert(#original is 4, "Original should have 4 elements")
+   assert(#copy is 3, "Copy should still have 3 elements")
+
+   -- Remove from copy
+   copy:remove(0)
+   assert(#copy is 2, "Copy should have 2 elements")
+   assert(#original is 4, "Original should still have 4 elements")
+end
+
+@Test function ArrayBuildWithInsert()
+   -- Build array using insert instead of push
+   arr = array<int>
+   for i = 0, 4 do
+      arr:insert(0, 4 - i)  -- Insert at start each time
+   end
+
+   assert(#arr is 5, "Array should have 5 elements")
+   for i = 0, 4 do
+      assert(arr[i] is i, "arr[" .. i .. "] should be " .. i)
+   end
+end
+
+@Test function ArrayRemoveUntilEmpty()
+   arr = array<int> { 1, 2, 3, 4, 5 }
+
+   while #arr > 0 do
+      arr:remove(0)  -- Always remove first
+   end
+
+   assert(#arr is 0, "Array should be empty")
+end
+
+@Test function ArrayCloneChain()
+   -- Clone multiple times
+   arr1 = array<int> { 1, 2, 3 }
+   arr2 = arr1:clone()
+   arr3 = arr2:clone()
+
+   arr1[0] = 100
+   arr2[1] = 200
+   arr3[2] = 300
+
+   assert(arr1[0] is 100 and arr1[1] is 2 and arr1[2] is 3, "arr1 should have correct values")
+   assert(arr2[0] is 1 and arr2[1] is 200 and arr2[2] is 3, "arr2 should have correct values")
+   assert(arr3[0] is 1 and arr3[1] is 2 and arr3[2] is 300, "arr3 should have correct values")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test array.sort() functionality
+
+@Test function ArraySortAscending()
+   arr = array<int, 5>
+   arr[0] = 30
+   arr[1] = 10
+   arr[2] = 50
+   arr[3] = 20
+   arr[4] = 40
+
+   arr:sort()
+
+   assert(arr[0] is 10, "sorted arr[0] should be 10")
+   assert(arr[1] is 20, "sorted arr[1] should be 20")
+   assert(arr[2] is 30, "sorted arr[2] should be 30")
+   assert(arr[3] is 40, "sorted arr[3] should be 40")
+   assert(arr[4] is 50, "sorted arr[4] should be 50")
+end
+
+@Test function ArraySortDescending()
+   arr = array<int, 5>
+   arr[0] = 30
+   arr[1] = 10
+   arr[2] = 50
+   arr[3] = 20
+   arr[4] = 40
+
+   arr:sort(true)
+
+   assert(arr[0] is 50, "desc sorted arr[0] should be 50")
+   assert(arr[1] is 40, "desc sorted arr[1] should be 40")
+   assert(arr[2] is 30, "desc sorted arr[2] should be 30")
+   assert(arr[3] is 20, "desc sorted arr[3] should be 20")
+   assert(arr[4] is 10, "desc sorted arr[4] should be 10")
+end
+
+@Test function ArraySortFloat()
+   arr = array<float, 5>
+   arr[0] = 3.14
+   arr[1] = 1.41
+   arr[2] = 2.71
+   arr[3] = 0.57
+   arr[4] = 1.73
+
+   arr:sort()
+
+   assert(arr[0] < arr[1], "sorted floats should be in order: arr[0] < arr[1]")
+   assert(arr[1] < arr[2], "sorted floats should be in order: arr[1] < arr[2]")
+   assert(arr[2] < arr[3], "sorted floats should be in order: arr[2] < arr[3]")
+   assert(arr[3] < arr[4], "sorted floats should be in order: arr[3] < arr[4]")
+end
+
+@Test function ArraySortAlreadySorted()
+   arr = array<int, 5>
+   for i = 0, 4 do
+      arr[i] = i
+   end
+
+   arr:sort()
+
+   for i = 0, 4 do
+      assert(arr[i] is i, "already sorted array should remain unchanged")
+   end
+end
+
+@Test function ArraySortDuplicates()
+   arr = array<int, 5>
+   arr[0] = 20
+   arr[1] = 10
+   arr[2] = 20
+   arr[3] = 10
+   arr[4] = 30
+
+   arr:sort()
+
+   assert(arr[0] is 10, "sorted with dups arr[0] should be 10")
+   assert(arr[1] is 10, "sorted with dups arr[1] should be 10")
+   assert(arr[2] is 20, "sorted with dups arr[2] should be 20")
+   assert(arr[3] is 20, "sorted with dups arr[3] should be 20")
+   assert(arr[4] is 30, "sorted with dups arr[4] should be 30")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test array.sort() with user-provided comparator function
+
+@Test function ArraySortComparatorAscending()
+   arr = array<int> { 30, 10, 50, 20, 40 }
+   arr:sort((a, b) => a < b)
+
+   assert(arr[0] is 10, "comparator asc arr[0] should be 10")
+   assert(arr[1] is 20, "comparator asc arr[1] should be 20")
+   assert(arr[2] is 30, "comparator asc arr[2] should be 30")
+   assert(arr[3] is 40, "comparator asc arr[3] should be 40")
+   assert(arr[4] is 50, "comparator asc arr[4] should be 50")
+end
+
+@Test function ArraySortComparatorDescending()
+   arr = array<int> { 30, 10, 50, 20, 40 }
+   arr:sort((a, b) => a > b)
+
+   assert(arr[0] is 50, "comparator desc arr[0] should be 50")
+   assert(arr[1] is 40, "comparator desc arr[1] should be 40")
+   assert(arr[2] is 30, "comparator desc arr[2] should be 30")
+   assert(arr[3] is 20, "comparator desc arr[3] should be 20")
+   assert(arr[4] is 10, "comparator desc arr[4] should be 10")
+end
+
+@Test function ArraySortComparatorFloat()
+   arr = array<float> { 3.14, 1.41, 2.71, 0.57, 1.73 }
+   arr:sort((a, b) => a < b)
+
+   assert(arr[0] < arr[1], "comparator float: arr[0] < arr[1]")
+   assert(arr[1] < arr[2], "comparator float: arr[1] < arr[2]")
+   assert(arr[2] < arr[3], "comparator float: arr[2] < arr[3]")
+   assert(arr[3] < arr[4], "comparator float: arr[3] < arr[4]")
+end
+
+@Test function ArraySortComparatorString()
+   arr = array<string> { 'cherry', 'apple', 'banana' }
+   arr:sort((a, b) => a < b)
+
+   assert(arr[0] is 'apple', "comparator string arr[0] should be 'apple'")
+   assert(arr[1] is 'banana', "comparator string arr[1] should be 'banana'")
+   assert(arr[2] is 'cherry', "comparator string arr[2] should be 'cherry'")
+end
+
+@Test function ArraySortComparatorStringDescending()
+   arr = array<string> { 'cherry', 'apple', 'banana' }
+   arr:sort((a, b) => a > b)
+
+   assert(arr[0] is 'cherry', "comparator string desc arr[0] should be 'cherry'")
+   assert(arr[1] is 'banana', "comparator string desc arr[1] should be 'banana'")
+   assert(arr[2] is 'apple', "comparator string desc arr[2] should be 'apple'")
+end
+
+@Test function ArraySortComparatorDuplicates()
+   arr = array<int> { 20, 10, 20, 10, 30 }
+   arr:sort((a, b) => a < b)
+
+   assert(arr[0] is 10, "comparator dups arr[0] should be 10")
+   assert(arr[1] is 10, "comparator dups arr[1] should be 10")
+   assert(arr[2] is 20, "comparator dups arr[2] should be 20")
+   assert(arr[3] is 20, "comparator dups arr[3] should be 20")
+   assert(arr[4] is 30, "comparator dups arr[4] should be 30")
+end
+
+@Test function ArraySortComparatorAlreadySorted()
+   arr = array<int> { 1, 2, 3, 4, 5 }
+   arr:sort((a, b) => a < b)
+
+   for i = 0, 4 do
+      assert(arr[i] is i + 1, "comparator already sorted: arr[" .. i .. "] should be " .. (i + 1))
+   end
+end
+
+@Test function ArraySortComparatorSingleElement()
+   arr = array<int> { 42 }
+   arr:sort((a, b) => a < b)
+   assert(arr[0] is 42, "comparator single element should remain 42")
+end
+
+@Test function ArraySortComparatorTwoElements()
+   arr = array<int> { 20, 10 }
+   arr:sort((a, b) => a < b)
+   assert(arr[0] is 10, "comparator two elements arr[0] should be 10")
+   assert(arr[1] is 20, "comparator two elements arr[1] should be 20")
+end
+
+@Test function ArraySortComparatorAbsoluteValue()
+   -- Sort by absolute value to demonstrate custom ordering logic
+   arr = array<int> { -5, 3, -1, 4, -2 }
+   arr:sort((a, b) => math.abs(a) < math.abs(b))
+
+   assert(math.abs(arr[0]) is 1, "abs sort arr[0] should have abs value 1")
+   assert(math.abs(arr[1]) is 2, "abs sort arr[1] should have abs value 2")
+   assert(math.abs(arr[2]) is 3, "abs sort arr[2] should have abs value 3")
+   assert(math.abs(arr[3]) is 4, "abs sort arr[3] should have abs value 4")
+   assert(math.abs(arr[4]) is 5, "abs sort arr[4] should have abs value 5")
+end
+
+@Test function ArraySortComparatorNamedFunction()
+   -- Test with a named function rather than an anonymous lambda
+   function compare(A, B)
+      return A > B
+   end
+
+   arr = array<int> { 3, 1, 4, 1, 5, 9, 2, 6 }
+   arr:sort(compare)
+
+   assert(arr[0] is 9, "named fn sort arr[0] should be 9")
+   assert(arr[1] is 6, "named fn sort arr[1] should be 6")
+   assert(arr[2] is 5, "named fn sort arr[2] should be 5")
+   assert(arr[#arr - 1] is 1, "named fn sort last should be 1")
+end
+
+@Test function ArraySortComparatorLarge()
+   arr = array<int, 100>
+   for i = 0, 99 do
+      arr[i] = 99 - i
+   end
+
+   arr:sort((a, b) => a < b)
+
+   for i = 0, 99 do
+      assert(arr[i] is i, "comparator large sort: arr[" .. i .. "] should be " .. i)
+   end
+end
+
+@Test function ArraySortComparatorByte()
+   arr = array<byte> { 67, 65, 68, 66 }  -- C, A, D, B
+   arr:sort((a, b) => a < b)
+
+   assert(arr[0] is 65, "comparator byte arr[0] should be 65 (A)")
+   assert(arr[1] is 66, "comparator byte arr[1] should be 66 (B)")
+   assert(arr[2] is 67, "comparator byte arr[2] should be 67 (C)")
+   assert(arr[3] is 68, "comparator byte arr[3] should be 68 (D)")
+end
+
+@Test function ArraySortComparatorInt64()
+   arr = array<int64> { 3000000000000, 1000000000000, 5000000000000, 2000000000000 }
+   arr:sort((a, b) => a < b)
+
+   assert(arr[0] is 1000000000000, "comparator int64 arr[0] should be smallest")
+   assert(arr[3] is 5000000000000, "comparator int64 arr[3] should be largest")
+end
+
+@Test function ArraySortComparatorDouble()
+   arr = array<double> { 2.718281828, 3.141592653, 1.414213562 }
+   arr:sort((a, b) => a < b)
+
+   assert(arr[0] < arr[1], "comparator double: arr[0] < arr[1]")
+   assert(arr[1] < arr[2], "comparator double: arr[1] < arr[2]")
+end
+
+@Test function ArraySortComparatorStringLength()
+   -- Sort strings by length rather than lexicographic order
+   arr = array<string> { 'hi', 'hello', 'hey', 'h' }
+   arr:sort((a, b) => #a < #b)
+
+   assert(arr[0] is 'h', "length sort arr[0] should be 'h'")
+   assert(arr[1] is 'hi', "length sort arr[1] should be 'hi'")
+   assert(arr[2] is 'hey', "length sort arr[2] should be 'hey'")
+   assert(arr[3] is 'hello', "length sort arr[3] should be 'hello'")
+end
+
+@Test function ArraySortComparatorTableByField()
+   -- Sort a table array by a numeric field
+   arr = array<table> {
+      { name = 'Charlie', age = 35 },
+      { name = 'Alice',   age = 28 },
+      { name = 'Dave',    age = 22 },
+      { name = 'Bob',     age = 31 }
+   }
+
+   arr:sort((a, b) => a.age < b.age)
+
+   assert(arr[0].name is 'Dave',    "age sort arr[0] should be Dave (22)")
+   assert(arr[1].name is 'Alice',   "age sort arr[1] should be Alice (28)")
+   assert(arr[2].name is 'Bob',     "age sort arr[2] should be Bob (31)")
+   assert(arr[3].name is 'Charlie', "age sort arr[3] should be Charlie (35)")
+
+   -- Sort by name (string field) descending
+   arr:sort((a, b) => a.name > b.name)
+
+   assert(arr[0].name is 'Dave',    "name desc arr[0] should be Dave")
+   assert(arr[1].name is 'Charlie', "name desc arr[1] should be Charlie")
+   assert(arr[2].name is 'Bob',     "name desc arr[2] should be Bob")
+   assert(arr[3].name is 'Alice',   "name desc arr[3] should be Alice")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test array.fill() with range support
+
+@Test function ArrayFillWithRange()
+   arr = array<int, 10>
+   arr:fill(0)  -- Zero-initialize first
+
+   -- Fill with range (exclusive)
+   arr:fill(99, {2..5})
+   assert(arr[0] is 0, "fill range: arr[0] should be 0")
+   assert(arr[1] is 0, "fill range: arr[1] should be 0")
+   assert(arr[2] is 99, "fill range: arr[2] should be 99")
+   assert(arr[3] is 99, "fill range: arr[3] should be 99")
+   assert(arr[4] is 99, "fill range: arr[4] should be 99")
+   assert(arr[5] is 0, "fill range: arr[5] should be 0")
+end
+
+@Test function ArrayFillWithInclusiveRange()
+   arr = array<int, 10>
+   arr:fill(0)  -- Zero-initialize first
+
+   -- Fill with inclusive range
+   arr:fill(77, {2...5})
+   assert(arr[1] is 0, "fill inclusive: arr[1] should be 0")
+   assert(arr[2] is 77, "fill inclusive: arr[2] should be 77")
+   assert(arr[3] is 77, "fill inclusive: arr[3] should be 77")
+   assert(arr[4] is 77, "fill inclusive: arr[4] should be 77")
+   assert(arr[5] is 77, "fill inclusive: arr[5] should be 77")
+   assert(arr[6] is 0, "fill inclusive: arr[6] should be 0")
+end
+
+@Test function ArrayFillWithNegativeRange()
+   arr = array<int, 5>
+   arr:fill(0)  -- Zero-initialize first
+
+   -- Fill last 2 elements using negative indices
+   arr:fill(55, {-2..-1})
+   assert(arr[0] is 0, "fill negative: arr[0] should be 0")
+   assert(arr[1] is 0, "fill negative: arr[1] should be 0")
+   assert(arr[2] is 0, "fill negative: arr[2] should be 0")
+   assert(arr[3] is 55, "fill negative: arr[3] should be 55")
+   assert(arr[4] is 55, "fill negative: arr[4] should be 55")
+end
+
+@Test function ArrayFillWithSteppedRange()
+   arr = array<int, 10>
+   arr:fill(0)  -- Zero-initialize first
+
+   -- Fill every other element using range.new(start, stop, inclusive, step)
+   arr:fill(33, range.new(0, 10, false, 2))
+   assert(arr[0] is 33, "fill stepped: arr[0] should be 33")
+   assert(arr[1] is 0, "fill stepped: arr[1] should be 0")
+   assert(arr[2] is 33, "fill stepped: arr[2] should be 33")
+   assert(arr[3] is 0, "fill stepped: arr[3] should be 0")
+   assert(arr[4] is 33, "fill stepped: arr[4] should be 33")
+   assert(arr[8] is 33, "fill stepped: arr[8] should be 33")
+   assert(arr[9] is 0, "fill stepped: arr[9] should be 0")
+end
+
+@Test function ArrayFillOriginalSyntax()
+   -- Verify original syntax still works
+   arr = array<int, 10>
+   arr:fill(0)  -- Zero-initialize first
+
+   -- Fill starting at index 3, 4 elements
+   arr:fill(42, 3, 4)
+   assert(arr[2] is 0, "fill original: arr[2] should be 0")
+   assert(arr[3] is 42, "fill original: arr[3] should be 42")
+   assert(arr[4] is 42, "fill original: arr[4] should be 42")
+   assert(arr[5] is 42, "fill original: arr[5] should be 42")
+   assert(arr[6] is 42, "fill original: arr[6] should be 42")
+   assert(arr[7] is 0, "fill original: arr[7] should be 0")
+end

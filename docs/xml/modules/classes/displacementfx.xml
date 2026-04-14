@@ -11,7 +11,7 @@
     <id>aec93c3c</id>
     <idstring>DISPLACEMENTFX</idstring>
     <category>Graphics</category>
-    <copyright>Paul Manias © 2010-2025</copyright>
+    <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>This filter effect uses the pixel values from the image from Mix to spatially displace the image from Input. This is the transformation to be performed:</p>
 <pre>P'(x,y) &lt;- P(x + Scale * (XC(x,y) - 0.5), y + Scale * (YC(x,y) - 0.5))

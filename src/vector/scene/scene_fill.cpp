@@ -505,8 +505,8 @@ static void fill_pattern(VectorState &State, const TClipRectangle<double> &Bound
       else if (dmf::hasY(Pattern.Dimensions)) dy = y_offset + Pattern.Y;
       else dy = y_offset;
 
-      int page_width = F2T(target_width);
-      int page_height = F2T(target_height);
+      int page_width = int(target_width);
+      int page_height = int(target_height);
 
       if ((page_width != Pattern.Scene->PageWidth) or (page_height != Pattern.Scene->PageHeight)) {
          Pattern.Scene->PageWidth = page_width;
@@ -539,8 +539,8 @@ static void fill_pattern(VectorState &State, const TClipRectangle<double> &Bound
       // Scale the bitmap so that it matches the final scale on the display.  This requires a matching inverse
       // adjustment when computing the final transform.
 
-      int page_width = F2T(target_width * (SCALE_BITMAP ? t_scale : 1.0));
-      int page_height = F2T(target_height * (SCALE_BITMAP ? t_scale : 1.0));
+      int page_width = int(target_width * (SCALE_BITMAP ? t_scale : 1.0));
+      int page_height = int(target_height * (SCALE_BITMAP ? t_scale : 1.0));
 
       // Mark the bitmap for recomputation if needed.
 

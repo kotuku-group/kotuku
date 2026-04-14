@@ -1,0 +1,247 @@
+-- XQuery 3.0 math namespace unit tests
+
+   include 'xml'
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Helper utilities
+
+local MATH_NAMESPACE = 'http://www.w3.org/2005/xpath-functions/math'
+local MATH_DECLARE = 'declare namespace math = "' .. MATH_NAMESPACE .. '"; '
+
+local function executeMath(Expression)
+   local query = obj.new('xquery', {
+      statement = MATH_DECLARE .. Expression
+   })
+   local err = query.acActivate()
+   return query, err
+end
+
+local function describeError(Query, Err)
+   if Query and Query.errorMsg and Query.errorMsg != '' then
+      return Query.errorMsg
+   end
+   return mSys.GetErrorMsg(Err)
+end
+
+local function assertAlmostEqual(Value, Expected, Epsilon, Message)
+   local difference = math.abs(Value - Expected)
+   assert(difference < Epsilon, (Message or 'Values differ') .. ' (|Δ|=' .. tostring(difference) .. ')')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Constant and trigonometric behaviour
+
+@Test function MathPiConstant()
+   local xq, err = executeMath('math:pi()')
+   assert(err is ERR_Okay, 'math:pi() should evaluate successfully: ' .. describeError(xq, err))
+
+   local value = tonumber(xq.resultString)
+   assert(value, 'math:pi() should return a numeric value, got ' .. tostring(xq.resultString))
+   assertAlmostEqual(value, math.pi, 1e-12, 'math:pi() should match Lua math.pi')
+end
+
+@Test function MathTrigonometricBasics()
+   local sin_query, err = executeMath('math:sin(0)')
+   assert(err is ERR_Okay, 'math:sin(0) should evaluate successfully: ' .. describeError(sin_query, err))
+   local sin_value = tonumber(sin_query.resultString)
+   assert(sin_value, 'math:sin(0) should return a numeric value, got ' .. tostring(sin_query.resultString))
+   assertAlmostEqual(sin_value, 0.0, 1e-12, 'math:sin(0) should be zero')
+
+   local cos_query
+   cos_query, err = executeMath('math:cos(0)')
+   assert(err is ERR_Okay, 'math:cos(0) should evaluate successfully: ' .. describeError(cos_query, err))
+   local cos_value = tonumber(cos_query.resultString)
+   assert(cos_value, 'math:cos(0) should return a numeric value, got ' .. tostring(cos_query.resultString))
+   assertAlmostEqual(cos_value, 1.0, 1e-12, 'math:cos(0) should be one')
+
+   local tan_query
+   tan_query, err = executeMath('math:tan(0)')
+   assert(err is ERR_Okay, 'math:tan(0) should evaluate successfully: ' .. describeError(tan_query, err))
+   local tan_value = tonumber(tan_query.resultString)
+   assert(tan_value, 'math:tan(0) should return a numeric value, got ' .. tostring(tan_query.resultString))
+   assertAlmostEqual(tan_value, 0.0, 1e-12, 'math:tan(0) should be zero')
+
+   local diag_query
+   diag_query, err = executeMath('math:sin(math:pi() div 4)')
+   assert(err is ERR_Okay, 'math:sin(pi/4) should evaluate successfully: ' .. describeError(diag_query, err))
+   sin_value = tonumber(diag_query.resultString)
+   assert(sin_value, 'math:sin(pi/4) should return numeric value, got ' .. tostring(diag_query.resultString))
+   assertAlmostEqual(sin_value, math.sqrt(0.5), 1e-12, 'math:sin(pi/4) should equal sqrt(1/2)')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Inverse trigonometric functions
+
+@Test function MathInverseFunctions()
+   local asin_query, err = executeMath('math:asin(0.5)')
+   assert(err is ERR_Okay, 'math:asin(0.5) should evaluate successfully: ' .. describeError(asin_query, err))
+   local asin_value = tonumber(asin_query.resultString)
+   assert(asin_value, 'math:asin(0.5) should return numeric value, got ' .. tostring(asin_query.resultString))
+   assertAlmostEqual(asin_value, math.asin(0.5), 1e-12, 'math:asin(0.5) should match Lua asin')
+
+   local acos_query
+   acos_query, err = executeMath('math:acos(0.5)')
+   assert(err is ERR_Okay, 'math:acos(0.5) should evaluate successfully: ' .. describeError(acos_query, err))
+   local acos_value = tonumber(acos_query.resultString)
+   assert(acos_value, 'math:acos(0.5) should return numeric value, got ' .. tostring(acos_query.resultString))
+   assertAlmostEqual(acos_value, math.acos(0.5), 1e-12, 'math:acos(0.5) should match Lua acos')
+
+   local atan_query
+   atan_query, err = executeMath('math:atan(1)')
+   assert(err is ERR_Okay, 'math:atan(1) should evaluate successfully: ' .. describeError(atan_query, err))
+   local atan_value = tonumber(atan_query.resultString)
+   assert(atan_value, 'math:atan(1) should return numeric value, got ' .. tostring(atan_query.resultString))
+   assertAlmostEqual(atan_value, math.pi / 4, 1e-12, 'math:atan(1) should equal pi/4')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Two-argument arctangent coverage
+
+@Test function MathAtan2Quadrants()
+   local q1_query, err = executeMath('math:atan2(1, 1)')
+   assert(err is ERR_Okay, 'math:atan2(1, 1) should evaluate successfully: ' .. describeError(q1_query, err))
+   local q1_value = tonumber(q1_query.resultString)
+   assert(q1_value, 'math:atan2(1, 1) should return numeric value, got ' .. tostring(q1_query.resultString))
+   assertAlmostEqual(q1_value, math.pi / 4, 1e-12, 'math:atan2(1, 1) should equal pi/4')
+
+   local q2_query
+   q2_query, err = executeMath('math:atan2(1, -1)')
+   assert(err is ERR_Okay, 'math:atan2(1, -1) should evaluate successfully: ' .. describeError(q2_query, err))
+   local q2_value = tonumber(q2_query.resultString)
+   assert(q2_value, 'math:atan2(1, -1) should return numeric value, got ' .. tostring(q2_query.resultString))
+   assertAlmostEqual(q2_value, 3 * math.pi / 4, 1e-12, 'math:atan2(1, -1) should equal 3*pi/4')
+
+   local q3_query
+   q3_query, err = executeMath('math:atan2(-1, -1)')
+   assert(err is ERR_Okay, 'math:atan2(-1, -1) should evaluate successfully: ' .. describeError(q3_query, err))
+   local q3_value = tonumber(q3_query.resultString)
+   assert(q3_value, 'math:atan2(-1, -1) should return numeric value, got ' .. tostring(q3_query.resultString))
+   assertAlmostEqual(q3_value, -3 * math.pi / 4, 1e-12, 'math:atan2(-1, -1) should equal -3*pi/4')
+
+   local q4_query
+   q4_query, err = executeMath('math:atan2(-1, 1)')
+   assert(err is ERR_Okay, 'math:atan2(-1, 1) should evaluate successfully: ' .. describeError(q4_query, err))
+   local q4_value = tonumber(q4_query.resultString)
+   assert(q4_value, 'math:atan2(-1, 1) should return numeric value, got ' .. tostring(q4_query.resultString))
+   assertAlmostEqual(q4_value, -math.pi / 4, 1e-12, 'math:atan2(-1, 1) should equal -pi/4')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Exponential and logarithmic calculations
+
+@Test function MathExponentialsAndLogs()
+   local exp_query, err = executeMath('math:exp(2)')
+   assert(err is ERR_Okay, 'math:exp(2) should evaluate successfully: ' .. describeError(exp_query, err))
+   local exp_value = tonumber(exp_query.resultString)
+   assert(exp_value, 'math:exp(2) should return numeric value, got ' .. tostring(exp_query.resultString))
+   assertAlmostEqual(exp_value, math.exp(2), 1e-12, 'math:exp(2) should match Lua exp')
+
+   local exp10_query
+   exp10_query, err = executeMath('math:exp10(3)')
+   assert(err is ERR_Okay, 'math:exp10(3) should evaluate successfully: ' .. describeError(exp10_query, err))
+   local exp10_value = tonumber(exp10_query.resultString)
+   assert(exp10_value, 'math:exp10(3) should return numeric value, got ' .. tostring(exp10_query.resultString))
+   assertAlmostEqual(exp10_value, 1000.0, 1e-9, 'math:exp10(3) should equal 1000')
+
+   local log_query
+   log_query, err = executeMath('math:log(math:exp(1))')
+   assert(err is ERR_Okay, 'math:log(exp(1)) should evaluate successfully: ' .. describeError(log_query, err))
+   local log_value = tonumber(log_query.resultString)
+   assert(log_value, 'math:log(exp(1)) should return numeric value, got ' .. tostring(log_query.resultString))
+   assertAlmostEqual(log_value, 1.0, 1e-12, 'math:log(exp(1)) should equal 1')
+
+   local log10_query
+   log10_query, err = executeMath('math:log10(1000)')
+   assert(err is ERR_Okay, 'math:log10(1000) should evaluate successfully: ' .. describeError(log10_query, err))
+   local log10_value = tonumber(log10_query.resultString)
+   assert(log10_value, 'math:log10(1000) should return numeric value, got ' .. tostring(log10_query.resultString))
+   assertAlmostEqual(log10_value, 3.0, 1e-12, 'math:log10(1000) should equal 3')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Power and square root helpers
+
+@Test function MathPowAndSqrt()
+   local pow_query, err = executeMath('math:pow(2, 10)')
+   assert(err is ERR_Okay, 'math:pow(2, 10) should evaluate successfully: ' .. describeError(pow_query, err))
+   local pow_value = tonumber(pow_query.resultString)
+   assert(pow_value, 'math:pow(2, 10) should return numeric value, got ' .. tostring(pow_query.resultString))
+   assertAlmostEqual(pow_value, 1024.0, 1e-9, 'math:pow(2, 10) should equal 1024')
+
+   local pow_negative_query
+   pow_negative_query, err = executeMath('math:pow(-2, 3)')
+   assert(err is ERR_Okay, 'math:pow(-2, 3) should evaluate successfully: ' .. describeError(pow_negative_query, err))
+   local pow_negative_value = tonumber(pow_negative_query.resultString)
+   assert(pow_negative_value, 'math:pow(-2, 3) should return numeric value, got ' .. tostring(pow_negative_query.resultString))
+   assertAlmostEqual(pow_negative_value, -8.0, 1e-9, 'math:pow(-2, 3) should equal -8')
+
+   local sqrt_query
+   sqrt_query, err = executeMath('math:sqrt(144)')
+   assert(err is ERR_Okay, 'math:sqrt(144) should evaluate successfully: ' .. describeError(sqrt_query, err))
+   local sqrt_value = tonumber(sqrt_query.resultString)
+   assert(sqrt_value, 'math:sqrt(144) should return numeric value, got ' .. tostring(sqrt_query.resultString))
+   assertAlmostEqual(sqrt_value, 12.0, 1e-12, 'math:sqrt(144) should equal 12')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Special value handling
+
+@Test function MathSpecialValues()
+   local empty_query, err = executeMath('math:sin(())')
+   assert(err is ERR_Okay, 'math:sin(()) should evaluate successfully: ' .. describeError(empty_query, err))
+   assert(empty_query.resultString is '' or empty_query.resultString is 'false',
+      'math:sin(()) should return empty sequence, got ' .. tostring(empty_query.resultString))
+
+   local domain_query
+   domain_query, err = executeMath('math:asin(2)')
+   assert(err is ERR_Okay, 'math:asin(2) should evaluate successfully returning NaN: ' .. describeError(domain_query, err))
+   assert(domain_query.resultString is 'NaN', 'math:asin(2) should return NaN, got ' .. tostring(domain_query.resultString))
+
+   local infinity_query
+   infinity_query, err = executeMath('math:sin(1 div 0)')
+   assert(err is ERR_Okay, 'math:sin(INF) should evaluate successfully returning NaN: ' .. describeError(infinity_query, err))
+   assert(infinity_query.resultString is 'NaN', 'math:sin(INF) should return NaN, got ' .. tostring(infinity_query.resultString))
+
+   local log_negative_query
+   log_negative_query, err = executeMath('math:log(-1)')
+   assert(err is ERR_Okay, 'math:log(-1) should evaluate successfully returning NaN: ' .. describeError(log_negative_query, err))
+   assert(log_negative_query.resultString is 'NaN', 'math:log(-1) should return NaN, got ' .. tostring(log_negative_query.resultString))
+end
+
+@Test function MathSignedZeroAndSpecialCases()
+   local sin_zero_query, err = executeMath('1 div math:sin(-0.0)')
+   assert(err is ERR_Okay, '1 div math:sin(-0e0) should evaluate successfully: ' .. describeError(sin_zero_query, err))
+   assert(sin_zero_query.resultString is '-Infinity',
+      '1 div math:sin(-0e0) should return -Infinity, got ' .. tostring(sin_zero_query.resultString))
+
+   local tan_zero_query
+   tan_zero_query, err = executeMath('1 div math:tan(-0.0)')
+   assert(err is ERR_Okay, '1 div math:tan(-0e0) should evaluate successfully: ' .. describeError(tan_zero_query, err))
+   assert(tan_zero_query.resultString is '-Infinity',
+      '1 div math:tan(-0e0) should return -Infinity, got ' .. tostring(tan_zero_query.resultString))
+
+   local sqrt_zero_query
+   sqrt_zero_query, err = executeMath('1 div math:sqrt(-0.0)')
+   assert(err is ERR_Okay, '1 div math:sqrt(-0e0) should evaluate successfully: ' .. describeError(sqrt_zero_query, err))
+   assert(sqrt_zero_query.resultString is '-Infinity',
+      '1 div math:sqrt(-0e0) should return -Infinity, got ' .. tostring(sqrt_zero_query.resultString))
+
+   local atan_zero_query
+   atan_zero_query, err = executeMath('math:atan2(-0.0, -1)')
+   assert(err is ERR_Okay, 'math:atan2(-0e0, -1) should evaluate successfully: ' .. describeError(atan_zero_query, err))
+   local atan_value = tonumber(atan_zero_query.resultString)
+   assert(atan_value, 'math:atan2(-0e0, -1) should return numeric value, got ' .. tostring(atan_zero_query.resultString))
+   assertAlmostEqual(atan_value, -math.pi, 1e-12, 'math:atan2(-0e0, -1) should equal -pi')
+
+   local pow_nan_zero_query
+   pow_nan_zero_query, err = executeMath('math:pow(number("NaN"), 0)')
+   assert(err is ERR_Okay, 'math:pow(NaN, 0) should evaluate successfully: ' .. describeError(pow_nan_zero_query, err))
+   assert(pow_nan_zero_query.resultString is '1',
+      'math:pow(NaN, 0) should return 1, got ' .. tostring(pow_nan_zero_query.resultString))
+
+   local pow_one_nan_query
+   pow_one_nan_query, err = executeMath('math:pow(1, number("NaN"))')
+   assert(err is ERR_Okay, 'math:pow(1, NaN) should evaluate successfully: ' .. describeError(pow_one_nan_query, err))
+   assert(pow_one_nan_query.resultString is '1',
+      'math:pow(1, NaN) should return 1, got ' .. tostring(pow_one_nan_query.resultString))
+end

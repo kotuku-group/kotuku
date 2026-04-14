@@ -1,9 +1,9 @@
 /*********************************************************************************************************************
 
 -MODULE-
-Core: The core library provides system calls and controls for the Parasol system.
+Core: The core library provides system calls and controls for the Kotuku system.
 
-The Parasol Core is a system library that provides a universal API that works on multiple platforms.  It follows an
+The Kotuku Core is a system library that provides a universal API that works on multiple platforms.  It follows an
 object oriented design with granular resource tracking to minimise resource usage and memory leaks.
 
 The portability of the core has been safe-guarded by keeping the functions as generalised as possible.  When writing
@@ -78,9 +78,9 @@ This documentation is intended for technical reference and is not suitable as an
 #endif
 
 #include "defs.h"
-#include <parasol/modules/core.h>
+#include <kotuku/modules/core.h>
 
-#ifdef _DEBUG // KMSG() prints straight to stderr without going through the log.
+#ifndef NDEBUG // KMSG() prints straight to stderr without going through the log.
 #define KMSG(...) //fprintf(stderr, __VA_ARGS__)
 #else
 #define KMSG(...)
@@ -215,7 +215,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
 #elif _WIN32
    int id = 0;
    if (glEnableCrashHandler) {
-      #ifdef _DEBUG
+      #ifndef NDEBUG
          winInitialise(&id, nullptr); // Don't set a break handler, this will allow GDB intercept CTRL-C.
       #else
          winInitialise(&id, (APTR)&BreakHandler);
@@ -276,7 +276,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
    }
 
    if (glSystemPath.empty()) {
-      // When no system path is specified then treat the install as 'run-anywhere' so that "parasol:" == "system:"
+      // When no system path is specified then treat the install as 'run-anywhere' so that "kotuku:" == "system:"
       glSystemPath = glRootPath;
    }
 
@@ -337,7 +337,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
          else if (iequals(arg, "log-warning")) glLogLevel = 2;
          else if (iequals(arg, "log-info"))    glLogLevel = 4; // Levels 3/4 are for applications (no internal detail)
          else if (iequals(arg, "log-api"))     glLogLevel = 5; // Default level for API messages
-         else if (iequals(arg, "log-extapi"))  glLogLevel = 6;
+         else if (iequals(arg, "log-xapi"))    glLogLevel = 6; // Extended API messages (detail() level).
          else if (iequals(arg, "log-debug"))   glLogLevel = 7;
          else if (iequals(arg, "log-trace"))   glLogLevel = 9;
          else if (iequals(arg, "log-all"))     glLogLevel = 9; // 9 is the absolute maximum
@@ -509,7 +509,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
 
    fs_initialised = true;
 
-#ifndef PARASOL_STATIC
+#ifndef KOTUKU_STATIC
    if ((Info->Flags & OPF::SCAN_MODULES) IS OPF::NIL) {
       ERR error;
       auto file = objFile::create { fl::Path(glClassBinPath), fl::Flags(FL::READ) };
@@ -558,7 +558,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
    }
 #endif
 
-#ifndef PARASOL_STATIC
+#ifndef KOTUKU_STATIC
    // Generate the Core table for our new task
    LocalCoreBase = (struct CoreBase *)build_jump_table(glFunctions);
 #else
@@ -584,7 +584,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
    evTaskCreated task_created = { EVID_SYSTEM_TASK_CREATED, glCurrentTask->UID };
    BroadcastEvent(&task_created, sizeof(task_created));
 
-#ifndef PARASOL_STATIC
+#ifndef KOTUKU_STATIC
    if ((Info->Flags & OPF::SCAN_MODULES) != OPF::NIL) {
       log.msg("Class scanning has been enforced by user request.");
       glScanClasses = true;
@@ -593,7 +593,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
    if (glScanClasses) scan_classes();
 #endif
 
-   #ifdef _DEBUG
+   #ifndef NDEBUG
       print_class_list();
    #endif
 
@@ -882,7 +882,7 @@ static void NullHandler(int SignalNumber, siginfo_t *Info, APTR Context)
 static void child_handler(int SignalNumber, siginfo_t *Info, APTR Context)
 {
 #if 0
-   parasol:Log log(__FUNCTION__);
+   kotuku:Log log(__FUNCTION__);
 
    int childprocess = Info->si_pid;
 
@@ -1063,30 +1063,30 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
    // Add system volumes that require run-time determination.  For the avoidance of doubt, on Unix systems the
    // default settings for a fixed installation are:
    //
-   // OPF::ROOT_PATH   : parasol : glRootPath   = /usr/local
-   // OPF::MODULE_PATH : modules : glModulePath = %ROOT%/lib/parasol
-   // OPF::SYSTEM_PATH : system  : glSystemPath = %ROOT%/share/parasol
+   // OPF::ROOT_PATH   : kotuku : glRootPath   = /usr/local
+   // OPF::MODULE_PATH : modules : glModulePath = %ROOT%/lib/kotuku
+   // OPF::SYSTEM_PATH : system  : glSystemPath = %ROOT%/share/kotuku
 
    #ifdef _WIN32
-      SetVolume("parasol", glRootPath.c_str(), "programs/filemanager", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+      SetVolume("kotuku", glRootPath.c_str(), "programs/filemanager", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
       SetVolume("system", glRootPath.c_str(), "misc/brick", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
 
-      #ifndef PARASOL_STATIC
+      #ifndef KOTUKU_STATIC
       if (!glModulePath.empty()) {
          SetVolume("modules", glModulePath.c_str(), "misc/brick", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
       }
       else SetVolume("modules", "system:lib/", "misc/brick", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
       #endif
    #elif __unix__
-      SetVolume("parasol", glRootPath.c_str(), "programs/filemanager", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+      SetVolume("kotuku", glRootPath.c_str(), "programs/filemanager", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
       SetVolume("system", glSystemPath.c_str(), "misc/brick", nullptr, nullptr, VOLUME::REPLACE|VOLUME::SYSTEM);
 
-      #ifndef PARASOL_STATIC
+      #ifndef KOTUKU_STATIC
       if (!glModulePath.empty()) {
          SetVolume("modules", glModulePath.c_str(), "misc/brick", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
       }
       else {
-         std::string path = glRootPath + "lib/parasol/";
+         std::string path = glRootPath + "lib/kotuku/";
          SetVolume("modules", path.c_str(), "misc/brick", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
       }
       #endif
@@ -1105,10 +1105,10 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
    #else
       SetVolume("templates", "scripts:templates/", "misc/openbook", nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
       SetVolume("config", "system:config/", "tools/cog", nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
-      if (AnalysePath("parasol:bin/", nullptr) IS ERR::Okay) { // Bin is the location of the fluid and parasol binaries
-         SetVolume("bin", "parasol:bin/", nullptr, nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
+      if (AnalysePath("kotuku:bin/", nullptr) IS ERR::Okay) { // Bin is the location of the tiri and kotuku binaries
+         SetVolume("bin", "kotuku:bin/", nullptr, nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
       }
-      else SetVolume("bin", "parasol:", nullptr, nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
+      else SetVolume("bin", "kotuku:", nullptr, nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
    #endif
 
    SetVolume("temp", "user:temp/", "items/trash", nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
@@ -1138,7 +1138,7 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
 
    // The client can specify glHomeFolderName on the command-line if desired.
 
-   if (glHomeFolderName.empty()) glHomeFolderName.assign("parasol");
+   if (glHomeFolderName.empty()) glHomeFolderName.assign("kotuku");
 
    std::string buffer("config:users/default/");
 
@@ -1341,7 +1341,7 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
       }
    }
 
-#ifndef PARASOL_STATIC
+#ifndef KOTUKU_STATIC
    // Change glModulePath to an absolute path to optimise the loading of modules.
    std::string mpath;
    if (ResolvePath("modules:", RSF::NO_FILE_CHECK, &mpath) IS ERR::Okay) {

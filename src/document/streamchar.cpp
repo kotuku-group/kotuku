@@ -88,7 +88,10 @@ void stream_char::erase_char(RSTREAM &Stream) // Erase a character OR an escape 
 {
    if (Stream[index].code IS SCODE::TEXT) {
       auto &text = Stream.lookup<bc_text>(index);
-      if (offset < text.text.size()) text.text.erase(offset, 1);
+      if (offset < text.text.size()) {
+         text.text.erase(offset, 1);
+         text.invalidate_tokens();
+      }
       if (offset > text.text.size()) offset = text.text.size();
    }
    else Stream.data.erase(Stream.data.begin() + index);

@@ -4,7 +4,7 @@
 -FUNCTION-
 IdentifyFile: Analyse a file and identify a class that can process it.
 
-This function examines the relationship between file data and Parasol classes.  For instance, a JPEG file would be
+This function examines the relationship between file data and Kōtuku classes.  For instance, a JPEG file would be
 identified as a datatype of the @Picture class.  An MP3 file would be identified as a datatype of the @Sound
 class.
 

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ai:m xmlns:ai="http://kotuku.dev/ai-docs" n="Tiri" p="fl" v="1" st="beta">
+  <ai:f n="SetVariable" c="Sets any variable in a loaded Tiri script." p="ERR fl::SetVariable(OBJECTPTR Script, CSTRING Name, INT Type, ...)" r="ERR">
+    <ai:i n="Script" t="OBJECTPTR" c="Pointer to a Tiri script."/>
+    <ai:i n="Name" t="CSTRING" c="The name of the variable to set."/>
+    <ai:i n="Type" t="INT" c="A valid field type must be indicated, e.g. FD_STRING, FD_POINTER, FD_INT, FD_DOUBLE, FD_INT64."/>
+    <ai:i n="Variable" t="..." c="A variable that matches the indicated Type."/>
+    <ai:e c="Okay"/>
+    <ai:e c="Args"/>
+    <ai:e c="ObjectCorrupt"/>
+    <ai:e c="FieldTypeMismatch"/>
+  </ai:f>
+</ai:m>

@@ -1,0 +1,871 @@
+-- XQuery prolog integration tests
+
+-----------------------------------------------------------------------------------------------------------------------
+-- User-defined functions declared in the prolog should execute during evaluation
+
+@Test function UserDefinedFunction()
+   xq = obj.new('xquery', { statement = 'declare function local:square($x) { $x * $x }; local:square(5)' })
+   assert(xq.acActivate() is ERR_Okay, f'Query execution failed: {xq.errorMsg}')
+   assert(tonumber(xq.resultString) is 25, f'Prolog-defined function should return the squared result, got {xq.resultString}')
+
+   list = xq.functions
+   assert(list, "Expected module functions to be accessible")
+   func_seen = false
+   for v in values(list) do
+      if v is 'local:square' then func_seen = true end
+   end
+   assert(func_seen, "Module function 'local:square' not found in function list")
+
+   err, xstr = xq.mtInspectFunctions("local:square")
+   assert(err is ERR_Okay, f"Inspection of 'local:square' failed: {xq.errorMsg}")
+   print(f'Found: {xstr}')
+   assert(string.find(xstr, "<name>local:square</name>"), "Inspection output should include function name")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Namespace declarations and prolog variables should participate in evaluation
+
+@Test function NamespaceAndVariableDeclarations()
+   xml = obj.new('xml', { statement = '<root xmlns:ex="http://example.com/ns"><ex:item>Alpha</ex:item></root>' })
+
+   expr = 'declare namespace ex = "http://example.com/ns"; declare variable $ex:answer := 42; if ($ex:answer = 42 and string(/root/ex:item) = "Alpha") then "pass" else "fail"'
+   err, value = xml.mtEvaluate(expr)
+
+   assert(value is 'pass', f'Prolog namespace and variable declarations should evaluate correctly, got {tostring(value)}')
+   assert(xml.errorMsg is nil or xml.errorMsg is '', f'Namespace and variable declarations should not record an error message, got {tostring(xml.errorMsg)}')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Boundary-space preservation should retain lexical whitespace in direct element constructors
+
+@Test function BoundarySpacePreservation()
+   xq = obj.new('xquery', { statement = 'declare boundary-space preserve; string(<a>  padded  </a>)' })
+   xq.acActivate()
+   assert(xq.resultString is '  padded  ', f'Boundary-space preserve should retain surrounding whitespace, got {tostring(xq.resultString)}')
+end
+
+@Test function BoundarySpacePreserveComputedText()
+   xq = obj.new('xquery', { statement = 'declare boundary-space preserve; string(<a>{"  padded  "}</a>)' })
+   assert(xq.acActivate() is ERR_Okay, f'Query execution failed: {xq.errorMsg}')
+   assert(xq.resultString is '  padded  ', f'Boundary-space preserve should retain whitespace from enclosed expressions, got {xq.resultString}')
+end
+
+@Test function BoundarySpaceStripRemoval()
+   xq = obj.new('xquery', { statement = 'string(<a>   </a>)' })
+   assert(xq.acActivate() is ERR_Okay, f'Query execution failed: {xq.errorMsg}')
+   assert(xq.resultString is '', f'Boundary-space strip should remove whitespace-only text, got {tostring(xq.resultString)}')
+end
+
+@Test function BoundarySpaceStripComputedText()
+   xq = obj.new('xquery', { statement = 'string(<a>{"  padded  "}</a>)' })
+   assert(xq.acActivate() is ERR_Okay, f'Query execution failed: {xq.errorMsg}')
+   assert(xq.resultString is 'padded', f'Boundary-space strip should trim whitespace from enclosed expressions, got {tostring(xq.resultString)}')
+end
+
+@Test function ConstructionStripComputedWhitespace()
+   xq = obj.new('xquery', { statement = [[declare construction strip; string(<a>{"   "}</a>)]] })
+   assert(xq.acActivate() is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   assert(xq.resultString is '', 'Construction strip should remove whitespace-only computed text nodes, got ' .. tostring(xq.resultString))
+end
+
+@Test function ConstructionPreserveComputedWhitespace()
+   xq = obj.new('xquery', { statement = [[declare construction preserve; string(<a>{"   "}</a>)]] })
+   assert(xq.acActivate() is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   assert(xq.resultString is '   ', 'Construction preserve should retain whitespace-only computed text nodes, got ' .. tostring(xq.resultString))
+end
+
+@Test function ConstructionStripTextConstructorWhitespace()
+   xq = obj.new('xquery', { statement = [[declare construction strip; string(element wrapper { text { "  padded  " } })]] })
+   assert(xq.acActivate() is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   assert(xq.resultString is 'padded', 'Construction strip should trim text constructor content, got ' .. tostring(xq.resultString))
+end
+
+@Test function ConstructionPreserveTextConstructorWhitespace()
+   xq = obj.new('xquery', { statement = [[declare construction preserve; string(element wrapper { text { "  padded  " } })]] })
+   assert(xq.acActivate() is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   assert(xq.resultString is '  padded  ', 'Construction preserve should retain text constructor whitespace, got ' .. tostring(xq.resultString))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Recursive functions declared in the prolog should resolve correctly
+
+@Test function RecursiveFunction()
+   xq = obj.new('xquery', { statement = 'declare function local:factorial($n) { if ($n le 1) then 1 else $n * local:factorial($n - 1) }; local:factorial(5)' })
+   assert(xq.acActivate() is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   result = tonumber(xq.resultString)
+   assert(result is 120, 'Recursive prolog function should compute factorial, got ' .. tostring(result))
+   assert(xq.errorMsg is nil or xq.errorMsg is '', 'Recursive function evaluation should not record an error message, got ' .. tostring(xq.errorMsg))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Functions with the same QName but different arity should dispatch based on argument count
+
+@Test function FunctionOverloadingByArity()
+   xq = obj.new('xquery', { statement = [[
+declare function local:adder($a, $b) { $a + $b };
+declare function local:adder($a, $b, $c) { $a + $b + $c };
+concat(local:adder(2, 3), ":", local:adder(1, 2, 3))
+]] })
+   assert(xq.acActivate() is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   value = xq.resultString
+   assert(value is '5:6', 'Function overloading by arity should select the correct body, got ' .. tostring(value))
+   assert(xq.errorMsg is nil or xq.errorMsg is '', 'Function overloading should not record an error message, got ' .. tostring(xq.errorMsg))
+
+   err, xstr = xq.mtInspectFunctions("local:*")
+   assert(err is ERR_Okay, "Inspection of 'local:adder' failed: " .. tostring(xq.errorMsg))
+   print('Found: ' .. xstr)
+   assert(string.find(xstr, "<name>local:adder</name>"), "Inspection output should include function name")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Namespace prefixes declared on the document should remain accessible when compiling queries
+
+@Test function NamespaceFallbackFromDocument()
+   xml = obj.new('xml', {
+      statement = '<root xmlns:ns="urn:fallback"><ns:item>Alpha</ns:item></root>'
+   })
+
+   err, value = xml.mtEvaluate('/root/ns:item')
+   assert(value is 'Alpha', 'Document namespace prefixes should be available during evaluation, got ' .. tostring(value))
+   assert(xml.errorMsg is nil or xml.errorMsg is '', 'Namespace fallback should not record an error message, got ' .. tostring(xml.errorMsg))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Dynamic bindings should shadow prolog variables of the same QName
+
+@Test function VariableShadowing()
+   xq = obj.new('xquery', { statement = 'declare variable $local:value := "prolog"; let $local:value := "runtime" return $local:value' })
+   err = xq.acActivate()
+   assert(err is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   assert(xq.resultString is 'runtime', 'Dynamic let binding should shadow prolog variable, got ' .. tostring(xq.resultString))
+   assert(xq.errorMsg is nil or xq.errorMsg is '', 'Variable shadowing should not record an error message, got ' .. tostring(xq.errorMsg))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- External variable declarations should surface explicit diagnostics
+
+@Test function ExternalVariableErrorHandling()
+   xq = obj.new('xquery', { statement = 'declare variable $local:missing external; $local:missing' })
+   err = xq.acActivate()
+   message = tostring(xq.errorMsg)
+   assert(err != ERR_Okay, 'External variable declaration should fail during activation')
+   assert(message is "External variable 'local:missing' is not supported.", 'External variable access should report a descriptive error, got ' .. message)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- External function declarations should report missing implementation errors
+
+@Test function ExternalFunctionErrorHandling()
+   xq = obj.new('xquery', { statement = 'declare function local:provided($x) external; local:provided(1)' })
+   err = xq.acActivate()
+   message = tostring(xq.errorMsg)
+   assert(err != ERR_Okay, 'External function declaration should fail during activation')
+   assert(message is "External function 'local:provided' is not supported.", 'External function invocation should report a descriptive error, got ' .. message)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Module imports without an installed loader should emit a load-failure diagnostic
+
+@Test function ModuleImportDeclaration()
+   xq = obj.new('xquery', { statement = 'import module namespace math = "urn:math"; math:square(2)' })
+   err = xq.acActivate()
+   message = tostring(xq.errorMsg)
+   assert(err != ERR_Okay, 'Module import should fail without loader')
+   -- Loader now emits a structured error with code and attempted locations
+   assert(string.find(message, 'XQST0059', 0, true)
+      and string.find(message, 'Cannot load module for namespace', 0, true)
+      and string.find(message, 'urn:math', 0, true),
+      'Module import should record structural diagnostic, got ' .. message)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Default function namespace should canonicalise prolog function names
+
+@Test function DefaultFunctionNamespaceNormalisation()
+   expr = [[
+declare namespace math = "urn:math";
+declare default function namespace "urn:math";
+declare function square($x) { $x * $x };
+concat(square(3), ":", math:square(4))
+]]
+   xq = obj.new('xquery', { statement = expr })
+   assert(xq.acActivate() is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   assert(xq.resultString is '9:16', 'Default function namespace should apply to prefixed and unprefixed calls, got ' .. tostring(xq.resultString))
+   assert(xq.errorMsg is nil or xq.errorMsg is '', 'Default function namespace should not record an error, got ' .. tostring(xq.errorMsg))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Module import namespaces should be normalised for cache lookups
+
+@Test function ModuleImportNamespaceNormalisation()
+   xq = obj.new('xquery', { statement = 'import module namespace math = "urn:math\\library"; math:square(2)' })
+   assert(xq.acActivate() != ERR_Okay, 'Module import with escaped namespace should fail without loader')
+   message = tostring(xq.errorMsg)
+   assert(message:find('urn:math/library'), f'Module import namespaces should be normalised, got {message}')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- User-defined functions with type annotations should parse without errors
+
+@Test function FunctionTypeAnnotations()
+   xq = obj.new('xquery', { statement = 'declare function local:add($a as xs:integer, $b as xs:integer) as xs:integer { $a + $b }; local:add(10, 20)' })
+   assert(xq.acActivate() is ERR_Okay, f'Query execution failed: {xq.errorMsg}')
+   result = tonumber(xq.resultString)
+   assert(result is 30, f'Function with type annotations should execute correctly, got {result}')
+   assert(xq.errorMsg is nil or xq.errorMsg is '', f'Function with type annotations should not record an error, got {xq.errorMsg}')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Multiple namespace declarations in prolog should be available during evaluation
+
+@Test function MultipleNamespacesInProlog()
+   xml = obj.new('xml', {
+      statement = '<root xmlns:a="urn:a" xmlns:b="urn:b"><a:item>A</a:item><b:item>B</b:item></root>'
+   })
+
+   expr = 'declare namespace a = "urn:a"; declare namespace b = "urn:b"; concat(string(/root/a:item), ":", string(/root/b:item))'
+   err, value = xml.mtEvaluate(expr)
+   assert(value is 'A:B', 'Multiple namespace declarations should work, got ' .. tostring(value))
+   assert(xml.errorMsg is nil or xml.errorMsg is '', 'Multiple namespaces should not error, got ' .. tostring(xml.errorMsg))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Variable initialization expressions should evaluate correctly
+
+@Test function VariableInitializerExpressions()
+   xq = obj.new('xquery', { statement = 'declare variable $x := 5; declare variable $y := $x * 2; $x + $y' })
+   err = xq.acActivate()
+   assert(err is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   value = tonumber(xq.resultString)
+   assert(value is 15, 'Variable initialiser expressions should evaluate, got ' .. tostring(value))
+   assert(xq.errorMsg is nil or xq.errorMsg is '', 'Variable initialisers should not error, got ' .. tostring(xq.errorMsg))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Default collation declaration should parse without errors (stored for future use)
+
+@Test function DefaultCollationDeclaration()
+   xq = obj.new('xquery', { statement = 'declare default collation "http://www.w3.org/2005/xpath-functions/collation/codepoint"; "test"' })
+   err = xq.acActivate()
+   assert(err is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   assert(xq.resultString is 'test', 'Default collation declaration should not affect evaluation, got ' .. tostring(xq.resultString))
+   assert(xq.errorMsg is nil or xq.errorMsg is '', 'Default collation should not error, got ' .. tostring(xq.errorMsg))
+end
+
+@Test function DefaultCollationFunctionUsesProlog()
+   xq = obj.new('xquery', { statement = 'declare default collation "urn:custom"; default-collation()' })
+   err = xq.acActivate()
+   assert(err is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   assert(xq.resultString is 'urn:custom', 'default-collation() should honour prolog declaration, got ' .. tostring(xq.resultString))
+end
+
+@Test function DecimalFormatDeclaration()
+   xq = obj.new('xquery', { statement = 'declare decimal-format local:df decimal-separator = "x"; "ok"' })
+   err = xq.acActivate()
+   assert(err is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   assert(xq.resultString is 'ok', 'Decimal-format declaration should succeed, got ' .. tostring(xq.resultString))
+   assert(xq.errorMsg is nil or xq.errorMsg is '', 'Decimal-format declaration should not error, got ' .. tostring(xq.errorMsg))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Construction mode declaration should parse correctly
+
+@Test function ConstructionModeDeclaration()
+   xq = obj.new('xquery', { statement = 'declare construction strip; string(<test>value</test>)' })
+   err = xq.acActivate()
+   assert(err is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   assert(xq.resultString is 'value', 'Construction mode declaration should parse, got ' .. tostring(xq.resultString))
+   assert(xq.errorMsg is nil or xq.errorMsg is '', 'Construction mode should not error, got ' .. tostring(xq.errorMsg))
+end
+
+@Test function ConstructionStripTrimsComputedContent()
+   xq = obj.new('xquery', { statement = 'declare construction strip; string(<test>{ "  padded  " }</test>)' })
+   err = xq.acActivate()
+   assert(err is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   assert(xq.resultString is 'padded', 'Construction strip should trim computed content, got ' .. tostring(xq.resultString))
+end
+
+@Test function ConstructionPreserveRetainsWhitespace()
+   xq = obj.new('xquery', { statement = 'declare construction preserve; string(<test>{ "  padded  " }</test>)' })
+   err = xq.acActivate()
+   assert(err is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   assert(xq.resultString is '  padded  ', 'Construction preserve should keep surrounding whitespace, got ' .. tostring(xq.resultString))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Function with zero parameters should work
+
+@Test function ZeroParameterFunction()
+   xq = obj.new('xquery', { statement = 'declare function local:getAnswer() { 42 }; local:getAnswer()' })
+   err = xq.acActivate()
+   assert(err is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   assert(tonumber(xq.resultString) is 42, 'Zero-parameter function should work, got ' .. tostring(xq.resultString))
+   assert(xq.errorMsg is nil or xq.errorMsg is '', 'Zero-parameter function should not error, got ' .. tostring(xq.errorMsg))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Function with many parameters should work
+
+@Test function MultiParameterFunction()
+   xq = obj.new('xquery', { statement = 'declare function local:sum($a, $b, $c, $d, $e) { $a + $b + $c + $d + $e }; local:sum(1, 2, 3, 4, 5)' })
+   err = xq.acActivate()
+   assert(err is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   assert(tonumber(xq.resultString) is 15, 'Multi-parameter function should work, got ' .. tostring(xq.resultString))
+   assert(xq.errorMsg is nil or xq.errorMsg is '', 'Multi-parameter function should not error, got ' .. tostring(xq.errorMsg))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Prolog variables should initialize before use in expression
+
+@Test function PrologVariableAvailability()
+   xq = obj.new('xquery', { statement = 'declare variable $pi := 3.14159; $pi * 100' })
+   err = xq.acActivate()
+   assert(err is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   value = tonumber(xq.resultString)
+   assert(math.floor(value + 0.5) is 314, 'Prolog variable should be available, got ' .. tostring(value))
+   assert(xq.errorMsg is nil or xq.errorMsg is '', 'Prolog variable should not error, got ' .. tostring(xq.errorMsg))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Function name collision with builtin should allow user-defined to be called with matching arity
+
+@Test function FunctionNameCollisionResolution()
+   -- Note: We cannot truly override built-in functions with single parameter since those exist
+   -- So we test with a different arity where the user function should be selected
+   xq = obj.new('xquery', { statement = 'declare function local:count($x, $y) { "custom" }; local:count(1, 2)' })
+   err = xq.acActivate()
+   assert(err is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   assert(xq.resultString is 'custom', 'User-defined function with different arity should be called, got ' .. tostring(xq.resultString))
+   assert(xq.errorMsg is nil or xq.errorMsg is '', 'Function name resolution should work, got ' .. tostring(xq.errorMsg))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Prolog namespace should take precedence over document namespace with same prefix
+
+@Test function NamespacePrecedence()
+   xml = obj.new('xml', { statement = '<root xmlns:ex="urn:document"><ex:item>doc-value</ex:item></root>' })
+
+   -- Declare a prolog namespace that shadows the document namespace
+   expr = 'declare namespace ex = "urn:prolog"; string(/root/ex:item)'
+   err, value = xml.mtEvaluate(expr)
+   -- This tests whether prolog namespace takes precedence
+   assert(xml.errorMsg is nil or xml.errorMsg is '', 'Namespace precedence should be handled, got ' .. tostring(xml.errorMsg))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Multiple function declarations with same name but different arity should all be available
+
+@Test function MultipleFunctionArities()
+   expr = [[
+declare function local:f($a) { "one" };
+declare function local:f($a, $b) { "two" };
+declare function local:f($a, $b, $c) { "three" };
+concat(local:f(1), ":", local:f(1, 2), ":", local:f(1, 2, 3))
+]]
+   xq = obj.new('xquery', { statement = expr })
+   assert(xq.acActivate() is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   assert(xq.resultString is 'one:two:three', 'Multiple function arities should be available, got ' .. tostring(xq.resultString))
+   assert(xq.errorMsg is nil or xq.errorMsg is '', 'Multiple function arities should not error, got ' .. tostring(xq.errorMsg))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Base URI declaration should parse (stored for future use)
+
+@Test function BaseUriDeclaration()
+   xq = obj.new('xquery', { statement = 'declare base-uri "http://example.com/"; "ok"' })
+   err = xq.acActivate()
+   assert(err is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   assert(xq.resultString is 'ok', 'Base URI declaration should parse, got ' .. tostring(xq.resultString))
+   assert(xq.errorMsg is nil or xq.errorMsg is '', 'Base URI declaration should not error, got ' .. tostring(xq.errorMsg))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Ordering declaration should parse
+
+@Test function OrderingDeclaration()
+   xq = obj.new('xquery', { statement = 'declare ordering ordered; (3, 1, 2)' })
+   err = xq.acActivate()
+   assert(err is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   assert(xq.resultString != nil, 'Ordering declaration should parse')
+   assert(xq.errorMsg is nil or xq.errorMsg is '', 'Ordering declaration should not error, got ' .. tostring(xq.errorMsg))
+end
+
+@Test function OrderingModeUnorderedSequence()
+   xml = obj.new('xml', { statement = '<root><a>Alpha</a><b>Beta</b></root>' })
+
+   expr = [[
+declare ordering unordered;
+let $seq := (/root/b, /root/a)
+return concat(string($seq[1]), ":", string($seq[2]))
+]]
+   err, value = xml.mtEvaluate(expr)
+   assert(value is 'Beta:Alpha', 'Ordering unordered should preserve evaluation sequence, got ' .. tostring(value))
+end
+
+@Test function OrderingModeUnorderedUnion()
+   xml = obj.new('xml', { statement = '<root><a>Alpha</a><b>Beta</b></root>' })
+
+   expr = [[
+declare ordering unordered;
+let $u := ((/root/b) union (/root/a))
+return concat(string($u[1]), ":", string($u[2]))
+]]
+   err, value = xml.mtEvaluate(expr)
+   assert(value is 'Beta:Alpha', 'Ordering unordered should preserve union branch order, got ' .. tostring(value))
+end
+
+@Test function OrderingModeUnorderedIntersect()
+   xml = obj.new('xml', { statement = '<root><a>Alpha</a><b>Beta</b></root>' })
+
+   expr = [[
+declare ordering unordered;
+let $inter := ((/root/b, /root/a) intersect (/root/a | /root/b))
+return concat(string($inter[1]), ":", string($inter[2]))
+]]
+   err, value = xml.mtEvaluate(expr)
+   assert(value is 'Beta:Alpha', 'Ordering unordered should retain left operand order for intersect, got ' .. tostring(value))
+end
+
+@Test function OrderingModeUnorderedExcept()
+   xml = obj.new('xml', { statement = '<root><a>Alpha</a><b>Beta</b><c>Gamma</c></root>' })
+
+   expr = [[
+declare ordering unordered;
+let $exc := ((/root/c, /root/a, /root/b) except (/root/a))
+return concat(string($exc[1]), ":", string($exc[2]))
+]]
+
+   err, value = xml.mtEvaluate(expr)
+   assert(value is 'Gamma:Beta', 'Ordering unordered should respect operand order for except, got ' .. tostring(value))
+end
+
+@Test function DefaultEmptyOrderGreatest()
+   expr = [[
+let $seq := (for $x in ("b", "", "a")
+order by if ($x = "") then () else $x
+return if ($x = "") then "empty" else $x)
+return concat($seq[1], ":", $seq[2], ":", $seq[3])
+]]
+
+   xq = obj.new('xquery', { statement = expr })
+   assert(xq.acActivate() is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   assert(xq.resultString is 'a:b:empty', 'Default empty order should treat empties as greatest, got ' .. tostring(xq.resultString))
+end
+
+@Test function EmptyOrderLeastPlacement()
+   expr = [[
+declare default order empty least;
+let $seq := (for $x in ("b", "", "a")
+order by if ($x = "") then () else $x
+return if ($x = "") then "empty" else $x)
+return concat($seq[1], ":", $seq[2], ":", $seq[3])
+]]
+
+   xq = obj.new('xquery', { statement = expr })
+   assert(xq.acActivate() is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   assert(xq.resultString is 'empty:a:b', 'Empty least should place empties first, got ' .. tostring(xq.resultString))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Copy-namespaces declaration should parse
+
+@Test function CopyNamespacesDeclaration()
+   xq = obj.new('xquery', { statement = 'declare copy-namespaces preserve, inherit; "ok"' })
+   assert(xq.acActivate() is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   assert(xq.resultString is 'ok', 'Copy-namespaces declaration should parse, got ' .. tostring(xq.resultString))
+   assert(xq.errorMsg is nil or xq.errorMsg is '', 'Copy-namespaces should not error, got ' .. tostring(xq.errorMsg))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Queries without prolog should still work
+
+@Test function QueryWithoutProlog()
+   xml = obj.new('xml', {
+      statement = '<root><item>test</item></root>'
+   })
+
+   err, value = xml.mtEvaluate('string(/root/item)')
+   assert(value is 'test', 'Query without prolog should work, got ' .. tostring(value))
+   assert(xml.errorMsg is nil or xml.errorMsg is '', 'Query without prolog should not error, got ' .. tostring(xml.errorMsg))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- ERROR HANDLING TESTS
+-- These tests enforce W3C XQuery 3.0 specification rules for duplicate declarations
+-----------------------------------------------------------------------------------------------------------------------
+-- W3C XQuery 3.0 XQST0033: Duplicate namespace prefix declarations must raise static error
+
+@Test function DuplicateNamespaceDeclaration()
+   try -- Compilation failure expected
+      obj.new('xquery', { statement = 'declare namespace ex = "urn:first"; declare namespace ex = "urn:second"; "test"' })
+   except e
+      assert(e.code is ERR_Syntax, 'W3C XQuery 3.0 XQST0033: Duplicate namespace prefix declaration must raise static error')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- W3C XQuery 3.0 XQST0049: Duplicate variable declarations must raise static error
+
+@Test function DuplicateVariableDeclaration()
+   try -- Compilation failure expected
+      obj.new('xquery', { statement = 'declare variable $x := 1; declare variable $x := 2; $x' })
+   except e
+      assert(e.code is ERR_Syntax, 'W3C XQuery 3.0 XQST0049: Duplicate variable declaration must raise static error')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- W3C XQuery 3.0 XQST0034: Duplicate function declarations with same signature must raise static error
+
+@Test function DuplicateFunctionDeclaration()
+   try -- Compilation failure expected
+      obj.new('xquery', { statement = 'declare function local:f($x) { $x }; declare function local:f($y) { $y * 2 }; local:f(5)' })
+   except e
+      assert(e.code is ERR_Syntax, 'W3C XQuery 3.0 XQST0034: Duplicate function declaration must raise static error')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- W3C XQuery 3.0 XQST0032: Duplicate base-uri declarations must raise static error
+
+@Test function DuplicateBaseUriDeclaration()
+   try -- Compilation failure expected
+      obj.new('xquery', { statement = 'declare base-uri "http://example.com/"; declare base-uri "http://other.com/"; "test"' })
+   except e
+      assert(e.code is ERR_Syntax, 'W3C XQuery 3.0 XQST0032: Duplicate base-uri declaration must raise static error')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- W3C XQuery 3.0 XQST0038: Duplicate default collation declarations must raise static error
+
+@Test function DuplicateDefaultCollationDeclaration()
+   try -- Compilation failure expected
+      obj.new('xquery', { statement = 'declare default collation "http://example.com/collation1"; declare default collation "http://example.com/collation2"; "test"' })
+   except e
+      assert(e.code is ERR_Syntax, 'W3C XQuery 3.0 XQST0038: Duplicate default collation declaration must raise static error')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- W3C XQuery 3.0 XQST0068: Duplicate boundary-space declarations must raise static error
+
+@Test function DuplicateBoundarySpaceDeclaration()
+   try -- Compilation failure expected
+      obj.new('xquery', { statement = 'declare boundary-space preserve; declare boundary-space strip; "test"' })
+   except e
+      assert(e.code is ERR_Syntax, 'W3C XQuery 3.0 XQST0068: Duplicate boundary-space declaration must raise static error')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- W3C XQuery 3.0 XQST0067: Duplicate construction mode declarations must raise static error
+
+@Test function DuplicateConstructionModeDeclaration()
+   try -- Compilation failure expected
+      obj.new('xquery', { statement = 'declare construction preserve; declare construction strip; "test"' })
+   except e
+      assert(e.code is ERR_Syntax, 'W3C XQuery 3.0 XQST0067: Duplicate construction mode declaration must raise static error')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- W3C XQuery 3.0 XQST0065: Duplicate ordering mode declarations must raise static error
+
+@Test function DuplicateOrderingModeDeclaration()
+   try -- Compilation failure expected
+      obj.new('xquery', { statement = 'declare ordering ordered; declare ordering unordered; "test"' })
+   except e
+      assert(e.code is ERR_Syntax, 'W3C XQuery 3.0 XQST0065: Duplicate ordering mode declaration must raise static error')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- W3C XQuery 3.0 XQST0069: Duplicate default empty order declarations must raise static error
+
+@Test function DuplicateEmptyOrderDeclaration()
+   try -- Compilation failure expected
+      obj.new('xquery', { statement = 'declare default order empty greatest; declare default order empty least; "test"' })
+   except e
+      assert(e.code is ERR_Syntax, 'W3C XQuery 3.0 XQST0069: Duplicate default empty order declaration must raise static error')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- W3C XQuery 3.0 XQST0055: Duplicate copy-namespaces declarations must raise static error
+
+@Test function DuplicateCopyNamespacesDeclaration()
+   try -- Compilation failure expected
+      obj.new('xquery', { statement = 'declare copy-namespaces preserve, inherit; declare copy-namespaces no-preserve, no-inherit; "test"' })
+   except e
+      assert(e.code is ERR_Syntax, 'W3C XQuery 3.0 XQST0055: Duplicate copy-namespaces declaration must raise static error')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- W3C XQuery 3.0 XQST0111: Duplicate decimal-format declarations must raise static error
+
+@Test function DuplicateDecimalFormatDeclaration()
+   try -- Compilation failure expected
+      obj.new('xquery', { statement = 'declare decimal-format local:df decimal-separator = "."; declare decimal-format local:df grouping-separator = ","; "test"' })
+   except e
+      assert(e.code is ERR_Syntax, 'W3C XQuery 3.0 XQST0111: Duplicate decimal-format declaration must raise static error')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- W3C XQuery 3.0 XQST0039: Duplicate parameter names in function must raise static error
+
+@Test function DuplicateParameterNames()
+   try -- Compilation failure expected
+      obj.new('xquery', { statement = 'declare function local:bad($x, $x) { $x }; local:bad(1, 2)' })
+   except e
+      assert(e.code is ERR_Syntax, 'W3C XQuery 3.0 XQST0039: Duplicate parameter names must raise static error')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Invalid prolog syntax: missing semicolon should report error
+
+@Test function InvalidPrologSyntaxMissingSemicolon()
+   try -- Compilation failure expected
+      xq = obj.new('xquery', { statement = 'declare variable $x := 5 declare variable $y := 10; $x + $y' })
+      xq.acActivate()
+   except e
+      assert(e.code is ERR_Syntax, 'Missing semicolon should report a syntax error')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Invalid prolog syntax: malformed function declaration
+
+@Test function InvalidPrologSyntaxMalformedFunction()
+   try -- Compilation failure expected
+      xq = obj.new('xquery', { statement = 'declare function local:bad { "missing params" }; local:bad()' })
+      xq.acActivate()
+   except e
+      assert(e.code is ERR_Syntax, 'Malformed function declaration should report a syntax error')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Invalid prolog syntax: incomplete namespace declaration
+
+@Test function InvalidPrologSyntaxIncompleteNamespace()
+   try -- Compilation failure expected
+      obj.new('xquery', { statement = 'declare namespace ex; "test"' })
+   except e
+      assert(e.code is ERR_Syntax, 'Incomplete namespace declaration should report a syntax error')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Invalid prolog syntax: missing variable initializer for non-external variable
+
+@Test function InvalidPrologSyntaxMissingInitializer()
+   try -- Compilation failure expected
+      obj.new('xquery', { statement = 'declare variable $x; $x' })
+   except e
+      assert(e.code is ERR_Syntax, 'Variable declaration without initializer or external keyword should report an error')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Function call with wrong number of parameters (too few)
+
+@Test function FunctionCallTooFewParameters()
+   try -- Compilation failure expected
+      xq = obj.new('xquery', { statement = 'declare function local:add($a, $b) { $a + $b }; local:add(5)' })
+      xq.acActivate()
+   except e
+      assert(e.code is ERR_Syntax, 'Function call with too few parameters should raise a static error')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Function call with wrong number of parameters (too many)
+
+@Test function FunctionCallTooManyParameters()
+   try -- Compilation failure expected
+      xq = obj.new('xquery', { statement = 'declare function local:square($x) { $x * $x }; local:square(5, 10)' })
+      xq.acActivate()
+   except e
+      assert(e.code is ERR_Syntax, 'Function call with too many parameters should raise a static error')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Type annotation parsing: complex sequence types should parse without errors
+
+@Test function ComplexTypeAnnotationParsing()
+   xq = obj.new('xquery', { statement = 'declare function local:process($items as xs:string*) as xs:integer { count($items) }; local:process(("a", "b", "c"))' })
+   err = xq.acActivate()
+   assert(err is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   assert(tonumber(xq.resultString) is 3, 'Function with sequence type annotation should work, got ' .. tostring(xq.resultString))
+   assert(xq.errorMsg is nil or xq.errorMsg is '', 'Complex type annotations should parse, got ' .. tostring(xq.errorMsg))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Type annotation parsing: optional types should parse
+
+@Test function OptionalTypeAnnotationParsing()
+   xq = obj.new('xquery', { statement = 'declare function local:maybe($x as xs:string?) as xs:boolean { exists($x) }; local:maybe("test")' })
+   err = xq.acActivate()
+   assert(err is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   assert(xq.resultString is 'true', 'Function with optional type annotation should work, got ' .. tostring(xq.resultString))
+   assert(xq.errorMsg is nil or xq.errorMsg is '', 'Optional type annotations should parse, got ' .. tostring(xq.errorMsg))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Type annotation parsing: element and node types should parse
+
+@Test function ElementTypeAnnotationParsing()
+   xq = obj.new('xquery', { statement = 'declare function local:check($n as node()) as xs:boolean { true() }; local:check(<test/>)' })
+   err = xq.acActivate()
+   assert(err is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   assert(xq.resultString is 'true', 'Function with node type annotation should work, got ' .. tostring(xq.resultString))
+   assert(xq.errorMsg is nil or xq.errorMsg is '', 'Node type annotations should parse, got ' .. tostring(xq.errorMsg))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Invalid boundary-space value should report an error
+
+@Test function InvalidBoundarySpaceValue()
+   try -- Compilation failure expected
+      obj.new('xquery', { statement = 'declare boundary-space invalid; "test"' })
+   except e
+      assert(e.code is ERR_Syntax, 'Invalid boundary-space value should report an error')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Invalid construction mode value should report an error
+
+@Test function InvalidConstructionModeValue()
+   try -- Compilation failure expected
+      obj.new('xquery', { statement = 'declare construction invalid; "test"' })
+   except e
+      assert(e.code is ERR_Syntax, 'Invalid construction mode value should report an error')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Invalid ordering mode value should report an error
+
+@Test function InvalidOrderingModeValue()
+   try -- Compilation failure expected
+      obj.new('xquery', { statement = 'declare ordering invalid; "test"' })
+   except e
+      assert(e.code is ERR_Syntax, 'Invalid ordering mode value should report a syntax error')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Invalid empty order value should report an error
+
+@Test; @Disabled function InvalidEmptyOrderValue()
+   try -- Compilation failure expected
+      obj.new('xquery', { statement = 'declare default order empty invalid; "test"' })
+   except e
+      assert(e.code is ERR_Syntax, 'Invalid empty order value should report a syntax error')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Invalid copy-namespaces values should report an error
+
+@Test function InvalidCopyNamespacesValue()
+   try -- Compilation failure expected
+      obj.new('xquery', { statement = 'declare copy-namespaces invalid, inherit; "test"' })
+   except e
+      assert(e.code is ERR_Syntax, 'Invalid copy-namespaces value should report an error')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Accessing undeclared variable should report an error
+
+@Test function UndeclaredVariableAccess()
+   try -- Compilation failure expected
+      xq = obj.new('xquery', { statement = '$undeclared' })
+      xq.acActivate()
+   except e
+      assert(e.code is ERR_Syntax, 'Accessing undeclared variable should report a static error')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Calling undeclared function should report an error
+
+@Test function UndeclaredFunctionCall()
+   try -- Compilation failure expected
+      xq = obj.new('xquery', { statement = 'local:undeclared(42)' })
+      xq.acActivate()
+   except e
+      assert(e.code is ERR_Syntax, 'Accessing undeclared function should report a static error')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Function with invalid QName (missing prefix binding) should report an error
+
+@Test function FunctionInvalidQName()
+   -- This may succeed if the parser accepts unbound prefixes, or may fail.
+   -- The important thing is it shouldn't crash
+   xq = obj.new('xquery', { statement = 'declare function unbound:func($x) { $x }; unbound:func(1)' })
+   xq.acActivate()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Variable with invalid QName (missing prefix binding) should report an error
+
+@Test function VariableInvalidQName()
+   -- This may succeed if the parser accepts unbound prefixes, or may fail
+   -- The important thing is it shouldn't crash
+   xq = obj.new('xquery', { statement = 'declare variable $unbound:var := 5; $unbound:var' })
+   xq.acActivate()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Decimal format with invalid property should be handled
+
+@Test function DecimalFormatInvalidProperty()
+   try
+      obj.new('xquery', { statement = 'declare decimal-format local:df invalid-prop = "x"; "ok"' })
+   except e
+      assert(e.code is ERR_Syntax, 'Invalid decimal format property should fail to compile.')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Empty prolog (just semicolons) should not cause errors
+
+@Test function EmptyProlog()
+   xq = obj.new('xquery', { statement = ';;; "test"' })
+   err = xq.acActivate()
+   if err is ERR_Okay then
+      assert(xq.resultString is 'test', 'Empty prolog statements should evaluate successfully when accepted, got ' .. tostring(xq.resultString))
+   else
+      assert(xq.errorMsg and xq.errorMsg != '', 'Empty prolog statements should be handled')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Function body with syntax error should report clear error
+
+@Test function FunctionBodySyntaxError()
+   xq = obj.new('xquery', { statement = 'declare function local:bad($x) { $x + }; local:bad(5)' })
+   err = xq.acActivate()
+   assert(err != ERR_Okay and xq.errorMsg and xq.errorMsg != '',
+      'Function body with syntax error should report an error')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Variable initializer with syntax error should report clear error
+
+@Test function VariableInitializerSyntaxError()
+   xq = obj.new('xquery', { statement = 'declare variable $x := 5 +; $x' })
+   err = xq.acActivate()
+   assert(err != ERR_Okay and xq.errorMsg and xq.errorMsg != '',
+      'Variable initializer with syntax error should report an error')
+end

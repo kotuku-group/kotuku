@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="Module" mod="Core" c="Manages the loading of system libraries." cat="System" id="0e32c72b" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="Module" mod="Core" c="Manages the loading of system libraries." cat="System" id="0e32c72b" v="1">
   <ai:m n="ResolveSymbol" c="Resolves library symbol names to their address pointers." p="ERR mod::ResolveSymbol(OBJECTPTR Object, CSTRING Name, APTR * Address)">
     <ai:i n="Name" t="CSTRING" c="The name of the symbol to resolve."/>
     <ai:i n="Address" t="APTR *" c="The address of the symbol will be returned in this parameter."/>

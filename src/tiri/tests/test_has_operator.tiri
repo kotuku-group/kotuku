@@ -1,0 +1,128 @@
+-- Tests for the `has` bitwise flag testing operator.
+-- `a has b` is equivalent to `bit.band(a, b) != 0`
+
+FLAG_A = 0x01
+FLAG_B = 0x02
+FLAG_C = 0x04
+FLAG_D = 0x08
+ALL_FLAGS = FLAG_A | FLAG_B | FLAG_C | FLAG_D
+
+@Test function BasicFlagTest()
+   flags = FLAG_A | FLAG_C  -- 0x05
+   assert(flags has FLAG_A, 'Should detect FLAG_A')
+   assert(flags has FLAG_C, 'Should detect FLAG_C')
+   assert(not (flags has FLAG_B), 'Should not detect FLAG_B')
+   assert(not (flags has FLAG_D), 'Should not detect FLAG_D')
+end
+
+@Test function ConstantFolding()
+   -- Both operands are constants; should be folded at compile time
+   assert(7 has 4, 'Constant: 7 has 4 should be true (bit 2 set)')
+   assert(7 has 1, 'Constant: 7 has 1 should be true (bit 0 set)')
+   assert(not (8 has 4), 'Constant: 8 has 4 should be false')
+   assert(not (0 has 1), 'Constant: 0 has anything should be false')
+end
+
+@Test function EdgeCases()
+   assert(not (0 has 0), '0 has 0 should be false (band is 0)')
+   assert(not (0 has 0xff), '0 has 0xff should be false')
+   assert(0xff has 0xff, '0xff has 0xff should be true')
+   assert(-1 has 1, '-1 has 1 should be true (all bits set)')
+   assert(-1 has 0x7fffffff, '-1 has max_int should be true')
+end
+
+@Test function VariableOperands()
+   a = 0x0f
+   b = 0x04
+   c = 0x10
+   assert(a has b, 'Variable: 0x0f has 0x04 should be true')
+   assert(not (a has c), 'Variable: 0x0f has 0x10 should be false')
+end
+
+@Test function CombinedFlags()
+   flags = FLAG_A | FLAG_B  -- 0x03
+   -- Testing against combined mask
+   assert(flags has FLAG_A | FLAG_B, 'Should detect combined flags (exact match)')
+   assert(flags has FLAG_A | FLAG_C, 'Should detect partial overlap with FLAG_A')
+   assert(not (flags has (FLAG_C | FLAG_D)), 'Should not detect non-overlapping flags')
+
+   flags = DEVICE_FLOPPY_DISK
+   if flags has DEVICE_FLOPPY_DISK|DEVICE_COMPACT_DISC|DEVICE_FIXED then
+      -- Success
+   else
+      error('Failed to correctly detect DEVICE_FLOPPY_DISK')
+   end
+
+   flags = DEVICE_FIXED
+   if flags has DEVICE_FLOPPY_DISK|DEVICE_COMPACT_DISC|DEVICE_FIXED then
+      -- Success
+   else
+      error('Failed to correctly detect DEVICE_FIXED')
+   end
+end
+
+@Test function InIfCondition()
+   flags = FLAG_B | FLAG_D  -- 0x0a
+   result = 'none'
+   if flags has FLAG_B then
+      result = 'found'
+   end
+   assert(result is 'found', 'has should work in if condition')
+
+   result = 'none'
+   if flags has FLAG_A then
+      result = 'found'
+   end
+   assert(result is 'none', 'has should correctly fail in if condition')
+end
+
+@Test function AsValue()
+   flags = FLAG_A | FLAG_C
+   result = flags has FLAG_A
+   assert(result is true, 'has should return true as a value')
+
+   result = flags has FLAG_B
+   assert(result is false, 'has should return false as a value')
+end
+
+@Test function WithLogicalOperators()
+   flags = FLAG_A | FLAG_C
+   assert(flags has FLAG_A and flags has FLAG_C, 'Both flags should be present')
+   assert(not (flags has FLAG_A and flags has FLAG_B), 'FLAG_B should not be present')
+   assert(flags has FLAG_A or flags has FLAG_B, 'At least FLAG_A should be present')
+end
+
+@Test function WithFunctionResult()
+   function getFlags()
+      return FLAG_A | FLAG_B | FLAG_D
+   end
+
+   assert(getFlags() has FLAG_A, 'Should work with function return value as LHS')
+   assert(getFlags() has FLAG_D, 'Should detect FLAG_D from function result')
+   assert(not (getFlags() has FLAG_C), 'Should not detect FLAG_C from function result')
+end
+
+@Test function MultiReturnLHS()
+   function returnTwoValues()
+      return FLAG_A | FLAG_C, 99
+   end
+
+   -- Only the first return value should be used
+   result = returnTwoValues() has FLAG_A
+   assert(result is true, 'Multi-return: first value should have FLAG_A')
+end
+
+@Test function ErrorCheck()
+   strvar = 'hello'
+   try
+      local fail = 0x100 has strvar
+   success
+      error('Expected failure when using "has" with string value')
+   end
+
+   try
+      local fail = strvar has 0x10
+   success
+      error('Expected failure when using "has" with string value')
+   end
+end

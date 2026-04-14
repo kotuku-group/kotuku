@@ -1,0 +1,142 @@
+-- Comprehensive XML parsing tests
+
+   include 'xml'
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test basic XML parsing from Statement field
+
+@Test function testStatementParsing()
+   local xml = obj.new("xml", {
+      statement = '<?xml version="1.0"?><root><child attr="value">Content</child></root>',
+      flags = XMF_STRIP_HEADERS
+   })
+
+   local tags = xml.tags
+   assert(tags, "XML parsing failed - no tags created")
+   assert(#tags is 1, "Expected 1 root tag, got " .. #tags)
+   assert(tags[0].attribs[0].name is "root", "Expected root tag name")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test CDATA parsing
+
+@Test function testCDATAParsing()
+   local xml = obj.new("xml", {
+      statement = '<root><![CDATA[Some <special> & content]]></root>'
+   })
+
+   local tags = xml.tags
+   assert(tags, "CDATA parsing failed")
+   local children = tags[0].children
+   assert(#children is 1, "Expected 1 CDATA child")
+   assert(children[0].attribs[0].value is "Some <special> & content", "CDATA content not preserved")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test comment handling
+
+@Test function testCommentHandling()
+   local xml = obj.new("xml", {
+      statement = '<root><!-- This is a comment --><child/></root>'
+   })
+
+   -- Comments should be stripped by default
+   assert(xml.tags[0].children[0].attribs[0].name is "child", "Comment not stripped properly")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test attribute parsing with various quote types
+
+@Test function testAttributeParsing()
+   local xml = obj.new("xml", {
+      statement = '<root attr1="value1" attr2=\'value2\' attr3=unquoted><child/></root>'
+   })
+
+   local err, value1 = xml.mtGetAttrib(xml.tags[0].id, 'attr1')
+   assert(err is ERR_Okay, "Failed to get attr1")
+   assert(value1 is "value1", "attr1 value incorrect")
+
+   local err, value2 = xml.mtGetAttrib(xml.tags[0].id, 'attr2')
+   assert(err is ERR_Okay, "Failed to get attr2")
+   assert(value2 is "value2", "attr2 value incorrect")
+
+   local err, value3 = xml.mtGetAttrib(xml.tags[0].id, 'attr3')
+   assert(err is ERR_Okay, "Failed to get attr3")
+   assert(value3 is "unquoted", "attr3 value incorrect")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test nested tag structure
+
+@Test function testNestedStructure()
+   local xml = obj.new("xml", {
+      statement = '<root><level1><level2><level3>Deep content</level3></level2></level1></root>'
+   })
+
+   local level1 = xml.tags[0].children[0]
+   local level2 = level1.children[0]
+   local level3 = level2.children[0]
+   local content = level3.children[0]
+
+   assert(level1.attribs[0].name is "level1", "Level1 tag name incorrect")
+   assert(level2.attribs[0].name is "level2", "Level2 tag name incorrect")
+   assert(level3.attribs[0].name is "level3", "Level3 tag name incorrect")
+   assert(content.attribs[0].value is "Deep content", "Deep content not preserved")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test self-closing tags
+
+@Test function testSelfClosingTags()
+   local xml = obj.new("xml", {
+      statement = '<root><self-closed attr="value"/><normal>content</normal></root>'
+   })
+
+   local children = xml.tags[0].children
+   assert(#children is 2, "Expected 2 children, got " .. #children)
+   assert(children[0].attribs[0].name is "self-closed", "Self-closed tag name incorrect")
+
+   local err, value = xml.mtGetAttrib(children[0].id, 'attr')
+   assert(err is ERR_Okay and value is "value", "Self-closed tag attribute not preserved")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test XML instructions
+
+@Test function testXMLInstructions()
+   local xml = obj.new("xml", {
+      statement = '<?xml version="1.0" encoding="UTF-8"?><?stylesheet type="text/xsl" href="style.xsl"?><root/>'
+   })
+
+   -- Instructions should be parsed when not stripped
+   assert(#xml.tags >= 1, "XML instructions affected normal parsing")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test mixed content
+
+@Test function testMixedContent()
+   local xml = obj.new("xml", {
+      statement = '<root>Text before <child>Child content</child> Text after</root>'
+   })
+
+   local children = xml.tags[0].children
+   assert(#children is 3, "Expected 3 content nodes, got " .. #children)
+   assert(children[0].attribs[0].value is "Text before ", "First content incorrect")
+   assert(children[1].attribs[0].name is "child", "Child tag missing")
+   assert(children[2].attribs[0].value is " Text after", "Last content incorrect")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test empty elements
+
+@Test function testEmptyElements()
+   local xml = obj.new("xml", {
+      statement = '<root><empty></empty><empty-self/></root>'
+   })
+
+   local children = xml.tags[0].children
+   assert(#children is 2, "Expected 2 empty elements")
+   assert(children[0].attribs[0].name is "empty", "First empty element name incorrect")
+   assert(children[1].attribs[0].name is "empty-self", "Second empty element name incorrect")
+end

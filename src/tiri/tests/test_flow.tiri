@@ -1,0 +1,281 @@
+-- Tests for break and continue statements across all loop types
+
+@BeforeEach(hotpath=100)
+function enforce_hotpath() end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Generic for loop tests
+
+@Test function nestedBreak()
+   lb = { 'a', 'b', 'c' }
+   tlb = { 'c', 'd', 'e' }
+
+   match = false
+
+   for a in values(lb) do
+      for b in values(tlb) do
+         if a is b then
+            match = true
+            break
+         end
+      end
+      if match then break end
+   end
+
+   assert(match, 'Should have found matching label')
+end
+
+@Test function genericForBreak()
+   result = 0
+   for i, v in ipairs({10, 20, 30, 40, 50}) do
+      result += v
+      if v is 30 then break end
+   end
+   assert(result is 60, 'Break should stop at 30, result=' .. result)
+end
+
+@Test function genericForContinue()
+   result = 0
+   for i, v in ipairs({1, 2, 3, 4, 5}) do
+      if v % 2 is 0 then continue end
+      result += v
+   end
+   assert(result is 9, 'Continue should skip even numbers, result=' .. result)
+end
+
+@Test function genericForNestedContinue()
+   outer_count = 0
+   inner_count = 0
+   for i in values({1, 2, 3}) do
+      outer_count++
+      for j in values({1, 2, 3, 4}) do
+         if j % 2 is 0 then continue end
+         inner_count++
+      end
+   end
+   assert(outer_count is 3, 'Outer loop should run 3 times')
+   assert(inner_count is 6, 'Inner continue should skip 2 per outer iteration (6 total)')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Numeric for loop tests
+
+@Test function numericForBreak()
+   result = 0
+   for i = 1, 10 do
+      result += i
+      if i is 5 then break end
+   end
+   assert(result is 15, 'Break should stop at 5, result=' .. result)
+end
+
+@Test function numericForContinue()
+   result = 0
+   for i = 1, 10 do
+      if i > 5 then continue end
+      result += i
+   end
+   assert(result is 15, 'Continue should skip i > 5, result=' .. result)
+end
+
+@Test function numericForNestedBreak()
+   outer_last = 0
+   inner_last = 0
+   for i = 1, 5 do
+      outer_last = i
+      for j = 1, 5 do
+         inner_last = j
+         if j is 3 then break end
+      end
+      if i is 2 then break end
+   end
+   assert(outer_last is 2, 'Outer loop should stop at 2')
+   assert(inner_last is 3, 'Inner loop should stop at 3')
+end
+
+@Test function numericForNestedContinue()
+   sum = 0
+   for i = 1, 3 do
+      for j = 1, 4 do
+         if j is 2 then continue end
+         sum += j
+      end
+   end
+   -- Each inner loop: 1 + 3 + 4 = 8, times 3 = 24
+   assert(sum is 24, 'Nested continue should skip j=2, sum=' .. sum)
+end
+
+@Test function numericForWithStep()
+   result = 0
+   for i = 10, 1, -2 do
+      result += i
+      if i is 4 then break end
+   end
+   -- 10 + 8 + 6 + 4 = 28
+   assert(result is 28, 'Break with negative step, result=' .. result)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- While loop tests
+
+@Test function whileBreak()
+   i = 0
+   result = 0
+   while i < 100 do
+      i++
+      result += i
+      if i is 5 then break end
+   end
+   assert(result is 15, 'While break should stop at 5, result=' .. result)
+end
+
+@Test function whileContinue()
+   i = 0
+   result = 0
+   while i < 10 do
+      i++
+      if i % 2 is 0 then continue end
+      result += i
+   end
+   -- 1 + 3 + 5 + 7 + 9 = 25
+   assert(result is 25, 'While continue should skip evens, result=' .. result)
+end
+
+@Test function whileNestedBreak()
+   outer_count = 0
+   inner_count = 0
+   i = 0
+   while i < 5 do
+      i++
+      outer_count++
+      j = 0
+      while j < 10 do
+         j++
+         inner_count++
+         if j is 3 then break end
+      end
+      if i is 2 then break end
+   end
+   assert(outer_count is 2, 'Outer while should run 2 times')
+   assert(inner_count is 6, 'Inner while should run 3 times per outer (6 total)')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Repeat-until loop tests
+
+@Test function repeatBreak()
+   i = 0
+   result = 0
+   repeat
+      i++
+      result += i
+      if i is 5 then break end
+   until i >= 100
+   assert(result is 15, 'Repeat break should stop at 5, result=' .. result)
+end
+
+@Test function repeatContinue()
+   i = 0
+   result = 0
+   repeat
+      i++
+      if i % 2 is 0 then continue end
+      result += i
+   until i >= 10
+   -- 1 + 3 + 5 + 7 + 9 = 25
+   assert(result is 25, 'Repeat continue should skip evens, result=' .. result)
+end
+
+@Test function repeatNestedBreak()
+   outer_count = 0
+   inner_count = 0
+   i = 0
+   repeat
+      i++
+      outer_count++
+      j = 0
+      repeat
+         j++
+         inner_count++
+         if j is 3 then break end
+      until j >= 10
+      if i is 2 then break end
+   until i >= 5
+   assert(outer_count is 2, 'Outer repeat should run 2 times')
+   assert(inner_count is 6, 'Inner repeat should run 3 times per outer (6 total)')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Mixed loop type tests
+
+@Test function mixedLoopBreak()
+   result = 0
+   for i = 1, 5 do
+      j = 0
+      while j < 10 do
+         j++
+         result++
+         if j is 3 then break end
+      end
+      if i is 2 then break end
+   end
+   -- 2 outer iterations * 3 inner iterations = 6
+   assert(result is 6, 'Mixed numeric for/while break, result=' .. result)
+end
+
+@Test function mixedLoopContinue()
+   result = 0
+   i = 0
+   while i < 3 do
+      i++
+      for j = 1, 4 do
+         if j is 2 then continue end
+         result++
+      end
+   end
+   -- 3 outer * 3 inner (skipping j=2) = 9
+   assert(result is 9, 'Mixed while/numeric for continue, result=' .. result)
+end
+
+@Test function tripleNestedBreak()
+   count = 0
+   for i = 1, 10 do
+      for j = 1, 10 do
+         for k = 1, 10 do
+            count++
+            if k is 2 then break end
+         end
+         if j is 3 then break end
+      end
+      if i is 4 then break end
+   end
+   -- i=1,2,3,4: each does j=1,2,3: each does k=1,2: 4 * 3 * 2 = 24
+   assert(count is 24, 'Triple nested break, count=' .. count)
+end
+
+@Test function breakAfterContinue()
+   result = 0
+   for i = 1, 10 do
+      if i % 2 is 0 then continue end
+      result += i
+      if i is 7 then break end
+   end
+   -- 1 + 3 + 5 + 7 = 16
+   assert(result is 16, 'Break after continue, result=' .. result)
+end
+
+@Test function continueAfterNestedBreak()
+   sum = 0
+   for i = 1, 5 do
+      for j = 1, 5 do
+         if j is 2 then break end
+         sum += j
+      end
+      if i % 2 is 0 then continue end
+      sum += i * 10
+   end
+   -- Inner always adds 1 (breaks at j=2), so inner adds 5
+   -- Outer: i=1 adds 10, i=2 skips, i=3 adds 30, i=4 skips, i=5 adds 50 = 90
+   -- Total = 5 + 90 = 95
+   assert(sum is 95, 'Continue after nested break, sum=' .. sum)
+end

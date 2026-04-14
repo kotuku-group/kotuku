@@ -1,0 +1,275 @@
+-- Tests for 'any' type arrays
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+@Test function ArrayAnyNew()
+   arr = array<any, 5>
+   assert(#arr is 5, "array should have 5 elements")
+   assert(array.type(arr) is 'any', "array type should be 'any'")
+   -- All elements should be nil initially
+   for i, v in arr do
+      assert(v is nil, "element " .. i .. " should be nil, got " .. type(v))
+   end
+end
+
+@Test function ArrayAnyOf()
+   arr = array<any> { 42, 'hello', true, nil, { x = 10 } }
+   assert(#arr is 5, "array should have 5 elements")
+   assert(arr[0] is 42, "first element should be 42")
+   assert(arr[1] is 'hello', "second element should be 'hello'")
+   assert(arr[2] is true, "third element should be true")
+   assert(arr[3] is nil, "fourth element should be nil")
+   assert(type(arr[4]) is 'table', "fifth element should be a table")
+   assert(arr[4].x is 10, "table should have x=10")
+end
+
+@Test function ArrayAnyMixedTypes()
+   arr = array<any, 6>
+   arr[0] = 123
+   arr[1] = 'text'
+   arr[2] = false
+   arr[3] = nil
+   arr[4] = { key = 'value' }
+   arr[5] = 3.14159
+
+   assert(type(arr[0]) is 'number', "element 0 should be number")
+   assert(type(arr[1]) is 'string', "element 1 should be string")
+   assert(type(arr[2]) is 'boolean', "element 2 should be boolean")
+   assert(arr[3] is nil, "element 3 should be nil")
+   assert(type(arr[4]) is 'table', "element 4 should be table")
+   assert(type(arr[5]) is 'number', "element 5 should be number")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayAnySortTypGrouped()
+   arr = array<any> { 3, 'z', nil, true, 'a', 1, false, { x = 1 }, 2 }
+   array.sort(arr)
+
+   -- Expected order: nil, false, true, 1, 2, 3, 'a', 'z', table
+   assert(arr[0] is nil, "first should be nil")
+   assert(arr[1] is false, "second should be false")
+   assert(arr[2] is true, "third should be true")
+   assert(arr[3] is 1, "fourth should be 1")
+   assert(arr[4] is 2, "fifth should be 2")
+   assert(arr[5] is 3, "sixth should be 3")
+   assert(arr[6] is 'a', "seventh should be 'a'")
+   assert(arr[7] is 'z', "eighth should be 'z'")
+   assert(type(arr[8]) is 'table', "ninth should be table")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayAnySortDescending()
+   arr = array<any> { 1, 'a', nil, true }
+   array.sort(arr, true) -- descending
+
+   -- Expected order (descending): string, number, boolean, nil
+   -- Actually: 'a', 1, true, nil (reversing the type order)
+   assert(arr[0] is 'a', "first should be 'a'")
+   assert(arr[1] is 1, "second should be 1")
+   assert(arr[2] is true, "third should be true")
+   assert(arr[3] is nil, "fourth should be nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayAnyPushPop()
+   arr = array<any>
+
+   array.push(arr, 1)
+   array.push(arr, 'two')
+   array.push(arr, true)
+   assert(#arr is 3, "array should have 3 elements after push")
+
+   v = array.pop(arr)
+   assert(v is true, "popped value should be true")
+   assert(#arr is 2, "array should have 2 elements after pop")
+
+   v = array.pop(arr)
+   assert(v is 'two', "popped value should be 'two'")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayAnyFirstLast()
+   arr = array<any> { 'first', 42, 'last' }
+
+   assert(array.first(arr) is 'first', "first should return 'first'")
+   assert(array.last(arr) is 'last', "last should return 'last'")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayAnyFirstLastEmpty()
+   arr = array<any>
+   assert(array.first(arr) is nil, "first on empty should return nil")
+   assert(array.last(arr) is nil, "last on empty should return nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayAnyClone()
+   t = { value = 123 }
+   arr = array<any> { 1, 'hello', t }
+   cloned = array.clone(arr)
+
+   assert(#cloned is 3, "cloned array should have 3 elements")
+   assert(cloned[0] is 1, "cloned first element should be 1")
+   assert(cloned[1] is 'hello', "cloned second element should be 'hello'")
+   assert(cloned[2].value is 123, "cloned table should have value=123")
+
+   -- Modify original table - cloned should reflect same table reference
+   t.value = 456
+   assert(cloned[2].value is 456, "cloned table should share reference")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayAnyReverse()
+   arr = array<any> { 1, 'two', true }
+   array.reverse(arr)
+
+   assert(arr[0] is true, "first should be true after reverse")
+   assert(arr[1] is 'two', "second should be 'two' after reverse")
+   assert(arr[2] is 1, "third should be 1 after reverse")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayAnyInsertRemove()
+   arr = array<any> { 1, 2, 3 }
+   array.insert(arr, 1, 'inserted')
+
+   assert(#arr is 4, "array should have 4 elements after insert")
+   assert(arr[0] is 1, "first should still be 1")
+   assert(arr[1] is 'inserted', "second should be 'inserted'")
+   assert(arr[2] is 2, "third should be 2")
+
+   array.remove(arr, 1)
+   assert(#arr is 3, "array should have 3 elements after remove")
+   assert(arr[1] is 2, "second should be 2 after remove")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayAnyClear()
+   arr = array<any> { 1, 'hello', {} }
+   array.clear(arr)
+   assert(#arr is 0, "array should be empty after clear")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayAnyToTable()
+   arr = array<any> { 42, 'text', true }
+   t = array.table(arr)
+
+   assert(t[0] is 42, "table[0] should be 42")
+   assert(t[1] is 'text', "table[1] should be 'text'")
+   assert(t[2] is true, "table[2] should be true")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayAnyIterator()
+   arr = array<any> { 1, 'two', false }
+   result = {}
+   for i, v in arr do
+      result[i] = v
+   end
+
+   assert(result[0] is 1, "iteration should yield 1 at index 0")
+   assert(result[1] is 'two', "iteration should yield 'two' at index 1")
+   assert(result[2] is false, "iteration should yield false at index 2")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayAnyFilter()
+   arr = array<any> { 1, 'skip', 2, nil, 3 }
+   filtered = array.filter(arr, function(v, i)
+      return type(v) is 'number'
+   end)
+
+   assert(#filtered is 3, "filtered should have 3 number elements")
+   assert(filtered[0] is 1, "first number should be 1")
+   assert(filtered[1] is 2, "second number should be 2")
+   assert(filtered[2] is 3, "third number should be 3")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayAnyMap()
+   arr = array<any> { 1, 2, 3 }
+   mapped = array.map(arr, i => i * 10)
+
+   assert(mapped[0] is 10, "first should be 10, got " .. tostring(mapped[0]))
+   assert(mapped[1] is 20, "second should be 20, got " .. tostring(mapped[1]))
+   assert(mapped[2] is 30, "third should be 30, got " .. tostring(mapped[2]))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayAnyReduce()
+   arr = array<any> { 1, 2, 3, 4 }
+   sum = array.reduce(arr, 0, function(acc, v)
+      return acc + v
+   end)
+
+   assert(sum is 10, "sum should be 10")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayAnyPredicates()
+   arr = array<any> { 1, 2, 3 }
+
+   any_even = array.any(arr, function(v) return v % 2 is 0 end)
+   assert(any_even, "should have at least one even number")
+
+   all_positive = array.all(arr, function(v) return v > 0 end)
+   assert(all_positive, "all numbers should be positive")
+
+   all_even = array.all(arr, function(v) return v % 2 is 0 end)
+   assert(not all_even, "not all numbers are even")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayAnyEach()
+   arr = array<any> { 10, 20, 30 }
+   total = 0
+   array.each(arr, function(v, i)
+      total += v
+   end)
+   assert(total is 60, "total should be 60")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayAnyNilAsValue()
+   -- nil is a valid value in 'any' arrays
+   arr = array<any, 3>
+   arr[0] = 1
+   arr[1] = nil  -- Explicit nil
+   arr[2] = 3
+
+   assert(arr[0] is 1, "first should be 1")
+   assert(arr[1] is nil, "second should be nil")
+   assert(arr[2] is 3, "third should be 3")
+   assert(#arr is 3, "length should still be 3")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayAnyGCStress()
+   -- Create many any arrays with GC objects to stress-test garbage collection
+   for i = 0, 100 do
+      arr = array<any> { { x = i }, 'str' .. i, { y = i * 2 } }
+      local t = array.table(arr)
+      assert(t[0].x is i, "table x should match i")
+   end
+   processing.collect()
+end

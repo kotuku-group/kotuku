@@ -1,0 +1,437 @@
+-- Flute tests for array functional methods (Tier 4)
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+----------------------------------------------------------------------------------------------------------------------
+-- array:each() tests
+
+@Test function EachBasicIteration()
+   arr = array<int> { 10, 20, 30 }
+   sum = 0
+   arr:each(function(v, i)
+      sum += v
+   end)
+   assert(sum is 60, "each() should iterate over all elements, sum was " .. sum)
+end
+
+@Test function EachReturnsArrayForChaining()
+   arr = array<int> { 1, 2, 3 }
+   result = arr:each(function(v) end)
+   assert(result is arr, "each() should return the array for chaining")
+end
+
+@Test function EachReceivesIndexAsSecondArg()
+   arr = array<string> { 'a', 'b', 'c' }
+   indexes = {}
+   arr:each(function(v, i)
+      indexes[#indexes] = i
+   end)
+   assert(indexes[0] is 0 and indexes[1] is 1 and indexes[2] is 2, "each() should pass zero-based index as second argument")
+end
+
+@Test function EachEmptyArray()
+   arr = array<int>
+   called = false
+   arr:each(function(v)
+      called = true
+   end)
+   assert(not called, "each() should not call callback for empty array")
+end
+
+@Test function EachWithStringArray()
+   arr = array<string> { 'hello', 'world' }
+   values = {}
+   arr:each(function(v, i)
+      values[i] = v
+   end)
+   assert(values[0] is 'hello' and values[1] is 'world', "each() should work with string arrays")
+end
+
+@Test function EachWithObjectArray()
+   obj_one = obj.new('time')
+   obj_two = obj.new('file')
+   arr = array<object> { obj_one, obj_two }
+   ids = array<int, 2>
+   arr:each(function(Value, Index)
+      ids[Index] = Value.id
+   end)
+   assert(ids[0] is obj_one.id and ids[1] is obj_two.id, "each() should pass object values")
+   obj_one.free()
+   obj_two.free()
+end
+
+@Test function EachWithArrowFunction()
+   arr = array<int> { 5, 10, 15 }
+   total = 0
+   arr:each(v => do total += v end)
+   assert(total is 30, "each() should work with arrow functions")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- array:map() tests
+
+@Test function MapDoubleValues()
+   arr = array<int> { 1, 2, 3, 4, 5 }
+   doubled = arr:map(v => v * 2)
+   assert(#doubled is 5, "map() should return array of same length")
+   assert(doubled[0] is 2 and doubled[1] is 4 and doubled[2] is 6 and doubled[3] is 8 and doubled[4] is 10,
+      "map() should transform each element")
+end
+
+@Test function MapPreservesOriginal()
+   arr = array<int> { 1, 2, 3 }
+   doubled = arr:map(v => v * 2)
+   assert(arr[0] is 1 and arr[1] is 2 and arr[2] is 3, "map() should not modify original array")
+end
+
+@Test function MapEmptyArray()
+   arr = array<int>
+   result = arr:map(v => v * 2)
+   assert(#result is 0, "map() on empty array should return empty array")
+end
+
+@Test function MapWithIndex()
+   arr = array<int> { 10, 20, 30 }
+   indexed = arr:map(function(v, i)
+      return v + i
+   end)
+   assert(indexed[0] is 10 and indexed[1] is 21 and indexed[2] is 32, "map() should pass index as second argument")
+end
+
+@Test function MapFloatArray()
+   arr = array<float> { 1.5, 2.5, 3.5 }
+   squared = arr:map(v => v * v)
+   assert(math.abs(squared[0] - 2.25) < 0.001, "map() should work with float arrays")
+   assert(math.abs(squared[1] - 6.25) < 0.001, "map() should work with float arrays")
+end
+
+@Test function MapStringArray()
+   arr = array<string> { 'hello', 'world' }
+   upper = arr:map(v => v:upper())
+   assert(upper[0] is 'HELLO' and upper[1] is 'WORLD', "map() should work with string arrays")
+end
+
+@Test function MapObjectArray()
+   obj_one = obj.new('time')
+   obj_two = obj.new('file')
+   arr = array<object> { obj_one, obj_two }
+   copied = arr:map(Value => Value)
+   assert(copied[0].id is obj_one.id and copied[1].id is obj_two.id, "map() should preserve objects")
+   obj_one.free()
+   obj_two.free()
+end
+
+@Test function MapSingleElement()
+   arr = array<int> { 42 }
+   result = arr:map(v => v * 2)
+   assert(#result is 1 and result[0] is 84, "map() should work with single element array")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- array:filter() tests
+
+@Test function FilterEvens()
+   arr = array<int> { 1, 2, 3, 4, 5, 6 }
+   evens = arr:filter(v => v % 2 is 0)
+   assert(#evens is 3, "filter() should return only matching elements, got " .. #evens)
+   assert(evens[0] is 2 and evens[1] is 4 and evens[2] is 6, "filter() should preserve order of matching elements")
+end
+
+@Test function FilterPreservesOriginal()
+   arr = array<int> { 1, 2, 3, 4, 5 }
+   evens = arr:filter(v => v % 2 is 0)
+   assert(#arr is 5, "filter() should not modify original array")
+end
+
+@Test function FilterObjectArray()
+   obj_one = obj.new('time')
+   obj_two = obj.new('file')
+   arr = array<object> { obj_one, obj_two }
+   filtered = arr:filter(Value => Value.id is obj_two.id)
+   assert(#filtered is 1, "filter() should return one object")
+   assert(filtered[0].id is obj_two.id, "filter() should keep matching object")
+   obj_one.free()
+   obj_two.free()
+end
+
+@Test function FilterAllMatch()
+   arr = array<int> { 2, 4, 6, 8 }
+   result = arr:filter(v => v % 2 is 0)
+   assert(#result is 4, "filter() with all matching should return full array")
+end
+
+@Test function FilterNoneMatch()
+   arr = array<int> { 1, 3, 5, 7 }
+   result = arr:filter(v => v % 2 is 0)
+   assert(#result is 0, "filter() with no matching should return empty array")
+end
+
+@Test function FilterEmptyArray()
+   arr = array<int>
+   result = arr:filter(v => true)
+   assert(#result is 0, "filter() on empty array should return empty array")
+end
+
+@Test function FilterWithIndex()
+   arr = array<int> { 10, 20, 30, 40, 50 }
+   indexed = arr:filter(function(v, i)
+      return i % 2 is 0
+   end)
+   assert(#indexed is 3, "filter() should work with index-based predicates")
+   assert(indexed[0] is 10 and indexed[1] is 30 and indexed[2] is 50,
+      "filter() should keep elements at even indices")
+end
+
+@Test function FilterStringArray()
+   arr = array<string> { 'apple', 'banana', 'apricot', 'cherry' }
+   aWords = arr:filter(v => v:startsWith('a'))
+   assert(#aWords is 2, "filter() should work with string arrays")
+   assert(aWords[0] is 'apple' and aWords[1] is 'apricot', "filter() should return correct string matches")
+end
+
+@Test function FilterFloatArray()
+   arr = array<float> { 1.5, 2.5, 3.0, 4.5, 5.0 }
+   whole = arr:filter(v => v % 1 is 0)
+   assert(#whole is 2, "filter() should work with float arrays")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- array:reduce() tests
+
+@Test function ReduceSum()
+   arr = array<int> { 1, 2, 3, 4, 5 }
+   sum = arr:reduce(0, (acc, v) => acc + v)
+   assert(sum is 15, "reduce() should correctly sum array elements, got " .. sum)
+end
+
+@Test function ReduceProduct()
+   arr = array<int> { 1, 2, 3, 4, 5 }
+   product = arr:reduce(1, (acc, v) => acc * v)
+   assert(product is 120, "reduce() should correctly compute product")
+end
+
+@Test function ReduceWithInitialString()
+   arr = array<string> { 'a', 'b', 'c' }
+   result = arr:reduce('', (acc, v) => acc .. v)
+   assert(result is 'abc', "reduce() should work with string accumulator")
+end
+
+@Test function ReduceEmptyArray()
+   arr = array<int>
+   result = arr:reduce(42, (acc, v) => acc + v)
+   assert(result is 42, "reduce() on empty array should return initial value")
+end
+
+@Test function ReduceWithIndex()
+   arr = array<int> { 10, 20, 30 }
+   result = arr:reduce(0, function(acc, v, i)
+      return acc + v * i
+   end)
+   -- 10*0 + 20*1 + 30*2 = 0 + 20 + 60 = 80
+   assert(result is 80, "reduce() should pass index as third argument, got " .. result)
+end
+
+@Test function ReduceToTable()
+   arr = array<int> { 1, 2, 3 }
+   result = arr:reduce({}, function(acc, v, i)
+      acc[i] = v * v
+      return acc
+   end)
+   assert(result[0] is 1 and result[1] is 4 and result[2] is 9, "reduce() should support table as accumulator")
+end
+
+@Test function ReduceSingleElement()
+   arr = array<int> { 42 }
+   result = arr:reduce(0, (acc, v) => acc + v)
+   assert(result is 42, "reduce() should work with single element array")
+end
+
+@Test function ReduceMax()
+   arr = array<int> { 3, 1, 4, 1, 5, 9, 2, 6 }
+   maxVal = arr:reduce(arr[0], (acc, v) => v > acc ? v :> acc)
+   assert(maxVal is 9, "reduce() should find maximum value")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- array:any() tests
+
+@Test function AnyFindsMatch()
+   arr = array<int> { 1, 3, 5, 6, 7 }
+   hasEven = arr:any(v => v % 2 is 0)
+   assert(hasEven, "any() should return true when match exists")
+end
+
+@Test function AnyNoMatch()
+   arr = array<int> { 1, 3, 5, 7, 9 }
+   hasEven = arr:any(v => v % 2 is 0)
+   assert(not hasEven, "any() should return false when no match exists")
+end
+
+@Test function AnyEmptyArray()
+   arr = array<int>
+   result = arr:any(v => true)
+   assert(not result, "any() on empty array should return false")
+end
+
+@Test function AnyWithIndex()
+   arr = array<int> { 10, 20, 30 }
+   found = arr:any(function(v, i)
+      return i is 1 and v is 20
+   end)
+   assert(found, "any() should pass index to predicate")
+end
+
+@Test function AnyStringArray()
+   arr = array<string> { 'apple', 'banana', 'cherry' }
+   hasLong = arr:any(v => #v > 5)
+   assert(hasLong, "any() should work with string arrays")
+end
+
+@Test function AnyFirstElement()
+   arr = array<int> { 100, 1, 2, 3 }
+   found = arr:any(v => v > 50)
+   assert(found, "any() should find match in first element")
+end
+
+@Test function AnyLastElement()
+   arr = array<int> { 1, 2, 3, 100 }
+   found = arr:any(v => v > 50)
+   assert(found, "any() should find match in last element")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- array:all() tests
+
+@Test function AllMatch()
+   arr = array<int> { 2, 4, 6, 8, 10 }
+   allEven = arr:all(v => v % 2 is 0)
+   assert(allEven, "all() should return true when all match")
+end
+
+@Test function AllNotMatch()
+   arr = array<int> { 2, 4, 5, 8, 10 }
+   allEven = arr:all(v => v % 2 is 0)
+   assert(not allEven, "all() should return false when any element fails")
+end
+
+@Test function AllEmptyArray()
+   arr = array<int>
+   result = arr:all(v => false)
+   assert(result, "all() on empty array should return true (vacuous truth)")
+end
+
+@Test function AllWithIndex()
+   arr = array<int> { 0, 1, 2, 3 }
+   result = arr:all(function(v, i)
+      return v is i
+   end)
+   assert(result, "all() should pass index to predicate")
+end
+
+@Test function AllStringArray()
+   arr = array<string> { 'abc', 'def', 'ghi' }
+   allShort = arr:all(v => #v is 3)
+   assert(allShort, "all() should work with string arrays")
+end
+
+@Test function AllFirstFails()
+   arr = array<int> { 1, 2, 4, 6 }
+   allEven = arr:all(v => v % 2 is 0)
+   assert(not allEven, "all() should short-circuit on first failure")
+end
+
+@Test function AllSingleElement()
+   arr = array<int> { 42 }
+   result = arr:all(v => v > 0)
+   assert(result, "all() should work with single element array")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Chaining tests
+
+@Test function ChainMapFilter()
+   arr = array<int> { 1, 2, 3, 4, 5 }
+   result = arr:map(v => v * 2):filter(v => v > 5)
+   assert(#result is 3, "chained map/filter should work")
+   assert(result[0] is 6 and result[1] is 8 and result[2] is 10,
+      "chained map/filter should produce correct values")
+end
+
+@Test function ChainFilterMap()
+   arr = array<int> { 1, 2, 3, 4, 5, 6 }
+   result = arr:filter(v => v % 2 is 0):map(v => v * 10)
+   assert(#result is 3, "chained filter/map should work")
+   assert(result[0] is 20 and result[1] is 40 and result[2] is 60,
+      "chained filter/map should produce correct values")
+end
+
+@Test function ChainFilterReduce()
+   arr = array<int> { 1, 2, 3, 4, 5, 6 }
+   sum = arr:filter(v => v % 2 is 0):reduce(0, (acc, v) => acc + v)
+   assert(sum is 12, "chained filter/reduce should work, got " .. sum)
+end
+
+@Test function ChainMapReduceAny()
+   arr = array<int> { 1, 2, 3, 4, 5 }
+   hasLarge = arr:map(v => v * 10):any(v => v > 40)
+   assert(hasLarge, "chained map/any should work")
+end
+
+@Test function ChainEachReturnsOriginal()
+   arr = array<int> { 1, 2, 3 }
+   count = 0
+   result = arr:each(v => do count += 1 end):map(v => v * 2)
+   assert(count is 3, "each() in chain should process all elements")
+   assert(#result is 3 and result[0] is 2, "map() after each() should work")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Edge cases and error handling
+
+@Test function FunctionalMethodsRequireFunction()
+   arr = array<int> { 1, 2, 3 }
+
+   try
+      arr:each("not a function")
+   success
+      error("each() should reject non-function argument")
+   end
+
+   try
+      arr:map(42)
+   success
+      error("map() should reject non-function argument")
+   end
+
+   try
+      arr:filter({})
+   success
+      error("filter() should reject non-function argument")
+   end
+
+   try
+      arr:reduce(0, nil)
+   success
+      error("reduce() should reject non-function reducer")
+   end
+end
+
+@Test function MapWithByteArray()
+   arr = array<byte> { 65, 66, 67 }
+   result = arr:map(v => v + 1)
+   assert(result[0] is 66 and result[1] is 67 and result[2] is 68,
+      "map() should work with byte arrays")
+end
+
+@Test function FilterWithDoubleArray()
+   arr = array<double> { 1.1, 2.2, 3.3, 4.4, 5.5 }
+   large = arr:filter(v => v > 3.0)
+   assert(#large is 3, "filter() should work with double arrays")
+end
+
+@Test function ReduceWithInt64Array()
+   arr = array<int64> { 1000000000, 2000000000, 3000000000 }
+   sum = arr:reduce(0, (acc, v) => acc + v)
+   assert(sum is 6000000000, "reduce() should work with int64 arrays")
+end

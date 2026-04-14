@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="Proxy" mod="Network" c="Manages user settings for proxy servers." cat="Network" id="102a23e7" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="Proxy" mod="Network" c="Manages user settings for proxy servers." cat="Network" id="102a23e7" v="1">
   <ai:a n="Disable" c="Marks a proxy as disabled." p="ERR acDisable(*Object)"/>
   <ai:a n="Enable" c="Enables a proxy." p="ERR acEnable(*Object)"/>
   <ai:a n="SaveSettings" c="Permanently saves user configurable settings for a proxy." p="ERR acSaveSettings(*Object)"/>

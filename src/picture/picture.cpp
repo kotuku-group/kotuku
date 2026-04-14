@@ -36,10 +36,10 @@ rendered image size.
 #include "lib/png.h"
 #include "lib/pngpriv.h"
 
-#include <parasol/main.h>
-#include <parasol/modules/picture.h>
-#include <parasol/modules/display.h>
-#include <parasol/strings.hpp>
+#include <kotuku/main.h>
+#include <kotuku/modules/picture.h>
+#include <kotuku/modules/display.h>
+#include <kotuku/strings.hpp>
 #include "../link/linear_rgb.h"
 
 #include "picture.h"
@@ -58,8 +58,8 @@ static void read_row_callback(png_structp, png_uint_32, int);
 static void write_row_callback(png_structp, png_uint_32, int);
 static void png_error_hook(png_structp png_ptr, png_const_charp message);
 static void png_warning_hook(png_structp png_ptr, png_const_charp message);
-void parasol_read_callback(png_structp png, png_bytep data, png_size_t length);
-void parasol_write_callback(png_structp png, png_bytep data, png_size_t length);
+void kotuku_read_callback(png_structp png, png_bytep data, png_size_t length);
+void kotuku_write_callback(png_structp png, png_bytep data, png_size_t length);
 void png_read_data(png_structp png, png_bytep data, png_size_t length);
 void png_write_data(png_structp png, png_const_bytep data, png_size_t length);
 void png_set_read_fn(png_structp png_ptr, png_voidp io_ptr, png_rw_ptr read_data_fn);
@@ -159,7 +159,7 @@ static ERR PICTURE_Activate(extPicture *Self)
 
    // Setup the PNG file
 
-   png_set_read_fn(read_ptr, Self->prvFile, parasol_read_callback);
+   png_set_read_fn(read_ptr, Self->prvFile, kotuku_read_callback);
 
    png_set_read_status_fn(read_ptr, read_row_callback); if (tlError) goto exit;
    png_read_info(read_ptr, info_ptr); if (tlError) goto exit;
@@ -420,7 +420,10 @@ static ERR PICTURE_Init(extPicture *Self)
             return ERR::File;
          }
       }
-      else return log.warning(ERR::FileNotFound);
+      else {
+         log.warning("Failed to find '%s'", Self->prvPath.c_str());
+         return ERR::FileNotFound;
+      }
    }
 
    return ERR::NoSupport;
@@ -479,7 +482,7 @@ static ERR PICTURE_Query(extPicture *Self)
 
    // Read the PNG description
 
-   png_set_read_fn(read_ptr, Self->prvFile, parasol_read_callback);
+   png_set_read_fn(read_ptr, Self->prvFile, kotuku_read_callback);
 
    png_set_read_status_fn(read_ptr, read_row_callback); if (tlError) goto exit;
    png_read_info(read_ptr, info_ptr); if (tlError) goto exit;
@@ -583,7 +586,7 @@ static ERR PICTURE_SaveImage(extPicture *Self, struct acSaveImage *Args)
 
    // Setup the PNG file
 
-   png_set_write_fn(write_ptr, file, parasol_write_callback, nullptr);
+   png_set_write_fn(write_ptr, file, kotuku_write_callback, nullptr);
 
    png_set_write_status_fn(write_ptr, write_row_callback);
    if (tlError) {
@@ -1120,7 +1123,7 @@ static void write_row_callback(png_structp write_ptr, png_uint_32 row, int pass)
 //********************************************************************************************************************
 // Read functions
 
-void parasol_read_callback(png_structp png, png_bytep data, png_size_t length)
+void kotuku_read_callback(png_structp png, png_bytep data, png_size_t length)
 {
    struct acRead read = { data, (int)length };
    if ((Action(AC::Read, (OBJECTPTR)png_get_io_ptr(png), &read) != ERR::Okay) or ((png_size_t)read.Result != length)) {
@@ -1131,7 +1134,7 @@ void parasol_read_callback(png_structp png, png_bytep data, png_size_t length)
 //********************************************************************************************************************
 // Write functions.
 
-void parasol_write_callback(png_structp png, png_bytep data, png_size_t length)
+void kotuku_write_callback(png_structp png, png_bytep data, png_size_t length)
 {
    struct acWrite write = { data, (int)length };
    if ((Action(AC::Write, (OBJECTPTR)png_get_io_ptr(png), &write) != ERR::Okay) or ((png_size_t)write.Result != length)) {
@@ -1366,6 +1369,6 @@ static ERR create_picture_class(void)
 
 //********************************************************************************************************************
 
-PARASOL_MOD(MODInit, nullptr, nullptr, MODExpunge, MOD_IDL, nullptr)
+KOTUKU_MOD(MODInit, nullptr, nullptr, MODExpunge, nullptr, MOD_IDL, nullptr)
 extern "C" struct ModHeader * register_picture_module() { return &ModHeader; }
 

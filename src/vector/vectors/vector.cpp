@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -239,10 +239,10 @@ static ERR VECTOR_Draw(extVector *Self, struct acDraw *Args)
       // TODO: Would need to account for client defined brush stroke widths and stroke scaling.
 
       const auto stroke_width = Self->fixed_stroke_width() + 1;
-      const int bx1 = F2T(Self->BX1 - stroke_width);
-      const int by1 = F2T(Self->BY1 - stroke_width);
-      const int bx2 = F2T(Self->BX2 + stroke_width);
-      const int by2 = F2T(Self->BY2 + stroke_width);
+      const int bx1 = int(Self->BX1 - stroke_width);
+      const int by1 = int(Self->BY1 - stroke_width);
+      const int bx2 = int(Self->BX2 + stroke_width);
+      const int by2 = int(Self->BY2 + stroke_width);
 
       struct drwScheduleRedraw area = { .X = bx1, .Y = by1, .Width = bx2 - bx1, .Height = by2 - by1 };
 #endif
@@ -283,7 +283,7 @@ static ERR VECTOR_Free(extVector *Self)
    if (Self->Morph)      UnsubscribeAction(Self->Morph, AC::Free);
    if (Self->AppendPath) UnsubscribeAction(Self->AppendPath, AC::Free);
 
-   if (Self->ID)           { FreeResource(Self->ID); Self->ID = nullptr; }
+   if (Self->SID)           { FreeResource(Self->SID); Self->SID = nullptr; }
    if (Self->FillString)   { FreeResource(Self->FillString); Self->FillString = nullptr; }
    if (Self->StrokeString) { FreeResource(Self->StrokeString); Self->StrokeString = nullptr; }
    if (Self->FilterString) { FreeResource(Self->FilterString); Self->FilterString = nullptr; }
@@ -504,7 +504,7 @@ static ERR VECTOR_Init(extVector *Self)
 
    if (Self->classID() IS CLASSID::VECTOR) {
       log.warning("Vector cannot be instantiated directly (use a sub-class).");
-      return ERR::Failed;
+      return ERR::UseSubClass;
    }
 
    if (!Self->Parent) {
@@ -921,8 +921,9 @@ static ERR VECTOR_SubscribeInput(extVector *Self, struct vec::SubscribeInput *Ar
       auto mask = Args->Mask;
 
       Self->InputMask |= mask;
-      ((extVectorScene *)Self->Scene)->InputSubscriptions[Self] = Self->InputMask;
       Self->InputSubscriptions->emplace_back(*Args->Callback, mask);
+      update_input_subscription_state(Self);
+      mark_input_boundary_dirty(Self);
    }
    else if (Self->InputSubscriptions) { // Remove existing subscriptions for this callback
       for (auto it=Self->InputSubscriptions->begin(); it != Self->InputSubscriptions->end(); ) {
@@ -930,11 +931,8 @@ static ERR VECTOR_SubscribeInput(extVector *Self, struct vec::SubscribeInput *Ar
          else it++;
       }
 
-      if (Self->InputSubscriptions->empty()) {
-         if ((Self->Scene) and (!Self->Scene->collecting())) {
-            ((extVectorScene *)Self->Scene)->InputSubscriptions.erase(Self);
-         }
-      }
+      update_input_subscription_state(Self);
+      mark_input_boundary_dirty(Self);
    }
 
    return ERR::Okay;
@@ -1077,7 +1075,7 @@ static ERR VECTOR_Trace(extVector *Self, struct vec::Trace *Args)
                args[2].Int = cmd;
                args[3].Double = x;
                args[4].Double = y;
-               if (sc::Call(*Args->Callback, args, result) != ERR::Okay) return ERR::Failed;
+               if (sc::Call(*Args->Callback, args, result) != ERR::Okay) return ERR::Function;
                if (result IS ERR::Terminate) return ERR::Okay;
             }
          } while (cmd != agg::path_cmd_stop);
@@ -1091,7 +1089,7 @@ static ERR VECTOR_Trace(extVector *Self, struct vec::Trace *Args)
                args[2].Int = cmd;
                args[3].Double = x;
                args[4].Double = y;
-               if (sc::Call(*Args->Callback, args, result) != ERR::Okay) return ERR::Failed;
+               if (sc::Call(*Args->Callback, args, result) != ERR::Okay) return ERR::Function;
                if (result IS ERR::Terminate) return ERR::Okay;
             }
          } while (cmd != agg::path_cmd_stop);
@@ -1204,6 +1202,7 @@ It is a pre-requisite that the associated @VectorScene has been linked to a @Sur
 static ERR VECTOR_SET_Cursor(extVector *Self, PTC Value)
 {
    Self->Cursor = Value;
+   mark_input_boundary_dirty(Self);
 
    if (Self->initialised()) {
       // Send a dummy input event to refresh the cursor
@@ -1423,8 +1422,8 @@ static ERR VECTOR_SET_Fill(extVector *Self, CSTRING Value)
 FillColour: Defines a solid colour for filling the vector path.
 
 Set the FillColour field to define a solid colour for filling the vector path.  The colour is defined as an array
-of four 32-bit floating point values between 0 and 1.0.  The array elements consist of Red, Green, Blue and Alpha
-values in that order.
+of four 32-bit floating point values between 0 and 1.0 if restricted to sRGB colourspace.  The array elements 
+consist of Red, Green, Blue and Alpha values in that order.
 
 If the Alpha component is set to zero then the FillColour will be ignored by the renderer.
 
@@ -1501,7 +1500,7 @@ using the @VectorFilter class and added to a VectorScene using @VectorScene.AddD
 then be referenced by ID in the Filter field of any vector object.  Please refer to the @VectorFilter class
 for further details on filter configuration.
 
-The Filter value can be in the format `ID` or `url(#ID)` according to client preference.
+The Filter value can be in the format `ID` or `url(#SID)` according to client preference.
 
 *********************************************************************************************************************/
 
@@ -1572,29 +1571,29 @@ static ERR VECTOR_SET_FillRule(extVector *Self, VFR Value)
 
 /*********************************************************************************************************************
 -FIELD-
-ID: String identifier for a vector.
+SID: String identifier for a vector.
 
 The ID field is provided for the purpose of SVG support.  Where possible we would recommend that you use the
 existing object name and automatically assigned ID's for identifiers.
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_ID(extVector *Self, STRING *Value)
+static ERR VECTOR_GET_SID(extVector *Self, STRING *Value)
 {
-   *Value = Self->ID;
+   *Value = Self->SID;
    return ERR::Okay;
 }
 
-static ERR VECTOR_SET_ID(extVector *Self, CSTRING Value)
+static ERR VECTOR_SET_SID(extVector *Self, CSTRING Value)
 {
-   if (Self->ID) FreeResource(Self->ID);
+   if (Self->SID) FreeResource(Self->SID);
 
    if (Value) {
-      Self->ID = strclone(Value);
+      Self->SID = strclone(Value);
       Self->NumericID = strhash(Value);
    }
    else {
-      Self->ID = nullptr;
+      Self->SID = nullptr;
       Self->NumericID = 0;
    }
    return ERR::Okay;
@@ -1637,7 +1636,7 @@ static ERR VECTOR_SET_InnerJoin(extVector *Self, VIJ Value)
       case VIJ::BEVEL: Self->InnerJoin = agg::inner_bevel; break;
       case VIJ::JAG:   Self->InnerJoin = agg::inner_jag; break;
       case VIJ::INHERIT: Self->InnerJoin = agg::inner_inherit; break;
-      default: return ERR::Failed;
+      default: return ERR::InvalidValue;
    }
    mark_buffers_for_refresh(Self);
    return ERR::Okay;
@@ -1674,7 +1673,7 @@ static ERR VECTOR_SET_LineCap(extVector *Self, VLC Value)
       case VLC::SQUARE:  Self->LineCap = agg::square_cap; break;
       case VLC::ROUND:   Self->LineCap = agg::round_cap; break;
       case VLC::INHERIT: Self->LineCap = agg::inherit_cap; break;
-      default: return ERR::Failed;
+      default: return ERR::InvalidValue;
    }
    mark_buffers_for_refresh(Self);
    return ERR::Okay;
@@ -1712,7 +1711,7 @@ static ERR VECTOR_SET_LineJoin(extVector *Self, VLJ Value)
       case VLJ::MITER_SMART:  Self->LineJoin = agg::miter_join; break;
       case VLJ::MITER_ROUND:  Self->LineJoin = agg::miter_join_round; break;
       case VLJ::INHERIT:      Self->LineJoin = agg::inherit_join; break;
-      default: return ERR::Failed;
+      default: return ERR::InvalidValue;
    }
    mark_buffers_for_refresh(Self);
    return ERR::Okay;
@@ -1911,9 +1910,9 @@ static ERR VECTOR_SET_Next(extVector *Self, extVector *Value)
 NumericID: A unique identifier for the vector.
 
 This field assigns a numeric ID to a vector.  Alternatively it can also reflect a case-sensitive hash of the
-#ID field if that has been defined previously.
+#SID field if that has been defined previously.
 
-If NumericID is set by the client, then any value in #ID will be immediately cleared.
+If NumericID is set by the client, then any value in #SID will be immediately cleared.
 
 *********************************************************************************************************************/
 
@@ -1926,7 +1925,7 @@ static ERR VECTOR_GET_NumericID(extVector *Self, int *Value)
 static ERR VECTOR_SET_NumericID(extVector *Self, int Value)
 {
    Self->NumericID = Value;
-   if (Self->ID) { FreeResource(Self->ID); Self->ID = nullptr; }
+   if (Self->SID) { FreeResource(Self->SID); Self->SID = nullptr; }
    return ERR::Okay;
 }
 
@@ -2231,7 +2230,8 @@ static ERR VECTOR_SET_Stroke(extVector *Self, STRING Value)
 StrokeColour: Defines the colour of the path stroke in RGB float format.
 
 This field defines the colour that will be used in stroking a path, and is comprised of floating point RGBA values.
-The intensity of each component is measured from 0 - 1.0.  Stroking is disabled if the alpha value is 0.
+The intensity of each component is measured from 0 - 1.0 if restricted to sRGB colourspace, but may otherwise exceed
+these limits.  Stroking is disabled if the alpha value is 0.
 
 This field is complemented by the #StrokeOpacity and #Stroke fields.
 
@@ -2535,7 +2535,7 @@ static const FieldArray clVectorFields[] = {
    { "AppendPath",   FDF_VIRTUAL|FDF_OBJECT|FDF_RW,          VECTOR_GET_AppendPath, VECTOR_SET_AppendPath },
    { "MorphFlags",   FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW,        VECTOR_GET_MorphFlags, VECTOR_SET_MorphFlags, &clMorphFlags },
    { "NumericID",    FDF_VIRTUAL|FDF_INT|FDF_RW,             VECTOR_GET_NumericID, VECTOR_SET_NumericID },
-   { "ID",           FDF_VIRTUAL|FDF_STRING|FDF_RW,          VECTOR_GET_ID, VECTOR_SET_ID },
+   { "SID",          FDF_VIRTUAL|FDF_STRING|FDF_RW,          VECTOR_GET_SID, VECTOR_SET_SID },
    { "ResizeEvent",  FDF_VIRTUAL|FDF_FUNCTION|FDF_W,         nullptr, VECTOR_SET_ResizeEvent },
    { "Sequence",     FDF_VIRTUAL|FDF_STRING|FDF_ALLOC|FDF_R, VECTOR_GET_Sequence },
    { "Stroke",       FDF_VIRTUAL|FDF_STRING|FDF_RW,          VECTOR_GET_Stroke, VECTOR_SET_Stroke },

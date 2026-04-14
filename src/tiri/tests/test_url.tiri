@@ -1,0 +1,320 @@
+-- $TIRI
+-- Comprehensive test suite for the URL module
+
+   import 'net/url'
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test URL encoding/decoding
+
+@Test function Encoding()
+   -- Basic encoding
+   assert(url.encode('hello world') is 'hello%20world', 'Basic space encoding failed')
+   assert(url.encode('hello+world') is 'hello%2Bworld', 'Plus sign encoding failed')
+   assert(url.encode('user@example.com') is 'user%40example.com', 'At sign encoding failed')
+   assert(url.encode('path/to/file') is 'path%2Fto%2Ffile', 'Slash encoding failed')
+
+   -- Special characters
+   assert(url.encode('!@#$%^&*()') is '%21%40%23%24%25%5E%26%2A%28%29', 'Special chars encoding failed')
+
+   -- Empty/nil handling
+   assert(url.encode('') is '', 'Empty string encoding failed')
+   assert(url.encode(nil) is nil, 'Nil encoding should return nil')
+
+   -- Plus encoding for forms
+   assert(url.encodePlus('hello world') is 'hello+world', 'Plus space encoding failed')
+   assert(url.encodePlus('test+case') is 'test%2Bcase', 'Plus sign in plus encoding failed')
+end
+
+@Test function Decoding()
+   -- Basic decoding
+   assert(url.decode('hello%20world') is 'hello world', 'Basic space decoding failed')
+   assert(url.decode('user%40example.com') is 'user@example.com', 'At sign decoding failed')
+   assert(url.decode('path%2Fto%2Ffile') is 'path/to/file', 'Slash decoding failed')
+
+   -- Case insensitive hex
+   assert(url.decode('test%2a') is 'test*', 'Lowercase hex decoding failed')
+   assert(url.decode('test%2A') is 'test*', 'Uppercase hex decoding failed')
+
+   -- Plus decoding for forms
+   assert(url.decodePlus('hello+world') is 'hello world', 'Plus space decoding failed')
+   assert(url.decodePlus('test%2Bcase') is 'test+case', 'Encoded plus decoding failed')
+
+   -- Empty/nil handling
+   assert(url.decode('') is '', 'Empty string decoding failed')
+   assert(url.decode(nil) is nil, 'Nil decoding should return nil')
+
+   -- Round-trip test
+   local original = 'Hello World! @#$%^&*()'
+   local encoded = url.encode(original)
+   local decoded = url.decode(encoded)
+   assert(decoded is original, 'Round-trip encoding/decoding failed')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test query string parsing
+
+@Test function QueryParsing()
+   -- Basic query parsing
+   local params = url.parseQuery('name=John&age=30&city=New%20York')
+   assert(params.name is 'John', 'Basic query param failed')
+   assert(params.age is '30', 'Numeric query param failed')
+   assert(params.city is 'New York', 'Encoded query param failed')
+
+   -- Empty query
+   local empty = url.parseQuery('')
+   assert(type(empty) is 'table' and next(empty) is nil, 'Empty query should return empty table')
+
+   -- Query with no values
+   local novals = url.parseQuery('flag1&flag2')
+   assert(novals.flag1 is '', 'No-value param should be empty string')
+   assert(novals.flag2 is '', 'No-value param should be empty string')
+
+   -- Duplicate keys
+   local dups = url.parseQuery('tag=red&tag=blue&tag=green')
+   assert(type(dups.tag) is 'table', 'Duplicate keys should create table')
+   assert(#dups.tag is 3, 'Should have 3 values for duplicate key')
+   assert(dups.tag[1] is 'red' and dups.tag[2] is 'blue' and dups.tag[3] is 'green', 'Duplicate values incorrect')
+
+   -- Plus encoding in query
+   local plus = url.parseQuery('message=hello+world&name=John+Doe')
+   assert(plus.message is 'hello world', 'Plus decoding in query failed')
+   assert(plus.name is 'John Doe', 'Plus decoding in name failed')
+end
+
+@Test function QueryList()
+   -- Parse as list to preserve order
+   local list = url.parseQueryList('first=1&second=2&first=3')
+   assert(#list is 3, 'Query list should have 3 items')
+   assert(list[1].key is 'first' and list[1].value is '1', 'First item incorrect')
+   assert(list[2].key is 'second' and list[2].value is '2', 'Second item incorrect')
+   assert(list[3].key is 'first' and list[3].value is '3', 'Third item incorrect')
+end
+
+@Test function QueryBuilding()
+   -- Build from table
+   local params = { name = 'John Doe', age = 30, active = true }
+   local query = url.buildQuery(params)
+
+   -- Parse back to verify
+   local parsed = url.parseQuery(query)
+   assert(parsed.name is 'John Doe', 'Built query name incorrect')
+   assert(parsed.age is '30', 'Built query age incorrect')
+   assert(parsed.active is 'true', 'Built query boolean incorrect')
+
+   -- Build from list
+   local list = {
+      { key = 'first', value = '1' },
+      { key = 'second', value = '2' },
+      { key = 'first', value = '3' }
+   }
+   local listQuery = url.buildQuery(list)
+   assert(listQuery is 'first=1&second=2&first=3', 'List query building failed')
+
+   -- Build with special characters
+   local special = { }
+   special['hello world'] = 'test&value'
+   special['key=name'] = 'John+Doe'
+
+   local specialQuery = url.buildQuery(special)
+   local specialParsed = url.parseQuery(specialQuery)
+   assert(specialParsed['hello world'] is 'test&value', 'Special char key failed')
+   assert(specialParsed['key=name'] is 'John+Doe', 'Special char value failed')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test URL parsing
+
+@Test function BasicParsing()
+   -- Simple HTTP URL
+   local parts = url.parse('https://example.com/path?query=value#section')
+   assert(parts.scheme is 'https', 'Scheme parsing failed')
+   assert(parts.host is 'example.com', 'Host parsing failed')
+   assert(parts.path is '/path', 'Path parsing failed')
+   assert(parts.query is 'query=value', 'Query parsing failed')
+   assert(parts.fragment is 'section', 'Fragment parsing failed')
+
+   -- URL with port
+   local withPort = url.parse('http://localhost:8080/api/test')
+   assert(withPort.scheme is 'http', 'Port URL scheme failed')
+   assert(withPort.host is 'localhost', 'Port URL host failed')
+   assert(withPort.port is 8080, 'Port parsing failed')
+   assert(withPort.path is '/api/test', 'Port URL path failed')
+
+   -- URL with auth
+   local withAuth = url.parse('ftp://user:pass@ftp.example.com/files/')
+   assert(withAuth.scheme is 'ftp', 'Auth URL scheme failed')
+   assert(withAuth.auth is 'user:pass', 'Auth parsing failed')
+   assert(withAuth.host is 'ftp.example.com', 'Auth URL host failed')
+   assert(withAuth.path is '/files/', 'Auth URL path failed')
+end
+
+@Test function IPv6Parsing()
+   -- IPv6 host
+   local ipv6 = url.parse('http://[2001:db8::1]:8080/path')
+   assert(ipv6.host is '2001:db8::1', 'IPv6 host parsing failed')
+   assert(ipv6.port is 8080, 'IPv6 port parsing failed')
+   assert(ipv6.path is '/path', 'IPv6 path parsing failed')
+
+   -- IPv6 without port
+   local ipv6NoPort = url.parse('http://[::1]/test')
+   assert(ipv6NoPort.host is '::1', 'IPv6 localhost parsing failed')
+   assert(ipv6NoPort.port is nil, 'IPv6 no port should be nil')
+end
+
+@Test function RelativeURLs()
+   -- Path-only URL
+   local pathOnly = url.parse('/path/to/resource')
+   assert(pathOnly.scheme is nil, 'Path-only should have no scheme')
+   assert(pathOnly.host is nil, 'Path-only should have no host')
+   assert(pathOnly.path is '/path/to/resource', 'Path-only path failed')
+
+   -- Query-only URL
+   local queryOnly = url.parse('?query=value')
+   assert(queryOnly.path is '', 'Query-only path should be empty')
+   assert(queryOnly.query is 'query=value', 'Query-only query failed')
+
+   -- Fragment-only URL
+   local fragOnly = url.parse('#section')
+   assert(fragOnly.path is '', 'Fragment-only path should be empty')
+   assert(fragOnly.fragment is 'section', 'Fragment-only fragment failed')
+end
+
+@Test function URLUnparsing()
+   -- Round-trip test
+   local original = 'https://user:pass@example.com:8080/path/to/resource;param=value?query=test&foo=bar#section'
+   local parsed = url.parse(original)
+   local reconstructed = url.unparse(parsed)
+
+   -- Parse both to compare components (order might differ in query)
+   local origParts = url.parse(original)
+   local reconParts = url.parse(reconstructed)
+
+   assert(origParts.scheme is reconParts.scheme, 'Round-trip scheme failed')
+   assert(origParts.host is reconParts.host, 'Round-trip host failed')
+   assert(origParts.port is reconParts.port, 'Round-trip port failed')
+   assert(origParts.path is reconParts.path, 'Round-trip path failed')
+   assert(origParts.fragment is reconParts.fragment, 'Round-trip fragment failed')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test URL joining
+
+@Test function URLJoining()
+   -- Basic relative URL joining
+   local joined = url.join('https://example.com/api/', 'users/123')
+   assert(joined is 'https://example.com/api/users/123', 'Basic joining failed')
+
+   -- Absolute path joining
+   local absJoined = url.join('https://example.com/api/old', '/new/path')
+   assert(absJoined is 'https://example.com/new/path', 'Absolute path joining failed')
+
+   -- Parent directory navigation
+   local parentJoined = url.join('https://example.com/api/v1/', '../v2/users')
+   assert(parentJoined is 'https://example.com/api/v2/users', 'Parent directory joining failed')
+
+   -- Query and fragment handling
+   local queryJoined = url.join('https://example.com/base', '?query=value')
+   assert(queryJoined is 'https://example.com/base?query=value', 'Query joining failed')
+
+   local fragJoined = url.join('https://example.com/page', '#section')
+   assert(fragJoined is 'https://example.com/page#section', 'Fragment joining failed')
+
+   -- Absolute URL overrides base
+   local absOverride = url.join('https://old.com/path', 'https://new.com/other')
+   assert(absOverride is 'https://new.com/other', 'Absolute URL override failed')
+end
+
+@Test function PathNormalization()
+   -- Basic normalization
+   assert(url.normalize('/a/b/../c') is '/a/c', 'Basic .. normalization failed')
+   assert(url.normalize('/a/./b') is '/a/b', 'Basic . normalization failed')
+   assert(url.normalize('/a//b') is '/a/b', 'Double slash normalization failed')
+
+   -- Complex normalization
+   assert(url.normalize('/a/b/../../c') is '/c', 'Complex .. normalization failed')
+   assert(url.normalize('a/../b') is 'b', 'Relative .. normalization failed')
+
+   -- Edge cases
+   assert(url.normalize('/..') is '/', 'Root .. should become /')
+   assert(url.normalize('../../a') is '../../a', 'Relative .. beyond root should remain')
+
+   -- Preserve trailing slash
+   assert(url.normalize('/a/b/') is '/a/b/', 'Trailing slash should be preserved')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test utility functions
+
+@Test function Utilities()
+   -- Absolute/relative detection
+   assert(url.isAbsolute('https://example.com') is true, 'HTTP URL should be absolute')
+   assert(url.isAbsolute('ftp://ftp.example.com') is true, 'FTP URL should be absolute')
+   assert(url.isAbsolute('/path/to/file') is false, 'Path should be relative')
+   assert(url.isAbsolute('relative/path') is false, 'Relative path should be relative')
+
+   assert(url.isRelative('/path') is true, 'Path should be relative')
+   assert(url.isRelative('https://example.com') is false, 'HTTP URL should not be relative')
+
+   -- Component extraction
+   assert(url.getScheme('https://example.com') is 'https', 'Scheme extraction failed')
+   assert(url.getScheme('/path/only') is nil, 'Path-only should have no scheme')
+
+   assert(url.getHost('https://example.com/path') is 'example.com', 'Host extraction failed')
+   assert(url.getHost('http://user@localhost:8080') is 'localhost', 'Host with auth/port failed')
+
+   -- Port extraction with defaults
+   assert(url.getPort('https://example.com:8080') is 8080, 'Explicit port extraction failed')
+   assert(url.getPort('https://example.com') is nil, 'No explicit port should return nil')
+   assert(url.getPort('https://example.com', 443) is 443, 'Default port should be used')
+   assert(url.getPort('http://example.com') is nil, 'HTTP default should not be auto-added')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test edge cases and error handling
+
+@Test function EdgeCases()
+   -- Empty/nil URLs
+   local nilResult = url.parse(nil)
+   assert(nilResult is nil, 'Nil URL should return nil')
+
+   local emptyResult = url.parse('')
+   assert(emptyResult is nil, 'Empty URL should return nil')
+
+   -- Malformed URLs
+   local malformed = url.parse('ht!tp://bad-scheme.com')
+   assert(malformed.scheme is nil, 'Bad scheme should not be parsed as scheme')
+
+   -- URL with only scheme
+   local schemeOnly = url.parse('file:')
+   assert(schemeOnly.scheme is 'file', 'Scheme-only parsing failed')
+   assert(schemeOnly.path is '', 'Scheme-only should have empty path')
+
+   -- URLs with special characters
+   local special = url.parse('https://example.com/path with spaces?query=value with spaces')
+   assert(special.path is '/path with spaces', 'Path with spaces should be preserved')
+   assert(special.query is 'query=value with spaces', 'Query with spaces should be preserved')
+
+   -- Very long URLs
+   local longPath = string.rep('a', 1000)
+   local longURL = 'https://example.com/' .. longPath
+   local longParsed = url.parse(longURL)
+   assert(longParsed.host is 'example.com', 'Long URL host parsing failed')
+   assert(longParsed.path is '/' .. longPath, 'Long URL path parsing failed')
+end
+
+@Test function Defrag()
+   -- URL with fragment
+   local base, frag = url.defrag('https://example.com/path#section')
+   assert(base is 'https://example.com/path', 'Defrag base incorrect')
+   assert(frag is 'section', 'Defrag fragment incorrect')
+
+   -- URL without fragment
+   local noFragBase, noFragFragment = url.defrag('https://example.com/path')
+   assert(noFragBase is 'https://example.com/path', 'No-frag base should be unchanged')
+   assert(noFragFragment is nil, 'No-frag fragment should be nil')
+
+   -- Empty fragment
+   local emptyFragBase, emptyFrag = url.defrag('https://example.com/path#')
+   assert(emptyFragBase is 'https://example.com/path', 'Empty frag base incorrect')
+   assert(emptyFrag is '', 'Empty fragment should be empty string')
+end

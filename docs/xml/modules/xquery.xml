@@ -1,0 +1,119 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="module.xsl"?>
+
+<book>
+  <info>
+    <name>XQuery</name>
+    <type>module</type>
+    <comment>Provides XPath 2.0 and XQuery 1.0+ support for the XML module.</comment>
+    <version>1</version>
+    <copyright>Paul Manias © 2025-2026</copyright>
+    <description>
+<p>The XQuery module provides comprehensive support for XPath 2.0 and XQuery languages, enabling powerful querying and navigation of XML documents.  It provides the <class name="XQuery">XQuery</class> class as its primary interface, and operates in conjunction with the <class name="XML">XML</class> class to provide a standards-compliant query engine with extensive functionality.</p></description>
+    <classes>
+      <class>XQuery</class>
+    </classes>
+  </info>
+
+  <types>
+    <constants lookup="XIF" comment="Result flags for InspectFunctions().">
+      <const name="ALL">Synonym for <code>AST | NAME | PARAMETERS | RETURN_TYPE | USER_DEFINED | SIGNATURE</code></const>
+      <const name="AST">Include the compiled function body in the inspection result.</const>
+      <const name="NAME">Include function name in the inspection result.</const>
+      <const name="PARAMETERS">Include function parameters in the inspection result.</const>
+      <const name="RETURN_TYPE">Include function return type in the inspection result.</const>
+      <const name="SIGNATURE">Include function signature in the inspection result.</const>
+      <const name="USER_DEFINED">Include user-defined status in the inspection result.</const>
+    </constants>
+
+    <constants lookup="XPVT" comment="Type descriptors for XPathValue">
+      <const name="Array"/>
+      <const name="Boolean"/>
+      <const name="Date"/>
+      <const name="DateTime"/>
+      <const name="Map"/>
+      <const name="NodeSet"/>
+      <const name="Number"/>
+      <const name="String"/>
+      <const name="Time"/>
+    </constants>
+
+    <constants lookup="XQF" comment="Flags indicating the features of a compiled XQuery expression.">
+      <const name="BASE_URI_DECLARED">Static base URI declared.</const>
+      <const name="BOUNDARY_PRESERVE">Boundary-space preserve mode.</const>
+      <const name="CONSTRUCTION_PRESERVE">Construction preserve mode.</const>
+      <const name="DEFAULT_COLLATION_DECLARED">Default collation declared.</const>
+      <const name="DEFAULT_ELEMENT_NS">Default element namespace declared.</const>
+      <const name="DEFAULT_FUNCTION_NS">Default function namespace declared.</const>
+      <const name="HAS_PROLOG">The XQuery declares a prolog.</const>
+      <const name="HAS_WILDCARD_TESTS">Wildcard name tests present.</const>
+      <const name="LIBRARY_MODULE">Prolog declares a module namespace (library module).</const>
+      <const name="MODULE_IMPORTS">One or more module imports are declared.</const>
+      <const name="ORDERING_UNORDERED">Ordering mode is unordered.</const>
+      <const name="XPATH">The expression is an XPath location string.</const>
+    </constants>
+
+    <constants lookup="XQueryNodeType">
+      <const name="ARRAY_CONSTRUCTOR"/>
+      <const name="ATTRIBUTE_VALUE_TEMPLATE"/>
+      <const name="AXIS_SPECIFIER"/>
+      <const name="BINARY_OP"/>
+      <const name="CASTABLE_EXPRESSION"/>
+      <const name="CAST_EXPRESSION"/>
+      <const name="COMMENT_CONSTRUCTOR"/>
+      <const name="COMPUTED_ATTRIBUTE_CONSTRUCTOR"/>
+      <const name="COMPUTED_ELEMENT_CONSTRUCTOR"/>
+      <const name="CONDITIONAL"/>
+      <const name="CONSTRUCTOR_CONTENT"/>
+      <const name="COUNT_CLAUSE"/>
+      <const name="DIRECT_ATTRIBUTE_CONSTRUCTOR"/>
+      <const name="DIRECT_ELEMENT_CONSTRUCTOR"/>
+      <const name="DIRECT_TEXT_CONSTRUCTOR"/>
+      <const name="DOCUMENT_CONSTRUCTOR"/>
+      <const name="EMPTY_SEQUENCE"/>
+      <const name="EXPRESSION"/>
+      <const name="FILTER"/>
+      <const name="FLWOR_EXPRESSION"/>
+      <const name="FOR_BINDING"/>
+      <const name="FOR_EXPRESSION"/>
+      <const name="FUNCTION_CALL"/>
+      <const name="GROUP_CLAUSE"/>
+      <const name="GROUP_KEY"/>
+      <const name="INSTANCE_OF_EXPRESSION"/>
+      <const name="LET_BINDING"/>
+      <const name="LET_EXPRESSION"/>
+      <const name="LITERAL"/>
+      <const name="LOCATION_PATH"/>
+      <const name="LOOKUP_EXPRESSION"/>
+      <const name="MAP_CONSTRUCTOR"/>
+      <const name="NAME_TEST"/>
+      <const name="NODE_TEST"/>
+      <const name="NODE_TYPE_TEST"/>
+      <const name="NUMBER"/>
+      <const name="ORDER_CLAUSE"/>
+      <const name="ORDER_SPEC"/>
+      <const name="PATH"/>
+      <const name="PI_CONSTRUCTOR"/>
+      <const name="PREDICATE"/>
+      <const name="PROCESSING_INSTRUCTION_TEST"/>
+      <const name="QUANTIFIED_BINDING"/>
+      <const name="QUANTIFIED_EXPRESSION"/>
+      <const name="ROOT"/>
+      <const name="STEP"/>
+      <const name="STRING"/>
+      <const name="TEXT_CONSTRUCTOR"/>
+      <const name="TREAT_AS_EXPRESSION"/>
+      <const name="TYPESWITCH_CASE"/>
+      <const name="TYPESWITCH_DEFAULT_CASE"/>
+      <const name="TYPESWITCH_EXPRESSION"/>
+      <const name="UNARY_OP"/>
+      <const name="UNION"/>
+      <const name="VARIABLE_REFERENCE"/>
+      <const name="WHERE_CLAUSE"/>
+      <const name="WILDCARD"/>
+    </constants>
+
+  </types>
+  <structs>
+  </structs>
+</book>

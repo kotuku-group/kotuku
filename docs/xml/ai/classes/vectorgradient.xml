@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="VectorGradient" mod="Vector" c="Provides support for the filling and stroking of vectors with colour gradients." cat="Graphics" id="e81ac386" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="VectorGradient" mod="Vector" c="Provides support for the filling and stroking of vectors with colour gradients." cat="Graphics" id="e81ac386" v="1">
   <ai:f n="CenterX" c="The horizontal center point of the gradient." t="DOUBLE" a="GS"/>
   <ai:f n="CenterY" c="The vertical center point of the gradient." t="DOUBLE" a="GS"/>
   <ai:f n="Colour" c="The default background colour to use when clipping is enabled." t="FLOAT []" a="GS"/>

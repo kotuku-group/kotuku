@@ -1,0 +1,132 @@
+-- XQuery arithmetic edge-case tests
+
+   include 'xml'
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Medium-length additive chains should iterate without exhausting the stack
+
+@Test function MediumAdditionChain()
+   count = 40
+   terms = {}
+   for index = 0, count do
+      terms[index] = tostring(index)
+   end
+
+   expected = (count * (count + 1)) / 2
+   xq = obj.new('xquery', { statement = table.concat(terms, ' + ') })
+   err = xq.acActivate()
+   assert(err is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   result = tonumber(xq.resultString)
+   assert(result is expected, 'Medium addition chain should equal ' .. tostring(expected) .. ', got ' .. tostring(result))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Long additive chains should complete successfully after the iterative evaluator change
+
+@Test function LongAdditionChain()
+   count = 400
+   terms = {}
+   for index = 0, count-1 do
+      terms[index] = tostring(index + 1)
+   end
+
+   expected = (count * (count + 1)) / 2
+   xq = obj.new('xquery', { statement = table.concat(terms, ' + ') })
+   err = xq.acActivate()
+   assert(err is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   result = tonumber(xq.resultString)
+   assert(result is expected, 'Long addition chain should equal ' .. tostring(expected) .. ', got ' .. tostring(result))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Multiplicative chains should respect left-to-right evaluation without recursion
+
+@Test function MultiplicationChain()
+   factors = {}
+   for index = 2, 10 do
+      factors[#factors] = tostring(index)
+   end
+   chain = table.concat(factors, ' * ')
+
+   expected = 1
+   for index = 2, 10 do
+      expected *= index
+   end
+
+   xq = obj.new('xquery', { statement = 'let $unit := 1 return (' .. chain .. ')' })
+   err = xq.acActivate()
+   assert(err is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   result = tonumber(xq.resultString)
+   assert(result is expected, 'Multiplication chain should equal ' .. tostring(expected) .. ', got ' .. tostring(result))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Mixed associative and non-associative operators should fall back to recursive evaluation
+
+@Test function MixedAdditionAndSubtraction()
+   xq = obj.new('xquery', { statement = '1 + 2 - 3 + 4' })
+   assert(xq.acActivate() is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   result = tonumber(xq.resultString)
+   assert(result is 4, 'Mixed addition and subtraction should equal 4, got ' .. tostring(result))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Unparenthesized multiplication should work without requiring parentheses
+
+@Test function UnparenthesizedMultiplication()
+   xq = obj.new('xquery', { statement = 'let $unit := 1 return 2 * 3 * 4' })
+   assert(xq.acActivate() is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   result = tonumber(xq.resultString)
+   assert(result is 24, 'Unparenthesized multiplication should equal 24, got ' .. tostring(result))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Multiplication directly after return keyword
+
+@Test function MultiplicationAfterReturn()
+   -- Expect failure, the statement is not valid XQuery
+   try
+      xq = obj.new('xquery', { statement = 'return 2 * 3' })
+      xq.acActivate()
+   success
+      error('Expected query to fail but it succeeded')
+   end
+
+   -- Pure number sequence is valid without the 'return' keyword
+   xq = obj.new('xquery', { statement = '2 * 3 * 4' })
+   assert(xq.acActivate() is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   result = tonumber(xq.resultString)
+   assert(result is 24, 'Unparenthesized multiplication should equal 24, got ' .. tostring(result))
+
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Multiplication in assignment position
+
+@Test function MultiplicationAfterAssign()
+   xq = obj.new('xquery', { statement = 'let $x := 2 * 3 return $x' })
+   assert(xq.acActivate() is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
+   result = tonumber(xq.resultString)
+   assert(result is 6, 'Multiplication in assignment should equal 6, got ' .. tostring(result))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Ensure wildcard paths still parse correctly after tokeniser changes
+
+@Test function WildcardPathsStillWork()
+   xml_doc = obj.new('xml', { statement = '<root><a><b>1</b></a><a><b>2</b></a></root>' })
+
+   xq = obj.new('xquery', { statement = 'count(/root/*/b)' })
+   assert(xq.mtEvaluate(xml_doc) is ERR_Okay, 'Wildcard path query failed: ' .. tostring(xq.errorMsg))
+   assert(tonumber(xq.resultString) is 2, 'Wildcard path should match 2 elements, got ' .. tostring(xq.resultString))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Ensure QName wildcards still parse correctly
+
+@Test function QNameWildcardStillWorks()
+   xml_doc = obj.new('xml', { statement = '<root><ns:item>1</ns:item><ns:other>2</ns:other></root>' })
+   xq = obj.new('xquery', { statement = '/root/*:item' })
+   assert(xq.mtEvaluate(xml_doc) is ERR_Okay, 'QName wildcard query failed: ' .. tostring(xq.errorMsg))
+   assert(tonumber(xq.resultString) is 1, 'QName wildcard should match 1 element, got ' .. tostring(xq.resultString))
+end

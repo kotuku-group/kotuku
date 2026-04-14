@@ -11,7 +11,7 @@
     <id>3db0d377</id>
     <idstring>COLOURFX</idstring>
     <category>Graphics</category>
-    <copyright>Paul Manias © 2010-2025</copyright>
+    <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>Use ColourFX to perform colour transformations on an input source.  A <fl>Mode</fl> must be selected and any required <fl>Values</fl> defined prior to rendering.</p>
 <p>SVG requires that the calculations are performed on non-premultiplied colour values.  If the input graphics consists of premultiplied colour values, those values are automatically converted into non-premultiplied colour values for this operation.</p></description>

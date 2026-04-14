@@ -105,7 +105,7 @@ void win32_netresponse(OBJECTPTR SocketObject, SOCKET_HANDLE Handle, int Message
       }
    }
 
-   #if defined(_DEBUG)
+   #ifndef NDEBUG
    static constexpr const char* const msg[] = { "None", "Write", "Read", "Accept", "Connect", "Close" };
    log.traceBranch("[%d:%d:%p], %s, Error %d, InUse: %d, WinRecursion: %d", Socket->UID, Handle, ClientSocket, msg[Message], int(Error), Socket->InUse, Socket->WinRecursion);
    #endif

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:m xmlns:ai="http://parasol-framework.org/ai-docs" n="Display" p="gfx" v="1" st="stable" cl="Bitmap,Clipboard,Controller,Display,Pointer,Surface">
+<ai:m xmlns:ai="http://kotuku.dev/ai-docs" n="Display" p="gfx" v="1" st="stable" cl="Bitmap,Clipboard,Controller,Display,Pointer,Surface">
   <ai:f n="AccessPointer" c="Returns a lock on the default pointer object." p="objPointer * gfx::AccessPointer()" r="objPointer *"/>
   <ai:f n="CheckIfChild" c="Check if a surface is the child of another surface." p="ERR gfx::CheckIfChild(OBJECTID Parent, OBJECTID Child)" r="ERR">
     <ai:i n="Parent" t="OBJECTID" c="The surface that is assumed to be the parent."/>

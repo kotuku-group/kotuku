@@ -5,8 +5,8 @@
 #include <vector>
 #include <string>
 #include <functional>
-#include <parasol/main.h>
-#include <parasol/strings.hpp>
+#include <kotuku/main.h>
+#include <kotuku/strings.hpp>
 
 // Device information structure
 struct ALSADeviceInfo {

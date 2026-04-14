@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 This software is based in part on the work of the Independent JPEG Group.  Source code has been derived from the
@@ -11,9 +11,9 @@ related to this Package.  The original libjpeg source code can be obtained from 
 
 #include <array>
 
-#include <parasol/main.h>
-#include <parasol/modules/picture.h>
-#include <parasol/modules/display.h>
+#include <kotuku/main.h>
+#include <kotuku/modules/picture.h>
+#include <kotuku/modules/display.h>
 
 #include "../picture/picture.h"
 
@@ -35,27 +35,27 @@ static ERR JPEG_SaveImage(extPicture *, struct acSaveImage *);
 
 static void decompress_jpeg(extPicture *, objBitmap *, struct jpeg_decompress_struct *);
 
-// Custom data source manager for Parasol objFile
+// Custom data source manager for Kotuku objFile
 typedef struct {
    struct jpeg_source_mgr pub;
    objFile *infile;
    JOCTET *buffer;
    boolean start_of_file;
-} parasol_source_mgr;
+} kotuku_source_mgr;
 
-typedef parasol_source_mgr *parasol_src_ptr;
+typedef kotuku_source_mgr *kotuku_src_ptr;
 
 #define INPUT_BUF_SIZE 4096
 
 // Initialize source
-METHODDEF(void) init_parasol_source(j_decompress_ptr cinfo) {
-   parasol_src_ptr src = (parasol_src_ptr)cinfo->src;
+METHODDEF(void) init_kotuku_source(j_decompress_ptr cinfo) {
+   kotuku_src_ptr src = (kotuku_src_ptr)cinfo->src;
    src->start_of_file = TRUE;
 }
 
 // Fill input buffer
-METHODDEF(boolean) fill_parasol_input_buffer(j_decompress_ptr cinfo) {
-   parasol_src_ptr src = (parasol_src_ptr)cinfo->src;
+METHODDEF(boolean) fill_kotuku_input_buffer(j_decompress_ptr cinfo) {
+   kotuku_src_ptr src = (kotuku_src_ptr)cinfo->src;
    int nbytes;
 
    if (src->infile->read(src->buffer, INPUT_BUF_SIZE, &nbytes) != ERR::Okay) {
@@ -74,13 +74,13 @@ METHODDEF(boolean) fill_parasol_input_buffer(j_decompress_ptr cinfo) {
 }
 
 // Skip input data
-METHODDEF(void) skip_parasol_input_data(j_decompress_ptr cinfo, long num_bytes) {
-   parasol_src_ptr src = (parasol_src_ptr)cinfo->src;
+METHODDEF(void) skip_kotuku_input_data(j_decompress_ptr cinfo, long num_bytes) {
+   kotuku_src_ptr src = (kotuku_src_ptr)cinfo->src;
 
    if (num_bytes > 0) {
       while (num_bytes > (long)src->pub.bytes_in_buffer) {
          num_bytes -= (long)src->pub.bytes_in_buffer;
-         (void)fill_parasol_input_buffer(cinfo);
+         (void)fill_kotuku_input_buffer(cinfo);
       }
       src->pub.next_input_byte += (size_t)num_bytes;
       src->pub.bytes_in_buffer -= (size_t)num_bytes;
@@ -88,30 +88,30 @@ METHODDEF(void) skip_parasol_input_data(j_decompress_ptr cinfo, long num_bytes) 
 }
 
 // Terminate source
-METHODDEF(void) term_parasol_source(j_decompress_ptr cinfo) {
+METHODDEF(void) term_kotuku_source(j_decompress_ptr cinfo) {
    // No work necessary here
 }
 
-// Set up data source for reading from Parasol objFile
-static void jpeg_parasol_src(j_decompress_ptr cinfo, objFile *infile) {
-   parasol_src_ptr src;
+// Set up data source for reading from Kotuku objFile
+static void jpeg_kotuku_src(j_decompress_ptr cinfo, objFile *infile) {
+   kotuku_src_ptr src;
 
    if (cinfo->src IS nullptr) {
       cinfo->src = (struct jpeg_source_mgr *)
          (*cinfo->mem->alloc_small)((j_common_ptr)cinfo, JPOOL_PERMANENT,
-                                   sizeof(parasol_source_mgr));
-      src = (parasol_src_ptr)cinfo->src;
+                                   sizeof(kotuku_source_mgr));
+      src = (kotuku_src_ptr)cinfo->src;
       src->buffer = (JOCTET *)
          (*cinfo->mem->alloc_small)((j_common_ptr)cinfo, JPOOL_PERMANENT,
                                    INPUT_BUF_SIZE * sizeof(JOCTET));
    }
 
-   src = (parasol_src_ptr)cinfo->src;
-   src->pub.init_source = init_parasol_source;
-   src->pub.fill_input_buffer = fill_parasol_input_buffer;
-   src->pub.skip_input_data = skip_parasol_input_data;
+   src = (kotuku_src_ptr)cinfo->src;
+   src->pub.init_source = init_kotuku_source;
+   src->pub.fill_input_buffer = fill_kotuku_input_buffer;
+   src->pub.skip_input_data = skip_kotuku_input_data;
    src->pub.resync_to_restart = jpeg_resync_to_restart;
-   src->pub.term_source = term_parasol_source;
+   src->pub.term_source = term_kotuku_source;
    src->infile = infile;
    src->pub.bytes_in_buffer = 0;
    src->pub.next_input_byte = nullptr;
@@ -122,15 +122,15 @@ typedef struct {
    struct jpeg_destination_mgr pub;
    objFile *outfile;
    JOCTET *buffer;
-} parasol_destination_mgr;
+} kotuku_destination_mgr;
 
-typedef parasol_destination_mgr *parasol_dest_ptr;
+typedef kotuku_destination_mgr *kotuku_dest_ptr;
 
 #define OUTPUT_BUF_SIZE 4096
 
 // Initialize destination
-METHODDEF(void) init_parasol_destination(j_compress_ptr cinfo) {
-   parasol_dest_ptr dest = (parasol_dest_ptr)cinfo->dest;
+METHODDEF(void) init_kotuku_destination(j_compress_ptr cinfo) {
+   kotuku_dest_ptr dest = (kotuku_dest_ptr)cinfo->dest;
    dest->buffer = (JOCTET *)
       (*cinfo->mem->alloc_small)((j_common_ptr)cinfo, JPOOL_IMAGE,
                                 OUTPUT_BUF_SIZE * sizeof(JOCTET));
@@ -139,8 +139,8 @@ METHODDEF(void) init_parasol_destination(j_compress_ptr cinfo) {
 }
 
 // Empty output buffer
-METHODDEF(boolean) empty_parasol_output_buffer(j_compress_ptr cinfo) {
-   parasol_dest_ptr dest = (parasol_dest_ptr)cinfo->dest;
+METHODDEF(boolean) empty_kotuku_output_buffer(j_compress_ptr cinfo) {
+   kotuku_dest_ptr dest = (kotuku_dest_ptr)cinfo->dest;
 
    if (dest->outfile->write(dest->buffer, OUTPUT_BUF_SIZE) != ERR::Okay) {
       ERREXIT(cinfo, JERR_FILE_WRITE);
@@ -153,8 +153,8 @@ METHODDEF(boolean) empty_parasol_output_buffer(j_compress_ptr cinfo) {
 }
 
 // Terminate destination
-METHODDEF(void) term_parasol_destination(j_compress_ptr cinfo) {
-   parasol_dest_ptr dest = (parasol_dest_ptr)cinfo->dest;
+METHODDEF(void) term_kotuku_destination(j_compress_ptr cinfo) {
+   kotuku_dest_ptr dest = (kotuku_dest_ptr)cinfo->dest;
    int datacount = OUTPUT_BUF_SIZE - dest->pub.free_in_buffer;
 
    if (datacount > 0) {
@@ -164,20 +164,20 @@ METHODDEF(void) term_parasol_destination(j_compress_ptr cinfo) {
    }
 }
 
-// Set up destination for writing to Parasol objFile
-static void jpeg_parasol_dest(j_compress_ptr cinfo, objFile *outfile) {
-   parasol_dest_ptr dest;
+// Set up destination for writing to Kotuku objFile
+static void jpeg_kotuku_dest(j_compress_ptr cinfo, objFile *outfile) {
+   kotuku_dest_ptr dest;
 
    if (cinfo->dest IS nullptr) {
       cinfo->dest = (struct jpeg_destination_mgr *)
          (*cinfo->mem->alloc_small)((j_common_ptr)cinfo, JPOOL_PERMANENT,
-                                   sizeof(parasol_destination_mgr));
+                                   sizeof(kotuku_destination_mgr));
    }
 
-   dest = (parasol_dest_ptr)cinfo->dest;
-   dest->pub.init_destination = init_parasol_destination;
-   dest->pub.empty_output_buffer = empty_parasol_output_buffer;
-   dest->pub.term_destination = term_parasol_destination;
+   dest = (kotuku_dest_ptr)cinfo->dest;
+   dest->pub.init_destination = init_kotuku_destination;
+   dest->pub.empty_output_buffer = empty_kotuku_output_buffer;
+   dest->pub.term_destination = term_kotuku_destination;
    dest->outfile = outfile;
 }
 
@@ -210,7 +210,7 @@ static ERR JPEG_Activate(extPicture *Self)
    auto bmp = Self->Bitmap;
    cinfo.err = jpeg_std_error((struct jpeg_error_mgr *)&jerr);
    jpeg_create_decompress(&cinfo);
-   jpeg_parasol_src(&cinfo, Self->prvFile);
+   jpeg_kotuku_src(&cinfo, Self->prvFile);
    jpeg_read_header(&cinfo, TRUE);
 
    bmp->Width  = cinfo.image_width;
@@ -365,7 +365,7 @@ static ERR JPEG_Query(extPicture *Self)
       auto bmp = Self->Bitmap;
       cinfo->err = jpeg_std_error((struct jpeg_error_mgr *)&jerr);
       jpeg_create_decompress(cinfo);
-      jpeg_parasol_src(cinfo, Self->prvFile);
+      jpeg_kotuku_src(cinfo, Self->prvFile);
       jpeg_read_header(cinfo, FALSE);
 
       if (!bmp->Width)           bmp->Width          = cinfo->image_width;
@@ -411,7 +411,7 @@ static ERR JPEG_SaveImage(extPicture *Self, struct acSaveImage *Args)
    struct jpeg_error_mgr jerr;
    cinfo.err = jpeg_std_error((struct jpeg_error_mgr *)&jerr);
    jpeg_create_compress(&cinfo);
-   jpeg_parasol_dest(&cinfo, (objFile *)file);
+   jpeg_kotuku_dest(&cinfo, (objFile *)file);
 
    cinfo.image_width      = Self->Bitmap->Width; 	// image width and height, in pixels
    cinfo.image_height     = Self->Bitmap->Height;
@@ -497,5 +497,5 @@ static ERR MODExpunge(void)
 
 //********************************************************************************************************************
 
-PARASOL_MOD(MODInit, nullptr, nullptr, MODExpunge, MOD_IDL, nullptr)
+KOTUKU_MOD(MODInit, nullptr, nullptr, MODExpunge, nullptr, MOD_IDL, nullptr)
 extern "C" struct ModHeader * register_jpeg_module() { return &ModHeader; }

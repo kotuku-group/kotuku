@@ -1,0 +1,69 @@
+-- Common interface for querying git repositories
+
+   namespace 'git'
+
+   _LIB[_NS] = {
+      ['null'] = {}
+   }
+
+   git = _LIB[_NS]
+
+local rx_head = <{ regex.new('ref: refs/heads/(.+)') }>
+
+-- Return basic git repository information (current branch and commit values)
+
+git.query = function(Path:str):table
+   local git_info = { branch = 'unknown', commit = 'unknown' }
+
+   -- Check if .git directory exists
+
+   local _, file_type = mSys.AnalysePath(f'{Path}../.git/')
+   if file_type != LOC_FOLDER then
+      msg(f'No .git folder identified at {Path}../.git/')
+      return git_info
+   end
+
+   -- Try to read current branch from .git/HEAD
+
+   local head_file = io.open(f'{Path}../.git/HEAD', 'r')
+   if head_file then
+      local head_content = head_file:read('*all')
+      head_file:close()
+
+      if head_content then
+         head_content = head_content:replace('\n', '')
+         head_content = head_content:replace('\r', '')
+
+         -- Check if HEAD points to a branch (ref: refs/heads/branch-name)
+         local branch_ref = rx_head.extract(head_content)
+         if branch_ref then
+            git_info.branch = branch_ref
+
+            -- Try to read the commit hash from the branch file
+            branch_file = io.open(f'{Path}../.git/refs/heads/{branch_ref}', 'r')
+            if branch_file then
+               commit_hash = branch_file:read('*all')
+               branch_file:close()
+
+               if commit_hash then
+                  commit_hash = commit_hash:replace('\n', '')
+                  commit_hash = commit_hash:replace('\r', '')
+                  git_info.commit = commit_hash
+               end
+            end
+         else
+            -- HEAD might contain a commit hash directly (detached HEAD)
+            if string.len(head_content) is 40 then
+               git_info.commit = head_content
+               git_info.branch = 'detached HEAD'
+            end
+         end
+      else
+         msg('.git HEAD file is empty.')
+      end
+   else
+      msg('Failed to open .git HEAD file.')
+   end
+
+   return git_info
+end

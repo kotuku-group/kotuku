@@ -13,7 +13,7 @@
     <id>f6e46c7b</id>
     <idstring>CONFIG</idstring>
     <category>Data</category>
-    <copyright>Paul Manias 1996-2025</copyright>
+    <copyright>Paul Manias 1996-2026</copyright>
     <description>
 <p>The Config class is provided for reading text based key-values in a simple structured format.  Although basic and lacking support for trees and types, they are reliable, easy to support and use minimal resources.</p>
 <p>The following segment of a config file illustrates:</p>
@@ -31,8 +31,8 @@ Path = modules:arrow
 </pre>
 <p>Notice the text enclosed in square brackets, such as <code>[Action]</code>. These are referred to as 'groups', which are responsible for holding groups of key values expressed as strings.  In the above example, keys are defined by the <code>ClassID</code> and <code>Path</code> identifiers.</p>
 <p>The following source code illustrates how to open the classes.cfg file and read a key from it:</p>
-<pre>local cfg = obj.new('config', { path='config:classes.cfg' })
-local err, str = cfg.mtReadValue('Action', 'Path')
+<pre>cfg = obj.new('config', { path='config:classes.cfg' })
+err, str = cfg.mtReadValue('Action', 'Path')
 print('The Action class is located at ' .. str)
 </pre>
 <p>Please note that internal string comparisons of group and key names are case sensitive by default.  Use of camel-case is recommended as the default naming format.</p></description>
@@ -301,7 +301,7 @@ print('The Action class is located at ' .. str)
 <p>Key filters are created in the format <code>[Key] = [Data1], [Data2], ...</code>.  For example:</p>
 <pre>Group = Sun, Light
 Path = documents:
-Name = Parasol
+Name = Kōtuku
 </pre>
 <p>Filters can be inversed by prefixing the key with the <code>!</code> character.</p>
 <p>To create a filter based on group names, refer to the <fl>GroupFilter</fl> field.</p>

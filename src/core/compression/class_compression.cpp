@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -12,7 +12,7 @@ The Compression class provides an interface to compress and decompress data.  It
 based compression as well as memory based compression routines.  The base class uses zip algorithms to support pkzip
 files, while other forms of compressed data can be supported by installing additional compression sub-classes.
 
-The following examples demonstrate basic usage of compression objects in Fluid:
+The following examples demonstrate basic usage of compression objects in Tiri:
 
 <pre>
 // Create a new zip archive and compress two files.
@@ -52,7 +52,7 @@ This code is based on the work of Jean-loup Gailly and Mark Adler.
 
 #define PRV_FILE
 #include "../defs.h"
-#include <parasol/main.h>
+#include <kotuku/main.h>
 #include <sstream>
 
 //********************************************************************************************************************
@@ -117,10 +117,10 @@ PACK(struct ziptail {
    uint16_t commentlen;
 });
 
-#define ZIP_PARASOL 0x7e // Use this identifier to declare Parasol zipped files
+#define ZIP_KOTUKU 0x7e // Use this identifier to declare Kotuku zipped files
 
-// The following flags can be tagged to each file entry in the zip file and are Parasol-specific (identifiable by the
-// ZIP_PARASOL OS tag).  NOTE: The low order bits aren't used because WinZip, WinRar and so forth assume that
+// The following flags can be tagged to each file entry in the zip file and are Kotuku-specific (identifiable by the
+// ZIP_KOTUKU OS tag).  NOTE: The low order bits aren't used because WinZip, WinRar and so forth assume that
 // those bits have meaning.
 
 static const int ZIP_LINK   = 0x00010000; // The entry is a symbolic link
@@ -237,7 +237,7 @@ static const uint8_t glHeader[HEAD_LENGTH] = {
 
 static const uint8_t glList[LIST_LENGTH] = {
    'P', 'K', 0x01, 0x02,   // 00 Signature
-   0x14, ZIP_PARASOL,      // 04 Version 2.0, host OS
+   0x14, ZIP_KOTUKU,      // 04 Version 2.0, host OS
    0x14, 0x00,             // 06 Version need to extract, OS needed to extract
    0x00, 0x00,             // 08 Flags
    0x08, 0x00,             // 10 Deflation method

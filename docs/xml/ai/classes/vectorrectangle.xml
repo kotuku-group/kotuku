@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="VectorRectangle" mod="Vector" c="Extends the Vector class with support for generating rectangles." cat="Graphics" id="ac2f506d" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="VectorRectangle" mod="Vector" c="Extends the Vector class with support for generating rectangles." cat="Graphics" id="ac2f506d" v="1">
   <ai:f n="Dimensions" c="Dimension flags define whether individual dimension fields contain fixed or scaled values." t="INT" a="GS"/>
   <ai:f n="Height" c="The height of the rectangle. Can be expressed as a fixed or scaled coordinate." t="DOUBLE" a="GS"/>
   <ai:f n="RoundX" c="Specifies the size of rounded corners on the horizontal axis." t="DOUBLE" a="GS"/>

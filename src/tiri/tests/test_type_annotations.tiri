@@ -1,0 +1,77 @@
+-- Regression tests for Tiri parameter type annotations and static analysis helpers
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+-- Compile a function with the provided signature and return the callable
+
+function parameter_names(Signature)
+   names = {}
+   for entry in values(Signature:split(',')) do
+      trimmed = entry:trim()
+      if trimmed?? then
+         colon = string.find(trimmed, ":", 0, true)
+         if colon?? then trimmed = string.substr(trimmed, 0, colon) end
+         table.insert(names, trimmed)
+      end
+   end
+   return names
+end
+
+function build_source(Signature)
+   names = parameter_names(Signature)
+   returns = table.concat(names, ", ")
+   if returns is "" then returns = "nil" end
+   return "local function typed(" .. Signature .. ") return " .. returns .. " end return typed"
+end
+
+function compile_signature(Signature)
+   factory = exec(build_source(Signature))
+   assert(type(factory) is "function", "Chunk did not produce a function")
+   return factory
+end
+
+@Test function BasicParsing()
+   typed = compile_signature("A:num, B:str, C:table")
+   results = { typed(7, "hello", { value = true }) }
+   assert(results[0] is 7, "Expected numeric argument to be returned")
+   assert(results[1] is "hello", "Expected string argument to be returned")
+   assert(type(results[2]) is "table", "Expected table argument to be returned, got " .. type(results[2]))
+end
+
+@Test function MixedParameters()
+   mixed = compile_signature("Untyped, Typed:bool")
+   results = { mixed("anything", true) }
+   assert(results[0] is "anything", "Untyped parameter should accept any value")
+   assert(results[1] is true, "Typed boolean parameter should pass through")
+end
+
+@Test function AllTypeNames()
+   function assert_compiles(Signature)
+      fn = exec(build_source(Signature))
+      assert(type(fn) is "function", "Expected a function from compiled chunk")
+   end
+
+   assert_compiles("N:num")
+   assert_compiles("Number:number")
+   assert_compiles("S:str")
+   assert_compiles("String:string")
+   assert_compiles("B:bool")
+   assert_compiles("Boolean:boolean")
+   assert_compiles("T:table")
+   assert_compiles("F:func")
+   assert_compiles("Function:function")
+   assert_compiles("A:any")
+   assert_compiles("NilVal:nil")
+   assert_compiles("ThreadVal:thread")
+   assert_compiles("ObjVal:obj")
+   assert_compiles("ObjectVal:object")
+end
+
+@Test function UnknownTypeRejected()
+   try
+      exec("local function rejected(Value:unknown_type) return Value end return rejected")
+   success
+      error("Expected unknown type name to prevent compilation")
+   end
+end

@@ -1,0 +1,1076 @@
+-- TDL functions such as module(), header(), flags(), c_include(), cpp_include() ...
+
+local rx_high_hex        = <{ regex.new([[^0x[8f][0-9abcdef]+]]) }>
+local rx_angle_bracket   = <{ regex.new([[^<(.+)>$]]) }>
+local rx_kotuku_include  = <{ regex.new([[^<kotuku/(.+)>$]]) }>
+local rx_extract_comment = <{ regex.new([[^\/\*+(.*?)\*+\/]], regex.MULTILINE|regex.DOT_ALL) }>
+local rx_module_section  = <{ regex.new([[-MODULE-(.*?)-END-]], regex.DOT_ALL) }>
+local rx_module_header   = <{ regex.new([[^(\w+):\s+(.*?)\n\n(.+)]], regex.MULTILINE|regex.DOT_ALL) }>
+local rx_key_comment     = <{ regex.new([[^([^:]*):\s+(.+)$]]) }>
+local rx_hex_number      = <{ regex.new([[^0x[0-9a-fA-F]+$]]) }>
+local rx_signed_int      = <{ regex.new([[^[+\-]?\d+$]]) }>
+local rx_trailing_space  = <{ regex.new([[^(.*\S)]], regex.DOT_ALL) }>
+local rx_type_name       = <{ regex.new([[^(.+)\s(\S+)$]]) }>
+local rx_non_word        = <{ regex.new('\\W') }>
+local rx_path_chars      = <{ regex.new('[\\/\\.]') }>
+local rx_comment_chars   = <{ regex.new('[`!@#]') }>
+
+----------------------------------------------------------------------------------------------------------------------
+-- TDL function
+
+global function c_include(...)
+   for v in values({...}) do
+      if v:startsWith('<') and v:endsWith('>') then
+         priority('#include ' .. v)
+      else
+         priority('#include "' .. v .. '"')
+      end
+   end
+   priority()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- TDL function
+
+global function cpp_include(...)
+   priority('#ifdef __cplusplus')
+   for v in values({...}) do
+      if v:startsWith('<') and v:endsWith('>') then
+         local inc = rx_kotuku_include.extract(v)
+
+         if inc then
+            inc = rx_path_chars.replace(inc, '_')
+            priority('#ifndef ' .. inc:upper())
+            priority('#include ' .. v)
+            priority('#endif')
+            priority()
+         else
+            priority('#include ' .. v)
+         end
+      else
+         priority('#include "' .. v .. '"')
+      end
+   end
+   priority('#endif')
+   priority()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- TDL function
+-- Restricts the output of anything declared within the Function.
+
+global function restrict(Function:func)
+   status = glRestrict
+   global glRestrict = 'ALL'
+   Function()
+   glRestrict = status
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+global function outputLookup(Name:str, List):str
+   sorted = { }
+   for v in values(List) do
+      table.insert(sorted, v)
+   end
+
+   table.sort(sorted, function(a,b)
+      return (a.value is b.value) ? a.name < b.name :> a.value < b.value
+   end)
+
+   list = ''
+   for v in values(sorted) do
+      if (v.name:upper() != 'PRIVATE') and (v.name:upper() != 'END') then
+         -- Note: This unusual formatting solution helps to resolve output problems on 64-bit Linux
+         hash_id = '0x' .. string.format('%08x', v.value):sub(-8)
+         if rx_high_hex.test(hash_id) then hash_id = '(int)' .. hash_id end
+         list ..= f"   {{ \"{shortName(v.name)}\", {hash_id} }},\n"
+      end
+   end
+
+   return f'static const struct FieldDef cl{Name}[] = {{\n{list}   {{ nullptr, 0 }}\n}};\n\n'
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- TDL function
+
+global function module(Options:table, Function:func)
+   if (Options['timestamp'] ?? 0) > glIDLTimestamp then
+      -- Do nothing if the timestamp is > than the timestamp on this idl-c release
+      global glAbort = f'Timestamp on IDL file ({Options["timestamp"]}) exceeds IDL-C timestamp of {glIDLTimestamp}'
+      return
+   end
+
+   global glModule = Options
+
+   if glModule.name?? then
+      priority('#pragma once')
+      priority()
+   else
+      error('No "name" field specified in module() call.')
+   end
+
+   priority(f'// Name:      {glModule.name:lower()}.h')
+
+   if Options['copyright']?? then
+      priority(f'// Copyright: {Options["copyright"]}')
+   end
+   priority('// Generator: idl-c')
+   priority()
+
+   priority('#include <kotuku/main.h>')
+   priority()
+
+   if glModule.version?? then
+      priority(f'#define MODVERSION_{glModule.name:upper()} ({glModule.version})')
+      priority()
+   end
+
+   if glModule.src then -- Primary source file
+      content = io.readAll(glTDLFolder .. glModule.src)
+      content = content:replace('\r\n', '\n')
+
+      -- Extract possible content from within comments so that we don't get interference from the code while parsing.
+
+      local extracted_content = ''
+      for _, _, cap in rx_extract_comment.findAll(content) do
+         extracted_content ..= '\n' .. cap[0]
+      end
+
+      mod_desc = rx_module_section.extract(extracted_content) -- -MODULE- ... -END-
+
+      if mod_desc then
+         local name
+         name, glModule.comment, glModule.description = rx_module_header.extract(mod_desc)
+
+         if not name then
+            error(f'The -MODULE- header for {glModule.name} is incorrectly defined.')
+         elseif (name:lower() != glModule.name:lower()) then
+            error(f"The name specified in the -MODULE- header '{name}' does not match the name specified in the module() call '{glModule.name}'")
+         end
+      end
+   end
+
+   Function()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- TDL function
+
+global function header(Options:table, Function:func)
+   global glHeaderPath = Options['path']
+   if glHeaderPath?? then
+      priority('#pragma once')
+      priority()
+      priority(f'// Name:      {glHeaderPath:lower()}.h')
+   else
+      s = ''
+      for i=1,10 do
+         s = s .. string.char(math.random(65, 90))
+      end
+
+      priority('#pragma once')
+      priority()
+   end
+
+   if Options['copyright']?? then
+      priority(f'// Copyright: {Options["copyright"]}')
+   end
+   priority('// Generator: idl-c')
+   priority()
+
+   Function()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- TDL function
+--
+--  flags('KQ', { comment='Special qualifier flags' },
+--    'L_SHIFT: Left Shift is held',
+--    'R_SHIFT: Right Shift is held',
+--    { SHIFT = 'L_SHIFT|R_SHIFT' }
+--  )
+
+global function flags(Prefix, Options:table, ...)
+   verbose(f'Processing {Prefix} flags.')
+   if glCustomTypes[Prefix] then print(f'WARN: A "{Prefix}" constant already exists.') end
+
+   Options ?= {}
+
+   out = array<string>
+   sortedFlags = { }
+   if Options.comment?? then
+      out:push('// ' .. Options.comment)
+      out:push('')
+   end
+
+   function outputFlagDef(Options:table, Prefix:str, flag_name:str, val)
+      if not Options.weak then
+         if Options.bits is 16 then
+            table.insert(sortedFlags, { value = val, define = f'   {flag_name} = 0x{string.format("%.4x",val)},' } )
+         else
+            hash_id = string.format('%08x', val):sub(-8)
+            table.insert(sortedFlags, { value = val, define = f'   {flag_name} = 0x{hash_id},' } )
+         end
+      elseif Options.bits is 16 then
+         table.insert(sortedFlags, { value = val, define = string.format('#define %s_%s 0x%.4x', Prefix, flag_name, val) })
+      else
+         -- Note: This unusual formatting solution helps to resolve output problems on 64-bit Linux
+         hash_id = string.format('%08x', val):sub(-8)
+         table.insert(sortedFlags, { value = val, define = string.format('#define %s_%s 0x%s', Prefix, flag_name, hash_id) } )
+      end
+   end
+
+   if not Options.weak then
+      type_size = choose Options.bits from
+         64 -> 'int64_t'
+         16 -> 'uint16_t'
+         8  -> 'uint8_t'
+         else -> 'uint32_t'
+      end
+      out:push(string.format('enum class %s : ' .. type_size .. ' {', Prefix))
+      out:push('   NIL = 0,')
+   end
+
+   lookup = { }
+   local flags = {...}
+   f = 0
+   for a=0, #flags - 1 do
+      local flag_name
+      if type(flags[a]) is 'string' then
+         local key, comment = rx_key_comment.extract(flags[a])
+         key ??= flags[a]
+
+         for flag_name in values(key:split('|')) do
+            val = 1 << f
+            outputFlagDef(Options, Prefix, flag_name, val)
+            lookup[flag_name] = { name=flag_name, value=val, comment=comment }
+         end
+      elseif type(flags[a]) is 'table' then
+         for flag_name, ref in pairs(flags[a]) do
+            val = 0
+
+            local key, comment
+            if type(ref) != 'number' then
+               key, comment = rx_key_comment.extract(ref)
+               if key then
+                  if rx_hex_number.test(key) or rx_signed_int.test(key) then
+                     key = tonumber(key)
+                  end
+               end
+            end
+
+            key ?= ref
+
+            if type(key) is 'number' then
+               val = key
+            else -- Process named reference(s) to other flags
+               for v in values(key:split('|')) do
+                  assert(lookup[v], f"Failed to lookup flag reference '{v}' for {Prefix}_{flag_name}")
+                  val = val | lookup[v].value
+               end
+               comment ??= f'Synonym for `{key:replace("|", " | ")}`'
+            end
+            outputFlagDef(Options, Prefix, flag_name, val)
+            lookup[flag_name] = { name=flag_name, value=val, comment=comment }
+         end
+      else
+         error(f"Invalid flag type for '{Prefix}', expected string, got '{type(flags[a])}'")
+      end
+
+      f++
+   end
+
+   table.sort(sortedFlags, function(a,b) return a.value < b.value end)
+   for flag in values(sortedFlags) do
+      out:push(flag.define)
+   end
+
+   if not Options.weak then
+      out:push('};')
+      out:push('')
+      out:push('DEFINE_ENUM_FLAG_OPERATORS(' .. Prefix .. ')')
+   end
+
+   out:push('')
+   if Options.module?? and (Options.module:lower() != glModule.name:lower()) then
+      -- Do nothing, module restriction imposed.
+   elseif not glRestrict then
+      for v in values(out) do table.insert(glConstants, v) end
+   end
+
+   glCustomTypes[Prefix] = {
+      prefix=Prefix, grouping='flags', list=lookup, comment=Options.comment, restrict=glRestrict
+   }
+
+   if not Options.weak then -- Promote strong-typing to other C++ definitions
+      glCustomTypes[Prefix].type = 'int'
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- TDL function
+
+global function privateNames(List)
+   for v in values(List) do
+      glPrivateNames[v] = true
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- TDL function
+
+global function hash(Prefix:str, Format:str, ...)
+   for v in values({...}) do
+      hash_name = rx_non_word.replace(v, '_')
+      -- Note: This unusual formatting solution helps to resolve output problems on 64-bit Linux
+      hash_id = string.format('%08x', v:hash()):sub(-8)
+      output(f'#define {Prefix}_{hash_name} {string.format(Format, hash_id)}')
+   end
+   output()
+end
+
+global function calcFieldHash(String:str):num
+   local hash = 5381
+   k = 0
+   while (k < #String) and (String[k] >= 'A') and (String[k] <= 'Z') do
+      hash = (hash<<5) + hash + (String[k]:lower():byte())
+      k++
+      if k >= #String then break end
+      if not ((k + 1 >= #String) or ((String[k+1] >= 'A') and (String[k+1] <= 'Z'))) then
+         break
+      end
+   end
+
+   while k < #String do
+      hash = (hash<<5) + hash + String[k]:byte()
+      k++
+   end
+   return hash
+end
+
+global function fieldHash(Prefix:str, Format:str, ...)
+   for v in values({...}) do
+      hash_name = rx_non_word.replace(v, '_')
+      v_hash = calcFieldHash(v)
+
+      -- Note: This unusual formatting solution helps to resolve output problems on 64-bit Linux
+      hash_id = string.format('%08x', v_hash):sub(-8)
+      output(f'#define {Prefix}_{hash_name} {string.format(Format, hash_id)}')
+   end
+   output()
+end
+
+global function typedHash(Prefix:str, Type:str, ...)
+   Type = cType({ type=Type }, Prefix)
+   output(f'enum class {Prefix} : {Type.type} {{')
+   output('   NIL = 0,')
+   for v in values({...}) do
+      local hash_name = rx_non_word.replace(v, '_')
+      -- Note: This unusual formatting solution helps to resolve output problems on 64-bit Linux
+      local hash_id = string.format('%08x', v:hash()):sub(-8)
+      output(f'   {hash_name} = {string.format("0x%sUL", hash_id)},')
+   end
+   output('};')
+   output()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- TDL function
+
+global function constants(Prefix:str, Options:table, ...)
+   verbose(f'Processing {Prefix} constants.')
+   if glCustomTypes[Prefix] then print(f'WARN: A "{Prefix}" constant already exists.') end
+
+   Options ?= {}
+
+   out = array<string>
+   if Options.comment?? then
+      out:push(f'// {Options.comment}')
+      out:push('')
+   end
+
+   if Options.type then -- Strong typing enabled, convert via cType()
+      Options.type = cType({ type=Options.type }, Prefix)
+      out:push(f'enum class {Prefix} : {Options.type.type} {{')
+      out:push('   NIL = 0,')
+   end
+
+   list = { }
+   for va in values({...}) do
+      if type(va) is 'string' then
+         local key = rx_key_comment.extract(va) ?? va
+         for v in values(key:split('|')) do
+            out:push(f'#define {Prefix}_{v}')
+         end
+      elseif type(va) is 'table' then
+         sorted = { }
+         for name, value in pairs(va) do
+            table.insert(sorted, { name = name, value = value })
+         end
+
+         table.sort(sorted, function(a,b)
+            if a.value is b.value then
+               return a.name < b.name
+            elseif type(a.value) is 'number' and type(b.value) is 'number' then
+               return a.value < b.value
+            else
+               return tostring(a.value) < tostring(b.value)
+            end
+         end)
+
+         for v in values(sorted) do
+            local val, comment, cap
+            if type(v.value) is 'string' then
+               val, comment = rx_key_comment.extract(v.value)
+            end
+            val ?= v.value
+
+            if Options.type then
+               out:push(f'   {v.name} = {val},')
+            else
+               out:push(f'#define {Prefix}_{v.name} {val}')
+            end
+
+            table.insert(list, { name=v.name, value=val, comment=comment })
+         end
+      else
+         error(f'Invalid const type for "{Prefix}", expected string, got "{type(va)}"')
+      end
+   end
+
+   if Options.type then
+      out:push('};')
+   end
+
+   out:push('')
+
+   if Options.module?? and (Options.module:lower() != glModule.name:lower()) then
+     -- Do nothing, module restriction imposed.
+   elseif not glRestrict then
+      for v in values(out) do table.insert(glConstants, v) end
+   end
+
+   glCustomTypes[Prefix] = {
+      prefix=Prefix, grouping='constants', list=list, comment=Options.comment,
+      restrict=(glRestrict ?? Options.restrict),
+      type=Options.type -- Promotes strong-typing to other C++ definitions
+   }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- TDL function
+
+global function enum(Prefix:str, Options:table, ...)
+   verbose(f'Processing {Prefix} enum.')
+   if glCustomTypes[Prefix] then print(f'WARN: A "{Prefix}" constant already exists.') end
+
+   Options ?= {}
+
+   out = array<string>
+   if Options.comment?? then
+      out:push(f'// {Options.comment}')
+      out:push('')
+   end
+
+   if Options.type then -- Strong typing enabled, convert via cType()
+      Options.type = cType({ type=Options.type }, Prefix)
+      out:push(f'enum class {Prefix} : {Options.type.type} {{')
+      out:push('   NIL = 0,')
+   end
+
+   list = { }
+   inc = (Options.start ?? 0)
+   for va in values({...}) do
+      if type(va) is 'string' then
+         local key, comment = rx_key_comment.extract(va)
+         key ?= va
+         synonym = false
+         for name in values(key:split('|')) do
+            if Options.type then
+               out:push(f'   {name} = {inc},')
+            elseif Options.bits is 64 then
+               out:push(f'#define {Prefix}_{name} {inc}LL')
+            else
+               out:push(f'#define {Prefix}_{name} {inc}')
+            end
+
+            table.insert(list, { name=name, value=inc, comment=comment, synonym=synonym })
+            synonym = true
+         end
+
+         inc++
+      elseif type(va) is 'table' then -- The client provided a table of fixed values
+         for name, client_val in pairs(va) do
+            assert(type(client_val) is 'number', f'Client-provided enum values must be numeric, got {client_val}')
+
+            if Options.type then
+               out:push(f'   {name} = {client_val},')
+            elseif Options.bits is 64 then
+               out:push(f'#define {Prefix}_{name} {client_val}LL')
+            else
+               out:push(f'#define {Prefix}_{name} {client_val}')
+            end
+
+            table.insert(list, { name=name, value=client_val })
+         end
+      else
+         error('Invalid enum type for "' .. Prefix .. '", expected string, got "' .. type(va) .. '"')
+      end
+   end
+
+   if Options.type then
+      out:push('};')
+   end
+
+   out:push('')
+
+   if Options.module?? and (Options.module:lower() != glModule.name:lower()) then
+     -- Do nothing, module restriction imposed.
+   elseif not glRestrict then
+      for v in values(out) do table.insert(glConstants, v) end
+   end
+
+   glCustomTypes[Prefix] = {
+      prefix=Prefix, grouping='constants', list=list, comment=Options.comment,
+      restrict=(glRestrict ?? Options.restrict),
+      bits=Options.bits,
+      type=Options.type -- Promotes strong-typing to other C++ definitions
+   }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- TDL function
+
+global function platform(Platform, Function)
+   saveHeader = glHeader
+   saveOutput = glOutput
+   global glHeader = array<string>
+   global glOutput = array<string>
+
+   local define
+   if (Platform:lower() is 'windows') then
+      define = '_WIN32'
+      Function()
+   elseif (Platform:lower() is 'linux') then
+      define = '__linux__'
+      Function()
+   elseif (Platform:lower() is 'x11') then
+      define = '__xwindows__'
+      Function()
+   --elseif (Platform:lower() is 'osx') then
+   --   define = '__xwindows__'
+   --   Function()
+   else
+      error('Unrecognised platform "' .. Platform .. '"')
+   end
+
+   platformHeader = glHeader
+   platformOutput = glOutput
+   glHeader = saveHeader
+   glOutput = saveOutput
+
+   if #platformHeader > 0 then
+      priority('#ifdef ' .. define)
+      priority()
+      for v in values(platformHeader) do
+         priority(v)
+      end
+      priority('#endif')
+      priority()
+   end
+
+   if #platformOutput > 0 then
+      output('#ifdef ' .. define)
+      output()
+      for v in values(platformOutput) do
+         output(v)
+      end
+      output('#endif')
+      output()
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- TDL function
+
+global function struct(Name, Options:table, Def, Append)
+   verbose('Processing struct ' .. tostring(Name))
+
+   prevStruct = glCurrentStructure
+   global glCurrentStructure = Name
+
+   try
+      Options ?= {}
+
+      out = array<string>
+      full_name = Name
+      if Options.version then
+         out:push(f'#define VER_{Name:upper()} {string.format("%f", Options.version)}')
+         out:push('')
+         full_name = Name .. 'V' .. Options.version
+      end
+
+      if not Options.type then
+         out:push(f'struct {full_name} {{')
+      else
+         out:push(f'typedef struct {full_name} {{')
+      end
+
+      fields = extractFields(Def, full_name)
+
+      type_len = 0
+      name_len = 0
+      type_max = 0
+      for f in values(fields) do
+         field_name = cName(f, true)
+         if field_name:len() > name_len then name_len = field_name:len() end
+
+         if f.type:len() > type_len then
+            if f.type:len() < 10 then
+               type_len = f.type:len()
+            end
+         end
+
+         if f.type:len() + field_name:len() > type_max then
+            type_max = f.type:len() + 2 + field_name:len()
+         end
+      end
+
+      max_len = 3 + type_max + 1 + 2
+
+      for f in values(fields) do
+         field_name = cName(f, true)
+         local left
+         if field_name?? then -- field_name can be nil if the field describes a function pointer
+            left = string.format('   %-' .. type_len .. 's %s;', (f.extType ?? f.type), field_name)
+         else
+            left = string.format('   %-' .. type_len .. 's;', (f.extType ?? f.type))
+         end
+
+         if f.comment?? then
+            clean_comment = rx_comment_chars.replace(f.comment, '')
+            out:push(string.format('%-' .. max_len .. 's // %s', left, clean_comment))
+         else
+            print('WARN: ' .. full_name .. '.' .. f.name .. ' requires a comment.')
+            out:push(left)
+         end
+      end
+
+      if Append then
+         out:push(Append:rtrim())
+      end
+
+      if not Options.type then
+         out:push('};')
+         out:push('')
+      else
+         Options.type = Options.type:upper()
+         out:push('} ' .. Options.type .. ';')
+         out:push('')
+      end
+
+      if Options.module?? and (Options.module:lower() != glModule.name:lower()) then
+        -- Do nothing, module restriction imposed.
+      elseif not glRestrict then
+         for v in values(out) do glOutput:push(v) end
+      end
+
+      glStructures[Name] = {
+         version = Options.version, type = Options.type, comment = Options.comment, fields = fields,
+         restrict = (glRestrict ?? Options.restrict), name = Name
+      }
+   except ex
+      glCurrentStructure = prevStruct
+      error(ex.message)
+   end
+
+   glCurrentStructure = prevStruct
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Create a C/C++ field name from the definitions in a Field object.
+
+global function cName(Field, CStruct)
+   if Field.isFunctionPtr then return '' end -- Functions have their name embedded in the type.
+
+   name = Field.name
+   if CStruct then
+      if (Field.type is 'OBJECTID') or (Field.type is 'MEMORYID') then
+         if name:sub(-2) != 'ID' then
+            name ..= 'ID'
+         end
+      end
+   end
+
+   if Field.arraySize and (Field.arraySize > 0) then
+      name ..= '[' .. Field.arraySize .. ']'
+   end
+
+   if Field.bits then
+      name ..= ':1'
+   end
+
+   return name
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- TDL Function
+-- Refer to outputClassHeader() for output of the class structure.
+
+global function class(Name, Options:table, Spec, Private, Custom)
+   verbose('Processing class ' .. tostring(Name))
+
+   Options ?= {}
+
+   output(f'// {Name} class definition')
+   output()
+   output(f'#define VER_{Name:upper()} ({string.format("%f", Options.version ?? 1.0)})')
+   output()
+
+   local class = registerClass(Name)
+   class.name = Name -- The name defined by class() has priority over any name defined by method()
+   class.src = Options.src
+   if Options.base then
+      class.base = "obj" .. Options.base
+   end
+   class.references = { }
+
+   global glActiveRefs = class.references
+
+   if type(class.src) is 'string' then class.src = { class.src } end -- Convert string to an array of strings
+
+   if mSys.GetResource(RES_STATIC_BUILD) is 0 then
+      -- Attempt to load the class into memory.  This introduces a circular reference when the module is not yet
+      -- compiled, so the meta information may only be used for phase 2 output (i.e. documentation).
+
+      if mSys.AnalysePath('~modules:' .. glModule.name) is ERR_Okay then
+         class.meta = mSys.FindClass(Name:hash(), 0)
+      else
+         if glFeedback is 'verbose' then
+            print(f'Module {glModule.name} not compiled, class documentation will not be produced.')
+         end
+      end
+   else
+      class.meta = mSys.FindClass(Name:hash(), 0)
+   end
+
+   -- Process methods and fields defined in the source code (if available)
+
+   cdef = parseClassFields(class, Spec)
+
+   if not table.empty(Options.references) then
+      for v in values(Options.references) do
+         if glCustomTypes[v]?? then
+            cdef = cdef .. outputLookup(class.name .. v, glCustomTypes[v].list)
+            glCustomTypes[v].restrict = nil
+         elseif glStructures[v]?? then
+            class.references['STRUCT:' .. v] = true
+            -- A manual reference to a structure will forcibly turn off any restriction
+            glStructures[v].restrict = nil
+         else
+            print(f'Reference to lookup {v} not found.')
+         end
+      end
+   end
+
+   class.actions = { }
+   if class.src then
+      -- Process -METHOD- and -FIELD- definitions
+
+      for path in values(class.src) do
+         if glFeedback is 'verbose' then
+            print()
+            print(f'Class file: {glTDLFolder}{path}')
+         end
+
+         content = io.readAll(glTDLFolder .. path)
+         content = content:replace('\r\n', '\n')
+
+         -- Look for C/C++ action declarations, in the format: ERR CLASS_Action(...).  This will create a series
+         -- of dummy action entries that can be overwritten with -ACTION- sections.
+
+         local rx_patterns = {
+            regex.new('ERR\\s*' .. Name:upper() .. '_([A-Za-z]+)\\(obj[^\\)]*\\)'),
+            regex.new('ERR\\s*' .. Name:upper() .. '_([A-Za-z]+)\\(ext[^\\)]*\\)')
+         }
+
+         for rx in values(rx_patterns) do
+            for _, _, cap in rx.findAll(content) do
+               local action_name = cap[0]
+               if glActions[action_name] then
+                  verbose('Discovered action ' .. action_name)
+                  class.actions[action_name] = { name=action_name }
+               else
+                  verbose('Ignoring declaration of ' .. action_name)
+               end
+            end
+         end
+
+         -- Extract possible content from within comments so that we don't get interference from the code while parsing.
+
+         local extracted_content = ''
+         for _, _, cap in rx_extract_comment.findAll(content) do
+            extracted_content ..= '\n' .. cap[0]
+         end
+
+         -- Parse each line individually
+
+         local current_entry, proc
+         for line in values(extracted_content:split('\n')) do
+            if line?? then
+               line = rx_trailing_space.extract(line)
+               if (line is '-CLASS-') or (line is '-METHOD-') or (line is '-ACTION-') or (line is '-FIELD-') then
+                  if current_entry then parseClassEntry(class, proc, current_entry) end
+                  current_entry = ''
+                  proc = line
+               elseif line is '-END-' then
+                  if current_entry then parseClassEntry(class, proc, current_entry) end
+                  current_entry = nil
+                  proc = nil
+               elseif line is '-INTERNAL-' then
+                  current_entry = nil
+                  proc = nil
+               elseif current_entry then
+                  current_entry ..= line .. '\n'
+               end
+            elseif current_entry then
+               current_entry ..= '\n'
+            end
+         end
+
+         if current_entry then parseClassEntry(class, proc, current_entry) end
+      end
+   end
+
+   -- Export method definitions for a class
+
+   if class.methods then
+      pfx  = class.methodPrefix
+      lpfx = pfx:lower()
+
+      if glFeedback is 'verbose' then
+         print('Generating ' .. #class.methods .. ' methods.')
+      end
+
+      for k, method in ipairs(class.methods) do
+         if method.input?? then
+            method.params = { }
+            for _,v in ipairs(method.input:split(';')) do
+               v = v:trim()
+               if v?? then
+                  local param = { }
+                  param.type, param.name = rx_type_name.extract(v)
+                  cType(param, 'Method ' .. method.name)
+                  table.insert(method.params, param)
+               end
+            end
+         end
+
+         -- Generate a modified C method name for the function declaration if the method shares a name with an existing
+         -- action.  E.g. 'XML_Sort' will become 'XML_SortXML'
+
+         method.funcName = method.name
+         if glActions[method.funcName] then
+            method.funcName ..= Name
+         end
+
+         function pName(Param:str):str
+            name = Param.name
+            if (Param.type is 'OBJECTID') or (Param.type is 'MEMORYID') then
+               if name:sub(-2) != 'ID' then
+                  name ..= 'ID'
+               end
+            end
+            return name
+         end
+
+         struct_params = '' -- struct parameter types & names
+         v = '' -- Parameter values
+         results = false
+         params = ''
+         if method.params then
+            for param in values(method.params) do
+               struct_params ..= param.basicType .. ' ' .. pName(param) .. '; '
+
+               if params?? then params ..= ', ' end
+
+               if param.type is 'FUNCTION *' then
+                  params ..= 'FUNCTION ' .. pName(param)
+                  if v?? then v ..= ', ' end
+                  v ..= '&' .. pName(param)
+               else
+                  params ..= param.type .. ' ' .. pName(param)
+                  if v?? then v ..= ', ' end
+
+                  if param.resultValue then
+                     v ..= '(' .. param.basicType .. ')0'
+                     results = true
+                  else
+                     v ..= pName(param)
+                  end
+               end
+            end
+         end
+
+         action_support = f'static const AC id = AC(-{method.id}); ERR call(OBJECTPTR Object) {{ return Action(id, Object, this); }}'
+         if method.params and #method.params > 0 then
+            class.methods[k].struct = f'struct {method.name} {{ {struct_params:trim()} {action_support} }};'
+         else
+            class.methods[k].struct = f'struct {method.name} {{ {action_support} }};'
+         end
+
+         name = method.name:decap()
+         if name is 'delete' then name = 'del' end -- C++ keyword check
+
+         inline = f'   inline ERR {name}({params}) noexcept {{\n'
+         local args = 'nullptr'
+
+         if method.params and #method.params > 0 then
+            inline ..= f'      struct {lpfx}::{method.name} args = {{ {v} }};\n'
+            args = '&args'
+         end
+
+         if (results) then
+            inline ..= f'      ERR error = Action(AC(-{method.id}), this, {args});\n'
+            for p in values(method.params) do
+               if p.resultValue then
+                  inline ..= f'      if ({p.name}) *{p.name} = args.{p.name};\n'
+               end
+            end
+            inline ..= '      return(error);\n'
+         else
+            inline ..= f'      return(Action(AC(-{method.id}), this, {args}));\n'
+         end
+
+         inline ..= '   }'
+         class.methods[k].nestedInline = inline
+      end
+
+      output('// ' .. Name:cap() .. ' methods')
+      output()
+
+      if lpfx?? then
+         output('namespace ' .. lpfx .. ' {')
+      end
+
+      for method in values(class.methods) do
+         if method.struct?? then
+            output(method.struct)
+         end
+      end
+      output()
+
+      if lpfx?? then
+         output('} // namespace')
+      end
+
+      output()
+   end
+
+   class.sortedActions = { }
+   for a in values(class.actions) do
+      table.insert(class.sortedActions, a)
+   end
+
+   if not table.empty(class.sortedActions) then
+      table.sort(class.sortedActions, function(a,b) return a.name < b.name end)
+   end
+
+   outputClassHeader(class, Private, Custom)
+
+   -- Output internal C definitions for class methods & actions, if an output file has been specified.
+
+   if Options.output?? then
+      mdef = ''
+      if not table.empty(class.methods) then
+         for m in values(class.methods) do
+            if not table.empty(m.params) then
+               mdef ..= f'FDEF ma{m.name}[] = {{ {buildInputParameters(m.params)} }};\n'
+            end
+         end
+         mdef ..= '\n'
+
+         mdef ..= f'static const struct MethodEntry cl{Name}Methods[] = {{\n'
+         for m in values(class.methods) do
+            local structSize
+            if table.empty(m.params) then
+               mdef ..= f'   {{ AC(-{m.id}), (APTR){Name:upper()}_{m.funcName}, "{m.name}", 0, 0 }},\n'
+            else
+               structSize = f'sizeof(struct {class.methodPrefix:lower()}::{m.name})'
+               mdef ..= f'   {{ AC(-{m.id}), (APTR){Name:upper()}_{m.funcName}, "{m.name}", ma{m.name}, {structSize} }},\n'
+            end
+         end
+         mdef ..= '   { AC::NIL, 0, 0, 0, 0 }\n};\n\n'
+      end
+
+      if not table.empty(class.sortedActions) then
+         mdef ..= "static const struct ActionArray cl" .. Name .. "Actions[] = {\n"
+         for action in values(class.sortedActions) do
+            mdef ..= f"   {{ AC::{action.name}, {Name:upper()}_{action.name} }},\n"
+         end
+         mdef ..= "   { AC::NIL, nullptr }\n};\n\n"
+      end
+
+      fl = obj.new("file", { flags=FL_WRITE|FL_NEW, location=glTDLFolder .. Options.output } )
+      fl.acWrite("// Auto-generated by idl-c.tiri\n\n")
+      if cdef?? then fl.acWrite(cdef) end
+      if mdef?? then fl.acWrite(mdef) end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- TDL Function
+-- This is a shortened version of functions(), where only the names of the functions need to be specified as a list.
+-- Further elaboration on the functions is normally done by embedding -FUNCTION- sections in the module code.
+
+global function functionNames(Prefix, ...)
+   global glFunctionPrefix = Prefix ?? ''
+   for fname in values({...}) do
+      if rx_non_word.test(fname) then
+         error(f'Invalid function name "{fname}"')
+      end
+
+      func = {
+         name  = fname,
+         def   = f'   void (*_{fname})(void);',
+         macro = function() -- Default macro, to be overridden by documented function
+            return f'template <typename... Args> inline ERR {glFunctionPrefix:lower()}{fname}(Args... pArgs) noexcept {{ return {glModule.name}Base->_{fname}(pArgs...); }}'
+         end,
+         staticMacro = function()
+            return f'template <typename... Args> ERR {glFunctionPrefix:lower()}{fname}(Args... pArgs);'
+         end
+      }
+
+      table.insert(glFunctions, func)
+      glFunctionLookup[fname] = func
+   end
+
+   output('__FUNCTION_TABLE__')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- TDL Function
+-- Register methods for a class.  This must be declared prior to the corresponding class() function call.
+
+global function methods(ClassName:str, Prefix:str, Methods)
+   verbose(<{ 'Processing ' .. #Methods .. ' methods for class ' .. tostring(ClassName) }>)
+
+   local class = registerClass(ClassName)
+   class.methodPrefix = Prefix
+   class.methods = Methods
+
+   -- Generate a lookup table by method name
+   class.lookupMethods = { }
+   for m in values(class.methods) do
+      class.lookupMethods[m.name] = m
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- TDL Function
+
+global function c_insert(Raw)
+   if glRestrict then return end
+   output(Raw)
+end

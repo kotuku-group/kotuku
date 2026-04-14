@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="CompressedStream" mod="Core" c="Acts as a proxy for decompressing and compressing data streams between objects." cat="Data" id="2144cb86" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="CompressedStream" mod="Core" c="Acts as a proxy for decompressing and compressing data streams between objects." cat="Data" id="2144cb86" v="1">
   <ai:f n="Format" c="The format of the compressed stream. The default is GZIP." t="CF" a="RI"/>
   <ai:f n="Input" c="An input object that will supply data for decompression." t="OBJECTPTR" a="RI"/>
   <ai:f n="Output" c="A target object that will receive data compressed by the stream." t="OBJECTPTR" a="RI"/>

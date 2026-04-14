@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-8254DG7MT6"> </script><script>
+	   window.dataLayer = window.dataLayer || [];
+	   function gtag(){dataLayer.push(arguments);}
+	   gtag('js', new Date());
+      gtag('config', 'G-8254DG7MT6');</script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Kōtuku documentation, machine generated from source">
+<meta name="author" content="Paul Manias">
+<link rel="icon" href="/favicon.ico">
+<title>Kōtuku Wiki - Tiri URL API</title>
+<link href="../css/bootstrap.min.css" rel="stylesheet">
+<link href="../css/module-template.css" rel="stylesheet">
+<link href="../css/github-markdown.css" rel="stylesheet">
+</head>
+
+<body>
+<nav class="navbar navbar-expand-sm navbar-dark bg-dark">
+  <div class="container-fluid">
+    <div class="navbar-header"><a class="navbar-brand" href="../index.html">Kōtuku</a></div>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div id="navbar" class="collapse navbar-collapse">
+      <ul class="nav navbar-nav"><li class="nav-item">
+        <li class="nav-item"><a class="nav-link" href="../gallery.html">Gallery</a></li>
+        <li class="nav-item"><a class="nav-link" href="../modules/api.html">API</a></li>
+        <li class="nav-item"><a class="nav-link" href="Home.html">Wiki</a></li>
+        <li class="nav-item"><a class="nav-link" href="https://github.com/parasol-framework/kotuku">GitHub</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<div class="container-fluid">
+  <div class="row">
+    <div class="d-sm-block d-none col-3 sidebar" style="max-width: 230px;">
+      <div class="flex-shrink-1 pt-2 pe-2 sticky-top overflow-auto vh-100 b-shadow">
+
+<ul class="list-unstyled">
+  <li>
+    <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#wiki-collapse" aria-expanded="true">Wiki</button>
+    <div class="collapse show" id="wiki-collapse">
+      <ul class="btn-toggle-nav list-unstyled fw-normal pb-1 ps-3">
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#bp-collapse" aria-expanded="false">Build Process</button>
+         <div class="collapse" id="bp-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="Linux-Builds.html">Linux Builds</a></li>
+              <li class="api-ref"><a class="rounded" href="Windows-Builds.html">Windows Builds</a></li>
+              <li class="api-ref"><a class="rounded" href="Customising-Your-Build.html">Customising Your Build</a></li>
+            </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#tm-collapse" aria-expanded="false">Technical Manuals</button>
+         <div class="collapse" id="tm-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+             <li class="api-ref"><a class="rounded" href="Kotuku-Objects.html">Kōtuku Objects</a></li>
+             <li class="api-ref"><a class="rounded" href="Kotuku-In-Depth.html">Kōtuku In Depth</a></li>
+             <li class="api-ref"><a class="rounded" href="Coding-With-AI.html">Coding With AI</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#fg-collapse" aria-expanded="false">Tiri</button>
+         <div class="collapse" id="fg-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+            <li class="api-ref"><a class="rounded" href="Tiri-Reference-Manual.html">Tiri Reference Manual</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-GUI-API.html">GUI API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-HTTPServer-API.html">HTTPServer API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-IO-API.html">I/O API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-JSON-API.html">JSON API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-URL-API.html">URL API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-VFX-API.html">VFX API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-Widgets.html">Widgets</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#rrm-collapse" aria-expanded="false">RIPL</button>
+         <div class="collapse" id="rrm-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="RIPL-Reference-Manual.html">RIPL Reference Manual</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#tools-collapse" aria-expanded="false">Tools</button>
+         <div class="collapse" id="tools-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="Origo.html">Origo</a></li>
+              <li class="api-ref"><a class="rounded" href="Unit-Testing.html">Flute / Unit Testing</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#doc-collapse" aria-expanded="false">Doc Generation</button>
+         <div class="collapse" id="doc-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="Embedded-Document-Formatting.html">Embedded Document Format</a></li>
+              <li class="api-ref"><a class="rounded" href="TDL-Reference-Manual.html">TDL Reference Manual</a></li>
+              <li class="api-ref"><a class="rounded" href="TDL-Tools.html">TDL Tools</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#app-collapse" aria-expanded="false">Appendix</button>
+         <div class="collapse" id="app-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+             <li class="api-ref"><a class="rounded" href="Action-Reference-Manual.html">Action Reference Manual</a></li>
+             <li class="api-ref"><a class="rounded" href="System-Error-Codes.html">System Error Codes</a></li>
+           </ul>
+         </div></li>
+      </ul>
+    </div>
+  </li>
+</ul>
+
+<ul class="list-unstyled">
+  <li class="border-top my-3"></li>
+  <li>
+    <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#mod-collapse" aria-expanded="false">Modules</button>
+    <div class="collapse" id="mod-collapse">
+      <ul class="btn-toggle-nav list-unstyled fw-normal">
+      <li class="api-ref"><a href="../modules/audio.html" class="rounded">Audio</a></li>
+      <li class="api-ref"><a href="../modules/core.html" class="rounded">Core</a></li>
+      <li class="api-ref"><a href="../modules/display.html" class="rounded">Display</a></li>
+      <li class="api-ref"><a href="../modules/font.html" class="rounded">Font</a></li>
+      <li class="api-ref"><a href="../modules/network.html" class="rounded">Network</a></li>
+      <li class="api-ref"><a href="../modules/regex.html" class="rounded">Regex</a></li>
+      <li class="api-ref"><a href="../modules/tiri.html" class="rounded">Tiri</a></li>
+      <li class="api-ref"><a href="../modules/vector.html" class="rounded">Vector</a></li>
+      <li class="api-ref"><a href="../modules/xml.html" class="rounded">XML</a></li>
+      <li class="api-ref"><a href="../modules/xpath.html" class="rounded">XPath</a></li>
+      </ul>
+    </div>
+  </li>
+</ul>
+
+<ul class="list-unstyled">
+  <li class="border-top my-3"></li>
+  <li>
+    <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#class-collapse" aria-expanded="false">Classes</button>
+    <div class="collapse" id="class-collapse">
+      <ul class="btn-toggle-nav list-unstyled fw-normal pb-1 ps-3">
+        <li>
+          <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#audio-collapse" aria-expanded="false">Audio</button>
+          <div class="collapse" id="audio-collapse">
+            <ul class="btn-toggle-nav list-unstyled fw-normal pb-1">
+            <li><a href="../modules/classes/audio.html" class="rounded">Audio</a></li>
+            <li><a href="../modules/classes/sound.html" class="rounded">Sound</a></li>
+            </ul>
+          </div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#core-collapse" aria-expanded="false">Core</button><div class="collapse" id="core-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a href="../modules/classes/file.html" class="rounded">File</a></li>
+        <li><a href="../modules/classes/metaclass.html" class="rounded">MetaClass</a></li>
+        <li><a href="../modules/classes/module.html" class="rounded">Module</a></li>
+        <li><a href="../modules/classes/storagedevice.html" class="rounded">StorageDevice</a></li>
+        <li><a href="../modules/classes/task.html" class="rounded">Task</a></li>
+        <li><a href="../modules/classes/thread.html" class="rounded">Thread</a></li>
+        <li><a href="../modules/classes/time.html" class="rounded">Time</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#data-collapse" aria-expanded="false">Data</button><div class="collapse" id="data-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a href="../modules/classes/compression.html" class="rounded">Compression</a></li>
+        <li><a href="../modules/classes/compressedstream.html" class="rounded">CompressedStream</a></li>
+        <li><a href="../modules/classes/config.html" class="rounded">Config</a></li>
+        <li><a href="../modules/classes/script.html" class="rounded">Script</a></li>
+        <li><a href="../modules/classes/xml.html" class="rounded">XML</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#devices-collapse" aria-expanded="false">Devices</button><div class="collapse" id="devices-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li><a href="../modules/classes/controller.html" class="rounded">Controller</a></li></ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#effects-collapse" aria-expanded="false">Effects</button><div class="collapse" id="effects-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/blurfx.html">BlurFX</a></li>
+        <li><a class="rounded" href="../modules/classes/colourfx.html">ColourFX</a></li>
+        <li><a class="rounded" href="../modules/classes/compositefx.html">CompositeFX</a></li>
+        <li><a class="rounded" href="../modules/classes/convolvefx.html">ConvolveFX</a></li>
+        <li><a class="rounded" href="../modules/classes/displacementfx.html">DisplacementFX</a></li>
+        <li><a class="rounded" href="../modules/classes/filtereffect.html">FilterEffect</a></li>
+        <li><a class="rounded" href="../modules/classes/floodfx.html">FloodFX</a></li>
+        <li><a class="rounded" href="../modules/classes/imagefx.html">ImageFX</a></li>
+        <li><a class="rounded" href="../modules/classes/lightingfx.html">LightingFX</a></li>
+        <li><a class="rounded" href="../modules/classes/mergefx.html">MergeFX</a></li>
+        <li><a class="rounded" href="../modules/classes/morphologyfx.html">MorphologyFX</a></li>
+        <li><a class="rounded" href="../modules/classes/offsetfx.html">OffsetFX</a></li>
+        <li><a class="rounded" href="../modules/classes/remapfx.html">RemapFX</a></li>
+        <li><a class="rounded" href="../modules/classes/sourcefx.html">SourceFX</a></li>
+        <li><a class="rounded" href="../modules/classes/turbulencefx.html">TurbulenceFX</a></li>
+        <li><a class="rounded" href="../modules/classes/wavefunctionfx.html">WaveFunctionFX</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#ext-collapse" aria-expanded="false">Extensions</button><div class="collapse" id="ext-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/scintilla.html">Scintilla</a></li>
+        <li><a class="rounded" href="../modules/classes/scintillasearch.html">ScintillaSearch</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#gfx-collapse" aria-expanded="false">Graphics</button><div class="collapse" id="gfx-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/bitmap.html">Bitmap</a></li>
+        <li><a class="rounded" href="../modules/classes/clipboard.html">Clipboard</a></li>
+        <li><a class="rounded" href="../modules/classes/display.html">Display</a></li>
+        <li><a class="rounded" href="../modules/classes/document.html">Document</a></li>
+        <li><a class="rounded" href="../modules/classes/font.html">Font</a></li>
+        <li><a class="rounded" href="../modules/classes/picture.html">Picture</a></li>
+        <li><a class="rounded" href="../modules/classes/pointer.html">Pointer</a></li>
+        <li><a class="rounded" href="../modules/classes/surface.html">Surface</a></li>
+        <li><a class="rounded" href="../modules/classes/svg.html">SVG</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#net-collapse" aria-expanded="false">Network</button><div class="collapse" id="net-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/clientsocket.html">ClientSocket</a></li>
+        <li><a class="rounded" href="../modules/classes/http.html">HTTP</a></li>
+        <li><a class="rounded" href="../modules/classes/netclient.html">NetClient</a></li>
+        <li><a class="rounded" href="../modules/classes/netlookup.html">NetLookup</a></li>
+        <li><a class="rounded" href="../modules/classes/netsocket.html">NetSocket</a></li>
+        <li><a class="rounded" href="../modules/classes/proxy.html">Proxy</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#vectors-collapse" aria-expanded="false">Vectors</button><div class="collapse" id="vectors-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/vector.html">Vector</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorclip.html">VectorClip</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorcolour.html">VectorColour</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorellipse.html">VectorEllipse</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorfilter.html">VectorFilter</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorgradient.html">VectorGradient</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorgroup.html">VectorGroup</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorimage.html">VectorImage</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorpath.html">VectorPath</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorpattern.html">VectorPattern</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorpolygon.html">VectorPolygon</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorrectangle.html">VectorRectangle</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorscene.html">VectorScene</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorshape.html">VectorShape</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorspiral.html">VectorSpiral</a></li>
+        <li><a class="rounded" href="../modules/classes/vectortext.html">VectorText</a></li>
+        <li><a class="rounded" href="../modules/classes/vectortransition.html">VectorTransition</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorviewport.html">VectorViewport</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorwave.html">VectorWave</a></li>
+        </ul></div>
+        </li>
+      </ul>
+    </div>
+  </li>
+</ul>
+
+</div>
+</div>
+
+<div class="col-sm-9" style="max-width: 1200px;">
+<div class="docs-content" id="default-page">
+
+<h1>Tiri URL API</h1>
+<h2 id="url-parsing-and-manipulation">URL Parsing and Manipulation</h2>
+<p>The URL interface provides comprehensive URL parsing, encoding, and manipulation capabilities similar to Python&#39;s urllib.parse module. It supports RFC 3986 compliant URL handling with features for encoding/decoding, query string manipulation, URL joining, and component extraction.</p>
+<p>The module is designed for HTTP client/server development, web API integration, and any application requiring robust URL manipulation.</p>
+<p>It can be loaded with the line:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>import <span class="st">&#39;net/url&#39;</span></span></code></pre></div>
+<h2 id="url-encoding-functions">URL Encoding Functions</h2>
+<h3 id="urlencode">url.encode()</h3>
+<p><code>encoded = url.encode(String, ExtraChars)</code></p>
+<p>Percent-encodes a string for safe URL use, encoding reserved characters according to RFC 3986.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="va">encoded</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>encode<span class="op">(</span><span class="st">&#39;hello world!&#39;</span><span class="op">)</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- Result: &#39;hello%20world%21&#39;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="va">encoded</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>encode<span class="op">(</span><span class="st">&#39;user@domain.com&#39;</span><span class="op">)</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="co">-- Result: &#39;user%40domain.com&#39;</span></span></code></pre></div>
+<p>The optional <code>ExtraChars</code> parameter allows additional characters to be encoded beyond the standard reserved set.</p>
+<h3 id="urlencodeplus">url.encodePlus()</h3>
+<p><code>encoded = url.encodePlus(String, ExtraChars)</code></p>
+<p>Percent-encodes a string with spaces converted to plus signs, suitable for form data encoding.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="va">encoded</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>encodePlus<span class="op">(</span><span class="st">&#39;hello world&#39;</span><span class="op">)</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- Result: &#39;hello+world&#39;</span></span></code></pre></div>
+<h3 id="urldecode">url.decode()</h3>
+<p><code>decoded = url.decode(String)</code></p>
+<p>Decodes a percent-encoded string back to its original form.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="va">decoded</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>decode<span class="op">(</span><span class="st">&#39;hello%20world%21&#39;</span><span class="op">)</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- Result: &#39;hello world!&#39;</span></span></code></pre></div>
+<h3 id="urldecodeplus">url.decodePlus()</h3>
+<p><code>decoded = url.decodePlus(String)</code></p>
+<p>Decodes a percent-encoded string with plus signs converted to spaces.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="va">decoded</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>decodePlus<span class="op">(</span><span class="st">&#39;hello+world&#39;</span><span class="op">)</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- Result: &#39;hello world&#39;</span></span></code></pre></div>
+<h3 id="urlencodecomponent">url.encodeComponent()</h3>
+<p><code>encoded = url.encodeComponent(String)</code></p>
+<p>Encodes a string for safe use in URL path components.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="va">encoded</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>encodeComponent<span class="op">(</span><span class="st">&#39;file name.txt&#39;</span><span class="op">)</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- Result: &#39;file%20name.txt&#39;</span></span></code></pre></div>
+<h2 id="query-string-functions">Query String Functions</h2>
+<h3 id="urlparsequery">url.parseQuery()</h3>
+<p><code>params = url.parseQuery(QueryString)</code></p>
+<p>Parses a query string into a table of key-value pairs. Duplicate keys are automatically converted to arrays.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="va">params</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>parseQuery<span class="op">(</span><span class="st">&#39;name=John&amp;age=30&amp;tag=red&amp;tag=blue&#39;</span><span class="op">)</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- Result: { name = &#39;John&#39;, age = &#39;30&#39;, tag = { &#39;red&#39;, &#39;blue&#39; } }</span></span></code></pre></div>
+<h3 id="urlparsequerylist">url.parseQueryList()</h3>
+<p><code>params = url.parseQueryList(QueryString)</code></p>
+<p>Parses a query string into an ordered list of key-value pairs, preserving parameter order and duplicates.</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="va">params</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>parseQueryList<span class="op">(</span><span class="st">&#39;first=1&amp;second=2&amp;first=3&#39;</span><span class="op">)</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- Result: {</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="co">--   { key = &#39;first&#39;, value = &#39;1&#39; },</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="co">--   { key = &#39;second&#39;, value = &#39;2&#39; },</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="co">--   { key = &#39;first&#39;, value = &#39;3&#39; }</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="co">-- }</span></span></code></pre></div>
+<h3 id="urlbuildquery">url.buildQuery()</h3>
+<p><code>queryString = url.buildQuery(Params)</code></p>
+<p>Builds a query string from a table or list of parameters.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="va">params</span> <span class="op">=</span> <span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;John Doe&#39;</span><span class="op">,</span> <span class="va">age</span> <span class="op">=</span> <span class="dv">30</span> <span class="op">}</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="va">query</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>buildQuery<span class="op">(</span><span class="va">params</span><span class="op">)</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="co">-- Result: &#39;name=John+Doe&amp;age=30&#39;</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="va">list</span> <span class="op">=</span> <span class="op">{</span> <span class="op">{</span> <span class="va">key</span> <span class="op">=</span> <span class="st">&#39;first&#39;</span><span class="op">,</span> <span class="va">value</span> <span class="op">=</span> <span class="st">&#39;1&#39;</span> <span class="op">},</span> <span class="op">{</span> <span class="va">key</span> <span class="op">=</span> <span class="st">&#39;second&#39;</span><span class="op">,</span> <span class="va">value</span> <span class="op">=</span> <span class="st">&#39;2&#39;</span> <span class="op">}</span> <span class="op">}</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="va">query</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>buildQuery<span class="op">(</span><span class="va">list</span><span class="op">)</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a><span class="co">-- Result: &#39;first=1&amp;second=2&#39;</span></span></code></pre></div>
+<h3 id="urlencodeparams">url.encodeParams()</h3>
+<p><code>queryString = url.encodeParams(Params)</code></p>
+<p>Alias for <code>url.buildQuery()</code> - encodes parameters into query string format.</p>
+<h2 id="url-parsing-functions">URL Parsing Functions</h2>
+<h3 id="urlparse">url.parse()</h3>
+<p><code>components = url.parse(UrlString)</code></p>
+<p>Parses a URL into its component parts, returning a table with the following fields:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Field</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">scheme</td>
+<td style="text-align: left;">Protocol scheme (e.g., &#39;http&#39;, &#39;https&#39;, &#39;ftp&#39;)</td>
+</tr>
+<tr>
+<td style="text-align: left;">auth</td>
+<td style="text-align: left;">Authentication information (user:password)</td>
+</tr>
+<tr>
+<td style="text-align: left;">host</td>
+<td style="text-align: left;">Hostname or IP address</td>
+</tr>
+<tr>
+<td style="text-align: left;">port</td>
+<td style="text-align: left;">Port number (as integer)</td>
+</tr>
+<tr>
+<td style="text-align: left;">path</td>
+<td style="text-align: left;">Path component</td>
+</tr>
+<tr>
+<td style="text-align: left;">params</td>
+<td style="text-align: left;">Path parameters (after semicolon)</td>
+</tr>
+<tr>
+<td style="text-align: left;">query</td>
+<td style="text-align: left;">Query string (after question mark)</td>
+</tr>
+<tr>
+<td style="text-align: left;">fragment</td>
+<td style="text-align: left;">Fragment identifier (after hash)</td>
+</tr>
+</tbody>
+</table>
+<div class="sourceCode" id="cb10"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="va">parts</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>parse<span class="op">(</span><span class="st">&#39;https://user:pass@example.com:8080/path?query=value#section&#39;</span><span class="op">)</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- Result: {</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="co">--   scheme = &#39;https&#39;,</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a><span class="co">--   auth = &#39;user:pass&#39;,</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a><span class="co">--   host = &#39;example.com&#39;,</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a><span class="co">--   port = 8080,</span></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a><span class="co">--   path = &#39;/path&#39;,</span></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a><span class="co">--   query = &#39;query=value&#39;,</span></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a><span class="co">--   fragment = &#39;section&#39;</span></span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a><span class="co">-- }</span></span></code></pre></div>
+<h3 id="urlunparse">url.unparse()</h3>
+<p><code>urlString = url.unparse(Components)</code></p>
+<p>Reconstructs a URL from component parts.</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="va">components</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">scheme</span> <span class="op">=</span> <span class="st">&#39;https&#39;</span><span class="op">,</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">host</span> <span class="op">=</span> <span class="st">&#39;example.com&#39;</span><span class="op">,</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">path</span> <span class="op">=</span> <span class="st">&#39;/api/users&#39;</span><span class="op">,</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>   <span class="va">query</span> <span class="op">=</span> <span class="st">&#39;limit=10&#39;</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a><span class="va">url</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>unparse<span class="op">(</span><span class="va">components</span><span class="op">)</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a><span class="co">-- Result: &#39;https://example.com/api/users?limit=10&#39;</span></span></code></pre></div>
+<h3 id="urlsplit">url.split()</h3>
+<p><code>components = url.split(UrlString)</code></p>
+<p>Splits a URL into 5 basic components (scheme, netloc, path, query, fragment) similar to Python&#39;s urlsplit.</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="va">parts</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>split<span class="op">(</span><span class="st">&#39;https://example.com:8080/path?query=value#section&#39;</span><span class="op">)</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- Result: {</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="co">--   scheme = &#39;https&#39;,</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="co">--   netloc = &#39;example.com:8080&#39;,</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a><span class="co">--   path = &#39;/path&#39;,</span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a><span class="co">--   query = &#39;query=value&#39;,</span></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a><span class="co">--   fragment = &#39;section&#39;</span></span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a><span class="co">-- }</span></span></code></pre></div>
+<h3 id="urlunsplit">url.unsplit()</h3>
+<p><code>urlString = url.unsplit(Components)</code></p>
+<p>Reconstructs a URL from split components.</p>
+<h3 id="urldefrag">url.defrag()</h3>
+<p><code>base, fragment = url.defrag(UrlString)</code></p>
+<p>Removes and returns the fragment portion of a URL.</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="va">base</span><span class="op">,</span> <span class="va">frag</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>defrag<span class="op">(</span><span class="st">&#39;https://example.com/path#section&#39;</span><span class="op">)</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- base = &#39;https://example.com/path&#39;</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a><span class="co">-- frag = &#39;section&#39;</span></span></code></pre></div>
+<h2 id="url-manipulation-functions">URL Manipulation Functions</h2>
+<h3 id="urljoin">url.join()</h3>
+<p><code>joinedUrl = url.join(BaseUrl, RelativeUrl)</code></p>
+<p>Joins a base URL with a relative URL, handling path resolution and normalisation.</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="va">joined</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>join<span class="op">(</span><span class="st">&#39;https://example.com/api/&#39;</span><span class="op">,</span> <span class="st">&#39;users/123&#39;</span><span class="op">)</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- Result: &#39;https://example.com/api/users/123&#39;</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a><span class="va">joined</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>join<span class="op">(</span><span class="st">&#39;https://example.com/api/v1/&#39;</span><span class="op">,</span> <span class="st">&#39;../v2/users&#39;</span><span class="op">)</span></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a><span class="co">-- Result: &#39;https://example.com/api/v2/users&#39;</span></span></code></pre></div>
+<h3 id="urlnormalize">url.normalize()</h3>
+<p><code>normalizedPath = url.normalize(Path)</code></p>
+<p>Normalises a URL path by resolving <code>.</code> and <code>..</code> components.</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="va">normalized</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>normalize<span class="op">(</span><span class="st">&#39;/api/v1/../v2/./users&#39;</span><span class="op">)</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- Result: &#39;/api/v2/users&#39;</span></span></code></pre></div>
+<h2 id="utility-functions">Utility Functions</h2>
+<h3 id="urlisabsolute">url.isAbsolute()</h3>
+<p><code>isAbs = url.isAbsolute(UrlString)</code></p>
+<p>Returns true if the URL is absolute (contains a scheme).</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="va">isAbs</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>isAbsolute<span class="op">(</span><span class="st">&#39;https://example.com&#39;</span><span class="op">)</span>  <span class="co">-- true</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="va">isAbs</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>isAbsolute<span class="op">(</span><span class="st">&#39;/relative/path&#39;</span><span class="op">)</span>       <span class="co">-- false</span></span></code></pre></div>
+<h3 id="urlisrelative">url.isRelative()</h3>
+<p><code>isRel = url.isRelative(UrlString)</code></p>
+<p>Returns true if the URL is relative (no scheme).</p>
+<h3 id="urlgetscheme">url.getScheme()</h3>
+<p><code>scheme = url.getScheme(UrlString)</code></p>
+<p>Extracts and returns the scheme from a URL.</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="va">scheme</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>getScheme<span class="op">(</span><span class="st">&#39;https://example.com&#39;</span><span class="op">)</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- Result: &#39;https&#39;</span></span></code></pre></div>
+<h3 id="urlgethost">url.getHost()</h3>
+<p><code>host = url.getHost(UrlString)</code></p>
+<p>Extracts and returns the hostname from a URL.</p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="va">host</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>getHost<span class="op">(</span><span class="st">&#39;https://example.com:8080/path&#39;</span><span class="op">)</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- Result: &#39;example.com&#39;</span></span></code></pre></div>
+<h3 id="urlgetport">url.getPort()</h3>
+<p><code>port = url.getPort(UrlString, DefaultPort)</code></p>
+<p>Extracts the port number from a URL, optionally returning a default if no port is specified.</p>
+<div class="sourceCode" id="cb19"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="va">port</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>getPort<span class="op">(</span><span class="st">&#39;https://example.com:8080&#39;</span><span class="op">)</span>     <span class="co">-- 8080</span></span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a><span class="va">port</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>getPort<span class="op">(</span><span class="st">&#39;https://example.com&#39;</span><span class="op">)</span>          <span class="co">-- nil</span></span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a><span class="va">port</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>getPort<span class="op">(</span><span class="st">&#39;https://example.com&#39;</span><span class="op">,</span> <span class="dv">443</span><span class="op">)</span>     <span class="co">-- 443</span></span></code></pre></div>
+<h2 id="special-features">Special Features</h2>
+<h3 id="ipv6-support">IPv6 Support</h3>
+<p>The URL parser fully supports IPv6 addresses in URLs:</p>
+<div class="sourceCode" id="cb20"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="va">parts</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>parse<span class="op">(</span><span class="st">&#39;http://[2001:db8::1]:8080/path&#39;</span><span class="op">)</span></span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- parts.host = &#39;2001:db8::1&#39;</span></span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a><span class="co">-- parts.port = 8080</span></span></code></pre></div>
+<h3 id="error-handling">Error Handling</h3>
+<p>URL parsing functions return <code>nil</code> for invalid input:</p>
+<div class="sourceCode" id="cb21"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="va">parts</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>parse<span class="op">(</span><span class="st">&#39;&#39;</span><span class="op">)</span>      <span class="co">-- returns nil</span></span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a><span class="va">parts</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>parse<span class="op">(</span><span class="kw">nil</span><span class="op">)</span>     <span class="co">-- returns nil</span></span></code></pre></div>
+<h3 id="rfc-3986-compliance">RFC 3986 Compliance</h3>
+<p>The module follows RFC 3986 standards for URL parsing and encoding, ensuring proper handling of reserved characters and edge cases.</p>
+<h2 id="usage-examples">Usage Examples</h2>
+<h3 id="building-api-urls">Building API URLs</h3>
+<div class="sourceCode" id="cb22"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="va">base</span> <span class="op">=</span> <span class="st">&#39;https://api.example.com/v1/&#39;</span></span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a><span class="va">endpoint</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>join<span class="op">(</span><span class="va">base</span><span class="op">,</span> <span class="st">&#39;users/search&#39;</span><span class="op">)</span></span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a><span class="va">params</span> <span class="op">=</span> <span class="op">{</span> <span class="va">q</span> <span class="op">=</span> <span class="st">&#39;john doe&#39;</span><span class="op">,</span> <span class="va">limit</span> <span class="op">=</span> <span class="dv">10</span><span class="op">,</span> <span class="va">active</span> <span class="op">=</span> <span class="kw">true</span> <span class="op">}</span></span>
+<span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a><span class="va">query</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>buildQuery<span class="op">(</span><span class="va">params</span><span class="op">)</span></span>
+<span id="cb22-5"><a href="#cb22-5" aria-hidden="true" tabindex="-1"></a><span class="va">apiUrl</span> <span class="op">=</span> <span class="va">endpoint</span> <span class="op">..</span> <span class="st">&#39;?&#39;</span> <span class="op">..</span> <span class="va">query</span></span>
+<span id="cb22-6"><a href="#cb22-6" aria-hidden="true" tabindex="-1"></a><span class="co">-- Result: &#39;https://api.example.com/v1/users/search?q=john+doe&amp;limit=10&amp;active=true&#39;</span></span></code></pre></div>
+<h3 id="parsing-request-urls">Parsing Request URLs</h3>
+<div class="sourceCode" id="cb23"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="va">requestUrl</span> <span class="op">=</span> <span class="st">&#39;https://example.com/api/users?name=John&amp;age=30#profile&#39;</span></span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a><span class="va">parts</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>parse<span class="op">(</span><span class="va">requestUrl</span><span class="op">)</span></span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a><span class="va">queryParams</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>parseQuery<span class="op">(</span><span class="va">parts</span><span class="op">.</span><span class="va">query</span><span class="op">)</span></span>
+<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span><span class="op">(</span><span class="st">&#39;Host:&#39;</span><span class="op">,</span> <span class="va">parts</span><span class="op">.</span><span class="va">host</span><span class="op">)</span>           <span class="co">-- example.com</span></span>
+<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span><span class="op">(</span><span class="st">&#39;Path:&#39;</span><span class="op">,</span> <span class="va">parts</span><span class="op">.</span><span class="va">path</span><span class="op">)</span>           <span class="co">-- /api/users</span></span>
+<span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span><span class="op">(</span><span class="st">&#39;Name:&#39;</span><span class="op">,</span> <span class="va">queryParams</span><span class="op">.</span><span class="va">name</span><span class="op">)</span>     <span class="co">-- John</span></span>
+<span id="cb23-8"><a href="#cb23-8" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span><span class="op">(</span><span class="st">&#39;Fragment:&#39;</span><span class="op">,</span> <span class="va">parts</span><span class="op">.</span><span class="va">fragment</span><span class="op">)</span>   <span class="co">-- profile</span></span></code></pre></div>
+<h3 id="safe-url-construction">Safe URL Construction</h3>
+<div class="sourceCode" id="cb24"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="va">userInput</span> <span class="op">=</span> <span class="st">&#39;file with spaces &amp; special chars!&#39;</span></span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a><span class="va">safePath</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>encodeComponent<span class="op">(</span><span class="va">userInput</span><span class="op">)</span></span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a><span class="va">fullUrl</span> <span class="op">=</span> <span class="va">url</span><span class="op">.</span>join<span class="op">(</span><span class="st">&#39;https://cdn.example.com/files/&#39;</span><span class="op">,</span> <span class="va">safePath</span><span class="op">)</span></span>
+<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a><span class="co">-- Result: &#39;https://cdn.example.com/files/file%20with%20spaces%20%26%20special%20chars%21&#39;</span></span></code></pre></div>
+</div></div></div></div>
+
+<script src="../js/bootstrap.bundle.min.js"></script>
+<script src="../js/base.js"></script>
+<script>
+
+   // Auto-open the relevant sidebar branch
+
+   var url = window.location.pathname;
+   var filename = url.substring(url.lastIndexOf('/')+1);
+   var el = document.querySelector('li[class="api-ref"] > a[href="' + filename + '"]');
+   if (el) {
+      var parent = getParentNode(el, '[class="collapse"]');
+      if (parent) new bootstrap.Collapse(parent, { show: true }); // Causes animation
+
+      el.style.backgroundColor = '#d2f4ea';
+   }
+
+   cancelAnimations();
+    </script>
+  </body>
+</html>

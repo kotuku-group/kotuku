@@ -1,0 +1,182 @@
+-- XPath constructor evaluation tests
+
+   include 'xml'
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Direct element constructors should evaluate expressions inside tags and attributes
+
+@Test function DirectConstructorEvaluation()
+   local xml = obj.new("xml", { statement = '<root price="10"><item>5</item></root>' })
+
+   local err, attributeValue = xml.mtEvaluate('string((<result price="{/root/@price}">{/root/item/text()}</result>)/@price)')
+   assert(attributeValue is '10', 'Attribute value template should resolve to 10, got ' .. tostring(attributeValue))
+
+   local err, elementString = xml.mtEvaluate('string((<result>{/root/item/text()}</result>)[1])')
+   assert(elementString is '5', 'Element content should expose inner text, got ' .. tostring(elementString))
+
+   local err, doubled = xml.mtEvaluate('string((<result><double>{/root/@price * 2}</double></result>)/double)')
+   assert(doubled is '20', 'Nested constructor should evaluate arithmetic content, got ' .. tostring(doubled))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Direct constructors should preserve literal whitespace inside element content
+
+@Test function DirectConstructorWhitespace()
+   local xq = obj.new('xquery', { statement = 'string(<a>hello world</a>)' })
+   local err = xq.acActivate()
+
+   assert(xq.resultString is 'hello world', 'Direct constructor should preserve single spaces, got ' .. tostring(xq.resultString))
+
+   xq.statement = 'string(<a>  padded  </a>)'
+   xq.acActivate()
+   assert(xq.resultString is '  padded  ', 'Direct constructor should retain leading and trailing spaces, got ' .. tostring(xq.resultString))
+
+   xq.statement = [[string(<a>line 1
+   line 2</a>)]]
+   xq.acActivate()
+   assert(xq.resultString is "line 1\n   line 2", 'Direct constructor should keep newline indentation, got ' .. tostring(xq.resultString))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Computed constructors should honour dynamic names and content expressions
+
+@Test function ComputedConstructors()
+   local xml = obj.new("xml", { statement = '<root price="10"/>' })
+
+   local err, elementName = xml.mtEvaluate('local-name(element summary { /root/@price })')
+   assert(elementName is 'summary', 'Computed element should adopt supplied lexical name, got ' .. tostring(elementName))
+
+   local err, elementContent = xml.mtEvaluate('string(element summary { /root/@price * 3 })')
+   assert(elementContent is '30', 'Computed element should evaluate numeric expressions, got ' .. tostring(elementContent))
+
+   local err, attributeValue = xml.mtEvaluate('string(element wrapper { attribute cost { /root/@price } }/@cost)')
+   assert(attributeValue is '10', 'Computed attribute should expose evaluated value, got ' .. tostring(attributeValue))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Text, comment, and processing-instruction constructors should produce textual nodes
+
+@Test function NonElementConstructors()
+   local xml = obj.new("xml", { statement = '<root price="10"/>' })
+
+   local err, textValue = xml.mtEvaluate('string(text { /root/@price })')
+   assert(textValue is '10', 'Text constructor should convert attribute content to text, got ' .. tostring(textValue))
+
+   local err, commentValue = xml.mtEvaluate('string(comment { "note" })')
+   assert(commentValue is 'note', 'Comment constructor should return its content, got ' .. tostring(commentValue))
+
+   local err, piName = xml.mtEvaluate('name(processing-instruction target { "data" })')
+   assert(piName is 'target', 'Processing-instruction should expose its target name, got ' .. tostring(piName))
+
+   local err, piContent = xml.mtEvaluate('string(processing-instruction target { "data" })')
+   assert(piContent is 'data', 'Processing-instruction should preserve its content, got ' .. tostring(piContent))
+
+   local err = xml.mtSearch('processing-instruction target { "bad?>data" }')
+   assert(err != ERR_Okay, 'Processing-instruction content containing ?> should be rejected')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Document constructors should wrap sequences into a standalone document node
+
+@Test function DocumentConstructor()
+   local xq = obj.new('xquery', { statement = 'count((document { <a/>, <b/> })/node())' })
+   local err = xq.acActivate()
+
+   local childCount = tonumber(xq.resultString)
+   assert(childCount is 2, 'Document constructor should expose two child nodes, got ' .. tostring(childCount))
+
+   xq.statement = 'name(((document { <root/> })/node())[1])'
+   local err = xq.acActivate()
+   assert(xq.resultString is 'root', 'Document constructor should retain child element names, got ' .. tostring(xq.resultString))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Attribute and sequence content should merge correctly inside constructors
+
+@Test function ConstructorAttributeSequences()
+   local xq = obj.new('xquery', { statement = 'count(element wrapper { (attribute first { "1" }, attribute second { "2" }), element child { "value" } }/@*)' })
+   assert(xq.acActivate() is ERR_Okay, 'XQuery execution failed.')
+
+   local mergedCount = tonumber(xq.resultString)
+   assert(mergedCount is 2, 'Element constructor should merge attribute sequences into the result, got ' .. tostring(mergedCount))
+
+   xq.statement = 'string(element wrapper { (attribute first { "1" }, attribute second { "2" }), element child { "value" } }/@second)'
+   assert(xq.acActivate() is ERR_Okay, 'XQuery execution failed.')
+   assert(xq.resultString is '2', 'Element constructor should preserve attribute values from sequences, got ' .. tostring(xq.resultString))
+
+   xq.statement = 'name((element wrapper { (attribute first { "1" }, attribute second { "2" }), element child { "value" } }/node())[1])'
+   assert(xq.acActivate() is ERR_Okay, 'XQuery execution failed.')
+   assert(xq.resultString is 'child', 'Element constructor should retain subsequent child nodes after attributes, got ' .. tostring(xq.resultString))
+
+   xq.statement = 'string((let $attrs := (attribute id { "main" }, attribute role { "admin" }) return element wrapper { $attrs, text { "ready" } })/@role)'
+   assert(xq.acActivate() is ERR_Okay, 'XQuery execution failed.')
+   assert(xq.resultString is 'admin', 'Element constructor should append dynamic attribute sequences before content, got ' .. tostring(xq.resultString))
+
+   xq.statement = 'string((let $attrs := (attribute id { "main" }) return element wrapper { $attrs, text { "ready" }, "!" })/text()[1])'
+   assert(xq.acActivate() is ERR_Okay, 'XQuery execution failed.')
+   assert(xq.resultString is 'ready', 'Element constructor should keep constructed text content before atomic values, got ' .. tostring(xq.resultString))
+
+   xq.statement = 'string((let $attrs := (attribute id { "main" }) return element wrapper { $attrs, text { "ready" }, "!" })/text()[2])'
+   assert(xq.acActivate() is ERR_Okay, 'XQuery execution failed.')
+   assert(xq.resultString is '!', 'Element constructor should append atomic values as subsequent text nodes, got ' .. tostring(xq.resultString))
+
+   xq.statement = 'concat((let $attrs := (attribute id { "main" }) return element wrapper { $attrs, text { "ready" }, "!" })/text()[1], (let $attrs := (attribute id { "main" }) return element wrapper { $attrs, text { "ready" }, "!" })/text()[2])'
+   assert(xq.acActivate() is ERR_Okay, 'XQuery execution failed.')
+   assert(xq.resultString is 'ready!', 'Element constructor should preserve text node ordering when combined explicitly, got ' .. tostring(xq.resultString))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Map, array, and lookup constructors should evaluate and chain correctly
+
+@Test function MapArrayLookup()
+   local xml = obj.new('xml', { statement = '<root/>' })
+
+   local err, lookup_result = xml.mtEvaluate('string((map { "price": 10 })?price)')
+   assert(err is ERR_Okay, 'Map lookup failed to evaluate.')
+   assert(lookup_result is '10', 'Map lookup should return the stored value, got ' .. tostring(lookup_result))
+
+   err, lookup_result = xml.mtEvaluate('string((map { "nested": map { "inner": 5 } })?nested?inner)')
+   assert(err is ERR_Okay, 'Chained lookup evaluation failed.')
+   assert(lookup_result is '5', 'Chained lookup should reach inner map value, got ' .. tostring(lookup_result))
+
+   err, lookup_result = xml.mtEvaluate('string((array { "first", "second", "third" })?2)')
+   assert(err is ERR_Okay, 'Array lookup failed to evaluate.')
+   assert(lookup_result is 'second', 'Array lookup should select the second member, got ' .. tostring(lookup_result))
+
+   err, lookup_result = xml.mtEvaluate('string-join(map { "a": 1, "b": 2 }?*, ",")')
+   assert(err is ERR_Okay, 'Map wildcard lookup failed to evaluate.')
+   assert(lookup_result is '1,2', 'Map wildcard should concatenate entry values, got ' .. tostring(lookup_result))
+
+   err, lookup_result = xml.mtEvaluate('string-join(array { "x", "y" }?*, "|")')
+   assert(err is ERR_Okay, 'Array wildcard lookup failed to evaluate.')
+   assert(lookup_result is 'x|y', 'Array wildcard should flatten member sequences, got ' .. tostring(lookup_result))
+
+   err, lookup_result = xml.mtEvaluate('let $i := 2 return string((array { "red", "blue", "green" })?($i))')
+   assert(err is ERR_Okay, 'Dynamic array lookup failed to evaluate.')
+   assert(lookup_result is 'blue', 'Dynamic array lookup should honour the computed index, got ' .. tostring(lookup_result))
+
+   assert([*_]xml.mtEvaluate('array { 1 }?5') != ERR_Okay, 'Out-of-range array lookup should raise FOAY0001')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Literal map/array constructors should preserve overwrites, nesting, and sequence members
+
+@Test function MapArrayConstructorSemantics()
+   local xml = obj.new('xml', { statement = '<root/>' })
+
+   local err, overwritten = xml.mtEvaluate('string((map { "dup": 1, "dup": 42 })?dup)')
+   assert(err is ERR_Okay, 'Duplicate map key evaluation failed.')
+   assert(overwritten is '42', 'Later duplicate keys should win, got ' .. tostring(overwritten))
+
+   err, nested_value = xml.mtEvaluate('string((map { "details": array { map { "price": 19 }, map { "price": 25 } } })?details?2?price)')
+   assert(err is ERR_Okay, 'Nested map/array lookup failed.')
+   assert(nested_value is '25', 'Chained lookup should reach the nested map value, got ' .. tostring(nested_value))
+
+   err, tuple_members = xml.mtEvaluate('string-join(array { (1, 2), 3 }?1, ",")')
+   assert(err is ERR_Okay, 'Array sequence member lookup failed.')
+   assert(tuple_members is '1,2', 'Array members should retain embedded sequences, got ' .. tostring(tuple_members))
+
+   err, second_sku = xml.mtEvaluate('string((array { map { "sku": "A1" }, map { "sku": "B2" } })?2?sku)')
+   assert(err is ERR_Okay, 'Nested array/map lookup failed.')
+   assert(second_sku is 'B2', 'Array lookup should expose the second nested map value, got ' .. tostring(second_sku))
+end

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="NetClient" mod="Network" c="Represents a single client IP address." cat="Network" id="05bdfa0b" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="NetClient" mod="Network" c="Represents a single client IP address." cat="Network" id="05bdfa0b" v="1">
   <ai:f n="ClientData" c="A custom pointer available for userspace." t="APTR" a="RW"/>
   <ai:f n="Connections" c="Pointer to the first established socket connection for the client IP." t="*ClientSocket" a="R"/>
   <ai:f n="IP" c="The IP address of the client." t="INT8" a="R"/>

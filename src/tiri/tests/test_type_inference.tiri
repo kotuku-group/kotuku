@@ -1,0 +1,245 @@
+-- Flute tests for Tiri Runtime Type Inference feature
+-- Runtime type inference commits function return types based on the first non-nil return value
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+----------------------------------------------------------------------------------------------------------------------
+-- BASIC TYPE INFERENCE
+
+@Test function TypefixNumber()
+   function getValue()
+      return 42
+   end
+
+   -- First call fixes the type
+   local a = getValue()
+   assert(a is 42, "First call should return 42")
+
+   -- Second call should still work with typed assignment
+   local x: num = getValue()
+   assert(x is 42, "Typed assignment should work after type inference")
+end
+
+@Test function TypefixString()
+   function getMessage()
+      return "hello"
+   end
+
+   local msg = getMessage()
+   local s: str = getMessage()
+   assert(s is "hello", "String type should be inferred")
+end
+
+@Test function TypefixTable()
+   function getConfig()
+      return { key = "value" }
+   end
+
+   local cfg = getConfig()
+   local t: table = getConfig()
+   assert(t.key is "value", "Table type should be inferred")
+end
+
+@Test function TypefixBool()
+   function getFlag()
+      return true
+   end
+
+   local a = getFlag()
+   assert(a is true, "First call should return true")
+
+   local b: bool = getFlag()
+   assert(b is true, "Bool type should be inferred")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- NIL HANDLING
+
+@Test function TypefixNilDoesNotFix()
+   global call_count = 0
+   function maybeValue()
+      call_count += 1
+      if call_count is 1 then
+         return nil
+      end
+      return 42
+   end
+
+   -- First call returns nil - should not fix type
+   local a = maybeValue()
+   assert(a is nil, "First call returns nil")
+
+   -- Second call returns number - this should fix the type
+   local b = maybeValue()
+   assert(b is 42, "Second call returns number")
+
+   -- Third call - type is now fixed to num
+   local x: num = maybeValue()
+   assert(x is 42, "Type should be fixed to num after first non-nil return")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- EXPLICIT TYPE ANNOTATIONS
+
+@Test function ExplicitTypeNotOverridden()
+   function getTyped(): num
+      return 42
+   end
+
+   -- Explicit type should not be changed by runtime inference
+   local x: num = getTyped()
+   assert(x is 42, "Explicit return type should work")
+end
+
+@Test function ExplicitTypePreventsTypefix()
+   -- Function with explicit return type should not emit BC_TYPEFIX
+   function typedFunc(): str
+      return "typed"
+   end
+
+   local s: str = typedFunc()
+   assert(s is "typed", "Explicit return type works correctly")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- TAIL-CALL HANDLING
+
+@Test function TypefixTailCall()
+   -- Test that tail-call returns still work with type inference
+   function inner()
+      return 99
+   end
+
+   function outer()
+      return inner()  -- Would be tail-call without PROTO_TYPEFIX
+   end
+
+   local a = outer()
+   assert(a is 99, "Tail-call return should work")
+
+   -- After first call, type should be inferred
+   local x: num = outer()
+   assert(x is 99, "Typed assignment after tail-call should work")
+end
+
+@Test function TypefixNestedTailCalls()
+   function level3()
+      return 333
+   end
+
+   function level2()
+      return level3()
+   end
+
+   function level1()
+      return level2()
+   end
+
+   local a = level1()
+   assert(a is 333, "Nested tail-calls should work")
+
+   local x: num = level1()
+   assert(x is 333, "Typed assignment after nested tail-calls should work")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- MULTIPLE RETURN VALUES
+
+@Test function TypefixMultiReturn()
+   function getMultiple()
+      return 1, "a"
+   end
+
+   local a, b = getMultiple()
+   assert(a is 1, "First return value should be 1")
+   assert(b is "a", "Second return value should be 'a'")
+
+   -- Test typed assignment of multi-return
+   local x: num, y: str = getMultiple()
+   assert(x is 1, "Typed first return should work")
+   assert(y is "a", "Typed second return should work")
+end
+
+@Test function TypefixMultiReturnPartial()
+   -- Test that each return position is fixed independently
+   global multi_call = 0
+   function partialMulti()
+      multi_call += 1
+      if multi_call is 1 then
+         return nil, "first"
+      end
+      return 42, "second"
+   end
+
+   -- First call: nil at position 0, "first" at position 1
+   local a1, b1 = partialMulti()
+   assert(a1 is nil, "First call position 0 is nil")
+   assert(b1 is "first", "First call position 1 is string")
+
+   -- Second call: 42 at position 0 (fixes type), "second" at position 1
+   local a2, b2 = partialMulti()
+   assert(a2 is 42, "Second call position 0 is number")
+   assert(b2 is "second", "Second call position 1 is string")
+
+   -- Now position 0 is fixed to num, position 1 to str
+   local x: num, y: str = partialMulti()
+   assert(x is 42, "Typed position 0 should work")
+   assert(y is "second", "Typed position 1 should work")
+end
+
+@Test function TypefixThreeReturns()
+   function getThree()
+      return 1, "two", true
+   end
+
+   local a, b, c = getThree()
+   assert(a is 1, "First return value should be 1")
+   assert(b is "two", "Second return value should be 'two'")
+   assert(c is true, "Third return value should be true")
+
+   local x: num, y: str, z: bool = getThree()
+   assert(x is 1, "Typed first return should work")
+   assert(y is "two", "Typed second return should work")
+   assert(z is true, "Typed third return should work")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- FUNCTION TYPE INFERENCE
+
+@Test function TypefixFunction()
+   function getHandler()
+      return function(x) return x * 2 end
+   end
+
+   local fn = getHandler()
+   assert(fn(5) is 10, "Returned function should work")
+
+   local typed: func = getHandler()
+   assert(typed(7) is 14, "Function type should be inferred")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- CLOSURE BEHAVIOR
+
+@Test function TypefixClosure()
+   -- Multiple closures share the same prototype, so type inference affects all
+   function makeCounter()
+      local count = 0
+      return function()
+         count += 1
+         return count
+      end
+   end
+
+   local counter1 = makeCounter()
+   local counter2 = makeCounter()
+
+   assert(counter1() is 1, "First counter should return 1")
+   assert(counter1() is 2, "First counter should return 2")
+   assert(counter2() is 1, "Second counter should return 1")
+
+   -- Type is inferred for the inner function prototype
+   local x: num = counter1()
+   assert(x is 3, "Typed assignment should work for closures")
+end

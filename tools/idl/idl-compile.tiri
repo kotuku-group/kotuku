@@ -1,0 +1,595 @@
+-- Read Kotuku TDL files and save interface information in our standard IDL string format.  IDL strings describe
+-- the structures, flags and constants used by modules in a universal format that is easy parse.  The headers can be
+-- dynamically consumed by any language for the purpose of achieving full integration with the Kotuku runtime
+-- environment, which is written in C.
+--
+-- Usage: origo sdk:scripts/idl-tiri.tiri src=source.tdl
+-- Example: origo sdk:scripts/idl-tiri.tiri src=sdk:core/modules/core/core.tdl
+
+global glSelf = obj.find('self')
+global glPath = glSelf.workingPath
+global glOutput = array<string>
+global glHeader = array<string>
+
+global glProgram    = 'idl-compile'
+global glSource     = arg('src')
+global glOutputPath = arg('output')
+global glFeedback   = arg('feedback')
+global glFormat     = arg('format')
+global glAppend     = arg('append')
+
+global glOrderedStructures = { }
+global glStructures = { }
+global glConstants = { }
+
+-- Dummy functions for loaded TDL files to prevent errors.
+
+global function c_include(...) end
+global function cpp_include(...) end
+global function class(Name:str, Options:table, Def:str, Private:bool) end
+global function functionNames(Prefix:str, ...) end
+global function methods(ClassName:str, Prefix:str, Methods:table) end
+global function c_insert(Raw:str) end
+global function privateNames(List:table) end
+
+   import './include/utils'
+
+-- Regex patterns for parsing
+
+local rx_key_comment     = <{ regex.new([[^(.+):\s+(.+)$]]) }>
+local rx_key_comment_ng  = <{ regex.new([[^(.*?):\s+(.+)$]]) }>
+local rx_value_only      = <{ regex.new([[^(.*?):\s+.+$]]) }>
+local rx_hex_num         = <{ regex.new([[^0x[0-9a-fA-F]+$]]) }>
+local rx_signed_int      = <{ regex.new([[^[+\-]?\d+$]]) }>
+local rx_cpp_type        = <{ regex.new([[^cpp\((.+)\)$]]) }>
+local rx_struct_type     = <{ regex.new([[^(c?)struct\((.+)\)$]]) }>
+local rx_ptr_extract     = <{ regex.new([[\*(.+)]]) }>
+local rx_obj_type        = <{ regex.new([[^obj\((.+)\)$]]) }>
+local rx_bit_type        = <{ regex.new([[^bit\((.+)\)$]]) }>
+local rx_char_flag       = <{ regex.new([[^char\(([A-Za-z]+)\)]]) }>
+local rx_non_word        = <{ regex.new([[\W]]) }>
+local rx_short_flag      = <{ regex.new([[^short\(([A-Za-z]+)\)]]) }>
+local rx_int_flag        = <{ regex.new([[^int\(([A-Za-z]+)\)]]) }>
+local rx_large_flag      = <{ regex.new([[^large\(([A-Za-z]+)\)]]) }>
+local rx_uchar_array     = <{ regex.new([[^(u?)char\((.+)\)$]]) }>
+local rx_uint_array      = <{ regex.new([[^(u?)int\((\d+)\)]]) }>
+local rx_double_count    = <{ regex.new([[^double\((.+)\)]]) }>
+local rx_float_count     = <{ regex.new([[^float\((.+)\)]]) }>
+local rx_ptr_type        = <{ regex.new([[^(c?)ptr\((.+)\)]]) }>
+local rx_array_sized     = <{ regex.new([[^array\((.+),(\d+)\)$]]) }>
+local rx_array_unsized   = <{ regex.new([[^array\((.+)\)$]]) }>
+local rx_fptr_type       = <{ regex.new([[^fptr\((.+)\)$]]) }>
+local rx_hash_comment    = <{ regex.new([[^.+#\s*(.+)$]]) }>
+local rx_hash_content    = <{ regex.new([[^(.+)#\s*.+$]]) }>
+local rx_colon_comment   = <{ regex.new([[^.+:\s*(.+)$]]) }>
+local rx_colon_content   = <{ regex.new([[^(.+):\s*.+$]]) }>
+local rx_type_name       = <{ regex.new([[^\s*(.+)\s+(\S+)\s*$]]) }>
+local rx_field_extract   = <{ regex.new([[^(.+?)[:#]\s*(.+)$]]) }> -- "type FieldName # Comment", also accepts ":"
+
+----------------------------------------------------------------------------------------------------------------------
+-- TDL function
+-- Restricts the output of anything declared within the referenced function.
+
+global function restrict(Function:func)
+   local status = glRestrict
+   global glRestrict = 'ALL'
+   Function()
+   glRestrict = status
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+global function module(Options:table, Function:func)
+   global glModuleName = Options['name']
+   Function()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+global function header(Options:table, Function:func)
+   global glHeaderPath = Options['path']
+   Function()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+global function flags(Prefix:str, Options:table, ...)
+   Options ?= {}
+
+   if Options.restrict?? or glRestrict then return end -- Restricted definitions are never exported
+   if Options.module?? and (Options.module:lower() != glModuleName:lower()) then return end
+   verbose('Processing flags ' .. Prefix)
+
+   list = { }
+   f = 0
+   for flag_def in values({...}) do
+      if type(flag_def) is 'string' then
+         local key = rx_key_comment.extract(flag_def)
+         key ??= flag_def
+
+         for v in values(key:split('|')) do
+            list[v] = 1 << f
+         end
+      elseif type(flag_def) is 'table' then
+         for flag, ref in pairs(flag_def) do
+            local key
+            if type(ref) != 'number' then
+               key = rx_key_comment.extract(ref)
+               if key then
+                  if rx_hex_num.test(key) or rx_signed_int.test(key) then
+                     key = tonumber(key)
+                  end
+               end
+            end
+
+            key ?= ref
+
+            if type(key) is 'number' then
+               list[flag] = key
+            else
+               local f = 0
+               for v in values(key:split('|')) do
+                  if list[v] then
+                     f = f | list[v]
+                  else
+                     print("Failed to lookup reference '" .. v .. "'")
+                  end
+               end
+               list[flag] = f
+            end
+         end
+      else
+         error("Invalid flag type for '" .. Prefix .. "', expected string, got '" .. type(flag_def) .. "'")
+      end
+      f++
+   end
+
+   glConstants[Prefix] = list
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+global function enum(Prefix, Options:table, ...)
+   Options ?= {}
+
+   if Options.restrict?? or glRestrict then return end -- Restricted definitions are never exported
+   if Options.module?? and (Options.module:lower() != glModuleName:lower()) then return end
+   verbose('Processing enum ' .. Prefix)
+
+   list = { }
+   inc = Options.start ?? 0
+   for k, enum_def in ipairs({...}) do
+      if type(enum_def) is 'string' then
+         local val = rx_value_only.extract(enum_def)  -- Scrap any comment for this value
+         val ?= enum_def
+
+         for name in values(val:split('|')) do
+            list[name] = inc
+         end
+      elseif type(enum_def) is 'table' then -- The client provided a table of fixed values
+         for name, client_val in pairs(enum_def) do
+            list[name] = client_val
+         end
+      else
+         error("Invalid enum type for '" .. Prefix .. "', expected string, got '" .. type(enum_def) .. "'")
+      end
+      inc++
+   end
+
+   glConstants[Prefix] = list
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+global function constants(Prefix, Options:table, ...)
+   Options ?= {}
+
+   if Options.restrict?? or glRestrict then return end -- Restricted definitions are never exported
+   if Options.module?? and (Options.module:lower() != glModuleName:lower()) then return end
+   verbose('Processing constants ' .. Prefix)
+
+   list = { }
+   for k, const_def in ipairs({...}) do
+      assert(type(const_def) is 'table', "Invalid const type for '" .. Prefix .. "', expected table, got '" .. type(const_def) .. "'")
+      for k, v in pairs(const_def) do
+         local val
+         if type(v) is 'string' then
+            val = rx_key_comment_ng.extract(v)
+         end
+
+         val ??= v
+
+         if type(val) is 'string' and (rx_hex_num.test(val) or rx_signed_int.test(val)) then
+            val = tonumber(val)
+         end
+
+         list[k] = val
+      end
+   end
+   glConstants[Prefix] = list
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+global function hash(Prefix:str, Format:str, ...)
+   for k, hash_def in ipairs({...}) do
+      hash_name = rx_non_word.replace(hash_def, '_')
+      hash_id = string.format('%08x', hash_name:hash()):sub(-8)
+      output('#define ' .. Prefix .. '_' .. hash_name .. ' ' .. string.format(Format, hash_id))
+   end
+   output()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+global function platform(Platform:str, Function:func)
+   if Platform:lower() is 'windows' then
+      Function()
+   elseif Platform:lower() is 'linux' then
+      Function()
+   elseif Platform:lower() is 'x11' then
+      Function()
+   else
+      error("Unrecognised platform '" .. Platform .. "'")
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+global function str_to_bytes(String:str):str
+   local list
+   String = String:replace("\\n", string.char(10))
+   for i = 0, #String - 1 do
+      if list then
+         list ..= string.format(',%d', String:byte(i))
+      else
+         list = string.format('%d', String:byte(i))
+      end
+   end
+   return list
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+global glTypes = {
+   hhandle = 'l',
+   mem     = 'l',
+   int     = 'l',
+   uint    = 'ul',
+   ptr     = 'p',
+   cptr    = 'p',
+   oid     = 'l',
+   short   = 'w',
+   ushort  = 'uw',
+   uchar   = 'uc',
+   char    = 'c',
+   error   = 'l',
+   large   = 'x',
+   cid     = 'ul',
+   obj     = 'o',
+   str     = 's',
+   cstr    = 's',
+   func    = 'r',
+   float   = 'f',
+   double  = 'd',
+   maxint  = 'm',
+   eid     = 'l',
+   fid     = 'x',
+   struct  = 'e',
+   resource = 'e'
+}
+
+global function cType(Field:table, Origin:str):table
+   assert(Field.type, "Field definition incorrect, missing 'type' value for '" .. (Origin ?? 'NIL') .. "'")
+
+   do
+      t = rx_cpp_type.extract(Field.type)
+      if t then
+         Field.cpp  = true
+         Field.type = t
+         cType(Field, Origin)
+         Field.type = 'z' .. Field.type
+         return Field
+      end
+   end
+
+   do
+      local _, struct = rx_struct_type.extract(Field.type)
+      if struct then
+         local ptr_struct = rx_ptr_extract.extract(struct)
+         if ptr_struct then struct = ptr_struct end
+
+         Field.struct = struct
+         Field.type = ptr_struct ? 'p' :> 'e'
+         Field.name ..= ':' .. struct
+
+         return Field
+      end
+   end
+
+   do
+      object = rx_obj_type.extract(Field.type)
+      if object then
+         local ptr_struct = rx_ptr_extract.extract(object)
+         Field.type = ptr_struct ? 'p' :> 'o'
+         return Field
+      end
+   end
+
+   do
+      t = rx_bit_type.extract(Field.type)
+      if t then
+         Field.type = cType({ type=t, name='Bit' }, Origin).type
+         Field.name = 'Bit'
+         return Field
+      end
+   end
+
+   do -- Char flags / Strong typing
+      if rx_char_flag.test(Field.type) then
+         Field.type = 'c'
+         return Field
+      end
+   end
+
+   do -- Short flags / Strong typing
+      if rx_short_flag.test(Field.type) then
+         Field.type = 'w'
+         return Field
+      end
+   end
+
+   do -- Integer flags / Strong typing
+      if rx_int_flag.test(Field.type) then
+         Field.type = 'l'
+         return Field
+      end
+   end
+
+   do -- Large flags / Strong typing
+      if rx_large_flag.test(Field.type) then
+         Field.type = 'x'
+         return Field
+      end
+   end
+
+   do -- Char arrays
+      local unsigned, count = rx_uchar_array.extract(Field.type)
+      if count then
+         Field.type = unsigned ? 'uc' :> 'c'
+         Field.name ..= f'[{count}]'
+         return Field
+      end
+   end
+
+   do -- Integer arrays
+      local unsigned, count = rx_uint_array.extract(Field.type)
+      if count then
+         Field.type = unsigned ? 'ul' :> 'l'
+         Field.name ..= f'[{count}]'
+         return Field
+      end
+   end
+
+   do -- Double arrays
+      dc = rx_double_count.extract(Field.type)
+      if dc then
+         Field.type = 'd'
+         Field.name ..= f'[{dc}]'
+         return Field
+      end
+   end
+
+   do -- Float arrays
+      fc = rx_float_count.extract(Field.type)
+      if fc then
+         Field.type = 'f'
+         Field.name ..= f'[{fc}]'
+         return Field
+      end
+   end
+
+   do
+      p = rx_ptr_type.extract(Field.type)
+      if p then
+         Field.type = 'p'
+         return Field
+      end
+   end
+
+   do
+      t, n = rx_array_sized.extract(Field.type)
+      if n then
+         Field.type = t
+         Field      = cType(Field, Origin)
+         Field.name ..= f'[{n}]'
+         return Field
+      end
+   end
+
+   do
+      f = rx_array_unsized.extract(Field.type)
+      if f then
+         Field.type = f
+         Field      = cType(Field, Origin)
+         Field.name ..= '[]'
+         return Field
+      end
+   end
+
+   do
+      if rx_fptr_type.test(Field.type) then
+         Field.type = 'p'
+         return Field
+      end
+   end
+
+   assert(glTypes[Field.type], 'No handling for field type "' .. Field.type .. '" from ' .. Origin)
+
+   Field.type = glTypes[Field.type] ?? Field.type
+   return Field
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Returns fields as a list returned by cType, featuring { type, name, docType, fullType, comment }
+
+global function extractFields(Def:str, Origin:str):table
+   fields = { }
+   Def ?? return fields
+   for line, content in Def:split('\n') do
+      local content_b, comment = rx_field_extract.extract(content)
+      if content_b then content = content_b end
+      local type, name = rx_type_name.extract(content)
+
+      if type?? then
+         field = cType({ type=type:trim(), name=name:trim() }, Origin)
+         table.insert(fields, field)
+      elseif not content:trim()?? then
+         -- Ignore empty line
+      else
+         error(f"Unable to process line '{content}' for '{Origin}'")
+      end
+   end
+
+   return fields
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+global function struct(Name:str, Options:table, Def:str)
+   Options ?= {}
+   if Options.restrict?? or glRestrict then return end -- Restricted structures are never exported
+   if Options.module?? and (Options.module:lower() != glModuleName:lower()) then return end
+   verbose('Processing structure ' .. Name)
+   local struct = {
+      name    = Name,
+      version = Options.version,
+      type    = Options.type,
+      fields  = extractFields(Def, Name)
+   }
+   struct.sequence = sequenceStruct(struct.fields)
+   glStructures[Name] = struct
+   table.insert(glOrderedStructures, struct)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Convert a struct definition into a string-based field sequence.
+
+global function sequenceStruct(fields)
+   seq = ''
+   for f in values(fields) do
+      if seq?? then seq ..= ',' end
+      if f.sequence then
+         seq ..= 'e' .. f.name:cap() .. ':' .. f.type
+      else
+         seq ..= f.type .. f.name:cap()
+      end
+   end
+   return seq
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+global function saveOutput()
+   outPath = glOutputPath
+
+   if not outPath then
+      if glModuleName?? then
+         outPath = f'sdk:data/config/defs/{glModuleName:lower()}.def'
+      else
+         error('No output path specified in command-line.')
+      end
+   end
+
+   print(f'Saving compressed IDL output to "{outPath}"')
+
+   local fl
+   try
+      if glAppend then
+         fl = obj.new('file', { flags=FL_WRITE, path=outPath } )
+         fl.acSeek(0, SEEK_END)
+      else
+         fl = obj.new('file', { flags=FL_WRITE | FL_NEW, path=outPath } )
+      end
+   except
+      print('Failed to write output to ' .. outPath)
+      return
+   end
+
+   EOL = '\n'
+   if glFormat is 'c' then EOL = '\\n' end
+
+   -- Build structures string
+
+   s = ''
+   for struct in values(glOrderedStructures) do
+      if struct.fields then
+         s ..= 's.' .. struct.name .. ':' .. struct.sequence .. EOL
+      end
+   end
+
+   -- Build constants strings
+
+   sortedConstants = { }
+   for prefix, tab in pairs(glConstants) do
+      sortedkv = { }
+      for k, v in pairs(tab) do
+         table.insert(sortedkv, { name = k, value = v })
+      end
+      table.sort(sortedkv, function(a,b) return a.name < b.name end)
+      table.insert(sortedConstants, { prefix=prefix, table=sortedkv })
+   end
+   table.sort(sortedConstants, function(a,b) return a.prefix < b.prefix end)
+
+   c = ''
+   for group in values(sortedConstants) do
+      c ..= f'c.{group.prefix}:'
+      e = ''
+      for const in values(group.table) do
+         if e?? then e ..= ',' end
+         if type(const.value) is 'string' then
+            local val = rx_value_only.extract(const.value) -- Scrap any defined comment for this value.
+            val ??= const.value
+            e ..= f'{const.name}="{const.value}"'
+         else
+            hexval = string.format('%x', const.value)
+            if hexval:len() is 16 then hexval = hexval:sub(-8) end
+            e ..= f'{const.name}=0x{hexval}'
+         end
+      end
+      c ..= e .. EOL
+   end
+
+   if glFormat is 'c' then
+      if s:len() + c:len() >= 16 * 1024 then -- MSVC doesn't like defined strings > 16Kb, so we need this alternative
+         fl.acWrite('char glIDL[] = { ')
+         fl.acWrite(str_to_bytes((s ?? '') .. (c ?? '')))
+         fl.acWrite(',0 };\n')
+      else
+         fl.acWrite('#undef MOD_IDL\n#define MOD_IDL "')
+         if s?? then fl.acWrite(s) end
+         if c?? then fl.acWrite(c) end
+         fl.acWrite('"\n')
+      end
+   else
+      if s?? then fl.acWrite(s) end
+      if c?? then fl.acWrite(c) end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+   if not glSource then
+      print('This command is used to compile IDL definition files.  Provide a reference to a')
+      print('source file, or directory of source files in the SRC argument.  The resulting data will be')
+      print('printed to the output object that was used in executing the command.')
+      return
+   end
+
+   resolveSDKPath(arg('sdk'))
+
+   local err, type = mSys.AnalysePath(glSource)
+   assert(type is LOC_FILE, 'The specified source "' .. glSource .. '" is invalid.')
+
+   loadFile(glSource)
+   saveOutput()

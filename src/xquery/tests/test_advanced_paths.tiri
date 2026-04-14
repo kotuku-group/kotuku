@@ -1,0 +1,79 @@
+-- Advanced XPath path lookup and edge case tests
+
+   include 'xml'
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Deeply nested path traversal combining multiple predicates and steps
+
+@Test function DeeplyNestedPathTraversal()
+   local xml = obj.new("xml", {
+      statement = '<catalog><category name="fiction"><series name="modern"><book author="Smith"><chapter num="1"><section><paragraph>Intro</paragraph></section></chapter><chapter num="2"><section><paragraph>Body</paragraph><paragraph>Middle</paragraph></section></chapter><chapter num="3"><section><paragraph>Conclusion</paragraph></section></chapter></book></series></category></catalog>'
+   })
+
+   local err, tagId = xml.mtSearch('/catalog/category[@name="fiction"]/series[@name="modern"]/book[@author="Smith"]/chapter[last()]/section/paragraph[position()=1]')
+   assert(err is ERR_Okay, 'last() combined with position() should locate the first paragraph of the last chapter: ' .. mSys.GetErrorMsg(err))
+
+   local err, content = xml.mtEvaluate('/catalog/category[@name="fiction"]/series[@name="modern"]/book[@author="Smith"]/chapter[last()]/section/paragraph[position()=1]')
+   assert(content is 'Conclusion', 'Paragraph content should be "Conclusion", got ' .. tostring(content))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Edge case: sequential predicates mixing numeric and functional tests
+
+@Test function SequentialPredicateEvaluation()
+   local xml = obj.new("xml", {
+      statement = '<data><entry type="record" priority="1"/><entry type="record" priority="2"/><entry type="log" priority="3"/><entry type="record" priority="4"/><entry type="record" priority="5"/></data>'
+   })
+
+   local err, tagId = xml.mtSearch('/data/entry[@type="record"][position()=last()]')
+   assert(err is ERR_Okay, 'Sequential predicates should allow position()=last() evaluation: ' .. mSys.GetErrorMsg(err))
+
+   local errAttr, priority = xml.mtGetAttrib(tagId, 'priority')
+   assert(errAttr is ERR_Okay and priority is '5', 'Expected the final record entry priority to be 5, got ' .. tostring(priority))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Edge case: navigating relative to the current node using .// patterns
+
+@Test function RelativeCurrentNodeTraversal()
+   local xml = obj.new("xml", {
+      statement = '<root><section id="alpha"><item id="x"/><group><item id="y"/></group></section><section id="beta"><group><item id="z"/><item id="target"/></group></section></root>'
+   })
+
+   local err, sectionId = xml.mtSearch('/root/section[./group/item[@id="target"]]')
+   assert(err is ERR_Okay, 'Predicate using ./group should evaluate relative to the current node: ' .. mSys.GetErrorMsg(err))
+
+   local errAttr, sectionName = xml.mtGetAttrib(sectionId, 'id')
+   assert(errAttr is ERR_Okay and sectionName is 'beta', 'Expected the section containing the target item to be beta, got ' .. tostring(sectionName))
+
+   local errItem, itemId = xml.mtSearch('/root/section[@id="beta"]//item[@id="target"]')
+   assert(errItem is ERR_Okay, '// should descend from the matched section to find the nested target item: ' .. mSys.GetErrorMsg(errItem))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Edge case: ensuring failed lookups return error codes cleanly
+
+@Test function MissingPathError()
+   local xml = obj.new("xml", {
+      statement = '<root><item id="1"/><item id="2"/></root>'
+   })
+
+   local err, tagId = xml.mtSearch('/root/item[@id="3"]')
+   assert(err != ERR_Okay, 'Non-existent predicate matches should produce an error result, got ' .. mSys.GetErrorMsg(err))
+   assert(tagId is nil or tagId is 0, 'No tag identifier should be returned when the lookup fails, got ' .. tagId)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Complex descendant traversal mixing attribute and element access
+
+@Test function DescendantAxisAttributeAccess()
+   local xml = obj.new("xml", {
+      statement = '<root category="library"><branch name="east"><shelf code="A"><book id="1">Intro</book></shelf></branch><branch name="west"><shelf code="B"><book id="2">Advanced</book></shelf></branch></root>'
+   })
+
+   local err, category = xml.mtEvaluate('//branch[@name="west"]/../@category')
+   assert(category is 'library', 'Using .. from a descendant selection should expose the ancestor attribute value, got ' .. tostring(category))
+
+   local err, tagId = xml.mtSearch('//branch[@name="west"]/shelf[@code="B"]/book[text()="Advanced"]')
+   assert(err is ERR_Okay, 'Complex descendant traversal should locate the advanced book entry: ' .. mSys.GetErrorMsg(err))
+end

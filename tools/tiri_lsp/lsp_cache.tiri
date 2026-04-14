@@ -1,0 +1,386 @@
+----------------------------------------------------------------------------------------------------------------------
+-- Documentation Cache Builder
+--
+-- Builds an index of Kotuku API documentation from XML files.
+-- Stores top-level info (names, comments, prototypes) plus byte offsets for on-demand detail retrieval.
+--
+-- Compact string format uses \0 as field separator:
+--   Fields:  'A:access\0L:start,end\0T:type\0C:comment'
+--   Methods: 'L:start,end\0P:prototype\0C:comment'
+--   Actions: 'L:start,end\0P:prototype\0C:comment'
+--   Functions: 'L:start,end\0P:prototype\0C:comment'
+
+local rx_pos_pair = <{ regex.new([[(\d+),(\d+)]]) }>
+
+-- Encode a field entry to compact string format
+function encodeField(Access, Type, ByteStart, ByteEnd, Comment)
+   return f'A:{Access or "R"}\0L:{ByteStart},{ByteEnd}\0T:{Type or ""}\0C:{Comment or ""}'
+end
+
+-- Encode a method/action/function entry to compact string format
+function encodeMethod(Prototype, ByteStart, ByteEnd, Comment)
+   return f'L:{ByteStart},{ByteEnd}\0P:{Prototype or ""}\0C:{Comment or ""}'
+end
+
+-- Decode a field from compact string format
+global function decodeField(Str:any):table
+   if type(Str) != 'string' then return Str end  -- Already decoded or nil
+
+   result = {}
+   for field in values(Str:split('\0')) do
+      key = field:sub(0, 1)
+      value = field:sub(2)
+      if key is 'A' then
+         result.access = value
+      elseif key is 'L' then
+         start_pos, end_pos = rx_pos_pair.extract(value)
+         result.byteStart = tonumber(start_pos)
+         result.byteEnd = tonumber(end_pos)
+      elseif key is 'T' then
+         result.type = value
+      elseif key is 'C' then
+         result.comment = value
+      else
+         print(f'Unrecognised key: {key}')
+      end
+   end
+   return result
+end
+
+-- Decode a method/action/function from compact string format
+
+global function decodeMethod(Str:any):table
+   if type(Str) is 'table' then return Str end  -- Already decoded or nil
+
+   result = {}
+   for field in values(Str:split('\0')) do
+      key = field:sub(0, 1)
+      value = field:sub(2)
+      if key is 'L' then
+         start_pos, end_pos = rx_pos_pair.extract(value)
+         result.byteStart = tonumber(start_pos)
+         result.byteEnd = tonumber(end_pos)
+      elseif key is 'P' then
+         result.prototype = value
+      elseif key is 'C' then
+         result.comment = value
+      else
+         print(f'Unrecognised key: {key}')
+      end
+   end
+
+   return result
+end
+
+function parseAccessString(ReadAttr:str, WriteAttr:str):str
+   -- Convert access attributes to simplified form: R, W, R/W, R/I, R/S, etc.
+   r = ReadAttr and (ReadAttr is 'R' or ReadAttr is 'G') and 'R' or nil
+   w = nil
+   if WriteAttr is 'W' or WriteAttr is 'S' or WriteAttr is 'I' then
+      w = WriteAttr
+   end
+
+   if r and w then return r .. '/' .. w
+   elseif r then return r
+   elseif w then return w
+   else return 'R' end
+end
+
+function extractXMLElement(Content:str, TagName:str, StartPos):table
+   -- Find an XML element and return its content plus byte positions
+   openTag = f'<{TagName}>'
+   closeTag = f'</{TagName}>'
+
+   tagStart = Content:find(openTag, StartPos)
+   tagStart ?? return
+
+   tagEnd = Content:find(closeTag, tagStart)
+   tagEnd ?? return
+
+   content = Content:sub(tagStart + #openTag, tagEnd - 1)
+   content = content?:unescapeXML()
+
+   return {
+      byteStart = tagStart,
+      byteEnd = tagEnd + #closeTag - 1,
+      content = content
+   }
+end
+
+function extractChildText(Content:str, TagName:str):str
+   -- Extract text content of a child element
+   rx = regex.new(f'<{TagName}>([^<]*)<\\/{TagName}>')
+   content = rx.extract(Content)
+   content?:unescapeXML()
+   return content
+end
+
+function extractChildAttr(Content:str, TagName:str, AttrName:str):str
+   -- Extract attribute value from a child element
+   rx = regex.new(f'<{TagName}[^>]*{AttrName}="([^"]*)"')
+   content = rx.extract(Content)
+   content?:unescapeXML()
+   return content
+end
+
+function processModuleXML(FilePath:str, DocPath:str):<str,table>
+   -- Process a module XML file and extract function information
+   content = io.readAll(FilePath)
+   content ?? return
+
+   relativePath = FilePath:replace(DocPath, '')
+
+   -- Extract module info
+   infoMatch = extractXMLElement(content, 'info', 0)
+   infoMatch ?? return
+
+   modName = extractChildText(infoMatch.content, 'name')
+   modName ?? return
+
+   modEntry = {
+      file = relativePath,
+      comment = extractChildText(infoMatch.content, 'comment') or '',
+      functions = {}
+   }
+
+   -- Extract functions (using compact string format)
+   pos = 0
+   while true do
+      funcMatch = extractXMLElement(content, 'function', pos)
+      funcMatch ?? break
+
+      funcName = extractChildText(funcMatch.content, 'name')
+      if funcName then
+         modEntry.functions[funcName] = encodeMethod(
+            extractChildText(funcMatch.content, 'prototype') or '',
+            funcMatch.byteStart,
+            funcMatch.byteEnd,
+            extractChildText(funcMatch.content, 'comment') or ''
+         )
+      end
+
+      pos = funcMatch.byteEnd
+   end
+
+   return modName, modEntry
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Process a class XML file and extract method/action/field information
+
+function processClassXML(FilePath, DocPath)
+   content = io.readAll(FilePath)
+   content ?? return
+
+   relativePath = FilePath:replace(DocPath, '')
+
+   -- Extract class info
+   infoMatch = extractXMLElement(content, 'info', 0)
+   infoMatch ?? return
+
+   className = extractChildText(infoMatch.content, 'name')
+   className ?? return
+
+   classEntry = {
+      file = relativePath,
+      module = extractChildText(infoMatch.content, 'module') or '',
+      comment = extractChildText(infoMatch.content, 'comment') or '',
+      methods = {},
+      actions = {},
+      fields = {}
+   }
+
+   -- Extract methods (using compact string format)
+   pos = 0
+   while true do
+      methodMatch = extractXMLElement(content, 'method', pos)
+      methodMatch ?? break
+
+      methodName = extractChildText(methodMatch.content, 'name')
+      if methodName then
+         classEntry.methods[methodName] = encodeMethod(
+            extractChildText(methodMatch.content, 'prototype') or '',
+            methodMatch.byteStart,
+            methodMatch.byteEnd,
+            extractChildText(methodMatch.content, 'comment') or ''
+         )
+      end
+
+      pos = methodMatch.byteEnd
+   end
+
+   -- Extract actions (using compact string format)
+   pos = 0
+   while true do
+      actionMatch = extractXMLElement(content, 'action', pos)
+      actionMatch ?? break
+
+      actionName = extractChildText(actionMatch.content, 'name')
+      if actionName then
+         classEntry.actions[actionName] = encodeMethod(
+            extractChildText(actionMatch.content, 'prototype') or '',
+            actionMatch.byteStart,
+            actionMatch.byteEnd,
+            extractChildText(actionMatch.content, 'comment') or ''
+         )
+      end
+
+      pos = actionMatch.byteEnd
+   end
+
+   -- Extract fields (using compact string format)
+   pos = 0
+   while true do
+      fieldMatch = extractXMLElement(content, 'field', pos)
+      fieldMatch ?? break
+
+      fieldName = extractChildText(fieldMatch.content, 'name')
+      if fieldName then
+         readAttr = extractChildAttr(fieldMatch.content, 'access', 'read')
+         writeAttr = extractChildAttr(fieldMatch.content, 'access', 'write')
+
+         classEntry.fields[fieldName] = encodeField(
+            parseAccessString(readAttr, writeAttr),
+            extractChildText(fieldMatch.content, 'type') or '',
+            fieldMatch.byteStart,
+            fieldMatch.byteEnd,
+            extractChildText(fieldMatch.content, 'comment') or ''
+         )
+      end
+
+      pos = fieldMatch.byteEnd
+   end
+
+   return className, classEntry
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function buildDocCache(DocPath)
+   -- Build the documentation cache from XML files
+
+   cache = {
+      version = 1,
+      built = mSys.PreciseTime() / 1000000,
+      sdkPath = DocPath,
+      modules = {},
+      classes = {}
+   }
+
+   modulesPath = DocPath .. 'modules/'
+   classesPath = DocPath .. 'modules/classes/'
+
+   -- Process module XML files
+
+   print('Scanning modules for documentation cache; ', modulesPath)
+
+   err = file.search(modulesPath, {
+      nameFilter = [[\.xml$]],
+      nameWild = true,
+      maxDepth = 0,
+      matchFeedback = function(Path, FileName, File)
+         -- Skip if it's a directory entry for 'classes'
+         if FileName is 'classes' then return end
+
+         fullPath = Path .. FileName
+         modName, modEntry = processModuleXML(fullPath, DocPath)
+         if modName and modEntry then
+            cache.modules[modName] = modEntry
+            msg('Found module ' .. modName .. ' @ ' .. fullPath)
+         end
+      end
+   })
+
+   processing.collect()
+
+   -- Process class XML files
+
+   print('Scanning classes for documentation cache; ', classesPath)
+
+   err = file.search(classesPath, {
+      nameFilter = [[\.xml$]],
+      nameWild = true,
+      maxDepth = 1,
+      matchFeedback = function(Path, FileName, File)
+         fullPath = Path .. FileName
+         className, classEntry = processClassXML(fullPath, DocPath)
+         if className and classEntry then
+            cache.classes[className] = classEntry
+            msg('Found class ' .. className .. ' @ ' .. fullPath)
+         end
+      end
+   })
+
+   msg('Scan completed')
+
+   processing.collect()
+   return cache
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Serialize a Lua table to a string representation
+
+function serializeTable(Tbl:any, Indent):str
+   Indent = Indent or ''
+   nextIndent = Indent .. '   '
+
+   if type(Tbl) != 'table' then
+      if type(Tbl) is 'string' then
+         -- Escape special characters
+         escaped = Tbl:replace('\\', '\\\\'):replace('\n', '\\n'):replace('\r', '\\r'):replace("'", "\\'")
+         return "'" .. escaped .. "'"
+      elseif type(Tbl) is 'number' then
+         return tostring(Tbl)
+      elseif type(Tbl) is 'boolean' then
+         return Tbl and 'true' or 'false'
+      else
+         return 'nil'
+      end
+   end
+
+   parts = array<string>
+   for k, v in pairs(Tbl) do
+      keyStr = type(k) is 'string' and "['" .. k .. "']" or '[' .. tostring(k) .. ']'
+      valStr = serializeTable(v, nextIndent)
+      parts:push(nextIndent .. keyStr .. ' = ' .. valStr)
+   end
+
+   if #parts is 0 then
+      return '{}'
+   end
+
+   return '{\n' .. parts.join(',\n') .. Indent .. '}'
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+global function saveDocCache(CachePath, Cache)
+   -- Save the cache as a Tiri script
+   content = [[-- Tiri LSP Documentation Cache
+-- Auto-generated, do not edit manually
+-- Built: ]] .. timestamp() .. [[
+
+return ]] .. serializeTable(Cache) .. '\n'
+
+   io.writeAll(CachePath, content)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+global function loadDocCache(DocPath)
+   -- Attempt to load the cache, returns nil if invalid
+   msg('Loading document cache from ' .. CACHE_PATH)
+
+   local cache
+   try
+      cache = loadFile(CACHE_PATH)
+   except ex
+      msg('Failed to run cache file.  Error: ' .. ex.message)
+      return nil
+   end
+
+   if cache.version != 1 then msg('Unsupported version'); return nil end
+   if cache.sdkPath != DocPath then msg('Path mismatch: ' .. cache.sdkPath .. ' != ' .. DocPath); return nil end
+
+   return cache
+end

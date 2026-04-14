@@ -7,7 +7,7 @@
     <type>module</type>
     <comment>Comprehensive audio processing and playback system with professional-grade mixing capabilities.</comment>
     <version>1</version>
-    <copyright>Paul Manias © 2002-2025</copyright>
+    <copyright>Paul Manias © 2002-2026</copyright>
     <description>
 <p>The Audio module provides a robust, cross-platform audio infrastructure that manages the complete audio pipeline from sample loading through to hardware output.  The module's architecture supports both high-level convenience interfaces and low-level professional audio control, making it suitable for applications ranging from simple media playback to sophisticated audio production environments.</p>
 <p>The module implements a client-server design pattern with two complementary class interfaces:</p>

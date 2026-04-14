@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -22,7 +22,7 @@ objCompression::create::untracked(
 </pre>
 
 With the Compression object in place, opening files within the archive only requires the correct path
-reference.  The format is `archive:ArchiveName/path/to/file.ext` and the Fluid example below illustrates:
+reference.  The format is `archive:ArchiveName/path/to/file.ext` and the Tiri example below illustrates:
 
 `obj.new('file', { path='archive:myfiles/readme.txt', flags='!READ' })`
 
@@ -396,9 +396,9 @@ static ERR ARCHIVE_Seek(extFile *Self, struct acSeek *Args)
 
    log.traceBranch("Seek to offset %.2f from seek position %d", Args->Offset, int(Args->Position));
 
-   if (Args->Position IS SEEK::START) pos = F2T(Args->Offset);
-   else if (Args->Position IS SEEK::END) pos = Self->Size - F2T(Args->Offset);
-   else if (Args->Position IS SEEK::CURRENT) pos = Self->Position + F2T(Args->Offset);
+   if (Args->Position IS SEEK::START) pos = int(Args->Offset);
+   else if (Args->Position IS SEEK::END) pos = Self->Size - int(Args->Offset);
+   else if (Args->Position IS SEEK::CURRENT) pos = Self->Position + int(Args->Offset);
    else return log.warning(ERR::Args);
 
    if (pos < 0) return log.warning(ERR::OutOfRange);
@@ -475,6 +475,7 @@ static ERR open_folder(DirInfo *Dir)
    Dir->prvTotal = 0;
    Dir->prvHandle = find_archive(Dir->prvResolvedPath, file_path);
    if (!Dir->prvHandle) return ERR::DoesNotExist;
+   new (Dir->Driver) ArchiveDriver;
    return ERR::Okay;
 }
 
@@ -586,6 +587,7 @@ static ERR scan_folder(DirInfo *Dir)
 
 static ERR close_folder(DirInfo *Dir)
 {
+   ((ArchiveDriver *)Dir->Driver)->~ArchiveDriver();
    return ERR::Okay;
 }
 

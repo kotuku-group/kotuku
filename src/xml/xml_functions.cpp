@@ -465,7 +465,7 @@ static void extract_content(extXML *Self, TAGS &Tags, ParseState &State)
          if (ch != '\r') str.push_back(ch);
       }
 
-      auto &content_tag = Tags.emplace_back(XMLTag(glTagID++, 0, { { "", std::move(str) } }));
+      auto &content_tag = Tags.emplace_back(XTag(glTagID++, 0, { { "", std::move(str) } }));
       Self->BaseURIMap[content_tag.ID] = State.CurrentBase;
    }
 }
@@ -569,7 +569,7 @@ static ERR parse_tag(extXML *Self, TAGS &Tags, ParseState &State)
       }
 
       std::string comment_text(State.cursor.data(), comment - State);
-      auto &comment_tag = Tags.emplace_back(XMLTag(glTagID++, line_no, { { "", comment_text } }));
+      auto &comment_tag = Tags.emplace_back(XTag(glTagID++, line_no, { { "", comment_text } }));
       comment_tag.Flags |= XTF::COMMENT;
       Self->BaseURIMap[comment_tag.ID] = State.CurrentBase;
       State = comment;
@@ -620,7 +620,7 @@ static ERR parse_tag(extXML *Self, TAGS &Tags, ParseState &State)
 
       // CDATA sections are assimilated into the parent tag as content
 
-      auto &cdata_tag = Tags.emplace_back(XMLTag(glTagID++, line_no, {
+      auto &cdata_tag = Tags.emplace_back(XTag(glTagID++, line_no, {
          { "", std::string(content.cursor.data(), State - content) }
       }));
       cdata_tag.Flags |= XTF::CDATA;
@@ -661,7 +661,7 @@ static ERR parse_tag(extXML *Self, TAGS &Tags, ParseState &State)
 
    State.Balance++;
 
-   auto &tag = Tags.emplace_back(XMLTag(glTagID++, line_no));
+   auto &tag = Tags.emplace_back(XTag(glTagID++, line_no));
    std::string node_base = State.CurrentBase;
    std::string inherited_base = State.CurrentBase;
 
@@ -896,7 +896,7 @@ static ERR txt_to_xml(extXML *Self, TAGS &Tags, std::string_view Text)
    // Extract the tag information.  This loop will extract the top-level tags.  The parse_tag() function is recursive
    // to extract the child tags.
 
-   log.branch("Parsing %" PRId64 " bytes...", Text.size());
+   log.msg(VLF::BRANCH|VLF::DETAIL, "Parsing %" PRId64 " bytes...", Text.size());
 
    // Estimate tag count and reserve space (heuristic: 1 tag per 100 characters)
    Tags.reserve(std::max(size_t(Text.size() / 100), size_t(16)));
@@ -923,7 +923,7 @@ static ERR txt_to_xml(extXML *Self, TAGS &Tags, std::string_view Text)
       }
 
       // Skip content/whitespace to get to the next tag.  NB: We are working on the basis that
-      // we are at the root level of the document and Parasol permits multiple root tags.
+      // we are at the root level of the document and Kotuku permits multiple root tags.
 
       state.skipTo('<', Self->LineNo);
    }
@@ -948,7 +948,7 @@ static ERR txt_to_xml(extXML *Self, TAGS &Tags, std::string_view Text)
 //********************************************************************************************************************
 // Serialise XML data into string form.
 
-static void serialise_xml(XMLTag &Tag, std::ostringstream &Buffer, XMF Flags)
+static void serialise_xml(XTag &Tag, std::ostringstream &Buffer, XMF Flags)
 {
    if (Tag.Attribs[0].isContent()) {
       if (not Tag.Attribs[0].Value.empty()) {
@@ -962,8 +962,7 @@ static void serialise_xml(XMLTag &Tag, std::ostringstream &Buffer, XMF Flags)
             const auto &str = Tag.Attribs[0].Value;
             size_t last_pos = 0;
             for (size_t j = 0; j < str.size(); ++j) {
-               auto escape = xml_escape_table[uint8_t(str[j])];
-               if (escape) {
+               if (auto escape = xml_escape_table[uint8_t(str[j])]; escape) {
                   if (j > last_pos) Buffer.write(str.data() + last_pos, j - last_pos);
                   Buffer << escape;
                   last_pos = j + 1;

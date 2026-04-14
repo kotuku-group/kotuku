@@ -11,7 +11,7 @@
     <id>1e0f9fdd</id>
     <idstring>THREAD</idstring>
     <category>System</category>
-    <copyright>Paul Manias 1996-2025</copyright>
+    <copyright>Paul Manias 1996-2026</copyright>
     <description>
 <p>The Thread class provides the means to execute and manage threads within an application.</p>
 <p>The following code illustrates how to create a temporary thread that is automatically destroyed after the <code>thread_entry()</code> function has completed:</p>

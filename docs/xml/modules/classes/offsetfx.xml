@@ -11,7 +11,7 @@
     <id>8e3b5bea</id>
     <idstring>OFFSETFX</idstring>
     <category>Graphics</category>
-    <copyright>Paul Manias © 2010-2025</copyright>
+    <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>This filter offsets the input image relative to its current position in the image space by the specified vector of <code>(XOffset,YOffset)</code>.</p></description>
     <source>

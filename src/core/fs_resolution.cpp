@@ -167,12 +167,12 @@ ERR ResolvePath(const std::string_view &pPath, RSF Flags, std::string *Result)
    // Keep looping until the volume is resolved
 
    int loop;
-   auto error = ERR::Failed;
+   auto error = ERR::ResolvePath;
    for (loop=10; loop > 0; loop--) {
       error = resolve(src, dest, Flags);
 
       if (error IS ERR::VirtualVolume) {
-         log.trace("Detected virtual volume '%s'", dest);
+         log.trace("Detected virtual volume '%s'", dest.c_str());
 
          // If RSF::CHECK_VIRTUAL is set, return ERR::VirtualVolume for reserved volume names, otherwise Okay.
 
@@ -367,7 +367,7 @@ static ERR resolve(const std::string &Source, std::string &Dest, RSF Flags)
       if (get_virtual(Source)) return ERR::VirtualVolume;
 
       if (tlClassLoaded) { // Already attempted to load the module on a previous occasion - we must fail
-         return ERR::Failed;
+         return ERR::LoadModule;
       }
 
       // An external reference can refer to a module for auto-loading (preferred) or a class name.
@@ -395,7 +395,7 @@ static ERR resolve(const std::string &Source, std::string &Dest, RSF Flags)
       while ((Source[j] IS '/') or (Source[j] IS '\\')) j++;
       Dest.append(Source, j);
 
-      // Fully resolve the path to a system folder before testing it (e.g. "scripts:" to "parasol:scripts/" to "c:\parasol\scripts\" will be resolved through this recursion).
+      // Fully resolve the path to a system folder before testing it (e.g. "scripts:" to "kotuku:scripts/" to "c:\kotuku\scripts\" will be resolved through this recursion).
 
       #ifdef _WIN32
          if ((Dest[1] IS ':') and ((Dest[2] IS '/') or (Dest[2] IS '\\'))) j = std::string::npos;

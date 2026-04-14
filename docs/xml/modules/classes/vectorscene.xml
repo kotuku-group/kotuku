@@ -11,7 +11,7 @@
     <id>890a3646</id>
     <idstring>VECTORSCENE</idstring>
     <category>Graphics</category>
-    <copyright>Paul Manias © 2010-2025</copyright>
+    <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>The VectorScene class acts as a container and control point for the management of vector definitions.  Its main purpose is to draw the scene to a target <class name="Bitmap">Bitmap</class> or <class name="Surface">Surface</class> provided by the client.</p>
 <p>Vector scenes are created by initialising multiple Vector objects such as <class name="VectorPath">VectorPath</class> and <class name="VectorViewport">VectorViewport</class> and positioning them within a vector tree.  The VectorScene must lie at the root of the tree.</p>

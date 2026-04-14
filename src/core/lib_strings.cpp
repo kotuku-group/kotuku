@@ -9,7 +9,7 @@ Name: System
 #ifdef __ANDROID__
 
 #include <android/configuration.h>
-#include <parasol/modules/android.h>
+#include <kotuku/modules/android.h>
 
 struct LanguageCode {
    const char Two[2];

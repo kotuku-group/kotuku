@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -93,9 +93,9 @@ For optimal results, choose the appropriate interface based on application requi
  #endif
 #endif
 
-#include <parasol/main.h>
-#include <parasol/modules/audio.h>
-#include <parasol/strings.hpp>
+#include <kotuku/main.h>
+#include <kotuku/modules/audio.h>
+#include <kotuku/strings.hpp>
 #include <sstream>
 #include <algorithm>
 
@@ -216,5 +216,5 @@ static STRUCTS glStructures = {
    { "AudioLoop", sizeof(AudioLoop) }
 };
 
-PARASOL_MOD(MODInit, nullptr, MODOpen, MODExpunge, MOD_IDL, &glStructures)
+KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, nullptr, MOD_IDL, &glStructures)
 extern "C" struct ModHeader * register_audio_module() { return &ModHeader; }

@@ -1,5 +1,5 @@
 
-#ifdef PARASOL_MAIN_H
+#ifdef KOTUKU_MAIN_H
 typedef void * HWND;
 typedef void * HDC;
 typedef void * HBITMAP;
@@ -16,7 +16,7 @@ struct WinCursor {
    #else
    void * WinCursor;
    #endif
-   #ifdef PARASOL_MAIN_H
+   #ifdef KOTUKU_MAIN_H
    PTC CursorID;
    #else
    int CursorID;
@@ -29,7 +29,7 @@ struct WinDT {
    void *Data;
 };
 
-#if !defined(PARASOL_MAIN_H) && defined(__cplusplus)
+#if !defined(KOTUKU_MAIN_H) && defined(__cplusplus)
 enum class CON : unsigned int {
    NIL = 0,
    GAMEPAD_S = 0x00000001,

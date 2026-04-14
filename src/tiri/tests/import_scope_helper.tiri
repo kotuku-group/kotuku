@@ -1,0 +1,35 @@
+-- Helper file for import scope upvalue test
+-- Tests that locals captured by closures in imported modules remain valid
+-- after the import scope ends and registers are freed.
+
+local x = 41  -- Local value to be captured
+
+global function get_x()
+   return x   -- Closure captures local x
+end
+
+x = 42  -- Modify x after defining the closure; the closure should see this update
+
+-- Also test a more complex scenario with multiple captures
+local a, b, c = 100, 200, 300
+
+global function get_sum()
+   return a + b + c
+end
+
+a = 110
+b = 220
+c = 330
+
+-- Test nested closures capturing the same local
+local counter = 0
+
+global function make_incrementer()
+   return function()
+      counter += 1
+      return counter
+   end
+end
+
+-- Test that closures returned from the import still work
+global incrementer = make_incrementer()

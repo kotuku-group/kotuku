@@ -1,6 +1,0 @@
---$FLUID:Include
-
-module({ name="Backstage", copyright="Paul Manias © 2025", version=1.0, timestamp=20240611 }, function()
-  c_include("<parasol/modules/network.h>")
-
-end)

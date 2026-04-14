@@ -1,0 +1,173 @@
+--[[
+The gui.checkbox API creates and manages checkboxes in the user interface.
+
+Documentation is available in the Kotuku Wiki.
+--]]
+
+   import 'gui'
+
+   namespace 'gui'
+
+FONT_MAX_HEIGHT, FONT_HEIGHT = gui.getFontHeight(gui.fonts.widget)
+HEIGHT    <const> = math.floor(FONT_MAX_HEIGHT * 1.25) + 1
+ICON_SIZE <const> = HEIGHT * 0.56
+GAP       <const> = HEIGHT * 0.35
+
+function toggleState(self)
+   if self.state is 1 then
+      self.state = 0
+      self.iconRender.opacity = 0.25
+   else
+      self.state = 1
+      self.iconRender.opacity = 1.0
+   end
+
+   if self.events.activate then self.events.activate(self) end
+end
+
+gui.checkbox = function(Options)
+   self = { -- Public variables
+      events         = Options.events ?? { },
+      parentViewport = Options.target,
+      state          = Options.state ?? 0,
+      text           = nil, -- A VectorText that represents the string
+      viewport       = nil, -- The checkbox's primary viewport
+   }
+
+   -- Change the active state of the checkbox to disabled or enabled
+
+   self.disable = function(self)
+      self.disabled = true
+      self.viewport.acDisable()
+      self.text.opacity = 0.5
+      self.bkgd.fill = self.theme.page.bkgd
+      self.events?.disable(self)
+      self.viewport.acDraw()
+   end
+
+   self.enable = function(self)
+      self.disabled = false
+      self.viewport.acDisable()
+      self.text.opacity = 1.0
+      self.bkgd.fill = self.theme.page.bkgd
+      self.events?.enable(self)
+      self.viewport.acDraw()
+   end
+
+   -- Main entry point --
+
+   assert(Options.target, 'A target viewport is required.')
+
+   self.theme = gui.getTheme(self.parentViewport)
+
+   vps = { -- Viewport settings
+      x        = Options.x,
+      y        = Options.y,
+      width    = Options.width,
+      height   = HEIGHT,
+      xOffset  = Options.xOffset,
+      yOffset  = Options.yOffset,
+      overflow = VOF_HIDDEN
+   }
+
+   calc_width = false
+   if not vps.x and not vps.xOffset then vps.x = 0 end
+   if not vps.y and not vps.yOffset then vps.y = 0 end
+   if not vps.width and not (vps.xOffset and vps.x) then
+      vps.width = gui.sizing.widget.width
+      calc_width = true
+   end
+
+   self.viewport = self.parentViewport.new('VectorViewport', vps)
+
+   self.bkgd = self.viewport.new('VectorRectangle', {
+      fill   = self.theme.page.bkgd,
+      x      = gui.sizing.page.strokeWidth * 0.5,
+      y      = gui.sizing.page.strokeWidth * 0.5,
+      width  = HEIGHT - gui.sizing.page.strokeWidth,
+      height = HEIGHT - gui.sizing.page.strokeWidth,
+      roundX = gui.sizing.page.strokeWidth * 2,
+      roundY = gui.sizing.page.strokeWidth * 2,
+      stroke = self.theme.widget.stroke,
+      strokeWidth = gui.sizing.page.strokeWidth,
+   })
+
+   icon_theme = gui.rgbToIconTheme(self.theme.page.text)
+
+   chk_icon = gui.createIcon(self.viewport.scene, 'items/checkmark', ICON_SIZE, icon_theme)
+
+   self.iconRender = self.viewport.new('VectorViewport', {
+      x      = (HEIGHT - ICON_SIZE) * 0.5,
+      y      = (self.viewport.height - ICON_SIZE) * 0.5,
+      width  = ICON_SIZE,
+      height = ICON_SIZE,
+      fill   = chk_icon.fill,
+      opacity = (function()
+         return self.state is 1 ? 1.0 :> 0.25
+      end)()
+   })
+
+   self.text = self.viewport.new('VectorText', {
+      x         = 0,
+      y         = FONT_HEIGHT + math.floor((HEIGHT - FONT_HEIGHT) * 0.5),
+      face      = gui.fonts.label.face,
+      fontSize  = string.format('%.2fpt', gui.fonts.label.size),
+      fontStyle = gui.fonts.label.style,
+      fill      = self.theme.window.text,
+      string    = Options.label,
+      lineLimit = 1
+   })
+
+   if calc_width then
+      self.viewport.width = HEIGHT + GAP + self.text.textWidth
+   end
+
+   if Options.align is 'right' then
+      self.text.x = 0
+      self.bkgd.x = self.viewport.width - HEIGHT + (gui.sizing.page.strokeWidth * 0.5)
+      self.iconRender.x = self.viewport.width - HEIGHT + ((HEIGHT - ICON_SIZE) * 0.5)
+   else
+      self.text.x = (GAP * 2) + ICON_SIZE
+   end
+
+   self.viewport.mtSubscribeFeedback(FM_HAS_FOCUS|FM_CHILD_HAS_FOCUS|FM_LOST_FOCUS, function(Viewport, Event)
+      if Event is FM_LOST_FOCUS then
+         self.bkgd.stroke = self.theme.widget.stroke
+         self.events?.lostFocus(self)
+      else
+         if self.disabled then
+            self.bkgd.stroke = self.theme.widget.stroke
+         else
+            self.bkgd.stroke = self.theme.widget.strokeFocus
+            self.events?.focus(self)
+         end
+      end
+
+      Viewport.acDraw()
+   end)
+
+   self.viewport.mtSubscribeKeyboard(function(Viewport, Qualifiers, Value, Unicode)
+      if not (Qualifiers has KQ_PRESSED) then return end
+
+      if (Value is KEY_ENTER) or (Value is KEY_SPACE) or (Value is KEY_NP_ENTER) then
+         toggleState(self)
+      end
+   end)
+
+   self.viewport.mtSubscribeInput(JTYPE_BUTTON, function(Viewport, Msg)
+      repeat
+         if Msg.type is JET_LMB then
+            if Msg.value > 0 then
+               toggleState(self)
+            end
+         end
+         Msg = Msg.next
+      until not Msg
+
+      Viewport.acDraw()
+   end)
+
+   self.events?.show(self)
+
+   return self
+end

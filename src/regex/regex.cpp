@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -22,7 +22,7 @@ Key features include:
 <li>Callback-based result processing for custom handling.</li>
 </list>
 
-Note: Fluid scripts are expected to use the built-in regex functions for better integration as opposed to this
+Note: Tiri scripts are expected to use the built-in regex functions for better integration as opposed to this
 module.
 
 -END-
@@ -31,9 +31,9 @@ module.
 
 #define PRV_REGEX_MODULE
 
-#include <parasol/main.h>
-#include <parasol/modules/regex.h>
-#include <parasol/strings.hpp>
+#include <kotuku/main.h>
+#include <kotuku/modules/regex.h>
+#include <kotuku/strings.hpp>
 #include "srell/srell.hpp"
 
 #include <cstddef>
@@ -140,7 +140,7 @@ static srell::regex_constants::match_flag_type convert_match_flags(RMATCH Flags)
 
 static ERR regex_free(APTR Address)
 {
-   ((Regex *)Address)->~Regex();
+   ((extRegex *)Address)->~extRegex();
    return ERR::Okay;
 }
 
@@ -224,7 +224,7 @@ ERR Compile(const std::string_view &Pattern, REGEX Flags, std::string *ErrorMsg,
       }
       else if (auto err = regex->srell->ecode(); err != 0) {
          auto error_msg = map_error_code(err);
-         log.warning("Regex compilation failed: %s", error_msg.c_str());
+         log.warning("Regex compilation failed: %s; Pattern: %.*s", error_msg.c_str(), int(Pattern.size()), Pattern.data());
          if (ErrorMsg) *ErrorMsg = error_msg;
          FreeResource(regex);
          return ERR::Syntax;
@@ -653,5 +653,5 @@ static STRUCTS glStructures = {
    { "Regex", sizeof(struct Regex) }
 };
 
-PARASOL_MOD(MODInit, nullptr, MODOpen, MODExpunge, MOD_IDL, &glStructures)
+KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, nullptr, MOD_IDL, &glStructures)
 extern "C" struct ModHeader * register_regex_module() { return &ModHeader; }

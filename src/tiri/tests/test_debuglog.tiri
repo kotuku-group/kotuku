@@ -1,0 +1,335 @@
+-- Flute tests for the DebugLog() method
+
+   glSelf = obj.find('self')
+
+rx_debuglog = regex.new('test_debuglog\\.tiri:\\d+')
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test default behaviour (stack trace only)
+
+@Test function DefaultStackTrace()
+   function innerFunc()
+      err, result = glSelf.mtDebugLog()
+      return result
+   end
+
+   function middleFunc()
+      return innerFunc()
+   end
+
+   result = middleFunc()
+   assert(result, 'DebugLog should return a result')
+   assert(string.find(result, 'CALL STACK'), 'Should contain stack trace header')
+   -- innerFunc does not appear in the stack because mtDebugLog starts inspection at level 1, skipping its own frame and showing the Lua caller
+   -- Function names are only shown for global/method/field calls, not local variables
+   assert(rx_debuglog.test(result), 'Should contain source location')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test locals option
+
+@Test function Locals()
+   -- Test compile-time variable capture with diagnose mode
+   script = obj.new('tiri', {
+      statement = [[
+         local x = 42
+         local name = 'test'
+         local flag = true
+         -- Local-by-default tests
+         x2 = 42
+         name2 = 'test'
+         flag2 = true
+      ]],
+      jitOptions = 'DIAGNOSE'
+   })
+
+   script.acQuery()
+   err, result = script.mtDebugLog('locals')
+   print(result)
+
+   assert(result, 'DebugLog should return a result')
+   assert(string.find(result, ':x:'), 'Should contain variable x')
+   assert(string.find(result, ':number'), 'Should contain num type for x')
+   assert(string.find(result, 'name'), 'Should contain variable name')
+   assert(string.find(result, ':string'), 'Should contain str type for name')
+   assert(string.find(result, 'flag'), 'Should contain variable flag')
+   assert(string.find(result, ':bool'), 'Should contain bool type for flag')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test upvalues option
+
+@Test function Upvalues()
+   counter = 10
+   config = { enabled = true }
+
+   function closure()
+      counter++
+      if config.enabled then end  -- Use config so it becomes an upvalue
+      err, result = glSelf.mtDebugLog('upvalues')
+      return result
+   end
+
+   result = closure()
+
+   assert(result, 'DebugLog should return a result')
+   assert(string.find(result, 'UPVALUES'), 'Should contain upvalues header')
+   assert(string.find(result, 'counter'), 'Should contain upvalue counter')
+   assert(string.find(result, 'config'), 'Should contain upvalue config')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test globals option
+
+global testGlobal = 'visible'
+global anotherGlobal = 123
+
+@Test function Globals()
+   err, result = glSelf.mtDebugLog('globals')
+
+   assert(result, 'DebugLog should return a result')
+   assert(string.find(result, 'GLOBALS'), 'Should contain globals header')
+   assert(string.find(result, 'testGlobal'), 'Should contain testGlobal')
+   assert(string.find(result, 'visible'), 'Should contain value visible')
+   assert(string.find(result, 'anotherGlobal'), 'Should contain anotherGlobal')
+   assert(string.find(result, '123'), 'Should contain value 123')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test memory option
+
+@Test function Memory()
+   err, result = glSelf.mtDebugLog('memory')
+
+   assert(result, 'DebugLog should return a result')
+   assert(string.find(result, 'MEMORY'), 'Should contain memory header')
+   assert(string.find(result, 'LuaUsage'), 'Should contain heap information')
+   assert(string.find(result, 'MB'), 'Should contain MB unit')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test state option
+
+@Test function State()
+   err, result = glSelf.mtDebugLog('state')
+
+   assert(result, 'DebugLog should return a result')
+   assert(string.find(result, 'STATE'), 'Should contain state header')
+   assert(string.find(result, 'Stack top'), 'Should contain stack top information')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test multiple options (CSV list)
+
+@Test function MultipleOptions()
+   x = 100
+   err, result = glSelf.mtDebugLog('stack,locals,memory')
+   msg(result)
+
+   assert(result, 'DebugLog should return a result')
+   assert(string.find(result, 'CALL STACK'), 'Should contain stack trace')
+   assert(string.find(result, 'LOCALS'), 'Should contain locals')
+   assert(string.find(result, 'MEMORY'), 'Should contain memory info')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test 'all' option
+
+@Test function AllOption()
+   y = 50
+   err, result = glSelf.mtDebugLog('all')
+
+   assert(result, 'DebugLog should return a result')
+   assert(string.find(result, 'CALL STACK'), 'Should contain stack trace')
+   assert(string.find(result, 'LOCALS'), 'Should contain locals')
+   assert(string.find(result, 'MEMORY'), 'Should contain memory info')
+   assert(string.find(result, 'STATE'), 'Should contain state info')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test compact mode
+
+@Test function CompactMode()
+   function compactTest()
+      x = 42
+      err, result = glSelf.mtDebugLog('stack,locals,compact')
+      return result
+   end
+
+   result = compactTest()
+
+   assert(result, 'DebugLog should return a result')
+   assert(rx_debuglog.test(result), 'Should contain source location')
+   assert(string.find(result, 'x'), 'Should contain variable x')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test with long strings (truncation)
+
+@Test function LongString()
+   function longStringTest()
+      longStr = 'This is a very long string that should be truncated to forty characters maximum'
+      err, result = glSelf.mtDebugLog('locals')
+      return result
+   end
+
+   result = longStringTest()
+
+   assert(result, 'DebugLog should return a result')
+   assert(string.find(result, 'longStr'), 'Should contain variable longStr')
+   assert(string.find(result, '...'), 'Should contain ellipsis for truncation')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test with various data types
+
+@Test function VariousTypes()
+   function typeTest()
+      numVar = 3.14
+      strVar = 'hello'
+      boolVar = false
+      nilVar = nil
+      tableVar = { a = 1, b = 2 }
+      funcVar = function() end
+
+      err, result = glSelf.mtDebugLog('locals')
+      return result
+   end
+
+   result = typeTest()
+print(result)
+   assert(result, 'DebugLog should return a result')
+   assert(string.find(result, 'numVar'), 'Should contain numVar')
+   assert(string.find(result, '3.14'), 'Should contain number value')
+   assert(string.find(result, 'strVar'), 'Should contain strVar')
+   assert(string.find(result, 'hello'), 'Should contain string value')
+   assert(string.find(result, 'boolVar'), 'Should contain boolVar')
+   assert(string.find(result, 'false'), 'Should contain false value')
+   assert(string.find(result, 'nilVar'), 'Should contain nilVar')
+   assert(string.find(result, 'nil'), 'Should contain nil value')
+   assert(string.find(result, 'tableVar'), 'Should contain tableVar')
+   assert(string.find(result, 'funcVar'), 'Should contain funcVar')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test nested function calls in stack trace
+
+@Test function NestedStack()
+   function level3()
+      err, result = glSelf.mtDebugLog('stack')
+      msg(result)
+      return result
+   end
+
+   function level2()
+      return level3()
+   end
+
+   function level1()
+      return level2()
+   end
+
+   result = level1()
+
+   assert(result, 'DebugLog should return a result')
+   -- The stack should contain source locations for the nested calls
+   -- Function names for local functions are not shown since they're unreliable
+   assert(rx_debuglog.test(result), 'Should contain source location')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test funcinfo option
+
+@Test function FuncInfo()
+   function calculateTotal(a, b, c)
+      sum = a + b + c
+      err, result = glSelf.mtDebugLog('funcinfo')
+      return result
+   end
+
+   result = calculateTotal(10, 20, 30)
+
+   assert(result??, 'DebugLog should return a result')
+   assert(string.find(result, 'FUNCTIONS'), 'Should contain function info header')
+   assert(regex.new('Function \\[\\d+\\]:').test(result), 'Should contain function label with level number')
+   assert(string.find(result, 'calculateTotal'), 'Should contain function name')
+   assert(string.find(result, 'Parameters:'), 'Should contain parameters count')
+   assert(string.find(result, 'Vararg:'), 'Should contain vararg flag')
+   assert(string.find(result, 'Stack slots:'), 'Should contain stack slots info')
+   assert(string.find(result, 'Bytecodes:'), 'Should contain bytecode count')
+   assert(string.find(result, 'Constants:'), 'Should contain constants info')
+   assert(string.find(result, 'Upvalues:'), 'Should contain upvalues count')
+
+   -- Verify parameter count is correct (3 parameters: a, b, c)
+   assert(regex.new('Parameters:\\s*3').test(result), 'Should show 3 parameters')
+
+   -- Verify vararg is false for this function
+   assert(regex.new('Vararg:\\s*false').test(result), 'Should show vararg as false')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test disassembly option
+
+@Test function Disassembly()
+   function sampleFunction(a, b)
+      scale = b * 2
+      total = a + scale
+      err, result = glSelf.mtDebugLog('disasm')
+      msg('sampleFunction: ' .. tostring(result))
+      return result
+   end
+
+   result = sampleFunction(5, 7)
+
+   assert(result??, 'DebugLog should return a result')
+   assert(string.find(result, 'BYTECODE'), 'Should contain disassembly header')
+   assert(string.find(result, 'FUNCF'), 'Should list function prologue instruction')
+   assert(string.find(result, 'RET'), 'Should list return instruction')
+
+   -- Test disassembly of a compiled script
+
+   script = obj.new('tiri', { statement = [[
+local function sampleFunction(a, b) -- Local function
+   scale = b * 2
+   total = a + scale
+   return result
+end
+
+global function Func() -- Global function
+   x = 42
+   name = 'test'
+   flag = true
+   return result
+end
+
+   a = 'a_var'
+   b = 'b_var'
+   c = a .. b
+]]
+   })
+
+   script.acActivate()
+   err, result = script.mtDebugLog('disasm')
+   msg(result)
+   assert(err is ERR_Okay, 'DebugLog on script should succeed')
+   assert(result??, 'DebugLog should return a result for script')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test binary dump option
+
+@Test function BytecodeDump()
+   function captureDump(a, b)
+      temp = a + b
+      err, result = glSelf.mtDebugLog('dump')
+      msg(result)
+      return result
+   end
+
+   result = captureDump(4, 9)
+
+   assert(result??, 'DebugLog should return a result')
+   assert(string.find(result, 'BINARY'), 'Should contain dump header')
+   assert(regex.new('Bytes:\\s*\\d+').test(result), 'Should report byte count')
+   assert(regex.new('\\d+:\\s*[a-fA-F0-9]{2}').test(result), 'Should contain hexadecimal byte output, got ' .. result)
+end

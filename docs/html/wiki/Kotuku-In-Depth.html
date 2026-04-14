@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-8254DG7MT6"> </script><script>
+	   window.dataLayer = window.dataLayer || [];
+	   function gtag(){dataLayer.push(arguments);}
+	   gtag('js', new Date());
+      gtag('config', 'G-8254DG7MT6');</script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Kōtuku documentation, machine generated from source">
+<meta name="author" content="Paul Manias">
+<link rel="icon" href="/favicon.ico">
+<title>Kōtuku Wiki - Kotuku In Depth</title>
+<link href="../css/bootstrap.min.css" rel="stylesheet">
+<link href="../css/module-template.css" rel="stylesheet">
+<link href="../css/github-markdown.css" rel="stylesheet">
+</head>
+
+<body>
+<nav class="navbar navbar-expand-sm navbar-dark bg-dark">
+  <div class="container-fluid">
+    <div class="navbar-header"><a class="navbar-brand" href="../index.html">Kōtuku</a></div>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div id="navbar" class="collapse navbar-collapse">
+      <ul class="nav navbar-nav"><li class="nav-item">
+        <li class="nav-item"><a class="nav-link" href="../gallery.html">Gallery</a></li>
+        <li class="nav-item"><a class="nav-link" href="../modules/api.html">API</a></li>
+        <li class="nav-item"><a class="nav-link" href="Home.html">Wiki</a></li>
+        <li class="nav-item"><a class="nav-link" href="https://github.com/parasol-framework/kotuku">GitHub</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<div class="container-fluid">
+  <div class="row">
+    <div class="d-sm-block d-none col-3 sidebar" style="max-width: 230px;">
+      <div class="flex-shrink-1 pt-2 pe-2 sticky-top overflow-auto vh-100 b-shadow">
+
+<ul class="list-unstyled">
+  <li>
+    <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#wiki-collapse" aria-expanded="true">Wiki</button>
+    <div class="collapse show" id="wiki-collapse">
+      <ul class="btn-toggle-nav list-unstyled fw-normal pb-1 ps-3">
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#bp-collapse" aria-expanded="false">Build Process</button>
+         <div class="collapse" id="bp-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="Linux-Builds.html">Linux Builds</a></li>
+              <li class="api-ref"><a class="rounded" href="Windows-Builds.html">Windows Builds</a></li>
+              <li class="api-ref"><a class="rounded" href="Customising-Your-Build.html">Customising Your Build</a></li>
+            </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#tm-collapse" aria-expanded="false">Technical Manuals</button>
+         <div class="collapse" id="tm-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+             <li class="api-ref"><a class="rounded" href="Kotuku-Objects.html">Kōtuku Objects</a></li>
+             <li class="api-ref"><a class="rounded" href="Kotuku-In-Depth.html">Kōtuku In Depth</a></li>
+             <li class="api-ref"><a class="rounded" href="Coding-With-AI.html">Coding With AI</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#fg-collapse" aria-expanded="false">Tiri</button>
+         <div class="collapse" id="fg-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+            <li class="api-ref"><a class="rounded" href="Tiri-Reference-Manual.html">Tiri Reference Manual</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-GUI-API.html">GUI API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-HTTPServer-API.html">HTTPServer API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-IO-API.html">I/O API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-JSON-API.html">JSON API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-URL-API.html">URL API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-VFX-API.html">VFX API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-Widgets.html">Widgets</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#rrm-collapse" aria-expanded="false">RIPL</button>
+         <div class="collapse" id="rrm-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="RIPL-Reference-Manual.html">RIPL Reference Manual</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#tools-collapse" aria-expanded="false">Tools</button>
+         <div class="collapse" id="tools-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="Origo.html">Origo</a></li>
+              <li class="api-ref"><a class="rounded" href="Unit-Testing.html">Flute / Unit Testing</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#doc-collapse" aria-expanded="false">Doc Generation</button>
+         <div class="collapse" id="doc-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="Embedded-Document-Formatting.html">Embedded Document Format</a></li>
+              <li class="api-ref"><a class="rounded" href="TDL-Reference-Manual.html">TDL Reference Manual</a></li>
+              <li class="api-ref"><a class="rounded" href="TDL-Tools.html">TDL Tools</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#app-collapse" aria-expanded="false">Appendix</button>
+         <div class="collapse" id="app-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+             <li class="api-ref"><a class="rounded" href="Action-Reference-Manual.html">Action Reference Manual</a></li>
+             <li class="api-ref"><a class="rounded" href="System-Error-Codes.html">System Error Codes</a></li>
+           </ul>
+         </div></li>
+      </ul>
+    </div>
+  </li>
+</ul>
+
+<ul class="list-unstyled">
+  <li class="border-top my-3"></li>
+  <li>
+    <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#mod-collapse" aria-expanded="false">Modules</button>
+    <div class="collapse" id="mod-collapse">
+      <ul class="btn-toggle-nav list-unstyled fw-normal">
+      <li class="api-ref"><a href="../modules/audio.html" class="rounded">Audio</a></li>
+      <li class="api-ref"><a href="../modules/core.html" class="rounded">Core</a></li>
+      <li class="api-ref"><a href="../modules/display.html" class="rounded">Display</a></li>
+      <li class="api-ref"><a href="../modules/font.html" class="rounded">Font</a></li>
+      <li class="api-ref"><a href="../modules/network.html" class="rounded">Network</a></li>
+      <li class="api-ref"><a href="../modules/regex.html" class="rounded">Regex</a></li>
+      <li class="api-ref"><a href="../modules/tiri.html" class="rounded">Tiri</a></li>
+      <li class="api-ref"><a href="../modules/vector.html" class="rounded">Vector</a></li>
+      <li class="api-ref"><a href="../modules/xml.html" class="rounded">XML</a></li>
+      <li class="api-ref"><a href="../modules/xpath.html" class="rounded">XPath</a></li>
+      </ul>
+    </div>
+  </li>
+</ul>
+
+<ul class="list-unstyled">
+  <li class="border-top my-3"></li>
+  <li>
+    <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#class-collapse" aria-expanded="false">Classes</button>
+    <div class="collapse" id="class-collapse">
+      <ul class="btn-toggle-nav list-unstyled fw-normal pb-1 ps-3">
+        <li>
+          <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#audio-collapse" aria-expanded="false">Audio</button>
+          <div class="collapse" id="audio-collapse">
+            <ul class="btn-toggle-nav list-unstyled fw-normal pb-1">
+            <li><a href="../modules/classes/audio.html" class="rounded">Audio</a></li>
+            <li><a href="../modules/classes/sound.html" class="rounded">Sound</a></li>
+            </ul>
+          </div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#core-collapse" aria-expanded="false">Core</button><div class="collapse" id="core-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a href="../modules/classes/file.html" class="rounded">File</a></li>
+        <li><a href="../modules/classes/metaclass.html" class="rounded">MetaClass</a></li>
+        <li><a href="../modules/classes/module.html" class="rounded">Module</a></li>
+        <li><a href="../modules/classes/storagedevice.html" class="rounded">StorageDevice</a></li>
+        <li><a href="../modules/classes/task.html" class="rounded">Task</a></li>
+        <li><a href="../modules/classes/thread.html" class="rounded">Thread</a></li>
+        <li><a href="../modules/classes/time.html" class="rounded">Time</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#data-collapse" aria-expanded="false">Data</button><div class="collapse" id="data-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a href="../modules/classes/compression.html" class="rounded">Compression</a></li>
+        <li><a href="../modules/classes/compressedstream.html" class="rounded">CompressedStream</a></li>
+        <li><a href="../modules/classes/config.html" class="rounded">Config</a></li>
+        <li><a href="../modules/classes/script.html" class="rounded">Script</a></li>
+        <li><a href="../modules/classes/xml.html" class="rounded">XML</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#devices-collapse" aria-expanded="false">Devices</button><div class="collapse" id="devices-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li><a href="../modules/classes/controller.html" class="rounded">Controller</a></li></ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#effects-collapse" aria-expanded="false">Effects</button><div class="collapse" id="effects-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/blurfx.html">BlurFX</a></li>
+        <li><a class="rounded" href="../modules/classes/colourfx.html">ColourFX</a></li>
+        <li><a class="rounded" href="../modules/classes/compositefx.html">CompositeFX</a></li>
+        <li><a class="rounded" href="../modules/classes/convolvefx.html">ConvolveFX</a></li>
+        <li><a class="rounded" href="../modules/classes/displacementfx.html">DisplacementFX</a></li>
+        <li><a class="rounded" href="../modules/classes/filtereffect.html">FilterEffect</a></li>
+        <li><a class="rounded" href="../modules/classes/floodfx.html">FloodFX</a></li>
+        <li><a class="rounded" href="../modules/classes/imagefx.html">ImageFX</a></li>
+        <li><a class="rounded" href="../modules/classes/lightingfx.html">LightingFX</a></li>
+        <li><a class="rounded" href="../modules/classes/mergefx.html">MergeFX</a></li>
+        <li><a class="rounded" href="../modules/classes/morphologyfx.html">MorphologyFX</a></li>
+        <li><a class="rounded" href="../modules/classes/offsetfx.html">OffsetFX</a></li>
+        <li><a class="rounded" href="../modules/classes/remapfx.html">RemapFX</a></li>
+        <li><a class="rounded" href="../modules/classes/sourcefx.html">SourceFX</a></li>
+        <li><a class="rounded" href="../modules/classes/turbulencefx.html">TurbulenceFX</a></li>
+        <li><a class="rounded" href="../modules/classes/wavefunctionfx.html">WaveFunctionFX</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#ext-collapse" aria-expanded="false">Extensions</button><div class="collapse" id="ext-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/scintilla.html">Scintilla</a></li>
+        <li><a class="rounded" href="../modules/classes/scintillasearch.html">ScintillaSearch</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#gfx-collapse" aria-expanded="false">Graphics</button><div class="collapse" id="gfx-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/bitmap.html">Bitmap</a></li>
+        <li><a class="rounded" href="../modules/classes/clipboard.html">Clipboard</a></li>
+        <li><a class="rounded" href="../modules/classes/display.html">Display</a></li>
+        <li><a class="rounded" href="../modules/classes/document.html">Document</a></li>
+        <li><a class="rounded" href="../modules/classes/font.html">Font</a></li>
+        <li><a class="rounded" href="../modules/classes/picture.html">Picture</a></li>
+        <li><a class="rounded" href="../modules/classes/pointer.html">Pointer</a></li>
+        <li><a class="rounded" href="../modules/classes/surface.html">Surface</a></li>
+        <li><a class="rounded" href="../modules/classes/svg.html">SVG</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#net-collapse" aria-expanded="false">Network</button><div class="collapse" id="net-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/clientsocket.html">ClientSocket</a></li>
+        <li><a class="rounded" href="../modules/classes/http.html">HTTP</a></li>
+        <li><a class="rounded" href="../modules/classes/netclient.html">NetClient</a></li>
+        <li><a class="rounded" href="../modules/classes/netlookup.html">NetLookup</a></li>
+        <li><a class="rounded" href="../modules/classes/netsocket.html">NetSocket</a></li>
+        <li><a class="rounded" href="../modules/classes/proxy.html">Proxy</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#vectors-collapse" aria-expanded="false">Vectors</button><div class="collapse" id="vectors-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/vector.html">Vector</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorclip.html">VectorClip</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorcolour.html">VectorColour</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorellipse.html">VectorEllipse</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorfilter.html">VectorFilter</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorgradient.html">VectorGradient</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorgroup.html">VectorGroup</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorimage.html">VectorImage</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorpath.html">VectorPath</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorpattern.html">VectorPattern</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorpolygon.html">VectorPolygon</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorrectangle.html">VectorRectangle</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorscene.html">VectorScene</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorshape.html">VectorShape</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorspiral.html">VectorSpiral</a></li>
+        <li><a class="rounded" href="../modules/classes/vectortext.html">VectorText</a></li>
+        <li><a class="rounded" href="../modules/classes/vectortransition.html">VectorTransition</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorviewport.html">VectorViewport</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorwave.html">VectorWave</a></li>
+        </ul></div>
+        </li>
+      </ul>
+    </div>
+  </li>
+</ul>
+
+</div>
+</div>
+
+<div class="col-sm-9" style="max-width: 1200px;">
+<div class="docs-content" id="default-page">
+
+<h1>Kotuku In Depth</h1>
+<p>In this document we get to grips with Kōtuku&#39;s object oriented design and how it differs to other systems and frameworks that exist today. We&#39;ll start with the basics, but the latter parts of this document may assume that you have installed the Kōtuku, have successfully run some examples and perhaps experimented with some of the code.</p>
+<hr>
+<h1 id="table-of-contents">Table of Contents</h1>
+<ol type="1">
+<li><a href="#design-overview">Design Overview</a></li>
+<li><a href="#modules">Modules</a>
+<ol type="1">
+<li><a href="#module-initialisation">Module Initialisation</a></li>
+<li><a href="#exporting-functions">Exporting Functions</a></li>
+</ol></li>
+<li><a href="#classes">Classes</a>
+<ol type="1">
+<li><a href="#the-metaclass">The MetaClass</a></li>
+<li><a href="#class-specifications">Class Specifications</a></li>
+<li><a href="#fields">Fields</a>
+<ol type="1">
+<li><a href="#field-types">Field Types</a></li>
+<li><a href="#field-access-management">Field Access Management</a></li>
+<li><a href="#virtual-fields">Virtual Fields</a></li>
+</ol></li>
+<li><a href="#local-objects-and-inheritance">Local Objects and Inheritance</a></li>
+<li><a href="#actions-contract-interfaces">Actions (Contract Interfaces)</a></li>
+<li><a href="#methods">Methods</a></li>
+<li><a href="#sub-classes">Sub-Classes</a></li>
+<li><a href="#spec-design">Spec Design</a></li>
+</ol></li>
+</ol>
+<h2 id="design-overview">Design Overview</h2>
+<p>Kōtuku follows a modular design. It has a Core API that must be initialised when a program starts, and provides essential API calls that are needed for a functional development environment. Non-essential features are broken out into API modules (libraries) that manage a specific feature-set, such as audio, graphics and data management. Access to the core and modules is achieved via language header files that are auto-generated during the build process.</p>
+<p>The exact manner in which the system is boot-strapped is a choice for client, as the Kōtuku build process is highly configurable. Generally a build will either function as an all-purpose distribution (such as the official release) or a static, custom build that is compiled for a specific program.</p>
+<p>Kōtuku&#39;s base-level design objectives are:</p>
+<ul>
+<li>Provide a modern object oriented API that does not alienate programming languages that need to interoperate with our services.</li>
+<li>Provide multimedia support and a first-class UI that uses vector graphics exclusively.</li>
+<li>Describe our APIs with an IDL (Interface Definition Language) so that headers can be generated for any programming language.</li>
+<li>The build process must be fully configurable, with the option to leave out features that are not required by the client.</li>
+<li>The Kōtuku environment must be fully self-contained so that programs are portable and easily compiled for new targets. Calls to the host system, such as Windows or Linux should not be necessary for the majority of client programs.</li>
+</ul>
+<h3 id="framework-initialisation">Framework Initialisation</h3>
+<p>The <code>src/link</code> folder contains platform-specific code for initialising and shutting down Kōtuku. The <code>init-unix.cpp</code> and <code>init-win.cpp</code> are such examples for Linux and Windows, both of which export <code>init_kotuku()</code> and <code>close_kotuku()</code> functions. Calling these from any executable is sufficient for opening and closing the framework. To see a working project example, please refer to the <code>src/launcher</code> folder and read the <code>CMakeLists.txt</code> and <code>kotuku.cpp</code> files.</p>
+<p>If a build isn&#39;t static, the initialisation process will start by finding the Kōtuku <code>core.so</code> or <code>core.dll</code> binary first. Priority is given to the local folder from which the executable is running. If no installation is found then a check will be made for a global installation, such as in <code>/usr/local/</code> before reporting a failure.</p>
+<p>Closing the framework is a clean process, which is to say that all resources will be terminated so that the process is returned to its original state. This means that opening and closing Kōtuku on an ad-hoc basis is viable if desired.</p>
+<h2 id="modules">Modules</h2>
+<p>Kōtuku libraries are referred to as <em>modules</em> and depending on the desired target, can either be built as dynamic shared libraries or statically compiled into an executable. There is no restriction on the choice of programming language when creating a module, but native modules in the framework are written in C++ for consistency.</p>
+<p>Modules can export a library of API functions, one or more classes, or a mixture of both. Exports are managed in the initialisation of the module. There is also a provision for a destructor function that is called during Kōtuku&#39;s &#39;expunge sequence&#39;, which allows modules to unload their resources safely. This is a useful way of detecting resource leaks that might otherwise go unnoticed.</p>
+<p>Before we discuss the code, here&#39;s a look at the CMake file for the XML module:</p>
+<pre><code>set (MOD xml)
+set (INC_MOD_XML TRUE PARENT_SCOPE)
+
+idl_gen (&quot;${MOD}.tdl&quot; NAME ${MOD}_defs
+   OUTPUT &quot;${INCLUDE_OUTPUT}/modules/${MOD}.h&quot;
+   APPEND_IDL &quot;${MOD}_def.c&quot;)
+
+add_library (${MOD})
+set_module_defaults (${MOD})
+target_sources (${MOD} PRIVATE &quot;${CMAKE_CURRENT_SOURCE_DIR}/${MOD}.cpp&quot;)
+
+flute_test (${MOD}_tests &quot;${CMAKE_CURRENT_SOURCE_DIR}/tests/test.tiri&quot;)</code></pre>
+<p>The <code>idl_gen()</code> call will generate automated headers and documents from the <code>xml.tdl</code> file, which contains the public specifications of the module. This process is further discussed in the <a href="./TDL-Tools.md">TDL</a> manuals in this Wiki.</p>
+<p>The <code>add_library()</code> call registers the module with the build process and <code>set_module_defaults()</code> pre-configures the build for the named module. The <code>target_sources()</code> call associates the <code>cpp</code> source files with the module.</p>
+<p>The <code>flute_test()</code> references a Tiri script that will test the module&#39;s functionality; this is further discussed in the <a href="./Unit-Testing.md">Unit Testing</a> manual in this Wiki.</p>
+<h3 id="module-initialisation">Module Initialisation</h3>
+<p>When the Core API loads a module for the first time, it needs an accessible way to initialise the module. In C++ this is achieved with the <code>KOTUKU_MOD()</code> macro, which creates a publicly accessible table that the Core can interact with. The parameters that can be passed to the macro are:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Parameter</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Init</td>
+<td style="text-align: left;">The initialisation routine, called when the module is loaded for the first time. Declared as <code>static ERR Init(OBJECTPTR, struct CoreBase *)</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">Close</td>
+<td style="text-align: left;">The close routine (optional). Called on each occasion that a client closes the module. Declared as <code>static void Close(OBJECTPTR)</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">Open</td>
+<td style="text-align: left;">The open routine (optional). Called on each occasion that a client opens the module. Declared as <code>static ERR Open(void)</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">Expunge</td>
+<td style="text-align: left;">The expunge routine. Global resources allocated by the module must be deallocated during the expunge. Declared as <code>static ERR Expunge(void)</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">IDL</td>
+<td style="text-align: left;">Reference to a compiled IDL, as generated from the module&#39;s <code>.tdl</code> file</td>
+</tr>
+<tr>
+<td style="text-align: left;">Structures</td>
+<td style="text-align: left;">A list of <code>STRUCTS</code>, which declares public <code>struct</code> types that are available to clients of the module.<br />Example: <code>static STRUCTS glStructures = { { &quot;XMLTag&quot;, sizeof(XMLTag) } };</code></td>
+</tr>
+</tbody>
+</table>
+<p>Note that it is compulsory that referenced globals use the <code>static</code> keyword, as it prevents naming conflicts in a static build.</p>
+<p>Here&#39;s the XML module&#39;s declaration of <code>KOTUKU_MOD()</code>:</p>
+<pre><code>KOTUKU_MOD(MODInit, NULL, NULL, MODExpunge, MOD_IDL, &amp;glStructures)</code></pre>
+<p>The <code>Init</code> and <code>Expunge</code> functionality deserves a closer look. The XML module takes a copy of the <code>CoreBase</code> reference, which it needs in order to make function calls to the Core API. It then creates the <code>XML</code> class by declaring its specifications, which is detailed elsewhere in this manual.</p>
+<p>The <code>Expunge</code> process must undo all allocations made by the <code>Init</code> process. In this case the XML module will only need to remove the <code>XML</code> class using <code>FreeResource()</code>.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> ERR MODInit<span class="op">(</span>OBJECTPTR pModule<span class="op">,</span> <span class="kw">struct</span> CoreBase <span class="op">*</span>pCore<span class="op">)</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>   CoreBase <span class="op">=</span> pCore<span class="op">;</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>   clXML <span class="op">=</span> objMetaClass<span class="op">::</span>create<span class="op">::</span>global<span class="op">(</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>      fl<span class="op">::</span>BaseClassID<span class="op">(</span>ID_XML<span class="op">),</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>      fl<span class="op">::</span>ClassVersion<span class="op">(</span>VER_XML<span class="op">),</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>      fl<span class="op">::</span>Name<span class="op">(</span><span class="st">&quot;XML&quot;</span><span class="op">),</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>      fl<span class="op">::</span>FileExtension<span class="op">(</span><span class="st">&quot;*.xml&quot;</span><span class="op">),</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>      fl<span class="op">::</span>FileDescription<span class="op">(</span><span class="st">&quot;XML File&quot;</span><span class="op">),</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>      fl<span class="op">::</span>Category<span class="op">(</span>CCF<span class="op">::</span>DATA<span class="op">),</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>      fl<span class="op">::</span>Actions<span class="op">(</span>clXMLActions<span class="op">),</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>      fl<span class="op">::</span>Methods<span class="op">(</span>clXMLMethods<span class="op">),</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>      fl<span class="op">::</span>Fields<span class="op">(</span>clFields<span class="op">),</span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>      fl<span class="op">::</span>Size<span class="op">(</span><span class="kw">sizeof</span><span class="op">(</span>extXML<span class="op">)),</span></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>      fl<span class="op">::</span>Path<span class="op">(</span>MOD_PATH<span class="op">));</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>   <span class="cf">return</span> clXML <span class="op">?</span> ERR<span class="op">::</span>Okay <span class="op">:</span> ERR<span class="op">::</span>AddClass<span class="op">;</span></span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> ERR MODExpunge<span class="op">(</span><span class="dt">void</span><span class="op">)</span></span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a>   <span class="cf">if</span> <span class="op">(</span>clXML<span class="op">)</span> <span class="op">{</span> FreeResource<span class="op">(</span>clXML<span class="op">);</span> clXML <span class="op">=</span> NULL<span class="op">;</span> <span class="op">}</span></span>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a>   <span class="cf">return</span> ERR<span class="op">::</span>Okay<span class="op">;</span></span>
+<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="exporting-functions">Exporting Functions</h3>
+<p>A module can opt to export function interfaces for client programs. This is achieved by adding a hook to the module&#39;s <code>Open</code> routine. The following example is from the Network module:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> ERR MODOpen<span class="op">(</span>OBJECTPTR Module<span class="op">)</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>   Module<span class="op">-&gt;</span>set<span class="op">(</span>FID_FunctionList<span class="op">,</span> glFunctions<span class="op">);</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>   <span class="cf">return</span> ERR<span class="op">::</span>Okay<span class="op">;</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>The <code>FunctionList</code> declares the list of functions that will be returned to the client. In theory a module can have more than one function table for different clients. Multiple function lists are rarely used, but can help in offering backwards compatibility by checking the requested module version number.</p>
+<p>The <code>glFunctions</code> array, excerpt below, is auto-generated from the Network module&#39;s <code>network.tdl</code> file and names the available functions, with links to function code. Parameter names and type information is also included. Taking advantage of the available TDL tools to generate this information eliminates the potential for mistakes as well as reducing development time. Critically it also ensures that run-time introspection is available and this enables usage from scripting languages like Tiri.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>FDEF argsAddressToStr<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span> <span class="op">{</span> <span class="st">&quot;Result&quot;</span><span class="op">,</span> FD_STR<span class="op">|</span>FD_ALLOC <span class="op">},</span> <span class="op">{</span> <span class="st">&quot;IPAddress:IPAddress&quot;</span><span class="op">,</span> FD_PTR<span class="op">|</span>FD_STRUCT <span class="op">},</span> <span class="op">{</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span> <span class="op">}</span> <span class="op">};</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>FDEF argsHostToLong<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span> <span class="op">{</span> <span class="st">&quot;Result&quot;</span><span class="op">,</span> FD_LONG<span class="op">|</span>FD_UNSIGNED <span class="op">},</span> <span class="op">{</span> <span class="st">&quot;Value&quot;</span><span class="op">,</span> FD_LONG<span class="op">|</span>FD_UNSIGNED <span class="op">},</span> <span class="op">{</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span> <span class="op">}</span> <span class="op">};</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>FDEF argsHostToShort<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span> <span class="op">{</span> <span class="st">&quot;Result&quot;</span><span class="op">,</span> FD_LONG<span class="op">|</span>FD_UNSIGNED <span class="op">},</span> <span class="op">{</span> <span class="st">&quot;Value&quot;</span><span class="op">,</span> FD_LONG<span class="op">|</span>FD_UNSIGNED <span class="op">},</span> <span class="op">{</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span> <span class="op">}</span> <span class="op">};</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>FDEF argsLongToHost<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span> <span class="op">{</span> <span class="st">&quot;Result&quot;</span><span class="op">,</span> FD_LONG<span class="op">|</span>FD_UNSIGNED <span class="op">},</span> <span class="op">{</span> <span class="st">&quot;Value&quot;</span><span class="op">,</span> FD_LONG<span class="op">|</span>FD_UNSIGNED <span class="op">},</span> <span class="op">{</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span> <span class="op">}</span> <span class="op">};</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>FDEF argsSetSSL<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span> <span class="op">{</span> <span class="st">&quot;Error&quot;</span><span class="op">,</span> FD_LONG<span class="op">|</span>FD_ERROR <span class="op">},</span> <span class="op">{</span> <span class="st">&quot;NetSocket&quot;</span><span class="op">,</span> FD_OBJECTPTR <span class="op">},</span> <span class="op">{</span> <span class="st">&quot;Tags&quot;</span><span class="op">,</span> FD_TAGS <span class="op">},</span> <span class="op">{</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span> <span class="op">}</span> <span class="op">};</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>FDEF argsShortToHost<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span> <span class="op">{</span> <span class="st">&quot;Result&quot;</span><span class="op">,</span> FD_LONG<span class="op">|</span>FD_UNSIGNED <span class="op">},</span> <span class="op">{</span> <span class="st">&quot;Value&quot;</span><span class="op">,</span> FD_LONG<span class="op">|</span>FD_UNSIGNED <span class="op">},</span> <span class="op">{</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span> <span class="op">}</span> <span class="op">};</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>FDEF argsStrToAddress<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span> <span class="op">{</span> <span class="st">&quot;Error&quot;</span><span class="op">,</span> FD_LONG<span class="op">|</span>FD_ERROR <span class="op">},</span> <span class="op">{</span> <span class="st">&quot;String&quot;</span><span class="op">,</span> FD_STR <span class="op">},</span> <span class="op">{</span> <span class="st">&quot;IPAddress:Address&quot;</span><span class="op">,</span> FD_PTR<span class="op">|</span>FD_STRUCT <span class="op">},</span> <span class="op">{</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span> <span class="op">}</span> <span class="op">};</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="at">const</span> <span class="kw">struct</span> Function glFunctions<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="op">(</span>APTR<span class="op">)</span>netStrToAddress<span class="op">,</span> <span class="st">&quot;StrToAddress&quot;</span><span class="op">,</span> argsStrToAddress <span class="op">},</span></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="op">(</span>APTR<span class="op">)</span>netAddressToStr<span class="op">,</span> <span class="st">&quot;AddressToStr&quot;</span><span class="op">,</span> argsAddressToStr <span class="op">},</span></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="op">(</span>APTR<span class="op">)</span>netHostToShort<span class="op">,</span> <span class="st">&quot;HostToShort&quot;</span><span class="op">,</span> argsHostToShort <span class="op">},</span></span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="op">(</span>APTR<span class="op">)</span>netHostToLong<span class="op">,</span> <span class="st">&quot;HostToLong&quot;</span><span class="op">,</span> argsHostToLong <span class="op">},</span></span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="op">(</span>APTR<span class="op">)</span>netShortToHost<span class="op">,</span> <span class="st">&quot;ShortToHost&quot;</span><span class="op">,</span> argsShortToHost <span class="op">},</span></span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="op">(</span>APTR<span class="op">)</span>netLongToHost<span class="op">,</span> <span class="st">&quot;LongToHost&quot;</span><span class="op">,</span> argsLongToHost <span class="op">},</span></span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="op">(</span>APTR<span class="op">)</span>netSetSSL<span class="op">,</span> <span class="st">&quot;SetSSL&quot;</span><span class="op">,</span> argsSetSSL <span class="op">},</span></span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> NULL<span class="op">,</span> NULL<span class="op">,</span> NULL <span class="op">}</span></span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<p>For information on how the function tables are generated, refer to <a href="./Embedded-Document-Formatting.md">Embedded Document Formatting</a>. Manually writing function tables is strongly discouraged as it can lead to the documentation being out-of-sync with the declarations in the module.</p>
+<h3 id="writing-a-function">Writing a Function</h3>
+<p>A new module function should always be prefaced with a commented <code>-FUNCTION-</code> declaration as defined in the EDF standard. This must then be immediately followed with the function itself. If the module accepts parameters, include an <code>-INPUT-</code> declaration and likewise for a return code, specify a <code>-RESULT-</code>. Here&#39;s a working example for <code>HostToLong()</code> from the Network module:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co">/***</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="co">-FUNCTION-</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="co">HostToLong: Converts a 32 bit (unsigned) long from host to network byte order.</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="co">Converts a 32 bit (unsigned) long from host to network byte order.</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a><span class="co">-INPUT-</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a><span class="co">uint Value: Data in host byte order to be converted to network byte order</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a><span class="co">-RESULT-</span></span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a><span class="co">uint: The long in network byte order</span></span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a><span class="co">***/</span></span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a>ULONG HostToLong<span class="op">(</span>ULONG Value<span class="op">)</span></span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>   <span class="cf">return</span> htonl<span class="op">(</span>Value<span class="op">);</span></span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p><em>You might have noticed that a call to <code>HostToLong()</code> from a C++ program would be <code>netHostToLong()</code>. We leave out the <code>net</code> prefix in our module declaration as this is an implementation concern that is specific to the client&#39;s chosen language.</em></p>
+<p>The last requirement is to ensure that the function is named in the <a href="./TDL-Reference-Manual.md"><code>functionNames()</code></a> declaration in the module&#39;s TDL file. If this is not done then the function will not be exported by our automated tools.</p>
+<h2 id="classes">Classes</h2>
+<p>Kōtuku classes are defined at run-time, not during the build process as is the case for many OO languages. This is a key design feature that maximises the potential for class introspection and allows dissimilar languages to talk over common OO protocols. Advanced features also include support for design-by-contract, virtual fields, permission based field access and resource tracking.</p>
+<h3 id="the-metaclass">The MetaClass</h3>
+<p>New classes are created by initialising MetaClass interfaces that declare new class specifications. While reading this section we advise keeping the <a href="https://kotuku.dev/modules/classes/metaclass.html]">MetaClass Manual</a> close by, in case you would like further detail on the fields that are referenced.</p>
+<p>The code snippet below from the XML module initialises the <a href="https://kotuku.dev/modules/classes/xml.html">XML class</a>:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>clXML <span class="op">=</span> objMetaClass<span class="op">::</span>create<span class="op">::</span>global<span class="op">(</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    fl<span class="op">::</span>BaseClassID<span class="op">(</span>ID_XML<span class="op">),</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>    fl<span class="op">::</span>ClassVersion<span class="op">(</span>VER_XML<span class="op">),</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    fl<span class="op">::</span>Name<span class="op">(</span><span class="st">&quot;XML&quot;</span><span class="op">),</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>    fl<span class="op">::</span>FileExtension<span class="op">(</span><span class="st">&quot;*.xml&quot;</span><span class="op">),</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>    fl<span class="op">::</span>FileDescription<span class="op">(</span><span class="st">&quot;XML File&quot;</span><span class="op">),</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>    fl<span class="op">::</span>Category<span class="op">(</span>CCF<span class="op">::</span>DATA<span class="op">),</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>    fl<span class="op">::</span>Actions<span class="op">(</span>clXMLActions<span class="op">),</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>    fl<span class="op">::</span>Methods<span class="op">(</span>clXMLMethods<span class="op">),</span></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>    fl<span class="op">::</span>Fields<span class="op">(</span>clFields<span class="op">),</span></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>    fl<span class="op">::</span>Size<span class="op">(</span><span class="kw">sizeof</span><span class="op">(</span>extXML<span class="op">)),</span></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a>    fl<span class="op">::</span>Path<span class="op">(</span>MOD_PATH<span class="op">));</span></span></code></pre></div>
+<p>Each <code>fl::Field()</code> reference in this list is defining the value of a field in the MetaClass. In C++ we use the <code>fl</code> namespace to define known field names and their types for type-safety reasons. It is not possible to use <code>fl::Name()</code> with a non-string value for instance.</p>
+<p>As the XML class is a data oriented class, it sets the <code>FileExtension</code> and <code>FileDescription</code> fields with appropriate metadata values. It also defines its category as <code>DATA</code>. This information can have value for applications such as file managers that attempt to match files to class interfaces. If a class doesn&#39;t save or load a specific file type then this information can be omitted.</p>
+<p>The <code>Actions</code>, <code>Methods</code> and <code>Fields</code> values define the specifications of the class structure and its functional interfaces. We&#39;ll look at these in more detail in the following sections.</p>
+<p>Take note of the <code>Size</code> value and its reference to <code>extXML</code>. A class specification must always declare the size of its objects so that they can be correctly allocated on the heap. What is notable here is that the official C++ object for the XML class is declared as <code>objXML</code>, so why <code>extXML</code>? The difference is that <code>objXML</code> is the publicly accessible interface for clients, but we want to be able to store and hide additional information from the client. We can achieve this by leveraging C++ class inheritance as seen in this example from the XML module:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> extXML <span class="op">:</span> <span class="kw">public</span> objXML <span class="op">{</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>   <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>      <span class="co">// Everything that follows will be hidden from the client.</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>      <span class="dt">bool</span>   ReadOnly<span class="op">;</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">bool</span>   StaleMap<span class="op">;</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>      <span class="op">...</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>      extXML<span class="op">()</span> <span class="op">:</span> ReadOnly<span class="op">(</span><span class="kw">false</span><span class="op">),</span> StaleMap<span class="op">(</span><span class="kw">true</span><span class="op">)</span> <span class="op">{</span> <span class="op">}</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<p>Consequently, all XML object references in the XML module use the <code>extXML</code> type only.</p>
+<h3 id="class-specifications">Class Specifications</h3>
+<p>Building a class specification that will be accepted by the <code>MetaClass</code> starts with the creation of an <a href="./TDL-Reference-Manual.md">TDL</a> file before writing any code. The XML TDL file is too large to insert here, but we can look at the specification for the class itself:</p>
+<pre><code>methods(&quot;xml&quot;, &quot;XML&quot;, {
+  { id=1,  name=&quot;SetAttrib&quot; },
+  { id=2,  name=&quot;Serialise&quot; },
+  { id=3,  name=&quot;InsertXML&quot; },
+  { id=4,  name=&quot;GetContent&quot; },
+  { id=5,  name=&quot;Sort&quot; },
+  ...
+})
+
+class(&quot;XML&quot;, { src=&quot;xml.cpp&quot;, output=&quot;xml_def.c&quot; }, [[
+  str Path         # Location of the XML data file
+  obj Source       # Alternative data source to specifying a `Path`
+  int(XMF) Flags   # Optional user flags
+  int Start        # Starting cursor position (tag index) for some operations
+  int Modified     # Modification timestamp
+  error ParseError # Private
+  int LineNo       # Private
+]])</code></pre>
+<p>The call to <code>class()</code> makes a reference to the <code>xml.cpp</code> file for the purpose of reading additional information from the class&#39; embedded documentation (see <a href="./Embedded-Document-Formatting.md">Embedded Document Formatting</a>). The generated output file, <code>xml_def.c</code> looks like this:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Auto-generated by idl-c.tiri</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> <span class="at">const</span> <span class="kw">struct</span> FieldDef clXMLFlags<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="st">&quot;WellFormed&quot;</span><span class="op">,</span> <span class="bn">0x00000001</span> <span class="op">},</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="st">&quot;IncludeComments&quot;</span><span class="op">,</span> <span class="bn">0x00000002</span> <span class="op">},</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>   <span class="op">...</span></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> NULL<span class="op">,</span> <span class="dv">0</span> <span class="op">}</span></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>FDEF maSetAttrib<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span> <span class="op">{</span> <span class="st">&quot;Index&quot;</span><span class="op">,</span> FD_LONG <span class="op">},</span> <span class="op">{</span> <span class="st">&quot;Attrib&quot;</span><span class="op">,</span> FD_LONG <span class="op">},</span> <span class="op">{</span> <span class="st">&quot;Name&quot;</span><span class="op">,</span> FD_STR <span class="op">},</span> <span class="op">{</span> <span class="st">&quot;Value&quot;</span><span class="op">,</span> FD_STR <span class="op">},</span> <span class="op">{</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span> <span class="op">}</span> <span class="op">};</span></span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a>FDEF maSerialise<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span> <span class="op">{</span> <span class="st">&quot;Index&quot;</span><span class="op">,</span> FD_LONG <span class="op">},</span> <span class="op">{</span> <span class="st">&quot;Flags&quot;</span><span class="op">,</span> FD_LONG <span class="op">},</span> <span class="op">{</span> <span class="st">&quot;Result&quot;</span><span class="op">,</span> FD_STR<span class="op">|</span>FD_ALLOC<span class="op">|</span>FD_RESULT <span class="op">},</span> <span class="op">{</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span> <span class="op">}</span> <span class="op">};</span></span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a>FDEF maInsertXML<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span> <span class="op">{</span> <span class="st">&quot;Index&quot;</span><span class="op">,</span> FD_LONG <span class="op">},</span> <span class="op">{</span> <span class="st">&quot;Where&quot;</span><span class="op">,</span> FD_LONG <span class="op">},</span> <span class="op">{</span> <span class="st">&quot;XML&quot;</span><span class="op">,</span> FD_STR <span class="op">},</span> <span class="op">{</span> <span class="st">&quot;Result&quot;</span><span class="op">,</span> FD_LONG<span class="op">|</span>FD_RESULT <span class="op">},</span> <span class="op">{</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span> <span class="op">}</span> <span class="op">};</span></span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a>FDEF maGetContent<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span> <span class="op">{</span> <span class="st">&quot;Index&quot;</span><span class="op">,</span> FD_LONG <span class="op">},</span> <span class="op">{</span> <span class="st">&quot;Buffer&quot;</span><span class="op">,</span> FD_BUFFER<span class="op">|</span>FD_STR <span class="op">},</span> <span class="op">{</span> <span class="st">&quot;Length&quot;</span><span class="op">,</span> FD_LONG<span class="op">|</span>FD_BUFSIZE <span class="op">},</span> <span class="op">{</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span> <span class="op">}</span> <span class="op">};</span></span>
+<span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-15"><a href="#cb10-15" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> <span class="at">const</span> <span class="kw">struct</span> MethodEntry clXMLMethods<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb10-16"><a href="#cb10-16" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="op">-</span><span class="dv">1</span><span class="op">,</span> <span class="op">(</span>APTR<span class="op">)</span>XML_SetAttrib<span class="op">,</span> <span class="st">&quot;SetAttrib&quot;</span><span class="op">,</span> maSetAttrib<span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span><span class="kw">struct</span> xmlSetAttrib<span class="op">)</span> <span class="op">},</span></span>
+<span id="cb10-17"><a href="#cb10-17" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="op">-</span><span class="dv">2</span><span class="op">,</span> <span class="op">(</span>APTR<span class="op">)</span>XML_Serialise<span class="op">,</span> <span class="st">&quot;Serialise&quot;</span><span class="op">,</span> maSerialise<span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span><span class="kw">struct</span> xmlSerialise<span class="op">)</span> <span class="op">},</span></span>
+<span id="cb10-18"><a href="#cb10-18" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="op">-</span><span class="dv">3</span><span class="op">,</span> <span class="op">(</span>APTR<span class="op">)</span>XML_InsertXML<span class="op">,</span> <span class="st">&quot;InsertXML&quot;</span><span class="op">,</span> maInsertXML<span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span><span class="kw">struct</span> xmlInsertXML<span class="op">)</span> <span class="op">},</span></span>
+<span id="cb10-19"><a href="#cb10-19" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="op">-</span><span class="dv">4</span><span class="op">,</span> <span class="op">(</span>APTR<span class="op">)</span>XML_GetContent<span class="op">,</span> <span class="st">&quot;GetContent&quot;</span><span class="op">,</span> maGetContent<span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span><span class="kw">struct</span> xmlGetContent<span class="op">)</span> <span class="op">},</span></span>
+<span id="cb10-20"><a href="#cb10-20" aria-hidden="true" tabindex="-1"></a>   <span class="op">...</span></span>
+<span id="cb10-21"><a href="#cb10-21" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span> <span class="op">}</span></span>
+<span id="cb10-22"><a href="#cb10-22" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb10-23"><a href="#cb10-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-24"><a href="#cb10-24" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> <span class="at">const</span> <span class="kw">struct</span> ActionArray clXMLActions<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb10-25"><a href="#cb10-25" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>Clear<span class="op">,</span> XML_Clear <span class="op">},</span></span>
+<span id="cb10-26"><a href="#cb10-26" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>DataFeed<span class="op">,</span> XML_DataFeed <span class="op">},</span></span>
+<span id="cb10-27"><a href="#cb10-27" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>Free<span class="op">,</span> XML_Free <span class="op">},</span></span>
+<span id="cb10-28"><a href="#cb10-28" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>GetKey<span class="op">,</span> XML_GetKey <span class="op">},</span></span>
+<span id="cb10-29"><a href="#cb10-29" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>Init<span class="op">,</span> XML_Init <span class="op">},</span></span>
+<span id="cb10-30"><a href="#cb10-30" aria-hidden="true" tabindex="-1"></a>   <span class="op">...</span></span>
+<span id="cb10-31"><a href="#cb10-31" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="dv">0</span><span class="op">,</span> NULL <span class="op">}</span></span>
+<span id="cb10-32"><a href="#cb10-32" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb10-33"><a href="#cb10-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-34"><a href="#cb10-34" aria-hidden="true" tabindex="-1"></a><span class="pp">#undef MOD_IDL</span></span>
+<span id="cb10-35"><a href="#cb10-35" aria-hidden="true" tabindex="-1"></a><span class="pp">#define MOD_IDL </span><span class="st">&quot;s.XMLAttrib:zsName,zsValue</span><span class="sc">\n</span><span class="st">s.XMLTag:lID,lParentID,lLineNo,lFlags,zeAttribs...&quot;</span></span></code></pre></div>
+<p>The generator covers many of our needs and in this case has output relevant constants, methods, actions and the IDL for hooking into languages. The list of field specifications for the MetaClass however is not generated. These need to be defined manually because the level of customisation exceeds the capabilities of TDL. We&#39;ll look at how this is done in the next section.</p>
+<h4 id="fields">Fields</h4>
+<p>The structure of a new class is declared by with an array of <code>FieldArray</code> values. Here&#39;s the relevant clip from the XML module:</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> <span class="at">const</span> FieldArray clFields<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="st">&quot;Path&quot;</span><span class="op">,</span>       FDF_STRING<span class="op">|</span>FDF_RW<span class="op">,</span> NULL<span class="op">,</span> SET_Path <span class="op">},</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="st">&quot;Source&quot;</span><span class="op">,</span>     FDF_OBJECT<span class="op">|</span>FDF_RI <span class="op">},</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="st">&quot;Flags&quot;</span><span class="op">,</span>      FDF_LONGFLAGS<span class="op">|</span>FDF_RW<span class="op">,</span> NULL<span class="op">,</span> NULL<span class="op">,</span> <span class="op">&amp;</span>clXMLFlags <span class="op">},</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="st">&quot;Start&quot;</span><span class="op">,</span>      FDF_LONG<span class="op">|</span>FDF_RW <span class="op">},</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="st">&quot;Modified&quot;</span><span class="op">,</span>   FDF_LONG<span class="op">|</span>FDF_R <span class="op">},</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="st">&quot;ParseError&quot;</span><span class="op">,</span> FDF_LONG<span class="op">|</span>FD_PRIVATE<span class="op">|</span>FDF_R <span class="op">},</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="st">&quot;LineNo&quot;</span><span class="op">,</span>     FDF_LONG<span class="op">|</span>FD_PRIVATE<span class="op">|</span>FDF_R <span class="op">},</span></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>   <span class="co">// Virtual fields</span></span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="st">&quot;ReadOnly&quot;</span><span class="op">,</span>   FDF_LONG<span class="op">|</span>FDF_RI<span class="op">,</span> GET_ReadOnly<span class="op">,</span> SET_ReadOnly <span class="op">},</span></span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="st">&quot;Src&quot;</span><span class="op">,</span>        FDF_STRING<span class="op">|</span>FDF_SYNONYM<span class="op">|</span>FDF_RW<span class="op">,</span> GET_Path<span class="op">,</span> SET_Path <span class="op">},</span></span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="st">&quot;Statement&quot;</span><span class="op">,</span>  FDF_STRING<span class="op">|</span>FDF_ALLOC<span class="op">|</span>FDF_RW<span class="op">,</span> GET_Statement<span class="op">,</span> SET_Statement <span class="op">},</span></span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="st">&quot;Tags&quot;</span><span class="op">,</span>       FDF_ARRAY<span class="op">|</span>FDF_STRUCT<span class="op">|</span>FDF_R<span class="op">,</span> GET_Tags<span class="op">,</span> NULL<span class="op">,</span> <span class="st">&quot;XMLTag&quot;</span> <span class="op">},</span></span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a>   END_FIELD</span>
+<span id="cb11-15"><a href="#cb11-15" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<p>Note that the order of the fields and the declared types must match to that of the <code>class()</code> call in the TDL file we referenced earlier. Each entry starts with the field name, type flags and optional get and set functions. A type arg can also be specified as the final value - this only applies for certain type specifiers, such as the <code>FLAGS</code> option.</p>
+<h4 id="field-types">Field Types</h4>
+<p>A field must always be associated with a type so that its size can be determined, and ensures that the Core can read and write the value correctly. Primitive types are defined using the <code>FDF</code> bit flags as seen in the following table:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">FDF Flag</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">BYTE</td>
+<td style="text-align: left;">Field is an 8-bit integer.</td>
+</tr>
+<tr>
+<td style="text-align: left;">WORD</td>
+<td style="text-align: left;">Field is a 16-bit integer.</td>
+</tr>
+<tr>
+<td style="text-align: left;">INT</td>
+<td style="text-align: left;">Field is a 32-bit integer.</td>
+</tr>
+<tr>
+<td style="text-align: left;">DOUBLE</td>
+<td style="text-align: left;">Field is a 64-bit float.</td>
+</tr>
+<tr>
+<td style="text-align: left;">INT64</td>
+<td style="text-align: left;">Field is a 64-bit integer.</td>
+</tr>
+<tr>
+<td style="text-align: left;">POINTER</td>
+<td style="text-align: left;">Field is an address pointer.</td>
+</tr>
+<tr>
+<td style="text-align: left;">OBJECT</td>
+<td style="text-align: left;">Field points to an object.</td>
+</tr>
+<tr>
+<td style="text-align: left;">OBJECTID</td>
+<td style="text-align: left;">Field refers to an object UID.</td>
+</tr>
+<tr>
+<td style="text-align: left;">LOCAL</td>
+<td style="text-align: left;">Field points to a local object.</td>
+</tr>
+<tr>
+<td style="text-align: left;">STRING</td>
+<td style="text-align: left;">Field points to a string.</td>
+</tr>
+<tr>
+<td style="text-align: left;">ERROR</td>
+<td style="text-align: left;">Field is an <code>ERR</code> code.</td>
+</tr>
+<tr>
+<td style="text-align: left;">RGB</td>
+<td style="text-align: left;">Field is a four-byte array representing R,G,B,A values.</td>
+</tr>
+<tr>
+<td style="text-align: left;">FUNCTION</td>
+<td style="text-align: left;">Field is an embedded <code>FUNCTION</code> value.</td>
+</tr>
+<tr>
+<td style="text-align: left;">FUNCTIONPTR</td>
+<td style="text-align: left;">Field points to a <code>FUNCTION</code> value.</td>
+</tr>
+<tr>
+<td style="text-align: left;">STRUCT</td>
+<td style="text-align: left;">The field refers to a C <code>struct</code> as declared in the module&#39;s TDL, and the type arg must refer to the name of that struct. Use in conjunction with <code>POINTER</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;">ARRAY</td>
+<td style="text-align: left;">Field is a pointer to an array (the base type being declared by other <code>FDF</code> flags).</td>
+</tr>
+<tr>
+<td style="text-align: left;">UNIT</td>
+<td style="text-align: left;">The field type is a display unit, supported by the <code>Unit</code> type. Values are fixed by default, but can be described as scaled with the <code>FD_SCALED</code> type option.</td>
+</tr>
+</tbody>
+</table>
+<p>Integer fields are signed by default, but can be made unsigned by adding the <code>UNSIGNED</code> flag.</p>
+<p>Primitive field types can be augmented with the following additional flags, many of which will affect run-time behaviour. The <code>FLAGS</code> and <code>LOOKUP</code> options allow Tiri programs to use string values instead of plain constants for instance.</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">FDF Flag</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">CPP</td>
+<td style="text-align: left;">The field is a C++ variant of the declared type. <code>STRING</code> becomes <code>std::string</code>; <code>ARRAY</code> becomes <code>pf::vector&lt;&gt;</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;">RESOURCE</td>
+<td style="text-align: left;">When applied in conjunction with the <code>STRUCT</code> flag, the field value will be treated as a trackable system resource that can be passed to module functions.</td>
+</tr>
+<tr>
+<td style="text-align: left;">SCALED</td>
+<td style="text-align: left;">The field supports scaled values, typically represented as a multiplier ranging from 0 to 1.0. For use with the <code>UNIT</code> indicator only.</td>
+</tr>
+<tr>
+<td style="text-align: left;">ALLOC</td>
+<td style="text-align: left;">Field is allocated on demand, and terminated with <code>FreeResource()</code>. Must be used in conjunction with a <em>get</em> function.</td>
+</tr>
+<tr>
+<td style="text-align: left;">FLAGS</td>
+<td style="text-align: left;">The field represents bit-flags. The type arg must refer to an array of <code>FieldDef</code> structs that define the flags.</td>
+</tr>
+<tr>
+<td style="text-align: left;">LOOKUP</td>
+<td style="text-align: left;">The field represents an integer value that corresponds to a name in a lookup table. The type arg must refer to an array of <code>FieldDef</code> structs that define the available lookup names.</td>
+</tr>
+<tr>
+<td style="text-align: left;">SYNONYM</td>
+<td style="text-align: left;">Declares the field as a synonym (an alternative name for another field). Synonyms are accessible to the client but will not appear in documentation in order to limit repetition. Can be used to maintain backwards compatibility when a field name is changed.</td>
+</tr>
+<tr>
+<td style="text-align: left;">SYSTEM</td>
+<td style="text-align: left;">The field exists for system use only, and will not be documented for client use. If possible, clients should be prevented from accessing the field.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="field-access-management">Field Access Management</h4>
+<p>Access to field values can be controlled by specifying read/write permission flags. These permissions are included in auto-generated documentation to communicate the level of access to developers.</p>
+<p>Compiled languages like C++ are not able to warn the developer of permission breaches if the developer has direct access to the class declaration. Integrated languages like Tiri however can throw an error, making the inclusion of access controls particularly worthwhile.</p>
+<p>The available permission flags are as follows:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">FDF Flag</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">READ/R</td>
+<td style="text-align: left;">Field is readable.</td>
+</tr>
+<tr>
+<td style="text-align: left;">WRITE/W</td>
+<td style="text-align: left;">Field is writeable.</td>
+</tr>
+<tr>
+<td style="text-align: left;">INIT/I</td>
+<td style="text-align: left;">Field is writeable, but only prior to initialisation.</td>
+</tr>
+<tr>
+<td style="text-align: left;">RW</td>
+<td style="text-align: left;">Synonym for `READ</td>
+</tr>
+<tr>
+<td style="text-align: left;">RI</td>
+<td style="text-align: left;">Synonym for `READ</td>
+</tr>
+</tbody>
+</table>
+<h4 id="virtual-fields">Virtual Fields</h4>
+<p>A virtual field is one that is accessible to the client via software controlled interfaces. Virtual fields helpfully eliminate the need for &#39;get&#39; and &#39;set&#39; methods that often pollute the namespace of OO classes, which makes for a cleaner interface.</p>
+<p>There are two ways to declare a virtual field, the first being to explicitly associate the field type with the <code>FDF_VIRTUAL</code> flag. The second is to match the R/W permission flags with <em>get</em> and <em>set</em> functions. For example if the <code>FDF_RW</code> flag is used and both of the <em>get</em> and <em>set</em> functions are defined, the field is automatically considered virtual.</p>
+<p>Some fields are partially virtual, for instance the XML <code>Path</code> uses a <em>set</em> function to allocate and store the path string, yet direct reading of the stored value is permitted. This is done when there is no advantage from hiding a field behind an accessor.</p>
+<p>When writing a <em>get</em> function, the general function prototype is <code>ERR GET_FieldName(*Object, T *Value)</code> where <code>T</code> is the C++ equivalent of the field&#39;s type. <em>Set</em> is similar, being <code>ERR SET_FieldName(*Object, T Value)</code>. When getting a field, the <code>Value</code> pointer must be populated on return unless an error is being reported.</p>
+<p>If a field is declared with the <code>UNIT</code> option then <code>T</code> is <code>Unit</code> and contains both type and value information. When writing a get function for a unit, the <code>Type</code> must be checked to verify what the client is requesting and the value then written to the <code>Unit.Value</code> field. The following example illustrates:</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> ERR GET_Dimension<span class="op">(</span>extMyClass <span class="op">*</span>Self<span class="op">,</span> Unit <span class="op">&amp;</span>Unit<span class="op">)</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>   DOUBLE return_value <span class="op">=</span> <span class="op">...</span>calculated value<span class="op">...;</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>   <span class="cf">if</span> <span class="op">(</span>Unit<span class="op">.</span>scaled<span class="op">())</span> return_value <span class="op">/=</span> Self<span class="op">-&gt;</span>ParentHeight<span class="op">;</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>   Unit<span class="op">.</span>Unit <span class="op">=</span> return_value<span class="op">;</span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>   <span class="cf">return</span> ERR<span class="op">::</span>Okay<span class="op">;</span></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>Note that if the requested <code>Type</code> is not supported then <code>ERR::FieldTypeMismatch</code> is customarily returned.</p>
+<p>For setting a Unit:</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> ERR SET_Dimension<span class="op">(</span>extMyClass <span class="op">*</span>Self<span class="op">,</span> Unit <span class="op">&amp;</span>Unit<span class="op">)</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>   <span class="cf">if</span> <span class="op">(</span>Unit<span class="op">.</span>scaled<span class="op">())</span> Self<span class="op">-&gt;</span>TargetField <span class="op">=</span> Unit<span class="op">.</span>Value <span class="op">*</span> Self<span class="op">-&gt;</span>RelativeValue<span class="op">;</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>   <span class="cf">else</span> Self<span class="op">-&gt;</span>TargetField <span class="op">=</span> Unit<span class="op">.</span>Value<span class="op">;</span></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>   <span class="cf">return</span> ERR<span class="op">::</span>Okay<span class="op">;</span></span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h4 id="local-objects-and-inheritance">Local Objects and Inheritance</h4>
+<p>Sometimes a class may need to allocate an object within its own scope, meaning that the object is not included in the object tree managed by the client. Such objects are designated as <em>local</em>.</p>
+<p>If a local object is accessible through a class field, it must be defined with the <code>FDF_LOCAL</code> option. A working example can be seen in the Picture class, which will always allocate a Bitmap object to contain and represent the rendered image. The Bitmap must be defined as <em>local</em> because the client did not explicitly request its creation.</p>
+<p>Local objects bring us to the topic of inheritance. Inheriting the attributes of a local object can be highly beneficial, saving us from having to otherwise duplicate the features already proffered by another class. The Picture class for instance, is essentially a higher order interface for the Bitmap class. It needs to provide all the features of a Bitmap, but with the addition of some extra metadata and the ability to decode and encode an image file like a PNG.</p>
+<p>A Kōtuku class can inherit the features of its <em>local</em> objects by using the <code>CLF::INHERIT_LOCAL</code> flag during the MetaClass creation process. In the Picture class this looks as follows:</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> <span class="at">const</span> FieldArray clFields<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="st">&quot;Bitmap&quot;</span><span class="op">,</span> FDF_LOCAL<span class="op">|</span>FDF_R<span class="op">,</span> NULL<span class="op">,</span> NULL<span class="op">,</span> ID_BITMAP <span class="op">},</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="st">&quot;Mask&quot;</span><span class="op">,</span>   FDF_LOCAL<span class="op">|</span>FDF_R<span class="op">,</span> NULL<span class="op">,</span> NULL<span class="op">,</span> ID_BITMAP <span class="op">},</span></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>   <span class="op">...</span></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a>clPicture <span class="op">=</span> objMetaClass<span class="op">::</span>create<span class="op">::</span>global<span class="op">(</span></span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a>   fl<span class="op">::</span>Fields<span class="op">(</span>clFields<span class="op">),</span></span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a>   fl<span class="op">::</span>Flags<span class="op">(</span>CLF<span class="op">::</span>INHERIT_LOCAL<span class="op">),</span></span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a>   <span class="op">...);</span></span></code></pre></div>
+<p>Kōtuku&#39;s inheritance is applied on a <em>run-time</em> basis and uses a <em>top-down</em> approach in terms of priority. For instance, reading the <code>width</code> of a Picture object would normally fail because no <code>width</code> is declared in the Picture class spec. Use of local inheritance means that the <code>Bitmap</code> object will be checked for the <code>width</code> field, and the corresponding value will be returned to client just as if the Picture class had defined <code>width</code> for itself. This all happens seamlessly for the client. If the Picture did declare its own <code>width</code>, that would take precedence and the <code>Bitmap</code> <code>width</code> would be ignored.</p>
+<p><em>Inheritance applies to fields only. Actions and methods are not propagated from local objects.</em></p>
+<h4 id="actions-contract-interfaces">Actions (Contract Interfaces)</h4>
+<p>Actions are a type of method that utilise a design-by-contract approach to object orientation. Supporting actions in a class is a great way of building a functional interface, as the developer will already know about the constraints and behaviours defined by the named contracts. The class interface will be seen as consistent and predictable, just like the other classes that support action interfaces.</p>
+<p>A complete and detailed guide on action interfaces is available in the <a href="./Action-Reference-Manual.md">Action Reference Manual</a>. In this section we will discuss how actions are supported in practice.</p>
+<p>Actions are declared during MetaClass creation and utilise the <code>ActionArray</code>, as in this XML class example:</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> <span class="at">const</span> <span class="kw">struct</span> ActionArray clXMLActions<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>Clear<span class="op">,</span>        XML_Clear <span class="op">},</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>DataFeed<span class="op">,</span>     XML_DataFeed <span class="op">},</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>Free<span class="op">,</span>         XML_Free <span class="op">},</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>GetKey<span class="op">,</span>       XML_GetKey <span class="op">},</span></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>Init<span class="op">,</span>         XML_Init <span class="op">},</span></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>NewObject<span class="op">,</span>    XML_NewObject <span class="op">},</span></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>Reset<span class="op">,</span>        XML_Reset <span class="op">},</span></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>SaveToObject<span class="op">,</span> XML_SaveToObject <span class="op">},</span></span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>SetKey<span class="op">,</span>       XML_SetKey <span class="op">},</span></span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="dv">0</span><span class="op">,</span> NULL <span class="op">}</span></span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a>clXML <span class="op">=</span> objMetaClass<span class="op">::</span>create<span class="op">::</span>global<span class="op">(</span></span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a>    fl<span class="op">::</span>Actions<span class="op">(</span>clXMLActions<span class="op">),</span></span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a>    <span class="op">...);</span></span></code></pre></div>
+<p>The <code>ActionArray</code> pairs the <code>AC</code> action identifiers with the routines that you will provide. Writing an <code>ActionArray</code> list manually isn&#39;t recommended - leverage the IDL compilers to do that for you. The template for action functions is <code>ERR CLASS_ActionName(*Object, *Args)</code> although <code>Args</code> can be dropped if the action does not take parameters. Here are some examples of the prototypes declared by the XML class:</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> ERR XML_Clear<span class="op">(</span>extXML <span class="op">*</span>Self<span class="op">);</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> ERR XML_DataFeed<span class="op">(</span>extXML <span class="op">*</span>Self<span class="op">,</span> <span class="kw">struct</span> acDataFeed <span class="op">*</span>Args<span class="op">);</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> ERR XML_Reset<span class="op">(</span>extXML <span class="op">*</span>Self<span class="op">);</span></span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> ERR XML_SaveToObject<span class="op">(</span>extXML <span class="op">*</span>Self<span class="op">,</span> <span class="kw">struct</span> acSaveToObject <span class="op">*</span>Args<span class="op">);</span></span></code></pre></div>
+<p>Notice how action parameters use a consistent template of <code>ac[Name]</code> structs, such as <code>acDataFeed</code> and <code>acSaveToObject</code>. Parameter names and their types are discussed in the <a href="./Action-Reference-Manual.md">Action Reference Manual</a>.</p>
+<p>When writing the code for each action, always precede the code with an <code>-ACTION-</code> document tag and include a short description at minimum. This information will appear in the documentation for the class, and also ensures that the action is recognised by IDL compilers so that the <code>ActionArray</code> is generated accurately.</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="co">/***</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="co">-ACTION-</span></span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a><span class="co">Clear: Clears all of the data held in an XML object.</span></span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a><span class="co">An optional long description can be written here.</span></span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a><span class="co">-</span><span class="re">END</span><span class="co">-</span></span>
+<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a><span class="co">***/</span></span>
+<span id="cb17-8"><a href="#cb17-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-9"><a href="#cb17-9" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> ERR XML_Clear<span class="op">(</span>extXML <span class="op">*</span>Self<span class="op">)</span></span>
+<span id="cb17-10"><a href="#cb17-10" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb17-11"><a href="#cb17-11" aria-hidden="true" tabindex="-1"></a>   <span class="op">...</span></span>
+<span id="cb17-12"><a href="#cb17-12" aria-hidden="true" tabindex="-1"></a>   <span class="cf">return</span> ERR<span class="op">::</span>Okay<span class="op">;</span></span>
+<span id="cb17-13"><a href="#cb17-13" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h4 id="methods">Methods</h4>
+<p>Kōtuku supports methods in the traditional OO sense, with the caveat that the return type is always an <code>ERR</code> code and the output(s) are declared in the parameters. This ensures that there is a consistent design approach that works across programming languages, and also allows for multiple return values to be supported.</p>
+<p>Declaring methods is largely similar to that of actions. A key difference is that more documentation is required, and the method will need to declare its parameters. Here&#39;s a shortened excerpt from the XML class that declares its methods:</p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>FDEF maSetAttrib<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span> <span class="op">{</span> <span class="st">&quot;Index&quot;</span><span class="op">,</span> FD_LONG <span class="op">},</span> <span class="op">{</span> <span class="st">&quot;Attrib&quot;</span><span class="op">,</span> FD_LONG <span class="op">},</span> <span class="op">{</span> <span class="st">&quot;Name&quot;</span><span class="op">,</span> FD_STR <span class="op">},</span> <span class="op">{</span> <span class="st">&quot;Value&quot;</span><span class="op">,</span> FD_STR <span class="op">},</span> <span class="op">{</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span> <span class="op">}</span> <span class="op">};</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>FDEF maSerialise<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span> <span class="op">{</span> <span class="st">&quot;Index&quot;</span><span class="op">,</span> FD_LONG <span class="op">},</span> <span class="op">{</span> <span class="st">&quot;Flags&quot;</span><span class="op">,</span> FD_LONG <span class="op">},</span> <span class="op">{</span> <span class="st">&quot;Result&quot;</span><span class="op">,</span> FD_STR<span class="op">|</span>FD_ALLOC<span class="op">|</span>FD_RESULT <span class="op">},</span> <span class="op">{</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span> <span class="op">}</span> <span class="op">};</span></span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>FDEF maInsertXML<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span> <span class="op">{</span> <span class="st">&quot;Index&quot;</span><span class="op">,</span> FD_LONG <span class="op">},</span> <span class="op">{</span> <span class="st">&quot;Where&quot;</span><span class="op">,</span> FD_LONG <span class="op">},</span> <span class="op">{</span> <span class="st">&quot;XML&quot;</span><span class="op">,</span> FD_STR <span class="op">},</span> <span class="op">{</span> <span class="st">&quot;Result&quot;</span><span class="op">,</span> FD_LONG<span class="op">|</span>FD_RESULT <span class="op">},</span> <span class="op">{</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span> <span class="op">}</span> <span class="op">};</span></span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a><span class="op">...</span></span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> <span class="at">const</span> <span class="kw">struct</span> MethodEntry clXMLMethods<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="op">-</span><span class="dv">1</span><span class="op">,</span> <span class="op">(</span>APTR<span class="op">)</span>XML_SetAttrib<span class="op">,</span> <span class="st">&quot;SetAttrib&quot;</span><span class="op">,</span> maSetAttrib<span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span><span class="kw">struct</span> xmlSetAttrib<span class="op">)</span> <span class="op">},</span></span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="op">-</span><span class="dv">2</span><span class="op">,</span> <span class="op">(</span>APTR<span class="op">)</span>XML_Serialise<span class="op">,</span> <span class="st">&quot;Serialise&quot;</span><span class="op">,</span> maSerialise<span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span><span class="kw">struct</span> xmlSerialise<span class="op">)</span> <span class="op">},</span></span>
+<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="op">-</span><span class="dv">3</span><span class="op">,</span> <span class="op">(</span>APTR<span class="op">)</span>XML_InsertXML<span class="op">,</span> <span class="st">&quot;InsertXML&quot;</span><span class="op">,</span> maInsertXML<span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span><span class="kw">struct</span> xmlInsertXML<span class="op">)</span> <span class="op">},</span></span>
+<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a>   <span class="op">...</span></span>
+<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span> <span class="op">}</span></span>
+<span id="cb18-12"><a href="#cb18-12" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb18-13"><a href="#cb18-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-14"><a href="#cb18-14" aria-hidden="true" tabindex="-1"></a>clXML <span class="op">=</span> objMetaClass<span class="op">::</span>create<span class="op">::</span>global<span class="op">(</span></span>
+<span id="cb18-15"><a href="#cb18-15" aria-hidden="true" tabindex="-1"></a>    fl<span class="op">::</span>Methods<span class="op">(</span>clXMLMethods<span class="op">),</span></span>
+<span id="cb18-16"><a href="#cb18-16" aria-hidden="true" tabindex="-1"></a>    <span class="op">...);</span></span></code></pre></div>
+<p>As-is the case for action definitions, we don&#39;t recommend that you manually write the <code>MethodEntry</code> list or the parameters. The IDL compilers will handle that for you. When writing the code for each method, always precede the code with a <code>-METHOD-</code> document tag and include a short description, long description, <code>-INPUT-</code> and <code>-ERRORS-</code> tags. This information will appear in the documentation for the class, and also ensures that the method is recognised by IDL compilers so that the <code>MethodEntry</code> list is generated accurately. Here&#39;s an example for the <code>SetAttrib()</code> method of the XML class:</p>
+<pre><code>-METHOD-
+SetAttrib: Adds, updates and removes XML attributes.
+
+This method is used to update and add attributes to existing XML tags, as well as adding or modifying content.
+
+...
+
+-INPUT-
+int Index: Identifies the tag that is to be updated.
+int(XMS) Attrib: Either the index number of the attribute that is to be updated, or set to `NEW`.
+cstr Name: String containing the new name for the attribute.  If `NULL`, the name will not be changed.
+cstr Value: String containing the new value for the attribute.  If `NULL`, the attribute is removed.
+
+-ERRORS-
+Okay
+NullArgs
+Args
+OutOfRange: The `Index` or `Attrib` value is out of range.
+Search: The attribute, identified by `Name`, could not be found.
+ReadOnly: The XML object is read-only.
+-END-</code></pre>
+<p>For further information on formatting guidelines, see <a href="./Embedded-Document-Formatting.md">Embedded Document Formatting</a>.</p>
+<p>Method prototypes follow the template <code>ERR CLASS_MethodName(*Object, struct abvMethodName *Args)</code>. The <code>abv</code> code is defined in the appropriate <code>methods()</code> call in the module&#39;s TDL file. Here&#39;s the prototype for <code>SetAttrib()</code>:</p>
+<div class="sourceCode" id="cb20"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> ERR XML_SetAttrib<span class="op">(</span>extXML <span class="op">*</span>Self<span class="op">,</span> <span class="kw">struct</span> xmlSetAttrib <span class="op">*</span>Args<span class="op">);</span></span></code></pre></div>
+<h3 id="sub-classes">Sub-Classes</h3>
+<p>Kōtuku supports a unique inheritance concept whereby a class can inherit all aspects of another class and extend it with additional features. From the perspective of the client, the objects will look no different to that of the original class. This feature is known as <em>sub-classing</em>, whereby the dominant class is referred to as the <em>base-class</em> and the additional features are provided by a <em>sub-class</em>.</p>
+<p>In this model, the following points are note-worthy:</p>
+<ul>
+<li>The base-class is dominant, and therefore defines the interface contract for the client. A sub-class cannot change the contract.</li>
+<li>The purpose of the sub-class should be to augment and improve the capabilities of the base-class.</li>
+<li>Inheritance is one-to-one. It isn&#39;t possible for two sub-classes to augment an object at the same time.</li>
+<li>Client code that targets the base-class will be compatible with all its sub-classes. From the client&#39;s perspective, there is no difference between the two types because the interface contract remains consistent.</li>
+<li>Sub-classes can declare new fields, methods and actions in their spec if necessary. This can be done without impacting on compatibility with the base-class or the client code that solely targets the base-class.</li>
+</ul>
+<p>There are a number of existing classes in the default Kōtuku build that have active sub-classes, such as:</p>
+<ul>
+<li>Picture: Supports PNG by default, extended by the JPEG sub-class.</li>
+<li>Sound: Supports WAV by default, extended by the MP3 sub-class.</li>
+<li>Vector: Defines a contract interface for supporting common vector graphics features. Extended by VectorEllipse, VectorRectangle, VectorText and many more.</li>
+<li>FilterEffect: Defines a contract interface for building graphics filter effects. Extended by ImageFX, FloodFX, CompositeFX, LightingFX and many more.</li>
+</ul>
+<p>Notice that sub-classing is commonly used for two different design approaches; a) Supporting data files; b) Defining interface contracts that can be extended with additional code.</p>
+<p>Sub-classes tend to be very easy to write, and no additional documentation needs to be written if the base-class is not being extended. Initialisation of the JPEG sub-class looks as follows:</p>
+<div class="sourceCode" id="cb21"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> ActionArray clActions<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>Activate<span class="op">,</span>  JPEG_Activate <span class="op">},</span></span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>Init<span class="op">,</span>      JPEG_Init <span class="op">},</span></span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>Query<span class="op">,</span>     JPEG_Query <span class="op">},</span></span>
+<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>SaveImage<span class="op">,</span> JPEG_SaveImage <span class="op">},</span></span>
+<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="dv">0</span><span class="op">,</span> NULL <span class="op">}</span></span>
+<span id="cb21-7"><a href="#cb21-7" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb21-8"><a href="#cb21-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-9"><a href="#cb21-9" aria-hidden="true" tabindex="-1"></a><span class="op">...</span></span>
+<span id="cb21-10"><a href="#cb21-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-11"><a href="#cb21-11" aria-hidden="true" tabindex="-1"></a>objModule<span class="op">::</span>create pic <span class="op">=</span> <span class="op">{</span> fl<span class="op">::</span>Name<span class="op">(</span><span class="st">&quot;picture&quot;</span><span class="op">)</span> <span class="op">};</span> <span class="co">// Load our dependency ahead of class registration</span></span>
+<span id="cb21-12"><a href="#cb21-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-13"><a href="#cb21-13" aria-hidden="true" tabindex="-1"></a>clJPEG <span class="op">=</span> objMetaClass<span class="op">::</span>create<span class="op">::</span>global<span class="op">(</span></span>
+<span id="cb21-14"><a href="#cb21-14" aria-hidden="true" tabindex="-1"></a>   fl<span class="op">::</span>BaseClassID<span class="op">(</span>ID_PICTURE<span class="op">),</span></span>
+<span id="cb21-15"><a href="#cb21-15" aria-hidden="true" tabindex="-1"></a>   fl<span class="op">::</span>ClassID<span class="op">(</span>ID_JPEG<span class="op">),</span></span>
+<span id="cb21-16"><a href="#cb21-16" aria-hidden="true" tabindex="-1"></a>   fl<span class="op">::</span>Name<span class="op">(</span><span class="st">&quot;JPEG&quot;</span><span class="op">),</span></span>
+<span id="cb21-17"><a href="#cb21-17" aria-hidden="true" tabindex="-1"></a>   fl<span class="op">::</span>Category<span class="op">(</span>CCF<span class="op">::</span>GRAPHICS<span class="op">),</span></span>
+<span id="cb21-18"><a href="#cb21-18" aria-hidden="true" tabindex="-1"></a>   fl<span class="op">::</span>FileExtension<span class="op">(</span><span class="st">&quot;*.jpeg|*.jpeg|*.jfif&quot;</span><span class="op">),</span></span>
+<span id="cb21-19"><a href="#cb21-19" aria-hidden="true" tabindex="-1"></a>   fl<span class="op">::</span>FileDescription<span class="op">(</span><span class="st">&quot;JPEG Picture&quot;</span><span class="op">),</span></span>
+<span id="cb21-20"><a href="#cb21-20" aria-hidden="true" tabindex="-1"></a>   fl<span class="op">::</span>FileHeader<span class="op">(</span><span class="st">&quot;[0:$ffd8ffe0]|[0:$ffd8ffe1]|[0:$ffd8fffe]&quot;</span><span class="op">),</span></span>
+<span id="cb21-21"><a href="#cb21-21" aria-hidden="true" tabindex="-1"></a>   fl<span class="op">::</span>Actions<span class="op">(</span>clActions<span class="op">),</span></span>
+<span id="cb21-22"><a href="#cb21-22" aria-hidden="true" tabindex="-1"></a>   fl<span class="op">::</span>Path<span class="op">(</span>MOD_PATH<span class="op">));</span></span></code></pre></div>
+<p>Notice that the JPEG class does not need to define a field spec as it will inherit this from the Picture base-class. It does however define a list of custom actions so that it can hook into the Picture interface and support JPEG encoding.</p>
+<p>A question remains, how is it determined that a file source is supported by a sub-class? The onus is not placed on the client to figure out what a JPEG is; this would be too onerous and at a loss of run-time dynamism. The answer lies in the initialisation process, which in the event that the base-class fails with <code>ERR::NoSupport</code> will lead to a query of the registered sub-classes to determine if support is available. Here&#39;s a look at the JPEG initialisation process, which supports the creation of new JPEG files and the loading of existing files:</p>
+<div class="sourceCode" id="cb22"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> ERR JPEG_Init<span class="op">(</span>extPicture <span class="op">*</span>Self<span class="op">)</span></span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a>   <span class="op">...</span></span>
+<span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb22-5"><a href="#cb22-5" aria-hidden="true" tabindex="-1"></a>   Self<span class="op">-&gt;</span>get<span class="op">(</span>FID_Location<span class="op">,</span> <span class="op">&amp;</span>path<span class="op">);</span></span>
+<span id="cb22-6"><a href="#cb22-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb22-7"><a href="#cb22-7" aria-hidden="true" tabindex="-1"></a>   <span class="cf">if</span> <span class="op">((!</span>path<span class="op">)</span> <span class="kw">or</span> <span class="op">((</span>Self<span class="op">-&gt;</span>Flags <span class="op">&amp;</span> PCF<span class="op">::</span>NEW<span class="op">)</span> <span class="op">!=</span> PCF<span class="op">::</span>NIL<span class="op">))</span> <span class="op">{</span></span>
+<span id="cb22-8"><a href="#cb22-8" aria-hidden="true" tabindex="-1"></a>      <span class="co">// A JPEG image is being created from scratch (e.g. to save an image to disk).</span></span>
+<span id="cb22-9"><a href="#cb22-9" aria-hidden="true" tabindex="-1"></a>      <span class="op">...</span></span>
+<span id="cb22-10"><a href="#cb22-10" aria-hidden="true" tabindex="-1"></a>      <span class="cf">return</span> ERR<span class="op">::</span>Okay<span class="op">;</span></span>
+<span id="cb22-11"><a href="#cb22-11" aria-hidden="true" tabindex="-1"></a>   <span class="op">}</span></span>
+<span id="cb22-12"><a href="#cb22-12" aria-hidden="true" tabindex="-1"></a>   <span class="cf">else</span> <span class="cf">if</span> <span class="op">(</span>Self<span class="op">-&gt;</span>getPtr<span class="op">(</span>FID_Header<span class="op">,</span> <span class="op">&amp;</span>buffer<span class="op">)</span> IS ERR<span class="op">::</span>Okay<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb22-13"><a href="#cb22-13" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> <span class="op">((</span>buffer<span class="op">[</span><span class="dv">0</span><span class="op">]</span> IS <span class="bn">0xff</span><span class="op">)</span> <span class="kw">and</span> <span class="op">(</span>buffer<span class="op">[</span><span class="dv">1</span><span class="op">]</span> IS <span class="bn">0xd8</span><span class="op">)</span> <span class="kw">and</span> <span class="op">(</span>buffer<span class="op">[</span><span class="dv">2</span><span class="op">]</span> IS <span class="bn">0xff</span><span class="op">)</span> <span class="kw">and</span></span>
+<span id="cb22-14"><a href="#cb22-14" aria-hidden="true" tabindex="-1"></a>          <span class="op">((</span>buffer<span class="op">[</span><span class="dv">3</span><span class="op">]</span> IS <span class="bn">0xe0</span><span class="op">)</span> <span class="kw">or</span> <span class="op">(</span>buffer<span class="op">[</span><span class="dv">3</span><span class="op">]</span> IS <span class="bn">0xe1</span><span class="op">)</span> <span class="kw">or</span> <span class="op">(</span>buffer<span class="op">[</span><span class="dv">3</span><span class="op">]</span> IS <span class="bn">0xfe</span><span class="op">)))</span> <span class="op">{</span></span>
+<span id="cb22-15"><a href="#cb22-15" aria-hidden="true" tabindex="-1"></a>         log<span class="op">.</span>msg<span class="op">(</span><span class="st">&quot;The file is a JPEG picture.&quot;</span><span class="op">);</span></span>
+<span id="cb22-16"><a href="#cb22-16" aria-hidden="true" tabindex="-1"></a>         <span class="cf">if</span> <span class="op">((</span>Self<span class="op">-&gt;</span>Flags <span class="op">&amp;</span> PCF<span class="op">::</span>LAZY<span class="op">)</span> IS PCF<span class="op">::</span>NIL<span class="op">)</span> acActivate<span class="op">(</span>Self<span class="op">);</span></span>
+<span id="cb22-17"><a href="#cb22-17" aria-hidden="true" tabindex="-1"></a>         <span class="cf">return</span> ERR<span class="op">::</span>Okay<span class="op">;</span></span>
+<span id="cb22-18"><a href="#cb22-18" aria-hidden="true" tabindex="-1"></a>      <span class="op">}</span></span>
+<span id="cb22-19"><a href="#cb22-19" aria-hidden="true" tabindex="-1"></a>      <span class="cf">else</span> log<span class="op">.</span>msg<span class="op">(</span><span class="st">&quot;The file is not a JPEG picture.&quot;</span><span class="op">);</span></span>
+<span id="cb22-20"><a href="#cb22-20" aria-hidden="true" tabindex="-1"></a>   <span class="op">}</span></span>
+<span id="cb22-21"><a href="#cb22-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb22-22"><a href="#cb22-22" aria-hidden="true" tabindex="-1"></a>   <span class="cf">return</span> ERR<span class="op">::</span>NoSupport<span class="op">;</span></span>
+<span id="cb22-23"><a href="#cb22-23" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>Notice how the file header is checked for the byte sequence that would identify the data as JPEG. If this is not matched, <code>ERR::NoSupport</code> is returned so that the initialisation sequence can query the next available sub-class. Also of note is the <code>Header</code> field; this feature is particular to the Picture class design and is intended to save each sub-class from reading the file header independently.</p>
+<h3 id="spec-design">Spec Design</h3>
+<p>Before we leave this chapter on classes, it is worth considering Kōtuku&#39;s contractural approach to OO and how that should impact on your class designs. It is extremely common for classes to use concepts that are generic by nature, for instance a UI widget will typically express an <em>X</em>, <em>Y</em>, <em>Width</em> and <em>Height</em>. A class that loads data may specify a <em>Path</em>. Bit-options may be expressed as <em>Flags</em>. As you spend more time using Kōtuku classes, you will discover that not only does the naming schedule for fields tend to be consistent and predictable, the code rarely differs in these generic areas too.</p>
+<p>We do not enforce generic constraints at a field level as this is seen as impractical and can cause issues when deviations are warranted. We do however strongly encourage observing the terminology and methodologies that are already in place across Kōtuku&#39;s interfaces. Leveraging existing concepts if you do any work at an API level can save time, with less documentation needing to be written, and also for the client in being able to predict behaviour patterns. If in doubt, check the source code of something that shares some commonality with what you are trying to achieve.</p>
+</div></div></div></div>
+
+<script src="../js/bootstrap.bundle.min.js"></script>
+<script src="../js/base.js"></script>
+<script>
+
+   // Auto-open the relevant sidebar branch
+
+   var url = window.location.pathname;
+   var filename = url.substring(url.lastIndexOf('/')+1);
+   var el = document.querySelector('li[class="api-ref"] > a[href="' + filename + '"]');
+   if (el) {
+      var parent = getParentNode(el, '[class="collapse"]');
+      if (parent) new bootstrap.Collapse(parent, { show: true }); // Causes animation
+
+      el.style.backgroundColor = '#d2f4ea';
+   }
+
+   cancelAnimations();
+    </script>
+  </body>
+</html>

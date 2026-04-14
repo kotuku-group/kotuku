@@ -11,7 +11,7 @@
     <id>227baf98</id>
     <idstring>VECTOR</idstring>
     <category>Graphics</category>
-    <copyright>Paul Manias © 2010-2025</copyright>
+    <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>Vector is an abstract class that is used as a blueprint for other vector classes that provide specific functionality for a vector scene.  At this time the classes are <class name="VectorClip">VectorClip</class>, <class name="VectorEllipse">VectorEllipse</class>, <class name="VectorGroup">VectorGroup</class>, <class name="VectorPath">VectorPath</class>, <class name="VectorPolygon">VectorPolygon</class>, <class name="VectorRectangle">VectorRectangle</class>, <class name="VectorSpiral">VectorSpiral</class>, <class name="VectorText">VectorText</class>, <class name="VectorViewport">VectorViewport</class> and <class name="VectorWave">VectorWave</class>.</p>
 <p>The majority of sub-classes support all of the functionality provided by Vector.  The general exception is that graphics functions will not be supported by non-graphical classes, for instance <class name="VectorGroup">VectorGroup</class> and <class name="VectorViewport">VectorViewport</class> do not produce a vector path and therefore cannot be rendered.</p>
@@ -379,7 +379,7 @@
       <access read="G" write="S">Get/Set</access>
       <type>FLOAT []</type>
       <description>
-<p>Set the FillColour field to define a solid colour for filling the vector path.  The colour is defined as an array of four 32-bit floating point values between 0 and 1.0.  The array elements consist of Red, Green, Blue and Alpha values in that order.</p>
+<p>Set the FillColour field to define a solid colour for filling the vector path.  The colour is defined as an array of four 32-bit floating point values between 0 and 1.0 if restricted to sRGB colourspace.  The array elements consist of Red, Green, Blue and Alpha values in that order.</p>
 <p>If the Alpha component is set to zero then the FillColour will be ignored by the renderer.</p>
       </description>
     </field>
@@ -411,7 +411,7 @@
       <type>STRING</type>
       <description>
 <p>This field assigns a graphics filter to the rendering pipeline of the vector.  The filter must initially be created using the <class name="VectorFilter">VectorFilter</class> class and added to a VectorScene using <class name="VectorScene" method="AddDef">VectorScene.AddDef()</class>.  The filter can then be referenced by ID in the Filter field of any vector object.  Please refer to the <class name="VectorFilter">VectorFilter</class> class for further details on filter configuration.</p>
-<p>The Filter value can be in the format <code>ID</code> or <code>url(<fl>ID</fl>)</code> according to client preference.</p>
+<p>The Filter value can be in the format <code>ID</code> or <code>url(<fl>SID</fl>)</code> according to client preference.</p>
       </description>
     </field>
 
@@ -422,16 +422,6 @@
       <type lookup="VF">VF</type>
       <description>
 <types lookup="VF"/>
-      </description>
-    </field>
-
-    <field>
-      <name>ID</name>
-      <comment>String identifier for a vector.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>STRING</type>
-      <description>
-<p>The ID field is provided for the purpose of SVG support.  Where possible we would recommend that you use the existing object name and automatically assigned ID's for identifiers.</p>
       </description>
     </field>
 
@@ -537,8 +527,8 @@
       <access read="G" write="S">Get/Set</access>
       <type>INT</type>
       <description>
-<p>This field assigns a numeric ID to a vector.  Alternatively it can also reflect a case-sensitive hash of the <fl>ID</fl> field if that has been defined previously.</p>
-<p>If NumericID is set by the client, then any value in <fl>ID</fl> will be immediately cleared.</p>
+<p>This field assigns a numeric ID to a vector.  Alternatively it can also reflect a case-sensitive hash of the <fl>SID</fl> field if that has been defined previously.</p>
+<p>If NumericID is set by the client, then any value in <fl>SID</fl> will be immediately cleared.</p>
       </description>
     </field>
 
@@ -608,6 +598,16 @@
     </field>
 
     <field>
+      <name>SID</name>
+      <comment>String identifier for a vector.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>STRING</type>
+      <description>
+<p>The ID field is provided for the purpose of SVG support.  Where possible we would recommend that you use the existing object name and automatically assigned ID's for identifiers.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Scene</name>
       <comment>Short-cut to the top-level <class name="VectorScene">VectorScene</class>.</comment>
       <access read="R">Read</access>
@@ -656,7 +656,7 @@ Z: Close Path
       <access read="G" write="S">Get/Set</access>
       <type>FLOAT []</type>
       <description>
-<p>This field defines the colour that will be used in stroking a path, and is comprised of floating point RGBA values. The intensity of each component is measured from 0 - 1.0.  Stroking is disabled if the alpha value is 0.</p>
+<p>This field defines the colour that will be used in stroking a path, and is comprised of floating point RGBA values. The intensity of each component is measured from 0 - 1.0 if restricted to sRGB colourspace, but may otherwise exceed these limits.  Stroking is disabled if the alpha value is 0.</p>
 <p>This field is complemented by the <fl>StrokeOpacity</fl> and <fl>Stroke</fl> fields.</p>
       </description>
     </field>

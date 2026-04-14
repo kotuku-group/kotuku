@@ -1,0 +1,356 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>XQuery</name>
+    <type>class</type>
+    <module>XQuery</module>
+    <comment>Provides an interface for XQuery evaluation and execution.</comment>
+    <fileExtension>*.xqm|*.xq</fileExtension>
+    <fileDescription>XQuery Module</fileDescription>
+    <version>1</version>
+    <id>2808c653</id>
+    <idstring>XQUERY</idstring>
+    <category>Data</category>
+    <copyright>Paul Manias © 2025-2026</copyright>
+    <description>
+<p>The XQuery class provides comprehensive support for executing XPath 2.0 and XQuery expressions, enabling navigation of XML documents.  It operates in conjunction with the <class name="XML">XML</class> class to provide a standards-compliant query engine with extensive functionality.</p>
+<header>XPath 2.0 Path Expressions</header>
+<p>The class supports the full XPath 2.0 specification for navigating XML documents, including all 13 standard axes (<code>child</code>, <code>descendant</code>, <code>descendant-or-self</code>, <code>following</code>, <code>following-sibling</code>, <code>parent</code>, <code>ancestor</code>, <code>ancestor-or-self</code>, <code>preceding</code>, <code>preceding-sibling</code>, <code>self</code>, <code>attribute</code>, and <code>namespace</code>), node tests for element names, wildcards (<code>*</code>), and attribute selectors (<code>@attr</code>), numeric position filters (<code>[1]</code>, <code>[2]</code>), comparison operators, and complex boolean expressions in predicates.  Both absolute paths (<code>/root/element</code>), relative paths (<code>element/subelement</code>), and recursive descent (<code>//element</code>) are supported.</p>
+<header>XQuery Language Support</header>
+<p>The class implements core XQuery 1.0 functionality including FLWOR expressions (<code>for</code>, <code>let</code>, <code>where</code>, <code>order by</code>, and <code>return</code> clauses) for advanced querying, sequence operations for constructing, filtering, and manipulating sequences of nodes and values, and a comprehensive type system supporting strings, numbers, booleans, node sets, dates, durations, and QNames.</p>
+<p>Informal support for XQuery 2.0 functionality is also included but the feature-set is not yet complete.</p>
+<header>Function Library</header>
+<p>A rich set of standard functions is provided across multiple categories:</p>
+<list type="bullet">
+<li>Node Functions: <code>position()</code>, <code>last()</code>, <code>count()</code>, <code>id()</code>, <code>name()</code>, <code>local-name()</code>, <code>namespace-uri()</code>, <code>root()</code>, <code>node-name()</code>, <code>base-uri()</code></li>
+<li>String Functions: <code>concat()</code>, <code>substring()</code>, <code>contains()</code>, <code>starts-with()</code>, <code>ends-with()</code>, <code>string-length()</code>, <code>normalize-space()</code>, <code>upper-case()</code>, <code>lower-case()</code>, <code>translate()</code>, <code>string-join()</code>, <code>encode-for-uri()</code>, <code>escape-html-uri()</code></li>
+<li>Numeric Functions: <code>number()</code>, <code>sum()</code>, <code>floor()</code>, <code>ceiling()</code>, <code>round()</code>, <code>round-half-to-even()</code>, <code>abs()</code>, <code>min()</code>, <code>max()</code>, <code>avg()</code></li>
+<li>Boolean Functions: <code>boolean()</code>, <code>not()</code>, <code>true()</code>, <code>false()</code>, <code>exists()</code>, <code>empty()</code>, <code>lang()</code></li>
+<li>Sequence Functions: <code>distinct-values()</code>, <code>index-of()</code>, <code>insert-before()</code>, <code>remove()</code>, <code>reverse()</code>, <code>subsequence()</code>, <code>unordered()</code>, <code>deep-equal()</code>, <code>zero-or-one()</code>, <code>one-or-more()</code>, <code>exactly-one()</code></li>
+<li>Regular Expressions: <code>matches()</code>, <code>replace()</code>, <code>tokenize()</code>, <code>analyze-string()</code></li>
+<li>Date and Time Functions: <code>current-date()</code>, <code>current-time()</code>, <code>current-dateTime()</code>, date and time component extractors, timezone adjustments, duration calculations</li>
+<li>Document Functions: <code>doc()</code>, <code>doc-available()</code>, <code>collection()</code>, <code>unparsed-text()</code>, <code>unparsed-text-lines()</code>, <code>document-uri()</code></li>
+<li>QName Functions: <code>QName()</code>, <code>resolve-QName()</code>, <code>prefix-from-QName()</code>, <code>local-name-from-QName()</code>, <code>namespace-uri-from-QName()</code>, <code>namespace-uri-for-prefix()</code>, <code>in-scope-prefixes()</code></li>
+<li>URI Functions: <code>resolve-uri()</code>, <code>iri-to-uri()</code></li>
+<li>Formatting Functions: <code>format-date()</code>, <code>format-time()</code>, <code>format-dateTime()</code>, <code>format-integer()</code></li>
+<li>Utility Functions: <code>error()</code>, <code>trace()</code></li>
+</list>
+<header>Expression Compilation</header>
+<p>XPath and XQuery expressions are compiled into an optimised internal representation for efficient reuse.  Expressions can be run in their own thread, with the result available in <fl>Result</fl> and <fl>ResultString</fl> on completion, but the targeted XML object will be locked for the duration of the query.</p>
+<header>Evaluation Modes</header>
+<p>There are two distinct methods for query evaluation.  Value evaluation returns typed results (XPathValue) that can represent node sets, strings, numbers, booleans, dates, or sequences.  Node iteration invokes a callback function for each matching node, enabling streaming processing of large result sets.</p>
+<header>Usage Patterns</header>
+<p>Compiling and evaluating queries:</p>
+<pre>objXQuery::create query { statement=&quot;/bookstore/book[@price &lt; 10]/title&quot; };
+if (query.ok()) {
+   XPathValue *result;
+   if (query-&gt;evaluate(xml) IS ERR::Okay) {
+      log.msg(&quot;Got: %s&quot;, query-&gt;get&lt;CSTRING&gt;(FID_ResultString));
+   }
+}
+</pre>
+<p>Node iteration with callbacks:</p>
+<pre>objXQuery::create query { statement=&quot;//chapter[@status='draft']&quot; };
+if (query.ok()) {
+   auto callback = C_FUNCTION(process_node);
+   query-&gt;search(xml, &amp;callback);
+}
+</pre>
+<header>Extensions</header>
+<p>The module includes several Kotuku-specific extensions beyond the standard specification.  Content matching with the <code>[=...]</code> syntax allows matching on encapsulated content, e.g., <code>/menu[=contentmatch]</code>.  Backslash (<code>\</code>) can be used as an escape character in attribute strings.</p></description>
+    <source>
+      <file>xquery_class.cpp</file>
+    </source>
+  </info>
+
+  <actions>
+    <action>
+      <name>Activate</name>
+      <comment>Run an XQuery expression.</comment>
+      <prototype>ERR acActivate(*Object)</prototype>
+      <description>
+<p>Use Activate to run a compiled XQuery expression without an XML document reference.  The result of the evaluation is returned in the <fl>Result</fl> field as XPathValue, which can represent various types of data including node sets, strings, numbers, or booleans.  On error, the <fl>ErrorMsg</fl> field will contain a descriptive message.</p>
+<p>Use <method>Evaluate</method> or <method>Search</method> for expressions expecting an XML document context.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Syntax">Invalid syntax detected.</error>
+      </result>
+    </action>
+
+    <action>
+      <name>Clear</name>
+      <comment>Clears all XQuery results and returns the object to its pre-compiled state.</comment>
+      <prototype>ERR acClear(*Object)</prototype>
+      <description>
+<p>Use Clear() to remove the resources consumed by the XQuery and reset its state.  The <fl>Statement</fl> and <fl>Path</fl> field values are retained, allowing the object to be seamlessly re-activated at any time.</p>
+      </description>
+    </action>
+
+    <action>
+      <name>GetKey</name>
+      <comment>Read XQuery variable values.</comment>
+      <prototype>ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)</prototype>
+      <input>
+        <param type="CSTRING" name="Key">The name of a key value.</param>
+        <param type="STRING" name="Value">Pointer to a buffer space large enough to hold the retrieved value.</param>
+        <param type="INT" name="Size">Indicates the byte size of the Buffer.</param>
+      </input>
+    </action>
+
+    <action>
+      <name>Init</name>
+      <comment>Compiles the XQuery statement.</comment>
+      <prototype>ERR InitObject(*Object)</prototype>
+      <description>
+<p>Initialisation will compile the XQuery <fl>Statement</fl> string into a compiled form that can be executed.</p>
+<p>If parsing fails, the object will not be initialised and an error message will be defined in the <fl>ErrorMsg</fl> field.</p>
+<p>Note: This function can hang temporarily if the expression references network URIs.  Consider calling it from a separate thread to avoid blocking in such cases.</p>
+      </description>
+    </action>
+
+    <action>
+      <name>Reset</name>
+      <comment>Synonym for <action>Clear</action>.</comment>
+      <prototype>ERR acRefresh(*Object)</prototype>
+    </action>
+
+    <action>
+      <name>SetKey</name>
+      <comment>Set XQuery variable values.</comment>
+      <prototype>ERR acSetKey(*Object, CSTRING Key, CSTRING Value)</prototype>
+      <input>
+        <param type="CSTRING" name="Key">The name of the target key.</param>
+        <param type="CSTRING" name="Value">The string value to associate with Key.</param>
+      </input>
+      <description>
+<p>Use SetKey to store key-value pairs that can be referenced in XQuery expressions using the variable syntax <code>$variableName</code>.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NullArgs">The <code>Key</code> parameter was not specified.</error>
+      </result>
+    </action>
+
+  </actions>
+
+  <methods>
+    <method>
+      <name>Evaluate</name>
+      <comment>Run an XQuery expression against an XML document.</comment>
+      <prototype>ERR xq::Evaluate(OBJECTPTR Object, objXML * XML)</prototype>
+      <input>
+        <param type="objXML *" name="XML">Targeted XML document to query.  Can be NULL for XQuery expressions that do not require a context.</param>
+      </input>
+      <description>
+<p>Use Evaluate to run a compiled XQuery expression against an XML document.  The result of the evaluation is returned in the <fl>Result</fl> field as XPathValue, which can represent various types of data including node sets, strings, numbers, or booleans.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="AllocMemory">AllocMemory() failed to create a new memory block.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+    </method>
+
+    <method>
+      <name>InspectFunctions</name>
+      <comment>Returns information about compiled XQuery functions.</comment>
+      <prototype>ERR xq::InspectFunctions(OBJECTPTR Object, CSTRING Name, XIF ResultFlags, CSTRING * Result)</prototype>
+      <input>
+        <param type="CSTRING" name="Name">The name of the function or functions to inspect (supports wildcards).</param>
+        <param type="XIF" name="ResultFlags" lookup="XIF">Bitmask controlling the returned information.</param>
+        <param type="CSTRING *" name="Result">Receives a serialised XML document describing the function(s).</param>
+      </input>
+      <description>
+<p>Use InspectFunctions to retrieve metadata about user-defined or standard XQuery functions available in the compiled XQuery object.  The function name can include wildcards to match multiple functions.</p>
+<p>The ResultFlags parameter controls which pieces of information are included in the output XML document.  If no flags are specified, all available information is returned.</p>
+<p>The structure of the returned XML document is as follows, with each matching function returned in series:</p>
+<pre>
+&lt;function&gt;
+  &lt;name&gt;function-name&lt;/name&gt;
+  &lt;parameters&gt;
+    &lt;parameter&gt;
+      &lt;name&gt;param1&lt;/name&gt;
+      &lt;type&gt;type1&lt;/type&gt;
+    &lt;/parameter&gt;
+    ...
+  &lt;/parameters&gt;
+  &lt;returnType&gt;type&lt;/returnType&gt;
+  &lt;userDefined&gt;true|false&lt;/userDefined&gt;
+  &lt;signature&gt;function-signature&lt;/signature&gt;
+  &lt;ast&gt;... serialized function body AST ...&lt;/ast&gt;
+&lt;/function&gt;
+ </pre>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+    </method>
+
+    <method>
+      <name>RegisterFunction</name>
+      <comment>Register a custom XQuery function.</comment>
+      <prototype>ERR xq::RegisterFunction(OBJECTPTR Object, CSTRING FunctionName, FUNCTION * Callback)</prototype>
+      <input>
+        <param type="CSTRING" name="FunctionName">The name of the function to register (e.g., "custom-function").</param>
+        <param type="FUNCTION *" name="Callback">The callback function to register for FunctionName.</param>
+      </input>
+      <description>
+<p>Use RegisterFunction to define a custom function that can be invoked within XQuery expressions.  The function will be associated with the specified name and can be called like any standard XQuery function.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+    </method>
+
+    <method>
+      <name>Search</name>
+      <comment>For node-based queries, calls a function for each matching node.</comment>
+      <prototype>ERR xq::Search(OBJECTPTR Object, objXML * XML, FUNCTION * Callback)</prototype>
+      <input>
+        <param type="objXML *" name="XML">Target XML document to search.</param>
+        <param type="FUNCTION *" name="Callback">Optional callback function to invoke for each matching node.</param>
+      </input>
+      <description>
+<p>Use the Search method to scan an XML document for tags or attributes that match a compiled XQuery expression. For every matching node, a user-defined callback function is invoked, allowing custom processing of each result.</p>
+<p>If no callback is provided, the search stops after the first match and the <class name="XML">XML</class> object's cursor markers will reflect the position of the node.</p>
+<p>Note that valid function execution can return <code>ERR:Search</code> if zero matches are found.</p>
+<p>The C++ prototype for Callback is <code>ERR Function(*XML, int TagID, CSTRING Attrib, APTR Meta)</code>.  For Tiri, use <code>function(XML, TagID, Attrib)</code></p>
+      </description>
+      <result>
+        <error code="Okay">At least one matching node was found and processed.</error>
+        <error code="Terminate">The callback function requested termination of the search.</error>
+        <error code="Search">No matching node was found.</error>
+        <error code="Syntax">The provided query expression has syntax errors.</error>
+        <error code="NullArgs">At least one required parameter was not provided.</error>
+      </result>
+    </method>
+
+  </methods>
+
+  <fields>
+    <field>
+      <name>ErrorMsg</name>
+      <comment>A readable description of the last parse or execution error.</comment>
+      <access read="G">Get</access>
+      <type>STRING</type>
+      <description>
+<p>This field may provide a textual description of the last parse or execution error that occurred.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>FeatureFlags</name>
+      <comment>Flags indicating the features of a compiled XQuery expression.</comment>
+      <access read="G">Get</access>
+      <type>INT</type>
+    </field>
+
+    <field>
+      <name>Functions</name>
+      <comment>Returns an allocated list of all declared XQuery functions.</comment>
+      <access read="G">Get</access>
+      <type>pf::vector&lt;std::string&gt;</type>
+      <description>
+<p>Provides a list of all XQuery functions that have been defined by the user or during evaluation of the XQuery expression (via the <code>declare</code> keyword).</p>
+<p>Example: For <code>declare function math:cube($x) { }</code> the name <code>math:cube</code> would appear in the list.</p>
+<p>Duplicate function names are not removed.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>MemoryUsage</name>
+      <comment>Returns the total amount of memory allocated by the last compilation or evaluation.</comment>
+      <access read="G">Get</access>
+      <type>INT64</type>
+      <description>
+<p>If the XQuery module has been compiled with ANALYSE_MEMORY_USAGE defined, this field will return the total amount of memory (in bytes) allocated during the last compilation or evaluation of the XQuery object.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Path</name>
+      <comment>Base path for resolving relative references.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>STRING</type>
+      <description>
+<p>Set the Path field to define the base-uri for an XQuery expression.  If left unset, the path will be computed through automated means on-the-fly, which relies  on the working directory or XML document path.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Result</name>
+      <comment>Returns the results of the most recently executed query.</comment>
+      <access read="G">Get</access>
+      <type>APTR</type>
+      <description>
+<p>Following the successful execution of an XQuery expression, the results can be retrieved as an XPathValue object through this field.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>ResultString</name>
+      <comment>Returns the results of the most recently executed query as a string.</comment>
+      <access read="G">Get</access>
+      <type>STRING</type>
+      <description>
+<p>Following the successful execution of an XQuery expression, the results can be retrieved as a string through this field.  The string representation is generated from the <fl>Result</fl> field, which holds the raw evaluation output.</p>
+<p>Note that if the result is empty, the returned string will also be empty (i.e. is not considered an error).  The string is managed internally and does not require manual deallocation.</p>
+<p>The string result becomes invalid if the XQuery object is modified, re-executed or destroyed.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>ResultType</name>
+      <comment>Returns the value type of the most recently executed query.</comment>
+      <access read="G">Get</access>
+      <type>INT</type>
+      <description>
+<p>If an XQuery expression returns a <fl>Result</fl>, the type can be retrieved from this field.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Statement</name>
+      <comment>XQuery data is processed through this field.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>STRING</type>
+      <description>
+<p>Set the Statement field with an XPath or XQuery expression for compilation.</p>
+<p>If this field is set after initialisation then <action>Clear</action> will be applied to the object first.  The expression will be compiled on the next execution attempt.</p>
+<p>If the statement is an XQuery expression with base-uri references, the <fl>Path</fl> field should be set to establish the base path for relative references.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Variables</name>
+      <comment>Returns an allocated list of all defined XQuery variables.</comment>
+      <access read="G">Get</access>
+      <type>pf::vector&lt;std::string&gt;</type>
+      <description>
+<p>Provides a list of all XQuery variables that have been defined using the <action>SetKey</action> action, or during evaluation of the XQuery expression (via the <code>declare</code> keyword).</p>
+<p>Example: For <code>declare variable $math:pi := 3.14159;</code> the variable name <code>math:pi</code> would appear in the list.</p>
+<p>Duplicate variable names are not removed.</p>
+      </description>
+    </field>
+
+  </fields>
+  <types>
+    <constants lookup="XIF" comment="Result flags for InspectFunctions().">
+      <const name="ALL">Synonym for <code>AST | NAME | PARAMETERS | RETURN_TYPE | USER_DEFINED | SIGNATURE</code></const>
+      <const name="AST">Include the compiled function body in the inspection result.</const>
+      <const name="NAME">Include function name in the inspection result.</const>
+      <const name="PARAMETERS">Include function parameters in the inspection result.</const>
+      <const name="RETURN_TYPE">Include function return type in the inspection result.</const>
+      <const name="SIGNATURE">Include function signature in the inspection result.</const>
+      <const name="USER_DEFINED">Include user-defined status in the inspection result.</const>
+    </constants>
+
+  </types>
+  <structs>
+  </structs>
+</book>

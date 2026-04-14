@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="VectorTransition" mod="Vector" c="Transitions are used to incrementally apply transforms over distance." cat="Graphics" id="a7c89dc3" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="VectorTransition" mod="Vector" c="Transitions are used to incrementally apply transforms over distance." cat="Graphics" id="a7c89dc3" v="1">
   <ai:f n="Stops" c="Defines the transforms that will be used at specific stop points." t="STRUCT []" a="S"/>
   <ai:f n="TotalStops" c="Total number of stops defined in the Stops array." t="INT" a="R"/>
 </ai:cl>

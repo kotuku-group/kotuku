@@ -1,0 +1,453 @@
+-- Core XPath query tests
+
+   include 'xml'
+
+function contains(table, element)
+   for value in values(table) do
+      if value is element then return true end
+   end
+   return false
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test basic XPath navigation
+
+@Test function BasicXPath()
+   local xml = obj.new("xml", {
+      statement = '<root><level1><level2><target>Found</target></level2></level1></root>'
+   })
+
+   -- Test absolute path
+   local tag_id
+   local xq = obj.new('xquery', { statement = '/root/level1/level2/target' })
+   local err = xq.mtSearch(xml, function(XML, TagID)
+      tag_id = TagID
+   end)
+   assert(err is ERR_Okay, "Failed to find target with absolute path: " .. mSys.GetErrorMsg(err))
+
+   local err, tag = xml.mtGetTag(tag_id)
+   assert(err is ERR_Okay, "Failed to get target tag " .. tostring(tag_id))
+   assert(tag.children[0].attribs[0].value is "Found", "Target content incorrect")
+
+   -- Simple deep evaluation
+   tag_id = nil
+   xq.statement = '//root'
+   local err = xq.mtEvaluate(xml)
+   assert(err is ERR_Okay, "Failed to evaluate //root: " .. mSys.GetErrorMsg(err))
+   assert(xq.resultString is 'Found', 'Target content incorrect')
+
+   -- Simple deep search
+   local count = 0
+   xq.statement = '//root'
+   local err = xq.mtSearch(xml, function(XML, TagID) count += 1 end)
+   assert(err is ERR_Okay and count > 0, "Failed to find //root, count " .. count .. ", error: " .. mSys.GetErrorMsg(err))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test attribute matching with [@attribute] syntax
+
+@Test function AttributeMatching()
+   local xml = obj.new("xml", {
+      statement = '<root><item type="book" title="Guide"/><item type="magazine" title="News"/><item type="book" title="Manual"/></root>'
+   })
+
+   -- Find items with type="book"
+   local bookCount = 0
+   local err, index = xml.mtSearch('/root/item[@type="book"]', function(XML, TagID, Attrib)
+      bookCount = bookCount + 1
+      local err, tag = xml.mtGetTag(TagID)
+      assert(err is ERR_Okay, "Failed to get book tag")
+
+      local err, typeValue = xml.mtGetAttrib(TagID, 'type')
+      assert(err is ERR_Okay and typeValue is "book", "Book type attribute incorrect")
+   end)
+
+   assert(bookCount is 2, "Expected 2 books, found " .. bookCount)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test attribute existence predicate [@attr] and wildcard attribute name [@*="value"]
+
+@Test function AttributePredicateExistence()
+   local xml = obj.new("xml", {
+      statement = '<root><section title="Test" note="alpha"/><section/><section title="Other"/></root>'
+   })
+
+   -- Existence predicate
+   local err, id = xml.mtSearch('/root/section[@title]')
+   assert(err is ERR_Okay, "Attribute existence predicate should find a section with title")
+
+   -- Non-existing attribute should not match
+   err, id = xml.mtSearch('/root/section[@missing]')
+   assert(err != ERR_Okay, "Missing attribute existence should not match")
+
+   -- Wildcard attribute name matches any attribute with given value
+   err, id = xml.mtSearch('/root/section[@*="alpha"]')
+   assert(err is ERR_Okay, "Wildcard attribute name should match any attribute with value")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test indexed access with [position] syntax
+
+@Test function IndexedAccess()
+   local xml = obj.new("xml", {
+      statement = '<root><item>First</item><item>Second</item><item>Third</item></root>'
+   })
+
+   -- Test first item (1-based indexing)
+   local err, firstId = xml.mtSearch('/root/item[1]')
+   assert(err is ERR_Okay, "Failed to find first item: " .. mSys.GetErrorMsg(err))
+
+   local err, tag = xml.mtGetTag(firstId)
+   assert(err is ERR_Okay, "Failed to get first tag")
+   assert(tag.children[0].attribs[0].value is "First", "First item content incorrect")
+
+   -- Test third item
+   local err, thirdId = xml.mtSearch('/root/item[3]')
+   assert(err is ERR_Okay, "Failed to find third item: " .. mSys.GetErrorMsg(err))
+
+   local err, tag = xml.mtGetTag(thirdId)
+   assert(err is ERR_Okay, "Failed to get third tag")
+   assert(tag.children[0].attribs[0].value is "Third", "Third item content incorrect")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test deep scanning with double-slash (//) syntax
+
+@Test function DeepScanning()
+   local xml = obj.new("xml", {
+      statement = '<root><section><subsection><target id="1"/></subsection></section><othersection><target id="2"/></othersection></root>'
+   })
+
+   -- Find all target elements anywhere in document
+   local targetCount = 0
+   local foundIds = {}
+   local err, index = xml.mtSearch('//target', function(XML, TagID, Attrib)
+      targetCount = targetCount + 1
+      local err, idValue = xml.mtGetAttrib(TagID, 'id')
+      assert(err is ERR_Okay, "Failed to get target id")
+      table.insert(foundIds, idValue)
+   end)
+
+   assert(targetCount is 2, "Expected 2 targets, found " .. targetCount)
+   assert(contains(foundIds, "1") and contains(foundIds, "2"), "Target IDs not found correctly")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Ensure deep scan mid-path currently fails gracefully: /root//target
+
+@Test function DeepScanMidPath()
+   local xml = obj.new("xml", {
+      statement = '<root><section><subsection><target id="a"/></subsection></section><othersection><target id="b"/></othersection></root>'
+   })
+
+   local err, id = xml.mtSearch('/root//target')
+   assert(err is ERR_Okay, "/root//target failed")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test wildcard matching with * syntax
+
+@Test function WildcardMatching()
+   local xml = obj.new("xml", {
+      statement = '<root><item1/><item2/><item3/><other/></root>'
+   })
+
+   -- Find all children of root
+   local childCount = 0
+   local err, index = xml.mtSearch('/root/*', function(XML, TagID, Attrib)
+      childCount = childCount + 1
+   end)
+
+   assert(childCount is 4, "Expected 4 children, found " .. childCount)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test content matching (Kotuku extension)
+
+@Test function ContentMatching()
+   local xml = obj.new("xml", {
+      statement = '<root><item>apple</item><item>banana</item><item>apple pie</item></root>'
+   })
+
+   -- Find items containing "apple"
+   local appleCount = 0
+   local err, index = xml.mtSearch('/root/item[=apple]', function(XML, TagID, Attrib)
+      appleCount = appleCount + 1
+   end)
+
+   assert(appleCount >= 1, "Expected at least 1 apple item, found " .. appleCount)
+
+   -- Wildcard content match
+
+   appleCount = 0
+   err, index = xml.mtSearch('/root/item[=apple*]', function(XML, TagID, Attrib)
+      appleCount = appleCount + 1
+   end)
+   assert(appleCount is 2, "Wildcard content matching should find 2 items, found " .. appleCount)
+
+   -- Square bracket predicates should also support content equality
+   local bananaErr, bananaId = xml.mtSearch('/root/item[=banana]')
+   assert(bananaErr is ERR_Okay, "[=value] predicate should locate the banana item")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test attribute extraction with @ syntax
+
+@Test function AttributeExtraction()
+   local xml = obj.new("xml", {
+      statement = '<root><book title="Guide" author="Smith"/></root>'
+   })
+
+   -- Extract title attribute value
+   local err, bookId = xml.mtSearch('/root/book')
+   assert(err is ERR_Okay, "Should locate the book element for attribute extraction")
+
+   local titleErr, titleValue = xml.mtGetAttrib(bookId, 'title')
+   assert(titleErr is ERR_Okay and titleValue is "Guide", "Title attribute extraction failed")
+
+   -- Extract author attribute value
+   local authorErr, authorValue = xml.mtGetAttrib(bookId, 'author')
+   assert(authorErr is ERR_Okay and authorValue is "Smith", "Author attribute extraction failed")
+
+   -- Wildcard attribute name in predicate: matches any attribute value
+   local err, id = xml.mtSearch('/root/book[@*="Smith"]')
+   assert(err is ERR_Okay, "Wildcard attribute name predicate should match on any attribute")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test count operations
+
+@Test function CountOperations()
+   local xml = obj.new("xml", {
+      statement = '<root><section><item/><item/><item/></section><section><item/></section></root>'
+   })
+
+   -- Count all items
+   local err, temp_totalItems = xml.mtEvaluate('count(//item)')
+   local totalItems = tonumber(temp_totalItems)
+   assert(totalItems is 4, "Expected 4 total items, got " .. totalItems)
+
+   -- Count items in first section
+   local err, temp_firstSectionItems = xml.mtEvaluate('count(/root/section[1]/item)')
+   local firstSectionItems = tonumber(temp_firstSectionItems)
+   assert(firstSectionItems is 3, "Expected 3 items in first section, got " .. firstSectionItems)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test exists operations
+
+@Test function ExistsOperations()
+   local xml = obj.new("xml", {
+      statement = '<root><section title="Test"><item/></section></root>'
+   })
+
+   -- Test element existence via XPath lookup
+   local err, sectionId = xml.mtSearch('/root/section')
+   assert(err is ERR_Okay, "Section should exist")
+
+   local missingErr, missingId = xml.mtSearch('/root/missing')
+   assert(missingErr != ERR_Okay, "Missing element should not exist")
+
+   -- Test attribute existence
+   local titleErr, titleValue = xml.mtGetAttrib(sectionId, 'title')
+   assert(titleErr is ERR_Okay and titleValue is "Test", "Title attribute should exist")
+
+   local missingAttrErr, missingAttrValue = xml.mtGetAttrib(sectionId, 'missing')
+   assert(missingAttrErr is ERR_NotFound, "Missing attribute should not exist")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test content extraction operations
+
+@Test function ContentExtraction()
+   local xml = obj.new("xml", {
+      statement = '<root><section>Direct content <em>emphasized</em> more content</section></root>'
+   })
+
+   -- Test immediate content extraction (excludes nested tags)
+   local err, immediateContent = xml.mtEvaluate('/root/section')
+   assert(string.find(immediateContent, "Direct content"), "Immediate content not extracted")
+   assert(string.find(immediateContent, "more content"), "Trailing content not extracted")
+
+   -- Test deep content extraction
+   local err, deepContent = xml.mtEvaluate('string(/root/section)')
+   assert(string.find(deepContent, "emphasized"), "Deep content not extracted, got: " .. deepContent)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test serialisation operations
+
+@Test function ExtractOperations()
+   local xml = obj.new("xml", {
+      statement = '<root><section><item id="1">Content</item></section></root>'
+   })
+
+   -- Extract XML for specific element
+   local err, id = xml.mtSearch('/root/section/item')
+   local err, result = xml.mtSerialise(id, false)
+
+   assert(string.find(result, 'id="1"'), "Extracted XML is missing attributes: " .. tostring(result))
+   assert(string.find(result, "Content"), "Extracted XML is missing content" .. tostring(result))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test complex XPath expressions
+
+@Test function ComplexExpressions()
+   local xml = obj.new("xml", {
+      statement = '<root><products><product category="electronics" price="100"/><product category="books" price="20"/><product category="electronics" price="50"/></products></root>'
+   })
+
+   -- Find electronics products
+   local electronicsCount = 0
+   local err, index = xml.mtSearch('/root/products/product[@category="electronics"]', function(XML, TagID, Attrib)
+      electronicsCount = electronicsCount + 1
+   end)
+
+   assert(electronicsCount is 2, "Expected 2 electronics products, found " .. electronicsCount)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test namespace support
+
+@Test function NamespaceSupport()
+   local xml = obj.new("xml", {
+      statement = '<root xmlns:book="http://books.com" xmlns:mag="http://magazines.com"><book:item title="Guide"/><mag:item title="News"/></root>'
+   })
+
+   -- Test namespace-aware matching (currently supported)
+   local bookCount = 0
+   local err, index = xml.mtSearch('/root/book:item', function(XML, TagID, Attrib)
+      bookCount = bookCount + 1
+   end)
+
+   if err is ERR_Okay then
+      assert(bookCount >= 0, "Namespace matching should work or gracefully fail")
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Prefixed node steps should resolve correctly
+
+@Test function NamespacePrefixedSteps()
+   local xml = obj.new("xml", {
+      statement = '<root xmlns:book="http://books.com"><book:item title="Guide"/></root>'
+   })
+
+   local err, tagId = xml.mtSearch('/root/book:item')
+   assert(err is ERR_Okay, "Prefixed node steps should locate namespaced elements")
+
+   local err, title = xml.mtGetAttrib(tagId, 'title')
+   assert(err is ERR_Okay and title is 'Guide', "Namespaced element should remain addressable by prefix")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test attribute wildcard matching
+
+@Test function AttributeWildcards()
+   local xml = obj.new("xml", {
+      statement = '<root><item type="book" title="Guide"/><item type="magazine" title="News"/></root>'
+   })
+
+   -- Test wildcard in attribute values (currently supported in string-based evaluator when available)
+   local err, itemId = xml.mtSearch('/root/item[@type="bo*"]')
+   if err is ERR_Okay then
+      local attrErr, typeValue = xml.mtGetAttrib(itemId, 'type')
+      assert(attrErr is ERR_Okay and typeValue is "book", "Wildcard attribute predicate should return the matching node")
+   else
+      assert(err is ERR_Search, "Wildcard attribute predicates should fail gracefully when not implemented")
+   end
+
+   -- Attribute existence without a value should be accepted
+   local existsErr, existsId = xml.mtSearch('/root/item[@title]')
+   assert(existsErr is ERR_Okay, "Attribute existence predicate [@title] should succeed")
+
+   -- Attribute name wildcards (@*) should match any attribute name using the provided pattern
+   local nameWildErr, titledId = xml.mtSearch('/root/item[@*="Gu*"]')
+   if nameWildErr is ERR_Okay then
+      local _, titleValue = xml.mtGetAttrib(titledId, 'title')
+      assert(titleValue is "Guide", "Wildcard name predicate should still point at the correct node")
+   else
+      assert(nameWildErr is ERR_Search, "Attribute name wildcard should fall back to a search error when unsupported")
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Regression: Function predicates should receive node-set arguments
+
+@Test function FunctionPredicateNodeSets()
+   local xml = obj.new("xml", {
+      statement = '<root><item/><item/><item/></root>'
+   })
+
+   local err, rootId = xml.mtSearch('/root[count(item)=3]')
+   assert(err is ERR_Okay, "count(item)=3 predicate should evaluate with node-set arguments (bug: identifiers become literals)")
+
+   local err, result = xml.mtSearch('/root[count(item)=2]')
+   assert(err is ERR_Search, "count(item)=2 predicate should not match when the function result is false")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test XPath 1.0 functions
+
+@Test function XPathFunctions()
+   local xml = obj.new("xml", {
+      statement = '<root><item>1</item><item>2</item><item>3</item></root>'
+   })
+
+   local err, itemId = xml.mtSearch('/root/item[position()=2]')
+   assert(err is ERR_Okay, "/root/item[position()=2] failed")
+
+   err, itemId = xml.mtSearch('/root/item[position()=last()]')
+   assert(err is ERR_Okay, "/root/item[position()=last()] failed")
+
+   err, itemId = xml.mtSearch('/root/item[last()]')
+   assert(err is ERR_Okay, "last() predicate should select the final item")
+   local err2, lastTag = xml.mtGetTag(itemId)
+   assert(err2 is ERR_Okay and lastTag.children[0].attribs[0].value is '3', "last() predicate should locate the third entry")
+
+   err, itemId = xml.mtSearch('/root[count(item)>2]')
+   assert(err is ERR_Okay, "count(item)>2 should succeed when AST evaluation is active")
+   assert(itemId != 0, "count(item)>2 should return a valid node identifier")
+
+   local err, itemId = xml.mtSearch('/root/item[text()="2"]')
+   assert(err is ERR_Okay, 'text()="2" failed')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Regression: Numeric position predicates should honour requested index
+
+@Test function NumericPositionPredicates()
+   local xml = obj.new("xml", {
+      statement = '<root><item>First</item><item>Second</item><item>Third</item></root>'
+   })
+
+   local err, secondId = xml.mtSearch('/root/item[2]')
+   assert(err is ERR_Okay, "item[2] should return the second node (bug: predicate currently hard-codes index==1)")
+
+   local err, tag = xml.mtGetTag(secondId)
+   assert(err is ERR_Okay and tag.children[0].attribs[0].value is 'Second', "item[2] should locate the 'Second' entry")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test XPath 1.0 boolean operators
+
+@Test function BooleanOperators()
+   local xml = obj.new("xml", {
+      statement = '<root><product price="100" category="electronics"/><product price="50" category="books"/></root>'
+   })
+
+   local err, productId = xml.mtSearch('/root/product[@price="100" and @category="electronics"]')
+   assert(err is ERR_Okay, "'and' operator should locate the product with matching price and category")
+   local err2, category = xml.mtGetAttrib(productId, 'category')
+   assert(err2 is ERR_Okay and category is 'electronics', "'and' operator should return the electronics product")
+
+   err, productId = xml.mtSearch('/root/product[@category="books" or @category="electronics"]')
+   assert(err is ERR_Okay, "'or' operator should locate a matching product")
+   err2, category = xml.mtGetAttrib(productId, 'category')
+   assert(err2 is ERR_Okay and category is 'electronics', "'or' operator should prioritise the first matching product")
+
+   err, productId = xml.mtSearch('/root/product[not(@category="books")]')
+   assert(err is ERR_Okay, "'not()' should exclude the books category and return the electronics product")
+end

@@ -1,0 +1,171 @@
+-- XPath sequence @Test function s
+
+sequence_document = [[
+<root>
+   <empty/>
+   <numbers>
+      <value code="one" order="1">1</value>
+      <value code="two" order="2">2</value>
+      <value code="three" order="3">3</value>
+   </numbers>
+   <duplicates>
+      <value>alpha</value>
+      <value>beta</value>
+      <value>alpha</value>
+      <value>gamma</value>
+   </duplicates>
+   <order>
+      <step pos="1"/>
+      <step pos="3"/>
+      <step pos="4"/>
+   </order>
+   <codes>
+      <code>1</code>
+      <code>2</code>
+      <code>3</code>
+   </codes>
+   <optional>
+      <value>42</value>
+   </optional>
+   <single>
+      <value>99</value>
+   </single>
+</root>
+]]
+
+glXMLSeq = <{ obj.new("xml", { statement = sequence_document }) }>
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Cardinality helper functions
+
+@Test(priority=1) function CardinalityFunctions()
+   xml = glXMLSeq
+
+   err, temp_zeroOneValue = xml.mtEvaluate('number(zero-or-one(/root/optional/value))')
+   zeroOneValue = tonumber(temp_zeroOneValue)
+   assert(zeroOneValue is 42, "zero-or-one should return the single item, got " .. tostring(zeroOneValue))
+
+   err, temp_zeroOneEmpty = xml.mtEvaluate('count(zero-or-one(/root/missing/value))')
+   zeroOneEmpty = tonumber(temp_zeroOneEmpty)
+   assert(zeroOneEmpty is 0, "zero-or-one should allow empty sequence, got " .. tostring(zeroOneEmpty))
+
+   err, temp_oneOrMoreCount = xml.mtEvaluate('count(one-or-more(/root/codes/code))')
+   oneOrMoreCount = tonumber(temp_oneOrMoreCount)
+   assert(oneOrMoreCount is 3, "one-or-more should keep all items, got " .. tostring(oneOrMoreCount))
+
+   err, temp_exactlyOne = xml.mtEvaluate('number(exactly-one(/root/single/value))')
+   exactlyOne = tonumber(temp_exactlyOne)
+   assert(exactlyOne is 99, "exactly-one should return the single value, got " .. tostring(exactlyOne))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- subsequence, unordered and deep-equal checks
+
+@Test(priority=2) function SubsequenceDeepEqual()
+   xml = glXMLSeq
+
+   err, subseqFirst = xml.mtEvaluate('subsequence(/root/duplicates/value, 2, 2)[1]')
+   assert(subseqFirst is 'beta', "subsequence should extract beta as first result, got " .. tostring(subseqFirst))
+
+   err, subseqSecond = xml.mtEvaluate('subsequence(/root/duplicates/value, 2, 2)[2]')
+   assert(subseqSecond is 'alpha', "subsequence should extract alpha as second result, got " .. tostring(subseqSecond))
+
+   err, unorderedEqual = xml.mtEvaluate('deep-equal(unordered(/root/codes/code), /root/codes/code)')
+   assert(unorderedEqual is 'true', "unordered should preserve all members, got " .. tostring(unorderedEqual))
+
+   err, deepEqualTrue = xml.mtEvaluate('deep-equal(/root/codes/code, /root/codes/code)')
+   assert(deepEqualTrue is 'true', "deep-equal should return true for identical sequences, got " .. tostring(deepEqualTrue))
+
+   err, deepEqualFalse = xml.mtEvaluate('deep-equal(/root/codes/code, remove(/root/codes/code, 3))')
+   assert(deepEqualFalse is 'false', "deep-equal should detect differing lengths, got " .. tostring(deepEqualFalse))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Validate empty() behaviour
+
+@Test(priority=3) function EmptyFunction()
+   xml = glXMLSeq
+
+   err, emptyValue = xml.mtEvaluate('empty(/root/empty/item)')
+   assert(emptyValue is 'true', "empty should return true for missing nodes, got " .. tostring(emptyValue))
+
+   err, nonEmptyValue = xml.mtEvaluate('empty(/root/numbers/value)')
+   assert(nonEmptyValue is 'false', "empty should return false for existing nodes, got " .. tostring(nonEmptyValue))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Verify index-of returns all matching positions
+
+@Test(priority=4) function IndexOfFunction()
+   xml = glXMLSeq
+
+   err, temp_matchCount = xml.mtEvaluate('count(index-of(/root/duplicates/value, "alpha"))')
+   matchCount = tonumber(temp_matchCount)
+   assert(matchCount is 2, "index-of should report two matches, got " .. tostring(matchCount))
+
+   err, temp_firstMatch = xml.mtEvaluate('index-of(/root/duplicates/value, "alpha")[1]')
+   firstMatch = tonumber(temp_firstMatch)
+   assert(firstMatch is 1, "index-of should report first occurrence at position 1, got " .. tostring(firstMatch))
+
+   err, temp_secondMatch = xml.mtEvaluate('index-of(/root/duplicates/value, "alpha")[2]')
+   secondMatch = tonumber(temp_secondMatch)
+   assert(secondMatch is 3, "index-of should report second occurrence at position 3, got " .. tostring(secondMatch))
+
+   err, temp_numericMatch = xml.mtEvaluate('index-of(/root/numbers/value, "2")[1]')
+   numericMatch = tonumber(temp_numericMatch)
+   assert(numericMatch is 2, "index-of should locate numeric content at the correct position, got " .. tostring(numericMatch))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- insert-before, remove and reverse sequence operations
+
+@Test(priority=5) function InsertRemoveReverse()
+   xml = glXMLSeq
+
+   err, insertFirst = xml.mtEvaluate('insert-before(/root/order/step/@pos, 2, "2")[1]')
+   assert(insertFirst is '1', "insert-before should retain first element, got " .. tostring(insertFirst))
+
+   err, insertSecond = xml.mtEvaluate('insert-before(/root/order/step/@pos, 2, "2")[2]')
+   assert(insertSecond is '2', "insert-before should place new value at position 2, got " .. tostring(insertSecond))
+
+   err, insertThird = xml.mtEvaluate('insert-before(/root/order/step/@pos, 2, "2")[3]')
+   assert(insertThird is '3', "insert-before should shift original third element, got " .. tostring(insertThird))
+
+   err, insertFourth = xml.mtEvaluate('insert-before(/root/order/step/@pos, 2, "2")[4]')
+   assert(insertFourth is '4', "insert-before should append remaining element, got " .. tostring(insertFourth))
+
+   err, removedFirst = xml.mtEvaluate('remove(/root/codes/code, 2)[1]')
+   assert(removedFirst is '1', "remove should keep first element, got " .. tostring(removedFirst))
+
+   err, removedSecond = xml.mtEvaluate('remove(/root/codes/code, 2)[2]')
+   assert(removedSecond is '3', "remove should drop middle element, got " .. tostring(removedSecond))
+
+   err, reverseFirst = xml.mtEvaluate('reverse(/root/codes/code)[1]')
+   assert(reverseFirst is '3', "reverse should place last element first, got " .. tostring(reverseFirst))
+
+   err, reverseSecond = xml.mtEvaluate('reverse(/root/codes/code)[2]')
+   assert(reverseSecond is '2', "reverse should place middle element second, got " .. tostring(reverseSecond))
+
+   err, reverseThird = xml.mtEvaluate('reverse(/root/codes/code)[3]')
+   assert(reverseThird is '1', "reverse should place first element last, got " .. tostring(reverseThird))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Distinct values should preserve first occurrence order
+
+@Test(priority=6) function DistinctValuesFunction()
+   xml = glXMLSeq
+
+   err, temp_totalValues = xml.mtEvaluate('count(distinct-values(/root/duplicates/value))')
+   totalValues = tonumber(temp_totalValues)
+   assert(totalValues is 3, "distinct-values should return three unique entries, got " .. tostring(totalValues))
+
+   err, firstValue = xml.mtEvaluate('distinct-values(/root/duplicates/value)[1]')
+   assert(firstValue is 'alpha', "distinct-values should keep first occurrence of alpha, got " .. tostring(firstValue))
+
+   err, secondValue = xml.mtEvaluate('distinct-values(/root/duplicates/value)[2]')
+   assert(secondValue is 'beta', "distinct-values should keep beta in second position, got " .. tostring(secondValue))
+
+   err, thirdValue = xml.mtEvaluate('distinct-values(/root/duplicates/value)[3]')
+   assert(thirdValue is 'gamma', "distinct-values should keep gamma as last entry, got " .. tostring(thirdValue))
+end

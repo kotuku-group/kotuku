@@ -260,7 +260,7 @@ static ERR SET_Parent(extSurface *Self, int Value)
    // within the surface lists.
 
    if (Self->initialised()) {
-      if (!Self->ParentID) return ERR::Failed; // Top level surfaces cannot be re-parented
+      if (!Self->ParentID) return ERR::InvalidState; // Top level surfaces cannot be re-parented
       if (Self->ParentID IS Value) return ERR::Okay;
 
       acHide(Self);
@@ -490,8 +490,7 @@ static ERR GET_WindowHandle(extSurface *Self, APTR *Value)
 
 static ERR SET_WindowHandle(extSurface *Self, APTR Value)
 {
-   if (Self->initialised()) return ERR::Failed;
+   if (Self->initialised()) return ERR::Immutable;
    if (Value) Self->DisplayWindow = Value;
    return ERR::Okay;
 }
-

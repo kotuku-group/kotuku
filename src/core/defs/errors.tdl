@@ -1,0 +1,219 @@
+--$TIRI:Include
+-- This file is included by core.tdl
+-- Refer to data_errors.c for the official description strings for each error code.
+
+function declareErrors()
+  cpp_include("<cstdint>")
+
+  enum("ERR", { start=0, comment="Universal error codes", type="int32" },
+    "Okay|True",
+    "False",            -- Non-fatal
+    "LimitedSuccess",   -- Limited success.
+    "Cancelled",        -- Operation cancelled.
+    "NothingDone",      -- Operation did not perform any activity (non-fatal).
+    "Continue",         -- Please continue processing
+    "Skip",             -- Skip this operation (do not raise an error)
+    "Retry",            -- Retry the operation (could not succeed at this time)
+    "DirEmpty",
+    -- Anything above this point is considered non-fatal for exception reporting purposes.
+    "Terminate|ExceptionThreshold", -- Operation processed, but do not call again with these parameters.
+    "NoMemory",
+    "NoPointer",
+    "InUse",
+    "Failed",
+    "File",
+    "InvalidData",
+    "Search|NotFound",
+    "InitModule",
+    "FileNotFound|FileDoesNotExist",
+    "WrongVersion",
+    "Args",
+    "NoData",
+    "Read",
+    "Write",
+    "LockFailed|Lock",          -- Failed to lock a required resource
+    "ExamineFailed",
+    "LostClass",
+    "NoAction",
+    "NoSupport",                -- Operation not supported
+    "Memory",
+    "Timeout|TimeOut",
+    "NoStats",
+    "LowCapacity",
+    "Init",
+    "NoPermission|Permissions|PermissionDenied",
+    "SystemCorrupt",
+    "NeedOwner",
+    "OwnerNeedsBitmap",
+    "CoreVersion",
+    "NeedWidthHeight",
+    "ModuleValidation",        -- Module validation has failed.
+    "ProcessCreation",         -- Process creation has failed.
+    "MissingClassName",
+    "OutOfRange",
+    "ObtainMethod",
+    "ArrayFull",
+    "Query",
+    "LostOwner",
+    "DoNotExpunge",
+    "MemoryCorrupt",
+    "FieldSearch",
+    "InvalidPath",
+    "SetField",
+    "MarkedForDeletion",
+    "IllegalMethodID",
+    "IllegalActionID",
+    "ModuleOpenFailed",
+    "IllegalActionAttempt",  -- DEPRECATED
+    "EntryMissingHeader",
+    "ModuleMissingInit",
+    "ModuleInitFailed",
+    "MemoryDoesNotExist",
+    "DeadLock",
+    "SystemLocked",
+    "ModuleMissingName",
+    "AddClass",
+    "Activate",
+    "DoubleInit",
+    "UndefinedField|FieldNotSet",
+    "MissingClass",         -- The class could not be found in the system.
+    "FileReadFlag",         -- The File flag FL_READ was not set on initialisation.
+    "FileWriteFlag",        -- The File flag FL_WRITE was not set on initialisation.
+    "Draw",                 -- An error occurred while drawing the object.
+    "NoMethods",            -- The class does not export any methods.
+    "NoMatchingObject",     -- Unable to find object
+    "AccessMemory",
+    "MissingPath",
+    "ResourceNotLocked",    -- A lock was expected but not found.
+    "NoSearchResult",
+    "StatementUnsatisfied",
+    "ObjectCorrupt",
+    "OwnerPassThrough",
+    "UnsupportedOwner",
+    "ExclusiveDenied|AccessObject",
+    "AllocMemory",
+    "NewObject",
+    "GetField",
+    "NoFieldAccess",
+    "VirtualVolume",
+    "InvalidDimension",
+    "FieldTypeMismatch",
+    "UnrecognisedFieldType",
+    "BufferOverflow",
+    "UnsupportedField",        -- Field name does not exist in class blueprint
+    "Mismatch",
+    "OutOfBounds",
+    "Seek",                    -- Seek failure
+    "ReallocMemory",           -- ReallocMemory() failed
+    "Loop",                    -- Recursion error
+    "FileExists",
+    "ResolvePath",             -- ResolvePath() failed
+    "CreateObject",            -- CreateObject() failed
+    "MemoryInfo",              -- MemoryInfo() failed
+    "NotInitialised",          -- Object or resource is not initialised
+    "ResourceExists",          -- A new resource could not be created because a matching resource exists.
+    "Refresh",                 -- An attempt to Refresh() an object failed.
+    "ListChildren",            -- An error occurred in a call to ListChildren().
+    "SystemCall",              -- A system call has failed.
+    "SmallMask",               -- The size of the mask is smaller than the source Bitmap's dimensions.
+    "EmptyString",             -- A required string is empty (null termination at the first character).
+    "ObjectExists",            -- Object exists.
+    "ExpectedFile",            -- The operation expected a path to a file.
+    "Resize",                  -- Resize failure
+    "Redimension",             -- Redimension failure
+    "SemaphoreOperation",      -- A semaphore operation has failed.
+    "FieldValidation",         -- Field validation has failed.
+    "CreateFile",              -- Failed to create a new file
+    "DeleteFile",              -- Deletion of dir/file failed (e.g. permissions, read-only media)
+    "OpenFile",                -- File could not be opened
+    "ReadOnly",                -- Delete/Write/Create operation failed due to read-only status
+    "DoesNotExist",            -- Resource/Object/File does not exist
+    "IdenticalPaths",          -- The destination path is the same as the source path
+    "Exists",                  -- Something exists.
+    "SanityFailure",           -- A sanity check failed
+    "OutOfSpace",              -- Run out of space, no room to complete request
+    "GetSurfaceInfo",          -- GetSurfaceInfo() failed
+    "Finished|EndOfFile|OutOfData", -- Operation or process loop finished
+    "Syntax|StringFormat",     -- Invalid syntax detected
+    "InvalidState",            -- Object was in an invalid state for processing.
+    "HostNotFound",            -- The internet host name could not be resolved
+    "InvalidURI",              -- Invalid Uniform Resource Identifier
+    "ConnectionRefused",       -- The remote host refused the connection
+    "NetworkUnreachable",      -- The network was unreachable
+    "HostUnreachable",         -- No route to host
+    "Disconnected",            -- A hard disconnect occurred
+    "TaskStillExists",         -- Task/Process still exists and is running
+    "IntegrityViolation|ConstraintViolation", -- Referential integrity / constraint violation.
+    "SchemaViolation",         -- Record changes would violate the DB schema
+    "DataSize",                -- The size of a data chunk or buffer is incorrect
+    "Busy",                    -- Operation cannot complete because system is busy with an earlier operation
+    "ConnectionAborted",       -- Attempt to connect to server aborted
+    "NullArgs",                -- Function call missing argument value(s)
+    "InvalidObject|WrongObjectType|WrongClass", -- An object of a different class was expected
+    "ExecViolation",           -- Execution violation - call must be made from the task that owns the object
+    "Recursion",               -- Detected illegal attempt at recursion
+    "IllegalAddress",          -- Address pointer outside of the process' space
+    "UnbalancedXML",           -- The XML tags do not balance
+    "WouldBlock",              -- The requested operation would block if it were performed at this time
+    "InputOutput",             -- A non-specific I/O error has occurred
+    "LoadModule",              -- Failed to load a module binary
+    "InvalidHandle",           -- A required handle is invalid
+    "Security",                -- A non-specific security violation has occurred
+    "InvalidValue",            -- A value has not passed validation
+    "ServiceUnavailable",      -- The required service process is not running
+    "Deactivated",             -- The object must be activated with the Activate action
+    "LockRequired",            -- A lock is required before accessing this functionality
+    "AlreadyLocked|Locked",    -- Object or resource has already been locked
+    "NoMediaInserted",         -- No media is inserted in the device
+    "CardReaderUnavailable",   -- The requested smart card reader is in use
+    "ProxySSLTunnel",          -- Failed to establish an SSL connection with the proxy server
+    "InvalidHTTPResponse",     -- A valid HTTP response was not received from the server
+    "InvalidReference",        -- The reference is invalid
+    "Exception",               -- An exception was caught
+    "ThreadAlreadyActive",     -- Cannot execute a thread that is already running.
+    "OpenGL",                  -- Failure has been reported from OpenGL
+    "OutsideMainThread",       -- An operation has been attempted that is only possible from within the main thread.
+    "UseSubClass",             -- Requested to use a registered sub-class (not an error).
+    "WrongType",               -- The expected type was not provided.
+    "ThreadNotLocked",         -- Thread objects must be locked prior to activation.
+    "MessageOperation",        -- A message queue operation has failed.
+    "SetVolume",               -- A call to SetVolume() failed.
+    "Decompression",           -- Unspecified failure during decompression of a data stream.
+    "Compression",             -- Unspecified failure during compression of a data stream.
+    "ExpectedFolder",          -- The operation expected a folder path.
+    "Immutable",               -- This operation would break the object's immutable status.
+    "ReadFileToBuffer",        -- A call to ReadFileToBuffer() failed.
+    "Obsolete",                -- This feature is no longer available (obsolete).
+    "CreateResource",          -- Failed to create a new resource.
+    "NotPossible",             -- It is not possible to perform the requested operation.
+    "ResolveSymbol",           -- Failed to resolve a linked library symbol
+    "Function",                -- A function call failed
+    "AlreadyDefined",          -- Attempted to change a value that cannot be redefined.
+    "SetValueNotNumeric",      -- Attempted to set a numeric field with an incompatible value.
+    "SetValueNotString",       -- Attempted to set a string field with an incompatible value.
+    "SetValueNotObject",       -- Attempted to set an object field with an incompatible value.
+    "SetValueNotFunction",     -- Attempted to set a function field with an incompatible value.
+    "SetValueNotPointer",      -- Attempted to set a pointer field with an incompatible value.
+    "SetValueNotArray",        -- Attempted to set an array field with an incompatible value.
+    "SetValueNotLookup",       -- Attempted to set a lookup field with an incompatible value.
+    "InvalidType",             -- The type of a value is invalid.
+    "CompressionStreamError",  -- A compression stream operation has failed.
+    "TaskExecutionFailed",     -- Task or process execution has failed.
+    "InvalidCompression",      -- The compression data is invalid or corrupted.
+    "SanityCheckFailed",       -- A sanity check has failed.
+    "NotAuthorised",           -- Client is not authorised to perform this operation.
+    "UnknownProperty",         -- The specified property is not recognised.
+    "END",
+    { Notified = 0x40000000 }
+  ) -- NB: Any new error messages need to be added to data_errors.c manually.
+
+  constants("ERF", { comment="Special error flags" }, {
+    Notified=0x40000000
+  })
+end
+
+   if (glProgram is "idl-c") then
+      header({ path="system/errors", copyright="Paul Manias © 1996-2026" }, declareErrors)
+   elseif (glProgram is "idl-compile") then
+      declareErrors()
+   end

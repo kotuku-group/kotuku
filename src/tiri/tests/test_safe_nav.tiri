@@ -1,0 +1,817 @@
+-- Flute tests for the safe navigation operators - ?., ?: and ?[
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeFieldOnNil()
+   user = nil
+   name = user?.profile?.details?.name
+   assert(name is nil, "Safe field on nil should yield nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeFieldChain()
+   user = { profile = { name = "Alex" } }
+   name = user.profile.name -- To prove no exception thrown for access
+   name = user?.profile?.name
+   assert(name is "Alex", "Safe field chain should return nested value, got " .. tostring(name))
+   missing = user?.profile?.address
+   assert(missing is nil, "Missing field in chain should yield nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeIndexOnNil()
+   items = nil
+   value = items?[1]
+   assert(value is nil, "Safe index on nil should yield nil, got " .. tostring(value))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeIndexValue()
+   container = { values = { [1] = "First", [2] = "Second" } }
+   value = container?.values?[2]
+   assert(value is "Second", "Safe index should return stored element when present, got " .. tostring(value))
+
+   -- Test with native Tiri array (use separate variable since array != table)
+   arr_container = array<string> { "First", "Second" }
+   value = arr_container?[1]
+   assert(value is "Second", "Safe index should return stored element when present, got " .. tostring(value))
+
+   value = arr_container?[6]
+   assert(value is nil, "Safe index should return nil when index is out of bounds, got " .. tostring(value))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeIndexShortCircuit()
+   calls = 0
+   function nextIndex()
+      calls++
+      return 2
+   end
+   arr = nil
+   value = arr?[nextIndex()]
+   assert(value is nil, "Safe index should produce nil when base is nil")
+   assert(calls is 0, "Index expression must not be evaluated when base is nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeMethodOnNil()
+   calls = 0
+   function argument()
+      calls += 1
+      return "ignored"
+   end
+   target = nil
+   result = target?:speak(argument())
+   assert(result is nil, "Safe method on nil should yield nil")
+   assert(calls is 0, "Method arguments must not be evaluated when base is nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeMethodValue()
+   greeter = { prefix = "Hello" }
+   function greeter:say(name)
+      return self.prefix .. ", " .. name
+   end
+   result = greeter?:say("World")
+   assert(result is "Hello, World", "Safe method should call method when base exists, got " .. tostring(result))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeMethodChain()
+   account = { profile = { email = "user@example.com" } }
+   function account:getProfile()
+      return self.profile
+   end
+   email = account?:getProfile()?.email
+   assert(email is "user@example.com", "Safe method chain should propagate returned table, got " .. tostring(email))
+   missing = nil?:getProfile()?.email
+   assert(missing is nil, "Safe method chain should short-circuit on nil base, got " .. tostring(missing))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testIntegrationWithPresence()
+   guest = nil
+   display = guest?.profile?.name ?? "Guest"
+   assert(display is "Guest", "Presence operator should provide default when safe chain yields nil, got " .. tostring(display))
+   member = { profile = { name = "Chloe" } }
+   memberDisplay = member?.profile?.name ?? "Guest"
+   assert(memberDisplay is "Chloe", "Presence operator should see real value when safe chain succeeds")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavPresenceFallbackVariants()
+   guest = nil
+
+   constantFallback = guest?.profile?.name ?? "Guest"
+   assert(constantFallback is "Guest", "Constant fallback should survive safe navigation presence chain")
+
+   fallbackLabel = "Visitor"
+   localFallback = guest?.profile?.name ?? fallbackLabel
+   assert(localFallback is "Visitor", "Local fallback should be forwarded when chain is nil")
+
+   function computeFallback()
+      return "Computed"
+   end
+   computedFallback = guest?.profile?.name ?? computeFallback()
+   assert(computedFallback is "Computed", "Function fallback should be invoked when chain is nil")
+
+   member = { profile = { name = "Chloe" } }
+   truthyChain = member?.profile?.name ?? "Guest"
+   assert(truthyChain is "Chloe", "Truthy safe navigation chain should bypass the fallback value")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavPresenceInsideCallLosesFallback()
+   guest = nil
+   function capture(value)
+      return value
+   end
+
+   try
+      result = capture(guest?.profile?.name ?? "Guest")
+      assert(result is "Guest", f"BUG: safe-nav + ?? argument currently yields {result} instead of fallback")
+   except ex
+      error("Function call should succeed, err=" .. ex.message)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavPresenceWithSiblingArgumentLosesFallback()
+   guest = nil
+   function capture(first, second)
+      return first, second
+   end
+
+   firstResult, secondResult = capture(guest?.profile?.name ?? "Guest", "suffix")
+   assert(firstResult is "Guest", f"BUG: safe-nav + ?? argument produced {firstResult} instead of fallback")
+   assert(secondResult is "suffix", "BUG: sibling argument should pass through unchanged")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeFieldWithOrQuestion()
+   fallback = { label = "Fallback" }
+   label = fallback?.missingField ?? "Default"
+   assert(label is "Default", "?? should observe nil result from safe field, got " .. tostring(label))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test safe navigation with false values (should not treat as nil)
+
+@Test function testSafeFieldFalseValue()
+   obj = { flag = false }
+   v = obj?.flag
+   assert(v is false, "Safe field should return false, not nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test safe navigation with zero values (should not treat as nil)
+
+@Test function testSafeFieldZeroValue()
+   obj = { count = 0 }
+   v = obj?.count
+   assert(v is 0, "Safe field should return 0, not nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test safe navigation with empty string (should not treat as nil)
+
+@Test function testSafeFieldEmptyString()
+   obj = { text = "" }
+   v = obj?.text
+   assert(v is "", "Safe field should return empty string, not nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test three-level chaining
+
+@Test function testThreeLevelChaining()
+   obj = { a = { b = { c = 123 } } }
+   v = obj?.a?.b?.c
+   assert(v is 123, "Three-level chaining should return nested value")
+
+   obj2 = { a = { b = nil } }
+   v2 = obj2?.a?.b?.c
+   assert(v2 is nil, "Three-level chaining should short-circuit on nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test safe method with multiple arguments
+
+@Test function testSafeMethodMultipleArgs()
+   calculator = {
+      add = function(self, a, b, c)
+         return a + b + c
+      end
+   }
+   result = calculator?:add(1, 2, 3)
+   assert(result is 6, "Safe method should handle multiple arguments, got " .. tostring(result))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test safe index with variable key
+
+@Test function testSafeIndexVariableKey()
+   key = "mykey"
+   obj = { mykey = "myvalue" }
+   v = obj?[key]
+   assert(v is "myvalue", "Safe index should work with variable keys")
+
+   obj2 = nil
+   v2 = obj2?[key]
+   assert(v2 is nil, "Safe index on nil should return nil with variable key")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test mixed safe field and safe index
+
+@Test function testMixedFieldAndIndex()
+   obj = { arr = { [1] = "first", [2] = "second" } }
+   v = obj?.arr?[2]
+   assert(v is "second", "Mixed safe field and index should work")
+
+   obj2 = { arr = nil }
+   v2 = obj2?.arr?[1]
+   assert(v2 is nil, "Mixed safe field and index should short-circuit")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test safe navigation on empty table
+
+@Test function testSafeFieldOnEmptyTable()
+   obj = {}
+   v = obj?.missingField
+   assert(v is nil, "Safe field on empty table should return nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test chaining with methods and fields
+
+@Test function testChainingMethodsAndFields()
+   ef_called = 0
+   service = {
+      data = {
+         value = 42,
+         embedded_function = function(arg1, arg2, arg3)
+            ef_called++
+            assert(arg1 is 1, "Embedded function arg1 mismatch, got " .. tostring(arg1))
+            assert(arg2 is '2', "Embedded function arg2 mismatch, got " .. tostring(arg2))
+            assert(arg3[0] is '3', "Embedded function arg3 mismatch, got " .. tostring(arg3[0]))
+            return 0xff
+         end
+      },
+      getData = function(self)
+         return self.data
+      end
+   }
+   v = service?:getData()?.value
+   assert(v is 42, "Chaining methods and fields should work, got " .. tostring(v))
+
+   nilService = nil
+   v2 = nilService?:getData()?.value
+   assert(v2 is nil, "Chaining methods and fields should short-circuit on nil")
+
+   v = service.data.embedded_function(1, "2", { "3" })
+   assert(v is 255, "Embedded function should return the correct value")
+
+   v = service.data?.embedded_function(1, "2", { "3" })
+   assert(v is 255, "Embedded function should return the correct value")
+
+   v = service.data?.not_embedded_function()
+   assert(not v, "Expected nil for function that doesn't exist")
+
+   assert(ef_called is 2, "Embedded function should have been called 3 times, was called " .. tostring(ef_called) .. " times")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test safe index with numeric keys
+
+@Test function testSafeIndexNumericKeys()
+   arr = { 10, 20, 30, 40 }
+   v = arr?[2]
+   assert(v is 30, "Safe index should work with numeric keys")
+
+   nilArr = nil
+   v2 = nilArr?[1]
+   assert(v2 is nil, "Safe index on nil array should return nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test complex chaining scenario
+
+@Test function testComplexChaining()
+   data = {
+      users = {
+         [1] = {
+            profile = {
+               settings = {
+                  theme = "dark"
+               }
+            }
+         }
+      }
+   }
+   theme = data?.users?[1]?.profile?.settings?.theme
+   assert(theme is "dark", "Complex chaining should work")
+
+   data2 = { users = { [1] = { profile = nil } } }
+   theme2 = data2?.users?[1]?.profile?.settings?.theme
+   assert(theme2 is nil, "Complex chaining should short-circuit")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test safe method returning nil
+
+@Test function testSafeMethodReturningNil()
+   obj = {
+      getNil = function(self)
+         return nil
+      end
+   }
+   v = obj?:getNil()
+   assert(v is nil, "Safe method can return nil as a valid result")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test safe navigation with if-empty on each level.  NB: Failure could mean a problem with either operator, or
+-- interference of one with the other.
+
+@Test function testChainingWithIfEmpty()
+   obj = { a = { b = nil } }
+   v = (obj?.a?.b?.c) ?? "default"
+   assert(v is "default", "Chaining with if-empty should use default on nil, got " .. tostring(v))
+
+   obj2 = { a = { b = { c = "value" } } }
+   v2 = (obj2?.a?.b?.c) ?? "default"
+   assert(v2 is "value", "Chaining with if-empty should use value when present")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Tiri Array Safe Navigation Tests
+
+@Test function testTiriArraySafeIndexBasic()
+   -- Test different array element types with safe navigation
+   intArr = array<int> { 10, 20, 30, 40, 50 }
+   assert(intArr?[0] is 10, "Safe index on int array should return first element")
+   assert(intArr?[2] is 30, "Safe index on int array should return middle element")
+   assert(intArr?[4] is 50, "Safe index on int array should return last element")
+   assert(intArr?[5] is nil, "Safe index out of bounds should return nil")
+   assert(intArr?[100] is nil, "Safe index far out of bounds should return nil")
+
+   doubleArr = array<double> { 1.5, 2.5, 3.5 }
+   assert(doubleArr?[0] is 1.5, "Safe index on double array should work")
+   assert(doubleArr?[3] is nil, "Safe index out of bounds on double array should return nil")
+
+   byteArr = array<byte> { 255, 128, 0 }
+   assert(byteArr?[0] is 255, "Safe index on byte array should work")
+   assert(byteArr?[1] is 128, "Safe index on byte array should return correct value")
+   assert(byteArr?[3] is nil, "Safe index out of bounds on byte array should return nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testTiriArraySafeIndexVariable()
+   -- Test safe navigation with variable indices
+   arr = array<string> { "zero", "one", "two", "three" }
+
+   idx = 0
+   assert(arr?[idx] is "zero", "Safe index with variable index 0 should work")
+
+   idx = 2
+   assert(arr?[idx] is "two", "Safe index with variable index should work")
+
+   idx = 10
+   assert(arr?[idx] is nil, "Safe index with out-of-bounds variable index should return nil")
+
+   -- Test with computed index
+   base = 1
+   assert(arr?[base + 1] is "two", "Safe index with computed index should work")
+   assert(arr?[base + 100] is nil, "Safe index with out-of-bounds computed index should return nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testTiriArraySafeIndexNilArray()
+   -- Test safe navigation on nil array variable
+   nilArr = nil
+   assert(nilArr?[0] is nil, "Safe index on nil should return nil")
+   assert(nilArr?[5] is nil, "Safe index on nil with any index should return nil")
+
+   -- Verify index expression is not evaluated when base is nil
+   indexCalls = 0
+   function getIndex()
+      indexCalls++
+      return 0
+   end
+   result = nilArr?[getIndex()]
+   assert(result is nil, "Safe index on nil should return nil")
+   assert(indexCalls is 0, "Index expression should not be evaluated when array is nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testTiriArraySafeIndexChained()
+   -- Test chained safe navigation with arrays
+   data = {
+      items = array<int> { 100, 200, 300 }
+   }
+   assert(data?.items?[0] is 100, "Chained safe navigation to array should work")
+   assert(data?.items?[2] is 300, "Chained safe navigation to array last element should work")
+   assert(data?.items?[5] is nil, "Chained safe navigation with out-of-bounds should return nil")
+
+   -- Test with nil intermediate
+   data2 = { items = nil }
+   assert(data2?.items?[0] is nil, "Chained safe navigation with nil intermediate should return nil")
+
+   -- Test with nil base
+   data3 = nil
+   assert(data3?.items?[0] is nil, "Chained safe navigation with nil base should return nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testTiriArraySafeIndexWithFallback()
+   -- Test safe array navigation combined with ?? operator
+   arr = array<string> { "first", "second" }
+
+   v = arr?[0] ?? "default"
+   assert(v is "first", "Safe index with fallback should return value when present")
+
+   v = arr?[10] ?? "default"
+   assert(v is "default", "Safe index out of bounds with fallback should return default")
+
+   nilArr = nil
+   v = nilArr?[0] ?? "default"
+   assert(v is "default", "Safe index on nil with fallback should return default")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testTiriArraySafeIndexNestedArrays()
+   -- Test arrays containing other arrays (if supported)
+   outer = array<any> { array<int> { 1, 2, 3 }, array<int> { 4, 5, 6 } }
+
+   inner = outer?[0]
+   assert(inner, "Safe index should return nested array")
+   assert(inner?[0] is 1, "Safe index on nested array should work")
+   assert(inner?[2] is 3, "Safe index on nested array should return correct value")
+
+   -- Out of bounds on outer
+   assert(outer?[5] is nil, "Safe index out of bounds on outer array should return nil")
+
+   -- Out of bounds on inner (if we got a valid inner)
+   inner2 = outer?[1]
+   assert(inner2?[10] is nil, "Safe index out of bounds on inner array should return nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testTiriArraySafeIndexEmptyArray()
+   -- Test safe navigation on empty arrays
+   emptyInt = array.new(0, 'int')
+   assert(emptyInt?[0] is nil, "Safe index on empty array should return nil")
+
+   emptyStr = array.new(0, 'string')
+   assert(emptyStr?[0] is nil, "Safe index on empty string array should return nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testTiriArraySafeIndexInLoop()
+   -- Test safe navigation in loop context
+   arr = array<int> { 10, 20, 30 }
+   results = {}
+
+   for i in {0..5} do
+      results[i] = arr?[i] ?? -1
+   end
+
+   assert(results[0] is 10, "Safe index in loop should work for index 0")
+   assert(results[1] is 20, "Safe index in loop should work for index 1")
+   assert(results[2] is 30, "Safe index in loop should work for index 2")
+   assert(results[3] is -1, "Safe index in loop should return fallback for out of bounds")
+   assert(results[4] is -1, "Safe index in loop should return fallback for out of bounds")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testTiriArraySafeIndexTableInArray()
+   -- Test array containing tables
+   arr = array<table> { { name = "Alice" }, { name = "Bob" }, { name = "Carol" } }
+
+   assert(arr?[0]?.name is "Alice", "Safe navigation through array to table field should work")
+   assert(arr?[1]?.name is "Bob", "Safe navigation through array to table field should work")
+   assert(arr?[5]?.name is nil, "Safe navigation with out-of-bounds array should return nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Safe navigation assignment tests
+
+@Test function testSafeNavAssignBasic()
+   obj = { }
+   obj?.field = 42
+   assert(obj.field is 42, "Safe field assignment should store value on non-nil base")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignNilBase()
+   obj = nil
+   obj?.field = 42
+   assert(obj is nil, "Safe field assignment should skip when base is nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignChained()
+   data = { toolbar = { items = { false, false, false } } }
+   data?.toolbar?.items?[1] = true
+   assert(data.toolbar.items[1] is true, "Safe chained assignment should reach final element")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignMiddleNil()
+   data = { toolbar = nil }
+   data?.toolbar?.items?[0] = true
+   assert(data.toolbar is nil, "Safe chained assignment should skip when middle hop is nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignShortCircuitValue()
+   calls = 0
+   function computeValue()
+      calls++
+      return 42
+   end
+
+   obj = nil
+   obj?.field = computeValue()
+   assert(calls is 0, "RHS should not be evaluated when safe assignment is skipped")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignMixed()
+   data = { inner = { value = 1 } }
+   data.inner?.value = 99
+   assert(data.inner.value is 99, "Mixed safe/non-safe chain should assign through final field")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignIndex()
+   arr = array<int> { 10, 20, 30 }
+   arr?[2] = 99
+   assert(arr[2] is 99, "Safe index assignment should store through array-specialised path")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignNestedIndex()
+   data = { items = array<int> { 5, 6, 7 } }
+   data?.items?[0] = 88
+   assert(data.items[0] is 88, "Safe member/index assignment should update nested array value")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignTiriArray()
+   holder = { values = array<int> { 1, 2, 3 } }
+   holder?.values?[1] = 77
+   assert(holder.values[1] is 77, "Safe assignment into Tiri array should preserve array semantics")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignObjectField()
+   clock = obj.new('time')
+   clock?.year = 2032
+   assert(clock.year is 2032, "Safe assignment should preserve object field stores")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignSelfAliasingRhs()
+   state = {
+      users = {
+         { count = 1 },
+         { count = 2 }
+      }
+   }
+
+   state?.users?[1].count = state.users[1].count + 5
+   assert(state.users[1].count is 7, "Safe assignment should preserve LHS operands while evaluating RHS")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignIndexExprShortCircuit()
+   calls = 0
+   function nextIndex()
+      calls++
+      return 0
+   end
+
+   data = nil
+   data?.items?[nextIndex()] = 10
+   assert(calls is 0, "Index expression should not be evaluated when earlier safe hop is nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignCompoundAdd()
+   store = { value = 1 }
+   store?.value += 2
+   assert(store.value is 3, "Safe navigation compound assignment should update non-nil target")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignMultiTargetMixed()
+   a = { value = 1 }
+   b = 0
+   a?.value, b = 3, 4
+   assert(a.value is 3, "Safe navigation target should store first mapped value in multi-target assignment")
+   assert(b is 4, "Non-safe later target should still store its mapped value")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignCompoundSkip()
+   calls = 0
+   function delta()
+      calls++
+      return 5
+   end
+
+   store = nil
+   store?.value += delta()
+   assert(calls is 0, "Compound safe-nav assignment should not evaluate RHS when base is nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignIfNil()
+   store = { value = nil, present = 8 }
+   store?.value ?= 42
+   store?.present ?= 99
+   assert(store.value is 42, "Safe-nav ?= should assign when terminal field is nil")
+   assert(store.present is 8, "Safe-nav ?= should skip when terminal field is non-nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignIfNilSkipBase()
+   calls = 0
+   function fallback()
+      calls++
+      return 12
+   end
+
+   store = nil
+   store?.value ?= fallback()
+   assert(calls is 0, "Safe-nav ?= should skip RHS when a safe hop is nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignIfEmpty()
+   store = { value = '', flag = false, present = 'ready' }
+   store?.value ??= 'filled'
+   store?.flag ??= true
+   store?.present ??= 'ignored'
+   assert(store.value is 'filled', "Safe-nav ??= should assign on empty string")
+   assert(store.flag is true, "Safe-nav ??= should assign on false")
+   assert(store.present is 'ready', "Safe-nav ??= should skip on truthy value")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignIfEmptyShortCircuitRhs()
+   calls = 0
+   function fallback()
+      calls++
+      return 'filled'
+   end
+
+   store = { value = 'present' }
+   store?.value ??= fallback()
+   assert(calls is 0, "Safe-nav ??= should not evaluate RHS when terminal value is already truthy")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignMultiTargetWithCall()
+   function values()
+      return 10, 20, 30
+   end
+
+   safe_store = nil
+   second = 0
+   third = 0
+   safe_store?.value, second, third = values()
+   assert(second is 20, "Multi-target call assignment should preserve value mapping after skipped safe target")
+   assert(third is 30, "Multi-target call assignment should preserve later mapped values")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignMultiTargetPartialSkip()
+   a = nil
+   b = { value = 1 }
+   c = 0
+   a?.value, b.value, c = 10, 11, 12
+   assert(b.value is 11, "Later non-safe target should still store when earlier safe target skips")
+   assert(c is 12, "Final target should still receive its mapped value when earlier safe target skips")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignCompoundArray()
+   holder = { items = array<int> { 1, 2, 3 } }
+   holder?.items?[1] += 8
+   assert(holder.items[1] is 10, "Compound safe-nav assignment should preserve array store behaviour")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignCompoundObjectField()
+   clock = obj.new('time')
+   clock.year = 2020
+   clock?.year += 3
+   assert(clock.year is 2023, "Compound safe-nav assignment should preserve object field stores")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignFunctionValue()
+   obj = { }
+   obj?.method = function()
+      return 123
+   end
+
+   assert(type(obj.method) is 'function', "Safe-nav function assignment should store a function value")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignFunctionValueSkip()
+   created = 0
+   function makeMethod()
+      created++
+      return function()
+         return 'skipped'
+      end
+   end
+
+   obj = nil
+   obj?.method = makeMethod()
+   assert(created is 0, "Function-valued RHS should not be evaluated when safe-nav assignment skips")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavAssignFunctionValueCall()
+   obj = { }
+   obj?.method = function()
+      return 'callable'
+   end
+
+   result = obj.method()
+   assert(result is 'callable', "Stored function from safe-nav assignment should be callable")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function testSafeNavFunctionStmtUnsupported()
+   try
+      exec([[
+         obj = { }
+         function obj?.method()
+            return 1
+         end
+      ]])
+   except ex
+      assert(ex.message:find('Parsing failed') != nil or ex.message:find('Unsupported') != nil or ex.message:find('Unexpected') != nil or ex.message:find('Expected Token') != nil,
+         'Expected function-statement safe-nav form to remain unsupported, got: ' .. ex.message)
+      return
+   end
+
+   error('function obj?.method() ... end should remain unsupported')
+end

@@ -1,0 +1,481 @@
+-- Flute tests that need to exercise the JIT in specific ways.
+
+local glCfg
+
+@BeforeAll
+function SetupJitTests()
+   jit.on()
+   jit.opt.start()  -- Reset to default JIT options before starting tests.
+   glCfg = obj.new('config', { flags=CNF_NEW })
+end
+
+@AfterAll
+function TeardownJitTests()
+   jit.opt.start()
+   glCfg.free()
+end
+
+cached_trace_no = nil
+cached_trace_info = nil
+outer_upvalue = 37
+
+function build_trace()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   function traced_sum(Count)
+      running_total = 0
+      for i = 1, Count do
+         running_total += i
+      end
+      return running_total
+   end
+
+   for i = 1, 80 do
+      traced_sum(10)
+   end
+
+   for trace_no = 1, 20 do
+      info = jit.util.traceInfo(trace_no)
+      if info then
+         cached_trace_no = trace_no
+         cached_trace_info = info
+         return trace_no, info
+      end
+   end
+
+   error("Failed to create a JIT trace for inspection")
+end
+
+function get_trace()
+   if cached_trace_no != nil and cached_trace_info != nil then
+      return cached_trace_no, cached_trace_info
+   end
+   return build_trace()
+end
+
+function sample_vararg(Left, Right, ...)
+   padding = 1
+   return Left + Right + padding
+end
+
+function upvalue_consumer(Multiplier)
+   extra = outer_upvalue * Multiplier
+   return extra
+end
+
+function constant_target(Value)
+   offset = 12345.6789  -- Non-integer to ensure it is stored in the numeric constant pool.
+   label = "jit-constant"
+   if Value > 0 then
+      return Value + offset, label
+   end
+   return offset, label
+end
+
+@Test function EngineModeToggles()
+   jit.on()
+   enabled_on = jit.status()
+   assert(enabled_on is true, "jit.on() should enable the compiler")
+
+   jit.off()
+   enabled_off = jit.status()
+   assert(enabled_off is false, "jit.off() should disable the compiler")
+
+   jit.on()
+   enabled_again, flags = jit.status()
+   assert(enabled_again is true, "jit.on() should restore the compiler state")
+   assert(type(flags) is "table", "jit.status() should return a flags table as the second result")
+
+   -- Verify all values in the flags table are booleans
+   for name, value in pairs(flags) do
+      assert(type(name) is "string", "Flag keys should be strings")
+      assert(type(value) is "boolean", f"Flag '{name}' should be a boolean, got {type(value)}")
+   end
+
+   -- Verify known optimisation flags are present
+   assert(flags.fold != nil, "Expected 'fold' optimisation flag in status table")
+   assert(flags.cse != nil, "Expected 'cse' optimisation flag in status table")
+end
+
+@Test function FuncInfoForLuaFunction()
+   info = jit.util.funcInfo(sample_vararg, 0)
+   assert(info.params is 2, "Expected sample_vararg to report two parameters")
+   assert(info.isVarArg is true, "Vararg flag should be set for sample_vararg")
+   assert(info.lastLineDefined >= info.lineDefined, "Line range should be ordered")
+   assert(info.stackSlots > 0, "Stack slots should be reported")
+   assert(info.byteCodes > 0, "Bytecode count should be reported")
+   assert(info.proto != nil, "Proto reference should be available for Lua functions")
+end
+
+@Test function FuncInfoForCFunction()
+   info = jit.util.funcInfo(print)
+   if info.ffid != nil then
+      assert(type(info.ffid) is "number", "FFI id should be numeric when present")
+   end
+   assert(type(info.addr) is "number", "C function address should be numeric")
+   assert(type(info.upvalues) is "number", "C function upvalue count should be numeric")
+end
+
+@Test function FuncBCAndFunck()
+   info = jit.util.funcInfo(constant_target, 0)
+   first_ins, mode = jit.util.funcBC(constant_target, 0)
+   assert(type(first_ins) is "number", "funcBC should return an instruction")
+   assert(type(mode) is "number", "funcBC should return an instruction mode")
+
+   invalid_ins, invalid_mode = jit.util.funcBC(constant_target, info.byteCodes)
+   assert(invalid_ins is nil and invalid_mode is nil, "Out-of-range funcBC should return nothing")
+
+   constants = { }
+   numeric_count = 0
+   for idx = 0, info.nConsts - 1 do
+      value = jit.util.funcK(constant_target, idx)
+      if value != nil then
+         constants[numeric_count] = value
+         numeric_count++
+      end
+   end
+
+   found_number = false
+   for i = 0, numeric_count - 1 do
+      if type(constants[i]) is "number" then found_number = true end
+   end
+   assert(found_number is true, "jit.util.funcK should expose numeric constants")
+
+   gc_values = { }
+   gc_count = 0
+   for idx = -1, -info.gcConsts, -1 do
+      value = jit.util.funcK(constant_target, idx)
+      if value != nil then
+         gc_values[gc_count] = value
+         gc_count++
+      end
+   end
+
+   found_label = false
+   for i = 0, gc_count - 1 do
+      if type(gc_values[i]) is "string" then found_label = true end
+   end
+   assert(found_label is true, "jit.util.funcK should expose GC constants")
+end
+
+@Test function FuncUpvalueName()
+   name = jit.util.funcUName(upvalue_consumer, 0)
+   assert(name is "outer_upvalue", "First upvalue name should match outer_upvalue")
+end
+
+@Test function TraceInfoAndIR()
+   trace_no, info = get_trace()
+
+   assert(type(info.nins) is "number" and info.nins > 0, "traceInfo should report instruction count")
+   assert(type(info.link) is "number", "traceInfo link should be numeric")
+   assert(type(info.linktype) is "string", "traceInfo linktype should be a string")
+
+   allowed_links = {
+      root = true,
+      loop = true,
+      ["tail-recursion"] = true,
+      ["up-recursion"] = true,
+      ["down-recursion"] = true,
+      interpreter = true,
+      ["return"] = true,
+      stitch = true,
+      none = true
+   }
+   assert(allowed_links[info.linktype] is true, "Unexpected linktype: " .. tostring(info.linktype))
+
+   ir_mode, ir_ot, ir_op1, ir_op2, ir_prev = jit.util.traceIR(trace_no, info.nins)
+   assert(type(ir_mode) is "number", "traceIR should return mode information")
+   assert(type(ir_ot) is "number", "traceIR should return type information")
+   assert(type(ir_op1) is "number", "traceIR should return first operand")
+   assert(type(ir_op2) is "number", "traceIR should return second operand")
+   assert(type(ir_prev) is "number", "traceIR should return previous reference")
+end
+
+@Test function TraceConstantsAndSnapshot()
+   trace_no, info = get_trace()
+   if type(info.nk) is "number" and info.nk <= 0 then
+      error("Trace did not expose any constants for verification")
+   end
+
+   k_value, k_type, k_slot = nil, nil, nil
+   for idx = -info.nk, -1 do
+      value, kind, slot = jit.util.traceK(trace_no, idx)
+      if value != nil then
+         k_value, k_type, k_slot = value, kind, slot
+         break
+      end
+   end
+   assert(k_value != nil, "traceK should return at least one constant for available trace constants")
+   assert(type(k_type) is "number", "traceK should return a type tag")
+   if k_slot != nil then
+      assert(type(k_slot) is "number", "traceK slot should be numeric when present")
+   end
+
+   snapshot = jit.util.traceSnap(trace_no, 0)
+   assert(snapshot != nil, "traceSnap should provide a snapshot table")
+   assert(type(snapshot[0]) is "number", "Snapshot should store reference at index 0")
+   assert(type(snapshot[1]) is "number", "Snapshot should store slot count at index 1")
+   assert(#snapshot >= 3, "Snapshot should include map entries and sentinel")
+end
+
+@Test function TraceMachineCodeAndExitStub()
+   trace_no = get_trace()
+   mcode, addr, loop_flag = jit.util.traceMC(trace_no)
+   assert(mcode != nil, "traceMC should return machine code for hot traces")
+   assert(type(addr) is "number", "traceMC should return a code address")
+   assert(type(loop_flag) is "number", "traceMC should return loop flag information")
+   if #mcode <= 0 then
+      error("traceMC returned an empty machine code buffer")
+   end
+
+   exit_addr = jit.util.traceExitStub(trace_no, 0)
+   if exit_addr is nil then
+      exit_addr = jit.util.traceExitStub(0)
+   end
+   assert(exit_addr != nil, "traceExitStub should return a stub address")
+   assert(type(exit_addr) is "number", "traceExitStub should return a numeric address")
+end
+
+@Test function IrCallAddrLookup()
+   addr = jit.util.irCallAddr(0)
+   assert(addr != nil, "irCallAddr(0) should return a function pointer")
+   assert(type(addr) is "number", "irCallAddr(0) should be numeric")
+
+   invalid = jit.util.irCallAddr(99999)
+   assert(invalid is nil, "Out-of-range irCallAddr should return nil")
+end
+
+--[[
+The JitAttachTraceEvent() test has been observed to intermittently trigger this LuaJIT assertion failure:
+
+LuaJIT ASSERT FAILED: /home/paul/kotuku/src/tiri/jit/src/lj_trace.cpp:798: lj_trace_ins: trace recorder mutated stack
+
+This means lj_trace_ins saw L->base or L->top change across the trace recorder call, which shouldn't happen unless the recorder aborted. The rarity points to stack growth or re-entrancy triggered only in some runs.  So far this problem has only been noticed in Linux and ignorance of the assert does not cause a crash in release builds.
+
+Areas for investigation:
+
+- src/tiri/jit/src/lj_trace.cpp:779 - lj_trace_ins snapshots base/top and asserts if they change while J->state is still recording; check what trace_state does for the failing event.
+- src/tiri/jit/src/runtime/lj_vmevent.cpp:19 - lj_vmevent_prepare calls lj_state_checkstack, which can grow the stack and move L->base/L->top; if a vmevent fires during recording (e.g., jit.attach), this can trip the assert without a logical stack leak.
+- src/tiri/jit/src/lib/lib_jit.cpp:117 and the JitAttachTraceEvent test code - confirm the event handler is stack-neutral (no extra pushes, no yields/errors) and doesn't indirectly trigger stack growth.
+- src/tiri/jit/src/runtime/lj_state.cpp:145 - stack growth routine; if any trace-time path can call lj_state_checkstack, pointer changes are expected and the assert may be too strict for that case.
+- src/tiri/jit/src/lj_record.cpp plus generated src/tiri/jit/src/lj_bcdef.h - verify any custom bytecodes or modified stack effects are reflected in the recorder; a mismatched stack effect can show up as a base/top change under recording.
+--]]
+
+@Test(hotpath=1000) function JitAttachTraceEvent()
+   cached_trace_no = nil
+   cached_trace_info = nil
+
+   trace_events = 0
+   function trace_handler(TraceNo, Reason)
+      trace_events++
+   end
+
+   jit.attach(trace_handler, "trace")
+   build_trace()
+   jit.attach(trace_handler)
+
+   assert(trace_events > 0, "Trace handler should run at least once")
+end
+
+@Test(hotpath=100) function ArrayIteratorTraces()
+   cached_trace_no = nil
+   cached_trace_info = nil
+
+   function ensure_trace(IterFunc)
+      jit.on()
+      jit.flush()
+      jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+      function traced_loop(Count)
+         arr = array<int> { 1, 2, 3, 4 }
+         sum = 0
+         for i = 1, Count do
+            for idx, val in IterFunc(arr) do
+               sum += val
+            end
+         end
+         return sum
+      end
+
+      for i = 1, 80 do
+         traced_loop(3)
+      end
+
+      for trace_no = 1, 20 do
+         info = jit.util.traceInfo(trace_no)
+         if info != nil then
+            return true
+         end
+      end
+
+      return false
+   end
+
+   assert(ensure_trace(ipairs) is true, "Expected array ipairs to produce a JIT trace")
+   assert(ensure_trace(pairs) is true, "Expected array pairs to produce a JIT trace")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test JIT recording of BC_OBGETF (object field get)
+-- Without JIT support, the trace recorder would abort with NYIBC (Not Yet Implemented Bytecode).
+
+@Test(hotpath=50) function JITObjectFieldGet()
+   cached_trace_no = nil
+   cached_trace_info = nil
+
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   -- Hot loop accessing object fields - should trigger JIT trace recording
+   function traced_field_access(Count)
+      sum = 0
+      for i = 1, Count do
+         p = glCfg.path   -- BC_OBGETF
+         f = glCfg.flags  -- BC_OBGETF
+         sum += 1
+      end
+      return sum
+   end
+
+   for i = 1, 20 do
+      traced_field_access(10)
+   end
+
+   -- Check if a trace was created
+   trace_found = false
+   for trace_no = 1, 30 do
+      info = jit.util.traceInfo(trace_no)
+      if info != nil then
+         trace_found = true
+         break
+      end
+   end
+
+   assert(trace_found is true, "Expected BC_OBGETF to produce a JIT trace instead of aborting")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test JIT recording of BC_OBSETF (object field set)
+
+@Test(hotpath=50) function JITObjectFieldSet()
+   cached_trace_no = nil
+   cached_trace_info = nil
+
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   -- Hot loop writing object fields - should trigger JIT trace recording
+   function traced_field_set(Count)
+      for i = 1, Count do
+         glCfg.flags = 0 -- BC_OBSETF
+         glCfg.path = "temp:test.cfg"
+      end
+   end
+
+   for i = 1, 20 do
+      traced_field_set(10)
+   end
+
+   -- Check if a trace was created
+   trace_found = false
+   for trace_no = 1, 30 do
+      info = jit.util.traceInfo(trace_no)
+      if info != nil then
+         trace_found = true
+         break
+      end
+   end
+
+   assert(trace_found is true, "Expected BC_OBSETF to produce a JIT trace instead of aborting")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test JIT optimised writes to numeric object fields (FD_INT, FD_INT64).
+-- Uses the Time class which has simple numeric fields without virtual setters.
+
+@Test(hotpath=50) function JITObjectFieldSetNumeric()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   local t = obj.new('time')
+
+   -- Hot loop writing integer fields - exercises the FD_INT XSTORE path
+   function traced_int_write(Count)
+      for i = 1, Count do
+         t.year = i
+         t.month = 6
+         t.day = i + 10
+      end
+   end
+
+   for i = 1, 20 do
+      traced_int_write(10)
+   end
+
+   -- Verify the final values are correct (last iteration: i=10)
+   assert(t.year is 10, f"Expected year=10, got {t.year}")
+   assert(t.month is 6, f"Expected month=6, got {t.month}")
+   assert(t.day is 20, f"Expected day=20, got {t.day}")
+
+   -- Check if a trace was created
+   trace_found = false
+   for trace_no = 1, 30 do
+      info = jit.util.traceInfo(trace_no)
+      if info != nil then
+         trace_found = true
+         break
+      end
+   end
+
+   assert(trace_found is true, "Expected numeric field writes to produce a JIT trace")
+
+   t.free()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test JIT optimised writes to FD_INT64 fields and double-to-integer coercion.
+
+@Test(hotpath=50) function JITObjectFieldSetInt64()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   local t = obj.new('time')
+
+   -- Hot loop writing int64 fields - exercises the FD_INT64 XSTORE path
+   function traced_int64_write(Count)
+      for i = 1, Count do
+         t.systemTime = i * 1000000
+      end
+   end
+
+   for i = 1, 20 do
+      traced_int64_write(10)
+   end
+
+   -- Verify the final value (last iteration: i=10)
+   assert(t.systemTime is 10000000, f"Expected systemTime=10000000, got {t.systemTime}")
+
+   -- Test double-to-integer truncation (3.7 should become 3 for int fields)
+   function traced_double_to_int(Count)
+      for i = 1, Count do
+         t.year = 2025.7
+         t.month = 11.9
+      end
+   end
+
+   jit.flush()
+   for i = 1, 20 do
+      traced_double_to_int(10)
+   end
+
+   assert(t.year is 2025, f"Expected year=2025 (truncated from 2025.7), got {t.year}")
+   assert(t.month is 11, f"Expected month=11 (truncated from 11.9), got {t.month}")
+
+   t.free()
+end

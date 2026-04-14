@@ -11,7 +11,7 @@
     <id>7c9e7894</id>
     <idstring>TIME</idstring>
     <category>System</category>
-    <copyright>Paul Manias 1996-2025</copyright>
+    <copyright>Paul Manias 1996-2026</copyright>
     <description>
 <p>The Time class is available for programs that require time and date management in a multi-platform manner.</p>
 <p>To get the current system time, use the <action>Query</action> action.</p></description>

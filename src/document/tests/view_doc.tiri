@@ -1,0 +1,29 @@
+
+   import 'gui/window'
+   import 'gui/scrollbar'
+
+   glScript = obj.find('self')
+
+   win = gui.window({ title='Document Test', insideWidth=1024, insideHeight=800, center=true })
+
+   src_file = arg('file', 'test.rpl')
+
+   doc = win:clientViewport().new('document', {
+      path = glScript.workingPath .. src_file .. '#Index'
+   })
+
+   page_height = doc.pageHeight
+   if (page_height < 800) then win:resizeClientArea(nil, doc.pageHeight) end
+
+   scrollbar = gui.scrollbar({
+      target = win:clientViewport(),
+      view   = doc.view,
+      page   = doc.page,
+      direction = 'all'
+   })
+
+   _, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   print(xml_str)
+
+   win:show()
+   processing.sleep()

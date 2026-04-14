@@ -1,0 +1,506 @@
+-- Comprehensive test suite for ternary operator in Tiri
+-- condition ? true_expr :> false_expr
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+-- Basic ternary tests
+
+@Test function BasicTrue()
+   v = true ? "A" :> "B"
+   assert(v is "A", "Failed basic true: expected 'A', got " .. tostring(v))
+end
+
+@Test function BasicFalse()
+   v2 = false ? "A" :> "B"
+   assert(v2 is "B", "Failed basic false: expected 'B', got " .. tostring(v2))
+end
+
+-- Extended falsey semantics tests for full ternary
+@Test function ExtendedFalseyNil()
+   v = nil ? "A" :> "B"
+   assert(v is "B", "Failed nil: expected 'B', got " .. tostring(v))
+end
+
+@Test function ExtendedFalseyZero()
+   v = 0 ? "A" :> "B"
+   assert(v is "B", "Failed zero: expected 'B', got " .. tostring(v))
+end
+
+@Test function ExtendedFalseyEmptyString()
+   v = "" ? "A" :> "B"
+   assert(v is "B", "Failed empty string: expected 'B', got " .. tostring(v))
+end
+
+@Test function ExtendedFalseyFalse()
+   v = false ? "A" :> "B"
+   assert(v is "B", "Failed false: expected 'B', got " .. tostring(v))
+end
+
+@Test function ExtendedTruthyNonZero()
+   v = 5 ? "A" :> "B"
+   assert(v is "A", "Failed non-zero: expected 'A', got " .. tostring(v))
+end
+
+@Test function ExtendedTruthyNonEmptyString()
+   v = "hello" ? "A" :> "B"
+   assert(v is "A", "Failed non-empty string: expected 'A', got " .. tostring(v))
+end
+
+-- Short-circuit tests
+@Test function ShortCircuitTrue()
+   called = false
+
+   function false_branch()
+      called = true
+      return "B"
+   end
+
+   -- This setup results in run-time evaluation
+
+   function truth()
+      return true
+   end
+   is_true = truth()
+
+   v = is_true ? "A" :> false_branch()
+   assert(v is "A", "Failed short-circuit true")
+   assert(not called, "False branch should not be called")
+
+   -- This setup can be evaluated at compile-time
+
+   v = true ? "A" :> false_branch()
+   assert(v is "A", "Failed short-circuit true")
+   assert(not called, "False branch should not be called")
+end
+
+@Test function ShortCircuitFalse()
+   called = false
+   function true_branch()
+      called = true
+      return "A"
+   end
+   v = false ? true_branch() :> "B"
+   assert(v is "B", "Failed short-circuit false")
+   assert(not called, "True branch should not be called")
+end
+
+-- Nested ternary (right-associative)
+@Test function NestedRightAssociative()
+   v = true ? (false ? "A" :> "B") :> "C"
+   -- Parses as: true ? (false ? "A" :> "B") :> "C"
+   -- Result: false ? "A" :> "B" = "B"
+   assert(v is "B", "Failed nested: expected 'B', got " .. tostring(v))
+end
+
+@Test function NestedMultiLevel()
+   v = false ? "A" :> true ? "B" :> "C"
+   -- Parses as: false ? "A" :> (true ? "B" :> "C")
+   -- Result: true ? "B" :> "C" = "B"
+   assert(v is "B", "Failed multi-level nested: expected 'B', got " .. tostring(v))
+end
+
+-- Runtime condition tests
+@Test function RuntimePositive()
+   x = 5
+   v = x > 0 ? "positive" :> "non-positive"
+   assert(v is "positive", "Failed runtime positive: expected 'positive', got " .. tostring(v))
+end
+
+@Test function RuntimeNegative()
+   x = -5
+   v = x > 0 ? "positive" :> "non-positive"
+   assert(v is "non-positive", "Failed runtime negative: expected 'non-positive', got " .. tostring(v))
+end
+
+-- Precedence tests
+@Test function PrecedenceArithmetic()
+   a, b = 5, 3
+   v = a > b ? a :> b
+   assert(v is 5, "Failed precedence: expected 5, got " .. tostring(v))
+end
+
+@Test function PrecedenceComparison()
+   a, b = 3, 5
+   v = a > b ? a :> b
+   assert(v is 5, "Failed precedence comparison: expected 5, got " .. tostring(v))
+end
+
+-- Complex expressions in branches
+@Test function ComplexExpressions()
+   a, b = 10, 20
+   v = a > b ? a + b :> a * b
+   assert(v is 200, "Failed complex expressions: expected 200, got " .. tostring(v))
+end
+
+@Test function FunctionCallInBranch()
+   function double(x)
+      return x * 2
+   end
+   x = 5
+   v = x > 0 ? double(x) :> 0
+   assert(v is 10, "Failed function call in branch: expected 10, got " .. tostring(v))
+end
+
+-- Assignment tests
+@Test function Assignment()
+   result = true ? "yes" :> "no"
+   assert(result is "yes", "Failed assignment: expected 'yes', got " .. tostring(result))
+end
+
+@Test function MultipleAssignments()
+   a = true ? 1 :> 2
+   b = false ? 3 :> 4
+   assert(a is 1 and b is 4, "Failed multiple assignments")
+end
+
+-- Compile-time constant optimization tests
+@Test function ConstantTrue()
+   v = true ? "A" :> error("Should not be called")
+   assert(v is "A", "Failed constant true")
+end
+
+@Test function ConstantFalse()
+   v = false ? error("Should not be called") :> "B"
+   assert(v is "B", "Failed constant false")
+end
+
+@Test function ConstantZero()
+   v = 0 ? error("Should not be called") :> "B"
+   assert(v is "B", "Failed constant zero")
+end
+
+@Test function ConstantEmptyString()
+   v = "" ? error("Should not be called") :> "B"
+   assert(v is "B", "Failed constant empty string")
+end
+
+@Test function ConstantNonZero()
+   v = 5 ? "A" :> error("Should not be called")
+   assert(v is "A", "Failed constant non-zero")
+end
+
+@Test function ConstantNonEmptyString()
+   v = "hello" ? "A" :> error("Should not be called")
+   assert(v is "A", "Failed constant non-empty string")
+end
+
+-- Table/field tests
+@Test function TableField()
+   t = { value = 10 }
+   v = t.value > 5 ? "high" :> "low"
+   assert(v is "high", "Failed table field: expected 'high', got " .. tostring(v))
+end
+
+-- Return value tests
+@Test function ReturnValue()
+   function test()
+      return true ? "yes" :> "no"
+   end
+   result = test()
+   assert(result is "yes", "Failed return value: expected 'yes', got " .. tostring(result))
+end
+
+-- Edge cases
+@Test function ChainedComparisons()
+   a, b, c = 1, 2, 3
+   v = a < b and b < c ? "ordered" :> "not ordered"
+   assert(v is "ordered", "Failed chained comparisons")
+end
+
+@Test function MixedOptionalAndFull()
+   v = (5 ?? 0) > 3 ? "high" :> "low"
+   -- First: 5 ?? 0 = 5
+   -- Then: 5 > 3 ? "high" :> "low" = "high"
+   assert(v is "high", "Failed mixed optional and full: expected 'high', got " .. tostring(v))
+end
+
+-- Method call tests (critical for in_ternary flag implementation)
+@Test function MethodCallInTrueBranch()
+   obj = {
+      getValue = function(self)
+         return "method_result"
+      end
+   }
+   v = true ? obj:getValue() :> "other"
+   assert(v is "method_result", "Failed method call in true branch: expected 'method_result', got " .. tostring(v))
+end
+
+@Test function MethodCallInFalseBranch()
+   obj = {
+      getValue = function(self)
+         return "method_result"
+      end
+   }
+   v = false ? "other" :> obj:getValue()
+   assert(v is "method_result", "Failed method call in false branch: expected 'method_result', got " .. tostring(v))
+end
+
+@Test function NestedTernaryWithMethodCallInTrueBranch()
+   obj = {
+      getValue = function(self)
+         return "inner_method"
+      end
+   }
+   -- cond1 ? (cond2 ? obj:method() :> other) :> default
+   v = true ? (true ? obj:getValue() :> "other") :> "default"
+   assert(v is "inner_method", "Failed nested ternary with method call in true branch: expected 'inner_method', got " .. tostring(v))
+end
+
+@Test function NestedTernaryWithMethodCallInFalseBranch()
+   obj = {
+      getValue = function(self)
+         return "inner_method"
+      end
+   }
+   -- cond1 ? true_val :> (cond2 ? obj:method() :> other)
+   v = false ? "true_val" :> (true ? obj:getValue() :> "other")
+   assert(v is "inner_method", "Failed nested ternary with method call in false branch: expected 'inner_method', got " .. tostring(v))
+end
+
+@Test function MethodCallWithArgumentsInTernary()
+   obj = {
+      multiply = function(self, x, y)
+         return x * y
+      end
+   }
+   v = true ? obj:multiply(5, 6) :> 0
+   assert(v is 30, "Failed method call with arguments: expected 30, got " .. tostring(v))
+end
+
+@Test function MethodCallInCondition()
+   obj = {
+      isActive = function(self)
+         return true
+      end
+   }
+   v = obj:isActive() ? "active" :> "inactive"
+   assert(v is "active", "Failed method call in condition: expected 'active', got " .. tostring(v))
+end
+
+-- Operator precedence and chaining tests
+@Test function TernaryWithArithmetic()
+   v = 5 + 3 > 6 ? 10 :> 5
+   -- Parses as: (5 + 3) > 6 ? 10 :> 5 = 8 > 6 ? 10 :> 5 = 10
+   assert(v is 10, "Failed ternary with arithmetic: expected 10, got " .. tostring(v))
+end
+
+@Test function TernaryChainedWithAnd()
+   a, b = 5, 10
+   v = a > 0 and b > 0 ? "both positive" :> "not both positive"
+   assert(v is "both positive", "Failed ternary chained with and: expected 'both positive', got " .. tostring(v))
+end
+
+@Test function TernaryChainedWithOr()
+   a, b = -5, 10
+   v = a > 0 or b > 0 ? "at least one positive" :> "both negative"
+   assert(v is "at least one positive", "Failed ternary chained with or: expected 'at least one positive', got " .. tostring(v))
+end
+
+@Test function TernaryInArithmeticExpression()
+   v = (true ? 10 :> 5) + 5
+   assert(v is 15, "Failed ternary in arithmetic expression: expected 15, got " .. tostring(v))
+end
+
+@Test function TernaryWithComparison()
+   a, b, c = 5, 3, 8
+   v = a > b ? c :> b
+   assert(v is 8, "Failed ternary with comparison: expected 8, got " .. tostring(v))
+end
+
+-- Parentheses and grouping tests
+@Test function ParenthesizedTernary()
+   v = (true ? "A" :> "B")
+   assert(v is "A", "Failed parenthesized ternary: expected 'A', got " .. tostring(v))
+end
+
+@Test function TernaryWithParenthesizedCondition()
+   v = (5 > 3) ? "yes" :> "no"
+   assert(v is "yes", "Failed ternary with parenthesized condition: expected 'yes', got " .. tostring(v))
+end
+
+@Test function TernaryWithParenthesizedBranches()
+   v = true ? (10 + 5) :> (20 - 5)
+   assert(v is 15, "Failed ternary with parenthesized branches: expected 15, got " .. tostring(v))
+end
+
+-- Array/table indexing tests
+@Test function ArrayIndexingInBranch()
+   arr = { "first", "second", "third" }
+   v = true ? arr[1] :> arr[2]
+   assert(v is "second", "Failed array indexing in branch: expected 'second', got " .. tostring(v))
+end
+
+@Test function NestedTableAccessInBranch()
+   t = {
+      user = {
+         name = "Alice",
+         age = 30
+      }
+   }
+   v = true ? t.user.name :> "Unknown"
+   assert(v is "Alice", "Failed nested table access in branch: expected 'Alice', got " .. tostring(v))
+end
+
+-- Multiple assignment tests
+@Test function TernaryInMultipleAssignment()
+   a, b = true ? 1 :> 3, 4
+   -- Ternary returns single value, so only first gets assigned
+   assert(a is 1, "Failed ternary in multiple assignment: expected a=1, got " .. tostring(a))
+end
+
+-- Whitespace and formatting tests (edge cases)
+@Test function TernaryWithExtraWhitespace()
+   v = true ? "A" :> "B"
+   assert(v is "A", "Failed ternary with whitespace: expected 'A', got " .. tostring(v))
+end
+
+@Test function TernaryNoSpaces()
+   v = true?"A":>"B"
+   assert(v is "A", "Failed ternary without spaces: expected 'A', got " .. tostring(v))
+end
+
+-- String concatenation in branches
+@Test function StringConcatenationInBranch()
+   v = true ? "Hello" .. " " .. "World" :> "Goodbye"
+   assert(v is "Hello World", "Failed string concatenation in branch: expected 'Hello World', got " .. tostring(v))
+end
+
+-- Negative numbers
+@Test function NegativeNumberInCondition()
+   v = -5 ? "negative" :> "zero_or_positive"
+   assert(v is "negative", "Failed negative number in condition: expected 'negative', got " .. tostring(v))
+end
+
+@Test function NegativeNumberInBranch()
+   v = true ? -10 :> 10
+   assert(v is -10, "Failed negative number in branch: expected -10, got " .. tostring(v))
+end
+
+-- Boolean expressions
+@Test function BooleanExpressionInCondition()
+   v = (true and false) ? "true" :> "false"
+   assert(v is "false", "Failed boolean expression in condition: expected 'false', got " .. tostring(v))
+end
+
+-- Empty branches (edge case)
+@Test function EmptyBranchesNotPossible()
+   -- Note: Empty branches would be syntax errors, but we test that valid expressions work
+   v = true ? 1 :> 2
+   assert(v is 1, "Valid ternary should work")
+end
+
+-- Ternary as function argument
+@Test function TernaryAsFunctionArgument()
+   function process(x)
+      return x * 2
+   end
+   v = process(true ? 5 :> 10)
+   assert(v is 10, "Failed ternary as function argument: expected 10, got " .. tostring(v))
+
+   function myFunc(value)
+      return value
+   end
+
+   Number = 1
+   result = myFunc(Number ? 1 :> 2) -- This should pass Number (1) to myFunc, not 2
+   assert(result is 1, "Expected 1, got " .. tostring(result))
+end
+
+-- Ternary in table constructor
+@Test function TernaryInTableConstructor()
+   t = {
+      value = true ? "yes" :> "no",
+      count = false ? 1 :> 2
+   }
+   assert(t.value is "yes", "Failed ternary in table constructor value: expected 'yes'")
+   assert(t.count is 2, "Failed ternary in table constructor count: expected 2")
+end
+
+-- Ternary with ?? operator (coalesce/or_question)
+@Test function TernaryWithOrQuestionOperator()
+   v = (nil ?? "default") ? "fallback" :> "final"
+   -- First: nil ?? "default" = "default"
+   -- Then: "default" ?? "fallback" :> "final" = "fallback" (truthy)
+   assert(v is "fallback", "Failed ternary with ? operator: expected 'fallback', got " .. tostring(v))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test ternary in conjunction with concatenation - note that bugs raised could be in either feature or in
+-- combination of both
+
+@Test function Concat()
+   function returnString(Arg)
+      if Arg then return Arg else return "Result" end
+   end
+
+   baseline = (nil and returnString('true') or returnString('false'))
+   assert(baseline is "false", "Failed baseline, got '" .. tostring(baseline) .. "'")
+
+   ternary = (nil ? returnString('true') :> returnString('false'))
+   assert(ternary is "false", "Failed concat-function baseline, got '" .. tostring(ternary) .. "'")
+
+   v = '' .. (nil ? returnString('true') :> returnString('false')) .. ''
+   assert(v is baseline, "Failed concat-function 1, got '" .. tostring(v) .. "'")
+
+   local val
+   v = '' .. (val ? returnString('ignore') :> 'false')
+   assert(v is "false", "Failed conat-function 2, got '" .. tostring(v) .. "'")
+end
+
+@Test function InFunction()
+   Function = { status = 'Hello' }
+
+   -- Ternary operator within a function
+   result = string.find((Function.status ? 'then' :> 'else'), 'e')
+   assert(result is 2, "Failed test: expected 3, got " .. tostring(result))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function EmbeddedConcat()
+   test   = 'thing'
+   struct = 'struct'
+   type   = test ? ('class ' .. struct) :> ('struct ' .. struct)
+   assert(type is 'class struct', "Failed embedded concat test: expected 'class struct', got " .. tostring(type))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function InvalidTernary()
+   try
+      exec([[
+         Options = { scale = false }
+         self = Options.scale is false ?? nil :> true
+         self = Options.missing is false ?? nil :> true
+      ]])
+   except ex
+      assert(string.find(ex.message, 'Unexpected Token') != nil, "Expected invalid token error, got: " .. ex.message)
+   success
+      error('Expected failure for invalid ternary usage')
+   end
+end
+
+@Test function ConditionsInTernary()
+   test_val = true
+   result = test_val ? (1 < 2) :> (1 > 2)
+   assert(result is true, "Expected true, got " .. tostring(result))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test that local variables used as ternary conditions are not corrupted when also accessed in the true branch.
+-- This regression test covers a bug where the ternary result register was reusing the condition's register,
+-- destroying the local variable binding if it was referenced later in the code.
+
+@Test function LocalVariablePreservation()
+   -- Create a table that will be used as the condition and accessed in the true branch
+   local data = { "first", "second", "third" }
+
+   -- Use data as condition AND access data[0] in true branch
+   local result = data ? data[0] :> "fallback"
+   assert(result is "first", "Failed: expected 'first', got " .. tostring(result))
+
+   -- Critical: verify data is still intact after the ternary
+   assert(data[1] is "second", "Local variable corrupted: expected 'second', got " .. tostring(data[1]))
+   assert(data[2] is "third", "Local variable corrupted: expected 'third', got " .. tostring(data[2]))
+end

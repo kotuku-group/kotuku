@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol Framework is made publicly available under the terms described in the LICENSE.TXT file
+The source code for Kōtuku is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 -CATEGORY-
@@ -44,6 +44,34 @@ Name: System
 #include "defs.h"
 
 using namespace pf;
+
+//********************************************************************************************************************
+
+thread_local std::shared_ptr<ThreadRecord> tlThreadRecord;
+
+//********************************************************************************************************************
+// Remove the calling thread from the global thread registry.  Safe to call even if the thread was never registered.
+
+void deregister_thread(void)
+{
+   tlThreadRecord.reset();
+   auto tid = get_thread_id();
+   std::lock_guard lock(glmThreadRegistry);
+   glThreadRegistry.erase(int(tid));
+}
+
+//********************************************************************************************************************
+// Return the ThreadRecord for the calling thread (pointer guaranteed).
+
+std::shared_ptr<ThreadRecord> get_thread_record(void)
+{
+   if (not tlThreadRecord) {
+      auto tid = get_thread_id();
+      std::lock_guard lock(glmThreadRegistry);
+      if (auto it = glThreadRegistry.find(int(tid)); it != glThreadRegistry.end()) tlThreadRecord = it->second;
+   }
+   return tlThreadRecord;
+}
 
 /*********************************************************************************************************************
 
@@ -211,7 +239,7 @@ static std::once_flag glCRCInit;
 
 uint32_t GenCRC32(uint32_t CRC, APTR Data, uint32_t Length)
 {
-   if (!Data) return 0;
+   if (not Data) return 0;
 
    std::call_once(glCRCInit, []() {
       // Copy table 0
@@ -260,8 +288,8 @@ uint32_t GenCRC32(uint32_t CRC, APTR Data, uint32_t Length)
 -FUNCTION-
 GetResource: Retrieves miscellaneous resource identifiers.
 
-The GetResource() function is used to retrieve miscellaneous resource information from the system core.  Refer to the
-Resource identifier for the full list of available resource codes and their meaning.
+The GetResource() function is used to retrieve miscellaneous resource and state information from the system
+core.  Refer to the Resource identifier for the full list of available resource codes and their meaning.
 
 C++ developers should use the `GetResourcePtr()` macro if a resource identifier is known to return a pointer.
 
@@ -290,12 +318,13 @@ int64_t GetResource(RES Resource)
       case RES::JNI_ENV:         return (MAXINT)glJNIEnv;
       case RES::THREAD_ID:       return int(get_thread_id());
       case RES::CORE_IDL:        return (MAXINT)glIDL;
-      case RES::DISPLAY_DRIVER:  if (!glDisplayDriver.empty()) return (MAXINT)glDisplayDriver.c_str(); else return 0;
+      case RES::DISPLAY_DRIVER:  if (not glDisplayDriver.empty()) return (MAXINT)glDisplayDriver.c_str(); else return 0;
+      case RES::MAIN_THREAD:     return tlMainThread ? true : false;
 
       case RES::MEMORY_USAGE: {
          #ifdef __linux__
             struct rusage usage;
-            if (!getrusage(RUSAGE_SELF, &usage)) {
+            if (not getrusage(RUSAGE_SELF, &usage)) {
                // Return the maximum resident set size in bytes.
                return (int64_t)usage.ru_maxrss * 1024LL; // Convert to bytes
             }
@@ -307,8 +336,15 @@ int64_t GetResource(RES Resource)
          #endif
       }
 
+      case RES::RELEASE_BUILD:
+         #ifdef KOTUKU_RELEASE_BUILD
+            return 1;
+         #else
+            return 0;
+         #endif
+
       case RES::STATIC_BUILD:
-         #ifdef PARASOL_STATIC
+         #ifdef KOTUKU_STATIC
             return 1;
          #else
             return 0;
@@ -319,14 +355,14 @@ int64_t GetResource(RES Resource)
       // change during runtime.
 
       case RES::TOTAL_MEMORY: {
-         if (!sysinfo(&sys)) return (int64_t)sys.totalram * (int64_t)sys.mem_unit;
+         if (not sysinfo(&sys)) return (int64_t)sys.totalram * (int64_t)sys.mem_unit;
          else return -1;
       }
 
       case RES::FREE_MEMORY: {
    #if 0
          // Unfortunately sysinfo() does not report on cached ram, which can be significant
-         if (!sysinfo(&sys)) return (int64_t)(sys.freeram + sys.bufferram) * (int64_t)sys.mem_unit; // Buffer RAM is considered as 'free'
+         if (not sysinfo(&sys)) return (int64_t)(sys.freeram + sys.bufferram) * (int64_t)sys.mem_unit; // Buffer RAM is considered as 'free'
    #else
          char str[2048];
          int result;
@@ -348,15 +384,15 @@ int64_t GetResource(RES Resource)
       }
 
       case RES::TOTAL_SHARED_MEMORY:
-         if (!sysinfo(&sys)) return (int64_t)sys.sharedram * (int64_t)sys.mem_unit;
+         if (not sysinfo(&sys)) return (int64_t)sys.sharedram * (int64_t)sys.mem_unit;
          else return -1;
 
       case RES::TOTAL_SWAP:
-         if (!sysinfo(&sys)) return (int64_t)sys.totalswap * (int64_t)sys.mem_unit;
+         if (not sysinfo(&sys)) return (int64_t)sys.totalswap * (int64_t)sys.mem_unit;
          else return -1;
 
       case RES::FREE_SWAP:
-         if (!sysinfo(&sys)) return (int64_t)sys.freeswap * (int64_t)sys.mem_unit;
+         if (not sysinfo(&sys)) return (int64_t)sys.freeswap * (int64_t)sys.mem_unit;
          else return -1;
 
       case RES::CPU_SPEED: {
@@ -403,7 +439,7 @@ const SystemState * GetSystemState(void)
    static bool initialised = false;
    static SystemState state;
 
-   if (!initialised) {
+   if (not initialised) {
       initialised = true;
 
       state.ConsoleFD = glConsoleFD;
@@ -533,7 +569,7 @@ ERR RegisterFD(int FD, RFD Flags, void (*Routine)(HOSTHANDLE, APTR), APTR Data)
 #ifdef _WIN32
    // Nothing to do for Win32
 #else
-   if ((!Routine) and (FD > 0)) fcntl(FD, F_SETFL, fcntl(FD, F_GETFL) | O_NONBLOCK); // Ensure that the FD is non-blocking
+   if ((not Routine) and (FD > 0)) fcntl(FD, F_SETFL, fcntl(FD, F_GETFL) | O_NONBLOCK); // Ensure that the FD is non-blocking
 #endif
 
    glFDTable.emplace_back(FD, Routine, Data, Flags);
@@ -677,7 +713,7 @@ int64_t SetResource(RES Resource, int64_t Value)
 
          if (Value) { // Enable admin privileges
             oldvalue = int64_t(ERR::Okay);
-            if (!privileged) {
+            if (not privileged) {
                if (glUID) {
                   if (glUID != glEUID) {
                      seteuid(glEUID);
@@ -696,7 +732,7 @@ int64_t SetResource(RES Resource, int64_t Value)
             // Disable admin privileges
             if (privileged > 0) {
                privileged--;
-               if (!privileged) {
+               if (not privileged) {
                   if (glUID != glEUID) seteuid(glUID);
                }
             }
@@ -707,7 +743,7 @@ int64_t SetResource(RES Resource, int64_t Value)
          break;
 
       default:
-         log.warning("Unrecognised resource ID: %d, Value: %" PF64, int(Resource), (long long)Value);
+         log.warning("Unrecognised resource ID: %d, Value: %" PRId64, int(Resource), (int64_t)Value);
    }
 
    return oldvalue;
@@ -724,7 +760,7 @@ A callback function must be provided that follows this prototype: `ERR Function(
 
 The `Elapsed` parameter is the total number of microseconds that have elapsed since the last call.  The `CurrentTime`
 parameter is set to the ~PreciseTime() value just prior to the `Callback` being called.  The callback function
-can return `ERR::Terminate` at any time to cancel the subscription.  All other error codes are ignored.  Fluid callbacks
+can return `ERR::Terminate` at any time to cancel the subscription.  All other error codes are ignored.  Tiri callbacks
 should call `check(ERR::Terminate)` to perform the equivalent of this behaviour.
 
 To change the interval, call ~UpdateTimer() with the new value.  To release a timer subscription, call
@@ -754,7 +790,7 @@ ERR SubscribeTimer(double Interval, FUNCTION *Callback, APTR *Subscription)
 {
    pf::Log log(__FUNCTION__);
 
-   if ((!Interval) or (!Callback)) return log.warning(ERR::NullArgs);
+   if ((not Interval) or (not Callback)) return log.warning(ERR::NullArgs);
    if (Interval < 0) return log.warning(ERR::Args);
 
    auto subscriber = tlContext.back().obj;
@@ -786,7 +822,7 @@ ERR SubscribeTimer(double Interval, FUNCTION *Callback, APTR *Subscription)
       // For resource tracking purposes it is important for us to keep a record of the subscription so that
       // we don't treat the object address as valid when it's been removed from the system.
 
-      subscriber->Flags |= NF::TIMER_SUB;
+      subscriber->setFlag(NF::TIMER_SUB);
       if (Subscription) *Subscription = &*it;
       return ERR::Okay;
    }
@@ -817,7 +853,7 @@ ERR UpdateTimer(APTR Subscription, double Interval)
 {
    pf::Log log(__FUNCTION__);
 
-   if (!Subscription) return log.warning(ERR::NullArgs);
+   if (not Subscription) return log.warning(ERR::NullArgs);
 
    log.msg(VLF::DETAIL|VLF::BRANCH|VLF::FUNCTION, "Subscription: %p, Interval: %.4f", Subscription, Interval);
 
@@ -877,14 +913,23 @@ developing a back-log.
 WaitTime() can return earlier than the indicated timeout if a message handler returns `ERR::Terminate`, or if a
 `MSGID::QUIT` message is sent to the task's message queue.
 
+For non-main threads, the sleep can be interrupted by another thread calling ~WakeThread().
+
+NOTE: If the thread is in a stopping state, e.g. from ~WakeThread(), this function will return
+immediately.
+
 -INPUT-
 double Seconds: The number of seconds to wait for.  Fractional values are supported for sub-second precision.
+
+-ERRORS-
+Okay:
+Cancelled: The thread has been requested to stop and cannot pause.
 
 -END-
 
 *********************************************************************************************************************/
 
-void WaitTime(double Seconds)
+ERR WaitTime(double Seconds)
 {
    // Determine message processing mode (negative seconds disable message processing)
    bool process_msg = tlMainThread and (Seconds >= 0.0);
@@ -894,7 +939,14 @@ void WaitTime(double Seconds)
    // Convert to microseconds with high precision
    auto total_microseconds = int64_t(Seconds * 1000000.0);
 
-   if (total_microseconds <= 0) return; // Nothing to wait for
+   if (total_microseconds <= 0) return ERR::Okay; // Nothing to wait for
+
+   auto record = get_thread_record();
+
+   {
+      if (record->state.load(std::memory_order_acquire) IS TSTATE::STOPPING) return ERR::Cancelled;
+      record->state.store(TSTATE::PAUSED, std::memory_order_release);
+   }
 
    if (process_msg) {
       auto end_time = PreciseTime() + total_microseconds;
@@ -910,6 +962,70 @@ void WaitTime(double Seconds)
       } while (true);
    }
    else {
-      std::this_thread::sleep_for(std::chrono::microseconds(total_microseconds));
+      std::unique_lock lock(record->mutex);
+      record->cv.wait_for(lock, std::chrono::microseconds(total_microseconds),
+         [&] { return record->interrupted.load(std::memory_order_acquire); });
+      record->interrupted.store(false, std::memory_order_release);
    }
+
+   auto error = ERR::Okay;
+   auto expected = TSTATE::PAUSED;
+   if (not record->state.compare_exchange_strong(expected, TSTATE::RUNNING, std::memory_order_acq_rel)) {
+      error = ERR::Cancelled; // State was changed to STOPPING by WakeThread()
+   }
+
+   return error;
+}
+
+/*********************************************************************************************************************
+
+-FUNCTION-
+WakeThread: Interrupt a sleeping thread.
+
+Call WakeThread() to interrupt a thread that is blocked in ~WaitTime() or similar, where supported.  The target
+thread will return from as soon as it is able to acquire its internal lock.  If the target thread is not currently
+sleeping, a pending interrupt is recorded so that its next sleep cycle will return immediately.
+
+If `Stop` is set to true then the target thread will be put into a stopping state.  This will cause all future
+sleep attempts in the target thread to be cancelled.
+
+-INPUT-
+int Thread: The target thread's unique ID, as returned by `GetResource(RES::THREAD_ID)`.
+int Stop: If `true`, the target thread will be put into a stopping state.
+
+-ERRORS-
+Okay: The thread was successfully interrupted.
+Search: No thread with the given ID was found in the registry.
+
+-END-
+
+*********************************************************************************************************************/
+
+ERR WakeThread(int Thread, int Stop)
+{
+   std::shared_ptr<ThreadRecord> record;
+
+   {
+      std::lock_guard lock(glmThreadRegistry);
+      auto it = glThreadRegistry.find(Thread);
+      if (it IS glThreadRegistry.end()) return ERR::Search;
+      record = it->second;
+   }
+
+   bool paused;
+   {
+      // Lock required to prevent missed wake-ups: the target thread could transition to PAUSED
+      // and enter cv.wait() between our flag write and notify call.
+      std::lock_guard lock(record->mutex);
+      paused = (record->state.load(std::memory_order_acquire) IS TSTATE::PAUSED);
+      record->interrupted.store(true, std::memory_order_release);
+      if (Stop) record->state.store(TSTATE::STOPPING, std::memory_order_release);
+   }
+
+   if (paused) {
+      record->cv.notify_one();
+      cvObjects.notify_all();   // Wake threads blocked in LockObject()
+      cvResources.notify_all(); // Wake threads blocked in AccessMemory()
+   }
+   return ERR::Okay;
 }

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="NetSocket" mod="Network" c="Manages network connections via TCP/IP sockets." cat="Network" id="2b439bb5" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="NetSocket" mod="Network" c="Manages network connections via TCP/IP sockets." cat="Network" id="2b439bb5" v="1">
   <ai:a n="Disable" c="Disables sending and receiving on the socket." p="ERR acDisable(*Object)">
     <ai:e c="Okay"/>
     <ai:e c="Failed"/>

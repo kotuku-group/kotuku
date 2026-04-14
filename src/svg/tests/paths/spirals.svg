@@ -8,16 +8,16 @@
 
   <rect fill="#ffffff" width="100%" height="100%"/>
 
-  <parasol:spiral cx="110" cy="110" loop-limit="10" stroke="black" stroke-width="1" fill="pink" spacing="10"/>
+  <kotuku:spiral cx="110" cy="110" loop-limit="10" stroke="black" stroke-width="1" fill="pink" spacing="10"/>
 
-  <parasol:spiral cx="320" cy="110" r="100" stroke="red" stroke-width="2" fill="none"/>
+  <kotuku:spiral cx="320" cy="110" r="100" stroke="red" stroke-width="2" fill="none"/>
 
-  <parasol:spiral cx="110" cy="320" r="100" loop-limit="10" spacing="10" offset="40" stroke="green" stroke-width="3" fill="none"/>
+  <kotuku:spiral cx="110" cy="320" r="100" loop-limit="10" spacing="10" offset="40" stroke="green" stroke-width="3" fill="none"/>
 
-  <parasol:spiral cx="320" cy="320" r="110" step="40" spacing="30" stroke="blue" stroke-width="1" fill="none"/>
+  <kotuku:spiral cx="320" cy="320" r="110" step="40" spacing="30" stroke="blue" stroke-width="1" fill="none"/>
 
-  <parasol:spiral cx="110" cy="530" r="100" spacing="12" stroke="url(#points)" stroke-width="12" fill="none"/>
+  <kotuku:spiral cx="110" cy="530" r="100" spacing="12" stroke="url(#points)" stroke-width="12" fill="none"/>
 
-  <parasol:spiral transform="translate(500,100)" stroke="blue" stroke-width="4" spacing="30" loop-limit="3"/>
+  <kotuku:spiral transform="translate(500,100)" stroke="blue" stroke-width="4" spacing="30" loop-limit="3"/>
 
 </svg>

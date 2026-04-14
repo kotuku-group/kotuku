@@ -12,7 +12,7 @@
     <id>2144cb86</id>
     <idstring>COMPRESSEDSTREAM</idstring>
     <category>Data</category>
-    <copyright>Paul Manias 1996-2025</copyright>
+    <copyright>Paul Manias 1996-2026</copyright>
     <description>
 <p>Use the CompressedStream class to compress and decompress data on the fly without the need for a temporary storage area.  The default compression algorithm is DEFLATE with gzip header data.  It is compatible with common command-line tools such as gzip.</p>
 <p>To decompress data, set the <fl>Input</fl> field with a source object that supports the Read() action, such as a <class name="File">File</class>. Repeatedly reading from the CompressedStream will automatically handle the decompression process.  If the decompressed size of the incoming data is defined in the source header, it will be reflected in the <fl>Size</fl> field.</p>
@@ -203,16 +203,17 @@
       <const name="CORE_END"/>
       <const name="DEBUG"/>
       <const name="EVENT"/>
-      <const name="FLUID_THREAD_CALLBACK"/>
       <const name="FREE"/>
       <const name="QUIT"/>
       <const name="THREAD_ACTION"/>
       <const name="THREAD_CALLBACK"/>
+      <const name="TIRI_THREAD_CALLBACK"/>
       <const name="VALIDATE_PROCESS"/>
       <const name="WAIT_FOR_OBJECTS"/>
     </constants>
 
     <constants lookup="NF" comment="Flags that can be passed to NewObject().  If a flag needs to be stored with the object, it must be specified in the lower word.">
+      <const name="ASYNC_ACTIVE">Read-only indicator that asynchronous actions are queued or executing against this object.</const>
       <const name="COLLECT">Marked for garbage collection.</const>
       <const name="FREE">Read-only indicator for when the object is being freed.</const>
       <const name="FREE_ON_UNLOCK">Read-only indicator for when the object is marked for deletion.</const>
@@ -268,6 +269,7 @@
     </constants>
 
     <constants lookup="PMF" comment="Flags for ProcessMessages">
+      <const name="EVENT_LOOP">Set if this is the program's main event loop.  Should be accompanied with an infinite timeout.</const>
     </constants>
 
     <constants lookup="RDF" comment="Flags for the OpenDir() function.">
@@ -301,11 +303,13 @@
       <const name="KEY_STATE">Maintains the state of key qualifiers such as caps-lock and the shift keys.</const>
       <const name="LOG_DEPTH">The current depth of log messages.</const>
       <const name="LOG_LEVEL">The current level of log detail (larger numbers indicate more detail).</const>
+      <const name="MAIN_THREAD">Read-only, returns <code>true</code> if called from the main thread.</const>
       <const name="MEMORY_USAGE">The total amount of memory used by the current process, in bytes.</const>
       <const name="OPEN_INFO">Pointer to the OpenInfo structure originally used to initialise the system.</const>
       <const name="PRIVILEGED">This is set to <code>true</code> if the process has elevated privileges (such as superuser or administrative rights).</const>
       <const name="PRIVILEGED_USER">If this value is set to 1, the process will operate in privileged mode (typically this enables full administrator rights).  This feature will only work for Unix processes that are granted admin rights when launched.  Setting the Value to 0 reverts to the user's permission settings.  SetResource() will return an error code indicating the level of success.</const>
       <const name="PROCESS_STATE">Life-cycle stage of the running process</const>
+      <const name="RELEASE_BUILD">Returns true if the runtime is a release build.</const>
       <const name="STATIC_BUILD">Returns true if the runtime is a statically linked build.</const>
       <const name="THREAD_ID">Return the ID of the current thread.</const>
       <const name="TOTAL_MEMORY">The total amount of installed memory.</const>
@@ -325,7 +329,7 @@
 
     <constants lookup="RP" comment="Path types for SetResourcePath()">
       <const name="MODULE_PATH">An alternative path leading to the system modules (normally <code>system:modules/</code>).  Introduced for platforms such as Android, where modules are stored in asset folders.</const>
-      <const name="ROOT_PATH">Overrides the root path, which defaults to the location at which Parasol is installed.</const>
+      <const name="ROOT_PATH">Overrides the root path, which defaults to the location at which Kōtuku is installed.</const>
       <const name="SYSTEM_PATH">The path of the <code>system:</code> volume, which otherwise defaults to <code>[root]:system/</code>.</const>
     </constants>
 
@@ -381,7 +385,7 @@
       <field name="SetValue" type="APTR">A virtual function that will set the value for this field.</field>
       <field name="WriteValue" type="FUNCTION *" prototype="ERR (*WriteValue)(OBJECTPTR, struct Field *, int, const void *, int)">An internal function for writing to this field.</field>
       <field name="Name" type="CSTRING">The English name for the field, e.g. <code>Width</code></field>
-      <field name="FieldID" type="UINT">Provides a fast way of finding fields, e.g. <code>FID_Width</code></field>
+      <field name="FieldID" type="UINT">32-bit hash from fieldhash(). Represented by FID constants, e.g. <code>FID_Width</code></field>
       <field name="Offset" type="UINT16">Field offset within the object</field>
       <field name="Index" type="UINT16">Field array index</field>
       <field name="Flags" type="UINT">Special flags that describe the field</field>

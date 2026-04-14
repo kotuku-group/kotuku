@@ -1,0 +1,530 @@
+-- URL parsing and handling module for Kōtuku
+--
+-- Usage:
+--   urllib = import 'net/url' -- Choose a name that avoids namespace conflicts
+--   parts = urllib.parse('https://example.com/path?query=value')
+
+   namespace 'url'
+
+   _LIB[_NS] = { }
+   url = _LIB[_NS]
+
+local DEFAULT_PORTS = {
+   http = 80,
+   https = 443,
+   ftp = 21,
+   ssh = 22,
+   telnet = 23,
+   smtp = 25,
+   pop3 = 110,
+   imap = 143,
+   ldap = 389,
+   ldaps = 636
+}
+
+-- Characters that need percent-encoding in different URL contexts
+
+local RESERVED_CHARS = {
+   -- General reserved characters (RFC 3986)
+   general = ':/?#[]@!$&\'()*+,;=%',
+   -- Additional characters that should be encoded in query strings
+   query = ' "<>\\^`{|}',
+   -- Characters that should be encoded in path components
+   path = ' "?<>#'
+}
+
+-- Deferred regex patterns for URL parsing
+
+rxPercentEncoded = <{ regex.new('%([0-9A-Fa-f]{2})') }>
+rxScheme         = <{ regex.new('^([\\w+.\\-]+):(.*)') }>
+rxSchemeOnly     = <{ regex.new('^[\\w+.\\-]+:(.*)') }>
+rxIPv6Port       = <{ regex.new('^\\[([^\\]]+)\\]:?(\\d*)$') }>
+rxIPv6PortOnly   = <{ regex.new('^\\[[^\\]]+\\]:(\\d+)$') }>
+rxAbsoluteUrl    = <{ regex.new('^[\\w+.\\-]+:') }>
+rxSchemeExtract  = <{ regex.new('^([\\w+.\\-]+):') }>
+rxQueryPair      = <{ regex.new('([^&]+)') }>
+rxKeyValueOpt    = <{ regex.new('^([^=]*)=(.*)$') }>
+rxBasePath       = <{ regex.new('(.*\\/)') }>
+rxPathSegment    = <{ regex.new('([^\\/]+)') }>
+
+----------------------------------------------------------------------------------------------------------------------
+-- URL Encoding Functions
+
+-- Percent-encode a string for safe URL use
+
+url.encode = function(str, extraChars)
+   str ?? return
+
+   chars_to_encode = RESERVED_CHARS.general .. RESERVED_CHARS.query
+   if extraChars then chars_to_encode = chars_to_encode .. extraChars end
+
+   -- Simple character-by-character encoding to avoid pattern issues
+   result = {}
+   for i = 0, #str-1 do
+      c = str:sub(i, i+1)
+      if chars_to_encode:find(c, 1, true) then
+         table.insert(result, string.format('%%%02X', string.byte(c)))
+      else
+         table.insert(result, c)
+      end
+   end
+
+   return table.concat(result)
+end
+
+-- Percent-encode with spaces as plus signs (for form data)
+
+url.encodePlus = function(str, extraChars)
+   str ?? return
+
+   encoded = url.encode(str, extraChars)
+   if encoded then
+      encoded = encoded:replace('%20', '+')
+   end
+
+   return encoded
+end
+
+-- Decode percent-encoded string
+
+url.decode = function(str)
+   if not str then return nil end
+
+   local result = ''
+   local last_stop = 0
+   for start, stop, cap in rxPercentEncoded.findAll(str) do
+      if start > last_stop then result ..= str:sub(last_stop, start) end
+      local hex = cap[0]
+      result ..= string.char(tonumber(hex, 16))
+      last_stop = stop
+   end
+   result ..= str:sub(last_stop)
+
+   return result
+end
+
+-- Decode percent-encoded string with plus signs as spaces
+
+url.decodePlus = function(String:str)
+   String ?? return nil
+   decoded = String:replace('+', ' ')
+   return url.decode(decoded)
+end
+
+-- Encode string for use in path components
+
+url.encodeComponent = function(str)
+   if not str then return nil end
+   return url.encode(str, RESERVED_CHARS.path)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Query String Functions
+
+-- Parse query string into table of key-value pairs
+
+url.parseQuery = function(queryString)
+   if not queryString or queryString is '' then return {} end
+
+   params = {}
+   for start, stop, cap in rxQueryPair.findAll(queryString) do
+      local pair = cap[0]
+      key, value = rxKeyValueOpt.extract(pair)
+      if key then
+         key = url.decodePlus(key)
+         value = url.decodePlus(value)
+         if params[key] then
+            -- Handle multiple values for same key
+            if type(params[key]) != 'table' then
+               params[key] = { params[key] }
+            end
+            table.insert(params[key], value)
+         else
+            params[key] = value
+         end
+      else
+         -- Handle key without value
+         key = url.decodePlus(pair)
+         params[key] = ''
+      end
+   end
+
+   return params
+end
+
+-- Parse query string into list of key-value pairs (preserves order and duplicates)
+
+url.parseQueryList = function(queryString)
+   params = array<table>
+   queryString ?? return params
+
+   for start, stop, cap in rxQueryPair.findAll(queryString) do
+      local pair = cap[0]
+      key, value = rxKeyValueOpt.extract(pair)
+      if key then
+         key = url.decodePlus(key)
+         value = url.decodePlus(value)
+         params:push({ key = key, value = value })
+      else
+         -- Handle key without value
+         key = url.decodePlus(pair)
+         params:push({ key = key, value = '' })
+      end
+   end
+
+   return params
+end
+
+-- Build query string from table or array of parameters
+
+url.buildQuery = function(params)
+   params ?? return ''
+
+   parts = array<string>
+
+   if type(params) is 'array' then
+      for param in values(params) do
+         parts:push(url.encodePlus(tostring(param.key)) .. '=' .. url.encodePlus(tostring(param.value or '')))
+      end
+   else
+      -- Hash-like table
+      for key, value in pairs(params) do
+         key = url.encodePlus(tostring(key))
+         if type(value) is 'table' then
+            -- Handle multiple values for same key
+            for _, v in ipairs(value) do
+               encodedValue = url.encodePlus(tostring(v))
+               parts:push(key .. '=' .. encodedValue)
+            end
+         else
+            encodedValue = url.encodePlus(tostring(value))
+            parts:push(key .. '=' .. encodedValue)
+         end
+      end
+   end
+
+   return parts:join('&')
+end
+
+-- Encode parameters into query string format
+
+url.encodeParams = function(params)
+   return url.buildQuery(params)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- URL Parsing Functions
+
+-- Parse a URL into its components
+
+url.parse = function(urlString)
+   urlString ?? return nil, 'Empty URL string'
+
+   components = {
+      scheme = nil,
+      auth = nil,
+      host = nil,
+      port = nil,
+      path = '',
+      params = nil,
+      query = nil,
+      fragment = nil
+   }
+
+   remaining = urlString
+
+   fragPos = remaining:find('#')
+   if fragPos then
+      components.fragment = remaining:sub(fragPos)
+      remaining = remaining:sub(0, fragPos)
+   end
+
+   queryPos = remaining:find('?', 1, true)
+   if queryPos then
+      components.query = remaining:sub(queryPos)
+      remaining = remaining:sub(0, queryPos)
+   end
+
+   schemeMatch = rxScheme.extract(remaining)
+   if schemeMatch then
+      components.scheme = schemeMatch:lower()
+      remaining = rxSchemeOnly.extract(remaining)
+   end
+
+   -- Handle authority (//host:port or //user:pass@host:port)
+   if remaining:sub(0, 2) is '//' then
+      remaining = remaining:sub(2) -- Remove //
+
+      -- Find the end of authority (next /, ?, #, or end of string)
+      pathStart = remaining:find('/') or (#remaining + 1)
+      authority = remaining:sub(0, pathStart - 1)
+      remaining = remaining:sub(pathStart)
+
+      -- Extract auth (user:pass@)
+      authEnd = authority:find('@')
+      if authEnd then
+         components.auth = authority:sub(0, authEnd - 1)
+         authority = authority:sub(authEnd)
+      end
+
+      -- Handle IPv6 addresses [host]:port
+      ipv6Match = rxIPv6Port.extract(authority)
+      if ipv6Match then
+         components.host = ipv6Match
+         portStr = rxIPv6PortOnly.extract(authority)
+         if portStr and portStr != '' then
+            components.port = tonumber(portStr)
+         end
+      else
+         -- Handle regular host:port
+         colonPos = authority:find(':', 1, true)
+         if colonPos then
+            components.host = authority:sub(0, colonPos - 1)
+            portStr = authority:sub(colonPos)
+            if portStr != '' then
+               components.port = tonumber(portStr)
+            end
+         else
+            components.host = authority
+         end
+      end
+   end
+
+   if remaining != '' then
+      components.path = remaining
+   elseif components.host then
+      components.path = '/'
+   end
+
+   if components.path then
+      paramPos = components.path:find(';')
+      if paramPos then
+         components.params = components.path:sub(paramPos)
+         components.path = components.path:sub(0, paramPos - 1)
+      end
+   end
+
+   return components
+end
+
+-- Reconstruct URL from components
+
+url.unparse = function(components)
+   components ?? return ''
+
+   parts = array<string>
+
+   if components.scheme then parts:push(components.scheme .. ':') end
+
+   if components.host then
+      parts:push('//')
+
+      if components.auth then parts:push(components.auth .. '@') end
+
+      if components.host:find(':') then
+         parts:push('[' .. components.host .. ']')
+      else
+         parts:push(components.host)
+      end
+
+      if components.port then parts:push(':' .. components.port) end
+   end
+
+   if components.path then parts:push(components.path) end
+   if components.params then parts:push(';' .. components.params) end
+   if components.query then parts:push('?' .. components.query) end
+   if components.fragment then parts:push('#' .. components.fragment) end
+
+   return parts:join()
+end
+
+-- Split URL into 5 components (no params)
+
+url.split = function(urlString)
+   components = url.parse(urlString)
+   components ?? return
+
+   return {
+      scheme   = components.scheme,
+      netloc   = url._buildNetloc(components),
+      path     = components.path,
+      query    = components.query,
+      fragment = components.fragment
+   }
+end
+
+-- Reconstruct URL from split components
+
+url.unsplit = function(components)
+   components ?? return ''
+   parts = array<string>
+   if components.scheme then parts:push(components.scheme .. ':') end
+   if components.netloc then parts:push('//' .. components.netloc) end
+   if components.path then parts:push(components.path) end
+   if components.query then parts:push('?' .. components.query) end
+   if components.fragment then parts:push('#' .. components.fragment) end
+   return parts:join()
+end
+
+-- Helper to build netloc from components
+
+url._buildNetloc = function(components)
+   components.host ?? return nil
+   netloc = {}
+   if components.auth then table.insert(netloc, components.auth .. '@') end
+   if components.host:find(':') then
+      table.insert(netloc, '[' .. components.host .. ']')
+   else
+      table.insert(netloc, components.host)
+   end
+   if components.port then table.insert(netloc, ':' .. components.port) end
+   return table.concat(netloc)
+end
+
+-- Remove fragment from URL
+
+url.defrag = function(urlString)
+   urlString ?? return nil, nil
+
+   fragPos = urlString:find('#')
+   if fragPos then
+      base = urlString:sub(0, fragPos - 1)
+      fragment = urlString:sub(fragPos + 1)
+      return base, fragment
+   end
+
+   return urlString, nil
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- URL Manipulation Functions
+
+-- Join base URL with relative URL
+url.join = function(baseUrl, relativeUrl)
+   if not baseUrl then return relativeUrl end
+   if not relativeUrl then return baseUrl end
+   if url.isAbsolute(relativeUrl) then return relativeUrl end
+
+   base = url.parse(baseUrl)
+   if not base then return relativeUrl end
+
+   -- Handle fragment-only URLs
+   if relativeUrl:sub(0, 1) is '#' then
+      base.fragment = relativeUrl:sub(1)
+      return url.unparse(base)
+   end
+
+   -- Handle query-only URLs
+   if relativeUrl:sub(0, 1) is '?' then
+      base.query = relativeUrl:sub(1)
+      base.fragment = nil
+      return url.unparse(base)
+   end
+
+   -- Parse relative URL
+   rel = url.parse(relativeUrl)
+   if not rel then return baseUrl end
+
+   -- If relative has authority, use it completely
+   if rel.host then
+      rel.scheme = rel.scheme or base.scheme
+      return url.unparse(rel)
+   end
+
+   rel.scheme = base.scheme
+   rel.host = base.host
+   rel.port = base.port
+   rel.auth = base.auth
+
+   -- Handle absolute path
+   if rel.path and rel.path:sub(0, 1) is '/' then
+      return url.unparse(rel)
+   end
+
+   -- Handle relative path
+   basePath = base.path or '/'
+   if basePath:sub(-1) != '/' then
+      basePath = rxBasePath.extract(basePath) or '/'
+   end
+
+   newPath = basePath .. (rel.path or '')
+   rel.path = url.normalize(newPath)
+
+   return url.unparse(rel)
+end
+
+-- Normalize URL path (resolve . and .. components)
+
+url.normalize = function(path)
+   if not path then return '' end
+
+   segments = {}
+   isAbsolute = path:sub(0, 1) is '/'
+
+   for start, stop, cap in rxPathSegment.findAll(path) do
+      local segment = cap[0]
+      if segment is '..' then
+         if #segments > 0 and segments[#segments] != '..' then
+            table.remove(segments)
+         elseif not isAbsolute then
+            table.insert(segments, '..')
+         end
+      elseif segment != '.' and segment != '' then
+         table.insert(segments, segment)
+      end
+   end
+
+   result = table.concat(segments, '/')
+   if isAbsolute then result = '/' .. result end
+
+   -- Preserve trailing slash
+   if path:sub(-1) is '/' and result:sub(-1) != '/' and result != '' then
+      result = result .. '/'
+   end
+
+   return result
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Utility Functions
+
+-- Check if URL is absolute
+
+url.isAbsolute = function(urlString)
+   urlString ?? return false
+   return rxAbsoluteUrl.test(urlString)
+end
+
+-- Check if URL is relative
+
+url.isRelative = function(urlString)
+   return not url.isAbsolute(urlString)
+end
+
+-- Extract scheme from URL
+
+url.getScheme = function(urlString)
+   urlString ?? return nil
+   return rxSchemeExtract.extract(urlString)
+end
+
+-- Extract host from URL
+
+url.getHost = function(urlString)
+   components = url.parse(urlString)
+   return components and components.host
+end
+
+-- Extract port from URL with optional default
+
+url.getPort = function(urlString, defaultPort)
+   components = url.parse(urlString)
+   if components then
+      if components.port then
+         return components.port
+      elseif defaultPort then
+         return defaultPort
+      end
+   end
+   return nil
+end

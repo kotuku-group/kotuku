@@ -1,0 +1,168 @@
+-- Pipe Operator Tests
+-- Syntax: lhs |> rhs_call() - pipes lhs as first argument(s) to rhs_call
+-- Limit syntax: lhs |N> rhs_call() - limits to N return values from lhs
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+@Test function BasicPipe()
+   function add_one(x)
+      return x + 1
+   end
+
+   result = 5 |> add_one()
+   assert(result is 6, "Failed basic pipe: expected 6, got " .. tostring(result))
+end
+
+@Test function ChainedPipes()
+   function double(x)
+      return x * 2
+   end
+
+   function square(x)
+      return x * x
+   end
+
+   result = 3 |> double() |> square()
+   assert(result is 36, "Failed chained pipes: expected 36, got " .. tostring(result))  -- (3*2)**2 = 36
+end
+
+@Test function PipeWithAdditionalArgs()
+   result = 5 |> math.max(3)
+   assert(result is 5, "Failed pipe with additional args: expected 5, got " .. tostring(result))  -- math.max(5, 3) = 5
+
+   result2 = 2 |> math.max(7)
+   assert(result2 is 7, "Failed pipe with additional args: expected 7, got " .. tostring(result2))  -- math.max(2, 7) = 7
+end
+
+@Test function MultiValuePipe()
+   function returns_two()
+      return 10, 20
+   end
+
+   result = returns_two() |> math.max()
+   assert(result is 20, "Failed multi-value pipe: expected 20, got " .. tostring(result))  -- math.max(10, 20) = 20
+end
+
+@Test function MultiValueWithLimit()
+   function returns_many()
+      return 1, 2, 3, 4, 5
+   end
+
+   function first_arg(a)
+      return a
+   end
+
+   -- Limit to 1 value
+   result = returns_many() |1> first_arg()
+   assert(result is 1, "Failed multi-value with limit: expected 1, got " .. tostring(result))
+end
+
+@Test function LimitTwoValues()
+   function returns_many()
+      return 1, 2, 3, 4, 5
+   end
+
+   -- Limit to 2 values, passes to math.max
+   result = returns_many() |2> math.max()
+   assert(result is 2, "Failed limit two values: expected 2, got " .. tostring(result))  -- math.max(1, 2) = 2
+end
+
+@Test function ComplexChaining()
+   function process(data)
+      return data * 2, data + 1
+   end
+
+   function combine(a, b)
+      return a + b
+   end
+
+   result = 5 |> process() |> combine()
+   -- process(5) returns 10, 6
+   -- combine(10, 6) returns 16
+   assert(result is 16, "Failed complex chaining: expected 16, got " .. tostring(result))
+end
+
+@Test function PipeWithString()
+   function upper(s)
+      return string.upper(s)
+   end
+
+   result = "hello" |> upper()
+   assert(result is "HELLO", "Failed pipe with string: expected 'HELLO', got " .. tostring(result))
+end
+
+@Test function PipeWithTable()
+   function get_length(t)
+      return #t
+   end
+
+   result = {1, 2, 3, 4} |> get_length()
+   assert(result is 4, "Failed pipe with table: expected 4, got " .. tostring(result))
+end
+
+@Test function PipeWithMathFunctions()
+   result = -5 |> math.abs()
+   assert(result is 5, "Failed pipe with math.abs: expected 5, got " .. tostring(result))
+
+   result2 = 2.7 |> math.floor()
+   assert(result2 is 2, "Failed pipe with math.floor: expected 2, got " .. tostring(result2))
+end
+
+@Test function PipeWithMultipleAdditionalArgs()
+   function sum_three(a, b, c)
+      return a + b + c
+   end
+
+   result = 1 |> sum_three(2, 3)
+   assert(result is 6, "Failed pipe with multiple additional args: expected 6, got " .. tostring(result))
+end
+
+@Test function PipePrecedence()
+   -- Pipe should have lower precedence than comparison, so this parses as (5 > 3) |> func()
+   function identity(x)
+      return x
+   end
+
+   result = 5 |> math.max(3) > 4
+   assert(result is true, "Failed pipe precedence: expected true, got " .. tostring(result))  -- (5 |> math.max(3)) > 4 = 5 > 4 = true
+end
+
+@Test function NestedFunctionPipe()
+   function outer(x)
+      return x * 10
+   end
+
+   function inner(x)
+      return x + 1
+   end
+
+   result = 5 |> inner() |> outer()
+   assert(result is 60, "Failed nested function pipe: expected 60, got " .. tostring(result))  -- outer(inner(5)) = outer(6) = 60
+end
+
+@Test function InvalidFloatLimit()
+   -- Floating-point limits like |2.5> should cause a parse error
+   script = obj.new('tiri', {
+      statement = [[
+         function identity(x) return x end
+         result = 1 |2.5> identity()
+      ]]
+   })
+
+   script.acActivate()
+   assert(script.error != ERR_Okay, "Script with float limit should have thrown an error")
+end
+
+@Test function InvalidZeroLimit()
+   -- Zero limit |0> should cause a parse error (limit must be >= 1)
+   script = obj.new('tiri', {
+      statement = [[
+         function identity(x) return x end
+         result = 1 |0> identity()
+      ]]
+   })
+
+   script.acActivate()
+   assert(script.error != ERR_Okay, "Script with zero limit should have thrown an error")
+end

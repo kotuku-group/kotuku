@@ -1,0 +1,454 @@
+-----------------------------------------------------------------------------------------------------------------------
+-- Comprehensive namespace testing for XML class
+
+   include 'xml'
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test basic namespace registration
+
+@Test function BasicNamespaceRegistration()
+   xml = obj.new("xml", { flags=XMF_NAMESPACE_AWARE })
+
+   -- Test namespace registration
+   err, nsHash = xml.mtRegisterNamespace("http://example.com/ns1")
+   assert(err is ERR_Okay, "Namespace registration should succeed")
+   assert(nsHash != 0, "Namespace hash should not be zero")
+
+   -- Test duplicate registration returns same hash
+   err2, nsHash2 = xml.mtRegisterNamespace("http://example.com/ns1")
+   assert(err2 is ERR_Okay, "Duplicate registration should succeed")
+   assert(nsHash is nsHash2, "Duplicate registration should return same hash")
+
+   -- Test URI retrieval
+   err3, uri = xml.mtGetNamespaceURI(nsHash)
+   assert(err3 is ERR_Okay, "URI retrieval should succeed")
+   assert(uri is "http://example.com/ns1", "Retrieved URI should match original")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test default namespace handling
+
+@Test function DefaultNamespace()
+   xml = obj.new("xml", {
+      flags=XMF_NAMESPACE_AWARE,
+      statement = '<root xmlns="http://default.example.com"><child>content</child></root>'
+   })
+
+   -- Test default namespace parsing
+   assert(#xml.tags > 0, "XML should parse successfully")
+
+   err, rootId = xml.mtSearch('/root')
+   assert(err is ERR_Okay, "Should find root tag")
+
+   err2, childId = xml.mtSearch('/root/child')
+   assert(err2 is ERR_Okay, "Should find child tag")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test prefixed namespaces
+
+@Test function PrefixedNamespaces()
+   xml = obj.new("xml", {
+      flags=XMF_NAMESPACE_AWARE,
+      statement = '<root xmlns:ns1="http://example.com/ns1" xmlns:ns2="http://example.com/ns2">' ..
+                  '<ns1:child1>content1</ns1:child1>' ..
+                  '<ns2:child2>content2</ns2:child2>' ..
+                  '</root>'
+   })
+
+   -- Test prefixed namespace parsing
+   assert(#xml.tags > 0, "XML should parse successfully")
+
+   err, ns1Id = xml.mtSearch('/root/ns1:child1')
+   assert(err is ERR_Okay, "Should find ns1:child1 tag")
+
+   err2, ns2Id = xml.mtSearch('/root/ns2:child2')
+   assert(err2 is ERR_Okay, "Should find ns2:child2 tag")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test nested namespace scopes
+
+@Test function NestedScopes()
+   xml = obj.new("xml", {
+      flags=XMF_NAMESPACE_AWARE,
+      statement = '<root xmlns:ns1="http://example.com/ns1">' ..
+                  '<level1 xmlns:ns2="http://example.com/ns2">' ..
+                  '<ns1:tag1>content1</ns1:tag1>' ..
+                  '<ns2:tag2>content2</ns2:tag2>' ..
+                  '</level1>' ..
+                  '</root>'
+   })
+
+   -- Test nested namespace scope resolution
+   assert(#xml.tags > 0, "XML should parse successfully")
+
+   err, tag1Id = xml.mtSearch('/root/level1/ns1:tag1')
+   assert(err is ERR_Okay, "Should find ns1:tag1 in nested scope")
+
+   err2, tag2Id = xml.mtSearch('/root/level1/ns2:tag2')
+   assert(err2 is ERR_Okay, "Should find ns2:tag2 in nested scope")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test namespace XPath queries
+
+@Test function NamespaceXPath()
+   xml = obj.new("xml", {
+      flags=XMF_NAMESPACE_AWARE,
+      statement = '<root xmlns:ns="http://example.com/ns">' ..
+                  '<ns:item id="1">Item 1</ns:item>' ..
+                  '<ns:item id="2">Item 2</ns:item>' ..
+                  '<item id="3">Item 3</item>' ..
+                  '</root>'
+   })
+
+   -- Test namespace-aware XPath queries
+   assert(xml.tags, "XML should parse successfully")
+
+   -- Should find namespaced items
+   err, count = xml.mtEvaluate('count(/root/ns:item)')
+   assert(err is ERR_Okay, "Count query should succeed")
+   assert(tonumber(count) is 2, "Should find 2 namespaced items")
+
+   -- Should find non-namespaced item
+   err2, itemId = xml.mtSearch('/root/item[@id="3"]')
+   assert(err2 is ERR_Okay, "Should find non-namespaced item")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Regression: XPath namespace alias resolution should compare namespace URIs
+
+@Test function XPathNamespaceAliasResolution()
+   xml = obj.new("xml", {
+      flags = XMF_NAMESPACE_AWARE,
+      statement = '<root xmlns:ns="http://example.com/primary" xmlns:alias="http://example.com/primary">' ..
+                  '<ns:item id="ns-target" />' ..
+                  '</root>'
+   })
+
+   assert(xml.tags, "XML should parse successfully")
+
+   err, itemId = xml.mtSearch('/root/alias:item')
+   assert(err is ERR_Okay, 'Alias prefix should resolve via namespace URI bindings: ' .. mSys.GetErrorMsg(err))
+
+   errAttrib, value = xml.mtGetAttrib(itemId, 'id')
+   assert(errAttrib is ERR_Okay and value is 'ns-target', 'Matched element should expose id="ns-target", got ' .. tostring(value))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test namespace serialization
+
+@Test function Serialization()
+   xml = obj.new("xml", {
+      flags=XMF_NAMESPACE_AWARE,
+      statement = '<root xmlns:ns="http://example.com/ns">' ..
+                  '<ns:child>content</ns:child>' ..
+                  '</root>'
+   })
+
+   -- Test namespace-aware serialization
+   assert(xml.tags, "XML should parse successfully")
+
+   err, serialized = xml.mtSerialise(0, XMF_INCLUDE_SIBLINGS)
+   assert(err is ERR_Okay, "Serialization should succeed")
+   assert(string.len(serialized) > 0, "Serialized string should not be empty")
+
+   -- Check that namespace declarations are preserved
+   assert(string.find(serialized, 'xmlns:ns="http://example.com/ns"'), "Namespace declaration should be preserved")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test error handling
+
+@Test function ErrorHandling()
+   xml = obj.new("xml", { flags=XMF_NAMESPACE_AWARE })
+
+   -- Test error cases
+
+   -- Test invalid namespace registration
+   err, hash = xml.mtRegisterNamespace("")
+   assert(err != ERR_Okay, "Empty URI registration should fail")
+
+   -- Test invalid namespace lookup
+   err2, uri = xml.mtGetNamespaceURI(999999)
+   assert(err2 != ERR_Okay, "Invalid hash lookup should fail")
+
+   -- Test invalid tag namespace assignment
+   err3 = xml.mtSetTagNamespace(999999, 12345)
+   assert(err3 != ERR_Okay, "Invalid tag ID should fail")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test prefix resolution
+
+@Test function PrefixResolution()
+   xml = obj.new("xml", {
+      flags=XMF_NAMESPACE_AWARE,
+      statement = '<root xmlns:test="http://test.example.com"><test:child/></root>'
+   })
+
+   -- Test prefix resolution method
+   assert(xml.tags, "XML should parse successfully")
+
+   err, childId = xml.mtSearch('/root/test:child')
+   assert(err is ERR_Okay, "Should find prefixed child")
+
+   err2, nsHash = xml.mtResolvePrefix("test", childId)
+   assert(err2 is ERR_Okay, "Prefix resolution should succeed")
+   assert(nsHash != 0, "Resolved namespace hash should not be zero")
+
+   err3, uri = xml.mtGetNamespaceURI(nsHash)
+   assert(err3 is ERR_Okay, "URI lookup should succeed")
+   assert(uri is "http://test.example.com", "Resolved URI should match")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test namespace validation
+
+@Test function NamespaceValidation()
+   xml = obj.new("xml", {
+      flags=XMF_NAMESPACE_AWARE,
+      statement = '<root xmlns:valid="http://valid.example.com">' ..
+                  '<valid:child>content</valid:child>' ..
+                  '<invalid:orphan>orphaned</invalid:orphan>' ..
+                  '</root>'
+   })
+
+   -- Test namespace validation
+   assert(xml.tags, "XML should parse successfully")
+
+   -- Valid namespace should work
+   err, validId = xml.mtSearch('/root/valid:child')
+   assert(err is ERR_Okay, "Valid namespace should be found")
+
+   -- Invalid namespace should be handled appropriately
+   -- (Specific behavior depends on validation implementation)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test with existing namespace test
+
+@Test function ExistingNamespaceHandling()
+   -- This extends the existing test in test_error_handling.tiri
+   xml = obj.new("xml", {
+      flags=XMF_NAMESPACE_AWARE,
+      statement = '<root xmlns:ns="http://example.com"><ns:child ns:attr="value"/></root>'
+   })
+
+   -- Namespaces should be preserved as part of tag/attribute names
+   assert(xml.tags, "Namespace XML should parse")
+
+   err, nsId = xml.mtSearch('/root/ns:child')
+   assert(err is ERR_Okay, "Should find namespaced child")
+
+   err, value = xml.mtGetAttrib(nsId, 'ns:attr')
+   assert(err is ERR_Okay and value is "value", "Namespace attribute should be preserved")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test hierarchical namespace resolution with nested scope redefinition
+
+@Test function HierarchicalResolution()
+   xml = obj.new("xml", {
+      flags=XMF_NAMESPACE_AWARE,
+      statement = '<root xmlns:ns1="http://root.example.com">' ..
+                  '  <level1 xmlns:ns2="http://level1.example.com">' ..
+                  '    <level2 xmlns:ns1="http://level2.example.com">' ..
+                  '      <target>content</target>' ..
+                  '    </level2>' ..
+                  '  </level1>' ..
+                  '</root>'
+   })
+
+   assert(xml.tags, "XML should parse successfully")
+
+   -- Find the target tag
+   err, targetId = xml.mtSearch('/root/level1/level2/target')
+   assert(err is ERR_Okay, "Should find target tag")
+
+   -- Test ns1 resolution from target scope (should find level2 redefinition)
+   err2, ns1Hash = xml.mtResolvePrefix("ns1", targetId)
+   assert(err2 is ERR_Okay, "Should resolve ns1 prefix")
+
+   -- Verify it resolves to the level2 redefinition
+   err3, ns1URI = xml.mtGetNamespaceURI(ns1Hash)
+   assert(err3 is ERR_Okay, "Should get ns1 URI")
+   assert(ns1URI is "http://level2.example.com", "Should resolve to level2 redefinition: " .. tostring(ns1URI))
+
+   -- Test ns2 resolution from target scope (should find level1 definition)
+   err4, ns2Hash = xml.mtResolvePrefix("ns2", targetId)
+   assert(err4 is ERR_Okay, "Should resolve ns2 prefix")
+
+   err5, ns2URI = xml.mtGetNamespaceURI(ns2Hash)
+   assert(err5 is ERR_Okay, "Should get ns2 URI")
+   assert(ns2URI is "http://level1.example.com", "Should resolve to level1 definition: " .. tostring(ns2URI))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test default namespace resolution at different levels
+
+@Test function DefaultNamespaceHierarchy()
+   xml = obj.new("xml", {
+      flags=XMF_NAMESPACE_AWARE,
+      statement = '<root xmlns="http://default1.example.com">' ..
+                  '  <level1>' ..
+                  '    <level2 xmlns="http://default2.example.com">' ..
+                  '      <target>content</target>' ..
+                  '    </level2>' ..
+                  '  </level1>' ..
+                  '</root>'
+   })
+
+   assert(xml.tags, "XML should parse successfully")
+
+   -- Find target in level2 scope
+   err, targetId = xml.mtSearch('/root/level1/level2/target')
+   assert(err is ERR_Okay, "Should find target tag")
+
+   -- Test default namespace resolution (empty prefix)
+   err2, defaultHash = xml.mtResolvePrefix("", targetId)
+   assert(err2 is ERR_Okay, "Should resolve default namespace")
+
+   err3, defaultURI = xml.mtGetNamespaceURI(defaultHash)
+   assert(err3 is ERR_Okay, "Should get default URI")
+   assert(defaultURI is "http://default2.example.com", "Should resolve to level2 default: " .. tostring(defaultURI))
+
+   -- Find target in level1 scope (inherits root default)
+   err4, level1Id = xml.mtSearch('/root/level1')
+   assert(err4 is ERR_Okay, "Should find level1 tag")
+
+   err5, level1DefaultHash = xml.mtResolvePrefix("", level1Id)
+   assert(err5 is ERR_Okay, "Should resolve level1 default namespace")
+
+   err6, level1DefaultURI = xml.mtGetNamespaceURI(level1DefaultHash)
+   assert(err6 is ERR_Okay, "Should get level1 default URI")
+   assert(level1DefaultURI is "http://default1.example.com", "Should resolve to root default: " .. tostring(level1DefaultURI))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test undefined prefix resolution
+
+@Test function UndefinedPrefix()
+   xml = obj.new("xml", {
+      flags=XMF_NAMESPACE_AWARE,
+      statement = '<root xmlns:ns="http://example.com"><child>content</child></root>'
+   })
+
+   assert(xml.tags, "XML should parse successfully")
+
+   err, childId = xml.mtSearch('/root/child')
+   assert(err is ERR_Okay, "Should find child tag")
+
+   -- Try to resolve undefined prefix
+   err2, hash = xml.mtResolvePrefix("undefined", childId)
+   assert(err2 != ERR_Okay, "Should fail to resolve undefined prefix")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test namespace scoping during parsing
+-- Verifies that namespace declarations in nested elements don't leak to sibling elements
+
+@Test function NamespaceScopingDuringParsing()
+   xml = obj.new("xml", {
+      flags=XMF_NAMESPACE_AWARE,
+      statement = '<root xmlns:ns="a"><ns:item1/><child xmlns:ns="b"><ns:item2/></child><ns:item3/></root>'
+   })
+
+   assert(xml.tags, "XML should parse successfully")
+
+   -- Get the actual NamespaceID assigned to each element during parsing
+   function get_tag_namespace_id(xpath)
+      err, tagId = xml.mtSearch(xpath)
+      if err is ERR_Okay then
+         err2, tag = xml.mtGetTag(tagId)
+         if err2 is ERR_Okay then
+            return tag.namespaceID or 0
+         end
+      end
+      return nil
+   end
+
+   ns_item1_id = get_tag_namespace_id('/root/ns:item1')
+   ns_item2_id = get_tag_namespace_id('/root/child/ns:item2')
+   ns_item3_id = get_tag_namespace_id('/root/ns:item3')
+
+   -- Both ns:item1 and ns:item3 should have the same NamespaceID (namespace "a")
+   -- because ns:item3 should not be affected by the xmlns:ns="b" declaration in <child>
+   assert(ns_item1_id and ns_item3_id, "Should find both ns:item1 and ns:item3")
+   assert(ns_item1_id is ns_item3_id, "ns:item1 and ns:item3 should have same NamespaceID (both should resolve to 'a')")
+
+   -- ns:item2 should have a different NamespaceID (namespace "b")
+   assert(ns_item2_id, "Should find ns:item2")
+   assert(ns_item2_id != ns_item1_id, "ns:item2 should have different NamespaceID (should resolve to 'b')")
+
+   -- Verify the actual namespace URIs
+   function get_namespace_uri(namespaceId):str
+      if namespaceId and namespaceId != 0 then
+         local err, uri = xml.mtGetNamespaceURI(namespaceId)
+         if err is ERR_Okay then
+            return uri
+         end
+      end
+      return "none"
+   end
+
+   ns_item1_uri = get_namespace_uri(ns_item1_id)
+   ns_item2_uri = get_namespace_uri(ns_item2_id)
+   ns_item3_uri = get_namespace_uri(ns_item3_id)
+
+   assert(ns_item1_uri is "a", "ns:item1 should resolve to namespace 'a', got: " .. ns_item1_uri)
+   assert(ns_item2_uri is "b", "ns:item2 should resolve to namespace 'b', got: " .. ns_item2_uri)
+   assert(ns_item3_uri is "a", "ns:item3 should resolve to namespace 'a', got: " .. ns_item3_uri)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test namespace resolution during XPath queries (complementary to parsing test)
+
+@Test function NamespaceScopingDuringResolution()
+   xml = obj.new("xml", {
+      flags=XMF_NAMESPACE_AWARE,
+      statement = '<root xmlns:ns="a"><ns:item id="1"/><child xmlns:ns="b"><ns:item id="2"/></child><ns:item id="3"/></root>'
+   })
+
+   assert(xml.tags, "XML should parse successfully")
+
+   -- Test prefix resolution for each element using ResolvePrefix method
+   err1, item1Id = xml.mtSearch('/root/ns:item[@id="1"]')
+   assert(err1 is ERR_Okay, "Should find first ns:item")
+
+   err2, item2Id = xml.mtSearch('/root/child/ns:item[@id="2"]')
+   assert(err2 is ERR_Okay, "Should find second ns:item")
+
+   err3, item3Id = xml.mtSearch('/root/ns:item[@id="3"]')
+   assert(err3 is ERR_Okay, "Should find third ns:item")
+
+   -- Test prefix resolution from each context
+   err4, ns1Hash = xml.mtResolvePrefix("ns", item1Id)
+   assert(err4 is ERR_Okay, "Should resolve ns prefix from item1 context")
+
+   err5, ns2Hash = xml.mtResolvePrefix("ns", item2Id)
+   assert(err5 is ERR_Okay, "Should resolve ns prefix from item2 context")
+
+   err6, ns3Hash = xml.mtResolvePrefix("ns", item3Id)
+   assert(err6 is ERR_Okay, "Should resolve ns prefix from item3 context")
+
+   -- Get the actual namespace URIs
+   err7, uri1 = xml.mtGetNamespaceURI(ns1Hash)
+   assert(err7 is ERR_Okay, "Should get URI for item1 namespace")
+
+   err8, uri2 = xml.mtGetNamespaceURI(ns2Hash)
+   assert(err8 is ERR_Okay, "Should get URI for item2 namespace")
+
+   err9, uri3 = xml.mtGetNamespaceURI(ns3Hash)
+   assert(err9 is ERR_Okay, "Should get URI for item3 namespace")
+
+   -- Verify correct namespace resolution
+   assert(uri1 is "a", "Item1 ns prefix should resolve to 'a', got: " .. uri1)
+   assert(uri2 is "b", "Item2 ns prefix should resolve to 'b', got: " .. uri2)
+   assert(uri3 is "a", "Item3 ns prefix should resolve to 'a', got: " .. uri3)
+
+   -- Verify that item1 and item3 resolve to the same namespace (not affected by child's declaration)
+   assert(ns1Hash is ns3Hash, "Item1 and item3 should resolve to same namespace (both 'a')")
+   assert(ns2Hash != ns1Hash, "Item2 should resolve to different namespace ('b')")
+end

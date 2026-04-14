@@ -1,0 +1,67 @@
+-- XPath 2.0 duration helper tests
+
+   include 'xml'
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Validate component extraction from general xs:duration values
+
+@Test function GeneralDurationComponents()
+   local xml = obj.new("xml", {
+      statement = '<root>'
+         .. '<duration id="ym" value="P2Y11M"/>'
+         .. '<duration id="carry-months" value="P14M"/>'
+         .. '<duration id="days" value="P30D"/>'
+         .. '<duration id="time" value="PT30.5S"/>'
+         .. '<duration id="carry-time" value="PT48H30M90S"/>'
+         .. '<duration id="negative" value="-P1Y2M3DT4H5M6S"/>'
+         .. '<duration id="mixed" value="P1Y2M3DT4H5M6.25S"/>'
+         .. '</root>'
+   })
+
+   local errYears, yearsNode = xml.mtSearch('/root/duration[@id = "ym" and years-from-duration(@value) = 2 and months-from-duration(@value) = 11]')
+   assert(errYears is ERR_Okay and yearsNode != nil, 'years-from-duration() should extract the year component from xs:duration values')
+
+   local errCarryMonths, carryMonthsNode = xml.mtSearch('/root/duration[@id = "carry-months" and years-from-duration(@value) = 1 and months-from-duration(@value) = 2]')
+   assert(errCarryMonths is ERR_Okay and carryMonthsNode != nil, 'duration helpers should normalise months into canonical year and month components')
+
+   local errDays, daysNode = xml.mtSearch('/root/duration[@id = "days" and days-from-duration(@value) = 30]')
+   assert(errDays is ERR_Okay and daysNode != nil, 'days-from-duration() should decode day quantities from xs:duration values')
+
+   local errSeconds, secondsNode = xml.mtSearch('/root/duration[@id = "time" and seconds-from-duration(@value) = 30.5]')
+   assert(errSeconds is ERR_Okay and secondsNode != nil, 'seconds-from-duration() should honour fractional seconds within xs:duration values')
+
+   local errCarryTime, carryTimeNode = xml.mtSearch('/root/duration[@id = "carry-time" and days-from-duration(@value) = 2 and hours-from-duration(@value) = 0 and minutes-from-duration(@value) = 31 and seconds-from-duration(@value) = 30]')
+   assert(errCarryTime is ERR_Okay and carryTimeNode != nil, 'duration helpers should carry overflowed time fields into neighbouring units before extraction')
+
+   local errNegative, negativeNode = xml.mtSearch('/root/duration[@id = "negative" and years-from-duration(@value) = -1 and months-from-duration(@value) = -2 and days-from-duration(@value) = -3 and hours-from-duration(@value) = -4 and minutes-from-duration(@value) = -5 and seconds-from-duration(@value) = -6]')
+   assert(errNegative is ERR_Okay and negativeNode != nil, 'duration component helpers should propagate the sign of negative xs:duration values')
+
+   local errMixed, mixedNode = xml.mtSearch('/root/duration[@id = "mixed" and hours-from-duration(@value) = 4 and minutes-from-duration(@value) = 5 and round(seconds-from-duration(@value) * 100) = 625]')
+   assert(errMixed is ERR_Okay and mixedNode != nil, 'duration helpers should parse combined date and time components including fractional seconds')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Validate specialised yearMonthDuration and dayTimeDuration helpers
+
+@Test function SpecificDurationTypes()
+   local xml = obj.new("xml", {
+      statement = '<root>'
+         .. '<duration id="ym-positive" value="P3Y4M"/>'
+         .. '<duration id="ym-negative" value="-P1Y2M"/>'
+         .. '<duration id="dt" value="P5DT6H7M8.25S"/>'
+         .. '<duration id="dt-negative" value="-P0DT12H30M45S"/>'
+         .. '</root>'
+   })
+
+   local errYmPositive, ymPositiveNode = xml.mtSearch('/root/duration[@id = "ym-positive" and years-from-yearMonthDuration(@value) = 3 and months-from-yearMonthDuration(@value) = 4]')
+   assert(errYmPositive is ERR_Okay and ymPositiveNode != nil, 'years-from-yearMonthDuration() should expose the year field of xs:yearMonthDuration values')
+
+   local errYmNegative, ymNegativeNode = xml.mtSearch('/root/duration[@id = "ym-negative" and years-from-yearMonthDuration(@value) = -1 and months-from-yearMonthDuration(@value) = -2]')
+   assert(errYmNegative is ERR_Okay and ymNegativeNode != nil, 'months-from-yearMonthDuration() should apply duration signs to the extracted month component')
+
+   local errDayTime, dayTimeNode = xml.mtSearch('/root/duration[@id = "dt" and days-from-dayTimeDuration(@value) = 5 and hours-from-dayTimeDuration(@value) = 6 and minutes-from-dayTimeDuration(@value) = 7 and round(seconds-from-dayTimeDuration(@value) * 100) = 825]')
+   assert(errDayTime is ERR_Okay and dayTimeNode != nil, 'dayTimeDuration helpers should decode combined day and time components, including fractional seconds')
+
+   local errDayTimeNegative, dayTimeNegativeNode = xml.mtSearch('/root/duration[@id = "dt-negative" and days-from-dayTimeDuration(@value) = 0 and hours-from-dayTimeDuration(@value) = -12 and minutes-from-dayTimeDuration(@value) = -30 and seconds-from-dayTimeDuration(@value) = -45]')
+   assert(errDayTimeNegative is ERR_Okay and dayTimeNegativeNode != nil, 'dayTimeDuration helpers should respect negative values across all components')
+end

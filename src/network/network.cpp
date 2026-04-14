@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -33,9 +33,9 @@ sockets and HTTP, please refer to the @NetSocket and @HTTP classes.
 
 #include <string.h>
 
-#include <parasol/main.h>
-#include <parasol/modules/network.h>
-#include <parasol/strings.hpp>
+#include <kotuku/main.h>
+#include <kotuku/modules/network.h>
+#include <kotuku/strings.hpp>
 
 #ifndef DISABLE_SSL
   #ifdef _WIN32
@@ -467,6 +467,7 @@ static OBJECTPTR clProxy = nullptr;
 static OBJECTPTR clNetSocket = nullptr;
 static OBJECTPTR clClientSocket = nullptr;
 static OBJECTPTR clNetClient = nullptr;
+static OBJECTPTR glNetworkModule = nullptr;
 static HOSTMAP glHosts; // Protected by glHostsMutex
 static HOSTMAP glAddresses; // Protected by glAddressesMutex
 static std::shared_mutex glHostsMutex;
@@ -508,6 +509,8 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    pf::Log log;
 
    CoreBase = argCoreBase;
+
+   argModule->get(FID_Root, glNetworkModule);
 
    if (init_netclient() != ERR::Okay) return ERR::AddClass;
    if (init_netsocket() != ERR::Okay) return ERR::AddClass;
@@ -1031,5 +1034,5 @@ static STRUCTS glStructures = {
    { "NetQueue",  sizeof(NetQueue) }
 };
 
-PARASOL_MOD(MODInit, nullptr, MODOpen, MODExpunge, MOD_IDL, &glStructures)
+KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, nullptr, MOD_IDL, &glStructures)
 extern "C" struct ModHeader * register_network_module() { return &ModHeader; }

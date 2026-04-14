@@ -1,0 +1,295 @@
+-- Flute test suite for values() and keys() iterators
+-- Tests the syntax: for v in values(tbl) do ... end
+--                   for k in keys(tbl) do ... end
+
+----------------------------------------------------------------------------------------------------------------------
+-- values() iterator tests
+
+@Test function ValuesBasicHash()
+   -- Test values() with hash table
+   t = {a=1, b=2, c=3}
+   sum = 0
+   for v in values(t) do
+      sum += v
+   end
+   assert(sum is 6, "values() sum should be 6, got " .. sum)
+end
+
+@Test function ValuesBasicArray()
+   -- Test values() with array table (0-based indexing)
+   t = {10, 20, 30, 40}
+   sum = 0
+   for v in values(t) do
+      sum += v
+   end
+   assert(sum is 100, "values() array sum should be 100, got " .. sum)
+end
+
+@Test function ValuesEmpty()
+   -- Test values() with empty table
+   t = {}
+   count = 0
+   for v in values(t) do
+      count++
+   end
+   assert(count is 0, "values() on empty table should iterate 0 times, got " .. count)
+end
+
+@Test function ValuesMixedTable()
+   -- Test values() with mixed array/hash table
+   t = {10, 20, name="test", value=100}
+   sum = 0
+   count = 0
+   for v in values(t) do
+      if type(v) is "number" then sum += v end
+      count++
+   end
+   assert(count is 4, "values() mixed table should have 4 elements, got " .. count)
+   assert(sum is 130, "values() numeric sum should be 130, got " .. sum)
+end
+
+@Test function ValuesNilValues()
+   -- Test values() skips nil values (sparse array)
+   t = {}
+   t[0] = 1
+   t[2] = 3
+   t[4] = 5
+   count = 0
+   sum = 0
+   for v in values(t) do
+      count++
+      sum += v
+   end
+   assert(count is 3, "values() should only see 3 non-nil values, got " .. count)
+   assert(sum is 9, "values() sum should be 9, got " .. sum)
+end
+
+@Test function ValuesStringValues()
+   -- Test values() with string values
+   t = {first="hello", second="world"}
+   result = ""
+   for v in values(t) do
+      result ..= v
+   end
+   -- Order is not guaranteed, so check length
+   assert(#result is 10, "concatenated length should be 10, got " .. #result)
+end
+
+@Test function ValuesNestedTables()
+   -- Test values() returns table values correctly
+   t = {a={1,2}, b={3,4}}
+   count = 0
+   for v in values(t) do
+      assert(type(v) is "table", "value should be table")
+      count++
+   end
+   assert(count is 2, "should have 2 table values, got " .. count)
+end
+
+@Test function ValuesWithBreak()
+   -- Test early termination with break
+   t = {a=1, b=2, c=3, d=4, e=5}
+   count = 0
+   for v in values(t) do
+      count++
+      if count >= 3 then break end
+   end
+   assert(count is 3, "values() with break should count 3, got " .. count)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- keys() iterator tests
+
+@Test function KeysBasicHash()
+   -- Test keys() with hash table
+   t = {a=1, b=2, c=3}
+   result = {}
+   for k in keys(t) do
+      result[k] = true
+   end
+   assert(result.a is true, "should have key 'a'")
+   assert(result.b is true, "should have key 'b'")
+   assert(result.c is true, "should have key 'c'")
+end
+
+@Test function KeysBasicArray()
+   -- Test keys() with array table (0-based indexing)
+   t = {10, 20, 30}
+   sum = 0
+   for k in keys(t) do
+      sum += k
+   end
+   -- Keys are 0, 1, 2 for a 3-element array
+   assert(sum is 3, "keys() sum should be 3 (0+1+2), got " .. sum)
+end
+
+@Test function KeysEmpty()
+   -- Test keys() with empty table
+   t = {}
+   count = 0
+   for k in keys(t) do
+      count++
+   end
+   assert(count is 0, "keys() on empty table should iterate 0 times, got " .. count)
+end
+
+@Test function KeysMixedTable()
+   -- Test keys() with mixed array/hash table
+   t = {10, 20, name="test"}
+   keys_found = {}
+   for k in keys(t) do
+      keys_found[tostring(k)] = true
+   end
+   assert(keys_found["0"] is true, "should have key 0")
+   assert(keys_found["1"] is true, "should have key 1")
+   assert(keys_found["name"] is true, "should have key 'name'")
+end
+
+@Test function KeysNilValues()
+   -- Test keys() skips indices with nil values
+   t = {}
+   t[0] = 1
+   t[2] = 3
+   t[4] = 5
+   count = 0
+   for k in keys(t) do
+      count++
+   end
+   assert(count is 3, "keys() should only see 3 keys, got " .. count)
+end
+
+@Test function KeysWithBreak()
+   -- Test early termination with break
+   t = {a=1, b=2, c=3, d=4, e=5}
+   count = 0
+   for k in keys(t) do
+      count++
+      if count >= 3 then break end
+   end
+   assert(count is 3, "keys() with break should count 3, got " .. count)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Comparison tests: values()/keys() vs pairs()
+
+@Test function ValuesEquivalentToPairs()
+   -- Verify values() produces same values as pairs()
+   t = {a=10, b=20, c=30}
+
+   values_sum = 0
+   for v in values(t) do
+      values_sum += v
+   end
+
+   pairs_sum = 0
+   for _, v in pairs(t) do
+      pairs_sum += v
+   end
+
+   assert(values_sum is pairs_sum, "values() and pairs() should produce same sum")
+   assert(values_sum is 60, "sum should be 60, got " .. values_sum)
+end
+
+@Test function KeysEquivalentToPairs()
+   -- Verify keys() produces same keys as pairs()
+   t = {a=10, b=20, c=30}
+
+   keys_from_keys = {}
+   for k in keys(t) do
+      keys_from_keys[k] = true
+   end
+
+   keys_from_pairs = {}
+   for k, _ in pairs(t) do
+      keys_from_pairs[k] = true
+   end
+
+   -- Check they have the same keys
+   for k in keys(keys_from_keys) do
+      assert(keys_from_pairs[k] is true, "keys() should have same keys as pairs()")
+   end
+   for k in keys(keys_from_pairs) do
+      assert(keys_from_keys[k] is true, "pairs() should have same keys as keys()")
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Edge cases and advanced tests
+
+@Test function ValuesDoesNotExposeKey()
+   -- Ensure only value is returned, not key
+   t = {only_key = "only_value"}
+   for v in values(t) do
+      assert(v is "only_value", "should get value, got " .. tostring(v))
+   end
+end
+
+@Test function KeysDoesNotExposeValue()
+   -- Ensure only key is returned, not value
+   t = {only_key = "only_value"}
+   for k in keys(t) do
+      assert(k is "only_key", "should get key, got " .. tostring(k))
+   end
+end
+
+@Test function ValuesWithFunctionValues()
+   -- Test values() with function values
+   fn1 = function() return 1 end
+   fn2 = function() return 2 end
+   t = {a=fn1, b=fn2}
+
+   sum = 0
+   for v in values(t) do
+      assert(type(v) is "function", "value should be function")
+      sum += v()
+   end
+   assert(sum is 3, "sum of function results should be 3, got " .. sum)
+end
+
+@Test function ValuesLargeTable()
+   -- Test values() with larger table for performance
+   t = {}
+   for i in {0..100} do
+      t[i] = i * 2
+   end
+
+   sum = 0
+   count = 0
+   for v in values(t) do
+      sum += v
+      count++
+   end
+   -- Sum of 0*2 + 1*2 + ... + 99*2 = 2 * (0+1+...+99) = 2 * 4950 = 9900
+   assert(count is 100, "should have 100 values, got " .. count)
+   assert(sum is 9900, "sum should be 9900, got " .. sum)
+end
+
+@Test function KeysLargeTable()
+   -- Test keys() with larger table for performance
+   t = {}
+   for i in {0..100} do
+      t[i] = true
+   end
+
+   sum = 0
+   count = 0
+   for k in keys(t) do
+      sum += k
+      count++
+   end
+   -- Sum of 0+1+...+99 = 4950
+   assert(count is 100, "should have 100 keys, got " .. count)
+   assert(sum is 4950, "sum should be 4950, got " .. sum)
+end
+
+@Test function NestedValuesIteration()
+   -- Test nested values() loops
+   outer = {a={x=1, y=2}, b={x=3, y=4}}
+   total = 0
+   for inner in values(outer) do
+      for v in values(inner) do
+         total += v
+      end
+   end
+   assert(total is 10, "nested values sum should be 10, got " .. total)
+end

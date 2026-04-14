@@ -1,0 +1,1191 @@
+-- Comprehensive test suite for the choose...from expression in Tiri
+-- Syntax: choose <value> from <pattern> [when <guard>] -> <result> ... else -> <result> end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Basic Value Matching
+
+@Test(hotpath=true) function BasicLiteralNumber()
+   result = choose 200 from
+      200 -> 'OK'
+      404 -> 'Not Found'
+      else -> 'Unknown'
+   end
+   assert(result is 'OK', "Expected 'OK', got " .. tostring(result))
+end
+
+@Test function BasicLiteralNumberSecondMatch()
+   result = choose 404 from
+      200 -> 'OK'
+      404 -> 'Not Found'
+      else -> 'Unknown'
+   end
+   assert(result is 'Not Found', "Expected 'Not Found', got " .. tostring(result))
+end
+
+@Test function BasicLiteralElse()
+   result = choose 500 from
+      200 -> 'OK'
+      404 -> 'Not Found'
+      else -> 'Unknown'
+   end
+   assert(result is 'Unknown', "Expected 'Unknown', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function BasicLiteralString()
+   result = choose 'hello' from
+      'hello' -> 'greeting'
+      'goodbye' -> 'farewell'
+      else -> 'unknown'
+   end
+   assert(result is 'greeting', "Expected 'greeting', got " .. tostring(result))
+end
+
+@Test function BasicLiteralBoolean()
+   result = choose true from
+      true -> 'yes'
+      false -> 'no'
+      else -> 'unknown'
+   end
+   assert(result is 'yes', "Expected 'yes', got " .. tostring(result))
+end
+
+@Test function BasicLiteralBooleanFalse()
+   result = choose false from
+      true -> 'yes'
+      false -> 'no'
+      else -> 'unknown'
+   end
+   assert(result is 'no', "Expected 'no', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function BasicLiteralNil()
+   result = choose nil from
+      nil -> 'nothing'
+      else -> 'something'
+   end
+   assert(result is 'nothing', "Expected 'nothing', got " .. tostring(result))
+end
+
+@Test function BasicNegativeNumber()
+   result = choose -42 from
+      -42 -> 'negative forty-two'
+      42 -> 'forty-two'
+      else -> 'other'
+   end
+   assert(result is 'negative forty-two', "Expected 'negative forty-two', got " .. tostring(result))
+end
+
+@Test function BasicFloatingPoint()
+   result = choose 3.14 from
+      3.14 -> 'pi'
+      2.71 -> 'e'
+      else -> 'other'
+   end
+   assert(result is 'pi', "Expected 'pi', got " .. tostring(result))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Variable Scrutinee (Runtime Evaluation)
+
+@Test(hotpath=true) function VariableScrutinee()
+   status = 200
+   result = choose status from
+      200 -> 'OK'
+      404 -> 'Not Found'
+      else -> 'Unknown'
+   end
+   assert(result is 'OK', "Expected 'OK', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function ScrutineeEvaluatedOnce()
+   call_count = 0
+   function getValue()
+      call_count++
+      return 'target'
+   end
+
+   result = choose getValue() from
+      'target' -> 'found'
+      else -> 'not found'
+   end
+
+   assert(result is 'found', "Expected 'found', got " .. tostring(result))
+   assert(call_count is 1, "Scrutinee should be evaluated exactly once, was called " .. tostring(call_count) .. " times")
+end
+
+@Test(hotpath=true) function ExpressionScrutinee()
+   a, b = 10, 5
+   result = choose a + b from
+      15 -> 'fifteen'
+      10 -> 'ten'
+      -20 -> 'negative twenty'
+      else -> 'other'
+   end
+   assert(result is 'fifteen', "Expected 'fifteen', got " .. tostring(result))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- No Else Branch (Default nil Behaviour)
+
+@Test function NoElseReturnsNil()
+   result = choose 999 from
+      200 -> 'OK'
+      404 -> 'Not Found'
+   end
+   assert(result is nil, "Expected nil when no match and no else, got " .. tostring(result))
+end
+
+@Test function NoElseWithMatch()
+   result = choose 200 from
+      200 -> 'OK'
+      404 -> 'Not Found'
+   end
+   assert(result is 'OK', "Expected 'OK', got " .. tostring(result))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- First-Match-Wins (Order Dependency)
+
+@Test function FirstMatchWins()
+   result = choose 'test' from
+      'test' -> 'first'
+      'test' -> 'second'
+      else -> 'else'
+   end
+   assert(result is 'first', "Expected 'first' (first match wins), got " .. tostring(result))
+end
+
+@Test function FirstMatchWinsWithWildcard()
+   result = choose 42 from
+      _ -> 'wildcard'
+      42 -> 'literal'
+      else -> 'else'
+   end
+   assert(result is 'wildcard', "Expected 'wildcard' (first match wins), got " .. tostring(result))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Wildcard `_` Pattern
+
+@Test function BareWildcard()
+   result = choose 'anything' from
+      _ -> 'matched'
+   end
+   assert(result is 'matched', "Expected 'matched', got " .. tostring(result))
+end
+
+@Test function WildcardAfterSpecificPatterns()
+   result = choose 'unknown' from
+      'known' -> 'specific'
+      _ -> 'catch-all'
+   end
+   assert(result is 'catch-all', "Expected 'catch-all', got " .. tostring(result))
+end
+
+@Test function WildcardMatchesNil()
+   -- Note: _ matches anything including nil (unlike else which is only reached if nothing matched)
+   result = choose nil from
+      _ -> 'wildcard matched nil'
+   end
+   assert(result is 'wildcard matched nil', "Expected wildcard to match nil, got " .. tostring(result))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Relational Patterns
+
+@Test(hotpath=true) function RelationalLessThan()
+   result = choose 25 from
+      < 30 -> 'small'
+      < 60 -> 'medium'
+      else -> 'large'
+   end
+   assert(result is 'small', "Expected 'small', got " .. tostring(result))
+end
+
+@Test function RelationalLessThanSecondMatch()
+   result = choose 45 from
+      < 30 -> 'small'
+      < 60 -> 'medium'
+      else -> 'large'
+   end
+   assert(result is 'medium', "Expected 'medium', got " .. tostring(result))
+end
+
+@Test function RelationalLessThanElse()
+   result = choose 100 from
+      < 30 -> 'small'
+      < 60 -> 'medium'
+      else -> 'large'
+   end
+   assert(result is 'large', "Expected 'large', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function RelationalLessThanOrEqual()
+   result = choose 30 from
+      <= 30 -> 'at most 30'
+      else -> 'more than 30'
+   end
+   assert(result is 'at most 30', "Expected 'at most 30', got " .. tostring(result))
+end
+
+@Test function RelationalGreaterThan()
+   result = choose 100 from
+      > 50 -> 'large'
+      else -> 'small'
+   end
+   assert(result is 'large', "Expected 'large', got " .. tostring(result))
+end
+
+@Test function RelationalGreaterThanOrEqual()
+   result = choose 50 from
+      >= 50 -> 'at least 50'
+      else -> 'less than 50'
+   end
+   assert(result is 'at least 50', "Expected 'at least 50', got " .. tostring(result))
+end
+
+@Test function RelationalBoundaryCondition()
+   -- Test exact boundary
+   result = choose 30 from
+      < 30 -> 'below'
+      else -> 'at or above'
+   end
+   assert(result is 'at or above', "Expected 'at or above' for boundary value, got " .. tostring(result))
+end
+
+@Test(hotpath=true) function RelationalWithNegativeNumbers()
+   result = choose -10 from
+      < 0 -> 'negative'
+      >= 0 -> 'non-negative'
+      else -> 'unknown'
+   end
+   assert(result is 'negative', "Expected 'negative', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function RelationalWithParenthesisedExpressions()
+   -- Test that parenthesised expressions in relational patterns parse correctly
+
+   -- Test with parenthesised expression as sole relational pattern
+   result = choose 50 from
+      < ((100 - 50) + 10) -> 'below 60'
+      else -> 'above or equal 60'
+   end
+   assert(result is 'below 60', "Expected 'below 60', got " .. tostring(result))
+
+   -- Test with literal first, then parenthesised expression
+   result = choose 100 from
+      < 50 -> 'very small'
+      < (200 + 70) -> 'medium'
+      else -> 'large'
+   end
+   assert(result is 'medium', "Expected 'medium', got " .. tostring(result))
+
+   -- Test multiple parenthesised expressions (using literals inside)
+   result = choose 80 from
+      < (50 + 25) -> 'below threshold'
+      < (100 + 25) -> 'near threshold'
+      else -> 'above threshold'
+   end
+   assert(result is 'near threshold', "Expected 'near threshold', got " .. tostring(result))
+
+   -- Test that complex expressions with variables in relational patterns work correctly
+   MAX_ANGLE = 360
+   QRT_ANGLE = 90
+   result = choose 100 from
+      < QRT_ANGLE -> 'small'
+      < (MAX_ANGLE - QRT_ANGLE) -> 'medium'
+      else -> 'large'
+   end
+   assert(result is 'medium', "Expected 'medium', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function RelationalWithFunctionCallExpressions()
+   function getLimit()
+      return 50
+   end
+
+   result = choose 30 from
+      < getLimit() -> 'below limit'
+      else -> 'at or above limit'
+   end
+   assert(result is 'below limit', "Expected 'below limit', got " .. tostring(result))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Table Patterns (Open Record Semantics)
+
+@Test(hotpath=true) function TablePatternExactMatch()
+   data = { type = 'message' }
+   result = choose data from
+      { type = 'message' } -> 'is message'
+      else -> 'not message'
+   end
+   assert(result is 'is message', "Expected 'is message', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function TablePatternOpenRecord()
+   -- Extra keys should be ignored (open record semantics)
+   data = { type = 'message', unread = true, timestamp = 12345 }
+   result = choose data from
+      { type = 'message' } -> 'is message'
+      else -> 'not message'
+   end
+   assert(result is 'is message', "Expected 'is message' with extra keys, got " .. tostring(result))
+end
+
+@Test(hotpath=true) function TablePatternMultipleKeys()
+   data = { type = 'message', unread = true }
+   result = choose data from
+      { type = 'message', unread = true } -> 'unread message'
+      { type = 'message' } -> 'read message'
+      else -> 'not message'
+   end
+   assert(result is 'unread message', "Expected 'unread message', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function TablePatternMissingKey()
+   -- Pattern should fail if required key is missing
+   data = { type = 'message' }
+   result = choose data from
+      { type = 'message', unread = true } -> 'unread message'
+      else -> 'fallback'
+   end
+   assert(result is 'fallback', "Expected 'fallback' when key is missing, got " .. tostring(result))
+end
+
+@Test(hotpath=true) function TablePatternKeyValueMismatch()
+   data = { type = 'notification' }
+   result = choose data from
+      { type = 'message' } -> 'is message'
+      else -> 'not message'
+   end
+   assert(result is 'not message', "Expected 'not message' for value mismatch, got " .. tostring(result))
+end
+
+@Test(hotpath=true) function TablePatternAgainstNil()
+   result = choose nil from
+      { type = 'message' } -> 'is message'
+      nil -> 'is nil'
+      else -> 'other'
+   end
+   assert(result is 'is nil', "Expected 'is nil', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function TablePatternAgainstNonTable()
+   result = choose 'string value' from
+      { type = 'message' } -> 'is message'
+      else -> 'not a table'
+   end
+   assert(result is 'not a table', "Expected 'not a table', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function EmptyTablePattern()
+   -- Empty pattern {} should match any table
+   data = { anything = 'here' }
+   result = choose data from
+      {} -> 'is a table'
+      else -> 'not a table'
+   end
+   assert(result is 'is a table', "Expected 'is a table', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function EmptyTablePatternAgainstEmptyTable()
+   data = {}
+   result = choose data from
+      {} -> 'empty table'
+      else -> 'not empty'
+   end
+   assert(result is 'empty table', "Expected 'empty table', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function TablePatternWithNumericValues()
+   data = { status = 200, count = 5 }
+   result = choose data from
+      { status = 200 } -> 'ok status'
+      { status = 404 } -> 'not found'
+      else -> 'other'
+   end
+   assert(result is 'ok status', "Expected 'ok status', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function TablePatternWithBooleanValues()
+   data = { active = true, visible = false }
+   result = choose data from
+      { active = true, visible = true } -> 'active and visible'
+      { active = true } -> 'active only'
+      else -> 'inactive'
+   end
+   assert(result is 'active only', "Expected 'active only', got " .. tostring(result))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Guards (when clause)
+
+@Test(hotpath=true) function GuardTrue()
+   value = 50
+   result = choose value from
+      _ when value > 25 -> 'large'
+      else -> 'small'
+   end
+   assert(result is 'large', "Expected 'large', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function GuardFalse()
+   value = 10
+   result = choose value from
+      _ when value > 25 -> 'large'
+      else -> 'small'
+   end
+   assert(result is 'small', "Expected 'small', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function GuardWithLiteral()
+   status = 200
+   priority = 5
+   result = choose status from
+      200 when priority > 3 -> 'high priority OK'
+      200 -> 'normal OK'
+      else -> 'other'
+   end
+   assert(result is 'high priority OK', "Expected 'high priority OK', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function GuardWithLiteralFails()
+   status = 200
+   priority = 1
+   result = choose status from
+      200 when priority > 3 -> 'high priority OK'
+      200 -> 'normal OK'
+      else -> 'other'
+   end
+   assert(result is 'normal OK', "Expected 'normal OK' when guard fails, got " .. tostring(result))
+end
+
+@Test(hotpath=true) function GuardWithTablePattern()
+   notification = { type = 'message', priority = 8 }
+   result = choose notification from
+      { type = 'message' } when notification.priority > 5 -> 'urgent message'
+      { type = 'message' } -> 'normal message'
+      else -> 'not a message'
+   end
+   assert(result is 'urgent message', "Expected 'urgent message', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function GuardEvaluatedAfterPatternMatch()
+   evaluated = false
+   function checkGuard()
+      evaluated = true
+      return true
+   end
+
+   result = choose 'no match' from
+      'match' when checkGuard() -> 'guarded'
+      else -> 'else'
+   end
+
+   assert(result is 'else', "Expected 'else', got " .. tostring(result))
+   assert(evaluated is false, "Guard should not be evaluated when pattern doesn't match")
+end
+
+@Test(hotpath=true) function GuardWithComplexExpression()
+   data = { x = 10, y = 20 }
+   result = choose data from
+      {} when data.x + data.y > 25 -> 'sum large'
+      {} when data.x * data.y > 100 -> 'product large'
+      else -> 'small'
+   end
+   assert(result is 'sum large', "Expected 'sum large', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function MultipleGuardsFirstWins()
+   value = 50
+   result = choose value from
+      _ when value > 40 -> 'first guard'
+      _ when value > 30 -> 'second guard'
+      else -> 'else'
+   end
+   assert(result is 'first guard', "Expected 'first guard' (first match wins), got " .. tostring(result))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Tuple Patterns
+
+@Test(hotpath=true) function TupleExactMatch()
+   result = choose (0, 0) from
+      (0, 0) -> 'origin'
+      else -> 'not origin'
+   end
+   assert(result is 'origin', "Expected 'origin', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function TupleWithWildcard()
+   result = choose (5, 0) from
+      (0, 0) -> 'origin'
+      (_, 0) -> 'on x-axis'
+      (0, _) -> 'on y-axis'
+      else -> 'elsewhere'
+   end
+   assert(result is 'on x-axis', "Expected 'on x-axis', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function TupleOnYAxis()
+   result = choose (0, 7) from
+      (0, 0) -> 'origin'
+      (_, 0) -> 'on x-axis'
+      (0, _) -> 'on y-axis'
+      else -> 'elsewhere'
+   end
+   assert(result is 'on y-axis', "Expected 'on y-axis', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function TupleElsewhere()
+   result = choose (3, 4) from
+      (0, 0) -> 'origin'
+      (_, 0) -> 'on x-axis'
+      (0, _) -> 'on y-axis'
+      else -> 'elsewhere'
+   end
+   assert(result is 'elsewhere', "Expected 'elsewhere', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function TupleFromVariables()
+   dx, dy = 0, 5
+   result = choose (dx, dy) from
+      (0, 0) -> 'standing'
+      (0, _) -> 'vertical'
+      (_, 0) -> 'horizontal'
+      else -> 'diagonal'
+   end
+   assert(result is 'vertical', "Expected 'vertical', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function TupleThreeElements()
+   result = choose (1, 2, 3) from
+      (0, 0, 0) -> 'origin'
+      (1, _, _) -> 'x is 1'
+      (_, 2, _) -> 'y is 2'
+      else -> 'other'
+   end
+   assert(result is 'x is 1', "Expected 'x is 1', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function TupleAllWildcards()
+   result = choose (5, 10) from
+      (_, _) -> 'any pair'
+   end
+   assert(result is 'any pair', "Expected 'any pair', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function TupleFromFunctionReturn()
+   function getCoords()
+      return 10, 20
+   end
+
+   result = choose getCoords() from
+      (0, 0) -> 'origin'
+      (10, 20) -> 'specific point'
+      else -> 'other'
+   end
+   assert(result is 'specific point', "Expected 'specific point', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function TupleWithStrings()
+   result = choose ('GET', '/api') from
+      ('GET', '/') -> 'home'
+      ('GET', '/api') -> 'api get'
+      ('POST', '/api') -> 'api post'
+      else -> 'other'
+   end
+   assert(result is 'api get', "Expected 'api get', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function TupleWithMixedTypes()
+   result = choose ('error', 404) from
+      ('success', _) -> 'success'
+      ('error', 404) -> 'not found error'
+      ('error', _) -> 'other error'
+      else -> 'unknown'
+   end
+   assert(result is 'not found error', "Expected 'not found error', got " .. tostring(result))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Expression Context
+
+@Test(hotpath=true) function InLocalAssignment()
+   x = choose 1 from
+      1 -> 'one'
+      else -> 'other'
+   end
+   assert(x is 'one', "Expected 'one', got " .. tostring(x))
+end
+
+@Test(hotpath=true) function InReturn()
+   function getStatus(code)
+      return choose code from
+         200 -> 'OK'
+         404 -> 'Not Found'
+         else -> 'Unknown'
+      end
+   end
+
+   assert(getStatus(200) is 'OK', "Expected 'OK'")
+   assert(getStatus(404) is 'Not Found', "Expected 'Not Found'")
+   assert(getStatus(500) is 'Unknown', "Expected 'Unknown'")
+end
+
+@Test(hotpath=true) function InTableConstructor()
+   t = {
+      status = choose 200 from
+         200 -> 'ok'
+         else -> 'error'
+      end,
+      code = 200
+   }
+   assert(t.status is 'ok', "Expected 'ok', got " .. tostring(t.status))
+   assert(t.code is 200, "Expected 200, got " .. tostring(t.code))
+end
+
+@Test(hotpath=true) function InFunctionArgument()
+   function process(value)
+      return 'processed: ' .. value
+   end
+
+   result = process(choose 1 from
+      1 -> 'one'
+      else -> 'other'
+   end)
+   assert(result is 'processed: one', "Expected 'processed: one', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function InArithmeticExpression()
+   multiplier = (choose 'double' from
+      'double' -> 2
+      'triple' -> 3
+      else -> 1
+   end)
+   result = 10 * multiplier
+   assert(result is 20, "Expected 20, got " .. tostring(result))
+end
+
+@Test(hotpath=true) function InConcatenation()
+   result = 'Status: ' .. (choose 200 from
+      200 -> 'OK'
+      else -> 'Error'
+   end)
+   assert(result is 'Status: OK', "Expected 'Status: OK', got " .. tostring(result))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Statement Context
+
+@Test(hotpath=true) function StatementContextSideEffects()
+   result = nil
+   choose 'save' from
+      'save' -> result = 'saved'
+      'load' -> result = 'loaded'
+      else -> result = 'unknown'
+   end
+   assert(result is 'saved', "Expected 'saved', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function StatementContextFunctionCalls()
+   log = {}
+   function logAction(action)
+      log[#log] = action  -- Use #log for 0-based indexing (Tiri convention)
+   end
+
+   choose 'create' from
+      'create' -> logAction('created')
+      'delete' -> logAction('deleted')
+      else -> logAction('unknown')
+   end
+
+   assert(#log is 1, "Expected 1 log entry")
+   assert(log[0] is 'created', "Expected 'created', got " .. tostring(log[0]))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Nested Choose Expressions
+
+@Test(hotpath=true) function NestedChooseInResult()
+   outer = 'a'
+   inner = 1
+   result = choose outer from
+      'a' -> choose inner from
+         1 -> 'a1'
+         2 -> 'a2'
+         else -> 'a?'
+      end
+      'b' -> 'b'
+      else -> 'other'
+   end
+   assert(result is 'a1', "Expected 'a1', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function NestedChooseInGuard()
+   value = 50
+   category = 'high'
+   result = choose value from
+      _ when (choose category from 'high' -> true else -> false end) -> 'high priority'
+      else -> 'normal'
+   end
+   assert(result is 'high priority', "Expected 'high priority', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function DeeplyNestedChoose()
+   a, b, c = 1, 2, 3
+   result = choose a from
+      1 -> choose b from
+         2 -> choose c from
+            3 -> 'all match'
+            else -> 'c mismatch'
+         end
+         else -> 'b mismatch'
+      end
+      else -> 'a mismatch'
+   end
+   assert(result is 'all match', "Expected 'all match', got " .. tostring(result))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Complex Result Expressions
+
+@Test(hotpath=true) function ResultWithArithmetic()
+   x = 10
+   result = choose x from
+      10 -> x * 2 + 5
+      else -> 0
+   end
+   assert(result is 25, "Expected 25, got " .. tostring(result))
+end
+
+@Test(hotpath=true) function ResultWithFunctionCall()
+   function double(n)
+      return n * 2
+   end
+
+   result = choose 5 from
+      5 -> double(5)
+      else -> 0
+   end
+   assert(result is 10, "Expected 10, got " .. tostring(result))
+end
+
+@Test(hotpath=true) function ResultWithTableConstructor()
+   result = choose 'user' from
+      'user' -> { name = 'John', role = 'user' }
+      'admin' -> { name = 'Admin', role = 'admin' }
+      else -> nil
+   end
+   assert(type(result) is 'table', "Expected table result")
+   assert(result.name is 'John', "Expected name 'John'")
+   assert(result.role is 'user', "Expected role 'user'")
+end
+
+@Test(hotpath=true) function ResultWithMethodCall()
+   obj = {
+      getValue = function(self)
+         return 'method result'
+      end
+   }
+
+   result = choose true from
+      true -> obj:getValue()
+      else -> 'other'
+   end
+   assert(result is 'method result', "Expected 'method result', got " .. tostring(result))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Edge Cases
+
+@Test(hotpath=true) function OnlyElseBranch()
+   result = choose 'anything' from
+      else -> 'always this'
+   end
+   assert(result is 'always this', "Expected 'always this', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function EmptyString()
+   result = choose '' from
+      '' -> 'empty'
+      else -> 'not empty'
+   end
+   assert(result is 'empty', "Expected 'empty', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function ZeroValue()
+   result = choose 0 from
+      0 -> 'zero'
+      else -> 'non-zero'
+   end
+   assert(result is 'zero', "Expected 'zero', got " .. tostring(result))
+end
+
+@Test function NaNHandling()
+   nan = 0/0
+   result = choose nan from
+      _ -> 'wildcard catches NaN'
+   end
+   assert(result is 'wildcard catches NaN', "Expected wildcard to catch NaN")
+end
+
+@Test function InfinityHandling()
+   inf = 1/0
+   result = choose inf from
+      > 1000000 -> 'very large'
+      else -> 'normal'
+   end
+   assert(result is 'very large', "Expected 'very large' for infinity")
+end
+
+@Test(hotpath=true) function ChooseWithTernary()
+   flag = true
+   result = choose (flag ? 1 :> 2) from
+      1 -> 'one'
+      2 -> 'two'
+      else -> 'other'
+   end
+   assert(result is 'one', "Expected 'one', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function ChooseWithCoalesce()
+   value = nil
+   result = choose (value ?? 'default') from
+      'default' -> 'used default'
+      else -> 'had value'
+   end
+   assert(result is 'used default', "Expected 'used default', got " .. tostring(result))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Type Coercion and Comparison Semantics
+
+@Test(hotpath=true) function NoImplicitTypeCoercion()
+   -- '1' should not match 1
+   result = choose '1' from
+      1 -> 'number'
+      '1' -> 'string'
+      else -> 'other'
+   end
+   assert(result is 'string', "Expected 'string' (no implicit coercion), got " .. tostring(result))
+end
+
+@Test(hotpath=true) function TableIdentityVsEquality()
+   t1 = { a = 1 }
+   t2 = { a = 1 }
+
+   -- Table patterns match by structure, not identity
+   result = choose t1 from
+      { a = 1 } -> 'matched by structure'
+      else -> 'no match'
+   end
+   assert(result is 'matched by structure', "Expected structural match")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Performance/Stress Tests
+
+@Test(hotpath=true) function ManyBranches()
+   -- Test that many branches work correctly
+   target = 50
+   result = choose target from
+      1 -> 'one'
+      2 -> 'two'
+      3 -> 'three'
+      10 -> 'ten'
+      20 -> 'twenty'
+      30 -> 'thirty'
+      40 -> 'forty'
+      50 -> 'fifty'
+      60 -> 'sixty'
+      70 -> 'seventy'
+      80 -> 'eighty'
+      90 -> 'ninety'
+      100 -> 'hundred'
+      else -> 'other'
+   end
+   assert(result is 'fifty', "Expected 'fifty', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function RepeatedEvaluation()
+   -- Ensure repeated use works correctly in a loop
+   results = {}
+   for i in {0..10} do
+      results[i] = choose i from
+         0 -> 'zero'
+         5 -> 'five'
+         9 -> 'nine'
+         else -> 'other'
+      end
+   end
+
+   assert(results[0] is 'zero', "Expected 'zero' for i=0, got " .. tostring(results[0]))
+   assert(results[1] is 'other', "Expected 'other' for i=1, got " .. tostring(results[1]))
+   assert(results[5] is 'five', "Expected 'five' for i=5, got " .. tostring(results[5]))
+   assert(results[9] is 'nine', "Expected 'nine' for i=9, got " .. tostring(results[9]))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Real-World Use Cases
+
+@Test(hotpath=true) function HttpStatusHandling()
+   function describeStatus(code)
+      return choose code from
+         < 200 -> 'informational'
+         < 300 -> 'success'
+         < 400 -> 'redirect'
+         < 500 -> 'client error'
+         < 600 -> 'server error'
+         else -> 'unknown'
+      end
+   end
+
+   assert(describeStatus(100) is 'informational')
+   assert(describeStatus(200) is 'success')
+   assert(describeStatus(301) is 'redirect')
+   assert(describeStatus(404) is 'client error')
+   assert(describeStatus(500) is 'server error')
+end
+
+@Test(hotpath=true) function EventDispatch()
+   function handleEvent(event)
+      return choose event from
+         { type = 'click', button = 'left' } -> 'left click'
+         { type = 'click', button = 'right' } -> 'right click'
+         { type = 'click' } -> 'other click'
+         { type = 'keydown' } when event.key is 'Enter' -> 'enter pressed'
+         { type = 'keydown' } -> 'key pressed'
+         else -> 'unknown event'
+      end
+   end
+
+   assert(handleEvent({ type = 'click', button = 'left' }) is 'left click')
+   assert(handleEvent({ type = 'click', button = 'right' }) is 'right click')
+   assert(handleEvent({ type = 'click', button = 'middle' }) is 'other click')
+   assert(handleEvent({ type = 'keydown', key = 'Enter' }) is 'enter pressed')
+   assert(handleEvent({ type = 'keydown', key = 'a' }) is 'key pressed')
+   assert(handleEvent({ type = 'scroll' }) is 'unknown event')
+end
+
+@Test(hotpath=true) function StateTransition()
+   function nextState(current, action)
+      return choose (current, action) from
+         ('idle', 'start') -> 'running'
+         ('running', 'pause') -> 'paused'
+         ('running', 'stop') -> 'idle'
+         ('paused', 'resume') -> 'running'
+         ('paused', 'stop') -> 'idle'
+         else -> current  -- Invalid transitions return current state
+      end
+   end
+
+   assert(nextState('idle', 'start') is 'running')
+   assert(nextState('running', 'pause') is 'paused')
+   assert(nextState('paused', 'resume') is 'running')
+   assert(nextState('running', 'stop') is 'idle')
+   assert(nextState('idle', 'pause') is 'idle')  -- Invalid, stays in current
+end
+
+@Test(hotpath=true) function IconSelection()
+   function getIcon(notification)
+      return choose notification from
+         { type = 'message', unread = true } -> 'icon-inbox-unread'
+         { type = 'message' } when notification.priority > 5 -> 'icon-priority'
+         { type = 'message' } -> 'icon-inbox'
+         { type = 'alert' } -> 'icon-alert'
+         nil -> 'icon-none'
+         else -> 'icon-default'
+      end
+   end
+
+   assert(getIcon({ type = 'message', unread = true }) is 'icon-inbox-unread')
+   assert(getIcon({ type = 'message', priority = 8 }) is 'icon-priority')
+   assert(getIcon({ type = 'message', priority = 2 }) is 'icon-inbox')
+   assert(getIcon({ type = 'alert' }) is 'icon-alert')
+   assert(getIcon(nil) is 'icon-none')
+   assert(getIcon({ type = 'unknown' }) is 'icon-default')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Syntax Error Tests (Expected Failures)
+-- These tests verify that invalid syntax is properly rejected
+
+@Test function SyntaxErrorMissingFrom()
+   script = obj.new('tiri', {
+      statement = [[
+         result = choose value
+            1 -> 'one'
+         end
+      ]]
+   })
+   script.acActivate()
+   assert(script.error != ERR_Okay, "Should fail: missing 'from' keyword")
+end
+
+@Test(hotpath=false) function SyntaxErrorMissingEnd()
+   script = obj.new('tiri', {
+      statement = [[
+         result = choose value from
+            1 -> 'one'
+      ]]
+   })
+   script.acActivate()
+   assert(script.error != ERR_Okay, "Should fail: missing 'end' keyword")
+end
+
+@Test function SyntaxErrorMissingArrow()
+   script = obj.new('tiri', {
+      statement = [[
+         result = choose value from
+            1 'one'
+         end
+      ]]
+   })
+   script.acActivate()
+   assert(script.error != ERR_Okay, "Should fail: missing '->' arrow")
+end
+
+@Test function SyntaxErrorElseNotLast()
+   script = obj.new('tiri', {
+      statement = [[
+         result = choose value from
+            else -> 'default'
+            1 -> 'one'
+         end
+      ]]
+   })
+   script.acActivate()
+   assert(script.error != ERR_Okay, "Should fail: 'else' must be last")
+end
+
+@Test function SyntaxErrorTupleArityMismatch()
+   -- This should be a compile-time error
+   script = obj.new('tiri', {
+      statement = [[
+         result = choose (1, 2) from
+            (1, 2, 3) -> 'three'
+            else -> 'other'
+         end
+      ]]
+   })
+   script.acActivate()
+   assert(script.error != ERR_Okay, "Should fail: tuple arity mismatch")
+end
+
+@Test function SyntaxErrorTuplePatternOnSingleValue()
+   -- Tuple patterns require a function call returning multiple values, not a single expression
+   script = obj.new('tiri', {
+      statement = [[
+         result = choose 1 from
+            (1, 2) -> 'matched'
+            else -> 'other'
+         end
+      ]]
+   })
+   script.acActivate()
+   assert(script.error != ERR_Okay, "Should fail: tuple pattern on single value")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Integration with Other Tiri Features
+
+@Test(hotpath=true) function WithRanges()
+   items = { [0] = 'a', [1] = 'b', [2] = 'c' }
+   results = {}
+   for i in {0..3} do
+      results[i] = choose items[i] from
+         'a' -> 'first'
+         'b' -> 'second'
+         'c' -> 'third'
+         else -> 'unknown'
+      end
+   end
+   assert(results[0] is 'first', "Expected 'first', got " .. tostring(results[0]))
+   assert(results[1] is 'second', "Expected 'second', got " .. tostring(results[1]))
+   assert(results[2] is 'third', "Expected 'third', got " .. tostring(results[2]))
+end
+
+@Test(hotpath=true) function WithCompoundAssignment()
+   count = 0
+   values = { [0] = 1, [1] = 2, [2] = 3, [3] = 1, [4] = 2, [5] = 1 }
+   for i in {0..6} do
+      count += choose values[i] from
+         1 -> 1
+         else -> 0
+      end
+   end
+   assert(count is 3, "Expected 3 ones, got " .. tostring(count))
+end
+
+@Test(hotpath=true) function WithDefer()
+   log = {}
+   function test()
+      defer()
+         log[#log] = 'deferred'
+      end
+
+      result = choose 'action' from
+         'action' -> 'result'
+         else -> 'other'
+      end
+      log[#log] = result
+      return result
+   end
+
+   ret = test()
+   assert(ret is 'result', "Expected 'result', got " .. tostring(ret))
+   assert(log[0] is 'result', "Expected log[0] to be 'result', got " .. tostring(log[0]))
+   assert(log[1] is 'deferred', "Expected log[1] to be 'deferred', got " .. tostring(log[1]))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Short-Circuit Evaluation
+
+@Test(hotpath=true) function ShortCircuitBranchNotEvaluated()
+   evaluated_branches = {}
+
+   function branch1()
+      evaluated_branches[#evaluated_branches] = 'branch1'
+      return 'result1'
+   end
+
+   function branch2()
+      evaluated_branches[#evaluated_branches] = 'branch2'
+      return 'result2'
+   end
+
+   function branch3()
+      evaluated_branches[#evaluated_branches] = 'branch3'
+      return 'result3'
+   end
+
+   result = choose 1 from
+      1 -> branch1()
+      2 -> branch2()
+      else -> branch3()
+   end
+
+   assert(result is 'result1', "Expected 'result1'")
+   assert(#evaluated_branches is 1, "Only matched branch should be evaluated, got " .. tostring(#evaluated_branches))
+   assert(evaluated_branches[0] is 'branch1', "Only branch1 should be called")
+end
+
+@Test(hotpath=true) function ShortCircuitGuardNotEvaluated()
+   guard_evaluated = false
+
+   function checkGuard()
+      guard_evaluated = true
+      return true
+   end
+
+   result = choose 1 from
+      1 -> 'first'
+      2 when checkGuard() -> 'second'
+      else -> 'else'
+   end
+
+   assert(result is 'first', "Expected 'first'")
+   assert(guard_evaluated is false, "Guard should not be evaluated when pattern doesn't match")
+end

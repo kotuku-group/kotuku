@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="Sound" mod="Audio" c="High-level audio sample playback interface with intelligent resource management and format detection." cat="Audio" id="105ee06e" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="Sound" mod="Audio" c="High-level audio sample playback interface with intelligent resource management and format detection." cat="Audio" id="105ee06e" v="1">
   <ai:a n="Activate" c="Plays the audio sample." p="ERR acActivate(*Object)"/>
   <ai:a n="Deactivate" c="Stops the audio sample and resets the playback position." p="ERR acDeactivate(*Object)"/>
   <ai:a n="Disable" c="Disable playback of an active audio sample, equivalent to pausing." p="ERR acDisable(*Object)"/>

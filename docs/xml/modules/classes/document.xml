@@ -12,10 +12,10 @@
     <id>155c3464</id>
     <idstring>DOCUMENT</idstring>
     <category>GUI</category>
-    <copyright>Paul Manias © 2005-2025</copyright>
+    <copyright>Paul Manias © 2005-2026</copyright>
     <description>
 <p>The Document class offers a complete page layout engine, providing rich text display features for creating complex documents and text-based interfaces.  Internally, document data is maintained as a serial byte stream and all object model information from the source is discarded.  This simplification of the data makes it possible to edit the document in-place, much the same as any word processor.  Alternatively it can be used for presentation purposes only, similarly to PDF or HTML formats.  Presentation is achieved by building a vector scene graph in conjunction with the <class name="Vector">Vector</class> module.  This means that the output is compatible with SVG and can be manipulated in detail with our existing vector API.  Consequently, document formatting is closely integrated with SVG concepts and seamlessly inherits SVG functionality such as filling and stroking commands.</p>
-<p>The native document format in Parasol is RIPL.  Documentation for RIPL is available in the Parasol Wiki.  Other document formats may be supported as sub-classes, but bear in mind that document parsing is a one-way trip and stateful information such as the HTML DOM is not supported.</p>
+<p>The native document format for Kōtuku is RIPL.  Documentation for RIPL is available in the Kotuku Wiki.  Other document formats may be supported as sub-classes, but bear in mind that document parsing is a one-way trip and stateful information such as the HTML DOM is not supported.</p>
 <p>The Document class does not include a security barrier in its current form.  Documents that include scripted code should not be processed unless they originate from a trusted source and are confirmed as such. To mitigate security problems, we recommend that the application is built with some form of sandbox that can prevent the system being compromised by bad actors.  Utilising a project such as Win32 App Isolation https://github.com/microsoft/win32-app-isolation is one potential way of doing this.</p></description>
     <source>
       <file path="../class/">document_class.cpp</file>
@@ -300,23 +300,29 @@
 
     <method>
       <name>ReadContent</name>
-      <comment>Returns selected content from the document, either as plain text or original byte code.</comment>
+      <comment>Returns selected content from the document, either as plain text, original byte code or XML.</comment>
       <prototype>ERR doc::ReadContent(OBJECTPTR Object, DATA Format, INT Start, INT End, STRING * Result)</prototype>
       <input>
-        <param type="DATA" name="Format" lookup="DATA">Set to <code>TEXT</code> to receive plain-text, or <code>RAW</code> to receive the original byte-code.</param>
+        <param type="DATA" name="Format" lookup="DATA">Set to <code>TEXT</code> to receive plain-text, <code>RAW</code> to receive the original byte-code, or <code>XML</code> to receive a textual XML serialisation of the stream.</param>
         <param type="INT" name="Start">An index in the document stream from which data will be extracted.</param>
         <param type="INT" name="End">An index in the document stream at which extraction will stop.</param>
         <param type="STRING *" name="Result">The data is returned in this parameter as an allocated string.</param>
       </input>
       <description>
-<p>The ReadContent() method extracts content from the document stream, covering a specific area.  It can return the data as a RIPL binary stream, or translate the content into plain-text (control codes are removed).</p>
-<p>If data is extracted in its original format, no post-processing is performed to fix validity errors that may arise from an invalid data range.  For instance, if an opening paragraph code is not closed with a matching paragraph end point, this will remain the case in the resulting data.</p>
+<p>The ReadContent() method extracts content from the document stream, covering a specific area.  It can return the data as a RIPL binary stream, translated into plain-text (control codes are removed), or serialised as an XML document describing the byte stream.</p>
+<p>The XML format is a linear, non-nested serialisation of the byte stream intended for inspection, diffing and tooling. Each byte code becomes one XML element wrapped in a <code>
+<extract/> root, followed by the requested content in a <code>
+<stream/> element, and text content appears inside <code>
+<text/> elements with the usual XML escaping applied.  Start/end markers such as paragraphs and font runs are emitted as sibling self-closing elements rather than nested, reflecting the underlying linear storage model.  A trailing <code>
+<fonts/> section lists information for the shared cached fonts.</code>
+<p>No post-processing is performed to fix validity errors that may arise from an invalid data range.  For instance, if an opening paragraph code is not closed with a matching paragraph end point, this will remain the case in the resulting data.</p>
+</code></code></code></p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="Args">Invalid arguments passed to function.</error>
         <error code="NoData">Operation successful, but no data was present for extraction.</error>
-        <error code="OutOfRange">The Start and/or End indexes are not within the stream.</error>
+        <error code="OutOfRange">The Start index is not within the stream.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>
@@ -617,7 +623,7 @@
       <access read="G">Get</access>
       <type>STRING</type>
       <description>
-<p>The working path for a document is defined here.  By default this is defined as the location from which the document was loaded, without the file name.  If this cannot be determined, the working path for the parent task is used (this is usually set to the location of the parasol executable).</p>
+<p>The working path for a document is defined here.  By default this is defined as the location from which the document was loaded, without the file name.  If this cannot be determined, the working path for the parent task is used (this is usually set to the location of the origo executable).</p>
 <p>The working path is always fully qualified with a slash or colon at the end of the string.</p>
 <p>The client can manually change the working path by setting the <fl>Origin</fl> field without affecting the loaded document.</p>
       </description>

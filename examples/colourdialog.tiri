@@ -1,0 +1,21 @@
+#!/usr/bin/env origo
+-- Colour Dialog test
+
+   import 'gui'
+   import 'gui/colourdialog'
+
+   proc = processing.new()
+
+   gui.dialog.colour({
+      colour  = 'rgb(255,0,0)',
+      feedback = function(Colour)
+         if not Colour then
+            print('Dialog was cancelled.')
+         else
+            print(f'The user selected colour is {Colour}')
+         end
+         proc.signal()
+      end
+   })
+
+   proc.sleep(nil, true)

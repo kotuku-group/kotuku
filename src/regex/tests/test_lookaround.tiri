@@ -1,0 +1,41 @@
+-- Lookahead and lookbehind feature verification
+
+@Test function PositiveLookahead()
+   matcher = regex.new("foo(?=bar)")
+   match = matcher.search("foobar")
+   assert(match and match[0][0] is "foo", "Positive lookahead should match prefix without consuming suffix")
+   assert(not matcher.test("foobaz"), "Lookahead condition should prevent mismatched suffix")
+end
+
+@Test function NegativeLookahead()
+   matcher = regex.new("foo(?!bar)")
+   assert(matcher.test("foobaz"), "Negative lookahead should allow alternate suffix")
+   assert(not matcher.test("foobar"), "Negative lookahead should block forbidden suffix")
+end
+
+@Test function PositiveLookbehind()
+   matcher = regex.new("(?<=EUR)\\d+")
+   match = matcher.search("EUR250")
+   assert(match and match[0][0] is "250", "Lookbehind should capture digits following currency prefix")
+   assert(not matcher.test("USD250"), "Lookbehind should require preceding currency")
+end
+
+@Test function NegativeLookbehind()
+   matcher = regex.new("(?<!USD)\\d+")
+   assert(matcher.test("EUR99"), "Negative lookbehind should allow alternative prefix")
+   match = matcher.search("USD99")
+   assert(match[0][0] is '9', "Expected the final '9' to produce a match")
+end
+
+@Test function LookaroundDoesNotConsume()
+   matcher = regex.new("(?<=@)([a-z]+)(?=\\.)")
+   match = matcher.search("Contact @support.example")
+   assert(match and match[0][0] is "support", "Lookarounds should not consume delimiter characters")
+end
+
+@Test function VariableWidthLookbehind()
+   matcher = regex.new("(?<=\\w+)x")
+   match = matcher.search("abcx")
+   assert(match and match[0][0] is "x", "Variable width lookbehind should match 'x' preceded by word characters")
+   assert(not matcher.test(" x"), "Should not match 'x' preceded by space")
+end

@@ -1,0 +1,299 @@
+-- Test the "String concatenation in loops" tip feature.
+-- This test verifies that the tip system correctly warns about string concatenation inside loops.
+-- The tip is emitted when --jit-options tips or all-tips is enabled.
+
+   include 'tiri' -- Required for JOF flags.
+
+   glSelf = obj.find('self')
+
+----------------------------------------------------------------------------------------------------------------------
+-- Script that uses string concatenation in various loop constructs
+
+glConcatScript = [[
+   -- Basic concatenation in numeric for loop (should warn)
+   result = ''
+   for i = 0, 10 do
+      result = result .. tostring(i)  -- Warning: concat in loop
+   end
+
+   -- Compound concatenation in loop (should warn)
+   result2 = ''
+   for i = 0, 10 do
+      result2 ..= tostring(i)  -- Warning: compound concat in loop
+   end
+
+   -- Concatenation in while loop (should warn)
+   count = 0
+   str = ''
+   while count < 5 do
+      str = str .. 'x'  -- Warning: concat in loop
+      count++
+   end
+
+   -- Concatenation in generic for loop (should warn)
+   parts = { 'a', 'b', 'c' }
+   joined = ''
+   for _, part in ipairs(parts) do
+      joined = joined .. part  -- Warning: concat in loop
+   end
+
+   -- Concatenation OUTSIDE loop (should NOT warn)
+   greeting = 'Hello' .. ' ' .. 'World'
+
+   -- Using table.concat (should NOT warn - this is the recommended approach)
+   items = {}
+   for i = 0, 10 do
+      items[#items + 1] = tostring(i)  -- Collect in table - no warning
+   end
+   final = table.concat(items, ', ')  -- Single concat outside loop - no warning
+]]
+
+----------------------------------------------------------------------------------------------------------------------
+-- Script that defines functions inside loops (should warn)
+
+glFunctionLoopScript = [[
+   -- Function expression in numeric for loop (should warn)
+   for i = 0, 10 do
+      callback = function() return i end
+   end
+
+   -- Function expression in while loop (should warn)
+   count = 0
+   while count < 5 do
+      handler = function() return count end
+      count = count + 1
+   end
+
+   -- Function expression in generic for loop (should warn)
+   data = { a = 1, b = 2 }
+   for k, v in pairs(data) do
+      processor = function() return v end
+   end
+
+   -- Arrow function in loop (should warn)
+   for i = 0, 5 do
+      transform = (x => x * 2)
+   end
+
+   -- Function defined OUTSIDE loop, used inside (should NOT warn)
+   local helper = function() return 42 end
+   for i = 0, 10 do
+      _ = helper()
+   end
+
+   -- Named function defined outside loop (should NOT warn)
+   function compute(x) return x * 2 end
+   for i = 0, 10 do
+      _ = compute(i)
+   end
+]]
+
+----------------------------------------------------------------------------------------------------------------------
+-- Script that accesses globals in various loop constructs
+
+glGlobalScript = [[
+   global glGlobalVar = 100  -- Explicit global declaration
+   local_var = 50            -- Implicit local (Tiri default)
+
+   -- Numeric for loop with global access (should warn)
+   for i = 0, 10 do
+      _ = glGlobalVar  -- Warning expected: global in loop
+   end
+
+   -- Generic for loop with global access (should warn)
+   for k, v in pairs({ a = 1, b = 2 }) do
+      _ = glGlobalVar  -- Warning expected: global in loop
+   end
+
+   -- While loop with global access (should warn)
+   count = 0
+   while count < 5 do
+      _ = glGlobalVar  -- Warning expected: global in loop
+      count = count + 1
+   end
+
+   -- Repeat loop with global access (should warn)
+   count = 0
+   repeat
+      _ = glGlobalVar  -- Warning expected: global in loop
+      count = count + 1
+   until count >= 5
+
+   -- Correctly cached local (should NOT warn)
+   local cached = glGlobalVar
+   for i = 0, 10 do
+      _ = cached  -- No warning - local variable
+   end
+
+   -- Global access outside of loop (should NOT warn)
+   _ = glGlobalVar
+
+   -- Implicit local in loop (should NOT warn - Tiri default is local)
+   for i = 0, 10 do
+      _ = local_var  -- No warning - implicit local variable
+   end
+]]
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test with TIPS - should emit concat-in-loop warnings
+
+@Test function ConcatInLoopTips()
+   msg('--- Testing string concatenation in loops with JOF_TIPS ---')
+   script = obj.new('tiri', { statement = glConcatScript, jitOptions = JOF_TIPS })
+   err = script.acActivate()
+   assert(err is ERR_Okay, 'Script should execute successfully')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test without tips enabled - should NOT emit warnings
+
+@Test function NoTipsWithoutFlag()
+   msg('--- Testing string concatenation without tip flags ---')
+   script = obj.new('tiri', { statement = glConcatScript })
+   err = script.acActivate()
+   assert(err is ERR_Okay, 'Script should execute successfully')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test nested loops with concatenation
+
+@Test function NestedLoops()
+   statement = [[
+   outer_result = ''
+   for i = 0, 3 do
+      outer_result = outer_result .. '['  -- Warning: concat in outer loop
+      inner = ''
+      for j = 0, 3 do
+         inner = inner .. tostring(j)  -- Warning: concat in inner loop
+      end
+      outer_result = outer_result .. inner .. ']'  -- Warning: concat in outer loop (2 times)
+   end
+]]
+
+   msg('--- Testing nested loops with string concatenation ---')
+   script = obj.new('tiri', { statement = glNestedLoopScript, jitOptions = JOF_TIPS })
+   err = script.acActivate()
+   assert(err is ERR_Okay, 'Script should execute successfully')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test chained concatenation
+
+glChainedConcatScript = [[
+   result = ''
+   for i = 0, 5 do
+      -- Chained concatenation should warn for each .. operator
+      result = result .. 'a' .. 'b' .. 'c'
+   end
+]]
+
+@Test function ChainedConcat()
+   msg('--- Testing chained concatenation in loop ---')
+   script = obj.new('tiri', { statement = glChainedConcatScript, jitOptions = JOF_TIPS })
+   err = script.acActivate()
+   assert(err is ERR_Okay, 'Script should execute successfully')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test with TIPS - should emit global-in-loop warnings
+
+@Test function GlobalInLoopTips()
+   -- This test runs the script with TIPS enabled (priority level 2 = medium).
+   -- The tip system should emit warnings for global variable accesses inside loops.
+   -- Review the log output to verify the warnings are present.
+
+   msg('--- Testing global access in loops with JOF_TIPS ---')
+   script = obj.new('tiri', { statement = glGlobalScript, jitOptions = JOF_TIPS })
+   err = script.acActivate()
+   assert(err is ERR_Okay, 'Script should execute successfully')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test without tips enabled - should NOT emit warnings
+
+@Test function NoTipsWithoutFlag()
+   msg('--- Testing global access without tip flags - should produce no tip output ---')
+   script = obj.new('tiri', { statement = glGlobalScript })
+   err = script.acActivate()
+   assert(err is ERR_Okay, 'Script should execute successfully')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test nested loops - should warn for each loop level
+
+@Test function NestedLoops()
+   statement = [[
+   global glOuter = 1  -- Explicit global
+   global glInner = 2  -- Explicit global
+
+   for i = 0, 3 do
+      _ = glOuter  -- Warning: global in loop (outer)
+      for j = 0, 3 do
+         _ = glInner  -- Warning: global in loop (inner)
+         _ = glOuter  -- Warning: global in loop (inner accessing outer global)
+      end
+   end
+]]
+
+   msg('--- Testing nested loops with global access ---')
+   script = obj.new('tiri', { statement = statement, jitOptions = JOF_TIPS })
+   err = script.acActivate()
+   assert(err is ERR_Okay, 'Script should execute successfully')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test with TIPS - should emit function-in-loop warnings
+
+@Test function FunctionInLoopTips()
+   msg('--- Testing function definition in loops with JOF_TIPS ---')
+   script = obj.new('tiri', { statement = glFunctionLoopScript, jitOptions = JOF_TIPS })
+   err = script.acActivate()
+   assert(err is ERR_Okay, 'Script should execute successfully')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test without tips enabled - should NOT emit warnings
+
+@Test function NoTipsWithoutFlag()
+   msg('--- Testing function in loop without tips flags ---')
+   script = obj.new('tiri', { statement = glFunctionLoopScript })
+   err = script.acActivate()
+   assert(err is ERR_Okay, 'Script should execute successfully')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test nested loops - should warn for each function definition
+
+@Test function NestedLoops()
+   statement = [[
+   for i = 0, 3 do
+      outer_fn = function() return i end  -- Warning: function in loop
+      for j = 0, 3 do
+         inner_fn = function() return i + j end  -- Warning: function in nested loop
+      end
+   end
+]]
+
+   msg('--- Testing nested loops with function definitions ---')
+   script = obj.new('tiri', { statement = statement, jitOptions = JOF_TIPS })
+   err = script.acActivate()
+   assert(err is ERR_Okay, 'Script should execute successfully')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test callback argument pattern - common case that should warn
+
+@Test function CallbackInLoop()
+   statement = [[
+   data = { { val = 3 }, { val = 1 }, { val = 2 } }
+   for i = 0, 5 do
+      -- This is a common anti-pattern: sorting with inline comparator in loop
+      table.sort(data, function(a, b) return a.val < b.val end)
+   end
+]]
+
+   msg('--- Testing callback function in loop ---')
+   script = obj.new('tiri', { statement = statement, jitOptions = JOF_TIPS })
+   err = script.acActivate()
+   assert(err is ERR_Okay, 'Script should execute successfully')
+end

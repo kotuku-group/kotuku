@@ -11,7 +11,7 @@
     <id>45df4e3c</id>
     <idstring>TURBULENCEFX</idstring>
     <category>Graphics</category>
-    <copyright>Paul Manias © 2010-2025</copyright>
+    <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>This filter effect creates an image using the Perlin turbulence function. It allows the synthesis of artificial textures like clouds or marble.  For a detailed description the of the Perlin turbulence function, see &quot;Texturing and Modeling&quot;, Ebert et al, AP Professional, 1994. The resulting image will fill the entire filter primitive subregion for this filter primitive.</p>
 <p>It is possible to create bandwidth-limited noise by synthesizing only one octave.</p>

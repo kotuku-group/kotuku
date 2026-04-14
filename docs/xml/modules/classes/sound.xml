@@ -13,7 +13,7 @@
     <id>105ee06e</id>
     <idstring>SOUND</idstring>
     <category>Audio</category>
-    <copyright>Paul Manias © 2002-2025</copyright>
+    <copyright>Paul Manias © 2002-2026</copyright>
     <description>
 <p>The Sound class provides a comprehensive, user-friendly interface for audio sample playback that abstracts the complexities of audio hardware management whilst delivering professional-quality results.  Designed as the primary interface for general-purpose audio operations, the Sound class automatically handles resource allocation, format detection, hardware abstraction, and intelligent streaming decisions to provide optimal performance across diverse system configurations.</p>
 <p>The Sound class implements robust file format support with automatic detection and validation:</p>

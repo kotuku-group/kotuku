@@ -412,7 +412,7 @@ private:
    static void blendHLine8(agg::pixfmt_psl *Self, int x, int y, unsigned len, const agg::rgba8 &c, int8u cover) noexcept
    {
       if (c.a) {
-         uint8_t grey = F2T((c.r * 0.2126) + (c.g * 0.7152) + (c.b * 0.0722));
+         uint8_t grey = int((c.r * 0.2126) + (c.g * 0.7152) + (c.b * 0.0722));
          uint8_t *p = Self->mData + (y * Self->mStride) + x;
          uint32_t alpha = (uint32_t(c.a) * (cover + 1)) >> 8;
          if (alpha == 0xff) {
@@ -433,7 +433,7 @@ private:
    static void blendSolidHSpan8(agg::pixfmt_psl *Self, int x, int y, uint32_t len, const agg::rgba8 &c, const uint8_t *covers) noexcept
    {
       if (c.a) {
-         uint8_t grey = F2T((c.r * 0.2126) + (c.g * 0.7152) + (c.b * 0.0722));
+         uint8_t grey = int((c.r * 0.2126) + (c.g * 0.7152) + (c.b * 0.0722));
          uint8_t *p = Self->mData + (y * Self->mStride) + x;
          do {
             uint32_t alpha = (uint32_t(c.a) * (uint32_t(*covers) + 1)) >> 8;
@@ -475,7 +475,7 @@ private:
    {
       uint8_t *p = Self->mData + (y * Self->mStride) + x;
       do {
-          p[0] = F2T((colors->r * 0.2126) + (colors->g * 0.7152) + (colors->b * 0.0722));
+          p[0] = int((colors->r * 0.2126) + (colors->g * 0.7152) + (colors->b * 0.0722));
           ++colors;
           p++;
       } while(--len);
@@ -485,14 +485,14 @@ private:
 
    static void blend8(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept
    {
-      uint8_t grey = F2T((cr * 0.2126) + (cg * 0.7152) + (cb * 0.0722));
+      uint8_t grey = int((cr * 0.2126) + (cg * 0.7152) + (cb * 0.0722));
       p[0] = ((p[0] * (0xff-alpha)) + (grey * alpha) + 0xff)>>8;
    }
 
    inline static void copy8(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept
    {
       if (alpha) {
-         uint8_t grey = F2T((cr * 0.2126) + (cg * 0.7152) + (cb * 0.0722));
+         uint8_t grey = int((cr * 0.2126) + (cg * 0.7152) + (cb * 0.0722));
          if (alpha == 0xff) p[0] = grey;
          else p[0] = ((p[0] * (0xff-alpha)) + (grey * alpha) + 0xff)>>8;
       }
@@ -502,13 +502,13 @@ private:
    {
       if (cover == 255) {
          if (alpha) {
-            uint8_t grey = F2T((cr * 0.2126) + (cg * 0.7152) + (cb * 0.0722));
+            uint8_t grey = int((cr * 0.2126) + (cg * 0.7152) + (cb * 0.0722));
             if (alpha == 0xff) p[0] = grey;
             else p[0] = ((p[0] * (0xff-alpha)) + (grey * alpha) + 0xff)>>8;
          }
       }
       else if (alpha) {
-         uint8_t grey = F2T((cr * 0.2126) + (cg * 0.7152) + (cb * 0.0722));
+         uint8_t grey = int((cr * 0.2126) + (cg * 0.7152) + (cb * 0.0722));
          alpha = (alpha * (cover + 1)) >> 8;
          if (alpha == 0xff) p[0] = grey;
          else p[0] = ((p[0] * (0xff-alpha)) + (grey * alpha) + 0xff)>>8;

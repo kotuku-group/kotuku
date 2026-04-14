@@ -35,7 +35,7 @@ static double parse_begin(anim_base &Anim, std::string_view Value)
 //********************************************************************************************************************
 // Set common animation properties
 
-static ERR set_anim_property(anim_base &Anim, XMLTag &Tag, uint32_t Hash, const std::string_view Value)
+static ERR set_anim_property(anim_base &Anim, XTag &Tag, uint32_t Hash, const std::string_view Value)
 {
    switch (Hash) {
       case SVF_ID:
@@ -237,12 +237,12 @@ static ERR set_anim_property(anim_base &Anim, XMLTag &Tag, uint32_t Hash, const 
          break;
       }
 
-      // A set of Bézier control points associated with the 'keyTimes' list, defining a cubic Bézier function
+      // A set of Bï¿½zier control points associated with the 'keyTimes' list, defining a cubic Bï¿½zier function
       // that controls interval pacing. The attribute value is a semicolon-separated list of control point
       // descriptions. Each control point description is a set of four values: x1 y1 x2 y2, describing the
-      // Bézier control points for one time segment. Note: SMIL allows these values to be separated either by
+      // Bï¿½zier control points for one time segment. Note: SMIL allows these values to be separated either by
       // commas with optional whitespace, or by whitespace alone. The 'keyTimes' values that define the
-      // associated segment are the Bézier "anchor points", and the 'keySplines' values are the control points.
+      // associated segment are the Bï¿½zier "anchor points", and the 'keySplines' values are the control points.
       // Thus, there must be one fewer sets of control points than there are 'keyTimes'.
       //
       // The values must all be in the range 0 to 1.

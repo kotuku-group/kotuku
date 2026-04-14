@@ -1,0 +1,464 @@
+-- Tests for <close> attribute and __close metamethod support.
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+-- Basic __close is called when scope ends
+
+@Test function BasicClose()
+   closed = false
+   mt = {
+      __close = function(self, err)
+         closed = true
+      end
+   }
+   do
+      local obj <close> = setmetatable({}, mt)
+   end
+   assert(closed, 'Basic close: __close should be called when scope ends')
+end
+
+-- __close receives self as first argument
+
+@Test function CloseSelfArg()
+   received_self = nil
+   obj_value = { data = 'test_value' }
+   mt = {
+      __close = function(self, err)
+         received_self = self
+      end
+   }
+   do
+      local obj <close> = setmetatable(obj_value, mt)
+   end
+   assert(received_self is obj_value, 'Self should be the closed object')
+   assert(received_self.data is 'test_value', 'Self should have correct data')
+end
+
+-- __close receives nil as second argument (normal exit)
+
+@Test function CloseNilErrArg()
+   received_err = 'not_nil'
+   mt = {
+      __close = function(self, err)
+         received_err = err
+      end
+   }
+   do
+      local obj <close> = setmetatable({}, mt)
+   end
+   assert(received_err is nil, 'Error arg should be nil for normal scope exit')
+end
+
+-- <close> with nil value - should not crash
+
+@Test function CloseWithNil()
+   do
+      local a <close> = nil
+   end
+end
+
+-- <close> with false value - should not crash
+
+@Test function CloseWithFalse()
+   do
+      local a <close> = false
+   end
+end
+
+-- Multiple close variables - LIFO order
+
+@Test function MultipleClosesLIFO()
+   order = {}
+   function makeMt(n)
+      return {
+         __close = function(self, err)
+            table.insert(order, n)
+         end
+      }
+   end
+
+   do
+      a <close> = setmetatable({}, makeMt(1))
+      b <close> = setmetatable({}, makeMt(2))
+      c <close> = setmetatable({}, makeMt(3))
+   end
+
+   assert(#order is 3, 'All three close handlers should be called')
+   assert(order[0] is 3, 'LIFO order: first closed should be 3, got ' .. tostring(order[0]))
+   assert(order[1] is 2, 'LIFO order: second closed should be 2, got ' .. tostring(order[1]))
+   assert(order[2] is 1, 'LIFO order: third closed should be 1, got ' .. tostring(order[2]))
+end
+
+-- Close in nested scopes
+
+@Test function NestedScopes()
+   order = {}
+   do
+      outer <close> = setmetatable({}, {
+         __close = function() table.insert(order, 'outer') end
+      })
+      do
+         inner <close> = setmetatable({}, {
+            __close = function() table.insert(order, 'inner') end
+         })
+      end
+      table.insert(order, 'between')
+   end
+   assert(#order is 3, 'Should have 3 events')
+   assert(order[0] is 'inner', 'Inner scope closes first: ' .. tostring(order[0]))
+   assert(order[1] is 'between', 'Between event: ' .. tostring(order[1]))
+   assert(order[2] is 'outer', 'Outer scope closes last: ' .. tostring(order[2]))
+end
+
+-- Close with defer - close should run before defer
+
+@Test function CloseWithDefer()
+   order = {}
+   do
+      defer
+         table.insert(order, 'defer')
+      end
+      local obj <close> = setmetatable({}, {
+         __close = function() table.insert(order, 'close') end
+      })
+   end
+   assert(#order is 2, 'Both close and defer should run')
+   assert(order[0] is 'close', 'Close should run before defer: ' .. tostring(order[0]))
+   assert(order[1] is 'defer', 'Defer should run after close: ' .. tostring(order[1]))
+end
+
+-- Close on function return
+
+@Test function CloseOnReturn()
+   closed = false
+   mt = {
+      __close = function(self, err)
+         closed = true
+      end
+   }
+
+   function inner()
+      local obj <close> = setmetatable({}, mt)
+      return 42
+   end
+
+   result = inner()
+   assert(closed, 'Close on return: __close should be called when function returns')
+   assert(result is 42, 'Return value should be preserved: ' .. tostring(result))
+end
+
+-- Close in for loop
+
+@Test function CloseInForLoop()
+   close_count = 0
+   mt = { __close = function() close_count++ end }
+
+   for i = 1, 3 do
+      local obj <close> = setmetatable({}, mt)
+   end
+
+   assert(close_count is 3, 'Close should be called each iteration: ' .. close_count)
+end
+
+-- Close on break
+
+@Test function CloseOnBreak()
+   closed = false
+   mt = { __close = function() closed = true end }
+
+   for i = 1, 10 do
+      local obj <close> = setmetatable({}, mt)
+      if i is 3 then
+         break
+      end
+   end
+
+   assert(closed, 'Close should be called on break')
+end
+
+-- Close on continue
+
+@Test function CloseOnContinue()
+   close_count = 0
+   mt = { __close = function() close_count++ end }
+
+   for i = 1, 3 do
+      local obj <close> = setmetatable({}, mt)
+      if i is 2 then
+         continue
+      end
+   end
+
+   assert(close_count is 3, 'Close should be called each iteration including continue: ' .. close_count)
+end
+
+-- Close with value that has no metatable
+
+@Test function CloseNoMetatable()
+   do
+      t <close> = {}
+   end
+end
+
+-- Close with metatable but no __close
+
+@Test function CloseMetatableNoClose()
+   mt = { __index = function() return 'value' end }
+   do
+      local obj <close> = setmetatable({}, mt)
+   end
+end
+
+-- Mixed close values (some nil)
+
+@Test function MixedCloseValues()
+   order = {}
+   do
+      a <close> = setmetatable({}, {
+         __close = function() table.insert(order, 'a') end
+      })
+      b <close> = nil
+      c <close> = setmetatable({}, {
+         __close = function() table.insert(order, 'c') end
+      })
+   end
+
+   assert(#order is 2, 'Only non-nil values should trigger close')
+   assert(order[0] is 'c', 'LIFO: c first')
+   assert(order[1] is 'a', 'LIFO: a second')
+end
+
+-- Close on error path (using try)
+-- Tests that __close IS called when using try to catch errors,
+-- AND that the error value is passed to the __close handler.
+
+@Test function CloseWithTry()
+   closed = false
+   received_err = nil
+   mt = {
+      __close = function(self, err)
+         closed = true
+         received_err = err
+      end
+   }
+
+   function inner()
+      local obj <close> = setmetatable({}, mt)
+      error('test error message')
+   end
+
+   try
+      inner()
+   success
+      error('try should catch error')
+   end
+
+   assert(closed, 'Close should be called when error is caught by try')
+   -- The error must be passed to __close during error unwinding
+   assert(received_err != nil, 'Error should be passed to __close handler')
+   assert(tostring(received_err):find('test error message'), 'Error message should contain "test error message": got ' .. tostring(received_err))
+end
+
+-- Close with string value - should not crash
+
+@Test function CloseWithString()
+   do
+      s <close> = 'hello'
+   end
+end
+
+-- Close with number value - should not crash
+
+@Test function CloseWithNumber()
+   do
+      n <close> = 42
+   end
+end
+
+-- Multiple close handlers during error - all should be called with error
+
+@Test function MultipleCloseOnError()
+   order = {}
+   errors_received = {}
+   function makeMt(n)
+      return {
+         __close = function(self, err)
+            table.insert(order, n)
+            errors_received[n] = err
+         end
+      }
+   end
+
+   function inner()
+      a <close> = setmetatable({}, makeMt(0))
+      b <close> = setmetatable({}, makeMt(1))
+      c <close> = setmetatable({}, makeMt(2))
+      error('multi close error')
+   end
+
+   try
+      inner()
+   success
+      error('try should catch error')
+   end
+
+   assert(#order is 3, 'All three close handlers should be called: ' .. #order)
+   assert(order[0] is 2, 'LIFO: 3 first, got ' .. tostring(order[0]))
+   assert(order[1] is 1, 'LIFO: 2 second, got ' .. tostring(order[1]))
+   assert(order[2] is 0, 'LIFO: 1 third, got ' .. tostring(order[2]))
+   -- All handlers should receive the same error
+   for i = 0, 2 do
+      assert(errors_received[i] != nil, 'Handler ' .. i .. ' should receive error')
+      assert(tostring(errors_received[i]):find('multi close error'), 'Handler ' .. i .. ' should get correct error')
+   end
+end
+
+-- Close in while loop
+
+@Test function CloseInWhileLoop()
+   close_count = 0
+   mt = { __close = function() close_count++ end }
+   i = 0
+
+   while i < 3 do
+      local obj <close> = setmetatable({}, mt)
+      i++
+   end
+
+   assert(close_count is 3, 'Close should be called each while iteration: ' .. close_count)
+end
+
+-- Nested function calls with close
+-- Note: With tail-call optimization, the order may vary. The important thing
+-- is that both handlers are called and the return value propagates correctly.
+
+@Test function NestedFunctionsClose()
+   order = {}
+   mt_outer = { __close = function() table.insert(order, 'outer') end }
+   mt_inner = { __close = function() table.insert(order, 'inner') end }
+
+   function inner()
+      local obj <close> = setmetatable({}, mt_inner)
+      return 'from_inner'
+   end
+
+   function outer()
+      local obj <close> = setmetatable({}, mt_outer)
+      return inner()
+   end
+
+   result = outer()
+   assert(result is 'from_inner', 'Return value should propagate')
+   assert(#order is 2, 'Both handlers should be called: got ' .. #order)
+   -- Both 'inner' and 'outer' should be in the order table
+   has_inner = false
+   has_outer = false
+   for _, v in ipairs(order) do
+      if v is 'inner' then has_inner = true end
+      if v is 'outer' then has_outer = true end
+   end
+   assert(has_inner, 'Inner close should be called')
+   assert(has_outer, 'Outer close should be called')
+end
+
+-- Close with early return in loop
+
+@Test function CloseEarlyReturnInLoop()
+   close_count = 0
+   mt = { __close = function() close_count++ end }
+
+   function inner()
+      for i = 1, 10 do
+         local obj <close> = setmetatable({}, mt)
+         if i is 3 then
+            return i
+         end
+      end
+      return 0
+   end
+
+   result = inner()
+   assert(result is 3, 'Should return 3')
+   assert(close_count is 3, 'Close should be called 3 times (iterations 1, 2, 3): ' .. close_count)
+end
+
+-- Error in __close handler replaces original error (Lua 5.4 semantics)
+
+@Test function CloseHandlerError()
+   order = {}
+   mt1 = {
+      __close = function(self, err)
+         table.insert(order, 'close1')
+         error('close1 error')
+      end
+   }
+   mt2 = {
+      __close = function(self, err)
+         table.insert(order, 'close2')
+         -- This handler should receive the error from close1 (or original)
+      end
+   }
+
+   function inner()
+      obj2 <close> = setmetatable({}, mt2)  -- Called second (LIFO)
+      obj1 <close> = setmetatable({}, mt1)  -- Called first (LIFO), throws
+      error('original error')
+   end
+
+   caught_ex = nil
+   try
+      inner()
+   except err
+      caught_ex = err
+   end
+
+   -- Both close handlers should be called even when one throws
+   assert(#order is 2, 'Both close handlers should be called: ' .. #order)
+   assert(order[0] is 'close1', 'close1 first (LIFO)')
+   assert(order[1] is 'close2', 'close2 second (LIFO)')
+   -- The error should be from close1, not the original (per Lua 5.4)
+   assert(caught_ex != nil, 'Exception should be caught')
+   assert(tostring(caught_ex.message):find('close1 error'), 'Error from __close should replace original: ' .. tostring(caught_ex.message))
+end
+
+-- Multiple __close errors - last one wins
+
+@Test function MultipleCloseErrors()
+   order = {}
+   mt1 = {
+      __close = function(self, err)
+         msg('mt1 __close called')
+         table.insert(order, 'close1')
+         error('close1 error')
+      end
+   }
+   mt2 = {
+      __close = function(self, err)
+         msg('mt2 __close called')
+         table.insert(order, 'close2')
+         error('close2 error')
+      end
+   }
+
+   function inner()
+      local obj2 <close> = setmetatable({}, mt2)  -- Called second, also throws
+      local obj1 <close> = setmetatable({}, mt1)  -- Called first, throws
+      error('Intentional error')
+   end
+
+   caught_ex = nil
+   try
+      inner()
+   except ex
+      print('Caught error: ' .. ex.message)
+      caught_ex = ex
+   success
+      error('Expected failure from inner()')
+   end
+
+   assert(#order is 2, 'Both close handlers should be called, got ' .. #order)
+   -- The last error (from close2) should be the final error
+   assert(caught_ex, 'Exception should be caught')
+   assert(caught_ex.message:find('close2 error'), 'Last __close error should win: ' .. caught_ex.message)
+end

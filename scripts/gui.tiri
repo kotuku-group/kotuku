@@ -1,0 +1,928 @@
+-- Graphical User Interface functions
+
+   namespace 'gui'
+
+global mVec ?= mod.load('vector') -- Configure mVec as a global convenience.  For fast access, clients assign to lVec
+local lVec = mVec
+
+_LIB[_NS] = {
+   theme = nil,
+   _counter = 0,
+   configureScene = function(Window, Scene)
+      -- Themes can set a custom configuration function that adds definitions to all window scenes, e.g. images
+      -- and patterns for fills.
+   end
+}
+
+gui = _LIB[_NS]
+
+local rxPixel    <const> = <{ regex.new([[^(\d+)([a-zA-Z]*)$]]) }>
+local rxFontSize <const> = <{ regex.new([[^(-?\d+)%$]]) }>
+local rxNum      <const> = <{ regex.new([[\d+]]) }>
+
+local glStyleConfig = 'user:config/style.cfg'
+local glPainter = struct.new('VectorPainter')
+
+----------------------------------------------------------------------------------------------------------------------
+
+gui.mtHSV = { -- HSV metatable
+   __newindex = function(Self, Key, Value)
+      error(f'Table structure is immutable: Cannot set {Key}')
+   end,
+   __eq = function(A:table, B:table):bool
+      return A.h is B.h and A.s is B.s and A.v is B.v and A.a is B.a
+   end,
+   __tostring = function(Self):str -- Returns an SVG compliant colour string
+      if Self.a is 1 or Self.a is nil then
+         return string.format('hsv(%d %d %d)', Self.r ?? -1, Self.g ?? -1, Self.b ?? -1)
+      else
+         return string.format('hsv(%d %d %d / %g)', Self.r ?? -1, Self.g ?? -1, Self.b ?? -1, Self.a)
+      end
+   end
+}
+
+gui.mtHSV.__index = gui.mtHSV
+
+gui.hsv = function(H:num, S:num, V:num, A:num):table -- HSV values
+   H ?= 0
+   S ?= 0
+   V ?= 0
+   A ?= 1
+   return setmetatable({ h = H, s = S, v = V, a = A }, gui.mtHSV)
+end
+
+function gui.mtHSV:interpolate(New:table, Ratio:num):table
+   Ratio ?= 0.5
+   return setmetatable({
+      a = self.a + ((New.a - self.a) * Ratio),
+      h = self.h + ((New.h - self.h) * Ratio),
+      s = self.s + ((New.s - self.s) * Ratio),
+      v = self.v + ((New.v - self.v) * Ratio)
+   }, gui.mtHSV)
+end
+
+function gui.mtHSV:toRGB():table
+   h = self.h / 60
+   s = self.s
+   v = self.v
+   i = math.floor(h)
+   f = h - i
+   if (i & 1) is 0 then f = 1 - f end
+   m = v * (1 - s)
+   n = v * (1 - s * f)
+
+   if i is 6 or i is 0 then
+      return setmetatable({ r = v, g = n, b = m, a = self.a }, gui.mtRGB)
+   elseif i is 1 then
+      return setmetatable({ r = n, g = v, b = m, a = self.a }, gui.mtRGB)
+   elseif i is 2 then
+      return setmetatable({ r = m, g = v, b = n, a = self.a }, gui.mtRGB)
+   elseif i is 3 then
+      return setmetatable({ r = m, g = n, b = v, a = self.a }, gui.mtRGB)
+   elseif i is 4 then
+      return setmetatable({ r = n, g = m, b = v, a = self.a }, gui.mtRGB)
+   elseif i is 5 then
+      return setmetatable({ r = v, g = m, b = n, a = self.a }, gui.mtRGB)
+   else
+      return setmetatable({ r = 0, g = 0, b = 0, a = self.a }, gui.mtRGB)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+gui.mtRGB = { -- sRGB metatable
+   __newindex = function(Self, Key, Value)
+      error(f'Table structure is immutable: Cannot set {Key}')
+   end,
+   __eq = function(A:table, B:table):bool
+      return A.r is B.r and A.g is B.g and A.b is B.b and A.a is B.a
+   end,
+   __tostring = function(Self):str -- Returns an SVG compliant colour string
+      if Self.a >= 1 or Self.a is nil then
+         return string.format('rgb(%d %d %d)', Self.r ? Self.r * 255 :> 0, Self.g ? Self.g * 255 :> 0, Self.b ? Self.b * 255 :> 0)
+      else
+         return string.format('rgb(%d %d %d / %g)', Self.r ? Self.r * 255 :> 0, Self.g ? Self.g * 255 :> 0, Self.b ? Self.b * 255 :> 0, Self.a)
+      end
+   end
+}
+
+gui.mtRGB.__index = gui.mtRGB
+
+gui.srgb = function(R:num, G:num, B:num, A:num, KV:table):table -- sRGB values
+   R ?= 0
+   G ?= 0
+   B ?= 0
+   A ?= 255
+   result = { r = R/255, g = G/255, b = B/255, a = A/255 }
+   if KV then
+      for k, v in pairs(KV) do
+         result[k] = v
+      end
+   end
+   return setmetatable(result, gui.mtRGB)
+end
+
+gui.nrgb = function(R:num, G:num, B:num, A:num, KV:table):table -- Normalised RGB values
+   result = { r = R, g = G, b = B, a = A ? A :> 1 }
+   if KV then
+      for k, v in pairs(KV) do
+         result[k] = v
+      end
+   end
+   return setmetatable(result, gui.mtRGB)
+end
+
+function gui.mtRGB:interpolate(New:table, Ratio:num):table
+   Ratio ?= 0.5
+   return setmetatable({
+      a = self.a + ((New.a - self.a) * Ratio),
+      r = self.r + ((New.r - self.r) * Ratio),
+      g = self.g + ((New.g - self.g) * Ratio),
+      b = self.b + ((New.b - self.b) * Ratio)
+   }, gui.mtRGB)
+end
+
+function gui.mtRGB:toHSV():table -- Normalised HSV
+   max = self:brightness()
+   hsv = { v = max }
+   if max > 0 then
+      min = self.b
+      if self.g < min then min = self.g end
+      if self.r < min then min = self.r end
+
+      delta = max - min
+      hsv.s = delta / max
+      if hsv.s is 0 then
+         hsv.h = 0
+      else
+         if self.r >= max then
+            hsv.h = (self.g - self.b) / delta
+         elseif self.g >= max then
+            hsv.h = 2.0 + (self.b - self.r) / delta
+         else
+            hsv.h = 4.0 + (self.r - self.g) / delta
+         end
+         hsv.h = hsv.h * 60
+         if hsv.h < 0 then hsv.h = hsv.h + 360 end
+      end
+   else
+      hsv.s = 0
+      hsv.h = 0
+   end
+   return setmetatable(hsv, gui.mtHSV)
+end
+
+-- Return the light value of an RGB colour (i.e. the V in HSV)
+
+function gui.mtRGB:brightness():num
+   local max = self.b
+   if self.g > max then max = self.g end
+   if self.r > max then max = self.r end
+   return max
+end
+
+function gui.mtRGB:withAlpha(Alpha:num):table
+   return setmetatable({ r = self.r, g = self.g, b = self.b, a = self.a * Alpha }, gui.mtRGB)
+end
+
+function gui.mtRGB:linearise():table
+   function lineariseRGB(u)
+      return (u <= 0.04045) ? (u / 12.92) :> (((u + 0.055) / 1.055) ** 2.4)
+   end
+
+   return { r = lineariseRGB(self.r), g = lineariseRGB(self.g), b = lineariseRGB(self.b), a = self.a }
+end
+
+-- Convert RGB table { r, g, b, a } (0-1) to HSL table { h, s, l }
+-- h is hue in degrees [0,360), s and l are in [0,1].
+
+function gui.mtRGB:toHSL():table
+   local r = self.r
+   local g = self.g
+   local b = self.b
+
+   local max = r
+   if g > max then max = g end
+   if b > max then max = b end
+
+   local min = r
+   if g < min then min = g end
+   if b < min then min = b end
+
+   local l = (max + min) / 2
+   if max is min then
+      return { h = 0, s = 0, l = l }
+   end
+
+   local delta = max - min
+   local s = (l > 0.5) ? (delta / (2 - max - min)) :> (delta / (max + min))
+   local h
+
+   if r >= max then
+      h = (g - b) / delta
+   elseif g >= max then
+      h = 2.0 + (b - r) / delta
+   else
+      h = 4.0 + (r - g) / delta
+   end
+   h = h * 60
+   if h < 0 then h = h + 360 end
+
+   return { h = h, s = s, l = l }
+end
+
+-- Return the relative luminance of the colour per WCAG 2.x (BT.709 coefficients).
+-- Result is in [0,1] where 0 is black and 1 is white.
+
+function gui.mtRGB:luminance():num
+   local linear = self:linearise()
+   return (0.2126 * linear.r) + (0.7152 * linear.g) + (0.0722 * linear.b)
+end
+
+-- Convert RGB table { r, g, b, a } (0-255) to Display P3 table { r, g, b }
+-- Values are in [0,1].  Out-of-gamut sRGB colours may produce values outside [0,1].
+
+function gui.mtRGB:toDisplayP3():table
+   local linear = self:linearise()
+
+   -- sRGB linear → XYZ D65
+   local x =  0.4124564 * linear.r + 0.3575761 * linear.g + 0.1804375 * linear.b
+   local y =  0.2126729 * linear.r + 0.7151522 * linear.g + 0.0721750 * linear.b
+   local z =  0.0193339 * linear.r + 0.1191920 * linear.g + 0.9503041 * linear.b
+
+   -- XYZ D65 → Display P3 linear
+   local pr =  2.4934969 * x - 0.9313836 * y - 0.4027108 * z
+   local pg = -0.8294890 * x + 1.7626641 * y + 0.0236247 * z
+   local pb =  0.0358458 * x - 0.0761724 * y + 0.9568845 * z
+
+   -- Apply sRGB-style gamma (Display P3 uses the same transfer function)
+   gamma = (u) => (u <= 0.0031308) ? (u * 12.92) :> (1.055 * (u ** (1 / 2.4)) - 0.055)
+
+   return { r = gamma(pr), g = gamma(pg), b = gamma(pb) }
+end
+
+-- Convert RGB table { r, g, b, a } (0-255) to OKLab table { okl, oka, okb, a }
+-- okl is lightness in [0,1], oka is green-red axis, okb is blue-yellow axis (both typically -0.5 to 0.5).
+
+function gui.mtRGB:toOKLab():table
+   local linear = self:linearise()
+
+   -- Linear sRGB → LMS (OKLab M1 matrix)
+   lms_l = 0.4122214708 * linear.r + 0.5363325363 * linear.g + 0.0514459929 * linear.b
+   lms_m = 0.2119034982 * linear.r + 0.6806995451 * linear.g + 0.1073969566 * linear.b
+   lms_s = 0.0883024619 * linear.r + 0.2817188376 * linear.g + 0.6299787005 * linear.b
+
+   -- Cube-root compression
+   lms_l = lms_l ** (1/3)
+   lms_m = lms_m ** (1/3)
+   lms_s = lms_s ** (1/3)
+
+   -- LMS → OKLab (M2 matrix)
+   return {
+      okl = 0.2104542553 * lms_l + 0.7936177850 * lms_m - 0.0040720468 * lms_s,
+      oka = 1.9779984951 * lms_l - 2.4285922050 * lms_m + 0.4505937099 * lms_s,
+      okb = 0.0259040371 * lms_l + 0.7827717662 * lms_m - 0.8086757660 * lms_s,
+      a   = self.a
+   }
+end
+
+-- Convert RGB table { r, g, b, a } (0-255) to OKLCH table { okl, okc, okh, a }
+-- okl is lightness in [0,1], okc is chroma (unbounded, typically 0-0.4), okh is hue in degrees [0,360).
+
+function gui.mtRGB:toOKLCH():table
+   local lab = self:toOKLab()
+   local c = math.sqrt(lab.oka * lab.oka + lab.okb * lab.okb)
+   local h = math.deg(math.atan2(lab.okb, lab.oka))
+   if h < 0 then h = h + 360 end
+   return setmetatable({ okl = lab.okl, okc = c, okh = h, a = self.a },
+      { __tostring = (Self) => Self.a is 1 ?
+         string.format('oklch(%.3f %.3f %.3f)', Self.okl, Self.okc, Self.okh) :>
+         string.format('oklch(%.3f %.3f %.3f / %.3f)', Self.okl, Self.okc, Self.okh, Self.a)
+      }
+   )
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+gui.getFontHeight = function(Font:table):<num,num>
+   try<trace>
+      if not Font.height then
+         err, handle = lVec.getFontHandle(Font.face, 'Regular', 0, Font.size)
+         metrics = struct.new('FontMetrics')
+         lVec.getFontMetrics(handle, metrics)
+         Font.height  = metrics.height
+         Font.spacing = metrics.lineSpacing
+      end
+      return Font.spacing, Font.height
+   except ex
+      error(f'{ex.message}\n{ex.stackTrace}')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Read a style value and return it in pixel units.  Supports px, in, mm, pt, dp
+
+gui.pixel = function(val:str):num
+   val ?? return 0
+   num, alpha = rxPixel.extract(val)
+   num = tonumber(num)
+   assert(num, f'Invalid graphics unit \'{val}\'')
+   return choose alpha from
+      'px' -> num
+      'in' -> gui.interface.dpi * num
+      'mm' -> gui.interface.dpi * (num / 25.4) -- 25.4 units per inch
+      'pt' -> gui.interface.dpi * (num / 72) -- 72 units per inch
+      'dp' -> num * (gui.interface.dpi * 0.00625) -- 160dpi relative value
+      else -> num
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Convert a colour string to an RGB table.
+
+gui.strToRGB = function(Value:str):table
+   assert(Value, 'Empty value passed to strToRGB()')
+
+   try<trace>
+      lVec.ReadPainter(nil, Value, glPainter)
+      nrgb = glPainter.Colour
+      if nrgb.Red < 0 then nrgb.Red = 0 end
+      if nrgb.Red > 1 then nrgb.Red = 1 end
+      if nrgb.Green < 0 then nrgb.Green = 0 end
+      if nrgb.Green > 1 then nrgb.Green = 1 end
+      if nrgb.Blue < 0 then nrgb.Blue = 0 end
+      if nrgb.Blue > 1 then nrgb.Blue = 1 end
+      return setmetatable({ r=nrgb.red, g=nrgb.green, b=nrgb.blue, a=nrgb.alpha }, gui.mtRGB)
+   except ex
+      error(f'Parsing "{Value}" failed: {ex.message}\n{ex.stackTrace}')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+gui.rgbToIconTheme = function(Value:any):str
+   if type(Value) is 'string' then
+      Value = gui.strToRGB(Value)
+   end
+
+   return (Value:brightness() > 0.5) ? 'pearl' :> 'carbon'
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Call a client function for each vector in the tree
+
+gui.forVector = function(Vector:obj, Function)
+   while Vector do
+      Function(Vector)
+      child = Vector.child
+      child and gui.forVector(child, Function)
+      Vector = Vector.next
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+gui.applyFill = function(Vector:obj, Fill)
+   while Vector do
+      if Vector.fill != 'none' then
+         Vector.fill = Fill
+      end
+      if Vector.stroke then Vector.stroke = Fill end
+      child = Vector.child
+      child and gui.applyFill(child, Fill)
+      Vector = Vector.next
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Generate a simple gradient fill for vectors.
+
+gui.simpleGradient = function(Scene:obj, Name:str, Colours, X1:num, Y1:num, X2:num, Y2:num, Units:str, IgnoreClashes:bool)
+   assert(Name, 'A name for the gradient is required.')
+
+   stops = { }
+   i = 0
+   for col in values(Colours) do
+      vc = struct.new('GradientStop')
+      vc.offset    = col.offset ? col.offset :> (i / (#Colours - 1))
+      vc.rgb.red   = col.r
+      vc.rgb.green = col.g
+      vc.rgb.blue  = col.b
+      vc.rgb.alpha = col.a ? col.a :> 1.0
+      table.insert(stops, vc)
+      i++
+   end
+
+   local gradient = Scene.new('VectorGradient', {
+      name=Name, type='linear', stops=stops, x1=X1, y1=Y1, x2=X2, y2=Y2, units=(Units ?? 'boundingbox')
+   })
+
+   if IgnoreClashes then -- Do not fail if a resource with the same name already exists (nb: will return nil).
+      try
+         Scene.mtAddDef(Name, gradient)
+      except ex
+         if ex.code is ERR_ResourceExists then
+            gradient.free()
+            return
+         else
+            error(ex)
+         end
+      end
+   else
+      Scene.mtAddDef(Name, gradient)
+   end
+
+   return gradient
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Build an icon styled with the current theme and register it as a pattern.  The pattern can then be used as a fill,
+-- i.e. "url(#Path)".  Using it in a VectorRectangle is akin to a cached bitmap (fast), or apply to a VectorViewport
+-- for live rendering (higher quality transforms).
+
+gui.createIcon = function(Scene:obj, Path:str, Size:num, Theme:any, Name:str):table
+   Size ??= 16
+   assert(Path, 'No Path specified.')
+   lGradient = gui.iconThemes.default
+   icon = { size=Size }
+
+   gui._counter++
+   gname = 'icon_grd' .. gui._counter
+
+   if type(Theme) is 'table' then
+      lGradient = Theme
+   elseif type(Theme) is 'string' then
+      gname = f'icon_{Theme}'
+      if gui.iconThemes[Theme] then
+         lGradient = gui.iconThemes[Theme]
+      else
+         error(f'gui.createIcon() theme {Theme} not recognised.')
+      end
+
+      Name ??= Theme:lower() .. '/' .. Path:lower()
+   else
+      error('Invalid Theme specified.')
+   end
+
+   Name ??= Path
+
+   if Scene.mtFindDef(Name) is ERR_Okay then -- Return if the icon pattern is already registered
+      return { name = Name, theme = Theme, size = Size, path = Path, fill = f'url(#{Name})' }
+   end
+
+   icon.pattern  = Scene.new('VectorPattern', { pageWidth=Size, pageHeight=Size, spreadMethod=VSPREAD_PAD })
+   icon.gradient = gui.simpleGradient(icon.pattern.scene, gname, { lGradient.first, lGradient.last }, 0, 0, 0, 1, 'boundingbox', true)
+   if not Path:startsWith('icons:') then
+      Path = f'icons:{Path}.svg'
+   end
+   icon.svg = obj.new('svg', { target=icon.pattern.viewport, path=Path })
+
+   gui.forVector(icon.pattern.viewport, function(Vector)
+      if Vector.fill != 'none' then
+         Vector.fill = f'url(#{gname})'
+      end
+
+      if Vector.stroke?? then
+         Vector.stroke = f'url(#{gname})'
+      elseif lGradient.stroke then
+         Vector.stroke = tostring(lGradient.stroke)
+         Vector.strokeWidth = '1.5%'
+      end
+   end)
+
+   check Scene.mtAddDef(Name, icon.pattern)
+
+   return { name = Name, theme = Theme, size = Size, path = Path, fill = f'url(#{Name})' }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- For rendering a separating line between widgets or delineating the end of a widget area.
+-- Pos & MarginX can be numbers or proportional values, e.g. 100%
+-- Negative positions, including -0.0, are interpreted as offsets from the end
+
+gui.separator = function(Viewport:obj, Orientation:str, Pos:any, MarginA:any, MarginB:any):num
+   local o = Orientation:substr(0, 1)
+   local options = { fill=tostring(gui.getTheme(Viewport).window.stroke) }
+
+   if o is 'h' or o is 'H' then
+      options.x       = MarginA ?? 0
+      options.xOffset = MarginB ?? 0
+      options.height  = gui.sizing.widget.strokeWidth
+
+      if type(Pos) is 'number' and (Pos < 0 or (Pos is 0 and (1/Pos) < 0)) then -- Include negative zero
+         options.yOffset = -Pos
+         subvp = Viewport.new('VectorViewport', options)
+         subvp.new('VectorRectangle', { fill=options.fill, width='100%', height='100%' })
+      else
+         options.y = Pos
+         Viewport.new('VectorRectangle', options)
+      end
+   else
+      options.y       = MarginA ?? 0
+      options.yOffset = MarginB ?? 0
+      options.width   = gui.sizing.widget.strokeWidth
+      if type(Pos) is 'number' and (Pos < 0 or (Pos is 0 and (1/Pos) < 0)) then
+         options.xOffset = -Pos
+         subvp = Viewport.new('VectorViewport', options)
+         subvp.new('VectorRectangle', { fill=options.fill, width='100%', height='100%' })
+      else
+         options.x = Pos
+         Viewport.new('VectorRectangle', options)
+      end
+   end
+   return gui.sizing.widget.strokeWidth
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Return the localised theme table for a given Viewport or vector Scene (effectively the theme assigned to the
+-- display Window).  NB: If a viewport is provided then the nearest parent scene is queried.
+
+gui.getTheme = function(Object:obj):table
+   local scene
+
+   if not Object then
+      return gui.themes[gui.theme]
+   end
+
+   if obj.class(Object).name is 'VectorViewport' then
+      scene = Object.scene
+   elseif obj.class(Object).name is 'VectorScene' then
+      scene = Object
+   else
+      error(f'Provided object class {Object.class()} is unsupported.')
+   end
+
+   state = scene._state()
+   themeName = state.theme -- Get pre-defined theme
+   if not themeName then -- Theme undefined, apply the default
+      state.theme = gui.theme
+      themeName = state.theme
+   end
+
+   return gui.themes[state.theme]
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- The base themes are 'light' and 'dark'.  Choosing an alternative theme will use one of the aforementioned as the
+-- base and then override values with its own settings.  In addition to this we have palettes, which are a pure
+-- user preference that provides the 'accents' that colour chosen theme.  Although the light and dark themes rely
+-- on palette colours heavily, alternative themes may ignore them entirely.
+
+gui.setTheme = function(Object:obj, Theme:str):table
+   msg(f'gui.setTheme({Object}, {Theme})')
+
+   local state
+   if Object then
+      local scene
+      if obj.class(Object).name is 'VectorViewport' then
+         scene = Object.scene
+      elseif obj.class(Object).name is 'VectorScene' then
+         scene = Object
+      else
+         error(f'Provided object class {Object.class()} is unsupported.')
+      end
+
+      state = scene._state()
+   end
+
+   if not gui.themes[Theme] then
+      -- Request for a custom theme, load from storage
+      if mSys.AnalysePath(f'config:themes/{Theme}.tiri') is ERR_Okay then
+         -- Client must use light or dark as a base, then modify values
+         loadFile(f'config:themes/{Theme}.tiri')
+         assert(gui.themes[Theme], 'Theme configuration did not initialise correctly.')
+      else
+         Theme = 'light' -- Revert to a known default
+         print(f'Theme "{Theme}" is not installed.')
+      end
+   end
+
+   if state then
+      state.theme = Theme
+   else
+      gui.theme = Theme
+   end
+
+   return gui.themes[Theme]
+end
+
+local function modifyAlpha(Colour:str, Alpha:num):str
+   lVec.ReadPainter(nil, Colour, glPainter)
+   nrgb = glPainter.Colour
+   rgb = gui.nrgb(nrgb.red, nrgb.green, nrgb.blue, nrgb.alpha)
+   return tostring(rgb:withAlpha(Alpha))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+gui.sizing = {
+   widget = {
+      width  = 160, -- Default width for common widgets (px)
+      gap    = 6,   -- Recommended gap between widgets (px)
+      margin = 6,   -- Recommended internal margin for widgets (px)
+      strokeWidth = 2
+   },
+   page = {
+      strokeWidth = 2
+   }
+}
+
+gui.fonts = {
+   -- Use percentages for scalable sizes, where 100% is equivalent to the value of gui.interface.fontSize
+   default  = { face='Noto Sans,Source Sans Pro', size='100%' },
+   window   = { face='Noto Sans,Source Sans Pro', style='medium', size='100%' }, -- For non-widget text
+   button   = { face='Noto Sans,Source Sans Pro', size='12' }, -- Text inside buttons
+   filesys  = { face='Inconsolata', size='12', style='medium' }, -- Text for files, folders
+   icon     = { face='Noto Sans,Source Sans Pro', size='10', size='100%' }, -- Labeling for icons
+   menu     = { face='Noto Sans,Source Sans Pro', style='medium', size='12' }, -- Menu & dropdown item text
+   page     = { face='Noto Sans,Source Sans Pro', size='12' }, -- Multiple lines of text
+   titlebar = { face='Noto Sans', size='100%' }, -- Window titlebar text
+   small    = { face='Tiny', size='60%' }, -- Recommended text for small sizes
+   large    = { face='Noto Sans,Source Sans Pro', size='130%' }, -- Recommended text for headers
+   input    = { face='Noto Sans,Source Sans Pro', style='medium', size='12' }, -- Text inside input widgets (e.g. combobox)
+   widget   = { face='Noto Sans,Source Sans Pro', style='medium', size='12' }, -- Text inside non-input widgets (e.g. button)
+   label    = { face='Noto Sans,Source Sans Pro', style='medium', size='100%' } -- Text for labels and outside widgets
+}
+
+gui.iconThemes = {
+   default = { first=gui.strToRGB('oklch(0.468 0.000 89.876)'),  last=gui.strToRGB('oklch(0.412 0.066 283.103)') },
+   carbon  = { first=gui.strToRGB('oklch(0.468 0.000 89.876)'),  last=gui.strToRGB('oklch(0.412 0.066 283.103)') },
+   yellow  = { first=gui.strToRGB('oklch(0.841 0.173 111.771)'), last=gui.strToRGB('oklch(0.690 0.148 68.131)'), stroke=gui.strToRGB('oklch(0.276 0.047 20.527)') },
+   orange  = { first=gui.strToRGB('oklch(0.857 0.164 87.613)'),  last=gui.strToRGB('oklch(0.698 0.174 43.865)') },
+   blue    = { first=gui.strToRGB('oklch(0.543 0.124 264.706)'), last=gui.strToRGB('oklch(0.281 0.063 262.910)') },
+   ocean   = { first=gui.strToRGB('oklch(0.813 0.093 268.180)'), last=gui.strToRGB('oklch(0.385 0.165 284.067)') },
+   green   = { first=gui.strToRGB('oklch(0.649 0.154 122.868)'), last=gui.strToRGB('oklch(0.444 0.116 152.499)') },
+   red     = { first=gui.strToRGB('oklch(0.800 0.162 78.770)'),  last=gui.strToRGB('oklch(0.615 0.235 30.433)') },
+   indigo  = { first=gui.strToRGB('oklch(0.570 0.134 345.216)'), last=gui.strToRGB('oklch(0.284 0.117 311.021)') },
+   rose    = { first=gui.strToRGB('oklch(0.863 0.083 51.527)'),  last=gui.strToRGB('oklch(0.834 0.095 7.824)') },
+   pink    = { first=gui.strToRGB('oklch(0.927 0.038 9.810)'),   last=gui.strToRGB('oklch(0.777 0.099 10.847)') },
+   grey    = { first=gui.strToRGB('oklch(0.503 0.000 89.876)'),  last=gui.strToRGB('oklch(0.394 0.000 89.876)') },
+   pearl   = { first=gui.strToRGB('oklch(0.983 0.002 67.803)'),  last=gui.strToRGB('oklch(0.804 0.002 247.844)') }
+}
+
+gui.palettes = {
+   -- bkgd is the standard background colour for large amounts of text (documents & code).  In a light theme it should be near-white.
+   -- inverse is the inverse light value of bkgd (or must contrast significantly). Useful for heavy contrast against bkgd, e.g. stroking menu borders.
+   -- prime (primary) should have a strong chroma and is used for drawing attention, like for highlighting and selection.
+   -- contrast is a suitable complement to prime and should be of a strongly contrasting hue
+   -- neutral is a default background colour for undefined areas (e.g. window background), usually a light grey tone
+   -- mid is used for separating an area from bkgd without drawing attention.  E.g. scrollbar and slider tracks
+   -- face is a midtone colour for widgets, normally drawn over 'mid'.  Chroma must be weaker than 'prime'
+   -- text is the default colour for text drawn over 'bkgd'
+   -- altText is the default colour for text drawn over 'prime' when highlighted or selected.  Can be same as 'text'
+   ocean = {
+      light = { type = 'light', bkgd = 'oklch(0.952 0.004 214.329)', inverse = 'oklch(0.356 0.039 248.975)',
+                prime = 'oklch(0.653 0.135 242.687)', contrast = 'oklch(0.631 0.194 29.442)',
+                neutral = 'oklch(0.894 0 89.876)', mid='oklch(0.804 0 89.876)',
+                text='black', altText='white' },
+      dark =  { type = 'dark', bkgd = 'oklch(0.406 0.026 246.349)', inverse = 'oklch(0.9135 0.0087 247.92)',
+                prime = 'oklch(0.653 0.135 242.687)', contrast = 'oklch(0.631 0.194 29.442)',
+                neutral = 'oklch(0.356 0.039 248.975)', mid='oklch(0.506 0.026 276.349)',
+                text='white', altText='white' },
+   },
+   orangeApples = {
+      light = { type = 'light', bkgd = 'white', inverse = 'oklch(0.289 0.030 185.119)',
+                prime = 'oklch(0.652 0.166 127.067)', contrast = 'oklch(0.732 0.157 67.580)',
+                neutral = 'oklch(0.894 0 89.876)', mid='none',
+                text='black', altText='white' },
+      dark =  { type = 'dark', bkgd = 'oklch(0.289 0.030 185.119)', inverse = 'white',
+                prime = 'oklch(0.652 0.166 127.067)', contrast = 'oklch(0.732 0.157 67.580)',
+                neutral = 'oklch(0.277 0 89.876)', mid='none',
+                text='white', altText='white' }
+   },
+   greenland = {
+      light = { type = 'light', bkgd = 'oklch(0.994 0.008 157.097)', inverse = 'oklch(0.309 0.093 136.720)',
+                prime = 'oklch(0.584 0.162 46.883)', contrast = 'oklch(0.532 0.138 127.325)',
+                neutral = 'oklch(0.932 0.012 106.630)', mid='none',
+                text='black', altText='white' },
+      dark  = { type = 'dark', bkgd = 'oklch(0.309 0.093 136.720)', inverse = 'white',
+                prime = 'oklch(0.584 0.162 46.883)', contrast = 'oklch(0.532 0.138 127.325)',
+                neutral = 'oklch(0.402 0.015 107.041)', mid='none',
+                text='white', altText='white' }
+   },
+   sunrise = {
+      light = { type = 'light', bkgd = 'oklch(0.995 0.007 164.946)', inverse = 'oklch(0.560 0.019 196.622)',
+                prime = 'oklch(0.634 0.185 40.533)', contrast = 'oklch(0.740 0.161 69.169)',
+                neutral = 'oklch(0.894 0 89.876)', mid='none',
+                text='black', altText='white' },
+      dark=   { type = 'dark', bkgd = 'black', inverse = 'oklch(0.560 0.019 196.622)',
+                prime = 'oklch(0.634 0.185 40.533)', contrast = 'oklch(0.740 0.161 69.169)',
+                neutral = 'oklch(0.277 0 89.876)', mid='none',
+                text='white', altText='white' }
+   },
+   candyfloss = {
+      light = { type = 'light', bkgd = 'oklch(0.988 0.007 53.450)', inverse = 'oklch(0.443 0.041 204.992)',
+                prime = 'oklch(0.768 0.105 167.447)', contrast = 'oklch(0.690 0.130 15.681)',
+                neutral = 'oklch(0.894 0 89.876)',  mid='none',
+                text='black', altText='white' },
+      dark  = { type = 'dark', bkgd = 'oklch(0.443 0.041 204.992)', inverse = 'white',
+                prime = 'oklch(0.768 0.105 167.447)', contrast = 'oklch(0.690 0.130 15.681)',
+                neutral = 'oklch(0.277 0 89.876)', mid='none',
+                text='white', altText='white' }
+   }
+}
+
+   if not gui.theme then
+      msg('No theme set, loading default from configuration file.')
+      gui.theme = 'light' -- Default
+      gui.paletteTheme = 'light' -- 'light' or 'dark' only
+      gui.palette = gui.palettes.ocean
+
+      if mSys.AnalysePath(glStyleConfig) is ERR_Okay then
+         try
+            local cfg = obj.new('config', { path=glStyleConfig })
+            theme = [_*]cfg.mtReadValue('Style', 'Theme')
+            palette = [_*]cfg.mtReadValue('Style', 'Palette')
+            paletteTheme = [_*]cfg.mtReadValue('Style', 'PaletteTheme')
+            gui.theme = theme
+            if gui.palettes[palette] then
+               gui.paletteTheme = gui.palettes?[palette]?[paletteTheme] ? paletteTheme :> 'light'
+               gui.palette = gui.palettes[palette]
+            end
+         except ex
+            print(f'Error in style configuration file {glStyleConfig}; delete to reset it')
+            print(f'  Detail: {ex.message}')
+         end
+      else
+         local file = obj.new('file', { path=glStyleConfig, flags=FL_WRITE|FL_NEW })
+         file.acWrite("[Style]\nTheme = light\nPalette = ocean\nPaletteTheme = light\n")
+      end
+   end
+
+gui.themes = {
+   -- All colour values are fills, so gradient and pattern references are also permitted.
+   dark = {
+      palette = gui.palette.dark,
+      page = {
+         bkgd              = gui.palette.dark.bkgd,     -- Background for hosting text & paper-based layouts
+         stroke            = gui.palette.dark.mid,      -- Border stroke for any area surrounding 'bkgd'
+         strokeFocus       = gui.palette.dark.contrast, -- Stroke to use when 'border' has the user's focus
+         text              = gui.palette.dark.text,     -- Default colour for text drawn over 'bkgd'
+         icon              = 'pearl',                   -- Default icon theme for icons drawn over 'bkgd'
+         iconHighlight     = 'pearl',                   -- Recommended icon theme when highlighted or selected
+         textHighlight     = gui.palette.dark.altText,  -- Colour for 'text' during user hover
+         textHighlightBkgd = gui.palette.dark.contrast, -- Background fill for 'text' during user hover
+         textSelect        = gui.palette.dark.altText,  -- Colour for 'text' when selected
+         textSelectBkgd    = gui.palette.dark.prime     -- Background fill for 'text' when selected
+      },
+      widget = { -- Non-input widgets only (exc. checkbox, combobox, etc.)
+         text        = gui.palette.dark.text,
+         bkgd        = gui.palette.dark.prime,
+         stroke      = 'rgb(255 255 255 / .25)',
+         strokeFocus = gui.palette.dark.contrast
+      },
+      input = {
+         text        = gui.palette.dark.text,
+         bkgd        = gui.palette.dark.prime,
+         stroke      = 'rgb(255 255 255 / .25)',
+         strokeFocus = gui.palette.dark.contrast
+      },
+      window = {
+         bkgd = gui.palette.dark.neutral,
+         icon = 'pearl',
+         text = gui.palette.dark.text,
+         stroke = modifyAlpha(gui.palette.dark.text, 0.25) -- Stroking of lines/paths (not borders of widgets)
+      },
+      button = {
+         bkgd      = gui.palette.dark.neutral,
+         highlight = gui.palette.dark.contrast
+      },
+      menubar = {
+         bkgd      = 'rgb(0 0 0 / .5)',
+         text      = gui.palette.dark.text,
+         highlight = gui.palette.dark.contrast
+      },
+      menu = {
+         bkgd      = gui.palette.dark.bkgd,
+         stroke    = gui.palette.dark.inverse,
+         highlight = gui.palette.dark.contrast,
+         text      = gui.palette.dark.text,
+         icon      = 'pearl'
+      },
+      dropdown = {
+         bkgd          = gui.palette.dark.bkgd,
+         stroke        = gui.palette.dark.inverse,
+         icon          = 'pearl',
+         iconHighlight = 'pearl',
+         text          = gui.palette.dark.text,
+         textHighlight = gui.palette.dark.altText
+      },
+      slider = {
+         bkgd            = gui.palette.dark.mid,
+         fore            = gui.palette.dark.inverse,
+         foreStroke      = 'none',
+         foreHighlight   = gui.palette.dark.contrast,
+         foreStrokeFocus = gui.palette.dark.contrast,
+         highlight       = 'none',
+         stroke          = 'none',
+         strokeFocus     = gui.palette.dark.contrast
+      },
+      toolbar = {
+         bkgd          = gui.palette.dark.bkgd,
+         groupStroke   = 'rgb(255 255 255 / .25)', -- Match input stroke
+         icon          = 'pearl',
+         iconHighlight = 'pearl'
+      },
+      desktop = {
+         bkgd = 'rgb(160 160 160)'
+      }
+   },
+   light = {
+      palette = gui.palette.light,
+      page = {
+         bkgd              = gui.palette.light.bkgd,
+         stroke            = gui.palette.light.mid,
+         strokeFocus       = gui.palette.light.contrast,
+         icon              = 'carbon',
+         iconHighlight     = 'pearl',
+         text              = gui.palette.light.text,
+         textHighlight     = gui.palette.light.altText,
+         textHighlightBkgd = gui.palette.light.contrast,
+         textSelect        = gui.palette.light.altText,
+         textSelectBkgd    = gui.palette.light.prime
+      },
+      widget = {
+         text        = gui.palette.light.altText,
+         bkgd        = gui.palette.light.prime,
+         stroke      = 'rgb(0 0 0 / .35)',
+         strokeFocus = gui.palette.light.contrast
+      },
+      input = {
+         text        = gui.palette.light.altText,
+         bkgd        = gui.palette.light.prime,
+         stroke      = 'rgb(0 0 0 / .35)',
+         strokeFocus = gui.palette.light.contrast
+      },
+      window = {
+         bkgd   = gui.palette.light.neutral,
+         icon   = 'carbon',
+         text   = gui.palette.light.text,
+         stroke = modifyAlpha(gui.palette.light.inverse, 0.5)
+      },
+      button = {
+         bkgd = gui.palette.light.inverse,
+         highlight = gui.palette.light.contrast
+      },
+      menubar = {
+         bkgd = gui.palette.light.inverse,
+         text = gui.palette.light.altText,
+         highlight = gui.palette.light.contrast
+      },
+      menu = {
+         bkgd      = gui.palette.light.inverse,
+         stroke    = gui.palette.light.neutral,
+         highlight = gui.palette.light.contrast,
+         text      = gui.palette.light.altText,
+         icon      = 'pearl'
+      },
+      dropdown = {
+         bkgd   = gui.palette.light.bkgd,
+         stroke = gui.palette.light.inverse,
+         icon   = 'carbon',
+         iconHighlight = 'pearl',
+         text          = gui.palette.light.text,
+         textHighlight = gui.palette.light.altText
+      },
+      slider = {
+         bkgd            = gui.palette.light.mid,
+         fore            = gui.palette.light.inverse,
+         foreStroke      = 'none',
+         foreHighlight   = gui.palette.light.contrast,
+         foreStrokeFocus = gui.palette.light.contrast,
+         highlight       = gui.palette.light.face,
+         stroke          = 'none',
+         strokeFocus     = gui.palette.light.contrast
+      },
+      toolbar = {
+         bkgd          = gui.palette.light.bkgd,
+         groupStroke   = gui.palette.light.inverse,
+         icon          = 'carbon',
+         iconHighlight = 'pearl'
+      },
+      desktop = {
+         bkgd = 'rgb(160 160 160)'
+      }
+   }
+}
+
+gui.style = gui.themes[gui.theme] -- Default user theme; but using gui.setTheme() is the preferred approach
+
+gui.interface = {
+   dpi       = 160,       -- Default DPI baseline
+   fontSize  = 12,        -- Default font-size for everything (pt)
+   iconTheme = 'Default', -- Named folder to load the icons from
+   iconSize  = 20         -- Recommended default size for icons (px) and should be related to fontSize
+}
+
+   -- Convert font percentage sizes to their px size
+
+   for font in values(gui.fonts) do
+      if font.size then
+         if rxFontSize.test(font.size) then
+            pct = tonumber(rxFontSize.extract(font.size))
+            font.size = math.floor(gui.interface.fontSize * (pct / 100))
+         end
+      end
+
+      font.style ??= 'Regular'
+   end

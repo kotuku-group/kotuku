@@ -1,5 +1,5 @@
 
-#include <parasol/modules/display.h>
+#include <kotuku/modules/display.h>
 
 static const ankerl::unordered_dense::map<uint32_t, RGB8> glNamedColours = { // For vecReadPainter()
   { SVF_NONE,                 { 0, 0, 0, 0 } },

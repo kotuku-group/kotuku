@@ -1,5 +1,5 @@
 #!/bin/sh
-# postinst script for parasol
+# postinst script for kotuku
 #
 # see: dh_installdeb(1)
 
@@ -23,20 +23,20 @@ case "$1" in
         if command -v ldconfig >/dev/null 2>&1; then
             ldconfig
         fi
-        
+
         # Create symlinks or register with alternatives if needed
-        # (This would be customized based on Parasol's specific needs)
-        
+        # (This would be customized based on Kotuku's specific needs)
+
         # Set up any necessary permissions on config directories
-        if [ -d /usr/share/parasol/config ]; then
-            chmod -R 644 /usr/share/parasol/config
-            find /usr/share/parasol/config -type d -exec chmod 755 {} \;
+        if [ -d /usr/share/kotuku/config ]; then
+            chmod -R 644 /usr/share/kotuku/config
+            find /usr/share/kotuku/config -type d -exec chmod 755 {} \;
         fi
-        
+
         # Make scripts executable if they exist
-        if [ -d /usr/share/parasol/scripts ]; then
-            find /usr/share/parasol/scripts -name "*.fluid" -exec chmod 644 {} \;
-            find /usr/share/parasol/scripts -type d -exec chmod 755 {} \;
+        if [ -d /usr/share/kotuku/scripts ]; then
+            find /usr/share/kotuku/scripts -name "*.fluid" -exec chmod 644 {} \;
+            find /usr/share/kotuku/scripts -type d -exec chmod 755 {} \;
         fi
         ;;
 

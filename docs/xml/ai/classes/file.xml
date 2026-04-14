@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="File" mod="Core" c="Enables access to the file system." cat="System" id="7c96cb25" v="1.2">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="File" mod="Core" c="Enables access to the file system." cat="System" id="7c96cb25" v="1.2">
   <ai:a n="Activate" c="Opens the file. Performed automatically if NEW, READ or WRITE flags were specified on initialisation." p="ERR acActivate(*Object)"/>
   <ai:a n="DataFeed" c="Data can be streamed to any file as a method of writing content." p="ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, APTR Buffer, INT Size)">
     <ai:i n="Object" t="OBJECTID" c="Must refer to the unique ID of the object that you represent. If you do not represent an object, set this parameter to the current task ID."/>

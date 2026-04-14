@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-8254DG7MT6"> </script><script>
+	   window.dataLayer = window.dataLayer || [];
+	   function gtag(){dataLayer.push(arguments);}
+	   gtag('js', new Date());
+      gtag('config', 'G-8254DG7MT6');</script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Kōtuku documentation, machine generated from source">
+<meta name="author" content="Paul Manias">
+<link rel="icon" href="/favicon.ico">
+<title>Kōtuku Wiki - Tiri GUI API</title>
+<link href="../css/bootstrap.min.css" rel="stylesheet">
+<link href="../css/module-template.css" rel="stylesheet">
+<link href="../css/github-markdown.css" rel="stylesheet">
+</head>
+
+<body>
+<nav class="navbar navbar-expand-sm navbar-dark bg-dark">
+  <div class="container-fluid">
+    <div class="navbar-header"><a class="navbar-brand" href="../index.html">Kōtuku</a></div>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div id="navbar" class="collapse navbar-collapse">
+      <ul class="nav navbar-nav"><li class="nav-item">
+        <li class="nav-item"><a class="nav-link" href="../gallery.html">Gallery</a></li>
+        <li class="nav-item"><a class="nav-link" href="../modules/api.html">API</a></li>
+        <li class="nav-item"><a class="nav-link" href="Home.html">Wiki</a></li>
+        <li class="nav-item"><a class="nav-link" href="https://github.com/parasol-framework/kotuku">GitHub</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<div class="container-fluid">
+  <div class="row">
+    <div class="d-sm-block d-none col-3 sidebar" style="max-width: 230px;">
+      <div class="flex-shrink-1 pt-2 pe-2 sticky-top overflow-auto vh-100 b-shadow">
+
+<ul class="list-unstyled">
+  <li>
+    <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#wiki-collapse" aria-expanded="true">Wiki</button>
+    <div class="collapse show" id="wiki-collapse">
+      <ul class="btn-toggle-nav list-unstyled fw-normal pb-1 ps-3">
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#bp-collapse" aria-expanded="false">Build Process</button>
+         <div class="collapse" id="bp-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="Linux-Builds.html">Linux Builds</a></li>
+              <li class="api-ref"><a class="rounded" href="Windows-Builds.html">Windows Builds</a></li>
+              <li class="api-ref"><a class="rounded" href="Customising-Your-Build.html">Customising Your Build</a></li>
+            </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#tm-collapse" aria-expanded="false">Technical Manuals</button>
+         <div class="collapse" id="tm-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+             <li class="api-ref"><a class="rounded" href="Kotuku-Objects.html">Kōtuku Objects</a></li>
+             <li class="api-ref"><a class="rounded" href="Kotuku-In-Depth.html">Kōtuku In Depth</a></li>
+             <li class="api-ref"><a class="rounded" href="Coding-With-AI.html">Coding With AI</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#fg-collapse" aria-expanded="false">Tiri</button>
+         <div class="collapse" id="fg-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+            <li class="api-ref"><a class="rounded" href="Tiri-Reference-Manual.html">Tiri Reference Manual</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-GUI-API.html">GUI API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-HTTPServer-API.html">HTTPServer API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-IO-API.html">I/O API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-JSON-API.html">JSON API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-URL-API.html">URL API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-VFX-API.html">VFX API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-Widgets.html">Widgets</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#rrm-collapse" aria-expanded="false">RIPL</button>
+         <div class="collapse" id="rrm-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="RIPL-Reference-Manual.html">RIPL Reference Manual</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#tools-collapse" aria-expanded="false">Tools</button>
+         <div class="collapse" id="tools-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="Origo.html">Origo</a></li>
+              <li class="api-ref"><a class="rounded" href="Unit-Testing.html">Flute / Unit Testing</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#doc-collapse" aria-expanded="false">Doc Generation</button>
+         <div class="collapse" id="doc-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="Embedded-Document-Formatting.html">Embedded Document Format</a></li>
+              <li class="api-ref"><a class="rounded" href="TDL-Reference-Manual.html">TDL Reference Manual</a></li>
+              <li class="api-ref"><a class="rounded" href="TDL-Tools.html">TDL Tools</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#app-collapse" aria-expanded="false">Appendix</button>
+         <div class="collapse" id="app-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+             <li class="api-ref"><a class="rounded" href="Action-Reference-Manual.html">Action Reference Manual</a></li>
+             <li class="api-ref"><a class="rounded" href="System-Error-Codes.html">System Error Codes</a></li>
+           </ul>
+         </div></li>
+      </ul>
+    </div>
+  </li>
+</ul>
+
+<ul class="list-unstyled">
+  <li class="border-top my-3"></li>
+  <li>
+    <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#mod-collapse" aria-expanded="false">Modules</button>
+    <div class="collapse" id="mod-collapse">
+      <ul class="btn-toggle-nav list-unstyled fw-normal">
+      <li class="api-ref"><a href="../modules/audio.html" class="rounded">Audio</a></li>
+      <li class="api-ref"><a href="../modules/core.html" class="rounded">Core</a></li>
+      <li class="api-ref"><a href="../modules/display.html" class="rounded">Display</a></li>
+      <li class="api-ref"><a href="../modules/font.html" class="rounded">Font</a></li>
+      <li class="api-ref"><a href="../modules/network.html" class="rounded">Network</a></li>
+      <li class="api-ref"><a href="../modules/regex.html" class="rounded">Regex</a></li>
+      <li class="api-ref"><a href="../modules/tiri.html" class="rounded">Tiri</a></li>
+      <li class="api-ref"><a href="../modules/vector.html" class="rounded">Vector</a></li>
+      <li class="api-ref"><a href="../modules/xml.html" class="rounded">XML</a></li>
+      <li class="api-ref"><a href="../modules/xpath.html" class="rounded">XPath</a></li>
+      </ul>
+    </div>
+  </li>
+</ul>
+
+<ul class="list-unstyled">
+  <li class="border-top my-3"></li>
+  <li>
+    <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#class-collapse" aria-expanded="false">Classes</button>
+    <div class="collapse" id="class-collapse">
+      <ul class="btn-toggle-nav list-unstyled fw-normal pb-1 ps-3">
+        <li>
+          <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#audio-collapse" aria-expanded="false">Audio</button>
+          <div class="collapse" id="audio-collapse">
+            <ul class="btn-toggle-nav list-unstyled fw-normal pb-1">
+            <li><a href="../modules/classes/audio.html" class="rounded">Audio</a></li>
+            <li><a href="../modules/classes/sound.html" class="rounded">Sound</a></li>
+            </ul>
+          </div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#core-collapse" aria-expanded="false">Core</button><div class="collapse" id="core-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a href="../modules/classes/file.html" class="rounded">File</a></li>
+        <li><a href="../modules/classes/metaclass.html" class="rounded">MetaClass</a></li>
+        <li><a href="../modules/classes/module.html" class="rounded">Module</a></li>
+        <li><a href="../modules/classes/storagedevice.html" class="rounded">StorageDevice</a></li>
+        <li><a href="../modules/classes/task.html" class="rounded">Task</a></li>
+        <li><a href="../modules/classes/thread.html" class="rounded">Thread</a></li>
+        <li><a href="../modules/classes/time.html" class="rounded">Time</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#data-collapse" aria-expanded="false">Data</button><div class="collapse" id="data-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a href="../modules/classes/compression.html" class="rounded">Compression</a></li>
+        <li><a href="../modules/classes/compressedstream.html" class="rounded">CompressedStream</a></li>
+        <li><a href="../modules/classes/config.html" class="rounded">Config</a></li>
+        <li><a href="../modules/classes/script.html" class="rounded">Script</a></li>
+        <li><a href="../modules/classes/xml.html" class="rounded">XML</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#devices-collapse" aria-expanded="false">Devices</button><div class="collapse" id="devices-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li><a href="../modules/classes/controller.html" class="rounded">Controller</a></li></ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#effects-collapse" aria-expanded="false">Effects</button><div class="collapse" id="effects-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/blurfx.html">BlurFX</a></li>
+        <li><a class="rounded" href="../modules/classes/colourfx.html">ColourFX</a></li>
+        <li><a class="rounded" href="../modules/classes/compositefx.html">CompositeFX</a></li>
+        <li><a class="rounded" href="../modules/classes/convolvefx.html">ConvolveFX</a></li>
+        <li><a class="rounded" href="../modules/classes/displacementfx.html">DisplacementFX</a></li>
+        <li><a class="rounded" href="../modules/classes/filtereffect.html">FilterEffect</a></li>
+        <li><a class="rounded" href="../modules/classes/floodfx.html">FloodFX</a></li>
+        <li><a class="rounded" href="../modules/classes/imagefx.html">ImageFX</a></li>
+        <li><a class="rounded" href="../modules/classes/lightingfx.html">LightingFX</a></li>
+        <li><a class="rounded" href="../modules/classes/mergefx.html">MergeFX</a></li>
+        <li><a class="rounded" href="../modules/classes/morphologyfx.html">MorphologyFX</a></li>
+        <li><a class="rounded" href="../modules/classes/offsetfx.html">OffsetFX</a></li>
+        <li><a class="rounded" href="../modules/classes/remapfx.html">RemapFX</a></li>
+        <li><a class="rounded" href="../modules/classes/sourcefx.html">SourceFX</a></li>
+        <li><a class="rounded" href="../modules/classes/turbulencefx.html">TurbulenceFX</a></li>
+        <li><a class="rounded" href="../modules/classes/wavefunctionfx.html">WaveFunctionFX</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#ext-collapse" aria-expanded="false">Extensions</button><div class="collapse" id="ext-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/scintilla.html">Scintilla</a></li>
+        <li><a class="rounded" href="../modules/classes/scintillasearch.html">ScintillaSearch</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#gfx-collapse" aria-expanded="false">Graphics</button><div class="collapse" id="gfx-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/bitmap.html">Bitmap</a></li>
+        <li><a class="rounded" href="../modules/classes/clipboard.html">Clipboard</a></li>
+        <li><a class="rounded" href="../modules/classes/display.html">Display</a></li>
+        <li><a class="rounded" href="../modules/classes/document.html">Document</a></li>
+        <li><a class="rounded" href="../modules/classes/font.html">Font</a></li>
+        <li><a class="rounded" href="../modules/classes/picture.html">Picture</a></li>
+        <li><a class="rounded" href="../modules/classes/pointer.html">Pointer</a></li>
+        <li><a class="rounded" href="../modules/classes/surface.html">Surface</a></li>
+        <li><a class="rounded" href="../modules/classes/svg.html">SVG</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#net-collapse" aria-expanded="false">Network</button><div class="collapse" id="net-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/clientsocket.html">ClientSocket</a></li>
+        <li><a class="rounded" href="../modules/classes/http.html">HTTP</a></li>
+        <li><a class="rounded" href="../modules/classes/netclient.html">NetClient</a></li>
+        <li><a class="rounded" href="../modules/classes/netlookup.html">NetLookup</a></li>
+        <li><a class="rounded" href="../modules/classes/netsocket.html">NetSocket</a></li>
+        <li><a class="rounded" href="../modules/classes/proxy.html">Proxy</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#vectors-collapse" aria-expanded="false">Vectors</button><div class="collapse" id="vectors-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/vector.html">Vector</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorclip.html">VectorClip</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorcolour.html">VectorColour</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorellipse.html">VectorEllipse</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorfilter.html">VectorFilter</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorgradient.html">VectorGradient</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorgroup.html">VectorGroup</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorimage.html">VectorImage</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorpath.html">VectorPath</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorpattern.html">VectorPattern</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorpolygon.html">VectorPolygon</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorrectangle.html">VectorRectangle</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorscene.html">VectorScene</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorshape.html">VectorShape</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorspiral.html">VectorSpiral</a></li>
+        <li><a class="rounded" href="../modules/classes/vectortext.html">VectorText</a></li>
+        <li><a class="rounded" href="../modules/classes/vectortransition.html">VectorTransition</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorviewport.html">VectorViewport</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorwave.html">VectorWave</a></li>
+        </ul></div>
+        </li>
+      </ul>
+    </div>
+  </li>
+</ul>
+
+</div>
+</div>
+
+<div class="col-sm-9" style="max-width: 1200px;">
+<div class="docs-content" id="default-page">
+
+<h1>Tiri GUI API</h1>
+<p>The GUI API provides shared helpers, theme state, sizing defaults and colour utilities that sit underneath the widget modules in <code>scripts/gui/</code>.</p>
+<p>Load it with:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>import <span class="st">&#39;gui&#39;</span></span></code></pre></div>
+<p>This page documents the current public surface of <code>scripts/gui.tiri</code> as of 2026-04-09.</p>
+<h2 id="overview">Overview</h2>
+<p>When imported, <code>gui</code> initialises these publicly accessible fields:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>theme</code></td>
+<td>The default theme name, read from <code>user:config/style.cfg</code> when available.</td>
+</tr>
+<tr>
+<td><code>palette</code></td>
+<td>The selected palette family name.</td>
+</tr>
+<tr>
+<td><code>paletteTheme</code></td>
+<td>Either <code>light</code> or <code>dark</code>.</td>
+</tr>
+<tr>
+<td><code>style</code></td>
+<td>Refers to the default theme, initialised from <code>gui.themes[gui.theme]</code>. Prefer <code>gui.getTheme()</code> for the active theme.</td>
+</tr>
+<tr>
+<td><code>fonts</code></td>
+<td>Shared font presets used by the GUI modules.</td>
+</tr>
+<tr>
+<td><code>iconThemes</code></td>
+<td>Named presets for styling icons.</td>
+</tr>
+<tr>
+<td><code>sizing</code></td>
+<td>Sizing recommendations for the layout of widgets and pages.</td>
+</tr>
+<tr>
+<td><code>interface</code></td>
+<td>Base interface settings such as default font size and icon size.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="colour-types">Colour Types</h2>
+<p>The API provides immutable colour tables that are backed by metatable functionality.</p>
+<h3 id="rgb-colours">RGB colours</h3>
+<p>Create RGB values in the sRGB colourspace with either:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="va">rgb</span> <span class="op">=</span> <span class="va">gui</span><span class="op">.</span>srgb<span class="op">(</span><span class="dv">255</span><span class="op">,</span> <span class="dv">128</span><span class="op">,</span> <span class="dv">64</span><span class="op">,</span> <span class="dv">255</span><span class="op">)</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="va">rgb</span> <span class="op">=</span> <span class="va">gui</span><span class="op">.</span>nrgb<span class="op">(</span><span class="dv">1.0</span><span class="op">,</span> <span class="dv">0.5</span><span class="op">,</span> <span class="dv">0.25</span><span class="op">,</span> <span class="dv">1.0</span><span class="op">)</span></span></code></pre></div>
+<ul>
+<li><code>gui.srgb(R, G, B, A, KV)</code> accepts 8-bit channel values and stores them internally as normalised <code>0..1</code> values.</li>
+<li><code>gui.nrgb(R, G, B, A, KV)</code> accepts normalised channel values directly.</li>
+<li><code>KV</code> is an optional table that is merged into the returned table before the metatable is applied.</li>
+<li><code>tostring(rgb)</code> returns an SVG/CSS-style <code>rgb(...)</code> string, including alpha when present.</li>
+</ul>
+<p>Available methods:</p>
+<ul>
+<li><code>rgb:interpolate(New, Ratio)</code> returns a new RGB colour between <code>rgb</code> and <code>New</code>.</li>
+<li><code>rgb:toHSV()</code> converts to an HSV colour table.</li>
+<li><code>rgb:brightness()</code> returns the maximum RGB channel value, equivalent to the <code>V</code> component in HSV.</li>
+<li><code>rgb:withAlpha(Alpha)</code> returns a copy with alpha multiplied by <code>Alpha</code>.</li>
+<li><code>rgb:linearise()</code> converts to linear sRGB.</li>
+<li><code>rgb:toHSL()</code> returns <code>{ h, s, l }</code>.</li>
+<li><code>rgb:luminance()</code> returns WCAG relative luminance in the range <code>0..1</code>.</li>
+<li><code>rgb:toDisplayP3()</code> returns a Display P3 <code>{ r, g, b }</code> table.</li>
+<li><code>rgb:toOKLab()</code> returns <code>{ okl, oka, okb, a }</code>.</li>
+<li><code>rgb:toOKLCH()</code> returns <code>{ okl, okc, okh, a }</code> and formats as <code>oklch(...)</code> when converted to string.</li>
+</ul>
+<p>Note: The sRGB colour values are unclamped in order to support extended colourspaces like Display P3. Clients are expected to clamp values to the 0 - 1.0 range when strict sRGB values are required.</p>
+<h3 id="hsv-colours">HSV colours</h3>
+<p>Create HSV values with:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="va">hsv</span> <span class="op">=</span> <span class="va">gui</span><span class="op">.</span>hsv<span class="op">(</span><span class="dv">210</span><span class="op">,</span> <span class="dv">0.5</span><span class="op">,</span> <span class="dv">0.75</span><span class="op">,</span> <span class="dv">1.0</span><span class="op">)</span></span></code></pre></div>
+<ul>
+<li><code>gui.hsv(H, S, V, A)</code> creates an immutable HSV table.</li>
+<li><code>tostring(hsv)</code> returns an <code>hsv(...)</code> string.</li>
+</ul>
+<p>Available methods:</p>
+<ul>
+<li><code>hsv:interpolate(New, Ratio)</code> returns a new HSV colour between <code>hsv</code> and <code>New</code>.</li>
+<li><code>hsv:toRGB()</code> converts to an RGB colour table.</li>
+</ul>
+<h3 id="parsing-colour-strings">Parsing colour strings</h3>
+<p><code>gui.strToRGB(Value)</code> parses a CSS colour string using the vector painter parser and returns an <code>RGB</code> table.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="va">gui</span><span class="op">.</span>strToRGB<span class="op">(</span><span class="st">&#39;#336699&#39;</span><span class="op">)</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="va">gui</span><span class="op">.</span>strToRGB<span class="op">(</span><span class="st">&#39;rgb(51 102 153 / 0.5)&#39;</span><span class="op">)</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="va">gui</span><span class="op">.</span>strToRGB<span class="op">(</span><span class="st">&#39;oklch(0.653 0.135 242.687)&#39;</span><span class="op">)</span></span></code></pre></div>
+<h2 id="theme-and-style-state">Theme And Style State</h2>
+<p>Themes are layered on top of named palettes.</p>
+<h3 id="palettes">Palettes</h3>
+<p><code>gui.palettes</code> contains named palette families such as <code>ocean</code>, <code>orangeApples</code>, <code>greenland</code>, <code>sunrise</code> and <code>candyfloss</code>.</p>
+<p>Each palette family is required to define <code>light</code> and <code>dark</code> variants of the palette.</p>
+<p>Each light or dark palette entry must contain these CSS colour fields:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bkgd</code></td>
+<td>The standard background colour for large amounts of text (documents &amp; code). In a light theme it should be near-white.</td>
+</tr>
+<tr>
+<td><code>inverse</code></td>
+<td>The inverse light value of <code>bkgd</code> (or must contrast significantly). Useful for heavy contrast against bkgd, e.g. stroking menu borders.</td>
+</tr>
+<tr>
+<td><code>prime</code></td>
+<td>Prime (primary) should have a strong chroma and is used for drawing attention, like for highlighting and selection.</td>
+</tr>
+<tr>
+<td><code>contrast</code></td>
+<td>Complements <code>prime</code> and should be of a strongly contrasting hue.</td>
+</tr>
+<tr>
+<td><code>neutral</code></td>
+<td>Default background colour for undefined areas (e.g. window background).</td>
+</tr>
+<tr>
+<td><code>mid</code></td>
+<td>Separates an area from <code>bkgd</code> without drawing attention. E.g. scrollbar and slider tracks.</td>
+</tr>
+<tr>
+<td><code>text</code></td>
+<td>Default colour for text drawn over <code>bkgd</code>.</td>
+</tr>
+<tr>
+<td><code>altText</code></td>
+<td>The default colour for text drawn over &#39;prime&#39; when highlighted or selected. Can be same as &#39;text&#39;</td>
+</tr>
+</tbody>
+</table>
+<p>These palette values are used to build the actual theme tables.</p>
+<h3 id="themes">Themes</h3>
+<p><code>gui.themes.light</code> and <code>gui.themes.dark</code> are the current resolved themes. Each contains sections used by the widget modules:</p>
+<ul>
+<li><code>page</code></li>
+<li><code>widget</code></li>
+<li><code>input</code></li>
+<li><code>window</code></li>
+<li><code>button</code></li>
+<li><code>menubar</code></li>
+<li><code>menu</code></li>
+<li><code>dropdown</code></li>
+<li><code>slider</code></li>
+<li><code>toolbar</code></li>
+<li><code>desktop</code></li>
+</ul>
+<p>All colour fields are fill values, so plain colours, gradients and pattern references are permitted.</p>
+<h3 id="accessors">Accessors</h3>
+<h3 id="guigettheme">gui.getTheme()</h3>
+<p><code>gui.getTheme(Object)</code></p>
+<p>Returns the active theme table. Themes are tracked at the <code>VectorScene</code> level, so the theme returned depends on the type of <code>Object</code> supplied:</p>
+<ul>
+<li>If <code>Object</code> is a <code>VectorViewport</code>, the nearest parent scene is used.</li>
+<li>If <code>Object</code> is a <code>VectorScene</code>, that scene is used directly.</li>
+<li>If <code>Object</code> is <code>nil</code>, the current global default theme is returned.</li>
+</ul>
+<p>Note: To get the theme for a window, access its <code>theme</code> field directly, which is set at window creation time.</p>
+<h3 id="guisettheme">gui.setTheme()</h3>
+<p><code>gui.setTheme(Object, Theme)</code></p>
+<p>Sets the active theme and returns the resolved theme table.</p>
+<ul>
+<li>Passing <code>nil</code> for <code>Object</code> changes the global default theme.</li>
+<li>Passing a viewport or scene applies the theme to that scene state only.</li>
+<li>If <code>Theme</code> is not already loaded, <code>gui.setTheme()</code> looks for <code>config:themes/&lt;Theme&gt;.tiri</code>.</li>
+<li>If the custom theme cannot be found, the theme falls back to <code>light</code>.</li>
+</ul>
+<h2 id="fonts-icons-and-sizing">Fonts, Icons And Sizing</h2>
+<h3 id="fonts">Fonts</h3>
+<p><code>gui.fonts</code> provides shared font presets for common GUI roles: <code>default</code>, <code>window</code>, <code>button</code>, <code>filesys</code>, <code>icon</code>, <code>menu</code>, <code>page</code>, <code>titlebar</code>, <code>small</code>, <code>large</code>, <code>input</code>, <code>widget</code>, <code>label</code>. Each preset can define the following field values:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>face</code></td>
+<td>The font family name. Multiple families separated by commas is permitted.</td>
+</tr>
+<tr>
+<td><code>style</code></td>
+<td>The font style, e.g. <code>Medium</code>, <code>Italic</code>, <code>Bold</code>, <code>Bold Italic</code>.</td>
+</tr>
+<tr>
+<td><code>size</code></td>
+<td>The font size in pixels. May also be a percentage string,</td>
+</tr>
+</tbody>
+</table>
+<p>Font sizes may be declared as percentages inside <code>gui.tiri</code>, but after initialisation they are converted to numeric sizes based on <code>gui.interface.fontSize</code>.</p>
+<h3 id="guigetfontheight">gui.getFontHeight()</h3>
+<p><code>gui.getFontHeight(Font)</code></p>
+<p>For a given preset from <code>gui.fonts</code>, returns the font&#39;s recommended line spacing and height in pixels.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="va">line_spacing</span><span class="op">,</span> <span class="va">height</span> <span class="op">=</span> <span class="va">gui</span><span class="op">.</span>getFontHeight<span class="op">(</span><span class="va">gui</span><span class="op">.</span><span class="va">fonts</span><span class="op">.</span><span class="va">window</span><span class="op">)</span></span></code></pre></div>
+<h3 id="guirgbtoicontheme">gui.rgbToIconTheme()</h3>
+<p><code>gui.rgbToIconTheme(Value)</code></p>
+<p>Returns either <code>pearl</code> or <code>carbon</code> based on the brightness of the colour supplied. <code>Value</code> may be an RGB table or a string that <code>gui.strToRGB()</code> can parse.</p>
+<h3 id="sizing">Sizing</h3>
+<p>The <code>gui.sizing</code> table currently exposes:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="va">gui</span><span class="op">.</span><span class="va">sizing</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">widget</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>      <span class="va">width</span>       <span class="op">=</span> <span class="dv">160</span><span class="op">,</span> <span class="co">-- Minimum recommended width for buttons, comboboxes, etc.</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>      <span class="va">gap</span>         <span class="op">=</span> <span class="dv">6</span><span class="op">,</span> <span class="co">-- Pixel gap between widgets in a layout</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>      <span class="va">margin</span>      <span class="op">=</span> <span class="dv">6</span><span class="op">,</span> <span class="co">-- Margins applicable to inner text and icons within widgets</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>      <span class="va">strokeWidth</span> <span class="op">=</span> <span class="dv">2</span>  <span class="co">-- Standard width of strokes used for widget borders</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>   <span class="op">},</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>   <span class="va">page</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>      <span class="va">strokeWidth</span> <span class="op">=</span> <span class="dv">2</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>   <span class="op">}</span></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>These are shared defaults used by the widget modules and by helper functions such as <code>gui.separator()</code>.</p>
+<h3 id="guipixel">gui.pixel()</h3>
+<p><code>gui.pixel(Value)</code></p>
+<p>Converts a size string into pixels. Supported units are: <code>px</code>, <code>in</code>, <code>mm</code>, <code>pt</code>, <code>dp</code></p>
+<p>Examples:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="va">gui</span><span class="op">.</span>pixel<span class="op">(</span><span class="st">&#39;16px&#39;</span><span class="op">)</span>  <span class="co">-- 16</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="va">gui</span><span class="op">.</span>pixel<span class="op">(</span><span class="st">&#39;12pt&#39;</span><span class="op">)</span>  <span class="co">-- converted using gui.interface.dpi</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="va">gui</span><span class="op">.</span>pixel<span class="op">(</span><span class="st">&#39;24dp&#39;</span><span class="op">)</span>  <span class="co">-- density-independent pixels at 160 DPI baseline</span></span></code></pre></div>
+<h2 id="scene-and-vector-helpers">Scene And Vector Helpers</h2>
+<h3 id="guiforvector">gui.forVector()</h3>
+<p><code>gui.forVector(Vector, Function)</code></p>
+<p>Walks a vector tree depth-first, visiting the supplied vector, then its children and siblings. <code>Function</code> is called as:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="va">gui</span><span class="op">.</span>forVector<span class="op">(</span><span class="va">viewport</span><span class="op">,</span> <span class="kw">function</span><span class="op">(</span><span class="va">Vector</span><span class="op">)</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>   <span class="fu">print</span><span class="op">(</span><span class="va">Vector</span><span class="op">)</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span><span class="op">)</span></span></code></pre></div>
+<h3 id="guiapplyfill">gui.applyFill()</h3>
+<p><code>gui.applyFill(Vector, Fill)</code></p>
+<p>Recursively applies <code>Fill</code> to every vector in the tree whose fill is not <code>none</code>. If a vector has a stroke, the stroke is also updated to match.</p>
+<h3 id="guisimplegradient">gui.simpleGradient()</h3>
+<p><code>gradient = gui.simpleGradient(Scene, Name, Colours, X1, Y1, X2, Y2, Units, IgnoreClashes)</code></p>
+<p>Creates and registers a linear <code>VectorGradient</code> in <code>Scene</code>.</p>
+<ul>
+<li><code>Colours</code> is an array of RGB tables. Each item may also include an explicit <code>offset</code>.</li>
+<li><code>Units</code> defaults to <code>boundingbox</code>.</li>
+<li>If <code>IgnoreClashes</code> is true and a definition with <code>Name</code> already exists, the function returns <code>nil</code> instead of failing.</li>
+</ul>
+<p>The result can be used as <code>url(#Name)</code>.</p>
+<p>Example:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="va">gui</span><span class="op">.</span>simpleGradient<span class="op">(</span><span class="va">scene</span><span class="op">,</span> <span class="st">&#39;accent_fill&#39;</span><span class="op">,</span> <span class="op">{</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">gui</span><span class="op">.</span>strToRGB<span class="op">(</span><span class="st">&#39;oklch(0.653 0.135 242.687)&#39;</span><span class="op">),</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">gui</span><span class="op">.</span>strToRGB<span class="op">(</span><span class="st">&#39;oklch(0.631 0.194 29.442)&#39;</span><span class="op">)</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="op">},</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">1</span><span class="op">,</span> <span class="dv">0</span><span class="op">)</span></span></code></pre></div>
+<h3 id="guicreateicon">gui.createIcon()</h3>
+<p><code>Info = gui.createIcon(Scene, Path, Size, Theme, Name)</code></p>
+<p>Builds an icon pattern from an SVG resource and registers it in <code>Scene</code>.</p>
+<ul>
+<li><code>Path</code> is an icon path relative to the <code>icons:</code> volume unless it already starts with <code>icons:</code>.</li>
+<li><code>Size</code> defaults to <code>16</code>.</li>
+<li><code>Theme</code> may be either a theme name from <code>gui.iconThemes</code> or a custom theme table.</li>
+<li><code>Name</code> defaults to the icon path, or to a derived <code>theme/path</code> name when a built-in icon theme name is used.</li>
+</ul>
+<p>The returned table contains: <code>name</code>, <code>theme</code>, <code>size</code>, <code>path</code>, <code>fill</code></p>
+<p>Use <code>fill</code> as the vector fill reference:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="va">icon</span> <span class="op">=</span> <span class="va">gui</span><span class="op">.</span>createIcon<span class="op">(</span><span class="va">scene</span><span class="op">,</span> <span class="st">&#39;items/help&#39;</span><span class="op">,</span> <span class="dv">20</span><span class="op">,</span> <span class="st">&#39;pearl&#39;</span><span class="op">)</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="va">viewport</span><span class="op">.</span>new<span class="op">(</span><span class="st">&#39;VectorRectangle&#39;</span><span class="op">,</span> <span class="op">{</span> <span class="va">width</span><span class="op">=</span><span class="dv">20</span><span class="op">,</span> <span class="va">height</span><span class="op">=</span><span class="dv">20</span><span class="op">,</span> <span class="va">fill</span><span class="op">=</span><span class="va">icon</span><span class="op">.</span><span class="va">fill</span> <span class="op">})</span></span></code></pre></div>
+<h3 id="guiseparator">gui.separator()</h3>
+<p><code>Thickness = gui.separator(Viewport, Orientation, Pos, MarginA, MarginB)</code></p>
+<p>Draws a horizontal or vertical separator line using the current window stroke colour.</p>
+<ul>
+<li>Set <code>Orientation</code> to <code>H</code> (horizontal) or <code>V</code> (vertical).</li>
+<li><code>Pos</code> is the horizontal or vertical coordinate. Providing a negative position, including negative zero, is treated as an offset from the far edge.</li>
+<li><code>MarginA</code> and <code>MarginB</code> are optional offsets for either side of the separator.</li>
+<li><code>Pos</code>, <code>MarginA</code> and <code>MarginB</code> may be numeric values or proportional values such as <code>100%</code>.</li>
+<li>The return value is the width of the separator.</li>
+</ul>
+</div></div></div></div>
+
+<script src="../js/bootstrap.bundle.min.js"></script>
+<script src="../js/base.js"></script>
+<script>
+
+   // Auto-open the relevant sidebar branch
+
+   var url = window.location.pathname;
+   var filename = url.substring(url.lastIndexOf('/')+1);
+   var el = document.querySelector('li[class="api-ref"] > a[href="' + filename + '"]');
+   if (el) {
+      var parent = getParentNode(el, '[class="collapse"]');
+      if (parent) new bootstrap.Collapse(parent, { show: true }); // Causes animation
+
+      el.style.backgroundColor = '#d2f4ea';
+   }
+
+   cancelAnimations();
+    </script>
+  </body>
+</html>

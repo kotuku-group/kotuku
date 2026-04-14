@@ -1,0 +1,35 @@
+--[[
+Manual test for confirming that the clibpoard works.
+--]]
+
+   import 'gui/window'
+
+   local win = gui.window({ title='Keyboard Example', insideWidth=400, insideHeight=200,
+      maxWidth=600, maxHeight=300, minWidth=400, minHeight=200 })
+
+   local viewport = win:clientViewport({ aspectRatio = ARF_MEET })
+
+   local text = viewport.new('VectorText', {
+      string='Push any key to test paste operations', face='Noto Sans', fontSize=20, y=50, x=10, fill='rgb(0,0,0)'
+   })
+
+   local clipboard = obj.new('Clipboard', { })
+
+   viewport.mtSubscribeKeyboard(function(Viewport, Qualifiers, Value, Unicode)
+      if bit.band(Qualifiers, KQ_PRESSED) is 0 then return end
+
+      local err, datatype, files, flags = clipboard.mtGetFiles(0, 0)
+      assert(err is ERR_Okay, 'Clipboard retrieval failed.')
+      assert(flags is 0, 'Flag results not empty.')
+
+      local output = #files .. ' clipboard items retrieved.\n\n'
+      for k, v in pairs(files) do
+         output = output .. v .. '\n'
+      end
+      text.string = output
+      viewport.acDraw()
+   end)
+
+   win:show()
+   processing.sleep()
+

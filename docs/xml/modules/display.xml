@@ -8,7 +8,7 @@
     <version>1</version>
     <status>stable</status>
     <prefix>gfx</prefix>
-    <copyright>Paul Manias 2003-2025</copyright>
+    <copyright>Paul Manias © 2003-2026</copyright>
     <classes>
       <class>Bitmap</class>
       <class>Clipboard</class>
@@ -136,7 +136,7 @@
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="Search">The supplied <code>Surface</code> ID did not refer to a recognised surface object</error>
-      <error code="AccessObject">An attempt to gain exclusive access to a shared object failed.</error>
+      <error code="AccessObject">Attempting to lock an object failed.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -396,7 +396,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="AccessMemory">Access to a shared memory block was denied.</error>
+      <error code="AccessMemory">Access to a memory block was denied.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -727,7 +727,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <error code="Okay">Operation successful.</error>
       <error code="InUse">A drag and drop operation has already been started.</error>
       <error code="Failed">The left mouse button is not held by the user.</error>
-      <error code="AccessObject">An attempt to gain exclusive access to a shared object failed.</error>
+      <error code="AccessObject">Attempting to lock an object failed.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -799,7 +799,8 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="AccessObject">Failed to access the pointer object.</error>
+      <error code="ResourceNotLocked">The pointer is not anchored to the given Surface.</error>
+      <error code="AccessObject">Attempting to lock an object failed.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1056,7 +1057,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <const name="DEVICE_TILT_XY">Controller tilted on the X/Y axis.  Value indicates angle, -ve = left, +ve = right</const>
       <const name="DEVICE_TILT_Z">Controller is rising or falling.  Value expressed as 'speed',</const>
       <const name="DISPLAY_EDGE">Recently supplied input occurred at the edge of the display.</const>
-      <const name="PEN_TILT_XY">For pen-based input, this type indicates the vertical tilt of the pen device.  A value of 0 indicates that the pen is laid flat with nib at the bottom, 0.5 is 90 degrees, 1.0 is laid flat with nib at the top.</const>
+      <const name="PEN_TILT_XY">Pen tilt angle.  0 is pointing down directly with nib at bottom, 0.5 is 90 degrees, 1.0 is inversed (eraser at bottom)</const>
       <const name="PRESSURE">Amount of pressure applied, ranges from 0 (none) to 1.0 (normal) and possibly higher if user presses hard enough</const>
       <const name="WHEEL">Mouse wheel rotation - the value generally reflects the number of 'clicks' rotated on the wheel.</const>
       <const name="WHEEL_TILT">Some mouse wheels can be tilted to the left or right.  Ranges from -1.0 to +1.0</const>

@@ -1,0 +1,29 @@
+-- Behavioural coverage for regex compilation and match flags
+
+@Test function CaseInsensitiveFlag()
+   local matcher = regex.new("hello", regex.ICASE)
+   assert(matcher.test("HeLlO"), "ICASE should ignore letter case")
+   assert(not matcher.test("yellow"), "ICASE should still reject different words")
+end
+
+@Test function MultilineAnchors()
+   local matcher = regex.new("^line", regex.MULTILINE)
+   assert(matcher.test("first\nline two"), "MULTILINE should let caret match after newline")
+end
+
+@Test function DotAllMatchesNewlines()
+   local matcher = regex.new("foo.*bar", regex.DOT_ALL)
+   assert(matcher.test("foo\n\nbar"), "DOT_ALL should allow dot to traverse newlines")
+   local baseline = regex.new("foo.*bar")
+   assert(not baseline.test("foo\nbar"), "Default dot should stop at newline")
+end
+
+@Test function PrevAvailableSupportsLookbehind()
+   local matcher = regex.new("(?<=a)b")
+   local source = "ab"
+   local baseline = matcher.search(source)
+   assert(baseline and baseline[0][0] is "b", "Baseline lookbehind should succeed inside the string")
+
+   local flagged = matcher.search(source, regex.PREV_AVAILABLE)
+   assert(flagged and flagged[0][0] is "b", "PREV_AVAILABLE should preserve lookbehind results when context is present")
+end

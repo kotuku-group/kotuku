@@ -1,0 +1,180 @@
+-- W3C XQuery Test Suite - Math Functions
+-- Tests from QT3_1_0/math folder
+
+   include 'xml'
+   import 'io/filesearch'
+
+rx_spaces = regex.new('\\s+')
+
+@BeforeAll function init(State)
+   math_folder = State.folder .. 'QT3_1_0/math/'
+
+   if mSys.AnalysePath(math_folder) != ERR_Okay then
+      -- Assume the XQuery test package isn't installed on this machine
+      print('Math folder not found at: ' .. math_folder)
+   end
+
+   print('Searching for tests in: ' .. math_folder)
+
+   counter = 1
+
+   io.search(math_folder, {
+      nameFilter  = '%.xml$',
+      nameWild = true,
+      matchFeedback = function(Path, FileName)
+         test_func = function()
+            runTest(Path .. FileName)
+         end
+
+         func_name = FileName .. '_' .. counter
+
+         debug.anno.set(test_func, {
+            { name = "Test", args = { name = func_name, labels = { "xquery", "math" } } }
+         }, "test_qt_match.tiri", func_name)
+
+         counter++
+      end
+   })
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Helper to parse test XML and execute tests
+
+function runTest(TestPath)
+   xml = obj.new('xml', { path = TestPath })
+
+   err, testSetId = xml.mtSearch('/test-set')
+   assert(err is ERR_Okay, 'Failed to find <test-set> in ' .. TestPath .. ': ' .. (xml.errorMsg or mSys.GetErrorMsg(err)))
+
+   err, testSetName = xml.mtGetAttrib(testSetId, 'name')
+   if err != ERR_Okay then
+      testSetName = 'unknown'
+   end
+
+   passed = 0
+   total_tests = 0
+
+   err, index = xml.mtSearch('//test-case', function(XML, TagID, Attrib)
+      local err, test_name = xml.mtGetAttrib(TagID, 'name')
+      if err != ERR_Okay then
+         print('  SKIP: (unnamed test case)')
+         return
+      end
+
+      -- Get the test query using XPath from the test-case
+      local err, test_query = xml.mtEvaluate('//test-case[@name="' .. test_name .. '"]/test')
+      if err != ERR_Okay or not test_query?? then
+         print('  SKIP: ' .. test_name .. ' (no test query found)')
+         return
+      end
+
+      print(test_name .. ': ' .. test_query)
+
+      total_tests++
+
+      -- Get expected result using XPath from the test-case
+
+      local err, result_id = xml.mtSearch('//test-case[@name="' .. test_name .. '"]/result')
+      if err != ERR_Okay then
+         print('  SKIP: ' .. test_name .. ' (no result found)')
+         return
+      end
+
+      -- Create a new XML context with math namespace for evaluation
+
+      testXml = obj.new('xml', {
+         statement = '<?xml version="1.0"?><root xmlns:math="http://www.w3.org/2005/xpath-functions/math"/>'
+      })
+
+      local err, actual_result = testXml.mtEvaluate(test_query)
+      if err != ERR_Okay then
+         print('  FAIL: ' .. test_name .. ' (query error: ' .. mSys.GetErrorMsg(err) .. ')')
+         return
+      end
+
+      local assert_eq, assert_empty, assert_string
+      err, assert_eq = xml.mtEvaluate('//test-case[@name="' .. test_name .. '"]/result/assert-eq')
+      if err != ERR_Okay then
+         err, assert_empty = xml.mtEvaluate('//test-case[@name="' .. test_name .. '"]/result/assert-empty')
+         if err != ERR_Okay then
+            err, assert_string = xml.mtEvaluate('//test-case[@name="' .. test_name .. '"]/result/assert-string-value')
+         end
+      end
+
+      testPassed = false
+
+      if assert_eq then -- assert-eq: exact equality
+         -- Get the tag and extract content
+         local err, assertTag = xml.mtGetTag(assertEqId)
+         expected_val = ''
+         if assertTag and assertTag.children then
+            for _, child in ipairs(assertTag.children) do
+               if child.attribs and child.attribs[1] and child.attribs[1].name is '' then
+                  expected_val ..= child.attribs[1].value or ''
+               end
+            end
+         end
+
+         -- Compare values (handle scientific notation)
+         actual   = rx_spaces.replace(actual_result, '')
+         expected = rx_spaces.replace(expected_val, '')
+
+         -- For numeric comparison, convert to numbers if possible
+         actualNum   = tonumber(actual)
+         expectedNum = tonumber(expected)
+
+         if actualNum and expectedNum then
+            -- Use epsilon comparison for floating point
+            if math.abs(actualNum - expectedNum) < 1e-10 then
+               testPassed = true
+            end
+         elseif actual is expected then
+            testPassed = true
+         end
+
+         if testPassed then
+            print('  PASS: ' .. test_name)
+            passed++
+         else
+            print('  FAIL: ' .. test_name .. ' (expected ' .. expected .. ', got ' .. actual .. ')')
+         end
+      elseif assert_empty then
+         -- assert-empty: result should be empty sequence
+         if not actual_result or actual_result is '' then
+            print('  PASS: ' .. test_name)
+            passed++
+            testPassed = true
+         else
+            print('  FAIL: ' .. test_name .. ' (expected empty, got ' .. tostring(actual_result) .. ')')
+         end
+
+      elseif assert_string then
+         -- assert-string-value: compare as strings
+         -- Get the tag and extract content
+         local err, assertTag = xml.mtGetTag(assertStringId)
+         expected_val = ''
+         if assertTag and assertTag.children then
+            for _, child in ipairs(assertTag.children) do
+               if child.attribs and child.attribs[1] and child.attribs[1].name is '' then
+                  expected_val ..= child.attribs[1].value or ''
+               end
+            end
+         end
+
+         actual = tostring(actual_result)
+         expected = tostring(expected_val)
+         if actual is expected then
+            print('  PASS: ' .. test_name)
+            passed++
+            testPassed = true
+         else
+            print('  FAIL: ' .. test_name .. ' (expected "' .. expected .. '", got "' .. actual .. '")')
+         end
+      else
+         passed++
+         print('  SKIP: ' .. test_name .. ' (unknown assertion type)')
+      end
+   end)
+
+   assert(passed is total_tests, 'Passed ' .. passed .. ' of ' .. total_tests .. ' tests')
+end

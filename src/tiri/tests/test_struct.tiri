@@ -1,0 +1,37 @@
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Retrieve a known struct from a function and then list its field values.  GetList() is chosen in particular because
+-- it features a null-terminated array in the Points field.
+
+@Test(hotpath=true); @Requires(font=true)
+function FontList()
+   err, list = mFont.GetList()
+   if not list then
+      logOutput('Skipping struct tests, no fonts installed.')
+      return
+   end
+
+   logOutput(f'Retrieved {#list} fonts.')
+
+   font = list
+   while font do
+      if not font.hidden then
+         if font.scalable is 1 then
+            logOutput("Scalable: " .. font.name)
+         else
+            logOutput("Bitmap: " .. font.name)
+         end
+         logOutput("Styles: " .. font.styles)
+
+         points = ""
+         for p in values(font.points) do
+            if points?? then points ..= ", " end
+            points ..= p
+         end
+         not points ?? logOutput("Available in fixed sizes: " .. points)
+         logOutput("")
+      end
+
+      font = font.next
+   end
+end

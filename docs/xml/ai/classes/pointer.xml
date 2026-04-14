@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="Pointer" mod="Display" c="Interface for mouse cursor support." cat="Graphics" id="bbd12926" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="Pointer" mod="Display" c="Interface for mouse cursor support." cat="Graphics" id="bbd12926" v="1">
   <ai:f n="Acceleration" c="The rate of acceleration for relative pointer movement." t="DOUBLE" a="RW"/>
   <ai:f n="Anchor" c="Can refer to a surface that the pointer has been anchored to." t="OBJECTID" a="R"/>
   <ai:f n="Bitmap" c="Refers to bitmap in which custom cursor images can be drawn." t="*Bitmap" a="R"/>

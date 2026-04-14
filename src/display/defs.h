@@ -15,7 +15,7 @@
 //#define DBG_LAYERS
 #define FOCUSMSG(...) //LogF(NULL, __VA_ARGS__)
 
-#include <parasol/system/errors.h>
+#include <kotuku/system/errors.h>
 
 #ifdef DBG_LAYERS
 #include <stdio.h>
@@ -103,10 +103,10 @@
 #define SURFACE_WRITE     (0x0002)   // Write access
 #define SURFACE_READWRITE (SURFACE_READ|SURFACE_WRITE)
 
-#include <parasol/modules/display.h>
-#include <parasol/modules/xml.h>
-#include <parasol/modules/regex.h>
-#include <parasol/strings.hpp>
+#include <kotuku/modules/display.h>
+#include <kotuku/modules/xml.h>
+#include <kotuku/modules/regex.h>
+#include <kotuku/strings.hpp>
 #include "../link/linear_rgb.h"
 #include "../link/unicode.h"
 
@@ -216,7 +216,7 @@ inline ERR ptrGrabX11Pointer(OBJECTPTR Ob, OBJECTID SurfaceID) {
 #include "idl.h"
 
 #ifdef __ANDROID__
-#include <parasol/modules/android.h>
+#include <kotuku/modules/android.h>
 #endif
 
 struct resolution {

@@ -13,7 +13,7 @@
     <id>ad68f281</id>
     <idstring>PICTURE</idstring>
     <category>Graphics</category>
-    <copyright>Paul Manias © 2001-2025</copyright>
+    <copyright>Paul Manias © 2001-2026</copyright>
     <description>
 <p>The Picture class provides a standard API for programs to load picture files of any supported data type.  It is future proof in that future data formats can be supported by installing class drivers on the user's system.</p>
 <p>The default file format for loading and saving pictures is PNG.  Other formats such as JPEG are supported via sub-classes, which can be loaded into the system at boot time or on demand.  Some rare formats such as TIFF are also supported, but user preference may dictate whether or not the necessary driver is installed.</p>

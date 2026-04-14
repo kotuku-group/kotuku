@@ -11,7 +11,7 @@
     <id>bbd12926</id>
     <idstring>POINTER</idstring>
     <category>Graphics</category>
-    <copyright>Paul Manias 2003-2025</copyright>
+    <copyright>Paul Manias © 2003-2026</copyright>
     <description>
 <p>The Pointer class provides the user with a means of interacting with the graphical interface.  On a host system such as Windows, the pointer functionality will hook into the host's capabilities.  If the display is native then the pointer service will manage its own cursor exclusively.</p>
 <p>Internally, a system-wide pointer object is automatically created with a name of <code>SystemPointer</code>.  This should be used for all interactions with this service.</p></description>

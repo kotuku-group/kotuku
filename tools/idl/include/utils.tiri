@@ -1,0 +1,257 @@
+-- Universal utility functions
+
+local rx_root_extract   = <{ regex.new('^<ROOT>(.*)</ROOT>$', regex.DOT_ALL) }>
+local rx_angle_brackets = <{ regex.new('[<>]') }>
+local rx_first_char     = <{ regex.new('^(.)(.+)$') }>
+local rx_cmake_path     = <{ regex.new('^(.+)CMakeLists\\.txt') }>
+
+----------------------------------------------------------------------------------------------------------------------
+-- Print a message to stdout if verbose mode is enabled
+
+global function verbose(String:str)
+   if glFeedback is 'verbose' then
+      print(String)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Add a line to the output. If the string ends with a newline character, preserve it, otherwise trim trailing spaces.
+
+global function output(String:str)
+   if String?? then
+      if String:sub(-1) is '\n' then
+         glOutput:push(String)
+      else
+         glOutput:push(String:rtrim())
+      end
+   else
+      glOutput:push('')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Add a line to the header with high priority. If Input is a function, execute it and add its output lines to the
+-- header.
+
+global function priority(Input:any)
+   if type(Input) is 'function' then
+      saveOutput = glOutput
+      glOutput = array<string>
+      Input()
+      for v in values(glOutput) do
+         glHeader:push(v)
+      end
+      glOutput = saveOutput
+   elseif (type(Input) is 'string') and Input?? then
+      glHeader:push(Input:rtrim())
+   else
+      glHeader:push('')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Convert a string such as 'SHOW_IMAGES' to 'ShowImages'
+
+global function shortName(Name:str):str
+   local result = ""
+   for n in values(Name:split("_")) do
+      if (n is "XY") or (n is "SSL") or (n is "HTML") or (n is "CDATA") or (n is "2D") or (n  is "3D") or (n is "DGA") or
+         (n is "DPMS") or (n is "GTF") or (n is "SRGB") or (n is "RGB") or (n is "HSV") or (n is "CX") or (n is "CY") or
+         (n is "FX") or (n is "FY") then
+         result ..= n
+      else
+         local first, rest = rx_first_char.extract(n)
+         if not first then
+            result ..= n:upper()
+         else
+            result ..= first:upper() .. rest:lower()
+         end
+      end
+   end
+   return result
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Scan Class.fields for a specific FieldName.
+
+global function findClassField(Class:table, FieldName:str):table
+   assert(Class.fields, 'Class.fields is empty')
+
+   for f in values(Class.fields) do
+      if f.name is FieldName then
+         return f
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Use to ensure strict XML compliance, like
+--
+-- From: <something>content</>
+-- To:   <something>content</something>
+
+local cxml
+
+global function cleanXMLString(String:str, Caller:str):str
+   String ?? return ''
+
+   if rx_angle_brackets.test(String) then
+      String = f'<ROOT>{String}</ROOT>'
+
+      try
+         if not cxml then
+            cxml = obj.new('xml', { statement=String, flags=XMF_INCLUDE_WHITESPACE })
+         else
+            cxml.statement = String
+         end
+
+         _, clean_str = cxml.mtSerialise(0, XMF_INCLUDE_SIBLINGS)
+         local extracted = rx_root_extract.extract(clean_str)
+         if extracted then String = extracted:trim() end
+      except ex
+         error(f'Failed to parse XML for {Caller ?? "undefined"}: {ex.message}')
+      end
+   end
+
+   return String
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Register a class by name and return its table. If the class already exists, return the existing table.
+
+global function registerClass(Name:str):table
+   assert(Name??, 'No Name provided to registerClass()')
+   global glClasses ?= { }
+   glClasses[Name:lower()] ?= { name=Name:cap() }
+   return glClasses[Name:lower()]
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Extract information from a compiled class' field definition.
+
+global function getMetaFieldDefinition(Field)
+   fl = {
+      name  = Field.name,
+      flags = Field.flags
+   }
+
+   getFieldType(fl, Field.flags, Field.name, Field.arg)
+   fl.docType = fl.doc_type
+
+   if (Field.flags & FD_SYNONYM)?? then
+      fl.synonym = true
+   end
+
+   if Field.getField?? then
+      fl.read = 'Get'
+      fl.get = Field.getField
+   elseif (Field.flags & FD_READ)?? then
+      fl.read = 'Read'
+   end
+
+   if Field.setField?? then
+      fl.write = 'Set'
+      fl.set = Field.setField
+   elseif (Field.flags & FD_WRITE)?? then
+      fl.write = 'Write'
+   elseif (Field.flags & FD_INIT)?? then
+      fl.write = 'Init'
+   end
+
+   if fl.read?? and fl.write?? then
+      fl.access = f'{fl.read}/{fl.write}'
+   elseif fl.read?? then
+      fl.access = fl.read
+   elseif fl.write?? then
+      fl.access = fl.write
+   else
+      fl.access = 'Private'
+   end
+
+   if (Field.flags & FD_SYSTEM)?? then
+      fl.access = 'Private'
+      fl.private = true
+   end
+
+   return fl
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Build a list of all available action names and their parameters.
+
+global function loadActions()
+   if glActions then return end
+   verbose("Loading core actions...")
+   global glActions = { }
+   list = mSys.ActionList()
+   for id=1, #list-1 do
+      if list[id].name?? then
+         glActions[list[id].name] = { name=list[id].name, input=list[id].args, hash=list[id].hash, id=id }
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Resolve the location of the Kotuku SDK and create an 'sdk:' volume.
+
+global function resolveSDKPath(Path:str)
+   local sdk_path
+   err = ERR_Failed
+   search_list = array<string>
+   if not Path then
+      search_path = 'CMakeLists.txt'
+      limit = 5
+      while (err != ERR_Okay) and (limit > 0) do
+         search_list:push(search_path)
+         err, sdk_path = mSys.ResolvePath(search_path)
+         search_path = f'../{search_path}'
+         limit -= 1
+      end
+   else
+      search_list:push(f'{Path}/CMakeLists.txt')
+      err, sdk_path = mSys.ResolvePath(f'{Path}/CMakeLists.txt')
+   end
+
+   if err is ERR_Okay then
+      sdk_path = rx_cmake_path.extract(sdk_path) ?? sdk_path
+   else
+      msg = ''
+      for path in values(search_list) do
+         msg ..= path .. '\n'
+      end
+      print('Unable to find CMakeLists.txt after searching the following paths:\n' .. msg)
+      error('A path to the Kotuku SDK could not be determined.')
+   end
+
+   mSys.SetVolume('sdk', sdk_path)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Decompile an IDL definition and return a table of constants.
+
+global function parseIDL(ModuleName:str):table
+   constants = { }
+   m = obj.new('module', { name=ModuleName })
+   defs = m.defs
+   if not defs then
+      verbose(f'No definitions found for module "{ModuleName}".')
+      return { }
+   end
+
+   matcher = regex.new("c\\.([A-Z]+):(.+)")
+   match_list = matcher.search(defs)
+
+   for i=0, #match_list-1 do
+      prefix = match_list[i][1]
+      extract = match_list[i][2]
+      constants[prefix] = { }
+      split_values = extract:split(',')
+      for v in values(split_values) do
+         pair = v:split('=')
+         constants[prefix][pair[0]] = tonumber(pair[1])
+      end
+   end
+
+   verbose(f'Parsed {#constants} constant groups from module "{ModuleName}".')
+   return constants
+end

@@ -1,0 +1,314 @@
+#!/usr/bin/env origo
+--[[
+A file viewer for recognised documents like SVG and RIPL
+--]]
+
+   import 'gui'
+   import 'gui/window'
+   import 'gui/divider'
+   import 'gui/fileview'
+   import 'gui/listview'
+   import 'gui/scrollbar'
+   import 'gui/filedialog'
+   include 'svg'
+
+glBody = [[<body fill="rgb(68 68 90)" font-fill="white" font-face="Noto Sans" font-size="12pt" margins="2em"/>]]
+
+glIntroduction = [[
+<template name="th">
+  <cell stroke="white" stroke-width="1" border="bottom"><p><b><inject/></b></p></cell>
+</template>
+
+<svg xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <image id="logo" xlink:href="vuepoint:data/vuepoint.svg" width="50" height="50"/>
+  </defs>
+</svg>
+
+<page name="Index">
+
+<p><font face="Noto Serif" size="3em"><image src="url(#logo)" width="50" height="50"/> <i>VuePoint</i></font></p>
+
+<p>VuePoint is a simple file browser that supports the following file types:</p>
+
+<p indent="1em">SVG, RIPL, JPEG, PNG</p>
+
+<h2>Command Line</h2>
+
+<p>The following command-line parameters are supported:</p>
+
+<p indent="1em"><table collapsed="true" cell-padding="0.2em" columns="12%,88%" width="90%">
+<row><th>Parameter</th><th>Description</th></row>
+<row><cell><p>width</p></cell><cell>Width of the application window</cell></row>
+<row><cell><p>height</p></cell><cell>Height of the application window.</cell></row>
+<row><cell><p>path</p></cell><cell>Path to use in the file selector.</cell></row>
+<row><cell><p>file</p></cell><cell>A source file to load and display in the application.</cell></row>
+<row><cell><p>no-browser</p></cell><cell>Hide the file browser.</cell></row>
+</table></p>
+
+</page>
+]]
+
+   local glWindow, glFileView, glTerminateView, glScrollbar, glViewArea, glStats, glAppBar
+
+   glScript = obj.find('self')
+   mSys.SetVolume('vuepoint', glScript.workingPath)
+
+----------------------------------------------------------------------------------------------------------------------
+
+function configureScrollbar(View:obj, Page:obj)
+   if glScrollbar then
+      glScrollbar.changeViewport(View, Page)
+   else
+      glScrollbar = gui.scrollbar({
+         target = glViewArea,
+         view   = View,
+         page   = Page,
+         direction = 'all'
+      })
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function displayInlineDoc(Content:str, Parameters:table)
+   doc = glViewArea.new('document', { })
+   if Parameters then
+      for k, v in pairs(Parameters) do
+         doc.acSetKey(k, v)
+      end
+   end
+   doc.acDataFeed(nil, DATA_XML, Content)
+   configureScrollbar(doc.view, doc.page)
+   glTerminateView = function()
+      doc.free()
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function displayError(Message:str)
+   page = glBody .. [[<page name="Index">]] .. Message .. [[</page>]]
+   displayInlineDoc(page, { })
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function displaySVG(Path:str)
+   vp = glViewArea.new('VectorViewport', { x=0, y=0, xOffset=0, yOffset=0, overflow='hidden' })
+   -- The ENFORCE_TRACKING flag ensures that registered defs are deallocated with the svg object.
+   svg = vp.new('svg', { target=vp, path=Path, flags=SVF_ENFORCE_TRACKING })
+
+   if svg.frameRate < 60 then svg.frameRate = 60 end
+   svg.acActivate() -- Animation support
+
+   glTerminateView = function()
+      vp.free()
+   end
+end
+
+function displayDoc(Path:str)
+   doc = glViewArea.new('document', { path = Path .. '#Index' })
+
+   configureScrollbar(doc.view, doc.page)
+
+   glTerminateView = function()
+      doc.free()
+   end
+end
+
+function displayImage(Path:str)
+   try
+      pic = glWindow.scene.new('picture', { src=Path, flags='ForceAlpha32' })
+      img = glWindow.scene.new('VectorImage', { picture = pic })
+      glWindow.scene.mtAddDef('Image', img)
+
+      window = glViewArea.new('VectorViewport', { x = 0, y = 0, width='100%', height='100%', overflow='hidden' })
+      page = window.new('VectorViewport', { x=0, y=0, width=pic.bitmap.width, height=pic.bitmap.height })
+      rect = page.new('VectorRectangle', {
+         x=0, y=0, width=pic.bitmap.width, height=pic.bitmap.height, fill='url(#Image)'
+      })
+
+      glTerminateView = function()
+         window.free()
+         pic.free()
+         img.free()
+      end
+
+      configureScrollbar(window, page)
+
+      glStats = { width = pic.bitmap.width, height = pic.bitmap.height }
+   except
+      displayError([[<p>Failed to process selected file.</p>]])
+   end
+end
+
+function displayText(Path:str)
+
+end
+
+function displayFile(Path:str)
+   Path ?? return
+
+   msg(f'Load file {Path}')
+
+   if glTerminateView then
+      glTerminateView()
+      glTerminateView = nil
+   end
+
+   glStats = { }
+
+   lpath = Path:lower()
+   if lpath:endsWith('.png') then
+      displayImage(Path)
+   elseif lpath:endsWith('.jpeg') or lpath:endsWith('.jpg') then
+      displayImage(Path)
+   elseif lpath:endsWith('.svg') then
+      displaySVG(Path)
+   elseif lpath:endsWith('.ripl') or lpath:endsWith('.rpl') then
+      displayDoc(Path)
+   else -- File is unsupported
+      displayError(f'<p>Unrecognised file "{Path}"</p>')
+   end
+
+   glViewArea.scene.surface.mtScheduleRedraw()
+
+   processing.collect()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+   glWindow = gui.window({
+      width      = arg('width', 1024),
+      height     = arg('height', 800),
+      title      = 'VuePoint',
+      icon       = 'icons:programs/pictureviewer',
+      minHeight  = 400,
+      minWidth   = 600,
+      borderless = true
+   })
+
+   glViewport = glWindow:clientViewport({ aspectRatio = ARF_MEET })
+
+   if arg('no-browser') then
+      glViewArea = glViewport.new('VectorViewport', {
+        x=glWindow.margins.left, y=glWindow.margins.top,
+        xOffset=glWindow.margins.right, yOffset=glWindow.margins.top
+      })
+   else
+      -- File view on the left
+
+      glFileView = gui.fileview({
+         viewOptions = {
+            x          = glWindow.margins.left,
+            y          = 0,
+            width      = 200,
+            yOffset    = glWindow.margins.top,
+            sensitive  = true,
+            borderless = true
+         },
+         target      = glViewport,
+         style       = 'list',
+         toolBar     = { navigation=true, views=true },
+         displayPath = true,
+         path        = arg('path', ':'),
+         filterList = array<table> {
+            { name='SVG Images', ext='.svg' },
+            { name='RIPL Documents', ext={ '.ripl', '.rpl' } },
+            { name='JPEG Images', ext={ '.jpeg', '.jpg' } },
+            { name='PNG Images', ext='.png' }
+         },
+         fileSelected = function(FileView)
+            displayFile(FileView.selectionPath())
+            title = FileView.selectionFile()
+            if glStats.width and glStats.height then
+               title ..= f' [ {glStats.width} x {glStats.height} ]'
+            end
+            glWindow:setTitle(title)
+         end
+      })
+
+      -- Document viewer on the right
+
+      glViewManager = glViewport.new('VectorViewport', {
+        x=glFileView.view.viewport.x + glFileView.view.viewport.width + 6, y=0,
+        xOffset=glWindow.margins.right, yOffset=glWindow.margins.top
+      })
+
+      -- Copy, Save As, Info, Zoom, Rotate Left / Right
+
+      bkgd = glViewManager.new('VectorRectangle', {
+         x=0, y=0, xOffset=0, height=1, fill=gui.palette.inverse
+      })
+
+      glAppBar = gui.toolbar({
+         target  = glViewManager,
+         x       = 0,
+         y       = 0,
+         xOffset = 0,
+         flush   = true,
+         createItems = function(Bar)
+            Bar.addItem(2, 'Save As', 'Save Image As', 'items/file_saveas', function()
+               gui.dialog.file({
+                  title       = 'Save Image As...',
+                  okText      = 'Save',
+                  cancelText  = 'Cancel',
+                  modal       = true,
+                  popOver     = glWindow.surface,
+                  warnExists  = true,
+                  allowNew    = true,
+                  feedback = function(Dialog, Path:str, Files)
+                     Files ?? return
+
+                     target_file = Path .. Files[0].filename
+
+                     bmp = glViewArea.buffer
+                     if bmp then
+                        pic = obj.new('picture', {
+                           width = bmp.width, height = bmp.height, bitsPerPixel = bmp.bitsPerPixel,
+                           flags = PCF_NEW|PCF_FORCE_ALPHA_32
+                        })
+                        bmp.acCopyData(pic.bitmap)
+                        file = obj.new('file', { flags=FL_NEW|FL_WRITE, path=target_file })
+                        pic.acSaveImage(file)
+                     end
+                  end
+               })
+            end)
+         end
+      })
+
+      bkgd.height = glAppBar.viewport.height
+
+      advance = gui.separator(glViewManager, 'h', glAppBar.viewport.height)
+
+      glViewArea = glViewManager.new('VectorViewport', {
+         x = 0, xOffset = 0, y = glAppBar.viewport.height + advance, yOffset = 0,
+         buffered = true
+      })
+
+      gui.divider({
+         left = glFileView.view.viewport, right = glViewManager,
+         minA = 100, maxA = glWindow.surface.width * 0.4, minB = 100
+      })
+   end
+
+   -- Display a file from the commandline, or show the application documentation.
+
+   if arg('file')?? then
+      displayFile(arg('file'))
+   else
+      doc = glViewArea.new('document', { })
+      doc.acDataFeed(nil, DATA_XML, glBody .. glIntroduction)
+      configureScrollbar(doc.view, doc.page)
+      glTerminateView = function()
+         doc.free()
+      end
+   end
+
+   processing.collect()
+
+   glWindow:show(true)
+
+   processing.sleep()

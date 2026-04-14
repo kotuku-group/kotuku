@@ -1,0 +1,644 @@
+-- Flute tests for the global keyword and debug.locality() function
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test basic global declaration
+
+@Test(hotpath=true)  function BasicGlobalDeclaration()
+   global testGlobalVar = 42
+   assert(testGlobalVar is 42, 'Global variable should be 42')
+   assert(debug.locality('testGlobalVar') is 'global', 'testGlobalVar should have global locality')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test basic local declaration
+
+@Test(hotpath=true) function BasicLocalDeclaration()
+   testLocalVar = 100
+   assert(testLocalVar is 100, 'Local variable should be 100')
+   assert(debug.locality('testLocalVar') is 'local', 'testLocalVar should have local locality')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test multiple global declarations
+
+@Test(hotpath=true) function MultipleGlobals()
+   global gA, gB, gC = 1, 2, 3
+   assert(gA is 1, 'gA should be 1')
+   assert(gB is 2, 'gB should be 2')
+   assert(gC is 3, 'gC should be 3')
+   assert(debug.locality('gA') is 'global', 'gA should have global locality')
+   assert(debug.locality('gB') is 'global', 'gB should have global locality')
+   assert(debug.locality('gC') is 'global', 'gC should have global locality')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test global with fewer values than names (remaining should be nil)
+
+@Test(hotpath=true) function GlobalPartialInit()
+   global gPartial1, gPartial2, gPartial3 = 'first', 'second'
+   assert(gPartial1 is 'first', 'gPartial1 should be first')
+   assert(gPartial2 is 'second', 'gPartial2 should be second')
+   assert(gPartial3 is nil, 'gPartial3 should be nil')
+   assert(debug.locality('gPartial1') is 'global', 'gPartial1 should have global locality')
+   assert(debug.locality('gPartial2') is 'global', 'gPartial2 should have global locality')
+   -- Note: debug.locality cannot distinguish a nil global from an undefined variable
+   -- because lua_getglobal returns nil in both cases. This is expected behaviour.
+   assert(debug.locality('gPartial3') is 'nil', 'gPartial3 with nil value returns nil locality')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test global declaration without initialiser
+
+@Test(hotpath=true) function GlobalNoInit()
+   global gNoInit
+   assert(gNoInit is nil, 'Uninitialised global should be nil')
+   -- Note: debug.locality cannot distinguish a nil global from an undefined variable
+   -- because lua_getglobal returns nil in both cases. This is expected behaviour.
+   assert(debug.locality('gNoInit') is 'nil', 'gNoInit with nil value returns nil locality')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test global inside function creates global, not local
+
+@Test function GlobalInFunction()
+   function innerFunction()
+      global gFromFunction = 'created inside'
+   end
+
+   assert(debug.locality('gFromFunction') is 'nil', 'gFromFunction should not exist before function call')
+   innerFunction()
+   assert(gFromFunction is 'created inside', 'Global should be accessible after function call')
+   assert(debug.locality('gFromFunction') is 'global', 'gFromFunction should have global locality')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test that local shadows global
+
+@Test(hotpath=true) function LocalShadowsGlobal()
+   global gShadowed = 'global value'
+
+   function checkShadowing()
+      local gShadowed = 'local value'
+      assert(gShadowed is 'local value', 'Local should shadow global inside function')
+      assert(debug.locality('gShadowed') is 'local', 'gShadowed should be local inside function')
+   end
+
+   checkShadowing()
+   assert(gShadowed is 'global value', 'Global should be unchanged outside function')
+   assert(debug.locality('gShadowed') is 'global', 'gShadowed should be global outside function')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test upvalue detection
+
+@Test(hotpath=true) function UpvalueLocality()
+   local outerVar = 'captured'
+
+   function closure()
+      -- outerVar is an upvalue here - we must actually use it
+      local captured = outerVar
+      local locality = debug.locality('outerVar')
+      return locality, captured
+   end
+
+   locality, _ = closure()
+   assert(locality is 'upvalue', 'outerVar should be an upvalue inside closure, got: ' .. tostring(locality))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test debug.locality with nil argument
+
+@Test(hotpath=true) function LocalityNilArg()
+   assert(debug.locality(nil) is 'nil', 'debug.locality(nil) should return nil')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test debug.locality with undefined variable
+
+@Test(hotpath=true) function LocalityUndefined()
+   assert(debug.locality('thisVarDoesNotExist') is 'nil', 'Undefined variable should return nil')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test debug.locality with built-in globals
+
+@Test(hotpath=true) function LocalityBuiltins()
+   assert(debug.locality('print') is 'global', 'print should be global')
+   assert(debug.locality('table') is 'global', 'table should be global')
+   assert(debug.locality('string') is 'global', 'string should be global')
+   assert(debug.locality('math') is 'global', 'math should be global')
+   assert(debug.locality('debug') is 'global', 'debug should be global')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test nested scope locality
+
+@Test(hotpath=true) function NestedScopeLocality()
+   outerLocal = 1
+
+   do
+      innerLocal = 2
+      assert(debug.locality('outerLocal') is 'local', 'outerLocal should be local in inner scope')
+      assert(debug.locality('innerLocal') is 'local', 'innerLocal should be local in inner scope')
+   end
+
+   assert(debug.locality('outerLocal') is 'local', 'outerLocal should still be local')
+   -- innerLocal is out of scope here
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test global modification from nested function
+-- Nested functions should recognize variables explicitly declared with 'global' keyword.
+
+@Test(hotpath=true) function GlobalModificationFromNested()
+   global gModifiable = 10
+
+   function modifier()
+      -- This should reference the declared global, not create a new local
+      gModifiable = gModifiable + 5
+   end
+
+   modifier()
+   assert(gModifiable is 15, 'Global should be modified by nested function')
+   assert(debug.locality('gModifiable') is 'global', 'gModifiable should remain global')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test that global keyword overrides protected_globals behaviour
+
+@Test(hotpath=true) function GlobalOverridesProtection()
+   -- When protected_globals is true, implicit assignments create locals
+   -- But explicit 'global' keyword should still create globals
+   global explicitGlobal = 'I am global'
+   assert(debug.locality('explicitGlobal') is 'global', 'Explicit global should be global regardless of protection')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test locality with same name in different scopes
+
+@Test(hotpath=true) function SameNameDifferentScopes()
+   global scopeTest = 'global'
+
+   local function level1()
+      local scopeTest = 'level1'
+      assert(debug.locality('scopeTest') is 'local', 'scopeTest should be local in level1')
+
+      local function level2()
+         local scopeTest = 'level2'
+         assert(debug.locality('scopeTest') is 'local', 'scopeTest should be local in level2')
+         return scopeTest
+      end
+
+      return level2()
+   end
+
+   assert(level1() is 'level2', 'Should return innermost value')
+   assert(debug.locality('scopeTest') is 'global', 'scopeTest should be global at top level')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test debug.locality with level parameter
+
+@Test(hotpath=true) function LocalityWithLevel()
+   local outerVar = 'outer'
+
+   local function inner()
+      local innerVar = 'inner'
+      -- Level 1 is the caller (inner), level 2 is the caller's caller (testLocalityWithLevel)
+      assert(debug.locality('innerVar', 1) is 'local', 'innerVar should be local at level 1')
+      assert(debug.locality('outerVar', 2) is 'local', 'outerVar should be local at level 2')
+   end
+
+   inner()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test global function assignment pattern
+
+@Test function GlobalFunctionAssignment()
+   global globalTestFunction = function()
+      return 'I am a global function'
+   end
+
+   assert(globalTestFunction() is 'I am a global function', 'Global function should work')
+   assert(debug.locality('globalTestFunction') is 'global', 'globalTestFunction should have global locality')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test that for loop variables are local
+
+@Test(hotpath=true) function ForLoopLocality()
+   for i = 1, 3 do
+      assert(debug.locality('i') is 'local', 'For loop variable should be local')
+   end
+
+   for k, v in pairs({ a = 1 }) do
+      assert(debug.locality('k') is 'local', 'For-in loop key should be local')
+      assert(debug.locality('v') is 'local', 'For-in loop value should be local')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test function parameters are local
+
+@Test(hotpath=true) function ParameterLocality(param1, param2)
+   assert(debug.locality('param1') is 'local', 'Function parameter should be local')
+   assert(debug.locality('param2') is 'local', 'Function parameter should be local')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test that compound assignment (++) works on a declared global
+-- The global must be declared BEFORE the function that uses it.
+
+global gCompoundTarget = 10
+
+@Test(hotpath=true) function CompoundOnDeclaredGlobal()
+   local initial = gCompoundTarget
+   gCompoundTarget++
+   assert(gCompoundTarget is initial + 1, 'Compound increment should work on declared global')
+   assert(debug.locality('gCompoundTarget') is 'global', 'gCompoundTarget should remain global after increment')
+
+   gCompoundTarget += 5
+   assert(gCompoundTarget is initial + 6, 'Compound add should work on declared global')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test that plain assignment to undeclared variable creates a local (protected_globals behaviour)
+
+@Test(hotpath=true) function PlainAssignmentCreatesLocal()
+   -- This variable is not declared with 'local' or 'global', so it becomes local
+   undeclaredPlainVar = 'test value'
+   assert(undeclaredPlainVar is 'test value', 'Undeclared variable should be assigned')
+   assert(debug.locality('undeclaredPlainVar') is 'local', 'Undeclared variable with plain assignment should be local')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test that if-empty assignment (??=) works on undeclared variables
+-- An undeclared variable is effectively nil, so ??= should assign and create a local
+
+@Test(hotpath=true) function IfEmptyOnUndeclared()
+   -- undeclaredIfEmptyVar doesn't exist, so it's nil, so ??= should assign
+   undeclaredIfEmptyVar ??= 'assigned because nil'
+   assert(undeclaredIfEmptyVar is 'assigned because nil', 'If-empty should assign to nil/undeclared variable')
+   assert(debug.locality('undeclaredIfEmptyVar') is 'local', 'If-empty on undeclared should create local')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test that if-empty assignment (??=) respects existing values
+
+@Test(hotpath=true) function IfEmptyRespectsExisting()
+   local existingVar = 'original'
+   existingVar ??= 'should not replace'
+   assert(existingVar is 'original', 'If-empty should not replace existing truthy value')
+
+   local nilVar = nil
+   nilVar ??= 'replaced nil'
+   assert(nilVar is 'replaced nil', 'If-empty should replace nil')
+
+   -- Using 'any' type to allow multi-type assignment (type fixing)
+   local falseVar: any = false
+   falseVar ??= 'replaced false'
+   assert(falseVar is 'replaced false', 'If-empty should replace false')
+
+   local zeroVar: any = 0
+   zeroVar ??= 'replaced zero'
+   assert(zeroVar is 'replaced zero', 'If-empty should replace zero')
+
+   local emptyVar = ''
+   emptyVar ??= 'replaced empty'
+   assert(emptyVar is 'replaced empty', 'If-empty should replace empty string')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test compound assignment on local variable
+
+@Test(hotpath=true) function CompoundOnLocal()
+   counter = 5
+   counter++
+   assert(counter is 6, 'Compound increment should work on local')
+   assert(debug.locality('counter') is 'local', 'counter should remain local')
+
+   counter += 10
+   assert(counter is 16, 'Compound add should work on local')
+
+   counter -= 3
+   assert(counter is 13, 'Compound subtract should work on local')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test that reading undeclared variable returns nil (falls back to global lookup)
+
+@Test(hotpath=true) function ReadUndeclaredReturnsNil()
+   -- Reading an undeclared variable should return nil (global lookup returns nil)
+   value = thisVariableDoesNotExist
+   assert(value is nil, 'Reading undeclared variable should return nil')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test global increment from nested function (global declared before function)
+
+global gNestedIncrement = 100
+
+@Test(hotpath=true) function GlobalIncrementFromNested()
+   function incrementer()
+      gNestedIncrement++
+   end
+
+   initial = gNestedIncrement
+   incrementer()
+   assert(gNestedIncrement is initial + 1, 'Nested function should increment global')
+   assert(debug.locality('gNestedIncrement') is 'global', 'gNestedIncrement should remain global')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test compound concat assignment on local
+
+@Test(hotpath=true) function CompoundConcatOnLocal()
+   str = 'hello'
+   str ..= ' world'
+   assert(str is 'hello world', 'Compound concat should work on local')
+   assert(debug.locality('str') is 'local', 'str should remain local')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test compound concat assignment on declared global
+
+global gConcatTarget = 'start'
+
+@Test function CompoundConcatOnGlobal()
+   gConcatTarget ..= ' middle'
+   gConcatTarget ..= ' end'
+   assert(gConcatTarget is 'start middle end', 'Compound concat should work on declared global')
+   assert(debug.locality('gConcatTarget') is 'global', 'gConcatTarget should remain global')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test multi-return assignment where first target is existing local, second is undeclared
+-- This tests the mixed-target multi-return assignment path
+
+@Test(hotpath=true) function MultiReturnMixedTargets()
+   function two_values()
+      return 1, 2
+   end
+
+   existing = 0
+   existing, newLocal = two_values()
+
+   assert(existing is 1, 'Existing local should get first return value')
+   assert(newLocal is 2, 'New local should get second return value')
+   assert(debug.locality('existing') is 'local', 'existing should remain local')
+   assert(debug.locality('newLocal') is 'local', 'newLocal should be local')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test multi-return assignment where all targets are undeclared
+
+@Test(hotpath=true) function MultiReturnAllUndeclared()
+   function three_values()
+      return 'a', 'b', 'c'
+   end
+
+   first, second, third = three_values()
+
+   assert(first is 'a', 'first should be a')
+   assert(second is 'b', 'second should be b')
+   assert(third is 'c', 'third should be c')
+   assert(debug.locality('first') is 'local', 'first should be local')
+   assert(debug.locality('second') is 'local', 'second should be local')
+   assert(debug.locality('third') is 'local', 'third should be local')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test multi-return where undeclared target is first, existing local is second
+
+@Test(hotpath=true) function MultiReturnUndeclaredFirst()
+   function two_values()
+      return 10, 20
+   end
+
+   existingSecond = 0
+   newFirst, existingSecond = two_values()
+
+   assert(newFirst is 10, 'New local should get first return value')
+   assert(existingSecond is 20, 'Existing local should get second return value')
+   assert(debug.locality('newFirst') is 'local', 'newFirst should be local')
+   assert(debug.locality('existingSecond') is 'local', 'existingSecond should remain local')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test multi-return with interleaved existing and undeclared targets
+
+@Test(hotpath=true) function MultiReturnInterleaved()
+   function four_values()
+      return 1, 2, 3, 4
+   end
+
+   a = 0
+   c = 0
+   a, b, c, d = four_values()
+
+   assert(a is 1, 'a should be 1')
+   assert(b is 2, 'b should be 2')
+   assert(c is 3, 'c should be 3')
+   assert(d is 4, 'd should be 4')
+   assert(debug.locality('a') is 'local', 'a should be local')
+   assert(debug.locality('b') is 'local', 'b should be local')
+   assert(debug.locality('c') is 'local', 'c should be local')
+   assert(debug.locality('d') is 'local', 'd should be local')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test multi-return with more targets than return values (extras should be nil)
+
+@Test(hotpath=true) function MultiReturnFewerValues()
+   function one_value()
+      return 42
+   end
+
+   existing = 0
+   existing, newUndeclared = one_value()
+
+   assert(existing is 42, 'Existing local should get the return value')
+   assert(newUndeclared is nil, 'New local should be nil when no value available')
+   assert(debug.locality('existing') is 'local', 'existing should remain local')
+   assert(debug.locality('newUndeclared') is 'local', 'newUndeclared should be local')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test that multi-return doesn't corrupt existing local values
+
+@Test(hotpath=true) function MultiReturnPreservesOtherLocals()
+   function two_values()
+      return 100, 200
+   end
+
+   preserved = 'keep me'
+   target1 = 0
+   target1, target2 = two_values()
+
+   assert(preserved is 'keep me', 'Unrelated local should be preserved')
+   assert(target1 is 100, 'target1 should be 100')
+   assert(target2 is 200, 'target2 should be 200')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test multi-return assignment inside nested function
+
+@Test(hotpath=true) function MultiReturnInNestedFunction()
+   function outer()
+      function inner_returns()
+         return 'x', 'y'
+      end
+
+      a = 'original'
+      a, b = inner_returns()
+
+      assert(a is 'x', 'a should be x in nested function')
+      assert(b is 'y', 'b should be y in nested function')
+      assert(debug.locality('a') is 'local', 'a should be local in nested function')
+      assert(debug.locality('b') is 'local', 'b should be local in nested function')
+   end
+
+   outer()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test multi-return with single undeclared target (common pattern: err, result = func())
+
+@Test(hotpath=true) function SingleUndeclaredFromMultiReturn()
+   function returns_two()
+      return nil, 'success'
+   end
+
+   err = 'initial'
+   err, result = returns_two()
+
+   assert(err is nil, 'err should be nil')
+   assert(result is 'success', 'result should be success')
+   assert(debug.locality('err') is 'local', 'err should be local')
+   assert(debug.locality('result') is 'local', 'result should be local')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test trailing identifier in local declaration: `local a = 1, b` means `local a, b = 1`
+
+@Test(hotpath=true) function LocalTrailingIdentifier()
+   local height = 2, descent
+
+   assert(height is 2, 'height should be 2')
+   assert(descent is nil, 'descent should be nil (trailing identifier)')
+   assert(debug.locality('height') is 'local', 'height should be local')
+   assert(debug.locality('descent') is 'local', 'descent should be local')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test multiple trailing identifiers in local declaration
+
+@Test(hotpath=true) function LocalMultipleTrailingIdentifiers()
+   local first = 'hello', second, third
+
+   assert(first is 'hello', 'first should be hello')
+   assert(second is nil, 'second should be nil')
+   assert(third is nil, 'third should be nil')
+   assert(debug.locality('first') is 'local', 'first should be local')
+   assert(debug.locality('second') is 'local', 'second should be local')
+   assert(debug.locality('third') is 'local', 'third should be local')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test trailing identifier in global declaration
+
+@Test(hotpath=true) function GlobalTrailingIdentifier()
+   global gHeight = 100, gDescent
+
+   assert(gHeight is 100, 'gHeight should be 100')
+   assert(gDescent is nil, 'gDescent should be nil (trailing identifier)')
+   assert(debug.locality('gHeight') is 'global', 'gHeight should be global')
+   -- Note: gDescent with nil value cannot be distinguished from undefined
+   assert(debug.locality('gDescent') is 'nil', 'gDescent returns nil locality when nil')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test conditional assignment on trailing identifier local
+
+@Test(hotpath=true) function TrailingIdentifierWithConditional()
+   local value = 2, fallback
+
+   if not fallback then
+      fallback = math.round(3.5)
+   end
+
+   assert(value is 2, 'value should be 2')
+   assert(fallback is 4, 'fallback should be 4 after conditional assignment')
+   assert(debug.locality('value') is 'local', 'value should be local')
+   assert(debug.locality('fallback') is 'local', 'fallback should be local')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test global function declaration
+
+@Test function GlobalFunctionDeclaration()
+   global function myGlobalFunc()
+      return 'from global'
+   end
+
+   assert(myGlobalFunc() is 'from global', 'Global function should return correct value')
+   assert(debug.locality('myGlobalFunc') is 'global', 'myGlobalFunc should be global')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test global function accessible from nested scope
+
+@Test function GlobalFunctionFromNested()
+   global function outerGlobalFunc()
+      return 'outer'
+   end
+
+   local function nestedCaller()
+      return outerGlobalFunc()
+   end
+
+   assert(nestedCaller() is 'outer', 'Nested function should access global function')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test global thunk declaration
+
+@Test function GlobalThunkDeclaration()
+   global thunk myGlobalThunk():str
+      return 'from thunk'
+   end
+
+   assert(myGlobalThunk() is 'from thunk', 'Global thunk should return correct value')
+   assert(debug.locality('myGlobalThunk') is 'global', 'myGlobalThunk should be global')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test that plain function declarations are local by default
+
+@Test(hotpath=true) function FunctionIsLocalByDefault()
+   function innerFunc()
+      return 'inner'
+   end
+
+   assert(innerFunc() is 'inner', 'Local function should return correct value')
+   assert(debug.locality('innerFunc') is 'local', 'innerFunc should be local by default')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test that table method syntax still works (stores to table, not local)
+
+@Test(hotpath=true) function TableMethodSyntax()
+   local myTable = {}
+
+   function myTable.staticMethod()
+      return 'static'
+   end
+
+   function myTable:instanceMethod()
+      return 'instance'
+   end
+
+   assert(myTable.staticMethod() is 'static', 'Static method should work')
+   assert(myTable:instanceMethod() is 'instance', 'Instance method should work')
+end

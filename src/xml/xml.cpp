@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -44,9 +44,9 @@ document access.  XQuery support excludes the following:
 
 *********************************************************************************************************************/
 
-#include <parasol/modules/xml.h>
-#include <parasol/modules/xpath.h>
-#include <parasol/strings.hpp>
+#include <kotuku/modules/xml.h>
+#include <kotuku/modules/xquery.h>
+#include <kotuku/strings.hpp>
 #include <array>
 #include <format>
 #include <functional>
@@ -65,103 +65,81 @@ JUMPTABLE_CORE
 
 static OBJECTPTR clXML = nullptr;
 static OBJECTPTR modContext = nullptr;
-static uint32_t glTagID = 1;
-
-#ifndef PARASOL_STATIC
-JUMPTABLE_XPATH
-static OBJECTPTR modXPath = nullptr;
-#endif
+static std::atomic<uint32_t> glTagID = 1;
 
 #include "xml_def.c"
-
-//*********************************************************************************************************************
-// Dynamic loader for the XPath functionality.  We only load it as needed due to the size of the module.
-
-static ERR load_xpath(void)
-{
-#ifndef PARASOL_STATIC
-   if (not modXPath) {
-      pf::SwitchContext ctx(modContext);
-      if (objModule::load("xpath", &modXPath, &XPathBase) != ERR::Okay) return ERR::InitModule;
-   }
-#endif
-   return ERR::Okay;
-}
 
 //*********************************************************************************************************************
 
 #include "xml_functions.cpp"
 
-namespace
+[[nodiscard]] static bool attribute_is_xml_base(const XMLAttrib &Attribute)
 {
-   [[nodiscard]] static bool attribute_is_xml_base(const XMLAttrib &Attribute)
-   {
-      if (Attribute.Name.empty()) return false;
-      return pf::iequals(Attribute.Name, "xml:base");
-   }
+   if (Attribute.Name.empty()) return false;
+   return pf::iequals(Attribute.Name, "xml:base");
+}
 
-   [[nodiscard]] static std::string document_base(extXML *Document)
-   {
-      if ((!Document) or (!Document->Path) or (!*Document->Path)) return std::string();
-      return xml::uri::normalise_uri_separators(std::string(Document->Path));
-   }
+[[nodiscard]] static std::string document_base(extXML *Document)
+{
+   if ((!Document) or (!Document->Path) or (!*Document->Path)) return std::string();
+   return xml::uri::normalise_uri_separators(std::string(Document->Path));
+}
 
-   [[nodiscard]] static std::string resolve_inherited_base(extXML *Document, XMLTag *Parent)
-   {
-      if (!Document) return std::string();
-      if (!Parent) return document_base(Document);
+[[nodiscard]] static std::string resolve_inherited_base(extXML *Document, XTag *Parent)
+{
+   if (!Document) return std::string();
+   if (!Parent) return document_base(Document);
 
-      if (auto cached = Document->findBaseURI(Parent->ID)) return *cached;
+   if (auto cached = Document->findBaseURI(Parent->ID)) return *cached;
 
-      std::vector<std::string> chain;
-      for (XMLTag *current = Parent; current; ) {
-         for (size_t index = 1; index < current->Attribs.size(); ++index) {
-            const XMLAttrib &attrib = current->Attribs[index];
-            if (attribute_is_xml_base(attrib)) chain.push_back(attrib.Value);
-         }
-
-         if (!current->ParentID) break;
-         current = Document->getTag(current->ParentID);
+   std::vector<std::string> chain;
+   for (XTag *current = Parent; current; ) {
+      for (size_t index = 1; index < current->Attribs.size(); ++index) {
+         const XMLAttrib &attrib = current->Attribs[index];
+         if (attribute_is_xml_base(attrib)) chain.push_back(attrib.Value);
       }
 
-      std::string base = document_base(Document);
-      for (auto iterator = chain.rbegin(); iterator != chain.rend(); ++iterator) {
-         if (base.empty()) base = *iterator;
-         else base = xml::uri::resolve_relative_uri(*iterator, base);
-         base = xml::uri::normalise_uri_separators(std::move(base));
-      }
-
-      return base;
+      if (!current->ParentID) break;
+      current = Document->getTag(current->ParentID);
    }
 
-   static void refresh_base_uris(extXML *Document, XMLTag &Node, const std::string &InheritedBase)
-   {
-      std::string node_base = InheritedBase;
-
-      for (size_t index = 1; index < Node.Attribs.size(); ++index) {
-         const XMLAttrib &attrib = Node.Attribs[index];
-         if (!attribute_is_xml_base(attrib)) continue;
-
-         std::string resolved;
-         if (attrib.Value.empty()) resolved = InheritedBase;
-         else if (InheritedBase.empty()) resolved = attrib.Value;
-         else resolved = xml::uri::resolve_relative_uri(attrib.Value, InheritedBase);
-
-         node_base = xml::uri::normalise_uri_separators(std::move(resolved));
-      }
-
-      Document->BaseURIMap[Node.ID] = node_base;
-
-      for (auto &child : Node.Children) refresh_base_uris(Document, child, node_base);
+   std::string base = document_base(Document);
+   for (auto iterator = chain.rbegin(); iterator != chain.rend(); ++iterator) {
+      if (base.empty()) base = *iterator;
+      else base = xml::uri::resolve_relative_uri(*iterator, base);
+      base = xml::uri::normalise_uri_separators(std::move(base));
    }
 
-   static void refresh_base_uris_for_insert(extXML *Document, TAGS &Inserted, XMLTag *Parent)
-   {
-      if ((!Document) or Inserted.empty()) return;
+   return base;
+}
 
-      std::string inherited = resolve_inherited_base(Document, Parent);
-      for (auto &node : Inserted) refresh_base_uris(Document, node, inherited);
+static void refresh_base_uris(extXML *Document, XTag &Node, const std::string &InheritedBase)
+{
+   std::string node_base = InheritedBase;
+
+   for (size_t index = 1; index < Node.Attribs.size(); ++index) {
+      const XMLAttrib &attrib = Node.Attribs[index];
+      if (!attribute_is_xml_base(attrib)) continue;
+
+      std::string resolved;
+      if (attrib.Value.empty()) resolved = InheritedBase;
+      else if (InheritedBase.empty()) resolved = attrib.Value;
+      else resolved = xml::uri::resolve_relative_uri(attrib.Value, InheritedBase);
+
+      node_base = xml::uri::normalise_uri_separators(std::move(resolved));
    }
+
+   Document->BaseURIMap[Node.ID] = node_base;
+
+   for (auto &child : Node.Children) refresh_base_uris(Document, child, node_base);
+}
+
+static void refresh_base_uris_for_insert(extXML *Document, TAGS &Inserted, XTag *Parent)
+{
+   if ((!Document) or Inserted.empty()) return;
+
+   std::string inherited = resolve_inherited_base(Document, Parent);
+   for (auto &node : Inserted) refresh_base_uris(Document, node, inherited);
 }
 
 static ERR add_xml_class(void);
@@ -180,9 +158,12 @@ static ERR MODInit(OBJECTPTR pModule, struct CoreBase *pCore)
 static ERR MODExpunge(void)
 {
    if (clXML) { FreeResource(clXML); clXML = nullptr; }
-#ifndef PARASOL_STATIC
-   if (modXPath) { FreeResource(modXPath); modXPath = nullptr; }
-#endif
+   return ERR::Okay;
+}
+
+static ERR MODOpen(OBJECTPTR Module)
+{
+   Module->set(FID_FunctionList, glFunctions);
    return ERR::Okay;
 }
 
@@ -231,7 +212,7 @@ Note: The integrity of the array is not guaranteed if the original XML document 
 
 -INPUT-
 ptr(struct(XPathValue)) Value: The XPathValue to convert.
-&cpp(array(ptr(struct(XMLTag)))) Result: The node-set is returned here as an array of !XMLTag structures.
+&cpp(array(ptr(struct(XTag)))) Result: The node-set is returned here as an array of !XTag structures.
 
 -ERRORS-
 Okay
@@ -240,7 +221,7 @@ NullArgs
 
 *********************************************************************************************************************/
 
-ERR XValueNodes(XPathValue *Value, pf::vector<XMLTag *> *Result)
+ERR XValueNodes(XPathValue *Value, pf::vector<XTag *> *Result)
 {
    pf::Log log(__FUNCTION__);
    if ((not Value) or (not Result)) return log.warning(ERR::NullArgs);
@@ -344,11 +325,11 @@ ERR XValueToString(const XPathValue *Value, std::string *Result)
 #include "xml_class.cpp"
 
 static STRUCTS glStructures = {
-   { "XMLTag", sizeof(XMLTag) },
+   { "XTag", sizeof(XTag) },
    { "XPathValue", sizeof(XPathValue) }
 };
 
 //********************************************************************************************************************
 
-PARASOL_MOD(MODInit, nullptr, nullptr, MODExpunge, MOD_IDL, &glStructures)
+KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, nullptr, MOD_IDL, &glStructures);
 extern "C" struct ModHeader * register_xml_module() { return &ModHeader; }

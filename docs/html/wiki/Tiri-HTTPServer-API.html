@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-8254DG7MT6"> </script><script>
+	   window.dataLayer = window.dataLayer || [];
+	   function gtag(){dataLayer.push(arguments);}
+	   gtag('js', new Date());
+      gtag('config', 'G-8254DG7MT6');</script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Kōtuku documentation, machine generated from source">
+<meta name="author" content="Paul Manias">
+<link rel="icon" href="/favicon.ico">
+<title>Kōtuku Wiki - Tiri HTTPServer API</title>
+<link href="../css/bootstrap.min.css" rel="stylesheet">
+<link href="../css/module-template.css" rel="stylesheet">
+<link href="../css/github-markdown.css" rel="stylesheet">
+</head>
+
+<body>
+<nav class="navbar navbar-expand-sm navbar-dark bg-dark">
+  <div class="container-fluid">
+    <div class="navbar-header"><a class="navbar-brand" href="../index.html">Kōtuku</a></div>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div id="navbar" class="collapse navbar-collapse">
+      <ul class="nav navbar-nav"><li class="nav-item">
+        <li class="nav-item"><a class="nav-link" href="../gallery.html">Gallery</a></li>
+        <li class="nav-item"><a class="nav-link" href="../modules/api.html">API</a></li>
+        <li class="nav-item"><a class="nav-link" href="Home.html">Wiki</a></li>
+        <li class="nav-item"><a class="nav-link" href="https://github.com/parasol-framework/kotuku">GitHub</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<div class="container-fluid">
+  <div class="row">
+    <div class="d-sm-block d-none col-3 sidebar" style="max-width: 230px;">
+      <div class="flex-shrink-1 pt-2 pe-2 sticky-top overflow-auto vh-100 b-shadow">
+
+<ul class="list-unstyled">
+  <li>
+    <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#wiki-collapse" aria-expanded="true">Wiki</button>
+    <div class="collapse show" id="wiki-collapse">
+      <ul class="btn-toggle-nav list-unstyled fw-normal pb-1 ps-3">
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#bp-collapse" aria-expanded="false">Build Process</button>
+         <div class="collapse" id="bp-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="Linux-Builds.html">Linux Builds</a></li>
+              <li class="api-ref"><a class="rounded" href="Windows-Builds.html">Windows Builds</a></li>
+              <li class="api-ref"><a class="rounded" href="Customising-Your-Build.html">Customising Your Build</a></li>
+            </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#tm-collapse" aria-expanded="false">Technical Manuals</button>
+         <div class="collapse" id="tm-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+             <li class="api-ref"><a class="rounded" href="Kotuku-Objects.html">Kōtuku Objects</a></li>
+             <li class="api-ref"><a class="rounded" href="Kotuku-In-Depth.html">Kōtuku In Depth</a></li>
+             <li class="api-ref"><a class="rounded" href="Coding-With-AI.html">Coding With AI</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#fg-collapse" aria-expanded="false">Tiri</button>
+         <div class="collapse" id="fg-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+            <li class="api-ref"><a class="rounded" href="Tiri-Reference-Manual.html">Tiri Reference Manual</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-GUI-API.html">GUI API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-HTTPServer-API.html">HTTPServer API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-IO-API.html">I/O API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-JSON-API.html">JSON API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-URL-API.html">URL API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-VFX-API.html">VFX API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-Widgets.html">Widgets</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#rrm-collapse" aria-expanded="false">RIPL</button>
+         <div class="collapse" id="rrm-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="RIPL-Reference-Manual.html">RIPL Reference Manual</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#tools-collapse" aria-expanded="false">Tools</button>
+         <div class="collapse" id="tools-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="Origo.html">Origo</a></li>
+              <li class="api-ref"><a class="rounded" href="Unit-Testing.html">Flute / Unit Testing</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#doc-collapse" aria-expanded="false">Doc Generation</button>
+         <div class="collapse" id="doc-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="Embedded-Document-Formatting.html">Embedded Document Format</a></li>
+              <li class="api-ref"><a class="rounded" href="TDL-Reference-Manual.html">TDL Reference Manual</a></li>
+              <li class="api-ref"><a class="rounded" href="TDL-Tools.html">TDL Tools</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#app-collapse" aria-expanded="false">Appendix</button>
+         <div class="collapse" id="app-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+             <li class="api-ref"><a class="rounded" href="Action-Reference-Manual.html">Action Reference Manual</a></li>
+             <li class="api-ref"><a class="rounded" href="System-Error-Codes.html">System Error Codes</a></li>
+           </ul>
+         </div></li>
+      </ul>
+    </div>
+  </li>
+</ul>
+
+<ul class="list-unstyled">
+  <li class="border-top my-3"></li>
+  <li>
+    <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#mod-collapse" aria-expanded="false">Modules</button>
+    <div class="collapse" id="mod-collapse">
+      <ul class="btn-toggle-nav list-unstyled fw-normal">
+      <li class="api-ref"><a href="../modules/audio.html" class="rounded">Audio</a></li>
+      <li class="api-ref"><a href="../modules/core.html" class="rounded">Core</a></li>
+      <li class="api-ref"><a href="../modules/display.html" class="rounded">Display</a></li>
+      <li class="api-ref"><a href="../modules/font.html" class="rounded">Font</a></li>
+      <li class="api-ref"><a href="../modules/network.html" class="rounded">Network</a></li>
+      <li class="api-ref"><a href="../modules/regex.html" class="rounded">Regex</a></li>
+      <li class="api-ref"><a href="../modules/tiri.html" class="rounded">Tiri</a></li>
+      <li class="api-ref"><a href="../modules/vector.html" class="rounded">Vector</a></li>
+      <li class="api-ref"><a href="../modules/xml.html" class="rounded">XML</a></li>
+      <li class="api-ref"><a href="../modules/xpath.html" class="rounded">XPath</a></li>
+      </ul>
+    </div>
+  </li>
+</ul>
+
+<ul class="list-unstyled">
+  <li class="border-top my-3"></li>
+  <li>
+    <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#class-collapse" aria-expanded="false">Classes</button>
+    <div class="collapse" id="class-collapse">
+      <ul class="btn-toggle-nav list-unstyled fw-normal pb-1 ps-3">
+        <li>
+          <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#audio-collapse" aria-expanded="false">Audio</button>
+          <div class="collapse" id="audio-collapse">
+            <ul class="btn-toggle-nav list-unstyled fw-normal pb-1">
+            <li><a href="../modules/classes/audio.html" class="rounded">Audio</a></li>
+            <li><a href="../modules/classes/sound.html" class="rounded">Sound</a></li>
+            </ul>
+          </div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#core-collapse" aria-expanded="false">Core</button><div class="collapse" id="core-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a href="../modules/classes/file.html" class="rounded">File</a></li>
+        <li><a href="../modules/classes/metaclass.html" class="rounded">MetaClass</a></li>
+        <li><a href="../modules/classes/module.html" class="rounded">Module</a></li>
+        <li><a href="../modules/classes/storagedevice.html" class="rounded">StorageDevice</a></li>
+        <li><a href="../modules/classes/task.html" class="rounded">Task</a></li>
+        <li><a href="../modules/classes/thread.html" class="rounded">Thread</a></li>
+        <li><a href="../modules/classes/time.html" class="rounded">Time</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#data-collapse" aria-expanded="false">Data</button><div class="collapse" id="data-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a href="../modules/classes/compression.html" class="rounded">Compression</a></li>
+        <li><a href="../modules/classes/compressedstream.html" class="rounded">CompressedStream</a></li>
+        <li><a href="../modules/classes/config.html" class="rounded">Config</a></li>
+        <li><a href="../modules/classes/script.html" class="rounded">Script</a></li>
+        <li><a href="../modules/classes/xml.html" class="rounded">XML</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#devices-collapse" aria-expanded="false">Devices</button><div class="collapse" id="devices-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li><a href="../modules/classes/controller.html" class="rounded">Controller</a></li></ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#effects-collapse" aria-expanded="false">Effects</button><div class="collapse" id="effects-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/blurfx.html">BlurFX</a></li>
+        <li><a class="rounded" href="../modules/classes/colourfx.html">ColourFX</a></li>
+        <li><a class="rounded" href="../modules/classes/compositefx.html">CompositeFX</a></li>
+        <li><a class="rounded" href="../modules/classes/convolvefx.html">ConvolveFX</a></li>
+        <li><a class="rounded" href="../modules/classes/displacementfx.html">DisplacementFX</a></li>
+        <li><a class="rounded" href="../modules/classes/filtereffect.html">FilterEffect</a></li>
+        <li><a class="rounded" href="../modules/classes/floodfx.html">FloodFX</a></li>
+        <li><a class="rounded" href="../modules/classes/imagefx.html">ImageFX</a></li>
+        <li><a class="rounded" href="../modules/classes/lightingfx.html">LightingFX</a></li>
+        <li><a class="rounded" href="../modules/classes/mergefx.html">MergeFX</a></li>
+        <li><a class="rounded" href="../modules/classes/morphologyfx.html">MorphologyFX</a></li>
+        <li><a class="rounded" href="../modules/classes/offsetfx.html">OffsetFX</a></li>
+        <li><a class="rounded" href="../modules/classes/remapfx.html">RemapFX</a></li>
+        <li><a class="rounded" href="../modules/classes/sourcefx.html">SourceFX</a></li>
+        <li><a class="rounded" href="../modules/classes/turbulencefx.html">TurbulenceFX</a></li>
+        <li><a class="rounded" href="../modules/classes/wavefunctionfx.html">WaveFunctionFX</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#ext-collapse" aria-expanded="false">Extensions</button><div class="collapse" id="ext-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/scintilla.html">Scintilla</a></li>
+        <li><a class="rounded" href="../modules/classes/scintillasearch.html">ScintillaSearch</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#gfx-collapse" aria-expanded="false">Graphics</button><div class="collapse" id="gfx-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/bitmap.html">Bitmap</a></li>
+        <li><a class="rounded" href="../modules/classes/clipboard.html">Clipboard</a></li>
+        <li><a class="rounded" href="../modules/classes/display.html">Display</a></li>
+        <li><a class="rounded" href="../modules/classes/document.html">Document</a></li>
+        <li><a class="rounded" href="../modules/classes/font.html">Font</a></li>
+        <li><a class="rounded" href="../modules/classes/picture.html">Picture</a></li>
+        <li><a class="rounded" href="../modules/classes/pointer.html">Pointer</a></li>
+        <li><a class="rounded" href="../modules/classes/surface.html">Surface</a></li>
+        <li><a class="rounded" href="../modules/classes/svg.html">SVG</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#net-collapse" aria-expanded="false">Network</button><div class="collapse" id="net-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/clientsocket.html">ClientSocket</a></li>
+        <li><a class="rounded" href="../modules/classes/http.html">HTTP</a></li>
+        <li><a class="rounded" href="../modules/classes/netclient.html">NetClient</a></li>
+        <li><a class="rounded" href="../modules/classes/netlookup.html">NetLookup</a></li>
+        <li><a class="rounded" href="../modules/classes/netsocket.html">NetSocket</a></li>
+        <li><a class="rounded" href="../modules/classes/proxy.html">Proxy</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#vectors-collapse" aria-expanded="false">Vectors</button><div class="collapse" id="vectors-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/vector.html">Vector</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorclip.html">VectorClip</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorcolour.html">VectorColour</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorellipse.html">VectorEllipse</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorfilter.html">VectorFilter</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorgradient.html">VectorGradient</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorgroup.html">VectorGroup</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorimage.html">VectorImage</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorpath.html">VectorPath</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorpattern.html">VectorPattern</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorpolygon.html">VectorPolygon</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorrectangle.html">VectorRectangle</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorscene.html">VectorScene</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorshape.html">VectorShape</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorspiral.html">VectorSpiral</a></li>
+        <li><a class="rounded" href="../modules/classes/vectortext.html">VectorText</a></li>
+        <li><a class="rounded" href="../modules/classes/vectortransition.html">VectorTransition</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorviewport.html">VectorViewport</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorwave.html">VectorWave</a></li>
+        </ul></div>
+        </li>
+      </ul>
+    </div>
+  </li>
+</ul>
+
+</div>
+</div>
+
+<div class="col-sm-9" style="max-width: 1200px;">
+<div class="docs-content" id="default-page">
+
+<h1>Tiri HTTPServer API</h1>
+<h2 id="http-server">HTTP Server</h2>
+<p>The HTTPServer interface provides a comprehensive HTTP service that runs in the background of the calling application. It supports static file serving, directory indexing, security headers, rate limiting, and comprehensive request handling.</p>
+<p>The server is designed for security and reliability, implementing features such as path validation, directory traversal protection, rate limiting, and proper error handling.</p>
+<p>It can be loaded with the line:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>import <span class="st">&#39;net/httpserver&#39;</span></span></code></pre></div>
+<h2 id="functions">Functions</h2>
+<h3 id="httpserverstart">httpServer.start()</h3>
+<p><code>server = hslib.start(Options)</code></p>
+<p>Creates a new HTTP server instance with the specified configuration options. The server will start immediately before returning unless an error is raised.</p>
+<p>This example creates a basic HTTP server serving files from the <code>kotuku:docs/html/</code> folder on port 7070:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>import <span class="st">&#39;net/httpserver&#39;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="va">server</span> <span class="op">=</span> <span class="va">hslib</span><span class="op">.</span>start<span class="op">({</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">port</span> <span class="op">=</span> <span class="dv">7070</span><span class="op">,</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>   <span class="va">folder</span> <span class="op">=</span> <span class="st">&#39;kotuku:docs/html/&#39;</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span></code></pre></div>
+<p>Valid options to use when defining the server configuration are as follows:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Option</th>
+<th style="text-align: left;">Description</th>
+<th style="text-align: left;">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">folder</td>
+<td style="text-align: left;"><strong>REQUIRED.</strong> The folder containing HTML pages and static files to serve</td>
+<td style="text-align: left;">none</td>
+</tr>
+<tr>
+<td style="text-align: left;">port</td>
+<td style="text-align: left;">The port number to listen on</td>
+<td style="text-align: left;">8080</td>
+</tr>
+<tr>
+<td style="text-align: left;">bind</td>
+<td style="text-align: left;">Bind to specific IP address (e.g., &#39;127.0.0.1&#39; for localhost only)</td>
+<td style="text-align: left;">all interfaces</td>
+</tr>
+<tr>
+<td style="text-align: left;">verbose</td>
+<td style="text-align: left;">Enable verbose logging (true/false)</td>
+<td style="text-align: left;">false</td>
+</tr>
+<tr>
+<td style="text-align: left;">timeout</td>
+<td style="text-align: left;">Request timeout in seconds (1-300)</td>
+<td style="text-align: left;">30</td>
+</tr>
+<tr>
+<td style="text-align: left;">autoIndex</td>
+<td style="text-align: left;">Enable automatic directory listing (true/false)</td>
+<td style="text-align: left;">true</td>
+</tr>
+<tr>
+<td style="text-align: left;">maxRequestSize</td>
+<td style="text-align: left;">Maximum request size in bytes</td>
+<td style="text-align: left;">65536</td>
+</tr>
+<tr>
+<td style="text-align: left;">fileChunkSize</td>
+<td style="text-align: left;">File streaming chunk size in bytes</td>
+<td style="text-align: left;">65536</td>
+</tr>
+<tr>
+<td style="text-align: left;">rateLimit</td>
+<td style="text-align: left;">Maximum requests per minute per IP (0-1000, 0 = disabled)</td>
+<td style="text-align: left;">100</td>
+</tr>
+<tr>
+<td style="text-align: left;">rateLimitWindow</td>
+<td style="text-align: left;">Rate limit window in seconds</td>
+<td style="text-align: left;">60</td>
+</tr>
+<tr>
+<td style="text-align: left;">enableCSP</td>
+<td style="text-align: left;">Enable Content-Security-Policy headers (true/false)</td>
+<td style="text-align: left;">true</td>
+</tr>
+<tr>
+<td style="text-align: left;">routes</td>
+<td style="text-align: left;">Array of route configurations for declarative routing setup</td>
+<td style="text-align: left;">none</td>
+</tr>
+<tr>
+<td style="text-align: left;">middleware</td>
+<td style="text-align: left;">Array of global middleware functions to apply to all routes</td>
+<td style="text-align: left;">none</td>
+</tr>
+</tbody>
+</table>
+<h2 id="server-methods">Server Methods</h2>
+<h3 id="serverstop">server.stop()</h3>
+<p><code>server.stop()</code></p>
+<p>Stops the HTTP server and releases all resources. The server socket is closed and garbage collection is triggered to clean up resources.</p>
+<h3 id="servernewmiddleware">server.newMiddleware()</h3>
+<p><code>server.newMiddleware(MiddlewareFunction)</code></p>
+<p>Adds a global middleware function to the server that will be executed for all routes. Middleware functions are executed in the order they are added.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="va">server</span><span class="op">.</span>newMiddleware<span class="op">(</span><span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">,</span> <span class="fu">next</span><span class="op">)</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>   <span class="fu">print</span><span class="op">(</span><span class="st">&#39;Processing request: &#39;</span> <span class="op">..</span> <span class="va">req</span><span class="op">.</span><span class="va">path</span><span class="op">)</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>   <span class="fu">next</span><span class="op">()</span>  <span class="co">-- Continue to next middleware or route handler</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span><span class="op">)</span></span></code></pre></div>
+<h3 id="servermiddleware">server.middleware</h3>
+<p>The server provides built-in middleware factory functions accessible via <code>server.middleware</code>:</p>
+<h4 id="servermiddlewarecors">server.middleware.cors()</h4>
+<p>Creates CORS (Cross-Origin Resource Sharing) middleware with configurable options:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="va">corsMiddleware</span> <span class="op">=</span> <span class="va">server</span><span class="op">.</span><span class="va">middleware</span><span class="op">.</span>cors<span class="op">({</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">origin</span> <span class="op">=</span> <span class="st">&#39;https://myapp.com&#39;</span><span class="op">,</span>           <span class="co">-- Allowed origins (default: &#39;*&#39;)</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">methods</span> <span class="op">=</span> <span class="st">&#39;GET, POST, PUT, DELETE&#39;</span><span class="op">,</span>     <span class="co">-- Allowed methods</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">headers</span> <span class="op">=</span> <span class="st">&#39;Content-Type, Authorization&#39;</span><span class="op">,</span> <span class="co">-- Allowed headers</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>   <span class="va">credentials</span> <span class="op">=</span> <span class="kw">true</span><span class="op">,</span>                      <span class="co">-- Allow credentials</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>   <span class="va">maxAge</span> <span class="op">=</span> <span class="dv">3600</span>                           <span class="co">-- Preflight cache time in seconds</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="va">server</span><span class="op">.</span>newMiddleware<span class="op">(</span><span class="va">corsMiddleware</span><span class="op">)</span></span></code></pre></div>
+<h4 id="servermiddlewarelogging">server.middleware.logging()</h4>
+<p>Creates request logging middleware that logs request details and response times:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="va">loggingMiddleware</span> <span class="op">=</span> <span class="va">server</span><span class="op">.</span><span class="va">middleware</span><span class="op">.</span>logging<span class="op">()</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="va">server</span><span class="op">.</span>newMiddleware<span class="op">(</span><span class="va">loggingMiddleware</span><span class="op">)</span></span></code></pre></div>
+<h4 id="servermiddlewareauth">server.middleware.auth()</h4>
+<p>Creates authentication middleware that validates Bearer tokens:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="va">authMiddleware</span> <span class="op">=</span> <span class="va">server</span><span class="op">.</span><span class="va">middleware</span><span class="op">.</span>auth<span class="op">({</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">header</span> <span class="op">=</span> <span class="st">&#39;authorization&#39;</span><span class="op">,</span>    <span class="co">-- Header name (default: &#39;authorization&#39;)</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">prefix</span> <span class="op">=</span> <span class="st">&#39;Bearer &#39;</span>          <span class="co">-- Token prefix (default: &#39;Bearer &#39;)</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="va">server</span><span class="op">.</span>newMiddleware<span class="op">(</span><span class="va">authMiddleware</span><span class="op">)</span></span></code></pre></div>
+<h2 id="middleware-system">Middleware System</h2>
+<p>The HTTP server includes a comprehensive middleware system that allows you to execute functions before and after route handlers. Middleware functions follow the <code>(request, response, next)</code> signature pattern, similar to Express.js.</p>
+<h3 id="middleware-execution-order">Middleware Execution Order</h3>
+<p>Middleware executes in the following order:</p>
+<ol type="1">
+<li><strong>Global middleware</strong> (applied to all routes) in registration order</li>
+<li><strong>Route-specific middleware</strong> (defined per route) in definition order</li>
+<li><strong>Route handler</strong> (the actual route callback)</li>
+</ol>
+<h3 id="middleware-function-signature">Middleware Function Signature</h3>
+<p>All middleware functions must follow this signature:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="kw">function</span> middlewareFunction<span class="op">(</span><span class="va">request</span><span class="op">,</span> <span class="va">response</span><span class="op">,</span> <span class="fu">next</span><span class="op">)</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>   <span class="co">-- Middleware logic here</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>   <span class="co">-- Call next() to continue to the next middleware or route handler</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>   <span class="fu">next</span><span class="op">()</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>   <span class="co">-- Or handle the request and don&#39;t call next() to stop the chain</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>   <span class="co">-- response.json({ error = &#39;Blocked by middleware&#39; })</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span></code></pre></div>
+<h3 id="global-middleware-configuration">Global Middleware Configuration</h3>
+<p>Global middleware can be configured during server creation or added dynamically:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co">-- Configure during server creation</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="va">server</span> <span class="op">=</span> <span class="va">hslib</span><span class="op">.</span>start<span class="op">({</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">port</span> <span class="op">=</span> <span class="dv">8080</span><span class="op">,</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">folder</span> <span class="op">=</span> <span class="st">&#39;./public/&#39;</span><span class="op">,</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>   <span class="va">middleware</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>      <span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">,</span> <span class="fu">next</span><span class="op">)</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>         <span class="fu">print</span><span class="op">(</span><span class="st">&#39;Request received: &#39;</span> <span class="op">..</span> <span class="va">req</span><span class="op">.</span><span class="va">method</span> <span class="op">..</span> <span class="st">&#39; &#39;</span> <span class="op">..</span> <span class="va">req</span><span class="op">.</span><span class="va">path</span><span class="op">)</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>         <span class="fu">next</span><span class="op">()</span></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>      <span class="kw">end</span><span class="op">,</span></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a>      <span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">,</span> <span class="fu">next</span><span class="op">)</span></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a>         <span class="va">req</span><span class="op">.</span><span class="va">timestamp</span> <span class="op">=</span> <span class="va">mSys</span><span class="op">.</span>PreciseTime<span class="op">()</span></span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a>         <span class="fu">next</span><span class="op">()</span></span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a>      <span class="kw">end</span></span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a>   <span class="op">}</span></span>
+<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span>
+<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a><span class="co">-- Add middleware dynamically</span></span>
+<span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a><span class="va">server</span><span class="op">.</span>newMiddleware<span class="op">(</span><span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">,</span> <span class="fu">next</span><span class="op">)</span></span>
+<span id="cb8-19"><a href="#cb8-19" aria-hidden="true" tabindex="-1"></a>   <span class="cf">if</span> <span class="va">req</span><span class="op">.</span><span class="va">method</span> <span class="op">==</span> <span class="st">&#39;POST&#39;</span> <span class="kw">and</span> <span class="kw">not</span> <span class="va">req</span><span class="op">.</span><span class="va">headers</span><span class="op">[</span><span class="st">&#39;content-type&#39;</span><span class="op">]</span> <span class="cf">then</span></span>
+<span id="cb8-20"><a href="#cb8-20" aria-hidden="true" tabindex="-1"></a>      <span class="va">res</span><span class="op">.</span>status<span class="op">(</span><span class="dv">400</span><span class="op">).</span>json<span class="op">({</span> <span class="fu">error</span> <span class="op">=</span> <span class="st">&#39;Content-Type header required&#39;</span> <span class="op">})</span></span>
+<span id="cb8-21"><a href="#cb8-21" aria-hidden="true" tabindex="-1"></a>      <span class="cf">return</span></span>
+<span id="cb8-22"><a href="#cb8-22" aria-hidden="true" tabindex="-1"></a>   <span class="cf">end</span></span>
+<span id="cb8-23"><a href="#cb8-23" aria-hidden="true" tabindex="-1"></a>   <span class="fu">next</span><span class="op">()</span></span>
+<span id="cb8-24"><a href="#cb8-24" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span><span class="op">)</span></span></code></pre></div>
+<h3 id="route-specific-middleware">Route-Specific Middleware</h3>
+<p>Middleware can be applied to specific routes via the <code>middleware</code> property in route configurations:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="va">server</span> <span class="op">=</span> <span class="va">hslib</span><span class="op">.</span>start<span class="op">({</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">port</span> <span class="op">=</span> <span class="dv">8080</span><span class="op">,</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">folder</span> <span class="op">=</span> <span class="st">&#39;./public/&#39;</span><span class="op">,</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">routes</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>         <span class="va">pattern</span> <span class="op">=</span> <span class="st">&#39;/api/protected&#39;</span><span class="op">,</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>         <span class="va">method</span> <span class="op">=</span> <span class="st">&#39;GET&#39;</span><span class="op">,</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>         <span class="va">handler</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">)</span></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>            <span class="va">res</span><span class="op">.</span>json<span class="op">({</span> <span class="va">message</span> <span class="op">=</span> <span class="st">&#39;Access granted&#39;</span><span class="op">,</span> <span class="va">user</span> <span class="op">=</span> <span class="va">req</span><span class="op">.</span><span class="va">auth</span><span class="op">.</span><span class="va">user</span> <span class="op">})</span></span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>         <span class="kw">end</span><span class="op">,</span></span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>         <span class="va">middleware</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>            <span class="co">-- Authentication middleware for this route only</span></span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a>            <span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">,</span> <span class="fu">next</span><span class="op">)</span></span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a>               <span class="va">token</span> <span class="op">=</span> <span class="va">req</span><span class="op">.</span><span class="va">headers</span><span class="op">.</span><span class="va">authorization</span></span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a>               <span class="cf">if</span> <span class="kw">not</span> <span class="va">token</span> <span class="kw">or</span> <span class="kw">not</span> <span class="va">token</span><span class="op">:</span><span class="fu">find</span><span class="op">(</span><span class="st">&#39;Bearer &#39;</span><span class="op">)</span> <span class="cf">then</span></span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a>                  <span class="va">res</span><span class="op">.</span>status<span class="op">(</span><span class="dv">401</span><span class="op">).</span>json<span class="op">({</span> <span class="fu">error</span> <span class="op">=</span> <span class="st">&#39;Authentication required&#39;</span> <span class="op">})</span></span>
+<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a>                  <span class="cf">return</span></span>
+<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a>               <span class="cf">end</span></span>
+<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a>               <span class="va">req</span><span class="op">.</span><span class="va">auth</span> <span class="op">=</span> <span class="op">{</span> <span class="va">user</span> <span class="op">=</span> <span class="st">&#39;authenticated_user&#39;</span><span class="op">,</span> <span class="va">token</span> <span class="op">=</span> <span class="va">token</span> <span class="op">}</span></span>
+<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a>               <span class="fu">next</span><span class="op">()</span></span>
+<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a>            <span class="kw">end</span><span class="op">,</span></span>
+<span id="cb9-22"><a href="#cb9-22" aria-hidden="true" tabindex="-1"></a>            <span class="co">-- Logging middleware for this route only</span></span>
+<span id="cb9-23"><a href="#cb9-23" aria-hidden="true" tabindex="-1"></a>            <span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">,</span> <span class="fu">next</span><span class="op">)</span></span>
+<span id="cb9-24"><a href="#cb9-24" aria-hidden="true" tabindex="-1"></a>               <span class="fu">print</span><span class="op">(</span><span class="st">&#39;Protected route accessed by: &#39;</span> <span class="op">..</span> <span class="va">req</span><span class="op">.</span><span class="va">auth</span><span class="op">.</span><span class="va">user</span><span class="op">)</span></span>
+<span id="cb9-25"><a href="#cb9-25" aria-hidden="true" tabindex="-1"></a>               <span class="fu">next</span><span class="op">()</span></span>
+<span id="cb9-26"><a href="#cb9-26" aria-hidden="true" tabindex="-1"></a>            <span class="kw">end</span></span>
+<span id="cb9-27"><a href="#cb9-27" aria-hidden="true" tabindex="-1"></a>         <span class="op">}</span></span>
+<span id="cb9-28"><a href="#cb9-28" aria-hidden="true" tabindex="-1"></a>      <span class="op">}</span></span>
+<span id="cb9-29"><a href="#cb9-29" aria-hidden="true" tabindex="-1"></a>   <span class="op">}</span></span>
+<span id="cb9-30"><a href="#cb9-30" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span></code></pre></div>
+<h3 id="dynamic-route-registration-with-middleware">Dynamic Route Registration with Middleware</h3>
+<p>The <code>newRoute()</code> method also accepts an optional middleware parameter:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="va">server</span><span class="op">.</span>newRoute<span class="op">({</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">method</span>  <span class="op">=</span> <span class="st">&#39;POST&#39;</span><span class="op">,</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">pattern</span> <span class="op">=</span> <span class="st">&#39;/api/upload&#39;</span><span class="op">,</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">handler</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">)</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>      <span class="va">res</span><span class="op">.</span>json<span class="op">({</span> <span class="va">message</span> <span class="op">=</span> <span class="st">&#39;File uploaded successfully&#39;</span> <span class="op">})</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>   <span class="kw">end</span><span class="op">,</span></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>   <span class="va">middleware</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>      <span class="co">-- Route-specific middleware</span></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>      <span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">,</span> <span class="fu">next</span><span class="op">)</span></span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>         <span class="cf">if</span> <span class="kw">not</span> <span class="va">req</span><span class="op">.</span><span class="va">headers</span><span class="op">[</span><span class="st">&#39;content-length&#39;</span><span class="op">]</span> <span class="cf">then</span></span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a>            <span class="va">res</span><span class="op">.</span>status<span class="op">(</span><span class="dv">400</span><span class="op">).</span>json<span class="op">({</span> <span class="fu">error</span> <span class="op">=</span> <span class="st">&#39;Content-Length header required&#39;</span> <span class="op">})</span></span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span></span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a>         <span class="cf">end</span></span>
+<span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a>         <span class="fu">next</span><span class="op">()</span></span>
+<span id="cb10-15"><a href="#cb10-15" aria-hidden="true" tabindex="-1"></a>      <span class="kw">end</span></span>
+<span id="cb10-16"><a href="#cb10-16" aria-hidden="true" tabindex="-1"></a>   <span class="op">})</span></span></code></pre></div>
+<h3 id="middleware-error-handling">Middleware Error Handling</h3>
+<p>Middleware functions are executed within a <code>pcall()</code>. If a middleware function throws an error, the request will be terminated with a 500 Internal Server Error response:</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="va">server</span><span class="op">.</span>newMiddleware<span class="op">(</span><span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">,</span> <span class="fu">next</span><span class="op">)</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>   <span class="cf">if</span> <span class="va">someCondition</span> <span class="cf">then</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>      <span class="fu">error</span><span class="op">(</span><span class="st">&#39;Something went wrong!&#39;</span><span class="op">)</span>  <span class="co">-- Will send 500 error to client</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>   <span class="cf">end</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>   <span class="fu">next</span><span class="op">()</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span><span class="op">)</span></span></code></pre></div>
+<h3 id="common-middleware-patterns">Common Middleware Patterns</h3>
+<h4 id="request-timing">Request Timing</h4>
+<div class="sourceCode" id="cb12"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="kw">function</span> timingMiddleware<span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">,</span> <span class="fu">next</span><span class="op">)</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">startTime</span> <span class="op">=</span> <span class="va">mSys</span><span class="op">.</span>PreciseTime<span class="op">()</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>   <span class="co">-- Override response methods to log timing</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>   <span class="va">originalJson</span> <span class="op">=</span> <span class="va">res</span><span class="op">.</span><span class="va">json</span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>   <span class="va">res</span><span class="op">.</span><span class="va">json</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">data</span><span class="op">)</span></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>      <span class="va">duration</span> <span class="op">=</span> <span class="op">(</span><span class="va">mSys</span><span class="op">.</span>PreciseTime<span class="op">()</span> <span class="op">-</span> <span class="va">startTime</span><span class="op">)</span> <span class="op">/</span> <span class="dv">1000</span></span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a>      <span class="fu">print</span><span class="op">(</span><span class="st">&#39;Request completed in &#39;</span> <span class="op">..</span> <span class="fu">string.format</span><span class="op">(</span><span class="st">&#39;%.2f&#39;</span><span class="op">,</span> <span class="va">duration</span><span class="op">)</span> <span class="op">..</span> <span class="st">&#39;ms&#39;</span><span class="op">)</span></span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>      <span class="cf">return</span> originalJson<span class="op">(</span><span class="va">data</span><span class="op">)</span></span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a>   <span class="kw">end</span></span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a>   <span class="fu">next</span><span class="op">()</span></span>
+<span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span></code></pre></div>
+<h4 id="request-validation">Request Validation</h4>
+<div class="sourceCode" id="cb13"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="kw">function</span> validateJsonMiddleware<span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">,</span> <span class="fu">next</span><span class="op">)</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>   <span class="cf">if</span> <span class="va">req</span><span class="op">.</span><span class="va">method</span> <span class="op">==</span> <span class="st">&#39;POST&#39;</span> <span class="kw">or</span> <span class="va">req</span><span class="op">.</span><span class="va">method</span> <span class="op">==</span> <span class="st">&#39;PUT&#39;</span> <span class="cf">then</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> <span class="kw">not</span> <span class="va">req</span><span class="op">.</span><span class="va">parsedBody</span> <span class="kw">or</span> <span class="fu">type</span><span class="op">(</span><span class="va">req</span><span class="op">.</span><span class="va">parsedBody</span><span class="op">)</span> <span class="er">!=</span> <span class="st">&#39;table&#39;</span> <span class="cf">then</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>         <span class="va">res</span><span class="op">.</span>status<span class="op">(</span><span class="dv">400</span><span class="op">).</span>json<span class="op">({</span> <span class="fu">error</span> <span class="op">=</span> <span class="st">&#39;Valid JSON body required&#39;</span> <span class="op">})</span></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>         <span class="cf">return</span></span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>      <span class="cf">end</span></span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>   <span class="cf">end</span></span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a>   <span class="fu">next</span><span class="op">()</span></span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span></code></pre></div>
+<h4 id="api-versioning">API Versioning</h4>
+<div class="sourceCode" id="cb14"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="kw">function</span> apiVersionMiddleware<span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">,</span> <span class="fu">next</span><span class="op">)</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">version</span> <span class="op">=</span> <span class="va">req</span><span class="op">.</span><span class="va">headers</span><span class="op">[</span><span class="st">&#39;api-version&#39;</span><span class="op">]</span> <span class="kw">or</span> <span class="st">&#39;1.0&#39;</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">req</span><span class="op">.</span><span class="va">apiVersion</span> <span class="op">=</span> <span class="va">version</span></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>   <span class="cf">if</span> <span class="va">version</span> <span class="er">!=</span> <span class="st">&#39;1.0&#39;</span> <span class="kw">and</span> <span class="va">version</span> <span class="er">!=</span> <span class="st">&#39;2.0&#39;</span> <span class="cf">then</span></span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a>      <span class="va">res</span><span class="op">.</span>status<span class="op">(</span><span class="dv">400</span><span class="op">).</span>json<span class="op">({</span> <span class="fu">error</span> <span class="op">=</span> <span class="st">&#39;Unsupported API version: &#39;</span> <span class="op">..</span> <span class="va">version</span> <span class="op">})</span></span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a>      <span class="cf">return</span></span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a>   <span class="cf">end</span></span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a>   <span class="fu">next</span><span class="op">()</span></span>
+<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span></code></pre></div>
+<h2 id="routing-system">Routing System</h2>
+<p>The HTTP server includes a comprehensive routing system that supports regex-based URL pattern matching with parameter extraction and callback functions. Routes are registered per-server instance and support multiple HTTP methods.</p>
+<h3 id="route-registration-methods">Route Registration Methods</h3>
+<p>There are two ways to register routes: declaratively via server configuration or programmatically using the <code>newRoute()</code> method.</p>
+<h4 id="declarative-route-configuration">Declarative Route Configuration</h4>
+<p>Routes can be configured during server creation using the <code>routes</code> option. This is the most concise approach for setting up multiple routes:</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="va">server</span> <span class="op">=</span> <span class="va">hslib</span><span class="op">.</span>start<span class="op">({</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">port</span> <span class="op">=</span> <span class="dv">8080</span><span class="op">,</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">folder</span> <span class="op">=</span> <span class="st">&#39;./public/&#39;</span><span class="op">,</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">routes</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">pattern</span> <span class="op">=</span> <span class="st">&#39;/api/users/:id&#39;</span><span class="op">,</span> <span class="va">method</span> <span class="op">=</span> <span class="st">&#39;GET&#39;</span><span class="op">,</span> <span class="va">handler</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">)</span></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>         <span class="va">userId</span> <span class="op">=</span> <span class="va">req</span><span class="op">.</span><span class="va">params</span><span class="op">.</span><span class="va">id</span></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>         <span class="va">res</span><span class="op">.</span>json<span class="op">({</span> <span class="va">userId</span> <span class="op">=</span> <span class="va">userId</span><span class="op">,</span> <span class="va">message</span> <span class="op">=</span> <span class="st">&#39;User retrieved&#39;</span> <span class="op">})</span></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a>      <span class="kw">end</span> <span class="op">},</span></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">pattern</span> <span class="op">=</span> <span class="st">&#39;/api/users&#39;</span><span class="op">,</span> <span class="va">method</span> <span class="op">=</span> <span class="st">&#39;POST&#39;</span><span class="op">,</span> <span class="va">handler</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">)</span></span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a>         <span class="va">userData</span> <span class="op">=</span> <span class="va">req</span><span class="op">.</span><span class="va">parsedBody</span></span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a>         <span class="va">res</span><span class="op">.</span>json<span class="op">({</span> <span class="va">message</span> <span class="op">=</span> <span class="st">&#39;User created&#39;</span><span class="op">,</span> <span class="va">data</span> <span class="op">=</span> <span class="va">userData</span> <span class="op">})</span></span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a>      <span class="kw">end</span> <span class="op">},</span></span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">pattern</span> <span class="op">=</span> <span class="st">&#39;/api/users/:id&#39;</span><span class="op">,</span> <span class="va">method</span> <span class="op">=</span> <span class="st">&#39;PUT&#39;</span><span class="op">,</span> <span class="va">handler</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">)</span></span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a>         <span class="va">userId</span> <span class="op">=</span> <span class="va">req</span><span class="op">.</span><span class="va">params</span><span class="op">.</span><span class="va">id</span></span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a>         <span class="va">userData</span> <span class="op">=</span> <span class="va">req</span><span class="op">.</span><span class="va">parsedBody</span></span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a>         <span class="va">res</span><span class="op">.</span>json<span class="op">({</span> <span class="va">userId</span> <span class="op">=</span> <span class="va">userId</span><span class="op">,</span> <span class="va">message</span> <span class="op">=</span> <span class="st">&#39;User updated&#39;</span><span class="op">,</span> <span class="va">data</span> <span class="op">=</span> <span class="va">userData</span> <span class="op">})</span></span>
+<span id="cb15-17"><a href="#cb15-17" aria-hidden="true" tabindex="-1"></a>      <span class="kw">end</span> <span class="op">},</span></span>
+<span id="cb15-18"><a href="#cb15-18" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">pattern</span> <span class="op">=</span> <span class="st">&#39;/api/users/:id&#39;</span><span class="op">,</span> <span class="va">method</span> <span class="op">=</span> <span class="st">&#39;DELETE&#39;</span><span class="op">,</span> <span class="va">handler</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">)</span></span>
+<span id="cb15-19"><a href="#cb15-19" aria-hidden="true" tabindex="-1"></a>         <span class="va">userId</span> <span class="op">=</span> <span class="va">req</span><span class="op">.</span><span class="va">params</span><span class="op">.</span><span class="va">id</span></span>
+<span id="cb15-20"><a href="#cb15-20" aria-hidden="true" tabindex="-1"></a>         <span class="va">res</span><span class="op">.</span>status<span class="op">(</span><span class="dv">204</span><span class="op">).</span>send<span class="op">(</span><span class="st">&#39;&#39;</span><span class="op">)</span></span>
+<span id="cb15-21"><a href="#cb15-21" aria-hidden="true" tabindex="-1"></a>      <span class="kw">end</span> <span class="op">}</span></span>
+<span id="cb15-22"><a href="#cb15-22" aria-hidden="true" tabindex="-1"></a>   <span class="op">}</span></span>
+<span id="cb15-23"><a href="#cb15-23" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span></code></pre></div>
+<p><strong>Route Configuration Format:</strong>
+Each route in the <code>routes</code> array must contain:</p>
+<ul>
+<li><code>pattern</code> - URL pattern with optional parameters (<code>:param</code>) or wildcards (<code>*</code>)</li>
+<li><code>method</code> - HTTP method as string (case-insensitive)</li>
+<li><code>handler</code> - Function to handle the route with signature <code>function(req, res)</code></li>
+<li><code>middleware</code> - (Optional) Array of middleware functions specific to this route</li>
+<li><code>validateHeader</code> - (Optional) Function to validate request headers before processing body</li>
+</ul>
+<h4 id="servernewroute">server.newRoute()</h4>
+<p><code>server.newRoute(Method, Pattern, Callback, Middleware)</code></p>
+<p>Registers a route with the specified HTTP method, URL pattern, callback function, and optional route-specific middleware. Use this method for dynamic route registration after server creation:</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="co">-- Register routes after server creation</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="va">server</span><span class="op">.</span>newRoute<span class="op">({</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">method</span>  <span class="op">=</span> <span class="st">&#39;GET&#39;</span><span class="op">,</span></span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">pattern</span> <span class="op">=</span> <span class="st">&#39;/api/status&#39;</span><span class="op">,</span></span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a>   <span class="va">handler</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">)</span></span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a>      <span class="va">res</span><span class="op">.</span>json<span class="op">({</span> <span class="va">status</span> <span class="op">=</span> <span class="st">&#39;OK&#39;</span><span class="op">,</span> <span class="va">timestamp</span> <span class="op">=</span> <span class="va">mSys</span><span class="op">.</span>PreciseTime<span class="op">()</span> <span class="op">})</span></span>
+<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a>   <span class="kw">end</span></span>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span>
+<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a><span class="va">server</span><span class="op">.</span>newRoute<span class="op">({</span></span>
+<span id="cb16-11"><a href="#cb16-11" aria-hidden="true" tabindex="-1"></a>   <span class="va">method</span> <span class="op">=</span> <span class="st">&#39;POST&#39;</span><span class="op">,</span></span>
+<span id="cb16-12"><a href="#cb16-12" aria-hidden="true" tabindex="-1"></a>   <span class="va">pattern</span> <span class="op">=</span> <span class="st">&#39;/api/upload&#39;</span><span class="op">,</span></span>
+<span id="cb16-13"><a href="#cb16-13" aria-hidden="true" tabindex="-1"></a>   <span class="va">handler</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">)</span></span>
+<span id="cb16-14"><a href="#cb16-14" aria-hidden="true" tabindex="-1"></a>      <span class="co">-- Handle file upload</span></span>
+<span id="cb16-15"><a href="#cb16-15" aria-hidden="true" tabindex="-1"></a>      <span class="va">res</span><span class="op">.</span>json<span class="op">({</span> <span class="va">message</span> <span class="op">=</span> <span class="st">&#39;Upload successful&#39;</span> <span class="op">})</span></span>
+<span id="cb16-16"><a href="#cb16-16" aria-hidden="true" tabindex="-1"></a>   <span class="kw">end</span></span>
+<span id="cb16-17"><a href="#cb16-17" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span></code></pre></div>
+<p>Supported HTTP methods are <code>GET</code>, <code>POST</code>, <code>PUT</code>, <code>DELETE</code>, <code>PATCH</code>, <code>HEAD</code>, <code>OPTIONS</code></p>
+<h3 id="route-patterns">Route Patterns</h3>
+<p>The routing system supports several pattern types for flexible URL matching:</p>
+<h4 id="exact-matches">Exact Matches</h4>
+<div class="sourceCode" id="cb17"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="va">server</span><span class="op">.</span>newRoute<span class="op">({</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">method</span> <span class="op">=</span> <span class="st">&#39;GET&#39;</span><span class="op">,</span></span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">pattern</span> <span class="op">=</span> <span class="st">&#39;/api/status&#39;</span><span class="op">,</span></span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">handler</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">)</span> <span class="va">res</span><span class="op">.</span>json<span class="op">({</span> <span class="va">status</span> <span class="op">=</span> <span class="st">&#39;OK&#39;</span> <span class="op">})</span> <span class="kw">end</span></span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span></code></pre></div>
+<h4 id="parameter-routes">Parameter Routes</h4>
+<p>Use <code>:parameter</code> syntax to capture URL segments as named parameters:</p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="va">server</span><span class="op">.</span>newRoute<span class="op">({</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">method</span>  <span class="op">=</span> <span class="st">&#39;GET&#39;</span><span class="op">,</span></span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">pattern</span> <span class="op">=</span> <span class="st">&#39;/api/users/:id&#39;</span><span class="op">,</span></span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">handler</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">)</span></span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a>      <span class="va">res</span><span class="op">.</span>json<span class="op">({</span> <span class="va">userId</span> <span class="op">=</span> <span class="va">req</span><span class="op">.</span><span class="va">params</span><span class="op">.</span><span class="va">id</span> <span class="op">})</span></span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a>   <span class="kw">end</span></span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a><span class="va">server</span><span class="op">.</span>newRoute<span class="op">({</span></span>
+<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a>   <span class="va">method</span>  <span class="op">=</span> <span class="st">&#39;GET&#39;</span><span class="op">,</span></span>
+<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a>   <span class="va">pattern</span> <span class="op">=</span> <span class="st">&#39;/api/users/:id/posts/:postId&#39;</span><span class="op">,</span></span>
+<span id="cb18-12"><a href="#cb18-12" aria-hidden="true" tabindex="-1"></a>   <span class="va">handler</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">)</span></span>
+<span id="cb18-13"><a href="#cb18-13" aria-hidden="true" tabindex="-1"></a>      <span class="va">res</span><span class="op">.</span>json<span class="op">({</span> <span class="va">userId</span> <span class="op">=</span> <span class="va">req</span><span class="op">.</span><span class="va">params</span><span class="op">.</span><span class="va">id</span><span class="op">,</span> <span class="va">postId</span> <span class="op">=</span> <span class="va">req</span><span class="op">.</span><span class="va">params</span><span class="op">.</span><span class="va">postId</span> <span class="op">})</span></span>
+<span id="cb18-14"><a href="#cb18-14" aria-hidden="true" tabindex="-1"></a>   <span class="kw">end</span></span>
+<span id="cb18-15"><a href="#cb18-15" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span></code></pre></div>
+<h4 id="wildcard-routes">Wildcard Routes</h4>
+<p>Use <code>*</code> to match any remaining path segments:</p>
+<div class="sourceCode" id="cb19"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="va">server</span><span class="op">.</span>newRoute<span class="op">({</span></span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">method</span>  <span class="op">=</span> <span class="st">&#39;GET&#39;</span><span class="op">,</span></span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">pattern</span> <span class="op">=</span> <span class="st">&#39;/api/files/*&#39;</span><span class="op">,</span></span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">handler</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">)</span></span>
+<span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a>      <span class="va">fullPath</span> <span class="op">=</span> <span class="va">req</span><span class="op">.</span><span class="va">path</span>  <span class="co">-- Contains the complete matched path</span></span>
+<span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a>      <span class="va">res</span><span class="op">.</span>json<span class="op">({</span> <span class="va">path</span> <span class="op">=</span> <span class="va">fullPath</span><span class="op">,</span> <span class="va">message</span> <span class="op">=</span> <span class="st">&#39;File route matched&#39;</span> <span class="op">})</span></span>
+<span id="cb19-7"><a href="#cb19-7" aria-hidden="true" tabindex="-1"></a>   <span class="kw">end</span></span>
+<span id="cb19-8"><a href="#cb19-8" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span></code></pre></div>
+<h3 id="request-object">Request Object</h3>
+<p>Route callbacks receive an enhanced request object with the following properties:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Property</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">method</td>
+<td style="text-align: left;">HTTP method (GET, POST, etc.)</td>
+</tr>
+<tr>
+<td style="text-align: left;">path</td>
+<td style="text-align: left;">Full request path</td>
+</tr>
+<tr>
+<td style="text-align: left;">fullPath</td>
+<td style="text-align: left;">Complete URL path including query string</td>
+</tr>
+<tr>
+<td style="text-align: left;">query</td>
+<td style="text-align: left;">Query string parameters as table</td>
+</tr>
+<tr>
+<td style="text-align: left;">params</td>
+<td style="text-align: left;">Route parameters extracted from URL pattern</td>
+</tr>
+<tr>
+<td style="text-align: left;">headers</td>
+<td style="text-align: left;">Request headers as table (lowercase keys)</td>
+</tr>
+<tr>
+<td style="text-align: left;">cookies</td>
+<td style="text-align: left;">Parsed cookies as table</td>
+</tr>
+<tr>
+<td style="text-align: left;">body</td>
+<td style="text-align: left;">Raw request body string (for POST/PUT/PATCH requests)</td>
+</tr>
+<tr>
+<td style="text-align: left;">parsedBody</td>
+<td style="text-align: left;">Parsed request body (JSON or form data)</td>
+</tr>
+<tr>
+<td style="text-align: left;">ip</td>
+<td style="text-align: left;">Client IP address string (available in middleware and route handlers)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="response-object">Response Object</h3>
+<p>Route callbacks receive a response object with chainable methods:</p>
+<h4 id="resjson">res.json()</h4>
+<p><code>res.json(Data)</code></p>
+<p>Sends a JSON response with appropriate Content-Type headers.</p>
+<div class="sourceCode" id="cb20"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="va">res</span><span class="op">.</span>json<span class="op">({</span> <span class="va">message</span> <span class="op">=</span> <span class="st">&#39;Success&#39;</span><span class="op">,</span> <span class="va">data</span> <span class="op">=</span> <span class="va">userData</span> <span class="op">})</span></span></code></pre></div>
+<h4 id="ressend">res.send()</h4>
+<p><code>res.send(Content, ContentType)</code></p>
+<p>Sends a response with custom content and optional content type.</p>
+<div class="sourceCode" id="cb21"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="va">res</span><span class="op">.</span>send<span class="op">(</span><span class="st">&#39;Hello World&#39;</span><span class="op">,</span> <span class="st">&#39;text/plain&#39;</span><span class="op">)</span></span></code></pre></div>
+<h4 id="resstatus">res.status()</h4>
+<p><code>res.status(StatusCode, StatusText)</code></p>
+<p>Sets the HTTP status code and optional status text for the response.</p>
+<div class="sourceCode" id="cb22"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="va">res</span><span class="op">.</span>status<span class="op">(</span><span class="dv">404</span><span class="op">).</span>json<span class="op">({</span> <span class="fu">error</span> <span class="op">=</span> <span class="st">&#39;Not found&#39;</span> <span class="op">})</span></span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a><span class="va">res</span><span class="op">.</span>status<span class="op">(</span><span class="dv">201</span><span class="op">,</span> <span class="st">&#39;Created&#39;</span><span class="op">).</span>json<span class="op">({</span> <span class="va">message</span> <span class="op">=</span> <span class="st">&#39;User created&#39;</span> <span class="op">})</span></span></code></pre></div>
+<h4 id="resheader">res.header()</h4>
+<p><code>res.header(Name, Value)</code></p>
+<p>Sets a response header.</p>
+<div class="sourceCode" id="cb23"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="va">res</span><span class="op">.</span>header<span class="op">(</span><span class="st">&#39;Cache-Control&#39;</span><span class="op">,</span> <span class="st">&#39;no-cache&#39;</span><span class="op">).</span>json<span class="op">({</span> <span class="va">data</span> <span class="op">=</span> <span class="va">result</span> <span class="op">})</span></span></code></pre></div>
+<h4 id="rescookie">res.cookie()</h4>
+<p><code>res.cookie(Name, Value, Options)</code></p>
+<p>Sets a cookie with optional configuration.</p>
+<div class="sourceCode" id="cb24"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="va">res</span><span class="op">.</span>cookie<span class="op">(</span><span class="st">&#39;sessionId&#39;</span><span class="op">,</span> <span class="st">&#39;12345&#39;</span><span class="op">,</span> <span class="op">{</span></span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">maxAge</span> <span class="op">=</span> <span class="dv">3600</span><span class="op">,</span></span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">httpOnly</span> <span class="op">=</span> <span class="kw">true</span><span class="op">,</span></span>
+<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">secure</span> <span class="op">=</span> <span class="kw">true</span></span>
+<span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span></code></pre></div>
+<h4 id="resredirect">res.redirect()</h4>
+<p><code>res.redirect(URL, StatusCode)</code></p>
+<p>Sends a redirect response (default 302).</p>
+<div class="sourceCode" id="cb25"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="va">res</span><span class="op">.</span>redirect<span class="op">(</span><span class="st">&#39;/login&#39;</span><span class="op">)</span></span>
+<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a><span class="va">res</span><span class="op">.</span>redirect<span class="op">(</span><span class="st">&#39;https://example.com&#39;</span><span class="op">,</span> <span class="dv">301</span><span class="op">)</span></span></code></pre></div>
+<h3 id="header-validation">Header Validation</h3>
+<p>Routes support optional header validation through the <code>validateHeader</code> callback function. This allows early validation of request headers before the request body is processed, providing better performance and security for routes that require specific headers.</p>
+<h4 id="validateheader-function">validateHeader Function</h4>
+<p>The <code>validateHeader</code> function receives the request headers as a table and can return:</p>
+<ul>
+<li><code>true</code> or <code>nil</code> - Headers are valid, continue processing</li>
+<li><code>false</code> - Headers are invalid, send 400 Bad Request response</li>
+<li><code>table</code> - Custom error response with <code>status</code>, <code>statusText</code>, <code>message</code>, and <code>details</code> fields</li>
+</ul>
+<div class="sourceCode" id="cb26"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">pattern</span> <span class="op">=</span> <span class="st">&#39;/api/protected&#39;</span><span class="op">,</span></span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">method</span> <span class="op">=</span> <span class="st">&#39;GET&#39;</span><span class="op">,</span></span>
+<span id="cb26-4"><a href="#cb26-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">validateHeader</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">headers</span><span class="op">)</span></span>
+<span id="cb26-5"><a href="#cb26-5" aria-hidden="true" tabindex="-1"></a>      <span class="va">auth</span> <span class="op">=</span> <span class="va">headers</span><span class="op">[</span><span class="st">&#39;authorization&#39;</span><span class="op">]</span></span>
+<span id="cb26-6"><a href="#cb26-6" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> <span class="kw">not</span> <span class="va">auth</span> <span class="cf">then</span></span>
+<span id="cb26-7"><a href="#cb26-7" aria-hidden="true" tabindex="-1"></a>         <span class="cf">return</span> <span class="op">{</span></span>
+<span id="cb26-8"><a href="#cb26-8" aria-hidden="true" tabindex="-1"></a>            <span class="va">status</span> <span class="op">=</span> <span class="dv">401</span><span class="op">,</span></span>
+<span id="cb26-9"><a href="#cb26-9" aria-hidden="true" tabindex="-1"></a>            <span class="va">statusText</span> <span class="op">=</span> <span class="st">&#39;Unauthorized&#39;</span><span class="op">,</span></span>
+<span id="cb26-10"><a href="#cb26-10" aria-hidden="true" tabindex="-1"></a>            <span class="va">message</span> <span class="op">=</span> <span class="st">&#39;Authentication required&#39;</span><span class="op">,</span></span>
+<span id="cb26-11"><a href="#cb26-11" aria-hidden="true" tabindex="-1"></a>            <span class="va">details</span> <span class="op">=</span> <span class="st">&#39;Missing Authorization header&#39;</span></span>
+<span id="cb26-12"><a href="#cb26-12" aria-hidden="true" tabindex="-1"></a>         <span class="op">}</span></span>
+<span id="cb26-13"><a href="#cb26-13" aria-hidden="true" tabindex="-1"></a>      <span class="cf">end</span></span>
+<span id="cb26-14"><a href="#cb26-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb26-15"><a href="#cb26-15" aria-hidden="true" tabindex="-1"></a>      <span class="va">token</span> <span class="op">=</span> <span class="va">auth</span><span class="op">:</span><span class="fu">match</span><span class="op">(</span><span class="st">&#39;Bearer%s+(.+)&#39;</span><span class="op">)</span></span>
+<span id="cb26-16"><a href="#cb26-16" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> <span class="kw">not</span> <span class="va">token</span> <span class="kw">or</span> <span class="va">token</span> <span class="er">!=</span> <span class="st">&#39;valid-token-123&#39;</span> <span class="cf">then</span></span>
+<span id="cb26-17"><a href="#cb26-17" aria-hidden="true" tabindex="-1"></a>         <span class="cf">return</span> <span class="kw">false</span> <span class="co">-- Simple 400 Bad Request</span></span>
+<span id="cb26-18"><a href="#cb26-18" aria-hidden="true" tabindex="-1"></a>      <span class="cf">end</span></span>
+<span id="cb26-19"><a href="#cb26-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb26-20"><a href="#cb26-20" aria-hidden="true" tabindex="-1"></a>      <span class="cf">return</span> <span class="kw">true</span> <span class="co">-- Valid, continue processing</span></span>
+<span id="cb26-21"><a href="#cb26-21" aria-hidden="true" tabindex="-1"></a>   <span class="kw">end</span><span class="op">,</span></span>
+<span id="cb26-22"><a href="#cb26-22" aria-hidden="true" tabindex="-1"></a>   <span class="va">handler</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">)</span></span>
+<span id="cb26-23"><a href="#cb26-23" aria-hidden="true" tabindex="-1"></a>      <span class="va">res</span><span class="op">.</span>json<span class="op">({</span> <span class="va">message</span> <span class="op">=</span> <span class="st">&#39;Access granted&#39;</span><span class="op">,</span> <span class="va">user</span> <span class="op">=</span> <span class="st">&#39;authenticated&#39;</span> <span class="op">})</span></span>
+<span id="cb26-24"><a href="#cb26-24" aria-hidden="true" tabindex="-1"></a>   <span class="kw">end</span></span>
+<span id="cb26-25"><a href="#cb26-25" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="route-priority">Route Priority</h3>
+<p>Routes are matched in the order they are registered. More specific routes should be registered before more general ones:</p>
+<div class="sourceCode" id="cb27"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="co">-- Register specific routes first</span></span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a><span class="va">server</span><span class="op">.</span>newRoute<span class="op">({</span> <span class="va">method</span><span class="op">=</span><span class="st">&#39;GET&#39;</span><span class="op">,</span> <span class="va">pattern</span><span class="op">=</span><span class="st">&#39;/api/users/admin&#39;</span><span class="op">,</span> <span class="va">handler</span><span class="op">=</span><span class="va">adminHandler</span> <span class="op">})</span></span>
+<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a><span class="va">server</span><span class="op">.</span>newRoute<span class="op">({</span> <span class="va">method</span><span class="op">=</span><span class="st">&#39;GET&#39;</span><span class="op">,</span> <span class="va">pattern</span><span class="op">=</span><span class="st">&#39;/api/users/:id&#39;</span><span class="op">,</span> <span class="va">handler</span><span class="op">=</span><span class="va">userHandler</span> <span class="op">})</span></span>
+<span id="cb27-4"><a href="#cb27-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-5"><a href="#cb27-5" aria-hidden="true" tabindex="-1"></a><span class="co">-- General routes last</span></span>
+<span id="cb27-6"><a href="#cb27-6" aria-hidden="true" tabindex="-1"></a><span class="va">server</span><span class="op">.</span>newRoute<span class="op">({</span> <span class="va">method</span><span class="op">=</span><span class="st">&#39;GET&#39;</span><span class="op">,</span> <span class="va">pattern</span><span class="op">=</span><span class="st">&#39;/api/*&#39;</span><span class="op">,</span> <span class="va">handler</span><span class="op">=</span><span class="va">catchAllHandler</span> <span class="op">})</span></span></code></pre></div>
+<h2 id="features">Features</h2>
+<h3 id="security">Security</h3>
+<p>The HTTP server implements comprehensive security measures:</p>
+<ul>
+<li><strong>Path Validation</strong>: Prevents directory traversal attacks using <code>../</code> sequences</li>
+<li><strong>File Type Restrictions</strong>: Blocks access to executables, configuration files, and hidden files</li>
+<li><strong>Rate Limiting</strong>: Configurable per-IP request limits to prevent DoS attacks</li>
+<li><strong>Security Headers</strong>: Automatic addition of CSP, X-Content-Type-Options, X-Frame-Options, and Referrer-Policy headers</li>
+<li><strong>Input Sanitisation</strong>: URL decoding and canonicalisation to prevent malicious requests</li>
+</ul>
+<h3 id="file-serving">File Serving</h3>
+<ul>
+<li><strong>MIME Type Detection</strong>: Automatic content-type detection for common file formats including HTML, CSS, JavaScript, images, fonts, audio/video, and documents</li>
+<li><strong>Streaming Support</strong>: Large files are streamed in configurable chunks to manage memory usage</li>
+<li><strong>Index Files</strong>: Automatic serving of index files in priority order: index.html, index.htm, default.html, default.htm</li>
+<li><strong>Directory Listing</strong>: Optional automatic directory browsing with formatted HTML output</li>
+</ul>
+<h3 id="error-handling">Error Handling</h3>
+<p>The server provides comprehensive error handling with styled HTML error pages for:</p>
+<ul>
+<li>400 Bad Request (malformed requests, invalid paths)</li>
+<li>403 Forbidden (blocked file types, disabled directory listing)</li>
+<li>404 Not Found (missing files or directories)</li>
+<li>405 Method Not Allowed (unsupported HTTP methods)</li>
+<li>429 Too Many Requests (rate limit exceeded)</li>
+<li>500 Internal Server Error (file read errors)</li>
+</ul>
+<h3 id="http-compliance">HTTP Compliance</h3>
+<ul>
+<li><strong>HTTP/1.1 Support</strong>: Full HTTP/1.1 protocol implementation</li>
+<li><strong>Method Support</strong>: GET, POST, PUT, DELETE, PATCH, HEAD, and OPTIONS methods supported via routing system</li>
+<li><strong>Header Processing</strong>: Complete request and response header handling</li>
+<li><strong>Connection Management</strong>: Proper connection lifecycle management</li>
+<li><strong>Status Codes</strong>: Appropriate HTTP status codes for all response conditions</li>
+</ul>
+<h2 id="configuration-examples">Configuration Examples</h2>
+<h3 id="basic-file-server">Basic File Server</h3>
+<div class="sourceCode" id="cb28"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="va">server</span> <span class="op">=</span> <span class="va">hslib</span><span class="op">.</span>start<span class="op">({</span></span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">port</span> <span class="op">=</span> <span class="dv">8080</span><span class="op">,</span></span>
+<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">folder</span> <span class="op">=</span> <span class="st">&#39;kotuku:docs/html/&#39;</span><span class="op">,</span></span>
+<span id="cb28-4"><a href="#cb28-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">verbose</span> <span class="op">=</span> <span class="kw">true</span></span>
+<span id="cb28-5"><a href="#cb28-5" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span></code></pre></div>
+<h3 id="basic-api-server-with-routing">Basic API Server with Routing</h3>
+<div class="sourceCode" id="cb29"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="va">server</span> <span class="op">=</span> <span class="va">hslib</span><span class="op">.</span>start<span class="op">({</span></span>
+<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">port</span> <span class="op">=</span> <span class="dv">3000</span><span class="op">,</span></span>
+<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">folder</span> <span class="op">=</span> <span class="st">&#39;./public/&#39;</span><span class="op">,</span></span>
+<span id="cb29-4"><a href="#cb29-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">verbose</span> <span class="op">=</span> <span class="kw">true</span><span class="op">,</span></span>
+<span id="cb29-5"><a href="#cb29-5" aria-hidden="true" tabindex="-1"></a>   <span class="va">routes</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb29-6"><a href="#cb29-6" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">pattern</span> <span class="op">=</span> <span class="st">&#39;/api/status&#39;</span><span class="op">,</span> <span class="va">method</span> <span class="op">=</span> <span class="st">&#39;GET&#39;</span><span class="op">,</span> <span class="va">handler</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">)</span></span>
+<span id="cb29-7"><a href="#cb29-7" aria-hidden="true" tabindex="-1"></a>         <span class="va">res</span><span class="op">.</span>json<span class="op">({</span> <span class="va">status</span> <span class="op">=</span> <span class="st">&#39;OK&#39;</span><span class="op">,</span> <span class="va">timestamp</span> <span class="op">=</span> <span class="va">mSys</span><span class="op">.</span>PreciseTime<span class="op">()</span> <span class="op">})</span></span>
+<span id="cb29-8"><a href="#cb29-8" aria-hidden="true" tabindex="-1"></a>      <span class="kw">end</span> <span class="op">},</span></span>
+<span id="cb29-9"><a href="#cb29-9" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">pattern</span> <span class="op">=</span> <span class="st">&#39;/api/users/:id&#39;</span><span class="op">,</span> <span class="va">method</span> <span class="op">=</span> <span class="st">&#39;GET&#39;</span><span class="op">,</span> <span class="va">handler</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">)</span></span>
+<span id="cb29-10"><a href="#cb29-10" aria-hidden="true" tabindex="-1"></a>         <span class="va">userId</span> <span class="op">=</span> <span class="va">req</span><span class="op">.</span><span class="va">params</span><span class="op">.</span><span class="va">id</span></span>
+<span id="cb29-11"><a href="#cb29-11" aria-hidden="true" tabindex="-1"></a>         <span class="va">res</span><span class="op">.</span>json<span class="op">({</span> <span class="va">userId</span> <span class="op">=</span> <span class="va">userId</span><span class="op">,</span> <span class="va">message</span> <span class="op">=</span> <span class="st">&#39;User retrieved&#39;</span> <span class="op">})</span></span>
+<span id="cb29-12"><a href="#cb29-12" aria-hidden="true" tabindex="-1"></a>      <span class="kw">end</span> <span class="op">},</span></span>
+<span id="cb29-13"><a href="#cb29-13" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">pattern</span> <span class="op">=</span> <span class="st">&#39;/api/users&#39;</span><span class="op">,</span> <span class="va">method</span> <span class="op">=</span> <span class="st">&#39;POST&#39;</span><span class="op">,</span> <span class="va">handler</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">)</span></span>
+<span id="cb29-14"><a href="#cb29-14" aria-hidden="true" tabindex="-1"></a>         <span class="va">userData</span> <span class="op">=</span> <span class="va">req</span><span class="op">.</span><span class="va">parsedBody</span></span>
+<span id="cb29-15"><a href="#cb29-15" aria-hidden="true" tabindex="-1"></a>         <span class="va">res</span><span class="op">.</span>json<span class="op">({</span> <span class="va">message</span> <span class="op">=</span> <span class="st">&#39;User created&#39;</span><span class="op">,</span> <span class="va">data</span> <span class="op">=</span> <span class="va">userData</span> <span class="op">})</span></span>
+<span id="cb29-16"><a href="#cb29-16" aria-hidden="true" tabindex="-1"></a>      <span class="kw">end</span> <span class="op">}</span></span>
+<span id="cb29-17"><a href="#cb29-17" aria-hidden="true" tabindex="-1"></a>   <span class="op">}</span></span>
+<span id="cb29-18"><a href="#cb29-18" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span></code></pre></div>
+<h3 id="secure-localhost-server">Secure Localhost Server</h3>
+<div class="sourceCode" id="cb30"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="va">server</span> <span class="op">=</span> <span class="va">hslib</span><span class="op">.</span>start<span class="op">({</span></span>
+<span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">port</span> <span class="op">=</span> <span class="dv">3000</span><span class="op">,</span></span>
+<span id="cb30-3"><a href="#cb30-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">folder</span> <span class="op">=</span> <span class="st">&#39;/path/to/secure/files/&#39;</span><span class="op">,</span></span>
+<span id="cb30-4"><a href="#cb30-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">bind</span> <span class="op">=</span> <span class="st">&#39;127.0.0.1&#39;</span><span class="op">,</span></span>
+<span id="cb30-5"><a href="#cb30-5" aria-hidden="true" tabindex="-1"></a>   <span class="va">autoIndex</span> <span class="op">=</span> <span class="kw">false</span><span class="op">,</span></span>
+<span id="cb30-6"><a href="#cb30-6" aria-hidden="true" tabindex="-1"></a>   <span class="va">rateLimit</span> <span class="op">=</span> <span class="dv">50</span><span class="op">,</span></span>
+<span id="cb30-7"><a href="#cb30-7" aria-hidden="true" tabindex="-1"></a>   <span class="va">timeout</span> <span class="op">=</span> <span class="dv">15</span></span>
+<span id="cb30-8"><a href="#cb30-8" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span></code></pre></div>
+<h3 id="high-performance-server">High-Performance Server</h3>
+<div class="sourceCode" id="cb31"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="va">server</span> <span class="op">=</span> <span class="va">hslib</span><span class="op">.</span>start<span class="op">({</span></span>
+<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">port</span> <span class="op">=</span> <span class="dv">80</span><span class="op">,</span></span>
+<span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">folder</span> <span class="op">=</span> <span class="st">&#39;/var/www/html/&#39;</span><span class="op">,</span></span>
+<span id="cb31-4"><a href="#cb31-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">maxRequestSize</span> <span class="op">=</span> <span class="dv">131072</span><span class="op">,</span>  <span class="co">-- 128KB</span></span>
+<span id="cb31-5"><a href="#cb31-5" aria-hidden="true" tabindex="-1"></a>   <span class="va">fileChunkSize</span> <span class="op">=</span> <span class="dv">131072</span><span class="op">,</span>   <span class="co">-- 128KB chunks</span></span>
+<span id="cb31-6"><a href="#cb31-6" aria-hidden="true" tabindex="-1"></a>   <span class="va">rateLimit</span> <span class="op">=</span> <span class="dv">200</span><span class="op">,</span></span>
+<span id="cb31-7"><a href="#cb31-7" aria-hidden="true" tabindex="-1"></a>   <span class="va">rateLimitWindow</span> <span class="op">=</span> <span class="dv">30</span><span class="op">,</span></span>
+<span id="cb31-8"><a href="#cb31-8" aria-hidden="true" tabindex="-1"></a>   <span class="va">enableCSP</span> <span class="op">=</span> <span class="kw">false</span>         <span class="co">-- Disable if custom headers needed</span></span>
+<span id="cb31-9"><a href="#cb31-9" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span></code></pre></div>
+<h3 id="restful-api-server">RESTful API Server</h3>
+<div class="sourceCode" id="cb32"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="va">server</span> <span class="op">=</span> <span class="va">hslib</span><span class="op">.</span>start<span class="op">({</span></span>
+<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">port</span> <span class="op">=</span> <span class="dv">8080</span><span class="op">,</span></span>
+<span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">folder</span> <span class="op">=</span> <span class="st">&#39;./static/&#39;</span><span class="op">,</span></span>
+<span id="cb32-4"><a href="#cb32-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">verbose</span> <span class="op">=</span> <span class="kw">true</span><span class="op">,</span></span>
+<span id="cb32-5"><a href="#cb32-5" aria-hidden="true" tabindex="-1"></a>   <span class="va">routes</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb32-6"><a href="#cb32-6" aria-hidden="true" tabindex="-1"></a>      <span class="co">-- RESTful user management API</span></span>
+<span id="cb32-7"><a href="#cb32-7" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">pattern</span> <span class="op">=</span> <span class="st">&#39;/api/users&#39;</span><span class="op">,</span> <span class="va">method</span> <span class="op">=</span> <span class="st">&#39;GET&#39;</span><span class="op">,</span> <span class="va">handler</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">)</span></span>
+<span id="cb32-8"><a href="#cb32-8" aria-hidden="true" tabindex="-1"></a>         <span class="va">res</span><span class="op">.</span>json<span class="op">({</span> <span class="va">users</span> <span class="op">=</span> getUserList<span class="op">()</span> <span class="op">})</span></span>
+<span id="cb32-9"><a href="#cb32-9" aria-hidden="true" tabindex="-1"></a>      <span class="kw">end</span> <span class="op">},</span></span>
+<span id="cb32-10"><a href="#cb32-10" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">pattern</span> <span class="op">=</span> <span class="st">&#39;/api/users/:id&#39;</span><span class="op">,</span> <span class="va">method</span> <span class="op">=</span> <span class="st">&#39;GET&#39;</span><span class="op">,</span> <span class="va">handler</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">)</span></span>
+<span id="cb32-11"><a href="#cb32-11" aria-hidden="true" tabindex="-1"></a>         <span class="va">user</span> <span class="op">=</span> getUser<span class="op">(</span><span class="va">req</span><span class="op">.</span><span class="va">params</span><span class="op">.</span><span class="va">id</span><span class="op">)</span></span>
+<span id="cb32-12"><a href="#cb32-12" aria-hidden="true" tabindex="-1"></a>         <span class="cf">if</span> <span class="va">user</span> <span class="cf">then</span></span>
+<span id="cb32-13"><a href="#cb32-13" aria-hidden="true" tabindex="-1"></a>            <span class="va">res</span><span class="op">.</span>json<span class="op">(</span><span class="va">user</span><span class="op">)</span></span>
+<span id="cb32-14"><a href="#cb32-14" aria-hidden="true" tabindex="-1"></a>         <span class="cf">else</span></span>
+<span id="cb32-15"><a href="#cb32-15" aria-hidden="true" tabindex="-1"></a>            <span class="va">res</span><span class="op">.</span>status<span class="op">(</span><span class="dv">404</span><span class="op">).</span>json<span class="op">({</span> <span class="fu">error</span> <span class="op">=</span> <span class="st">&#39;User not found&#39;</span> <span class="op">})</span></span>
+<span id="cb32-16"><a href="#cb32-16" aria-hidden="true" tabindex="-1"></a>         <span class="cf">end</span></span>
+<span id="cb32-17"><a href="#cb32-17" aria-hidden="true" tabindex="-1"></a>      <span class="kw">end</span> <span class="op">},</span></span>
+<span id="cb32-18"><a href="#cb32-18" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">pattern</span> <span class="op">=</span> <span class="st">&#39;/api/users&#39;</span><span class="op">,</span> <span class="va">method</span> <span class="op">=</span> <span class="st">&#39;POST&#39;</span><span class="op">,</span> <span class="va">handler</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">)</span></span>
+<span id="cb32-19"><a href="#cb32-19" aria-hidden="true" tabindex="-1"></a>         <span class="va">newUser</span> <span class="op">=</span> createUser<span class="op">(</span><span class="va">req</span><span class="op">.</span><span class="va">parsedBody</span><span class="op">)</span></span>
+<span id="cb32-20"><a href="#cb32-20" aria-hidden="true" tabindex="-1"></a>         <span class="va">res</span><span class="op">.</span>status<span class="op">(</span><span class="dv">201</span><span class="op">).</span>json<span class="op">(</span><span class="va">newUser</span><span class="op">)</span></span>
+<span id="cb32-21"><a href="#cb32-21" aria-hidden="true" tabindex="-1"></a>      <span class="kw">end</span> <span class="op">},</span></span>
+<span id="cb32-22"><a href="#cb32-22" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">pattern</span> <span class="op">=</span> <span class="st">&#39;/api/users/:id&#39;</span><span class="op">,</span> <span class="va">method</span> <span class="op">=</span> <span class="st">&#39;PUT&#39;</span><span class="op">,</span> <span class="va">handler</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">)</span></span>
+<span id="cb32-23"><a href="#cb32-23" aria-hidden="true" tabindex="-1"></a>         <span class="va">updatedUser</span> <span class="op">=</span> updateUser<span class="op">(</span><span class="va">req</span><span class="op">.</span><span class="va">params</span><span class="op">.</span><span class="va">id</span><span class="op">,</span> <span class="va">req</span><span class="op">.</span><span class="va">parsedBody</span><span class="op">)</span></span>
+<span id="cb32-24"><a href="#cb32-24" aria-hidden="true" tabindex="-1"></a>         <span class="va">res</span><span class="op">.</span>json<span class="op">(</span><span class="va">updatedUser</span><span class="op">)</span></span>
+<span id="cb32-25"><a href="#cb32-25" aria-hidden="true" tabindex="-1"></a>      <span class="kw">end</span> <span class="op">},</span></span>
+<span id="cb32-26"><a href="#cb32-26" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">pattern</span> <span class="op">=</span> <span class="st">&#39;/api/users/:id&#39;</span><span class="op">,</span> <span class="va">method</span> <span class="op">=</span> <span class="st">&#39;DELETE&#39;</span><span class="op">,</span> <span class="va">handler</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">)</span></span>
+<span id="cb32-27"><a href="#cb32-27" aria-hidden="true" tabindex="-1"></a>         deleteUser<span class="op">(</span><span class="va">req</span><span class="op">.</span><span class="va">params</span><span class="op">.</span><span class="va">id</span><span class="op">)</span></span>
+<span id="cb32-28"><a href="#cb32-28" aria-hidden="true" tabindex="-1"></a>         <span class="va">res</span><span class="op">.</span>status<span class="op">(</span><span class="dv">204</span><span class="op">).</span>send<span class="op">(</span><span class="st">&#39;&#39;</span><span class="op">)</span></span>
+<span id="cb32-29"><a href="#cb32-29" aria-hidden="true" tabindex="-1"></a>      <span class="kw">end</span> <span class="op">},</span></span>
+<span id="cb32-30"><a href="#cb32-30" aria-hidden="true" tabindex="-1"></a>      <span class="co">-- File serving with wildcard routes</span></span>
+<span id="cb32-31"><a href="#cb32-31" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">pattern</span> <span class="op">=</span> <span class="st">&#39;/files/*&#39;</span><span class="op">,</span> <span class="va">method</span> <span class="op">=</span> <span class="st">&#39;GET&#39;</span><span class="op">,</span> <span class="va">handler</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">req</span><span class="op">,</span> <span class="va">res</span><span class="op">)</span></span>
+<span id="cb32-32"><a href="#cb32-32" aria-hidden="true" tabindex="-1"></a>         <span class="va">filePath</span> <span class="op">=</span> <span class="va">req</span><span class="op">.</span><span class="va">path</span><span class="op">:</span><span class="fu">sub</span><span class="op">(</span><span class="dv">8</span><span class="op">)</span>  <span class="co">-- Remove &#39;/files/&#39; prefix</span></span>
+<span id="cb32-33"><a href="#cb32-33" aria-hidden="true" tabindex="-1"></a>         <span class="va">res</span><span class="op">.</span>send<span class="op">(</span><span class="st">&#39;Serving file: &#39;</span> <span class="op">..</span> <span class="va">filePath</span><span class="op">)</span></span>
+<span id="cb32-34"><a href="#cb32-34" aria-hidden="true" tabindex="-1"></a>      <span class="kw">end</span> <span class="op">}</span></span>
+<span id="cb32-35"><a href="#cb32-35" aria-hidden="true" tabindex="-1"></a>   <span class="op">}</span></span>
+<span id="cb32-36"><a href="#cb32-36" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span></code></pre></div>
+</div></div></div></div>
+
+<script src="../js/bootstrap.bundle.min.js"></script>
+<script src="../js/base.js"></script>
+<script>
+
+   // Auto-open the relevant sidebar branch
+
+   var url = window.location.pathname;
+   var filename = url.substring(url.lastIndexOf('/')+1);
+   var el = document.querySelector('li[class="api-ref"] > a[href="' + filename + '"]');
+   if (el) {
+      var parent = getParentNode(el, '[class="collapse"]');
+      if (parent) new bootstrap.Collapse(parent, { show: true }); // Causes animation
+
+      el.style.backgroundColor = '#d2f4ea';
+   }
+
+   cancelAnimations();
+    </script>
+  </body>
+</html>

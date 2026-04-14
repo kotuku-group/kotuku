@@ -1,15 +1,15 @@
 #include <windows.h>
 
 // Application Icon
-500                     ICON    DISCARDABLE     "parasol_sphere.ico"
+500                     ICON    DISCARDABLE     "kotuku.ico"
 
 // Application Manifest
-1                       RT_MANIFEST             "parasol.manifest"
+1                       RT_MANIFEST             "kotuku.manifest"
 
 // Version Information
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION     @PARASOL_VERSION_MAJOR@,@PARASOL_VERSION_MINOR@,@PARASOL_VERSION_PATCH@,0
-PRODUCTVERSION  @PARASOL_VERSION_MAJOR@,@PARASOL_VERSION_MINOR@,@PARASOL_VERSION_PATCH@,0
+FILEVERSION     @KOTUKU_VERSION_MAJOR@,@KOTUKU_VERSION_MINOR@,@KOTUKU_VERSION_PATCH@,0
+PRODUCTVERSION  @KOTUKU_VERSION_MAJOR@,@KOTUKU_VERSION_MINOR@,@KOTUKU_VERSION_PATCH@,0
 FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
 FILEFLAGS       0x0L
 FILEOS          VOS__WINDOWS32
@@ -20,14 +20,14 @@ BEGIN
     BEGIN
         BLOCK "040904b0" // US English, Unicode
         BEGIN
-            VALUE "CompanyName",      "Parasol Framework"
-            VALUE "FileDescription",  "Parasol Launcher"
-            VALUE "FileVersion",      "@PARASOL_VERSION_MAJOR@.@PARASOL_VERSION_MINOR@.@PARASOL_VERSION_PATCH@.0"
-            VALUE "InternalName",     "parasol"
-            VALUE "LegalCopyright",   "Copyright (C) @PARASOL_COPYRIGHT_YEAR@ Parasol Framework"
-            VALUE "OriginalFilename", "parasol.exe"
-            VALUE "ProductName",      "Parasol Framework"
-            VALUE "ProductVersion",   "@PARASOL_VERSION_MAJOR@.@PARASOL_VERSION_MINOR@.@PARASOL_VERSION_PATCH@.0"
+            VALUE "CompanyName",      "Kotuku Open Group"
+            VALUE "FileDescription",  "Origo Launcher"
+            VALUE "FileVersion",      "@KOTUKU_VERSION_MAJOR@.@KOTUKU_VERSION_MINOR@.@KOTUKU_VERSION_PATCH@.0"
+            VALUE "InternalName",     "origo"
+            VALUE "LegalCopyright",   "Copyright (C) @KOTUKU_COPYRIGHT_YEAR@ Paul Manias"
+            VALUE "OriginalFilename", "origo.exe"
+            VALUE "ProductName",      "Origo"
+            VALUE "ProductVersion",   "@KOTUKU_VERSION_MAJOR@.@KOTUKU_VERSION_MINOR@.@KOTUKU_VERSION_PATCH@.0"
         END
     END
     BLOCK "VarFileInfo"

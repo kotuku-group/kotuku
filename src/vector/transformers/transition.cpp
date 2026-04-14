@@ -4,7 +4,7 @@
 VectorTransition: Transitions are used to incrementally apply transforms over distance.
 
 The VectorTransition class is used to gradually transform vector shapes over the length of a path.  This feature is
-not SVG compliant, though it can be utilised from SVG files via the 'parasol:' name space.
+not SVG compliant, though it can be utilised from SVG files via the 'kotuku:' name space.
 
 The transition is defined as a series of stops and transform instructions, of which at least 2 are required in order to
 interpolate the transforms over distance.  The transform strings are defined as per the SVG guidelines for the
@@ -14,11 +14,11 @@ The following example illustrates the use of a transition in SVG:
 
 <pre>
   &lt;defs&gt;
-    &lt;parasol:transition id="hill"&gt;
+    &lt;kotuku:transition id="hill"&gt;
       &lt;stop offset="0" transform="scale(0.3)"/&gt;
       &lt;stop offset="50%" transform="scale(1.5)"/&gt;
       &lt;stop offset="100%" transform="scale(0.3)"/&gt;
-    &lt;/parasol:transition&gt;
+    &lt;/kotuku:transition&gt;
   &lt;/defs&gt;
 
   &lt;rect fill="#ffffff" width="100%" height="100%"/&gt;

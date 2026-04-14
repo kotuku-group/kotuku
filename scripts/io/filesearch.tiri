@@ -1,0 +1,220 @@
+--[[
+The FileSearch interface simplifies the process of searching for files and folders within the file system.
+Refer to the Tiri I/O Wiki page for documentation.
+--]]
+
+io.search = function(Path:str, Options:table)
+   lOptions      = Options
+   ADJUST_LOG    = 0
+   lStop         = false
+   isRegexFilter = false
+
+   function contentMatch(Path:str):bool
+      lOptions.contentFilter ?? return true
+
+      try
+         fl = obj.new('file', { path=Path, flags=FL_READ } )
+
+         -- By default, symbolic links are not scanned for content unless the scanLinks option is set.
+
+         if (fl.flags has FL_LINK) and (lOptions.scanLinks != true) then
+            fl.free()
+            return false
+         end
+
+         bytes = fl.size
+         if bytes > 4096 then bytes = 4096 end
+         buf = string.alloc(bytes)
+         err, totalRead = fl.acRead(buf)
+
+         while (err is ERR_Okay) and (totalRead >= lOptions.contentFilter:len()) do
+            if buf:find(lOptions.contentFilter) then return true end
+            if fl.position is fl.size then return false end
+            fl.acSeek(-lOptions.contentFilter:len(), SEEK_CURRENT) -- Sliding window
+            err, totalRead = fl.acRead(buf)
+         end
+      end
+
+      return false
+   end
+
+   function dateLessThan(A, B) -- struct DateTime
+      if A.year < B.year then return true
+      elseif A.year > B.year then return false end
+
+      -- else years are equal, so test months
+      if A.month < B.month then return true
+      elseif A.month > B.month then return false end
+
+      if A.day < B.day then return true
+      elseif A.day > B.day then return false end
+
+      if A.hour < B.hour then return true
+      elseif A.hour > B.hour then return false end
+
+      if A.minute < B.minute then return true
+      elseif A.minute > B.minute then return false end
+
+      if A.second < B.second then return true
+      elseif A.second > B.second then return false end
+
+      return false -- Dates are exactly equal
+   end
+
+   function scanPath(Path:str, currentDepth:num)
+      currentDepth ?= 0
+      msg(f'scanPath() {Path ?? ':'} (depth: {currentDepth})')
+
+      if lStop then return end
+
+      if lOptions.maxDepth and (currentDepth > lOptions.maxDepth) then return end
+
+      count = 0
+      flags = 0
+      if not lOptions.matchFolders then flags = flags | FL_EXCLUDE_FOLDERS end
+      if lOptions.ignoreFiles then flags = flags | FL_EXCLUDE_FILES end
+
+      local folder
+      try
+         folder = obj.new('file', { src=Path, flags=flags })
+      except ex
+         return
+      end
+
+      err, fl = folder.mtNext()
+      while (err is ERR_Okay) and (not lStop) do
+         count++
+         processing.sleep(0)
+
+         fileFolder, file_name = io.splitPath(fl.path)
+
+         -- Ensure that the filename matches our filter
+
+         match = true
+         if lOptions.nameFilter then
+            cmp_name = file_name
+            if not lOptions.caseSensitive then
+               cmp_name = cmp_name:lower()
+            end
+
+            if isRegexFilter then
+               if not lOptions.nameFilter.test(cmp_name) then
+                  match = false
+               end
+            elseif cmp_name != lOptions.nameFilter then -- Exact string match
+               match = false
+            end
+         end
+
+         if lOptions.minSize?? and (lOptions.minSize > 0) and (fl.size < lOptions.minSize) then match = false end
+         if lOptions.maxSize and (lOptions.maxSize >= 0) and (fl.size > lOptions.maxSize) then match = false end
+         if lOptions.minDateSet and dateLessThan(fl.date, lOptions.minDate) then match = false end
+         if lOptions.maxDateSet and dateLessThan(lOptions.maxDate, fl.date) then match = false end
+
+         if match and (fl.flags has FL_FILE) then
+            match = contentMatch(fl.path)
+         end
+
+         msg(f'Found: {fl.path} (count: {count}); Match: {match}')
+
+         if match then
+            if lOptions.matchFeedback then
+               mSys.AdjustLogLevel(-ADJUST_LOG) -- Temporarily revert debug log so that child behaviour can be analysed
+
+                  result = lOptions.matchFeedback(Path, file_name, fl)
+                  if result is ERR_Terminate then lStop = true end
+
+               mSys.AdjustLogLevel(ADJUST_LOG) -- Raise log level again
+            end
+         elseif lOptions.ignoreFeedback then
+            result = lOptions.ignoreFeedback(Path, file_name, fl)
+            if result is ERR_Terminate then lStop = true end
+         end
+
+         err, fl = folder.mtNext()
+      end
+
+      if lStop then return end
+
+      -- Recursively scan directory content (if we haven't reached max depth)
+
+      if not lOptions.maxDepth or currentDepth < lOptions.maxDepth then
+         try
+            folder = obj.new('file', { src=Path, flags=FL_EXCLUDE_FILES | FL_FOLDER } )
+
+            err, fl = folder.mtNext()
+            while (err is ERR_Okay) and (not lStop) do
+               count++
+               if fl.flags has FL_LINK then
+                  -- Do not scan symbolicly linked directories (possible recursion)
+               else
+                  processing.sleep(0)
+                  scanPath(fl.path, currentDepth + 1)
+               end
+               err, fl = folder.mtNext()
+            end
+         end
+      end
+
+      if count is 0 then processing.sleep(0) end  -- Message check required if the directory was empty
+
+      processing.collect()
+   end
+
+   function processPath(Path:str)
+      msg(f'Path: {Path}, Filter: {Options.nameFilter}, Regex: {isRegexFilter}, Content: {Options.contentFilter}')
+
+      if io.isFolder(Path) then
+         mSys.AdjustLogLevel(ADJUST_LOG)
+            scanPath(Path, 0)
+         mSys.AdjustLogLevel(-ADJUST_LOG)
+      else
+         -- Single file analysis
+
+         path, file_name = io.splitPath(Path)
+         name_matches = true
+
+         if Options.nameFilter then
+            cmp_name = file_name
+            if not lOptions.caseSensitive then
+               cmp_name = cmp_name:lower()
+            end
+
+            if isRegexFilter then
+               name_matches = lOptions.nameFilter.test(cmp_name)
+            else
+               name_matches = cmp_name is lOptions.nameFilter
+            end
+         end
+
+         if name_matches and contentMatch(Path) then
+            lOptions?.matchFeedback(path, file_name, <{ obj.new('file', { path=Path }) }>)
+         end
+      end
+   end
+
+   -- Entry point for the search
+
+   if lOptions.nameFilter and type(lOptions.nameFilter) != 'string' then
+      -- Check if it's a regex object by testing for regex methods
+      if lOptions.nameFilter.test and lOptions.nameFilter.match then
+         isRegexFilter = true
+      end
+   end
+
+   if lOptions.maxDate then
+      lOptions.maxDateSet = true
+   end
+
+   if lOptions.minDate then
+      lOptions.minDateSet = true
+   end
+
+   if type(Path) is 'table' or type(Path) is 'array' then
+      for v in values(Path) do
+         processPath(v)
+      end
+   else
+      processPath(Path)
+   end
+end

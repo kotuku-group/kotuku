@@ -13,7 +13,7 @@
     <id>0e32c72b</id>
     <idstring>MODULE</idstring>
     <category>System</category>
-    <copyright>Paul Manias 1996-2025</copyright>
+    <copyright>Paul Manias 1996-2026</copyright>
     <description>
 <p>The Module class is used to load and maintain the modules that are installed on the user's system.  A number of modules are available in the core platform as standard, which you can use in the development of your programs.  Examples of existing modules can be found in both the <code>modules:</code> folder.</p>
 <p>To load a module and interact with its API, create a module object and initialise it.  The following code segment illustrates in C++:</p>
@@ -21,7 +21,7 @@
 auto modDisplay = objModule::create::global(fl::Name(&quot;display&quot;));
 if (modDisplay) modDisplay-&gt;get(FID_ModBase, DisplayBase);
 </pre>
-<p>To do the same in Fluid:</p>
+<p>To do the same in Tiri:</p>
 <pre>mGfx = mod.load('display')
 </pre>
 <p>It is critical that the module object is permanently retained until the program no longer needs its functionality.</p></description>
@@ -54,9 +54,38 @@ if (modDisplay) modDisplay-&gt;get(FID_ModBase, DisplayBase);
       </result>
     </method>
 
+    <method>
+      <name>Test</name>
+      <comment>Run unit tests for the module, if present.</comment>
+      <prototype>ERR mod::Test(OBJECTPTR Object, CSTRING Options, INT * Passed, INT * Total)</prototype>
+      <input>
+        <param type="CSTRING" name="Options">Optional CSV list of testing options.</param>
+        <param type="INT *" name="Passed">The number of tests that passed will be returned in this parameter.</param>
+        <param type="INT *" name="Total">The total number of tests that were executed will be returned in this parameter.</param>
+      </input>
+      <description>
+<p>If a module is compiled with unit tests, calling the Test() method will execute them.  There is no explicit contract for what the unit tests should do, but it is typically expected that test results will be printed to the log.</p>
+<p>Unit tests should never be compiled into production releases of the code.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NoSupport">Unit tests are not defined for the module.</error>
+      </result>
+    </method>
+
   </methods>
 
   <fields>
+    <field>
+      <name>Defs</name>
+      <comment>Returns the compiled IDL definition for the module.</comment>
+      <access read="G">Get</access>
+      <type>STRING</type>
+      <description>
+<p>Returns the IDL definition string that was compiled from the module's TDL file.  Useful for introspection purposes.</p>
+      </description>
+    </field>
+
     <field>
       <name>Flags</name>
       <comment>Optional flags.</comment>

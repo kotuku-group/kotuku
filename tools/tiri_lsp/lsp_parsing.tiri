@@ -1,0 +1,738 @@
+
+-- Deferred regex patterns for folding range detection
+rx_quote_char  = <{ regex.new([["']]) }>
+rx_trim_start  = <{ regex.new([[^\s*(.*)]], regex.DOT_ALL) }>
+rx_func_sig    = <{ regex.new("\\bfunction\\s+[\\w]") }>
+rx_func_paren  = <{ regex.new([[\bfunction\s*\(]]) }>
+rx_kw_if       = <{ regex.new([[\bif\b]]) }>
+rx_kw_then     = <{ regex.new([[\bthen\b]]) }>
+rx_kw_for      = <{ regex.new([[\bfor\b]]) }>
+rx_kw_do       = <{ regex.new([[\bdo\b]]) }>
+rx_kw_while    = <{ regex.new([[\bwhile\b]]) }>
+rx_kw_repeat   = <{ regex.new([[\brepeat\b]]) }>
+rx_kw_defer    = <{ regex.new([[\bdefer\b]]) }>
+rx_kw_end      = <{ regex.new([[\bend\b]]) }>
+rx_kw_until    = <{ regex.new([[\buntil\b]]) }>
+
+-- Deferred regex patterns for token parsing
+rx_global_var   = <{ regex.new("^gl[A-Z]") }>
+rx_starts_upper = <{ regex.new("^[A-Z]") }>
+rx_all_upper    = <{ regex.new([[^[A-Z_]+$]]) }>
+
+----------------------------------------------------------------------------------------------------------------------
+-- Semantic Token Encoder
+
+-- Tokenize a Tiri source file and return semantic tokens
+-- Returns array of tokens: { line, startChar, length, tokenType, tokenModifiers }
+
+global function tokenizeTiri(Source:str):array
+   tokens = array<table>
+   line = 0
+   col = 0
+   pos = 0
+   len = #Source
+
+   -- Helper to add a token (skips zero-length tokens)
+   function addToken(TokenLine, TokenCol, TokenLen, TokenType, TokenMod)
+      if TokenLen <= 0 then return end  -- Skip invalid tokens
+      tokens:push({
+         line   = TokenLine,
+         char   = TokenCol,
+         length = TokenLen,
+         type   = TokenType,
+         modifiers = TokenMod or 0
+      })
+   end
+
+   -- Skip whitespace and track position
+   function skipWhitespace()
+      while pos < len do
+         c = Source:sub(pos, pos + 1)
+         if c is ' ' or c is '\t' then
+            col++
+            pos++
+         elseif c is '\n' then
+            line++
+            col = 0
+            pos++
+         elseif c is '\r' then
+            pos++
+            if pos < len and Source:sub(pos, pos + 1) is '\n' then
+               pos++
+            end
+            line++
+            col = 0
+         else
+            break
+         end
+      end
+   end
+
+   -- Check if character is identifier start
+   function isIdentStart(C)
+      return (C >= 'a' and C <= 'z') or (C >= 'A' and C <= 'Z') or C is '_'
+   end
+
+   -- Check if character is identifier continuation
+   function isIdentChar(C)
+      return isIdentStart(C) or (C >= '0' and C <= '9')
+   end
+
+   -- Check if character is digit
+   function isDigit(C)
+      return C >= '0' and C <= '9'
+   end
+
+   -- Main tokenization loop
+   while pos < len do
+      skipWhitespace()
+      if pos >= len then break end
+
+      c = Source:sub(pos, pos + 1)
+      start_col = col
+      start_pos = pos
+
+      -- Line comment: --
+      if c is '-' and pos + 1 < len and Source:sub(pos + 1, pos + 2) is '-' then
+         comment_start = col
+
+         -- Check for block comment --[[
+         if pos + 3 < len and Source:sub(pos + 2, pos + 4) is '[[' then
+            pos += 4
+            col += 4
+            -- Find closing ]]
+            while pos < len do
+               if Source:sub(pos, pos + 2) is ']]' then
+                  pos += 2
+                  col += 2
+                  break
+               elseif Source:sub(pos, pos + 1) is '\n' then
+                  -- Only add token if there's content on this line
+                  if col > comment_start then
+                     addToken(line, comment_start, col - comment_start, 6, 0)  -- comment
+                  end
+                  line++
+                  col = 0
+                  pos++
+                  comment_start = 0
+               else
+                  pos++
+                  col++
+               end
+            end
+            -- Add final line of block comment if there's content
+            if col > comment_start then
+               addToken(line, comment_start, col - comment_start, 6, 0)  -- comment
+            end
+         else
+            -- Line comment - find end of line
+            while pos < len and Source:sub(pos, pos + 1) != '\n' do
+               pos++
+               col++
+            end
+            addToken(line, comment_start, col - comment_start, 6, 0)  -- comment
+         end
+
+      -- String literals
+      elseif c is '"' or c is "'" then
+         quote = c
+         str_start = col
+         pos++
+         col++
+         while pos < len do
+            sc = Source:sub(pos, pos + 1)
+            if sc is quote then
+               pos++
+               col++
+               break
+            elseif sc is '\\' then
+               pos += 2
+               col += 2
+            elseif sc is '\n' then
+               break  -- Unterminated string
+            else
+               pos++
+               col++
+            end
+         end
+         addToken(line, str_start, col - str_start, 4, 0)  -- string
+
+      -- Multiline string [[
+      elseif c is '[' and pos + 1 < len and Source:sub(pos + 1, pos + 2) is '[' then
+         str_start_line = line
+         str_start_col = col
+         pos += 2
+         col += 2
+         segment_start = col
+         while pos < len do
+            if Source:sub(pos, pos + 2) is ']]' then
+               if col > segment_start or line is str_start_line then
+                  addToken(line, (line is str_start_line) and str_start_col or 0,
+                     (line is str_start_line) and (col - str_start_col + 2) or (col + 2), 4, 0)
+               end
+               pos += 2
+               col += 2
+               break
+            elseif Source:sub(pos, pos + 1) is '\n' then
+               if line is str_start_line then
+                  addToken(line, str_start_col, col - str_start_col, 4, 0)
+               else
+                  addToken(line, 0, col, 4, 0)
+               end
+               line++
+               col = 0
+               pos++
+               segment_start = 0
+            else
+               pos++
+               col++
+            end
+         end
+
+      -- Numbers
+      elseif isDigit(c) or (c is '.' and pos + 1 < len and isDigit(Source:sub(pos + 1, pos + 2))) then
+         num_start = col
+         -- Hex number
+         if c is '0' and pos + 1 < len and (Source:sub(pos + 1, pos + 2) is 'x' or Source:sub(pos + 1, pos + 2) is 'X') then
+            pos += 2
+            col += 2
+            while pos < len do
+               nc = Source:sub(pos, pos + 1)
+               if isDigit(nc) or (nc >= 'a' and nc <= 'f') or (nc >= 'A' and nc <= 'F') then
+                  pos++
+                  col++
+               else
+                  break
+               end
+            end
+         else
+            -- Decimal number
+            while pos < len and isDigit(Source:sub(pos, pos + 1)) do
+               pos++
+               col++
+            end
+            -- Decimal part
+            if pos < len and Source:sub(pos, pos + 1) is '.' then
+               pos++
+               col++
+               while pos < len and isDigit(Source:sub(pos, pos + 1)) do
+                  pos++
+                  col++
+               end
+            end
+            -- Exponent
+            if pos < len and (Source:sub(pos, pos + 1) is 'e' or Source:sub(pos, pos + 1) is 'E') then
+               pos++
+               col++
+               if pos < len and (Source:sub(pos, pos + 1) is '+' or Source:sub(pos, pos + 1) is '-') then
+                  pos++
+                  col++
+               end
+               while pos < len and isDigit(Source:sub(pos, pos + 1)) do
+                  pos++
+                  col++
+               end
+            end
+         end
+         addToken(line, num_start, col - num_start, 5, 0)  -- number
+      elseif isIdentStart(c) then -- Identifiers and keywords
+         ident_start = col
+         while pos < len and isIdentChar(Source:sub(pos, pos + 1)) do
+            pos++
+            col++
+         end
+         ident = Source:sub(start_pos, pos)
+         ident_len = col - ident_start
+
+         if FLUID_KEYWORDS[ident] then
+            addToken(line, ident_start, ident_len, 0, 0)  -- keyword
+         elseif FLUID_OPERATORS[ident] then
+            addToken(line, ident_start, ident_len, 1, 0)  -- operator
+         elseif FLUID_CONSTANTS[ident] then
+            addToken(line, ident_start, ident_len, 12, 4)  -- macro + readonly
+         elseif FLUID_BUILTINS[ident] then
+            addToken(line, ident_start, ident_len, 3, 128)  -- function + defaultLibrary
+         elseif FLUID_MODULES[ident] then
+            addToken(line, ident_start, ident_len, 10, 0)  -- namespace
+         elseif ident:startsWith('ERR_') then
+            addToken(line, ident_start, ident_len, 12, 4)  -- macro + readonly (error constants)
+         elseif rx_global_var.test(ident) then
+            addToken(line, ident_start, ident_len, 2, 8)  -- variable + static (global)
+         elseif rx_starts_upper.test(ident) and rx_all_upper.test(ident) then
+            addToken(line, ident_start, ident_len, 12, 4)  -- macro + readonly (CONSTANTS)
+         else
+            -- Check if it's a function call (followed by parenthesis)
+            -- Save all position state since skipWhitespace may cross newlines
+            save_pos = pos
+            save_col = col
+            save_line = line
+            skipWhitespace()
+            if pos < len and Source:sub(pos, pos + 1) is '(' then
+               addToken(save_line, ident_start, ident_len, 3, 0)  -- function
+            end
+            -- Restore position (we don't consume the paren)
+            pos = save_pos
+            col = save_col
+            line = save_line
+         end
+      elseif c is '?' then -- Symbolic operators (multi-character first, then single-character)
+         op_start = col
+         if pos + 2 < len and Source:sub(pos + 1, pos + 3) is '?=' then
+            -- ??= if-empty assignment
+            addToken(line, op_start, 3, 1, 0)
+            pos += 3
+            col += 3
+         elseif pos + 1 < len and Source:sub(pos + 1, pos + 2) is '?' then
+            -- ?? if-empty operator
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         elseif pos + 1 < len and Source:sub(pos + 1, pos + 2) is '=' then
+            -- ?= if-nil assignment
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         elseif pos + 1 < len and Source:sub(pos + 1, pos + 2) is '.' then
+            -- ?. safe navigation
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         elseif pos + 1 < len and Source:sub(pos + 1, pos + 2) is '[' then
+            -- ?[ safe index
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         else
+            -- ? ternary condition
+            addToken(line, op_start, 1, 1, 0)
+            pos++
+            col++
+         end
+      elseif c is '|' then
+         op_start = col
+         if pos + 1 < len and Source:sub(pos + 1, pos + 2) is '>' then
+            -- |> pipe operator
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         else
+            -- | bitwise OR
+            addToken(line, op_start, 1, 1, 0)
+            pos++
+            col++
+         end
+      elseif c is '=' then
+         op_start = col
+         if pos + 1 < len and Source:sub(pos + 1, pos + 2) is '>' then
+            -- => arrow function
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         else
+            -- = assignment (skip, not highlighted as operator)
+            pos++
+            col++
+         end
+      elseif c is ':' then
+         op_start = col
+         if pos + 1 < len and Source:sub(pos + 1, pos + 2) is '>' then
+            -- :> ternary else
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         else
+            -- : type annotation or method call (skip)
+            pos++
+            col++
+         end
+      elseif c is '.' then
+         op_start = col
+         if pos + 2 < len and Source:sub(pos + 1, pos + 3) is '.=' then
+            -- ..= concatenation assignment
+            addToken(line, op_start, 3, 1, 0)
+            pos += 3
+            col += 3
+         elseif pos + 2 < len and Source:sub(pos + 1, pos + 3) is '..' then
+            -- ... varargs or inclusive range
+            addToken(line, op_start, 3, 1, 0)
+            pos += 3
+            col += 3
+         elseif pos + 1 < len and Source:sub(pos + 1, pos + 2) is '.' then
+            -- .. concatenation or exclusive range
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         else
+            -- . field access (skip)
+            pos++
+            col++
+         end
+      elseif c is '+' then
+         op_start = col
+         if pos + 1 < len and Source:sub(pos + 1, pos + 2) is '+' then
+            -- ++ increment
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         elseif pos + 1 < len and Source:sub(pos + 1, pos + 2) is '=' then
+            -- += compound assignment
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         else
+            -- + addition
+            addToken(line, op_start, 1, 1, 0)
+            pos++
+            col++
+         end
+      elseif c is '-' then
+         op_start = col
+         if pos + 1 < len and Source:sub(pos + 1, pos + 2) is '=' then
+            -- -= compound assignment
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         else
+            -- - subtraction/negation
+            addToken(line, op_start, 1, 1, 0)
+            pos++
+            col++
+         end
+      elseif c is '*' then
+         op_start = col
+         if pos + 1 < len and Source:sub(pos + 1, pos + 2) is '=' then
+            -- *= compound assignment
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         elseif pos + 1 < len and Source:sub(pos + 1, pos + 2) is '*' then
+            -- ** exponentiation
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         else
+            -- * multiplication
+            addToken(line, op_start, 1, 1, 0)
+            pos++
+            col++
+         end
+      elseif c is '/' then
+         op_start = col
+         if pos + 1 < len and Source:sub(pos + 1, pos + 2) is '=' then
+            -- /= compound assignment
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         else
+            -- / division
+            addToken(line, op_start, 1, 1, 0)
+            pos++
+            col++
+         end
+      elseif c is '%' then
+         op_start = col
+         if pos + 1 < len and Source:sub(pos + 1, pos + 2) is '=' then
+            -- %= compound assignment
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         else
+            -- % modulo
+            addToken(line, op_start, 1, 1, 0)
+            pos++
+            col++
+         end
+      elseif c is '<' then
+         op_start = col
+         if pos + 1 < len and Source:sub(pos + 1, pos + 2) is '<' then
+            -- << left shift
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         elseif pos + 1 < len and Source:sub(pos + 1, pos + 2) is '=' then
+            -- <= less than or equal
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         else
+            -- < less than
+            addToken(line, op_start, 1, 1, 0)
+            pos++
+            col++
+         end
+      elseif c is '>' then
+         op_start = col
+         if pos + 1 < len and Source:sub(pos + 1, pos + 2) is '>' then
+            -- >> right shift
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         elseif pos + 1 < len and Source:sub(pos + 1, pos + 2) is '=' then
+            -- >= greater than or equal
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         else
+            -- > greater than
+            addToken(line, op_start, 1, 1, 0)
+            pos++
+            col++
+         end
+      elseif c is '!' then
+         op_start = col
+         if pos + 1 < len and Source:sub(pos + 1, pos + 2) is '=' then
+            -- != not equal
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         else -- ! (used in flags like '!READ')
+            pos++
+            col++
+         end
+      elseif c is '&' then -- & bitwise AND
+         addToken(line, col, 1, 1, 0)
+         pos++
+         col++
+      elseif c is '~' then -- ~ bitwise NOT
+         addToken(line, col, 1, 1, 0)
+         pos++
+         col++
+      elseif c is '^' then -- ^ bitwise XOR
+         addToken(line, col, 1, 1, 0)
+         pos++
+         col++
+      elseif c is '#' then -- # length operator
+         addToken(line, col, 1, 1, 0)
+         pos++
+         col++
+      else -- Skip other characters (punctuation, brackets, etc.)
+         pos++
+         col++
+      end
+   end
+
+   return tokens
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Extract folding ranges from Tiri source
+-- Returns array of FoldingRange objects for code folding
+
+global function extractFoldingRanges(Doc:table):array
+   ranges = array<table>
+   total_lines = getTotalLines(Doc)
+   block_stack = array<table>  -- Stack of { line, kind } for nested blocks
+   in_block_comment = false
+   block_comment_start = 0
+
+   for line_num = 0, total_lines - 1 do
+      line_text = getLine(Doc, line_num)
+
+      -- Handle block comments --[[ ... ]]
+      if in_block_comment then
+         if line_text:find(']]') then
+            -- End of block comment
+            if line_num > block_comment_start then
+               ranges:push({
+                  startLine = block_comment_start,
+                  endLine = line_num,
+                  kind = FOLDING_KIND.COMMENT
+               })
+            end
+            in_block_comment = false
+         end
+         continue
+      end
+
+      -- Check for block comment start
+      block_comment_pos = line_text:find('--[[')
+      if block_comment_pos then
+         -- Check it's not inside a string (simplified check)
+         before = line_text:sub(0, block_comment_pos)
+         if not rx_quote_char.test(before) then
+            in_block_comment = true
+            block_comment_start = line_num
+            continue
+         end
+      end
+
+      -- Check for block openers: function, if...then, for...do, while...do, repeat, defer
+      -- We need to be careful not to match keywords in comments or strings
+
+      -- Skip if line is a comment
+      trimmed = rx_trim_start.extract(line_text)
+      if trimmed:sub(0, 2) is '--' then
+         continue
+      end
+
+      -- Find comment position to avoid matching keywords in comments
+      comment_pos = line_text:find('--')
+
+      -- Check for block openers (only if not in a comment)
+      function checkKeyword(RxPattern)
+         start_pos, stop_pos = RxPattern.findFirst(line_text)
+         if start_pos and (not comment_pos or start_pos < comment_pos) then
+            return start_pos
+         end
+         return nil
+      end
+
+      -- function ... (opens a block)
+      if checkKeyword(rx_func_sig) or checkKeyword(rx_func_paren) then
+         block_stack:push({ line = line_num, kind = 'function' })
+      end
+
+      -- if ... then (opens a block)
+      if checkKeyword(rx_kw_if) and checkKeyword(rx_kw_then) then
+         block_stack:push({ line = line_num, kind = 'if' })
+      end
+
+      -- for ... do (opens a block)
+      if checkKeyword(rx_kw_for) and checkKeyword(rx_kw_do) then
+         block_stack:push({ line = line_num, kind = 'for' })
+      end
+
+      -- while ... do (opens a block)
+      if checkKeyword(rx_kw_while) and checkKeyword(rx_kw_do) then
+         block_stack:push({ line = line_num, kind = 'while' })
+      end
+
+      -- repeat (opens a block, closed by until)
+      if checkKeyword(rx_kw_repeat) then
+         block_stack:push({ line = line_num, kind = 'repeat' })
+      end
+
+      -- defer (opens a block)
+      if checkKeyword(rx_kw_defer) then
+         block_stack:push({ line = line_num, kind = 'defer' })
+      end
+
+      -- Check for block closers
+      -- 'end' closes function, if, for, while, defer
+      if checkKeyword(rx_kw_end) then
+         if #block_stack > 0 then
+            block_start = block_stack:pop()
+            if block_start and line_num > block_start.line then
+               ranges:push({
+                  startLine = block_start.line,
+                  endLine = line_num
+               })
+            end
+         end
+      end
+
+      -- 'until' closes repeat
+      if checkKeyword(rx_kw_until) then
+         if #block_stack > 0 then
+            block_start = block_stack:pop()
+            if block_start and block_start.kind is 'repeat' and line_num > block_start.line then
+               ranges:push({
+                  startLine = block_start.line,
+                  endLine = line_num
+               })
+            end
+         end
+      end
+   end
+
+   return ranges
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Encode tokens into LSP semantic tokens format (delta-encoded integers)
+
+global function encodeSemanticTokens(Tokens:array):array
+   data = array<int>
+   prev_line = 0
+   prev_char = 0
+
+   for tok in values(Tokens) do
+      delta_line = tok.line - prev_line
+      delta_char = (delta_line is 0) and (tok.char - prev_char) or tok.char
+
+      data:push(delta_line)
+      data:push(delta_char)
+      data:push(tok.length)
+      data:push(tok.type)
+      data:push(tok.modifiers)
+
+      prev_line = tok.line
+      prev_char = tok.char
+   end
+
+   return data
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Compute semantic token edits between old and new data arrays
+-- Returns array of SemanticTokensEdit: { start, deleteCount, data? }
+
+global function computeTokenEdits(OldData:array, NewData:array):array
+   old_len = #OldData
+   new_len = #NewData
+
+   -- Find common prefix (in groups of 5 integers = 1 token)
+   prefix_tokens = 0
+   max_prefix = math.min(old_len, new_len) / 5
+   while prefix_tokens < max_prefix do
+      idx = prefix_tokens * 5
+      match = true
+      for i = 0, 4 do
+         if OldData[idx + i] != NewData[idx + i] then
+            match = false
+            break
+         end
+      end
+      if not match then break end
+      prefix_tokens++
+   end
+
+   -- Find common suffix (in groups of 5 integers = 1 token)
+   suffix_tokens = 0
+   old_suffix_start = old_len
+   new_suffix_start = new_len
+   max_suffix = math.min((old_len / 5) - prefix_tokens, (new_len / 5) - prefix_tokens)
+
+   while suffix_tokens < max_suffix do
+      old_idx = old_len - (suffix_tokens + 1) * 5
+      new_idx = new_len - (suffix_tokens + 1) * 5
+      match = true
+      for i = 0, 4 do
+         if OldData[old_idx + i] != NewData[new_idx + i] then
+            match = false
+            break
+         end
+      end
+      if not match then break end
+      suffix_tokens++
+   end
+
+   -- Calculate the range that differs
+   prefix_ints = prefix_tokens * 5
+   suffix_ints = suffix_tokens * 5
+
+   delete_start = prefix_ints
+   delete_count = old_len - prefix_ints - suffix_ints
+   insert_count = new_len - prefix_ints - suffix_ints
+
+   -- If nothing changed, return empty edits
+   if delete_count is 0 and insert_count is 0 then
+      return array<table>
+   end
+
+   -- Build the edit
+   edit = {
+      start = delete_start,
+      deleteCount = delete_count
+   }
+
+   -- Include new data if we're inserting anything
+   if insert_count > 0 then
+      edit.data = array<int>
+      for i = prefix_ints, prefix_ints + insert_count - 1 do
+         edit.data:push(NewData[i])
+      end
+   end
+
+   return array<table> { edit }
+end

@@ -1,0 +1,83 @@
+-- $TIRI
+-- Flute tests for MP3 playback.
+-- These are audible tests that require human verification to confirm a full pass.
+
+@BeforeAll setp(State)
+   global glFolder = State.folder
+   global glAudio = obj.new('audio', { name='SystemAudio' })
+   if not glAudio then error('Failed to create audio object.') end
+   if glAudio.acActivate() != ERR_Okay then
+      error('Failed to initialise audio server.')
+   end
+   global glLag = glAudio.mixerLag
+   print('Audio mixer lag time measured as ' .. string.format('%.2fs', glLag))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test ability to seek within an MP3 file.  Seeking within MP3 files is imprecise, so wide tolerances are used when
+-- confirming results.
+
+@Test function Seek()
+   proc = processing.new()
+
+   time, time_taken
+   wake = function(SoundID)
+      time_taken = (mSys.preciseTime() - time) / 1000000
+      proc.signal()
+   end
+
+   -- Pre-seek by setting the position on initialisation
+
+   print('Pre-seek to half-way position.')
+
+   snd = obj.new('sound', { path=glFolder .. 'synth-cbr-joint-192k.mp3', onStop=wake, volume=0.33 })
+   assert(snd, 'Failed to process MP3 file.')
+
+   snd.acSeek(0.5, SEEK_RELATIVE)
+   assert(snd.acActivate() is ERR_Okay, 'Failed to playback MP3 sample.')
+   time = mSys.preciseTime()
+
+   proc.sleep()
+
+   duration = snd.duration / 2
+   assert(time_taken > duration-0.05, 'End-of-sample occurred earlier than duration of ' .. duration .. ': ' .. time_taken)
+   assert(time_taken < duration+glLag+0.1, 'End-of-sample exceeded duration of ' .. duration .. ': ' .. time_taken)
+
+   -- Post-seek by using the seek() action after initialisation
+
+   print('Post-seek to half-way position.')
+
+   snd = obj.new('sound', { path=glFolder .. 'synth-cbr-mono-192k.mp3', onStop=wake, volume=0.33 })
+   assert(snd, 'Failed to process MP3 file.')
+
+   assert(snd.acActivate() is ERR_Okay, 'Failed to playback MP3 sample.')
+   snd.acSeek(0.5, SEEK_RELATIVE)
+   time = mSys.preciseTime()
+
+   proc.sleep()
+
+   duration = snd.duration / 2
+   assert(time_taken > duration-0.05, 'End-of-sample occurred earlier than duration of ' .. duration .. ': ' .. time_taken)
+   assert(time_taken < duration+glLag+0.1, 'End-of-sample exceeded duration of ' .. duration .. ': ' .. time_taken)
+
+   proc.sleep(0.25)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test code tolerance to files that are very small and have some non-consumable data.  A static noise must be
+-- produced.
+
+@Test function Tolerance()
+   proc = processing.new()
+
+   snd = obj.new('sound', { path=glFolder .. 'MEANDR90.mp3', volume=0.33 })
+   assert(snd, 'Failed to process MP3 file.')
+
+   snd.onStop = function(SoundID)
+      proc.signal()
+   end
+
+   snd.acActivate()
+   proc.sleep()
+   proc.sleep(0.25)
+end

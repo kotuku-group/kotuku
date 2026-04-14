@@ -11,12 +11,12 @@
     <id>8bf5f002</id>
     <idstring>METACLASS</idstring>
     <category>System</category>
-    <copyright>Paul Manias 1996-2025</copyright>
+    <copyright>Paul Manias 1996-2026</copyright>
     <description>
-<p>The MetaClass is responsible for managing the construction of new classes.  Each MetaClass object remains active for the lifetime of the running program, and provides the benefit of run-time introspection so that detailed class information can be retrieved at any time.  This enables scripting languages such as Fluid to interact with all class types without needing active knowledge of their capabilities.</p>
+<p>The MetaClass is responsible for managing the construction of new classes.  Each MetaClass object remains active for the lifetime of the running program, and provides the benefit of run-time introspection so that detailed class information can be retrieved at any time.  This enables scripting languages such as Tiri to interact with all class types without needing active knowledge of their capabilities.</p>
 <p>A number of additional functions are available in the Core for the purpose of class management and introspection. <function>FindClass</function> allows all registered classes to be scanned.  <function>CheckAction</function> verifies if a specific action is supported by a class.  <function>FindField</function> confirms if a specific field is declared in the class specification.</p>
 <p>Classes are typically declared in modules, but if a class is intended to be private for an executable then declaring it within the application code is feasible also.</p>
-<p>Further discussion on classes and their technical aspects can be found in the Parasol Wiki.</p></description>
+<p>Further discussion on classes and their technical aspects can be found in the Kotuku Wiki.</p></description>
     <source>
       <file path="../classes/">class_metaclass.cpp</file>
     </source>
@@ -28,13 +28,13 @@
       <comment>Search a class definition for a specific field.</comment>
       <prototype>ERR mc::FindField(OBJECTPTR Object, INT ID, struct Field ** Field, objMetaClass ** Source)</prototype>
       <input>
-        <param type="INT" name="ID">The field ID to search for.  Field names can be converted to ID's by using the <code>strihash()</code> function.</param>
+        <param type="INT" name="ID">The field ID to search for.  Field names can be converted to ID's by using the <code>fieldhash()</code> function.</param>
         <param type="struct Field **" name="Field">Pointer to the <st>Field</st> if discovered, otherwise <code>NULL</code>.</param>
         <param type="objMetaClass **" name="Source">Pointer to the class that is associated with the <code>Field</code> (which can match the caller), or <code>NULL</code> if the field was not found.</param>
       </input>
       <description>
 <p>This method checks if a class has defined a given field by scanning its blueprint for a matching <code>ID</code>.  If found, a direct pointer to the <code>Field</code> struct will be returned to the client.</p>
-<p>In some clases the field might not be present in the main class spec, but does appear in an integral class.  In that case, a reference to the class will be returned in the <code>Source</code> parameter.</p>
+<p>In some classes the field might not be present in the main class spec, but does appear in an integral class.  In that case, a reference to the class will be returned in the <code>Source</code> parameter.</p>
       </description>
     </method>
 
@@ -147,7 +147,7 @@
       <type>const struct FieldArray *</type>
       <description>
 <p>This field points to an array that describes the structure of objects that will be generated for this class.  It is compulsory that base classes define this array.  Sub-classes will inherit the structure of their base, but they may set Fields with additional virtual fields if desired.</p>
-<p>Refer to the Parasol Wiki on class development for more information.</p>
+<p>Refer to the Kotuku Wiki on class development for more information.</p>
       </description>
     </field>
 
@@ -318,7 +318,7 @@
       <field name="SetValue" type="APTR">A virtual function that will set the value for this field.</field>
       <field name="WriteValue" type="FUNCTION *" prototype="ERR (*WriteValue)(OBJECTPTR, struct Field *, int, const void *, int)">An internal function for writing to this field.</field>
       <field name="Name" type="CSTRING">The English name for the field, e.g. <code>Width</code></field>
-      <field name="FieldID" type="UINT">Provides a fast way of finding fields, e.g. <code>FID_Width</code></field>
+      <field name="FieldID" type="UINT">32-bit hash from fieldhash(). Represented by FID constants, e.g. <code>FID_Width</code></field>
       <field name="Offset" type="UINT16">Field offset within the object</field>
       <field name="Index" type="UINT16">Field array index</field>
       <field name="Flags" type="UINT">Special flags that describe the field</field>

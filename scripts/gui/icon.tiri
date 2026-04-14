@@ -1,0 +1,219 @@
+--[[
+Documentation is available in the Kotuku Wiki.
+--]]
+
+   import 'gui'
+
+   namespace 'gui'
+
+   lVec = mVec -- Localise the gui mVec
+
+FONT_MAX_HEIGHT, FONT_HEIGHT = gui.getFontHeight(gui.fonts.icon)
+MARGIN = math.floor(FONT_HEIGHT * 0.5) + 1
+
+rx_whitespace = <{ regex.new([[\s+]]) }>
+rx_volume_prefix = <{ regex.new([[^[^:\/\\]+:]]) }>
+
+-- NB: If a custom SVG file is desired then the client must specify a volume in the path.
+
+function imageLocation(Path)
+   if Path:startsWith('icons:') then
+      return Path
+   elseif rx_volume_prefix.test(Path) then
+      return Path
+   else
+      return 'icons:' .. Path
+   end
+end
+
+gui.icon = function(Options)
+   self = { -- Public variables
+      parentViewport = Options.target,
+      events         = Options.events ?? { },
+      viewport       = nil -- The icon's primary viewport
+   }
+
+   local lText, lTextGroup, lThemeColour
+   lClick      = { held=false, x=0, y=0 }
+   lWords      = array<table>
+   lLines      = array<string>
+   lIconSize   = Options.size ?? 66
+   lIconWidth  = lIconSize
+   lFontSize   = FONT_HEIGHT
+   lLineHeight = 0
+
+   function inputFeedback(Viewport, Msg)
+      if Msg.type is JET_BUTTON_1 then
+         if Msg.value > 0 then
+            lClick.held = true
+            lClick.x = Msg.absX
+            lClick.y = Msg.absY
+            Viewport.opacity = 0.5
+            --Viewport.acMoveToFront()
+         else
+            lClick.held = false
+            Viewport.opacity = 1.0
+            --Viewport.acMoveToBack()
+
+            if (math.abs(Msg.absX - lClick.x) > 2) or (math.abs(Msg.absY - lClick.y) > 2) then
+               -- Do nothing - mouse moved/dragged when icon was clicked
+            elseif self.events.activate then
+               if Msg.flags has JTYPE_DBL_CLICK then
+                  self.events.activate(self, { name='dblclick' })
+               else
+                  self.events.activate(self, { name='click' })
+               end
+            end
+         end
+         Viewport.acDraw()
+      elseif Msg.type is JET_BUTTON_2 then
+         self.events.activate(self, { name='altclick' })
+      end
+   end
+
+   function calcWords()
+      lWords = array<table>
+      lLines = array<string>
+      lText ?? return
+
+      lFontSize = choose lIconSize from
+         < 26 -> 6
+         < 60 -> 8
+         else -> 10
+      end
+
+      err, font = lVec.getFontHandle(gui.fonts.icon.face, "Regular", 0, lFontSize)
+      metrics = struct.new('FontMetrics')
+      err = lVec.getFontMetrics(font, metrics)
+      lLineHeight = metrics.lineSpacing
+
+      -- Extract each word's pixel width
+
+      widest_word = 0
+      for word in values(lText) do
+         width = lVec.stringWidth(font, word, -1)
+         if width > widest_word then widest_word = width end
+         lWords:push({ word=word, width=width })
+      end
+
+      -- If necessary, expand the width of the icon to fit the longest word.
+
+      lIconWidth = lIconSize
+      if widest_word + (MARGIN * 2) > lIconWidth then
+         lIconWidth = widest_word + (MARGIN * 2)
+      end
+
+      local current_line
+      for word in values(lWords) do
+         if not current_line then
+            current_line = word.word
+         else
+            new_line = current_line .. ' ' .. word.word
+            width = lVec.stringWidth(font, new_line, -1)
+            if width + (MARGIN * 2) < lIconWidth then
+               current_line = new_line
+            else
+               lLines:push(current_line)
+               current_line = word.word -- Push the word to the next line
+            end
+         end
+      end
+
+      if current_line then
+         lLines:push(current_line)
+      end
+   end
+
+   function initText()
+      -- Create a dark rounded box in the background of the text, this will make it easier to distinguish the text
+      -- against a busy background or one of a similar colour.
+
+      lLines ?? return
+
+      box_height = self.viewport.height - (lIconSize + MARGIN)
+      y = lIconSize + MARGIN
+
+      lTextGroup = self.viewport.new('VectorGroup', { })
+
+      lTextGroup.new('VectorRectangle', {
+         fill   = 'rgba(0,0,0,.5)',
+         x      = 0,
+         y      = math.floor(y),
+         roundX = 5,
+         roundY = 5,
+         width  = lIconSize - 1.0,
+         height = box_height
+      })
+
+      for line in values(lLines) do
+         vText = lTextGroup.new('VectorText', {
+            x         = math.floor(lIconSize * 0.5),
+            face      = gui.fonts.icon.face,
+            fontSize  = string.format('%.2fpt', lFontSize),
+            fontStyle = gui.fonts.icon.style,
+            fill      = gui.style.widget.text,
+            align     = 'horizontal',
+            string    = line
+         })
+
+         y += lLineHeight
+         vText.y = math.floor(y)
+      end
+   end
+
+   -- Main entry point
+
+   if Options.text?? then
+      lText = rx_whitespace.replace(Options.text:trim(), ' '):split(' ')
+   else
+      lText = nil
+   end
+
+   assert(Options.target, 'A target viewport is required.')
+   assert(Options.image??, 'The image option is required.')
+
+   theme = gui.getTheme(Options.target)
+   lThemeColour = gui.iconThemes[theme.page.icon ?? 'carbon']
+
+   calcWords()
+
+   self.viewport = Options.target.new('VectorViewport', {
+      x = Options.x ?? 0, y = Options.y ?? 0,
+      width = lIconSize, height = lIconSize,
+      aspectRatio = 'XMid|YMin|Meet',
+      cursor = 'hand'
+   })
+
+   self.iconVP = self.viewport.new('VectorViewport', {
+      x = 0, y = 0, width = lIconSize, height = lIconSize
+   })
+
+   self.viewport.dragCallback = function(Viewport, X, Y)
+      Viewport.x = X
+      Viewport.y = Y
+      Viewport.acDraw()
+   end
+
+   src = imageLocation(Options.image)
+   assert(src, 'Invalid image source ' .. Options.image)
+   self.svg = obj.new('svg', { target=self.iconVP, path=src })
+
+   gname = 'iconFill' .. self.iconVP.id
+   self.svgGradient = gui.simpleGradient(self.iconVP.scene, gname, { lThemeColour.first, lThemeColour.last },
+      0, self.iconVP.y, 0, 1, 'boundingbox')
+   gui.applyFill(self.iconVP, f'url(#{gname})')
+
+   check self.viewport.mtSubscribeInput(JTYPE_BUTTON, inputFeedback)
+
+   gap = self.viewport.height * 0.1
+   if gap < 2 then gap = 2 end
+
+   self.viewport.height += gap + MARGIN + (lLineHeight * #lLines)
+
+   initText()
+
+   self.events?.show(self)
+   self.viewport.acDraw()
+
+   return self
+end

@@ -1,0 +1,341 @@
+----------------------------------------------------------------------------------------------------------------------
+-- FUNCTION CALLS
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Call local functions with various argument counts
+
+@Test function FunctionLocalCalls()
+   -- Define local functions with varying argument counts
+   local function noArgs()
+      return 42
+   end
+
+   local function oneArg(a)
+      return a * 2
+   end
+
+   local function twoArgs(a, b)
+      return a + b
+   end
+
+   local function threeArgs(a, b, c)
+      return a + b + c
+   end
+
+   local function fiveArgs(a, b, c, d, e)
+      return a + b + c + d + e
+   end
+
+   local function returnsMultiple(x)
+      return x, x * 2, x * 3
+   end
+
+   for i in {0..1000000} do
+      -- Call with no arguments
+      local r0 = noArgs()
+
+      -- Call with one argument
+      local r1 = oneArg(i)
+
+      -- Call with two arguments
+      local r2 = twoArgs(i, i + 1)
+
+      -- Call with three arguments
+      local r3 = threeArgs(i, i + 1, i + 2)
+
+      -- Call with five arguments
+      local r5 = fiveArgs(i, i + 1, i + 2, i + 3, i + 4)
+
+      -- Multiple return values
+      local a, b, c = returnsMultiple(i)
+
+      -- Chain function calls
+      local chained = oneArg(oneArg(oneArg(i)))
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Call functions with variadic arguments
+
+@Test function FunctionVariadic()
+   -- Variadic function that sums all arguments
+   local function sumAll(...)
+      local args = {...}
+      local total = 0
+      for _, v in ipairs(args) do
+         total += v
+      end
+      return total
+   end
+
+   -- Variadic function with fixed first argument
+   local function formatArgs(prefix, ...)
+      local args = {...}
+      return prefix .. #args
+   end
+
+   -- Function that forwards variadic arguments
+   local function forwardArgs(...)
+      return sumAll(...)
+   end
+
+   for i in {0..1000} do
+      -- Call with varying argument counts
+      local s1 = sumAll(1)
+      local s2 = sumAll(1, 2)
+      local s3 = sumAll(1, 2, 3)
+      local s5 = sumAll(1, 2, 3, 4, 5)
+      local s10 = sumAll(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+
+      -- Mixed fixed and variadic
+      local f1 = formatArgs("test", 1, 2, 3)
+      local f2 = formatArgs("data", 1, 2, 3, 4, 5)
+
+      -- Forward variadic arguments
+      local fwd = forwardArgs(i, i + 1, i + 2)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Create and call closures that capture upvalues
+
+@Test function FunctionClosures()
+   for i in {0..1000} do
+      -- Simple closure capturing one variable
+      local x = i
+      local getX = function()
+         return x
+      end
+      local v1 = getX()
+
+      -- Closure capturing multiple variables
+      local a, b, c = i, i + 1, i + 2
+      local getSum = function()
+         return a + b + c
+      end
+      local v2 = getSum()
+
+      -- Closure that modifies captured variable
+      local counter = 0
+      local increment = function()
+         counter++
+         return counter
+      end
+      for j = 0, 9 do
+         increment()
+      end
+
+      -- Nested closures
+      local outer = i
+      local makeInner = function()
+         local inner = outer * 2
+         return function()
+            return inner + outer
+         end
+      end
+      local innerFn = makeInner()
+      local v3 = innerFn()
+
+      -- Closure factory pattern
+      local makeAdder = function(n)
+         return function(x)
+            return x + n
+         end
+      end
+      local add5 = makeAdder(5)
+      local add10 = makeAdder(10)
+      local v4 = add5(i)
+      local v5 = add10(i)
+
+      -- Multiple closures sharing upvalue
+      local shared = 0
+      local inc = function() shared++ end
+      local get = function() return shared end
+      inc()
+      inc()
+      local v6 = get()
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Use anonymous function expressions with arrow syntax
+
+@Test function FunctionAnonymous()
+   for i in {0..1000} do
+      -- Simple arrow function
+      local double = (x => x * 2)
+      local v1 = double(i)
+
+      -- Arrow function with expression body
+      local sum = ((a, b) => a + b)
+      local v2 = sum(i, i + 1)
+
+      -- Arrow function in higher-order context
+      local numbers = { 1, 2, 3, 4, 5 }
+      local mapped = {}
+      for idx, n in ipairs(numbers) do
+         mapped[idx] = (x => x * 2)(n)
+      end
+
+      -- Immediately invoked arrow function
+      local result = (x => x * x)(i)
+
+      -- Arrow functions as callbacks (simulated)
+      local apply = function(fn, val)
+         return fn(val)
+      end
+      local v3 = apply((x => x + 10), i)
+      local v4 = apply((x => x * 3), i)
+
+      -- Nested arrow functions
+      local compose = function(f, g)
+         return (x => f(g(x)))
+      end
+      local addOne = (x => x + 1)
+      local timesTwo = (x => x * 2)
+      local composed = compose(addOne, timesTwo)
+      local v5 = composed(i)
+
+      -- Arrow function capturing upvalue
+      local multiplier = i % 10 + 1
+      local multiply = (x => x * multiplier)
+      local v6 = multiply(5)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Execute recursive function calls
+
+@Test function FunctionRecursive()
+   -- Recursive factorial (limited depth)
+   local function factorial(n:num):num
+      if n <= 1 then return 1 end
+      return n * factorial(n - 1)
+   end
+
+   -- Recursive fibonacci (limited depth)
+   local function fibonacci(n:num):num
+      if n <= 1 then return n end
+      return fibonacci(n - 1) + fibonacci(n - 2)
+   end
+
+   -- Tail-recursive sum
+   local function sumTo(n:num, acc:num):num
+      acc = acc ?? 0
+      if n <= 0 then return acc end
+      return sumTo(n - 1, acc + n)
+   end
+
+   -- Recursive tree traversal simulation
+   local function countDown(n:num):num
+      if n <= 0 then return 0 end
+      return 1 + countDown(n - 1)
+   end
+
+   -- Mutual recursion
+   local isEven, isOdd
+   isEven = function(n:num):bool
+      if n is 0 then return true end
+      return isOdd(n - 1)
+   end
+
+   isOdd = function(n:num):bool
+      if n is 0 then return false end
+      return isEven(n - 1)
+   end
+
+   for i in {0..500} do
+      -- Call recursive functions with safe depths
+      local f1 = factorial(10)
+      local f2 = factorial(12)
+
+      -- Fibonacci (small values to avoid exponential blowup)
+      local fib1 = fibonacci(10)
+      local fib2 = fibonacci(12)
+
+      -- Tail-recursive
+      local s1 = sumTo(50)
+      local s2 = sumTo(100)
+
+      -- Simple recursion
+      local c1 = countDown(50)
+      local c2 = countDown(100)
+
+      -- Mutual recursion
+      local e1 = isEven(20)
+      local o1 = isOdd(21)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Call methods on tables using colon syntax
+
+@Test function FunctionMethodCalls()
+   -- Create object-like tables with methods
+   local Counter = {
+      value = 0,
+      increment = function(self)
+         self.value++
+         return self.value
+      end,
+      decrement = function(self)
+         self.value--
+         return self.value
+      end,
+      add = function(self, n)
+         self.value += n
+         return self.value
+      end,
+      getValue = function(self)
+         return self.value
+      end,
+      reset = function(self)
+         self.value = 0
+      end
+   }
+
+   local Point = {
+      x = 0,
+      y = 0,
+      set = function(self, x, y)
+         self.x = x
+         self.y = y
+      end,
+      translate = function(self, dx, dy)
+         self.x += dx
+         self.y += dy
+      end,
+      distance = function(self)
+         return math.sqrt(self.x * self.x + self.y * self.y)
+      end
+   }
+
+   for i in {0..10000} do
+      -- Method calls with colon syntax
+      Counter:reset()
+      Counter:increment()
+      Counter:increment()
+      Counter:add(5)
+      local v1 = Counter:getValue()
+      Counter:decrement()
+
+      -- Multiple method calls in sequence
+      Point:set(i % 100, i % 50)
+      Point:translate(1, 2)
+      Point:translate(-1, 1)
+      local d = Point:distance()
+
+      -- Create new instances
+      local obj = { value = 0 }
+      setmetatable(obj, { __index = Counter })
+      obj:increment()
+      obj:add(10)
+      local v2 = obj:getValue()
+
+      -- Chain-like method usage
+      Counter:reset()
+      for j = 0, 9 do
+         Counter:increment()
+      end
+      local final = Counter:getValue()
+   end
+end

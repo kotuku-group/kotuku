@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="Audio" mod="Audio" c="Supports a machine's audio hardware and provides a client-server audio management service." cat="Audio" id="0f1c28b7" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="Audio" mod="Audio" c="Supports a machine's audio hardware and provides a client-server audio management service." cat="Audio" id="0f1c28b7" v="1">
   <ai:a n="Activate" c="Enables access to the audio hardware and initialises the mixer." p="ERR acActivate(*Object)">
     <ai:e c="Okay"/>
     <ai:e c="Failed"/>

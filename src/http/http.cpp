@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -37,7 +37,7 @@ further processing:
 
 <pre>
 http = obj.new('http', {
-   src        = 'http://www.parasol.ws/index.html',
+   src        = 'http://www.kotuku.dev/index.html',
    method     = 'get',
    outputFile = 'temp:index.html',
    stateChanged = function(HTTP, State)
@@ -53,7 +53,7 @@ This example uses data feeds to push the downloaded data to another object in te
 <pre>
 doc = obj.new('scintilla')
 http = obj.new('http', {
-   src        = 'http://www.parasol.ws/index.html',
+   src        = 'http://www.kotuku.dev/index.html',
    method     = 'get',
    datatype   = 'text',
    objectMode = 'DATA_FEED',
@@ -99,11 +99,11 @@ For information about the HTTP protocol, please refer to the official protocol w
 #include <algorithm>
 #include <format>
 
-#include <parasol/main.h>
-#include <parasol/modules/http.h>
-//#include <parasol/modules/display.h>
-#include <parasol/modules/network.h>
-#include <parasol/strings.hpp>
+#include <kotuku/main.h>
+#include <kotuku/modules/http.h>
+//#include <kotuku/modules/display.h>
+#include <kotuku/modules/network.h>
+#include <kotuku/strings.hpp>
 #include "../link/base64.h"
 
 #include "md5.c"
@@ -927,7 +927,7 @@ static ERR HTTP_NewPlacement(extHTTP *Self)
 {
    new (Self) extHTTP;
    Self->Error          = ERR::Okay;
-   Self->UserAgent      = pf::strclone("Parasol Client");
+   Self->UserAgent      = pf::strclone("Kotuku Client");
    Self->DataTimeout    = 5.0;
    Self->ConnectTimeout = 10.0;
    Self->Datatype       = DATA::RAW;
@@ -1037,5 +1037,5 @@ static ERR create_http_class(void)
 
 //********************************************************************************************************************
 
-PARASOL_MOD(MODInit, nullptr, nullptr, MODExpunge, MOD_IDL, nullptr)
+KOTUKU_MOD(MODInit, nullptr, nullptr, MODExpunge, nullptr, MOD_IDL, nullptr)
 extern "C" struct ModHeader * register_http_module() { return &ModHeader; }

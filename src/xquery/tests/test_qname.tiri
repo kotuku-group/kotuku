@@ -1,0 +1,59 @@
+-- XPath 2.0 QName utility tests
+
+   include 'xml'
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Validate QName construction and decomposition helpers
+
+@Test function QNameConstruction()
+   local xml = obj.new("xml", {
+      flags = XMF_NAMESPACE_AWARE,
+      statement = '<root xmlns="http://example.com/default" xmlns:ex="http://example.com/ns" xmlns:dup="http://example.com/dup">'
+         .. '<ex:item ex:attr="value" />'
+         .. '<plain attr="value" />'
+         .. '</root>'
+   })
+
+   local errQName, qnameNode = xml.mtSearch('/root[QName("http://example.com/ns", "ex:item") = "Q{http://example.com/ns}ex:item"]')
+   assert(errQName is ERR_Okay and qnameNode != nil, 'QName() should produce canonical QName strings with explicit prefixes')
+
+   local errResolve, resolveNode = xml.mtSearch('/root/ex:item[resolve-QName("ex:item", .) = "Q{http://example.com/ns}ex:item"]')
+   assert(errResolve is ERR_Okay and resolveNode != nil, 'resolve-QName() should map prefixes using the supplied element context')
+
+   local errPrefix, prefixNode = xml.mtSearch('/root/ex:item[prefix-from-QName(resolve-QName("ex:item", .)) = "ex"]')
+   assert(errPrefix is ERR_Okay and prefixNode != nil, 'prefix-from-QName() should expose the lexical prefix of resolved QNames')
+
+   local errLocal, localNode = xml.mtSearch('/root/ex:item[local-name-from-QName(resolve-QName("ex:item", .)) = "item"]')
+   assert(errLocal is ERR_Okay and localNode != nil, 'local-name-from-QName() should extract the NCName component from resolved QNames')
+
+   local errNamespace, namespaceNode = xml.mtSearch('/root/ex:item[namespace-uri-from-QName(resolve-QName("ex:item", .)) = "http://example.com/ns"]')
+   assert(errNamespace is ERR_Okay and namespaceNode != nil, 'namespace-uri-from-QName() should reveal the namespace bound to prefixed QNames')
+
+   local errDefaultPrefix, defaultPrefixNode = xml.mtSearch('/root/plain[not(exists(prefix-from-QName(resolve-QName("plain", .))))]')
+   assert(errDefaultPrefix is ERR_Okay and defaultPrefixNode != nil, 'Unprefixed QNames should report no lexical prefix')
+
+   local errDefaultNamespace, defaultNamespaceNode = xml.mtSearch('/root/plain[namespace-uri-from-QName(resolve-QName("plain", .)) = "http://example.com/default"]')
+   assert(errDefaultNamespace is ERR_Okay and defaultNamespaceNode != nil, 'Default namespaces should apply to unprefixed QNames')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Validate namespace lookup helpers
+
+@Test function NamespaceUtilities()
+   local xml = obj.new("xml", {
+      flags = XMF_NAMESPACE_AWARE,
+      statement = '<root xmlns="http://example.com/default" xmlns:ex="http://example.com/ns" xmlns:dup="http://example.com/dup">'
+         .. '<ex:item ex:attr="value" />'
+         .. '<plain attr="value" />'
+         .. '</root>'
+   })
+
+   local errPrefixLookup, prefixLookupNode = xml.mtSearch('/root/ex:item[namespace-uri-for-prefix("ex", .) = "http://example.com/ns"]')
+   assert(errPrefixLookup is ERR_Okay and prefixLookupNode != nil, 'namespace-uri-for-prefix() should resolve declared prefixes within scope')
+
+   local errDefaultLookup, defaultLookupNode = xml.mtSearch('/root/plain[namespace-uri-for-prefix("", .) = "http://example.com/default"]')
+   assert(errDefaultLookup is ERR_Okay and defaultLookupNode != nil, 'namespace-uri-for-prefix() should reveal the default namespace when requested')
+
+   local errScope, scopeNode = xml.mtSearch('/root/ex:item["ex" = in-scope-prefixes(.) and "dup" = in-scope-prefixes(.) and "xml" = in-scope-prefixes(.)]')
+   assert(errScope is ERR_Okay and scopeNode != nil, 'in-scope-prefixes() should enumerate declared prefixes and the implicit xml prefix')
+end

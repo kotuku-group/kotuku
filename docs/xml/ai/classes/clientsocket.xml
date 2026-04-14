@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="ClientSocket" mod="Network" c="Represents a single socket connection to a client IP address." cat="Network" id="a14972ed" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="ClientSocket" mod="Network" c="Represents a single socket connection to a client IP address." cat="Network" id="a14972ed" v="1">
   <ai:a n="Read" c="Read incoming data from a client socket." p="ERR acRead(*Object, APTR Buffer, INT Length, INT *Result)">
     <ai:i n="Buffer" t="APTR" c="Points a buffer that will receive the data."/>
     <ai:i n="Length" t="INT" c="The total number of bytes to read from the object. This value cannot exceed the size of the Buffer."/>

@@ -2,22 +2,22 @@
 //********************************************************************************************************************
 // Executes the target.
 
-ERR exec_source(CSTRING TargetFile, int ShowTime, const std::string Procedure)
+ERR exec_source(std::string TargetFile, int ShowTime, const std::string Procedure)
 {
    pf::Log log(__FUNCTION__);
    ERR error;
 
-   log.msg("Identifying file '%s'", TargetFile);
+   log.msg("Identifying file '%s'", TargetFile.c_str());
 
-   FindClass(CLASSID::FLUID);
+   FindClass(CLASSID::TIRI);
 
    CLASSID class_id, subclass;
    if (pf::startswith("STRING:", TargetFile)) {
       subclass = CLASSID::SCRIPT;
       class_id = CLASSID::SCRIPT;
    }
-   else if ((error = IdentifyFile(TargetFile, CLASSID::NIL, &class_id, &subclass)) != ERR::Okay) {
-      printf("Failed to identify the type of file for path '%s', error: %s.  Assuming CLASSID::SCRIPT.\n", TargetFile, GetErrorMsg(error));
+   else if ((error = IdentifyFile(TargetFile.c_str(), CLASSID::NIL, &class_id, &subclass)) != ERR::Okay) {
+      printf("Failed to identify the type of file for path '%s', error: %s.  Assuming CLASSID::SCRIPT.\n", TargetFile.c_str(), GetErrorMsg(error));
       subclass = CLASSID::SCRIPT;
       class_id = CLASSID::SCRIPT;
    }
@@ -127,7 +127,7 @@ ERR exec_source(CSTRING TargetFile, int ShowTime, const std::string Procedure)
 
          for (unsigned i=glArgsIndex; i < args.size(); i++) {
             auto eq = args[i].find('=');
-            if (eq IS std::string::npos) acSetKey(glScript, args[i].c_str(), "1");
+            if (eq IS std::string::npos) acSetKey(glScript, args[i].c_str(), "true");
             else {
                auto argname = std::string(args[i], 0, eq);
                eq++;
@@ -173,7 +173,7 @@ ERR exec_source(CSTRING TargetFile, int ShowTime, const std::string Procedure)
             }
 
             CSTRING msg;
-            if ((glScript->get(FID_ErrorString, msg) IS ERR::Okay) and (msg)) {
+            if ((glScript->get(FID_ErrorMessage, msg) IS ERR::Okay) and (msg)) {
                log.msg("Script returned error message: %s", msg);
                return ERR::Failed;
             }

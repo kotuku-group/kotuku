@@ -21,7 +21,7 @@
 #define PLAT_WIN 0
 #define PLAT_WX  0
 #define PLAT_FOX 0
-#define PLAT_PARASOL 0
+#define PLAT_KOTUKU 0
 
 #if defined(FOX)
 #undef PLAT_FOX
@@ -35,9 +35,9 @@
 #undef PLAT_GTK
 #define PLAT_GTK 1
 
-#elif defined(__PARASOL__)
-#undef PLAT_PARASOL
-#define PLAT_PARASOL 1
+#elif defined(__KOTUKU__)
+#undef PLAT_KOTUKU
+#define PLAT_KOTUKU 1
 
 #if defined(__WIN32__) || defined(_MSC_VER)
 #undef PLAT_GTK_WIN32
@@ -318,7 +318,7 @@ public:
 	friend class Surface;
 	friend class SurfaceImpl;
 
-#if PLAT_PARASOL
+#if PLAT_KOTUKU
 	bool bold;
 	bool italic;
 #endif

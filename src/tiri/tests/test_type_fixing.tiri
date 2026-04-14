@@ -1,0 +1,732 @@
+-- Flute tests for Tiri Type Fixing feature
+-- Type fixing commits local variables to a specific type upon first non-nil assignment
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+----------------------------------------------------------------------------------------------------------------------
+-- EXPLICIT TYPE ANNOTATIONS
+
+@Test function ExplicitNumAnnotation()
+   local count: num = 0
+   assert(count is 0, "initial value should be 0")
+   count = 42
+   assert(count is 42, "reassignment same type should work")
+   count = 3.14159
+   assert(count is 3.14159, "float value should work for num type")
+end
+
+@Test function ExplicitStrAnnotation()
+   local message: str = "hello"
+   assert(message is "hello", "initial value should be 'hello'")
+   message = "world"
+   assert(message is "world", "reassignment same type should work")
+   message = ""
+   assert(message is "", "empty string should work for str type")
+end
+
+@Test function ExplicitBoolAnnotation()
+   local flag: bool = true
+   assert(flag is true, "initial value should be true")
+   flag = false
+   assert(flag is false, "reassignment to false should work")
+   flag = true
+   assert(flag is true, "reassignment back to true should work")
+end
+
+@Test function ExplicitTableAnnotation()
+   local config: table = { host = "localhost" }
+   assert(config.host is "localhost", "initial table should have host field")
+   config = { port = 8080 }
+   assert(config.port is 8080, "different table shape should work")
+   config = {}
+   assert(type(config) is "table", "empty table should work")
+end
+
+@Test function ExplicitFuncAnnotation()
+   local handler: func = function() return 1 end
+   assert(handler() is 1, "initial function should return 1")
+   handler = function() return 2 end
+   assert(handler() is 2, "reassignment to different function should work")
+end
+
+@Test function ExplicitAnyOpt()
+   local variant: any = 0
+   assert(variant is 0, "initial number value")
+   variant = "text"
+   assert(variant is "text", "changed to string should work for any type")
+   variant = { key = true }
+   assert(variant.key is true, "changed to table should work for any type")
+   variant = nil
+   assert(variant is nil, "changed to nil should work for any type")
+   variant = false
+   assert(variant is false, "changed to boolean should work for any type")
+end
+
+@Test function ExplicitAnyAcceptsAllTypes()
+   -- The 'any' type should accept any value without type errors
+   local data: any
+
+   data = 42
+   assert(type(data) is "number", "any should accept number")
+
+   data = "string"
+   assert(type(data) is "string", "any should accept string")
+
+   data = true
+   assert(type(data) is "boolean", "any should accept boolean")
+
+   data = { x = 1 }
+   assert(type(data) is "table", "any should accept table")
+
+   data = function() end
+   assert(type(data) is "function", "any should accept function")
+
+   data = nil
+   assert(data is nil, "any should accept nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- IMPLICIT TYPE FIXING (no annotation)
+
+@Test function ImplicitFixingNumber()
+   local count = 10
+   assert(count is 10, "initial number")
+   count = 20
+   assert(count is 20, "reassignment same type should work")
+   count = 0
+   assert(count is 0, "zero should work")
+end
+
+@Test function ImplicitFixingString()
+   local name = "Alice"
+   assert(name is "Alice", "initial string")
+   name = "Bob"
+   assert(name is "Bob", "reassignment same type should work")
+   name = ""
+   assert(name is "", "empty string should work")
+end
+
+@Test function ImplicitFixingBoolean()
+   local active = true
+   assert(active is true, "initial boolean")
+   active = false
+   assert(active is false, "reassignment to false should work")
+end
+
+@Test function ImplicitFixingTable()
+   local data = { a = 1 }
+   assert(data.a is 1, "initial table")
+   data = { b = 2 }
+   assert(data.b is 2, "different table shape should work")
+   data = {}
+   assert(type(data) is "table", "empty table should work")
+end
+
+@Test function ImplicitFixingFunction()
+   local fn = function() return "original" end
+   assert(fn() is "original", "initial function")
+   fn = function() return "replaced" end
+   assert(fn() is "replaced", "reassignment to different function should work")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- NIL SEMANTICS
+
+@Test function NilPlaceholderDeferred()
+   local result
+   assert(result is nil, "initially nil")
+   result = nil
+   assert(result is nil, "still uncommitted after nil assignment")
+   result = 42
+   assert(result is 42, "now fixed to number")
+   result = 100
+   assert(result is 100, "reassignment same type should work")
+end
+
+@Test function NilClearsValue()
+   local x = 10
+   assert(x is 10, "initial value")
+   x = nil
+   assert(x is nil, "value cleared to nil")
+   x = 42
+   assert(x is 42, "reassigned back to number")
+end
+
+@Test function TypedVariableStartsNil()
+   local count: num
+   assert(count is nil, "typed variable starts nil")
+   count = 10
+   assert(count is 10, "assigned number value")
+   count = nil
+   assert(count is nil, "cleared back to nil")
+   count = 20
+   assert(count is 20, "reassigned number value")
+end
+
+@Test function NilAssignmentToTypedVariable()
+   local message: str = "hello"
+   assert(message is "hello", "initial string value")
+   message = nil
+   assert(message is nil, "nil clears value preserving type constraint")
+   message = "world"
+   assert(message is "world", "string reassignment should work")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- TYPE ANNOTATION ALIASES
+
+@Test function TypeAliases()
+   -- num/number are aliases
+   local n1: num = 1
+   local n2: number = 2
+   assert(n1 is 1, "num alias works")
+   assert(n2 is 2, "number alias works")
+
+   -- str/string are aliases
+   local s1: str = "a"
+   local s2: string = "b"
+   assert(s1 is "a", "str alias works")
+   assert(s2 is "b", "string alias works")
+
+   -- bool/boolean are aliases
+   local b1: bool = true
+   local b2: boolean = false
+   assert(b1 is true, "bool alias works")
+   assert(b2 is false, "boolean alias works")
+
+   -- func/function are aliases
+   local f1: func = function() return 1 end
+   local f2: function = function() return 2 end
+   assert(f1() is 1, "func alias works")
+   assert(f2() is 2, "function alias works")
+
+   -- obj/object are aliases
+   -- Skip actual object testing - just verify parsing works
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- TYPE MISMATCH ERROR DETECTION
+
+@Test function TypeMismatchNumberToString()
+   try
+      exec("local x = 10; x = 'text'")
+   success
+      error("should have thrown type error for number to string")
+   end
+end
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function TypeMismatchStringToNumber()
+   try
+      exec("local name = 'Alice'; name = 42")
+   success
+      error("should have thrown type error for string to number")
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function TypeMismatchBooleanToString()
+   try
+      exec("local flag = true; flag = 'yes'")
+   success
+      error("should have thrown type error for boolean to string")
+   end
+end
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function TypeMismatchTableToString()
+   try
+      exec("local data = {}; data = 'not a table'")
+   success
+      error("should have thrown type error for table to string")
+   end
+end
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function TypeMismatchFunctionToNumber()
+   try
+      exec("local fn = function() end; fn = 123")
+   success
+      error("should have thrown type error for function to number")
+   end
+end
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function TypeMismatchWithExplicitAnnotation()
+   try
+      exec("local count: num = 10; count = 'text'")
+   success
+      error("should have thrown type error for annotated variable")
+   end
+end
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function TypeMismatchInitialValue()
+   -- Explicit annotation with mismatched initial value
+   try
+      exec("local count: num = 'not a number'")
+   success
+      error("should have thrown type error for mismatched initial value")
+   end
+end
+----------------------------------------------------------------------------------------------------------------------
+
+@Test(hotpath=false) function UnknownTypeRejected()
+   try
+      exec("local x: NotAType = 42")
+   success
+      error("should have rejected unknown type name")
+   end
+end
+----------------------------------------------------------------------------------------------------------------------
+-- DEFERRED TYPE FIXING (nil placeholder then assignment)
+
+@Test function DeferredFixingThenMismatch()
+   try
+      exec("local result; result = 42; result = 'text'")
+   success
+      error("should have thrown type error for deferred fixing mismatch")
+   end
+end
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function DeferredFixingWithNilAssignments()
+   try
+      exec("local value; value = nil; value = nil; value = 100; value = 'wrong'")
+   success
+      error("should have thrown type error for deferred fixing with nil assignments")
+   end
+end
+----------------------------------------------------------------------------------------------------------------------
+-- EDGE CASES
+
+@Test function MultipleLocalsOneLine()
+   local a, b, c = 1, "two", true
+   assert(a is 1, "first local should be number")
+   assert(b is "two", "second local should be string")
+   assert(c is true, "third local should be boolean")
+
+   a = 2
+   b = "three"
+   c = false
+   assert(a is 2, "first local reassignment should work")
+   assert(b is "three", "second local reassignment should work")
+   assert(c is false, "third local reassignment should work")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function MultipleAnnotatedLocals()
+   local x: num, y: str = 10, "hello"
+   assert(x is 10, "first annotated local")
+   assert(y is "hello", "second annotated local")
+
+   x = 20
+   y = "world"
+   assert(x is 20, "first annotated reassignment")
+   assert(y is "world", "second annotated reassignment")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function MixedAnnotatedAndUnannotated()
+   local typed: num, untyped = 10, "hello"
+   assert(typed is 10, "annotated local should be number")
+   assert(untyped is "hello", "unannotated local should be string")
+
+   typed = 20
+   untyped = "world"
+   assert(typed is 20, "annotated reassignment should work")
+   assert(untyped is "world", "unannotated reassignment should work")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function LoopVariableScope()
+   -- Loop variables should be independent per iteration
+   for i in {0..3} do
+      local item = i * 10
+      assert(item is i * 10, "loop variable should be fixed in each iteration")
+      item = i * 20
+      assert(item is i * 20, "reassignment within iteration should work")
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function NestedFunctionScope()
+   local outer = "outer"
+   assert(outer is "outer", "outer variable should be string")
+
+   function inner()
+      local nested = 42
+      assert(nested is 42, "nested variable should be number")
+      nested = 100
+      assert(nested is 100, "nested reassignment should work")
+      return nested
+   end
+
+   assert(inner() is 100, "nested function should return number")
+   outer = "modified"
+   assert(outer is "modified", "outer variable reassignment should work")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ConditionalBranches()
+   local value
+   if true then
+      value = 42
+   else
+      value = 100
+   end
+   assert(value is 42, "value should be from true branch")
+
+   value = 200
+   assert(value is 200, "reassignment after conditional should work")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- FUNCTION PARAMETERS (type annotations on parameters)
+
+@Test function TypedParameterBasic()
+   function greet(Name: str)
+      return "Hello, " .. Name
+   end
+   assert(greet("World") is "Hello, World", "typed parameter should work")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function TypedParameterMultiple()
+   function add(A: num, B: num)
+      return A + B
+   end
+   assert(add(3, 4) is 7, "multiple typed parameters should work")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function MixedTypedAndUntypedParameters()
+   function process(Value, Count: num)
+      return { value = Value, count = Count }
+   end
+   result = process("test", 5)
+   assert(result.value is "test", "untyped parameter should accept any value")
+   assert(result.count is 5, "typed parameter should have number")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- TABLE SHAPE FLEXIBILITY
+
+@Test function TableShapeNotTracked()
+   -- Type fixing does NOT track table shapes
+   local config = { host = "localhost", port = 8080 }
+   config = { completely = "different", structure = true }
+   assert(config.completely is "different", "different table shape should be allowed")
+   config = { nested = { deep = { value = 1 } } }
+   assert(config.nested.deep.value is 1, "deeply nested table should be allowed")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- SPECIAL VALUES
+
+@Test function ZeroNotNil()
+   local count = 0
+   assert(count is 0, "zero should fix type to number")
+   count = 42
+   assert(count is 42, "reassignment to non-zero should work")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function EmptyStringNotNil()
+   local text = ""
+   assert(text is "", "empty string should fix type to string")
+   text = "content"
+   assert(text is "content", "reassignment to non-empty should work")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function FalseNotNil()
+   local flag = false
+   assert(flag is false, "false should fix type to boolean")
+   flag = true
+   assert(flag is true, "reassignment to true should work")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function EmptyTableFixesType()
+   local data = {}
+   assert(type(data) is "table", "empty table should fix type to table")
+   data = { key = "value" }
+   assert(data.key is "value", "reassignment to non-empty table should work")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- COMPOUND OPERATORS WITH TYPE FIXING
+
+@Test function CompoundOperatorsPreserveType()
+   local count = 10
+   count += 5
+   assert(count is 15, "compound += should work with fixed num type")
+   count -= 3
+   assert(count is 12, "compound -= should work with fixed num type")
+   count *= 2
+   assert(count is 24, "compound *= should work with fixed num type")
+   count /= 4
+   assert(count is 6, "compound /= should work with fixed num type")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function StringConcatPreservesType()
+   local text = "hello"
+   text ..= " world"
+   assert(text is "hello world", "string concat should work with fixed str type")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function PostfixIncrementPreservesType()
+   local counter = 0
+   counter++
+   assert(counter is 1, "postfix ++ should work with fixed num type")
+   counter++
+   assert(counter is 2, "repeated postfix ++ should work")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- SPECIAL FLUID OPERATORS WITH TYPE FIXING
+
+@Test function IfNilOperatorWithTypedVariable()
+   local value: num
+   value ?= 42
+   assert(value is 42, "?= should assign to nil typed variable")
+   value ?= 100
+   assert(value is 42, "?= should not overwrite non-nil value")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function IfEmptyOperatorWithAnyType()
+   -- Using 'any' type to allow multi-type assignment
+   local value: any = 0
+   value ??= "fallback"
+   assert(value is "fallback", "??= should work with any type allowing type change")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- RUNTIME TYPE CHECKING
+-- These tests verify BC_ISTYPE emission for dynamic values like function returns and table lookups
+
+@Test function RuntimeCheckFunctionReturn()
+   -- Function return values require runtime type checking since their type
+   -- isn't known at compile time in the assignment context
+   function getNumber(): num
+      return 42
+   end
+   local x: num = 0
+   x = getNumber()
+   assert(x is 42, "runtime check should pass for matching function return type")
+end
+
+@Test function RuntimeCheckNilAllowed()
+   -- Nil should always be allowed for typed variables (clears the value)
+   function maybeNil()
+      return nil
+   end
+   local x: num = 10
+   x = maybeNil()  -- nil is always allowed
+   assert(x is nil, "nil should be allowed for typed variables")
+end
+
+@Test function RuntimeCheckTableLookup()
+   -- Table field lookups require runtime type checking
+   local data = { value = 42 }
+   local x: num = 0
+   x = data.value
+   assert(x is 42, "table lookup should pass type check when value matches")
+end
+
+@Test function RuntimeCheckTableLookupMismatch()
+   -- Table field lookup with type mismatch should raise error
+   try
+      exec([[
+         local data = { value = "not a number" }
+         local x: num = 0
+         x = data.value
+      ]])
+   success
+      error("Should raise error when table lookup type doesn't match")
+   end
+end
+
+@Test function RuntimeCheckFunctionReturnMismatch()
+   -- Function returning wrong type should raise error
+   try
+      exec([[
+         function getString()
+            return "text"
+         end
+         local x: num = 0
+         x = getString()
+      ]])
+   success
+      error("should raise error when function return type doesn't match")
+   end
+end
+
+@Test function RuntimeCheckMultipleFunctionCalls()
+   -- Multiple function calls should all be checked
+   function getValue(N)
+      if N is 1 then return 100 end
+      if N is 2 then return 200 end
+      return 300
+   end
+
+   local a: num = 0
+   local b: num = 0
+   local c: num = 0
+
+   a = getValue(1)
+   b = getValue(2)
+   c = getValue(3)
+
+   assert(a is 100, "first function call should pass")
+   assert(b is 200, "second function call should pass")
+   assert(c is 300, "third function call should pass")
+end
+
+@Test function RuntimeCheckNestedTableLookup()
+   -- Nested table lookups should be checked
+   local config = {
+      settings = {
+         timeout = 30
+      }
+   }
+   local timeout: num = 0
+   timeout = config.settings.timeout
+   assert(timeout is 30, "nested table lookup should pass type check")
+end
+
+@Test function RuntimeCheckWithConditionalReturn()
+   -- Function with conditional returns should be checked at runtime
+   function getValueOrNil(ReturnValue)
+      if ReturnValue then
+         return 42
+      else
+         return nil
+      end
+   end
+
+   local x: num = 0
+   x = getValueOrNil(true)
+   assert(x is 42, "conditional return with value should pass")
+
+   x = getValueOrNil(false)
+   assert(x is nil, "conditional return with nil should be allowed")
+end
+
+@Test function RuntimeCheckArrayIndex()
+   -- Array index access requires runtime type checking
+   local numbers = { 10, 20, 30 }
+   local x: num = 0
+   x = numbers[0]
+   assert(x is 10, "array index access should pass type check")
+   x = numbers[1]
+   assert(x is 20, "second array index should pass")
+   x = numbers[2]
+   assert(x is 30, "third array index should pass")
+end
+
+@Test function RuntimeCheckStaticTypesSkipped()
+   -- Statically-known types should skip runtime check (optimization)
+   -- These assignments should NOT emit BC_ISTYPE
+   local x: num = 0
+   x = 42        -- literal number - static check only
+   x = 3.14159   -- literal float - static check only
+   assert(x is 3.14159, "literal assignments should work without runtime check")
+
+   local s: str = ""
+   s = "hello"   -- literal string - static check only
+   assert(s is "hello", "literal string should work without runtime check")
+
+   local b: bool = false
+   b = true      -- literal boolean - static check only
+   assert(b is true, "literal boolean should work without runtime check")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- COMPILE-TIME TYPE CHECKING FOR FUNCTION RETURN TYPES
+-- When a function has explicit return type annotations, the compiler can check type compatibility
+-- at compile time rather than runtime.
+
+@Test function CompileTimeMatchingReturnTypes()
+   -- When function return type matches variable type, no runtime check needed
+   function getNumber(): num
+      return 42
+   end
+
+   local x: num = 0
+   x = getNumber()  -- Types match, no BC_ISTYPE emitted
+   assert(x is 42, "matching return types should work without runtime check")
+
+   -- Multiple calls should all skip runtime check
+   x = getNumber()
+   x = getNumber()
+   assert(x is 42, "repeated calls with matching types should work")
+end
+
+@Test function CompileTimeMismatchReturnTypes()
+   -- When function return type doesn't match variable type, compile-time error
+   try
+      exec([[
+         function getString(): str
+            return "hello"
+         end
+
+         local x: num = 0
+         x = getString()  -- Type mismatch: str vs num
+      ]])
+   success
+      error("mismatched return types should cause compile-time error")
+   end
+end
+
+@Test function CompileTimeAnyReturnTypeAllowed()
+   -- Function returning 'any' should allow assignment to any typed variable
+   function getAny(): any
+      return 42
+   end
+
+   local x: num = 0
+   x = getAny()  -- 'any' return type means runtime check needed
+   assert(x is 42, "function returning 'any' should work with typed variable")
+end
+
+@Test function CompileTimeUnknownReturnTypeRuntimeCheck()
+   -- Function without return type annotation requires runtime check
+   function getValue()
+      return 42
+   end
+
+   local x: num = 0
+   x = getValue()  -- Unknown return type, BC_ISTYPE emitted for runtime check
+   assert(x is 42, "unknown return type should use runtime check")
+end
+
+@Test function CompileTimeMultipleReturnTypesFirstOnly()
+   -- Only the first return type is checked for single-value assignment
+   function getNumberAndString():<num, str>
+      return 42, "hello"
+   end
+
+   local x: num = 0
+   x = getNumberAndString()  -- First return is num, matches
+   assert(x is 42, "first return type should be used for type check")
+end

@@ -11,7 +11,7 @@
     <id>16f8c294</id>
     <idstring>SOURCEFX</idstring>
     <category>Graphics</category>
-    <copyright>Paul Manias © 2010-2025</copyright>
+    <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>The SourceFX class will render a named vector into a given rectangle within the current user coordinate system.</p>
 <p>Technically the SourceFX object is represented by a new viewport, the bounds of which are defined by attributes <code>X</code>, <code>Y</code>, <code>Width</code> and <code>Height</code>.  The placement and scaling of the referenced vector is controlled by the <fl>AspectRatio</fl> field.</p></description>

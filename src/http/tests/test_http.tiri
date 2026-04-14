@@ -1,0 +1,414 @@
+--[[
+Various HTTP examples that demonstrate how to GET, POST, etc.
+
+Note: Network communications take place in the background once started.  In order to ensure that an HTTP operation
+fully completes, it is crucial that the HTTP object remains in memory for the entire procedure.  In Tiri we can do
+this by maintaining at least one reference to the object at all times and this will prevent it from being garbage
+collected too early.
+--]]
+
+   import 'net/httpserver'
+   import 'json'
+   include 'http'
+
+   glOutFile = 'temp:http-output.txt'
+   SERVER_PORT = 18942
+
+@BeforeAll function setup(State)
+   logOutput('Serving files from ' .. State.folder)
+
+   global glServer = hslib.start({
+      port    = SERVER_PORT,
+      folder  = State.folder,
+      verbose = true,
+      routes = {
+         { pattern = '/api/test',
+            method = 'GET',
+            handler = function(req, res)
+               res.json({ message = 'GET route works!' })
+            end
+         },
+         { pattern = '/post',
+            method = 'POST',
+            handler = function(req, res)
+               -- Return the request data for testing
+               res.json({
+                  message = 'Simple post works!',
+                  body = req.body,
+                  headers = req.headers
+               })
+            end
+         },
+         { pattern = '/api/users/:id',
+            method = 'POST',
+            handler = function(req, res)
+               userId = req.params.id
+               res.json({
+                  message = 'User route works!',
+                  userId = userId,
+                  method = req.method
+               })
+            end
+         }
+      }
+   })
+end
+
+@AfterAll function cleanup()
+   glServer.stop()
+   mSys.DeleteFile(glOutFile)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test GET, outputFile and stateChanged callback
+
+@Test(priority=1) function GetLocal()
+   proc = processing.new({ timeout = 10.0 })
+   content = ''
+
+   http = obj.new('http', {
+      src        = 'http://127.0.0.1:' .. SERVER_PORT .. '/test_http.tiri',
+      method     = 'GET',
+      connectTimeout = 10,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer:getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            proc.signal()
+         end
+      end
+   })
+
+   err = http.acActivate()
+   assert(err is ERR_Okay, "HTTP object failed to activate.")
+
+   err = proc.sleep()
+   assert(err is ERR_Okay, 'Processing failed: ' .. mSys.GetErrorMsg(err))
+   assert(http.error is ERR_Okay, 'HTTP object returned error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.currentState is HGS_COMPLETED, 'Expected HTTP state of COMPLETED not reached, got ' .. http.currentState)
+   assert(content??, 'No content received.')
+
+   print(string.format('Received: %.80s [80 of %d bytes]', content, content:len()))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- POST to a local server using chunking (contentLength is -1)
+
+@Test(priority=2) function PostStringLocal()
+   proc = processing.new({ timeout = 5.0 })
+   content = ''
+   testPostStringCompleted = nil
+   outgoing_body = 'fname=smith&lname=jones'
+
+   http = obj.new('http', {
+      src        = 'http://127.0.0.1:' .. SERVER_PORT .. '/post',
+      method     = 'post',
+      flags      = HTF_NO_HEAD,
+      contentLength = -1,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer:getString()
+      end,
+      outgoing = function(HTTP)
+         assert(testPostStringCompleted != true, 'This routine has been called a second time.')
+         msg('Request for data received.')
+         HTTP.acWrite(outgoing_body)
+         testPostStringCompleted = true
+         check ERR_Terminate
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            proc.signal()
+         end
+      end
+   })
+
+   assert(http.acActivate() is ERR_Okay, "HTTP object failed to activate.")
+
+   err = proc.sleep()
+   assert(err is ERR_Okay, 'Processing failed: ' .. mSys.GetErrorMsg(err))
+
+   assert(http.error is ERR_Okay, 'HTTP object returned error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.currentState is HGS_COMPLETED, 'Expected HTTP state of COMPLETED not reached, got ' .. http.currentState)
+   assert(content??, 'No content received.')
+   assert(http.status is 200, 'Unexpected HTTP status: ' .. http.status)
+   js_content = json.decode(content)
+   assert(js_content.body is outgoing_body, 'Unexpected response: ' .. content)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- curl -v -X POST http://httpbin.org/post -d "fname=smith&lname=jones"
+-- POST to an external server using chunking (contentLength is -1)
+
+@Test(priority=3) function PostStringExt()
+   proc = processing.new({ timeout = 5.0 })
+   local testPostStringCompleted
+   content = ''
+
+   http = obj.new('http', {
+      src        = 'http://httpbin.org/post',
+      method     = 'post',
+      flags      = HTF_NO_HEAD,
+      contentLength = -1,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer:getString()
+      end,
+      outgoing = function(HTTP)
+         assert(testPostStringCompleted != true, 'This routine has been called a second time.')
+         msg('Request for data received.')
+         HTTP.acWrite('fname=smith&lname=jones')
+         testPostStringCompleted = true
+         check ERR_Terminate
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            proc.signal()
+         end
+      end
+   })
+
+   assert(http.acActivate() is ERR_Okay, "HTTP object failed to activate.")
+
+   err = proc.sleep()
+
+   if (http.status >= 500) then
+      print('httpbin.org service unavailable; cannot perform test.')
+      return
+   end
+
+   assert(err is ERR_Okay, 'Processing failed: ' .. mSys.GetErrorMsg(err))
+   assert(http.error is ERR_Okay, 'HTTP object returned error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.currentState is HGS_COMPLETED, 'Expected HTTP state of COMPLETED not reached, got ' .. http.currentState)
+   assert(http.status is 200, 'Unexpected HTTP status: ' .. http.status)
+   assert(content??, 'No content received.')
+
+   form = json.decode(content)
+   assert(form, 'No JSON response received.')
+   assert(form.form.fname is 'smith', 'Unexpected response: ' .. content)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- POST to a local server using a string body and a predefined size (no chunking)
+
+@Test(priority=4) function PostStringFile()
+   proc = processing.new({ timeout = 5.0 })
+   outgoing_body = 'fname=joe&lname=bloggs'
+   content = ''
+
+   http = obj.new('http', {
+      src        = 'http://127.0.0.1:' .. SERVER_PORT .. '/post',
+      method     = 'post',
+      contentType = 'text/plain',
+      flags      = HTF_NO_HEAD,
+      inputFile  = 'string:' .. outgoing_body,
+      size       = outgoing_body:len(),
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            proc.signal()
+         end
+      end,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer:getString()
+      end
+   })
+
+   assert(http.acActivate() is ERR_Okay, "HTTP object failed to activate.")
+
+   err = proc.sleep()
+   assert(err is ERR_Okay, 'Processing failed: ' .. mSys.GetErrorMsg(err))
+
+   assert(http.error is ERR_Okay, 'HTTP object returned error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.currentState is HGS_COMPLETED, 'Expected HTTP state of COMPLETED not reached, got ' .. http.currentState)
+   assert(http.status is 200, 'Unexpected HTTP status: ' .. http.status)
+
+   js_content = json.decode(content)
+   assert(js_content.body is outgoing_body, 'Unexpected response in body: ' .. content)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test(priority=5); @Disabled(reason='Requires further development')
+function SSLOverProxy()
+   proc = processing.new({ timeout = 5.0 })
+
+   http = obj.new('http', {
+      src         = 'https://www.google.co.uk/',
+      method      = 'get',
+      outputFile  = glOutFile,
+      proxyserver = 'localhost',
+      proxyport   = '8080'
+   })
+
+   err = http.acActivate()
+   assert(err is ERR_Okay, 'HTTP activation failed: ' .. mSys.GetErrorMsg(err))
+
+   err = proc.sleep(5.0)
+   assert(err is ERR_Okay, 'Processing failed: ' .. mSys.GetErrorMsg(err))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- curl -v -X GET https://www.google.com
+
+@Test(priority=6) function HTTPS()
+   content = nil
+   proc = processing.new({ timeout = 5.0 })
+
+   http = obj.new('http', {
+      src        = 'https://www.google.com',
+      method     = 'get',
+      outputFile = glOutFile,
+      stateChanged = function(HTTP, State)
+         if State is HGS_COMPLETED then
+            msg('State changed to COMPLETED.')
+         end
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            proc.signal()
+         end
+         return ERR_Okay
+      end
+   })
+
+   assert(http.acActivate() is ERR_Okay, 'HTTP activation failed: ' .. mSys.GetErrorMsg(err))
+
+   err = proc.sleep(5.0)
+
+   content = io.readAll(glOutFile)
+   print(string.format('%.80s [%d bytes]', content, content:len()))
+   assert(content, 'No content received.')
+   assert(err is ERR_Okay, 'Processing failed: ' .. mSys.GetErrorMsg(err))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Making an HTTPS request to google.co.uk should cause a redirect to google.com, which should
+-- all be handled in the background.
+
+@Test(priority=7) function RedirectedHTTPS()
+   local content
+   proc = processing.new({ timeout = 5.0 })
+
+   http = obj.new('http', {
+      src        = 'https://www.google.co.uk',
+      method     = 'get',
+      outputFile = glOutFile,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) then
+            content = io.readAll(glOutFile)
+            print(string.format('%.80s [%d bytes]', content, content:len()))
+         end
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            proc.signal()
+         end
+         return ERR_Okay
+      end
+   })
+
+   err = http.acActivate()
+   assert(err is ERR_Okay, 'HTTP activation failed: ' .. mSys.GetErrorMsg(err))
+
+   err = proc.sleep(5.0)
+   assert(err is ERR_Okay, 'Processing failed: ' .. mSys.GetErrorMsg(err))
+   assert(content, 'No content received.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test(priority=8); @Disabled(reason='Requires further development')
+function MultiPart()
+   proc = processing.new({ timeout = 5.0 })
+   content = ''
+   boundary = '----------d6sXWGimDGTgb2GDuLZqbR'
+
+   http = obj.new('http', {
+      src         = 'http://127.0.0.1/upload',
+      method      = 'post',
+      outputFile  = glOutFile,
+      flags       = HTF_NO_HEADER,
+      contenttype = 'multipart/form-data; boundary=' .. boundary,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.toString()
+      end
+   } )
+
+   str = ''
+   CRLF = string.char(13,10)
+   filepath = 'system:icons.zip'
+   filename = 'icons.zip'
+
+   -- Parameters
+
+   msg('Building parameters')
+   str ..= '--' .. boundary .. CRLF
+   str ..= "Content-Disposition: form-data; name=\"method\"" .. CRLF .. CRLF
+   str ..= 'fileUpload' .. CRLF
+
+   str ..= '--' .. boundary .. CRLF
+   str ..= "Content-Disposition: form-data; name=\"workspace\"" .. CRLF .. CRLF
+   str ..= '1' .. CRLF
+
+   // File header
+
+   str ..= '--' .. boundary .. CRLF
+   str ..= "Content-Disposition: form-data; name=\"file\"; filename=\"" .. filename .. "\"" .. CRLF
+   str ..= 'Content-Type: application/octet-stream' .. CRLF .. CRLF
+
+   headfile = obj.new('file', { src='temp:http-head', flags='WRITE|NEW' } )
+   headfile.acWrite(str, str:len())
+
+   tailfile = obj.new('file', { src='temp:http-tail', flags='WRITE|NEW' } )
+   str = CRLF .. '--' .. boundary .. '--' .. CRLF
+   tailfile.acWrite(str, str:len())
+
+   srcfile = obj.new('file', { src=filepath, flags='READ' } )
+
+   http.size = headfile.size + tailfile.size + srcfile.size
+   http.inputfile = headfile.location .. '|' .. srcfile.location .. '|' .. tailfile.location
+   http.acActivate()
+
+   headfile = nil
+   tailfile = nil
+   srcfile = nil
+
+   assert(proc.sleep(5.0) != ERR_TimeOut, 'Test timed-out.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- ipv6.google.com test-ipv6.com ipv6.he.net ipv6.cloudflare.com
+
+@Test(priority=9) function IPV6()
+   proc = processing.new({ timeout = 10.0 })
+   content = ''
+
+   http = obj.new('http', {
+      src        = 'http://ipv6.google.com/',
+      method     = 'get',
+      connectTimeout = 10,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) then
+            print(string.format('%.80s [80 of %d bytes]', content, content:len()))
+         end
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            proc.signal()
+         end
+      end,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer:getString()
+      end
+   })
+
+   err = http.acActivate()
+   assert(err is ERR_Okay, "HTTP object failed to activate.")
+
+   err = proc.sleep()
+   if http.error is ERR_HostNotFound then print('Unable to test, IPv6 name resolution failed.') return end
+   assert(err is ERR_Okay, 'Processing failed: ' .. mSys.GetErrorMsg(err))
+   assert(http.error is ERR_Okay, 'HTTP object returned error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.currentState is HGS_COMPLETED, 'Expected HTTP state of COMPLETED not reached, got ' .. http.currentState)
+
+   if #content < 2048 then
+       print('Response content:')
+       print(content)
+   else
+       print('Response preview (first 500 chars):')
+       print(string.substr(content, 0, 499) .. '...')
+   end
+end

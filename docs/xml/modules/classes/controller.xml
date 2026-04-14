@@ -11,7 +11,7 @@
     <id>bf67c809</id>
     <idstring>CONTROLLER</idstring>
     <category>IO</category>
-    <copyright>Paul Manias 2003-2025</copyright>
+    <copyright>Paul Manias © 2003-2026</copyright>
     <description>
 <p>Use the Controller class to read the state of game controllers that are recognised by the operating system.</p>
 <p>Unlike analog devices that stream input commands (e.g. mice), gamepad controllers maintain a state that can be read at any time.  The controller state is normally read at least once per frame, which can be achieved in a program's inner loop, or in a separate timer.</p>

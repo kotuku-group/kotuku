@@ -22,7 +22,7 @@
 #include <xinput.h>
 #include <map>
 
-#include <parasol/system/errors.h>
+#include <kotuku/system/errors.h>
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -67,11 +67,8 @@ typedef long long int64_t;
 #define WM_ICONNOTIFY (WM_USER + 101)
 #define ID_TRAY 100
 
-#ifdef _DEBUG
-#define MSG(...) fprintf(stderr, __VA_ARGS__)
-#else
+//#define MSG(...) fprintf(stderr, __VA_ARGS__)
 #define MSG(...)
-#endif
 
 extern HINSTANCE glInstance;
 extern int glLastPort;
@@ -177,7 +174,7 @@ ERR winGetCoords(HWND Window, int &WinX, int &WinY, int &WinWidth, int &WinHeigh
       ClientHeight = info.rcClient.bottom - info.rcClient.top;
       return ERR::Okay;
    }
-   else return ERR::Failed;
+   else return ERR::SystemCall;
 }
 
 //********************************************************************************************************************
@@ -580,7 +577,7 @@ static void HandleButtonPress(HWND window, int button)
 
    SetCapture(window);
 
-   // Send a Parasol message
+   // Send a Kotuku message
 
    MsgButtonPress(button, 1);
 }
@@ -1116,7 +1113,7 @@ ERR winReadController(int Port, double *Values, CON &Buttons)
       else Buttons = CON::NIL; //state.Gamepad.wButtons;
       return ERR::Okay;
    }
-   else return ERR::Failed;
+   else return ERR::SystemCall;
 }
 
 //********************************************************************************************************************
@@ -1222,7 +1219,7 @@ int winCreateScreenClass(void)
 HWND winCreateScreen(HWND PopOver, int *X, int *Y, int *Width, int *Height, char Maximise, char Borderless, const char *Name,
    char Composite, unsigned char Opacity, char Desktop)
 {
-   if (!Name) Name = "Parasol";
+   if (!Name) Name = "Kotuku";
 
    bool interactive;
    if ((Borderless) and (!glTrayIcon) and (!glTaskBar)) interactive = FALSE;
@@ -1312,7 +1309,7 @@ HWND winCreateChild(HWND Parent, int X, int Y, int Width, int Height)
 {
    if (auto Window = CreateWindowEx(
          0, // WS_EX_NOPARENTNOTIFY
-         "ScreenClass", "Parasol Child Window",
+         "ScreenClass", "Kotuku Child Window",
          WS_CHILD|WS_CLIPCHILDREN|WS_CLIPSIBLINGS,
          0, 0, Width, Height,
          Parent,
@@ -1740,7 +1737,7 @@ int winShowWindow(HANDLE window, int Maximise)
 
    if (GetWindowLong(HWND(window), WE_BORDERLESS) == TRUE) {
       // Raw surfaces (composites, borderless windows etc) do not get the focus automatically.
-      // This mirrors the functionality within the Parasol desktop.
+      // This mirrors the functionality within the Kotuku desktop.
 
       result = ShowWindow(HWND(window), Maximise ? SW_SHOWMAXIMIZED : SW_SHOWNOACTIVATE);
    }

@@ -1,0 +1,320 @@
+-- Advanced XPath path lookup and edge case tests
+
+   include 'xml'
+
+----------------------------------------------------------------------------------------------------------------------
+-- Deeply nested path traversal combining multiple predicates and steps
+
+@Test function DeeplyNestedPathTraversal()
+   local xml = obj.new("xml", {
+      statement = '<catalog><category name="fiction"><series name="modern"><book author="Smith"><chapter num="1"><section><paragraph>Intro</paragraph></section></chapter><chapter num="2"><section><paragraph>Body</paragraph><paragraph>Middle</paragraph></section></chapter><chapter num="3"><section><paragraph>Conclusion</paragraph></section></chapter></book></series></category></catalog>'
+   })
+
+   local err, tag_id = xml.mtSearch('/catalog/category[@name="fiction"]/series[@name="modern"]/book[@author="Smith"]/chapter[last()]/section/paragraph[position()=1]')
+   assert(err is ERR_Okay, 'last() combined with position() should locate the first paragraph of the last chapter: ' .. mSys.GetErrorMsg(err))
+
+   local err, content = xml.mtEvaluate('/catalog/category[@name="fiction"]/series[@name="modern"]/book[@author="Smith"]/chapter[last()]/section/paragraph[position()=1]')
+   assert(content is 'Conclusion', 'Paragraph content should be "Conclusion", got ' .. tostring(content))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Edge case: sequential predicates mixing numeric and functional tests
+
+@Test function SequentialPredicateEvaluation()
+   local xml = obj.new("xml", {
+      statement = '<data><entry type="record" priority="1"/><entry type="record" priority="2"/><entry type="log" priority="3"/><entry type="record" priority="4"/><entry type="record" priority="5"/></data>'
+   })
+
+   local err, tag_id = xml.mtSearch('/data/entry[@type="record"][position()=last()]')
+   assert(err is ERR_Okay, 'Sequential predicates should allow position()=last() evaluation: ' .. mSys.GetErrorMsg(err))
+
+   local errAttr, priority = xml.mtGetAttrib(tag_id, 'priority')
+   assert(errAttr is ERR_Okay and priority is '5', 'Expected the final record entry priority to be 5, got ' .. tostring(priority))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Edge case: navigating relative to the current node using .// patterns
+
+@Test function RelativeCurrentNodeTraversal()
+   local xml = obj.new("xml", {
+      statement = '<root><section id="alpha"><item id="x"/><group><item id="y"/></group></section><section id="beta"><group><item id="z"/><item id="target"/></group></section></root>'
+   })
+
+   local err, section_id = xml.mtSearch('/root/section[./group/item[@id="target"]]')
+   assert(err is ERR_Okay, 'Predicate using ./group should evaluate relative to the current node: ' .. mSys.GetErrorMsg(err))
+
+   local errAttr, section_name = xml.mtGetAttrib(section_id, 'id')
+   assert(errAttr is ERR_Okay and section_name is 'beta', 'Expected the section containing the target item to be beta, got ' .. tostring(section_name))
+
+   local errItem, item_id = xml.mtSearch('/root/section[@id="beta"]//item[@id="target"]')
+   assert(errItem is ERR_Okay, '// should descend from the matched section to find the nested target item: ' .. mSys.GetErrorMsg(errItem))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Edge case: ensuring failed lookups return error codes cleanly
+
+@Test function MissingPathError()
+   local xml = obj.new("xml", {
+      statement = '<root><item id="1"/><item id="2"/></root>'
+   })
+
+   local err, tag_id = xml.mtSearch('/root/item[@id="3"]')
+   assert(err != ERR_Okay, 'Non-existent predicate matches should produce an error result, got ' .. mSys.GetErrorMsg(err))
+   assert(tag_id is nil or tag_id is 0, 'No tag identifier should be returned when the lookup fails, got ' .. tag_id)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Complex descendant traversal mixing attribute and element access
+
+@Test function DescendantAxisAttributeAccess()
+   local xml = obj.new("xml", {
+      statement = '<root category="library"><branch name="east"><shelf code="A"><book id="1">Intro</book></shelf></branch><branch name="west"><shelf code="B"><book id="2">Advanced</book></shelf></branch></root>'
+   })
+
+   local err, category = xml.mtEvaluate('//branch[@name="west"]/../@category')
+   assert(category is 'library', 'Using .. from a descendant selection should expose the ancestor attribute value, got ' .. tostring(category))
+
+   local err, tag_id = xml.mtSearch('//branch[@name="west"]/shelf[@code="B"]/book[text()="Advanced"]')
+   assert(err is ERR_Okay, 'Complex descendant traversal should locate the advanced book entry: ' .. mSys.GetErrorMsg(err))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function SimpleDeep()
+   local xml = obj.new("xml", {
+      statement = '<root category="library"><branch name="east"><shelf code="A"><book id="1">Intro</book></shelf></branch><branch name="west"><shelf code="B"><book id="2">Advanced</book></shelf></branch></root>'
+   })
+
+   local err, root = xml.mtEvaluate('//root')
+   assert(err is ERR_Okay, 'Evaluating //root failed: ' .. mSys.GetErrorMsg(err))
+   assert(root is 'IntroAdvanced', 'Got root content of: ' .. tostring(root))
+
+   local err, root_id = xml.mtSearch('//root')
+   assert(err is ERR_Okay, 'Finding //root failed: ' .. mSys.GetErrorMsg(err))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Conditional expressions should select the correct branch
+
+@Test function ConditionalIfExpression()
+   local xml = obj.new("xml", {
+      statement = '<root><item id="a">Alpha</item><item id="b">Beta</item></root>'
+   })
+
+   local err, chosen = xml.mtEvaluate('if (/root/item[@id="a"]) then /root/item[@id="a"] else /root/item[@id="b"]')
+   assert(chosen is 'Alpha', 'If expression should return Alpha branch when predicate succeeds, got ' .. tostring(chosen))
+
+   local err, fallback = xml.mtEvaluate('if (/root/item[@id="missing"]) then /root/item[@id="a"] else /root/item[@id="b"]')
+   assert(fallback is 'Beta', 'If expression should evaluate else branch when condition fails, got ' .. tostring(fallback))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- For expressions should iterate sequences and aggregate node results
+
+@Test function ForExpressionNodeAggregation()
+   local xml = obj.new("xml", {
+      statement = '<root><group name="one"><item id="a">Alpha</item><item id="b">Beta</item></group><group name="two"><item id="c">Gamma</item></group></root>'
+   })
+
+   local collected = {}
+   local err, index = xml.mtSearch('for $g in /root/group return $g/item', function(XML, TagID, Attrib)
+      local errAttr, idValue = xml.mtGetAttrib(TagID, 'id')
+      assert(errAttr is ERR_Okay, 'For expression callback should resolve item id: ' .. mSys.GetErrorMsg(errAttr))
+      table.insert(collected, idValue)
+   end)
+
+   assert(err is ERR_Okay, 'For expression evaluation should succeed: ' .. mSys.GetErrorMsg(err))
+   assert(#collected is 3, 'For expression should yield three items, got ' .. #collected)
+
+   table.sort(collected)
+   assert(collected[0] is 'a' and collected[1] is 'b' and collected[2] is 'c', 'For expression should gather all item identifiers, got ' .. table.concat(collected, ','))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Quantified expressions should evaluate boolean logic correctly
+
+@Test function QuantifiedExpressions()
+   local xml = obj.new("xml", {
+      statement = '<root><group name="alpha"><item id="a" class="one"/><item id="b" class="two"/></group><group name="beta"><item id="c" class="beta"/></group></root>'
+   })
+
+   local err, someResult = xml.mtEvaluate('if (some $g in /root/group satisfies $g/@name = "beta") then "yes" else "no"')
+   assert(someResult is 'yes', 'Quantified some expression should detect the beta group, got ' .. tostring(someResult))
+
+   local err, everyResult = xml.mtEvaluate('if (every $item in /root/group[@name="alpha"]/item satisfies @class = "one") then "all" else "mixed"')
+   assert(everyResult is 'mixed', 'Quantified every expression should detect mixed class values, got ' .. tostring(everyResult))
+
+   local err, nestedResult = xml.mtEvaluate('if (some $g in /root/group, $item in $g/item satisfies $item/@id = "c") then "found" else "missing"')
+   assert(nestedResult is 'found', 'Nested quantified expression should locate item c, got ' .. tostring(nestedResult))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- For expressions with multiple bindings should iterate nested sequences
+
+@Test function ForExpressionMultipleBindings()
+   local xml = obj.new("xml", {
+      statement = '<root><group name="one"><item id="a" class="one"/><item id="b" class="two"/></group><group name="two"><item id="c" class="two"/><item id="d" class="one"/></group></root>'
+   })
+
+   local matched = {}
+   local err = xml.mtSearch('for $group in /root/group, $item in $group/item[@class=$group/@name] return $item', function(XML, TagID)
+      local errAttr, idValue = xml.mtGetAttrib(TagID, 'id')
+      assert(errAttr is ERR_Okay, 'Multi-binding for expression callback should resolve item id: ' .. mSys.GetErrorMsg(errAttr))
+      table.insert(matched, idValue)
+   end)
+
+   assert(err is ERR_Okay, 'Multi-binding for expression evaluation should succeed: ' .. mSys.GetErrorMsg(err))
+   table.sort(matched)
+   assert(#matched is 2 and matched[0] is 'a' and matched[1] is 'c', 'Multi-binding for expression should filter matching ids, got ' .. table.concat(matched, ','))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- FLWOR expressions should allow mixing FOR and LET clauses with shared variables
+
+@Test function FlworForLetCombination()
+   local xml = obj.new("xml", {
+      statement = '<library>' ..
+                  '<book id="a" genre="fiction" price="39"/>' ..
+                  '<book id="b" genre="reference" price="55"/>' ..
+                  '<book id="c" genre="fiction" price="42"/>' ..
+                  '</library>'
+   })
+
+   local collected = {}
+   local err = xml.mtSearch('for $book in /library/book let $genre := $book/@genre return $book[$genre = "fiction"]', function(XML, TagID)
+      local errAttr, idValue = xml.mtGetAttrib(TagID, 'id')
+      assert(errAttr is ERR_Okay, 'FLWOR for-let callback should resolve book id: ' .. mSys.GetErrorMsg(errAttr))
+      table.insert(collected, idValue)
+   end)
+
+   assert(err is ERR_Okay, 'FLWOR for-let evaluation should succeed: ' .. mSys.GetErrorMsg(err))
+   table.sort(collected)
+   assert(#collected is 2 and collected[0] is 'a' and collected[1] is 'c', 'FLWOR for-let should filter fiction books, got ' .. table.concat(collected, ','))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- LET clauses preceding FOR clauses should bind variables for subsequent iterations
+
+@Test function FlworLetForCombination()
+   local xml = obj.new("xml", {
+      statement = '<library>' ..
+                  '<book id="a" price="39"/>' ..
+                  '<book id="b" price="55"/>' ..
+                  '<book id="c" price="44"/>' ..
+                  '</library>'
+   })
+
+   local expensive = {}
+   local err = xml.mtSearch('let $collection := /library/book for $book in $collection return $book[@price > 40]', function(XML, TagID)
+      local errAttr, idValue = xml.mtGetAttrib(TagID, 'id')
+      assert(errAttr is ERR_Okay, 'FLWOR let-for callback should resolve book id: ' .. mSys.GetErrorMsg(errAttr))
+      table.insert(expensive, idValue)
+   end)
+
+   assert(err is ERR_Okay, 'FLWOR let-for evaluation should succeed: ' .. mSys.GetErrorMsg(err))
+   table.sort(expensive)
+   assert(#expensive is 2 and expensive[0] is 'b' and expensive[1] is 'c', 'FLWOR let-for should filter books above price 40, got ' .. table.concat(expensive, ','))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Sequence set operators should merge and filter node collections
+
+@Test function SequenceSetOperators()
+   local xml = obj.new("xml", {
+      statement = '<root>' ..
+                  '<item id="a" group="alpha"/>' ..
+                  '<item id="b" group="beta"/>' ..
+                  '<item id="c" group="gamma"/>' ..
+                  '<item id="d" group="alpha"/>' ..
+                  '</root>'
+   })
+
+   local unionOrder = {}
+   local errUnion = xml.mtSearch('(/root/item[@group="alpha"] union /root/item[@group="beta"])', function(XML, TagID)
+      local errAttr, value = xml.mtGetAttrib(TagID, 'id')
+      assert(errAttr is ERR_Okay, 'Union keyword should expose item identifiers: ' .. mSys.GetErrorMsg(errAttr))
+      table.insert(unionOrder, value)
+   end)
+
+   assert(errUnion is ERR_Okay, 'Union keyword expression should evaluate successfully: ' .. mSys.GetErrorMsg(errUnion))
+   assert(#unionOrder is 3, 'Union keyword should return three matching nodes, got ' .. #unionOrder)
+   assert(unionOrder[0] is 'a' and unionOrder[1] is 'b' and unionOrder[2] is 'd',
+      'Union keyword should preserve document order of a, b, d, got ' .. table.concat(unionOrder, ','))
+
+   local xmlIntersect = obj.new("xml", {
+      statement = '<root>' ..
+                  '<item id="one" group="team" priority="high"/>' ..
+                  '<item id="two" group="team" priority="low"/>' ..
+                  '<item id="three" group="other" priority="high" exclude="yes"/>' ..
+                  '<item id="four" group="team" priority="high" exclude="yes"/>' ..
+                  '</root>'
+   })
+
+   local intersectIds = {}
+   local errIntersect = xmlIntersect.mtSearch('(/root/item[@group="team"] intersect /root/item[@priority="high"])', function(XML, TagID)
+      local errAttr, value = xmlIntersect.mtGetAttrib(TagID, 'id')
+      assert(errAttr is ERR_Okay, 'Intersect operator should expose item identifiers: ' .. mSys.GetErrorMsg(errAttr))
+      table.insert(intersectIds, value)
+   end)
+
+   assert(errIntersect is ERR_Okay, 'Intersect operator should evaluate successfully: ' .. mSys.GetErrorMsg(errIntersect))
+   assert(#intersectIds is 2 and intersectIds[0] is 'one' and intersectIds[1] is 'four',
+      'Intersect operator should return ids one and four in document order, got ' .. table.concat(intersectIds, ','))
+
+   local exceptIds = {}
+   local errExcept = xmlIntersect.mtSearch('(/root/item[@priority="high"]) except /root/item[@exclude="yes"]', function(XML, TagID)
+      local errAttr, value = xmlIntersect.mtGetAttrib(TagID, 'id')
+      assert(errAttr is ERR_Okay, 'Except operator should expose item identifiers: ' .. mSys.GetErrorMsg(errAttr))
+      table.insert(exceptIds, value)
+   end)
+
+   assert(errExcept is ERR_Okay, 'Except operator should evaluate successfully: ' .. mSys.GetErrorMsg(errExcept))
+   assert(#exceptIds is 1 and exceptIds[0] is 'one',
+      'Except operator should filter excluded nodes leaving only id one, got ' .. table.concat(exceptIds, ','))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Node tests named after set operator keywords should continue to resolve
+
+@Test function SetOperatorKeywordNameTests()
+   local xml = obj.new("xml", {
+      statement = '<root>' ..
+                  '<union id="u"><leaf/></union>' ..
+                  '<intersect id="i" value="keep"/>' ..
+                  '<except id="e" flag="omit"/>' ..
+                  '</root>'
+   })
+
+   local err, unionId = xml.mtEvaluate('/root/union/@id')
+   assert(unionId is 'u', 'Selecting /root/union should expose id attribute, got ' .. tostring(unionId))
+
+   local errUnionAxis, unionAxisTag = xml.mtSearch('/root/child::union')
+   assert(errUnionAxis is ERR_Okay, 'child::union axis form should resolve the union element: ' .. mSys.GetErrorMsg(errUnionAxis))
+   assert(unionAxisTag != nil and unionAxisTag != 0, 'child::union should return a valid tag id, got ' .. tostring(unionAxisTag))
+
+   local errIntersect, intersectTag = xml.mtSearch('/root/intersect')
+   assert(errIntersect is ERR_Okay, 'Path lookup should resolve intersect element: ' .. mSys.GetErrorMsg(errIntersect))
+   local errIntersectAttrib, intersectValue = xml.mtGetAttrib(intersectTag, 'value')
+   assert(errIntersectAttrib is ERR_Okay and intersectValue is 'keep',
+       'Intersect element attribute should be retrievable, got ' .. tostring(intersectValue))
+
+   local errExcept, exceptTag = xml.mtSearch('/root/except')
+   assert(errExcept is ERR_Okay, 'Path lookup should resolve except element: ' .. mSys.GetErrorMsg(errExcept))
+   local errExceptAttrib, exceptFlag = xml.mtGetAttrib(exceptTag, 'flag')
+   assert(errExceptAttrib is ERR_Okay and exceptFlag is 'omit',
+      'Except element attribute should be retrievable, got ' .. tostring(exceptFlag))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Lookup operator chains should navigate nested maps, arrays, and sequences
+
+@Test function LookupOperatorChains()
+   local xml = obj.new('xml', { statement = '<root/>' })
+
+   local err, first_price = xml.mtEvaluate('let $order := map { "items": array { map { "sku": "A1", "price": 29 }, map { "sku": "B2", "price": 35 } }, "customer": map { "name": "Ada" } } return string($order?items?1?price)')
+   assert(err is ERR_Okay, 'Lookup operator should evaluate chained map/array access: ' .. mSys.GetErrorMsg(err))
+   assert(first_price is '29', 'Lookup chain should expose first price value, got ' .. tostring(first_price))
+
+   local failure_err = [*_]xml.mtEvaluate('let $order := map { "items": array { map { "sku": "X1" } } } return $order?items?5')
+   assert(failure_err != ERR_Okay, 'Out-of-range lookup should raise FOAY0001')
+end

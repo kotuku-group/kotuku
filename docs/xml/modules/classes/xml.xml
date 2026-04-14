@@ -13,10 +13,10 @@
     <id>0b88bfd6</id>
     <idstring>XML</idstring>
     <category>Data</category>
-    <copyright>Paul Manias © 2001-2025</copyright>
+    <copyright>Paul Manias © 2001-2026</copyright>
     <description>
 <p>The XML class is designed to provide robust functionality for creating, parsing and maintaining XML data structures. It supports both well-formed and loosely structured XML documents, offering flexible parsing behaviours to accommodate various XML formats.  The class includes comprehensive support for XPath 2.0 and XQuery 1.0 queries, content manipulation and document validation.</p>
-<p>The class has been designed in such a way as to accommodate other structured data formats such as JSON and YAML.  In this way, the class not only provides XML support but also serves as Parasol's general-purpose structured data handler.  It also makes it trivial to convert between different structured data formats, and benefit from the cross-application use of features, such as applying XPath 2.0 queries on data originating from YAML.</p>
+<p>The class has been designed in such a way as to accommodate other structured data formats such as JSON and YAML.  In this way, the class not only provides XML support but also serves as Kotuku's general-purpose structured data handler.  It also makes it trivial to convert between different structured data formats, and benefit from the cross-application use of features, such as applying XPath 2.0 queries on data originating from YAML.</p>
 <header>Data Loading and Parsing</header>
 <p>XML documents can be loaded into an XML object through multiple mechanisms:</p>
 <p>The <fl>Path</fl> field allows loading from file system sources, with automatic parsing upon initialisation.  The class supports <function module="Core">LoadFile</function> caching for frequently accessed files, improving performance for repeated operations.</p>
@@ -24,9 +24,9 @@
 <p>The <fl>Source</fl> field provides object-based input, allowing XML data to be sourced from any object supporting the Read action.</p>
 <p>For batch processing scenarios, the <fl>Path</fl> or <fl>Statement</fl> fields can be changed post-initialisation, causing the XML object to clear old data and parse the new.  This approach optimises memory usage by reusing existing object instances rather than creating new ones.</p>
 <header>Document Structure and Access</header>
-<p>Successfully parsed XML data is accessible through the <fl>Tags</fl> field, which contains a hierarchical array of <st>XMLTag</st> structures.  Each XMLTag represents a complete XML element including its attributes, content and child elements. The structure maintains the original document hierarchy, enabling both tree traversal and direct element access.</p>
-<p>C++ developers benefit from direct access to the Tags field, represented as <code>pf::vector&lt;XMLTag&gt;</code>.  This provides efficient iteration and element access with standard STL semantics.  Altering tag attributes is permitted and methods to do so are provided in the C++ header for <code>objXML</code> and <code>XMLTag</code>, with additional functions in the <code>xml</code> namespace. Check the header for details.</p>
-<p>Fluid developers need to be aware that reading the <fl>Tags</fl> field generates a copy of the entire tag structure - it should therefore be read only as needed and cached until the XML object is modified.</p>
+<p>Successfully parsed XML data is accessible through the <fl>Tags</fl> field, which contains a hierarchical array of <st>XTag</st> structures.  Each XTag represents a complete XML element including its attributes, content and child elements. The structure maintains the original document hierarchy, enabling both tree traversal and direct element access.</p>
+<p>C++ developers benefit from direct access to the Tags field, represented as <code>pf::vector&lt;XTag&gt;</code>.  This provides efficient iteration and element access with standard STL semantics.  Altering tag attributes is permitted and methods to do so are provided in the C++ header for <code>objXML</code> and <code>XTag</code>, with additional functions in the <code>xml</code> namespace. Check the header for details.</p>
+<p>Tiri developers need to be aware that reading the <fl>Tags</fl> field generates a copy of the entire tag structure - it should therefore be read only as needed and cached until the XML object is modified.</p>
 <header>Not Supported</header>
 <p>DTD processing and validation is intentionally not supported.  While the class can parse DOCTYPE declarations, it does not load or  validate against external DTDs as this is now a legacy technology.  Use XML Schema (XSD) for validation instead.</p></description>
     <source>
@@ -157,36 +157,11 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     </method>
 
     <method>
-      <name>FindTag</name>
-      <comment>Searches for XML elements using XPath expressions with optional callback processing.</comment>
-      <prototype>ERR xml::FindTag(OBJECTPTR Object, CSTRING XPath, FUNCTION * Callback, INT * Result)</prototype>
-      <input>
-        <param type="CSTRING" name="XPath">A valid XPath expression string conforming to XPath 2.0 syntax with Parasol extensions.  Must not be NULL or empty.</param>
-        <param type="FUNCTION *" name="Callback">Optional pointer to a callback function for processing multiple matches.</param>
-        <param type="INT *" name="Result">Pointer to an integer that will receive the unique ID of the first matching tag.  Only valid when no callback is provided.</param>
-      </input>
-      <description>
-<p>The FindTag method provides the primary mechanism for locating XML elements within the document structure using XPath 2.0 compatible expressions.  The method supports both single-result queries and comprehensive tree traversal with callback-based processing for complex operations.</p>
-<p>When no callback function is provided, FindTag returns the first matching element and terminates the search immediately.  This is optimal for simple queries where only the first occurrence is required.</p>
-<p>When a callback function is specified, FindTag continues searching through the entire document structure, calling the provided function for each matching element.  This enables comprehensive processing of all matching elements in a single traversal.</p>
-<p>The C++ prototype for Callback is <code>ERR Function(*XML, XMLTag &amp;Tag, CSTRING Attrib)</code>.</p>
-<p>The callback should return <code>ERR::Okay</code> to continue processing, or <code>ERR::Terminate</code> to halt the search immediately. All other error codes are ignored to maintain search robustness.</p>
-<p>Note: If an error occurs, check the <fl>ErrorMsg</fl> field for a custom error message containing further details.</p>
-      </description>
-      <result>
-        <error code="Okay">A matching tag was found (or callback processing completed successfully).</error>
-        <error code="Search">No matching tag could be found for the specified XPath expression.</error>
-        <error code="NoData">The XML document contains no data to search.</error>
-        <error code="NullArgs">The XPath parameter was NULL or the Result parameter was NULL when no callback was provided.</error>
-      </result>
-    </method>
-
-    <method>
       <name>GetAttrib</name>
       <comment>Retrieves the value of a specific XML attribute from a tagged element.</comment>
       <prototype>ERR xml::GetAttrib(OBJECTPTR Object, INT Index, CSTRING Attrib, CSTRING * Value)</prototype>
       <input>
-        <param type="INT" name="Index">The unique identifier of the XML tag to search.  This must correspond to a valid tag ID as returned by methods such as <method>FindTag</method>.</param>
+        <param type="INT" name="Index">The unique identifier of the XML tag to search.  This must correspond to a valid tag ID as returned by methods such as <method>Search</method>.</param>
         <param type="CSTRING" name="Attrib">The name of the attribute to retrieve (case insensitive).  If NULL or empty, the element's tag name is returned instead.</param>
         <param type="CSTRING *" name="Value">Pointer to a string pointer that will receive the attribute value.  Set to NULL if the specified attribute does not exist.</param>
       </input>
@@ -296,14 +271,14 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
 
     <method>
       <name>GetTag</name>
-      <comment>Returns a pointer to the <st>XMLTag</st> structure for a given tag index.</comment>
-      <prototype>ERR xml::GetTag(OBJECTPTR Object, INT Index, struct XMLTag ** Result)</prototype>
+      <comment>Returns a pointer to the <st>XTag</st> structure for a given tag index.</comment>
+      <prototype>ERR xml::GetTag(OBJECTPTR Object, INT Index, struct XTag ** Result)</prototype>
       <input>
         <param type="INT" name="Index">The index of the tag that is being retrieved.</param>
-        <param type="struct XMLTag **" name="Result">The <st>XMLTag</st> is returned in this parameter.</param>
+        <param type="struct XTag **" name="Result">The <st>XTag</st> is returned in this parameter.</param>
       </input>
       <description>
-<p>This method will return the <st>XMLTag</st> structure for a given tag <code>Index</code>.  The <code>Index</code> is checked to ensure it is valid prior to retrieval, and an <code>ERR::OutOfRange</code> error will be returned if it is invalid.</p>
+<p>This method will return the <st>XTag</st> structure for a given tag <code>Index</code>.  The <code>Index</code> is checked to ensure it is valid prior to retrieval, and an <code>ERR::OutOfRange</code> error will be returned if it is invalid.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
@@ -450,7 +425,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <description>
 <p>The RemoveTag method is used to remove one or more tags from an XML structure.  Child tags will automatically be discarded as a consequence of using this method, in order to maintain a valid XML structure.</p>
 <p>This method is capable of deleting multiple tags if the <code>Total</code> parameter is set to a value greater than 1.  Each consecutive tag and its children following the targeted tag will be removed from the XML structure until the count is exhausted. This is useful for mass delete operations.</p>
-<p>This method is volatile and will destabilise any cached address pointers that have been acquired from the XML object.</p>
+<p>Note: Removing tags will destabilise all cached address pointers that have been acquired from the XML object.</p>
       </description>
       <result>
         <error code="Okay">The tag(s) were successfully removed.</error>
@@ -505,6 +480,31 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="NotFound">The specified tag was not found.</error>
         <error code="Search">The prefix could not be resolved in any accessible scope.</error>
         <error code="NullArgs">Required arguments were not specified correctly.</error>
+      </result>
+    </method>
+
+    <method>
+      <name>Search</name>
+      <comment>Searches for XML elements using XPath and XQuery expressions with optional callback processing.</comment>
+      <prototype>ERR xml::Search(OBJECTPTR Object, CSTRING Expression, FUNCTION * Callback, INT * Result)</prototype>
+      <input>
+        <param type="CSTRING" name="Expression">A valid XQuery expression.</param>
+        <param type="FUNCTION *" name="Callback">Optional pointer to a callback function for processing multiple matches.</param>
+        <param type="INT *" name="Result">UID of the first matching tag.  Only valid when Callback is undefined.</param>
+      </input>
+      <description>
+<p>The Search method provides the primary mechanism for locating XML elements within the document structure using XPath and XQuery expressions.  The method supports both single-result queries and comprehensive tree traversal with callback-based processing for complex operations.</p>
+<p>When no callback function is provided, Search returns the first matching element and terminates the search immediately.  This is optimal for simple queries where only the first occurrence is required.</p>
+<p>When a callback function is specified, Search continues searching through the entire document structure, calling the provided function for each matching element.  This enables comprehensive processing of all matching elements in a single traversal.</p>
+<p>The C++ prototype for Callback is <code>ERR Function(*XML, int TagID, CSTRING Attrib, APTR Meta)</code>.</p>
+<p>The callback should return <code>ERR::Okay</code> to continue processing, or <code>ERR::Terminate</code> to halt the search immediately. All other error codes are ignored to maintain search robustness.</p>
+<p>Note: If an error occurs, check the <fl>ErrorMsg</fl> field for a custom error message containing further details.</p>
+      </description>
+      <result>
+        <error code="Okay">A matching tag was found (or callback processing completed successfully).</error>
+        <error code="Search">No matching tag could be found for the specified expression.</error>
+        <error code="NoData">The XML document contains no data to search.</error>
+        <error code="NullArgs">The Expression was NULL or the Result parameter was NULL when no callback was provided.</error>
       </result>
     </method>
 
@@ -570,24 +570,6 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
         <error code="Okay">The namespace was successfully assigned to the tag.</error>
         <error code="NotFound">The specified tag was not found.</error>
         <error code="NullArgs">Required arguments were not specified correctly.</error>
-      </result>
-    </method>
-
-    <method>
-      <name>SetVariable</name>
-      <comment>Stores a variable that can be referenced in XPath expressions.</comment>
-      <prototype>ERR xml::SetVariable(OBJECTPTR Object, CSTRING Key, CSTRING Value)</prototype>
-      <input>
-        <param type="CSTRING" name="Key">The name of the variable (case sensitive).</param>
-        <param type="CSTRING" name="Value">The string value to store.</param>
-      </input>
-      <description>
-<p>This method allows you to store key-value pairs that can be referenced in XPath expressions using the variable syntax <code>$variableName</code>.  Variables are stored as strings and are made available during XPath evaluation.</p>
-      </description>
-      <result>
-        <error code="Okay">Operation successful.</error>
-        <error code="ReadOnly">The XML object is read-only.</error>
-        <error code="NullArgs">The <code>Key</code> parameter was not specified.</error>
       </result>
     </method>
 
@@ -709,17 +691,6 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     </field>
 
     <field>
-      <name>Start</name>
-      <comment>Set a starting cursor to affect the starting point for some XML operations.</comment>
-      <access read="R" write="W">Read/Write</access>
-      <type>INT</type>
-      <description>
-<p>When using any XML function that creates an XML string (e.g. SaveToObject), the XML object will include the entire XML tree by default.  Defining the Start value will restrict processing to a specific tag and its children.</p>
-<p>The Start field currently affects the <action>SaveToObject</action> action and the <fl>Statement</fl> field.</p>
-      </description>
-    </field>
-
-    <field>
       <name>Statement</name>
       <comment>XML data is processed through this field.</comment>
       <access read="G" write="S">Get/Set</access>
@@ -727,7 +698,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <description>
 <p>Set the Statement field to parse an XML formatted data string through the object.  If this field is set after initialisation then the XML object will clear any existing data first.</p>
 <p>Be aware that setting this field with an invalid statement will result in an empty XML object.</p>
-<p>Reading the Statement field will return a serialised string of XML data.  By default all tags will be included in the statement unless a predefined starting position is set by the <fl>Start</fl> field.  The string result is an allocation that must be freed.</p>
+<p>Reading the Statement field will return a serialised string of XML data.  By default all tags will be included in the statement.  The string result is an allocation that must be freed.</p>
 <p>If the statement is an XQuery expression with base-uri references, the <fl>Path</fl> field should be set to establish the base path for relative references.</p>
       </description>
     </field>
@@ -745,10 +716,10 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <access read="G">Get</access>
       <type>STRUCT []</type>
       <description>
-<p>The Tags field exposes the complete XML document structure as a hierarchical array of <st>XMLTag</st> structures.  This field becomes available after successful XML parsing and provides the primary interface for reading XML content programmatically.</p>
-<p>Each <st>XMLTag</st> will have at least one attribute set in the <code>Attribs</code> array.  The first attribute will either reflect the tag name or a content string if the <code>Name</code> is undefined.  The <code>Children</code> array provides access to all child elements.</p>
+<p>The Tags field exposes the complete XML document structure as a hierarchical array of <st>XTag</st> structures.  This field becomes available after successful XML parsing and provides the primary interface for reading XML content programmatically.</p>
+<p>Each <st>XTag</st> will have at least one attribute set in the <code>Attribs</code> array.  The first attribute will either reflect the tag name or a content string if the <code>Name</code> is undefined.  The <code>Children</code> array provides access to all child elements.</p>
 <p>Direct read access to the Tags hierarchy is safe and efficient for traversing the document structure.  However, modifications should be performed using the XML object's methods (<method>InsertXML</method>, <method>SetAttrib</method>, <method>RemoveTag</method>, etc.) to maintain internal consistency and trigger appropriate cache invalidation.</p>
-<p>NOTE: Fluid will copy this field on read, caching the value is therefore recommended.</p>
+<p>NOTE: Tiri will copy this field on read, caching the value is therefore recommended.</p>
       </description>
     </field>
 
@@ -790,9 +761,11 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     </constants>
 
     <constants lookup="XPVT" comment="Type descriptors for XPathValue">
+      <const name="Array"/>
       <const name="Boolean"/>
       <const name="Date"/>
       <const name="DateTime"/>
+      <const name="Map"/>
       <const name="NodeSet"/>
       <const name="Number"/>
       <const name="String"/>
@@ -811,20 +784,21 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <field name="Value" type="std::string">Value of the attribute</field>
     </struct>
 
-    <struct name="XMLTag" typeName="XMLTAG">
-      <field name="ID" type="INT">Unique ID assigned to the tag on creation</field>
-      <field name="ParentID" type="INT">Unique ID of the parent tag</field>
-      <field name="LineNo" type="INT">Line number on which this tag was encountered</field>
-      <field name="Flags" type="XTF" lookup="XTF">Optional flags</field>
-      <field name="NamespaceID" type="UINT">Hash of namespace URI or 0 for no namespace</field>
-      <field name="Attribs" type="pf::vector&lt;XMLAttrib&gt;">Array of attributes for this tag</field>
-      <field name="Children" type="pf::vector&lt;XMLTag&gt;">Array of child tags</field>
-    </struct>
-
     <struct name="XPathValue" typeName="XPATHVALUE">
       <field name="Type" type="XPVT" lookup="XPVT">Identifies the type of value stored</field>
       <field name="NumberValue" type="DOUBLE">Defined if the type is Number or Boolean</field>
       <field name="StringValue" type="std::string">Defined if the type is String</field>
+    </struct>
+
+    <struct name="XTag" typeName="XTAG">
+      <field name="ID" type="INT">Globally unique ID assigned to the tag on creation.</field>
+      <field name="ParentID" type="INT">UID of the parent tag</field>
+      <field name="LineNo" type="INT">Line number on which this tag was encountered</field>
+      <field name="Flags" type="XTF" lookup="XTF">Optional flags</field>
+      <field name="NamespaceID" type="UINT">Hash of namespace URI or 0 for no namespace</field>
+      <field name="Reserved" type="INT">Private</field>
+      <field name="Attribs" type="pf::vector&lt;XMLAttrib&gt;">Array of attributes for this tag</field>
+      <field name="Children" type="pf::vector&lt;XTag&gt;">Array of child tags</field>
     </struct>
 
   </structs>

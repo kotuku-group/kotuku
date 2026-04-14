@@ -1,0 +1,629 @@
+-- Flute tests for array<type> typed syntax
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Basic typed array creation (empty arrays)
+
+@Test function ArrayTypedBasicInt()
+   arr = array<int>
+   assert(#arr is 0, "Empty array<int> should have length 0, got " .. #arr)
+   assert(arr:type() is 'int', "Type should be 'int', got '" .. arr:type() .. "'")
+end
+
+@Test function ArrayTypedBasicDouble()
+   arr = array<double>
+   assert(#arr is 0, "Empty array<double> should have length 0")
+   assert(arr:type() is 'double', "Type should be 'double'")
+end
+
+@Test function ArrayTypedBasicString()
+   arr = array<string>
+   assert(#arr is 0, "Empty array<string> should have length 0")
+   assert(arr:type() is 'string', "Type should be 'string'")
+end
+
+@Test function ArrayTypedBasicTable()
+   arr = array<table>
+   assert(#arr is 0, "Empty array<table> should have length 0")
+   assert(arr:type() is 'table', "Type should be 'table'")
+end
+
+@Test function ArrayTypedBasicObject()
+   arr = array<object>
+   assert(#arr is 0, "Empty array<object> should have length 0")
+   assert(arr:type() is 'object', "Type should be 'object'")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Typed arrays with pre-allocated size
+
+@Test function ArrayTypedWithSize()
+   arr = array<int, 5>
+   assert(#arr is 5, "Pre-allocated array should have length 5, got " .. #arr)
+   assert(arr:type() is 'int', "Type should be 'int'")
+   -- Can write to all slots (use ... for inclusive range)
+   for i in {0...4} do
+      arr[i] = i * 10
+   end
+   assert(arr[0] is 0, "First slot should be 0")
+   assert(arr[4] is 40, "Last slot should be 40")
+end
+
+@Test function ArrayTypedWithSizeTable()
+   arr = array<table, 3>
+   assert(#arr is 3, "Pre-allocated table array should have length 3")
+   assert(arr:type() is 'table', "Type should be 'table'")
+   -- All slots should be nil
+   for i in {0..2} do
+      assert(arr[i] is nil, "Slot " .. i .. " should be nil")
+   end
+end
+
+@Test function ArrayTypedWithSizeString()
+   arr = array<string, 10>
+   assert(#arr is 10, "Pre-allocated string array should have length 10")
+   assert(arr:type() is 'string', "Type should be 'string'")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Typed arrays with initialiser values
+
+@Test function ArrayTypedWithValues()
+   arr = array<int> { 10, 20, 30 }
+   assert(#arr is 3, "Initialised array should have length 3, got " .. #arr)
+   assert(arr:type() is 'int', "Type should be 'int'")
+   assert(arr[0] is 10, "First element should be 10, got " .. arr[0])
+   assert(arr[1] is 20, "Second element should be 20, got " .. arr[1])
+   assert(arr[2] is 30, "Third element should be 30, got " .. arr[2])
+end
+
+@Test function ArrayTypedWithDoubleValues()
+   arr = array<double> { 1.5, 2.5, 3.5, 4.5 }
+   assert(#arr is 4, "Double array should have 4 elements")
+   assert(arr[0] is 1.5, "First element should be 1.5")
+   assert(arr[3] is 4.5, "Last element should be 4.5")
+end
+
+@Test function ArrayTypedWithStringValues()
+   arr = array<string> { 'hello', 'world', 'test' }
+   assert(#arr is 3, "String array should have 3 elements")
+   assert(arr[0] is 'hello', "First element should be 'hello'")
+   assert(arr[1] is 'world', "Second element should be 'world'")
+   assert(arr[2] is 'test', "Third element should be 'test'")
+end
+
+@Test function ArrayTypedWithTableValues()
+   arr = array<table> { {x=1, y=2}, {x=3, y=4} }
+   assert(#arr is 2, "Table array should have 2 elements")
+   assert(arr[0].x is 1, "First table x should be 1")
+   assert(arr[1].y is 4, "Second table y should be 4")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- All supported types
+
+@Test function ArrayTypedAllTypes()
+   -- byte and char are aliases that map to 'char'
+   byte_arr = array<byte>
+   assert(byte_arr:type() is 'char', "byte should map to 'char', got '" .. byte_arr:type() .. "'")
+
+   char_arr = array<char>
+   assert(char_arr:type() is 'char', "char should be 'char'")
+
+   int16_arr = array<int16>
+   assert(int16_arr:type() is 'int16', "int16 should be 'int16'")
+
+   int_arr = array<int>
+   assert(int_arr:type() is 'int', "int should be 'int'")
+
+   int64_arr = array<int64>
+   assert(int64_arr:type() is 'int64', "int64 should be 'int64'")
+
+   float_arr = array<float>
+   assert(float_arr:type() is 'float', "float should be 'float'")
+
+   double_arr = array<double>
+   assert(double_arr:type() is 'double', "double should be 'double'")
+
+   string_arr = array<string>
+   assert(string_arr:type() is 'string', "string should be 'string'")
+
+   table_arr = array<table>
+   assert(table_arr:type() is 'table', "table should be 'table'")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Whitespace handling
+
+@Test function ArrayTypedWhitespace()
+   -- Whitespace inside < > should be ignored
+   arr = array< int , 3 >
+   assert(#arr is 3, "Whitespace should be ignored - got length " .. #arr)
+   assert(arr:type() is 'int', "Type should still be 'int'")
+end
+
+@Test function ArrayTypedWhitespaceWithValues()
+   -- Whitespace with initialiser
+   arr = array< string > { 'a', 'b', 'c' }
+   assert(#arr is 3, "Whitespace with values should work")
+   assert(arr[0] is 'a', "First element should be 'a'")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Expression context usage
+
+@Test function ArrayTypedInExpression()
+   -- Ensure it works in expression contexts
+   result = array<int> { 1, 2, 3 }:concat('%d', ', ')
+   assert(result is '1, 2, 3', "Method chain on typed array failed, got '" .. result .. "'")
+end
+
+@Test function ArrayTypedAsArgument()
+   -- Pass typed array as function argument
+   function sum_array(a)
+      total = 0
+      for i = 0, #a - 1 do
+         total += a[i]
+      end
+      return total
+   end
+
+   result = sum_array(array<int> { 1, 2, 3, 4, 5 })
+   assert(result is 15, "Sum should be 15, got " .. result)
+end
+
+@Test function ArrayTypedAssignment()
+   -- Standard assignment
+   numbers = array<int> { 100, 200, 300 }
+   assert(numbers[0] is 100)
+   assert(numbers[2] is 300)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Edge cases
+
+@Test function ArrayTypedSingleValue()
+   arr = array<int> { 42 }
+   assert(#arr is 1, "Single value array should have length 1")
+   assert(arr[0] is 42, "Single value should be 42")
+end
+
+@Test function ArrayTypedEmptyBraces()
+   arr = array<int> {}
+   assert(#arr is 0, "Empty braces should create empty array")
+   assert(arr:type() is 'int', "Type should still be 'int'")
+end
+
+@Test function ArrayTypedZeroSize()
+   arr = array<int>
+   assert(#arr is 0, "Zero size should create empty array")
+end
+
+@Test function ArrayTypedLargeSize()
+   arr = array<int, 1000>
+   assert(#arr is 1000, "Large pre-allocation should work")
+   arr[999] = 42
+   assert(arr[999] is 42, "Large array access should work")
+end
+
+@Test function ArrayTypedWithVariableSize()
+   -- Size can be a variable expression (not just a literal)
+   buffer_size = 400
+   arr = array<byte, buffer_size>
+   assert(#arr is 400, "Variable size should work, got " .. #arr)
+   assert(arr:type() is 'char', "Type should be 'char' (byte maps to char)")
+
+   -- Size can also be a more complex unary expression
+   obj = { size = 100 }
+   arr2 = array<int, obj.size>
+   assert(#arr2 is 100, "Member access size should work")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Comparison with traditional syntax
+
+@Test function ArrayTypedVsTraditional()
+   -- New syntax should produce equivalent results to traditional syntax
+   new_arr = array<int> { 1, 2, 3 }
+   old_arr = array.of('int', 1, 2, 3)
+
+   assert(#new_arr is #old_arr, "Lengths should match")
+   assert(new_arr:type() is old_arr:type(), "Types should match")
+   for i in {0..2} do
+      assert(new_arr[i] is old_arr[i], "Values at index " .. i .. " should match")
+   end
+end
+
+@Test function ArrayTypedVsTraditionalNew()
+   -- New syntax with size should match array.new()
+   new_arr = array<double, 5>
+   old_arr = array.new(5, 'double')
+
+   assert(#new_arr is #old_arr, "Lengths should match")
+   assert(new_arr:type() is old_arr:type(), "Types should match")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Variable size expressions (extended coverage)
+
+@Test function ArrayTypedWithLengthOperator()
+   -- Use length of another array as size
+   source = array<int> { 1, 2, 3, 4, 5 }
+   arr = array<double, #source>
+   assert(#arr is 5, "Length operator as size should work, got " .. #arr)
+end
+
+@Test function ArrayTypedWithFunctionCall()
+   -- Use function return value as size
+   function getSize()
+      return 50
+   end
+   arr = array<int, getSize()>
+   assert(#arr is 50, "Function call as size should work, got " .. #arr)
+end
+
+@Test function ArrayTypedWithTableIndex()
+   -- Use table index access as size
+   config = { buffer_size = 256, count = 10 }
+   arr = array<byte, config.buffer_size>
+   assert(#arr is 256, "Table field as size should work")
+
+   arr2 = array<int, config['count']>
+   assert(#arr2 is 10, "Table bracket access as size should work")
+end
+
+@Test function ArrayTypedWithParenthesizedExpr()
+   -- Parenthesized expression as size
+   x = 10
+   arr = array<int, (x)>
+   assert(#arr is 10, "Parenthesized variable as size should work")
+end
+
+@Test function ArrayTypedWithNegation()
+   -- Negation of negative produces positive
+   x = -25
+   arr = array<int, -x>
+   assert(#arr is 25, "Negated negative as size should work")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Type coercion and value handling
+
+@Test function ArrayTypedIntCoercion()
+   -- Floats assigned to int array should be truncated
+   arr = array<int> { 1.9, 2.5, 3.1 }
+   assert(arr[0] is 1, "Float 1.9 should truncate to 1")
+   assert(arr[1] is 2, "Float 2.5 should truncate to 2")
+   assert(arr[2] is 3, "Float 3.1 should truncate to 3")
+end
+
+@Test function ArrayTypedDoubleFromInt()
+   -- Ints assigned to double array should convert
+   arr = array<double> { 1, 2, 3 }
+   assert(arr[0] is 1.0, "Int should convert to double")
+   assert(arr[1] is 2.0, "Int should convert to double")
+end
+
+@Test function ArrayTypedByteRange()
+   -- Byte array values should be in valid range
+   arr = array<byte, 3>
+   arr[0] = 0
+   arr[1] = 127
+   arr[2] = 255
+   assert(arr[0] is 0, "Byte 0 should work")
+   assert(arr[1] is 127, "Byte 127 should work")
+   assert(arr[2] is 255, "Byte 255 should work")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Array methods with typed syntax
+
+@Test function ArrayTypedFindMethod()
+   -- Find method should locate values
+   arr = array<int> { 10, 20, 30, 40, 50 }
+   idx = arr:find(30)
+   assert(idx is 2, "Find should return index 2 for value 30, got " .. tostring(idx))
+end
+
+@Test function ArrayTypedMethodClear()
+   -- Clear method should reset array
+   arr = array<int> { 1, 2, 3, 4, 5 }
+   arr:clear()
+   assert(#arr is 0, "Cleared array should have length 0")
+   assert(arr:type() is 'int', "Type should be preserved after clear")
+end
+
+@Test function ArrayTypedConcat()
+   -- Concat method for string representation
+   arr = array<int> { 1, 2, 3, 4, 5 }
+   result = arr:concat('%d', '-')
+   assert(result is '1-2-3-4-5', "Concat should join with separator, got '" .. result .. "'")
+end
+
+@Test function ArrayTypedMethodSort()
+   -- Sort method should work
+   arr = array<int> { 5, 2, 8, 1, 9 }
+   arr:sort()
+   assert(arr[0] is 1, "First element after sort should be 1")
+   assert(arr[4] is 9, "Last element after sort should be 9")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Scoping and reassignment
+
+@Test function ArrayTypedLocalScope()
+   -- Local array in function scope
+   function createArray()
+      local arr = array<int, 5>
+      for i in {0...4} do
+         arr[i] = i * 2
+      end
+      return arr
+   end
+   result = createArray()
+   assert(#result is 5, "Returned array should have length 5")
+   assert(result[2] is 4, "Element at index 2 should be 4")
+end
+
+@Test function ArrayTypedReassignment()
+   -- Reassigning array variable
+   arr = array<int> { 1, 2, 3 }
+   assert(#arr is 3, "Initial array should have 3 elements")
+
+   arr = array<double> { 1.5, 2.5 }
+   assert(#arr is 2, "Reassigned array should have 2 elements")
+   assert(arr:type() is 'double', "Reassigned array should be double type")
+end
+
+@Test function ArrayTypedAsReturnValue()
+   -- Function returning typed array
+   function makeNumbers(n)
+      result = array<int, n>
+      for i = 0, n - 1 do
+         result[i] = i + 1
+      end
+      return result
+   end
+
+   nums = makeNumbers(5)
+   assert(#nums is 5, "Returned array should have 5 elements")
+   assert(nums[0] is 1, "First element should be 1")
+   assert(nums[4] is 5, "Last element should be 5")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Nested and complex structures
+
+@Test function ArrayTypedNestedInTable()
+   -- Array as table field
+   data = {
+      numbers = array<int> { 1, 2, 3 },
+      names = array<string> { 'a', 'b', 'c' }
+   }
+   assert(#data.numbers is 3, "Nested int array should have 3 elements")
+   assert(#data.names is 3, "Nested string array should have 3 elements")
+   assert(data.numbers[0] is 1, "First number should be 1")
+   assert(data.names[0] is 'a', "First name should be 'a'")
+end
+
+@Test function ArrayTypedOfTables()
+   -- Array containing table objects
+   arr = array<table, 3>
+   arr[0] = { x = 1, y = 2 }
+   arr[1] = { x = 3, y = 4 }
+   arr[2] = { x = 5, y = 6 }
+
+   total = 0
+   for i = 0, 2 do
+      total += arr[i].x + arr[i].y
+   end
+   assert(total is 21, "Sum of all x and y should be 21, got " .. total)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Iteration patterns
+
+@Test function ArrayTypedNumericFor()
+   -- Numeric for loop iteration
+   arr = array<int> { 10, 20, 30, 40, 50 }
+   sum = 0
+   for i = 0, #arr - 1 do
+      sum += arr[i]
+   end
+   assert(sum is 150, "Sum should be 150, got " .. sum)
+end
+
+@Test function ArrayTypedRangeIteration()
+   -- Range-based iteration with inclusive range
+   arr = array<int> { 100, 200, 300 }
+   sum = 0
+   for i in {0...2} do
+      sum += arr[i]
+   end
+   assert(sum is 600, "Sum should be 600, got " .. sum)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Edge cases (extended)
+
+@Test function ArrayTypedMinimumSize()
+   -- Size of 1
+   arr = array<int, 1>
+   assert(#arr is 1, "Minimum size array should have length 1")
+   arr[0] = 42
+   assert(arr[0] is 42, "Single element should be accessible")
+end
+
+@Test function ArrayTypedMultipleOnSameLine()
+   -- Multiple array declarations (separate statements)
+   a = array<int, 3>
+   b = array<double, 2>
+   c = array<string> { 'x' }
+
+   assert(#a is 3, "First array should have 3 elements")
+   assert(#b is 2, "Second array should have 2 elements")
+   assert(#c is 1, "Third array should have 1 element")
+end
+
+@Test function ArrayTypedEmptyVsZeroSize()
+   -- Both should create empty arrays
+   empty1 = array<int>
+   empty2 = array<int, 0>
+   empty3 = array<int> {}
+
+   assert(#empty1 is 0, "array<int> should be empty")
+   assert(#empty2 is 0, "array<int, 0> should be empty")
+   assert(#empty3 is 0, "array<int> {} should be empty")
+
+   assert(empty1:type() is 'int', "All should be int type")
+   assert(empty2:type() is 'int', "All should be int type")
+   assert(empty3:type() is 'int', "All should be int type")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Size larger than initial values (padding tests)
+
+@Test function ArrayTypedSizeLargerThanValues()
+   -- Size is larger than number of initial values - should pad with zeros
+   arr = array<int, 10> { 1, 2, 3 }
+   assert(#arr is 10, "Array should have length 10, got " .. #arr)
+   assert(arr:type() is 'int', "Type should be 'int'")
+   assert(arr[0] is 1, "First element should be 1, got " .. arr[0])
+   assert(arr[1] is 2, "Second element should be 2, got " .. arr[1])
+   assert(arr[2] is 3, "Third element should be 3, got " .. arr[2])
+   -- Remaining elements should be zero-initialized
+   assert(arr[3] is 0, "Element 3 should be 0 (padded), got " .. arr[3])
+   assert(arr[9] is 0, "Element 9 should be 0 (padded), got " .. arr[9])
+end
+
+@Test function ArrayTypedSizeLargerThanValuesDouble()
+   -- Test with double type
+   arr = array<double, 5> { 1.5, 2.5 }
+   assert(#arr is 5, "Array should have length 5, got " .. #arr)
+   assert(arr[0] is 1.5, "First element should be 1.5")
+   assert(arr[1] is 2.5, "Second element should be 2.5")
+   assert(arr[2] is 0.0, "Element 2 should be 0.0 (padded)")
+   assert(arr[4] is 0.0, "Element 4 should be 0.0 (padded)")
+end
+
+@Test function ArrayTypedSizeLargerThanValuesString()
+   -- Test with string type - padded elements should be nil
+   arr = array<string, 5> { 'hello', 'world' }
+   assert(#arr is 5, "Array should have length 5, got " .. #arr)
+   assert(arr[0] is 'hello', "First element should be 'hello'")
+   assert(arr[1] is 'world', "Second element should be 'world'")
+   assert(arr[2] is nil, "Element 2 should be nil (padded)")
+   assert(arr[4] is nil, "Element 4 should be nil (padded)")
+end
+
+@Test function ArrayTypedSizeLargerThanValuesTable()
+   -- Test with table type - padded elements should be nil
+   arr = array<table, 4> { {x=1}, {x=2} }
+   assert(#arr is 4, "Array should have length 4, got " .. #arr)
+   assert(arr[0].x is 1, "First table.x should be 1")
+   assert(arr[1].x is 2, "Second table.x should be 2")
+   assert(arr[2] is nil, "Element 2 should be nil (padded)")
+   assert(arr[3] is nil, "Element 3 should be nil (padded)")
+end
+
+@Test function ArrayTypedSizeEqualsValuesCount()
+   -- When size equals values count, should work normally
+   arr = array<int, 3> { 10, 20, 30 }
+   assert(#arr is 3, "Array should have length 3")
+   assert(arr[0] is 10, "First element should be 10")
+   assert(arr[2] is 30, "Third element should be 30")
+end
+
+@Test function ArrayTypedSizeLessThanValuesCount()
+   -- When size is less than values count, size should be ignored (values take precedence)
+   arr = array<int, 2> { 1, 2, 3, 4, 5 }
+   assert(#arr is 5, "Array should have 5 elements (values take precedence), got " .. #arr)
+   assert(arr[4] is 5, "Fifth element should be 5")
+end
+
+@Test function ArrayTypedDynamicSizeWithValues()
+   -- Dynamic size expression with initial values
+   n = 8
+   arr = array<int, n> { 100, 200 }
+   assert(#arr is 8, "Array should have length 8, got " .. #arr)
+   assert(arr[0] is 100, "First element should be 100")
+   assert(arr[1] is 200, "Second element should be 200")
+   assert(arr[7] is 0, "Element 7 should be 0 (padded)")
+end
+
+@Test function ArrayTypedSingleValueWithPadding()
+   -- Single initial value with larger size
+   arr = array<int, 5> { 42 }
+   assert(#arr is 5, "Array should have length 5")
+   assert(arr[0] is 42, "First element should be 42")
+   assert(arr[1] is 0, "Element 1 should be 0 (padded)")
+   assert(arr[4] is 0, "Element 4 should be 0 (padded)")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- array.resize() direct tests
+
+@Test function ArrayResizeGrow()
+   -- Test array.resize() growing an array
+   arr = array<int> { 1, 2, 3 }
+   assert(#arr is 3, "Initial length should be 3")
+   array.resize(arr, 7)
+   assert(#arr is 7, "Length after resize should be 7, got " .. #arr)
+   assert(arr[0] is 1, "First element preserved")
+   assert(arr[2] is 3, "Third element preserved")
+   assert(arr[3] is 0, "New element should be 0")
+   assert(arr[6] is 0, "Last element should be 0")
+end
+
+@Test function ArrayResizeShrink()
+   -- Test array.resize() shrinking an array
+   arr = array<int> { 10, 20, 30, 40, 50 }
+   assert(#arr is 5, "Initial length should be 5")
+   array.resize(arr, 2)
+   assert(#arr is 2, "Length after resize should be 2, got " .. #arr)
+   assert(arr[0] is 10, "First element preserved")
+   assert(arr[1] is 20, "Second element preserved")
+end
+
+@Test function ArrayResizeSameSize()
+   -- Test array.resize() with same size (no-op)
+   arr = array<int> { 1, 2, 3 }
+   array.resize(arr, 3)
+   assert(#arr is 3, "Length should remain 3")
+   assert(arr[0] is 1, "Elements should be unchanged")
+end
+
+@Test function ArrayResizeToZero()
+   -- Test array.resize() to zero (like clear)
+   arr = array<int> { 1, 2, 3 }
+   array.resize(arr, 0)
+   assert(#arr is 0, "Length should be 0 after resize to 0")
+end
+
+@Test function ArrayResizeStringArray()
+   -- Test array.resize() with string array
+   arr = array<string> { 'a', 'b' }
+   array.resize(arr, 5)
+   assert(#arr is 5, "Length should be 5")
+   assert(arr[0] is 'a', "First element preserved")
+   assert(arr[1] is 'b', "Second element preserved")
+   assert(arr[2] is nil, "New string element should be nil")
+end
+
+@Test function ArrayResizeObjectArray()
+   obj_one = obj.new('time')
+   obj_two = obj.new('file')
+   arr = array<object> { obj_one, obj_two }
+   array.resize(arr, 4)
+   assert(#arr is 4, "Length should be 4")
+   assert(arr[0].id is obj_one.id, "First object preserved")
+   assert(arr[1].id is obj_two.id, "Second object preserved")
+   assert(arr[2] is nil, "New object slot should be nil")
+   array.resize(arr, 1)
+   assert(#arr is 1, "Length should shrink to 1")
+   assert(arr[0].id is obj_one.id, "First object should remain after shrink")
+   obj_one.free()
+   obj_two.free()
+end

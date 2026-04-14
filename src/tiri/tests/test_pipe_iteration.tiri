@@ -1,0 +1,256 @@
+-- Flute test suite for Tiri Pipe Iteration feature
+-- Tests the {range} |> function syntax for automatic iteration
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+@Test function PipeIterationBasic()
+   -- Basic pipe iteration: {1..6} |> func calls func for each value
+   sum = 0
+   {1..6} |> i => do sum += i end
+   assert(sum is 15, "pipe iteration should sum to 15 (1+2+3+4+5), got " .. sum)
+end
+
+@Test function PipeIterationInclusive()
+   -- Inclusive range pipe iteration
+   sum = 0
+   {1...5} |> i => do sum += i end
+   assert(sum is 15, "pipe iteration of {1...5} should sum to 15, got " .. sum)
+end
+
+@Test function PipeIterationWithPrint()
+   -- Capture values via pipe iteration
+   captured = {}
+   {0..3} |> function(i) captured[#captured] = i end
+   assert(#captured is 3, "should capture 3 values, got " .. #captured)
+   assert(captured[0] is 0, "first captured should be 0")
+   assert(captured[2] is 2, "last captured should be 2")
+end
+
+@Test function PipeIterationChaining()
+   -- Chaining: pipe returns range for chaining
+   log1 = {}
+   log2 = {}
+   {1..4} |> function(i) log1[#log1] = i end
+          |> function(i) log2[#log2] = i * 2 end
+   assert(#log1 is 3, "log1 should have 3 elements, got " .. #log1)
+   assert(#log2 is 3, "log2 should have 3 elements, got " .. #log2)
+   assert(log2[0] is 2, "log2[0] should be 2, got " .. tostring(log2[0]))
+   assert(log2[2] is 6, "log2[2] should be 6, got " .. tostring(log2[2]))
+end
+
+@Test function PipeIterationEarlyTermination()
+   -- Return false from callback to stop iteration
+   count = 0
+   {1..100} |> function(i)
+      count++
+      if i >= 5 then return false end
+   end
+   assert(count is 5, "should stop after 5 iterations, got " .. count)
+end
+
+@Test function PipeIterationReverse()
+   -- Reverse range pipe iteration
+   result = {}
+   {5...1} |> function(i) result[#result] = i end
+   assert(#result is 5, "reverse range should have 5 elements, got " .. #result)
+   assert(result[0] is 5, "first element should be 5")
+   assert(result[4] is 1, "last element should be 1")
+end
+
+@Test function PipeIterationEmpty()
+   -- Empty range should not iterate
+   count = 0
+   {5..5} |> function(i) count++ end
+   assert(count is 0, "empty range should not iterate, got " .. count)
+end
+
+@Test function PipeIterationWithClosure()
+   -- Closure variables accessible in callback
+   multiplier = 3
+   results = {}
+   {1..4} |> function(i) results[#results] = i * multiplier end
+   assert(results[0] is 3, "results[0] should be 3, got " .. tostring(results[0]))
+   assert(results[2] is 9, "results[2] should be 9, got " .. tostring(results[2]))
+end
+
+@Test function PipeIterationReturnValue()
+   -- Pipe iteration should return original range for chaining
+   -- NOTE: When using a variable, use :each() directly since parser can't detect range type
+   r = {1..5}
+   returned = r:each(function(i) end)
+   assert(returned is r, "pipe iteration should return original range")
+end
+
+@Test function PipeNormalBehaviour()
+   -- Non-range pipes should work as before
+   function double(x) return x * 2 end
+   result = 5 |> double()
+   assert(result is 10, "normal pipe should still work, got " .. tostring(result))
+end
+
+@Test function PipeWithRangeVariable()
+   -- Pipe iteration with range stored in variable
+   -- NOTE: When using a variable, use :each() directly since parser can't detect range type
+   r = {1..6}
+   sum = 0
+   r:each(function(i) sum += i end)
+   assert(sum is 15, "sum should be 15, got " .. sum)
+end
+
+@Test function PipeIterationWithIdentifier()
+   -- Pipe iteration with function stored in identifier
+   sum = 0
+   function accumulate(Value) sum += Value end
+   {1..6} |> accumulate
+   assert(sum is 15, "pipe to identifier should sum to 15, got " .. sum)
+end
+
+@Test function PipeIterationNested()
+   -- Nested pipe iteration
+   combinations = {}
+   {1..3} |> function(i)
+      {1..3} |> function(j)
+         combinations[#combinations] = i * 10 + j
+      end
+   end
+   assert(#combinations is 4, "nested iteration should produce 4 combinations, got " .. #combinations)
+   -- Combinations: 11, 12, 21, 22
+   assert(combinations[0] is 11, "first combination should be 11, got " .. tostring(combinations[0]))
+   assert(combinations[3] is 22, "last combination should be 22, got " .. tostring(combinations[3]))
+end
+
+@Test function PipeIterationSingleElement()
+   -- Single element inclusive range
+   count = 0
+   value = nil
+   {5...5} |> function(i)
+      count++
+      value = i
+   end
+   assert(count is 1, "single element range should iterate once, got " .. count)
+   assert(value is 5, "value should be 5, got " .. tostring(value))
+end
+
+@Test function PipeIterationNegativeValues()
+   -- Negative values in range
+   result = {}
+   {-3..2} |> function(i) result[#result] = i end
+   assert(#result is 5, "should have 5 elements, got " .. #result)
+   assert(result[0] is -3, "first should be -3")
+   assert(result[4] is 1, "last should be 1")
+end
+
+@Test function PipeIterationContinuesOnTrue()
+   -- Returning true should NOT terminate
+   sum = 0
+   {1..6} |> function(i)
+      sum += i
+      return true
+   end
+   assert(sum is 15, "returning true should complete iteration, got " .. sum)
+end
+
+@Test function PipeIterationContinuesOnNil()
+   -- No return (nil) should continue
+   count = 0
+   {1..6} |> function(i)
+      count++
+   end
+   assert(count is 5, "no return should complete iteration, got " .. count)
+end
+
+@Test function PipeWithArrowFunction()
+   -- Arrow functions should work for pipe iteration
+   sum = 0
+   {1..6} |> (i => do sum += i end)
+   assert(sum is 15, "arrow function should sum to 15, got " .. sum)
+end
+
+-- Array pipe iteration tests
+
+@Test function ArrayPipeIterationBasic()
+   -- Basic array pipe iteration
+   sum = 0
+   array<int> { 10, 20, 30 } |> (v => do sum += v end)
+   assert(sum is 60, "array pipe iteration should sum to 60, got " .. sum)
+end
+
+@Test function ArrayPipeIterationWithIndex()
+   -- Array :each() passes (value, index) to the callback
+   captured = {}
+   array<int> { 100, 200, 300 } |> function(v, i)
+      captured[i] = v
+   end
+   assert(captured[0] is 100, "index 0 should be 100, got " .. tostring(captured[0]))
+   assert(captured[1] is 200, "index 1 should be 200, got " .. tostring(captured[1]))
+   assert(captured[2] is 300, "index 2 should be 300, got " .. tostring(captured[2]))
+end
+
+@Test function ArrayPipeIterationChaining()
+   -- Chaining: array |> func1 |> func2
+   log1 = {}
+   log2 = {}
+   array<int> { 5, 10, 15 } |> function(v) log1[#log1] = v end
+                              |> function(v) log2[#log2] = v * 2 end
+   assert(#log1 is 3, "log1 should have 3 elements, got " .. #log1)
+   assert(#log2 is 3, "log2 should have 3 elements, got " .. #log2)
+   assert(log1[0] is 5 and log1[2] is 15, "log1 values incorrect")
+   assert(log2[0] is 10 and log2[2] is 30, "log2 values incorrect")
+end
+
+@Test function ArrayPipeIterationNamedFunction()
+   -- Pipe iteration with a named function
+   total = 0
+   function accumulate_value(Value) total += Value end
+   array<int> { 3, 6, 9 } |> accumulate_value
+   assert(total is 18, "named function should sum to 18, got " .. total)
+end
+
+@Test function ArrayPipeIterationEmpty()
+   -- Empty array should iterate zero times
+   count = 0
+   array<int> {} |> function(v) count++ end
+   assert(count is 0, "empty array should iterate zero times, got " .. count)
+end
+
+-- Variable-based array pipe iteration (deferred iteration via type fixing)
+
+@Test function ArrayVarPipeIteration()
+   -- Array stored in a variable should work with pipe iteration via type fixing
+   arr = array<int> { 10, 20, 30 }
+   sum = 0
+   arr |> (v => do sum += v end)
+   assert(sum is 60, "variable array pipe should sum to 60, got " .. sum)
+end
+
+@Test function ArrayVarPipeIterationWithIndex()
+   -- Variable array pipe should pass (value, index) to callback
+   arr = array<string> { 'a', 'b', 'c' }
+   captured = {}
+   arr |> function(v, i) captured[i] = v end
+   assert(captured[0] is 'a', "index 0 should be 'a'")
+   assert(captured[1] is 'b', "index 1 should be 'b'")
+   assert(captured[2] is 'c', "index 2 should be 'c'")
+end
+
+@Test function ArrayVarPipeChaining()
+   -- Variable array chaining should work
+   arr = array<int> { 1, 2, 3 }
+   log1 = {}
+   log2 = {}
+   arr |> function(v) log1[#log1] = v end
+       |> function(v) log2[#log2] = v * 10 end
+   assert(#log1 is 3, "log1 should have 3 elements, got " .. #log1)
+   assert(#log2 is 3, "log2 should have 3 elements, got " .. #log2)
+   assert(log2[0] is 10 and log2[2] is 30, "log2 values incorrect")
+end
+
+@Test function ArrayVarPipeNamedFunction()
+   -- Variable array with named function reference
+   arr = array<int> { 5, 10, 15 }
+   total = 0
+   function add_to_total(Value) total += Value end
+   arr |> add_to_total
+   assert(total is 30, "variable array pipe to named function should sum to 30, got " .. total)
+end

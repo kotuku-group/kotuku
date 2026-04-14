@@ -1,5 +1,5 @@
-usr/bin/parasol
+usr/bin/origo
 usr/lib/lib*.so*
-usr/share/parasol/scripts/*
-usr/share/parasol/data/*
-usr/share/parasol/config/*
+usr/share/kotuku/scripts/*
+usr/share/kotuku/data/*
+usr/share/kotuku/config/*

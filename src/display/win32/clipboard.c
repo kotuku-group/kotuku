@@ -6,7 +6,7 @@
 #pragma warning (disable : 4244 4311 4312 4267 4244 4068) // Disable annoying VC++ typecast warnings
 #endif
 
-#include <parasol/system/errors_c.h>
+#include <kotuku/system/errors_c.h>
 
 #include "keys.h"
 #include <windows.h>
@@ -37,11 +37,8 @@ enum {
 #define AND &&
 #define IS  ==
 
-#ifdef _DEBUG
-#define MSG(...) fprintf(stderr, __VA_ARGS__)
-#else
+//#define MSG(...) fprintf(stderr, __VA_ARGS__)
 #define MSG(...)
-#endif
 
 #define CLIP_DATA    (1<<CT_DATA)   // 1
 #define CLIP_AUDIO   (1<<CT_AUDIO)  // 2
@@ -113,7 +110,7 @@ static UINT fmtShellIDList = 0;
 static UINT fmtPasteSucceeded = 0;
 static UINT fmtPerformedDropEffect = 0;
 static UINT fmtPreferredDropEffect = 0;
-static UINT fmtParasolClip = 0;
+static UINT fmtKotukuClip = 0;
 
 void winCreateScreenClassClipboard(void)
 {
@@ -121,11 +118,11 @@ void winCreateScreenClassClipboard(void)
    if (!fmtPasteSucceeded) fmtPasteSucceeded = RegisterClipboardFormat(CFSTR_PASTESUCCEEDED);
    if (!fmtPerformedDropEffect) fmtPerformedDropEffect = RegisterClipboardFormat(CFSTR_PERFORMEDDROPEFFECT);
    if (!fmtPreferredDropEffect) fmtPreferredDropEffect = RegisterClipboardFormat(CFSTR_PREFERREDDROPEFFECT);
-   if (!fmtParasolClip) fmtParasolClip = RegisterClipboardFormat("Parasol");
+   if (!fmtKotukuClip) fmtKotukuClip = RegisterClipboardFormat("Kotuku");
 }
 
 //********************************************************************************************************************
-// Convert the windows datatypes to Parasol datatypes.
+// Convert the windows datatypes to Kotuku datatypes.
 
 static int STDMETHODCALLTYPE RKDT_AssessDatatype(struct rkDropTarget *Self, IDataObject *Data, char *Result, int Length)
 {

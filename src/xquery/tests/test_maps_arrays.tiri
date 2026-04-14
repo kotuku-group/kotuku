@@ -1,0 +1,83 @@
+
+local MAP_NAMESPACE = 'http://www.w3.org/2005/xpath-functions/map'
+local ARRAY_NAMESPACE = 'http://www.w3.org/2005/xpath-functions/array'
+local MAP_ARRAY_DECLARE = 'declare namespace map = "' .. MAP_NAMESPACE .. '"; ' ..
+   'declare namespace array = "' .. ARRAY_NAMESPACE .. '"; '
+
+@Test function MapFunctions()
+   local xq = obj.new('xquery')
+
+   xq.statement = MAP_ARRAY_DECLARE .. 'map:size(map { "a": 1, "b": 2 })'
+   assert(xq.acActivate() is ERR_Okay, 'map:size should execute')
+   assert(xq.resultString is '2', 'map:size should count entries, got ' .. tostring(xq.resultString))
+
+   xq.statement = MAP_ARRAY_DECLARE .. 'string(map:get(map { "price": 10 }, "price"))'
+   assert(xq.acActivate() is ERR_Okay, 'map:get should execute')
+   assert(xq.resultString is '10', 'map:get should return stored value, got ' .. tostring(xq.resultString))
+
+   xq.statement = MAP_ARRAY_DECLARE .. 'map:contains(map { "sku": 5 }, "sku")'
+   assert(xq.acActivate() is ERR_Okay, 'map:contains should execute')
+   assert(xq.resultString is 'true', 'map:contains should report true, got ' .. tostring(xq.resultString))
+
+   xq.statement = MAP_ARRAY_DECLARE .. 'string(map:get(map:put(map { "sku": 5 }, "sku", 9), "sku"))'
+   assert(xq.acActivate() is ERR_Okay, 'map:put should execute')
+   assert(xq.resultString is '9', 'map:put should overwrite values, got ' .. tostring(xq.resultString))
+
+   xq.statement = MAP_ARRAY_DECLARE .. 'string-join(map:keys(map { "a": 1, "b": 2 }), ",")'
+   assert(xq.acActivate() is ERR_Okay, 'map:keys should execute')
+   assert(xq.resultString is 'a,b', 'map:keys should enumerate keys, got ' .. tostring(xq.resultString))
+
+   xq.statement = MAP_ARRAY_DECLARE .. 'string(map:get(map:merge((map { "a": 1 }, map { "a": 7, "b": 3 })), "a"))'
+   assert(xq.acActivate() is ERR_Okay, 'map:merge should execute')
+   assert(xq.resultString is '7', 'map:merge should prefer later maps, got ' .. tostring(xq.resultString))
+
+   xq.statement = MAP_ARRAY_DECLARE .. 'string(map:get(map:entry("code", "ok"), "code"))'
+   assert(xq.acActivate() is ERR_Okay, 'map:entry should execute')
+   assert(xq.resultString is 'ok', 'map:entry should create a single-entry map, got ' .. tostring(xq.resultString))
+end
+
+@Test function ArrayFunctions()
+   local xq = obj.new('xquery')
+
+   xq.statement = MAP_ARRAY_DECLARE .. 'array:size(array { "x", "y", "z" })'
+   assert(xq.acActivate() is ERR_Okay, 'array:size should execute')
+   assert(xq.resultString is '3', 'array:size should count members, got ' .. tostring(xq.resultString))
+
+   xq.statement = MAP_ARRAY_DECLARE .. 'string(array:get(array { "red", "green", "blue" }, 2))'
+   assert(xq.acActivate() is ERR_Okay, 'array:get should execute')
+   assert(xq.resultString is 'green', 'array:get should read the requested index, got ' .. tostring(xq.resultString))
+
+   xq.statement = MAP_ARRAY_DECLARE .. 'string-join(array:append(array { "a" }, "b")?*, ",")'
+   assert(xq.acActivate() is ERR_Okay, 'array:append should execute')
+   assert(xq.resultString is 'a,b', 'array:append should add members, got ' .. tostring(xq.resultString))
+
+   xq.statement = MAP_ARRAY_DECLARE .. 'string-join(array:insert-before(array { "a", "c" }, 2, "b")?*, "|")'
+   assert(xq.acActivate() is ERR_Okay, 'array:insert-before should execute')
+   assert(xq.resultString is 'a|b|c', 'array:insert-before should insert at the requested position, got ' .. tostring(xq.resultString))
+
+   xq.statement = MAP_ARRAY_DECLARE .. 'string-join(array:remove(array { 1, 2, 3 }, 2)?*, ",")'
+   assert(xq.acActivate() is ERR_Okay, 'array:remove should execute')
+   assert(xq.resultString is '1,3', 'array:remove should drop the supplied index, got ' .. tostring(xq.resultString))
+
+   xq.statement = MAP_ARRAY_DECLARE .. 'string-join(array:join((array { 1, 2 }, array { 3, 4 }))?*, ",")'
+   assert(xq.acActivate() is ERR_Okay, 'array:join should execute')
+   assert(xq.resultString is '1,2,3,4', 'array:join should concatenate members, got ' .. tostring(xq.resultString))
+
+   xq.statement = MAP_ARRAY_DECLARE .. 'string-join(array:flatten(array { 1, array { 2, array { 3 } }, 4 })?*, ",")'
+   assert(xq.acActivate() is ERR_Okay, 'array:flatten should execute')
+   assert(xq.resultString is '1,2,3,4', 'array:flatten should remove nested arrays, got ' .. tostring(xq.resultString))
+end
+
+@Test function MapArrayFunctionErrors()
+   local xq = obj.new('xquery')
+
+   xq.statement = MAP_ARRAY_DECLARE .. 'map:get(map { "a": 1 }, map { "bad": 2 })'
+   local err = xq.acActivate()
+   assert(err != ERR_Okay, 'map:get should reject non-atomic keys')
+   assert(xq.errorMsg and xq.errorMsg != '', 'map:get should report an error message for invalid keys')
+
+   xq.statement = MAP_ARRAY_DECLARE .. 'array:get(array { 1, 2 }, 0)'
+   err = xq.acActivate()
+   assert(err != ERR_Okay, 'array:get should reject zero indexes')
+   assert(xq.errorMsg and xq.errorMsg != '', 'array:get should report an error message for invalid indexes')
+end

@@ -1,0 +1,149 @@
+-- Test the use of action threading (asynchronous callbacks) by loading multiple pictures simultaneously.
+--
+-- The  testParallel() function executes the threads and then waits for them to complete by calling proc.sleep()
+-- until picLoaded() sends a signal().
+
+   import 'io/filesearch'
+
+   proc = processing.new(5.0)
+   glPicsProcessed = 0
+   glPictures = array<table>
+
+@BeforeAll function init()
+   mGfx ?? return
+
+   folder = 'icons:programs/'
+   list = ''
+   print(f'Scanning "{folder}" for SVGs')
+   io.search(folder, {
+      nameFilter = regex.new('.+\\.svg'),
+      matchFeedback = function(Path:str, FileName:str, File:obj)
+         list ..= FileName .. ' '
+         glPictures:push({ path=Path .. FileName })
+      end
+   })
+
+   print(f'Found {#glPictures} SVG files: {list}')
+
+   assert(#glPictures > 0, 'Failed to find any SVG files.')
+end
+
+function initPictures()
+   for v in values(glPictures) do
+      v.pic = obj.new('picture', { path=v.path, flags=PCF_QUERY } )
+   end
+end
+
+function freePictures()
+   for v in values(glPictures) do
+      if v.pic then v.pic = nil end
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- This callback function is called every time that a thread completes its Activate() action.
+
+function picProcessed(ActionID, pic, Error, Key)
+   if Error != ERR_Okay then
+      print('Failed to load picture, error: ' .. mSys.GetErrorMsg(Error))
+   end
+
+   glPicsProcessed++
+
+   if glPicsProcessed >= #glPictures then
+      --print('All pictures have been processed, exiting now.')
+      proc.signal()
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test(priority=1); @Requires(display=true) function Parallel()
+   initPictures()
+
+   glPicsProcessed = 0
+   count = 0
+
+   for k, v in glPictures do
+      if v.pic then
+         async.action(v.pic, 'Activate', picProcessed, k)
+         count++
+      end
+   end
+
+   -- Wait for threads to complete
+
+   if count > 0 then
+      err = proc.sleep()
+   end
+
+   freePictures()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- This is the control test for demonstrating how fast parallel execution can actually be versus sequential execution.
+
+@Test(priority=2); @Requires(display=true) function Sequential()
+   initPictures()
+
+   for v in values(glPictures) do
+      v.pic?.acActivate()
+   end
+
+   freePictures()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Verify that multiple async.action() calls on the same object execute in FIFO order.
+-- Each callback records its Key parameter; the final order should match submission order.
+
+@Test(priority=3); @Requires(display=true) function FifoOrdering()
+   pic = obj.new('picture', { path=glPictures[0].path, flags=PCF_QUERY })
+
+   order_log = { }
+   completed = 0
+   expected = 8
+
+   for i = 0, expected - 1 do
+      async.action(pic, 'Activate', function(ActionID, Object, Error, Key)
+         table.insert(order_log, Key)
+         completed++
+         if completed >= expected then
+            processing.signal()
+         end
+      end, i)
+   end
+
+   check processing.sleep(3)
+   assert(completed is expected, f'Expected {expected} completions, got {completed}')
+
+   -- Verify FIFO ordering: keys should arrive in submission order (0, 1, 2, ..., 7)
+   for i = 0, #order_log - 1 do
+      assert(order_log[i] is i, f'Expected key {i} at position {i}, got {order_log[i]}')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Verify that queued actions without callbacks still allow subsequent queued actions to dispatch.
+
+@Test(priority=4); @Requires(display=true) function CallbacklessQueueing()
+   pic = obj.new('picture', { path=glPictures[0].path, flags=PCF_QUERY })
+
+   completed = 0
+
+   -- Queue some actions on the same object without callbacks, followed by 1 with a callback
+
+   async.action(pic, 'Activate')
+
+   async.action(pic, 'Activate')
+
+   async.action(pic, 'Activate')
+
+   async.action(pic, 'Activate', function(ActionID, Object, Error, Key)
+      completed++
+      processing.signal()
+   end, 0)
+
+   check processing.sleep(3)
+   assert(completed is 1, 'Final callback was not invoked after callback-less queued actions.')
+end

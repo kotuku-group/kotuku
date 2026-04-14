@@ -1,5 +1,14 @@
 {
   "env": {
      "BASH_DEFAULT_TIMEOUT_MS": 300000
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+        ]
+      }
+    ]
   }
 }

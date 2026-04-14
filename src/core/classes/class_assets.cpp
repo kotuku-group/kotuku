@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -284,7 +284,7 @@ static ERR ASSET_Read(objFile *Self, struct acRead *Args)
       if (Args->Result IS -1) {
          log.msg("Failed to read %d bytes from the file.", Args->Length);
          Args->Result = 0;
-         return ERR::Failed;
+         return ERR::Read;
       }
 
       // Return ERR::Okay even though not all data was read, because this was not due to a failure.

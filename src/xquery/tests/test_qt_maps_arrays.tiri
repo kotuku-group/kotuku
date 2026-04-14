@@ -1,0 +1,123 @@
+-- QT3-inspired regression tests for maps, arrays, and lookup expressions
+
+   include 'xml'
+
+SUBSET_FILE = 'modules/qt3_map_array_subset.xml'
+
+function readExpectation(XmlDoc, Name)
+   base = '/test-set/test-case[@name="' .. Name .. '"]/result'
+
+   errString, stringValue = XmlDoc.mtEvaluate('string(' .. base .. '/assert-string-value)')
+   if errString is ERR_Okay and stringValue and stringValue != '' then
+      return { type = 'string', value = stringValue }
+   end
+
+   errEq, eqValue = XmlDoc.mtEvaluate('string(' .. base .. '/assert-eq)')
+   if errEq is ERR_Okay and eqValue and eqValue != '' then
+      return { type = 'string', value = eqValue }
+   end
+
+   errTrue = XmlDoc.mtSearch(base .. '/assert-true')
+   if errTrue is ERR_Okay then
+      return { type = 'boolean', value = true }
+   end
+
+   errFalse = XmlDoc.mtSearch(base .. '/assert-false')
+   if errFalse is ERR_Okay then
+      return { type = 'boolean', value = false }
+   end
+
+   errError, errorNode = XmlDoc.mtSearch(base .. '/error')
+   if errError is ERR_Okay and errorNode and errorNode != 0 then
+      errCode, codeValue = XmlDoc.mtGetAttrib(errorNode, 'code')
+      return { type = 'error', code = codeValue or '' }
+   end
+
+   return nil
+end
+
+function loadCases(Path)
+   subsetXml = obj.new('xml', { path = Path })
+   cases = { }
+
+   err = subsetXml.mtSearch('/test-set/test-case', function(XML, TagID)
+      errName, name = subsetXml.mtGetAttrib(TagID, 'name')
+      assert(errName is ERR_Okay and name and name != '', 'QT3 test-case is missing a name attribute.')
+
+      errQuery, query = subsetXml.mtEvaluate('string(/test-set/test-case[@name="' .. name .. '"]/test)')
+      assert(errQuery is ERR_Okay and query and query != '', 'QT3 test ' .. name .. ' is missing its query body.')
+
+      expectation = readExpectation(subsetXml, name)
+      assert(expectation, 'QT3 test ' .. name .. ' does not define an assertion.')
+
+      table.insert(cases, {
+         name = name,
+         query = query,
+         expect = expectation
+      })
+   end)
+
+   if err != ERR_Okay then
+      error('Failed to enumerate QT3 subset (' .. Path .. '): ' .. mSys.GetErrorMsg(err))
+   end
+
+   return cases
+end
+
+function runQt3Case(TestCase)
+   xq = obj.new('xquery')
+   xq.statement = TestCase.query
+
+   err = xq.acActivate()
+
+   if TestCase.expect.type is 'error' then
+      assert(err != ERR_Okay, 'QT3 ' .. TestCase.name .. ' expected an error but succeeded.')
+      if TestCase.expect.code and TestCase.expect.code != '' then
+         message = tostring(xq.errorMsg)
+         assert(message and string.find(message, TestCase.expect.code, 1, true),
+            'Expected error code ' .. TestCase.expect.code .. ', got ' .. tostring(message))
+      end
+      return
+   end
+
+   assert(err is ERR_Okay, 'QT3 ' .. TestCase.name .. ' failed: ' .. tostring(xq.errorMsg))
+
+   actual = tostring(xq.resultString or '')
+   if TestCase.expect.type is 'boolean' then
+      expectedString = TestCase.expect.value and 'true' or 'false'
+      assert(actual is expectedString, 'QT3 ' .. TestCase.name .. ' expected ' .. expectedString .. ', got ' .. actual)
+   elseif TestCase.expect.type is 'string' then
+      assert(actual is TestCase.expect.value, 'QT3 ' .. TestCase.name .. ' expected ' .. TestCase.expect.value .. ', got ' .. actual)
+   else
+      assert(actual is tostring(TestCase.expect.value), 'QT3 ' .. TestCase.name .. ' expected ' .. tostring(TestCase.expect.value) .. ', got ' .. actual)
+   end
+end
+
+return {
+   init = function(ScriptFolder)
+      subset_path = ScriptFolder .. SUBSET_FILE
+      if mSys.AnalysePath(subset_path) != ERR_Okay then
+         print('QT3 map/array subset not found at: ' .. subset_path)
+         print('Install the optional QT3 package to exercise these tests.')
+         return { }
+      end
+
+      cases = loadCases(subset_path)
+
+      counter = 1
+
+      for _, caseInfo in ipairs(cases) do
+         captured = caseInfo
+         func_name = 'qt3_' .. captured.name .. '_' .. counter
+         test_func = function()
+            runQt3Case(captured)
+         end
+
+         debug.anno.set(test_func, {
+            { name = "Test", args = { name = func_name, labels = { "xquery", "maps", "arrays" } } }
+         }, "test_qt_maps_arrays.tiri", func_name)
+
+         counter++
+      end
+   end
+}

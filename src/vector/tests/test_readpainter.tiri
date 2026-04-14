@@ -1,0 +1,433 @@
+
+   mVec ?= mod.load('vector')
+
+TOLERANCE <const> = 0.0099
+
+function near(A, B)
+   return math.abs(A - B) < TOLERANCE
+end
+
+function checkRGB(Painter, Red, Green, Blue, Alpha)
+   local rgb = Painter.colour
+   if not near(Red, rgb.red) then print(f'Red mismatch: expected {Red}, got {rgb.red}') return false end
+   if not near(Green, rgb.green) then print(f'Green mismatch: expected {Green}, got {rgb.green}') return false end
+   if not near(Blue, rgb.blue) then print(f'Blue mismatch: expected {Blue}, got {rgb.blue}') return false end
+   if not near(Alpha, rgb.alpha) then print(f'Alpha mismatch: expected {Alpha}, got {rgb.alpha}') return false end
+   return true
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- rgb() and rgba()
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ReadRGB()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "rgb(255,128,0)", painter)
+   assert(checkRGB(painter, 1.0, 128/255, 0, 1.0), 'Failed rgb(255,128,0)')
+end
+
+@Test function ReadRGBWithAlpha()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "rgb(255,255,255,0.5)", painter)
+   assert(checkRGB(painter, 1.0, 1.0, 1.0, 0.5), 'Failed rgb() with alpha')
+end
+
+@Test function ReadRGBA()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "rgba(0,0,0,0.75)", painter)
+   assert(checkRGB(painter, 0, 0, 0, 0.75), 'Failed rgba()')
+end
+
+@Test function ReadRGBPercentage()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "rgb(100%,50%,0%)", painter)
+   assert(checkRGB(painter, 1.0, 0.5, 0, 1.0), 'Failed rgb() with percentages')
+end
+
+@Test function ReadRGBBlack()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "rgb(0,0,0)", painter)
+   assert(checkRGB(painter, 0, 0, 0, 1.0), 'Failed rgb() black')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- rgb() space-separated (modern CSS)
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ReadRGBSpace()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "rgb(255 128 0)", painter)
+   assert(checkRGB(painter, 1.0, 128/255, 0, 1.0), 'Failed rgb() space-separated')
+end
+
+@Test function ReadRGBSpaceAlpha()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "rgb(255 255 255 / 0.5)", painter)
+   assert(checkRGB(painter, 1.0, 1.0, 1.0, 0.5), 'Failed rgb() space-separated with alpha')
+end
+
+@Test function ReadRGBSpaceAlphaPercent()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "rgb(0 0 255 / 75%)", painter)
+   assert(checkRGB(painter, 0, 0, 1.0, 0.75), 'Failed rgb() space-separated with percentage alpha')
+end
+
+@Test function ReadRGBSpacePercentage()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "rgb(100% 50% 0%)", painter)
+   assert(checkRGB(painter, 1.0, 0.5, 0, 1.0), 'Failed rgb() space-separated with percentages')
+end
+
+@Test function ReadRGBSpacePercentageAlpha()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "rgb(100% 0% 0% / 0.3)", painter)
+   assert(checkRGB(painter, 1.0, 0, 0, 0.3), 'Failed rgb() space-separated percentages with alpha')
+end
+
+@Test function ReadRGBSpaceBlack()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "rgb(0 0 0)", painter)
+   assert(checkRGB(painter, 0, 0, 0, 1.0), 'Failed rgb() space-separated black')
+end
+
+@Test function ReadRGBSpaceNoAlpha()
+   -- Verify alpha defaults to 1.0 when no slash is present
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "rgb(128 64 32)", painter)
+   assert(checkRGB(painter, 128/255, 64/255, 32/255, 1.0), 'Failed rgb() space-separated default alpha')
+end
+
+@Test function ReadRGBASpace()
+   -- rgba() prefix should also work with the space-separated format
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "rgba(0 255 0 / 0.8)", painter)
+   assert(checkRGB(painter, 0, 1.0, 0, 0.8), 'Failed rgba() space-separated')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Hex colours
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ReadHex6()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "#ff8000", painter)
+   assert(checkRGB(painter, 1.0, 128/255, 0, 1.0), 'Failed #RRGGBB')
+end
+
+@Test function ReadHex3()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "#f00", painter)
+   assert(checkRGB(painter, 1.0, 0, 0, 1.0), 'Failed #RGB (red)')
+end
+
+@Test function ReadHex8()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "#ff000080", painter)
+   assert(checkRGB(painter, 1.0, 0, 0, 128/255), 'Failed #RRGGBBAA')
+end
+
+@Test function ReadHexWhite()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "#ffffff", painter)
+   assert(checkRGB(painter, 1.0, 1.0, 1.0, 1.0), 'Failed #ffffff white')
+end
+
+@Test function ReadHexBlack()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "#000000", painter)
+   assert(checkRGB(painter, 0, 0, 0, 1.0), 'Failed #000000 black')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Named colours
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ReadNamedRed()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "red", painter)
+   assert(checkRGB(painter, 1.0, 0, 0, 1.0), 'Failed named colour "red"')
+end
+
+@Test function ReadNamedWhite()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "white", painter)
+   assert(checkRGB(painter, 1.0, 1.0, 1.0, 1.0), 'Failed named colour "white"')
+end
+
+@Test function ReadNamedBlack()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "black", painter)
+   assert(checkRGB(painter, 0, 0, 0, 1.0), 'Failed named colour "black"')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- hsl() and hsla()
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ReadHSLRed()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "hsl(0,100,50)", painter)
+   assert(checkRGB(painter, 1.0, 0, 0, 1.0), 'Failed hsl() red')
+end
+
+@Test function ReadHSLGreen()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "hsl(120,100,50)", painter)
+   assert(checkRGB(painter, 0, 1.0, 0, 1.0), 'Failed hsl() green')
+end
+
+@Test function ReadHSLBlue()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "hsl(240,100,50)", painter)
+   assert(checkRGB(painter, 0, 0, 1.0, 1.0), 'Failed hsl() blue')
+end
+
+@Test function ReadHSLGrey()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "hsl(0,0,50)", painter)
+   assert(checkRGB(painter, 0.5, 0.5, 0.5, 1.0), 'Failed hsl() grey (zero saturation)')
+end
+
+@Test function ReadHSLA()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "hsla(0,100,50,0.5)", painter)
+   assert(checkRGB(painter, 1.0, 0, 0, 0.5), 'Failed hsla() red with alpha')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- hsv()
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ReadHSVRed()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "hsv(0,100,100)", painter)
+   assert(checkRGB(painter, 1.0, 0, 0, 1.0), 'Failed hsv() red')
+end
+
+@Test function ReadHSVWithAlpha()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "hsv(0,100,100,0.3)", painter)
+   assert(checkRGB(painter, 1.0, 0, 0, 0.3), 'Failed hsv() with alpha')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- oklab()
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ReadOKLabWhite()
+   -- oklab(1 0 0) should produce white
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "oklab(1 0 0)", painter)
+   assert(checkRGB(painter, 1.0, 1.0, 1.0, 1.0), 'Failed oklab() white')
+end
+
+@Test function ReadOKLabBlack()
+   -- oklab(0 0 0) should produce black
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "oklab(0 0 0)", painter)
+   assert(checkRGB(painter, 0, 0, 0, 1.0), 'Failed oklab() black')
+end
+
+@Test function ReadOKLabWithAlpha()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "oklab(1 0 0 / 0.5)", painter)
+   assert(checkRGB(painter, 1.0, 1.0, 1.0, 0.5), 'Failed oklab() with alpha')
+end
+
+@Test function ReadOKLabPercentage()
+   -- oklab(100% 0% 0%) should produce white
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "oklab(100% 0% 0%)", painter)
+   assert(checkRGB(painter, 1.0, 1.0, 1.0, 1.0), 'Failed oklab() with percentages')
+end
+
+@Test function ReadOKLabRed()
+   -- oklab(0.6279 0.2249 0.1264) is approximately sRGB red
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "oklab(0.6279 0.2249 0.1264)", painter)
+   assert(near(painter.colour.red, 1.0), f'oklab() red: expected ~1.0, got {painter.colour.red}')
+   assert(near(painter.colour.green, 0.0), f'oklab() green: expected ~0.0, got {painter.colour.green}')
+   assert(near(painter.colour.blue, 0.0), f'oklab() blue: expected ~0.0, got {painter.colour.blue}')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- oklch()
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ReadOKLCHWhite()
+   -- oklch(1 0 0) should produce white (zero chroma)
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "oklch(1 0 0)", painter)
+   assert(checkRGB(painter, 1.0, 1.0, 1.0, 1.0), 'Failed oklch() white')
+end
+
+@Test function ReadOKLCHBlack()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "oklch(0 0 0)", painter)
+   assert(checkRGB(painter, 0, 0, 0, 1.0), 'Failed oklch() black')
+end
+
+@Test function ReadOKLCHWithAlpha()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "oklch(1 0 0 / 0.25)", painter)
+   assert(checkRGB(painter, 1.0, 1.0, 1.0, 0.25), 'Failed oklch() with alpha')
+end
+
+@Test function ReadOKLCHPercentage()
+   -- oklch(100% 0% 0) should produce white
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "oklch(100% 0% 0)", painter)
+   assert(checkRGB(painter, 1.0, 1.0, 1.0, 1.0), 'Failed oklch() with percentages')
+end
+
+@Test function ReadOKLCHPercentAlpha()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "oklch(1 0 0 / 50%)", painter)
+   assert(checkRGB(painter, 1.0, 1.0, 1.0, 0.5), 'Failed oklch() with percentage alpha')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- lab()
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ReadLabWhite()
+   -- lab(100 0 0) should produce white
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "lab(100 0 0)", painter)
+   assert(checkRGB(painter, 1.0, 1.0, 1.0, 1.0), 'Failed lab() white')
+end
+
+@Test function ReadLabBlack()
+   -- lab(0 0 0) should produce black
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "lab(0 0 0)", painter)
+   assert(checkRGB(painter, 0, 0, 0, 1.0), 'Failed lab() black')
+end
+
+@Test function ReadLabWithAlpha()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "lab(100 0 0 / 0.6)", painter)
+   assert(checkRGB(painter, 1.0, 1.0, 1.0, 0.6), 'Failed lab() with alpha')
+end
+
+@Test function ReadLabPercentage()
+   -- lab(100% 0% 0%) should produce white
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "lab(100% 0% 0%)", painter)
+   assert(checkRGB(painter, 1.0, 1.0, 1.0, 1.0), 'Failed lab() with percentages')
+end
+
+@Test function ReadLabMidGrey()
+   -- lab(50 0 0) should produce a mid-grey
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "lab(50 0 0)", painter)
+   local rgb = painter.colour
+   assert(near(rgb.red, rgb.green) and near(rgb.green, rgb.blue), 'lab() mid-grey: channels should be equal')
+   assert(rgb.red > 0.1 and rgb.red < 0.9, f'lab() mid-grey: expected mid value, got {rgb.red}')
+end
+
+@Test function ReadLabRed()
+   -- lab(54.29 80.81 69.89) is approximately sRGB red (#ff0000)
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "lab(54.29 80.81 69.89)", painter)
+   assert(near(painter.colour.red, 1.0), f'lab() red channel: expected ~1.0, got {painter.colour.red}')
+   assert(near(painter.colour.green, 0.0), f'lab() green channel: expected ~0.0, got {painter.colour.green}')
+   assert(near(painter.colour.blue, 0.0), f'lab() blue channel: expected ~0.0, got {painter.colour.blue}')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- lch()
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ReadLCHWhite()
+   -- lch(100 0 0) should produce white (zero chroma)
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "lch(100 0 0)", painter)
+   assert(checkRGB(painter, 1.0, 1.0, 1.0, 1.0), 'Failed lch() white')
+end
+
+@Test function ReadLCHBlack()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "lch(0 0 0)", painter)
+   assert(checkRGB(painter, 0, 0, 0, 1.0), 'Failed lch() black')
+end
+
+@Test function ReadLCHWithAlpha()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "lch(100 0 0 / 0.8)", painter)
+   assert(checkRGB(painter, 1.0, 1.0, 1.0, 0.8), 'Failed lch() with alpha')
+end
+
+@Test function ReadLCHPercentage()
+   -- lch(100% 0% 0) should produce white
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "lch(100% 0% 0)", painter)
+   assert(checkRGB(painter, 1.0, 1.0, 1.0, 1.0), 'Failed lch() with percentages')
+end
+
+@Test function ReadLCHRed()
+   -- lch(54.29 106.84 40.86) is approximately sRGB red
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "lch(54.29 106.84 40.86)", painter)
+   assert(near(painter.colour.red, 1.0), f'lch() red channel: expected ~1.0, got {painter.colour.red}')
+   assert(near(painter.colour.green, 0.0), f'lch() green channel: expected ~0.0, got {painter.colour.green}')
+   assert(near(painter.colour.blue, 0.0), f'lch() blue channel: expected ~0.0, got {painter.colour.blue}')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Input formatting edge cases
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function LeadingSemicolon()
+   -- ReadPainter() should skip a leading semicolon
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, ";rgb(255,0,0)", painter)
+   assert(checkRGB(painter, 1.0, 0, 0, 1.0), 'Failed to skip leading semicolon')
+end
+
+@Test function LeadingWhitespace()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "  rgb(0,255,0)", painter)
+   assert(checkRGB(painter, 0, 1.0, 0, 1.0), 'Failed to skip leading whitespace')
+end
+
+@Test function InvalidColourName()
+   painter = struct.new('VectorPainter')
+   local err = mVec.ReadPainter(nil, "notacolour", painter)
+   assert(err != ERR_Okay, 'Invalid colour name should return an error')
+end
+
+@Test function InvalidHexLength()
+   painter = struct.new('VectorPainter')
+   local err = mVec.ReadPainter(nil, "#ab", painter)
+   assert(err != ERR_Okay, 'Hex with 2 nibbles should return an error')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Cross-verification: equivalent colours in different formats produce the same result
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function CrossVerifyRedFormats()
+   -- Pure red expressed in multiple formats should produce near-identical RGB values
+   local formats = {
+      "rgb(255,0,0)",
+      "rgb(255 0 0)",
+      "#ff0000",
+      "red",
+      "hsl(0,100,50)"
+   }
+
+   local results = {}
+   for i, fmt in ipairs(formats) do
+      local p = struct.new('VectorPainter')
+      check mVec.ReadPainter(nil, fmt, p)
+      results[i] = p
+   end
+
+   for i = 0, #results - 2 do
+      local a = results[i].colour
+      local b = results[i + 1].colour
+      assert(near(a.red, b.red) and near(a.green, b.green) and near(a.blue, b.blue),
+         f'Red cross-check failed between format {i} and {i+1}')
+   end
+end

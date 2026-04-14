@@ -1,0 +1,544 @@
+-- Flute tests for table library functions
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Tests for table.new()
+
+@Test function NewCreatesTable()
+   t = table.new(10, 5)
+   assert(type(t) is 'table', "table.new should return a table")
+   assert(#t is 0, "Newly created table should be empty")
+end
+
+@Test function NewUsable()
+   -- Pre-allocated table should be usable normally
+   t = table.new(5, 0)
+   table.insert(t, 'a')
+   table.insert(t, 'b')
+   assert(#t is 2, "Pre-allocated table should support insert")
+   assert(t[0] is 'a')
+   assert(t[1] is 'b')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function NilAndEmpty()
+   -- nil is treated as an empty table
+   assert(table.empty(nil) is true, "nil should be considered empty")
+
+   -- empty table literal
+   t = {}
+   assert(table.empty(t) is true, "{} should be empty")
+end
+
+@Test function ArrayAndHash()
+   -- Non-empty array part
+   arr = {1}
+   assert(table.empty(arr) is false, "Array with one element should not be empty")
+
+   -- Non-empty hash part
+   map = { a = 1 }
+   assert(table.empty(map) is false, "Hash with one key should not be empty")
+end
+
+@Test function SparseAndHoles()
+   -- Sparse array with only a high index populated
+   t = {}
+   t[100] = 1
+   assert(table.empty(t) is false, "Sparse table with an entry should not be empty")
+
+   -- Table with only holes (all nil)
+   holes = {}
+   holes[0] = nil
+   holes[1] = nil
+   assert(table.empty(holes) is true, "Table with only nil entries should be empty")
+end
+
+@Test function ClearAndMutation()
+   t = { a = 5, 7 }
+   assert(table.empty(t) is false, "Initially non-empty table should not be empty")
+
+   table.clear(t)
+   assert(table.empty(t) is true, "table.clear() should result in an empty table")
+
+   -- Re-populate and re-check
+   t[0] = 10
+   assert(table.empty(t) is false, "Re-populated table should not be empty")
+end
+
+@Test function LookupWithField()
+   cfg = { }
+   table.insert(cfg, { apple = "banana", orange = "lemon" })
+   lookup = { value = "apple" }
+   assert(cfg[0][lookup.value] is "banana", "Lookup with field should return correct value")
+
+   m = {}
+   clients = { }
+   for i = 0, 1 do
+      m[i] = {}
+      table.insert(m[i], 'CLIENT_' .. i)
+   end
+   clients[0] = { }
+   clients[0].messageIndex = 0
+   result = m[0][clients[0].messageIndex]
+   assert(result is 'CLIENT_0', 'Expected CLIENT_0, got ' .. tostring(result))
+end
+
+@Test function SortByKeys()
+   t = { b = 2, a = 1, c = 3 }
+   keys = {}
+   for k, v in table.sortByKeys(t) do
+      table.insert(keys, k)
+   end
+   assert(#keys is 3, "Should have 3 keys after sorting, got " .. #keys)
+   assert(keys[0] is 'a', "First key should be 'a'")
+   assert(keys[1] is 'b', "Second key should be 'b'")
+   assert(keys[2] is 'c', "Third key should be 'c'")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Tests for #table
+
+@Test function TableEmpty()
+   -- Test length of empty table
+   t = {}
+   assert(#t is 0, "Empty table should have length 0")
+end
+
+@Test function TableLength()
+   -- Test length of array-style table
+   t = { 'a', 'b', 'c', 'd', 'e' }
+   assert(#t is 5, "Array with 5 elements should have length 5, got " .. #t)
+end
+
+@Test function TableLengthIgnoresHashPart()
+   -- Test that getn only counts array part
+   t = { 'x', 'y' }
+   t.name = 'test'
+   t.value = 42
+   assert(#t is 2, "getn should only count array elements, got " .. #t)
+end
+
+@Test function TableLengthAfterInsertRemove()
+   -- Test getn after modifications
+   t = {}
+   table.insert(t, 'a')
+   table.insert(t, 'b')
+   assert(#t is 2, "After 2 inserts, length should be 2")
+   table.remove(t)
+   assert(#t is 1, "After remove, length should be 1")
+end
+
+-- Tests for table.move()
+
+@Test function MoveBasic()
+   -- Test basic move within same table
+   t = { 'a', 'b', 'c', 'd', 'e' }
+   result = table.move(t, 0, 2, 3)  -- Move indices 0-2 to start at 3
+   assert(result is t, "move should return the target table")
+   assert(t[3] is 'a', "t[3] should be 'a', got " .. tostring(t[3]))
+   assert(t[4] is 'b', "t[4] should be 'b', got " .. tostring(t[4]))
+   assert(t[5] is 'c', "t[5] should be 'c', got " .. tostring(t[5]))
+end
+
+@Test function MoveToDifferentTable()
+   -- Test move to a different table
+   src = { 10, 20, 30 }
+   dst = {}
+   result = table.move(src, 0, 2, 0, dst)
+   assert(result is dst, "move should return destination table")
+   assert(dst[0] is 10, "dst[0] should be 10")
+   assert(dst[1] is 20, "dst[1] should be 20")
+   assert(dst[2] is 30, "dst[2] should be 30")
+end
+
+@Test function MoveEmptyRange()
+   -- Test move with empty range (e < f)
+   t = { 1, 2, 3 }
+   original_len = #t
+   result = table.move(t, 2, 1, 5)  -- Empty range, should do nothing
+   assert(result is t, "move should return the table")
+   assert(#t is original_len, "Table length should be unchanged")
+end
+
+@Test function MoveSingleElement()
+   -- Test moving a single element
+   t = { 'x', 'y', 'z' }
+   table.move(t, 1, 1, 5)  -- Move t[1] to t[5]
+   assert(t[5] is 'y', "t[5] should be 'y', got " .. tostring(t[5]))
+end
+
+@Test function MoveOverlappingForward()
+   -- Test overlapping move (shifting forward)
+   t = { 1, 2, 3, 4, 5 }
+   table.move(t, 0, 2, 1)  -- Move 0-2 to 1-3 (overlapping)
+   assert(t[1] is 1, "t[1] should be 1, got " .. tostring(t[1]))
+   assert(t[2] is 2, "t[2] should be 2, got " .. tostring(t[2]))
+   assert(t[3] is 3, "t[3] should be 3, got " .. tostring(t[3]))
+end
+
+@Test function MoveReturnsDestination()
+   -- Test that move returns the destination table
+   src = { 1, 2, 3 }
+   dst = { 'a', 'b' }
+   result = table.move(src, 0, 2, 0, dst)
+   assert(result is dst, "move should return destination table when provided")
+end
+
+@Test function MoveNoDestination()
+   -- Test move without explicit destination (uses source)
+   t = { 'a', 'b', 'c' }
+   result = table.move(t, 0, 1, 5)
+   assert(result is t, "move should return source table when no destination")
+   assert(t[5] is 'a', "t[5] should be 'a'")
+   assert(t[6] is 'b', "t[6] should be 'b'")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Tests for table.insert()
+
+@Test function InsertAppend()
+   -- Default insert appends to end
+   t = {}
+   table.insert(t, 'a')
+   table.insert(t, 'b')
+   table.insert(t, 'c')
+   assert(#t is 3, "Table should have 3 elements after 3 inserts")
+   assert(t[0] is 'a', "t[0] should be 'a'")
+   assert(t[1] is 'b', "t[1] should be 'b'")
+   assert(t[2] is 'c', "t[2] should be 'c'")
+end
+
+@Test function InsertAtPosition()
+   -- Positional insert shifts elements
+   t = { 'a', 'b', 'c' }
+   table.insert(t, 1, 'x')
+   assert(#t is 4, "Table should have 4 elements after positional insert")
+   assert(t[0] is 'a', "t[0] should remain 'a'")
+   assert(t[1] is 'x', "t[1] should be inserted 'x'")
+   assert(t[2] is 'b', "t[2] should be shifted 'b'")
+   assert(t[3] is 'c', "t[3] should be shifted 'c'")
+end
+
+@Test function InsertAtStart()
+   -- Insert at position 0 shifts everything
+   t = { 10, 20, 30 }
+   table.insert(t, 0, 5)
+   assert(#t is 4, "Table should have 4 elements")
+   assert(t[0] is 5, "t[0] should be 5")
+   assert(t[1] is 10, "t[1] should be 10")
+   assert(t[2] is 20, "t[2] should be 20")
+   assert(t[3] is 30, "t[3] should be 30")
+end
+
+@Test function InsertMixedTypes()
+   -- Insert different value types
+   t = {}
+   table.insert(t, 42)
+   table.insert(t, 'hello')
+   table.insert(t, true)
+   table.insert(t, { nested = 1 })
+   assert(#t is 4, "Table should have 4 elements")
+   assert(t[0] is 42, "t[0] should be 42")
+   assert(t[1] is 'hello', "t[1] should be 'hello'")
+   assert(t[2] is true, "t[2] should be true")
+   assert(t[3].nested is 1, "t[3].nested should be 1")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Tests for table.remove()
+
+@Test function RemoveLast()
+   -- Remove without position removes last element
+   t = { 'a', 'b', 'c' }
+   val = table.remove(t)
+   assert(val is 'c', "Removed value should be 'c', got " .. tostring(val))
+   assert(#t is 2, "Table should have 2 elements after remove")
+   assert(t[0] is 'a', "t[0] should still be 'a'")
+   assert(t[1] is 'b', "t[1] should still be 'b'")
+end
+
+@Test function RemoveAtPosition()
+   -- Remove at specific position shifts elements
+   t = { 'a', 'b', 'c', 'd' }
+   val = table.remove(t, 1)
+   assert(val is 'b', "Removed value should be 'b', got " .. tostring(val))
+   assert(#t is 3, "Table should have 3 elements after remove")
+   assert(t[0] is 'a', "t[0] should be 'a'")
+   assert(t[1] is 'c', "t[1] should be shifted 'c'")
+   assert(t[2] is 'd', "t[2] should be shifted 'd'")
+end
+
+@Test function RemoveAtStart()
+   -- Remove at position 0
+   t = { 10, 20, 30 }
+   val = table.remove(t, 0)
+   assert(val is 10, "Removed value should be 10, got " .. tostring(val))
+   assert(#t is 2, "Table should have 2 elements")
+   assert(t[0] is 20, "t[0] should be 20")
+   assert(t[1] is 30, "t[1] should be 30")
+end
+
+@Test function RemoveFromEmpty()
+   -- Remove from empty table should return nothing
+   t = {}
+   val = table.remove(t)
+   assert(val is nil, "Remove from empty table should return nil")
+end
+
+@Test function RemoveOutOfBounds()
+   -- Remove with out-of-bounds position
+   t = { 1, 2, 3 }
+   val = table.remove(t, 10)
+   assert(val is nil, "Remove out of bounds should return nil")
+   assert(#t is 3, "Table should be unchanged after out-of-bounds remove")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Tests for table.concat()
+
+@Test function ConcatBasic()
+   -- Basic concatenation of string elements
+   t = { 'a', 'b', 'c' }
+   result = table.concat(t)
+   assert(result is 'abc', "concat without separator should join directly, got '" .. result .. "'")
+end
+
+@Test function ConcatWithSeparator()
+   -- Concatenation with separator
+   t = { 'hello', 'world', 'foo' }
+   result = table.concat(t, ', ')
+   assert(result is 'hello, world, foo', "concat with separator failed, got '" .. result .. "'")
+end
+
+@Test function ConcatNumbers()
+   -- Numbers should be converted to strings
+   t = { 1, 2, 3, 4, 5 }
+   result = table.concat(t, '-')
+   assert(result is '1-2-3-4-5', "concat numbers failed, got '" .. result .. "'")
+end
+
+@Test function ConcatWithRange()
+   -- Concatenation with start and end indices
+   t = { 'a', 'b', 'c', 'd', 'e' }
+   result = table.concat(t, ',', 1, 3)
+   assert(result is 'b,c,d', "concat with range failed, got '" .. result .. "'")
+end
+
+@Test function ConcatSingleElement()
+   -- Single element table
+   t = { 'only' }
+   result = table.concat(t, ',')
+   assert(result is 'only', "concat single element should return element itself, got '" .. result .. "'")
+end
+
+@Test function ConcatEmpty()
+   -- Empty table
+   t = {}
+   result = table.concat(t, ',')
+   assert(result is '', "concat empty table should return empty string, got '" .. result .. "'")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Tests for table.sort()
+
+@Test function SortNumeric()
+   -- Sort numbers in ascending order (default)
+   t = { 5, 3, 1, 4, 2 }
+   table.sort(t)
+   assert(t[0] is 1, "t[0] should be 1, got " .. tostring(t[0]))
+   assert(t[1] is 2, "t[1] should be 2, got " .. tostring(t[1]))
+   assert(t[2] is 3, "t[2] should be 3")
+   assert(t[3] is 4, "t[3] should be 4")
+   assert(t[4] is 5, "t[4] should be 5")
+end
+
+@Test function SortStrings()
+   -- Sort strings alphabetically
+   t = { 'banana', 'apple', 'cherry', 'date' }
+   table.sort(t)
+   assert(t[0] is 'apple', "t[0] should be 'apple'")
+   assert(t[1] is 'banana', "t[1] should be 'banana'")
+   assert(t[2] is 'cherry', "t[2] should be 'cherry'")
+   assert(t[3] is 'date', "t[3] should be 'date'")
+end
+
+@Test function SortWithComparator()
+   -- Sort with custom comparator (descending)
+   t = { 1, 5, 3, 2, 4 }
+   table.sort(t, function(a, b) return a > b end)
+   assert(t[0] is 5, "t[0] should be 5 (descending)")
+   assert(t[1] is 4, "t[1] should be 4")
+   assert(t[2] is 3, "t[2] should be 3")
+   assert(t[3] is 2, "t[3] should be 2")
+   assert(t[4] is 1, "t[4] should be 1")
+end
+
+@Test function SortAlreadySorted()
+   -- Sorting an already sorted table should be stable
+   t = { 1, 2, 3, 4, 5 }
+   table.sort(t)
+   assert(t[0] is 1, "Already sorted table should remain sorted")
+   assert(t[4] is 5)
+end
+
+@Test function SortSingleElement()
+   -- Sorting a single element table
+   t = { 42 }
+   table.sort(t)
+   assert(t[0] is 42, "Single element should remain unchanged")
+end
+
+@Test function SortTwoElements()
+   -- Sorting two elements
+   t = { 9, 1 }
+   table.sort(t)
+   assert(t[0] is 1, "t[0] should be 1")
+   assert(t[1] is 9, "t[1] should be 9")
+end
+
+-- Tests for table.clear()
+
+@Test function ClearArrayPart()
+   -- Clear should remove array elements
+   t = { 1, 2, 3, 4, 5 }
+   table.clear(t)
+   assert(#t is 0, "Cleared table should have length 0")
+   assert(t[0] is nil, "t[0] should be nil after clear")
+end
+
+@Test function ClearHashPart()
+   -- Clear should also remove hash entries
+   t = { a = 1, b = 2, c = 3 }
+   table.clear(t)
+   assert(table.empty(t) is true, "Cleared hash table should be empty")
+   assert(t.a is nil, "t.a should be nil after clear")
+   assert(t.b is nil, "t.b should be nil after clear")
+end
+
+@Test function ClearMixed()
+   -- Clear a table with both array and hash parts
+   t = { 'x', 'y', name = 'test', value = 42 }
+   table.clear(t)
+   assert(#t is 0, "Array part should be cleared")
+   assert(t.name is nil, "Hash part should be cleared")
+   assert(table.empty(t) is true, "Table should be completely empty")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Tests for table.sortByKeys() (extended)
+
+@Test function SortByKeysEmpty()
+   -- Empty table should yield no iterations
+   t = {}
+   count = 0
+   for k, v in table.sortByKeys(t) do
+      count++
+   end
+   assert(count is 0, "Empty table should have 0 iterations")
+end
+
+@Test function SortByKeysSingleKey()
+   -- Single key table
+   t = { solo = 99 }
+   keys = {}
+   vals = {}
+   for k, v in table.sortByKeys(t) do
+      table.insert(keys, k)
+      table.insert(vals, v)
+   end
+   assert(#keys is 1, "Should have 1 key")
+   assert(keys[0] is 'solo', "Key should be 'solo'")
+   assert(vals[0] is 99, "Value should be 99")
+end
+
+@Test function SortByKeysDescending()
+   -- Custom comparator for reverse order
+   t = { b = 2, a = 1, c = 3 }
+   keys = {}
+   for k, v in table.sortByKeys(t, function(a, b) return a > b end) do
+      table.insert(keys, k)
+   end
+   assert(#keys is 3, "Should have 3 keys")
+   assert(keys[0] is 'c', "First key should be 'c' (descending)")
+   assert(keys[1] is 'b', "Second key should be 'b'")
+   assert(keys[2] is 'a', "Third key should be 'a'")
+end
+
+@Test function SortByKeysValues()
+   -- Verify values are correctly paired with keys
+   t = { b = 20, a = 10, c = 30 }
+   pairs_list = {}
+   for k, v in table.sortByKeys(t) do
+      table.insert(pairs_list, k .. '=' .. v)
+   end
+   assert(pairs_list[0] is 'a=10', "First pair should be 'a=10'")
+   assert(pairs_list[1] is 'b=20', "Second pair should be 'b=20'")
+   assert(pairs_list[2] is 'c=30', "Third pair should be 'c=30'")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Tests for table.toXML()
+
+@Test function ToXMLSimpleElement()
+   -- Simple element with no attributes or children
+   t = { item = {} }
+   result = table.toXML(t)
+   assert(result is '<item/>', "Simple empty element should be self-closing, got '" .. result .. "'")
+end
+
+@Test function ToXMLWithAttributes()
+   -- Element with string attributes
+   t = { item = { name = 'test', value = '42' } }
+   result = table.toXML(t)
+   -- Attributes can appear in any order, so check for presence
+   assert(string.find(result, 'name="test"'), "Should contain name attribute, got '" .. result .. "'")
+   assert(string.find(result, 'value="42"'), "Should contain value attribute, got '" .. result .. "'")
+   assert(string.find(result, '/>'), "Element with only attributes should be self-closing")
+end
+
+@Test function ToXMLWithNumericAttribute()
+   -- Numeric attribute values
+   t = { item = { count = 5 } }
+   result = table.toXML(t)
+   assert(string.find(result, 'count=5'), "Should contain numeric attribute, got '" .. result .. "'")
+end
+
+@Test function ToXMLWithBooleanAttribute()
+   -- Boolean true attribute (should appear as bare attribute)
+   t = { item = { enabled = true } }
+   result = table.toXML(t)
+   assert(string.find(result, 'enabled'), "Should contain boolean attribute, got '" .. result .. "'")
+end
+
+@Test function ToXMLWithChildContent()
+   -- Element with text child content
+   t = { item = { [0] = 'hello' } }
+   result = table.toXML(t)
+   assert(string.find(result, '>hello</>'), "Should contain text child, got '" .. result .. "'")
+end
+
+@Test function ToXMLEscaping()
+   -- Content with special XML characters should be escaped
+   t = { item = { [0] = 'a&b<c>d' } }
+   result = table.toXML(t)
+   assert(string.find(result, '&amp;'), "Ampersand should be escaped, got '" .. result .. "'")
+   assert(string.find(result, '&lt;'), "Less-than should be escaped, got '" .. result .. "'")
+   assert(string.find(result, '&gt;'), "Greater-than should be escaped, got '" .. result .. "'")
+end
+
+@Test function ToXMLAttributeEscaping()
+   -- Attribute values with special characters should be escaped
+   t = { item = { title = 'A&B' } }
+   result = table.toXML(t)
+   assert(string.find(result, 'title="A&amp;B"'), "Attribute should have escaped ampersand, got '" .. result .. "'")
+end
+
+@Test function ToXMLEmptyTable()
+   -- Empty input table should produce empty string
+   t = {}
+   result = table.toXML(t)
+   assert(result is '', "Empty table should produce empty XML string, got '" .. result .. "'")
+end

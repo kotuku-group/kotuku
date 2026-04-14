@@ -4,34 +4,34 @@
 <svg viewBox="0 0 500 500" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
   <defs>
     <path id="curves" d="M 10,90 Q 100,15 200,70 Q 340,140 400,30" pathLength="400"/>
-    <parasol:spiral id="spiral" offset="30" loop-limit="3" step="0.1" stroke="black" pathLength="1100"/>
-    <parasol:spiral id="wavespiral" cx="100" cy="280" r="130" step="0.1" stroke="black" pathLength="1100"/>
+    <kotuku:spiral id="spiral" offset="30" loop-limit="3" step="0.1" stroke="black" pathLength="1100"/>
+    <kotuku:spiral id="wavespiral" cx="100" cy="280" r="130" step="0.1" stroke="black" pathLength="1100"/>
 
-    <parasol:transition id="hill">
+    <kotuku:transition id="hill">
       <stop offset="0" transform="scale(0.1)"/>
       <stop offset="50%" transform="scale(1)"/>
       <stop offset="100%" transform="scale(0.1)"/>
-    </parasol:transition>
+    </kotuku:transition>
 
-    <parasol:transition id="flip">
+    <kotuku:transition id="flip">
       <stop offset="0" transform="scale(1,-1)"/>
       <stop offset="100%" transform="scale(1,-1)"/>
-    </parasol:transition>
+    </kotuku:transition>
 
-    <parasol:transition id="swirl">
+    <kotuku:transition id="swirl">
       <stop offset="0" transform="scale(0.6)"/>
       <stop offset="100%" transform="scale(1.5) skewX(30)"/>
-    </parasol:transition>
+    </kotuku:transition>
 
-    <parasol:transition id="swirl2">
+    <kotuku:transition id="swirl2">
       <stop offset="0" transform="scale(0.5) skewX(2)"/>
       <stop offset="100%" transform="scale(1.0) skewX(50)"/>
-    </parasol:transition>
+    </kotuku:transition>
 
-    <parasol:transition id="rotate">
+    <kotuku:transition id="rotate">
       <stop offset="0" transform="scale(1.0)"/>
       <stop offset="100%" transform="rotate(90,0.5,0.5)"/>
-    </parasol:transition>
+    </kotuku:transition>
 
   </defs>
 
@@ -44,15 +44,15 @@
     </text>
   </g>
 
-  <parasol:spiral offset="30" loop-limit="3" step="0.1" cx="330" cy="280" fill="none" stroke-width="1" stroke="turquoise" opacity="0.2"/>
+  <kotuku:spiral offset="30" loop-limit="3" step="0.1" cx="330" cy="280" fill="none" stroke-width="1" stroke="turquoise" opacity="0.2"/>
 
   <text x="330" y="280" font-size="20" fill="navy" font-family="Utopia">
-    <textPath xlink:href="#spiral" transition="url(#swirl)">This text is warped to fit a parasol:spiral element.  You can morph text to fit any element that generates a shape, not just SVG path elements.  Transitions can also be used to scale and skew the path, as seen here.</textPath>
+    <textPath xlink:href="#spiral" transition="url(#swirl)">This text is warped to fit a kotuku:spiral element.  You can morph text to fit any element that generates a shape, not just SVG path elements.  Transitions can also be used to scale and skew the path, as seen here.</textPath>
   </text>
 
   <text x="10" y="350" font-size="20" fill="navy"></text>
 
-  <parasol:wave width="800" height="15" frequency="50" stroke="red" stroke-width="1" fill="none" transition="url(#swirl2)">
-    <parasol:morph xlink:href="url(#wavespiral)" align="xMin yMid"/>
-  </parasol>
+  <kotuku:wave width="800" height="15" frequency="50" stroke="red" stroke-width="1" fill="none" transition="url(#swirl2)">
+    <kotuku:morph xlink:href="url(#wavespiral)" align="xMin yMid"/>
+  </kotuku>
 </svg>

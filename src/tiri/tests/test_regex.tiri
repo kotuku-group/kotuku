@@ -1,0 +1,377 @@
+-- Flute tests for the regex functionality
+
+@Test function Construction()
+   -- Test valid regex construction
+
+   simple_regex = regex.new('hello')
+   assert(simple_regex != nil, 'Failed to create simple regex')
+   assert(simple_regex.pattern is 'hello', 'Pattern property incorrect')
+   assert(simple_regex.flags is 0, 'Flags should default to 0')
+
+   -- Test regex with flags
+
+   case_regex = regex.new('HELLO', regex.ICASE)
+   assert(case_regex.flags is regex.ICASE, 'Case insensitive flag not set correctly')
+
+   -- Test invalid regex
+
+   local invalid_regex
+   try
+      invalid_regex = regex.new('[unclosed')
+   end
+   assert(invalid_regex is nil, 'Invalid regex should have failed')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function RegexConversion()
+   pattern = ltr('[Nn]ame:%s+(.-)')
+   expected = "[Nn]ame:[ \\t\\n\\r\\f\\v]+(.*?)"
+   assert(pattern is expected, 'Failed to convert pattern correctly\nGot: ' .. pattern .. '\nExp: ' .. expected)
+
+   pattern = ltr('(%w+):%s+(.-)')
+   expected = [[([\w]+):[ \t\n\r\f\v]+(.*?)]]
+   assert(pattern is expected, 'Failed to convert pattern correctly\nGot: ' .. pattern .. '\nExp: ' .. expected)
+
+   pattern = ltr('(.-)%-[A-Z]+%-')
+   expected = [[(.*?)-[A-Z]+-]]
+   assert(pattern is expected, 'Failed to convert pattern correctly\nGot: ' .. pattern .. '\nExp: ' .. expected)
+
+   assert(ltr('%(%)') is [[\(\)]], 'Failed to convert pattern')
+end
+
+@Test function RegexConversionDash()
+   pattern = ltr('[-A]*')
+   expected = [[[\-A]*]]
+   assert(pattern is expected, 'Failed to convert pattern\nGot: ' .. pattern .. '\nExp: ' .. expected)
+
+   pattern = ltr('[A-]*')
+   expected = [[[A\-]*]]
+   assert(pattern is expected, 'Failed to convert pattern\nGot: ' .. pattern .. '\nExp: ' .. expected)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function Extract()
+   sample_regex = regex.new('\\d+')
+   cap = sample_regex.extract('abc123def', 0)
+   assert(cap is nil, 'Expected no results (no captures present)')
+
+   sample_regex = regex.new('(\\d+)')
+   cap = sample_regex.extract('abc123def', 0)
+   assert(cap is '123', f'Expected "123", got {cap}')
+
+   optional_regex = regex.new('(u?)(\\d+)')
+   prefix, digits = optional_regex.extract('123', 0)
+   assert(prefix is '', 'Expected empty prefix for optional capture')
+   assert(digits is '123', f'Expected digits "123", got {digits}')
+
+   prefix, digits = optional_regex.extract('u123', 0)
+   assert(prefix is 'u', f'Expected prefix "u", got {prefix}')
+   assert(digits is '123', f'Expected digits "123", got {digits}')
+
+   optional_only = regex.new('(u?)')
+   cap = optional_only.extract('abc', 0)
+   assert(cap is '', 'Expected empty capture for optional group')
+   cap = optional_only.extract('u', 0)
+   assert(cap is 'u', 'Expected "u" for optional group')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function FindFirst()
+   local rx_whitespace = regex.new('[^ \\t\\n\\r\\f\\v]')
+
+   sample_regex = regex.new('\\d+')
+   pos, stop = sample_regex.findFirst('abc123def', 0)
+   assert(pos is 3, f'Expected position 3, got {pos}')
+   assert(stop is 6, f'Expected stop 6, got {stop}')
+
+   pos2, stop = sample_regex.findFirst('no digits here', 0)
+   assert(pos2 is nil and stop is nil, 'Expected no match, got position ' .. tostring(pos2))
+
+   pos, stop = rx_whitespace.findFirst('   leading space', 0)
+   assert(pos is 3, f'Expected position 3, got {pos}')
+   assert(stop is 4, f'Expected stop 4, got {stop}')
+
+   pos, stop = rx_whitespace.findFirst('   leading space', 2)
+   assert(pos is 3, f'Expected position 3, got {pos}')
+   assert(stop is 4, f'Expected stop 4, got {stop}')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function TestMethod()
+   test_regex = regex.new('[0-9]+')
+   assert(test_regex.test('abc123def'), 'Should find digits in string')
+   assert(not test_regex.test('hello world'), 'Should not find digits in text')
+   assert(test_regex.test('999'), 'Should match all digits')
+
+   -- Case insensitive test
+   case_test = regex.new('hello', regex.ICASE)
+   assert(case_test.test('Hello World'), 'Case insensitive should match Hello')
+   assert(case_test.test('HELLO'), 'Case insensitive should match HELLO')
+   assert(not case_test.test('goodbye'), 'Should not match different word')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function Match()
+   -- Simple match
+   word_regex = regex.new('(\\w+)')
+   matches = word_regex.search('hello world')
+   assert(matches, 'Match should succeed')
+   assert(#matches is 2, 'Expected two matches (hello and world), got ' .. #matches)
+   assert(matches[0][0] is 'hello', "Full match should be 'hello'")
+   assert(matches[0][1] is 'hello', "Capture should be 'hello'")
+   assert(matches[1][0] is 'world', "Full match should be 'world'")
+   assert(matches[1][1] is 'world', "Capture should be 'world'")
+
+   -- Multiple capture groups
+   email_regex = regex.new('([^@]+)@([^.]+)\\.(.+)')
+   email_matches = email_regex.match('user@example.com')
+   assert(email_matches, 'Should match email')
+   assert(email_matches[0] is 'user@example.com', 'Full match incorrect')
+   assert(email_matches[1] is 'user', 'Username capture incorrect')
+   assert(email_matches[2] is 'example', 'Domain capture incorrect')
+   assert(email_matches[3] is 'com', 'TLD capture incorrect')
+
+   -- No match case
+   no_regex = regex.new('([ABC]+)')
+   assert(not no_regex.match('123 456'), 'Should return nil for no match')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function Search()
+   digit_regex = regex.new('(\\d+)')
+   all_matches = digit_regex.search('abc123def456ghi')
+   assert(#all_matches is 2, 'Should find 2 digit sequences')
+   assert(all_matches[0][0] is '123', "First match should be '123'")
+   assert(all_matches[0][1] is '123', "First capture group should be '123'")
+   assert(all_matches[1][0] is '456', "Second match should be '456'")
+   assert(all_matches[1][1] is '456', "Second capture group should be '456'")
+
+   -- Test with no matches
+   no_matches = digit_regex.search('hello world')
+   assert(no_matches is nil, "Should return nil for no matches")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function Replace()
+   replace_regex = regex.new('\\d+')
+   result1 = replace_regex.replace('abc123def456', 'XXX')
+   assert(result1 is 'abcXXXdefXXX', 'Failed to replace both occurrences')
+
+   -- Test with backreferences
+   phone_regex = regex.new('(\\d{3})-(\\d{3})-(\\d{4})')
+   phone_result = phone_regex.replace('555-123-4567', '($1) $2-$3')
+   assert(phone_result is '(555) 123-4567', 'Should format phone number correctly')
+
+   -- Test no match
+   no_replace = replace_regex.replace('hello world', 'XXX')
+   assert(no_replace is 'hello world', 'Should return original if no match')
+
+   all_replace_regex = regex.new('\\d+')
+   all_result = all_replace_regex.replace('abc123def456ghi', 'XXX')
+   assert(all_result is 'abcXXXdefXXXghi', 'Should replace all occurrences')
+
+   -- Test global replacement with backreferences
+   word_regex2 = regex.new('(\\w+)')
+   caps_result = word_regex2.replace('hello world', '[$1]')
+   assert(caps_result is '[hello] [world]', 'Should wrap all words in brackets')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function Split()
+   comma_regex = regex.new('\\s*,\\s*')
+   split_result = comma_regex.split('apple, banana,  cherry')
+   assert(#split_result is 3, 'Should split into 3 parts')
+   assert(split_result[0] is "apple", "First part should be 'apple'")
+   assert(split_result[1] is "banana", "Second part should be 'banana'")
+   assert(split_result[2] is "cherry", "Third part should be 'cherry'")
+
+   -- Test splitting with multiple delimiters
+   multi_regex = regex.new("[,;]\\s*")
+   multi_result = multi_regex.split("a,b; c,d")
+   assert(#multi_result is 4, "Should split on both comma and semicolon")
+   assert(multi_result[0] is "a", "First part incorrect")
+   assert(multi_result[1] is "b", "Second part incorrect")
+   assert(multi_result[2] is "c", "Third part incorrect")
+   assert(multi_result[3] is "d", "Fourth part incorrect")
+
+   -- Test no split (no matches)
+   no_split_result = comma_regex.split("no delimiters here")
+   assert(#no_split_result is 1, "Should return single element")
+   assert(no_split_result[0] is "no delimiters here", "Should return original string")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function Flags()
+   -- Case insensitive flag
+   icase_regex = regex.new('hello', regex.ICASE)
+   assert(icase_regex.test('HELLO'), 'ICASE flag should work')
+   assert(icase_regex.test('Hello'), 'ICASE flag should work')
+   assert(icase_regex.test('hello'), 'ICASE flag should work')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ErrorHandling()
+   -- Test empty pattern (valid)
+   empty_regex = regex.new('')
+   assert(empty_regex.test('anything') is true, 'Empty pattern should match anything')
+
+   local invalid
+   try
+      invalid = regex.new('(unclosed')
+   end
+   assert(invalid is nil, 'Invalid regex pattern should error')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function RealWorldPatterns()
+   -- Email validation
+   email_validator = regex.new("^[\\w._%+\\-]+@[\\w.\\-]+\\.[A-Za-z]{2,}$")
+   assert(email_validator.test("user@example.com"), "Valid email should pass")
+   assert(email_validator.test("test.email+tag@domain.co.uk"), "Complex email should pass")
+   assert(not email_validator.test("invalid.email"), "Invalid email should fail")
+   assert(not email_validator.test("@invalid.com"), "Invalid email should fail")
+
+   -- URL extraction
+   url_extractor = regex.new("https?://[\\w.\\-]+(?:/[\\w.\\/?%&=]*)?")
+   url_matches = url_extractor.search("Visit https://example.com or http://test.org/path")
+   assert(#url_matches is 2, "Should find 2 URLs, got " .. #url_matches)
+   assert(url_matches[0][0] is "https://example.com", "First URL incorrect")
+   assert(url_matches[1][0] is "http://test.org/path", "Second URL incorrect")
+
+   -- HTML tag removal
+   html_stripper = regex.new("<[^>]*>")
+   clean_text = html_stripper.replace("<p>Hello <b>world</b>!</p>", "")
+   assert(clean_text is "Hello world!", "Should strip HTML tags")
+
+   -- Phone number formatting
+   phone_formatter = regex.new("\\D")
+   digits_only = phone_formatter.replace("(555) 123-4567", "")
+   assert(digits_only is "5551234567", "Should extract digits only")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function MemoryManagement()
+   -- Create many regex objects to test memory handling
+   regex_list = {}
+   for i = 0, 99 do
+      regex_list[i] = regex.new("pattern" .. i)
+   end
+
+   processing.collect()
+
+   -- Verify objects still work after GC pressure
+   assert(regex_list[50].test("pattern50") is true, "Regex should survive garbage collection")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function Escape()
+   -- Test escaping of all metacharacters
+   escaped = regex.escape('hello.world')
+   assert(escaped is 'hello\\.world', 'Should escape dot')
+
+   escaped = regex.escape('a+b*c?d')
+   assert(escaped is 'a\\+b\\*c\\?d', 'Should escape quantifiers')
+
+   escaped = regex.escape('(group)[class]{count}')
+   assert(escaped is '\\(group\\)\\[class\\]\\{count\\}', 'Should escape brackets')
+
+   escaped = regex.escape('^start|end$')
+   assert(escaped is '\\^start\\|end\\$', 'Should escape anchors and alternation')
+
+   escaped = regex.escape('back\\slash')
+   assert(escaped is 'back\\\\slash', 'Should escape backslash')
+
+   escaped = regex.escape('a-b')
+   assert(escaped is 'a\\-b', 'Should escape hyphen')
+
+   -- Test that escaped strings work as literal patterns
+   pattern = regex.escape('file.txt')
+   rx = regex.new(pattern)
+   assert(rx.test('file.txt') is true, 'Should match literal string')
+   assert(rx.test('filextxt') is false, 'Should not match unescaped pattern')
+
+   -- Test with user input scenario
+   user_input = '[user@example.com]'
+   safe_pattern = regex.new(regex.escape(user_input))
+   assert(safe_pattern.test('[user@example.com]') is true, 'Should match user input literally')
+   assert(safe_pattern.test('user@example.com') is false, 'Should require brackets')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function FindAll()
+   -- Test iterator pattern with for loop
+   digit_regex = regex.new('[0-9]+')
+   matches = {}
+   for pos, stop, cap in digit_regex.findAll('abc123def456ghi789') do
+      assert(cap is nil, 'No captures should be returned.')
+      matches[#matches] = { pos = pos, stop = stop }
+   end
+   assert(#matches is 3, 'Should find 3 digit sequences, found ' .. #matches)
+   assert(matches[0].pos is 3 and matches[0].stop is 6, 'First match at pos 3, stop 6')
+   assert(matches[1].pos is 9 and matches[1].stop is 12, 'Second match at pos 9, stop 12')
+   assert(matches[2].pos is 15 and matches[2].stop is 18, 'Third match at pos 15, stop 18')
+
+   -- Test with starting position (pos 6 skips past '123' entirely)
+   matches2 = {}
+   for pos, stop in digit_regex.findAll('abc123def456ghi789', 6) do
+      matches2[#matches2] = { pos = pos, stop = stop }
+   end
+   assert(#matches2 is 2, 'Should find 2 digit sequences when starting at pos 6')
+   assert(matches2[0].pos is 9, 'First match should be at pos 9')
+
+   -- Test no matches
+   count = 0
+   for pos, stop in digit_regex.findAll('no digits here') do
+      count++
+   end
+   assert(count is 0, 'Should find no matches')
+
+   -- Test single character matches
+   char_regex = regex.new('[aeiou]')
+   vowels = {}
+   for pos, stop, cap in char_regex.findAll('hello world') do
+      assert(cap is nil, 'No captures should be returned.')
+      vowels[#vowels] = pos
+   end
+   assert(#vowels is 3, 'Should find 3 vowels (e, o, o)')
+   assert(vowels[0] is 1, "First vowel 'e' at pos 1")
+   assert(vowels[1] is 4, "Second vowel 'o' at pos 4")
+   assert(vowels[2] is 7, "Third vowel 'o' at pos 7")
+
+   -- Test captures (3rd return value)
+   capture_regex = regex.new('([a-z]+)([0-9]+)')
+   captured = {}
+   for pos, stop, caps in capture_regex.findAll('abc123def456ghi789') do
+      captured[#captured] = { pos = pos, letters = caps[0], digits = caps[1] }
+   end
+   assert(#captured is 3, 'Should find 3 matches with captures, got ' .. #captured)
+   assert(captured[0].letters is 'abc', 'First full match')
+   assert(captured[1].letters is 'def', 'Second full match')
+   assert(captured[2].letters is 'ghi', 'Third full match')
+
+   -- Test email extraction with captures
+   email_regex = regex.new('([^@\\s]+)@([^.\\s]+)\\.([^\\s]+)')
+   emails = {}
+   for pos, stop, caps in email_regex.findAll('Contact alice@foo.com or bob@bar.org today') do
+      emails[#emails] = { user = caps[0], domain = caps[1], tld = caps[2] }
+   end
+   assert(#emails is 2, 'Should find 2 emails')
+   assert(emails[0].user is 'alice', 'First email user')
+   assert(emails[0].domain is 'foo', 'First email domain')
+   assert(emails[0].tld is 'com', 'First email tld')
+   assert(emails[1].user is 'bob', 'Second email user')
+end

@@ -1,7 +1,7 @@
 {
   "files.associations":{
-    "*.fdl": "lua",
-    "*.fluid": "lua",
+    "*.tdl": "lua",
+    "*.tiri": "lua",
     "bitset": "cpp",
     "algorithm": "cpp",
     "format": "cpp",
@@ -90,5 +90,6 @@
   "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
   "C_Cpp.default.compileCommands": "${workspaceFolder}/build/agents/compile_commands.json",
   "cmake.configureOnOpen": true,
-  "cmake.buildDirectory": "${workspaceFolder}/build/agents"
+  "cmake.buildDirectory": "${workspaceFolder}/build/agents",
+  "workbench.editor.enablePreview": false
 }

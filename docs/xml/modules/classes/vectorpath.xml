@@ -11,7 +11,7 @@
     <id>51b8d205</id>
     <idstring>VECTORPATH</idstring>
     <category>Graphics</category>
-    <copyright>Paul Manias © 2010-2025</copyright>
+    <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>VectorPath provides support for parsing SVG styled path strings.</p></description>
     <source>
@@ -99,7 +99,7 @@
       </input>
       <description>
 <p>Use SetCommandList() to copy a series of path commands to a <class name="VectorPath">VectorPath</class> object.  All existing commands will be cleared as a result of this process.</p>
-<p>NOTE: This method is not compatible with Fluid calls.</p>
+<p>NOTE: This method is not compatible with Tiri calls.</p>
       </description>
     </method>
 

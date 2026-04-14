@@ -1,0 +1,147 @@
+--[[
+Tests for file functions
+--]]
+
+glPath = 'kotuku:'
+
+rx_path = regex.new([[([^:\/]+)\/-$]])
+
+@BeforeAll function init()
+   global glRawPath = 'user:test.out'
+   out = obj.new('file', { src=glRawPath, flags=FL_NEW|FL_WRITE } )
+   out.acWrite('ABCD', 4)
+   out = nil
+   processing.collect()
+end
+
+@AfterAll function cleanup()
+   mSys.DeleteFile(glRawPath)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function FolderScan()
+   folder = obj.new('file', { src=glPath } )
+
+   names = nil
+   err, file = folder.mtNext()
+   count = 0
+   while err is ERR_Okay do
+      count++
+      date = file.date
+      assert(date, "Unable to get file's modification date.")
+
+      name = rx_path.extract(file.path)
+
+      if not names then
+         names = f'"{name}"'
+      else
+         names ..= f', "{name}"'
+      end
+      logOutput(tostring(name) .. ', Size: ' .. file.size .. ', Date: ' .. date.year .. '/' .. date.month .. '/' .. date.day)
+      err, file = folder.mtNext()
+   end
+
+   assert(count != 0, 'No files found in "' .. glPath .. '": ' .. mSys.GetErrorMsg(err))
+
+   return f'Found {count} files.'
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ScanDir()
+   err, dir = mSys.OpenDir(glPath, RDF_FILES|RDF_FOLDERS|RDF_QUALIFY|RDF_DATE|RDF_SIZE|RDF_TAGS)
+   if err is ERR_Okay then
+      err = mSys.ScanDir(dir)
+      while err is ERR_Okay do
+         fl = dir.info
+         created = fl.created
+
+         logOutput(fl.name .. ', Size: ' .. fl.size .. ', Date: ' .. created.year .. '/' .. created.month .. '/' .. created.day)
+
+         if (created.year < 1900) or (created.year > 3000) or (created.month < 1) or (created.month > 12) or (created.day < 1) or (created.day > 31) then
+            error('Invalid Year/Month/Day retrieved for "' .. fl.name .. '"')
+         end
+
+         err = mSys.ScanDir(dir)
+      end
+   else
+      error('OpenDir() error: ' .. mSys.GetErrorMsg(err))
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ScanVolumes()
+   err, dir = mSys.OpenDir(':', RDF_FILES | RDF_FOLDERS | RDF_TAGS)
+   if err is ERR_Okay then
+      volumes = { }
+      names = nil
+      err = mSys.ScanDir(dir)
+      while err is ERR_Okay do
+         fl = dir.info
+         names = not names ? fl.name :> names .. ' ' .. fl.name
+         volumes[fl.name] = true
+         err = mSys.ScanDir(dir)
+      end
+
+      logOutput(names)
+
+      assert(volumes['kotuku'], "The expected 'kotuku' volume is not present.")
+      assert(volumes['user'], "The expected 'user' volume is not present.")
+      assert(volumes['system'], "The expected 'system' volume is not present.")
+   else
+      error("OpenDir() error: " .. mSys.GetErrorMsg(err))
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- This code loads a raw file, converts it to a string, reverses it and then writes the string back to the file.
+
+@Test function Stringify()
+   fl = obj.new('file', { src=glRawPath, flags=FL_READ|FL_WRITE } )
+   buf = string.alloc(fl.size)
+   err, result = fl.acRead(buf, fl.size)
+   assert(err is ERR_Okay, 'Failed to read file ' .. fl.location)
+
+   fl.acSeek(POS_START, 0)
+   fl.acWrite(buf:reverse())
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function FileIcons()
+   if mSys.AnalysePath('icons:') != ERR_Okay then
+      -- Icons not available, skip test
+      return
+   end
+
+   icon_pairs = {
+      { path='fonts:fonts.cfg',            icon='icons:filetypes/text' },
+      { path='fonts:truetype/Micro-6.ttf', icon='icons:filetypes/font' },
+      { path='scripts:common.tiri',       icon='icons:filetypes/source' }
+   }
+
+   for v in values(icon_pairs) do
+      icon = obj.new('file', { path=v.path }).icon
+      if icon != v.icon then
+         error('Icon for ' .. v.path .. ' evaluated to ' .. icon .. ' instead of expected "' .. v.icon .. '"')
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AnalyseVolume()
+   err, type = mSys.AnalysePath('user:')
+   assert(err is ERR_Okay, 'AnalysePath() failed with error: ' .. mSys.GetErrorMsg(err))
+   assert(type is LOC_VOLUME, 'AnalysePath() returned type ' .. type .. ' and not LOC_VOLUME')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AnalyseFile()
+   err, type = mSys.AnalysePath('scripts:gui.tiri')
+   assert(err is ERR_Okay, 'AnalysePath() failed with error: ' .. mSys.GetErrorMsg(err))
+   assert(type is LOC_FILE, 'AnalysePath() returned type ' .. type .. ' and not LOC_FILE')
+end

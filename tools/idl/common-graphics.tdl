@@ -1,0 +1,383 @@
+-- These graphics constants are re-usable across all modules.
+
+enum("PTC", { type="int", start=0, comment="Predefined cursor styles" },
+  "NO_CHANGE",
+  "DEFAULT: The default cursor (usually an arrow pointing to the upper left).",
+  "SIZE_BOTTOM_LEFT: Sizing cursor - for resizing the bottom left corner of any rectangular area.",
+  "SIZE_BOTTOM_RIGHT: Sizing cursor - for resizing the bottom right corner of any rectangular area.",
+  "SIZE_TOP_LEFT: Sizing cursor - for resizing the top left corner of any rectangular area.",
+  "SIZE_TOP_RIGHT: Sizing cursor - for resizing the top right corner of any rectangular area.",
+  "SIZE_LEFT: Sizing cursor - for resizing the left edge of any rectangular area.",
+  "SIZE_RIGHT: Sizing cursor - for resizing the right edge of any rectangular area.",
+  "SIZE_TOP: Sizing cursor - for resizing the top edge of any rectangular area.",
+  "SIZE_BOTTOM: Sizing cursor - for resizing the bottom edge of any rectangular area.",
+  "CROSSHAIR: The cross hair is used for targeting specific pixel points (common in paint programs).",
+  "SLEEP: The sleep cursor is used to inform the user that the computer is busy.",
+  "SIZING: Multi-directional sizing cursor - for resizing in any direction.",
+  "SPLIT_VERTICAL: The vertical split cursor is typically used for splitting rectangles in half, or dragging a vertical split within a large rectangular space.",
+  "SPLIT_HORIZONTAL: The horizontal split cursor is typically used for splitting rectangles in half, or dragging a horizontal split within a large rectangular space.",
+  "MAGNIFIER: Represents a magnifying glass.",
+  "HAND: The hand cursor is often used for indicating click-able content (hyper-links, icons etc).",
+  "HAND_LEFT: Similar to the standard hand cursor, but points to the left.",
+  "HAND_RIGHT: Similar to the standard hand cursor, but points to the right.",
+  "TEXT: The text cursor is popular for the precise positioning of text cursors.",
+  "PAINTBRUSH: The paintbrush cursor is typically employed by paint programs.",
+  "STOP: The stop cursor is used to inform the user that an operation is not possible (e.g. drag and drop to an unsupported object area).",
+  "INVISIBLE: The cursor graphic is invisible (but will continue to operate as normal in all other respects).",
+  "CUSTOM: Works in conjunction with the SetCustomCursor() function to represent a program defined bitmap.",
+  "DRAGGABLE: Used to indicate that a surface or object can be dragged by the user.",
+  "END") -- Any new cursor images must be added to the CursorLookup array in pointer_class.c
+
+flags("DMF", { type="int", bits=32 },
+  "SCALED_X: The X field is scaled to this object's parent.",
+  "SCALED_Y: The Y field is scaled to this object's parent.",
+  "FIXED_X: The X field is a fixed coordinate.",
+  "FIXED_Y: The Y field is a fixed coordinate.",
+  "SCALED_X_OFFSET: The XOffset field is scaled to this object's parent.",
+  "SCALED_Y_OFFSET: The YOffset field is scaled to this object's parent.",
+  "FIXED_X_OFFSET: The XOffset field is a fixed coordinate.",
+  "FIXED_Y_OFFSET: The YOffset field is a fixed coordinate.",
+  "FIXED_HEIGHT: The Height field is a fixed size.",
+  "FIXED_WIDTH: The Width field is a fixed suze.",
+  "SCALED_HEIGHT: The Height field is scaled to this object's parent.",
+  "SCALED_WIDTH: The Width field is scaled to this object's parent.",
+  "FIXED_DEPTH: The Depth field is a fixed size.",
+  "SCALED_DEPTH: The Depth field is scaled to this object's parent.",
+  "FIXED_Z: The Z field is a fixed coordinate.",
+  "SCALED_Z: The Z field is a scaled coordinate to this object's parent.",
+  { SCALED_RADIUS_X  = "0x00010000: The RadiusX field is scaled to this object's parent.",
+    FIXED_RADIUS_X   = "0x00020000: The RadiusX field is a fixed size.",
+    SCALED_CENTER_X  = "0x00040000: The CenterX field is scaled to this object's parent.",
+    SCALED_CENTER_Y  = "0x00080000: The CenterY field is scaled to this object's parent.",
+    FIXED_CENTER_X   = "0x00100000: The CenterX field is a fixed size.",
+    FIXED_CENTER_Y   = "0x00200000: The CenterY field is a fixed size.",
+    STATUS_CHANGE_H  = 0x00400000,
+    STATUS_CHANGE_V  = 0x00800000,
+    SCALED_RADIUS_Y  = "0x01000000: The RadiusY field is a scaled size to this object's parent.",
+    FIXED_RADIUS_Y   = "0x02000000: The RadiusY field is a fixed size."
+  }
+)
+
+enum("DRL", { type="int", start=0, comment="Compass directions." },
+  "NORTH|UP",
+  "SOUTH|DOWN",
+  "EAST|RIGHT",
+  "WEST|LEFT",
+  "NORTH_EAST",
+  "NORTH_WEST",
+  "SOUTH_EAST",
+  "SOUTH_WEST")
+
+flags("MOVE", { comment="Generic flags for controlling movement." },
+  "DOWN",
+  "UP",
+  "LEFT",
+  "RIGHT",
+  { ALL = "DOWN|UP|LEFT|RIGHT" })
+
+flags("EDGE", { comment="Edge flags" },
+  "TOP", "LEFT", "RIGHT", "BOTTOM", "TOP_LEFT", "TOP_RIGHT", "BOTTOM_LEFT", "BOTTOM_RIGHT", { ALL = 0xff })
+
+flags("ALIGN", { comment="Universal values for alignment of graphics and text" },
+  "LEFT: Align to left",
+  "RIGHT: Align to right",
+  "HORIZONTAL: Align to horizontal center",
+  "VERTICAL: Align to vertical center",
+  "TOP: Align to top",
+  "BOTTOM: Align to bottom",
+  { CENTER = "HORIZONTAL|VERTICAL" },
+  { MIDDLE = "HORIZONTAL|VERTICAL" })
+
+flags("LAYOUT", { comment="Universal values for alignment of graphic layouts in documents." },
+  "TIGHT: Text wraps to the shape of the image (alpha blended/masked images only)",
+  "LEFT: The text boundary is extended to the left edge of the page.",
+  "RIGHT: The text boundary is extended to the right edge of the page.",
+  "BACKGROUND: Graphic is placed behind text.  The text will not be wrapped around the object",
+  "FOREGROUND: Graphic is placed in front of the text.  The text will not be wrapped around the object",
+  "EMBEDDED: Graphic is embedded in the text stream (treated as a character).  The height of the line can be extended to match the height of the graphic in this mode.",
+  "LOCK: Lock the position of the graphic to the top left of the view and not the scrolling position of the page.",
+  "IGNORE_CURSOR: The object has a fixed X/Y position, unrelated to the cursor",
+  "TILE: The graphic will be tiled.  Tiled graphics also meet the `BACKGROUND` criteria (no wrapping).",
+  { WIDE = "RIGHT|LEFT: The text boundary is extended to the left and right edges of the page." },
+  { SQUARE = "0: The default.  Text will clip around the image's border" })
+
+struct("HSV", { comment="Colour structure for Hue, Saturation and Value/Light components." }, [[
+  double Hue        # Between 0 and 359.999
+  double Saturation # Between 0 and 1.0
+  double Value      # Between 0 and 1.0.  Corresponds to Value, Lightness or Brightness
+  double Alpha      # Alpha blending value from 0 to 1.0
+]])
+
+c_insert([[
+// Forward declarations
+struct RGB8;
+]])
+
+struct("FRGB", { comment="32-bit floating point RGB colour components." }, [[
+  float Red   # Red component value
+  float Green # Green component value
+  float Blue  # Blue component value
+  float Alpha # Alpha component value
+]],
+[[
+   // Note that the colour components are unclamped so that any given FRGB value can support other colour spaces.
+   // If targeting a colour space like Display P3 for instance, the expectation is that colour values will exceed
+   // 1.0 and negative values are permitted.
+
+   constexpr FRGB() noexcept = default;
+   constexpr FRGB(float R, float G, float B, float A = 1.0) noexcept : Red(R), Green(G), Blue(B), Alpha(A) { };
+
+   constexpr RGB8 toRGB8() const noexcept;
+]])
+
+struct("RGB8", { type="RGB8", comment="8-bit RGB colour value." }, [[
+  uchar Red    # Red component value
+  uchar Green  # Green component value
+  uchar Blue   # Blue component value
+  uchar Alpha  # Alpha component value
+]],
+[[
+   constexpr RGB8() noexcept = default;
+   constexpr RGB8(uint8_t r, uint8_t g, uint8_t b, uint8_t a = 255) noexcept
+      : Red(r), Green(g), Blue(b), Alpha(a) { }
+   constexpr RGB8(FRGB frgb) noexcept;
+
+   inline FRGB toFRGB() const noexcept {
+      return FRGB(Red / 255.0, Green / 255.0, Blue / 255.0, Alpha / 255.0);
+   }
+]])
+
+c_insert([[
+constexpr RGB8 FRGB::toRGB8() const noexcept {
+   return RGB8 {
+      uint8_t((Red   >= 1.0f) ? 255 : (Red   < 0.0f ? 0 : Red   * 255.0)),
+      uint8_t((Green >= 1.0f) ? 255 : (Green < 0.0f ? 0 : Green * 255.0)),
+      uint8_t((Blue  >= 1.0f) ? 255 : (Blue  < 0.0f ? 0 : Blue  * 255.0)),
+      uint8_t((Alpha >= 1.0f) ? 255 : (Alpha < 0.0f ? 0 : Alpha * 255.0))
+   };
+}
+
+constexpr RGB8::RGB8(FRGB frgb) noexcept {
+   Red   = uint8_t((frgb.Red   >= 1.0f) ? 255 : (frgb.Red   < 0.0f) ? 0 : frgb.Red   * 255.0);
+   Green = uint8_t((frgb.Green >= 1.0f) ? 255 : (frgb.Green < 0.0f) ? 0 : frgb.Green * 255.0);
+   Blue  = uint8_t((frgb.Blue  >= 1.0f) ? 255 : (frgb.Blue  < 0.0f) ? 0 : frgb.Blue  * 255.0);
+   Alpha = uint8_t((frgb.Alpha >= 1.0f) ? 255 : (frgb.Alpha < 0.0f) ? 0 : frgb.Alpha * 255.0);
+}
+]])
+
+struct("CIEXYZ", { comment="Colour structure for CIE X, Y and Z components." }, [[
+  float X      # X is a mix of the three CIE RGB curves chosen to be non-negative
+  float Y      # Luminance value from 0 to 1.0
+  float Z      # Z is quasi-equal to blue
+  float Alpha  # Alpha blending value from 0 to 1.0
+]],
+[[
+   constexpr CIEXYZ() noexcept = default;
+   constexpr CIEXYZ(float x, float y, float z, float a = 1.0) noexcept
+     : X(x), Y(y), Z(z), Alpha(a) { }
+
+   // Convert sRGB (gamma-encoded, 0-1) to CIE XYZ via linear sRGB.
+
+   inline CIEXYZ(const FRGB &RGB) {
+      auto to_linear = [](const double V) -> double {
+          return (V <= 0.04045) ? V / 12.92 : pow((V + 0.055) / 1.055, 2.4);
+      };
+      const double lr = to_linear(RGB.Red);
+      const double lg = to_linear(RGB.Green);
+      const double lb = to_linear(RGB.Blue);
+      X = (0.4124564 * lr) + (0.3575761 * lg) + (0.1804375 * lb);
+      Y = (0.2126729 * lr) + (0.7151522 * lg) + (0.0721750 * lb);
+      Z = (0.0193339 * lr) + (0.1191920 * lg) + (0.9505041 * lb);
+      Alpha = RGB.Alpha;
+   }
+
+   inline CIEXYZ(const RGB8 &RGB) {
+      auto to_linear = [](const double V) -> double {
+          return (V <= 0.04045) ? V / 12.92 : pow((V + 0.055) / 1.055, 2.4);
+      };
+      const double lr = to_linear(RGB.Red / 255.0);
+      const double lg = to_linear(RGB.Green / 255.0);
+      const double lb = to_linear(RGB.Blue / 255.0);
+      X = (0.4124564 * lr) + (0.3575761 * lg) + (0.1804375 * lb);
+      Y = (0.2126729 * lr) + (0.7151522 * lg) + (0.0721750 * lb);
+      Z = (0.0193339 * lr) + (0.1191920 * lg) + (0.9505041 * lb);
+      Alpha = RGB.Alpha / 255.0;
+   }
+
+   // Convert CIE XYZ to sRGB via the inverse sRGB matrix and gamma encoding
+
+   inline FRGB toFRGB() const {
+      auto linear_to_srgb = [](double V) -> float {
+         if (V >= 0.0) return float((V <= 0.0031308) ? 12.92 * V : 1.055 * pow(V, 1.0 / 2.4) - 0.055);
+         return float(-1.055 * pow(-V, 1.0 / 2.4) + 0.055);
+      };
+      double lr =  (3.2404542 * X) - (1.5371385 * Y) - (0.4985314 * Z);
+      double lg = (-0.9692660 * X) + (1.8760108 * Y) + (0.0415560 * Z);
+      double lb =  (0.0556434 * X) - (0.2040259 * Y) + (1.0572252 * Z);
+      return FRGB(linear_to_srgb(lr), linear_to_srgb(lg), linear_to_srgb(lb), float(Alpha));
+   }
+
+   inline RGB8 toRGB() const {
+      auto frgb = toFRGB();
+      return RGB8(frgb.Red * 255, frgb.Green * 255, frgb.Blue * 255, frgb.Alpha * 255);
+   }
+]])
+
+struct("RGB16", { comment="16-bit RGB colour value." }, [[
+  ushort Red    # Red component value
+  ushort Green  # Green component value
+  ushort Blue   # Blue component value
+  ushort Alpha  # Alpha component value
+]])
+
+struct("RGB32", { comment="32-bit RGB colour value." }, [[
+  uint Red     # Red component value
+  uint Green   # Green component value
+  uint Blue    # Blue component value
+  uint Alpha   # Alpha component value
+]])
+
+--[==[
+Under consideration:
+
+-- Compressed Display P3 colour, packed into 64 bits.
+-- Stores RGB as 16-bit unsigned fixed-point values (0-65535 maps to 0.0-1.0 in linear Display P3 space)
+-- with 8-bit alpha and 8 reserved flag bits.  Note: For HDR (brightness) management, the expectation is that
+-- the client either creates a separate HDR map or uses the alpha channel to manage brightness rather than
+-- bundling it into the colour.
+--
+-- Layout: [Red:16][Green:16][Blue:16][Alpha:8][Flags:8]
+
+struct("CDP3", { comment="Compressed Display P3 colour." }, [[
+  ushort Red     # Display P3 red, linear, 16-bit fixed-point (0 = 0.0, 65535 = 1.0)
+  ushort Green   # Display P3 green, linear, 16-bit fixed-point
+  ushort Blue    # Display P3 blue, linear, 16-bit fixed-point
+  uchar  Alpha   # Alpha component (0 = transparent, 255 = opaque)
+  uchar  Info    # Lower-four bits represent the source (e.g. OKLCH, HSL, etc); Upper bits implementation dependent.
+]],
+[[
+   constexpr CDP3() noexcept : Red(0), Green(0), Blue(0), Alpha(255), Flags(0) { }
+
+   constexpr CDP3(uint16_t R, uint16_t G, uint16_t B, uint8_t A = 255, uint8_t F = 0) noexcept
+      : Red(R), Green(G), Blue(B), Alpha(A), Flags(F) { }
+
+   // Construct from FRGB (assumed sRGB gamma-encoded, 0-1 range).
+   // Converts sRGB -> linear sRGB -> linear Display P3.
+
+   inline CDP3(const FRGB &SRGB, uint8_t F = 0) noexcept {
+      // sRGB to linear sRGB
+      auto srgb_to_linear = [](float V) -> double {
+         if (V <= 0.0f) return 0.0;
+         if (V >= 1.0f) return 1.0;
+         return (V <= 0.04045f) ? V / 12.92 : pow((V + 0.055) / 1.055, 2.4);
+      };
+
+      const double lr = srgb_to_linear(SRGB.Red);
+      const double lg = srgb_to_linear(SRGB.Green);
+      const double lb = srgb_to_linear(SRGB.Blue);
+
+      // Linear sRGB (D65) to linear Display P3 (D65) via the combined matrix:
+      //   P3_from_sRGB = inverse(sRGB_to_XYZ_matrix_for_P3_primaries) * sRGB_to_XYZ
+      // Pre-computed D65-adapted matrix (sRGB -> Display P3, both linear):
+
+      const double pr = ( 0.8224621 * lr) + (0.1775380 * lg) + (0.0000000 * lb);
+      const double pg = ( 0.0331942 * lr) + (0.9668058 * lg) + (0.0000000 * lb);
+      const double pb = ( 0.0170827 * lr) + (0.0723974 * lg) + (0.9105199 * lb);
+
+      auto to_u16 = [](double V) -> uint16_t {
+         if (V <= 0.0) return 0;
+         if (V >= 1.0) return 65535;
+         return uint16_t(V * 65535.0 + 0.5);
+      };
+
+      Red   = to_u16(pr);
+      Green = to_u16(pg);
+      Blue  = to_u16(pb);
+      Alpha = uint8_t(SRGB.Alpha * 255.0f + 0.5f);
+      Flags = F;
+   }
+
+   // Convert back to FRGB (sRGB gamma-encoded, 0-1 range).
+   // Linear Display P3 -> linear sRGB -> sRGB.
+
+   inline FRGB toFRGB() const noexcept {
+      const double pr = Red   / 65535.0;
+      const double pg = Green / 65535.0;
+      const double pb = Blue  / 65535.0;
+
+      // Linear Display P3 (D65) to linear sRGB (D65):
+      //   sRGB_from_P3 = inverse(P3_to_sRGB_matrix)
+
+      const double lr = ( 1.2249401 * pr) + (-0.2249402 * pg) + ( 0.0000000 * pb);
+      const double lg = (-0.0420569 * pr) + ( 1.0420571 * pg) + ( 0.0000000 * pb);
+      const double lb = (-0.0196376 * pr) + (-0.0786507 * pg) + ( 1.0982882 * pb);
+
+      // Linear sRGB to sRGB (gamma encode)
+      auto linear_to_srgb = [](double V) -> float {
+         if (V <= 0.0) return 0.0f;
+         if (V > 1.0) return 1.0f;
+         return float((V <= 0.0031308) ? 12.92 * V : 1.055 * pow(V, 1.0 / 2.4) - 0.055);
+      };
+
+      return FRGB(linear_to_srgb(lr), linear_to_srgb(lg), linear_to_srgb(lb), Alpha / 255.0f);
+   }
+
+   inline RGB8 toRGB() const noexcept {
+      auto frgb = toFRGB();
+      return RGB8(uint8_t(frgb.Red * 255.0f + 0.5f), uint8_t(frgb.Green * 255.0f + 0.5f),
+                  uint8_t(frgb.Blue * 255.0f + 0.5f), Alpha);
+   }
+
+   inline uint64_t raw() const noexcept {
+      return ((uint64_t *)(&this->Red))[0];
+   }
+]])
+--]==]
+
+struct("RGBPalette", { }, [[
+  int AmtColours              # Total colours
+  array(struct(RGB8),256) Col # RGB Palette
+]])
+
+struct("ColourFormat", { type="colourformat" }, [[
+  uchar  RedShift     # Right shift value for red (15/16 bit formats only)
+  uchar  GreenShift   # Right shift value for green
+  uchar  BlueShift    # Right shift value for blue
+  uchar  AlphaShift   # Right shift value for alpha
+  uchar  RedMask      # Unshifted mask value for red (ranges from 0x00 to 0xff)
+  uchar  GreenMask    # Unshifted mask value for green
+  uchar  BlueMask     # Unshifted mask value for blue
+  uchar  AlphaMask    # Unshifted mask value for alpha
+  uchar  RedPos       # Left shift/positional value for red
+  uchar  GreenPos     # Left shift/positional value for green
+  uchar  BluePos      # Left shift/positional value for blue
+  uchar  AlphaPos     # Left shift/positional value for alpha
+  uchar  BitsPerPixel # Number of bits per pixel for this format.
+]])
+
+struct("ClipRectangle", { comment="Generic structure for rectangular clipping." }, [[
+  int Left     # Left-most coordinate
+  int Top      # Top coordinate
+  int Right    # Right-most coordinate
+  int Bottom   # Bottom coordinate
+]],
+"\
+   constexpr ClipRectangle() noexcept = default;\
+   constexpr ClipRectangle(int Value) : Left(Value), Top(Value), Right(Value), Bottom(Value) { }\
+   constexpr ClipRectangle(int pLeft, int pTop, int pRight, int pBottom) : Left(pLeft), Top(pTop), Right(pRight), Bottom(pBottom) { }\
+   [[nodiscard]] constexpr int width() const { return Right - Left; }\
+   [[nodiscard]] constexpr int height() const { return Bottom - Top; }\
+   constexpr void translate(int pX, int pY) {\
+      Left   += pX;\
+      Top    += pY;\
+      Right  += pX;\
+      Bottom += pY;\
+   }\
+")
+
+struct("Edges", { comment="Generic structure for declaring edge coordinates." }, [[
+  int Left     # Left-most coordinate
+  int Top      # Top coordinate
+  int Right    # Right-most coordinate
+  int Bottom   # Bottom coordinate
+]])

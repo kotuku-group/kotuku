@@ -1,0 +1,1190 @@
+-- Extended documentation parsing functionality; included by idl-c
+--
+-- Use # to refer to local class actions, fields, methods.
+-- Use ~ for external function and module references.
+-- Use @ to refer to external classes and items.
+-- Use ! to refer to constants and struct definitions.  Note that if declared on a single line, a
+--   table will be substituted in its place.
+
+local rx_all_anchored = <{ regex.new([[^!([\w]*)$]]) }>
+local rx_paragraph    = <{ regex.new([[^<[A-Za-z]+(.*?)>.*?<\/[A-Za-z]*?>.*?$]]) }>
+local rx_insert       = <{ regex.new([[^<[A-Za-z]+(.*?)\/>$]]) }>
+local rx_balance      = <{ regex.new([=[^<[A-Za-z]]=]) }>
+local rx_header       = <{ regex.new([[^<h[0-9]>.*?]]) }>
+local rx_list         = <{ regex.new([[^<list.+?>]]) }>
+local rx_alphanum     = <{ regex.new('^\\w+$') }>
+local rx_path         = <{ regex.new([[(.*[:\/\\])(.*)]]) }>
+
+-- Patterns for extractParagraph()
+local rx_lt_sign       = <{ regex.new([[<([\s\-])]]) }>
+local rx_gt_sign       = <{ regex.new([[([\s\-])>]]) }>
+local rx_pre_section   = <{ regex.new([[<pre>\s*(.*?)</pre>]], regex.DOT_ALL) }>
+local rx_md_codeblock  = <{ regex.new([[```(.*?)```]], regex.DOT_ALL) }>
+local rx_inline_code   = <{ regex.new([[`(.*?)`]], regex.DOT_ALL) }>
+local rx_lookup_ref    = <{ regex.new([[!(\w+)]]) }> -- !CONSTANT
+local rx_xml_tag       = <{ regex.new([[<(.*?)>]], regex.DOT_ALL) }>
+
+-- Patterns for substituteReferences()
+local rx_struct_insert   = <{ regex.new([[!([A-Z]\w+)([,\n\s])]]) }> -- !Struct or !CONSTANT
+local rx_action_method   = <{ regex.new([[#([A-Z]\w+)\(\)]]) }> -- #Action()
+local rx_field_ref       = <{ regex.new([[#([A-Z]\w*)]]) }> -- #Field
+local rx_ext_func_ref    = <{ regex.new([[~([A-Z]\w+)\.([A-Z]\w+)\(\)]]) }> -- ~Module.Function()
+local rx_local_func_ref  = <{ regex.new([[~([A-Z]\w+)\(\)]]) }> -- ~Function()
+local rx_ext_method_ref  = <{ regex.new([[@([A-Z]\w+)\.([A-Z]\w+)\(\)]]) }> -- @Class.Method()
+local rx_ext_field_ref   = <{ regex.new([=[[@#]([A-Z]\w+)\.([A-Z]\w*)]=]) }> -- @Class.Field
+local rx_class_ref       = <{ regex.new([[@([A-Z]\w+)]]) }> -- @Class
+local rx_rgb             = <{ regex.new('[A-Fa-f0-9RGBA]{6,8}') }>
+
+-- Patterns for docFunction()
+local rx_private_status  = <{ regex.new([[^[Pp]rivate]]) }>
+local rx_internal_status = <{ regex.new([[^[Ii]nternal]]) }>
+
+----------------------------------------------------------------------------------------------------------------------
+
+global function ignoreAction(actionID:num)
+   actionID ?? return
+   return glIgnoreList[actionID]
+end
+
+global glIgnoreList = {
+   [AC_DataFeed]    = true,
+   [AC_Free]        = true,
+   [AC_FreeWarning] = true,
+   [AC_Init]        = true,
+   [AC_NewChild]    = true,
+   [AC_NewObject]   = true,
+   [AC_NewOwner]    = true,
+   [AC_NewPlacement] = true
+}
+
+global function setAction(Action, Options)
+   for k, v in pairs(Options) do
+      glActions[Action][k] = v
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+loadActions()
+
+setAction('Activate', {
+   comment   = 'Performs the native action of the object.',
+   prototype = 'ERR acActivate(*Object)'
+})
+
+setAction('Clear', {
+   comment   = 'Clears an object\'s data.',
+   prototype = 'ERR acClear(*Object)'
+})
+
+setAction('Clipboard', {
+   comment   = 'Copy and paste information to and from clipboard objects.',
+   prototype = 'ERR acClipboard(*Object, OBJECTID Clipboard, CLIPMODE Mode)',
+   params    = {
+      { name='Mode', type='CLIPMODE', lookup='CLIPMODE', comment='The mode that will be used to shift data between the target object and clipboard system.' }
+   }
+})
+
+setAction('CopyData', {
+   comment   = 'Copies one object\'s data to another.',
+   prototype = 'ERR acCopyData(*Object, OBJECTID Dest)',
+   params    = {
+      { name='Dest', type='OBJECTID', comment='The unique ID of the destination object.' }
+   }
+})
+
+setAction('DataFeed', {
+   comment   = 'Provides a mechanism for feeding data to objects.',
+   prototype = 'ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, APTR Buffer, INT Size)',
+   params    = {
+      { name='Object', type='OBJECTID', comment='Must refer to the unique ID of the object that you represent. If you do not represent an object, set this parameter to the current task ID.' },
+      { name='Datatype', type='DATA', lookup='DATA', comment='The type of data being sent.' },
+      { name='Buffer', type='APTR', comment='The data being sent to the target object.' },
+      { name='Size', type='INT', comment='The size of the data in Buffer.' }
+   }
+})
+
+setAction('Deactivate', {
+   comment   = 'Stops an object from performing its native activities.',
+   prototype = 'ERR acDeactivate(*Object)'
+})
+
+setAction('Disable', {
+   comment   = 'Disables an object.',
+   prototype = 'ERR acDisable(*Object)'
+})
+
+setAction('DragDrop', {
+   comment   = 'Manages drag and drop from one object to another.',
+   prototype = 'ERR acDragDrop(*Object, OBJECTID Source, INT Item, DATA Datatype)',
+   params    = {
+      { name='Source', type='OBJECTID', comment='Refers to the object containing the source data.' },
+      { name='Item', type='INT', comment='An item ID, relevant to the source object.' },
+      { name='Datatype', type='DATA', lookup='DATA', comment='The type of data represented by the source item.' }
+   }
+})
+
+setAction('Draw', {
+   comment   = 'Draws object graphics to drawable areas.',
+   prototype = 'ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)',
+   params    = {
+      { name='X', type='INT', comment='The X position of the region to be drawn.' },
+      { name='Y', type='INT', comment='The Y position of the region to be drawn.' },
+      { name='Width', type='INT', comment='The width of the region to be drawn.' },
+      { name='Height', type='INT', comment='The height of the region to be drawn.' }
+   }
+})
+
+setAction('Enable', {
+   comment   = 'Restore the state of a disabled object.',
+   prototype = 'ERR acEnable(*Object)'
+})
+
+setAction('Flush', {
+   comment   = 'Flush buffered data from an object.',
+   prototype = 'ERR acFlush(*Object)'
+})
+
+setAction('Focus', {
+   comment   = 'Focus on this object in the user interface.',
+   prototype = 'ERR acFocus(*Object)'
+})
+
+setAction('FreeWarning', {
+   comment = 'Used for receiving an early warning before an object is removed.'
+})
+
+setAction('Free', {
+   comment   = 'Removes the object and its resources.',
+   prototype = 'ERR FreeResource(*Object)'
+})
+
+setAction('GetKey', {
+   comment   = 'Retrieves custom key values that are not defined by an object\'s structure.',
+   prototype = 'ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)',
+   params    = {
+      { name='Key', type='CSTRING', comment='The name of a key value.' },
+      { name='Value', type='STRING', comment='Pointer to a buffer space large enough to hold the retrieved value.' },
+      { name='Size', type='INT', comment='Indicates the byte size of the Buffer.' }
+   }
+})
+
+setAction('Hide', {
+   comment   = 'Hides a visible object from the view of the user.',
+   prototype = 'ERR acHide(*Object)'
+})
+
+setAction('Init', {
+   comment   = 'Initialises an object so that it is ready for active use.',
+   prototype = 'ERR InitObject(*Object)'
+})
+
+setAction('Lock', {
+   comment   = "Lock the underlying data or representation of the object.",
+   prototype = 'ERR acLock(*Object)'
+})
+
+setAction('LostFocus', {
+   comment   = 'This internal action is called when an object loses the user focus.',
+   prototype = 'ERR acLostFocus(*Object)'
+})
+
+setAction('Move', {
+   comment   = 'Moves the physical representation of an object to a new location.',
+   prototype = 'ERR acMove(*Object, DOUBLE DeltaX, DOUBLE DeltaY, DOUBLE DeltaZ)',
+   params    = {
+      { name='DeltaX', type='DOUBLE', comment='The number of units to move along the X axis.' },
+      { name='DeltaY', type='DOUBLE', comment='The number of units to move along the Y axis.' },
+      { name='DeltaZ', type='DOUBLE', comment='The number of units to move along the Z axis.' }
+   }
+})
+
+setAction('MoveToBack', {
+   comment   = 'Move an object to the back of its current location.',
+   prototype = 'ERR acMoveToBack(*Object)'
+})
+
+setAction('MoveToFront', {
+   comment   = 'Move an object to the front of its current location.',
+   prototype = 'ERR acMoveToFront(*Object)'
+})
+
+setAction('MoveToPoint', {
+   comment   = 'Moves the coordinates of an object to a new position.',
+   prototype = 'ERR acMoveToPoint(*Object, DOUBLE X, DOUBLE Y, DOUBLE Z, MTF Flags)',
+   params    = {
+      { name='X', type='DOUBLE', comment='The new X position to move the object to.' },
+      { name='Y', type='DOUBLE', comment='The new Y position to move the object to.' },
+      { name='Z', type='DOUBLE', comment='The new Z position to move the object to.' },
+      { name='Flags', type='MTF', lookup='MTF', comment='Set the relevant MTF flag for each provided parameter.' }
+   }
+})
+
+setAction('NewChild', {
+   comment = 'Used by classes that need to be alerted when an object receives a new child.'
+})
+
+setAction('NewObject', {
+   comment = 'Called when a new object has been created from a base class.'
+})
+
+setAction('NewOwner', {
+   comment = 'Called when the owner of an object is about to change.'
+})
+
+setAction('Next', {
+   comment   = 'Move to the next record.',
+   prototype = 'ERR acNext(*Object)'
+})
+
+setAction('Prev', {
+   comment   = 'Move to the previous record.',
+   prototype = 'ERR acPrev(*Object)'
+})
+
+setAction('Query', {
+   comment   = 'Retrieves the latest information from an object.',
+   prototype = 'ERR acQuery(*Object)'
+})
+
+setAction('Read', {
+   comment   = 'Reads raw data information from objects.',
+   prototype = 'ERR acRead(*Object, APTR Buffer, INT Length, INT *Result)',
+   params    = {
+      { name='Buffer', type='APTR', comment='Points a buffer that will receive the data.' },
+      { name='Length', type='INT', comment='The total number of bytes to read from the object.  This value cannot exceed the size of the Buffer.' },
+      { name='Result', type='INT', comment='The Read action will write this parameter with the total number of bytes read into the Buffer.' }
+   }
+})
+
+setAction('Redimension', {
+   comment   = 'Repositions and resizes the target object.',
+   prototype = 'ERR acRedimension(*Object, DOUBLE X, DOUBLE Y, DOUBLE Z, DOUBLE Width, DOUBLE Height, DOUBLE Depth)',
+   params    = {
+      { name='X', type='DOUBLE', comment='The new X position to apply to the target object.' },
+      { name='Y', type='DOUBLE', comment='The new Y position to apply to the target object.' },
+      { name='Z', type='DOUBLE', comment='The new Z position to apply to the target object.' },
+      { name='Width', type='DOUBLE', comment='The new width of the target object.' },
+      { name='Height', type='DOUBLE', comment='The new height of the target object.' },
+      { name='Depth', type='DOUBLE', comment='The new depth of the target object.' }
+   }
+})
+
+setAction('Redo', {
+   comment   = 'Reverse a previous call to the Undo action.',
+   prototype = 'ERR acRedo(*Object)'
+})
+
+setAction('Refresh', {
+   comment   = 'Refreshes the state of an object.',
+   prototype = 'ERR acRefresh(*Object)'
+})
+
+setAction('Rename', {
+   comment   = 'Renames an object.',
+   prototype = 'ERR acRename(*Object, CSTRING Name)',
+   params    = {
+      { name='Name', type='CSTRING', comment='The new name for the object.' }
+   }
+})
+
+setAction('Reset', {
+   comment   = 'Resets an object to its original state.',
+   prototype = 'ERR acRefresh(*Object)'
+})
+
+setAction('Resize', {
+   comment   = 'Resizes objects that are represented by two or three dimensional graphics.',
+   prototype = 'ERR acResize(*Object, DOUBLE Width, DOUBLE Height, DOUBLE Depth)',
+   params    = {
+      { name='Width', type='DOUBLE', comment='The new width of the object.' },
+      { name='Height', type='DOUBLE', comment='The new height of the object.' },
+      { name='Depth', type='DOUBLE', comment='The new depth of the object.' }
+   }
+})
+
+setAction('SaveImage', {
+   comment   = 'Saves an object\'s image to a destination object.',
+   prototype = 'ERR acSaveImage(*Object, OBJECTID Dest, CLASSID ClassID)',
+   params    = {
+      { name='Dest', type='OBJECTID', comment='Refers to an object that will receive the encoded image data.' },
+      { name='ClassID', type='CLASSID', comment='The Picture class to use for encoding the image data.' }
+   }
+})
+
+setAction('SaveSettings', {
+   comment   = 'Saves object settings to a physical storage location.',
+   prototype = 'ERR acSaveSettings(*Object)'
+})
+
+setAction('SaveToObject', {
+   comment   = 'Saves an object\'s data to a destination object.',
+   prototype = 'ERR acSaveToObject(*Object, OBJECTID Dest, CLASSID ClassID)',
+   params    = {
+      { name='Dest', type='OBJECTID', comment='Refers to an object that will receive the encoded data.' },
+      { name='ClassID', type='CLASSID', comment='Can refer to a sub-class that should be used when encoding the data.' }
+   }
+})
+
+setAction('Seek', {
+   comment   = 'Move the read/write marker to a new position.',
+   prototype = 'ERR acSeek(*Object, DOUBLE Offset, INT Position)',
+   params    = {
+      { name='Offset', type='DOUBLE', comment='The desired offset to seek to, relative to the Position parameter.' },
+      { name='Position', type='POS', comment='The position that defines the starting point for Offset.' }
+   }
+})
+
+setAction('SetField', {
+   comment = 'Private.  For use by the Core to manage context.'
+})
+
+setAction('SetKey', {
+   comment   = 'Sets custom key values that are not defined by an object\'s structure.',
+   prototype = 'ERR acSetKey(*Object, CSTRING Key, CSTRING Value)',
+   params    = {
+      { name='Key', type='CSTRING', comment='The name of the target key.' },
+      { name='Value', type='CSTRING', comment='The string value to associate with Key.' }
+   }
+})
+
+setAction('Show', {
+   comment   = 'Makes an object visible to the user.',
+   prototype = 'ERR acShow(*Object)'
+})
+
+setAction('Undo', {
+   comment   = 'Reverses the last operation.',
+   prototype = 'ERR acUndo(*Object)'
+})
+
+setAction('Unlock', {
+   comment   = 'Remove a lock from an object.',
+   prototype = 'ERR acUnlock(*Object)'
+})
+
+setAction('Write', {
+   comment   = 'Writes data to objects that provide storage or output services.',
+   prototype = 'ERR acWrite(*Object, APTR Buffer, INT Length, INT Result)',
+   params    = {
+      { name='Buffer', type='APTR', comment='A buffer containing the data that will be written to the object.' },
+      { name='Length', type='INT', comment='The total number of bytes to write to the object.' },
+      { name='Result', type='INT', comment='This parameter with be updated with the total number of bytes written from the Buffer.' }
+   }
+})
+
+----------------------------------------------------------------------------------------------------------------------
+
+global function saveDocuments()
+   -- Save module functions, if any
+
+   outPath = glDocPath ?? 'sdk:docs/xml/modules/'
+   if not outPath:endsWith('/') then outPath ..= '/' end
+
+   if glFunctions?? then
+      out = docModuleHeader()
+      for _, func in ipairs(glFunctions) do
+         out ..= docFunction(func)
+      end
+      out ..= docTypes()
+      out ..= docStructures()
+      out ..= '</book>\n'
+
+      if glModule.name?? then
+         fl = obj.new('file', { flags=FL_WRITE|FL_NEW, path=f'{outPath}{glModule.name:lower()}.xml' } )
+         print(f"Saving module documentation to {fl.path}")
+         fl.acWrite(out)
+      end
+   end
+
+   -- Save classes, if any.  Class documentation is only produced if the meta information could be loaded from
+   -- a compiled module.
+
+   if glClasses then
+      for className, cl in pairs(glClasses) do
+         verbose('Processing documentation for class ' .. tostring(className))
+
+         if cl.meta then
+            try
+               out = docClass(cl) .. docTypes(cl.references) .. docStructures(cl.references) .. '</book>\n'
+               fl = obj.new('file', { flags = FL_WRITE|FL_NEW, path = f'{outPath}classes/{className:lower()}.xml' } )
+               print(f'Saving XML class documentation to "{fl.path}"')
+               fl.acWrite(out)
+            except ex
+               print('Failed to produce documentation for class ' .. className .. ': ' .. ex.message)
+            end
+         else
+            print('No meta information for class ' .. className)
+         end
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Used for extracting descriptions, notes etc.  NB: <pre> should be used for multi-line preformatting, while <code>
+-- should be used for in-place code formatting.
+
+global function extractParagraph(Input:str, Caller:str, References:table)
+   assert(Input, 'No Input provided to extractParagraph()')
+
+   Input = Input:trim()
+
+   -- Convert dangling XML characters: < > &
+
+   Input = rx_lt_sign.replace(Input, '&lt;$1') -- Less than signs
+   Input = rx_gt_sign.replace(Input, '$1&gt;') -- Greater than signs
+
+   -- Eliminate any initial leading whitespace from preformatted sections.
+
+   Input = rx_pre_section.replace(Input, '<pre>$1</pre>')
+   Input = rx_md_codeblock.replace(Input, '<pre>$1</pre>')
+   Input = rx_inline_code.replace(Input, '<code>$1</code>')
+
+   -- Wrap each line inside a <p> tag and take into account lines that start with XML tags such as <pre> or otherwise
+   -- need special treatment.
+
+   lines = Input:split('\n')
+   output = ''
+   currentParagraph = nil
+
+   function closeParagraph()
+      if currentParagraph then
+         output ..= f'<p>{currentParagraph}</p>\n'
+         currentParagraph = nil
+      end
+   end
+
+   i = 0
+   while i < #lines do
+      line = string.trim(lines[i])
+      if line?? then
+         local action
+         if rx_all_anchored.test(line) then
+            action = 'insert'
+            local result = ''
+            local last_end = 0
+            for start, stop, cap in rx_lookup_ref.findAll(line) do
+               local lookup = cap[0]
+               if glStructures[lookup] then
+                  if References then References['STRUCT:' .. lookup] = 1 end
+                  result ..= '<struct lookup="' .. lookup .. '"/>'
+               elseif glCustomTypes[lookup] then
+                  if References then References['TYPE:' .. lookup] = 1 end
+                  result ..= '<types lookup="' .. lookup .. '"/>'
+               else
+                  print('Unrecognised struct or constant "' .. lookup .. '"')
+                  result ..= line:sub(start, stop)
+               end
+               last_end = stop
+            end
+            line = result .. line:sub(last_end)
+         elseif line:startsWith('<pre>') or rx_header.test(line) or line:startsWith('<header>') or rx_list.test(line) then
+            action = 'balance'
+         elseif rx_paragraph.test(line) then
+            action = 'paragraph'
+         elseif rx_insert.test(line) then
+            action = 'insert'
+         elseif rx_balance.test(line) then
+            action = 'balance'
+         else
+           action = 'paragraph'
+         end
+
+         if action is 'balance' then
+            -- Process everything within the tag verbatim
+            closeParagraph()
+            balance = 0
+            repeat
+               for _, _, cap in rx_xml_tag.findAll(lines[i]) do
+                  if cap[0]:startsWith('/') then
+                     balance -= 1
+                  else
+                     balance++
+                  end
+               end
+               output ..= lines[i] .. '\n'
+               i++
+            until (balance is 0) or (i is #lines)
+
+            if balance != 0 then
+               print('Unbalanced tags (' .. balance .. ') detected: [[' .. string.format('%s ...', output) .. ']]')
+            end
+         elseif action is 'paragraph' then
+            -- Sanity check for tags that start a line but are part of a paragraph.
+            if not currentParagraph then
+               currentParagraph = line
+            else
+               currentParagraph ..= ' ' .. line
+            end
+            i++
+         elseif action is 'insert' then
+            closeParagraph()
+            output ..= line .. '\n'
+            i++
+         end
+      else -- Blank line
+         closeParagraph()
+         i++
+      end
+   end
+
+   closeParagraph()
+
+   -- Handle <field>, <method> and <action> references
+
+   if output?? and output:len() > 12 then
+      if Caller and Caller.meta then
+         output = substituteReferences(output, Caller)
+      else
+         output = substituteReferences(output, nil)
+      end
+
+      return cleanXMLString(output, Caller)
+   else
+      return ''
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+global function substituteReferences(String:str, Class:table):str
+   -- Substitute !Struct and !LOOKUP references, which allow injecting struct and lookup tables into documentation
+
+   local result = ''
+   local last_end = 0
+   for start, stop, cap in rx_struct_insert.findAll(String) do
+      if start > last_end then result ..= String:sub(last_end, start) end
+      local lookup = cap[0]
+      local whitespace = cap[1]
+      if glStructures[lookup] then
+         if glStructures[lookup].restrict is 'c' then
+            result ..= lookup .. whitespace
+         else
+            if Class?.references then Class.references['STRUCT:' .. lookup] = 1 end
+            result ..= f'<st>{lookup}</st>{whitespace}'
+         end
+      elseif glCustomTypes[lookup] then
+         if Class?.references then Class.references['TYPE:' .. lookup] = 1 end
+         result ..= f'<lk>{lookup}</lk>{whitespace}'
+      else
+         print('Unrecognised struct or constant "!' .. lookup .. '"')
+         result ..= String:sub(start, stop)
+      end
+      last_end = stop
+   end
+   String = result .. String:sub(last_end)
+
+   -- Substitute action and method references, identified as #MethodName()
+
+   result = ''
+   last_end = 0
+   for start, stop, cap in rx_action_method.findAll(String) do
+      if start > last_end then result ..= String:sub(last_end, start) end
+      local call_name = cap[0]
+      if not Class then
+         result ..= f'<action>{call_name}</action>'
+      elseif Class.lookupMethods and Class.lookupMethods[call_name] then
+         result ..= f'<method>{call_name}</method>'
+      elseif glActions[call_name] then
+         result ..= f'<action>{call_name}</action>'
+      else
+         print('Unrecognised class action or method "' .. call_name .. '"')
+         result ..= String:sub(start, stop)
+      end
+      last_end = stop
+   end
+   String = result .. String:sub(last_end)
+
+   -- Substitute field references, identified as #Field.
+
+   result = ''
+   last_end = 0
+   for start, stop, cap in rx_field_ref.findAll(String) do
+      if start > last_end then result ..= String:sub(last_end, start) end
+      local field = cap[0]
+      if not Class then -- Localised field lookup
+         if rx_rgb.test(field) then -- Ignore RGB values
+            result ..= String:sub(start, stop)
+         else -- Localised field reference
+            result ..= f'<fl>{field}</fl>'
+         end
+      elseif (Class.lookupFields) and (Class.lookupFields[field]) then
+         result ..= f'<fl>{field}</fl>'
+      else -- Failed to lookup external field reference
+         if rx_rgb.test(field) then -- Ignore RGB values
+            result ..= String:sub(start, stop)
+         else
+            print(f'Unrecognised {Class.name} field "{field}"')
+            result ..= String:sub(start, stop)
+         end
+      end
+      last_end = stop
+   end
+   String = result .. String:sub(last_end)
+
+   -- Substitute external function references, identified as ~Module.Function()
+
+   result = ''
+   last_end = 0
+   for start, stop, cap in rx_ext_func_ref.findAll(String) do
+      -- TODO: Validate that the module and function actually exist.  Easiest way is with mod.load()
+      if start > last_end then
+         result ..= String:sub(last_end, start)
+      end
+      result ..= f'<function module="{cap[0]}">{cap[1]}</function>'
+      last_end = stop
+   end
+   String = result .. String:sub(last_end)
+
+   -- Substitute local function references, identified as ~Function()
+
+   result = ''
+   last_end = 0
+   for start, stop, cap in rx_local_func_ref.findAll(String) do
+      local func_name = cap[0]
+      if glFunctionLookup[func_name] then
+         if start > last_end then
+            result ..= String:sub(last_end, start)
+         end
+         result ..= f'<function>{func_name}</function>'
+      else
+         print(f'Unrecognised function reference ~{func_name}()')
+         result ..= String:sub(start, stop)
+      end
+      last_end = stop
+   end
+   String = result .. String:sub(last_end)
+
+   -- Substitute external method/action references, identified as @File.Init()
+
+   result = ''
+   last_end = 0
+   for start, stop, cap in rx_ext_method_ref.findAll(String) do
+      if start > last_end then result ..= String:sub(last_end, start) end
+      local class_name = cap[0]
+      local method_name = cap[1]
+      if mSys.FindClass(class_name:hash(), 0) then
+         -- TODO: Check that the method name is valid according to the class spec
+         result ..= f'<class name="{class_name}" method="{method_name}">{class_name}.{method_name}()</class>'
+      else
+         print(f'Unrecognised method/action reference @{class_name}.{method_name}()')
+         result ..= String:sub(start, stop)
+      end
+      last_end = stop
+   end
+   String = result .. String:sub(last_end)
+
+   -- Substitute external field references, identified as @File.Size or #File.Size
+
+   result = ''
+   last_end = 0
+   for start, stop, cap in rx_ext_field_ref.findAll(String) do
+      if start > last_end then result ..= String:sub(last_end, start) end
+      local class_name = cap[0]
+      local field_name = cap[1]
+      local meta = mSys.FindClass(class_name:hash(), 0)
+      if meta then
+         local err, field, src = meta.mtFindField(calcFieldHash(field_name))
+         if field then
+            result ..= f'<class name="{class_name}" field="{field_name}">{class_name}.{field_name}</class>'
+         else
+            print(f'Failed to find field {class_name}.{field_name}')
+            result ..= f'<class name="{class_name}" field="{field_name}">_{class_name}.{field_name}_</class>'
+         end
+      else
+         print(f'Unrecognised field reference @{class_name}.{field_name}')
+         result ..= String:sub(start, stop)
+      end
+      last_end = stop
+   end
+   String = result .. String:sub(last_end)
+
+   -- Substitute class references, identified as @File
+
+   result = ''
+   last_end = 0
+   for start, stop, cap in rx_class_ref.findAll(String) do
+      if start > last_end then result ..= String:sub(last_end, start) end
+      local class_name = cap[0]
+      if mSys.FindClass(class_name:hash(), 0) then
+         result ..= f'<class name="{class_name}">{class_name}</class>'
+      else
+         print(f'Unrecognised class name reference @{class_name}')
+         result ..= String:sub(start, stop)
+      end
+      last_end = stop
+   end
+   String = result .. String:sub(last_end)
+   String = rx_inline_code.replace(String, '<code>$1</code>')
+   return String
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Generate a header suitable for class documents.
+
+global function docClass(Class)
+   if not Class.meta then
+      print('No compiled meta information available for class ' .. Class.name)
+      return
+   end
+   meta = Class.meta
+
+   out = '<?xml version="1.0"?>\n'
+   out ..= '<?xml-stylesheet type="text/xsl" href="class.xsl"?>\n\n'
+   out ..= '<book>\n'
+   out ..= '  <info>\n'
+   out ..= '    <name>' .. Class.name .. '</name>\n'
+   out ..= '    <type>class</type>\n'
+   if glModule.name??      then out ..= '    <module>' .. glModule.name .. '</module>\n' end
+   if glModule.author??    then out ..= '    <author>' .. glModule.author:escXML() .. '</author>\n' end
+   if Class.comment??      then out ..= '    <comment>' .. substituteReferences(Class.comment:escXML(), Class) .. '</comment>\n' end
+   if Class.keywords??     then out ..= '    <keywords>' .. Class.keywords:escXML() .. '</keywords>\n' end
+   if meta.fileExtension?? then out ..= '    <fileExtension>' .. meta.fileExtension .. '</fileExtension>\n' end
+   if meta.fileDescription?? then out ..= '    <fileDescription>' .. meta.fileDescription:escXML() .. '</fileDescription>\n' end
+   out ..= '    <version>' .. (meta.classVersion ?? 1) .. '</version>\n'
+   class_hash = string.format('%08x', Class.name:hash()):sub(-8)
+   out ..= '    <id>' .. class_hash .. '</id>\n'
+   out ..= '    <idstring>' .. Class.name:upper() .. '</idstring>\n'
+   cat = meta.get('$category')
+   if cat?? then
+      out ..= '    <category>' .. cat .. '</category>\n'
+   end
+   if Class.include??      then out ..= '    <include>' .. Class.include .. '</include>\n' end
+   if Class.date??         then out ..= '    <date>' .. Class.date .. '</date>\n' end
+   if glModule.copyright?? then out ..= '    <copyright>' .. glModule.copyright:escXML() .. '</copyright>\n' end
+   if Class.description??  then out ..= '    <description>\n' .. extractParagraph(Class.description, Class, Class.references) .. '</description>\n' end
+
+   if not table.empty(Class.src) then
+      out ..= '    <source>\n'
+      for path in values(Class.src) do
+         local dir, filename = rx_path.extract(path)
+         if not filename then
+            filename = path
+            dir = nil
+         end
+         local xpath = dir ? (' path="' .. dir:escXML() .. '"') :> ''
+         out ..= '      <file' .. xpath .. '>' .. filename:escXML() .. '</file>\n'
+      end
+      out ..= '    </source>\n'
+   end
+
+   out ..= "  </info>\n"
+
+   if not table.empty(Class.sortedActions) then
+      out ..= "\n  <actions>\n"
+      for _, a in ipairs(Class.sortedActions) do
+         if (ignoreAction(glActions[a.name].id) != true) or a.description?? then
+            out ..= '    <action>\n'
+            out ..= '      <name>' .. a.name .. '</name>\n'
+
+            if not a.comment then a.comment = glActions[a.name].comment end
+            if a.comment?? then out ..= '      <comment>' .. substituteReferences(a.comment:escXML(), Class) .. '</comment>\n' end
+
+            if glActions[a.name].prototype?? then
+               out ..= '      <prototype>' .. glActions[a.name].prototype:escXML() .. '</prototype>\n'
+            end
+
+            if glActions[a.name].params?? then
+               out ..= '      <input>\n'
+               for _, param in ipairs(glActions[a.name].params) do
+                  ref = ''
+                  if param.lookup?? then ref = ' lookup="' .. param.lookup .. '"' end
+                  assert(param.comment, 'No comment provided for ' .. Class.name .. '.' .. a.name .. '()\'s parameter "' .. param.name .. '"')
+                  out ..= "        <param type=\"" .. (param.docType ?? param.type):escXML() .. "\" name=\"" .. param.name .. '"' .. ref .. ">" .. substituteReferences(param.comment:escXML(), Class) .. "</param>\n"
+               end
+               out ..= '      </input>\n'
+            end
+
+            if a.description?? then
+               out ..= '      <description>\n'
+               out ..= extractParagraph(a.description, Class, Class.references)
+               out ..= '\n      </description>\n'
+            end
+
+            if not table.empty(a.results) then
+               results = ''
+               for _, result in ipairs(a.results) do
+                  results ..= '        <error code="' .. result.codeName .. '">' .. substituteReferences(result.msg:escXML(), Class) .. '</error>\n'
+               end
+
+               if results?? then
+                  out ..= '      <result>\n' .. results .. '      </result>\n'
+               end
+            end
+
+            out ..= '    </action>\n\n'
+         end
+      end
+      out ..= '  </actions>\n'
+   end
+
+   if not table.empty(Class.methods) then
+      Class.sortedMethods = { }
+      for _, f in pairs(Class.methods) do
+         table.insert(Class.sortedMethods, f)
+      end
+
+      table.sort(Class.sortedMethods, function(a,b) return a.name < b.name end)
+
+      out ..= '\n  <methods>\n'
+      for _, method in ipairs(Class.sortedMethods) do
+         if method.comment?? and (method.comment:startsWith('Private')) then
+            -- Ignore method
+         else
+            out ..= '    <method>\n'
+            out ..=f'      <name>{method.name}</name>\n'
+            out ..=f'      <comment>{substituteReferences((method.comment ?? ''):escXML(), Class)}</comment>\n'
+            if method.prototype?? then out ..= f'      <prototype>{method.prototype:escXML()}</prototype>\n' end
+
+            if not table.empty(method.params) then
+               out ..= '      <input>\n'
+               for _, param in ipairs(method.params) do
+                  ref = ''
+                  if param.ref?? then ref = " lookup=\"" .. param.lookup .. '"' end
+                  assert(param.comment, 'No comment provided for ' .. Class.name .. '.' .. method.name .. '()\'s parameter "' .. param.name .. '"')
+                  out ..= "        <param type=\"" .. param.docType:escXML() .. "\" name=\"" .. param.name .. '"' .. ref .. ">" .. substituteReferences(param.comment:escXML(), Class) .. "</param>\n"
+               end
+               out ..= '      </input>\n'
+            end
+
+            if method.description?? then
+               out ..= f'      <description>\n{extractParagraph(method.description, Class, Class.references)}\n      </description>\n'
+            end
+
+            if not table.empty(method.results) then
+               results = ''
+               for _, result in ipairs(method.results) do
+                  results ..= f"        <error code=\"{result.codeName}\">{substituteReferences(result.msg:escXML(), Class)}</error>\n"
+               end
+
+               if results?? then
+                  out ..= f"      <result>\n{results}      </result>\n"
+               end
+            end
+
+            out ..= '    </method>\n\n'
+         end
+      end
+      out ..= '  </methods>\n'
+   end
+
+   if not table.empty(Class.fields) then
+      -- Process fields
+      Class.sortedFields = { }
+      for f in values(Class.fields) do
+         table.insert(Class.sortedFields, f)
+      end
+
+      table.sort(Class.sortedFields, function(a,b) return a.name < b.name end)
+
+      out ..= '\n  <fields>\n'
+      for f in values(Class.sortedFields) do
+         if f.private != true then
+            out ..= '    <field>\n'
+            out ..= '      <name>' .. f.name .. '</name>\n'
+
+            if f.comment?? then
+               out ..= f'      <comment>{substituteReferences(f.comment:escXML(), Class)}</comment>\n'
+            else
+               print(f"No comment for field '{Class.name}.{f.name}'.")
+            end
+
+            out ..= '      <access'
+            if f.read?? then out ..= f' read="{f.read:sub(0,1)}"' end
+            if f.write?? then out ..= f' write="{f.write:sub(0,1)}"' end
+            out ..= '>' .. (f.access ?? '-/-') .. '</access>\n'
+
+            lookup = ''
+            prototype = ''
+            if f.lookup then lookup = f' lookup="{f.lookup}"' end
+            typeName = f.docType ?? (f.type ?? 'NIL')
+            if typeName is 'struct RGB8' then
+               typeName = 'RGB8'
+            elseif typeName is 'int' then
+               typeName = 'INT'
+            elseif typeName is 'int64_t' then
+               typeName = 'INT64'
+            elseif f.className then
+               typeName = f'*{f.className}'
+               lookup = f' class="{f.className}"'
+            elseif f.isFunctionPtr then
+               typeName = 'FUNCTION *'
+               prototype = f' prototype="{f.docType}"'
+            end
+
+            out ..= '      <type' .. lookup .. prototype .. '>' .. typeName:escXML() .. '</type>\n'
+
+            description = f.description
+            if description then
+               description = extractParagraph(description, Class, Class.references)
+            end
+
+            if f.lookup then
+               lookup = f'<types lookup="{f.lookup}"/>'
+               if description then
+                  if not description:find('<types lookup="' .. f.lookup .. '"') then
+                     description ..= '\n' .. lookup
+                  end
+               else
+                  description = lookup
+               end
+            end
+
+            if description then
+               out ..= f'      <description>\n{description}\n      </description>\n'
+            end
+
+            out ..= '    </field>\n\n'
+         end
+      end
+      out ..= '  </fields>\n'
+   end
+
+   return out
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Generate a header suitable for a module that exports at least one function.
+
+global function docModuleHeader()
+   out = '<?xml version="1.0"?>\n'
+   out ..= '<?xml-stylesheet type="text/xsl" href="module.xsl"?>\n\n'
+   out ..= '<book>\n'
+   out ..= '  <info>\n'
+   if glModule.name??         then out ..= '    <name>' .. glModule.name .. '</name>\n' end
+   out ..= '    <type>module</type>\n'
+   if glModule.author??       then out ..= '    <author>' .. glModule.author:escXML() .. '</author>\n' end
+   if glModule.comment??      then out ..= '    <comment>' .. glModule.comment:escXML() .. '</comment>\n' end
+   if glModule.keywords??     then out ..= '    <keywords>' .. glModule.keywords:escXML() .. '</keywords>\n' end
+   if glModule.version??      then out ..= '    <version>' .. glModule.version .. '</version>\n' end
+   if glModule.id??           then out ..= '    <id>' .. string.format('%x',glModule.id) .. '</id>\n' end
+   if glModule.idstring??     then out ..= '    <idstring>' .. glModule.idstring .. '</idstring>\n' end
+   if glModule.status??       then out ..= '    <status>' .. glModule.status .. '</status>\n' end
+   if glModule.prefix??       then out ..= '    <prefix>' .. glModule.prefix .. '</prefix>\n' end
+   if glModule.category??     then out ..= '    <category>' .. glModule.category .. '</category>\n' end
+   if glModule.include??      then out ..= '    <include>modules/' .. glModule.name:lower() .. '.h</include>\n' end
+   if glModule.date??         then out ..= '    <date>' .. glModule.date .. '</date>\n' end
+   if glModule.copyright??    then out ..= '    <copyright>' .. glModule.copyright:escXML() .. '</copyright>\n' end
+   if glModule.description??  then out ..= '    <description>\n' .. extractParagraph(glModule.description, nil, nil) .. '</description>\n' end
+   if glModule.notes??        then out ..= '    <notes>\n' .. glModule.notes .. '</notes>\n' end
+   if glModule.technical??    then out ..= '    <technical>\n' .. glModule.technical .. '</technical>\n' end
+
+   if not table.empty(srcFiles) then
+      out ..= '    <source>\n'
+      for path in values(srcFiles) do
+         local dir, filename = rx_path.extract(path)
+         if not filename then
+            filename = path
+            dir = nil
+         end
+         out ..= f"      <file path=\"{(dir ?? ''):escXML()}\">{filename:escXML()}</file>\n"
+      end
+      out ..= '    </source>\n'
+   end
+
+   if not table.empty(glClasses) then
+      out ..= '    <classes>\n'
+      for className, cl in table.sortByKeys(glClasses) do
+         out ..= f'      <class>{cl.name}</class>\n'
+      end
+      out ..= '    </classes>\n'
+   end
+
+   if not table.empty(glCategories) then
+      out ..= '    <categories>\n'
+      for className, cl in table.sortByKeys(glCategories) do
+         out ..= f'      <category>{cl.name}</category>\n'
+      end
+      out ..= '    </categories>\n'
+   end
+
+   out ..= '  </info>\n\n'
+
+   return out
+end
+
+global function docFunction(Function)
+   if rx_private_status.test(Function.status ?? '') or
+      rx_internal_status.test(Function.status ?? '') or
+      rx_private_status.test(Function.comment ?? '') then
+      return ''
+   end
+
+   out = '  <function>\n'
+
+   if Function.name??      then out ..= '    <name>' .. Function.name .. '</name>\n' end
+   if Function.category??  then out ..= '    <category>' .. Function.category .. '</category>\n' end
+   if Function.version??   then out ..= '    <version>' .. Function.version .. '</version>\n' end
+   if Function.synonym??   then out ..= '    <synonym>' .. Function.synonym .. '</synonym>\n' end
+   if Function.comment??   then out ..= '    <comment>' .. substituteReferences(Function.comment:escXML()) .. '</comment>\n' end
+   if Function.prototype?? then out ..= '    <prototype>' .. Function.docPrototype:escXML() .. '</prototype>\n' end
+   if Function.id??        then out ..= '    <id>' .. Function.id .. '</id>\n' end
+
+   -- Function arguments
+
+   if not table.empty(Function.input) then
+      local args = ''
+      for fa in values(Function.input) do
+         ref = ''
+         if fa.ref then
+            ref = ' lookup="' .. fa.lookup .. '"'
+         end
+
+         if not fa.type then
+            args ..= string.format("      <param type=\"?\" name=\"%s\"" .. ref .. ">%s</param>\n",
+               fa.name, substituteReferences(fa.comment:escXML()))
+         else
+            args ..= string.format("      <param type=\"%s\" name=\"%s\"" .. ref .. ">%s</param>\n",
+               fa.docType:escXML(), fa.name, substituteReferences(fa.comment:escXML()))
+         end
+
+         assert(fa.comment != 'Undocumented', f'{Function.name}() parameter "{fa.name}" is undocumented.')
+      end
+
+      if args?? then out ..= f'    <input>\n{args}    </input>\n' end
+   end
+
+   -- Description
+
+   if Function.description?? then
+      out ..= f'    <description>\n{extractParagraph(Function.description, Function)}\n    </description>\n'
+   else
+      error(f'{Function.name}() has no description.')
+   end
+
+   -- Results
+
+   if not table.empty(Function.result) then
+      if not table.empty(Function.result.values) then
+         errors = ''
+         for result in values(Function.result.values) do
+            comment = (result.msg ?? mSys.GetErrorMsg(code))
+            errors ..= f"      <error code=\"{result.codeName}\">{substituteReferences(comment:escXML())}</error>\n"
+         end
+
+         if errors?? then
+            out ..= f"    <result type=\"ERR\">\n{errors}    </result>\n"
+         end
+      elseif Function.result.comment?? then
+         ref = ''
+         if Function.result.ref then
+            ref = " lookup=\"" .. Function.result.lookup .. '"'
+         end
+
+         out ..= "    <result type=\"" .. Function.result.docType:escXML() .. '"' .. ref .. ">" .. substituteReferences(Function.result.comment:escXML()) .. "</result>\n"
+      end
+   end
+
+   return out .. '  </function>\n\n'
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Output custom types - flags, enumerators etc
+
+global function docTypes(References)
+   out = ''
+   sortedTypes = { }
+   for ct in values(glCustomTypes) do
+      table.insert(sortedTypes, ct)
+   end
+
+   table.sort(sortedTypes, function(a,b) return a.prefix < b.prefix end)
+
+   for ct in values(sortedTypes) do
+      comment = ''
+      if ct.comment then comment = " comment=\"" .. ct.comment:escXML() .. '"' end
+
+      typeName = choose ct.grouping from
+         'constants' -> 'const'
+         'flags' -> 'flag'
+         else -> error("Unknown grouping for custom type, '" .. ct.grouping .. "'")
+      end
+
+      if ct.restrict?? then
+         -- Ignore private types
+      elseif References and (not References['TYPE:' .. ct.prefix]) then
+         -- Type is not referenced
+      else
+         out ..= "    <constants lookup=\"" .. ct.prefix .. '"' .. comment:escXML() .. '>\n'
+
+         sortedValues = { }
+         for v in values(ct.list) do
+            table.insert(sortedValues, v)
+         end
+         table.sort(sortedValues, function(a,b) return a.name < b.name end)
+
+         for v in values(sortedValues) do
+            if v.synonym then
+               -- Don't publish synonyms
+            elseif v.comment?? then
+               if (v.comment:startsWith('Internal')) or (v.comment:startsWith('Private')) then
+                  -- Ignore internal/private types
+               else
+                  out ..= "      <const name=\"" .. v.name .. "\">" .. substituteReferences(v.comment:escXML()) .. "</const>\n"
+               end
+            else
+               out ..= "      <const name=\"" .. v.name .. "\"/>\n"
+            end
+         end
+         out ..= '    </constants>\n\n'
+      end
+   end
+
+   if out?? then
+      out = '  <types>\n' .. out .. '  </types>\n'
+   end
+
+   return out
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Output structures.  Modules need to output all the structures; Classes output structures that are referenced.
+
+global function docStructures(References)
+   out = '  <structs>\n'
+
+   sortedStructs = { }
+   for f in values(glStructures) do
+      table.insert(sortedStructs, f)
+   end
+
+   table.sort(sortedStructs, function(a,b) return a.name < b.name end)
+
+   for struct in values(sortedStructs) do
+      if struct.restrict?? then
+         -- Don't output restricted structures.
+         --verbose(struct.name .. ' is restricted.')
+      elseif References and (not References['STRUCT:' .. struct.name]) then
+         -- Don't output unreferenced structures.
+         --verbose(struct.name .. ' is unreferenced.')
+      else
+         comment = ''
+         typeName = ''
+         if struct.comment then comment = " comment=\"" .. struct.comment:escXML() .. '"' end
+         if struct.type then typeName = " typeName=\"" .. struct.type:escXML() .. '"' end
+
+         out ..= "    <struct name=\"" .. struct.name .. '"' .. comment .. typeName .. '>\n'
+         for f in values(struct.fields) do
+            ref = ''
+            if f.lookup then ref = " lookup=\"" .. f.lookup .. '"' end
+
+            arraySize = ''
+            if f.arraySize then arraySize = " size=\"" .. f.arraySize .. '"' end
+
+            type = f.docType ?? 'NIL'
+            prototype = ''
+            if f.isFunctionPtr then
+               type = 'FUNCTION *'
+               prototype = ' prototype="' .. f.docType:escXML() .. '"'
+            end
+
+            out ..= "      <field name=\"" .. f.name .. "\" type=\"" .. type:escXML() .. '"' .. prototype .. ref .. arraySize .. ">"
+            if f.comment?? then out ..= substituteReferences(f.comment:escXML()) end
+            out ..= '</field>\n'
+         end
+         out ..= '    </struct>\n\n'
+      end
+   end
+   out ..= '  </structs>\n'
+   return out
+end

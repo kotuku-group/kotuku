@@ -1,0 +1,643 @@
+--[[
+Documentation is available in the Kotuku Wiki.
+--]]
+
+   import 'gui'
+   import 'json'
+   import 'gui/window'
+   import 'gui/icon'
+   import 'gui/button'
+   import 'gui/input'
+
+   namespace 'gui'
+
+   mGfx ?= mod.load('display')
+
+   gui.dialog ?= { }
+
+BTNSIZE    <const> = 20
+BTNGAP     <const> = 3
+WIDGET_GAP <const> = 6
+COL_BORDER <const> = 'rgba(128,128,128,0.75)'
+
+COMMON <const> = array<string> {
+  '0,64,64', '0,128,128', '0,192,192', '0,255,255', '64,255,255',  '128,255,255', '192,255,255', '224,255,255', -- Aqua
+  '0,64,0',  '0,128,0',   '0,192,0',   '0,255,0',   '64,255,64',   '128,255,128', '192,255,192', '224,255,224', -- Green
+  '64,64,0', '128,128,0', '192,192,0', '255,255,0', '255,255,64',  '255,255,128', '255,255,192', '255,255,224', -- Yellow
+  '64,0,0',  '128,0,0',   '192,0,0',   '255,0,0',   '255,64,64',   '255,128,128', '255,192,192', '255,224,224', -- Red
+  '64,0,64', '128,0,128', '192,0,192', '255,0,255', '255,64,255',  '255,128,255', '255,192,255', '255,224,255', -- Purple
+  '0,0,64',  '0,0,128',   '0,0,192',   '0,0,255',   '64,64,255',   '128,128,255', '192,192,255', '224,224,255', -- Blue
+  '0,0,0',   '32,32,32',  '64,64,64',  '96,96,96',  '128,128,128', '160,160,160', '192,192,192', '255,255,255'  -- Grey
+}
+
+local glRainbowBitmap
+
+----------------------------------------------------------------------------------------------------------------------
+
+function saveColours(self)
+   self._paletteChanged ?? return
+
+   svgColours = array<string> {}
+   for col in values(self._userColours) do
+      svgColours:push(tostring(col))
+   end
+
+   output = json.encode(svgColours)
+   if output?? then
+      try
+         save_file = obj.new('file', { path='user:config/colours.json', flags=FL_NEW|FL_WRITE })
+         save_file.acWrite(output)
+      except ex
+         msg('Failed to save custom colour table: ' .. ex.message)
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function updateRGBInput(self, RGB:table)
+   RGB ?? return
+   self._rgb = RGB
+   self.vecChosenColour?.fill = tostring(self._rgb)
+   self.inputRGB:setText(tostring(self._rgb))
+   self.viewport.acDraw()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function refreshColourNodes(self)
+   for idx, node in ipairs(self._colourNodes) do
+      rgb = self._userColours?[idx] ?? gui.nrgb(1,1,1,1)
+
+      rgb.r ?= 1
+      rgb.g ?= 1
+      rgb.b ?= 1
+      rgb.a ?= 1
+
+      node.fill = tostring(rgb)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function getRainbowBitmap()
+   if glRainbowBitmap then return glRainbowBitmap end
+
+   size = ((BTNSIZE + BTNGAP) * 7) - BTNGAP
+   glRainbowBitmap = obj.new('bitmap', { width=size, height=size, bitsPerPixel=32 })
+
+   val = glRainbowBitmap.height / 2
+   for y=0, (glRainbowBitmap.height / 2) - 1 do
+      s = 1 - (val / (glRainbowBitmap.height / 2))
+      v = 1
+      for x=0, glRainbowBitmap.width-1 do
+         h = x * 6 / glRainbowBitmap.width
+         i = math.floor(h)
+         f = h - i
+         if (i & 1) is 0 then
+            f = 1 - f
+         end
+         m = v * (1 - s)
+         n = v * (1 - s * f)
+
+         rgb = choose i from
+            1 -> [_*]glRainbowBitmap.mtGetColour(n * 255, v * 255, m * 255, 255)
+            2 -> [_*]glRainbowBitmap.mtGetColour(m * 255, v * 255, n * 255, 255)
+            3 -> [_*]glRainbowBitmap.mtGetColour(m * 255, n * 255, v * 255, 255)
+            4 -> [_*]glRainbowBitmap.mtGetColour(n * 255, m * 255, v * 255, 255)
+            5 -> [_*]glRainbowBitmap.mtGetColour(v * 255, m * 255, n * 255, 255)
+            else -> [_*]glRainbowBitmap.mtGetColour(v * 255, n * 255, m * 255, 255)
+         end
+
+         mGfx.DrawPixel(glRainbowBitmap, x, y, rgb)
+      end
+      val -= 1
+   end
+
+   val = glRainbowBitmap.height / 2
+   for y=glRainbowBitmap.height/2, glRainbowBitmap.height-1 do
+      s = val / (glRainbowBitmap.height / 2)
+      v = val / (glRainbowBitmap.height / 2)
+      for x=0, glRainbowBitmap.width-1 do
+         h = x * 6.0 / glRainbowBitmap.width
+         i = math.floor(h)
+         f = h - i
+         if (i & 1) is 0 then
+            f = 1 - f
+         end
+         m = v * (1 - s)
+         n = v * (1 - s * f)
+
+         rgb = choose i from
+            1 -> [_*]glRainbowBitmap.mtGetColour(n * 255, v * 255, m * 255, 255)
+            2 -> [_*]glRainbowBitmap.mtGetColour(m * 255, v * 255, n * 255, 255)
+            3 -> [_*]glRainbowBitmap.mtGetColour(m * 255, n * 255, v * 255, 255)
+            4 -> [_*]glRainbowBitmap.mtGetColour(n * 255, m * 255, v * 255, 255)
+            5 -> [_*]glRainbowBitmap.mtGetColour(v * 255, m * 255, n * 255, 255)
+            else -> [_*]glRainbowBitmap.mtGetColour(v * 255, n * 255, m * 255, 255)
+         end
+
+         mGfx.DrawPixel(glRainbowBitmap, x, y, rgb)
+      end
+      val -= 1
+   end
+
+   return glRainbowBitmap
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function buildLayout(self, Options)
+   self.scene ?? return
+
+   self._links = array<table>
+
+   dx = WIDGET_GAP
+   dy = 0
+
+   self.txtBasicColours = self.viewport.new('VectorText', {
+      x         = dx,
+      y         = dy + gui.getFontHeight(gui.fonts.window),
+      string    = 'Basic colours',
+      fill      = self._window.theme.window.text,
+      face      = gui.fonts.window.face,
+      fontSize  = string.format('%.2fpt', gui.fonts.window.size),
+      fontStyle = gui.fonts.window.style,
+      align     = 'left'
+   })
+
+   dy += gui.getFontHeight(gui.fonts.window) + WIDGET_GAP
+
+   -- Configure an array of 8x6 buttons representing a pre-selected colour palette
+
+   y = dy
+   colour = 0
+   for row=0, 6 do
+      x = WIDGET_GAP - 1
+      for col=0, 7 do
+         rgb = gui.strToRGB(f'rgb({COMMON[colour]})')
+
+         vec = self.viewport.new('VectorRectangle', {
+            fill   = tostring(rgb),
+            stroke = COL_BORDER,
+            strokeWidth = 1,
+            x      = x,
+            y      = y,
+            width  = BTNSIZE,
+            height = BTNSIZE,
+            roundX = 2,
+            roundY = 2
+         })
+
+         self._links:push({
+            vector=vec, x=x, y=y, width=BTNSIZE, height=BTNSIZE, colour=rgb,
+            routine = function(Link)
+               updateRGBInput(self, Link.colour)
+            end
+         })
+
+         x += BTNSIZE + BTNGAP
+         colour++
+      end
+      y += BTNSIZE + BTNGAP
+   end
+
+   dy = y + BTNGAP
+
+   -- Configure an array of 8x2 user customised colours
+
+   self.txtPersonalColours = self.viewport.new('VectorText', {
+      x         = dx,
+      y         = dy + gui.getFontHeight(gui.fonts.window),
+      string    = 'Personal colours',
+      fill      = self._window.theme.window.text,
+      face      = gui.fonts.window.face,
+      fontSize  = string.format('%.2fpt', gui.fonts.window.size),
+      fontStyle = gui.fonts.window.style,
+      align     = 'left'
+   })
+
+   self._colourNodes = array<any>
+
+   dy += gui.getFontHeight(gui.fonts.window) + WIDGET_GAP
+   y = dy
+   ci = 0
+   for row=1, 2 do
+      x = dx
+      for column=1, 7 do
+         rgb = self._userColours?[ci] ?? gui.srgb(255, 255, 255, 255)
+         rgb.r ?= 1
+         rgb.g ?= 1
+         rgb.b ?= 1
+         rgb.a ?= 1
+
+         if not getmetatable(rgb) then
+            setmetatable(rgb, gui.mtRGB)
+         end
+
+         vec = self.viewport.new('VectorRectangle', {
+            fill   = tostring(rgb),
+            stroke = COL_BORDER,
+            strokeWidth = 1,
+            x      = x,
+            y      = y,
+            width  = BTNSIZE,
+            height = BTNSIZE,
+            roundX = 2,
+            roundY = 2
+         })
+
+         self._colourNodes:push(vec)
+         index = (((row-1) * 7) + column) - 1
+         self._links:push({ vector=vec, x=x, y=y, width=BTNSIZE, height=BTNSIZE, colour=rgb, index=index,
+            routine = function(Link)
+               if self._userColours?[index] then updateRGBInput(self, self._userColours[index]) end
+            end
+         })
+
+         x += BTNSIZE + BTNGAP
+         ci++
+      end
+
+      -- Add buttons for the adding and removing of personal colours
+
+      if row is 1 then
+         gui.icon({
+            target = self.viewport, x = x+2, y = y, size = BTNSIZE, image = 'items/add',
+            events = {
+               activate = function(Icon)
+                  if self._userColours:any(col => ((col.r is self._rgb.r) and (col.g is self._rgb.g) and (col.b is self._rgb.b))) then
+                     return
+                  end
+
+                  if #self._userColours < 7 * 2 then
+                     self._paletteChanged = true
+                     self._userColours:push(self._rgb)
+                     refreshColourNodes(self)
+                     self.viewport.acDraw()
+                  else
+                     gui.dialog.error('Out of Palette Space', 'You have run out of space for adding new colours to your personal palette.  Please delete some of your existing colours before adding new ones.')
+                  end
+               end
+            }
+         })
+      elseif row is 2 then
+         gui.icon({
+            target = self.viewport, x = x+2, y = y, size = BTNSIZE, image = 'items/trash',
+            events = {
+               activate = function(Icon)
+                  for k, col in ipairs(self._userColours) do
+                     if (col.r is self._rgb.r) and (col.g is self._rgb.g) and (col.b is self._rgb.b) then
+                        self._paletteChanged = true
+                        self._userColours:remove(k)
+                        refreshColourNodes(self)
+                        self.viewport.acDraw()
+                        break
+                     end
+                  end
+               end
+            }
+         })
+      end
+
+      y += BTNSIZE + BTNGAP
+   end
+
+   bottom = y + WIDGET_GAP
+
+   -- Configure the palette selection area
+
+   dx += ((BTNSIZE + BTNGAP) * 8) + 10
+   dy = 0
+
+   self.txtRainbowPalette = self.viewport.new('VectorText', {
+      x         = dx,
+      y         = dy + gui.getFontHeight(gui.fonts.window),
+      string    = 'Rainbow palette',
+      fill      = self._window.theme.window.text,
+      face      = gui.fonts.window.face,
+      fontSize  = string.format('%.2fpt', gui.fonts.window.size),
+      fontStyle = gui.fonts.window.style,
+      align     = 'left'
+   })
+
+   dy += gui.getFontHeight(gui.fonts.window) + WIDGET_GAP
+
+   rainbow = getRainbowBitmap()
+
+   self.vecRainbowPalette = self.viewport.new('VectorRectangle', {
+      x      = dx,
+      y      = dy,
+      width  = rainbow.width,
+      height = rainbow.height,
+      roundX = 4,
+      roundY = 4,
+      stroke = COL_BORDER,
+      fill   = 'url(#Rainbow)'
+   })
+
+   self._rainbowX = dx
+   self._rainbowY = dy
+
+   dy += self.vecRainbowPalette.height + WIDGET_GAP
+
+   -- The picker selects colours in the rainbow palette and is only visible if the user activates it.
+
+   self.vecPicker = self.viewport.new('VectorEllipse', {
+      cx      = self._rainbowX,
+      cy      = self._rainbowY,
+      radiusX = 4,
+      radiusY = 4,
+      visibility = VIS_HIDDEN
+   })
+
+   self.vecChosenColour = self.viewport.new('VectorRectangle', {
+      x      = dx,
+      y      = dy,
+      roundX = 4,
+      roundY = 4,
+      width  = rainbow.width,
+      height = 32,
+      fill   = tostring(self._rgb),
+      stroke = COL_BORDER,
+   })
+
+   dy += self.vecChosenColour.height + WIDGET_GAP
+
+   self.inputRGB = gui.input({
+      target = self.viewport,
+      x      = dx,
+      y      = dy,
+      width  = rainbow.width,
+      shadowLabel = 'Colour',
+      inputMask = [[^rgb\(%d+,%d+,%d+\)$]],
+      events = {
+         activate = function(Widget, Event)
+            updateRGBInput(self, gui.strToRGB(Event.text))
+         end
+      }
+   })
+
+   dy += self.inputRGB.viewport.height + WIDGET_GAP
+
+   -- Okay and cancel buttons
+
+   lCancelButton = gui.button({
+      target  = self.viewport,
+      text    = 'Cancel',
+      xOffset = WIDGET_GAP,
+      y       = dy,
+      icon    = 'items/cancel',
+      events = {
+         activate = function(Widget)
+            self?.feedback(nil)
+            table.clear(self)
+         end
+      }
+   })
+
+   lOkayButton = gui.button({
+      target  = self.viewport,
+      text    = 'OK',
+      xOffset = lCancelButton.viewport.width + (WIDGET_GAP * 2),
+      y       = dy,
+      icon    = 'items/checkmark',
+      events = {
+         activate = function(Widget)
+            saveColours(self)
+            self?.feedback(self._rgb)
+            table.clear(self)
+         end
+      }
+   })
+
+   dy += lOkayButton.viewport.height + WIDGET_GAP
+   if dy > bottom then bottom = dy end
+
+   processing.collect()
+
+   return (self._rainbowX + rainbow.width + WIDGET_GAP), bottom
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Locate the picker within the rainbow palette, if active
+
+function arrangePicker(self)
+   self.vecPicker ?? return
+
+   if self._picker then
+      val = (self._picker.y * 255) / (getRainbowBitmap().height * 0.75)
+      if val > 255 then val = 255 end
+
+      self.vecPicker.cX = self._rainbowX + self._picker.x
+      self.vecPicker.cY = self._rainbowY + self._picker.y
+
+      self.vecPicker.stroke     = f'rgba({val},{val},{val},1)'
+      self.vecPicker.visibility = VIS_VISIBLE
+   else
+      self.vecPicker.visibility = VIS_HIDDEN
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function arrangeLayout(self)
+   -- Recalculate clickable links
+
+   for link in values(self._links) do
+      if link.vector then
+         link.x, link.y, link.width, link.height = [_*]link.vector.mtGetBoundary()
+      end
+   end
+
+   if self.vecRainbowPalette then
+      self._rainbow.winX, self._rainbow.winY, self._rainbow.winWidth, self._rainbow.winHeight = [_*]self.vecRainbowPalette.mtGetBoundary()
+   end
+
+   arrangePicker(self)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Executed when the user clicks the rainbow palette area.  Some coordinate translation
+-- occurs in order to manage viewport scaling within the display window.
+
+function selectPalette(self, X, Y)
+   if X < 0 then X = 0 end
+   if Y < 0 then Y = 0 end
+   if X >= self._rainbow.winWidth then X = self._rainbow.winWidth - 1 end
+   if Y >= self._rainbow.winHeight then Y = self._rainbow.winHeight - 1 end
+
+   rainbow = getRainbowBitmap()
+   descaleX, descaleY = (rainbow.width / self._rainbow.winWidth), (rainbow.height / self._rainbow.winHeight)
+   dX, dY = X * descaleX, Y * descaleY
+   rgb = mGfx.ReadRGBPixel(rainbow, descaleX * X, descaleY * Y)
+
+   self._picker ?= { x=dX, y=dY }
+
+   left, top, right, bottom = self._picker.x - 4, self._picker.y - 4, self._picker.x + 4, self._picker.y + 4
+
+   if dX < self._picker.x then
+      left = dX - 4
+   else
+      right = dX + 4
+   end
+
+   if dY < self._picker.y then
+      top = dY - 4
+   else
+      bottom = dY + 4
+   end
+
+   self._picker = { x=dX, y=dY }
+   arrangePicker(self)
+   self.viewport.acDraw()
+   updateRGBInput(self, gui.srgb(rgb.red, rgb.green, rgb.blue))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function loadColours(self)
+   try
+      js = io.readAll('user:config/colours.json')
+      if js?? then
+         self._userColours = json.decode(js)
+         if type(self._userColours) != 'array' then
+            print('Invalid user:config/colours.json file detected.')
+            self._userColours = array<table>
+         end
+
+         for i, col in self._userColours do
+            if type(col) is 'table' then -- Legacy format; remove in 2027
+               self._userColours[i] = gui.srgb(col.r, col.g, col.b)
+            elseif type(col) is 'string' then
+               self._userColours[i] = gui.strToRGB(col)
+            end
+         end
+      end
+   except ex
+      msg(ex.message)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+gui.dialog.colour = function(Options)
+   self = { -- Public variables and global resources that need to be retained
+      windowID   = nil,
+      colour     = gui.nrgb(0,0,0,1),
+      feedback   = Options.feedback,
+      _absX      = -1,
+      _absY      = -1,
+      _rainbowX  = -1,
+      _rainbowY  = -1,
+      _rainbow   = { winX = 0, winY = 0, winWidth = 0, winHeight = 0 },
+      _rainbowBmp,
+      _rgb       = gui.srgb(200, 200, 200, 255),
+      _links     = array<table>,
+      _userColours = array<table>,
+      _picker = nil
+   }
+
+   function inputFeedback(Viewport, Msg)
+      if Msg.type is JET_BUTTON_1 then
+         if Msg.value > 0 then -- Button down
+            if (Msg.x >= self._rainbow.winX) and
+               (Msg.y >= self._rainbow.winY) and
+               (Msg.x < self._rainbow.winX + self._rainbow.winWidth) and
+               (Msg.y < self._rainbow.winY + self._rainbow.winHeight) then
+               selectPalette(self, Msg.x - self._rainbow.winX, Msg.y - self._rainbow.winY)
+               self._rainbowClick = true
+            end
+            self._absX = Msg.absX
+            self._absY = Msg.absY
+         else -- Button released
+            self._rainbowClick = false
+
+            if (math.abs(Msg.absX - self._absX) <= 2) and (math.abs(Msg.absY - self._absY) <= 2) then
+               for link in values(self._links) do
+                  if (Msg.x >= link.x) and (Msg.x < link.x + link.width) and
+                     (Msg.y >= link.y) and (Msg.y < link.y + link.height) then
+                     link.routine(link)
+                     break
+                  end
+               end
+            end
+         end
+      elseif Msg.type is JET_ABS_XY then
+         if self._rainbowClick then selectPalette(self, Msg.x - self._rainbow.winX, Msg.y - self._rainbow.winY) end
+      end
+   end
+
+   loadColours(self)
+
+   self._window = gui.window({
+      insideWidth  = 600,
+      insideHeight = 400,
+      minWidth     = 200,
+      minHeight    = 50,
+      quit         = false,
+      center       = true,
+      stickToFront = true,
+      aspectRatio  = true,
+      popOver      = Options.popOver,
+      parent       = Options.target,
+      icon         = 'tools/palette',
+      title        = Options.title ?? 'Select a colour',
+      modal        = Options.modal ?? false,
+      events = {
+         close = function(Window)
+            saveColours(self)
+            self?.feedback(nil)
+            table.clear(self)
+         end
+      }
+   })
+
+   self.scene = self._window.scene
+
+   self.viewport = self._window:clientViewport({
+      resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
+         arrangeLayout(self)
+      end
+   })
+
+   check self.scene.mtAddDef('Rainbow', self.scene.new('VectorImage', { bitmap = getRainbowBitmap() }))
+
+   self.viewport.viewWidth, self.viewport.viewHeight = buildLayout(self, Options)
+
+   check self.viewport.mtSubscribeInput(JTYPE_MOVEMENT|JTYPE_BUTTON, inputFeedback)
+
+   -- Manage the aspect ratio.  The current width will determine the height
+
+   client = self._window:getClientSize()
+   scale = self.viewport.viewHeight / self.viewport.viewWidth
+
+   self._window:resizeClientArea(client.width, math.floor(client.width * scale))
+   self._window.surface.minWidth  = math.floor(client.width * 0.25)
+   self._window.surface.minHeight = math.floor(client.width * scale * 0.25)
+
+   updateRGBInput(self, gui.strToRGB(Options.colour ?? 'rgb(200,200,200)'))
+
+   self._window:moveToFront()
+   self._window:show()
+
+   arrangeLayout(self)
+
+   return self
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- This sub-routine is provided for languages other than Tiri to use the interface.
+
+@if(imported=false)
+   dlg = colour.dialog({
+      popOver    = arg('popOver'),
+      target     = arg('target'),
+      modal      = arg('modal'),
+      okText     = arg('okText'),
+      cancelText = arg('cancelText'),
+      icon       = arg('icon')
+   })
+
+   return dlg.windowID
+@end

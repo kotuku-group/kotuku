@@ -1,0 +1,254 @@
+--[[
+The ListView API is used to display data to the user in the form of a list of items.
+
+Documentation is available in the Kotuku Wiki.
+--]]
+
+   import 'gui'
+   import 'gui/libview'
+
+   namespace 'gui'
+
+ICON_SIZE <const> = 16
+VSPACING  <const> = 1
+EDGE      <const> = 4
+
+local LINE_HEIGHT, FONT_HEIGHT, LINE_OFFSET
+
+function rearrangeItems(View)
+   View.zones = { }
+   View._last_y = 0
+   y = 0
+   for item in values(View.items) do
+      item._y = y
+      if item._vectors.viewport then
+         item._vectors.viewport.visibility = item.hidden ? VIS_HIDDEN :> VIS_VISIBLE
+         item._vectors.viewport.y = y + EDGE
+      end
+
+      if not item.hidden then
+         View.addZone(0, item._y, nil, LINE_HEIGHT, item)
+         y += LINE_HEIGHT + VSPACING
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+gui.listView = function(Options:table)
+   lTextAttrib = Options.textAttrib ?? 'name'
+   lCompact    = Options.compact ?? 0
+
+   function setListTextFill(Item, Fill)
+      if Item._vectors.text then
+         Item._vectors.text.fill = Fill
+      end
+   end
+
+   -- When an item is hovered, create a highlight for it.
+
+   function highlightItem(View, Item:table, Highlighted:bool)
+      Item._vectors.viewport ?? return
+
+      if not Item._vectors.highlight then
+         Item._vectors.highlight = Item._vectors.viewport.new('VectorRectangle', {
+            roundX = 4, roundY = 4, width = '100%', height = '100%', visibility = VIS_HIDDEN
+         })
+         Item._vectors.highlight.acMoveToBack()
+      end
+
+      if Item._selected then
+         setListTextFill(Item, View.theme.page.textSelect)
+         Item._vectors.highlight.fill = View.theme.page.textSelectBkgd
+         Item._vectors.highlight.visibility = VIS_VISIBLE
+         if View.theme.page.iconHighlight and View.hIcons[Item.icon] then
+            Item._vectors.iconImage.fill = f'url(#{View.hIcons[Item.icon]})'
+         end
+      elseif Highlighted then
+         Item._vectors.highlight.fill = View.theme.page.textHighlightBkgd
+         setListTextFill(Item, View.theme.page.textHighlight)
+         Item._vectors.highlight.visibility = VIS_VISIBLE
+         if View.theme.page.iconHighlight and View.hIcons[Item.icon] then
+            Item._vectors.iconImage.fill = f'url(#{View.hIcons[Item.icon]})'
+         end
+      else
+         setListTextFill(Item, View.theme.page.text)
+         Item._vectors.highlight.visibility = VIS_HIDDEN
+         if View.icons[Item.icon] then
+            Item._vectors.iconImage.fill = f'url(#{Item.icon})'
+         end
+      end
+   end
+
+   function newItems(View, Items)
+      if #Items is 0 then return end
+
+      width  = View.frame.width - EDGE - EDGE
+      height = View.frame.height
+      x      = EDGE
+      y      = View._last_y
+      widest_item = 0
+
+      for item in values(Items) do
+         item._vectors ?= { }
+
+         item._x = x
+         item._y = y
+         item._width  = width
+         item._height = LINE_HEIGHT
+
+         -- If the item is hovered, create a highlight for it.  ColBkgdHighlight defines the background colour to use
+         -- when an item is highlighted.  If an item is also marked as selected, then the final colour is interpolated
+         -- with ColSelect.
+
+         item._highlightEvent = highlightItem
+
+         -- Respond to positive item selection by the user (e.g. button click)
+
+         item._selectEvent = function(View, Item)
+            if Item is View.hItem then
+               Item._highlightEvent(View, Item, true)
+            else
+               Item._highlightEvent(View, Item, false)
+            end
+         end
+
+         -- Each item gets its own viewport in the page
+
+         if not item._vectors.viewport then
+            item._vectors.viewport = View.page.new('VectorViewport', {
+               x       = EDGE,
+               y       = y + EDGE,
+               xOffset = EDGE,
+               height  = LINE_HEIGHT
+            })
+         else
+            item._vectors.viewport.y = y + EDGE
+         end
+
+         MARGIN = math.round(LINE_HEIGHT * 0.3)
+         ICON_MARGIN = 0
+
+         if not Options.noIcons then
+            ICON_MARGIN = ICON_SIZE + MARGIN
+         end
+
+         vp = item._vectors.viewport
+
+         if item.icon then
+            try
+               if not View.icons[item.icon] then
+                  gui.createIcon(View.scene, item.icon, ICON_SIZE, View.theme.page.icon, item.icon)
+                  View.icons[item.icon] = true
+               end
+
+               if View.theme.page.iconHighlight then
+                  if View.theme.page.iconHighlight is View.theme.page.icon then
+                     View.hIcons[item.icon] = item.icon
+                  else
+                     gui.createIcon(View.scene, item.icon, ICON_SIZE, View.theme.page.iconHighlight, f'_h_{item.icon}')
+                     View.hIcons[item.icon] = f'_h_{item.icon}'
+                  end
+               end
+
+               if not item._vectors.iconImage then
+                  item._vectors.iconImage = vp.new('VectorRectangle', {
+                     fill   = f'url(#{item.icon})',
+                     x      = math.round(LINE_HEIGHT * 0.2),
+                     y      = math.round((LINE_HEIGHT - ICON_SIZE) * 0.5),
+                     width  = ICON_SIZE,
+                     height = ICON_SIZE
+                  })
+               end
+            end
+         end
+
+         item_name = item[lTextAttrib]
+         if item_name then
+            if not item._vectors.text then
+               item._vectors.text = vp.new('VectorText', {
+                  face      = View.fontFace,
+                  fontSize  = string.format('%.2fpt', View.fontSize),
+                  fontStyle = View.fontStyle,
+                  align     = 'left',
+                  y         = LINE_OFFSET
+               })
+            end
+
+            item._vectors.text.x = MARGIN + ICON_MARGIN
+            item._vectors.text.y = LINE_OFFSET
+            if type(item_name) is 'table' then
+               item._vectors.text.string = item_name.value
+            else
+               item._vectors.text.string = item_name
+            end
+            --font.wrapEdge = x + item.Width
+
+            err, bx, by, bw, bh = item._vectors.text.mtGetBoundary(0)
+
+            width = MARGIN + ICON_MARGIN + bw + MARGIN
+
+            if item._selected then
+               item._vectors.text.fill = View.theme.page.textSelect
+            elseif item.index and (item.index is lHighlightedItem) then
+               item._vectors.text.fill = View.theme.page.textHighlight
+            else
+               item._vectors.text.fill = item.colour ?? View.theme.page.text
+            end
+         end
+
+         if item.hidden then
+            vp.visibility = VIS_HIDDEN
+         else
+            vp.visibility = VIS_VISIBLE
+            y += LINE_HEIGHT + VSPACING
+         end
+
+         if width > widest_item then widest_item = width end
+      end
+
+      View._last_y = y
+
+      -- Item click and hover management
+
+      for item in values(View.items) do
+         if not item.hidden then
+            if Options.compact is 1 then
+               View.addZone(item._x, item._y, widest_item, item._height, item, itemHoverCallback)
+            else
+               View.addZone(item._x, item._y, nil, item._height, item, itemHoverCallback)
+            end
+         end
+      end
+
+      -- Adjust the page dimensions and report to the scrollbar
+
+      if View.scrollbar then
+         widest_item = widest_item + EDGE + EDGE
+         View.scrollbar.setDynamicPageSize(widest_item, widest_item, y + EDGE + VSPACING)
+      end
+   end
+
+   function constructListView(View)
+      LINE_HEIGHT, FONT_HEIGHT = gui.getFontHeight({ face=View.fontFace, size=View.fontSize, style=View.fontStyle })
+      LINE_HEIGHT = math.round(LINE_HEIGHT * 1.5)
+      LINE_OFFSET = math.round((LINE_HEIGHT + FONT_HEIGHT) * 0.5)
+
+      View.icons ?= { }
+      View.hIcons ?= { }
+
+      View._last_y = 0
+      if #View.items > 0 then newItems(View, View.items) end
+
+      processing.collect()
+   end
+
+   vw = gui.initView(Options, constructListView, newItems)
+
+   vw.sort = function(Attrib, Ascending)
+      vw.sortItems(Attrib, Ascending)
+      rearrangeItems(vw)
+   end
+
+   return vw
+end

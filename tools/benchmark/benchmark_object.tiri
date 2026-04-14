@@ -1,0 +1,76 @@
+
+-- Read object fields directly from the glTime class, which permits direct access to the hour, minute, and second fields.
+
+   local glTime = obj.new('time', { })
+   glTime.acQuery()
+
+   local glConfig = obj.new('config', { flags=CNF_NEW, keyFilter='None', path='temp:config.cfg' })
+
+   local glXML = obj.new('xml')
+
+@Test function ObjectReadDirectFields()
+   for i = 0,100000 do
+      local h = glTime.hour
+      local m = glTime.minute
+      local s = glTime.second
+   end
+end
+
+-- The Config path field can be read directly.
+
+@Test function ObjectReadDirectStrings()
+   local val
+   glConfig.path = 'temp:config.cfg'
+   for i = 0,100000 do
+      val = glConfig.path
+   end
+end
+
+@Test function ObjectReadDirectObject()
+   local val
+   glXML.source = glConfig
+   for i = 0,100000 do
+      val = glXML.source
+   end
+end
+
+@Test function ObjectReadDirectObjectLocked()
+   local val
+   glXML.source = glConfig
+   with glXML do
+      for i = 0,100000 do
+         val = glXML.source
+      end
+   end
+end
+
+@Test function ObjectWriteDirectFields()
+   for i=0,100000 do
+      glTime.hour   = 1
+      glTime.minute = 2
+      glTime.second = 3
+   end
+end
+
+-- Read from the stamp field, which is backed by a function.
+
+@Test function ObjectReadIndirectFields()
+   for i = 0,100000 do
+      local tm = glTime.timeStamp
+   end
+end
+
+-- The Bitmap TransIndex field is an integer backed by a function.
+
+@Test function ObjectWriteIndirectFields()
+   local bmp = obj.new('bitmap')
+   for i = 0,100000 do
+      bmp.transIndex = 1
+   end
+end
+
+@Test function ObjectWriteIndirectStrings()
+   for i = 0,100000 do
+      glConfig.keyFilter = 'None'
+   end
+end

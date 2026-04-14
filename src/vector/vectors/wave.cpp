@@ -10,7 +10,7 @@ The sine wave will be generated within a rectangular region at (#X,#Y) with size
 center-line within the rectangle will dictate the orientation of the sine wave, and the path vertices are generated
 on a left-to-right basis.
 
-Waves can be used in Parasol's SVG implementation by using the &lt;parasol:wave/&gt; element.
+Waves can be used in Kotuku's SVG implementation by using the &lt;kotuku:wave/&gt; element.
 
 -END-
 

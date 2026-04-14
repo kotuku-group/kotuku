@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Download and install the Parasol CI artifact for local use.
+# Download and install the Kōtuku CI artifact for local use.
 #
 # The script mirrors the behaviour of CI by fetching the latest successful
 # workflow run artefact and extracting it into install/agents (by default).
@@ -10,10 +10,10 @@ set -euo pipefail
 
 WORKFLOW_FILE="${WORKFLOW_FILE:-ci.yml}"
 BRANCH_NAME="${BRANCH_NAME:-master}"
-ARTIFACT_NAME="${ARTIFACT_NAME:-parasol-install-ubuntu-latest-FastBuild}"
+ARTIFACT_NAME="${ARTIFACT_NAME:-kotuku-install-ubuntu-latest-FastBuild}"
 DEST_DIR="${DEST_DIR:-install/agents}"
 GITHUB_HOST="${GITHUB_HOST:-github.com}"
-DEFAULT_REPOSITORY="parasol-framework/parasol"
+DEFAULT_REPOSITORY="parasol-framework/kotuku"
 
 # Older versions of gh (including the one available in this environment)
 # do not support the --hostname flag.  Setting GH_HOST ensures the CLI
@@ -29,22 +29,22 @@ install_gh() {
    fi
 
    export DEBIAN_FRONTEND="noninteractive"
-   apt-get update -y
-   if apt-get install -y gh; then
+   apt-get update -y -qq >/dev/null 2>&1
+   if apt-get install -y -qq gh >/dev/null 2>&1; then
       return
    fi
 
    echo "Configuring GitHub CLI apt repository..."
-   apt-get install -y curl ca-certificates gnupg
+   apt-get install -y -qq curl ca-certificates gnupg >/dev/null 2>&1
    install -d -m 0755 /etc/apt/keyrings
    curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-      | gpg --dearmor -o /etc/apt/keyrings/githubcli-archive-keyring.gpg
+      | gpg --dearmor -o /etc/apt/keyrings/githubcli-archive-keyring.gpg 2>/dev/null
    chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
    printf "deb [arch=%s signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main\n" \
       "$(dpkg --print-architecture)" \
       > /etc/apt/sources.list.d/github-cli.list
-   apt-get update -y
-   apt-get install -y gh
+   apt-get update -y -qq >/dev/null 2>&1
+   apt-get install -y -qq gh >/dev/null 2>&1
 }
 
 ensure_gh() {

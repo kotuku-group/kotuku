@@ -11,11 +11,11 @@
     <id>51bca8eb</id>
     <idstring>VECTORWAVE</idstring>
     <category>Graphics</category>
-    <copyright>Paul Manias © 2010-2025</copyright>
+    <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>The VectorWave class provides functionality for generating paths based on sine waves.  This feature is not part of the SVG standard and therefore should not be used in cases where SVG compliance is a strict requirement.</p>
 <p>The sine wave will be generated within a rectangular region at (<fl>X</fl>,<fl>Y</fl>) with size (<fl>Width</fl>,<fl>Height</fl>).  The horizontal center-line within the rectangle will dictate the orientation of the sine wave, and the path vertices are generated on a left-to-right basis.</p>
-<p>Waves can be used in Parasol's SVG implementation by using the &lt;parasol:wave/&gt; element.</p></description>
+<p>Waves can be used in Kotuku's SVG implementation by using the &lt;kotuku:wave/&gt; element.</p></description>
     <source>
       <file path="vectors/">wave.cpp</file>
     </source>

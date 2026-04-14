@@ -1,0 +1,319 @@
+-- Tests for advanced XML features and flag combinations
+
+   include 'xml'
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test XML parsing flags
+
+@Test function ParsingFlags()
+   xmlWithComments = '<root><!-- Comment --><child/></root>'
+
+   -- Test with comment inclusion
+   xml1 = obj.new("xml", {
+      statement = xmlWithComments,
+      flags = XMF_INCLUDE_COMMENTS
+   })
+   -- Comments should be preserved when flag is set
+
+   -- Test with comment stripping (default)
+   xml2 = obj.new("xml", { statement = xmlWithComments })
+   assert(xml2.tags[0].children[0].attribs[0].name is "child", "Comments should be stripped by default")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test whitespace handling
+
+@Test function WhitespaceHandling()
+   xmlWithWhitespace = '<root>  \n  <child>  content  </child>  \n  </root>'
+
+   -- Test with whitespace inclusion
+   xml1 = obj.new("xml", {
+      statement = xmlWithWhitespace,
+      flags = XMF_INCLUDE_WHITESPACE
+   })
+   -- Whitespace should be preserved
+
+   -- Test default whitespace handling
+   xml2 = obj.new("xml", { statement = xmlWithWhitespace })
+   assert(xml2.tags[0].children[0].attribs[0].name is "child", "Child should be found despite whitespace")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test content stripping
+
+@Test function ContentStripping()
+   xmlWithContent = '<root><element>Text content</element><empty/></root>'
+
+   -- Test with content stripping
+   xml = obj.new("xml", {
+      statement = xmlWithContent,
+      flags = XMF_STRIP_CONTENT
+   })
+
+   -- Content should be stripped, only element structure preserved
+   assert(xml.tags[0].children[0].attribs[0].name is "element", "Element structure should remain")
+   assert(#xml.tags[0].children[0].children is 0, "Content should be stripped")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test header stripping
+
+@Test function HeaderStripping()
+   xmlWithHeaders = '<?xml version="1.0"?><!DOCTYPE root><root><child/></root>'
+
+   -- Test with header stripping
+   xml = obj.new("xml", {
+      statement = xmlWithHeaders,
+      flags = XMF_STRIP_HEADERS
+   })
+
+   -- Should only have the root element, no processing instructions
+   assert(xml.tags[0].attribs[0].name is "root", "Root element should be preserved")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test well-formed validation
+
+@Test function WellFormedValidation()
+   malformedXML = '<root><unclosed><proper/></root>'
+
+   -- Test without well-formed flag (should parse loosely)
+   xml1 = obj.new("xml", { statement = malformedXML })
+   -- Should parse in loose mode
+
+   -- Test with well-formed flag (should reject)
+   try
+      obj.new("xml", { statement = malformedXML, flags = XMF_WELL_FORMED })
+   success
+      error("Should reject malformed XML in well-formed mode")
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test entity parsing
+
+@Test function EntityParsing()
+   xmlWithEntities = [[<!DOCTYPE root PUBLIC "-//Example//DTD Example//EN" "http://example.com/example.dtd" [
+      <!ENTITY % base "value">
+      <!ENTITY test "%base; and more">
+      <!NOTATION icon SYSTEM "viewer">
+   ]>
+   <root>&test;</root>]]
+
+   -- Test with entity parsing enabled
+   xml = obj.new("xml", {
+      statement = xmlWithEntities,
+      flags = XMF_PARSE_ENTITY
+   })
+
+   assert(xml.docType is 'root', 'Document type field should be populated')
+   assert(xml.publicID is '-//Example//DTD Example//EN', 'Public identifier should match declaration')
+   assert(xml.systemID is 'http://example.com/example.dtd', 'System identifier should match declaration')
+
+   err, entityValue = xml.mtGetEntity('test')
+   assert(err is ERR_Okay and entityValue is 'value and more', 'Parsed entity should resolve parameter entities')
+
+   notationErr, notationValue = xml.mtGetNotation('icon')
+   assert(notationErr is ERR_Okay and notationValue is 'viewer', 'Notation lookup should return the system identifier')
+
+   err, resolved = xml.mtEvaluate('string(/root)')
+   assert(resolved is 'value and more', 'Entity references should be expanded in content')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test standalone declaration handling
+
+@Test function StandalonePreventsExternalDTD()
+   standaloneXML = [[<?xml version="1.0" standalone="yes"?>
+<!DOCTYPE root SYSTEM "http://example.com/example.dtd">
+<root><child/></root>]]
+
+   xml = obj.new("xml", {
+      statement = standaloneXML,
+      flags = XMF_PARSE_ENTITY
+   })
+
+   assert(bit.band(xml.flags, XMF_STANDALONE) != 0, 'Standalone declaration should set XMF_STANDALONE flag')
+   assert(xml.systemID is nil, 'System identifier should not be retained for standalone documents')
+   assert(xml.publicID is nil, 'Public identifier should not be retained for standalone documents')
+   assert(xml.docType is 'root', 'Document type should still be captured for standalone documents')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test no-escape mode
+
+@Test function NoEscapeMode()
+   xmlWithEscapes = '<root attr="&lt;&gt;">&amp;content&amp;</root>'
+
+   -- Test with escaping (default)
+   xml1 = obj.new("xml", { statement = xmlWithEscapes })
+   -- Escapes should be processed
+
+   -- Test without escaping
+   xml2 = obj.new("xml", {
+      statement = xmlWithEscapes,
+      flags = XMF_NO_ESCAPE
+   })
+   -- Escapes should be left as-is
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test sorting with various flags
+
+@Test function SortingFlags()
+   xml = obj.new("xml", {
+      statement = '<root><item sort="z">Z item</item><item sort="a">A item</item><item sort="m">M item</item></root>'
+   })
+
+   -- Test ascending sort
+   err = xml.mtSort('/root', 'item', XSF_NIL)
+   assert(err is ERR_Okay, "Ascending sort should succeed")
+
+   -- Test descending sort
+   err = xml.mtSort('/root', 'item', XSF_DESC)
+   assert(err is ERR_Okay, "Descending sort should succeed")
+
+   -- Test sort with check sort flag
+   err = xml.mtSort('/root', 'item', XSF_CHECK_SORT)
+   assert(err is ERR_Okay, "Sort with check flag should succeed")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test serialisation flags
+
+@Test function SerialisationFlags()
+   xml = obj.new("xml", {
+      statement = '<root><child attr="value">Content</child></root>'
+   })
+
+   -- Test readable serialisation
+   err, readable = xml.mtSerialise(0, bit.bor(XMF_READABLE, XMF_INCLUDE_SIBLINGS))
+   assert(err is ERR_Okay, "Readable serialisation should succeed")
+   assert(string.find(readable, '\n'), "Readable format should include newlines")
+
+   -- Test compact serialisation
+   err, compact = xml.mtSerialise(0, XMF_INCLUDE_SIBLINGS)
+   assert(err is ERR_Okay, "Compact serialisation should succeed")
+
+   -- Test omit tags serialisation
+   err, content = xml.mtSerialise(0, bit.bor(XMF_OMIT_TAGS, XMF_INCLUDE_SIBLINGS))
+   assert(err is ERR_Okay, "Content-only serialisation should succeed")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test GetContent vs deep content extraction
+
+@Test function ContentExtraction()
+   xml = obj.new("xml", {
+      statement = '<root>Before <em>emphasized</em> after <strong>strong</strong> end</root>'
+   })
+
+   rootId = xml.tags[0].id
+
+   -- Test shallow content extraction
+   buffer = string.alloc(1000)
+   err = xml.mtGetContent(rootId, buffer)
+   assert(err is ERR_Okay, "Shallow content extraction should succeed")
+   assert(string.find(buffer, "Before"), "Should include direct text")
+   assert(string.find(buffer, "after"), "Should include direct text")
+   assert(string.find(buffer, "end"), "Should include direct text")
+
+   -- Test deep content extraction via mtEvaluate
+   err, deepContent = xml.mtEvaluate('string(/root)')
+   assert(string.find(deepContent, "emphasized"), "Deep extraction should include nested content")
+   assert(string.find(deepContent, "strong"), "Deep extraction should include nested content")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test Count method vs count
+
+@Test function CountMethods()
+   xml = obj.new("xml", {
+      statement = '<root><section><item/><item/></section><section><item/><item/><item/></section></root>'
+   })
+
+   -- Test count: mtEvaluate
+   err, keyCount = xml.mtEvaluate('count(//item)')
+   assert(tonumber(keyCount) is 5, "Should count all items: got " .. keyCount)
+
+   -- Test specific path count
+   err, sectionCount = xml.mtEvaluate('count(/root/section[1]/item)')
+   assert(tonumber(sectionCount) is 2, "Should count items in first section only, got " .. sectionCount)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test Filter method
+
+@Test function FilterMethod()
+   xml = obj.new("xml", {
+      statement = '<root><keep><target>Keep this</target><child/></keep><remove><target>Remove this</target></remove></root>'
+   })
+
+   -- Filter to keep only the first 'keep' section
+   err = xml.mtFilter('/root/keep')
+   assert(err is ERR_Okay, "Filter should succeed")
+
+   -- Should now only have the filtered content
+   tags = xml.tags
+   assert(#tags is 1, "Should have only 1 root element after filter")
+   assert(tags[0].attribs[0].name is "keep", "Root should be the filtered element")
+   assert(tags[0].children[0].attribs[0].name is "target", "Children should be preserved")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test RemoveXPath with attribute removal
+
+@Test function RemoveXPathAttributes()
+   xml = obj.new("xml", {
+      statement = '<root><item id="1" name="first" type="test"/><item id="2" name="second"/></root>'
+   })
+
+   -- Remove specific attribute from all items
+   err = xml.mtRemoveXPath('//item/@type', 0)
+   assert(err is ERR_Okay, "Attribute removal should succeed")
+
+   -- Verify attribute was removed using a fresh lookup
+   err, itemId = xml.mtSearch('/root/item[@id="1"]')
+   assert(err is ERR_Okay, "Should be able to locate the first item after removal")
+
+   attrErr, value = xml.mtGetAttrib(itemId, 'type')
+   assert(attrErr is ERR_Search, "Type attribute should be removed by mtRemoveXPath: " .. mSys.GetErrorMsg(attrErr))
+
+   -- Verify other attributes remain
+   nameErr, nameValue = xml.mtGetAttrib(itemId, 'name')
+   assert(nameErr is ERR_Okay and nameValue is "first", "Other attributes should remain")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test exists() function
+
+@Test function Exists()
+   xml = obj.new("xml", {
+      statement = '<root><empty attrib="value" blank=""/><withContent>Some text</withContent><whitespaceOnly>   \n\t  </whitespaceOnly></root>'
+   })
+
+   err, emptyExists = xml.mtEvaluate('exists(/root/empty/text())')
+   assert(emptyExists is "false", "exists() on text() should report no content, got: " .. emptyExists)
+
+   err, emptyExists = xml.mtEvaluate('exists(/root/empty)')
+   assert(emptyExists is "true", "Targeted empty element exists, got: " .. emptyExists)
+
+   err, elementExists = xml.mtEvaluate('exists(/root/withContent)')
+   assert(elementExists is "true", "Element with content should report element exists, got: " .. elementExists)
+
+   err, attribExists = xml.mtEvaluate('exists(/root/empty/@attrib)')
+   assert(attribExists is "true", "Targeted attrib element exists, got: " .. attribExists)
+
+   err, attribExists = xml.mtEvaluate('exists(/root/empty/@blank)')
+   assert(attribExists is "true", "Targeted blank element exists, got: " .. attribExists)
+
+   err, attribExists = xml.mtEvaluate('exists(/root/empty/@doesnotexist)')
+   assert(attribExists is "false", "Unexpected result for non-existant attribute, got: " .. attribExists)
+
+   err, attribExists = xml.mtEvaluate('exists(string(/root/empty/@blank))')
+   assert(attribExists is "true", "Expected true because @blank exists, despite being empty.  Got: " .. attribExists)
+
+   -- Test element with only whitespace
+   err, whitespaceExists = xml.mtEvaluate('boolean(normalize-space(/root/whitespaceOnly))')
+   assert(whitespaceExists is "false", "Normalised whitespace should report no content, got: " .. whitespaceExists)
+end

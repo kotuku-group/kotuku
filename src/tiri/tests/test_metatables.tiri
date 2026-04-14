@@ -1,0 +1,641 @@
+-- Flute tests for metatable support: setmetatable/getmetatable, metamethods for arithmetic,
+-- comparison, string/length, indexing, callable tables, and protected metatables.
+-- Note: __close and __gc are covered in test_close.tiri; this suite covers all other metamethods.
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Metatable Basics
+
+@Test function SetAndGetMetatable()
+   t = {}
+   mt = {}
+   result = setmetatable(t, mt)
+   assert(result is t, "setmetatable should return the table")
+   assert(getmetatable(t) is mt, "getmetatable should return the metatable")
+end
+
+@Test function GetMetatableNone()
+   t = {}
+   assert(getmetatable(t) is nil, "Table without metatable should return nil")
+end
+
+@Test function RemoveMetatable()
+   t = {}
+   mt = { __index = function() return 'value' end }
+   setmetatable(t, mt)
+   assert(getmetatable(t) is mt, "Should have metatable before removal")
+
+   setmetatable(t, nil)
+   assert(getmetatable(t) is nil, "Metatable should be nil after removal")
+end
+
+@Test function SharedMetatable()
+   mt = { __index = function(Self, Key) return Key .. '_default' end }
+   a = setmetatable({}, mt)
+   b = setmetatable({}, mt)
+   assert(getmetatable(a) is getmetatable(b), "Both tables should share the same metatable")
+   assert(a.foo is 'foo_default', "a.foo should use shared __index")
+   assert(b.bar is 'bar_default', "b.bar should use shared __index")
+end
+
+@Test function ReplaceMetatable()
+   t = {}
+   mt1 = { __index = function() return 'first' end }
+   mt2 = { __index = function() return 'second' end }
+   setmetatable(t, mt1)
+   assert(t.x is 'first', "Should use first metatable")
+   setmetatable(t, mt2)
+   assert(t.x is 'second', "Should use second metatable after replacement")
+   assert(getmetatable(t) is mt2, "getmetatable should return the new metatable")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Arithmetic Metamethods
+
+-- Helper: create a simple 2D vector type with arithmetic metamethods
+
+function newVec(X, Y)
+   vec_mt = {
+      __add = function(A, B) return newVec(A.x + B.x, A.y + B.y) end,
+      __sub = function(A, B) return newVec(A.x - B.x, A.y - B.y) end,
+      __mul = function(A, B)
+         if type(B) is 'number' then return newVec(A.x * B, A.y * B) end
+         if type(A) is 'number' then return newVec(A * B.x, A * B.y) end
+         return newVec(A.x * B.x, A.y * B.y)
+      end,
+      __div = function(A, B)
+         if type(B) is 'number' then return newVec(A.x / B, A.y / B) end
+         return newVec(A.x / B.x, A.y / B.y)
+      end,
+      __mod = function(A, B)
+         if type(B) is 'number' then return newVec(A.x % B, A.y % B) end
+         return newVec(A.x % B.x, A.y % B.y)
+      end,
+      __pow = function(A, B)
+         if type(B) is 'number' then return newVec(A.x ** B, A.y ** B) end
+         return newVec(A.x ** B.x, A.y ** B.y)
+      end,
+      __unm = function(A) return newVec(-A.x, -A.y) end
+   }
+   return setmetatable({ x = X, y = Y }, vec_mt)
+end
+
+@Test function MetaAdd()
+   v1 = newVec(1, 2)
+   v2 = newVec(3, 4)
+   v3 = v1 + v2
+   assert(v3.x is 4, "__add: x should be 4, got " .. v3.x)
+   assert(v3.y is 6, "__add: y should be 6, got " .. v3.y)
+end
+
+@Test function MetaSub()
+   v1 = newVec(10, 20)
+   v2 = newVec(3, 7)
+   v3 = v1 - v2
+   assert(v3.x is 7, "__sub: x should be 7, got " .. v3.x)
+   assert(v3.y is 13, "__sub: y should be 13, got " .. v3.y)
+end
+
+@Test function MetaMul()
+   v = newVec(3, 4)
+   v2 = v * newVec(2, 3)
+   assert(v2.x is 6, "__mul vec*vec: x should be 6, got " .. v2.x)
+   assert(v2.y is 12, "__mul vec*vec: y should be 12, got " .. v2.y)
+end
+
+@Test function MetaMulScalar()
+   v = newVec(3, 4)
+   v2 = v * 2
+   assert(v2.x is 6, "__mul vec*scalar: x should be 6, got " .. v2.x)
+   assert(v2.y is 8, "__mul vec*scalar: y should be 8, got " .. v2.y)
+
+   v3 = 3 * v
+   assert(v3.x is 9, "__mul scalar*vec: x should be 9, got " .. v3.x)
+   assert(v3.y is 12, "__mul scalar*vec: y should be 12, got " .. v3.y)
+end
+
+@Test function MetaDiv()
+   v = newVec(10, 20)
+   v2 = v / 2
+   assert(v2.x is 5, "__div: x should be 5, got " .. v2.x)
+   assert(v2.y is 10, "__div: y should be 10, got " .. v2.y)
+end
+
+@Test function MetaMod()
+   v = newVec(10, 7)
+   v2 = v % 3
+   assert(v2.x is 1, "__mod: x should be 1, got " .. v2.x)
+   assert(v2.y is 1, "__mod: y should be 1, got " .. v2.y)
+end
+
+@Test function MetaPow()
+   v = newVec(2, 3)
+   v2 = v ** 2
+   assert(v2.x is 4, "__pow: x should be 4, got " .. v2.x)
+   assert(v2.y is 9, "__pow: y should be 9, got " .. v2.y)
+end
+
+@Test function MetaUnm()
+   v = newVec(5, -3)
+   v2 = -v
+   assert(v2.x is -5, "__unm: x should be -5, got " .. v2.x)
+   assert(v2.y is 3, "__unm: y should be 3, got " .. v2.y)
+end
+
+@Test function ArithmeticChaining()
+   v1 = newVec(1, 2)
+   v2 = newVec(3, 4)
+   v3 = newVec(5, 6)
+   result = v1 + v2 + v3
+   assert(result.x is 9, "Chained add: x should be 9, got " .. result.x)
+   assert(result.y is 12, "Chained add: y should be 12, got " .. result.y)
+end
+
+@Test function ArithmeticMixed()
+   v1 = newVec(2, 4)
+   v2 = newVec(1, 1)
+   result = (v1 - v2) * 3
+   assert(result.x is 3, "Mixed (v1-v2)*3: x should be 3, got " .. result.x)
+   assert(result.y is 9, "Mixed (v1-v2)*3: y should be 9, got " .. result.y)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Comparison & Equality Metamethods
+
+-- Shared metatable so that __eq is invoked (both operands must share the same metatable)
+
+cmp_mt = {
+   __eq = function(A, B) return A.val is B.val end,
+   __lt = function(A, B) return A.val < B.val end,
+   __le = function(A, B) return A.val <= B.val end
+}
+
+function newComparable(Val)
+   return setmetatable({ val = Val }, cmp_mt)
+end
+
+@Test function MetaEqTrue()
+   a = newComparable(42)
+   b = newComparable(42)
+   assert(a is b, "__eq: equal values should compare as equal")
+end
+
+@Test function MetaEqFalse()
+   a = newComparable(1)
+   b = newComparable(2)
+   assert(not (a is b), "__eq: different values should not compare as equal")
+end
+
+@Test function MetaLt()
+   a = newComparable(1)
+   b = newComparable(2)
+   assert(a < b, "__lt: 1 should be less than 2")
+   assert(not (b < a), "__lt: 2 should not be less than 1")
+   assert(not (a < a), "__lt: value should not be less than itself")
+end
+
+@Test function MetaLe()
+   a = newComparable(1)
+   b = newComparable(2)
+   c = newComparable(2)
+   assert(a <= b, "__le: 1 should be <= 2")
+   assert(b <= c, "__le: 2 should be <= 2")
+   assert(not (b <= a), "__le: 2 should not be <= 1")
+end
+
+@Test function MetaGtGe()
+   -- > and >= use __lt and __le with swapped operands
+   a = newComparable(5)
+   b = newComparable(3)
+   assert(a > b, "> should work via __lt")
+   assert(a >= b, ">= should work via __le")
+   c = newComparable(5)
+   assert(a >= c, ">= with equal values should work via __le")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- String & Length Metamethods
+
+@Test function MetaToString()
+   mt = { __tostring = function(Self) return 'MyObject(' .. Self.val .. ')' end }
+   obj = setmetatable({ val = 42 }, mt)
+   result = tostring(obj)
+   assert(result is 'MyObject(42)', "__tostring should return custom string, got '" .. result .. "'")
+end
+
+@Test function MetaToStringInConcat()
+   mt = { __tostring = function(Self) return 'item' end }
+   obj = setmetatable({}, mt)
+   result = 'The ' .. tostring(obj) .. ' is here'
+   assert(result is 'The item is here', "__tostring used in concatenation, got '" .. result .. "'")
+end
+
+@Test function MetaLen()
+   mt = { __len = function(Self) return Self.custom_size end }
+   obj = setmetatable({ custom_size = 42 }, mt)
+   assert(#obj is 42, "__len should return custom length, got " .. #obj)
+end
+
+@Test function MetaLenZero()
+   mt = { __len = function(Self) return 0 end }
+   obj = setmetatable({ 'a', 'b', 'c' }, mt)
+   assert(#obj is 0, "__len returning 0 should override actual length")
+end
+
+@Test function MetaConcat()
+   mt = {
+      __concat = function(A, B)
+         if type(A) is 'table' and type(B) is 'table' then
+            return setmetatable({ val = A.val .. B.val }, getmetatable(A))
+         end
+         if type(A) is 'table' then
+            return setmetatable({ val = A.val .. B }, getmetatable(A))
+         end
+         return setmetatable({ val = A .. B.val }, getmetatable(B))
+      end
+   }
+   a = setmetatable({ val = 'hello' }, mt)
+   b = setmetatable({ val = ' world' }, mt)
+   c = a .. b
+   assert(c.val is 'hello world', "__concat table..table, got '" .. c.val .. "'")
+end
+
+@Test function MetaConcatWithString()
+   mt = {
+      __concat = function(A, B)
+         if type(A) is 'table' then
+            return A.val .. B
+         end
+         return A .. B.val
+      end
+   }
+   obj = setmetatable({ val = 'data' }, mt)
+   result = obj .. '!'
+   assert(result is 'data!', "__concat table..string, got '" .. result .. "'")
+
+   result2 = 'prefix_' .. obj
+   assert(result2 is 'prefix_data', "__concat string..table, got '" .. result2 .. "'")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Indexing: __index and __newindex
+
+@Test function MetaIndexFunction()
+   mt = { __index = function(Self, Key) return Key .. '_default' end }
+   t = setmetatable({}, mt)
+   assert(t.foo is 'foo_default', "__index function should provide default, got '" .. tostring(t.foo) .. "'")
+   assert(t.bar is 'bar_default', "__index function should work for any key")
+end
+
+@Test function MetaIndexTable()
+   defaults = { x = 10, y = 20, z = 30 }
+   mt = { __index = defaults }
+   t = setmetatable({}, mt)
+   assert(t.x is 10, "__index table: x should be 10")
+   assert(t.y is 20, "__index table: y should be 20")
+   assert(t.z is 30, "__index table: z should be 30")
+end
+
+@Test function MetaIndexOverride()
+   -- Direct values should take precedence over __index
+   defaults = { x = 10, y = 20 }
+   mt = { __index = defaults }
+   t = setmetatable({ x = 99 }, mt)
+   assert(t.x is 99, "Direct value should override __index, got " .. t.x)
+   assert(t.y is 20, "Missing key should fall through to __index")
+end
+
+@Test function MetaIndexChain()
+   -- Chain of __index tables
+   base = { colour = 'red' }
+   mid = setmetatable({ size = 'large' }, { __index = base })
+   top = setmetatable({}, { __index = mid })
+
+   assert(top.size is 'large', "Should find 'size' in mid table")
+   assert(top.colour is 'red', "Should chain through to base table")
+   assert(top.missing is nil, "Truly missing key should return nil")
+end
+
+@Test function MetaNewIndex()
+   log = {}
+   mt = {
+      __newindex = function(Self, Key, Value)
+         table.insert(log, Key .. '=' .. tostring(Value))
+         rawset(Self, Key, Value)
+      end
+   }
+   t = setmetatable({}, mt)
+   t.foo = 'bar'
+   t.num = 42
+
+   assert(t.foo is 'bar', "__newindex should still set the value")
+   assert(t.num is 42, "__newindex should still set numeric value")
+   assert(#log is 2, "__newindex should have been called twice, got " .. #log)
+   assert(log[0] is 'foo=bar', "First log entry should be 'foo=bar', got '" .. log[0] .. "'")
+   assert(log[1] is 'num=42', "Second log entry should be 'num=42', got '" .. log[1] .. "'")
+end
+
+@Test function MetaNewIndexReadOnly()
+   mt = {
+      __newindex = function(Self, Key, Value)
+         error("Cannot modify read-only table: key '" .. Key .. "'")
+      end
+   }
+   t = setmetatable({}, mt)
+
+   try
+      t.anything = 'value'
+   except err
+      assert(tostring(err.message):find('read-only'), "Error should mention read-only, got: " .. tostring(err.message))
+   success
+      error("Setting a key on read-only table should fail")
+   end
+end
+
+@Test function MetaNewIndexExistingKey()
+   -- __newindex is only called for NEW keys; existing keys bypass it
+   call_count = 0
+   mt = {
+      __newindex = function(Self, Key, Value)
+         call_count++
+         rawset(Self, Key, Value)
+      end
+   }
+   t = setmetatable({}, mt)
+   t.x = 1       -- New key: __newindex called
+   assert(call_count is 1, "__newindex should be called for new key")
+
+   t.x = 2       -- Existing key: __newindex NOT called
+   assert(call_count is 1, "__newindex should NOT be called for existing key, got " .. call_count)
+   assert(t.x is 2, "Existing key should be updated directly")
+end
+
+@Test function ProxyTable()
+   -- Classic proxy pattern: separate storage from the proxy object
+   storage = {}
+   mt = {
+      __index = function(Self, Key)
+         return storage[Key]
+      end,
+      __newindex = function(Self, Key, Value)
+         storage[Key] = Value
+      end
+   }
+   proxy = setmetatable({}, mt)
+
+   proxy.name = 'test'
+   proxy.value = 42
+
+   assert(proxy.name is 'test', "Proxy read should work")
+   assert(proxy.value is 42, "Proxy numeric read should work")
+   assert(storage.name is 'test', "Storage should contain the value")
+   assert(storage.value is 42, "Storage should contain numeric value")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Callable Tables (__call)
+
+@Test function MetaCallBasic()
+   mt = { __call = function(Self) return 'called' end }
+   t = setmetatable({}, mt)
+   result = t()
+   assert(result is 'called', "__call basic should return 'called', got '" .. tostring(result) .. "'")
+end
+
+@Test function MetaCallWithArgs()
+   mt = { __call = function(Self, A, B) return A + B end }
+   t = setmetatable({}, mt)
+   result = t(3, 4)
+   assert(result is 7, "__call with args should return 7, got " .. result)
+end
+
+@Test function MetaCallMultipleReturns()
+   mt = { __call = function(Self, X) return X, X * 2, X * 3 end }
+   t = setmetatable({}, mt)
+   a, b, c = t(5)
+   assert(a is 5, "__call first return should be 5, got " .. a)
+   assert(b is 10, "__call second return should be 10, got " .. b)
+   assert(c is 15, "__call third return should be 15, got " .. c)
+end
+
+@Test function MetaCallSelfAccess()
+   mt = {
+      __call = function(Self, Key)
+         return Self.data[Key]
+      end
+   }
+   t = setmetatable({ data = { a = 1, b = 2, c = 3 } }, mt)
+   assert(t('a') is 1, "__call with self access, a should be 1")
+   assert(t('b') is 2, "__call with self access, b should be 2")
+   assert(t('c') is 3, "__call with self access, c should be 3")
+end
+
+@Test function MetaCallAsFactory()
+   -- Callable table acting as a constructor/factory
+   Point = setmetatable({}, {
+      __call = function(Self, X, Y)
+         return { x = X, y = Y }
+      end
+   })
+
+   p = Point(10, 20)
+   assert(p.x is 10, "Factory-created point x should be 10")
+   assert(p.y is 20, "Factory-created point y should be 20")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Protected Metatables (__metatable)
+
+@Test function MetaProtectedGetmetatable()
+   mt = {
+      __metatable = 'protected',
+      __index = function() return 'value' end
+   }
+   t = setmetatable({}, mt)
+   result = getmetatable(t)
+   assert(result is 'protected', "__metatable should override getmetatable, got '" .. tostring(result) .. "'")
+end
+
+@Test function MetaProtectedSetmetatable()
+   mt = { __metatable = 'no access' }
+   t = setmetatable({}, mt)
+
+   try
+      setmetatable(t, {})
+   except err
+      assert(tostring(err.message):find('protect'), "Error should mention protection, got: " .. tostring(err.message))
+   success
+      error("setmetatable on protected table should fail")
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Rawget and Rawset
+
+@Test function RawgetBypassesIndex()
+   mt = { __index = function() return 'metamethod' end }
+   t = setmetatable({ real = 'actual' }, mt)
+   assert(t.missing is 'metamethod', "Normal access should use __index")
+   assert(rawget(t, 'missing') is nil, "rawget should bypass __index")
+   assert(rawget(t, 'real') is 'actual', "rawget should find actual keys")
+end
+
+@Test function RawsetBypassesNewindex()
+   call_count = 0
+   mt = {
+      __newindex = function(Self, Key, Value)
+         call_count++
+         rawset(Self, Key, Value)
+      end
+   }
+   t = setmetatable({}, mt)
+   rawset(t, 'direct', 99)
+   assert(call_count is 0, "rawset should bypass __newindex, got " .. call_count)
+   assert(t.direct is 99, "rawset should still set the value")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Complex Patterns
+
+@Test function DefaultValuesPattern()
+   -- Common pattern: providing default values via __index
+   defaults = { width = 100, height = 200, colour = 'blue' }
+   function createWidget(Opts)
+      return setmetatable(Opts or {}, { __index = defaults })
+   end
+
+   w1 = createWidget({ width = 50 })
+   assert(w1.width is 50, "Explicit width should be 50")
+   assert(w1.height is 200, "Default height should be 200")
+   assert(w1.colour is 'blue', "Default colour should be 'blue'")
+
+   w2 = createWidget()
+   assert(w2.width is 100, "All defaults: width should be 100")
+   assert(w2.height is 200, "All defaults: height should be 200")
+end
+
+@Test function CountingTable()
+   -- Table that counts access and writes using proxy pattern
+   -- Data is stored separately so every read/write goes through metamethods
+   function createCounting()
+      state = { reads = 0, writes = 0, data = {} }
+      mt = {
+         __index = function(Self, Key)
+            state.reads++
+            return state.data[Key]
+         end,
+         __newindex = function(Self, Key, Value)
+            state.writes++
+            state.data[Key] = Value
+         end
+      }
+      return setmetatable({}, mt), state
+   end
+
+   t, stats = createCounting()
+   t.x = 10
+   t.y = 20
+   assert(stats.writes is 2, "Should have 2 writes, got " .. stats.writes)
+
+   val1 = t.x
+   val2 = t.y
+   val3 = t.z
+   assert(val1 is 10, "Read x should be 10")
+   assert(val2 is 20, "Read y should be 20")
+   assert(val3 is nil, "Read z should be nil")
+   assert(stats.reads is 3, "Should have 3 reads, got " .. stats.reads)
+end
+
+@Test function ClassLikePattern()
+   -- OOP-style class using metatables
+   Animal = {}
+   Animal.__index = Animal
+
+   function Animal.new(Name, Sound)
+      return setmetatable({ name = Name, sound = Sound }, Animal)
+   end
+
+   function Animal.speak(Self)
+      return Self.name .. ' says ' .. Self.sound
+   end
+
+   dog = Animal.new('Dog', 'Woof')
+   cat = Animal.new('Cat', 'Meow')
+
+   assert(dog:speak() is 'Dog says Woof', "Dog should speak correctly, got '" .. dog:speak() .. "'")
+   assert(cat:speak() is 'Cat says Meow', "Cat should speak correctly, got '" .. cat:speak() .. "'")
+   assert(getmetatable(dog) is Animal, "Dog metatable should be Animal")
+   assert(getmetatable(cat) is Animal, "Cat metatable should be Animal")
+end
+
+@Test function InheritancePattern()
+   -- Inheritance chain
+   Base = {}
+   Base.__index = Base
+   function Base.new(Name)
+      return setmetatable({ name = Name }, Base)
+   end
+   function Base.greet(Self)
+      return 'Hello, I am ' .. Self.name
+   end
+
+   Derived = setmetatable({}, { __index = Base })
+   Derived.__index = Derived
+   function Derived.new(Name, Extra)
+      obj = Base.new(Name)
+      obj.extra = Extra
+      return setmetatable(obj, Derived)
+   end
+   function Derived.info(Self)
+      return Self:greet() .. ' (' .. Self.extra .. ')'
+   end
+
+   d = Derived.new('Test', 'special')
+   assert(d:greet() is 'Hello, I am Test', "Inherited method should work, got '" .. d:greet() .. "'")
+   assert(d:info() is 'Hello, I am Test (special)', "Derived method should work, got '" .. d:info() .. "'")
+end
+
+-- Shared metatable for wrapped values so __eq works (both operands must share the same metatable).
+-- Declared first, then populated after newWrapped is defined.
+wrapped_mt = {}
+
+function newWrapped(Val)
+   return setmetatable({ val = Val }, wrapped_mt)
+end
+
+wrapped_mt.__add      = function(A, B) return newWrapped(A.val + B.val) end
+wrapped_mt.__tostring = function(Self) return 'Wrapped(' .. Self.val .. ')' end
+wrapped_mt.__eq       = function(A, B) return A.val is B.val end
+wrapped_mt.__len      = function(Self) return Self.val end
+wrapped_mt.__call     = function(Self) return Self.val end
+wrapped_mt.__unm      = function(Self) return newWrapped(-Self.val) end
+
+@Test function CombinedMetamethods()
+
+   w1 = newWrapped(10)
+   w2 = newWrapped(20)
+
+   -- Test __add
+   w3 = w1 + w2
+   assert(w3.val is 30, "Combined __add: val should be 30")
+
+   -- Test __tostring
+   assert(tostring(w1) is 'Wrapped(10)', "Combined __tostring")
+
+   -- Test __eq
+   w4 = newWrapped(10)
+   assert(w1 is w4, "Combined __eq: same value should be equal")
+   assert(not (w1 is w2), "Combined __eq: different values should not be equal")
+
+   -- Test __len
+   assert(#w1 is 10, "Combined __len: should return val")
+
+   -- Test __call
+   assert(w2() is 20, "Combined __call: should return val")
+
+   -- Test __unm
+   neg = -w1
+   assert(neg.val is -10, "Combined __unm: should negate val")
+end

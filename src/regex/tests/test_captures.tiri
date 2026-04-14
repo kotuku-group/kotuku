@@ -1,0 +1,23 @@
+-- Flute tests verifying capture normalisation behaviour
+
+@Test function OptionalGroups()
+   matcher = regex.new("(\\d+)(\\.\\d+)?")
+   result = matcher.match("42")
+
+   assert(result, "Should match the number")
+   assert(#result is 3, "Expect three captures: full, integer, optional; got " .. #result)
+   assert(result[0] is "42", "Full match should be 42")
+   assert(result[1] is "42", "Integer capture should be 42")
+   assert(result[2] is "", "Optional group should be empty when not matched")
+end
+
+@Test function NestedOptional()
+   matcher = regex.new("(a|(b|c))?d")
+   result = matcher.match("d")
+
+   assert(result, "Should match the single letter")
+   assert(#result >= 1 and result[0] is "d", "Full match should be d, got " .. tostring(result[0]))
+   assert(#result is 3, "Expected full match and three nested groups, got " .. #result)
+   assert(result[1] is "", "Outer optional group should be empty")
+   assert(result[2] is "", "Inner alternation should be empty")
+end

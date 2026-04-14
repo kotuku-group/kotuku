@@ -1,0 +1,231 @@
+-- Time Class Test Suite
+
+------------------------------------------------------------------------------------------------------------------------
+-- Test basic time object creation and Query action
+
+@Test function TimeCreation()
+   time_obj = obj.new('time')
+   time_obj.acQuery()
+
+   -- Verify all fields are populated with reasonable values
+   assert(time_obj.year >= 1970, 'Year should be >= 1970, got: ' .. tostring(time_obj.year))
+   assert(time_obj.year <= 3000, 'Year should be <= 3000, got: ' .. tostring(time_obj.year))
+   assert(time_obj.month >= 1 and time_obj.month <= 12, 'Month should be 1-12, got: ' .. tostring(time_obj.month))
+   assert(time_obj.day >= 1 and time_obj.day <= 31, 'Day should be 1-31, got: ' .. tostring(time_obj.day))
+   assert(time_obj.hour >= 0 and time_obj.hour <= 23, 'Hour should be 0-23, got: ' .. tostring(time_obj.hour))
+   assert(time_obj.minute >= 0 and time_obj.minute <= 59, 'Minute should be 0-59, got: ' .. tostring(time_obj.minute))
+   assert(time_obj.second >= 0 and time_obj.second <= 59, 'Second should be 0-59, got: ' .. tostring(time_obj.second))
+   assert(time_obj.milliSecond >= 0 and time_obj.milliSecond <= 999, 'MilliSecond should be 0-999, got: ' .. tostring(time_obj.milliSecond))
+   assert(time_obj.microSecond >= 0 and time_obj.microSecond <= 999999, 'MicroSecond should be 0-999999, got: ' .. tostring(time_obj.microSecond))
+   assert(time_obj.dayOfWeek >= 0 and time_obj.dayOfWeek <= 6, 'DayOfWeek should be 0-6, got: ' .. tostring(time_obj.dayOfWeek))
+end
+
+------------------------------------------------------------------------------------------------------------------------
+-- Test SystemTime field functionality
+
+@Test function SystemTime()
+   time_obj = obj.new('time')
+   time_obj.acQuery()
+
+   system_time = time_obj.systemTime
+   assert(system_time > 0, 'SystemTime should be positive, got: ' .. tostring(system_time))
+
+   -- Let's examine what we actually get and make reasonable assertions
+   print('SystemTime: ' .. tostring(system_time))
+   print('Year: ' .. tostring(time_obj.year))
+
+   -- SystemTime should be reasonable for the current year - just check it's a sane value
+   if time_obj.year >= 2020 then
+      -- Should be at least some microseconds for modern times
+      assert(system_time > 1000, 'SystemTime should be at least 1000 microseconds for modern dates: ' .. tostring(system_time))
+   end
+end
+
+------------------------------------------------------------------------------------------------------------------------
+-- Test TimeStamp field functionality
+
+@Test function TimeStamp()
+   time_obj = obj.new('time')
+   time_obj.acQuery()
+   timestamp = time_obj.timeStamp
+   assert(timestamp > 0, 'TimeStamp should be positive, got: ' .. tostring(timestamp))
+end
+
+------------------------------------------------------------------------------------------------------------------------
+-- Test specific date and time setting
+
+@Test function SetTimeFields()
+   time_obj = obj.new('time')
+
+   -- Set a specific date and time: 2024-03-15 14:30:45
+   time_obj.year = 2024
+   time_obj.month = 3
+   time_obj.day = 15
+   time_obj.hour = 14
+   time_obj.minute = 30
+   time_obj.second = 45
+   time_obj.milliSecond = 123
+   time_obj.microSecond = 456789
+
+   -- Verify the values were set correctly
+   assert(time_obj.year is 2024, 'Year not set correctly')
+   assert(time_obj.month is 3, 'Month not set correctly')
+   assert(time_obj.day is 15, 'Day not set correctly')
+   assert(time_obj.hour is 14, 'Hour not set correctly')
+   assert(time_obj.minute is 30, 'Minute not set correctly')
+   assert(time_obj.second is 45, 'Second not set correctly')
+   assert(time_obj.milliSecond is 123, 'MilliSecond not set correctly')
+   assert(time_obj.microSecond is 456789, 'MicroSecond not set correctly')
+
+   print('Time fields set successfully: ' .. time_obj.year .. '-' .. string.format('%02d', time_obj.month) .. '-' .. string.format('%02d', time_obj.day) .. ' ' .. string.format('%02d', time_obj.hour) .. ':' .. string.format('%02d', time_obj.minute) .. ':' .. string.format('%02d', time_obj.second))
+end
+
+------------------------------------------------------------------------------------------------------------------------
+-- Test day of week calculation for known dates
+
+@Test function DayOfWeekCalculation()
+   time_obj = obj.new('time')
+   time_obj.acQuery()
+
+   current_dow = time_obj.dayOfWeek
+   current_date = time_obj.year .. '-' .. string.format('%02d', time_obj.month) .. '-' .. string.format('%02d', time_obj.day)
+   assert(current_dow >= 0 and current_dow <= 6, 'Day of week should be 0-6, got: ' .. tostring(current_dow))
+end
+
+------------------------------------------------------------------------------------------------------------------------
+-- Test consistency between multiple queries
+
+@Test function ConsistentQueries()
+   time1 = obj.new('time')
+   time2 = obj.new('time')
+
+   -- Query both times in quick succession
+   time1.acQuery()
+   time2.acQuery()
+
+   -- Times should be very close (within a few seconds)
+   time_diff = math.abs(time1.systemTime - time2.systemTime)
+   assert(time_diff < 10000000, 'Time difference too large between consecutive queries: ' .. tostring(time_diff) .. ' microseconds')
+
+   assert(time1.year is time2.year, 'Years should match between consecutive queries')
+   assert(time1.month is time2.month, 'Months should match between consecutive queries')
+   assert(time1.day is time2.day, 'Days should match between consecutive queries')
+end
+
+------------------------------------------------------------------------------------------------------------------------
+-- Test leap year handling
+
+@Test function LeapYearDates()
+   time_obj = obj.new('time')
+
+   -- Test February 29th in leap year 2024
+   time_obj.year = 2024
+   time_obj.month = 2
+   time_obj.day = 29
+   time_obj.hour = 12
+   time_obj.minute = 0
+   time_obj.second = 0
+
+   -- Verify the values were set correctly
+   assert(time_obj.year is 2024, 'Leap year not set correctly')
+   assert(time_obj.month is 2, 'Leap year month not set correctly')
+   assert(time_obj.day is 29, 'Leap year day (Feb 29th) not set correctly')
+   assert(time_obj.hour is 12, 'Leap year hour not set correctly')
+   assert(time_obj.minute is 0, 'Leap year minute not set correctly')
+   assert(time_obj.second is 0, 'Leap year second not set correctly')
+
+   print('Set leap year date: ' .. time_obj.year .. '-' .. string.format('%02d', time_obj.month) .. '-' .. string.format('%02d', time_obj.day))
+end
+
+------------------------------------------------------------------------------------------------------------------------
+-- Test edge case dates
+
+@Test function EdgeCaseDates()
+   time_obj = obj.new('time')
+
+   -- Test end of year
+   time_obj.year = 2023
+   time_obj.month = 12
+   time_obj.day = 31
+   time_obj.hour = 23
+   time_obj.minute = 59
+   time_obj.second = 59
+   time_obj.milliSecond = 999
+
+   print('End of year test: ' .. time_obj.year .. '-' .. string.format('%02d', time_obj.month) .. '-' .. string.format('%02d', time_obj.day) .. ' ' .. string.format('%02d', time_obj.hour) .. ':' .. string.format('%02d', time_obj.minute) .. ':' .. string.format('%02d', time_obj.second) .. '.' .. string.format('%03d', time_obj.milliSecond))
+
+   -- Test beginning of year
+   time_obj.year = 2024
+   time_obj.month = 1
+   time_obj.day = 1
+   time_obj.hour = 0
+   time_obj.minute = 0
+   time_obj.second = 0
+   time_obj.milliSecond = 0
+
+   print('Beginning of year test: ' .. time_obj.year .. '-' .. string.format('%02d', time_obj.month) .. '-' .. string.format('%02d', time_obj.day) .. ' ' .. string.format('%02d', time_obj.hour) .. ':' .. string.format('%02d', time_obj.minute) .. ':' .. string.format('%02d', time_obj.second) .. '.' .. string.format('%03d', time_obj.milliSecond))
+end
+
+------------------------------------------------------------------------------------------------------------------------
+-- Test microsecond precision
+
+@Test function MicrosecondPrecision()
+   time_obj = obj.new('time')
+   time_obj.acQuery()
+
+   first_query_us = time_obj.microSecond
+
+   -- Brief delay (but not enough to change microseconds in most cases)
+   for i = 1, 1000 do end
+
+   time_obj.acQuery()
+   second_query_us = time_obj.microSecond
+
+   -- Check that we have microsecond precision (the values should be different or at least in reasonable range)
+   print('First query microseconds: ' .. tostring(first_query_us))
+   print('Second query microseconds: ' .. tostring(second_query_us))
+
+   assert(first_query_us >= 0 and first_query_us <= 999999, 'Microsecond value out of range')
+   assert(second_query_us >= 0 and second_query_us <= 999999, 'Microsecond value out of range')
+end
+
+------------------------------------------------------------------------------------------------------------------------
+-- Test SetTime method
+-- Note: Requires administrator privileges
+-- On Windows: needs SE_SYSTEMTIME_NAME privilege or admin rights
+-- On Unix: needs root access
+
+@Test; @Disabled function SetTimeMethod()
+   time_obj = obj.new('time')
+
+   -- Get current time first
+
+   time_obj.acQuery()
+   original_time = {
+      year = time_obj.year, month = time_obj.month, day = time_obj.day,
+      hour = time_obj.hour, minute = time_obj.minute, second = time_obj.second
+   }
+
+   local err
+   try
+      -- Try to set time to a specific known value
+      time_obj.year   = 2024
+      time_obj.month  = 12
+      time_obj.day    = 25
+      time_obj.hour   = 10
+      time_obj.minute = 30
+      time_obj.second = 0
+      err = time_obj.mtSetTime()
+
+      -- Restore original time if setting succeeded
+      time_obj.year   = original_time.year
+      time_obj.month  = original_time.month
+      time_obj.day    = original_time.day
+      time_obj.hour   = original_time.hour
+      time_obj.minute = original_time.minute
+      time_obj.second = original_time.second
+      time_obj.mtSetTime()
+   except e
+      print('SetTime method failed (expected if not running with admin privileges)')
+   end
+end

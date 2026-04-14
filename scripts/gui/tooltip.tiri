@@ -1,0 +1,100 @@
+--[[
+Documentation is available in the Kotuku Wiki.
+--]]
+
+   include('display', 'vector')
+
+   namespace 'gui'
+
+gui.tooltip = function(Options)
+   local self = { } -- Public variables
+
+   theme = gui.getTheme()
+
+   self.free = function()
+      self.surface.free()
+      table.clear(self)
+   end
+
+   local ptr = obj.find('systempointer')
+
+   self.surface = obj.new('surface', {
+      name = 'rgnTip',
+      x = ptr.x + 6, y = ptr.y, width = 300,
+      parent = 0, windowType = 'none',
+      flags = RNF_STICK_TO_FRONT | RNF_COMPOSITE
+   })
+
+   self.surface.detach()
+
+   self.scene = self.surface.new('VectorScene', { flags=VPF_RESIZE, surface=self.surface })
+
+   self.viewport = self.scene.new('VectorViewport', { })
+
+   self.box = self.viewport.new('VectorRectangle', {
+      x = 1, y = 1,
+      height = '100%', width = '100%',
+      stroke = theme.page.stroke,
+      fill = theme.page.bkgd,
+      strokeWidth = 2,
+      roundX = 4, roundY = 4,
+      resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
+         Vector.width  = Width - (Vector.x * 2)
+         Vector.height = Height - (Vector.y * 2)
+      end
+   })
+
+   self.text = self.viewport.new('VectorText', {
+      x         = gui.fonts.button.size,
+      string    = Options.text,
+      fill      = theme.page.text,
+      face      = gui.fonts.button.face,
+      fontStyle = gui.fonts.button.style,
+      fontSize  = string.format('%.2fpt', gui.fonts.button.size),
+      textFlags = VTXF_RASTER
+   })
+
+   self.surface.height = (gui.fonts.button.size*1.5) + self.text.fontSize
+   self.surface.y = ptr.y - self.surface.height
+   self.text.y = math.floor((self.viewport.height * 0.5) + (self.text.displaySize * 0.5))
+
+   -- This code segment attaches to the surface so that it works independently of the client.  It
+   -- terminates the tooltip when the pointer is moved by the user.
+
+   local script = self.surface.new('tiri', { name='flTip', statement=[[
+      include 'display'
+      surface = obj.find(arg('surface'))
+      if surface then
+         input.subscribe(JTYPE_MOVEMENT | JTYPE_BUTTON, nil, 0, function(Input, Message)
+            Input.unsubscribe()
+            surface.free()
+         end)
+      end
+   ]] })
+
+   script.setKey('surface', self.surface.id)
+   script.acActivate()
+
+   -- Reduce the width of the tooltip if the text is short.
+
+   if (self.surface.width > self.text.textWidth + (gui.fonts.button.size * 2)) then
+      self.surface.width = (gui.fonts.button.size * 2) + self.text.textWidth
+   end
+
+   -- Adjust the position of the tool tip so that it fits on the screen.
+--[[
+   if systemSurface != nil then
+      if self.surface.right > systemSurface.width then
+         self.surface.x = ptr.x - self.surface.width
+      end
+   end
+--]]
+
+   if self.surface.y < 0 then
+      self.surface.y = ptr.y + 20
+   end
+
+   self.surface.acShow()
+
+   return self
+end

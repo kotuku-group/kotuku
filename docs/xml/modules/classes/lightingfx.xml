@@ -11,7 +11,7 @@
     <id>1b9352d9</id>
     <idstring>LIGHTINGFX</idstring>
     <category>Graphics</category>
-    <copyright>Paul Manias © 2010-2025</copyright>
+    <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>The lighting effect class applies a diffuse or specular lighting effect to the alpha channel of an input bitmap, which functions as a bump map.  The output is an RGBA representation of the light effect.  If no light <fl>Colour</fl> is specified by the client then the output will be in grey scale.</p>
 <p>For diffuse lighting, the resulting RGBA image is computed as follows:</p>

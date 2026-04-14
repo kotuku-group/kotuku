@@ -229,9 +229,9 @@ public:
 
 class anim_value : public anim_base {
 public:
-   XMLTag *tag = nullptr;
+   XTag *tag = nullptr;
 
-   anim_value(extSVG *pSVG, OBJECTID pTarget, XMLTag *pTag) : anim_base(pSVG, pTarget), tag(pTag) { }
+   anim_value(extSVG *pSVG, OBJECTID pTarget, XTag *pTag) : anim_base(pSVG, pTarget), tag(pTag) { }
    void perform();
    void set_value(objVector &Vector);
 };

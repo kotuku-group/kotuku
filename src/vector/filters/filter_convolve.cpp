@@ -175,13 +175,13 @@ static ERR CONVOLVEFX_Draw(extConvolveFX *Self, struct acDraw *Args)
    const int canvas_width  = Self->Target->Clip.Right - Self->Target->Clip.Left;
    const int canvas_height = Self->Target->Clip.Bottom - Self->Target->Clip.Top;
 
-   if (canvas_width * canvas_height > 4096 * 4096) return ERR::Failed; // Bail on really large bitmaps.
+   if (canvas_width * canvas_height > 4096 * 4096) return ERR::OutOfRange; // Bail on really large bitmaps.
 
    std::vector<uint8_t> data;
    data.resize(canvas_width * canvas_height * Self->Target->BytesPerPixel);
 
    objBitmap *inBmp;
-   if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) != ERR::Okay) return ERR::Failed;
+   if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) != ERR::Okay) return ERR::NoData;
 
    // Note: The inBmp->Data pointer is pre-adjusted to match the Clip Left and Top values (i.e. add
    // (Clip.Left * BPP) + (Clip.Top * LineWidth) to Data in order to get its true value)
@@ -245,7 +245,7 @@ static ERR CONVOLVEFX_Init(extConvolveFX *Self)
 
    if (Self->MatrixSize != filter_size) {
       log.warning("Matrix size of %d does not match the filter size of %dx%d", Self->MatrixSize, Self->MatrixColumns, Self->MatrixRows);
-      return ERR::Failed;
+      return ERR::Mismatch;
    }
 
    // Use client-provided tx/ty values, otherwise default according to the SVG standard.

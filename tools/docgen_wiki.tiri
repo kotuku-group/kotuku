@@ -1,0 +1,159 @@
+#!/usr/bin/env origo
+-- This script will generate HTML documentation by running pandoc against every markdown document file found in the
+-- wiki folder.  It will fail if pandoc is not installed on the system.
+--
+-- Support parameters:
+--
+--   src: Source folder for markdown documents
+
+   import 'io/filesearch'
+
+   glSelf = <{ obj.find('self') }>
+   local rx_sdk_path = <{ regex.new([[(.+)CMakeLists\.txt]]) }>
+   local rx_wiki_path = <{ regex.new("[\\/\\\\]wiki[\\/\\\\]") }>
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Resolve the location of the Kōtuku SDK and create an 'sdk:' volume.
+
+function resolveSDKPath(Path)
+   local sdk_path
+   err = ERR_Failed
+   search_list = { }
+   if not Path then
+      search_path = 'CMakeLists.txt'
+      limit = 5
+      while (err != ERR_Okay) and (limit > 0) do
+         table.insert(search_list, search_path)
+         err, sdk_path = mSys.ResolvePath(search_path)
+         search_path = f'../{search_path}'
+         limit -= 1
+      end
+   else
+      table.insert(search_list, f'{Path}/CMakeLists.txt')
+      err, sdk_path = mSys.ResolvePath(f'{Path}/CMakeLists.txt')
+   end
+
+   if err is ERR_Okay then
+      sdk_path = rx_sdk_path.extract(sdk_path)
+   else
+      msg = ''
+      for path in values(search_list) do
+         msg ..= f'{path}\n'
+      end
+      print(f'Unable to find CMakeLists.txt after searching the following paths:\n{msg}')
+      error('A path to the Kōtuku SDK could not be determined.')
+   end
+
+   mSys.SetVolume('sdk', sdk_path)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+   resolveSDKPath(arg('sdk'))
+
+   state = mSys.GetSystemState()
+
+   pandoc = arg('pandoc', 'c:Program Files/Pandoc/pandoc')
+   md_folder = arg('wiki', 'sdk:docs/wiki/')
+
+   header = io.readAll('sdk:docs/wiki-header.html')
+   footer = io.readAll('sdk:docs/wiki-footer.html')
+
+   err, temp_output = mSys.ResolvePath('temp:markdown', RSF_NO_FILE_CHECK)
+   output_files = array<table>
+
+   err, pandoc_path = mSys.ResolvePath("pandoc", RSF_PATH)
+
+   if not pandoc_path?? then
+      if state.platform is 'Windows' then
+         pandoc_path = 'C:\\Program Files\\Pandoc\\pandoc.exe'
+         if mSys.AnalysePath(pandoc_path) != ERR_Okay then
+            pandoc_path = nil
+         end
+      else
+         pandoc_path = nil
+      end
+
+      assert(pandoc_path, 'pandoc not found on system path, please install it first.')
+   end
+
+   cmdlist = ''
+
+   io.search(md_folder, {
+      nameFilter = regex.new([[^.*\.md$]]),
+      matchFeedback = function(Path, FileName, File)
+         title = FileName:replace('-', ' ')
+         title = title:replace('.md', '')
+
+         src_path = Path .. FileName
+         output_path = rx_wiki_path.replace(src_path, '/html/wiki/')
+         output_path = output_path:replace('.md', '.html')
+
+         err, res_src_path = mSys.ResolvePath(src_path)
+         assert(err is ERR_Okay, f'Failed to resolve path {src_path}')
+
+         err, res_output_path = mSys.ResolvePath(output_path, RSF_NO_FILE_CHECK)
+         assert(err is ERR_Okay, f'Failed to resolve path {output_path}')
+
+         err, res_header_path = mSys.ResolvePath(glSelf.workingPath .. 'wiki-header.inc', RSF_NO_FILE_CHECK)
+         assert(err is ERR_Okay, 'Failed to resolve path to wiki-header.inc')
+
+         pandoc_output = f'{temp_output}-{math.random(1000000)}.html'
+         parameters = f'{res_src_path} -o {pandoc_output} -f gfm -t html5 -c github-markdown.css --wrap=preserve --embed-resource'
+
+         cmdlist ..= f'"{pandoc_path}" {parameters}\n'
+
+         output_files:push({ title=title, pandoc_output=pandoc_output, target_path=res_output_path })
+      end
+   })
+
+   output_path = arg('output') -- Optional output path for the generated script.
+
+   if state.platform is 'Windows' then
+      output_path ??= 'temp:docgen.bat'
+      cmdlist = cmdlist:replace('\\','\\\\')
+   else
+      output_path ??= 'temp:docgen.sh'
+      cmdlist = f'#!/bin/bash\n{cmdlist}'
+   end
+
+   fl = obj.new('file', { src=output_path, flags=FL_NEW|FL_WRITE, permissions=PERMIT_READ|PERMIT_WRITE|PERMIT_EXEC })
+   fl.acWrite(cmdlist)
+   fl.free()
+
+   if not arg('dry-run') then
+      print('Running generated script from ' .. output_path)
+
+      task = obj.new('task', {
+         src   = output_path,
+         flags = TSF_WAIT,
+         outputCallback = function(Task, Data)
+            -- Critical: Pandoc needs stdout to be consumed in Windows or it doesn't work
+         end,
+         timeOut = 20
+      })
+
+      task.acActivate()
+
+      mSys.DeleteFile(output_path)
+
+      for v in values(output_files) do
+         md_output = io.readAll(v.pandoc_output)
+         fl = obj.new('file', { path=v.target_path, flags=FL_WRITE|FL_NEW })
+
+         mod_header = header:replace('<title>Kōtuku Wiki</title>', '<title>Kōtuku Wiki - ' .. v.title .. '</title>')
+         md_output = md_output:replace('<hr />', '<hr>') -- HTML5 compliance
+         md_output = md_output:replace("\r\n", "\n") -- CRLF conversion
+
+         fl.acWrite(mod_header)
+         fl.acWrite('\n<h1>' .. v.title .. '</h1>\n')
+         fl.acWrite(md_output)
+         fl.acWrite(footer)
+
+         mSys.DeleteFile(v.pandoc_output)
+      end
+
+      print('Finished.')
+   else
+      print('Dry run, generated script available at ' .. output_path)
+   end

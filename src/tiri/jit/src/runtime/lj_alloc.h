@@ -1,0 +1,15 @@
+/*
+** Bundled memory allocator.
+** Donated to the public domain.
+*/
+
+#pragma once
+
+#include "lj_def.h"
+
+#ifndef LUAJIT_USE_SYSMALLOC
+LJ_FUNC void *lj_alloc_create(PRNGState *rs);
+LJ_FUNC void lj_alloc_setprng(void *msp, PRNGState *rs);
+LJ_FUNC void lj_alloc_destroy(void *msp);
+LJ_FUNC void *lj_alloc_f(void *msp, void *ptr, size_t osize, size_t nsize);
+#endif

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="VectorPolygon" mod="Vector" c="Extends the Vector class with support for generating polygons." cat="Graphics" id="2a04dc00" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="VectorPolygon" mod="Vector" c="Extends the Vector class with support for generating polygons." cat="Graphics" id="2a04dc00" v="1">
   <ai:f n="Closed" c="If true, the polygon will be closed between the start and end points." t="INT" a="GS"/>
   <ai:f n="PathLength" c="Calibrates the user agent's distance-along-a-path calculations with that of the author." t="INT" a="GS"/>
   <ai:f n="Points" c="A series of (X,Y) coordinates that define the polygon." t="STRING" a="S"/>

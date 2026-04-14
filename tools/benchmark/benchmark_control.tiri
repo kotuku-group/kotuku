@@ -1,0 +1,457 @@
+
+----------------------------------------------------------------------------------------------------------------------
+-- CONTROL FLOW
+----------------------------------------------------------------------------------------------------------------------
+
+-- Compare the performance of different ways to nullify unused return values from a function call
+
+function result_series()
+   return "One", 2, { three = 3 }
+end
+
+@Test function NullificationRetain()
+   for i in {0..10000000} do
+      local a, b, c = result_series()
+   end
+end
+
+@Test function NullificationBlank()
+   for i in {0..10000000} do
+      local _, _, c = result_series()
+   end
+end
+
+@Test function NullificationMask()
+   for i in {0..10000000} do
+      local c = [__*]result_series()
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Execute branching logic with if/elseif/else chains
+
+@Test function ControlIfElseChains()
+   for i in {0..1000000} do
+      local result = 0
+      local x = i % 100
+
+      -- Simple if-else
+      if x < 50 then
+         result = 1
+      else
+         result = 2
+      end
+
+      -- Multiple elseif branches
+      if x < 10 then
+         result = 0
+      elseif x < 20 then
+         result = 1
+      elseif x < 30 then
+         result = 2
+      elseif x < 40 then
+         result = 3
+      elseif x < 50 then
+         result = 4
+      elseif x < 60 then
+         result = 5
+      elseif x < 70 then
+         result = 6
+      elseif x < 80 then
+         result = 7
+      elseif x < 90 then
+         result = 8
+      else
+         result = 9
+      end
+
+      -- Nested if statements
+      if x < 50 then
+         if x < 25 then
+            result = x * 2
+         else
+            result = x * 3
+         end
+      else
+         if x < 75 then
+            result = x + 10
+         else
+            result = x + 20
+         end
+      end
+
+      -- Compound conditions
+      if x >= 20 and x < 40 then
+         result = 100
+      elseif x >= 40 and x < 60 then
+         result = 200
+      elseif x >= 60 or x < 10 then
+         result = 300
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Use ternary conditional operator for inline branching
+
+@Test function ControlTernaryOperator()
+   for i in {0..100000} do
+      local x = i % 100
+      local result = 0
+
+      -- Simple ternary
+      result = x < 50 ? 1 :> 0
+
+      -- Ternary with expressions
+      result = x % 2 is 0 ? x * 2 :> x * 3
+
+      -- Chained ternary (nested)
+      result = x < 25 ? 1 :> (x < 50 ? 2 :> (x < 75 ? 3 :> 4))
+
+      -- Ternary in expressions
+      local a = 10 + (x < 50 ? 5 :> 15)
+      local b = (x > 30 ? x :> 30) * 2
+
+      -- Ternary with function-like usage
+      local min_val = x < 50 ? x :> 50
+      local max_val = x > 25 ? x :> 25
+      local clamped = x < 20 ? 20 :> (x > 80 ? 80 :> x)
+
+      -- Ternary with boolean results
+      local is_even = x % 2 is 0 ? true :> false
+      local in_range = (x >= 25 and x <= 75) ? true :> false
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Use nil coalescing operators for default values
+
+@Test function ControlNilCoalescing()
+   for i in {0..100000} do
+      local result = 0
+
+      -- Basic ?? operator (nil coalescing)
+      local maybe_nil = i % 3 is 0 ? nil :> i
+      result = maybe_nil ?? 42
+
+      -- Chain of ?? operators
+      local a = i % 5 is 0 ? nil :> nil
+      local b = i % 3 is 0 ? nil :> i
+      local c = 100
+      result = a ?? b ?? c
+
+      -- ??= compound assignment
+      local value = i % 2 is 0 ? nil :> i
+      value ??= 99
+      result = value
+
+      -- ?? with expressions
+      local x = i % 7 is 0 ? nil :> i * 2
+      result = (x ?? 0) + 10
+
+      -- Nested nil coalescing
+      local outer = i % 4 is 0 ? nil :> { inner = i % 2 is 0 ? nil :> i }
+      local safe_val = outer ?? { inner = 0 }
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Execute numeric for loops with start, end, step
+
+@Test function ControlForNumericLoop()
+   for i in {0..10000} do
+      local sum = 0
+
+      -- Simple ascending loop
+      for j = 0, 99 do
+         sum += j
+      end
+
+      -- Loop with step
+      for j = 0, 99, 2 do
+         sum += j
+      end
+
+      -- Descending loop
+      for j = 99, 0, -1 do
+         sum += j
+      end
+
+      -- Descending with step
+      for j = 100, 0, -5 do
+         sum += j
+      end
+
+      -- Nested numeric loops
+      for x = 0, 9 do
+         for y = 0, 9 do
+            sum += x * y
+         end
+      end
+
+      -- Loop with computed bounds
+      local start = i % 10
+      local finish = start + 50
+      for j = start, finish do
+         sum += 1
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Execute range-based for loops
+
+@Test function ControlForRangeLoop()
+   for i in {0..100} do
+      local sum = 0
+
+      -- Simple range loop (exclusive end)
+      for j in {0..100} do
+         sum += j
+      end
+
+      -- Inclusive range loop
+      for j in {0...99} do
+         sum += j
+      end
+
+      -- Range with step (using range.new)
+      nr = range.new(0, 100, false, 2)
+      for j in nr() do
+         sum += j
+      end
+
+      -- Nested range loops
+      for x in {0..10} do
+         for y in {0..10} do
+            sum += x + y
+         end
+      end
+
+      -- Range with negative indices
+      for j in {-10..10} do
+         sum += j
+      end
+
+      -- Short ranges
+      for j in {0..5} do
+         sum += j
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Execute while loops with varying conditions
+
+@Test function ControlWhileLoop()
+   for i in {0..10000} do
+      local sum = 0
+      local count = 0
+
+      -- Simple counting while
+      count = 0
+      while count < 100 do
+         sum += count
+         count++
+      end
+
+      -- While with compound condition
+      count = 0
+      local limit = 50
+      while count < limit and sum < 10000 do
+         sum += count
+         count++
+      end
+
+      -- While with boolean flag
+      local running = true
+      count = 0
+      while running do
+         count++
+         if count >= 20 then
+            running = false
+         end
+      end
+
+      -- Nested while loops
+      local x = 0
+      while x < 10 do
+         local y = 0
+         while y < 10 do
+            sum += 1
+            y++
+         end
+         x++
+      end
+
+      -- While with modifying condition variable
+      local n = 100
+      while n > 0 do
+         sum += n
+         n = n - 3
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Execute repeat-until loops
+
+@Test function ControlRepeatUntil()
+   for i in {0..10000} do
+      local sum = 0
+      local count = 0
+
+      -- Simple repeat-until
+      count = 0
+      repeat
+         sum += count
+         count++
+      until count >= 100
+
+      -- Repeat with compound condition
+      count = 0
+      repeat
+         sum += count
+         count++
+      until count >= 50 or sum > 5000
+
+      -- Repeat at least once pattern
+      local value = 100
+      repeat
+         value = value - 10
+      until value <= 0
+
+      -- Nested repeat-until
+      local x = 0
+      repeat
+         local y = 0
+         repeat
+            sum += 1
+            y++
+         until y >= 10
+         x++
+      until x >= 10
+
+      -- Repeat with early exit condition
+      count = 0
+      local found = false
+      repeat
+         count++
+         if count is 42 then
+            found = true
+         end
+      until found or count >= 100
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Use break and continue statements in loops
+
+@Test function ControlBreakContinue()
+   for i in {0..1000} do
+      local sum = 0
+      local count = 0
+
+      -- Break from for loop
+      for j = 0, 999 do
+         if j >= 100 then
+            break
+         end
+         sum += j
+      end
+
+      -- Continue in for loop (skip even numbers)
+      for j = 0, 99 do
+         if j % 2 is 0 then
+            continue
+         end
+         sum += j
+      end
+
+      -- Break from while loop
+      count = 0
+      while true do
+         count++
+         if count >= 50 then
+            break
+         end
+      end
+
+      -- Continue in while loop
+      count = 0
+      while count < 100 do
+         count++
+         if count % 3 is 0 then
+            continue
+         end
+         sum += count
+      end
+
+      -- Break from nested loop (inner only)
+      for x = 0, 9 do
+         for y = 0, 99 do
+            if y >= 10 then
+               break
+            end
+            sum += 1
+         end
+      end
+
+      -- Continue in nested loop
+      for x = 0, 9 do
+         for y = 0, 9 do
+            if y % 2 is 0 then
+               continue
+            end
+            sum += x + y
+         end
+      end
+
+      -- Break in range loop
+      for j in {0..1000} do
+         if j >= 50 then
+            break
+         end
+         sum += j
+      end
+
+      -- Continue in range loop
+      for j in {0..100} do
+         if j % 5 is 0 then
+            continue
+         end
+         sum += j
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Measure overhead of the safe navigation operator (?.) vs direct access
+
+@Test function ControlSafeNavigationFastCmp()
+   local obj = { name = "Alice", addr = { city = "London", geo = { lat = 51.5 } } }
+   local arr = { 10, 20, 30, 40, 50 }
+
+   for i in {0..1000000} do
+      local v1 = obj.name
+      local v2 = obj.addr.city
+      local v3 = obj.addr.geo.lat
+      local v4 = arr[0]
+      local v5 = arr[2]
+   end
+end
+
+@Test function ControlSafeNavigation()
+   local obj = { name = "Alice", addr = { city = "London", geo = { lat = 51.5 } } }
+   local arr = { 10, 20, 30, 40, 50 }
+   local missing = nil
+
+   for i in {0..1000000} do
+      -- Safe access on valid paths (should behave like direct access)
+      local v1 = obj?.name
+      local v2 = obj?.addr?.city
+      local v3 = obj?.addr?.geo?.lat
+      local v4 = arr?[0]
+      local v5 = arr?[2]
+   end
+end

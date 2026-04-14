@@ -1,0 +1,14 @@
+-- Test importing a file with @if/@end blocks
+
+import './compile_if_helper'
+
+@Test function CompileIfImported()
+   -- helper_always_visible should be true (always defined)
+   assert(helper_always_visible is true, "helper_always_visible should be true")
+
+   -- helper_main_only should be nil (only defined when run directly)
+   assert(helper_main_only is nil, f"helper_main_only should be nil, got {helper_main_only}")
+
+   -- helper_import_only should be true (defined when imported)
+   assert(helper_import_only is true, f"helper_import_only should be true, got {helper_import_only}")
+end

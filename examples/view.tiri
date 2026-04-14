@@ -1,0 +1,48 @@
+#!/usr/bin/env origo
+--[[
+Basic demo of the View widget
+--]]
+
+   import 'gui/fileview'
+   import 'gui/columnview'
+   import 'gui/window'
+
+   lWindow = gui.window({ title='View Widget Example', insideWidth=400, insideHeight=200 })
+   lViewport = lWindow:clientViewport()
+
+   glView = gui.columnView({
+      target     = lViewport,
+      textAttrib = 'name',
+      x = 10,
+      y = 10,
+      xOffset = 10,
+      yOffset = 10,
+      itemSelected = function(View, Reason, Item)
+         print('Item selected: ' .. Item.name)
+      end,
+      activeChange = function(View, Reason, Item)
+         print('Active item changed: ' .. Item.name)
+      end,
+      itemDeselected = function(View, Reason, Item)
+         print('Item deselected: ' .. Item.name)
+      end,
+      itemActivated = function(View, Reason, Item)
+      end,
+      items = {
+         { id=10, group='folder', path='kotuku:system/', name='vegetables', icon='folders/folder', size=0, dateCreated='', colour={ r=0, g=0, b=200, a=255 } },
+         { id=11, group='folder', path='kotuku:system/', name='cereals', icon='folders/folder', size=0, dateCreated='', colour={ r=0, g=0, b=200, a=255 } },
+         { id=2, group='file', path='kotuku:system/', name='apple.txt', icon='filetypes/text', size=123223, dateCreated='2018-12-23 17:03' },
+         { id=3, group='file', path='kotuku:system/', name='banana.jpg', icon='filetypes/text', size=82, dateCreated='2016-08-02' },
+         { id=4, group='file', path='kotuku:system/', name='avocado.mp3', icon='filetypes/text', size=51724, dateCreated='2015-03-02T06:42' },
+         { id=5, group='file', path='kotuku:system/', name='cherry.txt', icon='filetypes/text', size=143566143, dateCreated='2018-08-02T21:14' },
+         { id=5, group='file', path='kotuku:system/', name='fruit salad.dessert', icon='filetypes/text', size=143566143, dateCreated='2018-08-02T21:14' }
+      },
+      columns = {
+        { attrib='name',        title='Name', width=16, showIcons=true },
+        { attrib='size',        title='Size', width=7, type='bytesize', align='right' },
+        { attrib='dateCreated', title='Date', width=10, type='date', align='right' }
+      }
+   })
+
+   lWindow:show()
+   processing.sleep() -- Will sleep until the window sends MSGID_QUIT

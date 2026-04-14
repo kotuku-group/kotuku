@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:m xmlns:ai="http://parasol-framework.org/ai-docs" n="Audio" v="1" cl="Audio,Sound">
+<ai:m xmlns:ai="http://kotuku.dev/ai-docs" n="Audio" v="1" cl="Audio,Sound">
   <ai:f n="MixContinue" c="Continue playing a stopped channel." p="ERR snd::MixContinue(objAudio * Audio, INT Handle)" r="ERR">
     <ai:i n="Audio" t="objAudio *" c="The target Audio object."/>
     <ai:i n="Handle" t="INT" c="The target channel."/>

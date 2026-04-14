@@ -185,7 +185,7 @@ Draw: Render the effect to the target bitmap.
 
 static ERR TURBULENCEFX_Draw(extTurbulenceFX *Self, struct acDraw *Args)
 {
-   if (Self->Target->BytesPerPixel != 4) return ERR::Failed;
+   if (Self->Target->BytesPerPixel != 4) return ERR::InvalidState;
 
    const int width = F2I(Self->Filter->TargetWidth);
    const int height = F2I(Self->Filter->TargetHeight);

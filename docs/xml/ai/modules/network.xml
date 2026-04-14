@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:m xmlns:ai="http://parasol-framework.org/ai-docs" n="Network" p="net" v="1" st="stable" cl="ClientSocket,NetClient,NetLookup,NetSocket,Proxy">
+<ai:m xmlns:ai="http://kotuku.dev/ai-docs" n="Network" p="net" v="1" st="stable" cl="ClientSocket,NetClient,NetLookup,NetSocket,Proxy">
   <ai:f n="AddressToStr" c="Converts an IPAddress structure to an IPAddress in dotted string form." p="CSTRING net::AddressToStr(struct IPAddress * IPAddress)" r="CSTRING">
     <ai:i n="IPAddress" t="struct IPAddress *" c="A pointer to the IPAddress structure."/>
   </ai:f>

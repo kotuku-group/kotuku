@@ -319,7 +319,7 @@ static ERR get_source_bitmap(extVectorFilter *Self, objBitmap **BitmapResult, VS
    }
    else {
       log.warning("Effect source %d is not supported.", int(SourceType));
-      return ERR::Failed;
+      return ERR::NoSupport;
    }
 
    #if defined(EXPORT_FILTER_BITMAP) && defined (DEBUG_FILTER_BITMAP)

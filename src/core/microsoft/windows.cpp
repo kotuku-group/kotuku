@@ -22,7 +22,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <algorithm>
-#ifdef _DEBUG
+#ifndef NDEBUG
 #include <crtdbg.h>
 #endif
 #ifdef _MSC_VER
@@ -41,11 +41,11 @@
 #include <imagehlp.h>
 
 #ifndef PLATFORM_CONFIG_H
-#include <parasol/config.h>
+#include <kotuku/config.h>
 #endif
 
 #include "windefs.h"
-#include <parasol/system/errors.h>
+#include <kotuku/system/errors.h>
 
 #define STD_TIMEOUT 1000
 
@@ -56,11 +56,8 @@ constexpr int MAX_ERROR_MSG = 400;
 constexpr int MAX_USERNAME = 256;
 constexpr int MAX_ENV_VALUE = 512;
 
-#ifdef _DEBUG
-#define MSG(...) printf(__VA_ARGS__)
-#else
+//#define MSG(...) printf(__VA_ARGS__)
 #define MSG(...)
-#endif
 
 #include <string>
 #include <array>
@@ -370,7 +367,7 @@ static inline unsigned int LCASEHASH(const char* String) noexcept
 
 //********************************************************************************************************************
 
-#ifdef _DEBUG
+#ifndef NDEBUG
 static char glSymbolsLoaded = false;
 static void windows_print_stacktrace(CONTEXT* context)
 {
@@ -442,7 +439,7 @@ extern "C" ERR winInitialise(unsigned int *PathHash, BREAK_HANDLER BreakHandler)
    char path[255];
    int len;
 
-   #ifdef _DEBUG
+   #ifndef NDEBUG
       // This is only needed if the application crashes and a stack trace is printed.
       SymSetOptions(SymGetOptions() | SYMOPT_LOAD_LINES | SYMOPT_DEFERRED_LOADS);
       if (SymInitialize(GetCurrentProcess(), 0, true)) glSymbolsLoaded = true;
@@ -456,7 +453,7 @@ extern "C" ERR winInitialise(unsigned int *PathHash, BREAK_HANDLER BreakHandler)
 
    SetErrorMode(SEM_FAILCRITICALERRORS|SEM_NOOPENFILEERRORBOX); // SEM_NOGPFAULTERRORBOX
 
-   // Calculate a unique hash from the Core's DLL path.  This hash can then be used for telling which Parasol
+   // Calculate a unique hash from the Core's DLL path.  This hash can then be used for telling which Kōtuku
    // programs are using the same set of binaries.
 
    if (PathHash) {
@@ -506,7 +503,7 @@ extern "C" ERR winInitialise(unsigned int *PathHash, BREAK_HANDLER BreakHandler)
    wx.hInstance     = glInstance;
    wx.lpszClassName = glMsgClass;
    if (RegisterClassEx(&wx)) {
-      glMsgWindow = CreateWindowEx(0, glMsgClass, "Parasol",
+      glMsgWindow = CreateWindowEx(0, glMsgClass, "Kotuku",
          0, // WS flags
          0, 0, // Coordinates
          CW_USEDEFAULT, CW_USEDEFAULT,
@@ -833,8 +830,8 @@ extern "C" void winLowerPriority(void) noexcept
 
 extern "C" int winSetProcessPriority(int Priority) noexcept
 {
-   // Map Parasol priority values to Windows priority classes
-   // Parasol uses: negative = lower priority, positive = higher priority, 0 = normal
+   // Map Kōtuku priority values to Windows priority classes
+   // Kōtuku uses: negative = lower priority, positive = higher priority, 0 = normal
    DWORD priorityClass;
 
    if (Priority <= -20) priorityClass = IDLE_PRIORITY_CLASS;              // Lowest priority
@@ -852,11 +849,11 @@ extern "C" int winSetProcessPriority(int Priority) noexcept
 
 extern "C" int winGetProcessPriority(void) noexcept
 {
-   // Get current process priority class and map to Parasol priority values
+   // Get current process priority class and map to Kōtuku priority values
    const DWORD priorityClass = GetPriorityClass(GetCurrentProcess());
    if (priorityClass IS 0) return -1; // Error occurred
 
-   // Map Windows priority classes to Parasol values
+   // Map Windows priority classes to Kōtuku values
    switch (priorityClass) {
       case IDLE_PRIORITY_CLASS:         return -20;  // Lowest priority
       case BELOW_NORMAL_PRIORITY_CLASS: return -10;  // Below normal
@@ -1333,7 +1330,7 @@ int ExceptionFilter(LPEXCEPTION_POINTERS Args)
 {
    int continuable, code, err;
 
-   #ifdef _DEBUG
+   #ifndef NDEBUG
    if (Args->ExceptionRecord->ExceptionCode != EXCEPTION_STACK_OVERFLOW) {
       windows_print_stacktrace(Args->ContextRecord);
    }

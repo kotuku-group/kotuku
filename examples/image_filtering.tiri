@@ -1,0 +1,286 @@
+#!/usr/bin/env origo
+--[[
+Image Filter Demonstration
+--]]
+
+   import 'gui'
+   import 'gui/window'
+   import 'gui/combobox'
+   import 'gui/slider'
+   import 'gui/button'
+
+   mVec ?= mod.load('vector')
+
+   local win, viewport, photo, mainVP, rect, picPhoto, glMatrix
+
+   transformStyle = 'scale'
+   glRotate = 0
+   glScale = 1.0
+
+   glSelf = <{ obj.find('self') }>
+   glPath = <{ glSelf.workingPath }>
+
+----------------------------------------------------------------------------------------------------------------------
+
+function selectFilter(Text)
+   if Text is 'Bilinear' then
+      mainVP.scene.sampleMethod = VSM_BILINEAR
+   elseif (Text is 'Bicubic') then
+      mainVP.scene.sampleMethod = VSM_BICUBIC
+   elseif Text is 'Blackman' then
+      mainVP.scene.sampleMethod = VSM_BLACKMAN
+   elseif Text is 'Sinc' then
+      mainVP.scene.sampleMethod = VSM_SINC
+   elseif Text is 'Nearest Neighbour' then
+      mainVP.scene.sampleMethod = VSM_NEIGHBOUR
+   elseif Text is 'Spline16' then
+      mainVP.scene.sampleMethod = VSM_SPLINE16
+   elseif Text is 'Kaiser' then
+      mainVP.scene.sampleMethod = VSM_KAISER
+   elseif Text is 'Quadric' then
+      mainVP.scene.sampleMethod = VSM_QUADRIC
+   elseif Text is 'Gaussian' then
+      mainVP.scene.sampleMethod = VSM_GAUSSIAN
+   elseif Text is 'Bessel' then
+      mainVP.scene.sampleMethod = VSM_BESSEL
+   elseif Text is 'Mitchell' then
+      mainVP.scene.sampleMethod = VSM_MITCHELL
+   end
+   mainVP.scene.surface.mtScheduleRedraw()
+end
+
+function transform()
+   if not glMatrix then
+      err, glMatrix = rect.mtNewMatrix(false)
+   end
+
+   mVec.ResetMatrix(glMatrix)
+
+   if transformStyle is 'zoom' then
+      scaled_size = 1.0 / glScale
+      half_scale = scaled_size * 0.5
+      rect.width  = scaled_size
+      rect.height = scaled_size
+
+      mVec.Translate(glMatrix, -half_scale, -half_scale)
+      mVec.Rotate(glMatrix, glRotate)
+      mVec.Scale(glMatrix, glScale, glScale)
+      mVec.Translate(glMatrix, half_scale, half_scale)
+      mVec.Translate(glMatrix, 0.5-half_scale, 0.5-half_scale)
+   else
+      mVec.Rotate(glMatrix, glRotate, 0.5, 0.5)
+      mVec.Translate(glMatrix, -0.5, -0.5)
+      mVec.Scale(glMatrix, glScale, glScale)
+      mVec.Translate(glMatrix, 0.5, 0.5)
+   end
+
+   mainVP.scene.surface.mtScheduleRedraw()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function addPhoto()
+   photo = viewport.scene.new('VectorImage', {
+      name = 'photo', picture=picPhoto
+   })
+
+   viewport.scene.mtAddDef('photo', photo)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function addPattern()
+   pattern = viewport.scene.new('VectorPattern', {
+      name = 'pattern',
+      width = 0.1, height = 0.1,
+      units = VUNIT_BOUNDING_BOX,
+      spreadMethod = VSPREAD_REPEAT
+   })
+
+   pattern.viewport.viewWidth = 1
+   pattern.viewport.viewHeight = 1
+
+   pattern.viewport.new('VectorRectangle', {
+      fill='white', x=0.5, y=0, width=0.5, height=0.5, stroke='none'
+   })
+
+   pattern.viewport.new('VectorEllipse', {
+      fill='white', cx=0.25, cy=0.75, radius=0.25, stroke='none'
+   })
+
+   pattern.viewport.new('VectorPath', {
+      stroke='black', strokeWidth=0.05,
+      sequence="M0,0 L1,1"
+   })
+
+   pattern.viewport.new('VectorPath', {
+      stroke='red', strokeWidth=0.025,
+      sequence="M0.5,0 L1,0.5Z M0,0.5 L0.5,1 Z"
+   })
+
+   pattern.viewport.new('VectorPath', {
+      stroke='green', strokeWidth=0.025,
+      sequence="M0.75,0 L1,0.25Z M0,0.75 L0.25,1Z M0,0.25 L0.75,1Z M0.25,0 L1,0.75Z"
+   })
+
+   viewport.scene.mtAddDef('pattern', pattern)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function addGradient()
+   pattern = viewport.scene.new('VectorPattern', {
+      name = 'pattern_gradient',
+      width = 0.1, height = 0.1,
+      units = VUNIT_BOUNDING_BOX,
+      spreadMethod = VSPREAD_REPEAT
+   })
+
+   pattern.viewport.viewWidth = 1
+   pattern.viewport.viewHeight = 1
+
+   gui.simpleGradient(pattern.viewport.scene, 'red_blue', { { r=255,g=0, b=0 }, { r=0, g=0, b=255 } }, 0, 0, 0, 1)
+
+   gui.simpleGradient(pattern.viewport.scene, 'grey', { { r=255,g=255, b=255 }, { r=0, g=0, b=0 } }, 0, 0, 0, 1)
+
+   pattern.viewport.new('VectorRectangle', {
+      fill='url(#red_blue)', x=0, y=0, width=1, height=0.5, stroke='none'
+   })
+
+   pattern.viewport.new('VectorRectangle', {
+      fill='url(#grey)', x=0, y=0.5, width=1, height=0.5, stroke='none'
+   })
+
+   viewport.scene.mtAddDef('gradient', pattern)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function buildScene()
+   picPhoto = obj.new('picture', { src=glPath .. 'data/mandril.png', bitsPerPixel=32 })
+
+   addPhoto()
+   addPattern()
+   addGradient()
+
+   viewport.scene.flags = bit.bor(viewport.scene.flags, VPF_RENDER_TIME)
+
+   viewport.scene.subscribe('draw', function(Surface, Args)
+      print('Rendering Time: ' .. string.format('%gs', viewport.scene.renderTime / 1000000))
+   end)
+
+   -- Notice the ViewWidth and ViewHeight of 1, which makes it easier to perform transforms in relative space.
+
+   mainVP = viewport.new('VectorViewport', {
+      name = 'vp_main',
+      x = 0, y = 20,
+      width = '100%', height = '100%',
+      viewWidth = 1, viewHeight = 1,
+      aspectRatio = bit.bor(ARF_MEET, ARF_X_MID, ARF_Y_MID),
+      overflow = 'hidden',
+      buffered = true
+   })
+
+   -- This rectangle will draw the selected image.
+
+   rect = mainVP.new('VectorRectangle', { name='rect_viewer', x=0, y=0, width=1, height=1, fill='url(#photo)' })
+
+   cmbFilter = gui.combobox({
+      target = viewport,
+      label  = 'Filter:',
+      text   = 'Bicubic',
+      x      = win.margins.left,
+      y      = 10,
+      items = {
+         { item='Nearest Neighbour' },
+         { item='Bicubic' },
+         { item='Bilinear' },
+         { item='Blackman' },
+         { item='Sinc' },
+         { item='Lanczos' },
+         { item='Spline16' },
+         { item='Kaiser' },
+         { item='Quadric' },
+         { item='Gaussian' },
+         { item='Bessel' },
+         { item='Mitchell' }
+      },
+      events = {
+         activate = function(Widget, Text)
+            selectFilter(Text)
+         end
+      }
+   })
+
+   selectFilter('Bicubic')
+
+   cmbImageType = gui.combobox({
+      target = viewport,
+      label  = 'Image Type:',
+      text   = 'Photo',
+      x      = cmbFilter.viewport.x + cmbFilter.viewport.width + 10,
+      y      = 10,
+      items  = { { item='Test Pattern' }, { item='Photo' }, { item='Gradient' } },
+      events = {
+         activate = function(Widget, Text)
+            if Text is 'Test Pattern' then
+               rect.fill = 'url(#pattern)'
+               transformStyle = 'zoom'
+            elseif Text is 'Photo' then
+               rect.fill = 'url(#photo)'
+               transformStyle = 'scale'
+            elseif Text is 'Gradient' then
+               rect.fill = 'url(#gradient)'
+               transformStyle = 'zoom'
+            end
+            mainVP.scene.surface.mtScheduleRedraw()
+         end
+      }
+   })
+
+   slRotate = gui.slider({
+      target = viewport,
+      label  = 'Rotate:',
+      value  = 1,
+      min    = 0,
+      max    = 360,
+      x      = cmbImageType.viewport.x + cmbImageType.viewport.width + 10,
+      y      = 10,
+      events = {
+         activate = function(Widget, Value)
+            glRotate = Value
+            transform()
+         end
+      }
+   })
+
+   slScale = gui.slider({
+      target = viewport,
+      label  = 'Scale:',
+      value  = 1,
+      min    = 0.1,
+      max    = 3,
+      x      = slRotate.viewport.x + slRotate.viewport.width + 10,
+      y      = 10,
+      events = {
+         activate = function(Widget, Value)
+            glScale = Value
+            transform()
+         end
+      }
+   })
+
+   mainVP.y = cmbFilter.viewport.y + cmbFilter.viewport.height + 12
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+   win = gui.window({ title='Image Filtering Demo', insideWidth=1024, insideHeight=800 })
+   viewport = win:clientViewport({
+      aspectRatio = ARF_MEET
+   })
+
+   buildScene()
+
+   win:show(true)
+   processing.sleep()

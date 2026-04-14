@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol Framework is made publicly available under the terms described in the LICENSE.TXT file
+The source code for Kōtuku is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -51,9 +51,9 @@ It will be translated to the following when loaded into an XML object:
 //#define DEBUG
 
 #define PRV_XML
-#include <parasol/main.h>
-#include <parasol/modules/xml.h>
-#include <parasol/strings.hpp>
+#include <kotuku/main.h>
+#include <kotuku/modules/xml.h>
+#include <kotuku/strings.hpp>
 #include <algorithm>
 #include <sstream>
 
@@ -64,15 +64,13 @@ static OBJECTPTR clJSON = nullptr;
 static ERR JSON_Init(objXML *);
 static ERR JSON_SaveToObject(objXML *, struct acSaveToObject *);
 
-static uint16_t glTagID = 1;
-
 static ActionArray clActions[] = {
    { AC::Init,         JSON_Init },
    { AC::SaveToObject, JSON_SaveToObject },
    { AC::NIL, nullptr }
 };
 
-static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags);
+static ERR extract_item(int &, CSTRING *, objXML::TAGS &, int &);
 static ERR txt_to_json(objXML *, CSTRING);
 
 //********************************************************************************************************************
@@ -114,7 +112,7 @@ static void debug_tree(objXML *Self)
    char buffer[1000];
 
    for (int index=0; index < int(Tags.size()); index++) {
-      XMLTag &Tag = Tags[index];
+      XTag &Tag = Tags[index];
 
       //for (i=0; i < Tag.Branch; i++) buffer[i] = ' '; // Indenting
       //buffer[i] = 0;
@@ -176,6 +174,7 @@ static ERR JSON_Init(objXML *Self)
 
    log.trace("Attempting JSON interpretation of source data.");
 
+   // TODO: A back-door to get the Statement string directly from the XML object would be useful
    if ((Self->get(FID_Statement, statement) IS ERR::Okay) and (statement)) {
       if ((Self->ParseError = txt_to_json(Self, statement)) != ERR::Okay) {
          log.warning("JSON Parsing Error: %s", GetErrorMsg(Self->ParseError));
@@ -236,13 +235,15 @@ static ERR txt_to_json(objXML *Self, CSTRING Text)
 
    for (str=Text; (*str) and (*str != '{'); str++) if (*str IS '\n') Self->LineNo++;
    if (*str IS '{') {
-      auto &root = Self->Tags.emplace_back(XMLTag(glTagID++, Self->LineNo, { { "item", "" }, { "type", "object" } }));
+      // XML requires the root tag to be numbered with ID 0
+      auto &root = Self->Tags.emplace_back(XTag(0, Self->LineNo, { { "item", "" }, { "type", "object" } }));
 
       str++; // Skip '{'
       while ((*str) and (*str <= 0x20)) { if (*str IS '\n') Self->LineNo++; str++; }
 
+      int tag_id = 1;
       do {
-         if (extract_item(Self->LineNo, &str, root.Children) != ERR::Okay) {
+         if (extract_item(Self->LineNo, &str, root.Children, tag_id) != ERR::Okay) {
             return log.warning(ERR::Syntax);
          }
       } while (next_item(Self->LineNo, str) IS ERR::Okay);
@@ -261,7 +262,7 @@ static ERR txt_to_json(objXML *Self, CSTRING Text)
 //********************************************************************************************************************
 // Called by txt_to_json() to extract the next item from a JSON string.  This function also recurses into itself.
 
-static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags)
+static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags, int &TagID)
 {
    pf::Log log(__FUNCTION__);
 
@@ -343,7 +344,7 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags)
 
       log.trace("Processing %s array at line %d.", subtype.c_str(), Line);
 
-      auto &array_tag = Tags.emplace_back(XMLTag(glTagID++, line_no, {
+      auto &array_tag = Tags.emplace_back(XTag(TagID++, line_no, {
          { "item", "" }, { "name", item_name }, { "type", "array" }, { "subtype", subtype }
       }));
 
@@ -353,7 +354,7 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags)
          while ((*str) and (*str != ']')) {
             // Evaluates to: <object>...</object>
 
-            auto &object_tag = array_tag.Children.emplace_back(XMLTag(glTagID++, line_no, {
+            auto &object_tag = array_tag.Children.emplace_back(XTag(TagID++, line_no, {
                { "item", "" }, { "type", "object" }
             }));
 
@@ -364,7 +365,7 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags)
                while ((*str) and (*str <= 0x20)) { if (*str IS '\n') Line++; str++; }
 
                if (*str != '}') { // Don't process content if the object is empty.
-                  if (auto error = extract_item(Line, &str, object_tag.Children); error != ERR::Okay) return error;
+                  if (auto error = extract_item(Line, &str, object_tag.Children, TagID); error != ERR::Okay) return error;
 
                   while ((*str) and (*str != '}')) { if (*str IS '\n') Line++; str++; } // Skip content/whitespace to get to the next tag.
 
@@ -418,8 +419,8 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags)
 
             // Create <value>string</value>
 
-            auto &value_tag = Tags.emplace_back(XMLTag(glTagID++, Line, { { "value", "" } }));
-            value_tag.Children.emplace_back(XMLTag(glTagID++, Line, { { "", buffer.str() } }));
+            auto &value_tag = Tags.emplace_back(XTag(TagID++, Line, { { "value", "" } }));
+            value_tag.Children.emplace_back(XTag(TagID++, Line, { { "", buffer.str() } }));
 
             str++; // Skip terminating '"'
 
@@ -454,8 +455,8 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags)
 
             // Create <value>number</value>
 
-            auto &value_tag = Tags.emplace_back(XMLTag(glTagID++, Line, { { "value", "" } }));
-            value_tag.Children.emplace_back(XMLTag(glTagID++, Line, { { "", numbuf } }));
+            auto &value_tag = Tags.emplace_back(XTag(TagID++, Line, { { "value", "" } }));
+            value_tag.Children.emplace_back(XTag(TagID++, Line, { { "", numbuf } }));
 
             // Go to next value, or end of array
 
@@ -477,8 +478,8 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags)
 
             // Create <value>number</value>
 
-            auto &value_tag = Tags.emplace_back(XMLTag(glTagID++, Line, { { "value", "" } }));
-            value_tag.Children.emplace_back(XMLTag(glTagID++, Line, { { "", numbuf } }));
+            auto &value_tag = Tags.emplace_back(XTag(TagID++, Line, { { "value", "" } }));
+            value_tag.Children.emplace_back(XTag(TagID++, Line, { { "", numbuf } }));
 
             // Go to next value, or end of array
 
@@ -506,7 +507,7 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags)
 
       log.trace("Item '%s' is an object.", item_name.c_str());
 
-      auto &object_tag = Tags.emplace_back(XMLTag(glTagID++, Line, {
+      auto &object_tag = Tags.emplace_back(XTag(TagID++, Line, {
          { "item", "" }, { "name", item_name }, { "type", "object" }
       }));
 
@@ -516,7 +517,7 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags)
       if (*str != '}') {
 
          do {
-            if (extract_item(Line, &str, object_tag.Children) != ERR::Okay) {
+            if (extract_item(Line, &str, object_tag.Children, TagID) != ERR::Okay) {
                log.warning("Aborting parsing of JSON statement.");
                return ERR::Syntax;
             }
@@ -539,7 +540,7 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags)
 
       str++; // Skip '"'
 
-      auto &string_tag = Tags.emplace_back(XMLTag(glTagID++, Line, {
+      auto &string_tag = Tags.emplace_back(XTag(TagID++, Line, {
          { "item", "" }, { "name", item_name }, { "type", "string" }
       }));
 
@@ -561,7 +562,7 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags)
       }
 
       if (*str IS '"') {
-         string_tag.Children.emplace_back(XMLTag(glTagID++, Line, { { "", buffer.str() } }));
+         string_tag.Children.emplace_back(XTag(TagID++, Line, { { "", buffer.str() } }));
          str++; // Skip '"'
       }
       else return log.warning(ERR::Syntax);
@@ -588,11 +589,11 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags)
          str++;
       }
 
-      auto &number_tag = Tags.emplace_back(XMLTag(glTagID++, Line, {
+      auto &number_tag = Tags.emplace_back(XTag(TagID++, Line, {
          { "item", "" }, { "name", item_name }, { "type", "number" }
       }));
 
-      number_tag.Children.emplace_back(XMLTag(glTagID++, Line, { { "", numbuf } }));
+      number_tag.Children.emplace_back(XTag(TagID++, Line, { { "", numbuf } }));
    }
    else if (((*str >= '0') and (*str <= '9')) or
             ((*str IS '-') and (str[1] >= '0') and (str[1] <= '9'))) {
@@ -615,16 +616,16 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags)
          str++;
       }
 
-      auto &number_tag = Tags.emplace_back(XMLTag(glTagID++, Line, {
+      auto &number_tag = Tags.emplace_back(XTag(TagID++, Line, {
          { "item", "" }, { "name", item_name }, { "type", "number" }
       }));
 
-      number_tag.Children.emplace_back(XMLTag(glTagID++, Line, { { "", numbuf } }));
+      number_tag.Children.emplace_back(XTag(TagID++, Line, { { "", numbuf } }));
    }
    else if (pf::startswith("null", str)) { // Evaluates to <item name="item_name" type="null"/>
       str += 4;
 
-      Tags.emplace_back(XMLTag(glTagID++, Line, {
+      Tags.emplace_back(XTag(TagID++, Line, {
          { "item", "" }, { "name", item_name }, { "type", "null" }
       }));
    }
@@ -639,5 +640,5 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags)
 
 //********************************************************************************************************************
 
-PARASOL_MOD(MODInit, nullptr, nullptr, MODExpunge, nullptr, nullptr)
+KOTUKU_MOD(MODInit, nullptr, nullptr, MODExpunge, nullptr, nullptr, nullptr)
 extern "C" struct ModHeader * register_json_module() { return &ModHeader; }

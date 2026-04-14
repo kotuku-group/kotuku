@@ -1,0 +1,176 @@
+
+   import 'gui'
+
+   lVec = mVec
+
+return {
+   initialise = function(Window:obj)
+      parent = Window.surface.parent
+      if parent then
+         Window.surface.x = parent.leftMargin + 10
+         Window.surface.y = parent.topMargin + 10
+      end
+      Window.moveToBack   = false
+      Window.resizeBorder = 6
+      Window.surface.leftLimit    = 0
+      Window.surface.topLimit     = 0
+      Window.surface.rightLimit   = 0
+      Window.surface.bottomLimit  = 0
+      Window.client = { top = 29, left = 5, right = 5, bottom = 5 }
+      Window.margins = { top = 5, left = 5, right = 5, bottom = 5 }
+      Window.events.minimise = function(Window)
+         Window.surface.acHide()
+         desktop = obj.find('desktop')
+         desktop?.acFocus()
+      end
+   end,
+   frame = function(Window)
+      Window.viewport.new('VectorRectangle', {
+         name = 'window_frame',
+         x=0, y=0, width='100%', height='100%',
+         strokeWidth=5, stroke='rgb(100,100,100)',
+         fill=gui.colours['window']
+      })
+   end,
+   menubar = function(Window:obj)
+      local menubar
+      if (Window.surface.parent != nil) then -- Window is in the native desktop
+         menubar = Window.surface.new('menubar', { x=5, y=Window.clientTop, xOffset=5, target=Window.surface.parent, path=Window.menu })
+      else -- Window is in a hosted environment (e.g. X11, Windows)
+         menubar = Window.surface.new('menubar', { x=0, y=0, xOffset=0, path=Window.menu })
+      end
+      Window.surface.topMargin = menubar.bottom + 4
+      Window.menubar = menubar
+   end,
+   titlebar = function(Window:obj)
+      bar = Window.surface.new('surface', { drag=Window.surface, height=21, x=5, y=5, xOffset=5, flags='!StickToFront' })
+
+      lGradientA = defineGradient(nil, nil, {r=76,g=62,b=128,a=255}, {r=126,g=123,b=187,a=255}, 0, 0, '100%', 0)
+      lGradientB = defineGradient(nil, nil, {r=76,g=76,b=76,a=255}, {r=150,g=150,b=150,a=255}, 0, 0, '100%', 0)
+
+      bar.mtAddCallback(function(Surface, Bitmap)
+         err, path = lVec.generateRectangle(0, 0, Surface.width, Surface.height)
+         if err is ERR_Okay then
+            if (Surface.flags & RNF_HAS_FOCUS) != RNF_HAS_FOCUS then
+               lVec.drawPath(Bitmap, path, 0, nil, lGradientA)
+            else
+               lVec.drawPath(Bitmap, path, 0, nil, lGradientB)
+            end
+            lVec.freePath(path)
+         end
+         for y=1,Surface.height,2 do
+            err, colShade = Bitmap.mtGetColour(0, 0, 0, 40)
+            Bitmap.mtDrawRectangle(0, y, Surface.width, 1, colShade, BAF_FILL | BAF_BLEND)
+         end
+      end)
+
+      Window.titleObject = bar.new('text', {
+         face=gui.fonts.titlebar.face, colour=gui.fonts.titlebar.colour, outline='40,40,40',
+         string=Window.title, x=26, xOffset=60, y=1
+      })
+
+      -- Application icon to the left of the titlebar
+
+      bar.new('image', { x=5, align='vertical', path=Window.icon .. '(16)', iconFilter='pearl' })
+
+      local tlX, tlY
+      input.subscribe(JTYPE_BUTTON, bar, 0, function(Handler, Msg)
+         if Msg.type != JET_BUTTON_1 then return end
+         if (Msg.x >= 5) and (Msg.x < 22) then
+            if (Msg.value > 0) then -- Button down
+               tlX = Msg.absX
+               tlY = Msg.absY
+            else -- Released
+               if (Msg.flags & JTYPE_DBL_CLICK) != 0 then
+                  if (math.abs(Msg.absX - tlX) <= 2) and (math.abs(Msg.absY - tlY) <= 2) then
+                     Window.mtClose()
+                  end
+               end
+            end
+         end
+      end)
+
+      -- Clicking anywhere on the titlebar will move the window to the front.
+
+      input.subscribe(JTYPE_BUTTON, bar, 0, function(Handler, Msg)
+         if (Msg.type is JET_BUTTON_1) and (Msg.value > 0) then
+            Window.surface.acMoveToFront()
+         end
+      end)
+
+      -- Double clicking on the titlebar will maximise it.
+
+      xoffset = 3
+      if Window.maximise?? then
+         input.subscribe(JTYPE_BUTTON, bar, 0, function(Handler, Msg)
+            if (Msg.type is JET_BUTTON_1) and ((Msg.flags & JTYPE_DBL_CLICK) != 0) and (Msg.value is 0) then
+               if (Msg.x >= 24) and (Msg.y >= 0) and (Msg.x < bar.width - 60) and (Msg.y < bar.height) then
+                  Window.mtMaximise(1)
+               end
+            end
+         end)
+      end
+
+      -- Close Gadget
+
+      if Window.close?? then
+         try
+            rgnClose = bar.new('surface', { xoffset=xoffset, y=2, width=17, height=17, region=true })
+            rgnClose.acShow()
+            input.subscribe(JTYPE_BUTTON, rgnClose, 0, function(Handler, Msg)
+               Window.mtClose()
+            end)
+            rgnClose.new('image', { path='icons:items/checkmark_cross(16)', iconFilter='pearl', align='center' })
+            xoffset += 22
+         end
+      end
+
+      -- Maximise Gadget
+
+      try
+         max = bar.new('surface', { width=17, height=17, y=2, xoffset=xoffset, region=true })
+         max.acShow()
+         input.subscribe(JTYPE_BUTTON, max, 0, function(Handler, Msg)
+            Window.mtMaximise()
+         end)
+         if Window.maximise?? then
+            max.new('image', { path='icons:items/window_maximise(16)', iconFilter='pearl', align='center' })
+         else
+            max.new('image', { path='icons:items/window_maximise(16)', iconFilter='pearl', align='center', opacity='33%' })
+         end
+         xoffset += 22
+      end
+
+      -- Minimise Gadget
+
+      try
+         min = bar.new('surface', { width=17, height=17, y=2, xoffset=xoffset, region=true })
+         min.acShow()
+         input.subscribe(JTYPE_BUTTON, min, 0, function(Handler, Msg)
+            Window.mtMinimise()
+         end)
+         if Window.minimise?? then
+            min.new('image', { path='icons:items/window_minimise(16)', iconFilter='pearl', align='center' })
+         else
+            min.new('image', { path='icons:items/window_minimise(16)', iconFilter='pearl', align='center', opacity='33%' })
+         end
+         xoffset += 22
+      end
+
+      -- Move-To-Back Gadget
+
+      if Window.moveToBack?? then
+         try
+            mtb = bar.new('surface', { width=17, height=17, y=2, xoffset=xoffset, region=true })
+            mtb.acShow()
+            input.subscribe(JTYPE_BUTTON, mtb, 0, function(Handler, Msg)
+               Window.surface.acMoveToBack()
+            end)
+            mtb.new('image', { path='icons:layers/bringforward(16)', align='center' })
+            xoffset += 22
+         end
+      end
+
+      bar.acShow()
+   end
+}

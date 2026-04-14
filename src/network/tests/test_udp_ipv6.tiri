@@ -1,0 +1,143 @@
+--[[
+UDP IPv6 Communication Test
+--]]
+
+   include 'network'
+   mNet ?= mod.load('network')
+
+local glBasePort = 19810  -- Base port for IPv6 UDP tests
+local glTestTimeout = 3.0
+
+------------------------------------------------------------------------------------------------------------------------
+-- Test basic UDP communication with IPv6
+
+function UDPIPv6Basic()
+   glBasePort++
+   local serverPort = glBasePort
+   local proc = processing.new({ timeout = glTestTimeout })
+   local messageReceived = false
+   local sv_source = struct.new('IPAddress')
+
+   local server = obj.new('netsocket', {
+      name    = 'UDPServer',
+      port    = serverPort,
+      address = '::1',  -- IPv6 loopback
+      flags   = 'SERVER|UDP',
+      incoming = function(Socket)
+         local buffer = string.alloc(1024)
+         local err, bytesRead = Socket.mtRecvFrom(sv_source, buffer)
+         assert(err is ERR_Okay, 'Server failed to receive IPv6 UDP data: ' .. mSys.GetErrorMsg(err))
+
+         if (bytesRead > 0) then
+            local msg = buffer:sub(0, bytesRead)
+            print('[IPv6 UDP Server] Received: "' .. msg .. '" from ' .. mNet.AddressToStr(sv_source) .. ':' .. sv_source.port)
+            assert(msg:startsWith('Hello IPv6'), 'Unexpected message received')
+            messageReceived = true
+            proc.signal()
+         end
+      end
+   })
+
+   local client = obj.new('netsocket', { flags = 'UDP' })
+
+   -- Client sends message to IPv6 loopback
+   local message = 'Hello IPv6 UDP Server'
+
+   local dest = struct.new('IPAddress')
+   check(mNet.StrToAddress('::1', dest))
+   dest.port = server.port
+
+   print('[IPv6 UDP Client] Sending: "' .. message .. '" to ::1:' .. dest.port)
+   local err, bytesSent = client.mtSendTo(dest, message)
+   assert(err is ERR_Okay, 'Client failed to send IPv6 UDP data: ' .. mSys.GetErrorMsg(err))
+   assert(bytesSent is string.len(message), 'Not all bytes were sent')
+
+   proc.sleep()
+
+   assert(messageReceived, 'Server did not receive IPv6 message')
+end
+
+------------------------------------------------------------------------------------------------------------------------
+-- Test dual-stack IPv4/IPv6 UDP communication
+
+function UDPDualStack()
+   glBasePort++
+   local serverPort = glBasePort
+   local proc = processing.new({ timeout = glTestTimeout })
+   local ipv4Received = false
+   local ipv6Received = false
+
+   local server = obj.new('netsocket', {
+      port = serverPort,
+      address = '::',  -- Bind to all interfaces (dual-stack)
+      flags = 'SERVER|UDP',
+      incoming = function(Socket)
+         local buffer = string.alloc(1024)
+         local source = struct.new('IPAddress')
+         local err, bytesRead = Socket.mtRecvFrom(source, buffer)
+         assert(err is ERR_Okay, 'Server failed to receive dual-stack UDP data: ' .. mSys.GetErrorMsg(err))
+
+         if (bytesRead > 0) then
+            local msg = buffer:sub(0, bytesRead)
+            print('[Dual-Stack UDP Server] Received: "' .. msg .. '" from ' .. mNet.AddressToStr(source) .. ':' .. source.port)
+
+            if (msg:startsWith('IPv4')) then
+               ipv4Received = true
+            elseif (msg:startsWith('IPv6')) then
+               ipv6Received = true
+            end
+
+            if (ipv4Received and ipv6Received) then
+               proc.signal()
+            end
+         end
+      end
+   })
+
+   local client = obj.new('netsocket', { flags = 'UDP' })
+
+   -- Send IPv4 message
+   local ipv4Message = 'Hello from IPv4'
+
+   local dest = struct.new('IPAddress')
+   check(mNet.StrToAddress('127.0.0.1', dest))
+   dest.port = server.port
+
+   print('[Dual-Stack Client] Sending IPv4 message to 127.0.0.1:' .. dest.port)
+   local err, bytesSent = client.mtSendTo(dest, ipv4Message)
+   assert(err is ERR_Okay, 'Failed to send IPv4 message: ' .. mSys.GetErrorMsg(err))
+
+   proc.sleep(0.1)  -- Brief pause between messages
+
+   -- Send IPv6 message
+   print('[Dual-Stack Client] Sending IPv6 message to ::1:' .. server.port)
+   check(mNet.StrToAddress('::1', dest))
+   err, bytesSent = client.mtSendTo(dest, 'Hello from IPv6')
+   assert(err is ERR_Okay, 'Failed to send IPv6 message: ' .. mSys.GetErrorMsg(err))
+
+   proc.sleep()
+
+   assert(ipv4Received, 'Server did not receive IPv4 message')
+   assert(ipv6Received, 'Server did not receive IPv6 message')
+end
+
+------------------------------------------------------------------------------------------------------------------------
+-- Test IPv6 specific socket properties
+
+function UDPIPv6Properties()
+   local ipv6Socket = obj.new('netsocket', { address = '::1', flags = 'UDP', multicastTTL = 5 })
+
+   assert(bit.band(ipv6Socket.flags, NSF_UDP) != 0, 'UDP flag not set on IPv6 socket')
+   assert(ipv6Socket.state is NTC_CONNECTED, 'IPv6 UDP socket should be in CONNECTED state')
+   assert(ipv6Socket.multicastTTL is 5, 'IPv6 multicast TTL (hops) not set correctly')
+end
+
+------------------------------------------------------------------------------------------------------------------------
+
+   return {
+      tests = {
+         testUDPIPv6Properties,
+         testUDPIPv6Basic,
+         testUDPDualStack
+      }
+   }

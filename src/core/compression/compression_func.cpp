@@ -535,7 +535,7 @@ static ERR fast_scan_zip(extCompression *Self)
          zf.CRC            = scan->crc32;
          zf.Offset         = scan->offset;
 
-         if (scan->ostype IS ZIP_PARASOL) zf.Flags = scan->attrib;
+         if (scan->ostype IS ZIP_KOTUKU) zf.Flags = scan->attrib;
          else zf.Flags = 0;
 
          // Read string information
@@ -646,7 +646,7 @@ static ERR scan_zip(extCompression *Self)
          entry.CRC            = zipentry.crc32;
          entry.Offset         = zipentry.offset;
 
-         if (zipentry.ostype IS ZIP_PARASOL) entry.Flags = zipentry.attrib;
+         if (zipentry.ostype IS ZIP_KOTUKU) entry.Flags = zipentry.attrib;
          else entry.Flags = 0;
 
          // Get rid of any useless './' prefix that sometimes make their way into zip files

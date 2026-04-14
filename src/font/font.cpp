@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 This code utilises the work of the FreeType Project under the FreeType License.  For more information please refer to
@@ -37,16 +37,16 @@ Google Fonts Knowledge page: https://fonts.google.com/knowledge
 
 #undef FT_INT64  // Avoid Freetype clash
 
-#include <parasol/main.h>
-#include <parasol/modules/xml.h>
-#include <parasol/modules/font.h>
-#include <parasol/modules/display.h>
+#include <kotuku/main.h>
+#include <kotuku/modules/xml.h>
+#include <kotuku/modules/font.h>
+#include <kotuku/modules/display.h>
 
 #include <sstream>
 #include <array>
 #include <math.h>
 #include <wchar.h>
-#include <parasol/strings.hpp>
+#include <kotuku/strings.hpp>
 #include "../link/unicode.h"
 
 using namespace pf;
@@ -1189,5 +1189,5 @@ static STRUCTS glStructures = {
    { "FontList", sizeof(FontList) }
 };
 
-PARASOL_MOD(MODInit, nullptr, MODOpen, MODExpunge, MOD_IDL, &glStructures)
+KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, nullptr, MOD_IDL, &glStructures)
 extern "C" struct ModHeader * register_font_module() { return &ModHeader; }

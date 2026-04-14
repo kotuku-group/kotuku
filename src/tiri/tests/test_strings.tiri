@@ -1,0 +1,808 @@
+-- Flute tests for the custom string functions
+-- String functions that are JIT-optimised are executed in loops to ensure coverage of their fast calls.
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+@Test function Alloc()
+   s = string.alloc(10)
+   assert(#s is 10, "String size is not 10 characters, got " .. #s)
+
+   -- Test zero size
+   empty = string.alloc(0)
+   assert(#empty is 0, "Zero alloc should create empty string, got " .. #empty)
+
+   -- Test large size
+   big = string.alloc(1000)
+   assert(#big is 1000, "Large alloc failed, expected 1000, got " .. #big)
+end
+
+@Test function Index()
+--   getmetatable('').__index = function(str,i) return string.substr(str,i,i) end
+--   hw = "Hello World"
+--   assert(string[1] is "H", "Expected 'H' at index 0, got '" .. tostring(string[1]) .. "'")
+end
+
+@Test function Split()
+   parts = string.split("\n\n\n", "\n")
+   assert(#parts is 4, "Expected 4 parts for consecutive newlines, got " .. #parts)
+   assert(parts[0] is "", "Expected empty string for first part, got '" .. parts[0] .. "'")
+   assert(parts[1] is "", "Expected empty string for first part, got '" .. parts[1] .. "'")
+   assert(parts[2] is "", "Expected empty string for first part, got '" .. parts[2] .. "'")
+   assert(parts[3] is "", "Expected empty string for first part, got '" .. parts[3] .. "'")
+
+   -- Basic comma split
+   parts = string.split("a,b,c", ",")
+   assert(#parts is 3, "Expected 3 parts, got " .. #parts)
+   assert(parts[0] is "a", "Expected 'a', got '" .. parts[0] .. "'")
+   assert(parts[1] is "b", "Expected 'b', got '" .. parts[1] .. "'")
+   assert(parts[2] is "c", "Expected 'c', got '" .. parts[2] .. "'")
+
+   -- Whitespace split (default)
+   words = string.split("hello world\ttab\nnewline")
+   assert(#words is 4, "Expected 4 words, got " .. #words)
+   assert(words[0] is "hello", "Expected 'hello', got '" .. words[0] .. "'")
+   assert(words[1] is "world", "Expected 'world', got '" .. words[1] .. "'")
+   assert(words[2] is "tab", "Expected 'tab', got '" .. words[2] .. "'")
+   assert(words[3] is "newline", "Expected 'newline', got '" .. words[3] .. "'")
+
+   -- Multi-character separator
+   multi = string.split("one::two::three", "::")
+   assert(#multi is 3, "Expected 3 parts with :: separator, got " .. #multi)
+   assert(multi[0] is "one", "Expected 'one', got '" .. multi[0] .. "'")
+   assert(multi[1] is "two", "Expected 'two', got '" .. multi[1] .. "'")
+   assert(multi[2] is "three", "Expected 'three', got '" .. multi[2] .. "'")
+
+   -- Empty string
+   empty = string.split("")
+   assert(#empty is 0, "Empty string split should return empty array, got " .. #empty)
+
+   -- No separator found
+   nosep = string.split("hello", ",")
+   assert(#nosep is 1, "No separator should return single item, got " .. #nosep)
+   assert(nosep[0] is "hello", "Expected 'hello', got '" .. nosep[0] .. "'")
+end
+
+@Test function SplitReturnsArray()
+   -- Verify that string.split() returns a first-class array
+   parts = string.split("a,b,c", ",")
+
+   -- Check type is array
+   assert(type(parts) is "array", "Expected type 'array', got '" .. type(parts) .. "'")
+
+   -- Verify array methods are available
+   assert(parts:type() is "string", "Expected array element type 'string', got '" .. tostring(parts:type()) .. "'")
+
+   -- Verify index-based iteration works
+   assert(parts[0] is "a", "parts[0] should be 'a'")
+   assert(parts[1] is "b", "parts[1] should be 'b'")
+   assert(parts[2] is "c", "parts[2] should be 'c'")
+
+   -- Verify empty string produces empty array
+   empty = string.split("")
+   assert(type(empty) is "array", "Empty split should return array")
+   assert(#empty is 0, "Empty split should have length 0")
+
+   -- Verify single element case
+   single = string.split("hello", ",")
+   assert(type(single) is "array", "Single element split should return array")
+   assert(#single is 1, "Single element should have length 1")
+   assert(single[0] is "hello", "Single element should be 'hello'")
+
+   -- Verify concat method works on string arrays
+   rejoined = parts:concat("%s", ",")
+   assert(rejoined is "a,b,c", "concat should rejoin elements, got '" .. rejoined .. "'")
+end
+
+@Test function Trim()
+   -- Basic trim
+   trimmed = string.trim("  hello world  ")
+   assert(trimmed is "hello world", "Expected 'hello world', got '" .. trimmed .. "'")
+
+   -- Left whitespace only
+   left = string.trim("  hello")
+   assert(left is "hello", "Expected 'hello', got '" .. left .. "'")
+
+   -- Right whitespace only
+   right = string.trim("hello  ")
+   assert(right is "hello", "Expected 'hello', got '" .. right .. "'")
+
+   -- Mixed whitespace types
+   mixed = string.trim("\t\n  hello world  \r\n\t")
+   assert(mixed is "hello world", "Expected 'hello world', got '" .. mixed .. "'")
+
+   -- All whitespace
+   allspace = string.trim("   \t\n\r   ")
+   assert(allspace is "", "All whitespace should return empty string, got '" .. allspace .. "'")
+
+   -- Empty string
+   empty = string.trim("")
+   assert(empty is "", "Empty string should remain empty, got '" .. empty .. "'")
+
+   -- No whitespace
+   none = string.trim("hello")
+   assert(none is "hello", "No whitespace should be unchanged, got '" .. none .. "'")
+end
+
+@Test function RTrim()
+   -- Basic right trim
+   trimmed = string.rtrim("hello world  ")
+   assert(trimmed is "hello world", "Expected 'hello world', got '" .. trimmed .. "'")
+
+   -- Left whitespace preserved
+   left = string.rtrim("  hello world  ")
+   assert(left is "  hello world", "Expected '  hello world', got '" .. left .. "'")
+
+   -- Mixed whitespace types
+   mixed = string.rtrim("hello world  \r\n\t")
+   assert(mixed is "hello world", "Expected 'hello world', got '" .. mixed .. "'")
+
+   -- All whitespace
+   allspace = string.rtrim("   \t\n\r   ")
+   assert(allspace is "", "All whitespace should return empty string, got '" .. allspace .. "'")
+
+   -- Empty string
+   empty = string.rtrim("")
+   assert(empty is "", "Empty string should remain empty, got '" .. empty .. "'")
+
+   -- No whitespace
+   none = string.rtrim("hello")
+   assert(none is "hello", "No whitespace should be unchanged, got '" .. none .. "'")
+end
+
+@Test function StartsWith()
+   -- Basic positive case
+   assert(string.startsWith("hello world", "hello"), "Should start with 'hello'")
+
+   -- Basic negative case
+   assert(not string.startsWith("hello world", "world"), "Should not start with 'world'")
+
+   -- Empty prefix (should always match)
+   assert(string.startsWith("hello", ""), "Should match empty prefix")
+
+   -- Prefix longer than string
+   assert(not string.startsWith("hi", "hello"), "Should not match longer prefix")
+
+   -- Exact match
+   assert(string.startsWith("hello", "hello"), "Should match exact string")
+
+   -- Empty string with empty prefix
+   assert(string.startsWith("", ""), "Empty string should match empty prefix")
+
+   -- Empty string with non-empty prefix
+   assert(not string.startsWith("", "hello"), "Empty string should not match non-empty prefix")
+
+   -- Case sensitive
+   assert(not string.startsWith("Hello", "hello"), "Should be case sensitive")
+end
+
+@Test function EndsWith()
+   -- Basic positive case
+   assert(string.endsWith("hello world", "world"), "Should end with 'world'")
+
+   -- Basic negative case
+   assert(not string.endsWith("hello world", "hello"), "Should not end with 'hello'")
+
+   -- Empty suffix (should always match)
+   assert(string.endsWith("hello", ""), "Should match empty suffix")
+
+   -- Suffix longer than string
+   assert(not string.endsWith("hi", "hello"), "Should not match longer suffix")
+
+   -- Exact match
+   assert(string.endsWith("hello", "hello"), "Should match exact string")
+
+   -- Empty string with empty suffix
+   assert(string.endsWith("", ""), "Empty string should match empty suffix")
+
+   -- Empty string with non-empty suffix
+   assert(not string.endsWith("", "hello"), "Empty string should not match non-empty suffix")
+
+   -- Case sensitive
+   assert(not string.endsWith("Hello", "hello"), "Should be case sensitive")
+end
+
+@Test function Contains()
+   -- Basic positive case
+   assert(string.contains("hello world", "world"), "Should contain 'world'")
+
+   -- Basic negative case
+   assert(not string.contains("hello world", "xyz"), "Should not contain 'xyz'")
+
+   -- Substring in middle
+   assert(string.contains("hello world", "lo wo"), "Should contain 'lo wo'")
+
+   -- Empty substr (should always match)
+   assert(string.contains("hello", ""), "Should match empty substr")
+
+   -- Substr longer than string
+   assert(not string.contains("hi", "hello"), "Should not match longer substr")
+
+   -- Exact match
+   assert(string.contains("hello", "hello"), "Should match exact string")
+
+   -- Empty string with empty substr
+   assert(string.contains("", ""), "Empty string should contain empty substr")
+
+   -- Empty string with non-empty substr
+   assert(not string.contains("", "hello"), "Empty string should not contain non-empty substr")
+
+   -- Case sensitive
+   assert(not string.contains("Hello World", "hello"), "Should be case sensitive")
+
+   -- Single character
+   assert(string.contains("hello", "e"), "Should find single character")
+   assert(not string.contains("hello", "x"), "Should not find absent character")
+
+   -- Method syntax
+   assert("hello world":contains("world"), "Method syntax should work")
+   assert(not "hello world":contains("xyz"), "Method syntax negative case")
+
+   -- 'in' operator syntax
+   assert("world" in "hello world", "'in' operator should find substring")
+   assert(not ("xyz" in "hello world"), "'in' operator negative case")
+   assert("ell" in "hello", "'in' operator should find middle substring")
+   assert("" in "hello", "'in' operator with empty needle")
+   assert(not ("hello world" in "hello"), "'in' operator with longer needle")
+end
+
+@Test function Cap()
+   -- Basic capitalization
+   capped = string.cap("hello")
+   assert(capped is "Hello", "Expected 'Hello', got '" .. capped .. "'")
+
+   -- Already capitalized
+   already = string.cap("Hello")
+   assert(already is "Hello", "Expected 'Hello', got '" .. already .. "'")
+
+   -- Single character
+   single = string.cap("a")
+   assert(single is "A", "Expected 'A', got '" .. single .. "'")
+
+   -- Empty string
+   empty = string.cap("")
+   assert(empty is "", "Empty string should remain empty, got '" .. empty .. "'")
+
+   -- Non-alphabetic first character
+   nonalpha = string.cap("123hello")
+   assert(nonalpha is "123hello", "Expected '123hello', got '" .. nonalpha .. "'")
+
+   -- Mixed case
+   mixed = string.cap("hELLO")
+   assert(mixed is "HELLO", "Expected 'HELLO', got '" .. mixed .. "'")
+end
+
+@Test function Decap()
+   -- Basic decapitalization
+   decapped = string.decap("Hello")
+   assert(decapped is "hello", "Expected 'hello', got '" .. decapped .. "'")
+
+   -- Already lowercase
+   already = string.decap("hello")
+   assert(already is "hello", "Expected 'hello', got '" .. already .. "'")
+
+   -- Single character
+   single = string.decap("A")
+   assert(single is "a", "Expected 'a', got '" .. single .. "'")
+
+   -- Empty string
+   empty = string.decap("")
+   assert(empty is "", "Empty string should remain empty, got '" .. empty .. "'")
+
+   -- Non-alphabetic first character
+   nonalpha = string.decap("123Hello")
+   assert(nonalpha is "123Hello", "Expected '123Hello', got '" .. nonalpha .. "'")
+
+   -- Mixed case
+   mixed = string.decap("HeLLo")
+   assert(mixed is "heLLo", "Expected 'heLLo', got '" .. mixed .. "'")
+end
+
+@Test function Pop()
+   -- Basic pop (default 1 character)
+   popped = string.pop("hello")
+   assert(popped is "hell", "Expected 'hell', got '" .. popped .. "'")
+
+   -- Pop multiple characters
+   pop2 = string.pop("hello", 2)
+   assert(pop2 is "hel", "Expected 'hel', got '" .. pop2 .. "'")
+
+   pop3 = string.pop("hello world", 6)
+   assert(pop3 is "hello", "Expected 'hello', got '" .. pop3 .. "'")
+
+   -- Pop all characters (count equals length)
+   popAll = string.pop("hello", 5)
+   assert(popAll is "", "Expected empty string, got '" .. popAll .. "'")
+
+   -- Pop more than string length
+   popMore = string.pop("hello", 10)
+   assert(popMore is "", "Expected empty string, got '" .. popMore .. "'")
+
+   popMore2 = string.pop("hi", 100)
+   assert(popMore2 is "", "Expected empty string, got '" .. popMore2 .. "'")
+
+   -- Pop zero (returns original)
+   popZero = string.pop("hello", 0)
+   assert(popZero is "hello", "Expected 'hello', got '" .. popZero .. "'")
+
+   -- Pop negative (returns original)
+   popNeg = string.pop("hello", -1)
+   assert(popNeg is "hello", "Expected 'hello', got '" .. popNeg .. "'")
+
+   popNeg2 = string.pop("hello", -10)
+   assert(popNeg2 is "hello", "Expected 'hello', got '" .. popNeg2 .. "'")
+
+   -- Empty string
+   popEmpty = string.pop("")
+   assert(popEmpty is "", "Expected empty string, got '" .. popEmpty .. "'")
+
+   popEmpty2 = string.pop("", 5)
+   assert(popEmpty2 is "", "Expected empty string, got '" .. popEmpty2 .. "'")
+
+   -- Single character string
+   popSingle = string.pop("a")
+   assert(popSingle is "", "Expected empty string, got '" .. popSingle .. "'")
+
+   popSingle2 = string.pop("a", 0)
+   assert(popSingle2 is "a", "Expected 'a', got '" .. popSingle2 .. "'")
+
+   -- Method syntax
+   methodPop = "hello world":pop()
+   assert(methodPop is "hello worl", "Expected 'hello worl', got '" .. methodPop .. "'")
+
+   methodPop2 = "hello world":pop(3)
+   assert(methodPop2 is "hello wo", "Expected 'hello wo', got '" .. methodPop2 .. "'")
+end
+
+@Test function Hash()
+   -- Basic hash (case insensitive by default)
+   hash1 = string.hash("hello")
+   hash2 = string.hash("HELLO")
+   assert(hash1 is hash2, "Case insensitive hashes should match: " .. hash1 .. " != " .. hash2)
+
+   -- Case sensitive hash
+   hash3 = string.hash("hello", true)
+   hash4 = string.hash("HELLO", true)
+   assert(hash3 != hash4, "Case sensitive hashes should differ: " .. hash3 .. " is " .. hash4)
+
+   -- Empty string
+   emptyHash = string.hash("")
+   assert(emptyHash != 0, "Empty string hash should not be 0, got " .. emptyHash)
+
+   -- Same string should produce same hash
+   consistent1 = string.hash("test")
+   consistent2 = string.hash("test")
+   assert(consistent1 is consistent2, "Consistent hashing failed: " .. consistent1 .. " != " .. consistent2)
+
+   -- Different strings should produce different hashes (highly likely)
+   diff1 = string.hash("hello")
+   diff2 = string.hash("world")
+   assert(diff1 != diff2, "Different strings produced same hash (collision): " .. diff1)
+end
+
+@Test function EscXML()
+   -- Basic XML escaping
+   escaped = string.escXML("Hello & goodbye")
+   assert(escaped is "Hello &amp; goodbye", "Expected 'Hello &amp; goodbye', got '" .. escaped .. "'")
+
+   -- Less than and greater than
+   brackets = string.escXML("<tag>content</tag>")
+   assert(brackets is "&lt;tag&gt;content&lt;/tag&gt;", "Expected '&lt;tag&gt;content&lt;/tag&gt;', got '" .. brackets .. "'")
+
+   -- All three special characters
+   all = string.escXML("A & B < C > D")
+   assert(all is "A &amp; B &lt; C &gt; D", "Expected 'A &amp; B &lt; C &gt; D', got '" .. all .. "'")
+
+   -- No special characters
+   normal = string.escXML("Hello World")
+   assert(normal is "Hello World", "Expected 'Hello World', got '" .. normal .. "'")
+
+   -- Empty string
+   empty = string.escXML("")
+   assert(empty is "", "Empty string should remain empty, got '" .. empty .. "'")
+
+   -- Nil input (should return empty string)
+   nilResult = string.escXML(nil)
+   assert(nilResult is "", "Nil input should return empty string, got '" .. nilResult .. "'")
+
+   -- Multiple ampersands (should not double-escape)
+   amps = string.escXML("A & B & C")
+   assert(amps is "A &amp; B &amp; C", "Expected 'A &amp; B &amp; C', got '" .. amps .. "'")
+
+   -- Mixed with quotes (should not escape quotes)
+   quotes = string.escXML('Hello "world" & <test>')
+   assert(quotes is 'Hello "world" &amp; &lt;test&gt;', "Expected 'Hello \"world\" &amp; &lt;test&gt;', got '" .. quotes .. "'")
+
+   ue = string.unescapeXML('&amp;&quot;&apos;;')
+   assert(ue is "&\"';", "Received string is incorrect: " .. tostring(ue))
+
+   ue = string.unescapeXML('&lt;<&gt;>')
+   assert(ue is "<<>>", "Received string is incorrect: " .. tostring(ue))
+end
+
+@Test function SubStr()
+   -- string.substr() uses exclusive end index (like JavaScript substring/Python slicing)
+   -- string.substr(s, start, end) extracts chars from start to end-1
+   s = "hello world"
+
+   for i=0,1000 do
+      -- Basic substring
+      sub = string.substr(s, 0, 5) -- Indices 0,1,2,3,4 (not 5)
+      assert(sub is "hello", "Expected 'hello', got '" .. sub .. "'")
+
+      -- Start from middle
+      mid = string.substr(s, 6, 11) -- Indices 6,7,8,9,10 (not 11)
+      assert(mid is "world", "Expected 'world', got '" .. mid .. "'")
+
+      -- Negative indices (count from end)
+      neg = string.substr(s, -5, -1)
+      assert(neg is "world", "Expected 'world' from negative indices, got '" .. neg .. "'")
+
+      -- Negative start, positive end
+      mixed = string.substr(s, -5, 11)
+      assert(mixed is "world", "Expected 'world' from mixed indices, got '" .. mixed .. "'")
+
+      -- Default end
+      toEnd = string.substr(s, 6)
+      assert(toEnd is "world", "Expected 'world' with default end, got '" .. toEnd .. "'")
+
+      -- Single character
+      single = string.substr(s, 0, 1)
+      assert(single is "h", "Expected 'h', got '" .. single .. "'")
+
+      -- Empty range
+      empty = string.substr(s, 5, 5)
+      assert(empty is "", "Expected empty string, got '" .. empty .. "'")
+
+      -- Beyond string length
+      beyond = string.substr(s, 0, 100)
+      assert(#beyond is #s, "Expected length to match original string length, got " .. #beyond)
+      assert(beyond is s, "Expected full string when end exceeds length, got '" .. beyond .. "'")
+
+      -- Empty string
+      emptyStr = string.substr("", 0, 0)
+      assert(emptyStr is "", "Expected empty string, got '" .. emptyStr .. "'")
+   end
+end
+
+@Test function Byte()
+   for i=0,1000 do
+      -- Single character (zero-indexed)
+      b = string.byte("hello", 0)
+      assert(b is 104, "Expected 104 (h), got " .. b)
+
+      -- Multiple characters
+      b1, b2, b3 = string.byte("abc", 0, 2)
+      assert(b1 is 97, "Expected 97 (a), got " .. b1)
+      assert(b2 is 98, "Expected 98 (b), got " .. b2)
+      assert(b3 is 99, "Expected 99 (c), got " .. b3)
+
+      -- Default range (single character at index 0)
+      def = string.byte("hello")
+      assert(def is 104, "Expected 104 (h) as default, got " .. def)
+
+      -- Negative index (from end)
+      neg = string.byte("hello", -1)
+      assert(neg is 111, "Expected 111 (o), got " .. neg)
+
+      -- Range with negative end
+      b4, b5 = string.byte("hello", -2, -1)
+      assert(b4 is 108, "Expected 108 (l), got " .. b4)
+      assert(b5 is 111, "Expected 111 (o), got " .. b5)
+
+      -- Empty range
+      empty = string.byte("hello", 5, 3)
+      assert(empty is nil, "Expected nil for empty range, got " .. tostring(empty))
+
+      -- Single character at last position
+      last = string.byte("hello", 4)
+      assert(last is 111, "Expected 111 (o), got " .. last)
+   end
+end
+
+@Test function Char()
+   for i=0,1000 do
+      -- Single character
+      c = string.char(65)
+      assert(c is "A", "Expected 'A', got '" .. c .. "'")
+
+      -- Multiple characters
+      multi = string.char(72, 101, 108, 108, 111)
+      assert(multi is "Hello", "Expected 'Hello', got '" .. multi .. "'")
+
+      -- Empty (no arguments)
+      empty = string.char()
+      assert(empty is "", "Expected empty string, got '" .. empty .. "'")
+
+      -- Common characters
+      space = string.char(32)
+      assert(space is " ", "Expected space, got '" .. space .. "'")
+
+      newline = string.char(10)
+      assert(newline is "\n", "Expected newline, got '" .. newline .. "'")
+
+      -- Zero character
+      zero = string.char(0)
+      assert(#zero is 1, "Expected 1-byte string for null char, got " .. #zero)
+   end
+end
+
+@Test function Rep()
+   for i=0,1000 do
+      -- Basic repetition
+      rep = string.rep("ab", 3)
+      assert(rep is "ababab", "Expected 'ababab', got '" .. rep .. "'")
+
+      -- Single repetition
+      single = string.rep("hello", 1)
+      assert(single is "hello", "Expected 'hello', got '" .. single .. "'")
+
+      -- Zero repetitions
+      zero = string.rep("hello", 0)
+      assert(zero is "", "Expected empty string, got '" .. zero .. "'")
+
+      -- With separator
+      withSep = string.rep("abc", 3, ",")
+      assert(withSep is "abc,abc,abc", "Expected 'abc,abc,abc', got '" .. withSep .. "'")
+
+      -- Separator with single repetition (no separator should appear)
+      singleSep = string.rep("hello", 1, ",")
+      assert(singleSep is "hello", "Expected 'hello' (no separator), got '" .. singleSep .. "'")
+
+      -- Empty string repetition
+      emptyRep = string.rep("", 5)
+      assert(emptyRep is "", "Expected empty string, got '" .. emptyRep .. "'")
+   end
+end
+
+@Test function Reverse()
+   -- Basic reverse
+   rev = string.reverse("hello")
+   assert(rev is "olleh", "Expected 'olleh', got '" .. rev .. "'")
+
+   -- Single character
+   single = string.reverse("a")
+   assert(single is "a", "Expected 'a', got '" .. single .. "'")
+
+   -- Empty string
+   empty = string.reverse("")
+   assert(empty is "", "Expected empty string, got '" .. empty .. "'")
+
+   -- With spaces
+   spaces = string.reverse("hello world")
+   assert(spaces is "dlrow olleh", "Expected 'dlrow olleh', got '" .. spaces .. "'")
+
+   -- Palindrome
+   palindrome = string.reverse("racecar")
+   assert(palindrome is "racecar", "Expected 'racecar', got '" .. palindrome .. "'")
+end
+
+@Test function LowerUpper()
+   -- Lower case
+   lower = string.lower("HELLO WORLD")
+   assert(lower is "hello world", "Expected 'hello world', got '" .. lower .. "'")
+
+   -- Upper case
+   upper = string.upper("hello world")
+   assert(upper is "HELLO WORLD", "Expected 'HELLO WORLD', got '" .. upper .. "'")
+
+   -- Mixed case to lower
+   mixedLower = string.lower("HeLLo WoRLd")
+   assert(mixedLower is "hello world", "Expected 'hello world', got '" .. mixedLower .. "'")
+
+   -- Mixed case to upper
+   mixedUpper = string.upper("HeLLo WoRLd")
+   assert(mixedUpper is "HELLO WORLD", "Expected 'HELLO WORLD', got '" .. mixedUpper .. "'")
+
+   -- Already lowercase
+   alreadyLower = string.lower("hello")
+   assert(alreadyLower is "hello", "Expected 'hello', got '" .. alreadyLower .. "'")
+
+   -- Already uppercase
+   alreadyUpper = string.upper("HELLO")
+   assert(alreadyUpper is "HELLO", "Expected 'HELLO', got '" .. alreadyUpper .. "'")
+
+   -- Empty string
+   emptyLower = string.lower("")
+   assert(emptyLower is "", "Expected empty string, got '" .. emptyLower .. "'")
+
+   emptyUpper = string.upper("")
+   assert(emptyUpper is "", "Expected empty string, got '" .. emptyUpper .. "'")
+
+   -- Non-alphabetic characters
+   numbersLower = string.lower("123!@#")
+   assert(numbersLower is "123!@#", "Expected '123!@#', got '" .. numbersLower .. "'")
+
+   numbersUpper = string.upper("123!@#")
+   assert(numbersUpper is "123!@#", "Expected '123!@#', got '" .. numbersUpper .. "'")
+end
+
+@Test function Find()
+   -- Basic find (zero-indexed positions)
+   s = "hello world"
+   start, finish = string.find(s, "world")
+   assert(start is 6, "Expected start at 6, got " .. tostring(start))
+   assert(finish is 10, "Expected finish at 10, got " .. tostring(finish))
+
+   -- Find at beginning
+   start2, finish2 = string.find(s, "hello")
+   assert(start2 is 0, "Expected start at 0, got " .. tostring(start2))
+   assert(finish2 is 4, "Expected finish at 4, got " .. tostring(finish2))
+
+   -- Not found
+   notFound = string.find(s, "xyz")
+   assert(notFound is nil, "Expected nil for not found, got " .. tostring(notFound))
+
+   -- With start position
+   start3, finish3 = string.find(s, "o", 5)
+   assert(start3 is 7, "Expected start at 7, got " .. tostring(start3))
+   assert(finish3 is 7, "Expected finish at 7, got " .. tostring(finish3))
+end
+
+@Test function Count()
+   -- Basic count
+   count = string.count("hello world", "o")
+   assert(count is 2, "Expected 2 occurrences of 'o', got " .. count)
+
+   -- Multiple occurrences of a word
+   count2 = string.count("hello hello hello", "hello")
+   assert(count2 is 3, "Expected 3 occurrences of 'hello', got " .. count2)
+
+   -- No matches
+   count3 = string.count("hello", "xyz")
+   assert(count3 is 0, "Expected 0 occurrences of 'xyz', got " .. count3)
+
+   -- Empty search string (should return 0)
+   count4 = string.count("hello", "")
+   assert(count4 is 0, "Expected 0 for empty search string, got " .. count4)
+
+   -- Empty source string
+   count5 = string.count("", "a")
+   assert(count5 is 0, "Expected 0 for empty source string, got " .. count5)
+
+   -- Both empty (should return 0)
+   count6 = string.count("", "")
+   assert(count6 is 0, "Expected 0 for both empty strings, got " .. count6)
+
+   -- Single character in string
+   count7 = string.count("a", "a")
+   assert(count7 is 1, "Expected 1 occurrence, got " .. count7)
+
+   -- Non-overlapping behaviour (counting "aa" in "aaa" should find 1, not 2)
+   count8 = string.count("aaa", "aa")
+   assert(count8 is 1, "Expected 1 non-overlapping match of 'aa' in 'aaa', got " .. count8)
+
+   count9 = string.count("aaaa", "aa")
+   assert(count9 is 2, "Expected 2 non-overlapping matches of 'aa' in 'aaaa', got " .. count9)
+
+   -- Multi-character search
+   count10 = string.count("one::two::three::four", "::")
+   assert(count10 is 3, "Expected 3 occurrences of '::', got " .. count10)
+
+   -- Case sensitivity
+   count11 = string.count("Hello HELLO hello", "hello")
+   assert(count11 is 1, "Expected 1 case-sensitive match, got " .. count11)
+
+   -- Method syntax
+   methodCount = "hello world":count("l")
+   assert(methodCount is 3, "Expected 3 'l' characters, got " .. methodCount)
+
+   -- Line endings
+   count12 = string.count("line1\r\nline2\r\nline3\r\n", "\r\n")
+   assert(count12 is 3, "Expected 3 CRLF occurrences, got " .. count12)
+end
+
+@Test function Replace()
+   -- Basic replacement (all occurrences)
+   result, count = string.replace("hello world", "o", "0")
+   assert(result is "hell0 w0rld", "Expected 'hell0 w0rld', got '" .. result .. "'")
+   assert(count is 2, "Expected 2 replacements, got " .. count)
+
+   -- Replace all occurrences of a word
+   result2, count2 = string.replace("hello hello hello", "hello", "hi")
+   assert(result2 is "hi hi hi", "Expected 'hi hi hi', got '" .. result2 .. "'")
+   assert(count2 is 3, "Expected 3 replacements, got " .. count2)
+
+   -- Limited replacements (max_count parameter)
+   result3, count3 = string.replace("hello hello hello", "hello", "hi", 2)
+   assert(result3 is "hi hi hello", "Expected 'hi hi hello', got '" .. result3 .. "'")
+   assert(count3 is 2, "Expected 2 replacements, got " .. count3)
+
+   -- Replace only first occurrence
+   result4, count4 = string.replace("aaa", "a", "b", 1)
+   assert(result4 is "baa", "Expected 'baa', got '" .. result4 .. "'")
+   assert(count4 is 1, "Expected 1 replacement, got " .. count4)
+
+   -- No matches found
+   result5, count5 = string.replace("hello", "xyz", "abc")
+   assert(result5 is "hello", "Expected 'hello', got '" .. result5 .. "'")
+   assert(count5 is 0, "Expected 0 replacements, got " .. count5)
+
+   -- Empty search string (should return original with 0 count)
+   result6, count6 = string.replace("hello", "", "x")
+   assert(result6 is "hello", "Expected 'hello', got '" .. result6 .. "'")
+   assert(count6 is 0, "Expected 0 replacements for empty search, got " .. count6)
+
+   -- Empty source string
+   result7, count7 = string.replace("", "a", "b")
+   assert(result7 is "", "Expected empty string, got '" .. result7 .. "'")
+   assert(count7 is 0, "Expected 0 replacements for empty source, got " .. count7)
+
+   -- Replacement with empty string (deletion)
+   result8, count8 = string.replace("hello world", "o", "")
+   assert(result8 is "hell wrld", "Expected 'hell wrld', got '" .. result8 .. "'")
+   assert(count8 is 2, "Expected 2 deletions, got " .. count8)
+
+   -- Multi-character search and replacement
+   result9, count9 = string.replace("one::two::three", "::", "-")
+   assert(result9 is "one-two-three", "Expected 'one-two-three', got '" .. result9 .. "'")
+   assert(count9 is 2, "Expected 2 replacements, got " .. count9)
+
+   -- Replacement longer than search
+   result10, count10 = string.replace("a-b-c", "-", "---")
+   assert(result10 is "a---b---c", "Expected 'a---b---c', got '" .. result10 .. "'")
+   assert(count10 is 2, "Expected 2 replacements, got " .. count10)
+
+   -- Method syntax
+   methodResult, methodCount = "hello world":replace("world", "Lua")
+   assert(methodResult is "hello Lua", "Expected 'hello Lua', got '" .. methodResult .. "'")
+   assert(methodCount is 1, "Expected 1 replacement, got " .. methodCount)
+
+   -- Consecutive matches
+   result11, count11 = string.replace("aaa", "aa", "b")
+   assert(result11 is "ba", "Expected 'ba', got '" .. result11 .. "'")
+   assert(count11 is 1, "Expected 1 replacement (non-overlapping), got " .. count11)
+
+   -- CRLF to LF conversion (common use case)
+   result12, count12 = string.replace("line1\r\nline2\r\nline3", "\r\n", "\n")
+   assert(result12 is "line1\nline2\nline3", "Expected LF-only string, got '" .. result12 .. "'")
+   assert(count12 is 2, "Expected 2 CRLF replacements, got " .. count12)
+
+   -- Max count of 0 (should not replace anything)
+   result13, count13 = string.replace("hello", "l", "x", 0)
+   assert(result13 is "hello", "Expected 'hello' with max_count=0, got '" .. result13 .. "'")
+   assert(count13 is 0, "Expected 0 replacements with max_count=0, got " .. count13)
+end
+
+@Test function Format()
+   for i=0,1000 do
+      -- Basic integer
+      f1 = string.format("value: %d", 42)
+      assert(f1 is "value: 42", "Expected 'value: 42', got '" .. f1 .. "'")
+
+      -- Floating point
+      f2 = string.format("pi: %.2f", 3.14159)
+      assert(f2 is "pi: 3.14", "Expected 'pi: 3.14', got '" .. f2 .. "'")
+
+      -- String
+      f3 = string.format("hello %s", "world")
+      assert(f3 is "hello world", "Expected 'hello world', got '" .. f3 .. "'")
+
+      -- Multiple arguments
+      f4 = string.format("%s = %d", "answer", 42)
+      assert(f4 is "answer = 42", "Expected 'answer = 42', got '" .. f4 .. "'")
+
+      -- Hexadecimal
+      f5 = string.format("0x%x", 255)
+      assert(f5 is "0xff", "Expected '0xff', got '" .. f5 .. "'")
+
+      f6 = string.format("0x%X", 255)
+      assert(f6 is "0xFF", "Expected '0xFF', got '" .. f6 .. "'")
+
+      -- Padding
+      f7 = string.format("%05d", 42)
+      assert(f7 is "00042", "Expected '00042', got '" .. f7 .. "'")
+
+      -- Character
+      f8 = string.format("char: %c", 65)
+      assert(f8 is "char: A", "Expected 'char: A', got '" .. f8 .. "'")
+
+      -- Percent sign
+      f9 = string.format("100%%")
+      assert(f9 is "100%", "Expected '100%', got '" .. f9 .. "'")
+
+      -- No arguments
+      f10 = string.format("hello")
+      assert(f10 is "hello", "Expected 'hello', got '" .. f10 .. "'")
+   end
+end

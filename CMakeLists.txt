@@ -1,28 +1,27 @@
-# Parasol Core Build File
+# Kotuku Core Build File
 #
-# Release Config:  cmake -S . -B release -DCMAKE_BUILD_TYPE=Release
-# Debug Config:    cmake -S . -B debug -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=local -DRUN_ANYWHERE=TRUE
-# Fast Config:     cmake -S . -B fast -DCMAKE_BUILD_TYPE=FastBuild -DCMAKE_INSTALL_PREFIX=local -DRUN_ANYWHERE=TRUE
+# Release Config:  cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release
+# Debug Config:    cmake -S . -B build/debug -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=local -DRUN_ANYWHERE=TRUE
+# Fast Config:     cmake -S . -B build/fast -DCMAKE_BUILD_TYPE=FastBuild -DCMAKE_INSTALL_PREFIX=local -DRUN_ANYWHERE=TRUE
 #                  (FastBuild optimises for compilation speed rather than runtime performance - uses -O0, faster linkers, minimal debug info)
-# Git Release:     cmake -S . -B release-git -DCMAKE_BUILD_TYPE=Release -DINSTALL_EXAMPLES=TRUE -DCMAKE_INSTALL_PREFIX=parasol-linux64-$(date +'%Y%m%d') -DRUN_ANYWHERE=TRUE -DBUILD_TESTS=OFF -DBUILD_DEFS=OFF
+# Git Release:     cmake -S . -B build/release-git -DCMAKE_BUILD_TYPE=Release -DINSTALL_EXAMPLES=TRUE -DCMAKE_INSTALL_PREFIX=kotuku-linux64-$(date +'%Y%m%d') -DRUN_ANYWHERE=TRUE -DBUILD_TESTS=OFF -DBUILD_DEFS=OFF
 #
 # For GCC based Windows builds, -G"MinGW Makefiles" must be added to the above commands.
 #
 # A build can target a local folder by adding -DCMAKE_INSTALL_PREFIX=local -DRUN_ANYWHERE=TRUE
 #
-# Build:   cmake --build release -j 8 -- -O
-# Install: sudo cmake --install release
-# Test:    [GCC] make -C release test ARGS=--verbose
-#          [MSVC] cd visual-studio; ctest -V -C Release
+# Build:   cmake --build build/release -j 8 -- -O
+# Install: sudo cmake --install build/release
+# Test:    ctest --testdir build/release -C Release --output-on-failure
 #
-# A static build can be enabled with -DPARASOL_STATIC=ON if the intention is to embed Parasol into another project.
+# A static build can be enabled with -DKOTUKU_STATIC=ON if the intention is to embed Kotuku into another project.
 # This may be useful if you intend to use a limited feature-set, like the vector graphics API.  Static builds
 # should be customised with an isolated output folder that is exclusive to the target project.  Sharing a static
 # build across multiple projects can otherwise lead to confusing outcomes.
 #
 # Windows release packages can be created using CPack integration:
 #
-#   cmake -S . -B release -DCMAKE_BUILD_TYPE=Release -DPARASOL_STATIC=ON -DINSTALL_EXAMPLES=ON
+#   cmake -S . -B release -DCMAKE_BUILD_TYPE=Release -DKOTUKU_STATIC=ON -DINSTALL_EXAMPLES=ON
 #   cmake --build release --config Release
 #   cmake --install release
 #   cd release && cpack -G ZIP
@@ -33,6 +32,13 @@
 #   - NSIS for installer generation (optional, auto-detected)
 
 cmake_minimum_required(VERSION 3.15)
+
+if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+   message (STATUS "CMAKE_BUILD_TYPE not set, defaulting to Release")
+   set (CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
+endif ()
+
+add_compile_definitions($<$<CONFIG:Release>:KOTUKU_RELEASE_BUILD>)
 
 include (CheckIncludeFiles)
 include (CheckTypeSize)
@@ -48,17 +54,23 @@ if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
    include(CTest)
 endif()
 
-project (Parasol VERSION 2024.2.27 LANGUAGES C CXX)
+file(READ "${CMAKE_SOURCE_DIR}/pkg/version.txt" KOTUKU_VERSION_STRING)
+string(STRIP "${KOTUKU_VERSION_STRING}" KOTUKU_VERSION_STRING)
+
+project (Kotuku VERSION ${KOTUKU_VERSION_STRING} LANGUAGES C CXX)
 
 cmake_policy (SET CMP0082 NEW) # Process install commands in the order that they appear
+if(POLICY CMP0177)
+   cmake_policy(SET CMP0177 NEW) # Normalise install destination paths (converts slashes etc)
+endif()
 
-# To switch on a custom option use -D, e.g. -DPARASOL_VLOG=ON
+# To switch on a custom option use -D, e.g. -DKOTUKU_VLOG=ON
 
-option (PARASOL_STATIC   "Build framework as a set of static libraries instead of the default modular build." OFF)
-option (PARASOL_INSTALL  "Create installation targets" ON)
-option (PARASOL_VLOG     "Enable verbose log messages in the generated binaries" OFF)
+option (KOTUKU_STATIC   "Build as a set of static libraries instead of the default modular build." OFF)
+option (KOTUKU_INSTALL  "Create installation targets" ON)
+option (KOTUKU_VLOG     "Enable verbose log messages in the generated binaries" OFF)
 if (UNIX)
-   option (RUN_ANYWHERE  "Build a framework that can run directly from the main folder.  Typically used if redefining CMAKE_INSTALL_PREFIX" OFF)
+   option (RUN_ANYWHERE  "Create a build that can run directly from the main folder.  Typically used if redefining CMAKE_INSTALL_PREFIX" OFF)
 else ()
    set (RUN_ANYWHERE ON)
 endif ()
@@ -76,7 +88,7 @@ option (DISABLE_MP3       "Disable MP3 support" OFF)
 option (DISABLE_NETWORK   "Disable Network API" OFF)
 option (DISABLE_PICTURE   "Disable Picture API" OFF)
 option (DISABLE_JPEG      "Disable JPEG support" OFF)
-option (DISABLE_SCINTILLA "Disable Scintilla API" OFF)
+option (DISABLE_SCINTILLA "Disable Scintilla API" ON)
 option (DISABLE_SVG       "Disable SVG support" OFF)
 option (DISABLE_VECTOR    "Disable Vector API" OFF)
 option (DISABLE_XSLT      "Disable XSLT API" OFF)
@@ -86,6 +98,7 @@ option (INSTALL_TESTS     "Install the test programs." OFF)
 option (ENABLE_ANALYSIS   "Enable run-time program analysis (with performance penalties) if available.  May negatively affect gdb." OFF)
 option (GENERATE_DEBIAN_PKG "Generate Debian packaging files" OFF)
 option (DISABLE_CPACK     "Disable CPack Windows packaging support" OFF)
+option (FULL_OPTIMISATION "Use the highest levels of optimisation available" OFF)
 
 set (CMAKE_CXX_STANDARD 20)
 set (CMAKE_CXX_STANDARD_REQUIRED True)
@@ -94,30 +107,30 @@ set (CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set (BUILD_RPATH_USE_ORIGIN TRUE)
 
-set (INCLUDE_OUTPUT "${PROJECT_SOURCE_DIR}/include/parasol")
+set (INCLUDE_OUTPUT "${PROJECT_SOURCE_DIR}/include/kotuku")
 set (DOCS "${PROJECT_SOURCE_DIR}/docs/xml")
 
-set(REQUIRED_MODS core fluid xml xpath regex json)
+set(REQUIRED_MODS core tiri xml xquery regex json)
 
-if (PARASOL_STATIC)
+if (KOTUKU_STATIC)
    set (BUILD_SHARED_LIBS OFF)
 else ()
    set (BUILD_SHARED_LIBS ON)
 endif ()
 
 if (RUN_ANYWHERE)
-   set (PARASOL_ROOT "${CMAKE_INSTALL_PREFIX}")
+   set (KOTUKU_ROOT "${CMAKE_INSTALL_PREFIX}")
    set (SHARE_TARGET .)
    set (LIB_TARGET "lib")
-   set (PARASOL_CMD_PATH "${CMAKE_INSTALL_PREFIX}")
+   set (ORIGO_CMD_PATH "${CMAKE_INSTALL_PREFIX}")
 else ()
-   set (PARASOL_ROOT "${CMAKE_INSTALL_PREFIX}/share/parasol")
-   set (SHARE_TARGET "share/parasol")
-   set (LIB_TARGET "lib/parasol")
-   set (PARASOL_CMD_PATH "${CMAKE_INSTALL_PREFIX}/bin")
+   set (KOTUKU_ROOT "${CMAKE_INSTALL_PREFIX}/share/kotuku")
+   set (SHARE_TARGET "share/kotuku")
+   set (LIB_TARGET "lib/kotuku")
+   set (ORIGO_CMD_PATH "${CMAKE_INSTALL_PREFIX}/bin")
 endif ()
 
-set (PARASOL_CMD_TARGET "${PARASOL_CMD_PATH}/parasol")
+set (ORIGO_CMD_TARGET "${ORIGO_CMD_PATH}/origo")
 
 test_big_endian (SYSTEM_ENDIAN_STYLE)
 if (SYSTEM_ENDIAN_STYLE EQUAL 0) # Little endian (Intel)
@@ -146,9 +159,23 @@ if (MINGW) # Undo the use of 'lib' as the default prefix set by MinGW
    set(CMAKE_STATIC_LIBRARY_PREFIX "")
 endif ()
 
+# MSVC-specific optimization flags for Release builds
+if (MSVC AND FULL_OPTIMISATION)
+   # Replace default /O2 with /Ox for maximum optimization
+   # /GL enables whole program optimization at compile time
+   # /LTCG enables link-time code generation for cross-module optimization
+   string(REPLACE "/O2" "/Ox /GL" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
+   string(REPLACE "/O2" "/Ox /GL" CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE}")
+
+   if (KOTUKU_STATIC)
+      set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /LTCG")
+      set(CMAKE_STATIC_LINKER_FLAGS_RELEASE "${CMAKE_STATIC_LINKER_FLAGS_RELEASE} /LTCG")
+   endif ()
+endif ()
+
 include_directories("${PROJECT_SOURCE_DIR}/include"
-   "${PROJECT_SOURCE_DIR}/include/parasol/3rdparty"
-   "${CMAKE_CURRENT_BINARY_DIR}")
+   "${PROJECT_SOURCE_DIR}/include/kotuku/3rdparty"
+   "${CMAKE_CURRENT_BINARY_DIR}") # For config.h
 
 	CHECK_CXX_SOURCE_COMPILES ("
 #include <stdio.h>
@@ -180,17 +207,17 @@ int main() {
 
 find_program (XXD_CMD "xxd")
 find_program (OD_CMD "od")
-find_program (PARASOL_CMD "parasol" NO_DEFAULT_PATH PATHS "${PARASOL_CMD_PATH}")
-find_file (IDL_C_SCRIPT "idl-c.fluid" PATHS "${PROJECT_SOURCE_DIR}/tools/idl")
-find_file (IDL_COMPILE_SCRIPT "idl-compile.fluid" PATHS "${PROJECT_SOURCE_DIR}/tools/idl")
-find_file (FLUTE_SCRIPT "flute.fluid" PATHS "${PROJECT_SOURCE_DIR}/tools")
+find_program (ORIGO_CMD "origo" NO_DEFAULT_PATH PATHS "${ORIGO_CMD_PATH}")
+find_file (IDL_C_SCRIPT "idl-c.tiri" PATHS "${PROJECT_SOURCE_DIR}/tools/idl")
+find_file (IDL_COMPILE_SCRIPT "idl-compile.tiri" PATHS "${PROJECT_SOURCE_DIR}/tools/idl")
+find_file (FLUTE_SCRIPT "flute.tiri" PATHS "${PROJECT_SOURCE_DIR}/tools")
 
-if (PARASOL_CMD STREQUAL "PARASOL_CMD-NOTFOUND")
+if (ORIGO_CMD STREQUAL "ORIGO_CMD-NOTFOUND")
    message (STATUS "Definitions will not be built and tests are disabled.")
    set (BUILD_DEFS OFF)
 else ()
    if (BUILD_DEFS)
-      message (STATUS "Definitions will be built with the Parasol exe installed @ ${PARASOL_CMD}.")
+      message (STATUS "Definitions will be built with the Origo exe installed @ ${ORIGO_CMD}.")
    endif ()
 endif ()
 
@@ -200,15 +227,15 @@ if (BUILD_TESTS)
 endif ()
 
 if (IDL_C_SCRIPT STREQUAL "IDL_C_SCRIPT-NOTFOUND")
-   message (FATAL_ERROR "The idl-c.fluid script was not found in ${PROJECT_SOURCE_DIR}/tools/idl")
+   message (FATAL_ERROR "The idl-c.tiri script was not found in ${PROJECT_SOURCE_DIR}/tools/idl")
 endif ()
 
 if (IDL_COMPILE_SCRIPT STREQUAL "IDL_COMPILE_SCRIPT-NOTFOUND")
-   message (FATAL_ERROR "The idl-compile.fluid script was not found in ${PROJECT_SOURCE_DIR}/tools/idl")
+   message (FATAL_ERROR "The idl-compile.tiri script was not found in ${PROJECT_SOURCE_DIR}/tools/idl")
 endif ()
 
 if (FLUTE_SCRIPT STREQUAL "FLUTE_SCRIPT-NOTFOUND")
-   message (FATAL_ERROR "The flute.fluid script was not found in ${PROJECT_SOURCE_DIR}/tools")
+   message (FATAL_ERROR "The flute.tiri script was not found in ${PROJECT_SOURCE_DIR}/tools")
 endif ()
 
 if (NOT MSVC)
@@ -216,20 +243,20 @@ if (NOT MSVC)
 endif ()
 
 if (WIN32)
-   if (PARASOL_STATIC)
+   if (KOTUKU_STATIC)
       # NB: MinGW does not guarantee that libgcc and libstdc++ will be static even if these flags are specified.
       if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
          set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc -static-libstdc++")
       endif ()
-      set (INIT_LINK "init-win" parasol_static)
+      set (INIT_LINK "init-win" kotuku_static)
    else ()
       set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
       set (INIT_LINK "init-win")
    endif ()
 else ()
    # Note that compiling with -static in Linux is disabled because it appears to cause segfaults when writing __thread variables.
-   if (PARASOL_STATIC)
-      set (INIT_LINK "init-unix" parasol_static)
+   if (KOTUKU_STATIC)
+      set (INIT_LINK "init-unix" kotuku_static)
    else ()
       set (INIT_LINK "init-unix")
    endif ()
@@ -246,9 +273,9 @@ add_custom_target(build_headers ALL COMMENT "Generate headers and definition fil
 function (flute_test name path)
    if (BUILD_TESTS)
       if (RUN_ANYWHERE)
-         set (FLUTE_EXE "${CMAKE_INSTALL_PREFIX}/parasol")
+         set (FLUTE_EXE "${CMAKE_INSTALL_PREFIX}/origo")
       else ()
-         set (FLUTE_EXE "${CMAKE_INSTALL_PREFIX}/bin/parasol")
+         set (FLUTE_EXE "${CMAKE_INSTALL_PREFIX}/bin/origo")
       endif ()
       get_filename_component(FLUTE_FULL_PATH "${path}" ABSOLUTE)
       add_test (NAME ${name}
@@ -259,7 +286,7 @@ function (flute_test name path)
 endfunction ()
 
 # --------------------------------------------------------------------------------------------------------------------
-# idl_gen() is used to generate both C/C++ headers and IDL strings from FDL files.
+# idl_gen() is used to generate both C/C++ headers and IDL strings from TDL files.
 
 function (idl_gen)
    cmake_parse_arguments (PARSE_ARGV 0 IDLC "" "OUTPUT;APPEND_IDL;NAME" "ARGS;FILES")
@@ -275,16 +302,16 @@ function (idl_gen)
          list (APPEND IDLC_ARGS "files={" ${IDLC_FILES} "}")
       endif ()
 
-      list (APPEND COMMAND_LIST COMMAND ${PARASOL_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=${ARGV0}"
+      list (APPEND COMMAND_LIST COMMAND ${ORIGO_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=${ARGV0}"
          "output=${IDLC_OUTPUT}" "sdk=${PROJECT_SOURCE_DIR}" ${IDLC_ARGS})
 
       if (DEFINED IDLC_APPEND_IDL)
-         list (APPEND COMMAND_LIST COMMAND ${PARASOL_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=${ARGV0}"
+         list (APPEND COMMAND_LIST COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=${ARGV0}"
             "output=${IDLC_APPEND_IDL}" "sdk=${PROJECT_SOURCE_DIR}" "format=c" "append")
       endif ()
 
       add_custom_command (OUTPUT ${IDLC_OUTPUT}
-         ${COMMAND_LIST}
+         ${COMMAND_LIST} || echo ""
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
          DEPENDS ${ARGV0}
          COMMENT "Generating C header file ${IDLC_OUTPUT} from ${ARGV0}"
@@ -313,7 +340,7 @@ function (idl_compile)
       endif ()
 
       add_custom_command (OUTPUT ${IDLC_OUTPUT}
-         COMMAND "${PARASOL_CMD}" "${IDL_COMPILE_SCRIPT}" "--log-warning" "src=${ARGV0}" "output=${IDLC_OUTPUT}" "sdk=${PROJECT_SOURCE_DIR}" "format=c" ${IDLC_ARGS}
+         COMMAND "${ORIGO_CMD}" "${IDL_COMPILE_SCRIPT}" "--log-warning" "src=${ARGV0}" "output=${IDLC_OUTPUT}" "sdk=${PROJECT_SOURCE_DIR}" "format=c" ${IDLC_ARGS}
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
          DEPENDS ${ARGV0}
          COMMENT "Producing definition file ${IDLC_OUTPUT} from ${ARGV0}"
@@ -328,7 +355,7 @@ function (idl_compile)
 endfunction ()
 
 # --------------------------------------------------------------------------------------------------------------------
-# This is a convenience function that configures the default settings needed for Parasol modules
+# This is a convenience function that configures the default settings needed for Kotuku modules
 
 function (set_module_defaults ARG_TARGET ARG_NAMESPACE)
    target_include_directories (${ARG_TARGET} PRIVATE "${PROJECT_SOURCE_DIR}/include")
@@ -342,7 +369,7 @@ function (set_module_defaults ARG_TARGET ARG_NAMESPACE)
       target_link_options (${ARG_TARGET} PRIVATE "$<${GCC_COMPAT}:$<LINK_ONLY:LINKER:--gc-sections>>")
    endif ()
 
-   if (PARASOL_STATIC)
+   if (KOTUKU_STATIC)
       set_target_properties (${ARG_TARGET}
          PROPERTIES
          CXX_STANDARD 20)
@@ -359,7 +386,7 @@ function (set_module_defaults ARG_TARGET ARG_NAMESPACE)
          LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/release/lib"
          RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/release/lib")
 
-      if (PARASOL_INSTALL)
+      if (KOTUKU_INSTALL)
          if (WIN32)
             install(TARGETS ${ARG_TARGET} RUNTIME DESTINATION "${LIB_TARGET}")
          else ()
@@ -372,7 +399,7 @@ function (set_module_defaults ARG_TARGET ARG_NAMESPACE)
    endif ()
 
    # Ensure all modules depend on build_headers to prevent race conditions
-   # where C++ compilation starts before FDL processing completes
+   # where C++ compilation starts before TDL processing completes
    add_dependencies (${ARG_TARGET} build_headers)
 
    # Ensure all modules have a minimum level of dependencies, this ensures a minimally
@@ -394,13 +421,13 @@ endfunction ()
 if (CMAKE_SIZEOF_VOID_P EQUAL 8)
    message (STATUS "This will be a 64-bit build for processor arch ${CMAKE_HOST_SYSTEM_PROCESSOR}")
    set (_LP64 ON) # Used by config.h
-#   set (PARASOL_ARCH "-m64")
+#   set (KOTUKU_ARCH "-m64")
 else ()
    message (STATUS "This will be a 32-bit build for processor arch ${CMAKE_HOST_SYSTEM_PROCESSOR}")
-#   set (PARASOL_ARCH "-m32")
+#   set (KOTUKU_ARCH "-m32")
 endif ()
 
-if (PARASOL_VLOG)
+if (KOTUKU_VLOG)
    add_compile_definitions ("_DEBUG")
 endif ()
 
@@ -409,15 +436,18 @@ endif ()
 if (MSVC)
    # Turn off ugly warnings
    add_compile_definitions ("_CRT_SECURE_NO_WARNINGS")
+
    # Use NODEFAULTLIB to override sub-projects linking to incorrect standard libraries.
    # https://learn.microsoft.com/en-us/previous-versions/visualstudio/visual-studio-6.0/aa267384(v=vs.60)?redirectedfrom=MSDN
-   if (PARASOL_VLOG)
+
+   if (KOTUKU_VLOG)
       set (CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDebugDLL")
       add_link_options ("/NODEFAULTLIB:libc.lib" "/NODEFAULTLIB:libcmt.lib" "/NODEFAULTLIB:libc.lib" "/NODEFAULTLIB:libcmtd.lib" "/NODEFAULTLIB:msvcrt.lib")
    else ()
       set (CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
       add_link_options ("/NODEFAULTLIB:libcmt.lib" "/NODEFAULTLIB:libcmtd.lib" "/NODEFAULTLIB:msvcrtd.lib")
    endif ()
+
    # add_link_options ("/VERBOSE:LIB")
    if (ENABLE_ANALYSIS)
       # Note that this option is not compatible with /ZI (edit-and-continue).  To rectify complaints about the asan DLL, you may also need a line like this one added to each entry in launch.vs.json:
@@ -430,7 +460,7 @@ if (MSVC)
    if (CMAKE_BUILD_TYPE STREQUAL "Release")
       add_compile_definitions ("_HAS_EXCEPTIONS=0")
       string(REPLACE "/EHsc" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-      string(REPLACE "/EHsc" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+      string(REPLACE "/EHsc" "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
       set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /EHs-c- /GR")
       set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHs-c- /GR")
    endif ()
@@ -447,8 +477,8 @@ else ()
       set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-color=auto -fdata-sections -ffunction-sections -fno-strict-aliasing")
    elseif (WIN32)
       add_definitions ("-D_WIN32" "-U__unix__")
-      set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu11 -fdiagnostics-color=auto -fdata-sections -ffunction-sections -fno-strict-aliasing -Wno-pointer-sign ${PARASOL_ARCH}")
-      set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdata-sections -fdiagnostics-color=auto -ffunction-sections -fno-strict-aliasing ${PARASOL_ARCH}")
+      set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu11 -fdiagnostics-color=auto -fdata-sections -ffunction-sections -fno-strict-aliasing -Wno-pointer-sign ${KOTUKU_ARCH}")
+      set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdata-sections -fdiagnostics-color=auto -ffunction-sections -fno-strict-aliasing ${KOTUKU_ARCH}")
       if (PRINTF64_ID)
          add_compile_definitions ("PRINTF64I")
       endif ()
@@ -469,8 +499,8 @@ else ()
       set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address -fsanitize=leak -DANALYSIS_ENABLED")
       set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fsanitize=leak -DANALYSIS_ENABLED")
       set (DISABLE_AUDIO ON)
-      if (NOT PARASOL_STATIC)
-         message (FATAL_ERROR "Address analysis requires the build to be compiled with PARASOL_STATIC on.")
+      if (NOT KOTUKU_STATIC)
+         message (FATAL_ERROR "Address analysis requires the build to be compiled with KOTUKU_STATIC on.")
       endif ()
    endif ()
 
@@ -677,9 +707,9 @@ list (APPEND LIB_LIST ${REQUIRED_MODS})
 
 add_subdirectory (src/link)
 add_subdirectory (src/core)
-add_subdirectory (src/fluid)
+add_subdirectory (src/tiri)
 add_subdirectory (src/xml)
-add_subdirectory (src/xpath)
+add_subdirectory (src/xquery)
 add_subdirectory (src/json)
 add_subdirectory (src/regex)
 
@@ -689,19 +719,19 @@ add_subdirectory (src/launcher)
 # Create a combined static library that links all modules together
 # This breaks the circular dependencies by having a separate target own all the inter-module linkage
 
-if (PARASOL_STATIC)
+if (KOTUKU_STATIC)
    # Create an interface library that groups all modules together
-   add_library (parasol_static INTERFACE)
+   add_library (kotuku_static INTERFACE)
 
-   target_link_libraries (parasol_static INTERFACE core ${LIB_LIST})
+   target_link_libraries (kotuku_static INTERFACE core ${LIB_LIST})
 
-   message(STATUS "Created combined interface library 'parasol_static' with modules: core ${LIB_LIST}")
+   message(STATUS "Created combined interface library 'kotuku_static' with modules: core ${LIB_LIST}")
 endif ()
 
 # --------------------------------------------------------------------------------------------------------------------
 # Generate the platform configuration header
 
-configure_file ("src/config.h.in" "parasol/config.h" NEWLINE_STYLE UNIX)
+configure_file ("src/config.h.in" "kotuku/config.h" NEWLINE_STYLE UNIX)
 
 # --------------------------------------------------------------------------------------------------------------------
 # Icons are installed as a zip file
@@ -741,10 +771,10 @@ endif()
 # --------------------------------------------------------------------------------------------------------------------
 # Installation steps
 
-if (PARASOL_INSTALL)
+if (KOTUKU_INSTALL)
    if (INSTALL_INCLUDES)
       install (DIRECTORY "${INCLUDE_OUTPUT}" DESTINATION "include")
-      install (FILES "${CMAKE_BINARY_DIR}/parasol/config.h" DESTINATION "include/parasol/")
+      install (FILES "${CMAKE_BINARY_DIR}/kotuku/config.h" DESTINATION "include/kotuku/")
    endif ()
 
    if (WIN32)
@@ -775,16 +805,16 @@ if (PARASOL_INSTALL)
       endif ()
    endif ()
 
-   if (NOT PARASOL_STATIC)
-      install (CODE "file(REMOVE \"${PARASOL_ROOT}/config/classes.bin\")")
-      install (CODE "MESSAGE(STATUS \"${PARASOL_CMD_TARGET} --log-warning --gfx-driver=headless --verify\")")
-      install (CODE "execute_process(COMMAND \"${PARASOL_CMD_TARGET}\" --log-warning --gfx-driver=headless --verify WORKING_DIRECTORY \"${CMAKE_INSTALL_PREFIX}\")")
+   if (NOT KOTUKU_STATIC)
+      install (CODE "file(REMOVE \"${KOTUKU_ROOT}/config/classes.bin\")")
+      install (CODE "MESSAGE(STATUS \"${ORIGO_CMD_TARGET} --log-warning --gfx-driver=headless --verify\")")
+      install (CODE "execute_process(COMMAND \"${ORIGO_CMD_TARGET}\" --log-warning --gfx-driver=headless --verify WORKING_DIRECTORY \"${CMAKE_INSTALL_PREFIX}\")")
    endif ()
 
    if (RUN_ANYWHERE)
-      install (CODE "MESSAGE(STATUS \"\nParasol has been installed to '${CMAKE_INSTALL_PREFIX}'.  You may need to add this folder to your PATH variable in order to run parasol.exe from the command-line.\")")
+      install (CODE "MESSAGE(STATUS \"\nKotuku has been installed to '${CMAKE_INSTALL_PREFIX}'.  You may need to add this folder to your PATH variable in order to run origo from the command-line.\")")
    else ()
-      install (CODE "MESSAGE(STATUS \"\nParasol has been installed to '${CMAKE_INSTALL_PREFIX}' and shared files are in '${PARASOL_ROOT}'.\")")
+      install (CODE "MESSAGE(STATUS \"\nKotuku has been installed to '${CMAKE_INSTALL_PREFIX}' and shared files are in '${KOTUKU_ROOT}'.\")")
    endif ()
 endif ()
 
@@ -878,12 +908,12 @@ if (GENERATE_DEBIAN_PKG)
         DESTINATION "${CMAKE_BINARY_DIR}/debian/")
    file(COPY "${CMAKE_SOURCE_DIR}/pkg/debian/compat"
         DESTINATION "${CMAKE_BINARY_DIR}/debian/")
-   file(COPY "${CMAKE_SOURCE_DIR}/pkg/debian/parasol.install"
+   file(COPY "${CMAKE_SOURCE_DIR}/pkg/debian/kotuku.install"
         DESTINATION "${CMAKE_BINARY_DIR}/debian/")
 
    # Copy dev package install file if building with headers
    if (INSTALL_INCLUDES)
-      file(COPY "${CMAKE_SOURCE_DIR}/pkg/debian/parasol-dev.install"
+      file(COPY "${CMAKE_SOURCE_DIR}/pkg/debian/kotuku-dev.install"
            DESTINATION "${CMAKE_BINARY_DIR}/debian/")
    endif()
 
@@ -909,14 +939,14 @@ if(WIN32 AND NOT DISABLE_CPACK)
    string(TIMESTAMP RELEASE_DATE "%Y%m%d")
 
    # Basic package information
-   set(CPACK_PACKAGE_NAME "Parasol")
-   set(CPACK_PACKAGE_VENDOR "Parasol Framework")
+   set(CPACK_PACKAGE_NAME "Kotuku")
+   set(CPACK_PACKAGE_VENDOR "Kotuku Open Group")
    set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
-   set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Parasol Vector Graphics Framework")
-   set(CPACK_PACKAGE_DESCRIPTION "A cross-platform vector graphics engine and application framework designed for creating scalable user interfaces with automatic resolution handling.")
+   set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Kotuku Application Framework")
+   set(CPACK_PACKAGE_DESCRIPTION "A cross-platform application framework specialising in scalable user interfaces.")
 
-   # Package file naming to match existing releases (parasol-win64-YYYYMMDD)
-   set(CPACK_PACKAGE_FILE_NAME "parasol-${WIN_ARCH}-${RELEASE_DATE}")
+   # Package file naming to match existing releases (kotuku-win64-YYYYMMDD)
+   set(CPACK_PACKAGE_FILE_NAME "kotuku-${WIN_ARCH}-${RELEASE_DATE}")
 
    # Check for 7-Zip availability for SFX generation
    find_program(SEVENZIP_EXECUTABLE NAMES 7z 7za 7zip HINTS "C:/Program Files/7-Zip" "C:/Program Files (x86)/7-Zip")
@@ -930,35 +960,35 @@ if(WIN32 AND NOT DISABLE_CPACK)
       message(STATUS "7-Zip not found - SFX generation disabled")
    endif()
 
-   if(NOT PARASOL_STATIC)
+   if(NOT KOTUKU_STATIC)
       # Only provide NSIS installer for modular builds (static builds are portable)
       list(APPEND CPACK_GENERATOR "NSIS")
    endif()
 
    # ZIP Archive configuration (primary distribution method)
-   set(CPACK_ARCHIVE_FILE_NAME "parasol-${WIN_ARCH}-${RELEASE_DATE}")
+   set(CPACK_ARCHIVE_FILE_NAME "kotuku-${WIN_ARCH}-${RELEASE_DATE}")
    set(CPACK_SOURCE_IGNORE_FILES "/build/;/.git/;/\\\\.DS_Store")
 
    # NSIS installer configuration (for modular builds)
-   if(NOT PARASOL_STATIC)
-      set(CPACK_NSIS_DISPLAY_NAME "Parasol Framework ${PROJECT_VERSION}")
-      set(CPACK_NSIS_PACKAGE_NAME "Parasol")
-      set(CPACK_NSIS_INSTALLED_ICON_NAME "parasol.exe")
-      set(CPACK_NSIS_MUI_ICON "${PROJECT_SOURCE_DIR}/src/link/parasol_sphere.ico")
-      set(CPACK_NSIS_MUI_UNIICON "${PROJECT_SOURCE_DIR}/src/link/parasol_sphere.ico")
-      set(CPACK_NSIS_HELP_LINK "https://github.com/parasol-framework/parasol")
-      set(CPACK_NSIS_URL_INFO_ABOUT "https://github.com/parasol-framework/parasol")
-      set(CPACK_NSIS_CONTACT "support@parasol.net")
+   if(NOT KOTUKU_STATIC)
+      set(CPACK_NSIS_DISPLAY_NAME "Kotuku ${PROJECT_VERSION}")
+      set(CPACK_NSIS_PACKAGE_NAME "Kotuku")
+      set(CPACK_NSIS_INSTALLED_ICON_NAME "origo.exe")
+      set(CPACK_NSIS_MUI_ICON "${PROJECT_SOURCE_DIR}/src/link/kotuku.ico")
+      set(CPACK_NSIS_MUI_UNIICON "${PROJECT_SOURCE_DIR}/src/link/kotuku.ico")
+      set(CPACK_NSIS_HELP_LINK "https://github.com/parasol-framework/kotuku")
+      set(CPACK_NSIS_URL_INFO_ABOUT "https://github.com/parasol-framework/kotuku")
+      set(CPACK_NSIS_CONTACT "support@kotuku.dev")
 
       # Create shortcuts for installer
       set(CPACK_NSIS_CREATE_ICONS_EXTRA
-         "CreateShortCut '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\Parasol.lnk' '$INSTDIR\\\\parasol.exe'"
-         "CreateShortCut '$DESKTOP\\\\Parasol.lnk' '$INSTDIR\\\\parasol.exe'"
+         "CreateShortCut '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\Origo.lnk' '$INSTDIR\\\\origo.exe'"
+         "CreateShortCut '$DESKTOP\\\\Origo.lnk' '$INSTDIR\\\\origo.exe'"
       )
 
       set(CPACK_NSIS_DELETE_ICONS_EXTRA
-         "Delete '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\Parasol.lnk'"
-         "Delete '$DESKTOP\\\\Parasol.lnk'"
+         "Delete '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\Origo.lnk'"
+         "Delete '$DESKTOP\\\\Origo.lnk'"
       )
 
       # Add to PATH for command-line access
@@ -981,15 +1011,15 @@ if(WIN32 AND NOT DISABLE_CPACK)
 
    # Component configuration (matches existing install structure)
    set(CPACK_COMPONENTS_ALL Runtime Config Scripts Examples)
-   set(CPACK_COMPONENT_RUNTIME_DISPLAY_NAME "Parasol Runtime")
-   set(CPACK_COMPONENT_RUNTIME_DESCRIPTION "Core Parasol executable and libraries")
+   set(CPACK_COMPONENT_RUNTIME_DISPLAY_NAME "Kotuku Runtime")
+   set(CPACK_COMPONENT_RUNTIME_DESCRIPTION "Core Kotuku executable and libraries")
    set(CPACK_COMPONENT_RUNTIME_REQUIRED TRUE)
 
    set(CPACK_COMPONENT_CONFIG_DISPLAY_NAME "Configuration Files")
    set(CPACK_COMPONENT_CONFIG_DESCRIPTION "Fonts, styles, and configuration data")
    set(CPACK_COMPONENT_CONFIG_REQUIRED TRUE)
 
-   set(CPACK_COMPONENT_SCRIPTS_DISPLAY_NAME "Fluid Scripts")
+   set(CPACK_COMPONENT_SCRIPTS_DISPLAY_NAME "Tiri Scripts")
    set(CPACK_COMPONENT_SCRIPTS_DESCRIPTION "Standard library and GUI toolkit")
    set(CPACK_COMPONENT_SCRIPTS_REQUIRED TRUE)
 
@@ -1006,13 +1036,13 @@ if(WIN32 AND NOT DISABLE_CPACK)
       set(SFX_CONFIG_FILE "${CMAKE_BINARY_DIR}/sfx_config.txt")
       file(WRITE ${SFX_CONFIG_FILE}
 ";!@Install@!UTF-8!
-Title=\"Parasol Framework ${PROJECT_VERSION}\"
-BeginPrompt=\"Extract Parasol Framework to a directory of your choice.\"
-ExtractTitle=\"Extracting Parasol Framework...\"
-ExtractDialogText=\"Please wait while Parasol Framework is extracted.\"
-InstallPath=\"%ProgramFiles%\\\\Parasol\"
+Title=\"Kotuku ${PROJECT_VERSION}\"
+BeginPrompt=\"Extract Kotuku to a directory of your choice.\"
+ExtractTitle=\"Extracting Kotuku...\"
+ExtractDialogText=\"Please wait while Kotuku is extracted.\"
+InstallPath=\"%ProgramFiles%\\\\Kotuku\"
 OverwriteMode=2
-ExecuteFile=\"parasol.exe\"
+ExecuteFile=\"origo.exe\"
 ExecuteParameters=\"\"
 ;!@InstallEnd@!
 ")
@@ -1036,11 +1066,10 @@ ExecuteParameters=\"\"
    if(SEVENZIP_EXECUTABLE)
       set(PACKAGE_TYPES "${PACKAGE_TYPES} + Self-Extracting EXE")
    endif()
-   if(NOT PARASOL_STATIC)
+   if(NOT KOTUKU_STATIC)
       set(PACKAGE_TYPES "${PACKAGE_TYPES} + NSIS installer")
    endif()
 
    message(STATUS "Windows packaging configured: ${PACKAGE_TYPES}")
    message(STATUS "Package name: ${CPACK_PACKAGE_FILE_NAME}")
 endif()
-

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="Config" mod="Core" c="Manages the reading and writing of configuration files." cat="Data" id="f6e46c7b" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="Config" mod="Core" c="Manages the reading and writing of configuration files." cat="Data" id="f6e46c7b" v="1">
   <ai:a n="Clear" c="Clears all configuration data." p="ERR acClear(*Object)"/>
   <ai:a n="DataFeed" c="Data can be added to a Config object through this action." p="ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, APTR Buffer, INT Size)">
     <ai:i n="Object" t="OBJECTID" c="Must refer to the unique ID of the object that you represent. If you do not represent an object, set this parameter to the current task ID."/>

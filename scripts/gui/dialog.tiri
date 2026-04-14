@@ -1,0 +1,322 @@
+--[[
+Display a dialog message to the user.
+
+Documentation is available in the Kotuku Wiki.
+--]]
+
+   import 'gui'
+   import 'gui/window'
+   include 'document'
+   include 'xml'
+
+   namespace 'gui'
+
+LINE_SPACING, FONT_HEIGHT = gui.getFontHeight(gui.fonts.window)
+MIN_WIDTH <const> = 300
+MAX_WIDTH <const> = 600
+
+rx_sanitise_icon = <{ regex.new([[^(%w+)\/(%w+)]]) }>
+rx_word = <{ regex.new([[\S+]]) }>
+
+ICONS = {
+   error     = 'items/error',
+   critical  = 'items/error',
+   warning   = 'items/alert_circle',
+   help      = 'items/question',
+   question  = 'items/question',
+   request   = 'items/request',
+   info      = 'items/info'
+}
+
+   gui.dialog ?= { }
+
+function defaultIcon(self)
+   if self.type and ICONS[self.type] then
+      return ICONS[self.type]
+   end
+   return 'items/question'
+end
+
+gui.dialog.message = function(Options)
+   self = { -- Public variables
+      document = nil,
+      options  = Options.options,
+      type     = Options.type,
+      feedback = Options.feedback,
+      inputRequired = Options.inputRequired,
+      message     = Options.message,
+      fmtMessage  = Options.fmtMessage,
+      scaleWindow = Options.scale is false ? nil :> true -- Scale by default
+   }
+
+   -- Wait for the user to respond to the dialog.
+
+   self.wait = function()
+      self.waiting = true
+      processing.sleep(-1, true)
+      self.waiting = nil
+   end
+
+   -- Configure the window according to initial doc size
+
+   function matchWindowToDocSize(self, Document)
+      page_width  = Document.pageWidth
+      page_height = Document.pageHeight
+
+      if page_width < 100 then page_width = 100 end
+      if page_height < 100 then page_height = 100 end
+
+      self.window:sizeHints(page_width/4, page_height/4, page_width * 3, page_height * 3, self.scaleWindow)
+      self.window.surface.width  = page_width
+      self.window.surface.height = page_height
+
+      -- If the viewport dimensions are set, the dialog will scale with the window.
+      if self.scaleWindow then
+         self.viewport.aspectRatio = 'XMin|YMin'
+         self.viewport.viewWidth  = page_width
+         self.viewport.viewHeight = page_height
+         Document.view.width = page_width
+         Document.view.height = page_height
+      end
+   end
+
+   function docEvent(Document, EventFlag, Parameters)
+      if EventFlag has DEF_LINK_ACTIVATED then
+         if self.feedback then
+            responseIndex = tonumber(Parameters.response)
+            response = self.options[responseIndex]
+            state = { }
+
+            state.checkbox = Document.getKey('checkbox') is '1' ? true :> false
+
+            input = Document.getKey('input')
+            if input?? then state.input = input end
+
+            if self.inputRequired and not state.input then
+               -- If input is mandatory, the response is cancelled when no input is given
+               response = nil
+            end
+
+            self.feedback(self, response, state)
+         end
+
+         if self.waiting then processing.signal() end
+         table.clear(self)
+      else
+         print('Document event received')
+      end
+   end
+
+   function buildDocument():str
+      option_icons = ''
+
+      -- At minimum, there must be an OK option.
+
+      if not ((type(self.options) is 'table') and (#self.options > 0)) then
+         self.options = { { id=1, text='Close Dialog', icon='items/cancel' } }
+      end
+
+      for i, option in ipairs(self.options) do
+         if option['icon'] then
+            if option_icons?? then option_icons ..= '\n' end
+            option_icons ..= f'    <image id="{option.icon}" xlink:href="icons:{option.icon}" width="48" height="48"/>\n'
+         end
+      end
+
+      doc = [[
+<?xml version="1.0"?>
+
+<svg xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <image id="icon" xlink:href="icons:]] .. (Options.image ?? defaultIcon(self)) .. [[" width="256" height="256"/>]]
+    .. option_icons .. [[
+  </defs>
+</svg>
+
+<body margins="10 10 18 10"/>
+]]
+
+      if Options.envTemplate then
+         -- The EnvTemplate can redefine the default body, GUI templates etc
+         doc ..= options.envTemplate .. '\n'
+      end
+
+      if Options.template then
+         -- A dialog-specific template can override the body style and change any class templates,
+         -- header and footer etc
+         doc ..= '<include src="' .. options.template .. '"/>\n'
+      end
+
+      icon = Options.image ?? defaultIcon(self)
+      icon = rx_sanitise_icon.replace(icon, '$1/$2')
+      msg = self.fmtMessage
+      if not msg?? then
+         msg = string.escXML(self.message ?? '')
+         msg = string.replace(msg, '\n', '<br/>')
+      end
+
+      doc ..= [[
+<page name="Index">
+  <table columns="48,0" width="100%">
+    <row>
+      <cell><image src="url(#icon)" width="5em" height="5em" padding="0 8 18 0"/></cell>
+      <cell>
+        <p>]] .. msg .. [[</p>
+]]
+
+      if Options.userInput then
+         inputOptions = ''
+         if Options.secret then inputOptions = 'secret="true"' end
+
+         msg = type(Options.userInput) is 'string' ? Options.userInput :> ''
+
+         doc ..= f'<p><input name="input" {inputOptions} width="16em" value="{msg}"/></p>\n'
+      end
+
+      if Options.checkboxLabel then
+         checkbox_value = 'false'
+         if Options.checkboxState then checkbox_value = 'true' end
+         doc ..= f'<p><checkbox name="checkbox" label="{Options.checkboxLabel}" value="{checkbox_value}"/></p>\n'
+      end
+
+      if Options.inject then
+         doc ..= Options.inject
+      end
+
+      doc ..= '<p no-wrap>'
+      for i, option in ipairs(self.options) do
+         if option['icon'] then
+            doc ..= f'<image src="url(#{option.icon})" width="16" height="16" padding="0 0 4 0"/>\n'
+         end
+
+         doc ..= f'<a @response="{i}">{option.text}</a>\n'
+
+         if i < #self.options then
+            doc ..= '<advance x="30"/>'
+         end
+      end
+      doc ..= '</p>'
+
+      doc ..= [[
+      </cell>
+    </row>
+  </table>
+  <advance y="20"/>
+</page>
+]]
+
+      return doc
+   end
+
+   -- Change the message in the dialog
+
+   self.setMessage = function(Message, Formatted)
+      if Formatted then
+         self.message = nil
+         self.fmtMessage = Message
+      else
+         self.message = Message
+         self.fmtMessage = nil
+      end
+      lDoc.acClear()
+      lDoc.acDataFeed(nil, DATA_XML, buildDocument())
+   end
+
+   -- Work out the dialog width based on the message.
+
+   dlg_width = MIN_WIDTH
+   if self.message?? then
+      longest = 10
+      for start, stop in rx_word.findAll(self.message) do
+         word_len = stop - start
+         if word_len > longest then longest = word_len end
+      end
+      dlg_width = 120 + (longest * FONT_HEIGHT)
+   elseif self.fmtMessage?? then
+      xml = obj.new('xml', { statement=f'<xml>{self.fmtMessage}</xml>' })
+      err, content = xml.mtSerialise(0, XMF_OMIT_TAGS|XMF_READABLE)
+      longest = 10
+      for start, stop in rx_word.findAll(content) do
+         word_len = stop - start
+         if word_len > longest then longest = word_len end
+      end
+      dlg_width = 120 + (longest * FONT_HEIGHT)
+   else
+      error('Dialog requires a message string.')
+   end
+
+   if dlg_width < MIN_WIDTH then dlg_width = MIN_WIDTH end
+   if dlg_width > MAX_WIDTH then dlg_width = MAX_WIDTH end
+
+   self.window = gui.window({
+      insideWidth  = dlg_width,
+      insideHeight = 300,
+      quit         = Options.quit ?? false,
+      popover      = Options.popover,
+      parent       = Options.target,
+      aspectRatio  = true,
+      icon         = Options.icon ?? 'items/question',
+      title        = Options.title ?? 'Confirmation Required',
+      modal        = Options.modal ?? false,
+      events = {
+         close = function(Window)
+            self?.feedback(self, nil, nil)
+
+            if self.waiting then processing.signal() end
+            table.clear(self)
+         end
+      }
+   })
+
+   self.viewport = self.window:clientViewport()
+
+   lDoc = self.viewport.new('document', {
+      eventMask     = 'LinkActivated',
+      eventCallback = docEvent,
+      path          = '#Index',
+      flags         = 'NoScrollbars',
+      clientScript  = obj.find('self')
+   })
+
+   lDoc.acDataFeed(nil, DATA_XML, buildDocument())
+
+   self?.input?.textinput?.mtSelectArea(0, 0, 20000, 20000)
+
+   matchWindowToDocSize(self, lDoc)
+
+   self.window:moveToFront()
+   self.window:show(true)
+
+   self.document = lDoc
+
+   return self
+end
+
+gui.dialog.error = function(Title:str, Message:str, Options:table)
+   Options ?= { }
+   Options.type = 'error'
+   Options.title = Title
+   Options.message = Message
+   Options.scale   = true
+   return gui.dialog.message(Options)
+end
+
+   -- This sub-routine is provided for languages other than Tiri to utilise the module.
+
+@if(imported=false)
+   dlg = gui.dialog.message({
+      popover    = arg('popover'),
+      target     = arg('target'),
+      modal      = arg('modal'),
+      options    = arg('options'),
+      message    = arg('message'),
+      checkboxLabel = arg('checkboxLabel'),
+      checkboxState = arg('checkboxState'),
+      icon       = arg('icon'),
+      image      = arg('image'),
+      userInput  = arg('userInput', nil),
+      secret     = arg('secret')
+   })
+
+   return dlg.windowID, dlg.document.id
+@end

@@ -1,0 +1,333 @@
+--[[
+Header Validation Testing
+
+Tests the new validateHeader callback feature for routes, which allows
+early header validation before the full request body is processed.
+--]]
+
+   import 'net/httpserver'
+   import 'json'
+   include 'http'
+
+   SERVER_PORT = 18940
+
+----------------------------------------------------------------------------------------------------------------------
+
+function ValidateHeaderSuccess()
+   local proc = processing.new({ timeout = 5.0 })
+   local content = ''
+
+   local http = obj.new('http', {
+      src = 'http://127.0.0.1:' .. SERVER_PORT .. '/auth/protected',
+      method = 'GET',
+      flags = HTF_NO_HEAD | HTF_NO_DIALOG,
+      _Authorization = 'Bearer valid-token-123',
+      incoming = function(HTTP, Buffer)
+         content ..= tostring(Buffer)
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            proc.signal()
+         end
+      end
+   })
+
+   assert(http.acActivate() is ERR_Okay, "Valid header test failed to activate")
+
+   local err = proc.sleep()
+   msg('Test woke up; HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(err is ERR_Okay, 'Valid header processing failed: ' .. mSys.GetErrorMsg(err))
+   assert(http.status is 200, 'Valid header should return 200, got: ' .. http.status)
+
+   local response = json.decode(content)
+   assert(response.message is 'Access granted', 'Should receive success message')
+
+   print('validateHeader success test passed; HTTP Error: ' .. mSys.GetErrorMsg(http.error))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function ValidateHeaderFailure()
+   local proc = processing.new({ timeout = 5.0 })
+
+   local http = obj.new('http', {
+      src = 'http://127.0.0.1:' .. SERVER_PORT .. '/auth/protected',
+      method = 'GET',
+      flags = HTF_NO_HEAD | HTF_NO_DIALOG,
+      _Authorization = 'Bearer invalid-token',
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            proc.signal()
+         end
+      end
+   })
+
+   assert(http.acActivate() is ERR_Okay, "Invalid header test failed to activate")
+
+   local err = proc.sleep()
+   msg('Test woke up; HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(err is ERR_Okay, 'Invalid header processing failed: ' .. mSys.GetErrorMsg(err))
+   assert(http.status is 400, 'Invalid header should return 400, got: ' .. http.status)
+
+   print('validateHeader failure test passed - 400 received; HTTP Error: ' .. mSys.GetErrorMsg(http.error))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function ValidateHeaderCustomError()
+   local proc = processing.new({ timeout = 5.0 })
+
+   local http = obj.new('http', {
+      src = 'http://127.0.0.1:' .. SERVER_PORT .. '/api/admin-only',
+      method = 'POST',
+      flags = HTF_NO_HEAD | HTF_NO_DIALOG,
+      _Authorization = 'Bearer user-token',
+      inputFile = 'string:{"data":"test"}',
+      size = 15,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            proc.signal()
+         end
+      end
+   })
+
+   assert(http.acActivate() is ERR_Okay, "Custom error test failed to activate")
+
+   local err = proc.sleep()
+   msg('Test woke up; HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(err is ERR_Okay, 'Custom error processing failed: ' .. mSys.GetErrorMsg(err))
+   assert(http.status is 403, 'Custom error should return 403 (Forbidden), got: ' .. http.status)
+
+   print('validateHeader custom error test passed - 403 received; HTTP Error: ' .. mSys.GetErrorMsg(http.error))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function ValidateHeaderMissingAuth()
+   local proc = processing.new({ timeout = 5.0 })
+
+   local http = obj.new('http', {
+      src = 'http://127.0.0.1:' .. SERVER_PORT .. '/auth/protected',
+      method = 'GET',
+      flags = HTF_NO_HEAD | HTF_NO_DIALOG,
+      -- No Authorization header
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            proc.signal()
+         end
+      end
+   })
+
+   check http.acActivate()
+
+   local err = proc.sleep()
+   assert(err is ERR_Okay, 'Missing auth processing failed: ' .. mSys.GetErrorMsg(err))
+   assert(http.status is 401, 'Missing auth should return 401, got: ' .. http.status)
+
+   print('validateHeader missing auth test passed - 401 received; HTTP Error: ' .. mSys.GetErrorMsg(http.error))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function ValidateHeaderContentType()
+   local proc = processing.new({ timeout = 5.0 })
+
+   -- Send XML to an endpoint that only accepts JSON
+   local xml_data = '<?xml version="1.0"?><test>data</test>'
+
+   local http = obj.new('http', {
+      src         = 'http://127.0.0.1:' .. SERVER_PORT .. '/api/json-only',
+      method      = 'POST',
+      flags       = HTF_NO_HEAD | HTF_NO_DIALOG,
+      contentType = 'application/xml',
+      inputFile   = 'string:' .. xml_data,
+      size        = xml_data:len(),
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            proc.signal()
+         end
+      end
+   })
+
+   assert(http.acActivate() is ERR_Okay, "Content type validation test failed to activate")
+
+   local err = proc.sleep()
+   msg('Test woke up; HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(err is ERR_Okay, 'Content type validation processing failed: ' .. mSys.GetErrorMsg(err))
+   assert(http.status is 415, 'Content type validation should return 415, got: ' .. http.status)
+
+   print('validateHeader content type test passed - 415 received; HTTP Error: ' .. mSys.GetErrorMsg(http.error))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function ValidateHeaderException()
+   local proc = processing.new({ timeout = 5.0 })
+
+   local http = obj.new('http', {
+      src    = 'http://127.0.0.1:' .. SERVER_PORT .. '/error/validation-crash',
+      method = 'GET',
+      flags  = HTF_NO_HEAD | HTF_NO_DIALOG,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            proc.signal()
+         end
+      end
+   })
+
+   assert(http.acActivate() is ERR_Okay, "Validation exception test failed to activate")
+
+   local err = proc.sleep()
+   msg('Test woke up; HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(err is ERR_Okay, 'Validation exception processing failed: ' .. mSys.GetErrorMsg(err))
+   assert(http.status is 500, 'Validation exception should return 500, got: ' .. http.status)
+
+   print('validateHeader exception handling test passed - 500 received; HTTP Error: ' .. mSys.GetErrorMsg(http.error))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function NoValidateHeaderCallback()
+   local proc = processing.new({ timeout = 5.0 })
+   local content = ''
+
+   local http = obj.new('http', {
+      src      = 'http://127.0.0.1:' .. SERVER_PORT .. '/public/no-validation',
+      method   = 'GET',
+      flags    = HTF_NO_HEAD | HTF_NO_DIALOG,
+      incoming = function(HTTP, Buffer)
+         content ..= tostring(Buffer)
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            proc.signal()
+         end
+      end
+   })
+
+   assert(http.acActivate() is ERR_Okay, "No validation test failed to activate")
+
+   local err = proc.sleep()
+   msg('Test woke up; HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(err is ERR_Okay, 'No validation processing failed: ' .. mSys.GetErrorMsg(err))
+   assert(http.status is 200, 'No validation should return 200, got: ' .. http.status)
+
+   local response = json.decode(content)
+   assert(response.message is 'Public endpoint', 'Should receive public endpoint message')
+
+   print('No validateHeader callback test passed; HTTP Error: ' .. mSys.GetErrorMsg(http.error))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+   return {
+      tests = {
+         testValidateHeaderSuccess,
+         testValidateHeaderFailure,
+         testValidateHeaderCustomError,
+         testValidateHeaderMissingAuth,
+         testValidateHeaderContentType,
+         testValidateHeaderException,
+         testNoValidateHeaderCallback
+      },
+      init = function(Path)
+         global glPath = Path
+
+         global glServer = hslib.start({
+            port = SERVER_PORT,
+            folder = glPath,
+            verbose = false,
+            logMessage = function(Message)
+               print(Message)
+            end,
+            routes = {
+               -- Route with authentication validation
+               { pattern = '/auth/protected',
+                 method = 'GET',
+                 validateHeader = function(headers):any
+                    local auth = headers['authorization']
+                    if not auth then
+                       return { status = 401, statusText = 'Unauthorized',
+                               message = 'Authentication required',
+                               details = 'Missing Authorization header' }
+                    end
+
+                    local token = regex.new('Bearer\\s+(.+)').extract(auth)
+                    if token != 'valid-token-123' then
+                       return false -- Simple 400 Bad Request
+                    end
+
+                    return true -- Valid, continue processing
+                 end,
+                 handler = function(req, res)
+                    res.json({ message = 'Access granted', user = 'authenticated' })
+                 end
+               },
+
+               -- Route with admin-level validation
+               { pattern = '/api/admin-only',
+                 method = 'POST',
+                 validateHeader = function(headers):any
+                    local auth = headers['authorization']
+                    if not auth then
+                       return { status = 401, statusText = 'Unauthorized',
+                               message = 'Authentication required',
+                               details = 'Missing Authorization header' }
+                    end
+
+                    local token = regex.new('Bearer\\s+(.+)').extract(auth)
+                    if not token or not token:find('admin') then
+                       return { status = 403, statusText = 'Forbidden',
+                               message = 'Admin access required',
+                               details = 'This endpoint requires admin privileges' }
+                    end
+
+                    return true
+                 end,
+                 handler = function(req, res)
+                    res.json({ message = 'Admin endpoint accessed', privileges = 'admin' })
+                 end
+               },
+
+               -- Route with content-type validation
+               { pattern = '/api/json-only',
+                 method = 'POST',
+                 validateHeader = function(headers):any
+                    local contentType = headers['content-type']
+                    if not contentType or not contentType:find('application/json') then
+                       return { status = 415, statusText = 'Unsupported Media Type',
+                               message = 'JSON content type required',
+                               details = 'This endpoint only accepts application/json' }
+                    end
+                    return true
+                 end,
+                 handler = function(req, res)
+                    res.json({ message = 'JSON data received', data = req.parsedBody })
+                 end
+               },
+
+               -- Route with validation that throws an exception
+               { pattern = '/error/validation-crash',
+                 method = 'GET',
+                 validateHeader = function(headers):any
+                    error('Intentional validation error')
+                 end,
+                 handler = function(req, res)
+                    res.json({ message = 'This should never be reached' })
+                 end
+               },
+
+               -- Route without validateHeader callback
+               { pattern = '/public/no-validation',
+                 method = 'GET',
+                 handler = function(req, res)
+                    res.json({ message = 'Public endpoint', access = 'unrestricted' })
+                 end
+               }
+            }
+         })
+      end,
+      cleanup = function()
+         glServer.stop()
+      end
+   }

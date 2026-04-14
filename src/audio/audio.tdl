@@ -1,0 +1,144 @@
+--$TIRI:Include
+
+module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timestamp=20240611, src="audio.cpp" }, function()
+  flags("ADF", { comment="Optional flags for the Audio object." },
+    "OVER_SAMPLING: Enables oversampling for higher quality audio at the cost of slower mixing.",
+    "FILTER_LOW: Enable a low level of output filtering to minimise distortion.",
+    "FILTER_HIGH: Enable a high level of output filtering to minimise distortion.",
+    "STEREO: Enable stereo output (set by default if the platform supports stereo).  If not set, output is in mono.",
+    "VOL_RAMPING: Enable volume ramping for softer playback when a sample is played multiple times (enabled by default).",
+    "AUTO_SAVE: Save configuration information on exit.",
+    "SYSTEM_WIDE: Mixer changes should be applied system-wide.")
+
+  flags("VCF", { comment="Volume control flags" },
+    { PLAYBACK = "0x00000001: The mixer supports audio output." },
+    { CAPTURE  = "0x00000010: The mixer supports audio input." },
+    { JOINED   = "0x00000100: The mixer channels are joined (e.g. left and right speakers cannot be adjusted separately)." },
+    { MONO     = "0x00001000: The mixer is restricted to mono input/output." },
+    { MUTE     = "0x00010000: The mixer is muted." },
+    { SYNC     = "0x00100000: The mixer is synchronised." }
+  )
+
+  flags("CHF", { comment="Optional flags for the AudioChannel structure." },
+    "MUTE: Channel is muted.",
+    "BACKWARD: Play channel backwards.",
+    "VOL_RAMP: Volume ramping is enabled.",
+    "CHANGED: Sample change")
+
+  flags("SVF", { comment="Flags for the SetVolume() method." },
+    { MUTE    = "0x00000100: Mute the audio for this channel." },
+    { UNMUTE  = "0x00001000: Unmute the audio for this channel." },
+    { CAPTURE = "0x00010000: Set input, not output." }
+  )
+
+  flags("SDF", { type='int', comment="Sound flags" },
+    "LOOP: Enables sample looping. The #LoopStart and #LoopEnd fields determine where the looping area lies within the sample data.",
+    "NEW: Create the sample from scratch (e.g. for audio recording purposes).",
+    "STEREO: Indicates that the sound has multiple audio channels.",
+    "RESTRICT_PLAY: Restricts playback so that the sound can never play on more than one channel at any given time.",
+    { STREAM = "0x40000000: Read-Only. Indicates that streaming is enabled." },
+    { NOTE = "0x80000000: Internal. Used for managing playback." }
+  )
+
+  constants("SFM", { type="uint", comment="These audio bit formats are supported by AddSample and AddStream." }, {
+    U8_BIT_MONO    = "1: 8-bit mono unsigned sample.",
+    S16_BIT_MONO   = "2: 16-bit mono signed sample.",
+    U8_BIT_STEREO  = "3: 8-bit stereo unsigned sample.",
+    S16_BIT_STEREO = "4: 16-bit stereo signed sample.",
+    END            = "5: Private.",
+    F_BIG_ENDIAN   = "0x80000000: Combine this flag with any audio format to declare it as big endian."
+  })
+
+  enum("LOOP", { type='short', start=1, comment="Loop modes for the AudioLoop structure." },
+    "SINGLE: Single loop: Releasing will end the note.",
+    "SINGLE_RELEASE: Single loop: Sample data after the loop will be played when the note is released.",
+    "DOUBLE: Double loop: When the note is released, playing shifts to the second loop.",
+    "AMIGA_NONE: Amiga loop: Do nothing.",
+    "AMIGA: Single loop: Amiga style.")
+
+  enum("LTYPE", { type='char', start=1, comment="Loop types for the AudioLoop structure." },
+    "UNIDIRECTIONAL: The sample playback position returns to the byte position specified in the Loop1Start field.",
+    "BIDIRECTIONAL: The sample will play in reverse whenever it hits the end marker, then forwards when it hits the start marker.")
+
+  enum("STREAM", { type='int', start=1, comment="Streaming options" },
+    "NEVER: No streaming - load all data into memory.",
+    "SMART: Smart streaming is the default.  If the sample appears to be relatively small with respect to available system RAM, it will be loaded into memory.  Otherwise it will be streamed.",
+    "ALWAYS: Stream if the sample length exceeds 64k.")
+
+  enum("NOTE", { start=0, comment="Definitions for the Note field.  An 'S' indicates a sharp note." },
+    "C", "CS", "D", "DS", "E", "F", "FS", "G", "GS", "A", "AS", "B", "OCTAVE")
+
+  enum("CHS", { type='char', start=0, comment="Channel status types for the AudioChannel structure." },
+   "STOPPED: Playing was stopped by the client.",
+   "FINISHED: Playback concluded by reaching the sample end.",
+   "PLAYING: Sample playing and not released.",
+   "RELEASED: Sample playing and note has been released.",
+   "FADE_OUT: Playback is fading out.")
+
+  struct("AudioLoop", { comment="Loop settings for the AddSample() method." }, [[
+    short(LOOP) LoopMode    # Loop mode (single, double)
+    char(LTYPE) Loop1Type   # First loop type (unidirectional, bidirectional)
+    char(LTYPE) Loop2Type   # Second loop type (unidirectional, bidirectional)
+    int Loop1Start          # Start of the first loop
+    int Loop1End            # End of the first loop
+    int Loop2Start          # Start of the second loop
+    int Loop2End            # End of the second loop
+  ]])
+
+  methods("Audio", "Snd", {
+    { id=1, name="OpenChannels" },
+    { id=2, name="CloseChannels" },
+    { id=3, name="AddSample" },
+    { id=4, name="RemoveSample" },
+    { id=5, name="SetSampleLength" },
+    { id=6, name="AddStream" },
+    { id=7, name="Beep" },
+    { id=8, name="SetVolume" }
+  })
+
+  class("Audio", { src="class_audio.cpp", output="audio_def.c" }, [[
+    int OutputRate
+    int InputRate
+    int Quality
+    int(ADF) Flags     # Special flags
+    int BitDepth       # Typically `8` or `16` bit, reflects the hardware driver's bit depth
+    int Periods        # Number of periods for ALSA audio buffering
+    int PeriodSize     # Period size for ALSA audio buffering
+  ]])
+
+  class("Sound", { src="class_sound.cpp" }, [[
+    double Volume      # Volume of sample (0 - 100%)
+    double Pan         # Horizontal positioning for playback on stereo speakers (`-100` to `+100`)
+    large Position     # Byte position to start playing from
+    int Priority       # Priority over other sounds
+    int Length         # Length of sample data in bytes
+    int Octave         # Current octave to use for playing back notes (defaults to zero)
+    int(SDF) Flags     # Sound flags
+    int Frequency      # Frequency of sampled sound (nb: does not affect playback - use the Playback field)
+    int Playback       # Frequency to use for sample playback
+    int Compression    # Compression rating (0% none, 100% high)
+    int BytesPerSecond # Bytes per second, measured as `Frequency * BytesPerSample`
+    int BitsPerSample  # Usually set to `8` or `16` bit
+    oid Audio          # Reference to an @Audio object to use for audio output and input
+    int LoopStart      # Byte position of looping start
+    int LoopEnd        # Byte position of looping end
+    int(STREAM) Stream # Streaming type (smart by default)
+    int Handle         # Audio handle acquired at the audio object [Private - Available to child classes]
+    int ChannelIndex   # Channel handle that the sound was last played on
+  ]])
+
+  functionNames("snd",
+     "MixContinue",
+     "MixFrequency",
+     "MixMute",
+     "MixPan",
+     "MixPlay",
+     "MixRate",
+     "MixSample",
+     "MixStop",
+     "MixStopLoop",
+     "MixVolume",
+     "MixStartSequence",
+     "MixEndSequence")
+
+end)

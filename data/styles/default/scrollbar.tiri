@@ -1,0 +1,79 @@
+-- Styling for the 'gui/scrollbar' script.
+
+   import 'gui'
+
+return {
+   arrange = function(State:table)
+      State.slider.sequence = f'M1,{State.slider.viewport.height-1} L1,1 M{State.slider.viewport.width-2},1'
+   end,
+   background = function(State:table, Viewport:obj, Theme:table)
+      State.barBkgd = Viewport.new('VectorRectangle', {
+         width = '100%', height = '100%', fill = Theme.slider.bkgd
+      })
+   end,
+   slider = function(State:table, Viewport:obj, Theme:table)
+      button_face      = Theme.slider.fore
+      button_highlight = Theme.slider.foreHighlight
+
+      State.slider = { viewport = Viewport }
+
+      State.slider.bkRect = Viewport.new('VectorRectangle', {
+         name='SliderRect', width = '100%', height = '100%', fill = button_face, opacity = 0.5
+      })
+
+      -- Decoration
+
+      State.slider.decoration = Viewport.new('VectorViewport', {
+         name='SliderDec', aspectRatio = 'XMid|YMid|Meet', x = 0, y = 0, viewX = 0, viewY = 0,
+      })
+
+      dec = State.slider.decoration
+      local stroke
+      if gui.strToRGB(Theme.slider.fore):luminance() > 0.5 then
+         stroke = 'rgb(0 0 0 / .5)'
+      else
+         stroke = 'rgb(255 255 255 / .5)'
+      end
+
+      decA = dec.new('VectorPolygon', {
+         strokeWidth = 3, stroke = stroke, dashArray = '3,3'
+      })
+
+      if State.direction is 'V' then
+         dec.width      = Viewport.width
+         dec.height     = '100%'
+         dec.viewWidth  = Viewport.width
+         dec.viewHeight = Viewport.width * 1.5
+
+         decA.x1 = dec.width * 0.5
+         decA.x2 = dec.width * 0.5
+         decA.y1 = 0
+         decA.y2 = dec.viewHeight
+      else
+         dec.width      = '100%'
+         dec.height     = Viewport.height
+         dec.viewWidth  = Viewport.height * 1.5
+         dec.viewHeight = Viewport.height
+
+         decA.y1 = dec.height * 0.5
+         decA.y2 = dec.height * 0.5
+         decA.x1 = 0
+         decA.x2 = dec.viewWidth
+      end
+
+      Viewport.mtSubscribeInput(JTYPE_CROSSING, function(Viewport, Msg)
+         repeat
+            if Msg.type is JET_CROSSED_IN then
+               State.slider.bkRect.fill = button_highlight
+               State.slider.bkRect.opacity = 1
+            elseif Msg.type is JET_CROSSED_OUT then
+               State.slider.bkRect.fill = button_face
+               State.slider.bkRect.opacity = 0.5
+            end
+            Msg = Msg.next
+         until not Msg
+
+         Viewport.acDraw()
+      end)
+   end
+}

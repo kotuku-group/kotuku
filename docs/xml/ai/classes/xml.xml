@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="XML" mod="XML" c="Provides XML data management services for parsing, manipulation and serialisation." cat="Data" id="0b88bfd6" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="XML" mod="XML" c="Provides XML data management services for parsing, manipulation and serialisation." cat="Data" id="0b88bfd6" v="1">
   <ai:a n="Clear" c="Completely clears all XML data and resets the object to its initial state." p="ERR acClear(*Object)"/>
   <ai:a n="DataFeed" c="Processes and integrates external XML data into the object's document structure." p="ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, APTR Buffer, INT Size)">
     <ai:i n="Object" t="OBJECTID" c="Must refer to the unique ID of the object that you represent. If you do not represent an object, set this parameter to the current task ID."/>
@@ -25,7 +25,7 @@
     <ai:e c="ReadOnly"/>
   </ai:a>
   <ai:m n="Count" c="Count all tags that match a given XPath expression." p="ERR xml::Count(OBJECTPTR Object, CSTRING XPath, INT * Result)">
-    <ai:i n="XPath" t="CSTRING" c="A valid XPath expression string defining the elements to count. The expression must conform to XPath 1.0 syntax with Parasol extensions."/>
+    <ai:i n="XPath" t="CSTRING" c="A valid XPath expression string defining the elements to count. The expression must conform to XPath 1.0 syntax with Kotuku extensions."/>
     <ai:i n="Result" t="INT *" c="Pointer to an integer variable that will receive the total count of matching tags."/>
     <ai:e c="Okay"/>
     <ai:e c="NullArgs"/>
@@ -37,7 +37,7 @@
     <ai:e c="NullArgs"/>
   </ai:m>
   <ai:m n="FindTag" c="Searches for XML elements using XPath expressions with optional callback processing." p="ERR xml::FindTag(OBJECTPTR Object, CSTRING XPath, FUNCTION * Callback, INT * Result)">
-    <ai:i n="XPath" t="CSTRING" c="A valid XPath expression string conforming to XPath 1.0 syntax with Parasol extensions. Must not be NULL or empty."/>
+    <ai:i n="XPath" t="CSTRING" c="A valid XPath expression string conforming to XPath 1.0 syntax with Kotuku extensions. Must not be NULL or empty."/>
     <ai:i n="Callback" t="FUNCTION *" c="Optional pointer to a callback function for processing multiple matches."/>
     <ai:i n="Result" t="INT *" c="Pointer to an integer that will receive the unique ID of the first matching tag. Only valid when no callback is provided."/>
     <ai:e c="Okay"/>

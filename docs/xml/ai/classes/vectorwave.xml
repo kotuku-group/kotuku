@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="VectorWave" mod="Vector" c="Extends the Vector class with support for sine wave based paths." cat="Graphics" id="51bca8eb" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="VectorWave" mod="Vector" c="Extends the Vector class with support for sine wave based paths." cat="Graphics" id="51bca8eb" v="1">
   <ai:f n="Amplitude" c="Adjusts the generated wave amplitude." t="DOUBLE" a="GS"/>
   <ai:f n="Close" c="Closes the generated wave path at either the top or bottom." t="INT" a="GS"/>
   <ai:f n="Decay" c="Declares a rate of decay to apply to the wave amplitude." t="DOUBLE" a="GS"/>

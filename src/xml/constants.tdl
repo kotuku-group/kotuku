@@ -1,0 +1,54 @@
+
+constants("XMS", { type="int", comment="For SetAttrib()" }, {
+  NEW         = "-1: Adds a new attribute.  Note that if the attribute already exists, this will result in at least two attributes of the same name in the tag.",
+  UPDATE_ONLY = "-2: SetAttrib will find the target attribute and update it.  It is not possible to rename the attribute when using this technique.  `ERR::Search` is returned if the attribute cannot be found.",
+  UPDATE      = "-3: As for `UPDATE_ONLY`, but if the attribute does not exist, it will be created."
+})
+
+flags("XSF", { comment="Options for the Sort method." },
+  "DESC: Sort in descending order.",
+  "CHECK_SORT: Tells the algorithm to check for a 'sort' attribute in each analysed tag and if found, the algorithm will use that as the sort value instead of that indicated in the `Attrib` field.")
+
+flags("XMF", { comment="Standard flags for the XML class." },
+  "WELL_FORMED: By default, the XML class will accept badly structured XML data.  This flag requires that XML statements must be well-formed (tags must balance) or an `ERR::BadData` error will be returned during processing.",
+  "INCLUDE_COMMENTS: By default, comments are stripped when parsing XML input unless this flag is specified.",
+  "STRIP_CONTENT: Strip all content from incoming XML data.",
+  "READABLE|INDENT: Indent the output of serialised XML to improve readability.",
+  "LOCK_REMOVE: Prevents removal of tags from the XML tree.  This specifically affects the RemoveTag and RemoveXPath methods.",
+  "STRIP_HEADERS: XML headers found in the source data will not be included in the parsed results.",
+  "NEW: Creates an empty XML object on initialisation - if the #Path field has been set, the source file will not be loaded.",
+  "NO_ESCAPE: Turns off escape code conversion.",
+  "INCLUDE_WHITESPACE: By default the XML parser will skip content between tags when they contain pure whitespace.  Setting this flag will retain all whitespace.",
+  "PARSE_HTML: Automatically parse HTML escape codes.",
+  "STRIP_CDATA: Do not serialise `CDATA` sections.  Note that this option is used as a parameter, not an object flag.",
+  "LOG_ALL: Print extra log messages.",
+  "PARSE_ENTITY: Enables parsing of DOCTYPE entities.",
+  "OMIT_TAGS: Prevents tags from being output when the XML is serialised (output content only).",
+  "NAMESPACE_AWARE: Enable namespace processing during parsing.",
+  "HAS_SCHEMA: Automatically defined when a schema has been loaded into the XML object.",
+  "STANDALONE: Automatically defined when the XML declaration specifies standalone=\"yes\".",
+  { INCLUDE_SIBLINGS = "0x80000000: Include siblings when building an XML string (#GetXMLString() only)" })
+
+enum("XMI", { type="int", start=0, comment="Tag insertion options." },
+  "PREV|PREVIOUS: Insert as the previous tag of the target.",
+  "CHILD: Insert as the first child of the target.",
+  "NEXT: Insert as the next tag of the target.",
+  "CHILD_END: Insert as the last child of the target.",
+  "END: Private")
+
+flags("XTF", { comment="Standard flags for XTag." },
+  "CDATA: Tag represents `CDATA`.",
+  "INSTRUCTION: Tag represents an instruction of the format `<?xml?>`.",
+  "NOTATION: Tag represents a notation of the format `<!XML>`.",
+  "COMMENT: Tag represents a comment of the format `<!-- Comment -->`.")
+
+enum('XPVT', { type='int', start=0, comment='Type descriptors for XPathValue' },
+   'NodeSet',
+   'Boolean',
+   'Number',
+   'String',
+   'Date',
+   'Time',
+   'DateTime',
+   'Map',
+   'Array')

@@ -1,0 +1,135 @@
+-- Flute regression tests for thunk resolution during table indexing
+-- Tests that thunks used as table keys are resolved before indexing
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Core issue: A thunk used as a table index should resolve to its value
+
+@Test function ThunkAsStringIndex()
+   -- Basic case: deferred string expression used to index a table
+   mythunk = <{ 'key' }>
+   mytable = { key = 'value' }
+   result = mytable[mythunk]
+   assert(result is 'value', 'Expected "value" when indexing with thunk resolving to "key", got ' .. tostring(result))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ThunkAsNumericIndex()
+   -- Deferred numeric expression used to index an array
+   idx = <{ 2 }>
+   arr = { 'a', 'b', 'c', 'd' }
+   result = arr[idx]
+   assert(result is 'c', 'Expected "c" at index 2, got ' .. tostring(result))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function NamedThunkAsStringIndex()
+   -- Named thunk returning a string key
+   thunk get_key():str
+      return 'name'
+   end
+
+   key = get_key()
+   data = { name = 'Alice', age = 30 }
+   result = data[key]
+   assert(result is 'Alice', 'Expected "Alice" when indexing with thunk key, got ' .. tostring(result))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function NamedThunkAsNumericIndex()
+   -- Named thunk returning a numeric index
+   thunk get_index():num
+      return 1
+   end
+
+   idx = get_index()
+   arr = { 'first', 'second', 'third' }
+   result = arr[idx]
+   assert(result is 'second', 'Expected "second" at thunk index 1, got ' .. tostring(result))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ThunkIndexWithComputedKey()
+   -- Thunk that computes the key from other values
+   prefix = 'user'
+   suffix = 'Name'
+   key_thunk = <{ prefix .. suffix }>
+   data = { userName = 'Bob' }
+   result = data[key_thunk]
+   assert(result is 'Bob', 'Expected "Bob" for computed thunk key "userName", got ' .. tostring(result))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ThunkIndexMissingKey()
+   -- Thunk key that resolves to a key not present in the table
+   mythunk = <{ 'missing' }>
+   mytable = { key = 'value' }
+   result = mytable[mythunk]
+   assert(result is nil, 'Expected nil for missing key, got ' .. tostring(result))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ThunkAsTableSetIndex()
+   -- Thunk used as an index for table assignment (TSET path)
+   key_thunk = <{ 'newkey' }>
+   t = {}
+   t[key_thunk] = 'newvalue'
+   assert(t.newkey is 'newvalue', 'Expected table assignment via thunk index to work, got ' .. tostring(t.newkey))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function BothThunkKeyAndThunkTable()
+   -- Both the table and the key are thunks
+   thunk get_table():table
+      return { x = 10, y = 20 }
+   end
+
+   key = <{ 'y' }>
+   tbl = get_table()
+   result = tbl[key]
+   assert(result is 20, 'Expected 20 when both table and key are thunks, got ' .. tostring(result))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ThunkIndexCachesResolution()
+   -- Verify that using a thunk as an index resolves it, and subsequent uses are cached
+   call_count = 0
+   thunk counted_key():str
+      call_count++
+      return 'tracked'
+   end
+
+   key = counted_key()
+   data = { tracked = 'found' }
+
+   result1 = data[key]
+   result2 = data[key]
+
+   assert(result1 is 'found', 'First indexing should return "found"')
+   assert(result2 is 'found', 'Second indexing should return "found"')
+   assert(call_count is 1, 'Thunk body should execute only once, but ran ' .. call_count .. ' times')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function MultipleThunkKeysOnSameTable()
+   -- Multiple different thunk keys accessing the same table
+   k1 = <{ 'a' }>
+   k2 = <{ 'b' }>
+   k3 = <{ 'c' }>
+   t = { a = 1, b = 2, c = 3 }
+
+   assert(t[k1] is 1, 'Expected t[k1] = 1, got ' .. tostring(t[k1]))
+   assert(t[k2] is 2, 'Expected t[k2] = 2, got ' .. tostring(t[k2]))
+   assert(t[k3] is 3, 'Expected t[k3] = 3, got ' .. tostring(t[k3]))
+end

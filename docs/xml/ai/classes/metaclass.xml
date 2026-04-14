@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="MetaClass" mod="Core" c="The MetaClass is used to manage all classes supported by the system core." cat="System" id="8bf5f002" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="MetaClass" mod="Core" c="The MetaClass is used to manage all classes supported by the system core." cat="System" id="8bf5f002" v="1">
   <ai:m n="FindField" c="Search a class definition for a specific field." p="ERR mc::FindField(OBJECTPTR Object, INT ID, struct Field ** Field, objMetaClass ** Source)">
     <ai:i n="ID" t="INT" c="The field ID to search for. Field names can be converted to ID's by using the strihash() function."/>
     <ai:i n="Field" t="struct Field **" c="Pointer to the Field if discovered, otherwise NULL."/>

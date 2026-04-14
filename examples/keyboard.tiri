@@ -1,0 +1,29 @@
+#!/usr/bin/env origo
+-- A basic demonstration of receiving keyboard input from a viewport.
+
+   import 'gui/window'
+
+   win = gui.window({ title='Keyboard Example', insideWidth=400, insideHeight=200,
+      maxWidth=600, maxHeight=300, minWidth=400, minHeight=200 })
+
+   viewport = win:clientViewport({ aspectRatio = ARF_MEET })
+
+   text = viewport.new('VectorText', {
+      string='Press a key', face='Noto Sans', fontSize=60, y=50, x=10, fill='rgb(0,0,0)'
+   })
+
+   -- Create a keyboard subscription to the window's main viewport.  The applied function will be called every time
+   -- that the user presses a key when the window has the focus.
+
+   viewport.mtSubscribeKeyboard(function(Viewport, Flags, Value, Unicode)
+      if Unicode > 0 then
+         glChars = (glChars ?? '') .. string.char(Unicode)
+         glChars = glChars:sub(-10)
+      end
+
+      text.string = 'Flags: ' .. string.format('0x%x', Flags) .. '\nCode: ' .. Value .. '\n' .. glChars
+      viewport.acDraw()
+   end)
+
+   win:show()
+   processing.sleep()

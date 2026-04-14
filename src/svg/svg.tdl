@@ -1,0 +1,23 @@
+--$TIRI:Include
+
+module({ name="SVG", copyright="Paul Manias © 2010-2026", version=1.0, timestamp=20240611 }, function()
+  flags("SVF", { comment="SVG flags." },
+    "AUTOSCALE: In auto-resize mode, vector dimensions are scaled to the width and height of the vector page.  The @VectorScene.PageWidth and @VectorScene.PageHeight must be set for this.",
+    "ALPHA: Generate an alpha channel in the rendered image.",
+    "ENFORCE_TRACKING: Enforce tracking of definition objects when a Target is used.")
+
+  methods("svg", "Svg", {
+    { id=1, name="Render" },
+    { id=2, name="ParseSymbol" }
+  })
+
+  class("SVG", { src="class_svg.cpp", output="class_svg_def.c" }, [[
+    obj Target      # Refers to the target of the generated SVG scene.
+    str Path        # A path referring to an SVG file.
+    str Title       # Automatically defined if the title element is used in the SVG source document.
+    str Statement   # A string containing SVG data.
+    int Frame       # Draw the SVG only when this frame number is a match to the target surface frame number.
+    int(SVF) Flags  # Optional flags.
+    int FrameRate   # Maximum frame rate to use for animation.
+  ]])
+end)

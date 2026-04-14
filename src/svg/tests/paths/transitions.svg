@@ -4,17 +4,17 @@
 <svg width="100%" height="100%" viewBox="0 0 530 140"
   version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
   <defs>
-    <parasol:transition id="hump">
+    <kotuku:transition id="hump">
       <stop offset="0" transform="scale(0.3,0.3)"/>
       <stop offset="50%" transform="scale(1.5,2.0)"/>
       <stop offset="100%" transform="scale(0.3,0.3)"/>
-    </parasol:transition>
+    </kotuku:transition>
 
-    <parasol:transition id="flip">
+    <kotuku:transition id="flip">
       <stop offset="0" transform="scale(0.3,-0.3)"/>
       <stop offset="50%" transform="scale(1.5,-1.0)"/>
       <stop offset="100%" transform="scale(0.3,-0.3)"/>
-    </parasol:transition>
+    </kotuku:transition>
 
     <linearGradient id="floor" x1="0" y1="0" x2="0" y2="40" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="rgb(200,200,255)" stop-opacity="0.9"/>

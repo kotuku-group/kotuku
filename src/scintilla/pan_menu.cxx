@@ -16,7 +16,7 @@ void Scintilla::Menu::CreatePopUp()
 
    Destroy();
 
-   /*** Create Parasol popup window ***/
+   /*** Create popup window ***/
 
    /*OBJECTID surface_id;
    if (CreateObject(CLASSID::SURFACE, 0, nullptr, &surface_id,

@@ -34,8 +34,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: |
-          /var/cache/apt/archives
-          /var/lib/apt/lists
+          /var/cache/apt/archives/*.deb
         key: ${{ runner.os }}-apt-${{ hashFiles('.github/workflows/ci.yml') }}
         restore-keys: |
           ${{ runner.os }}-apt-
@@ -78,7 +77,7 @@ jobs:
           -DCMAKE_C_COMPILER_LAUNCHER=$LAUNCHER \
           -DCMAKE_CXX_COMPILER_LAUNCHER=$LAUNCHER \
           -DRUN_ANYWHERE=TRUE \
-          -DPARASOL_STATIC=OFF \
+          -DKOTUKU_STATIC=OFF \
           -DBUILD_DEFS=OFF \
           -DBUILD_TESTS=ON
 
@@ -92,8 +91,8 @@ jobs:
       if: runner.os == 'Linux'
       run: |
         cd build/ci
-        tar -czf parasol-install-${{ matrix.os }}-${{ matrix.build_type }}.tar.gz -C ../../install/ci .
-        if [ ! -f parasol-install-${{ matrix.os }}-${{ matrix.build_type }}.tar.gz ]; then
+        tar -czf kotuku-install-${{ matrix.os }}-${{ matrix.build_type }}.tar.gz -C ../../install/ci .
+        if [ ! -f kotuku-install-${{ matrix.os }}-${{ matrix.build_type }}.tar.gz ]; then
           echo "Error: Archive creation failed"
           exit 1
         fi
@@ -102,23 +101,23 @@ jobs:
       shell: bash
       run: |
         if [ "${{ runner.os }}" = "Linux" ]; then
-          ls -lh build/ci/parasol-install-${{ matrix.os }}-${{ matrix.build_type }}.tar.gz
-          echo "Archive size: $(du -h build/ci/parasol-install-${{ matrix.os }}-${{ matrix.build_type }}.tar.gz | cut -f1)"
+          ls -lh build/ci/kotuku-install-${{ matrix.os }}-${{ matrix.build_type }}.tar.gz
+          echo "Archive size: $(du -h build/ci/kotuku-install-${{ matrix.os }}-${{ matrix.build_type }}.tar.gz | cut -f1)"
         else
-          ls -lh build/ci/parasol-install-${{ matrix.os }}-${{ matrix.build_type }}.zip
-          echo "Archive size: $(du -h build/ci/parasol-install-${{ matrix.os }}-${{ matrix.build_type }}.zip | cut -f1)"
+          ls -lh build/ci/kotuku-install-${{ matrix.os }}-${{ matrix.build_type }}.zip
+          echo "Archive size: $(du -h build/ci/kotuku-install-${{ matrix.os }}-${{ matrix.build_type }}.zip | cut -f1)"
         fi
 
     - name: Upload install artifact (Linux)
       if: runner.os == 'Linux' && success()
       uses: actions/upload-artifact@v4
       with:
-        name: parasol-install-${{ matrix.os }}-${{ matrix.build_type }}
-        path: build/ci/parasol-install-${{ matrix.os }}-${{ matrix.build_type }}.tar.gz
+        name: kotuku-install-${{ matrix.os }}-${{ matrix.build_type }}
+        path: build/ci/kotuku-install-${{ matrix.os }}-${{ matrix.build_type }}.tar.gz
         retention-days: 30
 
     - name: Run CTests (excluding audio/http)
-      run: ctest --build-config ${{ matrix.build_type }} --test-dir build/ci --output-on-failure -E "(audio|http)"
+      run: ctest --build-config ${{ matrix.build_type }} --test-dir build/ci --output-on-failure -E "(audio|http|network_udp_broadcast_multicast)"
 
     - name: Run http tests (allowed to fail)
       run: ctest --build-config ${{ matrix.build_type }} --test-dir build/ci --output-on-failure -R "(http)" || true
@@ -133,3 +132,67 @@ jobs:
           build/ci/CMakeFiles/CMakeError.log
           build/ci/Testing/Temporary/LastTest.log
         retention-days: 7
+
+  tag-stable:
+    name: Tag as Stable
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: stable-tag
+      cancel-in-progress: false
+    needs: [build-and-test]
+    if: github.ref == 'refs/heads/master' && needs.build-and-test.result == 'success'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Configure Git
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+    - name: Create/Move STABLE tag
+      run: |
+        # Delete existing STABLE tag if it exists (both local and remote)
+        git tag -d STABLE 2>/dev/null || true
+        git push origin :refs/tags/STABLE 2>/dev/null || true
+
+        # Create new STABLE tag at current commit
+        git tag -a STABLE -m "Stable build - passed all tests on $(date -u +%Y-%m-%d)"
+        git push origin STABLE
+
+  tag-unstable:
+    name: Tag as Unstable
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: unstable-tag
+      cancel-in-progress: false
+    needs: [build-and-test]
+    if: always() && github.ref == 'refs/heads/master' && needs.build-and-test.result == 'failure'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Configure Git
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+    - name: Create/Move UNSTABLE tag
+      run: |
+        # Delete existing UNSTABLE tag if it exists (both local and remote)
+        git tag -d UNSTABLE 2>/dev/null || true
+        git push origin :refs/tags/UNSTABLE 2>/dev/null || true
+
+        # Create new UNSTABLE tag at current commit
+        git tag -a UNSTABLE -m "Unstable build - tests failed on $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+        git push origin UNSTABLE

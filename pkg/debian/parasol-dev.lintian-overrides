@@ -1,7 +1,7 @@
-# Lintian overrides for Parasol development package
+# Lintian overrides for Kotuku development package
 
 # Development package may contain header files that seem unused
-parasol-dev: unused-file-in-deb usr/include/parasol/*
+kotuku-dev: unused-file-in-deb usr/include/kotuku/*
 
 # Some development files may have unusual permissions
-parasol-dev: unusual-file-perm usr/include/parasol/*
+kotuku-dev: unusual-file-perm usr/include/kotuku/*

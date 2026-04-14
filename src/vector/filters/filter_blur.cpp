@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -92,7 +92,7 @@ class extBlurFX : public extFilterEffect {
 static ERR BLURFX_Draw(extBlurFX *Self, struct acDraw *Args)
 {
    auto outBmp = Self->Target;
-   if (outBmp->BytesPerPixel != 4) return ERR::Failed;
+   if (outBmp->BytesPerPixel != 4) return ERR::InvalidState;
 
    double scale = 1.0;
    if (Self->Filter->ClientVector) scale = Self->Filter->ClientVector->Transform.scale();
@@ -102,30 +102,30 @@ static ERR BLURFX_Draw(extBlurFX *Self, struct acDraw *Args)
       if (Self->Filter->AspectRatio IS VFA::NONE) {
          // Scaling is applied evenly on both axis.  Uses the same formula as a scaled stroke-width.
          double diag = dist(0, 0, Self->Filter->BoundWidth, Self->Filter->BoundHeight) * INV_SQRT2;
-         rx = F2T(Self->SX * diag * 2 * scale);
-         ry = F2T(Self->SY * diag * 2 * scale);
+         rx = int(Self->SX * diag * 2 * scale);
+         ry = int(Self->SY * diag * 2 * scale);
       }
       else {
          // Scaling is stretched independently of each axis
-         rx = F2T(Self->SX * Self->Filter->BoundWidth * 2 * scale);
-         ry = F2T(Self->SY * Self->Filter->BoundHeight * 2 * scale);
+         rx = int(Self->SX * Self->Filter->BoundWidth * 2 * scale);
+         ry = int(Self->SY * Self->Filter->BoundHeight * 2 * scale);
       }
    }
    else {
-      rx = F2T(Self->SX * 2 * scale);
-      ry = F2T(Self->SY * 2 * scale);
+      rx = int(Self->SX * 2 * scale);
+      ry = int(Self->SY * 2 * scale);
    }
 
    objBitmap *inBmp;
 
    if ((rx < 1) and (ry < 1)) {
-      if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) != ERR::Okay) return ERR::Failed;
+      if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) != ERR::Okay) return ERR::NoData;
       BAF copy_flags = (Self->Filter->ColourSpace IS VCS::LINEAR_RGB) ? BAF::LINEAR : BAF::NIL;
       gfx::CopyArea(inBmp, outBmp, copy_flags, 0, 0, inBmp->Width, inBmp->Height, 0, 0);
       return ERR::Okay;
    }
 
-   if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) != ERR::Okay) return ERR::Failed;
+   if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) != ERR::Okay) return ERR::NoData;
 
    if (Self->Filter->ColourSpace IS VCS::LINEAR_RGB) inBmp->convertToLinear();
 

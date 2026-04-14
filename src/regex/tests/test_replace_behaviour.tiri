@@ -1,0 +1,61 @@
+-- Replacement semantics including backreferences and flag-driven behaviour
+
+@Test function SimpleReplacement()
+   matcher = regex.new("\\d+")
+   result = matcher.replace("v1.2.3", "X")
+   assert(result is "vX.X.X", "All numeric segments should be replaced")
+end
+
+@Test function BackreferenceReplacement()
+   matcher = regex.new("(\\w+)-(\\w+)")
+   result = matcher.replace("first-second", "$2:$1")
+   assert(result is "second:first", "Replacement should allow positional swaps")
+end
+
+@Test function ZeroCaptureReplacement()
+   matcher = regex.new("(\\d+)")
+   result = matcher.replace("42-54", "[$0]")
+   assert(result is "[42]-[54]", "$0 should expand to the entire match (got '" .. result .. "')")
+end
+
+@Test function LiteralDollarEscape()
+   matcher = regex.new("(\\d+)")
+   result = matcher.replace("Cost 15", "$$$1")
+   assert(result is "Cost $15", "Double dollar should escape literal currency")
+end
+
+@Test function WholeMatchPlaceholder()
+   matcher = regex.new("\\d+")
+   result = matcher.replace("a1b22c333", "<$&>")
+   assert(result is "a<1>b<22>c<333>", "$& should expand to the entire match")
+end
+
+@Test function SuffixPlaceholderAcrossMatches()
+   matcher = regex.new("\\d+")
+   result = matcher.replace("123-456-789", "X$'")
+   assert(result is "X-456-789-X-789-X", "Suffix placeholder should include the remaining text")
+end
+
+@Test function NamedCaptureReplacement()
+   matcher = regex.new("(?<area>\\d{3})-(?<local>\\d{4})")
+   result = matcher.replace("555-1234", "$<area>/$<local>")
+   assert(result is "555/1234", "Named capture placeholder should resolve by name")
+end
+
+@Test function ReplaceNoCopyFlag()
+   matcher = regex.new("\\d+")
+   result = matcher.replace("abc123def456", "#", regex.REPLACE_NO_COPY)
+   assert(result is "##", "REPLACE_NO_COPY should omit unmatched segments")
+end
+
+@Test function ReplaceFirstOnlyFlag()
+   matcher = regex.new("\\d+")
+   result = matcher.replace("1-2-3", "X", regex.REPLACE_FIRST_ONLY)
+   assert(result is "X-2-3", "REPLACE_FIRST_ONLY should only rewrite the first occurrence")
+end
+
+@Test function PrefixPlaceholderAcrossMatches()
+   matcher = regex.new("\\d+")
+   result = matcher.replace("abc123def123ghi", "$`X")
+   assert(result is "abcabcXdefabc123defXghi", "Prefix placeholder should include the full original prefix (got '" .. result .. "')")
+end

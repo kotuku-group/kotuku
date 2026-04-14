@@ -1,0 +1,257 @@
+-- Flute regression tests for deferred expressions <{ expr }> and <type{ expr }>
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Type inference tests
+
+@Test function InferredStringType()
+   x = <{ 'hello' }>
+   result = resolve(x)
+   assert(type(result) is 'string', 'Expected string type, got ' .. type(result))
+   assert(result is 'hello', 'Expected "hello", got "' .. result .. '"')
+end
+
+@Test function InferredNumberType()
+   x = <{ 42 }>
+   result = resolve(x)
+   assert(type(result) is 'number', 'Expected number type, got ' .. type(result))
+   assert(result is 42, 'Expected 42, got ' .. tostring(result))
+end
+
+@Test function InferredBooleanType()
+   x = <{ true }>
+   result = resolve(x)
+   assert(type(result) is 'boolean', 'Expected boolean type, got ' .. type(result))
+   assert(result is true, 'Expected true')
+
+   y = <{ false }>
+   result2 = resolve(y)
+   assert(type(result2) is 'boolean', 'Expected boolean type')
+   assert(result2 is false, 'Expected false')
+end
+
+@Test function InferredNilType()
+   x = <{ nil }>
+   result = resolve(x)
+   assert(result is nil, 'Expected nil')
+end
+
+@Test function InferredTableType()
+   x = <{ { a = 1, b = 2 } }>
+   a = x.a  -- Resolve 'x' and retrieve 'a'
+   assert(type(x) is 'table', 'Expected table type, got ' .. type(x))
+   assert(x.a is 1, 'Expected x.a = 1')
+   assert(x.b is 2, 'Expected x.b = 2')
+end
+
+@Test function InferredArithmeticType()
+   a = 10
+   b = 20
+   x = <{ a + b }>
+   result = resolve(x)
+   assert(type(result) is 'number', 'Expected number type from arithmetic')
+   assert(result is 30, 'Expected 30, got ' .. tostring(result))
+end
+
+@Test function InferredConcatType()
+   prefix = 'Hello'
+   suffix = 'World'
+   x = <{ prefix .. ' ' .. suffix }>
+   result = resolve(x)
+   assert(type(result) is 'string', 'Expected string type from concat')
+   assert(result is 'Hello World', 'Expected "Hello World", got "' .. result .. '"')
+end
+
+@Test function InferredComparisonType()
+   a = 5
+   b = 10
+   x = <{ a < b }>
+   result = resolve(x)
+   assert(type(result) is 'boolean', 'Expected boolean type from comparison')
+   assert(result is true, 'Expected true')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Explicit type annotation tests
+
+@Test function ExplicitStringType()
+   function getValue()
+      return 'computed'
+   end
+   x = <string{ getValue() }>
+   result = resolve(x)
+   assert(type(result) is 'string', 'Expected string type')
+   assert(result is 'computed', 'Expected "computed"')
+end
+
+@Test function ExplicitNumberType()
+   function compute()
+      return 42
+   end
+   x = <number{ compute() }>
+   result = resolve(x)
+   assert(type(result) is 'number', 'Expected number type')
+   assert(result is 42, 'Expected 42')
+end
+
+@Test function ExplicitTypeShortForm()
+   x = <num{ 123 }>
+   result = resolve(x)
+   assert(type(result) is 'number', 'Expected number type')
+   assert(result is 123, 'Expected 123')
+
+   y = <str{ 'test' }>
+   result2 = resolve(y)
+   assert(type(result2) is 'string', 'Expected string type')
+   assert(result2 is 'test', 'Expected "test"')
+end
+
+@Test function ExplicitTableType()
+   function buildTable()
+      return { value = 99 }
+   end
+   x = <table{ buildTable() }>
+   result = resolve(x)
+   assert(type(result) is 'table', 'Expected table type')
+   assert(result.value is 99, 'Expected result.value = 99')
+end
+
+@Test function ExplicitBooleanType()
+   function checkCondition()
+      return true
+   end
+   x = <bool{ checkCondition() }>
+   result = resolve(x)
+   assert(type(result) is 'boolean', 'Expected boolean type')
+   assert(result is true, 'Expected true')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- resolve() behaviour tests
+
+@Test function ResolveNonDeferred()
+   str = 'plain string'
+   result1 = resolve(str)
+   assert(result1 is str, 'resolve should return non-deferred values unchanged')
+
+   num = 42
+   result2 = resolve(num)
+   assert(result2 is num, 'resolve should return non-deferred numbers unchanged')
+
+   tbl = { x = 1 }
+   result3 = resolve(tbl)
+   assert(result3 is tbl, 'resolve should return non-deferred tables unchanged')
+end
+
+@Test function DeferredUpvalueCapture()
+   base = 100
+   multiplier = 2
+   x = <{ base * multiplier }>
+   result = resolve(x)
+   assert(result is 200, 'Expected 200')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- type() returns the expected type for deferred expressions (not "function")
+
+@Test function TypeReturnsExpectedType()
+   str = <{ 'hello' }>
+   assert(type(str) is 'string', 'Expected type(str) to be "string", got "' .. type(str) .. '"')
+
+   num = <{ 42 }>
+   assert(type(num) is 'number', 'Expected type(num) to be "number", got "' .. type(num) .. '"')
+
+   bool = <{ true }>
+   assert(type(bool) is 'boolean', 'Expected type(bool) to be "boolean", got "' .. type(bool) .. '"')
+
+   tbl = <{ {} }>
+   assert(type(tbl) is 'table', 'Expected type(tbl) to be "table", got "' .. type(tbl) .. '"')
+
+   nilval = <{ nil }>
+   assert(type(nilval) is 'nil', 'Expected type(nilval) to be "nil", got "' .. type(nilval) .. '"')
+end
+
+@Test function TypeWithExplicitAnnotation()
+   function getValue()
+      return 'computed'
+   end
+
+   x = <string{ getValue() }>
+   assert(type(x) is 'string', 'Expected type(x) to be "string" for explicitly typed deferred')
+
+   y = <number{ 42 }>
+   assert(type(y) is 'number', 'Expected type(y) to be "number" for explicitly typed deferred')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Deferred expressions in various contexts
+
+@Test function DeferredNested()
+   inner = <{ 'inner' }>
+   outer = <string{ inner }>
+   -- Resolving outer returns the inner deferred, which then needs resolving
+   result = resolve(resolve(outer))
+   assert(result is 'inner', 'Expected nested deferred to resolve to "inner"')
+end
+
+@Test function DeferredInTable()
+   t = {
+      lazy = <{ 'computed later' }>
+   }
+   result = resolve(t.lazy)
+   assert(result is 'computed later', 'Expected table field deferred to resolve correctly')
+end
+
+@Test function DeferredTernary()
+   flag = true
+   x = <{ flag ? 'yes' :> 'no' }>
+   result = resolve(x)
+   assert(result is 'yes', 'Expected ternary deferred to resolve to "yes"')
+
+   flag = false
+   y = <{ flag ? 'yes' :> 'no' }>
+   result2 = resolve(y)
+   assert(result2 is 'no', 'Expected ternary deferred to resolve to "no"')
+end
+
+@Test function DeferredAsArgument()
+   function identity(val)
+      return resolve(val)
+   end
+   x = <{ 'test' }>
+   result = identity(x)
+   assert(result is 'test', 'Expected deferred passed to function to resolve correctly')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- assert() short-circuit evaluation with deferred messages
+
+@Test function AssertShortCircuit()
+   evaluated = false
+   function makeMessage()
+      evaluated = true
+      return 'This is the error message'
+   end
+
+   -- Test that deferred message is NOT evaluated when assert succeeds
+   evaluated = false
+   assert(true, <string{ makeMessage() }>)
+   assert(evaluated is false, 'Deferred message should NOT be evaluated when assert succeeds')
+end
+
+@Test function AssertWithDeferredMessage()
+   context = 'test context'
+   value = 42
+
+   try
+      assert(false, <string{ 'Error in ' .. context .. ': value = ' .. tostring(value) }>)
+   except e
+      assert(e.message != nil, 'Error message should not be nil')
+      -- Verify the error message contains expected content
+      assert(string.find(e.message, 'Error in test context'), 'Error should contain context')
+   success
+      error('assert(false) should fail')
+   end
+end

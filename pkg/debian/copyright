@@ -1,9 +1,9 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: parasol
-Source: https://github.com/parasol-framework/parasol
+Upstream-Name: kotuku
+Source: https://github.com/parasol-framework/kotuku
 
 Files: *
-Copyright: Copyright holders of Parasol Framework
+Copyright: Copyright holders of Kotuku Framework
 License: LGPL-2.1+
 
 Files: 3rdparty/freetype-2.13.2/*

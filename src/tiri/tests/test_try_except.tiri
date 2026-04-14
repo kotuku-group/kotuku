@@ -1,0 +1,1428 @@
+-- Tests for try...except...end exception handling syntax
+
+@BeforeEach(hotpath=200)
+function enforce_hotpath() end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Basic try-except (statement form)
+
+@Test(priority=0) function BasicTryExcept()
+   handled = false
+
+   try
+      local some_value = 42
+      error("Test error")
+   except e
+      handled = true
+      assert(e.message:find("Test error"), "Expected error message to contain 'Test error'")
+   end
+
+   assert(handled, "Exception should have been handled")
+   assert(some_value is nil, "Variable from try block should not be visible outside")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test(priority=1) function SilentTry()
+   executed = false
+   try
+      executed = true
+   end
+   assert(executed, "Simple try block should execute with no exception handling")
+
+   executed = false
+   try
+      executed = true
+      error('Ignore exception')
+   end
+   assert(executed, "Exception should be handled silently.")
+
+   -- Test success block without except clause
+   success_executed = false
+   try
+      x = 42
+   success
+      success_executed = true
+   end
+   assert(success_executed, "Success block should execute with try...success...end (no except)")
+
+   -- Test success block not executing when exception occurs in silent try
+   success_executed = false
+   try
+      error('Test error')
+   success
+      success_executed = true
+   end
+   assert(not success_executed, "Success block should NOT execute when exception occurs in silent try")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Try block without exception
+
+@Test(priority=2) function NoException()
+   try_executed = false
+   except_executed = false
+   success_executed = false
+
+   try
+      try_executed = true
+   except e
+      except_executed = true
+   success
+      success_executed = true
+   end
+
+   assert(try_executed, "Try block should have executed")
+   assert(not except_executed, "Except block should not have executed")
+   assert(success_executed, "Success block should have executed when no exception")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Exception variable is optional
+
+@Test(priority=3) function WithoutExceptionVariable()
+   handled = false
+   success_executed = false
+
+   try
+      error("Test error")
+   except
+      handled = true
+   success
+      success_executed = true
+   end
+
+   assert(handled, "Exception should have been handled without variable")
+   assert(not success_executed, "Success block should NOT execute when exception was caught")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Nested try blocks with success
+
+@Test(priority=4) function NestedTry()
+   outer_handled = false
+   inner_handled = false
+   outer_success = false
+   inner_success = false
+
+   try
+      try
+         error("Inner error")
+      except e
+         inner_handled = true
+         assert(e.message:find("Inner"), "Inner handler should get inner error")
+      success
+         inner_success = true
+      end
+   except e
+      outer_handled = true
+   success
+      outer_success = true
+   end
+
+   assert(inner_handled, "Inner exception should have been handled")
+   assert(not outer_handled, "Outer handler should not execute for inner error")
+   assert(not inner_success, "Inner success should not execute when exception caught")
+   assert(outer_success, "Outer success should execute (inner try completed normally after catching)")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Re-throwing exceptions
+
+@Test(priority=5,hotpath=3) function Rethrow()
+   outer_handled = false
+
+   try
+      msg("Entered outer try")
+      try
+         msg("Entered inner try")
+         error("Raising error")
+      except e
+         msg("Captured inner error: " .. e.message)
+         error(e)
+      end
+   except e
+      outer_handled = true
+      msg("Captured rethrown error in outer try: " .. e.message)
+      assert(e.message:find("Raising error"), "Outer should catch rethrown error, got: " .. e.message)
+   end
+
+   assert(outer_handled, "Rethrown exception should be caught by outer handler")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Exception table fields
+
+@Test(priority=6) function ExceptionTableFields()
+   try
+      error("Test message")
+   except e
+      assert(e.code is ERR_Exception, "Lua errors should have ERR_Exception code")
+      assert(e.message:find("Test message"), "Message should match, got " .. e.message)
+      assert(e.line > 0, "Should have line number, got " .. tostring(e.line))
+      -- TODO: trace capture not yet implemented (requires saving before stack restoration)
+      -- assert(e.trace != nil, "Should have stack trace")
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- ERR code exceptions
+
+@Test(priority=7) function ErrCodeException()
+   try
+      raise ERR_Failed
+   except e
+      assert(e.code is ERR_Failed, "ERR exceptions should have numeric code")
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Single error code filter
+
+@Test(priority=8) function SingleFilter()
+   correct_handler = false
+
+   try
+      raise ERR_Args
+   except e when ERR_Args
+      correct_handler = true
+   except e
+      assert(false, "Should not reach catch-all")
+   end
+
+   assert(correct_handler, "Filtered handler should match")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Multiple error codes in filter
+
+@Test(priority=9) function MultipleFilter()
+   correct_handler = false
+
+   try
+      raise ERR_Failed
+   except e when ERR_Failed, ERR_Search
+      correct_handler = true
+   except e
+      assert(false, "Should not reach catch-all")
+   end
+
+   assert(correct_handler, "Multiple filter should match")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Filter falling through to catch-all
+
+@Test(priority=10) function FilterFallthrough()
+   catchall_handler = false
+
+   try
+      raise ERR_Write
+   except e when ERR_Read
+      assert(false, "Should not match ERR_Read filter")
+   except e
+      catchall_handler = true
+   end
+
+   assert(catchall_handler, "Should fall through to catch-all")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Multiple except clauses
+
+@Test(priority=11) function MultipleExceptClauses()
+   handler_index = 0
+
+   -- Test first handler matches
+   try
+      raise ERR_Args
+   except e when ERR_Args
+      handler_index = 1
+   except e when ERR_Failed
+      handler_index = 2
+   except e
+      handler_index = 3
+   end
+   assert(handler_index is 1, "First filter should match ERR_Args")
+
+   -- Test second handler matches
+   try
+      raise ERR_Failed
+   except e when ERR_Args
+      handler_index = 1
+   except e when ERR_Failed
+      handler_index = 2
+   except e
+      handler_index = 3
+   end
+   assert(handler_index is 2, "Second filter should match ERR_Failed")
+
+   -- Test catch-all matches
+   try
+      raise ERR_Search
+   except e when ERR_Args
+      handler_index = 1
+   except e when ERR_Failed
+      handler_index = 2
+   except e
+      handler_index = 3
+   end
+   assert(handler_index is 3, "Catch-all should match unfiltered error")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Scope isolation - variables in try block
+
+@Test(priority=16) function ScopeIsolation()
+   outer_var = "outer"
+
+   try
+      inner_var = "inner"
+      outer_var = "modified"
+   except e
+   end
+
+   assert(outer_var is "modified", "Outer variable should be modified")
+   -- Note: inner_var is visible because Tiri doesn't have block scope by default
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Empty try block
+
+@Test(priority=17) function EmptyTryBlock()
+   executed = false
+
+   try
+   except e
+      executed = true
+   end
+
+   assert(not executed, "Empty try should not trigger except")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Empty except block
+
+@Test(priority=18) function EmptyExceptBlock()
+   try
+      error("Test")
+   except e
+   end
+   -- Should not crash - empty handler is valid
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Multiple errors in sequence
+
+@Test(priority=19) function MultipleErrorsSequence()
+   count = 0
+
+   for i in {0..30} do  -- Range is exclusive, so 0..3 gives 0, 1, 2
+      try
+         error("Error " .. i)
+      except e
+         count++
+      end
+   end
+
+   assert(count is 30, "Should handle 30 errors, got " .. count)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Exception in loop with continue
+
+@Test(priority=20) function ExceptionInLoop()
+   successful = 0
+   failed = 0
+
+   for i in {0..5} do  -- Range is exclusive, so 0..5 gives 0, 1, 2, 3, 4
+      try
+         if i % 2 is 0 then
+            error("Even number")
+         end
+         successful++
+      except e
+         failed++
+      end
+   end
+
+   assert(successful is 2, "Should have 2 successful iterations (1, 3)")
+   assert(failed is 3, "Should have 3 failed iterations (0, 2, 4)")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Deeply nested try blocks
+
+@Test(priority=21) function DeeplyNested()
+   depth = 0
+
+   try
+      depth = 1
+      try
+         depth = 2
+         try
+            depth = 3
+            error("Deep error")
+         except e
+            assert(depth is 3, "Innermost should catch")
+         end
+      except e
+         assert(false, "Middle should not catch")
+      end
+   except e
+      assert(false, "Outer should not catch")
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Error code at filter boundary (4 codes max)
+
+@Test(priority=22) function FourCodeFilter()
+   matched = false
+
+   try
+      raise ERR_Search
+   except e when ERR_Args, ERR_Failed, ERR_Read, ERR_Search
+      matched = true
+   except e
+      assert(false, "Should match 4-code filter")
+   end
+
+   assert(matched, "Should match last code in 4-code filter")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Parser error tests using try...except to catch exec() errors
+
+@Test(priority=23,hotpath=false) function ParserErrors()
+   -- Test: catch-all before filtered (should be a parse error)
+
+   try
+      exec([[
+         try
+            error("test")
+         except e
+            print("catchall")
+         except e when ERR_Failed
+            print("filtered")
+         end
+      ]])
+   success
+      error("catch-all before filtered should fail to parse")
+   end
+
+   -- Test: duplicate catch-all (should be a parse error)
+
+   try
+      exec([[
+         try
+            error("test")
+         except e
+            print("first")
+         except e
+            print("second")
+         end
+      ]])
+   success
+      error("duplicate catch-all should fail to parse")
+   end
+
+   -- Test: when without error code
+
+   try
+      exec([[
+         try
+            error("test")
+         except e when
+            print("test")
+         end
+      ]])
+   success
+      error("when without error code should fail to parse")
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Valid syntax variations
+
+@Test(priority=24) function ValidSyntaxVariations()
+   -- Multiple filtered handlers, no catch-all
+   handled = false
+   try
+      raise ERR_Args
+   except e when ERR_Args
+      handled = true
+   except e when ERR_Failed
+      assert(false)
+   end
+   assert(handled)
+
+   -- Single filtered handler only
+   handled = false
+   try
+      raise ERR_Failed
+   except e when ERR_Failed
+      handled = true
+   end
+   assert(handled)
+
+   -- Just catch-all
+   handled = false
+   try
+      error("test")
+   except e
+      handled = true
+   end
+   assert(handled)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Return from within try block
+
+@Test(priority=25) function ReturnFromTry()
+   function test_return()
+      try
+         return "from_try"
+      except e
+         return "from_except"
+      success
+         return "from_success"
+      end
+      return "after_try"
+   end
+
+   result = test_return()
+   assert(result is "from_try", "Should return from try block (success not reached due to early return)")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Return from success block
+
+@Test(priority=25) function ReturnFromSuccess()
+   function test_return()
+      try
+         -- No exception, no early return
+         x = 42
+      except e
+         return "from_except"
+      success
+         return "from_success"
+      end
+      return "after_try"
+   end
+
+   result = test_return()
+   assert(result is "from_success", "Should return from success block")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Return from within except block
+
+@Test(priority=26) function ReturnFromExcept()
+   function test_return()
+      try
+         error("test")
+      except e
+         return "from_except"
+      end
+      return "after_try"
+   end
+
+   result = test_return()
+   assert(result is "from_except", "Should return from except block")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Break from try block in loop.  The outer function is used for isolation in case 'break' behaves in a way that
+-- could affect the test harness.
+
+global function break_test()
+   count = 0
+   for i in {0..9} do
+      try
+         count++
+         if i is 3 then
+            break
+         end
+      except e
+         error("Exception should not occur")
+      end
+   end
+   count++ -- We need a function to be called immediately after the break to ensure that function exit isn't broken
+   return count
+end
+
+@Test(priority=27) function BreakFromTry()
+   for i in {0..20} do
+      count = break_test()
+      assert(count is 5, "Expected a count of 5, got " .. count)
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Continue from try block in loop
+
+@Test(priority=28) function ContinueFromTry()
+   count = 0
+   sum = 0
+   for i in {0..5} do
+      try
+         count++
+         if i is 2 then
+            continue
+         end
+         sum += i
+      except e
+      end
+   end
+
+   assert(count is 5, "Should count all iterations, got " .. tostring(count))
+   assert(sum is 0+1+3+4, "Should skip i=2 in sum, got " .. sum)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Break from success block in loop
+
+@Test(priority=28) function BreakFromSuccess()
+   count = 0
+   success_count = 0
+   for i in {0..10} do
+      try
+         count++
+      except e
+      success
+         success_count++
+         if i is 3 then
+            break
+         end
+      end
+   end
+
+   assert(count is 4, "Should count 4 iterations (0, 1, 2, 3) before break in success, got " .. count)
+   assert(success_count is 4, "Success should execute 4 times before break, got " .. success_count)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Trigger Lua standard errors
+
+@Test(priority=29) function LuaErrors()
+   try
+      x = nil
+      y = x.field
+   except e
+      assert(e.code is ERR_Exception, "Expected ERR_Exception code, got " .. tostring(e.code))
+      assert(e.message:find("nil"), "Should mention nil in message")
+   end
+
+   -- Type error
+   try
+      x = "string" + 123
+   except e
+      assert(e.message != nil, "Should have error message")
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- ERR_Okay and other non-exception codes should not trigger except
+
+@Test(priority=30,hotpath=false) function NonExceptionErrors()
+   try
+      -- This should NOT trigger an exception (ERR_Okay is below threshold)
+      err = mSys.AnalysePath(".", 0)
+   except e
+      error("ERR_Okay should not trigger except, got " .. e.message)
+   end
+end
+
+@Test(priority=30,hotpath=false) function ErrorCodeRaised()
+   try
+      -- Trigger an ERR_Args exception
+      err = mSys.AllocMemory(-1024, MEM_DATA)
+   except e when ERR_Args
+      -- Expected result
+   except e
+      error(f"Expected ERR_Args code, got {e.code}")
+   success
+      error("Error should have been raised by faulty sytem call.")
+   end
+
+   -- Try can only check ERR codes in its immediate scope, so the AllocMemory() result would not be tested in this case
+   try
+      function internal()
+         mSys.AllocMemory(-1024, MEM_DATA)
+      end
+      internal()
+   except e
+      error(f"AllocMemory() should not have its ERR code tested.")
+   end
+
+   t = obj.new('time', { })
+   try
+      t.acDraw()
+   success
+      error("acDraw() on time object should raise an error")
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- <close> variable cleanup in try-except blocks
+-- Verifies that __close metamethods are called when an exception is caught by try-except
+
+@Test(priority=31) function CloseInTryExcept()
+   closed = false
+   received_err = nil
+   mt = {
+      __close = function(self, err)
+         closed = true
+         received_err = err
+      end
+   }
+
+   try
+      local obj <close> = setmetatable({}, mt)
+      error("test error in try")
+   except e
+      -- Exception should be caught
+   end
+
+   assert(closed, "<close> handler should be called when try-except catches exception")
+   assert(received_err != nil, "Error should be passed to __close handler")
+   assert(tostring(received_err):find("test error in try"), "Error message should be passed to __close: got " .. tostring(received_err))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Multiple <close> variables in try-except - LIFO order
+
+@Test(priority=32) function MultipleCloseInTryExcept()
+   order = array<int>
+   function makeMt(n:num)
+      return {
+         __close = function(self, err)
+            order:push(n)
+         end
+      }
+   end
+
+   try
+      local a <close> = setmetatable({}, makeMt(1))
+      local b <close> = setmetatable({}, makeMt(2))
+      local c <close> = setmetatable({}, makeMt(3))
+      error("multi close test")
+   except e
+      -- Exception should be caught
+   end
+
+   assert(#order is 3, "All three <close> handlers should be called, got " .. #order)
+   assert(order[0] is 3, "LIFO: 3 should close first, got " .. tostring(order[0]))
+   assert(order[1] is 2, "LIFO: 2 should close second, got " .. tostring(order[1]))
+   assert(order[2] is 1, "LIFO: 1 should close third, got " .. tostring(order[2]))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- <close> in nested try blocks
+-- Only locals created inside a try block should be closed when that try handles an exception.
+
+@Test(priority=33) function CloseInNestedTry()
+   order = array<string>
+   mt_outer = { __close = function() order:push('outer') end }
+   mt_inner = { __close = function() order:push('inner') end }
+
+   try
+      local outer_obj <close> = setmetatable({}, mt_outer)
+      try
+         local inner_obj <close> = setmetatable({}, mt_inner)
+         error("inner error")
+      except e
+         -- Inner exception caught
+      end
+   except e
+      -- Outer exception not expected
+      assert(false, "Outer except should not be reached")
+   end
+
+   assert(#order is 2, "Expected 2 <close> handler calls, got " .. #order)
+   assert(order[0] is 'inner', "Inner should close first, got " .. tostring(order[0]))
+   assert(order[1] is 'outer', "Outer should close after inner, got " .. tostring(order[1]))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- <close> cleanup when no exception occurs in try block, runs before success
+
+@Test(priority=34) function CloseInTryNoException()
+   order = array<string>
+   mt = {
+      __close = function(self, err)
+         order:push('close')
+      end
+   }
+
+   try
+      local obj <close> = setmetatable({}, mt)
+      order:push('try-body')
+   except e
+      assert(false, "No exception expected")
+   success
+      order:push('success')
+   end
+
+   result = order:join(',')
+   assert(result is 'try-body,close,success', "<close> should run before success: '" .. result .. "'")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- <close> error replaces original error in try-except
+
+@Test(priority=35) function CloseErrorInTryExcept()
+   close_called = false
+   mt = {
+      __close = function(self, err)
+         close_called = true
+         error("close handler error")
+      end
+   }
+
+   caught_error = nil
+   try
+      local obj <close> = setmetatable({}, mt)
+      error("original error")
+   except e
+      caught_error = e
+   end
+
+   assert(close_called, "<close> handler should be called")
+   -- Per Lua 5.4 semantics, error in __close replaces original
+   assert(caught_error != nil, "Should catch an error")
+   assert(tostring(caught_error.message):find("close handler error"), "Error from __close should replace original: got " .. tostring(caught_error.message))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- <close> cleanup when returning from try block
+
+@Test(priority=36) function CloseOnReturnFromTry()
+   closed = false
+   mt = {
+      __close = function(self, err)
+         closed = true
+      end
+   }
+
+   function subject()
+      try
+         local obj <close> = setmetatable({}, mt)
+         return "from_try"
+      except e
+         return "from_except"
+      end
+   end
+
+   result = subject()
+   assert(result is "from_try", "Should return from try block")
+   assert(closed, "<close> handler should run before return from try")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- <close> cleanup when returning from except block
+
+@Test(priority=37) function CloseOnReturnFromExcept()
+   closed = false
+   mt = {
+      __close = function(self, err)
+         closed = true
+      end
+   }
+
+   function subject()
+      try
+         local obj <close> = setmetatable({}, mt)
+         error("return from except test")
+      except e
+         return "from_except"
+      end
+   end
+
+   result = subject()
+   assert(result is "from_except", "Should return from except block")
+   assert(closed, "<close> handler should run before return from except")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- <close> cleanup when breaking out of a try block inside a loop
+
+@Test(priority=38) function CloseOnBreakFromTry()
+   function subject()
+      closed = 0
+      mt = { __close = function(self, err) closed++ end }
+      count = 0
+      for i in {0..5} do
+         try
+            local obj <close> = setmetatable({}, mt)
+            count++
+            if i is 2 then
+               break
+            end
+         except e
+         end
+      end
+      return count, closed
+   end
+
+   count, closed = subject()
+   assert(count is 3, "Expected 3 iterations before break, got " .. tostring(count))
+   assert(closed is 3, "Expected 3 <close> calls before break, got " .. tostring(closed))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- <close> cleanup when continuing from a try block inside a loop
+
+@Test(priority=39) function CloseOnContinueFromTry()
+   function subject()
+      closed = 0
+      mt = { __close = function(self, err) closed++ end }
+      count = 0
+      for i in {0..5} do
+         try
+            local obj <close> = setmetatable({}, mt)
+            count++
+            if i is 2 then
+               continue
+            end
+         except e
+         end
+      end
+      return count, closed
+   end
+
+   count, closed = subject()
+   assert(count is 5, "Expected 5 iterations with continue, got " .. tostring(count))
+   assert(closed is 5, "Expected 5 <close> calls with continue, got " .. tostring(closed))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- <close> cleanup when rethrowing from except
+
+@Test(priority=40) function CloseOnRethrow()
+   closed = false
+   mt = {
+      __close = function(self, err)
+         closed = true
+      end
+   }
+
+   caught_error = nil
+   try
+      try
+         local obj <close> = setmetatable({}, mt)
+         error("inner")
+      except e
+         error("outer " .. e.message)
+      end
+   except e
+      caught_error = e
+   end
+
+   assert(closed, "<close> handler should run before rethrow")
+   assert(caught_error != nil, "Outer exception should be caught")
+   assert(tostring(caught_error.message):find("outer"), "Expected rethrown error, got " .. tostring(caught_error.message))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- <close> handlers should continue after a __close error
+
+@Test(priority=41) function CloseErrorContinuesHandlers()
+   order = {}
+   mt_first = {
+      __close = function(self, err)
+         table.insert(order, "first")
+      end
+   }
+   mt_second = {
+      __close = function(self, err)
+         table.insert(order, "second")
+         error("close second")
+      end
+   }
+
+   caught_error = nil
+   try
+      local a <close> = setmetatable({}, mt_first)
+      local b <close> = setmetatable({}, mt_second)
+      error("original error")
+   except e
+      caught_error = e
+   end
+
+   assert(#order is 2, "Both <close> handlers should run, got " .. tostring(#order))
+   assert(order[0] is "second", "LIFO: second should close first, got " .. tostring(order[0]))
+   assert(order[1] is "first", "LIFO: first should close second, got " .. tostring(order[1]))
+   assert(tostring(caught_error.message):find("close second"), "Close error should replace original: got " .. tostring(caught_error.message))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Tests for defer interaction with try-except blocks
+
+-- Defer runs when try block exits normally (no exception), before success block
+
+@Test(priority=40) function DeferInTryBlockNormal()
+   order = array<string>
+
+   function subject()
+      try
+         defer
+            order:push('deferred')
+         end
+         order:push('try-body')
+      except e
+         order:push('except')
+      success
+         order:push('success')
+      end
+   end
+
+   subject()
+   result = order:join(',')
+   assert(result is 'try-body,deferred,success', "Defer should run before success block: '" .. tostring(result) .. "'")
+end
+
+-- Test defer behavior when exception is caught by try-except
+
+@Test(priority=40) function DeferInTryWithException()
+   order = array<string>
+
+   function subject()
+      try
+         defer
+            order:push('deferred')
+         end
+         order:push('before-error')
+         error('test error')
+         order:push('after-error')
+      except
+         order:push('except')
+      end
+   end
+
+   subject()
+
+   -- Document actual behavior - defer may or may not run depending on implementation
+   assert(#order >= 2, "Should have at least before-error and except: '" .. order:join(',') .. "'")
+   assert(order[0] is 'before-error', "First should be before-error: '" .. order:join(',') .. "'")
+end
+
+-- Test multiple defers when exception is caught
+
+@Test(priority=40) function MultipleDeferInTryWithException()
+   order = array<string>
+
+   function subject()
+      try
+         defer
+            order:push('defer-1')
+         end
+         defer
+            order:push('defer-2')
+         end
+         defer
+            order:push('defer-3')
+         end
+         order:push('body')
+         error('test error')
+      except e
+         order:push('except')
+      end
+   end
+
+   subject()
+
+   -- Document actual behavior
+   assert(#order >= 2, "Should have at least body and except: '" .. order:join(',') .. "'")
+   assert(order[0] is 'body', "First should be body: '" .. order:join(',') .. "'")
+end
+
+-- Defer in except block runs correctly when except exits
+
+@Test(priority=40) function DeferInExceptBlock()
+   order = array<string>
+
+   function subject()
+      try
+         error('test error')
+      except
+         defer
+            order:push('except-defer')
+         end
+         order:push('except-body')
+      end
+
+      order:push('after-try')
+   end
+
+   subject()
+
+   assert(order:join(',') is 'except-body,except-defer,after-try', "Defer in except block should run when except exits: '" .. order:join(',') .. "'")
+end
+
+-- Test defer behavior with nested try blocks
+
+@Test(priority=40) function DeferInNestedTry()
+   order = array<string>
+
+   function subject()
+      try
+         defer
+            order:push('outer-defer')
+         end
+         order:push('outer-body')
+
+         try
+            defer
+               order:push('inner-defer')
+            end
+            order:push('inner-body')
+            error('inner error')
+         except e
+            order:push('inner-except')
+         end
+
+         order:push('after-inner-try')
+      except e
+         order:push('outer-except')
+      end
+   end
+
+   subject()
+
+   -- Document actual behavior - outer-defer should run, inner-defer behavior may vary
+   assert(order[0] is 'outer-body', "First should be outer-body: '" .. order:join(',') .. "'")
+   assert(order[1] is 'inner-body', "Second should be inner-body: '" .. order:join(',') .. "'")
+end
+
+-- Defer runs when returning from try block (no exception)
+
+@Test(priority=40) function DeferWithReturnFromTry()
+   order = array<string>
+
+   function subject()
+      try
+         defer
+            order:push('deferred')
+         end
+         order:push('before-return')
+         return 'from-try'
+      except e
+         order:push('except')
+         return 'from-except'
+      end
+      order:push('after-try')
+      return 'after'
+   end
+
+   result = subject()
+   assert(result is 'from-try', "Should return from try block, got '" .. tostring(result) .. "'")
+   assert(order:join(',') is 'before-return,deferred', "Defer should run before return: '" .. order:join(',') .. "'")
+end
+
+-- Defer runs when breaking from try block in loop (no exception)
+
+@Test(priority=45) function DeferWithBreakInTryLoop()
+   order = array<string>
+
+   function subject()
+      for i = 1, 4 do
+         try
+            defer
+               order:push('defer-' .. tostring(i))
+            end
+            order:push('body-' .. tostring(i))
+         except
+            order:push('except-' .. tostring(i))
+         end
+      end
+   end
+
+   subject()
+
+   expected = 'body-1,defer-1,body-2,defer-2,body-3,defer-3,body-4,defer-4'
+   assert(order:join(',') is expected, "Defer should run on break from try:\n" .. expected .. '\n' .. order:join(','))
+end
+
+-- Test defer behavior with continue in try loop
+
+@Test(priority=45) function DeferWithContinueInTryLoop()
+   order = array<string>
+
+   function subject()
+      for i = 1, 3 do
+         try
+            defer
+               order:push('defer-' .. tostring(i))
+            end
+            order:push('body-' .. tostring(i))
+            if i is 2 then
+               continue
+            end
+            order:push('after-continue-' .. tostring(i))
+         except e
+            order:push('except-' .. tostring(i))
+         end
+      end
+   end
+
+   subject()
+
+   -- Document actual behavior
+   assert(#order >= 3, "Should have multiple entries: '" .. order:join(',') .. "'")
+end
+
+-- Test interaction between defer and <close> in try block with exception
+
+@Test(priority=45) function DeferAndCloseInTry()
+   order = array<string>
+   mt = { __close = function() order:push('close') end }
+
+   function subject()
+      try
+         defer
+            order:push('defer')
+         end
+         local obj <close> = setmetatable({}, mt)
+         order:push('body')
+         error('test error')
+      except
+         order:push('except')
+      end
+   end
+
+   subject()
+
+   -- Document actual behavior - close should run, defer behavior may vary
+   assert(order[0] is 'body', "First should be body: '" .. order:join(',') .. "'")
+
+   local has_close = false
+   for v in values(order) do
+      if v is 'close' then has_close = true end
+   end
+   assert(has_close, "<close> handler should be called: '" .. order:join(',') .. "'")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Tests for try<trace> stack trace capture
+
+@Test(priority=50) function TryTraceCapture()
+   try<trace>
+      error("Test error")
+   except e
+      assert(e.trace, "Trace should be captured with try<trace>")
+      assert(type(e.trace) is "array", "Trace should be array of frames")
+      assert(#e.trace >= 1, "Should have at least one frame")
+   end
+end
+
+@Test(priority=51) function TryTraceFrameStructure()
+   try<trace>
+      error("Test error")
+   except e
+      assert(e.trace, "Trace should be captured")
+      frame = e.trace[0]
+      assert(frame, "First frame should exist")
+      assert(frame.source != nil or frame.line != nil, "Frame should have source or line")
+   end
+end
+
+@Test(priority=52) function TryTraceStackTraceString()
+   try<trace>
+      error("Test error")
+   except e
+      str = e.stackTrace
+      assert(type(str) is "string", "stackTrace should return string")
+      assert(str:find("stack traceback:"), "Should have traceback header")
+   end
+end
+
+@Test(priority=53) function TryWithoutTraceIsNil()
+   try
+      error("Test error")
+   except e
+      assert(e.trace is nil, "Regular try should not capture trace")
+      assert(e.stackTrace is nil, "Regular try should not have stackTrace")
+   end
+end
+
+@Test(priority=54) function TryTraceNestedFunction()
+   function innerFunc()
+      error("Inner error")
+   end
+
+   function outerFunc()
+      innerFunc()
+   end
+
+   try<trace>
+      outerFunc()
+   except e
+      assert(e.trace, "Trace should be captured")
+      assert(#e.trace >= 2, "Should have multiple frames for nested calls")
+
+      -- Check that we captured function names
+      found_inner = false
+      found_outer = false
+      for i, frame in ipairs(e.trace) do
+         if frame.func and frame.func:find("innerFunc") then found_inner = true end
+         if frame.func and frame.func:find("outerFunc") then found_outer = true end
+      end
+      -- Note: function names may not always be available depending on how the error is raised
+   end
+end
+
+@Test(priority=55) function TryTraceWithRaise()
+   try<trace>
+      raise ERR_Failed
+   except e
+      assert(e.trace, "Trace should be captured with raise()")
+      assert(e.code is ERR_Failed, "Error code should be ERR_Failed")
+   end
+end
+
+@Test(priority=56) function TryTraceNestedTryBlocks()
+   outer_trace = nil
+   inner_trace = nil
+
+   try<trace>
+      try<trace>
+         error("Inner error")
+      except e
+         inner_trace = e.trace
+      end
+      error("Outer error")
+   except e
+      outer_trace = e.trace
+   end
+
+   assert(inner_trace, "Inner try<trace> should capture trace")
+   assert(outer_trace, "Outer try<trace> should capture trace")
+end
+
+@Test(priority=57) function TryTraceMixedWithRegularTry()
+   trace_captured = nil
+
+   try<trace>
+      try
+         error("Inner error - no trace")
+      except e
+         -- Inner try has no trace
+         assert(e.trace is nil, "Inner try should not have trace")
+         error("Rethrow")
+      end
+   except e
+      trace_captured = e.trace
+   end
+
+   assert(trace_captured, "Outer try<trace> should capture trace from rethrow")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Tests for raise and check keywords
+
+@Test(priority=60) function RaiseBasic()
+   try
+      raise ERR_Failed
+   except e
+      assert(e.code is ERR_Failed, "raise should set error code")
+      return
+   end
+   error("raise did not throw an exception")
+end
+
+@Test(priority=61) function RaiseWithMessage()
+   try
+      raise ERR_Args, "Custom error message"
+   except e
+      assert(e.code is ERR_Args, "raise should set error code")
+      assert(e.message:find("Custom error message"), "raise should use custom message")
+      return
+   end
+   error("raise with message did not throw an exception")
+end
+
+@Test(priority=62) function CheckBelowThreshold()
+   -- ERR_Okay should not raise an exception
+   check ERR_Okay
+   -- If we reach here, the test passed
+end
+
+@Test(priority=63) function CheckAboveThreshold()
+   try
+      check ERR_Failed
+   except e
+      assert(e.code is ERR_Failed, "check should raise for codes >= threshold, got " .. e.code)
+      return
+   end
+   error("check should have raised an exception for ERR_Failed")
+end
+
+@Test(priority=64) function CheckWithExpression()
+   function returns_error()
+      return ERR_Args
+   end
+
+   try
+      check returns_error()
+   except e when ERR_Args
+      return  -- Expected
+   end
+   error("check with expression should have thrown")
+end
+
+@Test(priority=65) function RaiseWithVariable()
+   -- Test that raise works with variables, not just constants
+   err_code = ERR_Failed
+   caught = false
+
+   try
+      raise err_code
+   except e
+      caught = true
+      assert(e.code is ERR_Failed, "Should catch ERR_Failed, got " .. tostring(e.code))
+   end
+
+   assert(caught, "Exception should have been caught")
+end
+
+@Test(priority=66) function RaiseConditionalShorthand()
+   truthy_value = "has_something"
+   falsy_value = nil
+
+   try
+      truthy_value ?? raise ERR_Failed
+   except e
+      error("Truthy value should not trigger raise")
+   end
+
+   caught = false
+   try
+      falsy_value ?? raise ERR_Failed
+   except e
+      caught = true
+      assert(e.code is ERR_Failed, "Should catch ERR_Failed")
+   end
+   assert(caught, "Falsy value should have triggered raise")
+end
+
+@Test(priority=67) function CheckConditionalShorthand()
+   truthy_value = true
+   falsy_value = nil
+
+   try
+      truthy_value ?? check ERR_Failed  -- Would fail if executed, but shouldn't execute
+   except e
+      error("Truthy value should not trigger check")
+   end
+
+   caught = false
+   try
+      falsy_value ?? check ERR_Failed
+   except e
+      caught = true
+      assert(e.code is ERR_Failed, "Should catch ERR_Failed")
+   end
+   assert(caught, "Falsy value should have triggered check")
+end

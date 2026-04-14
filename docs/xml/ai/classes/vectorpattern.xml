@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="VectorPattern" mod="Vector" c="Provides support for the filling and stroking of vectors with patterns." cat="Graphics" id="09eaa136" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="VectorPattern" mod="Vector" c="Provides support for the filling and stroking of vectors with patterns." cat="Graphics" id="09eaa136" v="1">
   <ai:f n="Dimensions" c="Dimension flags are stored here." t="DMF" a="R"/>
   <ai:f n="Height" c="Height of the pattern tile." t="DOUBLE" a="GS"/>
   <ai:f n="Inherit" c="Inherit attributes from a VectorPattern referenced here." t="*VectorPattern" a="RS"/>

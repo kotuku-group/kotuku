@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -44,12 +44,12 @@ ScintillaSearch: Provides search functionality for use on Scintilla objects.
 #include "Editor.h"
 #include "ScintillaBase.h"
 
-#include <parasol/main.h>
-#include <parasol/modules/display.h>
-#include <parasol/strings.hpp>
+#include <kotuku/main.h>
+#include <kotuku/modules/display.h>
+#include <kotuku/strings.hpp>
 
-#include "scintillaparasol.h"
-#include <parasol/modules/scintilla.h>
+#include "scintillakotuku.h"
+#include <kotuku/modules/scintilla.h>
 
 #define SCICALL     ((extScintilla *)(Self->Scintilla))->API->SendScintilla
 

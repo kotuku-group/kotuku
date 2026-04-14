@@ -1,0 +1,6 @@
+--$TIRI:Include
+
+module({ name="Backstage", copyright="Paul Manias © 2025-2026", version=1.0, timestamp=20240611 }, function()
+  c_include("<kotuku/modules/network.h>")
+
+end)

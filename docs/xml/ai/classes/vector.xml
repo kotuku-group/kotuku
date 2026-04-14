@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="Vector" mod="Vector" c="An abstract class for supporting vector graphics objects and functionality." cat="Graphics" id="227baf98" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="Vector" mod="Vector" c="An abstract class for supporting vector graphics objects and functionality." cat="Graphics" id="227baf98" v="1">
   <ai:a n="Disable" c="Disabling a vector can be used to trigger style changes and prevent user input." p="ERR acDisable(*Object)"/>
   <ai:a n="Draw" c="Draws the surface associated with the vector." p="ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)">
     <ai:i n="X" t="INT" c="The X position of the region to be drawn."/>

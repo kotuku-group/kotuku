@@ -1,0 +1,47 @@
+--$TIRI:Include
+
+module({ name="Regex", copyright="Paul Manias © 2025-2026", version=1.0, timestamp=20240611, src="regex.cpp" }, function()
+  flags("REGEX", { comment="Optional flags for the Regex functions." },
+    "ICASE:     Ignore case.",
+    "MULTILINE: `^` and `$` match line boundaries.",
+    "DOT_ALL:   `.` matches newlines.")
+
+  flags("RMATCH", { },
+    "NOT_BEGIN_OF_LINE:  Treats the first character in the sequence as NOT being at the beginning of a line, preventing `^` from matching at that position.",
+    "NOT_END_OF_LINE:    Treats the last character in the sequence as NOT being at the end of a line, preventing `$` from matching at that position.",
+    "NOT_BEGIN_OF_WORD:  Treats the first character in the sequence as NOT being at the beginning of a word, affecting `\\b` word boundary matching.",
+    "NOT_END_OF_WORD:    Treats the last character in the sequence as NOT being at the end of a word, affecting `\\b` word boundary matching.",
+    "NOT_NULL:           Prevents the regex engine from matching zero-length (empty) sequences.",
+    "CONTINUOUS:         Requires the match to start at the beginning of the sequence (anchored matching).",
+    "PREV_AVAILABLE:     Indicates that a valid character exists before the first position in the sequence, enabling proper look-behind and boundary assertions.",
+    "REPLACE_NO_COPY:    In Replace(), prevents copying non-matched portions of the input to the output.",
+    "REPLACE_FIRST_ONLY: In Replace(), replaces only the first match and leaves subsequent matches unchanged.",
+    "WHOLE:              Implicit `^...$` around the pattern.")
+
+  struct("Regex", { comment="Compiled regex structure." }, [[
+   cpp(str)   Pattern   # Original pattern string
+   int(REGEX) Flags     # Compilation flags
+  ]])
+
+  -- Capture vectors delivered to callbacks are always normalised to include every group.
+  functionNames("rx",
+    "Compile",
+    "Search",
+    "Replace",
+    "Split",
+    "GetCaptureIndex")
+
+  c_insert([==[
+
+#ifndef PRV_REGEX_MODULE
+namespace rx {
+[[maybe_unused]] inline ERR Match(Regex *Regex, const std::string_view &Text, RMATCH Flags, FUNCTION *Callback)
+{
+   if (not Regex) return ERR::NullArgs;
+   return rx::Search(Regex, Text, Flags|RMATCH::CONTINUOUS|RMATCH::WHOLE, Callback);
+}
+} // namespace rx
+#endif
+
+]==])
+end)

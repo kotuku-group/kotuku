@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-8254DG7MT6"> </script><script>
+	   window.dataLayer = window.dataLayer || [];
+	   function gtag(){dataLayer.push(arguments);}
+	   gtag('js', new Date());
+      gtag('config', 'G-8254DG7MT6');</script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Kōtuku documentation, machine generated from source">
+<meta name="author" content="Paul Manias">
+<link rel="icon" href="/favicon.ico">
+<title>Kōtuku Wiki - TDL Reference Manual</title>
+<link href="../css/bootstrap.min.css" rel="stylesheet">
+<link href="../css/module-template.css" rel="stylesheet">
+<link href="../css/github-markdown.css" rel="stylesheet">
+</head>
+
+<body>
+<nav class="navbar navbar-expand-sm navbar-dark bg-dark">
+  <div class="container-fluid">
+    <div class="navbar-header"><a class="navbar-brand" href="../index.html">Kōtuku</a></div>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div id="navbar" class="collapse navbar-collapse">
+      <ul class="nav navbar-nav"><li class="nav-item">
+        <li class="nav-item"><a class="nav-link" href="../gallery.html">Gallery</a></li>
+        <li class="nav-item"><a class="nav-link" href="../modules/api.html">API</a></li>
+        <li class="nav-item"><a class="nav-link" href="Home.html">Wiki</a></li>
+        <li class="nav-item"><a class="nav-link" href="https://github.com/parasol-framework/kotuku">GitHub</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<div class="container-fluid">
+  <div class="row">
+    <div class="d-sm-block d-none col-3 sidebar" style="max-width: 230px;">
+      <div class="flex-shrink-1 pt-2 pe-2 sticky-top overflow-auto vh-100 b-shadow">
+
+<ul class="list-unstyled">
+  <li>
+    <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#wiki-collapse" aria-expanded="true">Wiki</button>
+    <div class="collapse show" id="wiki-collapse">
+      <ul class="btn-toggle-nav list-unstyled fw-normal pb-1 ps-3">
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#bp-collapse" aria-expanded="false">Build Process</button>
+         <div class="collapse" id="bp-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="Linux-Builds.html">Linux Builds</a></li>
+              <li class="api-ref"><a class="rounded" href="Windows-Builds.html">Windows Builds</a></li>
+              <li class="api-ref"><a class="rounded" href="Customising-Your-Build.html">Customising Your Build</a></li>
+            </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#tm-collapse" aria-expanded="false">Technical Manuals</button>
+         <div class="collapse" id="tm-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+             <li class="api-ref"><a class="rounded" href="Kotuku-Objects.html">Kōtuku Objects</a></li>
+             <li class="api-ref"><a class="rounded" href="Kotuku-In-Depth.html">Kōtuku In Depth</a></li>
+             <li class="api-ref"><a class="rounded" href="Coding-With-AI.html">Coding With AI</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#fg-collapse" aria-expanded="false">Tiri</button>
+         <div class="collapse" id="fg-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+            <li class="api-ref"><a class="rounded" href="Tiri-Reference-Manual.html">Tiri Reference Manual</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-GUI-API.html">GUI API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-HTTPServer-API.html">HTTPServer API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-IO-API.html">I/O API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-JSON-API.html">JSON API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-URL-API.html">URL API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-VFX-API.html">VFX API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-Widgets.html">Widgets</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#rrm-collapse" aria-expanded="false">RIPL</button>
+         <div class="collapse" id="rrm-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="RIPL-Reference-Manual.html">RIPL Reference Manual</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#tools-collapse" aria-expanded="false">Tools</button>
+         <div class="collapse" id="tools-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="Origo.html">Origo</a></li>
+              <li class="api-ref"><a class="rounded" href="Unit-Testing.html">Flute / Unit Testing</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#doc-collapse" aria-expanded="false">Doc Generation</button>
+         <div class="collapse" id="doc-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="Embedded-Document-Formatting.html">Embedded Document Format</a></li>
+              <li class="api-ref"><a class="rounded" href="TDL-Reference-Manual.html">TDL Reference Manual</a></li>
+              <li class="api-ref"><a class="rounded" href="TDL-Tools.html">TDL Tools</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#app-collapse" aria-expanded="false">Appendix</button>
+         <div class="collapse" id="app-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+             <li class="api-ref"><a class="rounded" href="Action-Reference-Manual.html">Action Reference Manual</a></li>
+             <li class="api-ref"><a class="rounded" href="System-Error-Codes.html">System Error Codes</a></li>
+           </ul>
+         </div></li>
+      </ul>
+    </div>
+  </li>
+</ul>
+
+<ul class="list-unstyled">
+  <li class="border-top my-3"></li>
+  <li>
+    <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#mod-collapse" aria-expanded="false">Modules</button>
+    <div class="collapse" id="mod-collapse">
+      <ul class="btn-toggle-nav list-unstyled fw-normal">
+      <li class="api-ref"><a href="../modules/audio.html" class="rounded">Audio</a></li>
+      <li class="api-ref"><a href="../modules/core.html" class="rounded">Core</a></li>
+      <li class="api-ref"><a href="../modules/display.html" class="rounded">Display</a></li>
+      <li class="api-ref"><a href="../modules/font.html" class="rounded">Font</a></li>
+      <li class="api-ref"><a href="../modules/network.html" class="rounded">Network</a></li>
+      <li class="api-ref"><a href="../modules/regex.html" class="rounded">Regex</a></li>
+      <li class="api-ref"><a href="../modules/tiri.html" class="rounded">Tiri</a></li>
+      <li class="api-ref"><a href="../modules/vector.html" class="rounded">Vector</a></li>
+      <li class="api-ref"><a href="../modules/xml.html" class="rounded">XML</a></li>
+      <li class="api-ref"><a href="../modules/xpath.html" class="rounded">XPath</a></li>
+      </ul>
+    </div>
+  </li>
+</ul>
+
+<ul class="list-unstyled">
+  <li class="border-top my-3"></li>
+  <li>
+    <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#class-collapse" aria-expanded="false">Classes</button>
+    <div class="collapse" id="class-collapse">
+      <ul class="btn-toggle-nav list-unstyled fw-normal pb-1 ps-3">
+        <li>
+          <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#audio-collapse" aria-expanded="false">Audio</button>
+          <div class="collapse" id="audio-collapse">
+            <ul class="btn-toggle-nav list-unstyled fw-normal pb-1">
+            <li><a href="../modules/classes/audio.html" class="rounded">Audio</a></li>
+            <li><a href="../modules/classes/sound.html" class="rounded">Sound</a></li>
+            </ul>
+          </div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#core-collapse" aria-expanded="false">Core</button><div class="collapse" id="core-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a href="../modules/classes/file.html" class="rounded">File</a></li>
+        <li><a href="../modules/classes/metaclass.html" class="rounded">MetaClass</a></li>
+        <li><a href="../modules/classes/module.html" class="rounded">Module</a></li>
+        <li><a href="../modules/classes/storagedevice.html" class="rounded">StorageDevice</a></li>
+        <li><a href="../modules/classes/task.html" class="rounded">Task</a></li>
+        <li><a href="../modules/classes/thread.html" class="rounded">Thread</a></li>
+        <li><a href="../modules/classes/time.html" class="rounded">Time</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#data-collapse" aria-expanded="false">Data</button><div class="collapse" id="data-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a href="../modules/classes/compression.html" class="rounded">Compression</a></li>
+        <li><a href="../modules/classes/compressedstream.html" class="rounded">CompressedStream</a></li>
+        <li><a href="../modules/classes/config.html" class="rounded">Config</a></li>
+        <li><a href="../modules/classes/script.html" class="rounded">Script</a></li>
+        <li><a href="../modules/classes/xml.html" class="rounded">XML</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#devices-collapse" aria-expanded="false">Devices</button><div class="collapse" id="devices-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li><a href="../modules/classes/controller.html" class="rounded">Controller</a></li></ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#effects-collapse" aria-expanded="false">Effects</button><div class="collapse" id="effects-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/blurfx.html">BlurFX</a></li>
+        <li><a class="rounded" href="../modules/classes/colourfx.html">ColourFX</a></li>
+        <li><a class="rounded" href="../modules/classes/compositefx.html">CompositeFX</a></li>
+        <li><a class="rounded" href="../modules/classes/convolvefx.html">ConvolveFX</a></li>
+        <li><a class="rounded" href="../modules/classes/displacementfx.html">DisplacementFX</a></li>
+        <li><a class="rounded" href="../modules/classes/filtereffect.html">FilterEffect</a></li>
+        <li><a class="rounded" href="../modules/classes/floodfx.html">FloodFX</a></li>
+        <li><a class="rounded" href="../modules/classes/imagefx.html">ImageFX</a></li>
+        <li><a class="rounded" href="../modules/classes/lightingfx.html">LightingFX</a></li>
+        <li><a class="rounded" href="../modules/classes/mergefx.html">MergeFX</a></li>
+        <li><a class="rounded" href="../modules/classes/morphologyfx.html">MorphologyFX</a></li>
+        <li><a class="rounded" href="../modules/classes/offsetfx.html">OffsetFX</a></li>
+        <li><a class="rounded" href="../modules/classes/remapfx.html">RemapFX</a></li>
+        <li><a class="rounded" href="../modules/classes/sourcefx.html">SourceFX</a></li>
+        <li><a class="rounded" href="../modules/classes/turbulencefx.html">TurbulenceFX</a></li>
+        <li><a class="rounded" href="../modules/classes/wavefunctionfx.html">WaveFunctionFX</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#ext-collapse" aria-expanded="false">Extensions</button><div class="collapse" id="ext-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/scintilla.html">Scintilla</a></li>
+        <li><a class="rounded" href="../modules/classes/scintillasearch.html">ScintillaSearch</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#gfx-collapse" aria-expanded="false">Graphics</button><div class="collapse" id="gfx-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/bitmap.html">Bitmap</a></li>
+        <li><a class="rounded" href="../modules/classes/clipboard.html">Clipboard</a></li>
+        <li><a class="rounded" href="../modules/classes/display.html">Display</a></li>
+        <li><a class="rounded" href="../modules/classes/document.html">Document</a></li>
+        <li><a class="rounded" href="../modules/classes/font.html">Font</a></li>
+        <li><a class="rounded" href="../modules/classes/picture.html">Picture</a></li>
+        <li><a class="rounded" href="../modules/classes/pointer.html">Pointer</a></li>
+        <li><a class="rounded" href="../modules/classes/surface.html">Surface</a></li>
+        <li><a class="rounded" href="../modules/classes/svg.html">SVG</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#net-collapse" aria-expanded="false">Network</button><div class="collapse" id="net-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/clientsocket.html">ClientSocket</a></li>
+        <li><a class="rounded" href="../modules/classes/http.html">HTTP</a></li>
+        <li><a class="rounded" href="../modules/classes/netclient.html">NetClient</a></li>
+        <li><a class="rounded" href="../modules/classes/netlookup.html">NetLookup</a></li>
+        <li><a class="rounded" href="../modules/classes/netsocket.html">NetSocket</a></li>
+        <li><a class="rounded" href="../modules/classes/proxy.html">Proxy</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#vectors-collapse" aria-expanded="false">Vectors</button><div class="collapse" id="vectors-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/vector.html">Vector</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorclip.html">VectorClip</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorcolour.html">VectorColour</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorellipse.html">VectorEllipse</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorfilter.html">VectorFilter</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorgradient.html">VectorGradient</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorgroup.html">VectorGroup</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorimage.html">VectorImage</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorpath.html">VectorPath</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorpattern.html">VectorPattern</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorpolygon.html">VectorPolygon</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorrectangle.html">VectorRectangle</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorscene.html">VectorScene</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorshape.html">VectorShape</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorspiral.html">VectorSpiral</a></li>
+        <li><a class="rounded" href="../modules/classes/vectortext.html">VectorText</a></li>
+        <li><a class="rounded" href="../modules/classes/vectortransition.html">VectorTransition</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorviewport.html">VectorViewport</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorwave.html">VectorWave</a></li>
+        </ul></div>
+        </li>
+      </ul>
+    </div>
+  </li>
+</ul>
+
+</div>
+</div>
+
+<div class="col-sm-9" style="max-width: 1200px;">
+<div class="docs-content" id="default-page">
+
+<h1>TDL Reference Manual</h1>
+<p>TDL - the Tiri Definition Language - is an Interface Definition Language designed specifically for Kōtuku. It is accompanied with a series of tools - <code>idl-c</code>, <code>idl-compile</code> and <code>idl-doc</code>, which parse <code>.tdl</code> files to produce language headers and user documentation.</p>
+<p>This document describes the definition language itself. Instruction on how to use the tools is provided in the TDL Tools manual.</p>
+<hr>
+<h2 id="file-structure">File Structure</h2>
+<p>TDL files must be given a <code>.tdl</code> extension and are expected to start with <code>--$TIRI:Include</code> on their first line. TDL is a function-oriented document format, meaning the document itself makes calls to the parser so that it has control over the entire process. The first function that is called from the TDL file must be one of the following:</p>
+<h3 id="module">module()</h3>
+<p><code>module({ Options... }, Function)</code></p>
+<p>Use <code>module()</code> to declare the interface of a named module. The following key-values can be provided as <code>Options</code>:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Key</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">name</td>
+<td style="text-align: left;">The name of the module.</td>
+</tr>
+<tr>
+<td style="text-align: left;">copyright</td>
+<td style="text-align: left;">Copyright information declaring the owner(s) of the module, recommended to be kept under 120 characters.</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>Function</code> is a callback that will define the module interface using functions declared in the next section.</p>
+<h3 id="header">header()</h3>
+<p><code>header({ Options... }, Function)</code></p>
+<p>Use <code>header()</code> to create a language header file that declares constant types and values. Unlike <code>module()</code>, a header is not permitted to export functional interfaces. The following key-values can be provided as <code>Options</code>:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Key</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">path</td>
+<td style="text-align: left;">A simplified path for the header file. For example, a value of <code>system/fields</code> would evaluate to <code>include/system/fields.h</code> when generated as a C++ header.</td>
+</tr>
+<tr>
+<td style="text-align: left;">copyright</td>
+<td style="text-align: left;">Copyright information declaring the owner(s) of the header, recommended to be kept under 120 characters.</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>Function</code> is a callback that will define the header content, using the functions declared in the next section.</p>
+<hr>
+<h2 id="utility-functions">Utility Functions</h2>
+<h3 id="c_include">c_include()</h3>
+<p><code>c_include(&#39;&lt;a&gt;&#39;, &#39;&lt;b&gt;&#39;, ...)</code></p>
+<p>Use <code>c_include()</code> to specify C/C++ headers that must be included when generating C/C++ header output.</p>
+<h3 id="cpp_include">cpp_include()</h3>
+<p><code>cpp_include(&#39;&lt;a&gt;&#39;, &#39;&lt;b&gt;&#39;, ...)</code></p>
+<p>Use <code>cpp_include()</code> to specify C++ headers that must be included when generating C++ header output.</p>
+<h3 id="c_insert">c_insert()</h3>
+<p><code>c_insert(String)</code></p>
+<p>Use <code>c_insert()</code> to output C/C++ content when generating C/C++ headers.</p>
+<h3 id="platform">platform()</h3>
+<p><code>platform(PlatformFilter, Function)</code></p>
+<p>Use <code>platform()</code> when the content described in <code>Function</code> is for a specific target platform. Valid <code>PlatformFilter</code> values are <code>windows</code>, <code>linux</code>, <code>x11</code> and <code>osx</code>. As an example, the following:</p>
+<pre><code>platform(&#39;X11&#39;, function()
+  c_include(&#39;&lt;X11/Xlib.h&gt;&#39;, &#39;&lt;X11/extensions/XShm.h&gt;&#39;)
+end)</code></pre>
+<p>Generates the following C header:</p>
+<pre><code>#ifdef __xwindows__
+#include &lt;X11/Xlib.h&gt;
+#include &lt;X11/extensions/XShm.h&gt;
+#endif</code></pre>
+<h3 id="restrict">restrict()</h3>
+<p><code>restrict(Function)</code></p>
+<p>Use <code>restrict()</code> to prevent the TDL parser from outputting anything contained within <code>Function</code>.</p>
+<p>Consider a situation where an TDL file has a dependency on other TDL files. Using <code>restrict()</code> as a wrapper will prevent the included definitions from appearing in the generated output, as in this example:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>restrict<span class="op">(</span><span class="kw">function</span><span class="op">()</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>   loadFile<span class="op">(</span><span class="va">glPath</span> <span class="op">..</span> <span class="st">&#39;common.tdl&#39;</span><span class="op">)</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>   loadFile<span class="op">(</span><span class="va">glPath</span> <span class="op">..</span> <span class="st">&#39;common-graphics.tdl&#39;</span><span class="op">)</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span><span class="op">)</span></span></code></pre></div>
+<h3 id="priority">priority()</h3>
+<p><code>priority(Function)</code></p>
+<p>Use <code>priority()</code> to ensure that the content wrapped by <code>Function</code> is inserted at the top of the generated header file.</p>
+<h3 id="privatenames">privateNames()</h3>
+<p><code>privateNames(Values...)</code></p>
+<p>Use <code>privateNames()</code> to name a series of types that are considered private and not to appear in generated documentation. This does not affect header generation.</p>
+<h2 id="primary-functions">Primary Functions</h2>
+<h3 id="hash">hash()</h3>
+<p><code>hash(Prefix, Format, Values...)</code></p>
+<p>Use <code>hash()</code> to convert a series of string <code>Values</code> to their 32-bit hash equivalent, as output by the <code>StrHash()</code> function. Each value will be named as <code>Prefix_Value</code> and the generated hash will be formatted in-line with the provided <code>Format</code>. For example:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>hash<span class="op">(</span><span class="st">&#39;SVF&#39;</span><span class="op">,</span> <span class="st">&#39;0x%s&#39;</span><span class="op">,</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>   <span class="st">&#39;APPEND-PATH&#39;</span><span class="op">,</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>   <span class="st">&#39;AZIMUTH&#39;</span><span class="op">)</span></span></code></pre></div>
+<p>Generates the following C output:</p>
+<pre><code>#define SVF_APPEND_PATH 0x64cbc017
+#define SVF_AZIMUTH 0x52cfd287</code></pre>
+<h3 id="flags">flags()</h3>
+<p><code>flags(Prefix, { Options }, Values..., { Manual })</code></p>
+<p>Use <code>flags()</code> to specify a group of bit-flags suitable for application to an integer of unspecified size. A unique name must be given to <code>Prefix</code> that will categorise the group of flags.</p>
+<p>Available <code>Options</code> are:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Name</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">restrict</td>
+<td style="text-align: left;">Do not output the listed flags to the language header file.</td>
+</tr>
+<tr>
+<td style="text-align: left;">module</td>
+<td style="text-align: left;">Output the listed flags only if <code>flags()</code> has been called from the named module.</td>
+</tr>
+<tr>
+<td style="text-align: left;">comment</td>
+<td style="text-align: left;">A short description that will be added to documentation for the collection.</td>
+</tr>
+<tr>
+<td style="text-align: left;">bits</td>
+<td style="text-align: left;">The maximum number of bits recommended for hosting the flags.</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>Values</code> is a list of strings that define the name of each flag with an appropriate short description, formatted as <code>NAME: Description</code>. If <code>NAME</code> contains multiple words, developers are strongly encouraged to use underscores to separate them. Sometimes a flag may have one or more synonyms, in which case the separator bar may be used to specify them, i.e. <code>NAME|ALT_NAME:Description</code>.</p>
+<p>If more control over flag configuration is required, this can be achieved by ending the value list with a table of <code>Manual</code> settings. If a flag needs to be created that is a superset of other flags, a key-value like the following can be created:</p>
+<p><code>NAME = &#39;OTHER_FLAG_A|OTHER_FLAG_B|...&#39;</code></p>
+<p>If a flag has a specific value to be associated with it, this can be achieved as follows:</p>
+<p><code>NAME = &#39;0x00000000: Description&#39;</code></p>
+<h3 id="enum">enum()</h3>
+<p><code>enum(Prefix, { Options }, Values..., { Manual })</code></p>
+<p>Use <code>enum()</code> to list a collection of named numeric constants that enumerate from zero.</p>
+<p>Available <code>Options</code> are:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Name</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">restrict</td>
+<td style="text-align: left;">Do not output the listed values to the language header file.</td>
+</tr>
+<tr>
+<td style="text-align: left;">module</td>
+<td style="text-align: left;">Output the listed values only if <code>enum()</code> has been called from the named module.</td>
+</tr>
+<tr>
+<td style="text-align: left;">comment</td>
+<td style="text-align: left;">A short description that will be added to documentation for the collection.</td>
+</tr>
+<tr>
+<td style="text-align: left;">start</td>
+<td style="text-align: left;">Start the count from this value, otherwise default to 0.</td>
+</tr>
+<tr>
+<td style="text-align: left;">type</td>
+<td style="text-align: left;">The integer type that represents the collection, typically <code>int</code>, <code>short</code> or <code>char</code>. Highly recommended for enabling strong typing.</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>Values</code> is a list of strings that define the name of each value with an appropriate short description, formatted as <code>NAME: Description</code>. If <code>NAME</code> contains multiple words, developers are strongly encouraged to use underscores to separate them.</p>
+<p>If more control over flag configuration is required, this can be achieved by ending the value list with a table of <code>Manual</code> settings. If a flag has a specific value to be associated with it, this can be achieved as follows:</p>
+<p><code>NAME = &#39;0x00000000: Description&#39;</code></p>
+<h3 id="const">const()</h3>
+<p><code>const(Prefix, { Options }, { Values... })</code></p>
+<p>Use <code>const()</code> to list a collection of named numeric constants with values that are manually provided.</p>
+<p>Available <code>Options</code> are:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Name</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">restrict</td>
+<td style="text-align: left;">Do not output the listed values to the language header file.</td>
+</tr>
+<tr>
+<td style="text-align: left;">module</td>
+<td style="text-align: left;">Output the listed values only if <code>const()</code> has been called from the named module.</td>
+</tr>
+<tr>
+<td style="text-align: left;">comment</td>
+<td style="text-align: left;">A short description that will be added to documentation for the collection.</td>
+</tr>
+<tr>
+<td style="text-align: left;">type</td>
+<td style="text-align: left;">The integer type that represents the collection, typically <code>int</code>, <code>short</code> or <code>char</code>. Highly recommended for enabling strong typing.</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>Values</code> are provided as a key-value table. To specify a value without a comment, use the format:</p>
+<p><code>NAME = Value</code></p>
+<p>To attach a comment to the value:</p>
+<p><code>NAME = &#39;Value: Description&#39;</code></p>
+<h3 id="functionnames">functionNames()</h3>
+<p><code>functionNames(Prefix, Values...)</code></p>
+<p>If a module exports one or more functions, they need to be named so that an export header can be generated. A <code>Prefix</code> must also be specified that will act as a namespace for the functions. Example:</p>
+<pre><code>functionNames(&#39;vec&#39;,
+   &#39;DrawPath&#39;,
+   &#39;GenerateEllipse&#39;,
+   &#39;GeneratePath&#39;,
+   &#39;GenerateRectangle&#39;)</code></pre>
+<h3 id="struct">struct()</h3>
+<p><code>struct(Name, { Options }, [[ Spec ]], [[ Append ]])</code></p>
+<p>Use <code>struct()</code> to declare a named structure consisting of field types.</p>
+<p>Available <code>Options</code> are:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Name</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">restrict</td>
+<td style="text-align: left;">Restricts the output to a specific language. E.g. <code>restrict=&#39;c&#39;</code> will generate C header output only.</td>
+</tr>
+<tr>
+<td style="text-align: left;">module</td>
+<td style="text-align: left;">Output the struct only if <code>struct()</code> has been called from the named module.</td>
+</tr>
+<tr>
+<td style="text-align: left;">comment</td>
+<td style="text-align: left;">A short description that will be added to documentation for the collection.</td>
+</tr>
+<tr>
+<td style="text-align: left;">version</td>
+<td style="text-align: left;">Associates a version number (whole numbers only) with the struct.</td>
+</tr>
+<tr>
+<td style="text-align: left;">type</td>
+<td style="text-align: left;">For C/C++ only, adds a named <code>typedef</code> in conjunction with the struct name.</td>
+</tr>
+</tbody>
+</table>
+<p>The Spec is a multi-line string of named types that define the struct. The template for each line is as follows, where <code># Comment</code> is optional:</p>
+<p><code>Type Name # Comment</code></p>
+<p>Example:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>struct<span class="op">(</span><span class="st">&#39;VectorPoint&#39;</span><span class="op">,</span> <span class="op">{</span> <span class="va">comment</span><span class="op">=</span><span class="st">&#39;Structure for the VectorPolygon PointsArray field.&#39;</span> <span class="op">},</span> <span class="vs">[[</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="vs">  double X   # The X coordinate of this point.</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="vs">  double Y   # The Y coordinate of this point.</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="vs">  bit(uchar) XScaled # TRUE if the X value is scaled to its viewport (between 0 and 1.0).</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="vs">  bit(uchar) YScaled # TRUE if the Y value is scaled to its viewport (between 0 and 1.0).</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="vs">]]</span><span class="op">)</span></span></code></pre></div>
+<p>For information on type definitions, please refer to the Document Formatting manual.</p>
+<p>Structs that are output to C/C++ can be augmented with additional information specified in <code>Append</code>. The information that you provide here will be inserted in its raw form without interpretation from the parser.</p>
+<h3 id="class">class()</h3>
+<p><code>class(Name, { Options }, [[ Spec ]], [[ Private ]], [[ Append ]])</code></p>
+<p>Use <code>class()</code> to declare a named structure consisting of field types.</p>
+<p>Available <code>Options</code> are:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Name</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">restrict</td>
+<td style="text-align: left;">Restricts the output to a specific language. E.g. <code>restrict=&#39;c&#39;</code> will generate C header output only.</td>
+</tr>
+<tr>
+<td style="text-align: left;">module</td>
+<td style="text-align: left;">Output the class only if <code>class()</code> has been called from the named module.</td>
+</tr>
+<tr>
+<td style="text-align: left;">comment</td>
+<td style="text-align: left;">A short description that will be added to documentation for the collection.</td>
+</tr>
+<tr>
+<td style="text-align: left;">version</td>
+<td style="text-align: left;">Associates a version number (<code>Version.Revision</code>) with the struct.</td>
+</tr>
+<tr>
+<td style="text-align: left;">type</td>
+<td style="text-align: left;">For C/C++ only, adds a named <code>typedef</code> in conjunction with the struct name.</td>
+</tr>
+<tr>
+<td style="text-align: left;">base</td>
+<td style="text-align: left;">If the spec is for a sub-class, refer to the name of its base class here.</td>
+</tr>
+<tr>
+<td style="text-align: left;">src</td>
+<td style="text-align: left;">A table of paths that refer to the C++ source file(s) representing the class.</td>
+</tr>
+<tr>
+<td style="text-align: left;">references</td>
+<td style="text-align: left;">An optional table referring to flags, enums and constants that are used by the class. Only required if said references are not already declared in the Spec section.</td>
+</tr>
+<tr>
+<td style="text-align: left;">output</td>
+<td style="text-align: left;">Specifying a path to an output file will generate C definitions for class methods &amp; actions declared by the class.</td>
+</tr>
+</tbody>
+</table>
+<p>The Spec is a multi-line string of named types that define the class. The template for each line is as follows, where <code># Comment</code> is optional:</p>
+<p><code>Type Name # Comment</code></p>
+<p>Example:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>class<span class="op">(</span><span class="st">&#39;File&#39;</span><span class="op">,</span> <span class="op">{</span> <span class="va">version</span><span class="op">=</span><span class="dv">1.2</span><span class="op">,</span> <span class="va">src</span><span class="op">=</span><span class="st">&#39;../classes/class_file.cpp&#39;</span><span class="op">,</span> <span class="va">output</span><span class="op">=</span><span class="st">&#39;../classes/class_file_def.c&#39;</span> <span class="op">},</span> <span class="vs">[[</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="vs">  large     Position  # The current read/write byte position in a file.</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="vs">  int(FL)   Flags     # File flags and options.</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="vs">  int       Static    # Set to TRUE if a file object should be static.</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="vs">  oid       Target    # Specifies a surface ID to target for user feedback and dialog boxes.</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="vs">  ptr(char) Buffer    # Points to the internal data buffer if the file content is held in memory.</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="vs">]]</span><span class="op">)</span></span></code></pre></div>
+<p>For information on type definitions, please refer to the Document Formatting manual.</p>
+<p>Classes that are output to C/C++ can declare internal content for their struct in <code>Private</code>. This information will not appear in documentation, nor will it be available to clients using the class. The information that you provide here will be inserted in its raw form without interpretation from the parser.</p>
+<p>Customised content for C++ clients can be added to the class with <code>Append</code>. This feature is typically used for adding C++ specific methods and templates that can aid development, but bear in mind such additions will not be portable to other languages.</p>
+<h3 id="methods">methods()</h3>
+<p><code>methods(Class, Prefix, { Methods })</code></p>
+<p>Use <code>methods()</code> to declare the public methods of a <code>Class</code>. A unique <code>Prefix</code> must be assigned to give the methods a namespace. The <code>Methods</code> table consists of <code>id</code> and <code>name</code> keys to declare the methods. The following example illustrates:</p>
+<pre><code>methods(&#39;vectorscene&#39;, &#39;Sc&#39;, {
+   { id=1, name=&#39;AddDef&#39; },
+   { id=2, name=&#39;SearchByID&#39; },
+   { id=3, name=&#39;FindDef&#39; },
+   { id=4, name=&#39;Debug&#39; }
+})</code></pre>
+<p>Each method must have a corresponding TDL method declared in the source code of the class. The parser will use this information when building viable function calls for the methods.</p>
+</div></div></div></div>
+
+<script src="../js/bootstrap.bundle.min.js"></script>
+<script src="../js/base.js"></script>
+<script>
+
+   // Auto-open the relevant sidebar branch
+
+   var url = window.location.pathname;
+   var filename = url.substring(url.lastIndexOf('/')+1);
+   var el = document.querySelector('li[class="api-ref"] > a[href="' + filename + '"]');
+   if (el) {
+      var parent = getParentNode(el, '[class="collapse"]');
+      if (parent) new bootstrap.Collapse(parent, { show: true }); // Causes animation
+
+      el.style.backgroundColor = '#d2f4ea';
+   }
+
+   cancelAnimations();
+    </script>
+  </body>
+</html>

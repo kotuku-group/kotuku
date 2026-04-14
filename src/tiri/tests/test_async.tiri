@@ -1,0 +1,587 @@
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Create two dummy objects and use them to confirm that the signalling of multiple objects works.
+-- Also ensures that the garbage collector doesn't collect the script while it's running.
+-- This is not a genuine threading test (only one thread and the main program is active at any time).
+
+@Test(priority=1) function MultipleSignals()
+   signal_a = obj.new('time', { }) -- This would normally be something more practical, like a file
+   signal_b = obj.new('time', { })
+   work_list = array<object> { signal_a, signal_b }
+
+   callback = function()
+      msg('Thread has finished execution.')
+      work_list:each(o => o.acSignal())
+   end
+
+   proc = processing.new({ timeout=1.0, signals = work_list })
+
+   -- Verify that garbage collection doesn't invalidate the thread while it's running
+
+   for i=1,100 do
+      do
+         script = obj.new('script', { statement=[[ msg('Thread is now in session.') ]] })
+         async.script(script, callback)
+      end
+
+      processing.collect()
+
+      msg('Sleeping....')
+      check proc.sleep()
+   end
+
+   -- Allocate the threaded script once, then run it multiple times.  Note that you can't run the
+   -- same object in parallel (you'd have to allocate more and reference the same string).
+
+   script = obj.new('script', { statement=[[ msg('Thread is now in session.') ]] })
+
+   for i=1,100 do -- Run enough times to sufficiently test thread locking and the JIT
+      async.script(script, callback)
+
+      msg('Sleeping....')
+      check proc.sleep()
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Verify that the async.script() callback receives an error code and message when the script fails.
+
+@Test(priority=2) function ScriptCallbackError()
+   script = obj.new('script', { statement=[[ error('Deliberate test failure') ]] })
+
+   glCallbackError = nil
+   glCallbackMsg = nil
+   glCallbackFired = false
+
+   async.script(script, function()
+      glCallbackError = script.error
+      glCallbackMsg   = script.errorMessage
+      glCallbackFired = true
+      processing.signal()
+   end)
+
+   check processing.sleep(3.0)
+
+   assert(glCallbackFired, 'Callback was not invoked.')
+   assert(glCallbackError != ERR_Okay, f'Expected a non-zero error code, got ERR_Okay')
+   assert(glCallbackMsg and #glCallbackMsg > 0, 'Expected a non-empty error message')
+   print(f'Script error reported: {glCallbackError}, message: {glCallbackMsg}')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Queue multiple async.script() calls against separate script objects without waiting between each dispatch.
+-- AsyncAction serialises requests per-object, so distinct objects can run concurrently.  The test verifies that all
+-- callbacks fire and that no registry references are corrupted when multiple ThreadScriptMsg allocations are in flight.
+
+@Test(priority=3) function QueuedScriptExecution()
+   total = 50
+   completed = 0
+
+   signal = obj.new('time', { })
+   proc = processing.new({ timeout=5.0, signals = array<object> { signal } })
+
+   scripts = array<object>
+   for i=0, total-1 do
+      scripts:push(obj.new('script', { statement = [[ msg('Queued script ]] .. i .. [[ running.') ]] }))
+   end
+
+   for script in values(scripts) do
+      async.script(script, function()
+         completed++
+         msg(f'Callback {completed}/{total} fired.')
+         if completed >= total then
+            signal.acSignal()
+         end
+      end)
+   end
+
+   check proc.sleep()
+
+   assert(completed >= total, f'Expected {total} callbacks but only {completed} fired.')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Demonstrate the use of array<object> |> pipe iteration to fan out async work across multiple objects.
+-- Each script object runs in its own thread; the pipe dispatches all of them without an explicit loop.
+
+@Test(priority=4) function ArrayPipeFanOut()
+   -- Create a bunch of worker scripts that return a result
+
+   scripts = array<object> { }
+   for i in {1...10} do
+      scripts:push(obj.new('script', { statement = [[ print('Pipe worker ]] .. i .. [[ running.'); return ]] .. i }))
+   end
+
+   proc = processing.new({ timeout=5.0, signals = scripts })
+
+   -- Run all the workers in one go
+
+   completed = 0
+   scripts |> function(script)
+      async.script(script, function(Object)
+         Object.acSignal()
+         print('Received result: ', Object.results?[0])
+         check Object.error
+         completed++
+      end)
+   end
+
+   check proc.sleep()
+
+   assert(completed >= #scripts, f'Expected {total} callbacks but only {completed} fired.')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Verify that async.pool supports reading and writing scalar values (number, string, boolean).
+
+@Test(priority=5) function PoolScalarReadWrite()
+   async.pool.clear()
+
+   async.pool.count = 42
+   async.pool.name  = 'hello'
+   async.pool.flag  = true
+
+   assert(async.pool.count is 42, f'Expected 42, got {async.pool.count}')
+   assert(async.pool.name is 'hello', f'Expected hello, got {async.pool.name}')
+   assert(async.pool.flag is true, f'Expected true, got {async.pool.flag}')
+
+   -- Overwrite with different types
+   async.pool.count = 'now a string'
+   assert(async.pool.count is 'now a string', f'Expected "now a string", got {async.pool.count}')
+
+   -- Non-existent key returns nil
+   assert(async.pool.nonexistent is nil, 'Expected nil for missing key')
+
+   async.pool.clear()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Verify that storing an object in the pool stores its ID and reads back as a live object.
+
+@Test(priority=6) function PoolObjectStorage()
+   async.pool.clear()
+
+   signal = obj.new('time', { })
+   expected_id = signal.id
+
+   async.pool.target = signal
+
+   result = async.pool.target
+   assert(result != nil, 'Expected object, got nil')
+   assert(result.id is expected_id, f'Expected object ID {expected_id}, got {result.id}')
+
+   async.pool.clear()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Verify that assigning nil to a pool key deletes it.
+
+@Test(priority=7) function PoolNilDeletion()
+   async.pool.clear()
+
+   async.pool.temp = 99
+   assert(async.pool.temp is 99, 'Expected 99')
+
+   async.pool.temp = nil
+   assert(async.pool.temp is nil, 'Expected nil after deletion')
+
+   async.pool.clear()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Verify that async.pool.clear() removes all entries.
+
+@Test(priority=8) function PoolClear()
+   async.pool.clear()
+
+   async.pool.a = 1
+   async.pool.b = 2
+   async.pool.c = 3
+
+   async.pool.clear()
+
+   assert(async.pool.a is nil, 'Expected nil after clear')
+   assert(async.pool.b is nil, 'Expected nil after clear')
+   assert(async.pool.c is nil, 'Expected nil after clear')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Verify that a worker thread can read and write the pool, and the main thread sees the results.
+
+@Test(priority=9) function PoolCrossThread()
+   async.pool.clear()
+   async.pool.input = 'from main'
+
+   script = obj.new('script', { statement=[[
+      val = async.pool.input
+      async.pool.output = 'from thread: ' .. val
+   ]] })
+
+   async.script(script, function(Object)
+      check Object.error
+      processing.signal()
+   end)
+
+   check processing.sleep(3.0)
+
+   assert(async.pool.output is 'from thread: from main',
+      f'Expected "from thread: from main", got "{async.pool.output}"')
+
+   async.pool.clear()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- In this test the signals are sent from the threaded script rather than being managed by the main thread's callback.
+
+@Test(priority=10) function PoolBinaryValues()
+   async.pool.clear()
+
+   -- Store and retrieve a string value containing embedded NUL bytes
+
+   binary_val = 'abc\0def\0ghi'
+   async.pool.binval = binary_val
+
+   result = async.pool.binval
+   assert(#result is #binary_val, f'Length mismatch: expected {#binary_val}, got {#result}')
+   assert(result is binary_val, 'Binary value round-trip failed')
+
+   async.pool.clear()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Verify that pool operations remain functional after a worker thread encounters an error.
+-- This guards against a failed write permanently locking the shared mutex.
+
+@Test(priority=11) function PoolErrorRecovery()
+   async.pool.clear()
+   async.pool.before = 'ok'
+
+   -- Run a script that attempts an invalid pool write (function value), which should raise an error.
+
+   script = obj.new('script', { statement=[[
+      try
+         async.pool.bad = function() end
+      except
+      end
+   ]] })
+
+   async.script(script, function(Object)
+      processing.signal()
+   end)
+
+   check processing.sleep(3.0)
+
+   -- The pool must still be functional: read the pre-existing value and write a new one.
+
+   assert(async.pool.before is 'ok', f'Expected "ok", got "{async.pool.before}"')
+
+   async.pool.after = 'still works'
+   assert(async.pool.after is 'still works', f'Expected "still works", got "{async.pool.after}"')
+
+   async.pool.clear()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- async.script() must reject a non-script object (e.g. a time object).
+
+@Test(priority=12) function ScriptRejectsNonScript()
+   timer = obj.new('time', { })
+   rejected = false
+   try
+      async.script(timer, function() end)
+   except
+      rejected = true
+   end
+   assert(rejected, 'Expected an error when passing a non-script object to async.script()')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- async.script() must reject non-object arguments (string, number, nil, table).
+
+@Test(priority=13) function ScriptRejectsBadArgs()
+   bad_args = { 'hello', 42, nil, { } }
+
+   for arg in values(bad_args) do
+      rejected = false
+      try
+         async.script(arg, function() end)
+      except
+         rejected = true
+      end
+      assert(rejected, f'Expected error for arg type {type(arg)}, got none')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- async.action() must reject a bogus action name.
+
+@Test(priority=14) function ActionRejectsBogusName()
+   timer = obj.new('time', { })
+   rejected = false
+   try
+      async.action(timer, 'TotallyFakeAction', function() end, 0)
+   except
+      rejected = true
+   end
+   assert(rejected, 'Expected error for unrecognised action name')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- async.action() must reject a wrong type for the action argument (e.g. a table or boolean).
+
+@Test(priority=15) function ActionRejectsBadActionType()
+   timer = obj.new('time', { })
+
+   for arg in values({ true, { } }) do
+      rejected = false
+      try
+         async.action(timer, arg, function() end, 0)
+      except
+         rejected = true
+      end
+      assert(rejected, f'Expected error for action arg type {type(arg)}')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- async.method() must reject a non-existent method name.
+
+@Test(priority=16) function MethodRejectsBogusName()
+   timer = obj.new('time', { })
+   rejected = false
+   try
+      async.method(timer, 'CompletelyBogusMethod', function() end, 0)
+   except
+      rejected = true
+   end
+   assert(rejected, 'Expected error for unrecognised method name')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- async.method() must reject wrong types for the method argument (boolean, table).
+
+@Test(priority=17) function MethodRejectsBadMethodType()
+   timer = obj.new('time', { })
+
+   for arg in values({ true, { } }) do
+      rejected = false
+      try
+         async.method(timer, arg, function() end, 0)
+      except
+         rejected = true
+      end
+      assert(rejected, f'Expected error for method arg type {type(arg)}')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- async.pool must reject unsupported value types (table, function) from the same thread.
+
+@Test(priority=18) function PoolRejectsUnsupportedTypes()
+   async.pool.clear()
+
+   for val in values({ { 1, 2, 3 }, function() end }) do
+      rejected = false
+      try
+         async.pool.badkey = val
+      except
+         rejected = true
+      end
+      assert(rejected, f'Expected error for pool value type {type(val)}')
+   end
+
+   -- Confirm the pool is still operational after the rejected writes
+   async.pool.ok = 'yes'
+   assert(async.pool.ok is 'yes', 'Pool should still work after rejected writes')
+
+   async.pool.clear()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Rapid overwrite of the same pool key from multiple threads to stress the locking.
+
+@Test(priority=19) function PoolConcurrentOverwrite()
+   async.pool.clear()
+
+   total = 20
+   completed = 0
+   signal = obj.new('time', { })
+   proc = processing.new({ timeout=5.0, signals = array<object> { signal } })
+
+   for i=0, total-1 do
+      script = obj.new('script', { statement = f"for j=0,99 do async.pool.counter = {i} * 100 + j end" })
+      async.script(script, function(Object)
+         check Object.error
+         completed++
+         if completed >= total then signal.acSignal() end
+      end)
+   end
+
+   check proc.sleep()
+
+   assert(completed >= total, f'Expected {total} completions, got {completed}')
+
+   -- The final value must be a number (we don't care which thread won the race)
+   result = async.pool.counter
+   assert(type(result) is 'number', f'Expected number, got {type(result)}')
+   print(f'Concurrent overwrite completed. Final counter value: {result}')
+
+   async.pool.clear()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- In this test the signals are sent from the threaded script rather than being managed by the main thread's callback.
+
+@Test(priority=20) function MultipleClientSignals()
+   signal_a = obj.new('time', { }) -- This would normally be something more practical, like a file
+   work_list = array<object> { signal_a } -- List all the objects that will be worked on
+
+   async_statement = [[
+      print(f'Thread {arg('Iteration')} is now in session.')
+      sig_a = obj.find(arg('A'))
+      sig_a.acSignal()
+   ]]
+
+   local script = obj.new('script', { statement = async_statement })
+   script.acQuery()
+   script.setKey('A', signal_a.id) -- Make the signal object available via arg()
+
+   proc = processing.new({ timeout=1.0, signals = work_list })
+
+   for i=1,100 do
+      script.setKey('Iteration', i)
+      async.script(script)
+      check proc.sleep()
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- async.pending() returns zero for an object with no async activity.
+
+@Test(priority=21) function PendingZeroWhenIdle()
+   timer = obj.new('time', { })
+   count = async.pending(timer)
+   assert(count is 0, f'Expected 0 pending actions, got {count}')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- async.pending() returns a positive count while an async action is in-flight or queued.
+
+@Test(priority=22) function PendingCountDuringAsync()
+   script = obj.new('script', { statement=[[ mSys.WaitTime(0.5) ]] })
+
+   async.script(script)
+
+   -- The action should be in-flight immediately after dispatch.
+   count = async.pending(script)
+   assert(count > 0, f'Expected positive pending count, got {count}')
+   msg(f'In-flight script reports {count} pending action(s).')
+
+   check async.wait(script, 5.0)
+
+   -- After completion the count should be zero.
+   count = async.pending(script)
+   assert(count is 0, f'Expected 0 after completion, got {count}')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- async.cancel() on an idle object succeeds without error.
+
+@Test(priority=23) function CancelIdleObject()
+   timer = obj.new('time', { })
+   err = async.cancel(timer)
+   assert(err is ERR_Okay, f'Expected ERR_Okay, got {err}')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- async.cancel() drains queued actions and the callback receives an error.
+
+@Test(priority=24) function CancelDrainsQueue()
+   script = obj.new('script', { statement=[[ mSys.WaitTime(2.0) ]] })
+
+   glCancelCallbackCount = 0
+
+   for i=0, 4 do
+      async.script(script, function(Object)
+         glCancelCallbackCount++
+      end)
+   end
+
+   -- Give the first action a moment to start executing.
+   processing.sleep(0.1)
+
+   -- Cancel remaining queued actions.
+   check async.cancel(script)
+
+   -- Wait for completion of the in-flight action and callback processing.
+   check async.wait(script, 5.0)
+
+   -- After cancellation, pending count should be zero.
+   count = async.pending(script)
+   assert(count is 0, f'Expected 0 pending after cancel, got {count}')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- async.cancel() accepts an array<object> argument.
+
+@Test(priority=25) function CancelArrayOfObjects()
+   script_a = obj.new('script', { statement=[[ mSys.WaitTime(1.0) ]] })
+   script_b = obj.new('script', { statement=[[ mSys.WaitTime(1.0) ]] })
+
+   start = mSys.PreciseTime()
+   elapsed = (a) => (mSys.PreciseTime() - start)/1000000
+
+   async.script(script_a)
+   print('Started script_a at ', elapsed(), ' seconds')
+   async.script(script_b)
+   print('Started script_b at ', elapsed(), ' seconds')
+
+   -- Allow threads to register before cancelling.
+   processing.sleep(0.25)
+
+   print('Cancelling both scripts at ', elapsed(), ' seconds')
+   check async.cancel(array<object> { script_a, script_b })
+
+   print('Waiting for cancellation to complete at ', elapsed(), ' seconds')
+
+   check async.wait(script_a, 3.0)
+   print('script_a cancellation complete at ', elapsed(), ' seconds')
+
+   check async.wait(script_b, 3.0)
+   print('script_b cancellation complete at ', elapsed(), ' seconds')
+
+   a_pending = async.pending(script_a)
+   b_pending = async.pending(script_b)
+   assert(a_pending is 0, f'script_a should have no pending actions, got {a_pending}')
+   assert(b_pending is 0, f'script_b should have no pending actions, got {b_pending}')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- async.pending() must reject non-object arguments.
+
+@Test(priority=26) function PendingRejectsBadArgs()
+   for arg in values({ 'hello', 42, true, { } }) do
+      rejected = false
+      try
+         async.pending(arg)
+      except
+         rejected = true
+      end
+      assert(rejected, f'Expected error for arg type {type(arg)}, got none')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- async.cancel() must reject non-object/non-array arguments.
+
+@Test(priority=27) function CancelRejectsBadArgs()
+   for arg in values({ 'hello', 42, true }) do
+      rejected = false
+      try
+         async.cancel(arg)
+      except
+         rejected = true
+      end
+      assert(rejected, f'Expected error for arg type {type(arg)}, got none')
+   end
+end

@@ -1,0 +1,678 @@
+-- Flute tests for Typed Function Return Values feature
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+----------------------------------------------------------------------------------------------------------------------
+-- SINGLE RETURN TYPE DECLARATIONS
+
+@Test function SingleReturnTypeNum()
+   function double(X: num):num
+      return X * 2
+   end
+   assert(double(5) is 10, "single typed return should work")
+   assert(double(3.5) is 7.0, "float return should work")
+end
+
+@Test function SingleReturnTypeStr()
+   function greet(Name: str):str
+      return "Hello, " .. Name
+   end
+   assert(greet("World") is "Hello, World", "string return type should work")
+end
+
+@Test function SingleReturnTypeBool()
+   function isPositive(X: num):bool
+      return X > 0
+   end
+   assert(isPositive(5) is true, "boolean true return should work")
+   assert(isPositive(-5) is false, "boolean false return should work")
+end
+
+@Test function SingleReturnTypeTable()
+   function makeConfig(Host: str):table
+      return { host = Host, port = 8080 }
+   end
+   local config = makeConfig("localhost")
+   assert(config.host is "localhost", "table return type should work")
+   assert(config.port is 8080, "table fields should be accessible")
+end
+
+@Test function SingleReturnTypeFunc()
+   function makeAdder(N: num):func
+      return function(X) return X + N end
+   end
+   add5 = makeAdder(5)
+   assert(add5(10) is 15, "function return type should work")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- MULTIPLE RETURN TYPE DECLARATIONS
+
+@Test function MultipleReturnTypes()
+   function divmod(A: num, B: num):<num, num>
+      return math.floor(A / B), A % B
+   end
+   q, r = divmod(17, 5)
+   assert(q is 3, "quotient should be 3")
+   assert(r is 2, "remainder should be 2")
+end
+
+@Test function MultipleReturnTypesMixed()
+   function parseResult(Input: str):<bool, str, num>
+      return true, Input, #Input
+   end
+   ok, text, len = parseResult("hello")
+   assert(ok is true, "first return (bool) should be true")
+   assert(text is "hello", "second return (str) should be 'hello'")
+   assert(len is 5, "third return (num) should be 5")
+end
+
+@Test function TwoReturnsStringAndNum()
+   function measure(Text: str):<str, num>
+      return Text, #Text
+   end
+   s, n = measure("test")
+   assert(s is "test", "string return should work")
+   assert(n is 4, "number return should work")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- VARIADIC RETURN TYPES (... marker)
+
+@Test function VariadicReturnsSameType()
+   function manyNums(Count: num):<num, ...>
+      -- Use simple table instead of array<>
+      results = { 10, 20, 30 }
+      return results[0], results[1], results[2] -- Presume 3
+   end
+   a, b, c = manyNums(3)
+   assert(a is 10, "first variadic return should be 10")
+   assert(b is 20, "second variadic return should be 20")
+   assert(c is 30, "third variadic return should be 30")
+end
+
+@Test function VariadicReturnsWithPrefix()
+   function statusAndValues(Ok: bool):<bool, num, ...>
+      if Ok then
+         return true, 1, 2, 3, 4, 5
+      else
+         return false, 0
+      end
+   end
+   ok, first, second, third = statusAndValues(true)
+   assert(ok is true, "first (bool) should be true")
+   assert(first is 1, "second (first num) should be 1")
+   assert(second is 2, "third (variadic num) should be 2")
+   assert(third is 3, "fourth (variadic num) should be 3")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- VARIANT RETURN (any) OPT-OUT
+
+@Test function AnyReturnType()
+   function dynamicReturn(Kind: str):any
+      if Kind is "number" then return 42 end
+      if Kind is "string" then return "text" end
+      if Kind is "table" then return { key = "value" } end
+      return nil
+   end
+   assert(dynamicReturn("number") is 42, "any should allow number return")
+   assert(dynamicReturn("string") is "text", "any should allow string return")
+   assert(dynamicReturn("table").key is "value", "any should allow table return")
+   assert(dynamicReturn("other") is nil, "any should allow nil return")
+end
+
+@Test function AnyReturnMultipleTypes()
+   counter = 0
+   function alternate():any
+      counter += 1
+      if counter % 2 is 0 then
+         return "even"
+      else
+         return counter
+      end
+   end
+   assert(alternate() is 1, "first call returns number")
+   assert(alternate() is "even", "second call returns string")
+   assert(alternate() is 3, "third call returns number")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- TYPE INFERENCE FROM RETURN STATEMENTS (no explicit declaration)
+
+@Test function InferredReturnTypeNum()
+   function computed(X)
+      return X * 2
+   end
+   assert(computed(5) is 10, "inferred num return should work")
+end
+
+@Test function InferredReturnTypeStr()
+   function formatted(Name)
+      return "Name: " .. Name
+   end
+   assert(formatted("Alice") is "Name: Alice", "inferred str return should work")
+end
+
+@Test function InferredReturnTypeTable()
+   function wrapped(Value)
+      return { data = Value }
+   end
+   result = wrapped(42)
+   assert(result.data is 42, "inferred table return should work")
+end
+
+@Test function InferredMultipleReturns()
+   function pair(A, B)
+      return A, B
+   end
+   x, y = pair(1, 2)
+   assert(x is 1, "first inferred return should work")
+   assert(y is 2, "second inferred return should work")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- RETURN TYPE MISMATCH ERRORS (compile-time detection)
+
+@Test function ReturnTypeMismatchNumToStr()
+   try
+      exec([[
+         function bad():num
+            return "not a number"
+         end
+      ]])
+   success
+      error("should detect return type mismatch: str returned for num declaration")
+   end
+end
+
+@Test function ReturnTypeMismatchStrToNum()
+   try
+      exec([[
+         function bad():str
+            return 42
+         end
+      ]])
+   end
+   success
+      error("should detect return type mismatch: num returned for str declaration")
+   end
+end
+
+@Test function ReturnTypeMismatchBoolToTable()
+   try
+      exec([[
+         function bad():bool
+            return {}
+         end
+      ]])
+   end
+   success
+      error("should detect return type mismatch: table returned for bool declaration")
+   end
+end
+
+@Test function ReturnTypeMismatchInMultiple()
+   try
+      exec([[
+         function bad():<num, str>
+            return "wrong", 42
+         end
+      ]])
+   end
+   success
+      error("should detect return type mismatch in multiple returns")
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- RETURN COUNT VALIDATION
+
+@Test function TooManyReturnsError()
+   try
+      exec([[
+         function bad():<num, str>
+            return 1, "a", "extra"
+         end
+      ]])
+   success
+      error("should detect too many return values")
+   end
+end
+
+@Test function FewerReturnsAllowed()
+   -- Fewer returns than declared should be allowed (filled with nil)
+   function partial():<num, str, bool>
+      return 42
+   end
+   a, b, c = partial()
+   assert(a is 42, "first return should be 42")
+   assert(b is nil, "second return should be nil (not provided)")
+   assert(c is nil, "third return should be nil (not provided)")
+end
+
+@Test function EmptyReturnForVoid()
+   function noReturn()
+      x = 42
+      -- no return statement
+   end
+   result = noReturn()
+   assert(result is nil, "void function should return nil")
+end
+
+@Test function BareReturn()
+   function bareReturn()
+      return
+   end
+   result = bareReturn()
+   assert(result is nil, "bare return should return nil")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- RECURSIVE FUNCTIONS REQUIRE EXPLICIT TYPE
+
+@Test function RecursiveFunctionWithType()
+   function factorial(N: num):num
+      if N <= 1 then return 1 end
+      return N * factorial(N - 1)
+   end
+   assert(factorial(5) is 120, "recursive function with type should work")
+end
+
+@Test function RecursiveFibonacciWithType()
+   function fib(N: num):num
+      if N < 2 then return N end
+      return fib(N - 1) + fib(N - 2)
+   end
+   assert(fib(10) is 55, "recursive fibonacci with type should work")
+end
+
+@Test function RecursiveFunctionWithoutTypeError()
+   try
+      exec([[
+         function factorial(N)
+            if N <= 1 then return 1 end
+            return N * factorial(N - 1)
+         end
+      ]])
+   end
+   success
+      error("recursive function without explicit return type should error")
+   end
+end
+
+@Test function MutualRecursionNeedsTypes()
+   -- Both functions need explicit types because they call each other
+   -- Forward declare isOdd so isEven can call it
+   local isOdd
+
+   function isEven(N: num):bool
+      if N is 0 then return true end
+      return isOdd(N - 1)
+   end
+
+   isOdd = function(N: num):bool
+      if N is 0 then return false end
+      return isEven(N - 1)
+   end
+
+   assert(isEven(4) is true, "4 should be even")
+   assert(isOdd(3) is true, "3 should be odd")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- ARROW FUNCTION RETURN TYPES
+
+@Test function ArrowFunctionExplicitType()
+   local double = (x => num: x * 2)
+   assert(double(5) is 10, "arrow function with explicit num type should work")
+end
+
+@Test function ArrowFunctionExplicitTypeStr()
+   greet = (name => str: "Hello, " .. name)
+   assert(greet("World") is "Hello, World", "arrow function with explicit str type should work")
+end
+
+@Test function ArrowFunctionExplicitTypeBool()
+   isPositive = (x => bool: x > 0)
+   assert(isPositive(5) is true, "arrow function with explicit bool type should work")
+   assert(isPositive(-5) is false, "arrow function should return false for negative")
+end
+
+@Test function ArrowFunctionInferredType()
+   square = (x => x * x)
+   assert(square(5) is 25, "arrow function with inferred num type should work")
+end
+
+@Test function ArrowFunctionInferredString()
+   wrap = (s => "[" .. s .. "]")
+   assert(wrap("test") is "[test]", "arrow function with inferred str type should work")
+end
+
+@Test function ArrowFunctionTypeMismatch()
+   try
+      exec([[
+         bad = (x => num: "not a number")
+      ]])
+   end
+   success
+      error("arrow function with mismatched return type should error")
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- NIL RETURN HANDLING
+
+@Test function NilReturnAllowedForAnySlot()
+   function maybeNum(ReturnNil: bool):num
+      if ReturnNil then return nil end
+      return 42
+   end
+   assert(maybeNum(false) is 42, "non-nil return should work")
+   assert(maybeNum(true) is nil, "nil return should be allowed for typed return")
+end
+
+@Test function NilInMultipleReturns()
+   function mixed(IncludeNil: bool):<num, str>
+      if IncludeNil then
+         return nil, "text"
+      end
+      return 42, "text"
+   end
+   a, b = mixed(true)
+   assert(a is nil, "nil in first position should work")
+   assert(b is "text", "string in second position should work")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- TYPE INFERENCE "FIRST WINS" RULE
+
+@Test function FirstReturnFixesType()
+   -- First return should fix the type, subsequent returns must match
+   try
+      exec([[
+         function inconsistent(X)
+            if X > 0 then
+               return 42
+            else
+               return "text"
+            end
+         end
+      ]])
+   end
+   success
+      error("inconsistent return types should error (first wins rule)")
+   end
+end
+
+@Test function FirstReturnFixesTypeConsistent()
+   function consistent(X)
+      if X > 0 then
+         return 42
+      else
+         return 100
+      end
+   end
+   assert(consistent(5) is 42, "first branch should return 42")
+   assert(consistent(-5) is 100, "second branch should return 100")
+end
+
+@Test function FirstReturnFixesMultipleTypes()
+   try
+      exec([[
+         function inconsistentPair(X)
+            if X > 0 then
+               return 1, "a"
+            else
+               return "wrong", 2
+            end
+         end
+      ]])
+   end
+   success
+      error("inconsistent multiple return types should error")
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- EDGE CASES
+
+@Test function NestedFunctionReturnTypes()
+   function outer():func
+      function inner():num
+         return 42
+      end
+      return inner
+   end
+   fn = outer()
+   assert(fn() is 42, "nested function with return types should work")
+end
+
+@Test function FunctionReturningItself()
+   function selfReturning():func
+      return selfReturning
+   end
+   fn = selfReturning()
+   assert(fn is selfReturning, "function returning itself should work")
+end
+
+@Test function HigherOrderFunctionReturnTypes()
+   function makeMultiplier(Factor: num):func
+      return (x => num: x * Factor)
+   end
+   times3 = makeMultiplier(3)
+   assert(times3(10) is 30, "higher-order function with typed return should work")
+end
+
+@Test function ReturnTypeWithDefaultParameter()
+   -- Default parameters not supported in Tiri, test with regular parameter
+   function withDefault(X: num):num
+      return X * 2
+   end
+   assert(withDefault(10) is 20, "function with typed param and return type should work")
+   assert(withDefault(5) is 10, "function with explicit param should work")
+end
+
+@Test function ReturnTypeInLocalFunction()
+   function localTyped(X: num):num
+      return X + 1
+   end
+   assert(localTyped(5) is 6, "function with return type should work")
+end
+
+@Test function ReturnTypeInMethodSyntax()
+   local obj = {}
+   function obj:getValue():num
+      return 42
+   end
+   assert(obj:getValue() is 42, "method with return type should work")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- MAX RETURN TYPES LIMIT (8)
+
+@Test function MaxReturnTypes()
+   function eightReturns():<num, num, num, num, num, num, num, num>
+      return 1, 2, 3, 4, 5, 6, 7, 8
+   end
+   a, b, c, d, e, f, g, h = eightReturns()
+   assert(a is 1, "1st of 8 returns")
+   assert(h is 8, "8th of 8 returns")
+end
+
+@Test function MoreThanEightTypesDropped()
+   -- 9th+ types should be treated as 'any' (no type checking)
+   function manyReturns():<num, num, num, num, num, num, num, num, str>
+      -- 9th type (str) should be treated as any due to MAX_RETURN_TYPES = 8
+      return 1, 2, 3, 4, 5, 6, 7, 8, "ninth"
+   end
+   a, b, c, d, e, f, g, h, i = manyReturns()
+   assert(a is 1, "1st return should be 1")
+   assert(h is 8, "8th return should be 8")
+   assert(i is "ninth", "9th return should work (treated as any)")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- CALLING TYPED FUNCTIONS AND TYPE FIXING INTEGRATION
+
+@Test function AssignTypedFunctionResultToTypedVariable()
+   function getNum():num
+      return 42
+   end
+
+   result: num = getNum()
+   assert(result is 42, "typed variable from typed function should work")
+end
+
+-- Detect type mismatch when assigning function result to typed variable
+
+@Test function TypedFunctionResultTypeMismatch()
+   try
+      exec([[
+         function getNum():num
+            return 42
+         end
+         result: str = getNum()
+      ]])
+   success
+      error("Expected exception to be raised from invalid typed assignment")
+   end
+end
+
+@Test function MultipleAssignmentFromTypedFunction()
+   function getPair():<num, str>
+      return 42, "hello"
+   end
+
+   local n: num, s: str = getPair()
+   assert(n is 42, "num variable from function should be 42")
+   assert(s is "hello", "str variable from function should be 'hello'")
+end
+
+@Test function ImplicitTypeFixingFromFunctionCall()
+   function getNum():num
+      return 42
+   end
+
+   result = getNum()  -- Should implicitly fix 'result' to num
+   result = 100  -- Should work (same type)
+   assert(result is 100, "implicitly fixed variable should allow same-type reassignment")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- TYPE ALIASES IN RETURN DECLARATIONS
+
+@Test function ReturnTypeAliasNumber()
+   function getNumber():number
+      return 42
+   end
+   assert(getNumber() is 42, "number alias in return type should work")
+end
+
+@Test function ReturnTypeAliasString()
+   function getString():string
+      return "hello"
+   end
+   assert(getString() is "hello", "string alias in return type should work")
+end
+
+@Test function ReturnTypeAliasBoolean()
+   function getBoolean():boolean
+      return true
+   end
+   assert(getBoolean() is true, "boolean alias in return type should work")
+end
+
+@Test function ReturnTypeAliasFunction()
+   -- 'function' is a keyword, so the alias 'func' should be used for return types
+   function getFunction():func
+      return function() return 1 end
+   end
+   assert(getFunction()() is 1, "func alias in return type should work")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- COMPLEX SCENARIOS
+
+@Test function ChainedTypedFunctions()
+   function step1(X: num):num
+      return X + 1
+   end
+
+   function step2(X: num):num
+      return X * 2
+   end
+
+   function step3(X: num):str
+      return "Result: " .. tostring(X)
+   end
+
+   result = step3(step2(step1(5)))
+   assert(result is "Result: 12", "chained typed functions should work")
+end
+
+@Test function TypedFunctionInTable()
+   ops = {
+      add = function(A: num, B: num):num return A + B end,
+      sub = function(A: num, B: num):num return A - B end,
+      mul = function(A: num, B: num):num return A * B end
+   }
+   assert(ops.add(3, 4) is 7, "typed function in table should work")
+   assert(ops.substr(10, 3) is 7, "second typed function should work")
+   assert(ops.mul(3, 4) is 12, "third typed function should work")
+end
+
+@Test function TypedFunctionAsCallback()
+   function withCallback(Value: num, Cb: func):num
+      return Cb(Value)
+   end
+
+   function doubler(X: num):num
+      return X * 2
+   end
+
+   result = withCallback(5, doubler)
+   assert(result is 10, "typed function as callback should work")
+end
+
+@Test function TypedFunctionWithVarargs()
+   function sumAll(...):num
+      total = 0
+      for _, v in ipairs({...}) do
+         total += v
+      end
+      return total
+   end
+   assert(sumAll(1, 2, 3, 4, 5) is 15, "typed function with varargs should work")
+end
+
+@Test function TypedFunctionReturningFromVarargs()
+   function firstAndRest(...):<num, ...>
+      return ...
+   end
+   a, b, c = firstAndRest(1, 2, 3)
+   assert(a is 1, "first from varargs should be 1")
+   assert(b is 2, "second from varargs should be 2")
+   assert(c is 3, "third from varargs should be 3")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- ERROR MESSAGE QUALITY
+
+@Test function ErrorMessageMentionsTypes()
+   try
+      exec([[
+         function bad():num
+            return "text"
+         end
+      ]])
+   success
+      error("should have caught type error")
+   except ex
+      -- Check that error message is helpful
+      msg = ex.message
+      assert(string.find(msg, "type") or string.find(msg, "num") or string.find(msg, "str"),
+         "error message should mention type information")
+   end
+end

@@ -48,17 +48,17 @@ if (BUILD_DEFS)
          "${INCLUDE_OUTPUT}/system/registry.h"
          "${INCLUDE_OUTPUT}/system/fields.h"
          "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
-      COMMAND ${PARASOL_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=defs/errors.fdl" "output=${INCLUDE_OUTPUT}/system/errors.h" "sdk=${PROJECT_SOURCE_DIR}"
-      COMMAND ${PARASOL_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=defs/registry.fdl" "output=${INCLUDE_OUTPUT}/system/registry.h" "sdk=${PROJECT_SOURCE_DIR}"
-      COMMAND ${PARASOL_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=defs/fields.fdl" "output=${INCLUDE_OUTPUT}/system/fields.h" "sdk=${PROJECT_SOURCE_DIR}"
-      COMMAND ${PARASOL_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=defs/core.fdl" "sdk=${PROJECT_SOURCE_DIR}" "output-proto=prototypes.h" "output-defs=data_functions.c" "files={" ${FUNCTIONS} "}"
-      COMMAND ${PARASOL_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=defs/core.fdl" "output=${CMAKE_CURRENT_SOURCE_DIR}/idl.h" "sdk=${PROJECT_SOURCE_DIR}" "format=c"
+      COMMAND ${ORIGO_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=defs/errors.tdl" "output=${INCLUDE_OUTPUT}/system/errors.h" "sdk=${PROJECT_SOURCE_DIR}"
+      COMMAND ${ORIGO_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=defs/registry.tdl" "output=${INCLUDE_OUTPUT}/system/registry.h" "sdk=${PROJECT_SOURCE_DIR}"
+      COMMAND ${ORIGO_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=defs/fields.tdl" "output=${INCLUDE_OUTPUT}/system/fields.h" "sdk=${PROJECT_SOURCE_DIR}"
+      COMMAND ${ORIGO_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=defs/core.tdl" "sdk=${PROJECT_SOURCE_DIR}" "output-proto=prototypes.h" "output-defs=data_functions.c" "files={" ${FUNCTIONS} "}"
+      COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=defs/core.tdl" "output=${CMAKE_CURRENT_SOURCE_DIR}/idl.h" "sdk=${PROJECT_SOURCE_DIR}" "format=c"
       DEPENDS
-         "${CMAKE_CURRENT_SOURCE_DIR}/defs/core.fdl"
-         "${CMAKE_CURRENT_SOURCE_DIR}/defs/errors.fdl"
-         "${CMAKE_CURRENT_SOURCE_DIR}/defs/registry.fdl"
-         "${CMAKE_CURRENT_SOURCE_DIR}/defs/fields.fdl"
-         "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/idl/common.fdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/defs/core.tdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/defs/errors.tdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/defs/registry.tdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/defs/fields.tdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/idl/common.tdl"
          ${FUNCTIONS}
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       COMMENT "Producing definition files for the Core library"
@@ -70,11 +70,11 @@ if (BUILD_DEFS)
       "${INCLUDE_OUTPUT}/system/registry.h"
       "${INCLUDE_OUTPUT}/system/fields.h"
       "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
-      "${CMAKE_CURRENT_SOURCE_DIR}/defs/core.fdl"
-      "${CMAKE_CURRENT_SOURCE_DIR}/defs/errors.fdl"
-      "${CMAKE_CURRENT_SOURCE_DIR}/defs/registry.fdl"
-      "${CMAKE_CURRENT_SOURCE_DIR}/defs/fields.fdl"
-      "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/idl/common.fdl")
+      "${CMAKE_CURRENT_SOURCE_DIR}/defs/core.tdl"
+      "${CMAKE_CURRENT_SOURCE_DIR}/defs/errors.tdl"
+      "${CMAKE_CURRENT_SOURCE_DIR}/defs/registry.tdl"
+      "${CMAKE_CURRENT_SOURCE_DIR}/defs/fields.tdl"
+      "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/idl/common.tdl")
 
    add_dependencies (build_headers core_defs)
 endif ()
@@ -89,23 +89,23 @@ endif ()
 # DBG_DIAGNOSTICS: Print enhanced diagnostic messages on crash - e.g. semaphore and memory locks.
 # DBG_SLEEP: Debug any area of the system that puts the process to sleep.
 
-add_compile_definitions ("__system__" "DBG_DIAGNOSTICS")
+add_library (core)
+
+target_compile_definitions (core PRIVATE "__system__" "DBG_DIAGNOSTICS" "PRV_METACLASS")
 
 if (MSVC)
-   add_compile_definitions ("_CRT_NONSTDC_NO_DEPRECATE")
+   target_compile_definitions (core PRIVATE "_CRT_NONSTDC_NO_DEPRECATE")
 endif ()
 
 # These definitions tell the Core where the system files are installed.
 
 if (RUN_ANYWHERE)
-   add_compile_definitions("_ROOT_PATH=" "_SYSTEM_PATH=" "_MODULE_PATH=\"parasol:lib/\"")
+   target_compile_definitions (core PRIVATE "_ROOT_PATH=" "_SYSTEM_PATH=" "_MODULE_PATH=\"kotuku:lib/\"")
 else ()
-   add_compile_definitions ("_ROOT_PATH=\"${CMAKE_INSTALL_PREFIX}/\""
-      "_SYSTEM_PATH=\"${CMAKE_INSTALL_PREFIX}/share/parasol/\""
-      "_MODULE_PATH=\"${CMAKE_INSTALL_PREFIX}/lib/parasol/\"")
+   target_compile_definitions (core PRIVATE "_ROOT_PATH=\"${CMAKE_INSTALL_PREFIX}/\""
+      "_SYSTEM_PATH=\"${CMAKE_INSTALL_PREFIX}/share/kotuku/\""
+      "_MODULE_PATH=\"${CMAKE_INSTALL_PREFIX}/lib/kotuku/\"")
 endif ()
-
-add_library (core)
 
 set_module_defaults (core "Sys")
 
@@ -144,7 +144,7 @@ target_link_libraries (core PRIVATE zlib)
 if (WIN32)
    target_sources (core PRIVATE microsoft/windows.cpp)
    target_link_libraries (core PRIVATE wsock32 psapi)
-   if (PARASOL_VLOG OR MSVC)
+   if (KOTUKU_VLOG OR MSVC)
       # Header generation for libdbghelp: dlltool -k -d dbghelp.def -l libdbghelp.a
       # Copy libdbghelp.a to your MinGW libs folder.
       target_link_libraries (core PRIVATE dbghelp)
@@ -153,11 +153,11 @@ else ()
    target_link_libraries (core PRIVATE pthread dl)
 endif ()
 
-flute_test (core_filesystem "tests/filesystem.fluid")
-flute_test (core_misc "tests/misc.fluid")
-flute_test (core_compression "tests/compression.fluid")
-flute_test (core_config "tests/config.fluid")
-flute_test (core_time "tests/test_time.fluid")
+flute_test (core_filesystem "tests/filesystem.tiri")
+flute_test (core_misc "tests/misc.tiri")
+flute_test (core_compression "tests/compression.tiri")
+flute_test (core_config "tests/config.tiri")
+flute_test (core_time "tests/test_time.tiri")
 
 if (INSTALL_TESTS)
    # Windows-compatible tests

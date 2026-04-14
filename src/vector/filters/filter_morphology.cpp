@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -47,7 +47,7 @@ static ERR MORPHOLOGYFX_Draw(extMorphologyFX *Self, struct acDraw *Args)
    const int canvasWidth = Self->Target->Clip.Right - Self->Target->Clip.Left;
    const int canvasHeight = Self->Target->Clip.Bottom - Self->Target->Clip.Top;
 
-   if (canvasWidth * canvasHeight > 4096 * 4096) return ERR::Failed; // Bail on really large bitmaps.
+   if (canvasWidth * canvasHeight > 4096 * 4096) return ERR::OutOfRange; // Bail on really large bitmaps.
 
    const uint8_t A = Self->Target->ColourFormat->AlphaPos>>3;
    const uint8_t R = Self->Target->ColourFormat->RedPos>>3;
@@ -76,7 +76,7 @@ static ERR MORPHOLOGYFX_Draw(extMorphologyFX *Self, struct acDraw *Args)
    }
 
    objBitmap *inBmp;
-   if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) != ERR::Okay) return ERR::Failed;
+   if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) != ERR::Okay) return ERR::NoData;
    uint8_t *input = inBmp->Data + (inBmp->Clip.Top * inBmp->LineWidth) + (inBmp->Clip.Left * inBmp->BytesPerPixel);
 
    if (Self->RadiusX > 0) { // Top-to-bottom dilate

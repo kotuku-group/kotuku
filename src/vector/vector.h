@@ -15,12 +15,12 @@ template<class... Args> void DBG_TRANSFORM(Args...) {
 #include <stack>
 #include <algorithm>
 
-#include <parasol/main.h>
-#include <parasol/modules/xml.h>
-#include <parasol/modules/picture.h>
-#include <parasol/modules/display.h>
-#include <parasol/modules/font.h>
-#include <parasol/strings.hpp>
+#include <kotuku/main.h>
+#include <kotuku/modules/xml.h>
+#include <kotuku/modules/picture.h>
+#include <kotuku/modules/display.h>
+#include <kotuku/modules/font.h>
+#include <kotuku/strings.hpp>
 
 using namespace pf;
 
@@ -196,7 +196,7 @@ public:
    PTC cursor; // This value buffers the Vector.Cursor field for optimisation purposes.
    TClipRectangle<double> bounds; // Collision boundary
    double x, y; // Absolute X,Y without collision
-   bool pass_through; // True if input events should be passed through (the cursor will still apply)
+   bool pass_through; // True if input events should drop through (the cursor will still apply, if defined)
 
    InputBoundary(OBJECTID pV, PTC pC, TClipRectangle<double> &pBounds, double p5, double p6, bool pPass = false) :
       vector_id(pV), cursor(pC), bounds(pBounds), x(p5), y(p6), pass_through(pPass) {};
@@ -292,7 +292,7 @@ public:
 
 constexpr int TB_NOISE = 1;
 
-#include <parasol/modules/vector.h>
+#include <kotuku/modules/vector.h>
 
 class FeedbackSubscription {
 public:
@@ -393,7 +393,6 @@ class extPainter : public VectorPainter {
 public:
    GRADIENT_TABLE *GradientTable;
    double GradientAlpha;
-   RGB8   RGB;
 };
 
 class extVector : public objVector {
@@ -407,7 +406,7 @@ class extVector : public objVector {
    agg::path_storage BasePath;
    agg::trans_affine Transform;   // Final transform.  Accumulated from the Matrix list during path generation.
    CSTRING FilterString, StrokeString, FillString;
-   STRING ID;
+   STRING SID;
    void   (*GeneratePath)(extVector *, agg::path_storage &);
    agg::rasterizer_scanline_aa<>     *StrokeRaster;
    agg::rasterizer_scanline_aa<>     *FillRaster;
@@ -506,6 +505,7 @@ class extVectorViewport : public extVector {
    objBitmap *vpBuffer;
    uint8_t *vpBufferData;
    int vpBufferSize; // Size of the vpBufferData in bytes
+   std::unique_ptr<std::vector<class InputBoundary>> vpInputBounds; // Cached boundaries for buffered viewports; allocated on first use only.
    bool  vpClip; // Viewport requires non-rectangular clipping, e.g. because it is rotated or sheared.
    DMF   vpDimensions;
    ARF   vpAspectRatio;
@@ -563,7 +563,7 @@ class GradientColours {
 
          // For a given block of colours, compute the average colour and apply it to the entire block.
 
-         int block_size = F2T(resolution * table.size());
+         int block_size = int(resolution * table.size());
          for (int i = 0; i < table.size(); i += block_size) {
 
             int red = 0, green = 0, blue = 0, alpha = 0, total = 0;
@@ -705,6 +705,42 @@ static void mark_buffers_for_refresh(extVector *Vector)
 
       parent_view = parent_view->ParentView;
    }
+}
+
+//********************************************************************************************************************
+// Input boundaries are generated during scene drawing.  If their source state changes without a visual path change,
+// buffered parent viewports still need to redraw once so that their cached input-boundary list stays current.
+
+inline static bool has_input_subscriptions(const extVector *Vector)
+{
+   return (Vector->InputSubscriptions) and (not Vector->InputSubscriptions->empty());
+}
+
+inline static bool has_input_boundary(const extVector *Vector)
+{
+   return has_input_subscriptions(Vector) or ((Vector->Cursor != PTC::NIL) and (Vector->Cursor != PTC::DEFAULT));
+}
+
+inline static void update_input_subscription_state(extVector *Vector)
+{
+   JTYPE mask = JTYPE::NIL;
+   if (Vector->InputSubscriptions) {
+      for (auto &sub : *Vector->InputSubscriptions) mask |= sub.Mask;
+   }
+
+   Vector->InputMask = mask;
+
+   if ((Vector->Scene) and (!Vector->Scene->collecting())) {
+      auto scene = (extVectorScene *)Vector->Scene;
+      if (mask != JTYPE::NIL) scene->InputSubscriptions[Vector] = mask;
+      else scene->InputSubscriptions.erase(Vector);
+   }
+}
+
+inline static void mark_input_boundary_dirty(extVector *Vector)
+{
+   mark_buffers_for_refresh(Vector);
+   if (Vector->Scene) ((extVectorScene *)Vector->Scene)->RefreshCursor = true;
 }
 
 //********************************************************************************************************************

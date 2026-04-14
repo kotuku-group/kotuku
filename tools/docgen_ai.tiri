@@ -1,0 +1,123 @@
+-- AI Documentation Generator for Kōtuku
+--
+-- This script processes the full XML documentation and generates a highly condensed XML format optimized for AI
+-- processing. The output removes verbose descriptions, formatting, and examples while preserving essential API
+-- information.
+--
+-- Usage: origo docgen-ai.tiri [output=folder]
+
+   import 'io/filesearch'
+
+   rx_sdk_path = <{ regex.new([[(.+)\.git]]) }>
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Resolve the location of the Kōtuku SDK and create an 'sdk:' volume.
+
+function resolveSDKPath(Path)
+   local sdk_path
+   err = ERR_Failed
+   search_list = { }
+   if not Path then
+      search_path = '.git'
+      limit = 5
+      while (err != ERR_Okay) and (limit > 0) do
+         table.insert(search_list, search_path)
+         err, sdk_path = mSys.ResolvePath(search_path)
+         search_path = '../' .. search_path
+         limit -= 1
+      end
+   else
+      table.insert(search_list, Path .. '/.git')
+      err, sdk_path = mSys.ResolvePath(Path .. '/.git')
+   end
+
+   if (err is ERR_Okay) then
+      sdk_path = rx_sdk_path.extract(sdk_path)
+   else
+      local msg = ''
+      for path in values(search_list) do
+         msg ..= path .. '\n'
+      end
+      print('Unable to find .git folder after searching the following paths:\n' .. msg)
+      error('A path to the Kōtuku SDK could not be determined.')
+   end
+
+   mSys.SetVolume('sdk', sdk_path)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+   resolveSDKPath(arg('sdk'))
+
+   local output_folder = arg('output', 'sdk:docs/xml/ai/')
+   local xml_folder = 'sdk:docs/xml/'
+   local xsl_file = 'sdk:docs/xml/ai-condense.xsl'
+
+   local err, resolved_xsl = mSys.ResolvePath(xsl_file)
+   if err != ERR_Okay then error('XSLT transformation file not found: ' .. xsl_file) end
+
+   print('Generating AI-optimized documentation...')
+   print('Output path: ' .. output_folder)
+   print('Using XSLT: ' .. resolved_xsl)
+
+   err, output_folder = mSys.ResolvePath(output_folder, RSF_NO_FILE_CHECK)
+   assert(err is ERR_Okay, 'Failed to resolve output path.')
+
+   mSys.CreateFolder(output_folder .. 'modules/')
+   mSys.CreateFolder(output_folder .. 'classes/')
+
+   print('Processing modules...')
+
+   io.search(xml_folder .. 'modules/', {
+      nameFilter = regex.new([[^.+\.xml$]]),
+      maxDepth   = 0,
+      ignoreFeedback = function(Path, FileName, File)
+         print('Ignoring ' .. Path .. FileName)
+      end,
+      matchFeedback = function(Path, FileName, File)
+         local src_path = Path .. FileName
+         local output_file = output_folder .. 'modules/' .. FileName
+
+         local err, res_src_path = mSys.ResolvePath(src_path)
+         assert(err is ERR_Okay, 'Failed to resolve: ' .. src_path)
+
+         local err, res_output = mSys.ResolvePath(output_file, RSF_NO_FILE_CHECK)
+         assert(err is ERR_Okay, 'Failed to resolve output: ' .. output_file)
+
+         local parameters = '-o ' .. res_output .. ' ' .. resolved_xsl .. ' ' .. res_src_path
+         msg('xsltproc ' .. parameters)
+         local task = obj.new('task', { src = 'xsltproc', args  = parameters, flags = TSF_WAIT, timeout = 10 })
+
+         if task.acActivate() != ERR_Okay then
+            print('Failed to run xsltproc for ' .. FileName)
+         end
+
+         processing.collect()
+      end
+   })
+
+   print('Processing classes...')
+
+   io.search(xml_folder .. 'modules/classes/', {
+      nameFilter = regex.new([[^.*\.xml$]]),
+      matchFeedback = function(Path, FileName, File)
+         local src_path = Path .. FileName
+         local output_file = output_folder .. 'classes/' .. FileName
+
+         local err, res_src_path = mSys.ResolvePath(src_path)
+         assert(err is ERR_Okay, f'Failed to resolve: {src_path}')
+
+         local err, res_output = mSys.ResolvePath(output_file, RSF_NO_FILE_CHECK)
+         assert(err is ERR_Okay, f'Failed to resolve output: {output_file}')
+
+         local parameters = f'-o {res_output} {resolved_xsl} {res_src_path}'
+         msg('xsltproc ' .. parameters)
+         local task = obj.new('task', { src = 'xsltproc', args  = parameters, flags = TSF_WAIT, timeout = 10 })
+
+         if task.acActivate() != ERR_Okay then
+            print('Failed to run xsltproc for ' .. FileName)
+         end
+
+         processing.collect()
+      end
+   })

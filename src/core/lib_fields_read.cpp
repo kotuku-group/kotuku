@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol Framework is made publicly available under the terms described in the LICENSE.TXT file
+The source code for Kōtuku is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 -CATEGORY-
@@ -10,7 +10,7 @@ Name: Fields
 *********************************************************************************************************************/
 
 #include "defs.h"
-#include <parasol/main.h>
+#include <kotuku/main.h>
 
 //********************************************************************************************************************
 // This internal function provides a fast binary search of field names via ID.
@@ -43,7 +43,7 @@ Field * lookup_id(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target)
       }
    }
 
-   // Local object support.  NOTE: This is fallback mechanism.  The client can optimise their code by
+   // Local object support.  NOTE: This is a fallback mechanism.  The client can optimise their code by
    // directly retrieving a pointer to the local object and then reading the field value from that.
 
    for (unsigned i=0; mc->Local[i] != 0xff; i++) {

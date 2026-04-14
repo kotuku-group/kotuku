@@ -1,0 +1,284 @@
+
+rx_obj_new = <{ regex.new("([\\w]+)\\s*=\\s*obj\\.new\\s*\\(\\s*['\"]([\\w]+)['\"]", regex.DOT_ALL) }>
+rx_starts_capital = <{ regex.new("^[A-Z]") }>
+rx_action_prefix = <{ regex.new("^ac[A-Z]") }>
+rx_method_prefix = <{ regex.new("^mt[A-Z]") }>
+
+----------------------------------------------------------------------------------------------------------------------
+-- Hover Support - Token Extraction
+
+global function getTokenAtPosition(Doc:table, Line:num, Character:num):table
+   -- Extract the token/symbol at a given position in the document
+   -- Returns: { text, object, startCol, endCol, context }
+   -- context: 'identifier', 'method_call', 'field_access', 'module_call'
+
+   lineText = getLine(Doc, Line)
+   if not lineText or Character >= #lineText then return nil end
+
+   -- Helper to check if character is identifier-like
+   function isIdent(C)
+      return (C >= 'a' and C <= 'z') or (C >= 'A' and C <= 'Z') or (C >= '0' and C <= '9') or C is '_'
+   end
+
+   -- Find token boundaries
+   startCol = Character
+   endCol = Character
+
+   -- Scan backwards to find token start
+   while startCol > 0 do
+      c = lineText:sub(startCol - 1, startCol)
+      if not isIdent(c) then break end
+      startCol -= 1
+   end
+
+   -- Scan forward to find token end
+   while endCol < #lineText do
+      c = lineText:sub(endCol, endCol + 1)
+      if not isIdent(c) then break end
+      endCol++
+   end
+
+   if startCol is endCol then return nil end
+
+   token = lineText:sub(startCol, endCol)
+   context = 'identifier'
+   precedingIdent = nil
+
+   -- Check for preceding dot (field access or method call)
+   if startCol > 0 then
+      beforeStart = startCol - 1
+
+      -- Skip whitespace
+      while beforeStart > 0 and (lineText:sub(beforeStart, beforeStart + 1) is ' ' or lineText:sub(beforeStart, beforeStart + 1) is '\t') do
+         beforeStart -= 1
+      end
+
+      if lineText:sub(beforeStart, beforeStart + 1) is '.' then
+         -- Find the preceding identifier (the object/module name)
+         objEnd = beforeStart
+         objStart = beforeStart - 1
+
+         while objStart > 0 and isIdent(lineText:sub(objStart - 1, objStart)) do
+            objStart -= 1
+         end
+
+         if objStart < objEnd then
+            precedingIdent = lineText:sub(objStart, objEnd)
+
+            -- Check if followed by parenthesis (method call)
+            afterEnd = endCol
+            while afterEnd < #lineText and (lineText:sub(afterEnd, afterEnd + 1) is ' ' or lineText:sub(afterEnd, afterEnd + 1) is '\t') do
+               afterEnd++
+            end
+
+            if lineText:sub(afterEnd, afterEnd + 1) is '(' then
+               context = 'method_call'
+            else
+               context = 'field_access'
+            end
+         end
+      end
+   end
+
+   return {
+      text     = token,
+      object   = precedingIdent,
+      startCol = startCol,
+      endCol   = endCol,
+      context  = context
+   }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Hover Support - Type Inference
+
+function buildTypeMap(Doc)
+   -- Build a mapping of variable names to class types based on obj.new() calls
+   typeMap = {}
+
+   -- Match patterns like: varname = obj.new('classname' or varname = obj.new("classname"
+   for start, stop, cap in rx_obj_new.findAll(Doc.content) do
+      local varname, classname = cap[0], cap[1]
+      -- Capitalize first letter for class name lookup (e.g., 'netsocket' -> 'NetSocket')
+      -- Most class names in the XML are in TitleCase
+      normalizedClass = classname:sub(1,1):upper() .. classname:sub(2)
+      typeMap[varname] = normalizedClass
+   end
+
+   return typeMap
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Hover Support - Content Resolution and Formatting
+
+function formatClassHover(ClassName, ClassDoc)
+   md = '**class ' .. ClassName .. '**\n\n'
+   md ..= ClassDoc.comment
+   if ClassDoc.module and #ClassDoc.module > 0 then
+      md ..= '\n\n_Module: ' .. ClassDoc.module .. '_'
+   end
+   return md
+end
+
+function formatMethodHover(ClassName, MethodName, MethodDoc)
+   doc = decodeMethod(MethodDoc)  -- Decode compact string if needed
+   md = f'**{ClassName}.{MethodName}**\n\n'
+   if doc.prototype?? then
+      md ..= '```c\n' .. doc.prototype .. '\n```\n\n'
+   end
+   md ..= doc.comment or ''
+   return md
+end
+
+function formatActionHover(ClassName, ActionName, ActionDoc)
+   doc = decodeMethod(ActionDoc)  -- Decode compact string if needed
+   md = f'**{ClassName}.ac{ActionName}** _(Action)_\n\n'
+   if doc.prototype?? then
+      md ..= '```c\n' .. doc.prototype .. '\n```\n\n'
+   end
+   md ..= doc.comment or ''
+   return md
+end
+
+function formatFieldHover(ClassName, FieldName, FieldDoc)
+   doc = decodeField(FieldDoc)  -- Decode compact string if needed
+   md = f'**{ClassName}.{FieldName}**\n\n'
+   md ..= f"Type: `{doc.type or 'unknown'}`"
+   if doc.access then
+      md ..= f" | Access: {doc.access}"
+   end
+   md ..= '\n\n' .. (doc.comment or '')
+   return md
+end
+
+function formatModuleFunctionHover(ModuleName, FuncName, FuncDoc)
+   doc = decodeMethod(FuncDoc)  -- Decode compact string if needed
+   md = f'**{ModuleName}.{FuncName}**\n\n'
+   if doc.prototype?? then
+      md ..= '```c\n' .. doc.prototype .. '\n```\n\n'
+   end
+   md ..= doc.comment or ''
+   md ..= f'\n\n[Documentation]({HTML_URI}{ModuleName:lower()}.html?page={FuncName})'
+   return md
+end
+
+function formatBuiltinHover(FuncName, BuiltinDoc)
+   md = f'**{FuncName}** _(Built-in)_\n\n'
+   if BuiltinDoc.prototype?? then
+      md ..= '```lua\n' .. BuiltinDoc.prototype .. '\n```\n\n'
+   end
+   md ..= BuiltinDoc.comment
+   return md
+end
+
+function formatKeywordHover(Keyword, KeywordDoc)
+   md = f'**{Keyword}** _(Keyword)_\n\n' .. KeywordDoc.comment
+   return md
+end
+
+global function resolveHoverContent(TokenInfo, Doc)
+   -- Resolve hover content for a token
+   -- Priority: keywords, builtins, class names, module functions, object methods/fields
+
+   if not TokenInfo then return nil end
+
+   token = TokenInfo.text
+   context = TokenInfo.context
+
+   -- Check for keywords
+   if glDefs?.keywords?[token] then
+      return formatKeywordHover(token, glDefs.keywords[token])
+   end
+
+   -- Check for built-in functions
+   if glDefs?.builtins?[token] then
+      return formatBuiltinHover(token, glDefs.builtins[token])
+   end
+
+   -- Handle obj.new specially
+   if context is 'method_call' and TokenInfo.object is 'obj' and token is 'new' then
+      if glDefs and glDefs.builtins and glDefs.builtins['obj.new'] then
+         return formatBuiltinHover('obj.new', glDefs.builtins['obj.new'])
+      end
+   end
+
+   -- Check for class names (standalone identifier starting with capital)
+   if context is 'identifier' and rx_starts_capital.test(token) then
+      if glDocCache and glDocCache.classes and glDocCache.classes[token] then
+         return formatClassHover(token, glDocCache.classes[token])
+      end
+   end
+
+   -- Handle method or field access on an object
+   if (context is 'method_call' or context is 'field_access') and TokenInfo.object then
+      objName = TokenInfo.object
+
+      -- Try to infer class type from obj.new() assignments
+      typeMap = buildTypeMap(Doc)
+      className = typeMap[objName]
+
+      -- Also try the object name directly as a class (for cases like NetSocket.Connect)
+      if not className and rx_starts_capital.test(objName) then
+         className = objName
+      end
+
+      if className and glDocCache and glDocCache.classes then
+         classDoc = glDocCache.classes[className]
+         if classDoc then
+            if context is 'method_call' then
+               -- Check for action pattern (acXxx)
+               if rx_action_prefix.test(token) then
+                  actionName = token:sub(3)
+                  if classDoc.actions and classDoc.actions[actionName] then
+                     return formatActionHover(className, actionName, classDoc.actions[actionName])
+                  end
+               end
+
+               -- Check for method pattern (mtXxx)
+               if rx_method_prefix.test(token) then
+                  methodName = token:sub(3)
+                  if classDoc.methods and classDoc.methods[methodName] then
+                     return formatMethodHover(className, methodName, classDoc.methods[methodName])
+                  end
+               end
+
+               -- Try direct method lookup
+               if classDoc.methods and classDoc.methods[token] then
+                  return formatMethodHover(className, token, classDoc.methods[token])
+               end
+
+               -- Also check actions without ac prefix
+               if classDoc.actions and classDoc.actions[token] then
+                  return formatActionHover(className, token, classDoc.actions[token])
+               end
+            else
+               -- Field access - try various case combinations
+               if classDoc.fields then
+                  -- Try exact match
+                  if classDoc.fields[token] then
+                     return formatFieldHover(className, token, classDoc.fields[token])
+                  end
+                  -- Try capitalized (Tiri uses lowercase, XML uses TitleCase)
+                  capitalizedToken = token:sub(1,1):upper() .. token:sub(2)
+                  if classDoc.fields[capitalizedToken] then
+                     return formatFieldHover(className, capitalizedToken, classDoc.fields[capitalizedToken])
+                  end
+               end
+            end
+         end
+      end
+
+      -- Try module function lookup (mSys.Sleep, mNet.AddressToStr, etc.)
+      if glDefs?.modulePrefixes?[objName] then
+         modName = glDefs.modulePrefixes[objName]
+         if glDocCache?.modules?[modName] then
+            moduleDoc = glDocCache.modules[modName]
+            if moduleDoc?.functions?[token] then
+               return formatModuleFunctionHover(modName, token, moduleDoc.functions[token])
+            end
+         end
+      end
+   end
+
+   return nil
+end

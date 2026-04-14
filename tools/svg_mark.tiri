@@ -1,0 +1,247 @@
+#!/usr/bin/env origo
+--[[
+SVG Rendering Benchmark Tool
+
+Written from scratch with Claude Code.
+
+Loads an SVG file from the command line and repeatedly renders it to an internal bitmap, then reports back with
+performance statistics.  This tool is intended to check on the impact that vector rendering changes have on rendering
+speed.
+
+Usage:
+  origo svg_mark.tiri file=path/to/file.svg [width=1024] [height=768]
+
+Parameters:
+  file         - Path to the SVG file to benchmark (optional - file dialog shown if not provided)
+  width        - Width of the render bitmap (default: 1024)
+  height       - Height of the render bitmap (default: 768)
+  warmup       - Number of warmup renders to exclude from statistics (default: 10)
+  preview      - Show preview window (default: true, set to false for headless)
+--]]
+
+   import 'gui'
+   import 'gui/window'
+   import 'gui/listview'
+   import 'gui/filedialog'
+   import 'benchmark'
+   import 'git'
+
+   global glSelf = obj.find('self')
+   global glPath = glSelf.workingPath
+   global glLogFile = io.open(glPath .. 'svg_mark_results.log', 'a')
+   global glGitInfo = { }
+
+-----------------------------------------------------------------------------------------------------------------------
+
+function createPreviewWindow(SvgPath)
+   global previewWindow = gui.window({
+      width  = 800,
+      height = 700,
+      title  = 'SVG Benchmark Preview - ' .. SvgPath,
+      minHeight = 500,
+      minWidth  = 600,
+      events = {
+         close = function(Window)
+            mSys.SendMessage(MSGID_QUIT)
+         end
+      }
+   })
+
+   viewport = previewWindow:clientViewport({ aspectRatio = ARF_MEET })
+
+   -- Create main container
+   mainArea = viewport.new('VectorViewport', {
+      x = previewWindow.margins.left,
+      y = previewWindow.margins.top,
+      xOffset = previewWindow.margins.right,
+      yOffset = previewWindow.margins.bottom
+   })
+
+   -- SVG display area (top half)
+
+   svgViewport = mainArea.new('VectorViewport', {
+      x=0, y=0, width='100%', height='60%', overflow='hidden'
+   })
+
+   svg = svgViewport.new('svg', {
+      target=svgViewport, path=SvgPath, flags=SVF_ENFORCE_TRACKING
+   })
+
+   -- Results display area (bottom half) - create listview for results
+
+   resultsListView = gui.listView({
+      x = 0, y = '60%', width = '100%', height = '40%',
+      target = mainArea,
+      textAttrib = 'text',
+      noIcons = true,
+      sensitive = false,  -- Read-only display
+      fontFace = 'Courier',
+      fontSize = 10
+   })
+
+   previewWindow:show()
+
+   resultsListView.addItems({ { text = 'Initializing benchmark...' } })
+
+   global glStatusUpdater = function(message)
+      resultsListView.addItems({ { text = message } })
+   end
+
+   return previewWindow
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+function logMessage(message)
+   if glStatusUpdater then
+      glStatusUpdater(message)
+   else
+      print(message)
+   end
+end
+
+function saveMessage(message:any)
+   if type(message) is 'string' then
+      logMessage(message)
+      glLogFile:write(message .. '\n')
+   elseif type(message) is 'array' then
+      for s in values(message) do
+         logMessage(s)
+         glLogFile:write(s .. '\n')
+      end
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+function runBenchmark(SvgPath, Width, Height, Duration, WarmupRenders)
+   tm = obj.new('time')
+   tm.acQuery()
+
+   saveMessage('================================================================================')
+   saveMessage(string.format('%04d-%02d-%02d %02d:%02d:%02d', tm.year, tm.month, tm.day, tm.hour, tm.minute, tm.second) .. '\n')
+   saveMessage(f'Git branch: {glGitInfo.branch} / {glGitInfo.commit}')
+
+   logMessage('Starting SVG benchmark...')
+   saveMessage('File: ' .. SvgPath)
+   saveMessage(f'Bitmap size: {Width}x{Height}')
+   saveMessage(f'Duration: {Duration} seconds')
+   saveMessage('')
+
+   if WarmupRenders > 0 then
+      logMessage(f'Warmup renders: {WarmupRenders} (excluded from statistics)')
+   end
+
+   scene = obj.new('VectorScene', { pageWidth=Width, pageHeight=Height })
+   vp    = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   svg   = obj.new('svg', { target=vp, path=SvgPath })
+   bmp   = obj.new('bitmap', { width=scene.pageWidth, height=scene.pageHeight, bitsPerPixel=32, bkgd='255,255,255,255' })
+   scene.bitmap = bmp
+
+   results = bmark.run({ duration=Duration, warmupCalls=WarmupRenders, feedbackRate=100 }, logMessage,
+      function()
+         scene.acDraw()
+      end)
+
+   logMessage('')
+
+   saveMessage(bmark.textReport(results))
+
+   if results.memoryLeakRate > 0 then
+      saveMessage(string.format('Leak Rate:  %.1f KB/sec', results.memoryLeakRate / 1024))
+   else
+      saveMessage('Leak Rate:  No significant growth detected')
+   end
+
+   if results.benchmarkCalls > 0 then
+      local memoryEfficiency = (results.finalMemory - results.initialMemory) / results.benchmarkCalls
+      saveMessage(string.format('Per Render: %.1f bytes/render', memoryEfficiency))
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+   -- Check for file parameter, show dialog if not provided
+   svgFile = arg('file')
+
+   global glGitInfo = git.query(glPath)
+
+   if not svgFile then
+      print('No file parameter provided. Opening file dialog...')
+
+      selectedFile = nil
+
+      gui.dialog.file({
+         title      = 'Select SVG File for Benchmark',
+         okText     = 'Select',
+         cancelText = 'Cancel',
+         modal      = true,
+         filterList = {
+            { name = 'SVG Files', ext = '.svg' },
+            { name = 'All Files', ext = '*' }
+         },
+         feedback = function(Dialog, Path, Files)
+            if Files and #Files > 0 then
+               selectedFile = Path .. Files[0].filename
+            end
+            processing.signal()
+         end
+      })
+
+      processing.sleep(nil, true)
+
+      selectedFile ?? return
+      svgFile = selectedFile
+   end
+
+   err, file_type = mSys.AnalysePath(svgFile)
+   if file_type != LOC_FILE then
+      print('Error: Cannot find file "' .. svgFile .. '"')
+      return
+   end
+
+   -- Get benchmark parameters
+   width       = tonumber(arg('width',1024))
+   height      = tonumber(arg('height',768))
+   duration    = tonumber(arg('duration',10))
+   warmup      = tonumber(arg('warmup',10))
+   showPreview = arg('preview') != 'false'
+
+   -- Validate parameters
+   if width < 100 or width > 4096 then
+      print('Error: Width must be between 100 and 4096 pixels')
+      return
+   end
+
+   if height < 100 or height > 4096 then
+      print('Error: Height must be between 100 and 4096 pixels')
+      return
+   end
+
+   if duration < 1 or duration > 300 then
+      print('Error: Duration must be between 1 and 300 seconds')
+      return
+   end
+
+   if warmup < 0 or warmup > 1000 then
+      print('Error: Warmup renders must be between 0 and 1000')
+      return
+   end
+
+   -- Create and show preview window if enabled
+   if showPreview then
+      previewWindow = createPreviewWindow(svgFile)
+      processing.sleep(0.2)
+   else
+      print('Preview disabled. Running in console mode.')
+   end
+
+   runBenchmark(svgFile, width, height, duration, warmup)
+
+   if showPreview then
+      logMessage('')
+      logMessage('Benchmark complete. Close window to exit.')
+      processing.sleep() -- Wait indefinitely until window is closed
+   else
+      processing.sleep(3)
+   end

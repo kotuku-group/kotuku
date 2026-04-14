@@ -11,7 +11,7 @@
     <id>7c9813c5</id>
     <idstring>HTTP</idstring>
     <category>Network</category>
-    <copyright>Paul Manias © 2005-2025</copyright>
+    <copyright>Paul Manias © 2005-2026</copyright>
     <description>
 <p>The HTTP class provides a way of interacting with servers that support the HTTP protocol.  Supported HTTP methods include <code>GET</code>, <code>POST</code>, <code>PUT</code>, <code>DELETE</code>, <code>COPY</code>, <code>MOVE</code>, <code>MKCOL</code> and more.  The following features are included:</p>
 <list type="bullet">
@@ -29,7 +29,7 @@
 <header>Receiving Content</header>
 <p>There are three possible methods for content download.  This first example downloads content to a temporary file for further processing:</p>
 <pre>http = obj.new('http', {
-   src        = 'http://www.parasol.ws/index.html',
+   src        = 'http://www.kotuku.dev/index.html',
    method     = 'get',
    outputFile = 'temp:index.html',
    stateChanged = function(HTTP, State)
@@ -42,7 +42,7 @@ http.acActivate()
 <p>This example uses data feeds to push the downloaded data to another object in text format:</p>
 <pre>doc = obj.new('scintilla')
 http = obj.new('http', {
-   src        = 'http://www.parasol.ws/index.html',
+   src        = 'http://www.kotuku.dev/index.html',
    method     = 'get',
    datatype   = 'text',
    objectMode = 'DATA_FEED',
@@ -465,7 +465,7 @@ http.acActivate()
       <access read="R" write="S">Read/Set</access>
       <type>STRING</type>
       <description>
-<p>This field describes the <code>user-agent</code> value that will be sent in HTTP requests.  The default value is <code>Parasol Client</code>.</p>
+<p>This field describes the <code>user-agent</code> value that will be sent in HTTP requests.  The default value is <code>Kotuku Client</code>.</p>
       </description>
     </field>
 

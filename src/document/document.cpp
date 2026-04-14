@@ -1,19 +1,17 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 *********************************************************************************************************************/
 
-//#define _DEBUG
-//#define DBG_LAYOUT
-//#define DBG_STREAM
+//#define DBG_LAYOUT   // Enable layout log messages
+//#define DBG_STREAM   // Dump the bytecode stream to the log
 //#define DBG_SEGMENTS // Print list of segments
-//#define DBG_WORDWRAP
-//#define GUIDELINES // Clipping guidelines
-//#define GUIDELINES_CONTENT // Segment guidelines
+//#define DBG_WORDWRAP // Enable word-wrap log messages
+//#define GUIDELINES   // Draw guidelines around all registered content segments
 
-#if (defined(_DEBUG) || defined(DBG_LAYOUT) || defined(DBG_STREAM) || defined(DBG_SEGMENTS))
+#if (!defined(NDEBUG) || defined(DBG_LAYOUT) || defined(DBG_STREAM) || defined(DBG_SEGMENTS))
  #define RETAIN_LOG_LEVEL TRUE
 #endif
 
@@ -32,24 +30,6 @@ that is distributed with this package.  Please refer to it for further informati
 #define PRV_DOCUMENT_MODULE
 #define PRV_SURFACE
 
-#include <parasol/main.h>
-#include <parasol/modules/xml.h>
-#include <parasol/modules/document.h>
-#include <parasol/modules/font.h>
-#include <parasol/modules/display.h>
-#include <parasol/modules/svg.h>
-#include <parasol/modules/vector.h>
-#include <parasol/strings.hpp>
-
-#include <float.h>
-#include <iomanip>
-#include <algorithm>
-#include <array>
-#include <variant>
-#include <stack>
-#include <cmath>
-#include <mutex>
-#include <charconv>
 #include "defs/hashes.h"
 #include "../link/unicode.h"
 
@@ -70,7 +50,7 @@ JUMPTABLE_VECTOR
 
 //********************************************************************************************************************
 
-static std::string glHighlight = "rgb(219,219,255,255)";
+static std::string glHighlight = "rgb(219 219 255 / 1)";
 
 static OBJECTPTR clDocument = nullptr;
 static OBJECTPTR modDisplay = nullptr, modFont = nullptr, modDocument = nullptr, modVector = nullptr;
@@ -217,6 +197,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
       APTR new_handle = nullptr;
       if (vec::GetFontHandle(resolved_face, DEFAULT_FONTSTYLE.c_str(), 400, DEFAULT_FONTSIZE, &new_handle) IS ERR::Okay) {
          glFonts.emplace_back(new_handle, resolved_face, DEFAULT_FONTSTYLE, DEFAULT_FONTSIZE);
+         glFontIndexCache.try_emplace(font_cache_key { resolved_face, DEFAULT_FONTSTYLE, DEFAULT_FONTSIZE }, 0);
       }
       else return ERR::Failed;
    }
@@ -227,6 +208,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
 static ERR MODExpunge(void)
 {
+   glFontIndexCache.clear();
    glFonts.clear();
 
    if (modVector)  { FreeResource(modVector);  modVector  = nullptr; }
@@ -323,5 +305,5 @@ static ERR add_document_class(void)
 
 //********************************************************************************************************************
 
-PARASOL_MOD(MODInit, nullptr, nullptr, MODExpunge, MOD_IDL, nullptr)
+KOTUKU_MOD(MODInit, nullptr, nullptr, MODExpunge, nullptr, MOD_IDL, nullptr)
 extern "C" struct ModHeader * register_document_module() { return &ModHeader; }

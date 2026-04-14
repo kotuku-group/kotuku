@@ -262,7 +262,7 @@ ERR GetRelativeCursorPos(OBJECTID SurfaceID, double *X, double *Y)
 
    if (get_surface_abs(SurfaceID, &absx, &absy, 0, 0) != ERR::Okay) {
       log.warning("Failed to get info for surface #%d.", SurfaceID);
-      return ERR::Failed;
+      return ERR::Search;
    }
 
    if (auto pointer = gfx::AccessPointer()) {
@@ -709,7 +709,7 @@ ERR StartCursorDrag(OBJECTID Source, int Item, CSTRING Datatypes, OBJECTID Surfa
    if (auto pointer = (extPointer *)gfx::AccessPointer()) {
       if (!pointer->Buttons[0].LastClicked) {
          ReleaseObject(pointer);
-         return log.warning(ERR::Failed);
+         return log.warning(ERR::InvalidState);
       }
 
       if (pointer->DragSourceID) {
@@ -757,8 +757,8 @@ oid Surface: Refers to the surface object used for calling LockCursor().
 -ERRORS-
 Okay:
 NullArgs:
-AccessObject: Failed to access the pointer object.
-NotLocked: A lock is not present, or the lock belongs to another surface.
+AccessObject:
+ResourceNotLocked: The pointer is not anchored to the given Surface.
 -END-
 
 *********************************************************************************************************************/
@@ -780,10 +780,7 @@ ERR UnlockCursor(OBJECTID SurfaceID)
          return ERR::ResourceNotLocked;
       }
    }
-   else {
-      log.warning("Failed to access the mouse pointer.");
-      return ERR::AccessObject;
-   }
+   else return log.warning(ERR::AccessObject);
 }
 
 } // namespace

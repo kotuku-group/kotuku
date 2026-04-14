@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="VectorClip" mod="Vector" c="Clips are used to define complex clipping regions for vectors." cat="Graphics" id="51b1de80" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="VectorClip" mod="Vector" c="Clips are used to define complex clipping regions for vectors." cat="Graphics" id="51b1de80" v="1">
   <ai:f n="Flags" c="Optional flags." t="VCLF" a="GS"/>
   <ai:f n="Units" c="Defines the coordinate system for fields X, Y, Width and Height." t="VUNIT" a="GS"/>
   <ai:f n="Viewport" c="This viewport hosts the Vector objects that will contribute to the clip path." t="*VectorViewport" a="G"/>

@@ -47,13 +47,68 @@ struct layout {
    std::vector<edit_cell>   m_ecells;
 
 private:
+   struct line_state {
+      stream_char index;       // Stream position for the line's content.
+      double descent = 0;      // Vertical spacing accommodated for glyph tails.  Inclusive within the height value, not additive
+      double height = 0;       // The complete height of the line, including inline vectors/images/tables.  Text is drawn so that the text descent is aligned to the base line
+      double x = 0;            // Starting horizontal position
+      double word_height = 0;  // Height of the current word (including inline graphics), utilised for word wrapping
+
+      void reset(double LeftMargin) {
+         x       = LeftMargin;
+         descent = 0;
+         height  = 0;
+      }
+
+      void full_reset(double LeftMargin) {
+         reset(LeftMargin);
+         word_height = 0;
+      }
+
+      void apply_word_height() {
+         if (word_height > height) height = word_height;
+         word_height = 0;
+      }
+   };
+
    struct link_marker {
       double x;           // Starting coordinate of the link.  Can change if the link is split across multiple lines.
       double word_width;  // Reflects the m_word_width value at the moment of a link's termination.
       INDEX index;
       ALIGN align;
 
-      link_marker(double pX, INDEX pIndex, ALIGN pAlign) : x(pX), word_width(0), index(pIndex), align(pAlign) { }
+      constexpr link_marker(double pX, INDEX pIndex, ALIGN pAlign) : x(pX), word_width(0), index(pIndex), align(pAlign) { }
+   };
+
+   struct layout_checkpoint {
+      int break_loop = 0;
+      bc_row *row = nullptr;
+      font_entry *font = nullptr;
+      double cursor_x = 0;
+      double cursor_y = 0;
+      double page_width = 0;
+      INDEX index = 0;
+      stream_char word_index;
+      double align_edge = 0;
+      int kernchar = 0;
+      double left_margin = 0;
+      int paragraph_bottom = 0;
+      SEGINDEX line_seg_start = 0;
+      int word_width = 0;
+      int line_count = 0;
+      int16_t space_width = 0;
+      bool no_wrap = false;
+      bool cursor_drawn = false;
+      bool edit_mode = false;
+      line_state line;
+      size_t segment_count = 0;
+      size_t segment_restore_start = 0;
+      size_t ecell_count = 0;
+      size_t clip_count = 0;
+      size_t list_depth = 0;
+      size_t para_depth = 0;
+      size_t font_depth = 0;
+      std::vector<doc_segment> segment_tail;
    };
 
    std::stack<bc_list *>      m_stack_list;
@@ -84,29 +139,92 @@ private:
    bool m_cursor_drawn = false;   // Set to true when the cursor has been drawn during scene graph creation.
    bool m_edit_mode    = false;   // Set to true when inside an area that allows user editing of the content.
 
-   struct {
-      stream_char index;   // Stream position for the line's content.
-      double descent;      // Vertical spacing accommodated for glyph tails.  Inclusive within the height value, not additive
-      double height;       // The complete height of the line, including inline vectors/images/tables.  Text is drawn so that the text descent is aligned to the base line
-      double x;            // Starting horizontal position
-      double word_height;  // Height of the current word (including inline graphics), utilised for word wrapping
+   line_state m_line;
 
-      void reset(double LeftMargin) {
-         x       = LeftMargin;
-         descent = 0;
-         height  = 0;
+   template <class T> static void restore_stack_depth(std::stack<T *> &Stack, size_t Depth) {
+#ifdef _DEBUG
+      assert(Stack.size() >= Depth);
+#endif
+
+      while (Stack.size() > Depth) Stack.pop();
+   }
+
+   layout_checkpoint capture_checkpoint() const {
+      layout_checkpoint state;
+      state.break_loop          = m_break_loop;
+      state.row                 = m_row;
+      state.font                = m_font;
+      state.cursor_x            = m_cursor_x;
+      state.cursor_y            = m_cursor_y;
+      state.page_width          = m_page_width;
+      state.index               = idx;
+      state.word_index          = m_word_index;
+      state.align_edge          = m_align_edge;
+      state.kernchar            = m_kernchar;
+      state.left_margin         = m_left_margin;
+      state.paragraph_bottom    = m_paragraph_bottom;
+      state.line_seg_start      = m_line_seg_start;
+      state.word_width          = m_word_width;
+      state.line_count          = m_line_count;
+      state.space_width         = m_space_width;
+      state.no_wrap             = m_no_wrap;
+      state.cursor_drawn        = m_cursor_drawn;
+      state.edit_mode           = m_edit_mode;
+      state.line                = m_line;
+      state.segment_count       = m_segments.size();
+      state.segment_restore_start = std::min<size_t>(m_line_seg_start, state.segment_count);
+      state.ecell_count         = m_ecells.size();
+      state.clip_count          = m_clips.size();
+      state.list_depth          = m_stack_list.size();
+      state.para_depth          = m_stack_para.size();
+      state.font_depth          = m_stack_font.size();
+      state.segment_tail.assign(m_segments.begin() + state.segment_restore_start, m_segments.end());
+      return state;
+   }
+
+   void restore_checkpoint(const layout_checkpoint &State) {
+#ifdef _DEBUG
+      assert(m_segments.size() >= State.segment_count);
+      assert(m_ecells.size() >= State.ecell_count);
+      assert(m_clips.size() >= State.clip_count);
+      assert(m_stack_list.size() >= State.list_depth);
+      assert(m_stack_para.size() >= State.para_depth);
+      assert(m_stack_font.size() >= State.font_depth);
+#endif
+
+      if (m_segments.size() >= State.segment_count) {
+         m_segments.resize(State.segment_count);
+         std::copy(State.segment_tail.begin(), State.segment_tail.end(), m_segments.begin() + State.segment_restore_start);
       }
 
-      void full_reset(double LeftMargin) {
-         reset(LeftMargin);
-         word_height = 0;
-      }
+      if (m_ecells.size() >= State.ecell_count) m_ecells.resize(State.ecell_count);
+      if (m_clips.size() >= State.clip_count) m_clips.resize(State.clip_count);
 
-      void apply_word_height() {
-         if (word_height > height) height = word_height;
-         word_height = 0;
-      }
-   } m_line;
+      restore_stack_depth(m_stack_list, State.list_depth);
+      restore_stack_depth(m_stack_para, State.para_depth);
+      restore_stack_depth(m_stack_font, State.font_depth);
+
+      m_break_loop       = State.break_loop;
+      m_row              = State.row;
+      m_font             = State.font;
+      m_cursor_x         = State.cursor_x;
+      m_cursor_y         = State.cursor_y;
+      m_page_width       = State.page_width;
+      idx                = State.index;
+      m_word_index       = State.word_index;
+      m_align_edge       = State.align_edge;
+      m_kernchar         = State.kernchar;
+      m_left_margin      = State.left_margin;
+      m_paragraph_bottom = State.paragraph_bottom;
+      m_line_seg_start   = State.line_seg_start;
+      m_word_width       = State.word_width;
+      m_line_count       = State.line_count;
+      m_space_width      = State.space_width;
+      m_no_wrap          = State.no_wrap;
+      m_cursor_drawn     = State.cursor_drawn;
+      m_edit_mode        = State.edit_mode;
+      m_line             = State.line;
+   }
 
    inline void reset() {
       m_clips.clear();
@@ -152,9 +270,16 @@ private:
       reset_broken_segment(idx+1, m_cursor_x);
    }
 
-   // When lines are segmented, the last segment will store the final height of the line whilst the earlier segments
-   // will have the wrong height.  This function ensures that all segments for a line have the same height and descent
-   // values.
+   // Line Management
+   // * The LineSpacing of the font determines how tall the segment needs to be.
+   // * LineSpacing covers the max height of the font's glyphs, including accents, gutter space and additional
+   //   whitespace for clearance.
+   // * descent() is used to determine the baseline of the text from the bottom of the segment. It includes both the
+   //   gutter and additional whitespace for clearance.
+
+   // When a single line is segmented multiple times, the last segment will store the final height of the line whilst
+   // the earlier segments will have the wrong height.  This function ensures that all segments for a line have the
+   // same height and descent values.
 
    inline void sanitise_line_height() {
       auto end = SEGINDEX(m_segments.size());
@@ -180,12 +305,31 @@ private:
    inline void check_line_height() {
       if (m_font->metrics.LineSpacing >= m_line.height) {
          m_line.height  = m_font->metrics.LineSpacing;
-         m_line.descent = m_font->metrics.Descent;
+         m_line.descent = m_font->descent();
       }
    }
 
    inline const int wrap_edge() const { // Marks the boundary at which graphics and text will need to wrap.
       return m_page_width - m_margins.right;
+   }
+
+   inline size_t clip_limit_count(size_t ClipLimit) const {
+      if (ClipLimit < m_clips.size()) return ClipLimit;
+      return m_clips.size();
+   }
+
+   double glyph_advance(APTR Handle, uint32_t Glyph, uint32_t PrevGlyph = 0) {
+      if ((!Self) or (!Handle)) return 0;
+
+      auto key = glyph_cache_key { (uintptr_t)Handle, Glyph, PrevGlyph };
+      if (auto it = Self->GlyphAdvanceCache.find(key); it != Self->GlyphAdvanceCache.end()) {
+         return it->second.advance;
+      }
+
+      double kerning = 0;
+      auto advance = vec::CharWidth(Handle, Glyph, PrevGlyph, &kerning) + kerning;
+      Self->GlyphAdvanceCache.try_emplace(key, glyph_cache_value { advance });
+      return advance;
    }
 
    void size_widget(widget_mgr &, bool);
@@ -204,14 +348,15 @@ private:
    void lay_row_end(bc_table *);
    TE   lay_table_end(bc_table &, double, double, double &, double &);
    WRAP lay_text();
+   int compute_word_width(const std::string &, const word_token &, int, int &);
 
    void apply_style(bc_font &);
    double calc_page_height();
-   WRAP check_wordwrap(stream_char, double &, double &, double, double, bool = false);
-   void end_line(NL, stream_char);
+   WRAP check_wordwrap(stream_char, double &, double &, double, double, bool = false, size_t = size_t(-1));
+   void end_line(NL, stream_char, size_t = size_t(-1));
    void new_code_segment();
    void new_segment(const stream_char, const stream_char, double, double, double);
-   WTC wrap_through_clips(double, double, double, double, double &);
+   WTC wrap_through_clips(double, double, double, double, double &, size_t = size_t(-1));
 
 public:
    layout(extDocument *pSelf, RSTREAM *pStream, objVectorViewport *pViewport, padding &pMargins) :
@@ -220,7 +365,70 @@ public:
    ERR do_layout(font_entry **, double &, double &, bool &);
    void gen_scene_graph(objVectorViewport *, std::vector<doc_segment> &);
    ERR gen_scene_init(objVectorViewport *);
+   void render_segments(OBJECTID, std::vector<doc_segment> &);
 };
+
+//********************************************************************************************************************
+static inline void update_layout_metrics(extDocument *Self, size_t SegmentCount, size_t ClipCount)
+{
+   if (!Self) return;
+
+   if (SegmentCount > Self->LayoutMetrics.segment_count_peak) {
+      Self->LayoutMetrics.segment_count_peak = (uint32_t)SegmentCount;
+   }
+
+   if (ClipCount > Self->LayoutMetrics.clip_count_peak) {
+      Self->LayoutMetrics.clip_count_peak = (uint32_t)ClipCount;
+   }
+}
+
+struct table_layout_values {
+   double stroke_width = 0;
+   double cell_h_spacing = 0;
+   double cell_v_spacing = 0;
+   double min_width = 0;
+   double min_height = 0;
+   double cell_padding_width = 0;
+};
+
+static inline table_layout_values resolve_table_layout(layout &Layout, bc_table &Table)
+{
+   table_layout_values values;
+   values.stroke_width = Table.stroke_width.px(Layout);
+   values.cell_h_spacing = Table.cell_h_spacing.px(Layout);
+   values.cell_v_spacing = Table.cell_v_spacing.px(Layout);
+   values.min_width = Table.min_width.px(Layout);
+   values.min_height = Table.min_height.px(Layout);
+   values.cell_padding_width = Table.cell_padding.left + Table.cell_padding.right;
+   return values;
+}
+
+static inline bool segment_merge_barrier(SCODE Code)
+{
+   switch (Code) {
+      case SCODE::BUTTON:
+      case SCODE::CHECKBOX:
+      case SCODE::COMBOBOX:
+      case SCODE::IMAGE:
+      case SCODE::INPUT:
+      case SCODE::TABLE_START:
+      case SCODE::TABLE_END:
+      case SCODE::TEXT:
+         return true;
+
+      default:
+         return false;
+   }
+}
+
+static inline bool range_has_segment_merge_barrier(RSTREAM *Stream, stream_char Start, stream_char Stop)
+{
+   for (auto i=Start; i < Stop; i.next_code()) {
+      if (segment_merge_barrier(Stream[0][i.index].code)) return true;
+   }
+
+   return false;
+}
 
 //********************************************************************************************************************
 // In the first pass, the size of each cell is calculated with respect to its content.  When SCODE::TABLE_END is
@@ -249,6 +457,9 @@ CELL layout::lay_cell(bc_table *Table)
       return CELL::NIL;
    }
 
+   auto values = resolve_table_layout(*this, *Table);
+   auto column_count = std::ssize(Table->columns);
+
    // Adding a segment ensures that the table graphics will be accounted for when drawing.
 
    new_segment(stream_char(idx), stream_char(idx + 1), m_cursor_y, 0, 0);
@@ -262,9 +473,9 @@ CELL layout::lay_cell(bc_table *Table)
       //if (cell.column IS 0);
       //else cell.AbsX += Table->cell_h_spacing.px(*this);
    }
-   else cell.x += Table->cell_h_spacing.px(*this);
+   else cell.x += values.cell_h_spacing;
 
-   if (cell.column IS 0) cell.x += Table->stroke_width.px(*this);
+   if (cell.column IS 0) cell.x += values.stroke_width;
 
    cell.width  = Table->columns[cell.column].width; // Minimum width for the cell's column
    cell.height = m_row->row_height;
@@ -308,6 +519,8 @@ CELL layout::lay_cell(bc_table *Table)
 
    if (!cell.stream->data.empty()) {
       m_edit_mode = (!cell.edit_def.empty()) ? true : false;
+
+      Self->LayoutMetrics.cell_layouts++;
 
       layout sl(Self, cell.stream, *cell.viewport, Table->cell_padding);
       sl.m_depth = m_depth + 1;
@@ -360,9 +573,9 @@ CELL layout::lay_cell(bc_table *Table)
 
    Table->row_width += Table->columns[cell.column].width;
 
-   if (!Table->collapsed) Table->row_width += Table->cell_h_spacing.px(*this);
-   else if ((cell.column + cell.col_span) < std::ssize(Table->columns)-1) {
-      Table->row_width += Table->cell_h_spacing.px(*this);
+   if (!Table->collapsed) Table->row_width += values.cell_h_spacing;
+   else if ((cell.column + cell.col_span) < column_count-1) {
+      Table->row_width += values.cell_h_spacing;
    }
 
    if ((cell.height > m_row->row_height) or (m_row->vertical_repass)) {
@@ -382,10 +595,10 @@ CELL layout::lay_cell(bc_table *Table)
 
    m_cursor_x += Table->columns[cell.column].width;
 
-   if (!Table->collapsed) m_cursor_x += Table->cell_h_spacing.px(*this);
-   else if ((cell.column + cell.col_span) < std::ssize(Table->columns)) m_cursor_x += Table->cell_h_spacing.px(*this);
+   if (!Table->collapsed) m_cursor_x += values.cell_h_spacing;
+   else if ((cell.column + cell.col_span) < column_count) m_cursor_x += values.cell_h_spacing;
 
-   if (cell.column IS 0) m_cursor_x += Table->stroke_width.px(*this);
+   if (cell.column IS 0) m_cursor_x += values.stroke_width;
 
    if (!cell.edit_def.empty()) {
       // The area of each edit cell is logged for assisting interaction between the mouse pointer and the cells.
@@ -455,11 +668,10 @@ void layout::size_widget(widget_mgr &Widget, bool ScaleToFont)
 WRAP layout::place_widget(widget_mgr &Widget)
 {
    auto wrap_result = WRAP::DO_NOTHING;
-
-   auto full_width = [&Widget, this]() {
-      if (Widget.internal_page) return Widget.final_width + Widget.final_pad.left + Widget.final_pad.right;
-      else return Widget.final_width + Widget.label_width + Widget.label_pad.px(*this) + Widget.final_pad.left + Widget.final_pad.right;
-   };
+   auto label_pad = Widget.internal_page ? 0.0 : Widget.label_pad.px(*this);
+   auto full_width = Widget.final_width + Widget.final_pad.left + Widget.final_pad.right;
+   auto full_height = Widget.full_height();
+   if (!Widget.internal_page) full_width += Widget.label_width + label_pad;
 
    if (Widget.floating_x()) {
       // Calculate horizontal position
@@ -469,10 +681,10 @@ WRAP layout::place_widget(widget_mgr &Widget)
       }
       else if ((Widget.align & ALIGN::CENTER) != ALIGN::NIL) {
          // We use the left margin and not the cursor for calculating the center because the widget is floating.
-         Widget.x = m_left_margin + ((m_align_edge - full_width()) * 0.5);
+         Widget.x = m_left_margin + ((m_align_edge - full_width) * 0.5);
       }
       else if ((Widget.align & ALIGN::RIGHT) != ALIGN::NIL) {
-         Widget.x = m_align_edge - full_width();
+         Widget.x = m_align_edge - full_width;
       }
       else Widget.x = m_cursor_x;
 
@@ -487,8 +699,9 @@ WRAP layout::place_widget(widget_mgr &Widget)
       // For a floating widget we need to declare a clip region based on the final widget dimensions.
       // TODO: Add support for masked clipping through SVG paths.
 
-      m_clips.emplace_back(Widget.x, m_cursor_y, Widget.x + full_width(), m_cursor_y + Widget.full_height(),
+      m_clips.emplace_back(Widget.x, m_cursor_y, Widget.x + full_width, m_cursor_y + full_height,
          idx, false, "Widget");
+      update_layout_metrics(Self, m_segments.size(), m_clips.size());
    }
    else { // Widget is inline and must be treated like a text character.
       if (!m_word_width) m_word_index.set(idx); // Save the index of the new word
@@ -498,14 +711,14 @@ WRAP layout::place_widget(widget_mgr &Widget)
       // adjusted in this call because if a wrap occurs then the widget won't be in the former segment.
 
       wrap_result = check_wordwrap(m_word_index,
-         m_cursor_x, m_cursor_y, m_word_width + full_width(), m_line.height);
+         m_cursor_x, m_cursor_y, m_word_width + full_width, m_line.height);
 
       // The inline widget will probably increase the height of the line, but due to the potential for delayed
       // word-wrapping (if we're part of an embedded word) we need to cache the value for now.
 
-      if (Widget.full_height() > m_line.word_height) m_line.word_height = Widget.full_height();
+      if (full_height > m_line.word_height) m_line.word_height = full_height;
 
-      m_word_width += full_width();
+      m_word_width += full_width;
       m_kernchar   = 0;
    }
 
@@ -577,7 +790,7 @@ void layout::apply_style(bc_font &Style) {
    else m_font->align = ALIGN::NIL;
 
    m_no_wrap = ((Style.options & FSO::NO_WRAP) != FSO::NIL);
-   m_space_width = vec::CharWidth(m_font->handle, ' ', 0, 0);
+   m_space_width = m_font->space_width;
 }
 
 //********************************************************************************************************************
@@ -586,7 +799,7 @@ void layout::lay_font()
 {
    auto &style = m_stream->lookup<bc_font>(idx);
 
-   if ((m_font = style.layout_font(*this))) {
+   if (m_font = style.layout_font(*this)) {
       apply_style(style);
 
       // Setting m_word_index ensures that the font code appears in the current segment.
@@ -602,7 +815,7 @@ void layout::lay_font_end()
    if ((m_word_width > 0) and (m_line.height < m_font->metrics.LineSpacing)) {
       // We need to record the line-height for the active word now, in case we revert to a smaller font.
       m_line.height  = m_font->metrics.LineSpacing;
-      m_line.descent = m_font->metrics.Descent;
+      m_line.descent = m_font->descent();
    }
 
    m_stack_font.pop();
@@ -613,12 +826,38 @@ void layout::lay_font_end()
 }
 
 //********************************************************************************************************************
+// Compute the pixel width of a word token by summing glyph advances with kerning.  Width is accumulated using the
+// same integer truncation semantics as the original per-glyph `m_word_width += glyph_advance(...)` path so cached
+// words preserve existing wrap points.  The InitKern parameter supports cross-text word continuation where the
+// previous character affects the first glyph's kerning.  LastChar receives the last unicode codepoint in the token for
+// subsequent kerning.
+// 
+// NOTE: Bear in mind that the first word in a TEXT string could be a direct continuation of a previous TEXT word.
+// This can occur if the font colour is changed mid-word for example.
+
+int layout::compute_word_width(const std::string &Str, const word_token &Token, int InitKern, int &LastChar)
+{
+   int width = 0;
+   auto handle = m_font->handle;
+   int kern = InitKern;
+   for (unsigned i = Token.start; i < Token.stop; ) {
+      int unicode;
+      i += getutf8(Str.c_str() + i, &unicode);
+      width += glyph_advance(handle, unicode, kern);
+      kern = unicode;
+   }
+   LastChar = kern;
+   return width;
+}
+
+//********************************************************************************************************************
 // NOTE: Bear in mind that the first word in a TEXT string could be a direct continuation of a previous TEXT word.
 // This can occur if the font colour is changed mid-word for example.
 
 WRAP layout::lay_text()
 {
-   auto wrap_result = WRAP::DO_NOTHING; // Needs to to change to WRAP::EXTEND_PAGE if a word is > width
+   pf::Log log(__FUNCTION__);
+   auto wrap_result = WRAP::DO_NOTHING; // Needs to change to WRAP::EXTEND_PAGE if a word is > width
 
    m_align_edge = wrap_edge(); // TODO: Not sure about this following the switch to embedded TEXT structures
 
@@ -626,17 +865,26 @@ WRAP layout::lay_text()
    auto &text = m_stream->lookup<bc_text>(idx);
    auto &str = text.text;
    text.vector_text.clear();
-   for (unsigned i=0; i < str.size(); ) {
-      if (str[i] IS '\n') { // The use of '\n' in a string forces a line break
+
+   // Ensure the token cache is up to date
+
+   if (text.tokens_dirty) text.tokenise();
+
+   if (text.width_cache_generation != Self->WidthCacheGeneration) {
+      text.invalidate_widths();
+      text.width_cache_generation = Self->WidthCacheGeneration;
+   }
+
+   for (auto &tok : text.tokens) {
+      if (tok.is_newline()) {
          check_line_height();
          wrap_result = check_wordwrap(m_word_index, m_cursor_x, m_cursor_y, m_word_width,
             (m_line.height < 1) ? 1 : m_line.height);
          if (wrap_result IS WRAP::EXTEND_PAGE) break;
 
-         end_line(NL::PARAGRAPH, stream_char(idx, i));
-         i++;
+         end_line(NL::PARAGRAPH, stream_char(idx, tok.start));
       }
-      else if (unsigned(str[i]) <= 0x20) { // Whitespace encountered
+      else if (tok.is_whitespace()) {
          check_line_height();
 
          if ((m_word_width) and (!m_no_wrap)) { // Existing word finished, check if it will wordwrap
@@ -652,24 +900,60 @@ WRAP layout::lay_text()
          // Current word state must be reset.
          m_kernchar   = 0;
          m_word_width = 0;
-         i++;
       }
-      else {
+      else { // WORD token
+         int last_char = 0;
+
          if (!m_word_width) {
-            m_word_index.set(idx, i);   // Save the index of the new word
+            m_word_index.set(idx, tok.start);   // Save the index of the new word
             check_line_height();
+
+            // Use cached width when available, otherwise compute and cache it
+
+            if ((tok.width >= 0) and (!text.widths_dirty)) {
+               m_word_width += tok.width;
+               last_char = tok.last_char;
+            }
+            else {
+               auto w = compute_word_width(str, tok, 0, last_char);
+               if (w > MAX_WORD_TOKEN_WIDTH) {
+                  log.warning("Word width %d exceeds the legal limit of %d pixels.", w, MAX_WORD_TOKEN_WIDTH);
+                  Self->Error = ERR::InvalidData;
+                  return WRAP::DO_NOTHING;
+               }
+
+               tok.width = w;
+               tok.last_char = last_char;
+               m_word_width += w;
+            }
+         }
+         else {
+            // Continuation of a previous word (cross-text or consecutive word tokens).
+            // Kerning depends on m_kernchar, so we compute character-by-character.
+
+            auto w = compute_word_width(str, tok, m_kernchar, last_char);
+            if (w > MAX_WORD_TOKEN_WIDTH) {
+               log.warning("Word width %d exceeds the legal limit of %d pixels.", w, MAX_WORD_TOKEN_WIDTH);
+               Self->Error = ERR::InvalidData;
+               return WRAP::DO_NOTHING;
+            }
+
+            m_word_width += w;
          }
 
-         int unicode;
-         double kerning;
-         i += getutf8(str.c_str()+i, &unicode);
-         m_word_width += vec::CharWidth(m_font->handle, unicode, m_kernchar, &kerning);
-         m_word_width += kerning;
-         m_kernchar    = unicode;
+         if (m_word_width > MAX_WORD_TOKEN_WIDTH) {
+            log.warning("Word width %d exceeds the legal limit of %d pixels.", m_word_width, MAX_WORD_TOKEN_WIDTH);
+            Self->Error = ERR::InvalidData;
+            return WRAP::DO_NOTHING;
+         }
+
+         m_kernchar = last_char;
 
          if (ascent > m_line.word_height) m_line.word_height = ascent;
       }
    }
+
+   text.widths_dirty = false;
 
    // Entire text string has been processed, perform one final wrapping check.
 
@@ -752,19 +1036,20 @@ void layout::lay_row_end(bc_table *Table)
    pf::Log log;
 
    auto Row = m_row;
+   auto values = resolve_table_layout(*this, *Table);
    Table->row_index++;
 
    // Increase the table height if the row exceeds it
 
-   auto bottom = Row->y + Row->row_height + Table->cell_v_spacing.px(*this);
+   auto bottom = Row->y + Row->row_height + values.cell_v_spacing;
    if (bottom > Table->y + Table->height) Table->height = bottom - Table->y;
 
    // Advance the cursor by the height of this row
 
-   m_cursor_y += Row->row_height + Table->cell_v_spacing.px(*this);
+   m_cursor_y += Row->row_height + values.cell_v_spacing;
    m_cursor_x = Table->x;
    DLAYOUT("Row ends, advancing down by %g+%g, new height: %g, y-cursor: %g",
-      Row->row_height, Table->cell_v_spacing.px(*this), Table->height, m_cursor_y);
+      Row->row_height, values.cell_v_spacing, Table->height, m_cursor_y);
 
    if (Table->row_width > Table->width) Table->width = Table->row_width;
 
@@ -794,7 +1079,8 @@ void layout::lay_paragraph()
 
          if (!para.value.empty()) {
             auto strwidth = vec::StringWidth(m_font->handle, para.value.c_str(), -1) + 10;
-            if (strwidth > list->item_indent.px(*this)) {
+            auto item_indent = list->item_indent.px(*this);
+            if (strwidth > item_indent) {
                list->item_indent = DUNIT(strwidth, DU::PIXEL);
                para.item_indent  = DUNIT(strwidth, DU::PIXEL);
                list->repass      = true;
@@ -828,9 +1114,11 @@ void layout::lay_paragraph()
 
    if (!para.indent.empty()) para.block_indent = para.indent;
 
-   para.x = m_left_margin + para.block_indent.px(*this);
+   auto block_indent = para.block_indent.px(*this);
+   auto item_indent = para.item_indent.px(*this);
+   para.x = m_left_margin + block_indent;
 
-   auto advance = para.block_indent.px(*this) + para.item_indent.px(*this);
+   auto advance = block_indent + item_indent;
 
    m_left_margin += advance;
    m_cursor_x    += advance;
@@ -838,7 +1126,7 @@ void layout::lay_paragraph()
 
    // Paragraph management variables
 
-   if (!m_stack_list.empty()) para.leading = m_stack_list.top()->v_spacing.px(*this);
+   if (!m_stack_list.empty()) para.leading = m_stack_list.top()->v_spacing;
 
    m_font = para.font.layout_font(*this);
 
@@ -851,7 +1139,25 @@ void layout::lay_paragraph()
 
    apply_style(para.font);
 
-   if (m_line_count > 0) m_cursor_y += para.leading.px(*this);
+   if (m_line_count > 0) {
+      double para_leading;
+      if (para.leading.type IS DU::LINE_HEIGHT) {
+         // Paragraph leading is block spacing, so resolve it against the document's default line height
+         // rather than the paragraph's own font metrics.  This keeps headings from inflating pre-spacing.
+         bc_font root_style;
+         root_style.face = Self->FontFace;
+         root_style.style = Self->FontStyle;
+         root_style.req_size = DUNIT(Self->FontSize, DU::PIXEL);
+
+         if (auto root_font = root_style.layout_font(*this)) {
+            para_leading = std::trunc(para.leading.value * root_font->metrics.LineSpacing);
+         }
+         else para_leading = para.leading.px(*this);
+      }
+      else para_leading = para.leading.px(*this);
+
+      m_cursor_y += para_leading;
+   }
 
    para.y = m_cursor_y;
    para.height = 0;
@@ -894,6 +1200,8 @@ TE layout::lay_table_end(bc_table &Table, double TopMargin, double BottomMargin,
    pf::Log log(__FUNCTION__);
 
    double min_height;
+   auto values = resolve_table_layout(*this, Table);
+   auto column_count = Table.columns.size();
 
    if (Table.cells_expanded IS false) {
       int unfixed;
@@ -907,19 +1215,19 @@ TE layout::lay_table_end(bc_table &Table, double TopMargin, double BottomMargin,
       Table.cells_expanded = true;
 
       if (!Table.columns.empty()) {
-         colwidth = (Table.stroke_width.px(*this) * 2) + Table.cell_h_spacing.px(*this);
+         colwidth = (values.stroke_width * 2) + values.cell_h_spacing;
          for (auto &col : Table.columns) {
-            colwidth += col.width + Table.cell_h_spacing.px(*this);
+            colwidth += col.width + values.cell_h_spacing;
          }
-         if (Table.collapsed) colwidth -= Table.cell_h_spacing.px(*this) * 2; // Collapsed tables have no spacing allocated on the sides
+         if (Table.collapsed) colwidth -= values.cell_h_spacing * 2; // Collapsed tables have no spacing allocated on the sides
 
          if (colwidth < Table.width) { // Cell layout is less than the pre-determined table width
             // Calculate the amount of additional space that is available for cells to expand into
 
-            double avail_width = Table.width - (Table.stroke_width.px(*this) * 2) -
-               (Table.cell_h_spacing.px(*this) * (Table.columns.size() - 1));
+            double avail_width = Table.width - (values.stroke_width * 2) -
+               (values.cell_h_spacing * (column_count - 1));
 
-            if (!Table.collapsed) avail_width -= (Table.cell_h_spacing.px(*this) * 2);
+            if (!Table.collapsed) avail_width -= (values.cell_h_spacing * 2);
 
             // Count the number of columns that do not have a fixed size
 
@@ -979,17 +1287,17 @@ TE layout::lay_table_end(bc_table &Table, double TopMargin, double BottomMargin,
       // If the table height is expressed as a percentage, it is calculated against the line width
       // so that it remains proportional.
 
-      min_height = (wrap_edge() - m_margins.left) * Table.min_width.value;
+      min_height = (wrap_edge() - m_margins.left) * Table.min_height.value;
       if (min_height < 0) min_height = 0;
    }
-   else min_height = Table.min_height.px(*this);
+   else min_height = values.min_height;
 
-   if (min_height > Table.height + Table.cell_v_spacing.px(*this) + Table.stroke_width.px(*this)) {
+   if (min_height > Table.height + values.cell_v_spacing + values.stroke_width) {
       // The last row in the table needs its height increased
       if (m_row) {
-         auto h = min_height - (Table.height + Table.cell_v_spacing.px(*this) + Table.stroke_width.px(*this));
+         auto h = min_height - (Table.height + values.cell_v_spacing + values.stroke_width);
          DLAYOUT("Extending table height to %g (row %g+%g) due to a minimum height of %g at coord %g",
-            min_height, m_row->row_height, h, Table.min_height.px(*this), Table.y);
+            min_height, m_row->row_height, h, values.min_height, Table.y);
          m_row->row_height += h;
          return TE::REPASS_ROW_HEIGHT;
       }
@@ -998,7 +1306,7 @@ TE layout::lay_table_end(bc_table &Table, double TopMargin, double BottomMargin,
 
    // Adjust for cellspacing at the bottom
 
-   Table.height += Table.cell_v_spacing.px(*this) + Table.stroke_width.px(*this);
+   Table.height += values.cell_v_spacing + values.stroke_width;
 
    // Restart if the width of the table will force an extension of the page.
 
@@ -1042,14 +1350,7 @@ TE layout::lay_table_end(bc_table &Table, double TopMargin, double BottomMargin,
 
    DLAYOUT("Checking table collisions (%gx%g, %gx%g).", Table.x, Table.y, Table.width, Table.height);
 
-   WRAP ww;
-   if (Table.total_clips > m_clips.size()) {
-      std::vector<doc_clip> saved_clips(m_clips.begin() + Table.total_clips, m_clips.end() + m_clips.size());
-      m_clips.resize(Table.total_clips);
-      ww = check_wordwrap(idx, Table.x, Table.y, Table.width, Table.height, Table.floating_x());
-      m_clips.insert(m_clips.end(), make_move_iterator(saved_clips.begin()), make_move_iterator(saved_clips.end()));
-   }
-   else ww = check_wordwrap(idx, Table.x, Table.y, Table.width, Table.height, Table.floating_x());
+   auto ww = check_wordwrap(idx, Table.x, Table.y, Table.width, Table.height, Table.floating_x(), Table.total_clips);
 
    if (ww IS WRAP::EXTEND_PAGE) {
       DLAYOUT("Table wrapped - expanding page width due to table size/position.");
@@ -1065,6 +1366,7 @@ TE layout::lay_table_end(bc_table &Table, double TopMargin, double BottomMargin,
    // other content.
 
    m_clips.emplace_back(Table.x, Table.y, Table.x + Table.width, Table.y + Table.height, idx, false, "Table");
+   update_layout_metrics(Self, m_segments.size(), m_clips.size());
 
    m_cursor_x = Table.x + Table.width;
    m_cursor_y = Table.y;
@@ -1082,9 +1384,10 @@ TE layout::lay_table_end(bc_table &Table, double TopMargin, double BottomMargin,
 void layout::new_segment(const stream_char Start, const stream_char Stop, double Y, double Width, double AlignWidth)
 {
    pf::Log log(__FUNCTION__);
+   Self->LayoutMetrics.new_segment_calls++;
 
    if (Width > AlignWidth) {
-      log.traceWarning("Content width exceeds align width: %g > %g", Width, AlignWidth);
+      log.trace("Content width of %g exceeds align width of %g", Width, AlignWidth);
    }
 
    // Process trailing whitespace at the end of the line.  This helps to prevent situations such as underlining
@@ -1105,23 +1408,14 @@ void layout::new_segment(const stream_char Start, const stream_char Stop, double
    // If allow_merge is true, this segment can be merged with prior segment(s) on the line to create one continuous
    // segment.  The basic rule is that any code that produces a graphics element is not safe to merge.
 
-   bool allow_merge = true;
-   for (auto i=Start; i < Stop; i.next_code()) {
-      switch (m_stream[0][i.index].code) {
-         case SCODE::BUTTON:
-         case SCODE::CHECKBOX:
-         case SCODE::COMBOBOX:
-         case SCODE::IMAGE:
-         case SCODE::INPUT:
-         case SCODE::TABLE_START:
-         case SCODE::TABLE_END:
-         case SCODE::TEXT:
-            allow_merge = false;
-            break;
-
-         default: break;
-      }
+   bool allow_merge;
+   if (Width > 0) {
+      allow_merge = false;
    }
+   else if ((Start.offset IS 0) and (Stop.offset IS 0) and (Start.index + 1 IS Stop.index)) {
+      allow_merge = !segment_merge_barrier(m_stream[0][Start.index].code);
+   }
+   else allow_merge = !range_has_segment_merge_barrier(m_stream, Start, Stop);
 
    auto line_height = m_line.height;
    auto descent     = m_line.descent;
@@ -1129,11 +1423,11 @@ void layout::new_segment(const stream_char Start, const stream_char Stop, double
       if (line_height <= 0) {
          // Use the most recent font to determine the line height
          line_height = m_font->metrics.LineSpacing;
-         descent     = m_font->metrics.Descent;
+         descent     = m_font->descent();
       }
 
       if (!descent) { // Sanity check: In case descent is missing for some reason
-         descent = m_font->metrics.Descent;
+         descent = m_font->descent();
       }
    }
 
@@ -1185,13 +1479,15 @@ void layout::new_segment(const stream_char Start, const stream_char Stop, double
          .stop        = Stop,
          .trim_stop   = trim_stop,
          .area        = { m_line.x, Y, Width, line_height },
-         .descent      = descent,
+         .descent     = descent,
          .align_width = AlignWidth,
          .stream      = m_stream,
          .edit        = m_edit_mode,
          .allow_merge = allow_merge
       });
    }
+
+   update_layout_metrics(Self, m_segments.size(), m_clips.size());
 }
 
 //********************************************************************************************************************
@@ -1249,11 +1545,24 @@ static void layout_doc(extDocument *Self)
 
    padding margins { Self->LeftMargin, Self->TopMargin, Self->RightMargin, Self->BottomMargin };
 
+   //Self->GlyphAdvanceCache.clear(); // Retain the glyph advance cache between passes since fonts survive the object's lifetime.
+   Self->LayoutMetrics.reset();
+
+   if ((Self->WidthCacheFontSize != Self->FontSize) or
+       (Self->WidthCacheFontFace != Self->FontFace) or
+       (Self->WidthCacheFontStyle != Self->FontStyle)) {
+      Self->invalidate_text_width_cache();
+      Self->WidthCacheFontFace = Self->FontFace;
+      Self->WidthCacheFontStyle = Self->FontStyle;
+      Self->WidthCacheFontSize = Self->FontSize;
+   }
+
    layout l(Self, &Self->Stream, Self->Page, margins);
    bool repeat = true;
    while (repeat) {
       repeat = false;
       l.m_break_loop--;
+      Self->LayoutMetrics.root_passes++;
 
       double page_width;
 
@@ -1296,6 +1605,15 @@ static void layout_doc(extDocument *Self)
    Self->UpdatingLayout = false;
 
    print_segments(Self);
+
+   DLAYOUT("Layout metrics: root_passes=%d do_layout_calls=%d page_extend_restarts=%d page_extend_requests=%d vertical_repasses=%d table_wrap_restarts=%d row_repasses=%d cell_layouts=%d check_wordwrap_calls=%d wrap_through_clips_calls=%d new_segment_calls=%d segment_peak=%d clip_peak=%d",
+      int(Self->LayoutMetrics.root_passes), int(Self->LayoutMetrics.do_layout_calls),
+      int(Self->LayoutMetrics.page_extend_restarts), int(Self->LayoutMetrics.page_extend_requests),
+      int(Self->LayoutMetrics.vertical_repasses), int(Self->LayoutMetrics.table_wrap_restarts),
+      int(Self->LayoutMetrics.row_repasses), int(Self->LayoutMetrics.cell_layouts),
+      int(Self->LayoutMetrics.check_wordwrap_calls), int(Self->LayoutMetrics.wrap_through_clips_calls),
+      int(Self->LayoutMetrics.new_segment_calls), int(Self->LayoutMetrics.segment_count_peak),
+      int(Self->LayoutMetrics.clip_count_peak));
 
    // If an error occurred during layout processing, unload the document and display an error dialog.  (NB: While it is
    // possible to display a document up to the point at which the error occurred, we want to maintain a strict approach
@@ -1350,6 +1668,7 @@ static void layout_doc(extDocument *Self)
 ERR layout::do_layout(font_entry **Font, double &Width, double &Height, bool &VerticalRepass)
 {
    pf::Log log(__FUNCTION__);
+   Self->LayoutMetrics.do_layout_calls++;
 
    if ((m_stream->data.empty()) or (!Font) or (!Font[0])) {
       return log.traceWarning(ERR::NoData);
@@ -1370,8 +1689,9 @@ ERR layout::do_layout(font_entry **Font, double &Width, double &Height, bool &Ve
       m_margins.left, m_margins.right, m_margins.top, m_margins.bottom);
    #endif
 
-   layout tablestate(Self, m_stream, m_viewport, m_margins), rowstate(Self, m_stream, m_viewport, m_margins), liststate(Self, m_stream, m_viewport, m_margins);
+   layout_checkpoint tablestate, rowstate, liststate;
    bc_table *table;
+   table_layout_values table_values;
    double last_height;
    int edit_segment;
    bool check_wrap;
@@ -1405,7 +1725,7 @@ extend_page:
    m_cursor_y       = m_margins.top;
    m_line_seg_start = m_segments.size();
    m_font           = *Font;
-   m_space_width    = vec::CharWidth(m_font->handle, ' ', 0, nullptr);
+   m_space_width    = m_font->space_width;
    m_line_count     = 0;
 
    m_word_index.reset();
@@ -1448,8 +1768,9 @@ extend_page:
          case SCODE::TABLE_END: {
             auto &table = m_stream->lookup<bc_table>(idx);
             auto wrap_result = check_wordwrap(m_word_index.index, m_cursor_x, m_cursor_y, m_word_width, (m_line.height < 1) ? 1 : m_line.height, table.floating_x());
-            if (wrap_result IS WRAP::EXTEND_PAGE) {
+           if (wrap_result IS WRAP::EXTEND_PAGE) {
                DLAYOUT("Expanding page width on wordwrap request.");
+               Self->LayoutMetrics.page_extend_restarts++;
                goto extend_page;
             }
             break;
@@ -1457,8 +1778,9 @@ extend_page:
 
          case SCODE::ADVANCE: {
             auto wrap_result = check_wordwrap(m_word_index.index, m_cursor_x, m_cursor_y, m_word_width, (m_line.height < 1) ? 1 : m_line.height);
-            if (wrap_result IS WRAP::EXTEND_PAGE) {
+           if (wrap_result IS WRAP::EXTEND_PAGE) {
                DLAYOUT("Expanding page width on wordwrap request.");
+               Self->LayoutMetrics.page_extend_restarts++;
                goto extend_page;
             }
             break;
@@ -1481,6 +1803,7 @@ extend_page:
             auto wrap_result = lay_text();
             if (wrap_result IS WRAP::EXTEND_PAGE) { // A word in the text string is too big for the available space.
                DLAYOUT("Expanding page width on wordwrap request.");
+               Self->LayoutMetrics.page_extend_restarts++;
                goto extend_page;
             }
             else if (wrap_result IS WRAP::WRAPPED) { // A wrap occurred during text processing.
@@ -1538,13 +1861,13 @@ extend_page:
             // This is the start of a list.  Each item in the list will be identified by SCODE::PARAGRAPH codes.  The
             // cursor position is advanced by the size of the item graphics element.
 
-            liststate = *this;
+            liststate = capture_checkpoint();
             m_stack_list.push(&m_stream->lookup<bc_list>(idx));
             m_stack_list.top()->repass = false;
             break;
 
          case SCODE::LIST_END:
-            if (lay_list_end()) *this = liststate;
+            if (lay_list_end()) restore_checkpoint(liststate);
             break;
 
          case SCODE::USE: {
@@ -1559,7 +1882,10 @@ extend_page:
          case SCODE::BUTTON: {
             auto &button = m_stream->lookup<bc_button>(idx);
             auto ww = lay_button(button);
-            if (ww IS WRAP::EXTEND_PAGE) goto extend_page;
+            if (ww IS WRAP::EXTEND_PAGE) {
+               Self->LayoutMetrics.page_extend_restarts++;
+               goto extend_page;
+            }
             break;
          }
 
@@ -1567,7 +1893,10 @@ extend_page:
             auto &checkbox = m_stream->lookup<bc_checkbox>(idx);
             size_widget(checkbox, false);
             auto ww = place_widget(checkbox);
-            if (ww IS WRAP::EXTEND_PAGE) goto extend_page;
+            if (ww IS WRAP::EXTEND_PAGE) {
+               Self->LayoutMetrics.page_extend_restarts++;
+               goto extend_page;
+            }
             break;
          }
 
@@ -1575,7 +1904,10 @@ extend_page:
             auto &combobox = m_stream->lookup<bc_combobox>(idx);
             size_widget(combobox, true);
             auto ww = place_widget(combobox);
-            if (ww IS WRAP::EXTEND_PAGE) goto extend_page;
+            if (ww IS WRAP::EXTEND_PAGE) {
+               Self->LayoutMetrics.page_extend_restarts++;
+               goto extend_page;
+            }
             break;
          }
 
@@ -1583,7 +1915,10 @@ extend_page:
             auto &image = m_stream->lookup<bc_image>(idx);
             size_widget(image, false);
             auto ww = place_widget(image);
-            if (ww IS WRAP::EXTEND_PAGE) goto extend_page;
+            if (ww IS WRAP::EXTEND_PAGE) {
+               Self->LayoutMetrics.page_extend_restarts++;
+               goto extend_page;
+            }
             break;
          }
 
@@ -1591,7 +1926,10 @@ extend_page:
             auto &input = m_stream->lookup<bc_input>(idx);
             size_widget(input, true);
             auto ww = place_widget(input);
-            if (ww IS WRAP::EXTEND_PAGE) goto extend_page;
+            if (ww IS WRAP::EXTEND_PAGE) {
+               Self->LayoutMetrics.page_extend_restarts++;
+               goto extend_page;
+            }
             break;
          }
 
@@ -1608,12 +1946,13 @@ extend_page:
             //    expand the cells to meet the requested width.
             // 5. Restart the page layout using the correct width and height settings for the cells.
 
-            tablestate = *this;
+            tablestate = capture_checkpoint();
 
             table = &m_stream->lookup<bc_table>(idx);
             table->reset_row_height = true; // All rows start with a height of min_height up until TABLE_END in the first pass
             table->compute_columns = 1;
             table->width = -1;
+            table_values = resolve_table_layout(*this, *table);
 
             for (unsigned j=0; j < table->columns.size(); j++) table->columns[j].min_width = 0;
 
@@ -1634,7 +1973,7 @@ extend_page:
                if (!table->fill.empty()) table->path->set(FID_Fill, table->fill);
 
                if (!table->stroke.empty()) {
-                  table->path->setFields(fl::Stroke(table->stroke), fl::StrokeWidth(table->stroke_width.px(*this)));
+                  table->path->setFields(fl::Stroke(table->stroke), fl::StrokeWidth(table_values.stroke_width));
                }
             }
 
@@ -1647,16 +1986,16 @@ wrap_table_start:
                if (table->min_width.type IS DU::SCALED) {
                   width = (Width - m_cursor_x - m_margins.right) * table->min_width.value;
                }
-               else width = table->min_width.px(*this);
+               else width = table_values.min_width;
 
                if (width < 0) width = 0;
 
                {
-                  double min = (table->stroke_width.px(*this) * 2) +
-                     (table->cell_h_spacing.px(*this) * (std::ssize(table->columns)-1)) +
-                     ((table->cell_padding.left + table->cell_padding.right) * table->columns.size());
+                  double min = (table_values.stroke_width * 2) +
+                     (table_values.cell_h_spacing * (std::ssize(table->columns)-1)) +
+                     (table_values.cell_padding_width * table->columns.size());
 
-                  if (table->collapsed) min -= table->cell_h_spacing.px(*this) * 2; // Thin tables do not have spacing on the left and right borders
+                  if (table->collapsed) min -= table_values.cell_h_spacing * 2; // Thin tables do not have spacing on the left and right borders
                   if (width < min) width = min;
                }
 
@@ -1680,11 +2019,11 @@ wrap_table_cell:
             table->y           = m_cursor_y;
             table->row_index   = 0;
             table->total_clips = m_clips.size();
-            table->height      = table->stroke_width.px(*this);
+            table->height      = table_values.stroke_width;
 
             DLAYOUT("(i%d) Laying out table of %dx%d, coords %gx%g,%gx%g, page width %g.",
                idx, int(table->columns.size()), table->rows, table->x, table->y,
-               table->width, table->min_height.px(*this), Width);
+               table->width, table_values.min_height, Width);
 
             table->computeColumns();
 
@@ -1694,6 +2033,7 @@ wrap_table_cell:
             auto ww = check_wordwrap(idx, table->x, table->y, table->width, table->height, table->floating_x());
             if (ww IS WRAP::EXTEND_PAGE) {
                DLAYOUT("Expanding page width due to table size.");
+               Self->LayoutMetrics.page_extend_restarts++;
                goto extend_page;
             }
             else if (ww IS WRAP::WRAPPED) {
@@ -1702,11 +2042,12 @@ wrap_table_cell:
 
                DLAYOUT("Restarting table calculation due to page wrap to position %gx%g.", m_cursor_x, m_cursor_y);
                table->compute_columns = 1;
+               Self->LayoutMetrics.table_wrap_restarts++;
                goto wrap_table_start;
             }
 
             m_cursor_x = table->x; // Configure cursor location to help with the layout of rows and cells.
-            m_cursor_y = table->y + table->stroke_width.px(*this) + table->cell_v_spacing.px(*this);
+            m_cursor_y = table->y + table_values.stroke_width + table_values.cell_v_spacing;
             new_code_segment();
             break;
          }
@@ -1715,18 +2056,27 @@ wrap_table_cell:
             auto action = lay_table_end(*table, m_margins.top, m_margins.bottom, Height, Width);
             if (action != TE::NIL) {
                auto req_width = m_page_width;
-               *this = tablestate;
+               restore_checkpoint(tablestate);
                m_page_width = req_width;
-               if (action IS TE::WRAP_TABLE) goto wrap_table_end;
-               else if (action IS TE::REPASS_ROW_HEIGHT) goto repass_row_height;
-               else if (action IS TE::EXTEND_PAGE) goto extend_page;
+               if (action IS TE::WRAP_TABLE) {
+                  Self->LayoutMetrics.table_wrap_restarts++;
+                  goto wrap_table_end;
+               }
+               else if (action IS TE::REPASS_ROW_HEIGHT) {
+                  Self->LayoutMetrics.row_repasses++;
+                  goto repass_row_height;
+               }
+               else if (action IS TE::EXTEND_PAGE) {
+                  Self->LayoutMetrics.page_extend_restarts++;
+                  goto extend_page;
+               }
             }
             break;
          }
 
          case SCODE::ROW:
             m_row = &m_stream->lookup<bc_row>(idx);
-            rowstate = *this;
+            rowstate = capture_checkpoint();
 
             if (table->reset_row_height) m_row->row_height = m_row->min_height;
 
@@ -1743,7 +2093,7 @@ wrap_table_cell:
 repass_row_height:
             m_row->vertical_repass = false;
             m_row->y = m_cursor_y;
-            table->row_width = (table->stroke_width.px(*this) * 2) + table->cell_h_spacing.px(*this);
+            table->row_width = (table_values.stroke_width * 2) + table_values.cell_h_spacing;
 
             new_code_segment();
             break;
@@ -1758,11 +2108,13 @@ repass_row_height:
                   goto exit;
 
                case CELL::WRAP_TABLE_CELL:
-                  *this = tablestate;
+                  restore_checkpoint(tablestate);
+                  Self->LayoutMetrics.table_wrap_restarts++;
                   goto wrap_table_cell;
 
                case CELL::REPASS_ROW_HEIGHT:
-                  *this = rowstate;
+                  restore_checkpoint(rowstate);
+                  Self->LayoutMetrics.row_repasses++;
                   goto repass_row_height;
 
                default:
@@ -1800,6 +2152,8 @@ exit:
    if ((!m_depth) and (VerticalRepass) and (last_height < page_height)) {
       DLAYOUT("============================================================");
       DLAYOUT("SECOND PASS: Root page height increased from %g to %g", last_height, page_height);
+      Self->LayoutMetrics.vertical_repasses++;
+      Self->LayoutMetrics.page_extend_restarts++;
       goto extend_page;
    }
 
@@ -1814,14 +2168,14 @@ exit:
 //********************************************************************************************************************
 // This function is called only when a paragraph or explicit line-break (\n) is encountered.
 
-void layout::end_line(NL NewLine, stream_char Next)
+void layout::end_line(NL NewLine, stream_char Next, size_t ClipLimit)
 {
    pf::Log log(__FUNCTION__);
 
    if ((!m_line.height) and (m_word_width)) {
       // If this is a one-word line, the line height will not have been defined yet
-      m_line.height = m_font->metrics.LineSpacing;
-      m_line.descent = m_font->metrics.Descent;
+      m_line.height  = m_font->metrics.LineSpacing;
+      m_line.descent = m_font->descent();
    }
 
    m_line.apply_word_height();
@@ -1832,7 +2186,9 @@ void layout::end_line(NL NewLine, stream_char Next)
       m_line.index.index, int(m_line.index.offset), Next.index, int(Next.offset));
 #endif
 
-   for (auto &clip : m_clips) {
+   auto clip_count = clip_limit_count(ClipLimit);
+   for (size_t i=0; i < clip_count; i++) {
+      auto &clip = m_clips[i];
       if (clip.transparent) continue;
       if ((m_cursor_y + m_line.height >= clip.top) and (m_cursor_y < clip.bottom)) {
          if (m_cursor_x + m_word_width < clip.left) {
@@ -1888,9 +2244,11 @@ void layout::end_line(NL NewLine, stream_char Next)
 // Wrapping can be checked even if there is no 'active word' because we need to be able to wrap empty lines (e.g.
 // solo <br/> tags).
 
-WRAP layout::check_wordwrap(stream_char Cursor, double &X, double &Y, double Width, double Height, bool Floating)
+WRAP layout::check_wordwrap(stream_char Cursor, double &X, double &Y, double Width, double Height, bool Floating,
+   size_t ClipLimit)
 {
    pf::Log log(__FUNCTION__);
+   Self->LayoutMetrics.check_wordwrap_calls++;
 
    if (m_break_loop <= 0) return WRAP::DO_NOTHING;
    if (Width < 1) Width = 1;
@@ -1911,13 +2269,14 @@ WRAP layout::check_wordwrap(stream_char Cursor, double &X, double &Y, double Wid
    for (breakloop = MAXLOOP; breakloop > 0; breakloop--) {
       m_align_edge = wrap_edge();
 
-      if (!m_clips.empty()) {
+      auto clip_count = clip_limit_count(ClipLimit);
+      if (clip_count > 0) {
          // If clips are registered then we need to check them for collisions.  Updates m_align_edge if necessary
 
          auto wrap_clip = WTC::DO_NOTHING;
          do {
             double adv_x = 0;
-            wrap_clip = wrap_through_clips(X, Y, Width, Height, adv_x);
+            wrap_clip = wrap_through_clips(X, Y, Width, Height, adv_x, ClipLimit);
 
             if (wrap_clip IS WTC::WRAP_OVER) {
                // Set the line segment up to the encountered boundary and continue checking the vector position against the
@@ -1948,6 +2307,7 @@ WRAP layout::check_wordwrap(stream_char Cursor, double &X, double &Y, double Wid
             DWRAP("Forcing an extension of the page width to %g", min_width);
          }
          else m_page_width += 1;
+         Self->LayoutMetrics.page_extend_requests++;
          return WRAP::EXTEND_PAGE;
       }
 
@@ -2005,9 +2365,13 @@ WRAP layout::check_wordwrap(stream_char Cursor, double &X, double &Y, double Wid
 // 2. A collision occurs and the word can be advanced to white space that is available past the obstacle.
 // 3. A collision occurs and there is no further room available on this line (not handled by this routine).
 
-WTC layout::wrap_through_clips(double X, double Y, double Width, double Height, double &AdvanceTo)
+WTC layout::wrap_through_clips(double X, double Y, double Width, double Height, double &AdvanceTo, size_t ClipLimit)
 {
-   for (auto &clip : m_clips) {
+   Self->LayoutMetrics.wrap_through_clips_calls++;
+
+   auto clip_count = clip_limit_count(ClipLimit);
+   for (size_t i=0; i < clip_count; i++) {
+      auto &clip = m_clips[i];
       if (clip.transparent) continue;
       if ((Y + Height < clip.top) or (Y >= clip.bottom)) continue; // Ignore clips above or below the line.
       if ((X >= clip.right) or (X + Width < clip.left)) continue; // Ignore clips to the left or right
@@ -2063,7 +2427,10 @@ font_entry * bc_font::layout_font(layout &Layout)
 {
    pf::Log log(__FUNCTION__);
 
-   if ((font_index < std::ssize(glFonts)) and (font_index >= 0)) return &glFonts[font_index];
+   {
+      std::lock_guard lk(glFontsMutex);
+      if ((font_index < std::ssize(glFonts)) and (font_index >= 0)) return &glFonts[font_index];
+   }
 
    // Sanity check the face and point values
 
@@ -2083,29 +2450,50 @@ font_entry * bc_font::layout_font(layout &Layout)
       face.assign(resolved_face);
    }
 
-   APTR new_handle = nullptr;
-   if (vec::GetFontHandle(face.c_str(), style.c_str(), 400, pixel_size, &new_handle) IS ERR::Okay) {
-      for (unsigned i=0; i < glFonts.size(); i++) {
-         if (new_handle IS glFonts[i].handle) {
-            font_index = i;
-            break;
-         }
+   auto cache_key = font_cache_key { face, style, pixel_size };
+   {
+      std::lock_guard lk(glFontsMutex);
+      if (auto it = glFontIndexCache.find(cache_key); it != glFontIndexCache.end()) {
+         font_index = it->second;
+         if ((font_index < std::ssize(glFonts)) and (font_index >= 0)) return &glFonts[font_index];
       }
    }
 
-   if ((font_index IS -1) and (new_handle)) { // Font not in cache
+   APTR new_handle = nullptr;
+   if (vec::GetFontHandle(face.c_str(), style.c_str(), 400, pixel_size, &new_handle) IS ERR::Okay) {
       std::lock_guard lk(glFontsMutex);
 
-      log.branch("Index: %d, %s, %s, %d", int(std::ssize(glFonts)), face.c_str(), style.c_str(), pixel_size);
+      if (auto it = glFontIndexCache.find(cache_key); it != glFontIndexCache.end()) {
+         font_index = it->second;
+      }
+      else {
+         log.branch("Index: %d, %s, %s, %d", int(std::ssize(glFonts)), face.c_str(), style.c_str(), pixel_size);
 
-      font_index = std::ssize(glFonts);
-      glFonts.emplace_back(new_handle, face, style, pixel_size);
+         font_index = std::ssize(glFonts);
+         glFonts.emplace_back(new_handle, face, style, pixel_size);
+         glFontIndexCache.try_emplace(cache_key, font_index);
+      }
+
+      if ((font_index < std::ssize(glFonts)) and (font_index >= 0)) return &glFonts[font_index];
    }
-
-   if (font_index >= 0) return &glFonts[font_index];
+   else {
+      std::lock_guard lk(glFontsMutex);
+      if (!glFonts.empty()) {
+         font_index = 0;
+         glFontIndexCache.try_emplace(cache_key, font_index);
+         return &glFonts[0];
+      }
+   }
 
    log.warning("Failed to create font %s:%d", face.c_str(), pixel_size);
 
-   if (!glFonts.empty()) return &glFonts[0]; // Always try to return a font rather than null
-   else return nullptr;
+   {
+      std::lock_guard lk(glFontsMutex);
+      if (!glFonts.empty()) {
+         font_index = 0;
+         glFontIndexCache.try_emplace(cache_key, font_index);
+         return &glFonts[0];
+      }
+      else return nullptr;
+   }
 }

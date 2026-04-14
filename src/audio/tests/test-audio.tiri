@@ -1,0 +1,231 @@
+-- $TIRI
+-- Flute tests for the Audio server and associated classes.
+-- These are audible tests that require human verification to confirm a full pass.
+-- NB: Latency differs between platforms.  Do not expect playback gaps to match between Windows and Linux.
+
+-----------------------------------------------------------------------------------------------------------------------
+-- This test must result in playback of a low-tone, then followed by a high tone.
+
+@Test(requires='audio')
+function SequentialPlayback()
+   local proc = processing.new()
+
+   local snd = obj.new('sound', { path=glFolder .. 'low-tone.wav', volume=0.25 })
+   assert(snd, 'Failed to process low-tone wav file.')
+
+   local time, time_taken
+   snd.onStop = function(SoundID)
+      time_taken = (mSys.preciseTime() - time) / 1000000
+      proc.signal()
+   end
+
+   local duration = snd.duration
+   processing.collect()
+
+   assert(snd.acActivate() is ERR_Okay, 'Failed to playback low-tone sound sample.')
+   time = mSys.preciseTime()
+
+   proc.sleep()
+
+   assert(time_taken >= duration, 'End-of-sample occurred earlier than duration of ' .. duration .. ': ' .. time_taken)
+   assert(time_taken <  duration+glLag+0.02, 'End-of-sample exceeded duration of ' .. duration .. ': ' .. time_taken)
+
+   -- Second sample
+
+   local snd = obj.new('sound', { path=glFolder .. 'high-tone.wav', volume=0.25 })
+   assert(snd, 'Failed to process high-tone wav file.')
+
+   snd.onStop = function(SoundID)
+      time_taken = (mSys.preciseTime() - time) / 1000000
+      proc.signal()
+   end
+
+   duration = snd.duration
+   assert(snd.acActivate() is ERR_Okay, 'Failed to playback high-tone sound sample.')
+   time = mSys.preciseTime()
+
+   proc.sleep()
+
+   assert(time_taken >= duration, 'End-of-sample occurred earlier than duration of ' .. duration .. ': ' .. time_taken)
+   assert(time_taken <  duration+glLag+0.02, 'End-of-sample exceeded duration of ' .. duration .. ': ' .. time_taken)
+
+   proc.sleep(0.25)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test left and right speaker panning
+
+@Test(requires='audio')
+function Pan()
+   local proc = processing.new()
+
+   local snd = obj.new('sound', { path=glFolder .. 'low-tone.wav', pan=-1.0, volume=0.25 })
+   assert(snd, 'Failed to process low-tone wav file.')
+
+   snd.onStop = function(SoundID)
+      proc.signal()
+   end
+
+   print('Play left speaker.')
+
+   assert(snd.acActivate() is ERR_Okay, 'Failed to playback low-tone sound sample.')
+
+   proc.sleep()
+
+   -- Right speaker
+
+   print('Play right speaker.')
+   snd.pan = 1.0
+   assert(snd.acActivate() is ERR_Okay, 'Failed to playback low-tone sound sample.')
+
+   proc.sleep()
+
+   proc.sleep(0.25)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test volume adjustment and OnStop trigger rates.
+
+@Test(requires='audio')
+function Volume()
+   local proc = processing.new()
+
+   local snd = obj.new('sound', { path=glFolder .. 'low-tone.wav' })
+   assert(snd, 'Failed to process low-tone wav file.')
+
+   print('Sample duration is ' .. string.format('%.2fs', snd.duration))
+
+   local active_time = 0
+   local elapsed = 0
+   snd.onStop = function(SoundID)
+      elapsed = (mSys.PreciseTime() - active_time) / 1000000
+      proc.signal()
+   end
+
+   for i=1,4 do
+      snd.volume = 1.0 * (i / 4)
+      active_time = mSys.PreciseTime()
+      snd.acActivate()
+      proc.sleep()
+      assert(elapsed >= snd.duration-0.02, 'OnStop triggered ' .. string.format('%.2fs', snd.duration - elapsed) .. ' earlier than the sample\'s duration.')
+      print('Playback latency measured as ' .. string.format('%.2fs', elapsed - snd.duration))
+   end
+
+   proc.sleep(0.25)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Increase the pitch repeatedly
+
+@Test(requires='audio')
+function Tones()
+   local proc = processing.new()
+
+   local snd = obj.new('sound', { path=glFolder .. 'low-tone.wav', volume=0.25 })
+   assert(snd, 'Failed to process low-tone wav file.')
+
+   local active_time = 0
+   local elapsed = 0
+   snd.onStop = function(SoundID)
+      elapsed = (mSys.PreciseTime() - active_time) / 1000000
+      proc.signal()
+   end
+
+   for i=1,8 do
+      snd.note = i
+      active_time = mSys.PreciseTime()
+      snd.acActivate()
+      proc.sleep()
+   end
+
+   proc.sleep(0.25)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test(requires='audio')
+function Beep()
+   glAudio.mtBeep(3000, 100, 5)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test WAVE file saving by loading a file and saving it to a temp location, then comparing the binary content of
+-- both files.
+
+@Test(requires='audio')
+function WaveSave()
+   local snd = obj.new('sound', { path=glFolder .. 'low-tone.wav' })
+   local output_file = obj.new('file', { path='temp:low-tone.wav', flags='!NEW|WRITE' })
+
+   -- Save the sound as WAVE format to the temporary file
+   local result = snd.acSaveToObject(output_file)
+   assert(result is ERR_Okay, 'Failed to save sound to temporary file: ' .. mSys.GetErrorMsg(result))
+
+   -- Close the output file to ensure data is flushed
+   output_file = nil
+   processing.collect()
+
+   -- Now read both files as binary and compare their content
+   local original_file = obj.new('file', { path=glFolder .. 'low-tone.wav', flags='READ' })
+   assert(original_file, 'Failed to open original low-tone.wav for reading.')
+
+   local saved_file = obj.new('file', { path='temp:low-tone.wav', flags='READ' })
+   assert(saved_file, 'Failed to open saved low-tone.wav for reading.')
+
+   -- Get file sizes
+   local original_size = original_file.size
+   local saved_size = saved_file.size
+
+   assert(original_size is saved_size, 'File sizes do not match: original=' .. original_size .. ', saved=' .. saved_size)
+
+   -- Compare file content in chunks
+   local chunk_size = 4096
+   local bytes_compared = 0
+
+   while bytes_compared < original_size do
+      local remaining = original_size - bytes_compared
+      local read_size = math.min(chunk_size, remaining)
+
+      local original_data = string.alloc(read_size)
+      local saved_data = string.alloc(read_size)
+      local err, size_a = original_file.acRead(original_data, read_size)
+      local err, size_b = saved_file.acRead(saved_data, read_size)
+
+      assert(original_data, 'Failed to read from original file at offset ' .. bytes_compared)
+      assert(saved_data, 'Failed to read from saved file at offset ' .. bytes_compared)
+      assert(size_a is size_b, 'Read size mismatch at offset ' .. bytes_compared)
+
+      -- Compare byte by byte
+      for i = 1, read_size do
+         local orig_byte = string.byte(original_data, i)
+         local saved_byte = string.byte(saved_data, i)
+         if orig_byte != saved_byte then
+            error('Byte mismatch at offset ' .. (bytes_compared + i - 1) .. ': original=' .. orig_byte .. ', saved=' .. saved_byte)
+         end
+      end
+
+      bytes_compared = bytes_compared + read_size
+   end
+
+   original_file = nil
+   saved_file = nil
+   processing.collect()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+   return {
+      init = function(Folder)
+         glFolder = Folder
+         glAudio = obj.new('audio', { name='SystemAudio' })
+         if not glAudio then error('Failed to create audio object.') end
+         if glAudio.acActivate() != ERR_Okay then
+            error('Failed to initialise audio server.')
+         end
+         glLag = glAudio.mixerLag
+         print('Audio mixer lag time measured as ' .. string.format('%.2fs', glLag))
+      end,
+      cleanup = function()
+         mSys.DeleteFile('temp:low-tone.wav')
+      end
+   }

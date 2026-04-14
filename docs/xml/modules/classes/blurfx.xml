@@ -11,7 +11,7 @@
     <id>f45d03b8</id>
     <idstring>BLURFX</idstring>
     <category>Graphics</category>
-    <copyright>Paul Manias © 2010-2025</copyright>
+    <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>The BlurFX class performs a Gaussian blur, or approximation thereof, on the input source.  The Gaussian blur kernel is an approximation of the normalized convolution <code>G(x,y) = H(x)I(y)</code> where <code>H(x) = exp(-x2/ (2s2)) / sqrt(2* pi*s2)</code> and <code>I(y) = exp(-y2/ (2t2)) / sqrt(2* pi*t2)</code> with 's' being the standard deviation in the x direction and 't' being the standard deviation in the y direction, as specified by <fl>SX</fl> and <fl>SY</fl>.</p>
 <p>At least one of <fl>SX</fl> or <fl>SY</fl> should be greater than 0, otherwise no rendering is performed.</p></description>

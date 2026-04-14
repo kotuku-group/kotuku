@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="Bitmap" mod="Display" c="Manages bitmap graphics and provides drawing functionality." cat="Graphics" id="f42617e2" v="2">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="Bitmap" mod="Display" c="Manages bitmap graphics and provides drawing functionality." cat="Graphics" id="f42617e2" v="2">
   <ai:a n="Clear" c="Clears a bitmap's image to BkgdIndex." p="ERR acClear(*Object)"/>
   <ai:a n="CopyData" c="Copies bitmap image data to other bitmaps with colour remapping enabled." p="ERR acCopyData(*Object, OBJECTID Dest)">
     <ai:i n="Dest" t="OBJECTID" c="The unique ID of the destination object."/>

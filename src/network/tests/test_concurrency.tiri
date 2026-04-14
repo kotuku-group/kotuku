@@ -1,0 +1,316 @@
+--[[
+Concurrent Connections Test
+
+This test verifies multiple client connections to a single NetSocket server.
+Tests include:
+- NSF::MULTI_CONNECT flag functionality
+- Multiple simultaneous client connections
+- Client limit enforcement via ClientLimit field
+- Per-client message isolation and delivery
+- Connection management and cleanup
+- Resource allocation under load
+- Client identification and tracking
+
+The test creates multiple clients that connect simultaneously and exchange
+unique messages to verify proper isolation and delivery.
+--]]
+
+   include 'network'
+
+   glPort = 14603
+   glActiveClients = 0
+   glMaxSockets = 5
+   glMessagesPerClient = 3
+   glClientResponses = array<string>
+   glServerReceived = array<string>
+
+@AfterAll function cleanup()
+   glActiveClients = 0
+   glClientResponses = nil
+   glServerReceived = nil
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function MultipleConnections()
+   proc = processing.new({ timeout = 3.0 })
+
+   glPort++
+   glClientsCreated = 0
+
+   server = obj.new('netsocket', {
+      name = 'ConcurrentServer',
+      feedback = function(Socket, Client, State)
+         if State is NTC_CONNECTED then
+            glActiveClients++
+            print('[Server] Client connected. Active clients: ' .. glActiveClients)
+
+            -- Send unique welcome message to each client
+            welcome = 'WELCOME:Client-' .. glActiveClients .. ':Connected'
+            err, len = Client.acWrite(welcome)
+            assert(err is ERR_Okay, '[Server] Failed to send welcome to client: ' .. mSys.GetErrorMsg(err))
+
+         elseif State is NTC_DISCONNECTED then
+            glActiveClients = glActiveClients - 1
+            print('[Server] Client disconnected. Active clients: ' .. glActiveClients)
+
+            if (glClientsCreated is glMaxSockets) and (glActiveClients is 0) then
+               print('[Server] All clients disconnected, test complete')
+               proc.signal()
+            end
+         end
+      end,
+      incoming = function(Socket, Client)
+         buffer = string.alloc(1024)
+         err, read_len = Client.acRead(buffer)
+         if err is ERR_Disconnected then return end
+         assert(err is ERR_Okay, '[Server] Failed to read from client: ' .. mSys.GetErrorMsg(err))
+
+         msg = buffer:sub(0, read_len)
+         print('[Server] Received: ' .. msg)
+
+         -- Track messages per client
+         glServerReceived:push(msg)
+
+         -- Echo back with server prefix
+         response = 'SERVER_ECHO:' .. msg
+         err, len = Client.acWrite(response)
+         assert(err is ERR_Okay, '[Server] Failed to echo to client: ' .. mSys.GetErrorMsg(err))
+      end,
+      port = glPort,
+      flags = 'SERVER|MULTI_CONNECT',
+      socketLimit = glMaxSockets
+   })
+
+   assert(server, 'Failed to create server socket')
+
+   -- Create multiple clients
+   clients = {}
+   client_data = { }
+   for i = 0, glMaxSockets-1 do
+      clients[i] = obj.new('netsocket', {
+         name = 'ConcurrentClient' .. i,
+         feedback = function(Socket, Client, State)
+            if (State is NTC_CONNECTED) then
+               print('[Client ' .. (client_data[Socket.id].id ?? i) .. '] Connected to server')
+            elseif (State is NTC_DISCONNECTED) then
+               print('[Client ' .. (client_data[Socket.id].id ?? i) .. '] Disconnected from server')
+            end
+         end,
+         incoming = function(Socket, Script)
+            data = client_data[Socket.id]
+            buffer = string.alloc(1024)
+            err, read_len = Socket.acRead(buffer)
+            assert(err is ERR_Okay, '[Client ' .. data.id .. '] Failed to read: ' .. mSys.GetErrorMsg(err))
+
+            msg = buffer:sub(0, read_len)
+            data.messagesReceived++
+
+            -- Store response for verification
+            glClientResponses:push(msg)
+
+            if msg:startsWith('WELCOME:') then
+               -- Send first test message
+               test_msg = 'CLIENT_' .. data.id .. '_MSG_1'
+               err, len = Socket.acWrite(test_msg)
+               assert(err is ERR_Okay, '[Client ' .. data.id .. '] Failed to send: ' .. mSys.GetErrorMsg(err))
+               data.messagesSent++
+
+            elseif msg:startsWith('SERVER_ECHO:') then
+               -- Send next message or disconnect
+               if data.messagesSent < glMessagesPerClient then
+                  data.messagesSent++
+                  test_msg = 'CLIENT_' .. data.id .. '_MSG_' .. data.messagesSent
+                  err, len = Socket.acWrite(test_msg)
+                  assert(err is ERR_Okay, '[Client ' .. data.id .. '] Failed to send: ' .. mSys.GetErrorMsg(err))
+               else
+                  raise ERR_Terminate -- Disconnect
+               end
+            end
+
+            client_data[Socket.id] = data
+         end
+      })
+
+      client_data[clients[i].id] = { id = i, messagesSent = 0, messagesReceived = 0 }
+      assert(clients[i], 'Failed to create client ' .. i)
+   end
+
+   -- Connect all clients as fast as possible
+
+   for i = 0, glMaxSockets-1 do
+      err = clients[i].mtConnect('127.0.0.1', glPort)
+      assert(err is ERR_Okay, '[Client ' .. i .. '] Failed to connect: ' .. mSys.GetErrorMsg(err))
+      glClientsCreated++
+   end
+
+   -- Wait for test completion
+   err = proc.sleep()
+   assert(err is ERR_Okay, 'Concurrent connections test failed: ' .. mSys.GetErrorMsg(err))
+
+   expected_server_messages = glMaxSockets * glMessagesPerClient
+   assert(#glServerReceived is expected_server_messages,
+      'Server message count mismatch. Expected: ' .. expected_server_messages .. ', Got: ' .. #glServerReceived)
+
+   expected_client_responses = glMaxSockets * (glMessagesPerClient + 1) -- +1 for welcome
+   assert(#glClientResponses >= expected_client_responses,
+      'Client response count too low. Expected: >= ' .. expected_client_responses .. ', Got: ' .. #glClientResponses)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ClientLimitEnforcement()
+   proc = processing.new({ timeout = 3.0 })
+   limit = 2
+   connectAttempts = 4
+   successfulConnections = 0
+   rejectedConnections = 0
+   glPort++
+
+   server = obj.new('netsocket', {
+      name = 'LimitTestServer',
+      feedback = function(Socket, Client, State)
+         if (State is NTC_CONNECTED) then
+            successfulConnections++
+            print('[Server] Client connected. Total: ' .. successfulConnections)
+         end
+      end,
+      port = glPort,
+      flags = 'SERVER|MULTI_CONNECT',
+      socketLimit = limit
+   })
+
+   -- Create more clients than the limit allows
+   clients = {}
+   for i = 0, connectAttempts-1 do
+      clients[i] = obj.new('netsocket', {
+         name = 'LimitTestClient' .. i,
+         feedback = function(Socket, Client, State)
+            if State is NTC_CONNECTED then
+               print('[Client ' .. i .. '] Connection successful')
+            elseif State is NTC_DISCONNECTED then
+               print('[Client ' .. i .. '] Connection failed or disconnected')
+            end
+         end
+      })
+   end
+
+   -- Attempt connections rapidly
+   for i = 0, connectAttempts-1 do
+      err = clients[i].mtConnect('127.0.0.1', glPort)
+      if err != ERR_Okay then
+         rejectedConnections++
+         print('[Client ' .. i .. '] Connection rejected: ' .. mSys.GetErrorMsg(err))
+      end
+      processing.sleep(0.05, false) -- Small delay
+   end
+
+   processing.sleep(0.5)
+
+   assert(successfulConnections <= limit,
+      'Too many connections accepted. Limit: ' .. limit .. ', Accepted: ' .. successfulConnections)
+
+   assert(successfulConnections > 0, 'No connections were successful - test setup issue')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ConnectionIsolation()
+   proc = processing.new({ timeout = 3.0 })
+   clientCount = 3
+   clientMessages = array<array<string>>
+   messagesPerClient = 2
+   glPort++
+
+   -- Initialize expected messages
+   for i = 0, clientCount-1 do
+      clientMessages:push(array<string>)
+      for j = 0, messagesPerClient-1 do
+         clientMessages[i]:push(f'ISOLATED_CLIENT_{i}_MESSAGE_{j}')
+      end
+   end
+
+   server = obj.new('netsocket', {
+      name = 'IsolationTestServer',
+      feedback = function(Socket, Client, State)
+         if (State is NTC_CONNECTED) then
+            print('[Server] Client connected, sending start message')
+            -- Send unique start signal to each client
+            start_msg = 'START:' .. mSys.PreciseTime()
+            Client.acWrite(start_msg)
+         end
+      end,
+      incoming = function(Socket, Client)
+         buffer = string.alloc(1024)
+         err, read_len = Client.acRead(buffer)
+         msg = buffer:sub(0, read_len)
+
+         print('[Server] Received isolated message: ' .. msg)
+
+         -- Verify message belongs to expected client
+         client_id = regex.new('ISOLATED_CLIENT_(\\d+)_').extract(msg)
+         assert(client_id, 'Invalid message format: ' .. msg)
+
+         -- Echo back to originating client only
+         echo = 'ECHO_TO_CLIENT_' .. client_id .. ':' .. msg
+         Client.acWrite(echo)
+      end,
+      port = glPort,
+      flags = 'SERVER|MULTI_CONNECT'
+   })
+
+   clients = {}
+   completedClients = 0
+
+   for i = 0, clientCount-1 do
+      clients[i] = { }
+      clients[i].socket = obj.new('netsocket', {
+         name = 'IsolationClient' .. i,
+         incoming = function(Socket, Script)
+            buffer = string.alloc(1024)
+            err, read_len = Socket.acRead(buffer)
+            msg = buffer:sub(0, read_len)
+            clientId = i
+
+            print(f'[Client {clientId}] Received: {msg}')
+
+            if (msg:startsWith('START:')) then
+               -- Send first message
+               test_msg = clientMessages[clientId][clients[i].messageIndex]
+               print(f'[Client {clientId}] Sending: {test_msg}')
+               Socket.acWrite(test_msg)
+
+            elseif (msg:find('ECHO_TO_CLIENT_' .. clientId)) then
+               -- Verify echo is for this client
+               assert(msg:find('CLIENT_' .. clientId), f'Client {clientId} received message for wrong client: {msg}')
+
+               clients[i].messageIndex++
+               if (clients[i].messageIndex < messagesPerClient) then
+                  test_msg = clientMessages[clientId][clients[i].messageIndex]
+                  print(f'[Client {clientId}] Sending: {test_msg}')
+                  Socket.acWrite(test_msg)
+               else
+                  print(f'[Client {clientId}] All messages completed')
+                  completedClients++
+                  if (completedClients is clientCount) then
+                     proc.signal()
+                  end
+               end
+            end
+         end
+      })
+
+      clients[i].messageIndex = 0
+   end
+
+   -- Connect all clients
+   for i = 0, clientCount-1 do
+      clients[i].socket.mtConnect('127.0.0.1', glPort)
+   end
+
+   err = proc.sleep()
+   assert(err is ERR_Okay, 'Connection isolation test failed: ' .. mSys.GetErrorMsg(err))
+
+   assert(completedClients is clientCount,
+      f'Not all clients completed. Expected: {clientCount}, Completed: {completedClients}')
+end

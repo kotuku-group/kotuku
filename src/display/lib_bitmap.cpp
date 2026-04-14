@@ -233,7 +233,7 @@ uint8_t validate_clip(CSTRING Header, CSTRING Name, extBitmap *Bitmap)
 {
    pf::Log log(Header);
 
-#ifdef _DEBUG // Force break if clipping is wrong (use gdb)
+#ifndef NDEBUG // Force break if clipping is wrong (use gdb)
    if (((Bitmap->Clip.Right) > Bitmap->Width) or
        ((Bitmap->Clip.Bottom) > Bitmap->Height) or
        ((Bitmap->Clip.Left) < 0) or

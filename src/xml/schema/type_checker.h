@@ -32,8 +32,8 @@ namespace xml::schema
 
       [[nodiscard]] bool validate_value(const XPathVal &Value, const SchemaTypeDescriptor &Descriptor) const;
       [[nodiscard]] bool validate_attribute(const XMLAttrib &Attribute, const SchemaTypeDescriptor &Descriptor) const;
-      [[nodiscard]] bool validate_node(const XMLTag &Tag, const SchemaTypeDescriptor &Descriptor) const;
-      [[nodiscard]] bool validate_element(const XMLTag &Tag, const ElementDescriptor &Descriptor) const;
+      [[nodiscard]] bool validate_node(const XTag &Tag, const SchemaTypeDescriptor &Descriptor) const;
+      [[nodiscard]] bool validate_element(const XTag &Tag, const ElementDescriptor &Descriptor) const;
       [[nodiscard]] SchemaTypeRegistry & registry() const;
    };
 }

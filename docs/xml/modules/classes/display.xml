@@ -11,7 +11,7 @@
     <id>12cd479b</id>
     <idstring>DISPLAY</idstring>
     <category>Graphics</category>
-    <copyright>Paul Manias 2003-2025</copyright>
+    <copyright>Paul Manias © 2003-2026</copyright>
     <description>
 <p>A Display object represents a region of displayable video memory and metadata that defines the display mode. The Display is a primitive, hardware oriented interface.  It is recommended that unless otherwise required, the <class name="Surface">Surface</class> class is used to create displayable graphics regions.</p></description>
     <source>
@@ -185,7 +185,7 @@
       <comment>Presents a display object to the user.</comment>
       <prototype>ERR acShow(*Object)</prototype>
       <description>
-<p>This method presents a display object to the user.  On a hosted platform, this will result in a window appearing on screen.  By default the window will be hosted within a window border which may contain regular window gadgets such as a titlebar and buttons for close, maximise and minimise operations.  The position of the window is determined by the <fl>X</fl> and <fl>Y</fl> fields.  In Parasol's native environment, the user's screen display will be altered to match the required resolution and the graphics of the display's <fl>Bitmap</fl> object will take up the entirety of the screen.</p>
+<p>This method presents a display object to the user.  On a hosted platform, this will result in a window appearing on screen.  By default the window will be hosted within a window border which may contain regular window gadgets such as a titlebar and buttons for close, maximise and minimise operations.  The position of the window is determined by the <fl>X</fl> and <fl>Y</fl> fields.  In Kōtuku's native environment, the user's screen display will be altered to match the required resolution and the graphics of the display's <fl>Bitmap</fl> object will take up the entirety of the screen.</p>
 <p>If the <code>BORDERLESS</code> flag has been set in the <fl>Flags</fl> field, the window will appear without the surrounding border and gadgets normally associated with new windows.</p>
 <p>In Microsoft Windows, the <fl>LeftMargin</fl>, <fl>RightMargin</fl>, <fl>TopMargin</fl> and <fl>BottomMargin</fl> fields will be updated to reflect the position of the client area within the hosted window.  In X11 these field values are all set to zero.</p>
 <p>If the window is minimised at the time this action is called, the window will be restored to its original position if the code for the host platform supports this capability.</p>

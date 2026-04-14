@@ -1,0 +1,197 @@
+----------------------------------------------------------------------------------------------------------------------
+-- MEMORY & ALLOCATION
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Measure overhead of creating many small tables
+
+@Test function MemoryTableAllocation()
+   for i in {0..100} do
+      -- Create empty tables
+      local tables = {}
+      for j = 0, 99 do
+         tables[j] = {}
+      end
+
+      -- Create tables with initial values
+      for j = 0, 99 do
+         tables[j] = { a = 1, b = 2, c = 3 }
+      end
+
+      -- Create nested table structures
+      for j = 0, 49 do
+         tables[j] = {
+            inner = {
+               value = j,
+               data = { x = 1, y = 2 }
+            }
+         }
+      end
+
+      -- Create tables with varying sizes
+      for j = 0, 19 do
+         local t = {}
+         for k = 0, j do
+            t[k] = k
+         end
+         tables[j] = t
+      end
+
+      -- Create and immediately discard tables
+      for j = 0, 99 do
+         local temp = { value = j, name = "temp" }
+         local _ = temp.value
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Measure overhead of creating many strings
+
+@Test function MemoryStringAllocation()
+   for i in {0..500} do
+      -- Create short strings
+      local strings = {}
+      for j = 0, 99 do
+         strings[j] = "str"
+      end
+
+      -- Create strings via concatenation
+      for j = 0, 49 do
+         strings[j] = "prefix_" .. tostring(j) .. "_suffix"
+      end
+
+      -- Create strings via string.format
+      for j = 0, 49 do
+         strings[j] = string.format("item_%03d", j)
+      end
+
+      -- Create strings via interpolation
+      for j = 0, 49 do
+         strings[j] = f"value_{j}_data"
+      end
+
+      -- Create strings of varying lengths
+      for j = 0, 19 do
+         strings[j] = string.rep("x", j + 1)
+      end
+
+      -- Create and immediately discard strings
+      for j = 0, 99 do
+         local temp = "temporary_" .. tostring(j)
+         local _ = #temp
+      end
+
+      -- Substring operations creating new strings
+      local source = "The quick brown fox jumps over the lazy dog"
+      for j = 0, 19 do
+         local sub = string.substr(source, j + 1, j + 10)
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Allocate large numbers of arrays
+
+@Test function MemoryTypedArrayAllocation()
+   for i in {0..10} do
+      -- Create typed integer arrays
+      local int_arrays = array<array>
+      for j = 0, 49 do
+         int_arrays:push(array<int, 100>)
+      end
+
+      -- Create typed double arrays
+      local dbl_arrays = array<array>
+      for j = 0, 49 do
+         dbl_arrays:push(array<double, 100>)
+      end
+
+      -- Create typed string arrays
+      local str_arrays = {}
+      for j = 0, 49 do
+         str_arrays[j] = array<string, 50>
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Compare typed and untyped array fills
+
+@Test function MemoryTypedArrayFilled()
+   for i in {0..100} do
+      local int_arrays = array<array>
+      for j = 0, 100 do
+         int_arrays:push(array<int> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 })
+      end
+   end
+end
+
+@Test function MemoryUntypedArrayFilled()
+   for i in {0..100} do
+      local any_arrays = array<array>
+      for j = 0, 100 do
+         any_arrays:push(array<any> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 })
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Stress test garbage collector with allocation-heavy workload
+
+@Test function MemoryGCPressure()
+   for i in {0..100} do
+      -- Rapid allocation and discard of tables
+      for j = 0, 199 do
+         local t = { a = j, b = j * 2, c = j * 3 }
+         local sum = t.a + t.b + t.c
+      end
+
+      -- Rapid allocation and discard of strings
+      for j = 0, 199 do
+         local s = "item_" .. tostring(j) .. "_value"
+         local len = #s
+      end
+
+      -- Nested allocations
+      for j = 0, 49 do
+         local outer = {
+            inner1 = { value = j },
+            inner2 = { value = j * 2 },
+            inner3 = { value = j * 3 }
+         }
+         local sum = outer.inner1.value + outer.inner2.value
+      end
+
+      -- Mixed type allocations
+      for j = 0, 49 do
+         local mixed = {
+            num = j,
+            str = f"string_{j}",
+            tbl = { x = 1, y = 2 },
+            arr = { 1, 2, 3, 4, 5 }
+         }
+      end
+
+      -- Array allocation pressure
+      for j = 0, 49 do
+         local arr = array<int> { j, j+1, j+2, j+3, j+4 }
+         local sum = arr[0] + arr[4]
+      end
+
+      -- String building pressure
+      for j = 0, 19 do
+         local result = ""
+         for k = 0, 9 do
+            result ..= tostring(k)
+         end
+      end
+
+      -- Closure allocation pressure
+      for j = 0, 49 do
+         local captured = j
+         local fn = function()
+            return captured * 2
+         end
+         local result = fn()
+      end
+   end
+end

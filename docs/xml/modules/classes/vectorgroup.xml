@@ -11,7 +11,7 @@
     <id>88397565</id>
     <idstring>VECTORGROUP</idstring>
     <category>Graphics</category>
-    <copyright>Paul Manias © 2010-2025</copyright>
+    <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>Groups provide a simple way of grouping vector objects.  Groups have a passive effect on the drawing process and can be effective at assigning inheritable attributes to child vectors.</p>
 <p>If there is a need to adjust the container dimensions, use a <class name="VectorViewport">VectorViewport</class> instead.</p></description>

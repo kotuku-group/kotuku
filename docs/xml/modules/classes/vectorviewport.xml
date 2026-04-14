@@ -11,7 +11,7 @@
     <id>15da8fb8</id>
     <idstring>VECTORVIEWPORT</idstring>
     <category>Graphics</category>
-    <copyright>Paul Manias © 2010-2025</copyright>
+    <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>This class is used to declare a viewport within a vector scene graph.  A master viewport is required as the first object in a <class name="VectorScene">VectorScene</class> and it must contain all vector graphics content.</p>
 <p>The size of the viewport is initially set to <code>(0,0,100%,100%)</code> so as to be all inclusive.  Setting the <fl>X</fl>, <fl>Y</fl>, <fl>Width</fl> and <fl>Height</fl> fields will determine the position and clipping of the displayed content (the 'target area').  The <fl>ViewX</fl>, <fl>ViewY</fl>, <fl>ViewWidth</fl> and <fl>ViewHeight</fl> fields declare the viewbox ('source area') that will be sampled for the target.</p>
@@ -343,10 +343,10 @@
   </types>
   <structs>
     <struct name="FontMetrics" comment="Font metrics, measured in pixels relative to the display">
-      <field name="Height" type="INT">Capitalised font height</field>
-      <field name="LineSpacing" type="INT">Vertical advance from one line to the next</field>
-      <field name="Ascent" type="INT">Height from the baseline to the top of the font, including accents.</field>
-      <field name="Descent" type="INT">Height from the baseline to the bottom of the font</field>
+      <field name="Height" type="INT">Full font height equivalent to <code>Ascent (cap-height) + Descent (gutter)</code>.  Does NOT include accents.</field>
+      <field name="LineSpacing" type="INT">Vertical advance from one line to the next.  Includes coverage for accents and additional whitespace.</field>
+      <field name="Ascent" type="INT">Height from the baseline to the top (cap-height) of the font.  Does NOT include accents.</field>
+      <field name="Descent" type="INT">Height from the baseline to the bottom of the font (gutter)</field>
     </struct>
 
     <struct name="VectorMatrix" comment="Vector transformation matrix.">
@@ -365,7 +365,7 @@
       <field name="Pattern" type="objVectorPattern *">A <class name="VectorPattern">VectorPattern</class> object, suitable for pattern based fills.</field>
       <field name="Image" type="objVectorImage *">A <class name="VectorImage">VectorImage</class> object, suitable for image fills.</field>
       <field name="Gradient" type="objVectorGradient *">A <class name="VectorGradient">VectorGradient</class> object, suitable for gradient fills.</field>
-      <field name="Colour" type="struct FRGB">A single RGB colour definition, suitable for block colour fills.</field>
+      <field name="Colour" type="struct FRGB">A single RGB colour definition, suitable for block colour fills.  Colour values are unclamped to support all possible colour spaces.</field>
     </struct>
 
   </structs>

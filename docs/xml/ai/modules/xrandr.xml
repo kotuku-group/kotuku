@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:m xmlns:ai="http://parasol-framework.org/ai-docs" n="XRandR" p="xr" v="1">
+<ai:m xmlns:ai="http://kotuku.dev/ai-docs" n="XRandR" p="xr" v="1">
   <ai:f n="GetDisplayMode" c="Retrieve information of a display mode." p="APTR xrGetDisplayMode(LONG Index)" r="APTR">
     <ai:i n="Index" t="LONG" c="Index of the display mode to retrieve."/>
   </ai:f>

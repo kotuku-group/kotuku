@@ -1,6 +1,6 @@
 #!/bin/bash
-# Parasol Debian Package Builder
-# This script builds .deb packages for Parasol Framework
+# Kotuku Debian Package Builder
+# This script builds .deb packages for Kotuku
 
 set -e -u -o pipefail
 
@@ -28,7 +28,7 @@ escape_changelog_line() {
 # Function to generate changelog entries from Git log
 generate_changelog_entries() {
     local max_entries="${1:-10}"
-    
+
     if command -v git &> /dev/null && git rev-parse --git-dir &> /dev/null; then
         # Use quote-safe Git log formatting and escape output for security
         local git_output
@@ -36,7 +36,7 @@ generate_changelog_entries() {
             echo "  * Initial release"
             return
         }
-        
+
         # Process each line safely to prevent command injection
         if [ -n "$git_output" ]; then
             while IFS= read -r line; do
@@ -58,16 +58,16 @@ process_control_template() {
     local output_file="$2"
     local package_version="$3"
     local architecture="$4"
-    
+
     if [[ ! -f "$template_file" ]]; then
         echo "Error: Control template not found: $template_file"
         return 1
     fi
-    
+
     # Get current date in RFC 2822 format for Debian changelog
     local current_date
     current_date=$(date -R 2>/dev/null || date)
-    
+
     # Process template variables with proper escaping
     sed -e "s/@VERSION@/$package_version/g" \
         -e "s/@DEBIAN_ARCH@/$architecture/g" \
@@ -85,13 +85,13 @@ create_debian_changelog() {
     local output_file="$1"
     local package_name="$2"
     local version="$3"
-    
+
     cat > "$output_file" << EOF
 $package_name ($version-1) stable; urgency=medium
 
 $(generate_changelog_entries 5)
 
- -- Parasol Framework Team <team@parasol-framework.org>  $(date -R)
+ -- Kotuku Open Group <team@kotuku.dev>  $(date -R)
 EOF
 }
 
@@ -141,7 +141,7 @@ while [[ $# -gt 0 ]]; do
                 echo "Error: Build directory path contains invalid characters"
                 exit 1
             fi
-            
+
             # Ensure the parent directory exists for the build directory
             local parent_dir
             parent_dir="$(dirname "$BUILD_DIR")"
@@ -163,57 +163,57 @@ done
 validate_build_dependencies() {
     local missing_deps=()
     local missing_packages=()
-    
+
     echo "Validating build dependencies..."
-    
+
     # Essential build tools
     if ! command -v cmake &> /dev/null; then
         missing_deps+=("cmake")
         missing_packages+=("cmake")
     fi
-    
+
     if ! command -v dpkg-deb &> /dev/null; then
         missing_deps+=("dpkg-deb")
         missing_packages+=("dpkg-dev")
     fi
-    
+
     if ! command -v make &> /dev/null; then
         missing_deps+=("make")
         missing_packages+=("build-essential")
     fi
-    
+
     if ! command -v gcc &> /dev/null; then
         missing_deps+=("gcc")
         missing_packages+=("build-essential")
     fi
-    
+
     # Check for debhelper (used by proper Debian packaging)
     if ! command -v dh &> /dev/null; then
         missing_deps+=("debhelper")
         missing_packages+=("debhelper")
     fi
-    
+
     # Development libraries (check for pkg-config files or headers)
     if ! pkg-config --exists freetype2 2>/dev/null && [[ ! -f /usr/include/freetype2/freetype/freetype.h ]]; then
         missing_deps+=("libfreetype6-dev")
         missing_packages+=("libfreetype6-dev")
     fi
-    
+
     if [[ ! -f /usr/include/zlib.h ]]; then
         missing_deps+=("zlib1g-dev")
         missing_packages+=("zlib1g-dev")
     fi
-    
+
     if [[ ! -f /usr/include/X11/Xlib.h ]]; then
         missing_deps+=("libx11-dev")
         missing_packages+=("libx11-dev")
     fi
-    
+
     if [[ ! -f /usr/include/alsa/asoundlib.h ]]; then
         missing_deps+=("libasound2-dev")
         missing_packages+=("libasound2-dev")
     fi
-    
+
     # Report missing dependencies
     if [ ${#missing_deps[@]} -gt 0 ]; then
         echo "Error: Missing required build dependencies:"
@@ -225,7 +225,7 @@ validate_build_dependencies() {
         echo ""
         return 1
     fi
-    
+
     echo "✓ All build dependencies satisfied"
     return 0
 }
@@ -238,14 +238,14 @@ fi
 # Get version from CMakeLists.txt with validation
 if [ ! -f "CMakeLists.txt" ]; then
     echo "Error: CMakeLists.txt not found in current directory"
-    echo "Please run this script from the Parasol source root directory"
+    echo "Please run this script from the Kotuku source root directory"
     exit 1
 fi
 
 VERSION=$(awk '
     BEGIN { version = "" }
-    # Match project(Parasol ... VERSION x.y.z ...)
-    /project[[:space:]]*\([[:space:]]*Parasol[[:space:]]+VERSION[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+/ {
+    # Match project(Kotuku ... VERSION x.y.z ...)
+    /project[[:space:]]*\([[:space:]]*Kotuku[[:space:]]+VERSION[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+/ {
         match($0, /VERSION[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+)/, arr)
         if (arr[1] != "") { version = arr[1] }
     }
@@ -253,14 +253,14 @@ VERSION=$(awk '
 ' CMakeLists.txt)
 if [ -z "$VERSION" ] || [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     echo "Error: Could not extract valid version from CMakeLists.txt"
-    echo "Expected format: project (Parasol VERSION x.y.z)"
+    echo "Expected format: project (Kotuku VERSION x.y.z)"
     exit 1
 fi
 
 # Detect architecture
 ARCH=$(dpkg --print-architecture)
 
-echo "Building Parasol Debian packages..."
+echo "Building Kotuku Debian packages..."
 echo "Version: $VERSION"
 echo "Architecture: $ARCH"
 echo "Build directory: $BUILD_DIR"
@@ -281,7 +281,7 @@ cmake -S . -B "$BUILD_DIR" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=/usr \
     -DGENERATE_DEBIAN_PKG=ON \
-    -DPARASOL_STATIC=OFF \
+    -DKOTUKU_STATIC=OFF \
     -DRUN_ANYWHERE=OFF \
     -DBUILD_TESTS=OFF \
     -DBUILD_DEFS=OFF \
@@ -304,8 +304,8 @@ if ! cmake --build "$BUILD_DIR" --config Release -j "$JOBS"; then
 fi
 
 # Create staging directories for packages
-RUNTIME_STAGING="$BUILD_DIR/debian/parasol"
-DEV_STAGING="$BUILD_DIR/debian/parasol-dev"
+RUNTIME_STAGING="$BUILD_DIR/debian/kotuku"
+DEV_STAGING="$BUILD_DIR/debian/kotuku-dev"
 
 echo "Creating package staging directories..."
 rm -rf "$RUNTIME_STAGING" "$DEV_STAGING"
@@ -327,19 +327,19 @@ fi
 if [ -f "$BUILD_DIR/debian/control" ]; then
     cp "$BUILD_DIR/debian/control" "$RUNTIME_STAGING/DEBIAN/" || { echo "Failed to copy control file"; exit 1; }
 fi
-if [ ! -d "$RUNTIME_STAGING/usr/share/doc/parasol/" ]; then
-    mkdir -p "$RUNTIME_STAGING/usr/share/doc/parasol/" || { echo "Failed to create directory $RUNTIME_STAGING/usr/share/doc/parasol/"; exit 1; }
+if [ ! -d "$RUNTIME_STAGING/usr/share/doc/kotuku/" ]; then
+    mkdir -p "$RUNTIME_STAGING/usr/share/doc/kotuku/" || { echo "Failed to create directory $RUNTIME_STAGING/usr/share/doc/kotuku/"; exit 1; }
 fi
 # Copy or generate documentation files
 if [ -f "$BUILD_DIR/debian/copyright" ]; then
-    cp "$BUILD_DIR/debian/copyright" "$RUNTIME_STAGING/usr/share/doc/parasol/" || { echo "Failed to copy copyright file"; exit 1; }
+    cp "$BUILD_DIR/debian/copyright" "$RUNTIME_STAGING/usr/share/doc/kotuku/" || { echo "Failed to copy copyright file"; exit 1; }
 fi
 
 # Generate changelog if not provided by CMake
 if [ -f "$BUILD_DIR/debian/changelog" ]; then
-    cp "$BUILD_DIR/debian/changelog" "$RUNTIME_STAGING/usr/share/doc/parasol/" || { echo "Failed to copy changelog file"; exit 1; }
+    cp "$BUILD_DIR/debian/changelog" "$RUNTIME_STAGING/usr/share/doc/kotuku/" || { echo "Failed to copy changelog file"; exit 1; }
 else
-    create_debian_changelog "$RUNTIME_STAGING/usr/share/doc/parasol/changelog" "parasol" "$VERSION"
+    create_debian_changelog "$RUNTIME_STAGING/usr/share/doc/kotuku/changelog" "kotuku" "$VERSION"
 fi
 
 # Copy maintainer scripts if they exist
@@ -351,9 +351,9 @@ for script in postinst prerm postrm; do
 done
 
 # Copy lintian overrides if they exist
-if [ -f "pkg/debian/parasol.lintian-overrides" ]; then
+if [ -f "pkg/debian/kotuku.lintian-overrides" ]; then
     mkdir -p "$RUNTIME_STAGING/usr/share/lintian/overrides"
-    cp "pkg/debian/parasol.lintian-overrides" "$RUNTIME_STAGING/usr/share/lintian/overrides/parasol" || { echo "Warning: Failed to copy lintian overrides"; }
+    cp "pkg/debian/kotuku.lintian-overrides" "$RUNTIME_STAGING/usr/share/lintian/overrides/kotuku" || { echo "Warning: Failed to copy lintian overrides"; }
 fi
 
 # Create runtime package control file from template
@@ -365,13 +365,13 @@ fi
 # Handle development package if requested
 if [ "$INSTALL_INCLUDES" = "ON" ]; then
     echo "Setting up development package..."
-    
+
     # Move headers and development files to dev package
     if [ -d "$RUNTIME_STAGING/usr/include" ]; then
         mkdir -p "$DEV_STAGING/usr"
         mv "$RUNTIME_STAGING/usr/include" "$DEV_STAGING/usr/"
     fi
-    
+
     # Create dev package control file from template
     if ! process_control_template "pkg/debian/control-dev.in" "$DEV_STAGING/DEBIAN/control" "$VERSION" "$ARCH"; then
         echo "Error: Failed to create dev control file"
@@ -379,22 +379,22 @@ if [ "$INSTALL_INCLUDES" = "ON" ]; then
     fi
 
     # Copy documentation to dev package
-    mkdir -p "$DEV_STAGING/usr/share/doc/parasol-dev"
+    mkdir -p "$DEV_STAGING/usr/share/doc/kotuku-dev"
     if [ -f "$BUILD_DIR/debian/copyright" ]; then
-        cp "$BUILD_DIR/debian/copyright" "$DEV_STAGING/usr/share/doc/parasol-dev/"
+        cp "$BUILD_DIR/debian/copyright" "$DEV_STAGING/usr/share/doc/kotuku-dev/"
     fi
-    
+
     # Generate or copy changelog
     if [ -f "$BUILD_DIR/debian/changelog" ]; then
-        cp "$BUILD_DIR/debian/changelog" "$DEV_STAGING/usr/share/doc/parasol-dev/"
+        cp "$BUILD_DIR/debian/changelog" "$DEV_STAGING/usr/share/doc/kotuku-dev/"
     else
-        create_debian_changelog "$DEV_STAGING/usr/share/doc/parasol-dev/changelog" "parasol-dev" "$VERSION"
+        create_debian_changelog "$DEV_STAGING/usr/share/doc/kotuku-dev/changelog" "kotuku-dev" "$VERSION"
     fi
-    
+
     # Copy lintian overrides for dev package if they exist
-    if [ -f "pkg/debian/parasol-dev.lintian-overrides" ]; then
+    if [ -f "pkg/debian/kotuku-dev.lintian-overrides" ]; then
         mkdir -p "$DEV_STAGING/usr/share/lintian/overrides"
-        cp "pkg/debian/parasol-dev.lintian-overrides" "$DEV_STAGING/usr/share/lintian/overrides/parasol-dev" || { echo "Warning: Failed to copy dev lintian overrides"; }
+        cp "pkg/debian/kotuku-dev.lintian-overrides" "$DEV_STAGING/usr/share/lintian/overrides/kotuku-dev" || { echo "Warning: Failed to copy dev lintian overrides"; }
     fi
 fi
 
@@ -402,13 +402,13 @@ fi
 echo "Building .deb packages..."
 
 # Build runtime package
-RUNTIME_PACKAGE="parasol_${VERSION}-1_${ARCH}.deb"
+RUNTIME_PACKAGE="kotuku_${VERSION}-1_${ARCH}.deb"
 dpkg-deb --build "$RUNTIME_STAGING" "$RUNTIME_PACKAGE"
 echo "Created: $RUNTIME_PACKAGE"
 
 # Build development package if requested
 if [ "$INSTALL_INCLUDES" = "ON" ]; then
-    DEV_PACKAGE="parasol-dev_${VERSION}-1_${ARCH}.deb"
+    DEV_PACKAGE="kotuku-dev_${VERSION}-1_${ARCH}.deb"
     dpkg-deb --build "$DEV_STAGING" "$DEV_PACKAGE"
     echo "Created: $DEV_PACKAGE"
 fi

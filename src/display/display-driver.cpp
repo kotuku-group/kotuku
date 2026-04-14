@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 *********************************************************************************************************************/
@@ -820,7 +820,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
    if (objModule::load("regex", &modRegex, &RegexBase) != ERR::Okay) return ERR::InitModule;
 
-#ifndef PARASOL_STATIC
+#ifndef KOTUKU_STATIC
 
    if (GetSystemState()->Stage < 0) { // An early load indicates that classes are being probed, so just return them.
       glHeadless = true;
@@ -873,11 +873,11 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
 #ifdef __xwindows__
    if (!glHeadless) {
-      // Attempt to open X11.  Use PARASOL_XDISPLAY if set, otherwise use the DISPLAY variable.
+      // Attempt to open X11.  Use KOTUKU_XDISPLAY if set, otherwise use the DISPLAY variable.
 
       log.msg("Attempting to open X11...");
 
-      CSTRING strdisplay = getenv("PARASOL_XDISPLAY");
+      CSTRING strdisplay = getenv("KOTUKU_XDISPLAY");
       if (!strdisplay) strdisplay = getenv("DISPLAY");
 
       if ((XDisplay = XOpenDisplay(strdisplay))) {
@@ -891,14 +891,14 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
             PropertyChangeMask|SubstructureRedirectMask| // SubstructureNotifyMask |
             KeyPressMask|ButtonPressMask|ButtonReleaseMask);
 
-         if (!getenv("PARASOL_XDISPLAY")) setenv("PARASOL_XDISPLAY", strdisplay, FALSE);
+         if (!getenv("KOTUKU_XDISPLAY")) setenv("KOTUKU_XDISPLAY", strdisplay, FALSE);
 
          XSync(XDisplay, 0);
 
          XSetErrorHandler((XErrorHandler)CatchXError);
          XSetIOErrorHandler(CatchXIOError);
       }
-      else return ERR::Failed;
+      else return ERR::SystemCall;
 
       // Get the X11 file descriptor (for incoming events) and tell the Core to listen to it when the task is sleeping.
       // The FD is currently marked as a dummy because processes aren't being woken from select() if the X11 FD already
@@ -939,7 +939,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
       C_Default = XCreateFontCursor(XDisplay, XC_left_ptr);
 
       XWADeleteWindow = XInternAtom(XDisplay, "WM_DELETE_WINDOW", False);
-      atomSurfaceID   = XInternAtom(XDisplay, "PARASOL_SCREENID", False);
+      atomSurfaceID   = XInternAtom(XDisplay, "KOTUKU_SCREENID", False);
 
       XGetWindowAttributes(XDisplay, DefaultRootWindow(XDisplay), &glRootWindow);
 
@@ -1567,5 +1567,5 @@ static STRUCTS glStructures = {
    { "SurfaceInfo",   sizeof(SurfaceInfoV2) }
 };
 
-PARASOL_MOD(MODInit, nullptr, MODOpen, MODExpunge, MOD_IDL, &glStructures)
+KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, nullptr, MOD_IDL, &glStructures)
 extern "C" struct ModHeader * register_display_module() { return &ModHeader; }

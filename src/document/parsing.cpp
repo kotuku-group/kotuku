@@ -10,6 +10,8 @@ hyperlink etc.  When a type is instantiated it will be assigned a UID and stored
 
 */
 
+#include <cfloat>
+
 // State machine for the parser.  This information is discarded after parsing.
 
 struct parser {
@@ -65,12 +67,12 @@ struct parser {
    }
 
    inline ERR  calc(const std::string &, double *, std::string &);
-   inline TRF  parse_tag(XMLTag &, IPF &);
+   inline TRF  parse_tag(XTag &, IPF &);
    inline TRF  parse_tags(objXML::TAGS &, IPF = IPF::NIL);
    inline TRF  parse_tags_with_style(objXML::TAGS &, bc_font &, IPF = IPF::NIL);
    inline TRF  parse_tags_with_embedded_style(objXML::TAGS &, bc_font &, IPF = IPF::NIL);
    inline void process_page(objXML *pXML);
-   inline void tag_xml_content(XMLTag &, PXF);
+   inline void tag_xml_content(XTag &, PXF);
    inline void translate_attrib_args(pf::vector<XMLAttrib> &);
    inline void translate_args(const std::string &, std::string &);
    inline void translate_calc(std::string &, size_t);
@@ -87,40 +89,40 @@ struct parser {
       return old;
    }
 
-   inline void tag_advance(XMLTag &);
-   inline void tag_body(XMLTag &);
-   inline void tag_button(XMLTag &);
-   inline void tag_call(XMLTag &);
-   inline void tag_cell(XMLTag &);
-   inline void tag_checkbox(XMLTag &);
-   inline void tag_combobox(XMLTag &);
-   inline void tag_debug(XMLTag &);
-   inline void tag_div(XMLTag &);
-   inline void tag_editdef(XMLTag &);
-   inline void tag_font(XMLTag &);
+   inline void tag_advance(XTag &);
+   inline void tag_body(XTag &);
+   inline void tag_button(XTag &);
+   inline void tag_call(XTag &);
+   inline void tag_cell(XTag &);
+   inline void tag_checkbox(XTag &);
+   inline void tag_combobox(XTag &);
+   inline void tag_debug(XTag &);
+   inline void tag_div(XTag &);
+   inline void tag_editdef(XTag &);
+   inline void tag_font(XTag &);
    inline void tag_font_style(objXML::TAGS &, FSO, std::string_view);
-   inline void tag_head(XMLTag &);
-   inline void tag_image(XMLTag &);
-   inline void tag_include(XMLTag &);
-   inline void tag_index(XMLTag &);
-   inline void tag_input(XMLTag &);
-   inline void tag_li(XMLTag &);
-   inline void tag_link(XMLTag &);
-   inline void tag_list(XMLTag &);
-   inline void tag_page(XMLTag &);
-   inline void tag_paragraph(XMLTag &);
-   inline void tag_parse(XMLTag &);
+   inline void tag_head(XTag &);
+   inline void tag_image(XTag &);
+   inline void tag_include(XTag &);
+   inline void tag_index(XTag &);
+   inline void tag_input(XTag &);
+   inline void tag_li(XTag &);
+   inline void tag_link(XTag &);
+   inline void tag_list(XTag &);
+   inline void tag_page(XTag &);
+   inline void tag_paragraph(XTag &);
+   inline void tag_parse(XTag &);
    inline void tag_pre(objXML::TAGS &);
-   inline void tag_print(XMLTag &);
-   inline void tag_repeat(XMLTag &);
-   inline void tag_row(XMLTag &);
-   inline void tag_script(XMLTag &);
-   inline void tag_svg(XMLTag &);
-   inline void tag_table(XMLTag &);
-   inline void tag_template(XMLTag &);
-   inline void tag_trigger(XMLTag &);
-   inline void tag_use(XMLTag &);
-   inline void tag_object(XMLTag &);
+   inline void tag_print(XTag &);
+   inline void tag_repeat(XTag &);
+   inline void tag_row(XTag &);
+   inline void tag_script(XTag &);
+   inline void tag_svg(XTag &);
+   inline void tag_table(XTag &);
+   inline void tag_template(XTag &);
+   inline void tag_trigger(XTag &);
+   inline void tag_use(XTag &);
+   inline void tag_object(XTag &);
    inline bool check_para_attrib(const XMLAttrib &, bc_paragraph *, bc_font &);
    inline bool check_font_attrib(const XMLAttrib &, bc_font &);
 
@@ -170,7 +172,7 @@ void parser::process_page(objXML *pXML)
    // Look for the first page that matches the requested page name (if a name is specified).  Pages can be located anywhere
    // within the XML source - they don't have to be at the root.
 
-   XMLTag *page = nullptr;
+   XTag *page = nullptr;
    for (auto &scan : m_xml->Tags) {
       if (!iequals("page", scan.Attribs[0].Name)) continue;
 
@@ -836,7 +838,7 @@ static bool eval_condition(const std::string &String)
 //********************************************************************************************************************
 // Used by if, elseif, while statements to check the satisfaction of conditions.
 
-static bool check_tag_conditions(extDocument *Self, XMLTag &Tag)
+static bool check_tag_conditions(extDocument *Self, XTag &Tag)
 {
    pf::Log log("eval");
 
@@ -858,13 +860,13 @@ static bool check_tag_conditions(extDocument *Self, XMLTag &Tag)
       else if (iequals("notnull", Tag.Attribs[i].Name)) {
          log.trace("NotNull: %s", Tag.Attribs[i].Value);
          if (Tag.Attribs[i].Value.empty()) satisfied = false;
-         else if (Tag.Attribs[i].Value == "0") satisfied = false;
+         else if (Tag.Attribs[i].Value IS "0") satisfied = false;
          else satisfied = true;
       }
       else if ((iequals("isnull", Tag.Attribs[i].Name)) or (iequals("null", Tag.Attribs[i].Name))) {
          log.trace("IsNull: %s", Tag.Attribs[i].Value);
             if (Tag.Attribs[i].Value.empty()) satisfied = true;
-            else if (Tag.Attribs[i].Value == "0") satisfied = true;
+            else if (Tag.Attribs[i].Value IS "0") satisfied = true;
             else satisfied = false;
       }
       else if (iequals("not", Tag.Attribs[i].Name)) {
@@ -883,7 +885,7 @@ static bool check_tag_conditions(extDocument *Self, XMLTag &Tag)
 // Intended for use from parse_tags(), this is the principal function for the parsing of XML tags.  Insertion into
 // the stream will occur at Index, which is updated on completion.
 
-TRF parser::parse_tag(XMLTag &Tag, IPF &Flags)
+TRF parser::parse_tag(XTag &Tag, IPF &Flags)
 {
    pf::Log log(__FUNCTION__);
 
@@ -892,7 +894,7 @@ TRF parser::parse_tag(XMLTag &Tag, IPF &Flags)
       return TRF::NIL;
    }
 
-   XMLTag *object_template = nullptr;
+   XTag *object_template = nullptr;
 
    auto saved_attribs = Tag.Attribs;
    translate_attrib_args(Tag.Attribs);
@@ -929,7 +931,7 @@ TRF parser::parse_tag(XMLTag &Tag, IPF &Flags)
       if (Self->RefreshTemplates) {
          Self->TemplateIndex.clear();
 
-         for (XMLTag &scan : Self->Templates->Tags) {
+         for (XTag &scan : Self->Templates->Tags) {
             for (unsigned i=0; i < scan.Attribs.size(); i++) {
                if (iequals("name", scan.Attribs[i].Name)) {
                   Self->TemplateIndex[strihash(scan.Attribs[i].Value)] = &scan;
@@ -941,7 +943,7 @@ TRF parser::parse_tag(XMLTag &Tag, IPF &Flags)
       }
 
       if (Self->TemplateIndex.contains(tag_hash)) {
-         // Process the template by jumping into it.  Arguments in the tag are added to a sequential
+         // Process the template by jumping into it.  Key-values in the tag are added to a sequential
          // list that will be processed in reverse by translate_attrib_args().
 
          auto xml  = m_inject_xml;
@@ -1245,6 +1247,17 @@ TRF parser::parse_tags_with_style(objXML::TAGS &Tags, bc_font &Style, IPF Flags)
       font_change = true;
    }
 
+   // Prevent em-based size inheritance from compounding on each nested style change.  When the
+   // caller has not overridden req_size, any FONT_SIZE (em) value held in m_style has already
+   // been resolved to pixels during the parent's layout pass.  If we allow the inherited em to
+   // pass through to a new bc_font entry, layout_font() would re-multiply it by the parent's
+   // current metrics.Height and compound the size.  Substituting 1em makes the nested entry
+   // resolve to the parent's already-computed pixel size rather than doubling (or worse).
+   if ((font_change) and (Style.req_size IS m_style.req_size) and
+       (Style.req_size.type IS DU::FONT_SIZE)) {
+      Style.req_size = DUNIT(1.0, DU::FONT_SIZE);
+   }
+
    auto result = TRF::NIL;
    if (font_change) {
       Style.uid = glByteCodeID++;
@@ -1313,7 +1326,8 @@ bool parser::check_para_attrib(const XMLAttrib &Attrib, bc_paragraph *Para, bc_f
          else if (iequals("bottom", Attrib.Value)) align = ALIGN::BOTTOM;
 
          if (align != ALIGN::NIL) {
-            Style.valign = (Style.valign & (ALIGN::TOP|ALIGN::VERTICAL|ALIGN::BOTTOM)) | align;
+            Style.valign &= ~(ALIGN::TOP|ALIGN::VERTICAL|ALIGN::BOTTOM);
+            Style.valign |= align;
          }
          return true;
       }
@@ -1325,7 +1339,7 @@ bool parser::check_para_attrib(const XMLAttrib &Attrib, bc_paragraph *Para, bc_f
          // Line height affects the advance of m_cursor_y whenever a word-wrap occurs.  It is expressed as a multiplier
          // that is applied to m_line.height.
 
-         if (Para) Para->line_height = DUNIT(Attrib.Value, DU::LINE_HEIGHT, DBL_MIN);
+         if (Para) Para->line_height = DUNIT(Attrib.Value, DU::TRUE_LINE_HEIGHT, DBL_MIN);
          return true;
 
       case HASH_trim:
@@ -1408,9 +1422,13 @@ void parser::trim_preformat(extDocument *Self)
          auto found = text.text.find_last_not_of(ws);
          if (found != std::string::npos) {
             text.text.erase(found + 1);
+            text.invalidate_tokens();
             break;
          }
-         else text.text.clear();
+         else {
+            text.text.clear();
+            text.invalidate_tokens();
+         }
       }
       else break;
    }
@@ -1419,7 +1437,7 @@ void parser::trim_preformat(extDocument *Self)
 //********************************************************************************************************************
 // Advances the cursor.  It is only possible to advance positively on either axis.
 
-void parser::tag_advance(XMLTag &Tag)
+void parser::tag_advance(XTag &Tag)
 {
    auto &adv = m_stream->emplace<bc_advance>(m_index);
 
@@ -1438,7 +1456,7 @@ void parser::tag_advance(XMLTag &Tag)
 // NB: If a <body> tag contains any children, it is treated as a template and must contain an <inject/> tag so that
 // the XML insertion point is known.
 
-void parser::tag_body(XMLTag &Tag)
+void parser::tag_body(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -1511,6 +1529,12 @@ void parser::tag_body(XMLTag &Tag)
             Self->FontFace = Tag.Attribs[i].Value;
             break;
 
+         case HASH_font_style:
+            [[fallthrough]];
+         case HASH_style:
+            Self->FontStyle = Tag.Attribs[i].Value;
+            break;
+
          case HASH_font_size: {
             // Default font point size, which must be fixed.  Relative sizes like 'em' are not permitted.
             auto val = DUNIT(Tag.Attribs[i].Value);
@@ -1554,6 +1578,7 @@ void parser::tag_body(XMLTag &Tag)
    m_style.options  = FSO::NIL;
    m_style.fill     = Self->FontFill;
    m_style.face     = Self->FontFace;
+   m_style.style    = Self->FontStyle;
    m_style.req_size = DUNIT(Self->FontSize, DU::PIXEL);
 
    if (!Tag.Children.empty()) m_body_tag = &Tag.Children;
@@ -1572,7 +1597,7 @@ void parser::tag_body(XMLTag &Tag)
 //
 // <call function="[script].function" arg1="" arg2="" _global=""/>
 
-void parser::tag_call(XMLTag &Tag)
+void parser::tag_call(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
    objScript *script = Self->DefaultScript;
@@ -1678,7 +1703,7 @@ const char glButtonSVG[] = R"-(
   <rect rx="7.5%" ry="7.5%" width="95%" height="93%" x="2.5%" y="2.5%" fill="url(#shading)"/>
 </svg>)-";
 
-void parser::tag_button(XMLTag &Tag)
+void parser::tag_button(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -1775,7 +1800,7 @@ void parser::tag_button(XMLTag &Tag)
 
 //********************************************************************************************************************
 
-void parser::tag_checkbox(XMLTag &Tag)
+void parser::tag_checkbox(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -1794,7 +1819,7 @@ void parser::tag_checkbox(XMLTag &Tag)
          else if (iequals("right", value)) widget.label_pos = 1;
       }
       else if (hash IS HASH_value) {
-         widget.alt_state = (value == "1") or (value == "true");
+         widget.alt_state = (value IS "1") or (value IS "true");
       }
       else log.warning("<checkbox> unsupported attribute '%s'", Tag.Attribs[i].Name.c_str());
    }
@@ -1870,7 +1895,7 @@ void parser::tag_checkbox(XMLTag &Tag)
 
 //********************************************************************************************************************
 
-void parser::tag_combobox(XMLTag &Tag)
+void parser::tag_combobox(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -1989,7 +2014,7 @@ void parser::tag_combobox(XMLTag &Tag)
 
 //********************************************************************************************************************
 
-void parser::tag_input(XMLTag &Tag)
+void parser::tag_input(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -2032,7 +2057,7 @@ void parser::tag_input(XMLTag &Tag)
 
 //********************************************************************************************************************
 
-void parser::tag_debug(XMLTag &Tag)
+void parser::tag_debug(XTag &Tag)
 {
    pf::Log log("DocMsg");
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
@@ -2048,7 +2073,7 @@ void parser::tag_debug(XMLTag &Tag)
 // This tag can only be used ONCE per document.  Potentially we could improve this by appending to the existing
 // SVG object via data feeds.
 
-void parser::tag_svg(XMLTag &Tag)
+void parser::tag_svg(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -2089,7 +2114,7 @@ void parser::tag_svg(XMLTag &Tag)
 // If more sophisticated inline or float embedding is required, the <image> tag is probably more applicable to the
 // client.
 
-void parser::tag_use(XMLTag &Tag)
+void parser::tag_use(XTag &Tag)
 {
    std::string id;
    for (int i = 1; i < std::ssize(Tag.Attribs); i++) {
@@ -2108,23 +2133,34 @@ void parser::tag_use(XMLTag &Tag)
 // Use div to structure the document in a similar way to paragraphs.  The main difference is that it impacts on style
 // attributes only, avoiding the declaration of paragraph start and end points and won't cause line breaks.
 
-void parser::tag_div(XMLTag &Tag)
+void parser::tag_div(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
 
    auto new_style = m_style;
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
       if (iequals("align", Tag.Attribs[i].Name)) {
+         auto align = FSO::NIL;
+         auto valid = true;
          if ((iequals(Tag.Attribs[i].Value, "center")) or
              (iequals(Tag.Attribs[i].Value, "middle"))) {
-            new_style.options |= FSO::ALIGN_CENTER;
+            align = FSO::ALIGN_CENTER;
          }
          else if (iequals(Tag.Attribs[i].Value, "right")) {
-            new_style.options |= FSO::ALIGN_RIGHT;
+            align = FSO::ALIGN_RIGHT;
          }
-         else log.warning("Alignment type '%s' not supported.", Tag.Attribs[i].Value.c_str());
+         else if (!iequals(Tag.Attribs[i].Value, "left")) {
+            log.warning("Alignment type '%s' not supported.", Tag.Attribs[i].Value.c_str());
+            valid = false;
+         }
+
+         if (valid) {
+            new_style.options &= ~(FSO::ALIGN_CENTER|FSO::ALIGN_RIGHT);
+            new_style.options |= align;
+         }
       }
-      else check_para_attrib(Tag.Attribs[i], 0, new_style);
+      else if (check_para_attrib(Tag.Attribs[i], 0, new_style));
+      else check_font_attrib(Tag.Attribs[i], new_style);
    }
 
    parse_tags_with_style(Tag.Children, new_style);
@@ -2134,7 +2170,7 @@ void parser::tag_div(XMLTag &Tag)
 // Creates a new edit definition.  These are stored in a linked list.  Edit definitions are used by referring to them
 // by name in table cells.
 
-void parser::tag_editdef(XMLTag &Tag)
+void parser::tag_editdef(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -2152,7 +2188,10 @@ void parser::tag_editdef(XMLTag &Tag)
 
          case HASH_select_fill: break;
 
-         case HASH_line_breaks: edit.line_breaks = std::stoi(Tag.Attribs[i].Value); break;
+         case HASH_line_breaks:
+            if (Tag.Attribs[i].Value IS "true") edit.line_breaks = true;
+            else if (Tag.Attribs[i].Value IS "1") edit.line_breaks = true;
+            break;
 
          case HASH_edit_fonts:
          case HASH_edit_images:
@@ -2188,7 +2227,7 @@ void parser::tag_editdef(XMLTag &Tag)
 //********************************************************************************************************************
 // Use of <meta> for custom information is allowed and is ignored by the parser.
 
-void parser::tag_head(XMLTag &Tag)
+void parser::tag_head(XTag &Tag)
 {
    // The head contains information about the document
 
@@ -2230,7 +2269,7 @@ void parser::tag_head(XMLTag &Tag)
 //********************************************************************************************************************
 // Include XML from another RIPL file.
 
-void parser::tag_include(XMLTag &Tag)
+void parser::tag_include(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -2256,7 +2295,7 @@ void parser::tag_include(XMLTag &Tag)
 //********************************************************************************************************************
 // Parse a string value as XML
 
-void parser::tag_parse(XMLTag &Tag)
+void parser::tag_parse(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -2292,7 +2331,7 @@ void parser::tag_parse(XMLTag &Tag)
 // A benefit to rendering SVG images in the <defs> area is that they are converted to cached bitmap textures ahead of
 // time.  This provides a considerable speed boost when drawing them, at a potential cost to image quality.
 
-void parser::tag_image(XMLTag &Tag)
+void parser::tag_image(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -2307,27 +2346,45 @@ void parser::tag_image(XMLTag &Tag)
          case HASH_align:
             // Setting the horizontal alignment of an image will cause it to float above the text.
             // If the image is declared inside a paragraph, it will be completely de-anchored as a result.
+            {
+               auto align = ALIGN::NIL;
+               auto valid = true;
             switch (strihash(value)) {
-               case HASH_left:   img.align = ALIGN::LEFT; break;
-               case HASH_right:  img.align = ALIGN::RIGHT; break;
-               case HASH_center: img.align = ALIGN::CENTER; break;
-               case HASH_middle: img.align = ALIGN::CENTER; break; // synonym
+               case HASH_left:   align = ALIGN::LEFT; break;
+               case HASH_right:  align = ALIGN::RIGHT; break;
+               case HASH_center: align = ALIGN::HORIZONTAL; break;
+               case HASH_middle: align = ALIGN::HORIZONTAL; break; // synonym
                default:
                   log.warning("Invalid alignment value '%s'", value.c_str());
+                  valid = false;
                   break;
+            }
+               if (valid) {
+                  img.align &= ~(ALIGN::LEFT|ALIGN::RIGHT|ALIGN::HORIZONTAL);
+                  img.align |= align;
+               }
             }
             break;
 
          case HASH_v_align:
             // If the image is anchored and the line is taller than the image, the image can be vertically aligned.
+            {
+               auto align = ALIGN::NIL;
+               auto valid = true;
             switch(strihash(value)) {
-               case HASH_top:    img.align = ALIGN::TOP; break;
-               case HASH_center: img.align = ALIGN::VERTICAL; break;
-               case HASH_middle: img.align = ALIGN::VERTICAL; break; // synonym
-               case HASH_bottom: img.align = ALIGN::BOTTOM; break;
+               case HASH_top:    align = ALIGN::TOP; break;
+               case HASH_center: align = ALIGN::VERTICAL; break;
+               case HASH_middle: align = ALIGN::VERTICAL; break; // synonym
+               case HASH_bottom: align = ALIGN::BOTTOM; break;
                default:
                   log.warning("Invalid valign value '%s'", value.c_str());
+                  valid = false;
                   break;
+            }
+               if (valid) {
+                  img.align &= ~(ALIGN::TOP|ALIGN::VERTICAL|ALIGN::BOTTOM);
+                  img.align |= align;
+               }
             }
             break;
 
@@ -2371,7 +2428,7 @@ void parser::tag_image(XMLTag &Tag)
 // The developer can use indexes to bookmark areas of code that are of interest.  The FindIndex() method is used for
 // this purpose.
 
-void parser::tag_index(XMLTag &Tag)
+void parser::tag_index(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -2421,7 +2478,7 @@ void parser::tag_index(XMLTag &Tag)
 // Dummy links that specify neither an href or onclick value can be useful in embedded documents if the
 // EventCallback feature is used.
 
-void parser::tag_link(XMLTag &Tag)
+void parser::tag_link(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -2494,7 +2551,7 @@ void parser::tag_link(XMLTag &Tag)
 
 //********************************************************************************************************************
 
-void parser::tag_list(XMLTag &Tag)
+void parser::tag_list(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
    bc_list list;
@@ -2550,7 +2607,7 @@ void parser::tag_list(XMLTag &Tag)
 //********************************************************************************************************************
 // Also see check_para_attrib() for paragraph attributes.
 
-void parser::tag_paragraph(XMLTag &Tag)
+void parser::tag_paragraph(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -2560,14 +2617,24 @@ void parser::tag_paragraph(XMLTag &Tag)
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
       if (iequals("align", Tag.Attribs[i].Name)) {
+         auto align = FSO::NIL;
+         auto valid = true;
          if ((iequals(Tag.Attribs[i].Value, "center")) or
              (iequals(Tag.Attribs[i].Value, "middle"))) {
-            para.font.options |= FSO::ALIGN_CENTER;
+            align = FSO::ALIGN_CENTER;
          }
          else if (iequals(Tag.Attribs[i].Value, "right")) {
-            para.font.options |= FSO::ALIGN_RIGHT;
+            align = FSO::ALIGN_RIGHT;
          }
-         else log.warning("Alignment type '%s' not supported.", Tag.Attribs[i].Value.c_str());
+         else if (!iequals(Tag.Attribs[i].Value, "left")) {
+            log.warning("Alignment type '%s' not supported.", Tag.Attribs[i].Value.c_str());
+            valid = false;
+         }
+
+         if (valid) {
+            para.font.options &= ~(FSO::ALIGN_CENTER|FSO::ALIGN_RIGHT);
+            para.font.options |= align;
+         }
       }
       else if (iequals("leading", Tag.Attribs[i].Name)) {
          // The leading is a line height multiplier that applies to the first line in the paragraph only.
@@ -2593,7 +2660,7 @@ void parser::tag_paragraph(XMLTag &Tag)
 
 //********************************************************************************************************************
 
-void parser::tag_print(XMLTag &Tag)
+void parser::tag_print(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -2624,7 +2691,7 @@ void parser::tag_print(XMLTag &Tag)
 //********************************************************************************************************************
 // Templates can be used to create custom tags.
 
-void parser::tag_template(XMLTag &Tag)
+void parser::tag_template(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -2880,8 +2947,8 @@ ERR parser::tag_xml_content_eval(std::string &Buffer)
             // Check for [lb] and [rb] escape codes
 
             char code = 0;
-            if (name == "rb") code = ']';
-            else if (name == "lb") code = '[';
+            if (name IS "rb") code = ']';
+            else if (name IS "lb") code = '[';
 
             if (code) {
                Buffer[pos] = code;
@@ -2958,7 +3025,7 @@ repeat:
 
 //********************************************************************************************************************
 
-void parser::tag_font(XMLTag &Tag)
+void parser::tag_font(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -2981,7 +3048,7 @@ void parser::tag_font(XMLTag &Tag)
 
 //********************************************************************************************************************
 
-void parser::tag_object(XMLTag &Tag)
+void parser::tag_object(XTag &Tag)
 {
    /*
    pf::Log log(__FUNCTION__);
@@ -3240,13 +3307,13 @@ void parser::tag_pre(objXML::TAGS &Children)
 //
 // Only the first section of content enclosed within the <script> tag (CDATA) is accepted by the script parser.
 
-void parser::tag_script(XMLTag &Tag)
+void parser::tag_script(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
    objScript *script;
    ERR error;
 
-   std::string type = "fluid";
+   std::string type = "tiri";
    std::string src, cachefile, name;
    bool defaultscript = false;
    bool persistent = false;
@@ -3335,8 +3402,8 @@ void parser::tag_script(XMLTag &Tag)
       }
    }
 
-   if (iequals("fluid", type)) {
-      error = NewLocalObject(CLASSID::FLUID, &script);
+   if (iequals("tiri", type)) {
+      error = NewLocalObject(CLASSID::TIRI, &script);
    }
    else {
       error = ERR::NoSupport;
@@ -3423,7 +3490,7 @@ void parser::tag_font_style(objXML::TAGS &Children, FSO StyleFlag, std::string_v
 //********************************************************************************************************************
 // List item parser.  List items are essentially paragraphs with automated indentation management.
 
-void parser::tag_li(XMLTag &Tag)
+void parser::tag_li(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -3446,8 +3513,8 @@ void parser::tag_li(XMLTag &Tag)
          para.value = Tag.Attribs[i].Value;
       }
       else if (iequals("aggregate", tagname)) {
-         if (Tag.Attribs[i].Value == "true") para.aggregate = true;
-         else if (Tag.Attribs[i].Value == "1") para.aggregate = true;
+         if (Tag.Attribs[i].Value IS "true") para.aggregate = true;
+         else if (Tag.Attribs[i].Value IS "1") para.aggregate = true;
       }
       else check_para_attrib(Tag.Attribs[i], &para, para.font);
    }
@@ -3498,7 +3565,7 @@ void parser::tag_li(XMLTag &Tag)
 
 //********************************************************************************************************************
 
-void parser::tag_repeat(XMLTag &Tag)
+void parser::tag_repeat(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -3580,7 +3647,7 @@ void parser::tag_repeat(XMLTag &Tag)
 // (repeat, if statements, etc).  The table byte code is typically generated as SCODE::TABLE_START, SCODE::ROW,
 // SCODE::CELL..., SCODE::ROW_END, SCODE::TABLE_END.
 
-void parser::tag_table(XMLTag &Tag)
+void parser::tag_table(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -3635,8 +3702,8 @@ void parser::tag_table(XMLTag &Tag)
             switch(strihash(value)) {
                case HASH_left:   table.align = ALIGN::LEFT; break;
                case HASH_right:  table.align = ALIGN::RIGHT; break;
-               case HASH_center: table.align = ALIGN::CENTER; break;
-               case HASH_middle: table.align = ALIGN::CENTER; break; // synonym
+               case HASH_center: table.align = ALIGN::HORIZONTAL; break;
+               case HASH_middle: table.align = ALIGN::HORIZONTAL; break; // synonym
                default: log.warning("Invalid alignment value '%s'", value.c_str()); break;
             }
             break;
@@ -3693,7 +3760,7 @@ void parser::tag_table(XMLTag &Tag)
 
 //********************************************************************************************************************
 
-void parser::tag_row(XMLTag &Tag)
+void parser::tag_row(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -3734,7 +3801,7 @@ void parser::tag_row(XMLTag &Tag)
 
 //********************************************************************************************************************
 
-void parser::tag_cell(XMLTag &Tag)
+void parser::tag_cell(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
    auto new_style = m_style;
@@ -3871,7 +3938,7 @@ void parser::tag_cell(XMLTag &Tag)
 //********************************************************************************************************************
 // No response is required for page tags, but we can check for validity.
 
-void parser::tag_page(XMLTag &Tag)
+void parser::tag_page(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
    if (auto name = Tag.attrib("name")) {
@@ -3894,7 +3961,7 @@ void parser::tag_page(XMLTag &Tag)
 //********************************************************************************************************************
 // Usage: <trigger event="resize" function="script.function"/>
 
-void parser::tag_trigger(XMLTag &Tag)
+void parser::tag_trigger(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
    DRT trigger_code;

@@ -4,7 +4,7 @@
 Audio: Supports a machine's audio hardware and provides a client-server audio management service.
 
 The Audio class provides a comprehensive audio service that works across multiple platforms and follows a client-server
-design model. It serves as the foundation for all audio operations in the Parasol framework, managing hardware resources,
+design model. It serves as the foundation for all audio operations in Kōtuku framework, managing hardware resources,
 sample mixing, and output buffering.
 
 The Audio class supports 8/16/32 bit output in stereo or mono configurations, with advanced features including oversampling
@@ -128,7 +128,7 @@ static ERR AUDIO_Activate(extAudio *Self)
 
    const int mixbitsize = Self->Stereo ? sizeof(float) * 2 : sizeof(float);
 
-   Self->MixBufferSize = BYTELEN((F2T((mixbitsize * Self->OutputRate) * (MIX_INTERVAL * 1.5)) + 15) & (~15));
+   Self->MixBufferSize = BYTELEN((int((mixbitsize * Self->OutputRate) * (MIX_INTERVAL * 1.5)) + 15) & (~15));
    Self->MixElements   = SAMPLE(Self->MixBufferSize / mixbitsize);
 
    if (AllocMemory(Self->MixBufferSize, MEM::DATA, &Self->MixBuffer) IS ERR::Okay) {
@@ -953,7 +953,7 @@ static ERR AUDIO_SetVolume(extAudio *Self, struct snd::SetVolume *Args)
 
       double vol = Args->Volume;
       if (vol > 1.0) vol = 1.0;
-      int lvol = F2T(double(pmin) + (double(pmax - pmin) * vol));
+      int lvol = int(double(pmin) + (double(pmax - pmin) * vol));
 
       if ((Self->Volumes[index].Flags & VCF::CAPTURE) != VCF::NIL) {
          snd_mixer_selem_set_capture_volume_all(elem, lvol);

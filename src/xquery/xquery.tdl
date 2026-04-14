@@ -1,0 +1,36 @@
+--$TIRI:Include
+
+module({ name='XQuery', src='xquery.cpp', copyright='Paul Manias © 2025-2026', version=1.0, timestamp=20240611 }, function()
+  c_include('<kotuku/modules/xml.h>')
+  cpp_include('<functional>', '<optional>', '<sstream>', '<kotuku/strings.hpp>', '<string_view>', '<vector>')
+
+  restrict(function()
+    loadFile('sdk:src/xml/constants.tdl')
+  end)
+
+  -- Shared enumerations for parser and evaluator state, including map/array node kinds.
+  loadFile('sdk:src/xquery/constants.tdl')
+
+  methods('xquery', 'XQ', {
+    { id=1, name='Evaluate' },
+    { id=2, name='Search' },
+    { id=3, name='RegisterFunction' },
+    { id=4, name='InspectFunctions' }
+  })
+
+  class('XQuery', {
+    src        = 'xquery_class.cpp',
+    output     = 'xquery_class_def.cpp',
+    references = { 'XQF', 'XPVT' },
+    comment    = 'Provides an interface for XQuery evaluation and execution.' }, [[
+  ]])
+
+  c_insert([[
+namespace xq {
+
+using XQueryFunction = ERR (*)(objXQuery *Query, std::string_view FunctionName, const std::vector<XPathValue> &Input, XPathValue &Result, APTR Meta);
+
+} // namespace xq
+  ]])
+
+end)

@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol Framework is made publicly available under the terms described in the LICENSE.TXT file
+The source code for Kōtuku is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 -CATEGORY-
@@ -141,7 +141,7 @@ void VLogF(VLF Flags, CSTRING Header, CSTRING Message, va_list Args)
 
    if ((Flags & VLF::CRITICAL) != VLF::NIL) { // Print the message irrespective of the log level
       #ifdef __ANDROID__
-         __android_log_vprint(ANDROID_LOG_ERROR, Header ? Header : "Parasol", Message, Args);
+         __android_log_vprint(ANDROID_LOG_ERROR, Header ? Header : "Kotuku", Message, Args);
       #else
          #ifdef ESC_OUTPUT
             if (!Header) Header = "";
@@ -315,7 +315,7 @@ C/C++ as the function name is automatically entered by the C pre-processor.
 
 -INPUT-
 cstr Header: A short string that names the function that is making the call.
-error Error: An error code from the `system/errors.h` include file.  Valid error codes and their descriptions can be found in the Parasol Wiki.
+error Error: An error code from the `system/errors.h` include file.  Valid error codes and their descriptions can be found in the Kotuku Wiki.
 
 -RESULT-
 error: Returns the same code that was specified in the `Error` parameter.

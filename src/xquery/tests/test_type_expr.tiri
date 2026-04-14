@@ -1,0 +1,773 @@
+-- Comprehensive tests for XPath 2.0 Type and Range Expressions
+-- Tests the following constructs:
+-- * cast expression - explicit type conversion
+-- * castable expression - test conversion feasibility
+-- * treat as expression - runtime type assertion
+-- * instance of expression - type conformance testing
+-- * typeswitch expression - type-based control flow
+-- * to range operator - integer sequence generation
+
+   include 'xml'
+
+-----------------------------------------------------------------------------------------------------------------------
+-- CAST EXPRESSION TESTS
+
+-- Test basic cast to string
+@Test function CastToString()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('42 cast as xs:string')
+   assert(err is ERR_Okay, "Cast to string should succeed: " .. mSys.GetErrorMsg(err))
+   assert(result is "42", "Cast to string should return '42', got: " .. result)
+end
+
+-- Test basic cast to decimal
+@Test function CastToDecimal()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('"123.45" cast as xs:decimal')
+   assert(err is ERR_Okay, "Cast to decimal should succeed: " .. mSys.GetErrorMsg(err))
+   assert(tonumber(result) is 123.45, "Cast to decimal should return 123.45, got: " .. result)
+end
+
+-- Test basic cast to integer
+@Test function CastToInteger()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('"456" cast as xs:integer')
+   assert(err is ERR_Okay, "Cast to integer should succeed: " .. mSys.GetErrorMsg(err))
+   assert(tonumber(result) is 456, "Cast to integer should return 456, got: " .. result)
+end
+
+-- Test basic cast to boolean
+@Test function CastToBoolean()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('"true" cast as xs:boolean')
+   assert(err is ERR_Okay, "Cast to boolean should succeed: " .. mSys.GetErrorMsg(err))
+   assert(result is "true", "Cast to boolean should return true, got: " .. result)
+
+   local err2, result2 = xml.mtEvaluate('"0" cast as xs:boolean')
+   assert(err2 is ERR_Okay, "Cast '0' to boolean should succeed")
+   assert(result2 is "false", "Cast '0' to boolean should return false, got: " .. result2)
+end
+
+-- Test basic cast to date
+@Test function CastToDate()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('"2025-10-22" cast as xs:date')
+   assert(err is ERR_Okay, "Cast to date should succeed: " .. mSys.GetErrorMsg(err))
+   assert(result is "2025-10-22", "Cast to date should preserve format, got: " .. result)
+end
+
+-- Test cast to dateTime
+@Test function CastToDateTime()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('"2025-10-22T14:30:00" cast as xs:dateTime')
+   assert(err is ERR_Okay, "Cast to dateTime should succeed: " .. mSys.GetErrorMsg(err))
+end
+
+-- Test invalid cast should raise XPTY0004 error
+@Test function CastInvalidConversion()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   -- Try to cast non-numeric string to integer
+   local err, result = xml.mtEvaluate('"abc" cast as xs:integer')
+   assert(err != ERR_Okay, "Invalid cast should fail with error code")
+   -- Should raise XPTY0004 or similar error
+end
+
+-- Test cast with empty sequence
+@Test function CastEmptySequence()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   -- Empty sequence cannot be cast (should raise error)
+   local err, result = xml.mtEvaluate('() cast as xs:string')
+   assert(err != ERR_Okay, "Cast of empty sequence should fail")
+end
+
+-- Test cast from attribute value
+@Test function CastFromAttribute()
+   local xml = obj.new("xml", { statement = '<root price="99.99"/>' })
+
+   local err, result = xml.mtEvaluate('/root/@price cast as xs:decimal')
+   assert(err is ERR_Okay, "Cast from attribute should succeed: " .. mSys.GetErrorMsg(err))
+   assert(tonumber(result) is 99.99, "Cast from attribute should return 99.99, got: " .. result)
+end
+
+-- Test cast from element text
+@Test function CastFromElement()
+   local xml = obj.new("xml", { statement = '<root><count>42</count></root>' })
+
+   local err, result = xml.mtEvaluate('/root/count/text() cast as xs:integer')
+   assert(err is ERR_Okay, "Cast from element text should succeed: " .. mSys.GetErrorMsg(err))
+   assert(tonumber(result) is 42, "Cast from element should return 42, got: " .. result)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- CASTABLE EXPRESSION TESTS
+
+-- Test basic castable to string (always true for atomic values)
+@Test function CastableToString()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('42 castable as xs:string')
+   assert(err is ERR_Okay, "Castable to string should succeed: " .. mSys.GetErrorMsg(err))
+   assert(result is "true", "42 should be castable to string, got: " .. result)
+end
+
+-- Test castable with valid numeric conversion
+@Test function CastableValidNumeric()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('"123" castable as xs:integer')
+   assert(err is ERR_Okay, "Castable check should succeed: " .. mSys.GetErrorMsg(err))
+   assert(result is "true", "'123' should be castable to integer, got: " .. result)
+end
+
+-- Test castable with invalid numeric conversion
+@Test function CastableInvalidNumeric()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('"abc" castable as xs:integer')
+   assert(err is ERR_Okay, "Castable check should succeed: " .. mSys.GetErrorMsg(err))
+   assert(result is "false", "'abc' should not be castable to integer, got: " .. result)
+end
+
+-- Test castable with valid date
+@Test function CastableValidDate()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('"2025-10-22" castable as xs:date')
+   assert(err is ERR_Okay, "Castable to date should succeed: " .. mSys.GetErrorMsg(err))
+   assert(result is "true", "Valid date string should be castable, got: " .. result)
+end
+
+-- Test castable with invalid date
+@Test function CastableInvalidDate()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('"not-a-date" castable as xs:date')
+   assert(err is ERR_Okay, "Castable check should succeed: " .. mSys.GetErrorMsg(err))
+   assert(result is "false", "Invalid date should not be castable, got: " .. result)
+end
+
+-- Test castable with boolean
+@Test function CastableBoolean()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('"true" castable as xs:boolean')
+   assert(err is ERR_Okay, "Castable to boolean should succeed")
+   assert(result is "true", "'true' should be castable to boolean, got: " .. result)
+
+   local err2, result2 = xml.mtEvaluate('"maybe" castable as xs:boolean')
+   assert(err2 is ERR_Okay, "Castable check should succeed")
+   assert(result2 is "false", "'maybe' should not be castable to boolean, got: " .. result2)
+end
+
+-- Test castable with empty sequence
+@Test function CastableEmptySequence()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('() castable as xs:string')
+   assert(err is ERR_Okay, "Castable with empty sequence should succeed")
+   assert(result is "false", "Empty sequence should not be castable, got: " .. result)
+end
+
+-- Test castable from attribute
+@Test function CastableFromAttribute()
+   local xml = obj.new("xml", { statement = '<root value="123.45"/>' })
+
+   local err, result = xml.mtEvaluate('/root/@value castable as xs:decimal')
+   assert(err is ERR_Okay, "Castable from attribute should succeed: " .. mSys.GetErrorMsg(err))
+   assert(result is "true", "Numeric attribute should be castable to decimal, got: " .. result)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- TREAT AS EXPRESSION TESTS
+
+-- Test treat as with matching type
+@Test function TreatAsMatchingType()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('42 treat as xs:integer')
+   assert(err is ERR_Okay, "Treat as matching type should succeed: " .. mSys.GetErrorMsg(err))
+   assert(tonumber(result) is 42, "Treat as should return 42, got: " .. result)
+end
+
+-- Test treat as with string
+@Test function TreatAsString()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('"hello" treat as xs:string')
+   assert(err is ERR_Okay, "Treat as string should succeed: " .. mSys.GetErrorMsg(err))
+   assert(result is "hello", "Treat as should return 'hello', got: " .. result)
+end
+
+-- Test treat as with mismatched type (should raise XPTY0004)
+@Test function TreatAsMismatchedType()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   -- Try to treat string as integer without conversion
+   local err, result = xml.mtEvaluate('"abc" treat as xs:integer')
+   assert(err != ERR_Okay, "Treat as with mismatched type should fail with XPTY0004")
+end
+
+-- Test treat as with occurrence indicator ?
+@Test function TreatAsOptional()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   -- Single value treated as optional
+   local err, result = xml.mtEvaluate('42 treat as xs:integer?')
+   assert(err is ERR_Okay, "Treat as optional should succeed: " .. mSys.GetErrorMsg(err))
+
+   -- Empty sequence treated as optional
+   local err2, result2 = xml.mtEvaluate('() treat as xs:integer?')
+   assert(err2 is ERR_Okay, "Empty sequence with ? should succeed: " .. mSys.GetErrorMsg(err2))
+end
+
+-- Test treat as with occurrence indicator +
+@Test function TreatAsOneOrMore()
+   local xml = obj.new("xml", { statement = '<root><item>1</item><item>2</item></root>' })
+
+   -- Multiple items treated as one-or-more
+   local err, result = xml.mtEvaluate('data(/root/item/text()) treat as xs:string+')
+   assert(err is ERR_Okay, "Treat as one-or-more should succeed: " .. mSys.GetErrorMsg(err))
+
+   -- Empty sequence should fail with +
+   local err2, result2 = xml.mtEvaluate('() treat as xs:string+')
+   assert(err2 != ERR_Okay, "Empty sequence with + should fail")
+end
+
+-- Test treat as with occurrence indicator *
+@Test function TreatAsZeroOrMore()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   -- Empty sequence treated as zero-or-more
+   local err, result = xml.mtEvaluate('() treat as xs:integer*')
+   assert(err is ERR_Okay, "Empty sequence with * should succeed: " .. mSys.GetErrorMsg(err))
+
+   -- Multiple items treated as zero-or-more
+   local err2, result2 = xml.mtEvaluate('(1, 2, 3) treat as xs:integer*')
+   assert(err2 is ERR_Okay, "Multiple items with * should succeed: " .. mSys.GetErrorMsg(err2))
+end
+
+-- Test treat as with element sequence
+@Test function TreatAsElementSequence()
+   local xml = obj.new("xml", { statement = '<root><child/></root>' })
+
+   local err, result = xml.mtEvaluate('/root/child treat as element()')
+   assert(err is ERR_Okay, "Treat as element should succeed: " .. mSys.GetErrorMsg(err))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- INSTANCE OF EXPRESSION TESTS
+
+-- Test instance of with matching primitive type
+@Test function InstanceOfInteger()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('42 instance of xs:integer')
+   assert(err is ERR_Okay, "Instance of check should succeed: " .. mSys.GetErrorMsg(err))
+   assert(result is "true", "42 should be instance of xs:integer, got: " .. result)
+end
+
+-- Test instance of with non-matching primitive type
+@Test function InstanceOfNonMatchingType()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('"hello" instance of xs:integer')
+   assert(err is ERR_Okay, "Instance of check should succeed: " .. mSys.GetErrorMsg(err))
+   assert(result is "false", "String should not be instance of xs:integer, got: " .. result)
+end
+
+-- Test instance of with string type
+@Test function InstanceOfString()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('"hello" instance of xs:string')
+   assert(err is ERR_Okay, "Instance of string should succeed: " .. mSys.GetErrorMsg(err))
+   assert(result is "true", "String should be instance of xs:string, got: " .. result)
+end
+
+-- Test instance of with boolean type
+@Test function InstanceOfBoolean()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('true() instance of xs:boolean')
+   assert(err is ERR_Okay, "Instance of boolean should succeed: " .. mSys.GetErrorMsg(err))
+   assert(result is "true", "true() should be instance of xs:boolean, got: " .. result)
+end
+
+-- Regression: atomic sequences must not satisfy node() tests
+@Test function InstanceOfNodeWithAtomicSequence()
+   local xml = obj.new("xml", { statement = '<root attr="v">text</root>' })
+
+   -- Purely atomic sequence should not be instance of node()
+   local err, result = xml.mtEvaluate('(1, 2) instance of node()')
+   assert(err is ERR_Okay, "Instance of node() on atomic sequence should evaluate: " .. mSys.GetErrorMsg(err))
+   assert(result is "false", "(1, 2) must not satisfy node(), got: " .. tostring(result))
+
+   -- Control checks: real nodes should satisfy node()
+   local err2, result2 = xml.mtEvaluate('/root/text() instance of node()')
+   assert(err2 is ERR_Okay and result2 is "true", "text() should satisfy node(), got: " .. tostring(result2))
+
+   local err3, result3 = xml.mtEvaluate('/root/@attr instance of node()')
+   assert(err3 is ERR_Okay and result3 is "true", "@attr should satisfy node(), got: " .. tostring(result3))
+end
+
+-- Test instance of with occurrence indicator ?
+@Test function InstanceOfOptional()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   -- Single value is instance of optional type
+   local err, result = xml.mtEvaluate('42 instance of xs:integer?')
+   assert(err is ERR_Okay, "Instance of optional should succeed: " .. mSys.GetErrorMsg(err))
+   assert(result is "true", "Single value should match xs:integer?, got: " .. result)
+
+   -- Empty sequence is instance of optional type
+   local err2, result2 = xml.mtEvaluate('() instance of xs:integer?')
+   assert(err2 is ERR_Okay, "Empty sequence instance check should succeed")
+   assert(result2 is "true", "Empty sequence should match xs:integer?, got: " .. result2)
+
+   -- Multiple values do not match optional (exactly zero or one)
+   local err3, result3 = xml.mtEvaluate('(1, 2) instance of xs:integer?')
+   assert(err3 is ERR_Okay, "Multiple values instance check should succeed")
+   assert(result3 is "false", "Multiple values should not match xs:integer?, got: " .. result3)
+end
+
+-- Test instance of with occurrence indicator +
+@Test function InstanceOfOneOrMore()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   -- Single value matches one-or-more
+   local err, result = xml.mtEvaluate('42 instance of xs:integer+')
+   assert(err is ERR_Okay, "Instance of one-or-more should succeed: " .. mSys.GetErrorMsg(err))
+   assert(result is "true", "Single value should match xs:integer+, got: " .. result)
+
+   -- Multiple values match one-or-more
+   local err2, result2 = xml.mtEvaluate('(1, 2, 3) instance of xs:integer+')
+   assert(err2 is ERR_Okay, "Multiple values instance check should succeed")
+   assert(result2 is "true", "Multiple values should match xs:integer+, got: " .. result2)
+
+   -- Empty sequence does not match one-or-more
+   local err3, result3 = xml.mtEvaluate('() instance of xs:integer+')
+   assert(err3 is ERR_Okay, "Empty sequence instance check should succeed")
+   assert(result3 is "false", "Empty sequence should not match xs:integer+, got: " .. result3)
+end
+
+-- Test instance of with occurrence indicator *
+@Test function InstanceOfZeroOrMore()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   -- Empty sequence matches zero-or-more
+   local err, result = xml.mtEvaluate('() instance of xs:integer*')
+   assert(err is ERR_Okay, "Instance of zero-or-more should succeed: " .. mSys.GetErrorMsg(err))
+   assert(result is "true", "Empty sequence should match xs:integer*, got: " .. result)
+
+   -- Single value matches zero-or-more
+   local err2, result2 = xml.mtEvaluate('42 instance of xs:integer*')
+   assert(err2 is ERR_Okay, "Single value instance check should succeed")
+   assert(result2 is "true", "Single value should match xs:integer*, got: " .. result2)
+
+   -- Multiple values match zero-or-more
+   local err3, result3 = xml.mtEvaluate('(1, 2, 3) instance of xs:integer*')
+   assert(err3 is ERR_Okay, "Multiple values instance check should succeed")
+   assert(result3 is "true", "Multiple values should match xs:integer*, got: " .. result3)
+end
+
+-- Test instance of with element type
+@Test function InstanceOfElement()
+   local xml = obj.new("xml", { statement = '<root><child/></root>' })
+
+   local err, result = xml.mtEvaluate('/root/child instance of element()')
+   assert(err is ERR_Okay, "Instance of element should succeed: " .. mSys.GetErrorMsg(err))
+   assert(result is "true", "Element should be instance of element(), got: " .. result)
+
+   -- Attribute is not an element
+   local err2, result2 = xml.mtEvaluate('/root/@* instance of element()')
+   assert(err2 is ERR_Okay, "Attribute instance check should succeed")
+   -- Empty result or false expected
+end
+
+-- Test instance of with attribute type
+@Test function InstanceOfAttribute()
+   local xml = obj.new("xml", { statement = '<root name="test"/>' })
+
+   local err, result = xml.mtEvaluate('/root/@name instance of attribute()')
+   assert(err is ERR_Okay, "Instance of attribute should succeed: " .. mSys.GetErrorMsg(err))
+   assert(result is "true", "Attribute should be instance of attribute(), got: " .. result)
+end
+
+-- Test instance of with text type
+@Test function InstanceOfText()
+   local xml = obj.new("xml", { statement = '<root>text content</root>' })
+
+   local err, result = xml.mtEvaluate('/root/text() instance of text()')
+   assert(err is ERR_Okay, "Instance of text should succeed: " .. mSys.GetErrorMsg(err))
+   assert(result is "true", "Text node should be instance of text(), got: " .. result)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- TYPESWITCH EXPRESSION TESTS
+
+-- Test basic typeswitch with integer
+@Test function TypeswitchInteger()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local query = [[
+      typeswitch(42)
+         case $i as xs:integer return "integer"
+         case $s as xs:string return "string"
+         default return "other"
+   ]]
+
+   local err, result = xml.mtEvaluate(query)
+   assert(err is ERR_Okay, "Typeswitch should succeed: " .. mSys.GetErrorMsg(err))
+   assert(result is "integer", "Should match integer case, got: " .. result)
+end
+
+-- Test typeswitch with string
+@Test function TypeswitchString()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local query = [[
+      typeswitch("hello")
+         case $i as xs:integer return "integer"
+         case $s as xs:string return "string"
+         default return "other"
+   ]]
+
+   local err, result = xml.mtEvaluate(query)
+   assert(err is ERR_Okay, "Typeswitch should succeed: " .. mSys.GetErrorMsg(err))
+   assert(result is "string", "Should match string case, got: " .. result)
+end
+
+-- Test typeswitch with default case
+@Test function TypeswitchDefault()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local query = [[
+      typeswitch(true())
+         case $i as xs:integer return "integer"
+         case $s as xs:string return "string"
+         default return "boolean"
+   ]]
+
+   local err, result = xml.mtEvaluate(query)
+   assert(err is ERR_Okay, "Typeswitch should succeed: " .. mSys.GetErrorMsg(err))
+   assert(result is "boolean", "Should match default case, got: " .. result)
+end
+
+-- Test typeswitch with variable binding
+@Test function TypeswitchVariableBinding()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local query = [[
+      typeswitch(42)
+         case $i as xs:integer return $i * 2
+         default return 0
+   ]]
+
+   local err, result = xml.mtEvaluate(query)
+   assert(err is ERR_Okay, "Typeswitch with variable should succeed: " .. mSys.GetErrorMsg(err))
+   assert(tonumber(result) is 84, "Should use bound variable, got: " .. result)
+end
+
+-- Test typeswitch with multiple cases
+@Test function TypeswitchMultipleCases()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local query = [[
+      typeswitch("test")
+         case $i as xs:integer return "int"
+         case $d as xs:decimal return "decimal"
+         case $s as xs:string return "str"
+         case $b as xs:boolean return "bool"
+         default return "other"
+   ]]
+
+   local err, result = xml.mtEvaluate(query)
+   assert(err is ERR_Okay, "Typeswitch with multiple cases should succeed: " .. mSys.GetErrorMsg(err))
+   assert(result is "str", "Should match string case, got: " .. result)
+end
+
+-- Test typeswitch first-match-wins behavior
+@Test function TypeswitchFirstMatchWins()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   -- If integer matches multiple types, first should win
+   local query = [[
+      typeswitch(42)
+         case $n as xs:decimal return "decimal"
+         case $i as xs:integer return "integer"
+         default return "other"
+   ]]
+
+   local err, result = xml.mtEvaluate(query)
+   assert(err is ERR_Okay, "Typeswitch should succeed: " .. mSys.GetErrorMsg(err))
+   -- Should match based on subtype hierarchy
+end
+
+-- Test typeswitch with element nodes
+@Test function TypeswitchElement()
+   local xml = obj.new("xml", { statement = '<root><child>value</child></root>' })
+
+   local query = [[
+      typeswitch(/root/child)
+         case $e as element() return "element"
+         case $t as text() return "text"
+         default return "other"
+   ]]
+
+   local err, result = xml.mtEvaluate(query)
+   assert(err is ERR_Okay, "Typeswitch with element should succeed: " .. mSys.GetErrorMsg(err))
+   assert(result is "element", "Should match element case, got: " .. result)
+end
+
+-- Test typeswitch with occurrence indicators
+@Test function TypeswitchOccurrenceIndicators()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   -- Test optional type
+   local query1 = [[
+      typeswitch(())
+         case $i as xs:integer? return "optional-int"
+         default return "other"
+   ]]
+
+   local err, result = xml.mtEvaluate(query1)
+   assert(err is ERR_Okay, "Typeswitch with optional should succeed: " .. mSys.GetErrorMsg(err))
+
+   -- Test one-or-more type
+   local query2 = [[
+      typeswitch((1, 2, 3))
+         case $i as xs:integer+ return "one-or-more"
+         default return "other"
+   ]]
+
+   local err2, result2 = xml.mtEvaluate(query2)
+   assert(err2 is ERR_Okay, "Typeswitch with one-or-more should succeed: " .. mSys.GetErrorMsg(err2))
+   assert(result2 is "one-or-more", "Should match one-or-more case, got: " .. result2)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- TO RANGE OPERATOR TESTS
+
+-- Test basic range generation
+@Test function RangeBasic()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('1 to 5')
+   assert(err is ERR_Okay, "Range operator should succeed: " .. mSys.GetErrorMsg(err))
+   -- Result should be sequence: 1 2 3 4 5
+   assert(string.find(result, "1"), "Range should contain 1")
+   assert(string.find(result, "5"), "Range should contain 5")
+end
+
+-- Test range with count
+@Test function RangeCount()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('count(1 to 10)')
+   assert(err is ERR_Okay, "Range count should succeed: " .. mSys.GetErrorMsg(err))
+   assert(tonumber(result) is 10, "Range 1 to 10 should have 10 elements, got: " .. result)
+end
+
+-- Test range with single element
+@Test function RangeSingleElement()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('count(5 to 5)')
+   assert(err is ERR_Okay, "Single element range should succeed: " .. mSys.GetErrorMsg(err))
+   assert(tonumber(result) is 1, "Range 5 to 5 should have 1 element, got: " .. result)
+end
+
+-- Test empty range (end < start)
+@Test function RangeEmpty()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('count(10 to 5)')
+   assert(err is ERR_Okay, "Empty range should succeed: " .. mSys.GetErrorMsg(err))
+   assert(tonumber(result) is 0, "Range 10 to 5 should be empty, got: " .. result)
+end
+
+-- Test range with negative numbers
+@Test function RangeNegative()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('count(-5 to 5)')
+   assert(err is ERR_Okay, "Negative range should succeed: " .. mSys.GetErrorMsg(err))
+   assert(tonumber(result) is 11, "Range -5 to 5 should have 11 elements, got: " .. result)
+end
+
+-- Test range with zero
+@Test function RangeZero()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('count(0 to 10)')
+   assert(err is ERR_Okay, "Range from zero should succeed: " .. mSys.GetErrorMsg(err))
+   assert(tonumber(result) is 11, "Range 0 to 10 should have 11 elements, got: " .. result)
+end
+
+-- Test large range (with safeguards)
+@Test function RangeLarge()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('count(1 to 1000)')
+   assert(err is ERR_Okay, "Large range should succeed: " .. mSys.GetErrorMsg(err))
+   assert(tonumber(result) is 1000, "Range 1 to 1000 should have 1000 elements, got: " .. result)
+end
+
+-- Test range in for expression
+@Test function RangeInFor()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local query = 'sum(for $i in 1 to 5 return $i)'
+
+   local err, result = xml.mtEvaluate(query)
+   assert(err is ERR_Okay, "Range in for expression should succeed: " .. mSys.GetErrorMsg(err))
+   assert(tonumber(result) is 15, "Sum of 1 to 5 should be 15, got: " .. result)
+end
+
+-- Test range with position predicates
+@Test function RangeWithPredicates()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('(1 to 10)[5]')
+   assert(err is ERR_Okay, "Range with predicate should succeed: " .. mSys.GetErrorMsg(err))
+   assert(tonumber(result) is 5, "Fifth element of range should be 5, got: " .. result)
+end
+
+-- Test range with arithmetic
+@Test function RangeWithArithmetic()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('count(1 to (5 + 5))')
+   assert(err is ERR_Okay, "Range with arithmetic should succeed: " .. mSys.GetErrorMsg(err))
+   assert(tonumber(result) is 10, "Range should evaluate arithmetic, got: " .. result)
+end
+
+-- Test range with non-integer values (should handle or error)
+@Test function RangeNonInteger()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   -- XPath 2.0 spec: operands to 'to' must be integers
+   local err, result = xml.mtEvaluate('1.5 to 5.5')
+   -- Should either truncate to integers or raise error
+   assert(err != ERR_Okay or result, "Range with non-integers should handle gracefully")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- COMBINED EXPRESSION TESTS
+
+-- Test cast with range
+@Test function CastWithRange()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('count(for $i in 1 to 5 return $i cast as xs:string)')
+   assert(err is ERR_Okay, "Cast with range should succeed: " .. mSys.GetErrorMsg(err))
+   assert(tonumber(result) is 5, "Should cast all range elements, got: " .. result)
+end
+
+-- Test instance of with typeswitch
+@Test function InstanceOfWithTypeswitch()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local query = [[
+      let $val := 42
+      return if ($val instance of xs:integer) then
+         typeswitch($val)
+            case $i as xs:integer return $i * 2
+            default return 0
+      else 0
+   ]]
+
+   local err, result = xml.mtEvaluate(query)
+   assert(err is ERR_Okay, "Combined instance of and typeswitch should succeed: " .. mSys.GetErrorMsg(err))
+end
+
+-- Test castable in conditional
+@Test function CastableInConditional()
+   local xml = obj.new("xml", { statement = '<root value="123"/>' })
+
+   local query = [[
+      if (/root/@value castable as xs:integer) then
+         /root/@value cast as xs:integer
+      else
+         0
+   ]]
+
+   local err, result = xml.mtEvaluate(query)
+   assert(err is ERR_Okay, "Castable in conditional should succeed: " .. mSys.GetErrorMsg(err))
+   assert(tonumber(result) is 123, "Should cast valid value, got: " .. result)
+end
+
+-- Test treat as with range sequence
+@Test function TreatAsWithRange()
+   local xml = obj.new("xml", { statement = '<root/>' })
+
+   local err, result = xml.mtEvaluate('(1 to 5) treat as xs:integer+')
+   assert(err is ERR_Okay, "Treat as with range should succeed: " .. mSys.GetErrorMsg(err))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Constructor error tests
+
+@Test function ConstructorUnknownType()
+   local xml = obj.new('xml', { statement = '<root/>' })
+
+   local err = xml.mtEvaluate('xs:notAType("42")')
+   assert(err != ERR_Okay, 'Unknown constructor type should raise XPST0051')
+
+   local message = string.lower(tostring(xml.errorMsg))
+   assert(string.find(message, 'xpst0051', 0, true),
+      'Error message should include XPST0051 for unknown constructor types, got ' .. message)
+end
+
+@Test function ConstructorUnboundPrefix()
+   local xml = obj.new('xml', { statement = '<root/>' })
+
+   local err = xml.mtEvaluate('abc:decimal("7")')
+   assert(err != ERR_Okay, 'Constructor with unbound prefix should raise XPST0081')
+
+   local message = string.lower(tostring(xml.errorMsg))
+   assert(string.find(message, 'xpst0081', 0, true),
+      'Error message should include XPST0081 for missing namespace bindings, got ' .. message)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Constructor metadata propagation through cast/treat expressions
+
+@Test function ConstructorCastChaining()
+   local xml = obj.new('xml', { statement = '<root/>' })
+
+   local err, castDateTime = xml.mtEvaluate("let $value := xs:dateTime('2024-05-01T06:30:00+02:00') "
+      .. "return string($value cast as xs:dateTime)")
+   assert(err is ERR_Okay, 'Casting constructor results to the same type should succeed: ' .. mSys.GetErrorMsg(err))
+   assert(castDateTime is '2024-05-01T06:30:00+02:00',
+      'Casting xs:dateTime results should preserve canonical lexical forms, got: ' .. tostring(castDateTime))
+
+   local err2, castDate = xml.mtEvaluate("let $value := xs:date(xs:dateTime('2024-05-01T06:30:00+02:00')) "
+      .. "return string($value cast as xs:date)")
+   assert(err2 is ERR_Okay, 'xs:date values should remain castable to xs:date: ' .. mSys.GetErrorMsg(err2))
+   assert(castDate is '2024-05-01+02:00',
+      'Casting xs:date projections should retain their timezone component, got: ' .. tostring(castDate))
+end
+
+@Test function ConstructorTreatAsChaining()
+   local xml = obj.new('xml', { statement = '<root/>' })
+
+   local err, treatDuration = xml.mtEvaluate("let $value := xs:duration('P2DT3H4M') "
+      .. "return ($value treat as xs:duration) instance of xs:duration")
+   assert(err is ERR_Okay, 'Treating constructor duration values as xs:duration should succeed: ' .. mSys.GetErrorMsg(err))
+   assert(treatDuration is 'true',
+      'Treat as expression should preserve xs:duration annotations, got: ' .. tostring(treatDuration))
+
+   local err2, treatQName = xml.mtEvaluate("declare namespace p='http://example.com/ns'; "
+      .. "let $value := xs:QName('p:local') return ($value treat as xs:QName) instance of xs:QName")
+   assert(err2 is ERR_Okay, 'Treating xs:QName constructor values should succeed when prefixes are bound: ' .. mSys.GetErrorMsg(err2))
+   assert(treatQName is 'true', 'Treat as should preserve xs:QName typing, got: ' .. tostring(treatQName))
+end

@@ -11,7 +11,7 @@
     <id>2b439bb5</id>
     <idstring>NETSOCKET</idstring>
     <category>Network</category>
-    <copyright>Paul Manias © 2005-2025</copyright>
+    <copyright>Paul Manias © 2005-2026</copyright>
     <description>
 <p>The NetSocket class provides a simple way of managing TCP/IP socket communications.  Connections from a single client to the server and from the server to multiple clients are supported.  SSL functionality is also integrated.</p>
 <p>The design of the NetSocket class caters to asynchronous (non-blocking) communication.  This is achieved primarily through callback fields - connection alerts are managed by <fl>Feedback</fl>, incoming data is received through <fl>Incoming</fl> and readiness for outgoing data is supported by <fl>Outgoing</fl>.</p>
@@ -33,11 +33,23 @@ initially fill the internal write buffer, thereafter it will be called whenever 
 <header>SSL Server Certificates</header>
 <p>For SSL server sockets, custom certificates can be specified using the <fl>SSLCertificate</fl> field. Both PEM and PKCS#12 formats are supported across all platforms.</p>
 <p>Example with PKCS#12 certificate:</p>
-<p>
-<code/><code> netsocket = obj.new('netsocket', { flags = 'SERVER|SSL', port = 8443, sslCertificate = 'config:ssl/server.p12', sslKeyPassword = 'password123' }) </code><code/></p>
+<pre>
+netsocket = obj.new('netsocket', {
+   flags = 'SERVER|SSL',
+   port = 8443,
+   sslCertificate = 'config:ssl/server.p12',
+   sslKeyPassword = 'password123'
+})
+</pre>
 <p>Example with PEM certificate and separate private key:</p>
-<p>
-<code/><code> netsocket = obj.new('netsocket', { flags = 'SERVER|SSL', port = 8443, sslCertificate = 'config:ssl/server.crt', sslPrivateKey = 'config:ssl/server.key' }) </code><code/></p>
+<pre>
+netsocket = obj.new('netsocket', {
+   flags = 'SERVER|SSL',
+   port = 8443,
+   sslCertificate = 'config:ssl/server.crt',
+   sslPrivateKey = 'config:ssl/server.key'
+})
+</pre>
 <p>If no custom certificate is specified, the framework will automatically use a localhost self-signed certificate for development purposes.  For production use, always specify a proper certificate signed by a trusted CA.</p></description>
     <source>
       <file path="netsocket/">netsocket.cpp</file>
@@ -369,7 +381,7 @@ initially fill the internal write buffer, thereafter it will be called whenever 
       <access read="G" write="S">Get/Set</access>
       <type>FUNCTION</type>
       <description>
-<p>The Incoming field can be set with a custom function that will be called whenever the socket receives data.  The function prototype for C++ is <code>ERR Incoming(*NetSocket, APTR Meta)</code>.  For Fluid use <code>function Incoming(NetSocket)</code>.</p>
+<p>The Incoming field can be set with a custom function that will be called whenever the socket receives data.  The function prototype for C++ is <code>ERR Incoming(*NetSocket, APTR Meta)</code>.  For Tiri use <code>function Incoming(NetSocket)</code>.</p>
 <p>The <code>NetSocket</code> parameter refers to the NetSocket object.  <code>Meta</code> is optional userdata from the <code>FUNCTION</code>.</p>
 <p>Retrieve data from the socket with the <action>Read</action> action. Reading at least some of the data from the socket is compulsory - if the function does not do this then the data will be cleared from the socket when the function returns. If the callback function returns/raises <code>ERR::Terminate</code> then the Incoming field will be cleared and the function will no longer be called.  All other error codes are ignored.</p>
       </description>

@@ -1,0 +1,31 @@
+-- Unicode handling, properties, and case folding coverage
+
+@Test function UnicodeEscapeMatches()
+   local matcher = regex.new("\\u{00E9}")
+   assert(matcher.test("café"), "Unicode escape should match accented character")
+   assert(not matcher.test("cafe"), "Unicode escape should not match plain ASCII")
+end
+
+@Test function AstralSymbolDetection()
+   local matcher = regex.new("\\u{1F642}")
+   assert(matcher.test("Hello 🙂"), "Astral plane escape should match emoji")
+end
+
+@Test function UnicodeProperties()
+   local matcher = regex.new("^\\p{Lu}+$")
+   assert(matcher.test("ΩΨ"), "Unicode Lu property should recognise Greek capitals")
+   assert(not matcher.test("Ωψ"), "Unicode property should reject lowercase mixture")
+end
+
+@Test function UnicodeCaseFolding()
+   local matcher = regex.new("caf\\u{00E9}", regex.ICASE)
+   assert(matcher.test("CAFÉ"), "ICASE should fold accented characters")
+end
+
+@Test function SplitOnUnicodeWhitespace()
+   local matcher = regex.new("\\s+")
+   local nbsp = string.char(0xC2, 0xA0)
+   local result = matcher.split("first" .. nbsp .. "second\tthird")
+   assert(#result is 3, "Split should handle non breaking space and tab")
+   assert(result[1] is "second", "Second token should survive Unicode whitespace split")
+end

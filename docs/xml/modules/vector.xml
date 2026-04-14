@@ -6,7 +6,7 @@
     <name>Vector</name>
     <type>module</type>
     <version>1</version>
-    <copyright>Paul Manias © 2010-2025</copyright>
+    <copyright>Paul Manias © 2010-2026</copyright>
     <classes>
       <class>BlurFX</class>
       <class>ColourFX</class>
@@ -413,10 +413,38 @@ Z: Close Path
     </input>
     <description>
 <p>This function will parse an SVG style IRI into its equivalent logical values.  The results can then be processed for rendering a stroke or fill operation in the chosen style.</p>
-<p>Colours can be referenced using one of three methods.  Colour names such as <code>orange</code> and <code>red</code> are accepted.  Hexadecimal RGB values are supported in the format <code>#RRGGBBAA</code>.  Floating point RGB is supported as <code>rgb(r,g,b,a)</code> whereby the component values range between <code>0.0</code> and <code>255.0</code>.</p>
-<p>A Gradient, Image or Pattern can be referenced using the <code>url(#name)</code> format, where the 'name' is a definition that has been registered with the provided <code>Scene</code> object.  If <code>Scene</code> is <code>NULL</code> then it will not be possible to find the reference.  Any failure to lookup a reference will be silently discarded.</p>
+<p>Colours can be expressed in the following formats:</p>
+<types>
+<type name="Named colour">Standard SVG colour names such as <code>orange</code> and <code>red</code> are accepted.  Application-defined
+colour names are also supported.</type>
+<type name="#RRGGBB / #RRGGBBAA">Hexadecimal formats.  Alpha defaults to fully opaque when omitted.</type>
+<type name="rgb(R,G,B) / rgba(R,G,B,A)">Legacy comma-separated format.  Component values range from <code>0</code> to <code>255</code>,
+or from <code>0%</code> to <code>100%</code>.  The alpha component ranges from <code>0.0</code> to <code>1.0</code> (or <code>0%</code> to <code>100%</code>).</type>
+<type name="rgb(R G B) / rgb(R G B / A)">Modern CSS space-separated format.  Component values range from <code>0</code> to
+<code>255</code>, or from <code>0%</code> to <code>100%</code>.  Alpha is optional, preceded by <code>/</code>, and ranges from <code>0.0</code> to <code>1.0</code> (or <code>0%</code> to
+<code>100%</code>).</type>
+<type name="hsl(H,S,L) / hsla(H,S,L,A)">Hue is expressed in degrees (<code>0</code>-<code>360</code>).  Saturation and lightness are
+percentages.  Alpha ranges from <code>0.0</code> to <code>1.0</code>.</type>
+<type name="hsv(H,S,V)">Hue in degrees (<code>0</code>-<code>360</code>), saturation and value as percentages.  An optional alpha
+component ranging from <code>0.0</code> to <code>1.0</code> is supported.</type>
+<type name="oklab(L a b [/ A])">CSS Color Level 4 OKLAB colour space.  Lightness (<code>L</code>) is <code>0</code>-<code>1</code> or <code>0%</code>-<code>100%</code>.
+The <code>a</code> and <code>b</code> axes range from approximately <code>-0.4</code> to <code>0.4</code>, or as percentages where <code>100%</code> equals <code>0.4</code>.
+Alpha (<code>A</code>) is optional, preceded by <code>/</code>, and ranges from <code>0.0</code> to <code>1.0</code> or <code>0%</code> to <code>100%</code>.</type>
+<type name="oklch(L C H [/ A])">CSS Color Level 4 OKLCh colour space.  Lightness (<code>L</code>) is <code>0</code>-<code>1</code> or <code>0%</code>-<code>100%</code>.
+Chroma (<code>C</code>) is an unbounded positive value, or a percentage where <code>100%</code> equals <code>0.4</code>.  Hue (<code>H</code>) is in degrees.
+Alpha (<code>A</code>) is optional, preceded by <code>/</code>, and ranges from <code>0.0</code> to <code>1.0</code> or <code>0%</code> to <code>100%</code>.</type>
+<type name="lab(L a b [/ A])">CSS Color Level 4 CIE Lab colour space.  Lightness (<code>L</code>) is <code>0</code>-<code>100</code> or <code>0%</code>-<code>100%</code>.
+The <code>a</code> and <code>b</code> axes range from approximately <code>-125</code> to <code>125</code>, or as percentages where <code>100%</code> equals <code>125</code>.
+Alpha (<code>A</code>) is optional, preceded by <code>/</code>, and ranges from <code>0.0</code> to <code>1.0</code> or <code>0%</code> to <code>100%</code>.</type>
+<type name="lch(L C H [/ A])">CSS Color Level 4 CIE LCH colour space (cylindrical form of Lab).  Lightness (<code>L</code>) is
+<code>0</code>-<code>100</code> or <code>0%</code>-<code>100%</code>.  Chroma (<code>C</code>) is an unbounded positive value, or a percentage where <code>100%</code> equals <code>150</code>.
+Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, preceded by <code>/</code>, and ranges from <code>0.0</code> to <code>1.0</code> or
+<code>0%</code> to <code>100%</code>.</type>
+</types>
+<p>A Gradient, Image or Pattern can be referenced using the <code>url(#name)</code> format, where <code>name</code> is a definition registered with the provided <code>Scene</code> object.  If <code>Scene</code> is <code>NULL</code> then it will not be possible to find the reference.  Any failure to look up a reference will result in an error.  The <code>Scene</code> parameter accepts either a <class name="VectorScene">VectorScene</class> or a <class name="Vector">Vector</class> object if its Scene field value is defined.</p>
 <p>To access one of the pre-defined colourmaps, use the format <code>url(#cmap:name)</code>.  The colourmap will be accessible as a linear gradient that belongs to the <code>Scene</code>.  Valid colourmap names are <code>cmap:crest</code>, <code>cmap:flare</code>, <code>cmap:icefire</code>, <code>cmap:inferno</code>, <code>cmap:magma</code>, <code>cmap:mako</code>, <code>cmap:plasma</code>, <code>cmap:rocket</code>, <code>cmap:viridis</code>.</p>
-<p>A <st>VectorPainter</st> structure must be provided by the client and will be used to store the final result.  All pointers that are returned will remain valid as long as the provided Scene exists with its registered painter definitions.  An optional <code>Result</code> string can store a reference to the character up to which the IRI was parsed.</p>
+<p>A <st>VectorPainter</st> structure must be provided by the client and will be used to store the final result.  All pointers that are returned will remain valid as long as the provided Scene exists with its registered painter definitions.  An optional <code>Result</code> string can store a reference to the character position up to which the IRI was parsed.</p>
+<p>Note: To ensure that colour values are never clipped, values stored in the Colour field are unclamped from the sRGB colour space (colours may be negative or exceed 1.0).  Clients must clamp colours as necessary when converting to their target colour space.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
@@ -987,10 +1015,10 @@ Z: Close Path
   </types>
   <structs>
     <struct name="FontMetrics" comment="Font metrics, measured in pixels relative to the display">
-      <field name="Height" type="INT">Capitalised font height</field>
-      <field name="LineSpacing" type="INT">Vertical advance from one line to the next</field>
-      <field name="Ascent" type="INT">Height from the baseline to the top of the font, including accents.</field>
-      <field name="Descent" type="INT">Height from the baseline to the bottom of the font</field>
+      <field name="Height" type="INT">Full font height equivalent to <code>Ascent (cap-height) + Descent (gutter)</code>.  Does NOT include accents.</field>
+      <field name="LineSpacing" type="INT">Vertical advance from one line to the next.  Includes coverage for accents and additional whitespace.</field>
+      <field name="Ascent" type="INT">Height from the baseline to the top (cap-height) of the font.  Does NOT include accents.</field>
+      <field name="Descent" type="INT">Height from the baseline to the bottom of the font (gutter)</field>
     </struct>
 
     <struct name="GradientStop" comment="Describes a colour stop for the VectorGradient Stops field.">
@@ -1040,7 +1068,7 @@ Z: Close Path
       <field name="Pattern" type="objVectorPattern *">A <class name="VectorPattern">VectorPattern</class> object, suitable for pattern based fills.</field>
       <field name="Image" type="objVectorImage *">A <class name="VectorImage">VectorImage</class> object, suitable for image fills.</field>
       <field name="Gradient" type="objVectorGradient *">A <class name="VectorGradient">VectorGradient</class> object, suitable for gradient fills.</field>
-      <field name="Colour" type="struct FRGB">A single RGB colour definition, suitable for block colour fills.</field>
+      <field name="Colour" type="struct FRGB">A single RGB colour definition, suitable for block colour fills.  Colour values are unclamped to support all possible colour spaces.</field>
     </struct>
 
     <struct name="VectorPoint" comment="Structure for the VectorPolygon PointsArray field.">

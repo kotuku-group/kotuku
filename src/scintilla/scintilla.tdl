@@ -1,0 +1,109 @@
+--$TIRI:Include
+
+module({ name="Scintilla", copyright="Paul Manias © 2005-2026", version=1.0, timestamp=20240611 }, function()
+  c_include("<kotuku/modules/display.h>",
+  "<kotuku/modules/font.h>")
+
+  restrict(function()
+    loadFile(glPath .. 'common-graphics.tdl')
+  end)
+
+  constants("SCLEX", { type="int", comment="Scintilla Lexers.  These codes originate from the Scintilla library." }, {
+    PYTHON     = "2: Python",
+    CPP        = "3: C or C++",
+    HTML       = "4: HTML",
+    XML        = "5: XML",
+    PERL       = "6: Perl",
+    SQL        = "7: SQL",
+    VB         = "8: Visual Basic",
+    PROPERTIES = "9: Properties",
+    ERRORLIST  = "10: ErrorList",
+    MAKEFILE   = "11: Makefile",
+    BATCH      = "12: Batch",
+    TIRI      = "15: Tiri",
+    DIFF       = "16: Diff",
+    PASCAL     = "18: Pascal",
+    RUBY       = "22: Ruby",
+    VBSCRIPT   = "28: VBScript",
+    ASP        = "29: Active Server Pages",
+    ASSEMBLER  = "34: Assembler",
+    CSS        = "38: CSS",
+    BASH       = "62: Bash",
+    PHPSCRIPT  = "69: PHP Script",
+    REBOL      = "71: Rebol"
+  })
+
+  flags("SCIF", { comment="Optional flags." },
+     "DISABLED: Read-only.  This flag is set if the Scintilla object has been deactivated with the Disable action.",
+     "DETECT_LEXER: Automatic lexer detection will occur on initialisation and at any time that a source file is loaded.",
+     "EDIT: Must be defined if the document is to be editable via user input.",
+     "EXT_PAGE: Extends the length of the document by one blank page.  This is a visual effect that only has an impact when the user scrolls to the end of the document.")
+   -- OVERWRITE
+   -- AREA_SELECTED
+   -- SYS_KEYS Support CTRL-C, CTRL-V etc?
+
+  flags("SEF", { comment="Flags for EventCallback and EventFlags" },
+     "MODIFIED: The content has changed to a modified state, i.e. the user has made an edit.  The modified state will remain until the content is saved.",
+     "CURSOR_POS: The cursor position has changed.",
+     "FAIL_RO: User attempt to edit read-only content.",
+     "NEW_CHAR: At least one new character has been inserted.")
+
+  flags("STF", { comment="Scintilla search flags." },
+    "CASE: Case sensitive search.",
+    "MOVE_CURSOR: The cursor is moved to the discovered string.  If not set, the string is auto-selected.",
+    "SCAN_SELECTION: Limit search to within the user's current selection.",
+    "BACKWARDS: Search backwards.",
+    "EXPRESSION: Search text is a regular expression.",
+    "WRAP: Wrap search at the end of the document.")
+
+  methods("scintilla", "Sci", {
+    { id=1,  name="SetFont" },
+    { id=2,  name="ReplaceText" },
+    { id=3,  name="DeleteLine" },
+    { id=4,  name="SelectRange" },
+    { id=5,  name="InsertText" },
+    { id=6,  name="GetLine" },
+    { id=7,  name="ReplaceLine" },
+    { id=8,  name="GotoLine" },
+    { id=9,  name="TrimWhitespace" },
+    { id=10, name="GetPos" },
+    { id=11, name="ReportEvent" },
+    { id=12, name="ScrollToPoint" }
+  })
+
+  class("Scintilla", { src={ "class_scintilla.cxx" }, output="class_scintilla_def.cxx" }, [[
+    obj(Font) Font             # Font to use for the text
+    cstr Path                  # Source text file
+    int(SEF) EventFlags        # SEF flags.  Indicates the events that will be reported.
+    oid Surface                # The object that should be rendered to
+    int(SCIF) Flags            # Optional flags
+    oid Focus
+    int Visible                # TRUE if the text is visible
+    int LeftMargin             # Size of the left margin
+    int RightMargin            # Size of the right margin
+    struct(RGB8) LineHighlight # Background colour for the current line of the cursor
+    struct(RGB8) SelectFore    # Default colour for text highlighting (foreground)
+    struct(RGB8) SelectBkgd    # Default colour for text highlighting (background)
+    struct(RGB8) BkgdColour    # Colour for text background
+    struct(RGB8) CursorColour  # The colour of the cursor
+    struct(RGB8) TextColour    # The colour of foreground text
+    int CursorRow              # Current cursor row
+    int CursorCol              # Current cursor column
+    int(SCLEX) Lexer           # Chosen lexer
+    int Modified               # TRUE if the document has been modified since last save.
+  ]])
+
+  methods("scintillasearch", "Ss", {
+    { id=1, name="Next" },
+    { id=2, name="Prev" },
+    { id=3, name="Find" }
+  })
+
+  class("ScintillaSearch", { comment="Simple search for Scintilla", src="class_scintilla_search.cxx" }, [[
+    obj(Scintilla) Scintilla  # The targeted Scintilla object.
+    cstr Text       # The text being searched for.
+    int(STF) Flags  # Optional flags affecting the search.
+    int Start       # Start of the current/most recent selection
+    int End         # End of the current/most recent selection
+  ]])
+end)

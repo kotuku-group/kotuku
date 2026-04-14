@@ -11,7 +11,7 @@
     <id>09eaa136</id>
     <idstring>VECTORPATTERN</idstring>
     <category>Graphics</category>
-    <copyright>Paul Manias © 2010-2025</copyright>
+    <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>The VectorPattern class is used by Vector painting algorithms to fill and stroke vectors with pre-rendered patterns. It is the most efficient way of rendering a common set of graphics multiple times.</p>
 <p>The VectorPattern must be registered with a <class name="VectorScene">VectorScene</class> via the <method class="VectorScene">AddDef</method> method. Any vector within the target scene will be able to utilise the pattern for filling or stroking by referencing its name through the <class name="Vector" field="Fill">Vector.Fill</class> and <class name="Vector" field="Stroke">Vector.Stroke</class> fields.  For instance <code>url(#dots)</code>.</p>

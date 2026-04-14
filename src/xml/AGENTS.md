@@ -1,10 +1,10 @@
 # XML Module - AI Agent Guide
 
-This file provides comprehensive information about the Parasol XML module for AI agents working with the codebase.
+This file provides comprehensive information about the Kōtuku XML module for AI agents working with the codebase.
 
 ## Overview
 
-The XML module provides robust functionality for creating, parsing, and maintaining XML data structures. It serves as Parasol's general-purpose structured data handler, supporting XML, JSON, YAML, and other structured formats with cross-format conversion capabilities.
+The XML module provides robust functionality for creating, parsing, and maintaining XML data structures. It serves as Kōtuku's general-purpose structured data handler, supporting XML, JSON, YAML, and other structured formats with cross-format conversion capabilities.
 
 **Key Features:**
 - Full XML parsing and serialisation with flexible parsing modes
@@ -22,7 +22,7 @@ The XML module provides robust functionality for creating, parsing, and maintain
 
 ```
 src/xml/
-├── xml.fdl              # Interface definition (classes, enums, structs)
+├── xml.tdl              # Interface definition (classes, enums, structs)
 ├── xml.cpp              # Main XML module implementation
 ├── xml.h                # Internal header definitions
 ├── xml_def.c            # Generated C module definitions
@@ -39,16 +39,16 @@ src/xml/
 │   ├── schema_types.cpp/h        # Schema type system and validation
 │   └── type_checker.cpp/h        # Type validation logic
 └── tests/               # XML-specific test suite
-    ├── test_basic.fluid                # Basic XML operations
-    ├── test_advanced_features.fluid    # Complex parsing scenarios
-    ├── test_schema_validation.fluid    # XML Schema validation tests
-    ├── test_xml_parsing.fluid          # Parser robustness tests
-    ├── test_xml_manipulation.fluid     # Content modification tests
-    ├── test_data_sources.fluid         # Multiple input source handling
-    ├── test_namespaces.fluid           # Namespace processing
-    ├── test_setvariable.fluid          # Variable binding
-    ├── test_error_handling.fluid       # Error condition handling
-    └── benchmark.fluid                 # Performance measurement
+    ├── test_basic.tiri                # Basic XML operations
+    ├── test_advanced_features.tiri    # Complex parsing scenarios
+    ├── test_schema_validation.tiri    # XML Schema validation tests
+    ├── test_xml_parsing.tiri          # Parser robustness tests
+    ├── test_xml_manipulation.tiri     # Content modification tests
+    ├── test_data_sources.tiri         # Multiple input source handling
+    ├── test_namespaces.tiri           # Namespace processing
+    ├── test_setvariable.tiri          # Variable binding
+    ├── test_error_handling.tiri       # Error condition handling
+    └── benchmark.tiri                 # Performance measurement
 ```
 
 ### Dependencies
@@ -62,7 +62,7 @@ src/xml/
 
 Primary class for XML document handling with comprehensive parsing and manipulation capabilities.
 
-**Include:** `<parasol/modules/xml.h>`
+**Include:** `<kotuku/modules/xml.h>`
 
 **Key Fields:**
 - `Path` (str) - File system location of XML data
@@ -70,28 +70,28 @@ Primary class for XML document handling with comprehensive parsing and manipulat
 - `Flags` (XMF) - Parsing and behavior flags
 - `Start` (int) - Starting cursor position for operations
 - `Modified` (int) - Modification timestamp
-- `Tags` (TAGS) - Hierarchical array of XMLTag structures
+- `Tags` (TAGS) - Hierarchical array of XTag structures
 
 **Critical Implementation Notes:**
-- C++ developers get direct access to `Tags` field as `pf::vector<XMLTag>`
-- Fluid developers should cache `Tags` reads as they create full copies
+- C++ developers get direct access to `Tags` field as `pf::vector<XTag>`
+- Tiri developers should cache `Tags` reads as they create full copies
 - Thread-safe due to object locking principles.
 
-### XMLTag Structure
+### XTag Structure
 
 Represents complete XML elements with attributes, content, and hierarchy.
 
-**Include:** `<parasol/modules/xml.h>`
+**Include:** `<kotuku/modules/xml.h>`
 
 ```cpp
-struct XMLTag {
+struct XTag {
    int ID;                             // Unique tag identifier
    int ParentID;                       // Parent tag ID (0 for root)
    int LineNo;                         // Source line number
    XTF Flags;                          // Tag flags (CDATA, INSTRUCTION, etc.)
    uint NamespaceID;                   // Namespace URI hash
    pf::vector<XMLAttrib> Attribs;      // Attributes array
-   pf::vector<XMLTag> Children;        // Child elements array
+   pf::vector<XTag> Children;        // Child elements array
 }
 ```
 
@@ -106,7 +106,7 @@ struct XMLTag {
 
 Simple name-value pair for XML attributes and content.
 
-**Include:** `<parasol/modules/xml.h>`
+**Include:** `<kotuku/modules/xml.h>`
 
 ```cpp
 struct XMLAttrib {
@@ -118,7 +118,7 @@ struct XMLAttrib {
 ### Key Enumerations and Flags
 
 **XMF Flags** - XML parsing and behavior options
-**Include:** `<parasol/modules/xml.h>`
+**Include:** `<kotuku/modules/xml.h>`
 - `WELL_FORMED` - Require well-formed XML structure
 - `INCLUDE_COMMENTS` - Preserve XML comments in parsing
 - `STRIP_CONTENT` - Remove all text content during parsing
@@ -127,15 +127,15 @@ struct XMLAttrib {
 - `PARSE_HTML` - Handle HTML escape codes
 - `INCLUDE_WHITESPACE` - Retain whitespace between tags
 
-**XTF Flags** - XMLTag type indicators
-**Include:** `<parasol/modules/xml.h>`
+**XTF Flags** - XTag type indicators
+**Include:** `<kotuku/modules/xml.h>`
 - `CDATA` - Tag represents CDATA section
 - `INSTRUCTION` - Processing instruction (<?xml?>)
 - `NOTATION` - Notation declaration (<!XML>)
 - `COMMENT` - Comment section (<!-- -->)
 
 **XMI Enum** - Tag insertion positions
-**Include:** `<parasol/modules/xml.h>`
+**Include:** `<kotuku/modules/xml.h>`
 - `PREV/PREVIOUS` - Insert before target tag
 - `CHILD` - Insert as first child
 - `NEXT` - Insert after target tag
@@ -221,13 +221,13 @@ For detailed XPath functionality, see the XPath module documentation at `src/xpa
 ### Utility Functions
 
 **XML Namespace Functions**
-**Include:** `<parasol/modules/xml.h>` (xml namespace)
+**Include:** `<kotuku/modules/xml.h>` (xml namespace)
 
 ```cpp
 // Direct tag attribute manipulation
-void UpdateAttrib(XMLTag &Tag, const std::string Name, const std::string Value, bool CanCreate = false)
-void NewAttrib(XMLTag &Tag, const std::string Name, const std::string Value)
-std::string GetContent(const XMLTag &Tag)
+void UpdateAttrib(XTag &Tag, const std::string Name, const std::string Value, bool CanCreate = false)
+void NewAttrib(XTag &Tag, const std::string Name, const std::string Value)
+std::string GetContent(const XTag &Tag)
 
 // Process all attributes in XML tree
 void ForEachAttrib(objXML::TAGS &Tags, std::function<void(XMLAttrib &)> &Function)
@@ -240,32 +240,32 @@ void ForEachAttrib(objXML::TAGS &Tags, std::function<void(XMLAttrib &)> &Functio
 Comprehensive test suite using Flute test runner covering all module features:
 
 **Core XML Tests (src/xml/tests/):**
-- `test_basic.fluid` - Core XML operations and tag access
-- `test_advanced_features.fluid` - Complex parsing scenarios
-- `test_xml_parsing.fluid` - Parser robustness tests
-- `test_xml_manipulation.fluid` - Content modification
-- `test_data_sources.fluid` - Multiple input source handling
-- `test_namespaces.fluid` - Namespace processing
-- `test_setvariable.fluid` - Variable binding for XPath queries
-- `test_error_handling.fluid` - Error condition handling
-- `test_schema_validation.fluid` - XML Schema validation and type checking
-- `benchmark.fluid` - Performance measurement and optimization
+- `test_basic.tiri` - Core XML operations and tag access
+- `test_advanced_features.tiri` - Complex parsing scenarios
+- `test_xml_parsing.tiri` - Parser robustness tests
+- `test_xml_manipulation.tiri` - Content modification
+- `test_data_sources.tiri` - Multiple input source handling
+- `test_namespaces.tiri` - Namespace processing
+- `test_setvariable.tiri` - Variable binding for XPath queries
+- `test_error_handling.tiri` - Error condition handling
+- `test_schema_validation.tiri` - XML Schema validation and type checking
+- `benchmark.tiri` - Performance measurement and optimization
 
 **XPath Integration Tests (src/xpath/tests/):**
 XPath tests have been moved to the separate XPath module. See `src/xpath/AGENTS.md` for details on XPath-specific tests including:
-- `test_core.fluid` - XPath integration with XML class
-- `test_predicates.fluid` - Predicate evaluation
-- `test_axes.fluid` - XPath axes navigation
-- `test_advanced.fluid` - Complex XPath queries
-- `test_flwor.fluid` / `test_flwor_clauses.fluid` - FLWOR expressions
-- `test_func_ext.fluid` - Extended function library
+- `test_core.tiri` - XPath integration with XML class
+- `test_predicates.tiri` - Predicate evaluation
+- `test_axes.tiri` - XPath axes navigation
+- `test_advanced.tiri` - Complex XPath queries
+- `test_flwor.tiri` / `test_flwor_clauses.tiri` - FLWOR expressions
+- `test_func_ext.tiri` - Extended function library
 - And many more XPath-specific test files
 
 ### Running Tests
 
 **Individual Test:**
 ```bash
-cd src/xml/tests && ../../../install/agents/parasol.exe ../../../tools/flute.fluid file=E:/parasol/src/xml/tests/test_basic.fluid --gfx-driver=headless --log-warning
+cd src/xml/tests && ../../../install/agents/origo.exe ../../../tools/flute.tiri file=E:/parasol/src/xml/tests/test_basic.tiri --gfx-driver=headless --log-warning
 ```
 
 **All XML Tests via CMake:**
@@ -277,7 +277,7 @@ ctest --build-config [BuildType] --test-dir build/agents -R xml_
 
 ### Basic XML Parsing
 
-```fluid
+```tiri
 local xml = obj.new('xml', { path = 'document.xml' })
 local tags = xml.tags
 for i, tag in ipairs(tags) do
@@ -290,7 +290,7 @@ end
 
 ### XPath Queries - Multiple Matches
 
-```fluid
+```tiri
 -- XPath queries are handled through the XML class methods
 local err, index = xml.mtFindTag('//book[@category="fiction"]',  function(XML, TagID, Attrib)
    local err, tag = XML.mtGetTag(TagID)
@@ -302,7 +302,7 @@ end)
 
 ### XML Schema Validation
 
-```fluid
+```tiri
 -- Load schema definition
 local xml = obj.new('xml', { path = 'document.xml', flags = '!NAMESPACE_AWARE' })
 local err = xml.mtLoadSchema('schema.xsd')
@@ -360,14 +360,14 @@ The XML Schema validation system is integrated into the module with these compon
 
 ### Memory Management
 
-- **Tags Array**: Direct C++ access avoids copying, Fluid access creates copies
+- **Tags Array**: Direct C++ access avoids copying, Tiri access creates copies
 - **Content Extraction**: Pre-calculated string sizes prevent reallocations
 - **Namespace Hashing**: URI hashes for fast namespace lookups
 - **Schema Validation**: Schema definitions cached after initial load
 
 ### Optimization Strategies
 
-- Cache `Tags` reads in Fluid scripts
+- Cache `Tags` reads in Tiri scripts
 - Use specific XPath expressions rather than broad queries (see XPath module for optimization)
 - Enable namespace processing only when required (`XMF::NAMESPACE_AWARE`)
 - Consider `XMF::STRIP_CONTENT` for metadata-only operations
@@ -418,7 +418,7 @@ While primarily XML-focused, the module architecture supports extension to other
 - **Document Module**: XML provides structured data for RIPL document processing
 - **SVG Module**: XML parsing serves as foundation for SVG document handling
 - **Core Module**: Utilizes Core's file system and object management
-- **Fluid Module**: Provides scripted access to all XML functionality
+- **Tiri Module**: Provides scripted access to all XML functionality
 
 ### External Dependencies
 
@@ -431,4 +431,4 @@ While primarily XML-focused, the module architecture supports extension to other
 - **Schema Validation**: Detailed schema validation information in this document
 - **API Reference**: See `docs/xml/modules/classes/xml.xml` for complete API documentation
 
-This guide provides the essential information needed for AI agents to work effectively with the Parasol XML module, covering architecture, functionality, testing, and integration patterns.
+This guide provides the essential information needed for AI agents to work effectively with the Kōtuku XML module, covering architecture, functionality, testing, and integration patterns.

@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -9,9 +9,9 @@ MP3: Sound class extension
 
 *********************************************************************************************************************/
 
-#include <parasol/main.h>
-#include <parasol/modules/audio.h>
-#include <parasol/strings.hpp>
+#include <kotuku/main.h>
+#include <kotuku/modules/audio.h>
+#include <kotuku/strings.hpp>
 
 extern "C" {
 //#define MINIMP3_FLOAT_OUTPUT
@@ -288,7 +288,8 @@ static int check_xing(objSound *Self, const uint8_t *Frame)
    len -= int64_t(prv->PaddingEnd * prv->info.channels) * sizeof(int16_t);
    Self->setLength(len);
 
-   log.msg("Info header detected.  Total Frames: %d, Samples: %d, Track Time: %.2fs, Byte Length: %" PF64 ", Padding: %d/%d", prv->TotalFrames, prv->TotalSamples, seconds_len, (long long)len, prv->PaddingStart, prv->PaddingEnd);
+   log.msg("Info header detected.  Total Frames: %d, Samples: %d, Track Time: %.2fs, Byte Length: %" PRId64 ", Padding: %d/%d",
+      prv->TotalFrames, prv->TotalSamples, seconds_len, int64_t(len), prv->PaddingStart, prv->PaddingEnd);
 
    return 1;
 }
@@ -552,9 +553,9 @@ static ERR MP3_Seek(objSound *Self, struct acSeek *Args)
    auto prv = (prvMP3 *)Self->ChildPrivate;
 
    int64_t offset;
-   if (Args->Position IS SEEK::START)         offset = F2T(Args->Offset);
-   else if (Args->Position IS SEEK::END)      offset = Self->Length - F2T(Args->Offset);
-   else if (Args->Position IS SEEK::CURRENT)  offset = prv->ReadOffset + F2T(Args->Offset);
+   if (Args->Position IS SEEK::START)         offset = int(Args->Offset);
+   else if (Args->Position IS SEEK::END)      offset = Self->Length - int(Args->Offset);
+   else if (Args->Position IS SEEK::CURRENT)  offset = prv->ReadOffset + int(Args->Offset);
    else if (Args->Position IS SEEK::RELATIVE) offset = Self->Length * Args->Offset;
    else return log.warning(ERR::Args);
 
@@ -583,7 +584,7 @@ static ERR MP3_Seek(objSound *Self, struct acSeek *Args)
             // (relative to TotalFrames).  By knowing the frame number, we can make more accurate calculations
             // as to time and length remaining.
 
-            int idx = F2T(pct * prv->TOC.size());
+            int idx = int(pct * prv->TOC.size());
             if (idx < 0) idx = 0;
             else if (idx >= (int)prv->TOC.size()) idx = prv->TOC.size() - 1;
 
@@ -610,8 +611,8 @@ static ERR MP3_Seek(objSound *Self, struct acSeek *Args)
                prv->StreamSize = size - prv->SeekOffset;
             }
 
-            int frame  = F2T(prv->TotalFrames * pct);
-            int offset = F2T(prv->StreamSize * pct);
+            int frame  = int(prv->TotalFrames * pct);
+            int offset = int(prv->StreamSize * pct);
             if (frame < 0) frame = 0;
             if (offset < 0) offset = 0;
             prv->File->seekStart(prv->SeekOffset + offset);
@@ -768,7 +769,7 @@ static int64_t calc_length(objSound *Self, int ReduceEnd)
 
    sort(fsizes.begin(), fsizes.end(), std::greater<uint16_t>());
    const int first = fsizes.size() / 4;
-   const int last  = F2T(fsizes.size() * 0.75);
+   const int last  = int(fsizes.size() * 0.75);
    double avg_frame_len = 0;
    for (int i=first; i < last; i++) avg_frame_len += fsizes[i];
    avg_frame_len /= (last - first);
@@ -777,13 +778,13 @@ static int64_t calc_length(objSound *Self, int ReduceEnd)
 
    if (filesize > buffer_size) {
       if (prv->VBR) {
-         prv->TotalFrames = F2T((filesize - prv->SeekOffset - frame_start - ReduceEnd) / avg_frame_len);
+         prv->TotalFrames = int((filesize - prv->SeekOffset - frame_start - ReduceEnd) / avg_frame_len);
          return int64_t(prv->TotalFrames * frame_samples * channels) * sizeof(int16_t);
       }
       else {
          // For CBR we guess the total frames from the file size.
          prv->File->get(FID_Size, filesize);
-         int total_frames = F2T((filesize - prv->SeekOffset - frame_start - ReduceEnd) / avg_frame_len);
+         int total_frames = int((filesize - prv->SeekOffset - frame_start - ReduceEnd) / avg_frame_len);
          double seconds = (total_frames * (double)avg_frame_len) / (double(current_bitrate) / 1000.0 * 125.0);
          prv->TotalFrames = total_frames;
          return seconds * Self->BytesPerSecond;
@@ -894,5 +895,5 @@ static ERR MODExpunge(void)
 
 //********************************************************************************************************************
 
-PARASOL_MOD(MODInit, nullptr, nullptr, MODExpunge, nullptr, nullptr)
+KOTUKU_MOD(MODInit, nullptr, nullptr, MODExpunge, nullptr, nullptr, nullptr)
 extern "C" struct ModHeader * register_mp3_module() { return &ModHeader; }

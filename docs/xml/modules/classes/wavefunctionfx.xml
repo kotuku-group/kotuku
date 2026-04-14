@@ -11,7 +11,7 @@
     <id>1069903c</id>
     <idstring>WAVEFUNCTIONFX</idstring>
     <category>Graphics</category>
-    <copyright>Paul Manias © 2010-2025</copyright>
+    <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>This filter effect uses a quantum wave function algorithm to generate a plot of electron probability density. Ignoring its scientific value, the formula can be exploited for its aesthetic qualities.  It can be used as an alternative to the radial gradient for generating more interesting shapes for example.</p>
 <p>The rendering of the wave function is controlled by its parameters <fl>N</fl>, <fl>L</fl> and <fl>M</fl>.  A <fl>Scale</fl> is also provided to deal with situations where the generated plot would otherwise be too large for its bounds.</p>

@@ -1,6 +1,6 @@
 #!/bin/bash
-# Parasol Debian Package Builder
-# This script builds .deb packages for Parasol Framework
+# Kotuku Debian Package Builder
+# This script builds .deb packages for Kotuku
 
 set -e -u -o pipefail
 
@@ -23,7 +23,7 @@ escape_changelog_line() {
 # Function to generate changelog entries from Git log
 generate_changelog_entries() {
     local max_entries="${1:-10}"
-    
+
     if command -v git &> /dev/null && git rev-parse --git-dir &> /dev/null; then
         # Use quote-safe Git log formatting and escape output for security
         local git_output
@@ -31,7 +31,7 @@ generate_changelog_entries() {
             echo "  * Initial release"
             return
         }
-        
+
         # Process each line safely to prevent command injection
         if [ -n "$git_output" ]; then
             while IFS= read -r line; do
@@ -53,12 +53,12 @@ process_control_template() {
     local output_file="$2"
     local package_version="$3"
     local architecture="$4"
-    
+
     if [[ ! -f "$template_file" ]]; then
         echo "Error: Control template not found: $template_file"
         return 1
     fi
-    
+
     # Process template variables with proper escaping
     sed -e "s/@VERSION@/$package_version/g" \
         -e "s/@DEBIAN_ARCH@/$architecture/g" \
@@ -74,13 +74,13 @@ create_debian_changelog() {
     local output_file="$1"
     local package_name="$2"
     local version="$3"
-    
+
     cat > "$output_file" << EOF
 $package_name ($version-1) stable; urgency=medium
 
 $(generate_changelog_entries 5)
 
- -- Parasol Framework Team <team@parasol-framework.org>  $(date -R)
+ -- Kotuku Open Group <team@kotuku.dev>  $(date -R)
 EOF
 }
 
@@ -88,7 +88,7 @@ EOF
 usage() {
     echo "Usage: $0 <tarball> [options]"
     echo "Arguments:"
-    echo "  tarball                 Path to .tar.gz file containing compiled Parasol release"
+    echo "  tarball                 Path to .tar.gz file containing compiled Kotuku release"
     echo "Options:"
     echo "  -h, --help              Show this help message"
     echo "  -c, --clean             Clean build directory before building"
@@ -97,9 +97,9 @@ usage() {
     echo "  -b, --build-dir DIR     Use custom build directory (default: build-deb)"
     echo ""
     echo "Examples:"
-    echo "  $0 parasol-linux64-20250731.tar.gz          Build runtime package"
-    echo "  $0 parasol-linux64-20250731.tar.gz --dev    Build both runtime and dev packages"
-    echo "  $0 parasol-linux64-20250731.tar.gz --clean  Clean build and create package"
+    echo "  $0 kotuku-linux64-20250731.tar.gz          Build runtime package"
+    echo "  $0 kotuku-linux64-20250731.tar.gz --dev    Build both runtime and dev packages"
+    echo "  $0 kotuku-linux64-20250731.tar.gz --clean  Clean build and create package"
 }
 
 # Check if tarball is provided
@@ -118,7 +118,7 @@ fi
 shift
 
 # Validate tarball path doesn't contain dangerous characters
-if [[ "$TARBALL" =~ [\\;\\&\\|\\`] ]]; then
+if [[ "$TARBALL" =~ [\;\&\|\`] ]]; then
     echo "Error: Tarball path contains invalid characters"
     exit 1
 fi
@@ -170,7 +170,7 @@ while [[ $# -gt 0 ]]; do
                 echo "Error: Build directory path contains invalid characters"
                 exit 1
             fi
-            
+
             # Ensure the parent directory exists for the build directory
             local parent_dir
             parent_dir="$(dirname "$BUILD_DIR")"
@@ -192,27 +192,21 @@ done
 validate_tarball_dependencies() {
     local missing_deps=()
     local missing_packages=()
-    
+
     echo "Validating packaging dependencies..."
-    
+
     # Essential packaging tools
     if ! command -v dpkg-deb &> /dev/null; then
         missing_deps+=("dpkg-deb")
         missing_packages+=("dpkg-dev")
     fi
-    
+
     if ! command -v tar &> /dev/null; then
         missing_deps+=("tar")
         missing_packages+=("tar")
     fi
-    
-    # Check for debhelper (recommended for proper Debian packaging)
-    if ! command -v dh &> /dev/null; then
-        missing_deps+=("debhelper (recommended)")
-        missing_packages+=("debhelper")
-    fi
-    
-    # Report missing dependencies
+
+    # Report missing dependencies (only fail on essential tools, not debhelper)
     if [ ${#missing_deps[@]} -gt 0 ]; then
         echo "Error: Missing required packaging dependencies:"
         printf "  - %s\\n" "${missing_deps[@]}"
@@ -223,8 +217,13 @@ validate_tarball_dependencies() {
         echo ""
         return 1
     fi
-    
-    echo "✓ All packaging dependencies satisfied"
+
+    # Warn if debhelper is missing (optional for tarball builds)
+    if ! command -v dh &> /dev/null; then
+        echo "⚠ debhelper not found (optional for tarball builds)"
+    fi
+
+    echo "✓ All essential packaging dependencies satisfied"
     return 0
 }
 
@@ -243,11 +242,11 @@ if [ -n "$DATE_VERSION" ]; then
 else
     # Fallback: try to get version from CMakeLists.txt if available
     if [ -f "CMakeLists.txt" ]; then
-        VERSION=$(grep "project (Parasol VERSION" CMakeLists.txt | sed 's/.*VERSION \([0-9.]*\).*/\1/')
+        VERSION=$(grep "project (Kotuku VERSION" CMakeLists.txt | sed 's/.*VERSION \([0-9.]*\).*/\1/')
     fi
     if [ -z "$VERSION" ]; then
         echo "Error: Could not extract version from tarball filename or CMakeLists.txt"
-        echo "Expected tarball format: parasol-linux64-YYYYMMDD.tar.gz"
+        echo "Expected tarball format: kotuku-linux64-YYYYMMDD.tar.gz"
         exit 1
     fi
 fi
@@ -255,7 +254,7 @@ fi
 # Detect architecture
 ARCH=$(dpkg --print-architecture)
 
-echo "Building Parasol Debian packages from tarball..."
+echo "Building Kotuku Debian packages from tarball..."
 echo "Tarball: $TARBALL"
 echo "Version: $VERSION"
 echo "Architecture: $ARCH"
@@ -281,16 +280,23 @@ if ! tar -xzf "$TARBALL" -C "$BUILD_DIR/extracted" --strip-components=1; then
 fi
 
 # Verify essential files exist in extracted tarball
-if [[ ! -f "$BUILD_DIR/extracted/parasol" ]]; then
-    echo "Error: Parasol executable not found in tarball"
+EXECUTABLE_NAME=""
+if [[ -f "$BUILD_DIR/extracted/kotuku" ]]; then
+    EXECUTABLE_NAME="kotuku"
+elif [[ -f "$BUILD_DIR/extracted/origo" ]]; then
+    EXECUTABLE_NAME="origo"
+elif [[ -f "$BUILD_DIR/extracted/tiri" ]]; then
+    EXECUTABLE_NAME="tiri"
+else
+    echo "Error: No executable found in tarball (looked for kotuku, origo, or tiri)"
     exit 1
 fi
 
-echo "Tarball extracted to $BUILD_DIR/extracted"
+echo "Tarball extracted to $BUILD_DIR/extracted (executable: $EXECUTABLE_NAME)"
 
 # Create staging directories for packages
-RUNTIME_STAGING="$BUILD_DIR/debian/parasol"
-DEV_STAGING="$BUILD_DIR/debian/parasol-dev"
+RUNTIME_STAGING="$BUILD_DIR/debian/kotuku"
+DEV_STAGING="$BUILD_DIR/debian/kotuku-dev"
 
 echo "Creating package staging directories..."
 rm -rf "$RUNTIME_STAGING" "$DEV_STAGING"
@@ -305,45 +311,51 @@ echo "Installing to staging directory..."
 
 # Create necessary directories
 mkdir -p "$RUNTIME_STAGING/usr/bin"
-mkdir -p "$RUNTIME_STAGING/usr/share/parasol"
-mkdir -p "$RUNTIME_STAGING/usr/share/doc/parasol"
+mkdir -p "$RUNTIME_STAGING/usr/share/kotuku"
+mkdir -p "$RUNTIME_STAGING/usr/share/doc/kotuku"
 
-# Copy the main parasol binary with validation
-if [[ ! -f "$BUILD_DIR/extracted/parasol" ]]; then
-    echo "Error: Parasol executable not found in extracted files"
+# Copy the main executable binary with validation
+if [[ ! -f "$BUILD_DIR/extracted/$EXECUTABLE_NAME" ]]; then
+    echo "Error: Executable not found in extracted files: $EXECUTABLE_NAME"
     exit 1
 fi
 
-cp "$BUILD_DIR/extracted/parasol" "$RUNTIME_STAGING/usr/bin/" || { echo "Error: Failed to copy parasol executable"; exit 1; }
-chmod 755 "$RUNTIME_STAGING/usr/bin/parasol" || { echo "Error: Failed to set executable permissions"; exit 1; }
+# Copy the executable as 'origo' for consistency
+cp "$BUILD_DIR/extracted/$EXECUTABLE_NAME" "$RUNTIME_STAGING/usr/bin/origo" || { echo "Error: Failed to copy executable"; exit 1; }
+chmod 755 "$RUNTIME_STAGING/usr/bin/origo" || { echo "Error: Failed to set executable permissions"; exit 1; }
+
+# Create a symlink with the original name if different
+if [[ "$EXECUTABLE_NAME" != "origo" ]]; then
+    ln -s origo "$RUNTIME_STAGING/usr/bin/$EXECUTABLE_NAME" || { echo "Warning: Failed to create symlink for $EXECUTABLE_NAME"; }
+fi
 
 # Copy configuration and scripts with validation
 if [[ -d "$BUILD_DIR/extracted/config" ]]; then
-    cp -r "$BUILD_DIR/extracted/config" "$RUNTIME_STAGING/usr/share/parasol/" || { echo "Warning: Failed to copy config directory"; }
+    cp -r "$BUILD_DIR/extracted/config" "$RUNTIME_STAGING/usr/share/kotuku/" || { echo "Warning: Failed to copy config directory"; }
 else
     echo "Warning: No config directory found in tarball"
 fi
 
 if [[ -d "$BUILD_DIR/extracted/scripts" ]]; then
-    cp -r "$BUILD_DIR/extracted/scripts" "$RUNTIME_STAGING/usr/share/parasol/" || { echo "Warning: Failed to copy scripts directory"; }
+    cp -r "$BUILD_DIR/extracted/scripts" "$RUNTIME_STAGING/usr/share/kotuku/" || { echo "Warning: Failed to copy scripts directory"; }
 else
     echo "Warning: No scripts directory found in tarball"
 fi
 
 # Copy examples if they exist
 if [ -d "$BUILD_DIR/extracted/examples" ]; then
-    cp -r "$BUILD_DIR/extracted/examples" "$RUNTIME_STAGING/usr/share/parasol/"
+    cp -r "$BUILD_DIR/extracted/examples" "$RUNTIME_STAGING/usr/share/kotuku/"
 fi
 
 # Create copyright and changelog files
-cat > "$RUNTIME_STAGING/usr/share/doc/parasol/copyright" << 'EOF'
+cat > "$RUNTIME_STAGING/usr/share/doc/kotuku/copyright" << 'EOF'
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: Parasol Framework
-Upstream-Contact: Parasol Framework Team <team@parasol-framework.org>
-Source: https://github.com/parasol-framework/parasol
+Upstream-Name: Kotuku
+Upstream-Contact: Kotuku Open Group <team@kotuku.dev>
+Source: https://github.com/parasol-framework/kotuku
 
 Files: *
-Copyright: Parasol Framework Team
+Copyright: Paul Manias
 License: Custom
  This package is distributed under the terms described in the LICENSE.TXT file
  that is distributed with this package. Please refer to it for further
@@ -351,7 +363,7 @@ License: Custom
 EOF
 
 # Generate changelog with Git history if available
-create_debian_changelog "$RUNTIME_STAGING/usr/share/doc/parasol/changelog" "parasol" "$VERSION"
+create_debian_changelog "$RUNTIME_STAGING/usr/share/doc/kotuku/changelog" "kotuku" "$VERSION"
 
 # Copy maintainer scripts if they exist
 for script in postinst prerm postrm; do
@@ -362,9 +374,9 @@ for script in postinst prerm postrm; do
 done
 
 # Copy lintian overrides if they exist
-if [ -f "pkg/debian/parasol.lintian-overrides" ]; then
+if [ -f "pkg/debian/kotuku.lintian-overrides" ]; then
     mkdir -p "$RUNTIME_STAGING/usr/share/lintian/overrides"
-    cp "pkg/debian/parasol.lintian-overrides" "$RUNTIME_STAGING/usr/share/lintian/overrides/parasol" || { echo "Warning: Failed to copy lintian overrides"; }
+    cp "pkg/debian/kotuku.lintian-overrides" "$RUNTIME_STAGING/usr/share/lintian/overrides/kotuku" || { echo "Warning: Failed to copy lintian overrides"; }
 fi
 
 # Create runtime package control file from template
@@ -376,13 +388,13 @@ fi
 # Handle development package if requested
 if [ "$INSTALL_INCLUDES" = "ON" ]; then
     echo "Setting up development package..."
-    
+
     # Move headers and development files to dev package
     if [ -d "$RUNTIME_STAGING/usr/include" ]; then
         mkdir -p "$DEV_STAGING/usr"
         mv "$RUNTIME_STAGING/usr/include" "$DEV_STAGING/usr/"
     fi
-    
+
     # Create dev package control file from template
     if ! process_control_template "pkg/debian/control-dev.in" "$DEV_STAGING/DEBIAN/control" "$VERSION" "$ARCH"; then
         echo "Error: Failed to create dev control file"
@@ -390,17 +402,17 @@ if [ "$INSTALL_INCLUDES" = "ON" ]; then
     fi
 
     # Copy documentation to dev package
-    mkdir -p "$DEV_STAGING/usr/share/doc/parasol-dev"
-    
+    mkdir -p "$DEV_STAGING/usr/share/doc/kotuku-dev"
+
     # Create copyright file for dev package
-    cat > "$DEV_STAGING/usr/share/doc/parasol-dev/copyright" << 'EOF'
+    cat > "$DEV_STAGING/usr/share/doc/kotuku-dev/copyright" << 'EOF'
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: Parasol Framework
-Upstream-Contact: Parasol Framework Team <team@parasol-framework.org>
-Source: https://github.com/parasol-framework/parasol
+Upstream-Name: Kotuku
+Upstream-Contact: Kotuku Open Group <team@kotuku.dev>
+Source: https://github.com/parasol-framework/kotuku
 
 Files: *
-Copyright: Parasol Framework Team
+Copyright: Paul Manias
 License: Custom
  This package is distributed under the terms described in the LICENSE.TXT file
  that is distributed with this package. Please refer to it for further
@@ -408,20 +420,20 @@ License: Custom
 EOF
 
     # Generate changelog for dev package
-    create_debian_changelog "$DEV_STAGING/usr/share/doc/parasol-dev/changelog" "parasol-dev" "$VERSION"
+    create_debian_changelog "$DEV_STAGING/usr/share/doc/kotuku-dev/changelog" "kotuku-dev" "$VERSION"
 fi
 
 # Build the packages
 echo "Building .deb packages..."
 
 # Build runtime package
-RUNTIME_PACKAGE="parasol_${VERSION}-1_${ARCH}.deb"
+RUNTIME_PACKAGE="kotuku_${VERSION}-1_${ARCH}.deb"
 dpkg-deb --build "$RUNTIME_STAGING" "$RUNTIME_PACKAGE"
 echo "Created: $RUNTIME_PACKAGE"
 
 # Build development package if requested
 if [ "$INSTALL_INCLUDES" = "ON" ]; then
-    DEV_PACKAGE="parasol-dev_${VERSION}-1_${ARCH}.deb"
+    DEV_PACKAGE="kotuku-dev_${VERSION}-1_${ARCH}.deb"
     dpkg-deb --build "$DEV_STAGING" "$DEV_PACKAGE"
     echo "Created: $DEV_PACKAGE"
 fi

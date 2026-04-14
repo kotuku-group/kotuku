@@ -1,0 +1,103 @@
+-- Comprehensive tests for bitshift operators
+-- C style precedence must be observed
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+@Test function BinaryBitwiseBasics()
+   assert((1 << 3) is bit.lshift(1, 3), '<< should map to bit.lshift')
+   assert((8 >> 1) is bit.rshift(8, 1), '>> should map to bit.rshift (logical)')
+   assert((-8 >> 1) is bit.rshift(-8, 1), '>> should use logical shift via bit.rshift')
+end
+
+@Test function BitwisePrecedenceAndGrouping()
+   -- In C, addition/subtraction bind tighter than shifts
+   assert(1 + 1 << 3 is ((1 + 1) << 3), '+ should bind tighter than <<')
+   assert(10 - 2 >> 1 is ((10 - 2) >> 1), '- should bind tighter than >>')
+end
+
+@Test function ChainedBitshifts()
+   -- Left-associative: (a << b) << c
+   local a, b, c = 1, 2, 3
+   local expected = bit.lshift(bit.lshift(a, b), c)
+
+   local progressive = a << b
+   progressive = progressive << c
+   assert(progressive is expected, 'progressive check failed, got ' .. string.format('0x%.2x, expected 0x%.2x', progressive, expected))
+
+   local single_value, second = a << b << c
+   assert(second is nil, 'chained << should yield a single result; got second=' .. tostring(second))
+   assert(single_value is expected, 'single << should match nested bit.lshift calls, got ' .. string.format('0x%.2x, expected 0x%.2x', single_value, expected))
+
+   -- Mixed with right shift: (x >> y) >> z
+   local x, y, z = 64, 2, 3
+   local chained_right = x >> y >> z
+   assert(tostring(x >> y >> z) is '2', 'Chained series did not evaluate to a single value')
+   assert(chained_right is bit.rshift(bit.rshift(x, y), z), 'chained >> should be left-associative')
+
+   local mixed = 1 << 4 >> 1
+   assert(mixed is bit.rshift(bit.lshift(1, 4), 1), 'mixed << >> chain should evaluate left-to-right')
+end
+
+@Test function LargeShiftCounts()
+   -- bitop masks shift counts (implementation-defined), test through bit.* expectations
+   assert((1 << 40) is bit.lshift(1, 40), '<< follows bit.lshift for large counts')
+   assert((1 >> 40) is bit.rshift(1, 40), '>> follows bit.rshift for large counts')
+end
+
+@Test function AdditionTighterThanBitshift()
+   -- C precedence: + and - bind tighter than << and >>
+   local value = 1 + 1 << 3
+   assert(value is (1 + 1) << 3, '+ should bind tighter than << (expect 16)')
+   local valueRight = 8 >> 1 + 1
+   local expect = bit.rshift(8, 1 + 1)
+   assert(valueRight is expect, '>> RHS addition should group: 8 >> (1+1), got ' .. string.format('0x%.2x expected 0x%.2x', valueRight, expect))
+end
+
+@Test function ShiftTighterThanBitwiseOps()
+   -- C precedence: << and >> bind tighter than &, |, ~
+   -- 1 << 4 = 16 (0x10), 16 & 0xFF = 16
+   assert((1 << 4 & 0xFF) is ((1 << 4) & 0xFF), '<< should bind tighter than &')
+   -- 0xFF | 1 << 4 = 0xFF | 16 = 0xFF (255)
+   assert((0xFF | 1 << 4) is (0xFF | (1 << 4)), '<< should bind tighter than |')
+   -- 32 >> 2 = 8, 8 ^ 0x0F = 7
+   assert((32 >> 2 ^ 0x0F) is ((32 >> 2) ^ 0x0F), '>> should bind tighter than ^')
+end
+
+@Test function ShiftTighterThanComparison()
+   -- C precedence: << and >> bind tighter than <, >, <=, >=
+   -- 1 << 3 = 8, 8 < 10 = true
+   assert((1 << 3 < 10) is ((1 << 3) < 10), '<< should bind tighter than <')
+   -- 16 >> 2 = 4, 4 > 3 = true
+   assert((16 >> 2 > 3) is ((16 >> 2) > 3), '>> should bind tighter than >')
+end
+
+@Test function MultiplicationTighterThanShift()
+   -- C precedence: * and / bind tighter than << and >>
+   -- 2 * 3 = 6, 6 << 1 = 12
+   assert(2 * 3 << 1 is (2 * 3) << 1, '* should bind tighter than <<')
+   -- 8 / 2 = 4, 4 >> 1 = 2
+   assert(8 / 2 >> 1 is (8 / 2) >> 1, '/ should bind tighter than >>')
+end
+
+local function returns6_3()
+   return 6, 3
+end
+
+-- Currently if a function returns 2+ results to a bitwise operator then the results are undefined.
+
+@Test; @Disable
+function MultiReturn()
+   -- Confirm that primitive operators work with multi-return functions
+   local x = 1 + returns6_3()
+   assert(x is 7, 'addition with multi-return should use first value, got ' .. x)
+
+   -- Now test bitshift operators
+   local cmp = bit.lshift(1, 6)
+   x = 1 << 6
+   assert(x is cmp, 'lshift literal failed: ' .. x .. ' vs ' .. cmp)
+   local x2 = 1 << returns6_3()
+   assert(x2 is cmp, 'lshift multi-return failed: ' .. x2 .. ' vs ' .. cmp)
+   x = 64 >> returns6_3()
+   assert(x is bit.rshift(64, 6), 'rshift multi-return failed: ' .. x .. ' vs ' .. bit.rshift(64, 6))
+end

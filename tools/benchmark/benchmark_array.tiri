@@ -1,0 +1,561 @@
+----------------------------------------------------------------------------------------------------------------------
+-- ARRAY OPERATIONS
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Create arrays of different types with initial values
+
+@Test function ArrayCreateWithValues()
+   for i in {0..10000} do
+      local int_arr1 = array<int> { 1, 2, 3, 4, 5 }
+      local int_arr2 = array<int> { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 }
+
+      local dbl_arr1 = array<double> { 1.1, 2.2, 3.3, 4.4, 5.5 }
+      local dbl_arr2 = array<double> { 3.14159, 2.71828, 1.41421, 1.73205 }
+
+      local str_arr1 = array<string> { "apple", "banana", "cherry" }
+      local str_arr2 = array<string> { "one", "two", "three", "four", "five" }
+   end
+end
+
+-- Compare with table performance
+
+@Test function TableCreateWithValues()
+   for i in {0..10000} do
+      local int_arr1 = { 1, 2, 3, 4, 5 }
+      local int_arr2 = { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 }
+
+      local dbl_arr1 = { 1.1, 2.2, 3.3, 4.4, 5.5 }
+      local dbl_arr2 = { 3.14159, 2.71828, 1.41421, 1.73205 }
+
+      local str_arr1 = { "apple", "banana", "cherry" }
+      local str_arr2 = { "one", "two", "three", "four", "five" }
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Read and write elements by index
+
+-- Initialise arrays
+
+local glIntArray = array<int, 1000>
+local glStrArray = array<string, 100>
+local glIntTable = { }
+local glStrTable = { }
+
+for i = 0, 999 do
+   glIntArray[i] = i
+   table.insert(glIntTable, i)
+end
+
+for i = 0, 99 do
+   glStrArray[i] = f"item_{i}"
+   table.insert(glStrTable, f"item_{i}")
+end
+
+@Test function ArrayAccessByIndex()
+   for i in {0..5000} do
+      local v1 = glIntArray[0]
+      local v2 = glIntArray[500]
+      local v3 = glIntArray[999]
+
+      local s1 = glStrArray[0]
+      local s2 = glStrArray[50]
+      local s3 = glStrArray[99]
+
+      -- Write elements
+      local idx = i % 100
+      glIntArray[idx] = i
+      glStrArray[idx] = f"value_{i}"
+   end
+end
+
+@Test function TableAccessByIndex()
+   for i in {0..5000} do
+      local v1 = glIntTable[0]
+      local v2 = glIntTable[500]
+      local v3 = glIntTable[999]
+
+      local s1 = glStrTable[0]
+      local s2 = glStrTable[50]
+      local s3 = glStrTable[99]
+
+      -- Write elements
+      local idx = i % 100
+      glIntTable[idx] = i
+      glStrTable[idx] = f"value_{i}"
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Add elements to the end of an array.  Directly comparable to the table equivalent
+
+@Test function ArrayPushElements()
+   for i in {0..100} do
+      local int_arr = array<int>
+      for j = 0, 99 do
+         int_arr:push(j * 10)
+      end
+
+      local dbl_arr = array<double>
+      for j = 0, 99 do
+         dbl_arr:push(j * 1.5)
+      end
+
+      local str_arr = array<string>
+      for j = 0, 49 do
+         str_arr:push(f"item_{j}")
+      end
+   end
+end
+
+@Test function TablePushElements()
+   for i in {0..100} do
+      local int_arr = {}
+      for j = 0, 99 do
+         table.insert(int_arr, j * 10)
+      end
+
+      local dbl_arr = {}
+      for j = 0, 99 do
+         table.insert(dbl_arr, j * 1.5)
+      end
+
+      local str_arr = {}
+      for j = 0, 49 do
+         table.insert(str_arr, f"item_{j}")
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Remove elements from the end of an array
+
+@Test function ArrayPopElements()
+   for i in {0..1000} do
+      -- Pop integers
+      local int_arr = array<int> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }
+      for j = 0, 9 do
+         local val = int_arr:pop()
+      end
+
+      -- Pop doubles
+      local dbl_arr = array<double> { 1.1, 2.2, 3.3, 4.4, 5.5 }
+      for j = 0, 4 do
+         local val = dbl_arr:pop()
+      end
+
+      -- Pop strings
+      local str_arr = array<string> { "a", "b", "c", "d", "e" }
+      for j = 0, 4 do
+         local val = str_arr:pop()
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Find a value in an array
+
+@Test function ArrayFindValue()
+   local int_arr = array<int, 1000>
+   local dbl_arr = array<double, 1000>
+   local str_arr = array<string> { "apple", "banana", "cherry", "date", "elderberry",
+      "fig", "grape", "honeydew", "kiwi", "lemon" }
+
+   for i = 0, 999 do
+      int_arr[i] = i * 10
+      dbl_arr[i] = i * 1.5
+   end
+
+   for i in {0..1000} do
+      -- Find in integer array
+      local idx1 = int_arr:find(0)
+      local idx2 = int_arr:find(5000)
+      local idx3 = int_arr:find(9990)
+      local idx4 = int_arr:find(12345)  -- Not found
+
+      -- Find in double array
+      local idx5 = dbl_arr:find(0.0)
+      local idx6 = dbl_arr:find(750.0)
+      local idx7 = dbl_arr:find(999.999)  -- Not found
+
+      -- Find in string array
+      local idx8 = str_arr:find("apple")
+      local idx9 = str_arr:find("grape")
+      local idx10 = str_arr:find("mango")  -- Not found
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Check if an array contains a specific value
+
+@Test function ArrayContainsValue()
+   local int_arr = array<int> { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 }
+   local dbl_arr = array<double> { 1.5, 2.5, 3.5, 4.5, 5.5 }
+   local str_arr = array<string> { "red", "green", "blue", "yellow", "purple" }
+
+   for i in {0..1000} do
+      -- Check integer array
+      local has1 = int_arr:contains(50)
+      local has2 = int_arr:contains(100)
+      local has3 = int_arr:contains(55)  -- false
+
+      -- Check double array
+      local has4 = dbl_arr:contains(3.5)
+      local has5 = dbl_arr:contains(2.0)  -- false
+
+      -- Check string array
+      local has6 = str_arr:contains("blue")
+      local has7 = str_arr:contains("orange")  -- false
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Sort an array in ascending or descending order
+
+@Test function ArraySortElements()
+   for i in {0..1000} do
+      -- Sort integers ascending
+      local int_arr = array<int> { 50, 30, 80, 10, 60, 40, 90, 20, 70, 100 }
+      int_arr:sort()
+
+      -- Sort integers descending
+      local int_arr2 = array<int> { 50, 30, 80, 10, 60, 40, 90, 20, 70, 100 }
+      int_arr2:sort(true)
+
+      -- Sort doubles
+      local dbl_arr = array<double> { 3.14, 1.41, 2.71, 1.73, 0.57 }
+      dbl_arr:sort()
+
+      -- Sort strings alphabetically
+      local str_arr = array<string> { "cherry", "apple", "banana", "date", "elderberry" }
+      str_arr:sort()
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Reverse the order of elements in an array
+
+@Test function ArrayReverseElements()
+   for i in {0..1000} do
+      -- Reverse integer array
+      local int_arr = array<int> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }
+      int_arr:reverse()
+
+      -- Reverse double array
+      local dbl_arr = array<double> { 1.1, 2.2, 3.3, 4.4, 5.5 }
+      dbl_arr:reverse()
+
+      -- Reverse string array
+      local str_arr = array<string> { "first", "second", "third", "fourth", "fifth" }
+      str_arr:reverse()
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Extract a portion of an array (slice)
+
+@Test function ArraySliceRange()
+   local int_arr = array<int> { 0, 10, 20, 30, 40, 50, 60, 70, 80, 90 }
+   local dbl_arr = array<double> { 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0 }
+   local str_arr = array<string> { "a", "b", "c", "d", "e", "f", "g", "h" }
+
+   for i in {0..1000} do
+      -- Slice integer arrays with different ranges
+      local slice1 = int_arr:slice({0..5})      -- First 5 elements
+      local slice2 = int_arr:slice({5..10})     -- Last 5 elements
+      local slice3 = int_arr:slice({2..8})      -- Middle portion
+      local slice4 = int_arr:slice({-3..-1})    -- Last 3 using negative indices
+
+      -- Slice double array
+      local slice5 = dbl_arr:slice({0..4})
+      local slice6 = dbl_arr:slice({2...5})     -- Inclusive range
+
+      -- Slice string array
+      local slice7 = str_arr:slice({1..4})
+      local slice8 = str_arr:slice({0..-1})     -- All elements
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Fill an array with a specific value
+
+@Test function ArrayFillWithValue()
+   for i in {0..1000} do
+      -- Fill entire integer array
+      local int_arr = array<int, 100>
+      int_arr:fill(42)
+
+      -- Fill portion of array with range
+      local int_arr2 = array<int, 100>
+      int_arr2:fill(0)
+      int_arr2:fill(99, {10..50})
+
+      -- Fill double array
+      local dbl_arr = array<double, 50>
+      dbl_arr:fill(3.14159)
+
+      -- Fill with stepped range
+      local int_arr3 = array<int, 100>
+      int_arr3:fill(0)
+      int_arr3:fill(1, range.new(0, 100, false, 2))  -- Every other element
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Copy data between arrays
+
+@Test function ArrayCopyData()
+   for i in {0..1000} do
+      -- Copy from table to integer array
+      local int_arr = array<int, 10>
+      local table_data = {10, 20, 30, 40, 50, 60, 70, 80, 90, 100}
+      int_arr:copy(table_data)
+
+      -- Copy from table to double array
+      local dbl_arr = array<double, 5>
+      local dbl_data = {1.1, 2.2, 3.3, 4.4, 5.5}
+      dbl_arr:copy(dbl_data)
+
+      -- Copy with destination offset
+      local int_arr2 = array<int, 10>
+      int_arr2:fill(0)
+      int_arr2:copy({100, 200, 300}, 3, 0, 3)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Iterate over all elements in arrays and tables
+
+@Test function IterateArrayValues()
+   for i in {0..50} do
+      local sum = 0.0
+      for val in values(glIntArray) do
+         sum += val
+      end
+   end
+end
+
+@Test function IterateTableValues()
+   for i in {0..50} do
+      local sum = 0.0
+      for val in values(glIntTable) do
+         sum += val
+      end
+   end
+end
+
+@Test function IterateArrayIPairs()
+   for i in {0..50} do
+      local concat = ""
+      for _, s in ipairs(glStrArray) do
+         concat ..= s
+      end
+   end
+end
+
+@Test function IterateTableIPairs()
+   for i in {0..50} do
+      local concat = ""
+      for _, s in ipairs(glStrTable) do
+         concat ..= s
+      end
+   end
+end
+
+@Test function IterateArrayPairs()
+   for i in {0..50} do
+      local count = 0
+      for k, v in pairs(glIntArray) do
+         count++
+      end
+   end
+end
+
+@Test function IterateTablePairs()
+   for i in {0..50} do
+      local count = 0
+      for k, v in pairs(glIntTable) do
+         count++
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Join array elements into a single string
+
+@Test function ArrayJoinToString()
+   for i in {0..50} do
+      local joined1 = glIntArray:join("-")
+      local joined2 = glIntArray:join(", ")
+      local joined3 = glIntArray:join("")
+
+      local joined5 = glStrArray:join(" ")
+      local joined6 = glStrArray:join(", ")
+      local joined7 = glStrArray:join("")
+   end
+end
+
+@Test function TableJoinToString()
+   for i in {0..50} do
+      local joined1 = table.concat(glIntTable, "-")
+      local joined2 = table.concat(glIntTable, ", ")
+      local joined3 = table.concat(glIntTable, "")
+
+      local joined5 = table.concat(glStrTable, " ")
+      local joined6 = table.concat(glStrTable, ", ")
+      local joined7 = table.concat(glStrTable, "")
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Concatenate array elements with formatting
+
+@Test function ArrayConcatFormatted()
+   for i in {0..25} do
+      local result1 = glIntArray:concat("%d", ", ")
+      local result2 = glIntArray:concat("%03d", "-")
+      local result5 = glStrArray:concat("%s", " ")
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Get the first and last elements of an array
+
+@Test function ArrayFirstLastByMethod()
+   for i in {0..10000} do
+      local first_int = glIntArray:first()
+      local first_str = glStrArray:first()
+      local last_int = glIntArray:last()
+      local last_str = glStrArray:last()
+   end
+end
+
+-- Compare with direct indexing
+
+@Test function ArrayFirstLastByIndex()
+   for i in {0..1000000} do
+      local first_direct = glIntArray[0]
+      local first_direct = glStrArray[0]
+      local last_direct = glIntArray[#glIntArray - 1]
+      local last_direct = glStrArray[#glStrArray - 1]
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Get the length of an array/table
+
+@Test function ArrayGetLength()
+   for i in {0..100000} do
+      local len1 = #glIntArray
+      local len2 = #glStrArray
+      local total = len1 + len2
+   end
+end
+
+@Test function TableGetLength()
+   for i in {0..100000} do
+      local len1 = #glIntTable
+      local len2 = #glStrTable
+      local total = len1 + len2
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Convert array to a Lua table
+
+@Test function ArrayConvertToTable()
+   local int_arr = array<int> { 10, 20, 30, 40, 50 }
+   local dbl_arr = array<double> { 1.5, 2.5, 3.5, 4.5, 5.5 }
+   local str_arr = array<string> { "one", "two", "three" }
+
+   for i in {0..1000} do
+      -- Convert to tables
+      local tbl1 = int_arr:table()
+      local tbl2 = dbl_arr:table()
+      local tbl3 = str_arr:table()
+
+      -- Access converted table elements
+      local v1 = tbl1[0]
+      local v2 = tbl2[2]
+      local v3 = tbl3[1]
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Build and process a large array
+
+@Test function ArrayLargeOperations()
+   for i in {0..10} do
+      -- Create and fill large array
+      local arr = array<int, 10000>
+      for j = 0, 9999 do
+         arr[j] = j
+      end
+
+      -- Find values
+      local idx1 = arr:find(5000)
+      local idx2 = arr:find(9999)
+
+      -- Check contains
+      local has1 = arr:contains(5000)
+      local has2 = arr:contains(99999)
+
+      -- Slice
+      local slice = arr:slice({1000..2000})
+
+      -- Iterate and sum
+      local sum = 0
+      for _, v in arr do
+         sum += v
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Perform stack operations (push/pop pattern)
+
+@Test function ArrayStackOperations()
+   for i in {0..1000} do
+      local stack = array<int>
+
+      -- Push 100 items
+      for j = 0, 99 do
+         stack:push(j)
+      end
+
+      -- Pop all items
+      local sum = 0
+      while #stack > 0 do
+         sum += stack:pop()
+      end
+
+      -- Mixed push/pop operations
+      local mixed = array<string>
+      mixed:push("first")
+      mixed:push("second")
+      local top = mixed:pop()
+      mixed:push("third")
+      mixed:push("fourth")
+      top = mixed:pop()
+      top = mixed:pop()
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Use arrays as queues (FIFO pattern simulation)
+
+@Test function ArrayQueuePattern()
+   for i in {0..100} do
+      local queue = array<int>
+
+      -- Enqueue items
+      for j = 0, 49 do
+         queue:push(j)
+      end
+
+      -- De-queue by slicing (simulating queue behaviour)
+      while #queue > 0 do
+         local front = queue:first()
+         queue:remove(0)
+      end
+   end
+end

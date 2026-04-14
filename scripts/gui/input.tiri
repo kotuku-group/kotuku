@@ -1,0 +1,262 @@
+--[[
+Documentation is available in the Kotuku Wiki.
+--]]
+
+   import 'gui'
+
+   namespace 'gui'
+
+function reportActivate(self:table, State:str, Force:bool)
+   self.events.activate ?? return
+   text = self.text.string
+   hash = string.hash(text)
+   if Force or hash != self.hash then
+      self.hash = hash
+      self.events.activate(self, { text=text, state=State })
+   end
+end
+
+function validateInput(self)
+   if self.inputMask then
+      userInput = self.text.string ?? ''
+      if string.len(userInput) > 0 then
+         if not self.inputMask.test(userInput) then
+            self.text.string = self._lastGoodInput
+            self.viewport.acDraw()
+            return false
+         end
+      end
+      self._lastGoodInput = userInput
+   end
+   return true
+end
+
+gui.input = function(Options)
+   local theme
+
+   self = { -- Public variables
+      events         = Options.events ?? { },
+      label          = Options.label,
+      parentViewport = Options.target,
+      inputMask      = Options.inputMask ? regex.new(Options.inputMask) :> nil,
+      text           = nil, -- A VectorText that represents the string
+      viewport       = nil, -- The input box's primary viewport
+      _lastGoodInput = ''
+   }
+
+   -- Change the active state of the input box to disabled or enabled
+
+   self.disable = function(self)
+      self.disabled = true
+      self.viewport.acDisable()
+      self.text.opacity = 0.5
+      self.bkgd.fill = theme.page.bkgd
+      self.events?.disable(self)
+      self.viewport.acDraw()
+   end
+
+   self.enable = function(self)
+      self.disabled = false
+      self.viewport.acDisable()
+      self.text.opacity = 1.0
+      self.bkgd.fill = theme.page.bkgd
+      self.events?.enable(self)
+      self.viewport.acDraw()
+   end
+
+   function checkShadowLabel(self)
+      if self.shadowLabel then
+         if self.text.string?? then
+            self.shadowLabel.visibility = VIS_HIDDEN
+         else
+            self.shadowLabel.visibility = VIS_VISIBLE
+         end
+      end
+   end
+
+   self.setText = function(self, Text:str)
+      if self.text then self.text.string = Text end
+      checkShadowLabel(self)
+      self.viewport.acDraw()
+   end
+
+   -- Main entry point --
+
+   assert(Options.target, 'A target viewport is required.')
+
+   theme = gui.getTheme(Options.target)
+
+   font_max_height, font_height = gui.getFontHeight(gui.fonts.input)
+   box_height = math.floor(font_max_height * 1.35) + 1
+
+   vps = { -- Viewport settings
+      name    = 'vp_input',
+      x       = Options.x,
+      y       = Options.y,
+      width   = Options.width,
+      height  = box_height,
+      xOffset = Options.xOffset,
+      yOffset = Options.yOffset
+   }
+
+   if not vps.x and not vps.xOffset then vps.x = 0 end
+   if not vps.y and not vps.yOffset then vps.y = 0 end
+   if not vps.width and not vps.xOffset then vps.width = gui.sizing.width end
+
+   self.viewport = self.parentViewport.new('VectorViewport', vps)
+
+   self.inputViewport = self.viewport.new('VectorViewport', {
+      name    = 'vp_input_box',
+      cursor  = 'text',
+      x       = 0,
+      y       = 0,
+      width   = self.viewport.width,
+      yOffset = 0,
+      resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
+         new_width = Width - self.labelWidth
+         if Vector.width != new_width then
+            Vector.width = new_width
+         end
+
+         if Vector.height != Height then
+            Vector.height = Height
+         end
+      end
+   })
+
+   if self.label then
+      self.labelText = self.viewport.new('VectorText', {
+         name      = 'vt_input_label',
+         x         = 0,
+         y         = math.round(font_height + math.floor((box_height - font_height) * 0.5)),
+         face      = Options.textFace ?? gui.fonts.label.face,
+         fontSize  = string.format('%.2fpt', gui.fonts.label.size),
+         fontStyle = gui.fonts.label.style,
+         fill      = Options.labelFill ?? theme.window.text,
+         string    = self.label,
+         lineLimit = 1
+      })
+
+      self.labelWidth          = self.labelText.textWidth + gui.sizing.widget.margin
+      self.inputViewport.x     = self.labelText.x + self.labelWidth
+      self.inputViewport.width = self.viewport.width - self.labelWidth
+   else
+      self.labelWidth = 0
+   end
+
+   self.bkgd = self.inputViewport.new('VectorRectangle', {
+      fill = Options.bkgd ?? theme.page.bkgd, x = 0, y = 0, width = '100%', height = '100%',
+   })
+
+   if not Options.flushEdges then
+      self.bkgd.stroke      = theme.input.stroke
+      self.bkgd.strokeWidth = gui.sizing.page.strokeWidth
+      self.bkgd.roundX      = gui.sizing.page.strokeWidth * 2
+      self.bkgd.roundY      = gui.sizing.page.strokeWidth * 2
+   end
+
+   self._textClip = self.inputViewport.new('VectorViewport', {
+      name = 'vp_input_clip',
+      x = gui.sizing.page.strokeWidth, y = gui.sizing.page.strokeWidth,
+      xOffset = gui.sizing.page.strokeWidth, yOffset = gui.sizing.page.strokeWidth,
+      overflow = VOF_HIDDEN
+   })
+
+   textFill = Options.textFill
+   if not textFill?? then
+      textFill = Options.bkgd is 'none' ? theme.window.text :> theme.page.text
+   end
+
+   if Options.shadowLabel then
+      self.shadowLabel = self._textClip.new('VectorText', {
+         name      = 'vt_shadow',
+         x         = 4,
+         y         = math.round(font_height + math.floor((box_height - font_height - (gui.sizing.page.strokeWidth * 2)) * 0.5)),
+         face      = Options.textFace ?? gui.fonts.input.face,
+         fontSize  = string.format('%.2fpt', gui.fonts.input.size),
+         fontStyle = Options.textStyle ?? gui.fonts.input.style,
+         fill      = textFill,
+         opacity   = 0.5,
+         string    = Options.shadowLabel,
+         lineLimit = 1
+      })
+
+      if Options.text?? then
+         self.shadowLabel.visibility = VIS_HIDDEN
+      end
+   end
+
+   self.text = self._textClip.new('VectorText', {
+      name      = 'vt_input',
+      x         = 4,
+      y         = math.round(font_height + math.floor((box_height - font_height - (gui.sizing.page.strokeWidth * 2)) * 0.5)),
+      face      = Options.textFace ?? gui.fonts.input.face,
+      fontSize  = string.format('%.2fpt', gui.fonts.input.size),
+      fontStyle = Options.textStyle ?? gui.fonts.input.style,
+      fill      = textFill,
+      string    = Options.text,
+      lineLimit = 1,
+      textFlags = (function()
+         flags = VTXF_EDITABLE
+         if Options.secret then flags = (flags | VTXF_SECRET) end
+         return flags
+      end)()
+   })
+
+   if Options.selected then self.text.mtSelectArea(0, 20000) end
+
+   self.viewport.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, function(Viewport:obj, Event)
+      if Event is FM_LOST_FOCUS then
+         if not Options.flushEdges then
+            self.bkgd.stroke = theme.input.stroke
+         end
+         self.events?.lostFocus(self)
+         if validateInput(self) then
+            reportActivate(self, 'lost-focus', false)
+         end
+      else
+         self._lastGoodInput = self.text.string
+         if self.disabled then
+            if not Options.flushEdges then
+               self.bkgd.stroke = theme.input.stroke
+            end
+         else
+            if not Options.flushEdges then
+               self.bkgd.stroke = theme.page.strokeFocus
+            end
+            self.events?.focus(self)
+         end
+      end
+
+      Viewport.acDraw()
+   end)
+
+   self._textClip.mtSubscribeKeyboard(function(Viewport:obj, Qualifiers, Value, Unicode)
+      if not (Qualifiers has KQ_PRESSED) then return end
+
+      if (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) then
+         validateInput(self)
+         reportActivate(self, 'activated', true)
+      end
+
+      self.events?.keypress(self, { qualifiers=Qualifiers, value=Value, unicode=Unicode })
+
+      checkShadowLabel(self)
+   end)
+
+   if self.events.cursorEntry or self.events.cursorExit then
+      self.inputViewport.mtSubscribeInput(JTYPE_CROSSING, function(Viewport:obj, Msg)
+         repeat
+            choose Msg.type from
+               JET_CROSSED_IN -> self.events?.cursorEntry(self)
+               JET_CROSSED_OUT -> self.events?.cursorExit(self)
+            end
+            Msg = Msg.next
+         until not Msg
+      end)
+   end
+
+   self.events?.show(self)
+
+   return self
+end

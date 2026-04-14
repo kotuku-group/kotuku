@@ -1,0 +1,14 @@
+-- Flute tests for Unicode operators
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+@Test function MultiplicationBasic()
+   result = 5 × 3
+   assert(result is 15, "5 × 3 should equal 15, got " ‥ tostring(result))
+end
+
+@Test function DivisionBasic()
+   result = 20 ÷ 4
+   assert(result is 5, "20 ÷ 4 should equal 5, got " ‥ tostring(result))
+end

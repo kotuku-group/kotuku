@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="Controller" mod="Display" c="Provides support for reading state-based game controllers." cat="IO" id="bf67c809" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="Controller" mod="Display" c="Provides support for reading state-based game controllers." cat="IO" id="bf67c809" v="1">
   <ai:a n="Query" c="Get the current controller state." p="ERR acQuery(*Object)"/>
   <ai:f n="Buttons" c="JET button values expressed as bit-fields." t="CON" a="R"/>
   <ai:f n="LeftStickX" c="Left analog stick value for X axis, between -1.0 and 1.0." t="DOUBLE" a="R"/>

@@ -1,2 +1,2 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="VectorGroup" mod="Vector" c="Extends the Vector class with support for organising vectors into groups." cat="Graphics" id="88397565" v="1"/>
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="VectorGroup" mod="Vector" c="Extends the Vector class with support for organising vectors into groups." cat="Graphics" id="88397565" v="1"/>

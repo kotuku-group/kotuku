@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="Clipboard" mod="Display" c="The Clipboard class manages cut, copy and paste between applications." cat="IO" id="4912a9b5" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="Clipboard" mod="Display" c="The Clipboard class manages cut, copy and paste between applications." cat="IO" id="4912a9b5" v="1">
   <ai:a n="Clear" c="Destroys all cached data that is stored in the clipboard." p="ERR acClear(*Object)"/>
   <ai:a n="DataFeed" c="This action can be used to place data in a clipboard." p="ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, APTR Buffer, INT Size)">
     <ai:i n="Object" t="OBJECTID" c="Must refer to the unique ID of the object that you represent. If you do not represent an object, set this parameter to the current task ID."/>

@@ -1,0 +1,357 @@
+-- FLWOR and LET tests
+
+   include 'xml'
+
+----------------------------------------------------------------------------------------------------------------------
+-- Basic LET expressions should evaluate arithmetic results
+
+@Test function LetSimpleArithmetic()
+   local xq = obj.new('xquery', { statement = 'let $price := 10.99 return $price * 1.1' })
+   local err = xq.acActivate()
+   local result = tonumber(xq.resultString)
+   assert(result and math.abs(result - 12.089) < 0.0001,
+      'Let expression should scale numeric values, got ' .. tostring(result))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Multiple bindings should be available inside the return clause
+
+@Test function LetMultipleBindings()
+   local xq = obj.new('xquery', { statement = 'let $a := 5, $b := 10 return $a + $b' })
+   local err = xq.acActivate()
+   local result = tonumber(xq.resultString)
+   assert(result and math.abs(result - 15.0) < 0.0001, 'Let expression should expose all bound variables, got ' .. tostring(xq.resultString))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- LET expressions can combine node lookups with arithmetic
+
+@Test function LetDocumentComputation()
+   local xml = obj.new("xml", {
+      statement = '<catalog>' ..
+                  '<book id="bk-1" price="25"/>' ..
+                  '<book id="bk-2" price="45"/>' ..
+                  '</catalog>'
+   })
+
+   local err, temp_result = xml.mtEvaluate('let $tax := 0.08 return number(/catalog/book[@price > 20][1]/@price) * (1 + $tax)')
+   local result = tonumber(temp_result)
+   assert(result and math.abs(result - 27.0) < 0.0001, 'Let expression should compute taxed pricing, got ' .. tostring(result))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Invalid LET syntax should report descriptive parser errors
+
+@Test function LetSyntaxErrors()
+   local xq = obj.new('xquery')
+   xq.statement = 'let $a return $a'
+   local err = xq.init()
+   assert(err is ERR_Syntax, 'Missing assignment should be a syntax error, got ' .. mSys.getErrorMsg(err))
+   local message = xq.errorMsg ?? ''
+   assert(string.find(message, "Expected ':=' in let binding", 0, true),
+      'Error message should reference missing :=, got ' .. message)
+
+   xq.statement = 'let $a := return 5'
+   local err = xq.init()
+   assert(err is ERR_Syntax, 'Missing expression should be a syntax error, got ' .. mSys.GetErrorMsg(err))
+   local message = xq.errorMsg ?? ''
+   assert(string.find(message, "Expected expression after ':=' in let binding", 0, true),
+      'Error message should reference missing binding expression, got ' .. message)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- FLWOR return expressions can now yield atomic values (wrapped as node-sets with string values)
+
+@Test function FlworNonNodeReturnError()
+   local xml = obj.new("xml", {
+      statement = '<library>' ..
+                  '<book id="a" genre="fiction" price="39"/>' ..
+                  '<book id="b" genre="reference" price="55"/>' ..
+                  '</library>'
+   })
+
+   -- Atomic values are now wrapped in node-sets, so this should succeed
+   local err, result = xml.mtEvaluate('for $book in /library/book let $discounted := number($book/@price) * 0.9 return $discounted')
+   assert(err is ERR_Okay, 'Numeric FLWOR return should now succeed with atomic value wrapping')
+   assert(result != nil, 'FLWOR should return wrapped atomic values')
+   -- The result should be something like "35.1:49.5" (the two discounted prices concatenated)
+   assert(string.find(tostring(result), '35.1', 0, true) or string.find(tostring(result), '49.5', 0, true),
+      'FLWOR result should contain discounted prices, got ' .. tostring(result))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Repeated FLWOR evaluations should remain stable and performant
+
+@Test function FlworRepeatedEvaluationConsistency()
+   local xml = obj.new("xml", {
+      statement = '<library>' ..
+                  '<book id="a" genre="fiction"/>' ..
+                  '<book id="b" genre="reference"/>' ..
+                  '<book id="c" genre="fiction"/>' ..
+                  '</library>'
+   })
+
+   for iteration = 0, 24 do
+      local collected = {}
+      local err = xml.mtSearch('for $book in /library/book let $genre := $book/@genre return $book[$genre = "fiction"]',
+         function(XML, TagID)
+            local errAttr, idValue = xml.mtGetAttrib(TagID, 'id')
+            assert(errAttr is ERR_Okay,
+               'Iteration ' .. iteration .. ' should resolve id attribute: ' .. mSys.GetErrorMsg(errAttr))
+            table.insert(collected, idValue)
+         end)
+
+      assert(err is ERR_Okay, 'Iteration ' .. iteration .. ' should evaluate successfully: ' .. mSys.GetErrorMsg(err))
+      table.sort(collected)
+      assert(#collected is 2 and collected[0] is 'a' and collected[1] is 'c',
+         'Iteration ' .. iteration .. ' should yield consistent fiction ids, got ' .. table.concat(collected, ','))
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- WHERE clause should filter bound sequences using boolean predicates
+
+@Test function WhereFiltersNodes()
+   local xml = obj.new('xml', {
+      statement = '<library>' ..
+                  '<book id="bk-1" genre="fiction" price="25"/>' ..
+                  '<book id="bk-2" genre="reference" price="55"/>' ..
+                  '<book id="bk-3" genre="fiction" price="32"/>' ..
+                  '<book id="bk-4" genre="history" price="41"/>' ..
+                  '</library>'
+   })
+
+   local filtered = {}
+   local err = xml.mtSearch('for $book in /library/book where number($book/@price) < 40 return $book',
+      function(XML, TagID)
+         local errAttr, idValue = xml.mtGetAttrib(TagID, 'id')
+         assert(errAttr is ERR_Okay, 'WHERE clause should preserve attribute access: ' .. mSys.GetErrorMsg(errAttr))
+         table.insert(filtered, idValue)
+      end)
+
+   assert(err is ERR_Okay, 'WHERE clause FLWOR should evaluate successfully: ' .. tostring(xml.errorMsg))
+   table.sort(filtered)
+   assert(#filtered is 2 and filtered[0] is 'bk-1' and filtered[1] is 'bk-3',
+      'Filtered identifiers should match price predicate, got ' .. table.concat(filtered, ','))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- ORDER BY clause should support ascending lexical ordering on attributes
+
+@Test function OrderByAscendingStrings()
+   local xml = obj.new('xml', {
+      statement = '<library>' ..
+                  '<book id="bk-3" title="Gamma" price="19"/>' ..
+                  '<book id="bk-1" title="Alpha" price="42"/>' ..
+                  '<book id="bk-4" title="Delta" price="13"/>' ..
+                  '<book id="bk-2" title="Beta" price="27"/>' ..
+                  '</library>'
+   })
+   -- Expecting A,B,D,G order based on title attribute (bk-1, bk-2, bk-4, bk-3)
+   local ordered = {}
+   local err = xml.mtSearch('for $book in /library/book order by $book/@title ascending return $book',
+      function(XML, TagID)
+         local errId, idValue = xml.mtGetAttrib(TagID, 'id')
+         assert(errId is ERR_Okay, 'ORDER BY clause should expose node attributes post-sort: ' .. mSys.GetErrorMsg(errId))
+         table.insert(ordered, idValue)
+      end)
+
+   local recv_order = table.concat(ordered, ',')
+   assert(err is ERR_Okay, 'ORDER BY clause FLWOR should evaluate successfully: ' .. tostring(xml.errorMsg))
+   assert(recv_order is 'bk-1,bk-2,bk-4,bk-3', 'Expected order of bk-1,bk-2,bk-4,bk-3, got ' .. recv_order)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- ORDER BY clause should support descending numeric ordering and tiebreakers
+
+@Test function OrderByDescendingNumbers()
+   local xml = obj.new('xml', {
+      statement = '<library>' ..
+                  '<book id="bk-1" title="Alpha" price="25"/>' ..
+                  '<book id="bk-2" title="Beta" price="25"/>' ..
+                  '<book id="bk-3" title="Gamma" price="42"/>' ..
+                  '<book id="bk-4" title="Delta" price="31"/>' ..
+                  '</library>'
+   })
+
+   local ordered = {}
+   local err = xml.mtSearch('for $book in /library/book order by number($book/@price) descending, $book/@title ascending return $book',
+      function(XML, TagID)
+         local errId, idValue = xml.mtGetAttrib(TagID, 'id')
+         assert(errId is ERR_Okay, 'ORDER BY with numeric descending should expose node attributes: ' .. mSys.GetErrorMsg(errId))
+         table.insert(ordered, idValue)
+      end)
+
+   local recv_order = table.concat(ordered, ',')
+
+   assert(err is ERR_Okay, 'ORDER BY clause with descending numeric sort should evaluate successfully: ' .. tostring(xml.errorMsg))
+   assert(recv_order is 'bk-3,bk-4,bk-1,bk-2', 'Expected order of bk-3,bk-4,bk-1,bk-2, got ' .. recv_order)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- GROUP BY clause should bucket items and expose grouped bindings
+
+@Test function GroupByAggregatesSequences()
+   local xml = obj.new('xml', {
+      statement = '<library>' ..
+                  '<book id="bk-1" genre="fiction" price="25"/>' ..
+                  '<book id="bk-2" genre="reference" price="55"/>' ..
+                  '<book id="bk-3" genre="fiction" price="32"/>' ..
+                  '<book id="bk-4" genre="reference" price="26"/>' ..
+                  '<book id="bk-5" genre="history" price="41"/>' ..
+                  '</library>'
+   })
+
+   local groups = {}
+   local err = xml.mtSearch('for $book in /library/book group by $genre := string($book/@genre) return <group genre="{$genre}" count="{count($book)}"/>',
+      function(XML, TagID)
+         local errGenre, genreValue = xml.mtGetAttrib(TagID, 'genre')
+         assert(errGenre is ERR_Okay, 'GROUP BY clause should expose computed grouping key: ' .. mSys.GetErrorMsg(errGenre))
+         local errCount, countValue = xml.mtGetAttrib(TagID, 'count')
+         assert(errCount is ERR_Okay, 'GROUP BY clause should allow aggregated count output: ' .. mSys.GetErrorMsg(errCount))
+         groups[genreValue] = tonumber(countValue)
+      end)
+
+   assert(err is ERR_Okay, 'GROUP BY clause FLWOR should evaluate successfully: ' .. tostring(xml.errorMsg))
+   assert(groups['fiction'] is 2, 'Fiction group should contain two members, got ' .. tostring(groups['fiction']))
+   assert(groups['reference'] is 2, 'Reference group should contain two members, got ' .. tostring(groups['reference']))
+   assert(groups['history'] is 1, 'History group should contain one member, got ' .. tostring(groups['history']))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- GROUP BY clause should maintain access to grouped sequences for derived output
+
+@Test function GroupBySequenceAccess()
+   local xml = obj.new('xml', {
+      statement = '<library>' ..
+                  '<book id="bk-1" genre="fiction" price="25"/>' ..
+                  '<book id="bk-2" genre="fiction" price="31"/>' ..
+                  '<book id="bk-3" genre="history" price="41"/>' ..
+                  '</library>'
+   })
+
+   local members = {}
+   local err = xml.mtSearch('for $book in /library/book group by $genre := $book/@genre return <group genre="{$genre}" members="{string-join(for $member in $book return string($member/@id), ",")}"/>',
+      function(XML, TagID)
+         local errGenre, genreValue = xml.mtGetAttrib(TagID, 'genre')
+         assert(errGenre is ERR_Okay, 'GROUP BY sequence access should expose genre attribute: ' .. mSys.GetErrorMsg(errGenre))
+         local errMembers, memberList = xml.mtGetAttrib(TagID, 'members')
+         assert(errMembers is ERR_Okay, 'GROUP BY sequence access should expose concatenated member identifiers: ' .. mSys.GetErrorMsg(errMembers))
+         msg("Received callback: " .. genreValue .. ' ' .. memberList);
+         members[genreValue] = memberList
+      end)
+
+   assert(err is ERR_Okay, 'GROUP BY sequence FLWOR should evaluate successfully: ' .. tostring(xml.errorMsg))
+   assert(members['fiction'] is 'bk-1,bk-2', 'Fiction group should expose concatenated identifiers, got ' .. tostring(members['fiction']))
+   assert(members['history'] is 'bk-3', 'History group should expose single identifier, got ' .. tostring(members['history']))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- COUNT clause should expose positional counters during iteration
+
+@Test function CountProvidesPosition()
+   local xml = obj.new('xml', {
+      statement = '<library>' ..
+                  '<book id="bk-1" price="25"/>' ..
+                  '<book id="bk-2" price="55"/>' ..
+                  '<book id="bk-3" price="32"/>' ..
+                  '</library>'
+   })
+
+   local order = {}
+   local err = xml.mtSearch('for $book in /library/book order by number($book/@price) ascending count $position return <entry pos="{$position}" id="{$book/@id}"/>',
+      function(XML, TagID)
+         local errPos, posValue = xml.mtGetAttrib(TagID, 'pos')
+         assert(errPos is ERR_Okay, 'COUNT clause should expose generated positional attribute: ' .. mSys.GetErrorMsg(errPos))
+         local errId, idValue = xml.mtGetAttrib(TagID, 'id')
+         assert(errId is ERR_Okay, 'COUNT clause should maintain binding access after sorting: ' .. mSys.GetErrorMsg(errId))
+         table.insert(order, posValue .. ':' .. idValue)
+      end)
+
+   assert(err is ERR_Okay, 'COUNT clause FLWOR should evaluate successfully: ' .. tostring(xml.errorMsg))
+   assert(order[0] is '1:bk-1' and order[1] is '2:bk-3' and order[2] is '3:bk-2',
+      'COUNT clause should align positional counters with sorted order, got "' .. table.concat(order, ',') .. '"')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Nested FOR product should expand correctly and expose both bindings
+
+@Test function NestedForProduct()
+   local xml = obj.new('xml', {
+      statement = '<root>' ..
+                  '<a id="a1"/><a id="a2"/>' ..
+                  '<b id="b1"/><b id="b2"/>' ..
+                  '</root>'
+   })
+
+   local pairs = {}
+   local err = xml.mtSearch('for $a in /root/a for $b in /root/b return <p a="{$a/@id}" b="{$b/@id}"/>',
+      function(XML, TagID)
+         local errA, ida = xml.mtGetAttrib(TagID, 'a')
+         local errB, idb = xml.mtGetAttrib(TagID, 'b')
+         assert(errA is ERR_Okay and errB is ERR_Okay, 'Nested FOR should expose both bindings')
+         table.insert(pairs, ida .. '-' .. idb)
+      end)
+
+   assert(err is ERR_Okay, 'Nested FOR FLWOR should evaluate successfully: ' .. tostring(xml.errorMsg))
+   assert(#pairs is 4, 'Nested FOR product should produce four pairs, got ' .. tostring(#pairs))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- ORDER BY with multiple keys and empty handling should respect empty-greatest/least
+
+@Test function OrderByMultipleKeysEmptyHandling()
+   local xml = obj.new('xml', {
+      statement = '<library>' ..
+                  '<book id="bk-1" genre="fiction" price="25"/>' ..
+                  '<book id="bk-2" genre="fiction"/>' ..
+                  '<book id="bk-3" genre="history" price="20"/>' ..
+                  '</library>'
+   })
+
+   local seq1 = {}
+   local err1 = xml.mtSearch('for $book in /library/book order by $book/@genre ascending empty greatest, number($book/@price) ascending empty least return <e id="{$book/@id}"/>',
+      function(XML, TagID)
+         local _, idv = xml.mtGetAttrib(TagID, 'id')
+         table.insert(seq1, idv)
+      end)
+   assert(err1 is ERR_Okay, 'ORDER BY with empty modes should evaluate: ' .. tostring(xml.errorMsg))
+   assert(seq1[0] is 'bk-2' or seq1[0] is 'bk-3', 'First element should be empty-greatest genre or lowest price within first genre')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- LET variable shadowing should respect inner scope and preserve outer value
+
+@Test function LetVariableShadowing()
+   local xq = obj.new('xquery', { statement = 'let $x := "outer" return (let $x := "inner" return $x, $x)' })
+   local err = xq.acActivate()
+   local s = tostring(xq.resultString)
+   assert(string.find(s, 'inner', 0, true), 'Inner let should produce inner value, got ' .. s)
+   assert(string.find(s, 'outer', 0, true), 'Outer let should remain accessible after inner scope, got ' .. s)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Invalid clause ordering should report descriptive syntax errors
+
+@Test function InvalidOrdering()
+   local xml = obj.new('xml', { statement = '<root><value/></root>' })
+
+   local err = xml.mtSearch('for $node in /root/value order by $node where $node return $node')
+   assert(err is ERR_Syntax, 'ORDER BY followed by WHERE should be rejected as syntax error, got ' .. mSys.GetErrorMsg(err))
+   local message = tostring(xml.errorMsg)
+   assert(string.find(message, 'where clause must precede order by', 0, true), 'Error message should describe WHERE/ORDER BY ordering requirement, got ' .. message)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Incompatible grouping expressions should surface evaluation errors
+
+@Test function InvalidGroupByExpression()
+   local xml = obj.new('xml', {
+      statement = '<root><item id="a"/><item id="b"/></root>'
+   })
+
+   local err = xml.mtSearch('for $item in /root/item group by $key := $undefined return $item')
+   assert(err != ERR_Okay, 'Group by referencing undefined bindings should fail evaluation')
+   local message = tostring(xml.errorMsg)
+   assert(string.find(message, 'Group key expression could not be evaluated.', 0, true), 'Error message should describe invalid grouping expression, got ' .. message)
+end

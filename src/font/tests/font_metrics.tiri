@@ -1,0 +1,114 @@
+--[[
+A simple test program for confirming that our fonts and reported metrics values are in-line with what we would expect.
+--]]
+
+   import 'gui/window'
+   import 'gui/combobox'
+
+   global mFont ?= mod.load('font')
+
+glFontSize = 30
+local glViewport, glWindow, glTextY
+
+function setFont(Face, Size)
+   if glText then glText.free() end
+
+   local err, font = mVec.getFontHandle(Face, "Regular", 0, Size)
+   local metrics = struct.new('FontMetrics')
+   local err = mVec.getFontMetrics(font, metrics)
+
+   if not glInitialised then
+      -- CAP-HEIGHT: YELLOW
+      -- The fontSize * 0.75 should meet the cap height (A-Z).  This works for maybe 2/3rds of
+      -- our fonts.  Non-conforming fonts are notable for including the accents.
+      -- For the most part this proves that fontSize should not be used in metrics calculations.
+      global glSize = glViewport.new('vectorrectangle', { x = 0, width='50%', y=0, height=1, fill='rgb(255,255,0,128)' })
+
+      -- METRICS LINE SPACING: BLUE
+      global glNextLine = glViewport.new('vectorrectangle', { x = 0, width='100%', y=0, height=1, fill='rgb(0,0,255,128)' })
+      global glNextHeight = glViewport.new('vectorrectangle', { x = 0, width='100%', y=0, height=1, fill='rgb(0,0,255,128)' })
+
+      -- METRICS DESCENT: GREEN
+      global glDescent = glViewport.new('vectorrectangle', { x = 0, width='100%', y=0, height=1, fill='rgb(0,255,0,64)' })
+
+      -- METRICS HEIGHT: RED
+      -- The metrics height is equivalent to Ascent + Descent.  Accents are ignored.  Generally very reliable, only
+      -- a few fonts show a slight margin of error - Courier Prime probably being the worst because its descent is off.
+      -- It's vital to remember that the height is taken from the bottom of the gutter, not the basline.
+      global glHeight = glViewport.new('vectorrectangle', { x = '50%', width='100%', y=0, height=1, fill='rgb(255,0,0,64)' })
+
+      -- METRICS ASCENT: BLUE DOTTED
+      -- The ascent is the distance from the baseline to the top of the font, NOT including accents.  Generally very
+      -- reliable, the margin of error is reasonably tight for our fonts.
+      global glAscent = glViewport.new('vectorpolygon', { x1 = 0, y1 = 0, x2 = '100%', y2 = 0, stroke='rgb(0,0,255,128)', dashArray="4,4" })
+   end
+
+   baseline = glTextY + Size
+
+   global glText = glViewport.new('vectortext', {
+      x        = glWindow.margins.left,
+      y        = baseline,
+      face     = Face,
+      fontSize = Size,
+      fill     = 'rgb(0,0,0)',
+      string   = f'{Face}; ÄĆÃÊgy; Size: {Size}/{(Size * 72/96)}; Height: {metrics.height}; ' ..
+         f'Ascent: {metrics.ascent}; Descent: {metrics.descent}; LineSpacing: {metrics.lineSpacing};\n' ..
+         'ÄĆÃÊ The quick brown Fox jumped Over the lazy Dog'
+   })
+
+   glHeight.y = baseline + metrics.descent - metrics.height
+   glHeight.height = metrics.height
+
+   -- FONTSIZE MATCHES THE CAP HEIGHT WHEN * 0.75
+   glSize.y = glText.y
+   glSize.height = -glText.fontSize * 0.75
+
+   glNextLine.y = glText.y + metrics.lineSpacing
+   glNextHeight.y = glText.y + metrics.lineSpacing - metrics.ascent
+
+   glDescent.y = glText.y
+   glDescent.height = metrics.descent
+
+   glAscent.y1 = glText.y - metrics.ascent
+   glAscent.y2 = glText.y - metrics.ascent
+
+   global glInitialised = true
+   processing.collect()
+end
+
+   --mFont.refreshFonts()
+
+   glWindow = gui.window({ title='Widget Examples', insideWidth=600, insideHeight=400, center=true })
+   glViewport = glWindow:clientViewport({ aspectRatio = ARF_MEET })
+
+   y = 6
+   items = array<table> { }
+   err, list = mFont.GetList()
+
+   while list do
+      if list.hidden != 1 then
+         items:push({ item=list.name })
+      end
+      list = list.next
+   end
+
+   combobox = gui.combobox({
+      target = glViewport,
+      label  = 'Font:',
+      string = 'Noto Sans',
+      x      = glWindow.margins.left, y = y,
+      items  = items,
+      events = {
+         activate = function(Widget, Text)
+            setFont(Widget.text.string, glFontSize)
+         end
+      }
+   })
+   y += combobox.viewport.height + 12
+
+   glTextY = y
+
+   setFont(items[0].item, glFontSize)
+
+   glWindow:show()
+   processing.sleep() -- Will sleep until the window sends MSGID_QUIT

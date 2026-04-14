@@ -1,0 +1,160 @@
+-- Tests for different XML data source methods
+
+@AfterAll function cleanup()
+   -- Clean up any remaining test files
+   mSys.DeleteFile('temp:test_xml_path.xml')
+   mSys.DeleteFile('temp:test_switch.xml')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test loading from file path
+
+@Test(priority=1) function PathLoading()
+   -- Create a temporary XML file for testing
+   testXML = '<?xml version="1.0"?><testRoot><testChild>Path content</testChild></testRoot>'
+   file = obj.new('file', { path = 'temp:test_xml_path.xml', flags = FL_WRITE|FL_NEW })
+   file.acWrite(testXML)
+   file = nil
+
+   -- Load XML from file path
+   xml = obj.new("xml", { path = 'temp:test_xml_path.xml', flags = XMF_STRIP_HEADERS })
+   tags = xml.tags
+   assert(tags, "XML should load from file path")
+   assert(tags[1].attribs[0].name is "testRoot", "Root tag should be testRoot; got " .. tostring(tags[0].attribs[0].name))
+   assert(tags[1].children[0].children[0].attribs[0].value is "Path content", "Content should be preserved")
+
+   processing.collect()
+   mSys.DeleteFile('temp:test_xml_path.xml')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test loading from object source
+
+@Test(priority=2) function ObjectSource()
+   -- Create a memory object with XML content
+   testXML = '<sourceRoot><sourceChild>Object content</sourceChild></sourceRoot>'
+   memory = obj.new('file', { flags = FL_READ | FL_WRITE | FL_NEW | FL_BUFFER })
+   memory.acWrite(testXML)
+   memory.acSeek(0, SEEK_SET)
+
+   -- Load XML from object source
+   xml = obj.new("xml", { source = memory })
+   tags = xml.tags
+   assert(tags, "XML should load from object source")
+   assert(tags[0].attribs[0].name is "sourceRoot", "Root tag should be sourceRoot")
+   assert(tags[0].children[0].children[0].attribs[0].value is "Object content", "Content should be preserved")
+
+   memory = nil
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test string: path prefix
+
+@Test(priority=3) function StringPathPrefix()
+   testXML = '<stringRoot><stringChild>String path content</stringChild></stringRoot>'
+
+   -- Use string: prefix to treat path as XML content
+   xml = obj.new("xml", { path = 'string:' .. testXML })
+   tags = xml.tags
+   assert(tags, "string: prefix should parse XML content")
+   assert(tags[0].attribs[0].name is "stringRoot", "Root tag should be stringRoot")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test DataFeed action
+
+@Test(priority=4) function DataFeed()
+   xml = obj.new("xml", { statement = '<root><existing>Original</existing></root>' })
+
+   -- Feed additional XML data
+   err = xml.acDataFeed(nil, DATA_XML, '<added>New content</added>')
+   assert(err is ERR_Okay, "DataFeed should succeed")
+
+   tags = xml.tags
+   assert(#tags is 2, "Should have 2 root-level elements after DataFeed")
+   assert(tags[1].attribs[0].name is "added", "Added element should be present")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test DataFeed with empty XML
+
+@Test(priority=5) function DataFeedEmpty()
+   xml = obj.new("xml") -- Start with empty XML
+
+   -- Feed XML data to empty object
+   err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
+   assert(err is ERR_Okay, "DataFeed to empty XML should succeed")
+
+   tags = xml.tags
+   assert(tags and #tags is 1, "Should have 1 element after first DataFeed")
+
+   -- Feed more data
+   err = xml.acDataFeed(nil, DATA_XML, '<second>Second element</second>')
+   assert(err is ERR_Okay, "Second DataFeed should succeed")
+
+   tags = xml.tags
+   assert(#tags is 2, "Should have 2 elements after second DataFeed")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test reloading from different sources
+
+@Test(priority=6) function SourceSwitching()
+   -- Start with statement
+   xml = obj.new("xml", { statement = '<initial>Statement content</initial>' })
+   assert(xml.tags[0].attribs[0].name is "initial", "Initial load should work")
+
+   -- Switch to different statement
+   xml.statement = '<switched>New statement</switched>'
+   assert(xml.tags[0].attribs[0].name is "switched", "Statement switching should work")
+
+   -- Create file for path switching
+   fileXML = '<pathSwitched>Path content</pathSwitched>'
+   file = obj.new('file', { path = 'temp:test_switch.xml', flags = FL_WRITE | FL_NEW })
+   file.acWrite(fileXML)
+   file = nil
+
+   -- Switch to path
+   xml.path = 'temp:test_switch.xml'
+   assert(xml.tags[0].attribs[0].name is "pathSwitched", "Path switching should work")
+
+   processing.collect()
+   mSys.DeleteFile('temp:test_switch.xml')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test loading large files
+
+@Test(priority=7) function LargeFileLoading()
+   -- Generate large XML content
+   parts = {'<largeRoot>'}
+   for i = 0, 499 do
+      table.insert(parts, '<item id="' .. i .. '">Content for item ' .. i .. '</item>')
+   end
+   table.insert(parts, '</largeRoot>')
+   largeXML = table.concat(parts)
+
+   -- Load large file
+   xml = obj.new("xml", { statement = largeXML })
+   assert(xml.tags, "Large XML file should load")
+   assert(#xml.tags[0].children is 500, "All 500 items should be loaded")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test invalid file handling
+
+@Test(priority=8) function InvalidFileHandling()
+   -- Try to load non-existent file
+
+   try
+      xml = obj.new("xml", { path = 'temp:nonexistent.xml' })
+   success
+      error("Should report error for non-existent file")
+   end
+
+   -- Try to parse invalid XML content.  Throwing an exception is considered acceptable if content is unparseable
+   try
+      xml2 = obj.new("xml", { statement = 'This is not valid XML content' })
+      assert(xml2.parseError != ERR_Okay, "Should report error for invalid XML")
+   end
+end

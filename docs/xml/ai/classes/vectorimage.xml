@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="VectorImage" mod="Vector" c="Provides support for the filling and stroking of vectors with bitmap images." cat="Graphics" id="885aab1b" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="VectorImage" mod="Vector" c="Provides support for the filling and stroking of vectors with bitmap images." cat="Graphics" id="885aab1b" v="1">
   <ai:f n="AspectRatio" c="Flags that affect the aspect ratio of the image within its target vector." t="ARF" a="RS"/>
   <ai:f n="Bitmap" c="Reference to a source bitmap for the rendering algorithm." t="*Bitmap" a="RS"/>
   <ai:f n="Dimensions" c="Dimension flags define whether individual dimension fields contain fixed or scaled values." t="DMF" a="RW"/>

@@ -1,0 +1,86 @@
+{
+   "name": "tiri-language",
+   "displayName": "Tiri Language Support",
+   "description": "Language support for Tiri programs",
+   "version": "0.1.0",
+   "publisher": "kotuku",
+   "engines": {
+      "vscode": "^1.75.0"
+   },
+   "categories": [
+      "Programming Languages"
+   ],
+   "activationEvents": [
+      "workspaceContains:**/*.tiri"
+   ],
+   "main": "./extension.js",
+   "contributes": {
+      "languages": [
+         {
+            "id": "tiri",
+            "aliases": ["Tiri", "tiri"],
+            "extensions": [".tiri"],
+            "configuration": "./language-configuration.json"
+         }
+      ],
+      "grammars": [
+         {
+            "language": "tiri",
+            "scopeName": "source.tiri",
+            "path": "./syntaxes/tiri.tmLanguage.json"
+         }
+      ],
+      "configuration": {
+         "type": "object",
+         "title": "Tiri",
+         "properties": {
+            "tiri.lsp.enable": {
+               "type": "boolean",
+               "default": true,
+               "description": "Enable Tiri LSP server connection"
+            },
+            "tiri.lsp.host": {
+               "type": "string",
+               "default": "127.0.0.1",
+               "description": "LSP server host address"
+            },
+            "tiri.lsp.port": {
+               "type": "number",
+               "default": 5007,
+               "description": "LSP server TCP port"
+            }
+         }
+      },
+      "semanticTokenScopes": [
+         {
+            "language": "tiri",
+            "scopes": {
+               "keyword": ["keyword.control.tiri"],
+               "operator": ["keyword.operator.tiri"],
+               "variable": ["variable.other.tiri"],
+               "function": ["entity.name.function.tiri"],
+               "string": ["string.quoted.tiri"],
+               "number": ["constant.numeric.tiri"],
+               "comment": ["comment.tiri"],
+               "type": ["entity.name.type.tiri"],
+               "parameter": ["variable.parameter.tiri"],
+               "property": ["variable.other.property.tiri"],
+               "namespace": ["entity.name.namespace.tiri"],
+               "class": ["entity.name.class.tiri"],
+               "macro": ["constant.other.tiri"]
+            }
+         }
+      ],
+      "configurationDefaults": {
+         "[tiri]": {
+            "editor.semanticHighlighting.enabled": true
+         }
+      }
+   },
+   "dependencies": {
+      "vscode-languageclient": "^9.0.1"
+   },
+   "devDependencies": {
+      "@types/vscode": "^1.75.0"
+   }
+}

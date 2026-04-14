@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="StorageDevice" mod="Core" c="Queries the meta data of file system volumes." cat="System" id="63e19c4a" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="StorageDevice" mod="Core" c="Queries the meta data of file system volumes." cat="System" id="63e19c4a" v="1">
   <ai:f n="BytesFree" c="Total amount of storage space that is available, measured in bytes." t="INT64" a="R"/>
   <ai:f n="BytesUsed" c="Total amount of storage space in use." t="INT64" a="R"/>
   <ai:f n="DeviceFlags" c="These read-only flags identify the type of device and its features." t="DEVICE" a="R"/>

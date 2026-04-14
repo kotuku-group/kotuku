@@ -1,0 +1,161 @@
+-- Regression tests for the processing interface
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function GCStatsKeyValues()
+   stats = processing.gcStats()
+   assert(type(stats) is 'table', 'gcStats() should return a table')
+
+   assert(stats.memoryKB != nil, 'gcStats() should have memoryKB field')
+   assert(type(stats.memoryKB) is 'number', 'memoryKB should be a number')
+   assert(stats.memoryKB >= 0, 'memoryKB should be non-negative')
+
+   assert(stats.memoryBytes != nil, 'gcStats() should have memoryBytes field')
+   assert(type(stats.memoryBytes) is 'number', 'memoryBytes should be a number')
+   assert(stats.memoryBytes >= 0, 'memoryBytes should be non-negative')
+   assert(stats.memoryBytes < 1024, 'memoryBytes should be less than 1024 (remainder)')
+
+   assert(stats.memoryMB != nil, 'gcStats() should have memoryMB field')
+   assert(type(stats.memoryMB) is 'number', 'memoryMB should be a number')
+   assert(stats.memoryMB >= 0, 'memoryMB should be non-negative')
+
+   -- memoryMB should approximately equal memoryKB/1024 + memoryBytes/(1024*1024)
+   expected_mb = stats.memoryKB / 1024.0 + stats.memoryBytes / (1024.0 * 1024.0)
+   diff = math.abs(stats.memoryMB - expected_mb)
+   assert(diff < 0.0001, f'memoryMB ({stats.memoryMB}) should be consistent with KB+bytes ({expected_mb})')
+
+   assert(stats.isRunning != nil, 'gcStats() should have isRunning field')
+   assert(type(stats.isRunning) is 'boolean', 'isRunning should be a boolean')
+
+   assert(stats.pause != nil, 'gcStats() should have pause field')
+   assert(type(stats.pause) is 'number', 'pause should be a number')
+   assert(stats.pause > 0, 'pause should be positive')
+
+   assert(stats.stepMul != nil, 'gcStats() should have stepMul field')
+   assert(type(stats.stepMul) is 'number', 'stepMul should be a number')
+   assert(stats.stepMul > 0, 'stepMul should be positive')
+
+   -- Default LuaJIT values are typically 200 for both pause and stepMul
+   assert(stats.pause is 200, f'Default pause should be 200, got {stats.pause}')
+   assert(stats.stepMul is 200, f'Default stepMul should be 200, got {stats.stepMul}')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function CollectDefaultMode()
+   result = processing.collect()
+   assert(type(result) is 'number', 'collect() should return a number')
+end
+
+@Test function CollectFullMode()
+   result = processing.collect('full')
+   assert(type(result) is 'number', "collect('full') should return a number")
+end
+
+@Test function CollectStepMode()
+   result = processing.collect('step')
+   assert(type(result) is 'number', "collect('step') should return a number")
+end
+
+@Test function CollectStepWithStepSize()
+   result = processing.collect('step', { stepSize = 100 })
+   assert(type(result) is 'number', "collect('step', {stepSize=100}) should return a number")
+end
+
+@Test function CollectStopMode()
+   processing.stopCollector()
+
+   stats = processing.gcStats()
+   assert(stats.isRunning is false, 'GC should be stopped after collect("stop")')
+
+   processing.startCollector()
+end
+
+@Test function CollectRestartMode()
+   processing.stopCollector()
+
+   stats_stopped = processing.gcStats()
+   assert(stats_stopped.isRunning is false, 'GC should be stopped')
+
+   processing.startCollector()
+
+   stats_restarted = processing.gcStats()
+   assert(stats_restarted.isRunning is true, 'GC should be running after restart')
+end
+
+@Test function CollectInvalidModeError()
+   try
+      processing.collect('invalid_mode')
+   success
+      error('collect() with invalid mode should throw an error')
+   end
+end
+
+@Test function CollectReducesMemory()
+   -- Allocate some memory
+   t = {}
+   for i in {0..5000} do
+      t[i] = string.rep('x', 100)
+   end
+
+   before = processing.gcStats().memoryMB
+
+   -- Release the reference and collect
+   t = nil
+   processing.collect('full')
+
+   after = processing.gcStats().memoryMB
+
+   -- Memory should decrease after collection (allow for some variance)
+   assert(after < before, f'Memory should decrease after collection: before={before}, after={after}')
+end
+
+@Test function CollectStepReturnsProgress()
+   -- Step collection returns 1 if collection is not finished, 0 if finished
+   result = processing.collect('step', { stepSize = 1 })
+   assert(result is 0 or result is 1, f"Step collect should return 0 or 1, got {result}")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function SleepZeroProcessesMessages()
+   -- Sleep with 0 seconds should return immediately after processing messages
+   -- We can't easily time this without os.clock, so just verify it returns without hanging
+   result = processing.sleep(0)
+   assert(type(result) is 'number', 'sleep(0) should return an error code')
+end
+
+@Test function SleepReturnsError()
+   result = processing.sleep(0)
+   assert(type(result) is 'number', 'sleep() should return an error code')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function SignalExists()
+   assert(type(processing.signal) is 'function', 'processing.signal should be a function')
+end
+
+@Test function FlushExists()
+   assert(type(processing.flush) is 'function', 'processing.flush should be a function')
+end
+
+@Test function FlushClearsSignal()
+   -- Signal and then flush should work without error
+   processing.signal()
+   processing.flush()
+   -- If we get here without error, the test passes
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function TaskReturnsObject()
+   task = processing.task()
+   assert(task != nil, 'task() should return an object')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function DelayedCallExists()
+   assert(type(processing.delayedCall) is 'function', 'processing.delayedCall should be a function')
+end

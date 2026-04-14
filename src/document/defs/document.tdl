@@ -1,0 +1,102 @@
+--$TIRI:Include
+
+module({ name="Document", copyright="Paul Manias © 2005-2026", version=1.0, timestamp=20240611 }, function()
+  restrict(function()
+    loadFile(glPath .. 'common-graphics.tdl')
+  end)
+
+  c_include("<kotuku/modules/display.h>", "<kotuku/modules/xml.h>", "<kotuku/modules/font.h>", "<kotuku/modules/vector.h>")
+
+  loadFile(glPath .. 'common.tdl')
+
+  constants("RIPL", { comment="Official version number (date format).  Any changes to the handling of document content require that this number be updated." }, {
+    VERSION = "\"20240126\""
+  })
+
+  enum("TT", { type="char", start=1 }, "VECTOR", "LINK", "EDIT")
+
+  flags("DEF", { comment="Event flags for selectively receiving events from the Document object." },
+    "PATH: The source file path has changed.  Useful for detecting when the user has left the page.",
+    "ON_CLICK: The user has interacted with an element that has an on-click definition.",
+    "ON_MOTION: The user has triggered a motion event in an element that supports motion monitoring.",
+    "ON_CROSSING_IN: The mouse pointer has crossed into an element.",
+    "ON_CROSSING_OUT: The mouse pointer has crossed out of an element.",
+    "LINK_ACTIVATED: The user has interacted with a hyperlink.  This event can be cancelled by returning ERR::Skip.",
+    "WIDGET_STATE: The state value of a widget has changed (e.g. input, checkbox, text).  `name` and `value` keys will be defined in the event parameters.",
+    { ON_CROSSING = "ON_CROSSING_IN|ON_CROSSING_OUT" }
+  )
+
+  enum("DRT", { type="int", start=0, comment="Internal trigger codes" },
+    "BEFORE_LAYOUT",
+    "AFTER_LAYOUT",
+    "USER_CLICK",
+    "USER_CLICK_RELEASE",
+    "USER_MOVEMENT",
+    "REFRESH",
+    "GOT_FOCUS",
+    "LOST_FOCUS",
+    "LEAVING_PAGE",
+    "PAGE_PROCESSED",
+    "END")
+
+  flags("DCF", { comment="Document flags" },
+    "EDIT: Allow direct keyboard input and document editing.",
+    "OVERWRITE: This flag forces overwrite mode when the user enters information through the keyboard.  If the flag is not set, then insert mode is used.",
+    "NO_SYS_KEYS: System-keys provide standard key support for Ctrl-C, Ctrl-X etc.  Set this flag to turn them off.",
+    "DISABLED: This read-only flag is set if the UI has been disabled through the Disable action.",
+    "NO_LAYOUT_MSG: Turn off debug output produced during document layout and processing - useful on refresh for example.",
+    "UNRESTRICTED: Turn off all security measures - may only be set prior to initialisation.")
+
+  flags("FSO", { comment="These are document style flags, as used in the DocStyle structure" },
+    "UNDERLINE: Draw a line under the text.",
+    "PREFORMAT: All white-space is taken into account.",
+    "ALIGN_RIGHT: Align to the right.",
+    "ALIGN_CENTER: Align to the centre.",
+    "NO_WRAP: Do not wrap the text.",
+    { STYLES = "UNDERLINE" })
+
+  methods("Document", "doc", {
+    { id=1,  name="FeedParser" },
+    { id=2,  name="SelectLink" },
+    { id=4,  name="FindIndex" },
+    { id=5,  name="InsertXML" },
+    { id=6,  name="RemoveContent" },
+    { id=7,  name="InsertText" },
+    { id=8,  name="CallFunction" },
+    { id=9,  name="AddListener" },
+    { id=10, name="RemoveListener" },
+    { id=11, name="ShowIndex" },
+    { id=12, name="HideIndex" },
+    { id=13, name="Edit" },
+    { id=14, name="ReadContent" }
+  })
+
+  class("Document", { src={ "../class/document_class.cpp", "../class/fields.cpp" }, output="../class/document_def.c" }, [[
+    str Description      # A description assigned by the author of the document
+    str Title            # The title of the document
+    str Author           # The author of the document
+    str Copyright        # Copyright information for the document
+    str Keywords         # Keywords for the document
+    obj(VectorViewport) Viewport  # The viewport that will host the document
+    obj(VectorViewport) Focus     # Monitor this viewport for focus events
+    obj(VectorViewport) View      # An internally created viewport that hosts the Page
+    obj(VectorViewport) Page      # The Page contains the document content and is hosted by the View
+    oid TabFocus         # If the tab key is pressed, focus can be changed to this object
+    int(DEF) EventMask   # Event mask for selectively receiving events from the Document object.
+    int(DCF) Flags       # Optional flags
+    int PageHeight       # Height of the document page
+    error Error          # Most recent error code produced by the parser
+  ]])
+
+    c_insert([[
+namespace fl {
+   using namespace pf;
+
+constexpr FieldValue EventCallback(const FUNCTION &Value) { return FieldValue(FID_EventCallback, &Value); }
+constexpr FieldValue EventCallback(APTR Value) { return FieldValue(FID_EventCallback, Value); }
+constexpr FieldValue EventMask(DEF Value) { return FieldValue(FID_EventMask, int(Value)); }
+constexpr FieldValue Flags(DCF Value) { return FieldValue(FID_Flags, int(Value)); }
+
+}
+]])
+end)

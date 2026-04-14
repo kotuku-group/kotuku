@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="Tiri" mod="Tiri" cat="Data" id="0f71fc19" v="1">
+  <ai:a n="Activate" c="Performs the native action of the object." p="ERR acActivate(*Object)"/>
+  <ai:a n="SaveToObject" c="Compiles the current script statement and saves it as byte code." p="ERR acSaveToObject(*Object, OBJECTID Dest, CLASSID ClassID)">
+    <ai:i n="Dest" t="OBJECTID" c="Refers to an object that will receive the encoded data."/>
+    <ai:i n="ClassID" t="CLASSID" c="Can refer to a sub-class that should be used when encoding the data."/>
+  </ai:a>
+  <ai:m n="ClearBreakpoint" c="Remove an existing breakpoint." p="ERR sc::ClearBreakpoint(OBJECTPTR Object, CSTRING File, INT Line)">
+    <ai:i n="File" t="CSTRING" c="The name of the script file (optional, can be empty)."/>
+    <ai:i n="Line" t="INT" c="The line number to set the breakpoint at (0-based)."/>
+    <ai:e c="Okay"/>
+  </ai:m>
+  <ai:m n="SetBreakpoint" c="Adds a breakpoint at the specified line in the script." p="ERR sc::SetBreakpoint(OBJECTPTR Object, CSTRING File, INT Line)">
+    <ai:i n="File" t="CSTRING" c="The name of the script file (optional, can be empty)."/>
+    <ai:i n="Line" t="INT" c="The line number to set the breakpoint at (0-based)."/>
+    <ai:e c="Okay"/>
+  </ai:m>
+  <ai:m n="Step" c="Steps the script forward by one line when paused at a breakpoint." p="ERR sc::Step(OBJECTPTR Object)">
+    <ai:e c="Okay"/>
+  </ai:m>
+  <ai:f n="Procedures" c="Returns a string array of all named procedures defined by a script." t="pf::vector&lt;std::string&gt;" a="G"/>
+</ai:cl>

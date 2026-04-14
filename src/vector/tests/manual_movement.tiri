@@ -1,0 +1,78 @@
+-- $TIRI:persistent
+--
+-- This test moves vector shapes to random locations every second.  Use it to confirm that the MoveToPoint()
+-- action and the setting of coordinate fields directly are working as anticipated.  If any shapes sit idle, then
+-- further investigation is required.
+--
+-- In addition to the movement, the radius of ellipses is also modified to ensure that base paths are recomputed
+-- correctly.
+
+   glSelf = obj.find("self")
+   glFrameRate = 1
+
+//*********************************************************************************************************************
+
+function drawPage(Surface, Bitmap)
+   local err, colour = Bitmap.mtGetColour(255, 255, 255, 255)
+   Bitmap.mtDrawRectangle(0, 0, Surface.width, Surface.height, colour, BAF_FILL)
+
+   glVector.bitmap     = Bitmap
+   glVector.pageWidth  = Surface.width
+   glVector.pageHeight = Surface.height
+   glVector.acDraw()
+end
+
+//*********************************************************************************************************************
+
+function timer(ID, Elapsed, CurrentTime)
+   // Test MoveToPoint()
+
+   local x = mSys.randomNumber(glWindow.insidewidth-20)
+   local y = mSys.randomNumber(glWindow.insideheight-20)
+   glRectangleMTP.acMoveToPoint(x, y, 0, bit.bor(MTF_X, MTF_Y))
+   glRectangleMTP.width = 10 + mSys.randomNumber(10)
+   glRectangleMTP.height = 10 + mSys.randomNumber(10)
+
+   local x = mSys.randomNumber(glWindow.insidewidth-20)
+   local y = mSys.randomNumber(glWindow.insideheight-20)
+   glEllipseMTP.acMoveToPoint(x, y, 0, bit.bor(MTF_X, MTF_Y))
+   glEllipseMTP.radius = 10 + mSys.randomNumber(10)
+
+   // Test setting X/Y field values directly
+
+   glRectangleXY.x = mSys.randomNumber(glWindow.insidewidth-20)
+   glRectangleXY.y = mSys.randomNumber(glWindow.insideheight-20)
+
+   glEllipseXY.cx = mSys.randomNumber(glWindow.insideheight-20)
+   glEllipseXY.cy = mSys.randomNumber(glWindow.insideheight-20)
+   glEllipseXY.radius = 10 + mSys.randomNumber(10)
+
+   glPage.acDraw()
+end
+
+//*********************************************************************************************************************
+
+   glWindow = obj.new("window", {
+      insidewidth=600, insideheight=400, title="Vector Movement Test", flags="!nomargins", minwidth=200, minheight=200
+   })
+   glWindow.acShow()
+   glWindow.detach()
+
+   glPage = glWindow.new("surface", { x=glWindow.leftmargin, y=glWindow.topmargin, xoffset=glWindow.rightmargin, yoffset=glWindow.bottommargin } )
+   glPage.acShow()
+
+   glVector = glPage.new("VectorScene", { name="MainVectorPage" } )
+   glViewport = glVector.new("VectorViewport", { name="MainView" }) // Main view port for vector graphics.
+
+   glRectangleXY = glViewport.new("VectorRectangle", { name="RectangleXY", x=10, y=10, width=20, height=20, strokewidth="2", strokecolour="1,0,0,1" })
+   glRectangleMTP = glViewport.new("VectorRectangle", { name="RectangleMTP", x=10, y=50, width=20, height=20, strokewidth="2", strokecolour="0,0,1,1" })
+
+   glEllipseXY = glViewport.new("VectorEllipse", { name="EllipseXY", cx=20, cy=20, width=20, height=20, strokewidth="2", strokecolour="1,0,0,1" })
+   glEllipseMTP = glViewport.new("VectorEllipse", { name="EllipseMTP", cx=20, cy=60, width=20, height=20, strokewidth="2", strokecolour="0,0,1,1" })
+
+   glPage.mtAddCallback(drawPage)
+   glPage.acDraw()
+
+   local err, timerID = mSys.SubscribeTimer(1.0/glFrameRate, timer)
+
+   processing.sleep()

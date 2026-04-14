@@ -1,0 +1,87 @@
+--$TIRI:Include
+
+module({ name="Font", copyright="Paul Manias © 1998-2026", version=1.0, timestamp=20240611 }, function()
+  restrict(function()
+    loadFile(glPath .. 'common-graphics.tdl')
+  end)
+
+  c_include("<kotuku/modules/display.h>")
+
+  flags("FTF", { comment="Font flags" },
+    "HEAVY_LINE: Underline the font with a double-sized line, using the colour defined in #Underline.",
+    "BASE_LINE: The Font's #Y coordinate is the base line.",
+    { ITALIC   = "0x40000000: Font is described as using italics (read only)." },
+    { BOLD     = "0x20000000: Font is described as having a bold weight (read only)." }
+  )
+
+  flags("FMETA", { comment="Result flags for the SelectFont() function." },
+    "SCALED: The font is scalable (assume fixed otherwise).",
+    "VARIABLE: This is a scalable font featuring variable metrics.",
+    "HINT_NORMAL: The hinting information provided by the font should be given preference.",
+    "HINT_LIGHT: The light version of the Freetype hinter should be used.",
+    "HINT_INTERNAL: The Freetype hinter should be used.",
+    "HIDDEN: The font should not appear in any named list shown to the user."
+  )
+
+  enum("HINT", { type="char", start=1, comment="Force hinting options for a font." },
+     "NORMAL: The hinting information provided by the font will be given preference.",
+     "INTERNAL: The Freetype hinter will be forcibly imposed.",
+     "LIGHT: The light version of the Freetype hinter will be forcibly imposed.")
+
+  struct("FontList", { comment="For GetList(), describes a system font." }, [[
+    struct(*FontList) Next  # Pointer to the next entry in the list.
+    str   Name              # The name of the font face.
+    str   Alias             # Reference to another font Name if this is an alias.
+    array(int,0) Points     # Pointer to an array of fixed point sizes supported by the font.
+    str   Styles            # Supported styles are listed here in CSV format.
+    str   Axes              # For variable fonts, lists all supported axis codes in CSV format
+    char  Scalable          # `TRUE` if the font is scalable.
+    char  Variable          # `TRUE` if the font has variable metrics.
+    char(HINT) Hinting      # Hinting options
+    char  Hidden            # `TRUE` if the font should be hidden from user font lists.
+  ]])
+
+  constants("FSS", { comment="Options for the StringSize() function." }, {
+    ALL  = "-1: Process all characters.",
+    LINE = "-2: Terminate operation at the first line feed or word-wrap."
+  })
+
+  class("Font", { version=1, src="class_font.cpp", output="class_font_def.c", references={ 'ALIGN', 'RGB8' } }, [[
+   double Point           # The Point/Height of the font (arbitrary size, non-exact)
+   double GlyphSpacing    # Amount of spacing between characters (additional to normal horizontal spacing)
+   obj(Bitmap) Bitmap     # Pointer to destination @Bitmap
+   str   String           # String for drawing etc
+   str   Path             # The location of the font file as derived from the name of the face.
+   str   Style            # The font style (Regular, Bold, Italic, Condensed, Light etc)
+   str   Face             # The face of the font
+   struct(RGB8) Outline   # Outline colour
+   struct(RGB8) Underline # Underline colour
+   struct(RGB8) Colour    # Fill colour
+   int(FTF) Flags         # Optional flags
+   int   Gutter           # "External leading" in pixels
+   int   LineSpacing      # Vertical spacing between lines
+   int   X                # X Coordinate
+   int   Y                # Y Coordinate
+   int   TabSize          # Tab column interval
+   int   WrapEdge         # Point at which word-wrap is encountered
+   int   FixedWidth       # Force a fixed pixel width
+   int   Height           # The point size of the font (vertical bearing), expressed in pixels.  Does not include leading.
+   int   Leading          # "Internal leading" in pixels
+   int   MaxHeight        # Maximum possible pixel height per character, covering the entire character set at the chosen point size
+   int(ALIGN) Align       # Alignment options when drawing the font.
+   int   AlignWidth       # Width to use for right alignment
+   int   AlignHeight      # Height to use for bottom alignment
+   int   Ascent           # The total number of pixels above the baseline, including leading
+   int   EndX             # Finished horizontal coordinate after drawing
+   int   EndY             # Finished vertical coordinate after drawing
+  ]])
+
+  functionNames("fnt",
+    "GetList",
+    "StringWidth",
+    "CharWidth",
+    "RefreshFonts",
+    "SelectFont",
+    "ResolveFamilyName")
+
+end)

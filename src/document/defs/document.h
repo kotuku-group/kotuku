@@ -10,6 +10,7 @@ static constexpr int MAX_PAGE_HEIGHT  = 100000;
 static constexpr int MIN_PAGE_WIDTH   = 20;
 static constexpr int MAX_DEPTH        = 40;    // Limits recursion from tables-within-tables
 static constexpr int WIDTH_LIMIT      = 4000;
+static constexpr int MAX_WORD_TOKEN_WIDTH = 0x7fff; // Cached word widths are limited to signed 16-bit range.
 static constexpr int DEFAULT_FONTSIZE = 14;    // 72DPI pixel size
 static std::string DEFAULT_FONTSTYLE("Medium");
 static std::string DEFAULT_FONTFACE("Noto Sans");
@@ -329,7 +330,7 @@ public:
    }
 
    docresource& operator=(docresource &&other) noexcept { // Move assignment
-      if (this == &other) return *this;
+      if (this IS &other) return *this;
       object_id = other.object_id;
       class_id  = other.class_id;
       type      = other.type;
@@ -339,7 +340,7 @@ public:
    }
 
    docresource& operator=(const docresource& other) { // Copy assignment
-      if (this == &other) return *this;
+      if (this IS &other) return *this;
       object_id = other.object_id;
       class_id  = other.class_id;
       type      = other.type;
@@ -363,57 +364,80 @@ struct font_entry {
    APTR handle;
    std::string face;
    std::string style;
-   FontMetrics metrics;
+   FontMetrics metrics; // Derived from vec::GetFontMetrics() at the time of caching
    int font_size; // 72 DPI pixel size
    ALIGN align;
+   int16_t space_width = 0; // Cached pixel width of ' ' (matches m_space_width type)
+   double zero_width = 0;   // Cached pixel width of '0' (for DU::CHAR unit conversion)
 
    font_entry(APTR pHandle, const std::string_view pFace, const std::string_view pStyle, double pSize) :
       handle(pHandle), face(pFace), style(pStyle), font_size(pSize), align(ALIGN::NIL) {
       vec::GetFontMetrics(pHandle, &metrics);
+      double kerning = 0;
+      space_width = int16_t(vec::CharWidth(pHandle, ' ', 0, &kerning) + kerning);
+      kerning = 0;
+      zero_width = vec::CharWidth(pHandle, '0', 0, &kerning) + kerning;
    }
 
    ~font_entry() { }
 
    font_entry(font_entry &&other) noexcept { // Move constructor
-      handle    = other.handle;
-      metrics   = other.metrics;
-      font_size = other.font_size;
-      face      = other.face;
-      style     = other.style;
-      align     = other.align;
+      handle      = other.handle;
+      metrics     = other.metrics;
+      font_size   = other.font_size;
+      face        = other.face;
+      style       = other.style;
+      align       = other.align;
+      space_width = other.space_width;
+      zero_width  = other.zero_width;
       other.handle = nullptr;
    }
 
    font_entry(const font_entry &other) { // Copy constructor
-      handle    = other.handle;
-      font_size = other.font_size;
-      metrics   = other.metrics;
-      face      = other.face;
-      style     = other.style;
-      align     = other.align;
+      handle      = other.handle;
+      font_size   = other.font_size;
+      metrics     = other.metrics;
+      face        = other.face;
+      style       = other.style;
+      align       = other.align;
+      space_width = other.space_width;
+      zero_width  = other.zero_width;
    }
 
    font_entry& operator=(font_entry &&other) noexcept { // Move assignment
-      if (this == &other) return *this;
-      handle   = other.handle;
-      font_size = other.font_size;
-      metrics   = other.metrics;
-      face      = other.face;
-      style     = other.style;
-      align     = other.align;
+      if (this IS &other) return *this;
+      handle      = other.handle;
+      font_size   = other.font_size;
+      metrics     = other.metrics;
+      face        = other.face;
+      style       = other.style;
+      align       = other.align;
+      space_width = other.space_width;
+      zero_width  = other.zero_width;
       other.handle = nullptr;
       return *this;
    }
 
    font_entry& operator=(const font_entry& other) { // Copy assignment
-      if (this == &other) return *this;
-      handle    = other.handle;
-      font_size = other.font_size;
-      metrics   = other.metrics;
-      face      = other.face;
-      style     = other.style;
-      align     = other.align;
+      if (this IS &other) return *this;
+      handle      = other.handle;
+      font_size   = other.font_size;
+      metrics     = other.metrics;
+      face        = other.face;
+      style       = other.style;
+      align       = other.align;
+      space_width = other.space_width;
+      zero_width  = other.zero_width;
       return *this;
+   }
+
+   // NB: FontMetrics are not reported identically by all backends.
+   // Bitmap fonts expose Height as the full region above the baseline, while FreeType-backed fonts may expose Ascent
+   // for that role instead.
+
+   double descent() const {
+      auto gap = metrics.LineSpacing - metrics.Height - metrics.Descent;
+      return metrics.Descent + gap;
    }
 };
 
@@ -423,6 +447,27 @@ struct font_entry {
 
 static std::mutex glFontsMutex;
 static std::deque<font_entry> glFonts; // font_entry pointers must be kept stable
+
+struct font_cache_key {
+   std::string face;
+   std::string style;
+   int pixel_size = 0;
+
+   bool operator==(const font_cache_key &Other) const {
+      return (pixel_size IS Other.pixel_size) and (face == Other.face) and (style == Other.style);
+   }
+};
+
+struct font_cache_hash {
+   size_t operator()(const font_cache_key &Key) const {
+      auto hash = std::hash<std::string> {}(Key.face);
+      hash ^= std::hash<std::string> {}(Key.style) + 0x9e3779b97f4a7c15ULL + (hash << 6) + (hash >> 2);
+      hash ^= size_t(Key.pixel_size) + 0x9e3779b97f4a7c15ULL + (hash << 6) + (hash >> 2);
+      return hash;
+   }
+};
+
+static ankerl::unordered_dense::map<font_cache_key, int16_t, font_cache_hash> glFontIndexCache;
 
 struct bc_font : public entity {
 private:
@@ -444,7 +489,10 @@ public:
    // Calling this is only valid after the layout process has completed, i.e. during drawing and UI operations
 
    font_entry * get_font() const {
-      if ((font_index < std::ssize(glFonts)) and (font_index >= 0)) return &glFonts[font_index];
+      {
+         std::lock_guard lk(glFontsMutex);
+         if ((font_index < std::ssize(glFonts)) and (font_index >= 0)) return &glFonts[font_index];
+      }
 
       pf::Log log(__FUNCTION__);
       log.error("A font_index is -1."); // An index of -1 means a call to layout_font() is missing.
@@ -484,7 +532,7 @@ struct stream_char {
    stream_char(INDEX pIndex) : index(pIndex), offset(0) { }
 
    bool operator==(const stream_char &Other) const {
-      return (this->index == Other.index) and (this->offset == Other.offset);
+      return (this->index IS Other.index) and (this->offset IS Other.offset);
    }
 
    bool operator<(const stream_char &Other) const {
@@ -557,7 +605,7 @@ struct doc_segment {
    stream_char stop;        // Stop at this index/character
    stream_char trim_stop;   // The stopping point when whitespace is removed
    FloatRect area;          // Dimensions of the segment.
-   double  descent;         // The largest descent value after taking into account all fonts used on the line.
+   double  descent;         // The largest descent (gutter) value in pixels after taking into account all fonts used on the line
    double  align_width;     // Full width of this segment if it were non-breaking
    RSTREAM *stream;         // The stream that this segment refers to
    bool    edit;            // true if this segment represents content that can be edited
@@ -573,7 +621,7 @@ struct doc_segment {
       if ((VAlign & ALIGN::TOP) != ALIGN::NIL) return area.Y + Font->metrics.Ascent;
       else if ((VAlign & ALIGN::VERTICAL) != ALIGN::NIL) {
          const double avail_space = area.Height - descent;
-         return area.Y + avail_space - ((avail_space - Font->metrics.Height) * 0.5);
+         return area.Y + avail_space - ((avail_space - Font->metrics.Ascent) * 0.5);
       }
       else return area.Y + area.Height - descent;
    }
@@ -684,7 +732,7 @@ struct bc_list : public entity {
    int   item_num     = 0;
    int   order_insert = 0;
    DUNIT v_spacing    = DUNIT(0.5, DU::LINE_HEIGHT);  // Spacing between list items, equivalent to paragraph leading, expressed as a ratio
-   uint8_t type         = BULLET;
+   uint8_t type       = BULLET;
    bool  repass       = false;
 
    bc_list() { code = SCODE::LIST_START; }
@@ -836,15 +884,68 @@ struct bc_cell : public entity {
    bc_cell(const bc_cell &Other);
 };
 
+enum class text_token_kind : uint8_t {
+   WORD,
+   WHITESPACE,
+   NEWLINE
+};
+
+struct word_token {
+   uint16_t start = 0;          // Inclusive byte offset into bc_text.text
+   uint16_t stop = 0;           // Exclusive byte offset into bc_text.text
+   int16_t width = -1;          // Cached pixel width for WORD tokens, -1 if unknown
+   uint16_t last_char = 0;      // Last unicode codepoint in the token, used to restore kerning state on cache hits
+   text_token_kind kind = text_token_kind::WORD;
+
+   inline uint16_t length() const {
+      return stop - start;
+   }
+
+   inline bool is_word() const {
+      return kind IS text_token_kind::WORD;
+   }
+
+   inline bool is_whitespace() const {
+      return kind IS text_token_kind::WHITESPACE;
+   }
+
+   inline bool is_newline() const {
+      return kind IS text_token_kind::NEWLINE;
+   }
+
+   inline void invalidate_width() {
+      width = -1;
+      last_char = 0;
+   }
+};
+
 struct bc_text : public entity {
    std::string text;
    std::vector<objVectorText *> vector_text;
+   std::vector<word_token> tokens;
    bool formatted = false;
+   bool tokens_dirty = true;    // Set when text content changes, requiring retokenisation
+   bool widths_dirty = true;    // Set when font context changes, requiring width recalculation
+   uint32_t width_cache_generation = 0;
    SEGINDEX segment = -1; // Reference to the first segment that manages this text string.
 
    bc_text() { code = SCODE::TEXT; }
-   bc_text(std::string_view pText) : text(pText) { code = SCODE::TEXT; }
-   bc_text(std::string_view pText, bool pFormatted) : text(pText), formatted(pFormatted) { code = SCODE::TEXT; }
+   bc_text(std::string_view pText) : text(pText) { code = SCODE::TEXT; tokens.reserve(pText.length()/4); }
+   bc_text(std::string_view pText, bool pFormatted) : text(pText), formatted(pFormatted) { code = SCODE::TEXT; tokens.reserve(pText.length()/4); }
+
+   void invalidate_tokens() {
+      tokens_dirty = true;
+      widths_dirty = true;
+      width_cache_generation = 0;
+   }
+
+   void invalidate_widths() {
+      widths_dirty = true;
+      width_cache_generation = 0;
+      for (auto &t : tokens) t.invalidate_width();
+   }
+
+   void tokenise();
 };
 
 struct bc_use : public entity {
@@ -980,12 +1081,20 @@ struct bc_input : public entity, widget_mgr {
    GuardedObject<objVectorViewport> clip_vp;
    bool secret = false;
 
-   bc_input() { code = SCODE::INPUT; align_to_text = true; }
+   bc_input() {
+      code = SCODE::INPUT;
+      align_to_text = true;
+   }
 };
 
 struct bc_image : public entity, widget_mgr {
    // Images inherit from widget graphics management since the rules are identical
-   bc_image() { code = SCODE::IMAGE; }
+   // Images are inline by default and aligned to the text baseline (matches HTML)
+   bc_image() {
+      code = SCODE::IMAGE;
+      align_to_text = true;
+      align = ALIGN::BOTTOM;
+   }
 };
 
 //********************************************************************************************************************
@@ -1063,9 +1172,68 @@ public:
 //********************************************************************************************************************
 
 class sorted_segment { // Efficient lookup to the doc_segment array, sorted by vertical position
-public:
+   public:
    SEGINDEX segment;
    double y;
+};
+
+//********************************************************************************************************************
+
+struct doc_layout_metrics {
+   uint32_t root_passes = 0;
+   uint32_t do_layout_calls = 0;
+   uint32_t page_extend_restarts = 0;
+   uint32_t page_extend_requests = 0;
+   uint32_t vertical_repasses = 0;
+   uint32_t table_wrap_restarts = 0;
+   uint32_t row_repasses = 0;
+   uint32_t cell_layouts = 0;
+   uint32_t check_wordwrap_calls = 0;
+   uint32_t wrap_through_clips_calls = 0;
+   uint32_t new_segment_calls = 0;
+   uint32_t clip_count_peak = 0;
+   uint32_t segment_count_peak = 0;
+
+   inline void reset() {
+      root_passes = 0;
+      do_layout_calls = 0;
+      page_extend_restarts = 0;
+      page_extend_requests = 0;
+      vertical_repasses = 0;
+      table_wrap_restarts = 0;
+      row_repasses = 0;
+      cell_layouts = 0;
+      check_wordwrap_calls = 0;
+      wrap_through_clips_calls = 0;
+      new_segment_calls = 0;
+      clip_count_peak = 0;
+      segment_count_peak = 0;
+   }
+};
+
+//********************************************************************************************************************
+
+struct glyph_cache_key {
+   uintptr_t handle = 0;
+   uint32_t glyph = 0;
+   uint32_t prev_glyph = 0;
+
+   bool operator==(const glyph_cache_key &Other) const {
+      return (handle IS Other.handle) and (glyph IS Other.glyph) and (prev_glyph IS Other.prev_glyph);
+   }
+};
+
+struct glyph_cache_hash {
+   size_t operator()(const glyph_cache_key &Key) const {
+      auto hash = size_t(Key.handle);
+      hash ^= size_t(Key.glyph) + 0x9e3779b97f4a7c15ULL + (hash << 6) + (hash >> 2);
+      hash ^= size_t(Key.prev_glyph) + 0x9e3779b97f4a7c15ULL + (hash << 6) + (hash >> 2);
+      return hash;
+   }
+};
+
+struct glyph_cache_value {
+   double advance = 0;
 };
 
 //********************************************************************************************************************
@@ -1075,7 +1243,7 @@ class extDocument : public objDocument {
    FUNCTION EventCallback;
    KEYVALUE Vars;   // Variables as defined by the client program.  Transparently accessible like URI params.  Names have priority over params.
    KEYVALUE Params; // Incoming parameters provided via the URI
-   std::map<uint32_t, XMLTag *>   TemplateIndex;
+   std::map<uint32_t, XTag *>   TemplateIndex;
    std::vector<OBJECTID>       UIObjects;    // List of temporary objects in the UI
    std::vector<doc_segment>    Segments;
    std::vector<sorted_segment> SortSegments; // Used for UI interactivity when determining who is front-most
@@ -1085,10 +1253,13 @@ class extDocument : public objDocument {
    std::vector<docresource>    Resources; // Tracks resources that are page related.  Terminated on page unload.
    std::vector<tab>            Tabs;
    std::vector<edit_cell>      EditCells;
+   doc_layout_metrics          LayoutMetrics;
+   ankerl::unordered_dense::map<glyph_cache_key, glyph_cache_value, glyph_cache_hash> GlyphAdvanceCache;
    ankerl::unordered_dense::map<std::string_view, doc_edit> EditDefs;
    std::array<std::vector<FUNCTION>, size_t(DRT::END)> Triggers;
-   std::vector<const XMLTag *> TemplateArgs; // If a template is called, the tag is referred here so that args can be pulled from it
+   std::vector<const XTag *> TemplateArgs; // If a template is called, the tag is referred here so that args can be pulled from it
    std::string FontFace;       // Default font face
+   std::string WidthCacheFontFace;
    RSTREAM Stream;             // Internal stream buffer
    stream_char SelectStart, SelectEnd;  // Selection start & end (stream index)
    stream_char CursorIndex;    // Position of the cursor if text is selected, or edit mode is active.  It reflects the position at which entered text will be inserted.
@@ -1101,17 +1272,19 @@ class extDocument : public objDocument {
    std::string Background;     // Background fill instruction
    std::string CursorStroke;   // Stroke instruction for the text cursor
    std::string FontStyle;      // Default font style, usually set to Regular
+   std::string WidthCacheFontStyle;
    objXML *Templates;          // All templates for the current document are stored here
    objXML *PretextXML;         // Execute this XML prior to loading a new page.
    objSVG *SVG;                // Allocated by the <svg> tag
    objVectorRectangle *Bkgd;   // Background fill object
-   XMLTag    *PageTag;         // Refers to a specific page that is being processed for the layout
+   XTag    *PageTag;         // Refers to a specific page that is being processed for the layout
    objScript *ClientScript;    // Allows the developer to define a custom default script.
    objScript *DefaultScript;
    doc_edit  *ActiveEditDef; // As for ActiveEditCell, but refers to the active editing definition
    objVectorScene *Scene;    // A document specific scene is required to keep our resources away from the host
    double VPWidth, VPHeight; // Dimensions of the host Viewport
    double FontSize;          // The default font-size, measured in 72 DPI pixels
+   double WidthCacheFontSize = 0;
    double MinPageWidth;      // Internal value for managing the page width, speeds up layout processing
    Unit   PageWidth;         // Width of the widest section of the document page.  Can be pre-defined by the client for a fixed or relative width
    double LeftMargin, TopMargin, RightMargin, BottomMargin;
@@ -1127,6 +1300,7 @@ class extDocument : public objDocument {
    TIMER    FlashTimer;       // For flashing the cursor
    CELL_ID  ActiveEditCellID; // If editing is active, this refers to the ID of the cell being edited
    uint32_t ActiveEditCRC;      // CRC for cell editing area, used for managing onchange notifications
+   uint32_t WidthCacheGeneration = 1;
    int16_t  FocusIndex;         // Tab focus index
    int16_t  Invisible;          // Incremented for sections within a hidden index
    uint8_t  Processing;         // If > 0, the page layout is being altered
@@ -1138,6 +1312,11 @@ class extDocument : public objDocument {
    bool   CursorState;      // True if the edit cursor is on, false if off.  Used for flashing of the cursor
 
    std::vector<sorted_segment> & get_sorted_segments();
+
+   inline void invalidate_text_width_cache() {
+      WidthCacheGeneration++;
+      if (!WidthCacheGeneration) WidthCacheGeneration = 1;
+   }
 };
 
 bc_button::bc_button() {

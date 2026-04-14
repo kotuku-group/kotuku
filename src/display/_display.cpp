@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -23,7 +23,7 @@ the display API will be diverted to the module binary that is relevant to the pl
 #include <stdio.h>
 #endif
 
-#include <parasol/modules/display.h>
+#include <kotuku/modules/display.h>
 #include "idl.h"
 
 //********************************************************************************************************************
@@ -239,7 +239,7 @@ static ERROR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
       if (display IS DISPLAY_X11) {
          static uint8_t x11_fail = FALSE;
          if (!x11_fail) {
-            printf("An X Server needs to be running (try running 'parasol-xserver' to automatically create one).\n");
+            printf("An X Server needs to be running (try running 'kotuku-xserver' to automatically create one).\n");
             x11_fail = TRUE;
          }
          return ERR_InitModule;
@@ -277,4 +277,4 @@ static ERROR MODExpunge(void)
 
 //********************************************************************************************************************
 
-PARASOL_MOD(MODInit, nullptr, MODOpen, MODExpunge, MOD_IDL, nullptr)
+KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, nullptr, MOD_IDL, nullptr)

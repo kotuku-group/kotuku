@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:m xmlns:ai="http://parasol-framework.org/ai-docs" n="Font" v="1" cl="Font">
+<ai:m xmlns:ai="http://kotuku.dev/ai-docs" n="Font" v="1" cl="Font">
   <ai:f n="CharWidth" c="Returns the width of a character." p="INT fnt::CharWidth(objFont * Font, UINT Char)" r="INT">
     <ai:i n="Font" t="objFont *" c="The font to use for calculating the character width."/>
     <ai:i n="Char" t="UINT" c="A unicode character."/>

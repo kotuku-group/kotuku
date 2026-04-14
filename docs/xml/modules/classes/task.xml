@@ -13,7 +13,7 @@
     <id>7c9e5758</id>
     <idstring>TASK</idstring>
     <category>System</category>
-    <copyright>Paul Manias 1996-2025</copyright>
+    <copyright>Paul Manias 1996-2026</copyright>
     <description>
 <p>Tasks, also known as processes, form the basis of process execution in an operating system.  By creating a task object, it is possible to execute a program from within the host system.</p>
 <p>To execute a compiled program, set the <fl>Location</fl> field to point to the executable file before initialising the task.  Arguments can be passed to the executable by setting the <fl>Parameters</fl> field.  After initialising the task, use the <action>Activate</action> action to run the executable.  If the program executes successfully, the task object can be removed and this will not impact the running program.</p>
@@ -126,8 +126,8 @@
 \HKEY_CLASSES_ROOT\
 \HKEY_USERS\
 </pre>
-<p>Here is a valid example for reading the 'Parasol' key value <code>\HKEY_CURRENT_USER\Software\Parasol</code></p>
-<p>Caution: If your programming language uses backslash as an escape character (true for Fluid developers), remember to use double-backslashes as the key value separator in your Name string.</p>
+<p>Here is a valid example for reading the 'Kotuku' key value <code>\HKEY_CURRENT_USER\Software\Kotuku</code></p>
+<p>Caution: If your programming language uses backslash as an escape character (true for Tiri developers), remember to use double-backslashes as the key value separator in your Name string.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
@@ -185,7 +185,7 @@
       <access read="G">Get</access>
       <type>APTR</type>
       <description>
-<p>This field provides direct access to the actions of a task, and is intended for use with the active task object returned from <function>CurrentTask</function>.  Hooking into the action table allows the running executable to 'blend-in' with Parasol's object oriented design.</p>
+<p>This field provides direct access to the actions of a task, and is intended for use with the active task object returned from <function>CurrentTask</function>.  Hooking into the action table allows the running executable to 'blend-in' with Kotuku's object oriented design.</p>
 <p>The Actions field points to a lookup table of ActionEntry items.  Hooking into an action involves writing its <code>AC</code> index in the table with a pointer to the action routine.  For example:</p>
 <pre>if (not AccessObject(CurrentTask(), 5000, &amp;task)) {
    task-&gt;get(FID_Actions, actions);
@@ -263,7 +263,7 @@
       <access read="G" write="S">Get/Set</access>
       <type>FUNCTION</type>
       <description>
-<p>The InputCallback field is available to the active task object only (i.e. the current process). The referenced function will be called when process receives data from STDIN.  The callback must match the prototype <code>void Function(*Task, APTR Data, int Size, ERR Status)</code>.  In Fluid the prototype is 'function callback(Task, Array, Status)<code> where </code>Array<code> is an array interface.</code>
+<p>The InputCallback field is available to the active task object only (i.e. the current process). The referenced function will be called when process receives data from STDIN.  The callback must match the prototype <code>void Function(*Task, APTR Data, int Size, ERR Status)</code>.  In Tiri the prototype is 'function callback(Task, Array, Status)<code> where </code>Array<code> is an array interface.</code>
 <p>The information read from STDOUT will be returned in the </p>Data<code> pointer and the byte-length of the data will be indicated by the </code>Size<code>.  The data buffer is temporary and will be invalid once the callback function has returned.</code>
 <p>A status of </p>ERR::Finished` is sent if the stdinput handle has been closed.</p>
       </description>
@@ -306,7 +306,7 @@
       <access read="G" write="S">Get/Set</access>
       <type>FUNCTION</type>
       <description>
-<p>The OutputCallback field can be set with a function reference that will be called when an active process sends data via STDOUT.  For C++ the callback must match the prototype <code>void Function(*Task, APTR Data, int Size)</code>.  In Fluid the prototype is 'function callback(Task, Array)<code> where </code>Array<code> is an array interface.</code>
+<p>The OutputCallback field can be set with a function reference that will be called when an active process sends data via STDOUT.  For C++ the callback must match the prototype <code>void Function(*Task, APTR Data, int Size)</code>.  In Tiri the prototype is 'function callback(Task, Array)<code> where </code>Array<code> is an array interface.</code>
 <p>The information read from STDOUT will be returned in the </p>Data<code> pointer and the byte-length of the data will be indicated by the </code>Size<code>.  The </code>Data` pointer is temporary and will be invalid once the callback function has returned.</p>
       </description>
     </field>

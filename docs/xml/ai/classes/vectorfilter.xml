@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="VectorFilter" mod="Vector" c="Constructs filter pipelines that alter rendered vector graphics." cat="Graphics" id="8c6e727e" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="VectorFilter" mod="Vector" c="Constructs filter pipelines that alter rendered vector graphics." cat="Graphics" id="8c6e727e" v="1">
   <ai:a n="Clear" c="Removes all filter effects." p="ERR acClear(*Object)"/>
   <ai:f n="AspectRatio" c="Aspect ratio to use when scaling X/Y values" t="VFA" a="RW"/>
   <ai:f n="ColourSpace" c="The colour space of the filter graphics (SRGB or linear RGB)." t="VCS" a="RW"/>

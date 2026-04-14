@@ -1,0 +1,226 @@
+-- XQuery module loading integration tests
+
+   include 'xml'
+
+@BeforeAll
+function init(State)
+   global glScriptFolder = State.folder
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Basic module import and function call
+
+@Test function BasicModuleImport()
+   -- Initial verification of module file existence and that it is compilable
+
+   mod_content = io.readAll(glScriptFolder .. '/modules/math_utils.xq')
+   assert(mod_content, 'Module file not found: modules/math_utils.xq')
+   compiled_mod = obj.new('xquery', { statement = mod_content })
+
+   -- Test the ability to import the module and run it
+
+   query = [[
+      import module namespace math = "http://example.com/math"
+         at "modules/math_utils.xq";
+
+      math:square(5)
+   ]]
+
+   xq = obj.new('xquery', { statement = query, path=glScriptFolder })
+   err = xq.acActivate()
+   assert(err is ERR_Okay, 'Module import compilation failed: ' .. tostring(xq.errorMsg))
+   assert(tonumber(xq.resultString) is 25, 'Should compute 5^2 = 25, got ' .. tostring(xq.resultString))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Return multiple results from more than one function
+
+@Test function MultipleFunctions()
+   xq = obj.new('xquery', { statement = [[
+      import module namespace math = "http://example.com/math"
+         at "modules/math_utils.xq";
+
+      (math:square(3), math:cube(2))
+   ]], path=glScriptFolder })
+
+   err = xq.acActivate()
+   assert(err is ERR_Okay, 'Multiple function calls failed: ' .. tostring(xq.errorMsg))
+   -- Result should be a sequence: "9:8" or similar representation
+   result = tostring(xq.resultString)
+   assert(string.find(result, '9', 0, true) and string.find(result, '8', 0, true),
+      'Should return both 3^2=9 and 2^3=8, got ' .. result)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Access module variables
+
+@Test function ModuleVariables()
+   xq = obj.new('xquery', { statement = [[
+      import module namespace math = "http://example.com/math"
+         at "modules/math_utils.xq";
+
+      $math:pi
+   ]], path=glScriptFolder })
+
+   err = xq.acActivate()
+   assert(err is ERR_Okay, 'Module variable access failed: ' .. tostring(xq.errorMsg))
+   pi_value = tonumber(xq.resultString)
+   assert(pi_value and math.abs(pi_value - 3.14159) < 0.00001, 'Should return pi value 3.14159, got ' .. pi_value)
+
+   vars = xq.variables
+   assert(vars, "Expected module variables to be accessible")
+   math_pi_seen = false
+   for k,v in pairs(vars) do
+      if (v is 'math:pi') then math_pi_seen = true end
+   end
+   assert(math_pi_seen, "Module variable 'math:pi' not found in variables list")
+
+   list = xq.functions
+   assert(list, "Expected module functions to be accessible")
+   math_count = 0
+   for k,v in pairs(list) do
+      if (string.substr(v, 0, 5) is 'math:') then math_count++ end
+   end
+   assert(math_count >= 2, "Module variable 'math:pi' not found in variables list")
+
+   -- Verify feature flags include ModuleImports
+
+   assert(string.find(xq.get("$featureFlags"), 'ModuleImports', 0, true), "Expected feature flags to include ModuleImports")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Import and use multiple modules
+
+@Test function MultipleModuleImports()
+   -- First, ensure the built-in function fn:upper-case is available
+   xq = obj.new('xquery', { statement = [[fn:upper-case("hello")]], path = glScriptFolder })
+   err = xq.acActivate()
+   assert((err is ERR_Okay) and (tostring(xq.resultString) is 'HELLO'), 'Built-in function fn:upper-case not available')
+
+   xq.statement = [[
+      import module namespace math = "http://example.com/math"
+         at "modules/math_utils.xq";
+      import module namespace str = "http://example.com/strings"
+         at "modules/string_utils.xq";
+
+      (math:square(4), str:uppercase("hello"))
+   ]]
+
+   err = xq.acActivate()
+   assert(err is ERR_Okay, 'Multiple module imports failed: ' .. tostring(xq.errorMsg))
+   result = tostring(xq.resultString)
+   assert(string.find(result, '16', 0, true) and string.find(result, 'HELLO', 0, true),
+      'Should return both 16 and HELLO, got ' .. result)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Module importing other modules (transitive imports)
+
+@Test function TransitiveImports()
+   xq = obj.new('xquery', { statement = [[
+      import module namespace comp = "http://example.com/composite"
+         at "modules/composite.xq";
+
+      comp:area(10)
+   ]], path=glScriptFolder })
+
+   err = xq.acActivate()
+   assert(err is ERR_Okay, 'Transitive module import failed: ' .. tostring(xq.errorMsg))
+   area = tonumber(xq.resultString) -- area(10) = pi * 10^2 = 314.159
+   assert(area and math.abs(area - 314.159) < 0.001, 'Should compute circle area 314.159, got ' .. area)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Module loaded once and cached across queries
+
+@Test function ModuleCaching()
+   xq = obj.new('xquery', { statement = [[
+      import module namespace math = "http://example.com/math"
+         at "modules/math_utils.xq";
+      math:square(2)
+   ]], path=glScriptFolder })
+
+   err = xq.acActivate()
+   assert(err is ERR_Okay, 'First module use failed: ' .. tostring(xq.errorMsg))
+   assert(tonumber(xq.resultString) is 4, 'First query should return 4, got ' .. tostring(xq.resultString))
+
+   -- Second query reusing cached module
+   xq.statement = [[
+      import module namespace math = "http://example.com/math"
+         at "modules/math_utils.xq";
+      math:cube(2)
+   ]]
+
+   err = xq.acActivate()
+   assert(err is ERR_Okay, 'Cached module use failed: ' .. tostring(xq.errorMsg))
+   assert(tonumber(xq.resultString) is 8, 'Second query should return 8, got ' .. tostring(xq.resultString))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Detect circular module dependencies
+
+@Test function CircularDependencyDetection()
+   xq = obj.new('xquery', { statement = [[
+      import module namespace a = "http://example.com/circular-a"
+         at "modules/circular_a.xq";
+
+      a:call-b()
+   ]], path=glScriptFolder })
+
+   err = xq.acActivate()
+   assert(err != ERR_Okay, 'Should detect circular dependency')
+   error_msg = string.lower(tostring(xq.errorMsg))
+   assert(string.find(error_msg, 'circular', 0, true), 'Error message should mention circular dependency, got ' .. tostring(xq.errorMsg))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Error when module file not found
+
+@Test function MissingModuleError()
+   xq = obj.new('xquery', { statement = [[
+      import module namespace missing = "http://example.com/missing"
+         at "modules/nonexistent.xq";
+
+      missing:func()
+   ]], path=glScriptFolder })
+
+   err = xq.acActivate()
+   assert(err != ERR_Okay, 'Should fail when loading missing module')
+   assert(xq.errorMsg != nil and xq.errorMsg != '', 'Should have error message for missing module')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Validate module namespace matches import
+
+@Test function NamespaceValidation()
+   xq = obj.new('xquery', { statement = [[
+      import module namespace expected = "http://example.com/expected"
+         at "modules/bad_namespace.xq";
+
+      expected:test()
+   ]], path=glScriptFolder })
+
+   err = xq.acActivate()
+   assert(err != ERR_Okay, 'Should detect namespace mismatch')
+   error_msg = string.lower(tostring(xq.errorMsg))
+   assert(string.find(error_msg, 'namespace', 0, true) or string.find(error_msg, 'mismatch', 0, true),
+      'Error message should mention namespace issue, got ' .. tostring(xq.errorMsg))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Reject non-library modules on import
+
+@Test function LibraryModuleValidation()
+   xq = obj.new('xquery', { statement = [[
+      import module namespace main = "http://example.com/main"
+         at "modules/main_module.xq";
+
+      main:test()
+   ]], path=glScriptFolder })
+
+   err = xq.acActivate()
+   assert(err != ERR_Okay, 'Should reject non-library module')
+   error_msg = string.lower(tostring(xq.errorMsg))
+   assert(string.find(error_msg, 'library', 0, true),
+      'Error message should mention library module requirement, got ' .. tostring(xq.errorMsg))
+end

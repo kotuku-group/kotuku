@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -74,8 +74,8 @@ static ERR DISPLACEMENTFX_Draw(extDisplacementFX *Self, struct acDraw *Args)
    // expected format, most probably SRGB and not linear.
 
    objBitmap *inBmp, *mixBmp;
-   if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) != ERR::Okay) return log.warning(ERR::Failed);
-   if (get_source_bitmap(Self->Filter, &mixBmp, Self->MixType, Self->Mix, false) != ERR::Okay) return log.warning(ERR::Failed);
+   if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) != ERR::Okay) return log.warning(ERR::NoData);
+   if (get_source_bitmap(Self->Filter, &mixBmp, Self->MixType, Self->Mix, false) != ERR::Okay) return log.warning(ERR::NoData);
 
    const uint8_t RGBA[4] = {
       uint8_t(Self->Target->ColourFormat->RedPos>>3),

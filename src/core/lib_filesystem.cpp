@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol Framework is made publicly available under the terms described in the LICENSE.TXT file
+The source code for Kōtuku is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 -CATEGORY-
@@ -52,8 +52,8 @@ typedef int HANDLE;
 #endif
 
 #include "defs.h"
-#include <parasol/main.h>
-#include <parasol/strings.hpp>
+#include <kotuku/main.h>
+#include <kotuku/strings.hpp>
 
 #include <stdarg.h>
 #include <errno.h>
@@ -128,9 +128,7 @@ public:
    CacheFileIndex() = default;
 
    CacheFileIndex(std::string_view Path, int64_t Timestamp, int64_t Size)
-      : path(Path), timestamp(Timestamp), size(Size)
-   {
-   }
+      : path(Path), timestamp(Timestamp), size(Size) { }
 
    friend bool operator==(const CacheFileIndex &, const CacheFileIndex &) = default;
 };
@@ -572,14 +570,14 @@ recursively, so as to copy all sub-folders and files within the location.
 It is important that you are aware that different types of string formatting can give different results.  The following
 examples illustrate:
 
-Copying `parasol:makefile` to `parasol:documents` results in a file called `parasol:documents`.
+Copying `kotuku:makefile` to `kotuku:documents` results in a file called `kotuku:documents`.
 
-Copying `parasol:makefile` to `parasol:documents/` results in a file called `parasol:documents/makefile`.
+Copying `kotuku:makefile` to `kotuku:documents/` results in a file called `kotuku:documents/makefile`.
 
-Copying `parasol:pictures/` to `parasol:documents/` results in a folder at `parasol:documents/pictures` and includes
+Copying `kotuku:pictures/` to `kotuku:documents/` results in a folder at `kotuku:documents/pictures` and includes
 a copy of all folders and files found within the pictures folder.
 
-Copying `parasol:pictures/` to `parasol:documents` results in a folder at `parasol:documents` (if the documents folder
+Copying `kotuku:pictures/` to `kotuku:documents` results in a folder at `kotuku:documents` (if the documents folder
 already exists, it receives additional content from the pictures folder).
 
 This function will overwrite any destination file(s) that already exist.
@@ -989,10 +987,10 @@ following examples illustrate:
 
 <pre>
 <b>Source               Destination          Result</b>
-parasol:makefile     parasol:documents    parasol:documents
-parasol:makefile     parasol:documents/   parasol:documents/makefile
-parasol:pictures/    parasol:documents/   parasol:documents/pictures
-parasol:pictures/    parasol:documents    parasol:documents (Existing documents folder destroyed)
+kotuku:makefile     kotuku:documents    kotuku:documents
+kotuku:makefile     kotuku:documents/   kotuku:documents/makefile
+kotuku:pictures/    kotuku:documents/   kotuku:documents/pictures
+kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents folder destroyed)
 </>
 
 This function will overwrite the destination location if it already exists.
@@ -1514,7 +1512,7 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
 
          std::string srcbuffer(src);
 
-         // Check if the copy would cause recursion  - e.g. "/parasol/system/" to "/parasol/system/temp/".
+         // Check if the copy would cause recursion  - e.g. "/kotuku/system/" to "/kotuku/system/temp/".
 
          if (src.size() <= dest.size()) {
             if (pf::startswith(src, dest)) {
@@ -1723,7 +1721,7 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
          else return ERR::File;
       #endif
 
-      // Check if the copy would cause recursion  - e.g. "/parasol/system/" to "/parasol/system/temp/".
+      // Check if the copy would cause recursion  - e.g. "/kotuku/system/" to "/kotuku/system/temp/".
 
       if (src.size() <= dest.size()) {
          if (pf::startswith(src, dest)) {
@@ -2773,5 +2771,3 @@ ERR delete_tree(std::string &Path, FUNCTION *Callback, FileFeedback *Feedback)
 #include "fs_folders.cpp"
 #include "fs_volumes.cpp"
 #include "fs_watch_path.cpp"
-
-

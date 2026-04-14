@@ -11,7 +11,7 @@
     <id>25d95173</id>
     <idstring>MORPHOLOGYFX</idstring>
     <category>Graphics</category>
-    <copyright>Paul Manias © 2010-2025</copyright>
+    <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>The MorphologyFX class performs &quot;fattening&quot; or &quot;thinning&quot; of artwork.  It is particularly useful for fattening or thinning an alpha channel.</p>
 <p>The dilation (or erosion) kernel is a rectangle with a width of <code>2 * RadiusX</code> and a height of <code>2 * RadiusY</code>. In dilation, the output pixel is the individual component-wise maximum of the corresponding R,G,B,A values in the input image's kernel rectangle.  In erosion, the output pixel is the individual component-wise minimum of the corresponding R,G,B,A values in the input image's kernel rectangle.</p>

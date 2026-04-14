@@ -1,5 +1,5 @@
 #!/bin/sh
-# postrm script for parasol
+# postrm script for kotuku
 #
 # see: dh_installdeb(1)
 
@@ -23,18 +23,18 @@ case "$1" in
         # Remove any user configuration files or directories
         # that were created by the package but not automatically
         # removed by dpkg
-        
+
         # Remove any log files if they exist
-        if [ -d /var/log/parasol ]; then
-            rm -rf /var/log/parasol
+        if [ -d /var/log/kotuku ]; then
+            rm -rf /var/log/kotuku
         fi
-        
+
         # Remove any cache directories if they exist
-        if [ -d /var/cache/parasol ]; then
-            rm -rf /var/cache/parasol
+        if [ -d /var/cache/kotuku ]; then
+            rm -rf /var/cache/kotuku
         fi
         ;;
-        
+
     remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
         # Update dynamic linker cache
         if command -v ldconfig >/dev/null 2>&1; then

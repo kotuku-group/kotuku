@@ -11,7 +11,7 @@
     <id>9bba5446</id>
     <idstring>IMAGEFX</idstring>
     <category>Graphics</category>
-    <copyright>Paul Manias © 2010-2025</copyright>
+    <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>The ImageFX class will render a source image into a given rectangle within the current user coordinate system.  The client has the option of providing a pre-allocated <class name="Bitmap">Bitmap</class> or the path to a <class name="Picture">Picture</class> file as the source.</p>
 <p>If a pre-allocated <class name="Bitmap">Bitmap</class> is to be used, it must be created under the ownership of the ImageFX object, and this must be configured prior to initialisation.  It is required that the bitmap uses 32 bits per pixel and that the alpha channel is enabled.</p>

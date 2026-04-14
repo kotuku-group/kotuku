@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -21,7 +21,7 @@ auto modDisplay = objModule::create::global(fl::Name("display"));
 if (modDisplay) modDisplay->get(FID_ModBase, DisplayBase);
 </pre>
 
-To do the same in Fluid:
+To do the same in Tiri:
 
 <pre>
 mGfx = mod.load('display')
@@ -37,7 +37,7 @@ It is critical that the module object is permanently retained until the program 
 #endif
 
 #include "../defs.h"
-#include <parasol/main.h>
+#include <kotuku/main.h>
 
 static STRUCTS glStructures = {
    { "ActionArray",         sizeof(ActionArray) },
@@ -86,13 +86,14 @@ static STRUCTS glStructures = {
 #include "../idl.h"
 
 static RootModule glCoreRoot;
-struct ModHeader glCoreHeader(nullptr, nullptr, nullptr, nullptr, glIDL, &glStructures, "core", "Sys");
+struct ModHeader glCoreHeader(nullptr, nullptr, nullptr, nullptr, nullptr, glIDL, &glStructures, "core", "Sys");
 
 static RootModule * check_resident(extModule *, std::string_view);
 static void free_module(MODHANDLE handle);
 
 //********************************************************************************************************************
 
+static ERR GET_Defs(extModule *, CSTRING *);
 static ERR GET_Name(extModule *, CSTRING *);
 
 static ERR SET_Header(extModule *, struct ModHeader *);
@@ -107,10 +108,11 @@ static const FieldDef clFlags[] = {
 static const FieldArray glModuleFields[] = {
    { "FunctionList", FDF_POINTER|FDF_RW },
    { "ModBase",      FDF_POINTER|FDF_R },
-   { "Root",         FDF_POINTER|FDF_R },
-   { "Header",       FDF_POINTER|FDF_RI, nullptr, SET_Header },
+   { "Root",         FDF_OBJECT|FDF_R, nullptr, nullptr, "RootModule" }, // Not intended for client use
+   { "Header",       FDF_POINTER|FDF_STRUCT|FDF_RI, nullptr, SET_Header, "ModHeader" }, // For creating virtual modules only
    { "Flags",        FDF_INT|FDF_RI, nullptr, nullptr, &clFlags },
    // Virtual fields
+   { "Defs",         FDF_STRING|FDF_R, GET_Defs },
    { "Name",         FDF_STRING|FDF_RI, GET_Name, SET_Name },
    END_FIELD
 };
@@ -128,7 +130,7 @@ static const ActionArray glModuleActions[] = {
 
 //********************************************************************************************************************
 
-#ifndef PARASOL_STATIC
+#ifndef KOTUKU_STATIC
 static ERR load_mod(extModule *Self, RootModule *Root, struct ModHeader **Table)
 {
    pf::Log log(__FUNCTION__);
@@ -154,7 +156,7 @@ static ERR load_mod(extModule *Self, RootModule *Root, struct ModHeader **Table)
             path.assign(glModulePath);
             if (path.back() != '/') path.push_back('/');
          }
-         else path = glRootPath + "lib/parasol/";
+         else path = glRootPath + "lib/kotuku/";
 
          if ((Self->Flags & MOF::LINK_LIBRARY) != MOF::NIL) path += "lib/";
 
@@ -365,7 +367,7 @@ static ERR MODULE_Init(extModule *Self)
          table = Self->Header;
       }
       else {
-         #ifdef PARASOL_STATIC
+         #ifdef KOTUKU_STATIC
          auto it = glStaticModules.find(Self->Name);
          if (it != glStaticModules.end()) table = it->second;
          else {
@@ -386,19 +388,20 @@ static ERR MODULE_Init(extModule *Self)
          if (!table->Init) { log.warning(ERR::ModuleMissingInit); goto exit; }
          if (!table->Name) { log.warning(ERR::ModuleMissingName); goto exit; }
 
-         master->Header     = table;
-         master->Table      = table;
-         master->Name       = table->Name;
-         master->Init       = table->Init;
-         master->Open       = table->Open;
-         master->Expunge    = table->Expunge;
-         master->Flags      = table->Flags;
+         master->Header  = table;
+         master->Table   = table;
+         master->Name    = table->Name;
+         master->Init    = table->Init;
+         master->Open    = table->Open;
+         master->Expunge = table->Expunge;
+         master->Test    = table->Test;
+         master->Flags   = table->Flags;
       }
 
       // INIT
 
       if (master->Init) {
-         #ifdef PARASOL_STATIC
+         #ifdef KOTUKU_STATIC
             error = master->Init(Self, nullptr);
          #else
             // Build a Core base for the module to use
@@ -446,7 +449,7 @@ static ERR MODULE_Init(extModule *Self)
 
    // Build the jump table for the program
 
-   #ifndef PARASOL_STATIC
+   #ifndef KOTUKU_STATIC
    if (Self->FunctionList) {
       if (!(Self->ModBase = build_jump_table(Self->FunctionList))) {
          goto exit;
@@ -517,7 +520,7 @@ static ERR MODULE_ResolveSymbol(extModule *Self, struct mod::ResolveSymbol *Args
    if ((!Args) or (!Args->Name)) return log.warning(ERR::NullArgs);
 
 #ifdef _WIN32
-   #ifdef PARASOL_STATIC
+   #ifdef KOTUKU_STATIC
    if ((Args->Address = winGetProcAddress(nullptr, Args->Name))) {
    #else
    if ((!Self->Root) or (!Self->Root->LibraryBase)) return ERR::FieldNotSet;
@@ -530,7 +533,7 @@ static ERR MODULE_ResolveSymbol(extModule *Self, struct mod::ResolveSymbol *Args
       return ERR::NotFound;
    }
 #elif __unix__
-   #ifdef PARASOL_STATIC
+   #ifdef KOTUKU_STATIC
    if ((Args->Address = dlsym(RTLD_DEFAULT, Args->Name))) {
    #else
    if ((!Self->Root) or (!Self->Root->LibraryBase)) return ERR::FieldNotSet;
@@ -546,6 +549,52 @@ static ERR MODULE_ResolveSymbol(extModule *Self, struct mod::ResolveSymbol *Args
    #warning Platform not supported.
    return ERR::NoSupport;
 #endif
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+Test: Run unit tests for the module, if present.
+
+If a module is compiled with unit tests, calling the Test() method will execute them.  There is no explicit contract
+for what the unit tests should do, but it is typically expected that test results will be printed to the log.
+
+Unit tests should never be compiled into production releases of the code.
+
+-INPUT-
+cstr Options: Optional CSV list of testing options.
+&int Passed: The number of tests that passed will be returned in this parameter.
+&int Total: The total number of tests that were executed will be returned in this parameter.
+
+-ERRORS-
+Okay
+NoSupport: Unit tests are not defined for the module.
+
+**********************************************************************************************************************/
+
+static ERR MODULE_Test(extModule *Self, struct mod::Test *Args)
+{
+   if (Self->Root->Test) {
+      Self->Root->Test(Args->Options, &Args->Passed, &Args->Total);
+      return ERR::Okay;
+   }
+   else return ERR::NoSupport;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+Defs: Returns the compiled IDL definition for the module.
+
+Returns the IDL definition string that was compiled from the module's TDL file.  Useful for introspection purposes.
+
+**********************************************************************************************************************/
+
+static ERR GET_Defs(extModule *Self, CSTRING *Value)
+{
+   if ((Self->Root) and (Self->Root->Header)) *Value = Self->Root->Header->Definitions;
+   else *Value = nullptr;
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -566,8 +615,8 @@ FunctionList array consists of !Function structs in the following format:
 Header: For internal usage only.
 Status: private
 
-Setting the module Table prior to initialisation allows 'fake' modules to be created that reside in memory rather
-than on disk.
+Setting the module Table prior to initialisation allows virtual modules to be created that reside in memory rather
+than on solid media.
 
 **********************************************************************************************************************/
 
@@ -627,7 +676,7 @@ static ERR SET_Name(extModule *Self, CSTRING Name)
 //********************************************************************************************************************
 // Builds jump tables that link programs to modules.
 
-#ifndef PARASOL_STATIC
+#ifndef KOTUKU_STATIC
 APTR build_jump_table(const Function *FList)
 {
    if (!FList) return nullptr;
@@ -661,11 +710,14 @@ static RootModule * check_resident(extModule *Self, const std::string_view Modul
    if (iequals("core", ModuleName)) {
       if (!kminit) {
          kminit = true;
-         glCoreRoot.Class       = glRootModuleClass;
-         glCoreRoot.Name        = "Core";
-         glCoreRoot.OpenCount   = 1;
-         glCoreRoot.Table       = &glCoreHeader;
-         glCoreRoot.Header      = &glCoreHeader;
+         // NB: The Object constructor clears all values initially.
+         glCoreRoot.Class         = glRootModuleClass;
+         glCoreRoot.UID           = 1;
+         glCoreRoot.setFlag(NF::INITIALISED|NF::NAME|NF::UNIQUE);
+         glCoreRoot.Name          = "Core";
+         glCoreRoot.OpenCount     = 1;
+         glCoreRoot.Table         = &glCoreHeader;
+         glCoreRoot.Header        = &glCoreHeader;
       }
       Self->FunctionList = glFunctions;
       return &glCoreRoot;
@@ -715,9 +767,16 @@ static void free_module(MODHANDLE handle)
 //********************************************************************************************************************
 
 static const FunctionField argsResolveSymbol[] = { { "Name", FD_STR }, { "Address", FD_PTR|FD_RESULT }, { nullptr, 0 } };
+static const FunctionField argsTest[] = {
+   { "Options", FD_STR },
+   { "Passed", FD_INT|FD_RESULT },
+   { "Total", FD_INT|FD_RESULT },
+   { nullptr, 0 }
+};
 
 static const MethodEntry glModuleMethods[] = {
    { mod::ResolveSymbol::id, (APTR)MODULE_ResolveSymbol, "ResolveSymbol", argsResolveSymbol, sizeof(struct mod::ResolveSymbol) },
+   { mod::Test::id, (APTR)MODULE_Test, "Test", argsTest, sizeof(mod::Test) },
    { AC::NIL, nullptr, nullptr, nullptr, 0 }
 };
 
@@ -765,4 +824,3 @@ extern ERR add_module_class(void)
 
    return ERR::Okay;
 }
-

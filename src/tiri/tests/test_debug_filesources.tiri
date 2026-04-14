@@ -1,0 +1,51 @@
+
+@Test function FileSources()
+   local sources = debug.fileSources()
+
+   -- Should have at least one entry (the main file)
+   assert(#sources >= 1, f"Expected at least one file source, got {#sources}")
+
+   -- First entry should be index 0 (main file)
+   local main = sources[0]
+   assert(main, "Expected main file at index 0")
+   assert(main.index is 0, f"Main file should have index 0, got {main.index}")
+   assert(main.filename != "", "Main file should have a filename")
+   assert(main.parentIndex is 0, f"Main file parent should be 0, got {main.parentIndex}")
+
+   print("File sources:")
+   for i = 0, #sources - 1 do
+      local src = sources[i]
+      print(f"  [{src.index}] {src.filename}")
+      print(f"      path: {src.path}")
+      if src.namespace != "" then
+         print(f"      namespace: {src.namespace}")
+      end
+      if src.parentIndex != 0 or src.importLine != 0 then
+         print(f"      imported from [{src.parentIndex}] at line {src.importLine}")
+      end
+      print(f"      firstLine: {src.firstLine}, sourceLines: {src.sourceLines}")
+      print(f"      isOverflow: {src.isOverflow}")
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test debug.getInfo() returns fileIndex
+
+@Test function GetInfoFileIndex()
+   local info = debug.getInfo(1, "S")  -- Calling function (this function)
+   assert(info, "Expected debug info")
+   assert(info.fileIndex != nil, "Expected fileIndex in debug info")
+   assert(info.fileIndex >= 0, f"fileIndex should be non-negative, got {info.fileIndex}")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test that fileIndex correlates with fileSources
+
+@Test function FileIndexCorrelation()
+   local sources = debug.fileSources()
+   local info = debug.getInfo(1, "S")  -- Level 1 = this function
+
+   local src = sources[info.fileIndex]
+   assert(src, f"Expected file source at index {info.fileIndex}")
+   assert(src.index is info.fileIndex, "fileIndex should match source index")
+end

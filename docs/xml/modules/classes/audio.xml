@@ -11,9 +11,9 @@
     <id>0f1c28b7</id>
     <idstring>AUDIO</idstring>
     <category>Audio</category>
-    <copyright>Paul Manias © 2002-2025</copyright>
+    <copyright>Paul Manias © 2002-2026</copyright>
     <description>
-<p>The Audio class provides a comprehensive audio service that works across multiple platforms and follows a client-server design model. It serves as the foundation for all audio operations in the Parasol framework, managing hardware resources, sample mixing, and output buffering.</p>
+<p>The Audio class provides a comprehensive audio service that works across multiple platforms and follows a client-server design model. It serves as the foundation for all audio operations in Kōtuku framework, managing hardware resources, sample mixing, and output buffering.</p>
 <p>The Audio class supports 8/16/32 bit output in stereo or mono configurations, with advanced features including oversampling for enhanced quality, intelligent streaming for large samples, multiple simultaneous audio channels, and command sequencing for precise timing control. The internal floating-point mixer ensures high-quality audio processing regardless of the target hardware bit depth.</p>
 <p>For straightforward audio playback requirements, we recommend using the <class name="Sound">Sound</class> class interface, which provides a simplified API whilst utilising the Audio class internally. Direct use of the Audio class is appropriate for applications requiring precise mixer control, multiple simultaneous samples, or custom audio processing workflows.</p>
 <p>Note: Support for audio recording is not currently available in this implementation.</p></description>

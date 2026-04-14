@@ -1,22 +1,22 @@
 #!/bin/bash
-# Configuration validation test for Parasol package
+# Configuration validation test for Kotuku package
 
 set -e
 
-echo "Testing Parasol configuration validation..."
+echo "Testing Kotuku configuration validation..."
 
 # Check if configuration files are readable
-CONFIG_DIR="/usr/share/parasol/config"
+CONFIG_DIR="/usr/share/kotuku/config"
 
 if [ -d "$CONFIG_DIR" ]; then
     echo "Checking configuration directory permissions..."
-    
+
     # Check directory is readable
     if [ ! -r "$CONFIG_DIR" ]; then
         echo "FAIL: Configuration directory not readable"
         exit 1
     fi
-    
+
     # Check if there are any config files and they're readable
     config_files_found=0
     for config_file in "$CONFIG_DIR"/*; do
@@ -28,7 +28,7 @@ if [ -d "$CONFIG_DIR" ]; then
             fi
         fi
     done
-    
+
     if [ $config_files_found -ge 1 ]; then
         echo "Configuration files found and readable"
     else
@@ -39,16 +39,16 @@ else
 fi
 
 # Check scripts directory
-SCRIPTS_DIR="/usr/share/parasol/scripts"
+SCRIPTS_DIR="/usr/share/kotuku/scripts"
 
 if [ -d "$SCRIPTS_DIR" ]; then
     echo "Checking scripts directory permissions..."
-    
+
     if [ ! -r "$SCRIPTS_DIR" ]; then
         echo "FAIL: Scripts directory not readable"
         exit 1
     fi
-    
+
     echo "Scripts directory accessible"
 else
     echo "WARNING: Scripts directory not found"

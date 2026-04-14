@@ -1,0 +1,112 @@
+-- XPath string and URI function coverage
+
+   include 'xml'
+
+glTestXML = nil
+
+@BeforeAll
+function init(State)
+   glTestXML = obj.new("xml", {
+      statement = '<root base="http://example.com/docs/start.xml"><part>a</part><part>b</part><part>c</part></root>'
+   })
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function CodepointConversions()
+   xml = glTestXML
+
+   err, text = xml.mtEvaluate("codepoints-to-string(string-to-codepoints('café'))")
+   assert(text is 'café', "codepoints-to-string should decode UTF-8 codepoints")
+
+   err, fourth = xml.mtEvaluate("string-to-codepoints('café')[4]")
+   assert(fourth is '233', "string-to-codepoints should report the final codepoint value")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function StringFunctions()
+   xml = glTestXML
+
+   err, temp_compareResult = xml.mtEvaluate("compare('abc','def')")
+   compareResult = tonumber(temp_compareResult)
+   assert(compareResult is -1, "compare should report that abc comes before def")
+
+   err, equalResult = xml.mtEvaluate("codepoint-equal('same','same')")
+   assert(equalResult is 'true', "codepoint-equal should return true for identical strings")
+
+   err, suffixMatch = xml.mtEvaluate("ends-with('hello world','world')")
+   assert(suffixMatch is 'true', "ends-with should confirm matching suffix")
+
+   err, joined = xml.mtEvaluate("string-join(/root/part, '-')")
+   assert(joined is 'a-b-c', "string-join should concatenate entries with separators")
+
+   err, nfcValue = xml.mtEvaluate("normalize-unicode('café','NFC')")
+   assert(nfcValue is 'café', "normalize-unicode NFC form should preserve composed characters")
+
+   err, nfdValue = xml.mtEvaluate("normalize-unicode('café','NFD')")
+   assert(nfdValue:sub(0, 3) is 'caf', "normalize-unicode NFD form should begin with the original prefix")
+
+   err, iriValue = xml.mtEvaluate("iri-to-uri('https://example.com/é')")
+   assert(iriValue is 'https://example.com/%C3%A9', "iri-to-uri should percent encode non ASCII characters")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function AnalyzeString()
+   xml = glTestXML
+
+   err, first = xml.mtEvaluate("analyze-string('abc123','([0-9]+)')[1]")
+   assert(first is 'non-match:abc', "analyze-string should report unmatched prefix, got '" .. tostring(first) .. "'")
+
+   err, second = xml.mtEvaluate("analyze-string('abc123','([0-9]+)')[2]")
+   assert(second is 'match:123', "analyze-string should report matched text, got '" .. tostring(second) .. "'")
+
+   err, third = xml.mtEvaluate("analyze-string('abc123','([0-9]+)')[3]")
+   assert(third is 'group1:123', "analyze-string should include capture groups, got '" .. tostring(third) .. "'")
+
+   err, gap = xml.mtEvaluate("analyze-string('ab12cd34ef','([0-9]+)')[4]")
+   assert(gap is 'non-match:cd', "analyze-string should report intermediate gaps once, got '" .. tostring(gap) .. "'")
+
+   err, secondMatch = xml.mtEvaluate("analyze-string('ab12cd34ef','([0-9]+)')[5]")
+   assert(secondMatch is 'match:34', "analyze-string should capture subsequent matches, got '" .. tostring(secondMatch) .. "'")
+
+   err, secondGroup = xml.mtEvaluate("analyze-string('ab12cd34ef','([0-9]+)')[6]")
+   assert(secondGroup is 'group1:34', "analyze-string should report groups for each match, got '" .. tostring(secondGroup) .. "'")
+
+   err, tail = xml.mtEvaluate("analyze-string('ab12cd34ef','([0-9]+)')[7]")
+   assert(tail is 'non-match:ef', "analyze-string should append the trailing suffix once, got '" .. tostring(tail) .. "'")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ResolveUri()
+   xml = glTestXML
+
+   err, resolved = xml.mtEvaluate("resolve-uri('images/icon.png','http://example.com/docs/start.xml')")
+   assert(resolved is 'http://example.com/docs/images/icon.png', "resolve-uri should combine base and relative paths")
+
+   err, up = xml.mtEvaluate("resolve-uri('../shared/data.json','http://example.com/docs/dir/page.html')")
+   assert(up is 'http://example.com/docs/shared/data.json', "resolve-uri should normalise parent directory references")
+
+   err, absolute = xml.mtEvaluate("resolve-uri('https://cdn.example.com/app.js','http://example.com/docs/start.xml')")
+   assert(absolute is 'https://cdn.example.com/app.js', "resolve-uri should return absolute URIs unchanged")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function FormattingFunctions()
+   xml = glTestXML
+
+   err, formattedDate = xml.mtEvaluate("format-date('2024-05-17','[Y0001]-[M01]-[D01]')")
+   assert(formattedDate is '2024-05-17', "format-date should honour the supplied picture")
+
+   err, formattedTime = xml.mtEvaluate("format-time('12:34:56','[H01]:[m01]:[s01]')")
+   assert(formattedTime is '12:34:56', "format-time should produce the requested components")
+
+   err, formattedDateTime = xml.mtEvaluate("format-dateTime('2024-05-17T12:34:56','[Y0001]-[M01]-[D01]T[H01]:[m01]')")
+   assert(formattedDateTime is '2024-05-17T12:34', "format-dateTime should format combined values")
+
+   err, formattedInteger = xml.mtEvaluate("format-integer(1234567,'#,##0')")
+   assert(formattedInteger is '1,234,567', "format-integer should insert group separators")
+end

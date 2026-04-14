@@ -2,7 +2,7 @@
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
 
 <svg width="1024px" height="800px" viewBox="0 0 1024 800"  version="1.1" xmlns="http://www.w3.org/2000/svg"
-   xmlns:parasol="http://www.parasol.ws/namespaces/parasol">
+   xmlns:kotuku="http://www.kotuku.dev/namespaces/kotuku">
   <defs>
     <contourGradient id="halfcontour" x1="0" x2="0.5">
       <stop offset="0%" stop-color="green" />
@@ -28,13 +28,13 @@
   <rect x="70" y="410" width="100" height="100" rx="50" ry="30" stroke-width="3" stroke="rgb(0,0,0)"
     transform="skewX(30)"  fill="url(#contour1)"/>
 
-  <parasol:spiral id="Spiral" transform="translate(500,650)" stroke="none" stroke-width="4" fill="url(#halfcontour)"
+  <kotuku:spiral id="Spiral" transform="translate(500,650)" stroke="none" stroke-width="4" fill="url(#halfcontour)"
     spacing="30" loop-limit="3"/>
 
   <rect x="400" y="500" width="200" height="100" fill="url(#halfcontour)" stroke="pink" stroke-width="2" transform="rotate(40,100,100)"/>
 
-  <parasol:shape id="starfish" cx="500" cy="200" r="200" stroke="black" stroke-width="3" fill="url(#contour1)"/>
+  <kotuku:shape id="starfish" cx="500" cy="200" r="200" stroke="black" stroke-width="3" fill="url(#contour1)"/>
 
-  <parasol:shape id="triangle" cx="200" cy="300" r="300" spiral="2" vertices="7" m="0"
+  <kotuku:shape id="triangle" cx="200" cy="300" r="300" spiral="2" vertices="7" m="0"
     stroke="white" stroke-width="0.5" fill="url(#contour2)"/>
 </svg>

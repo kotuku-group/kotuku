@@ -1,0 +1,1905 @@
+-- Refer to the Wiki for usage.
+--
+-- import 'net/httpserver'
+-- httpServer = hslib.start({ Options... })
+-- httpServer.stop()
+
+   include 'network'
+   import 'json'
+
+   namespace 'hslib'
+   _LIB[_NS] = { }
+   hslib = _LIB[_NS]
+
+glTime = obj.new('time')
+
+rxControlChars    = <{ regex.new([=[[\x00-\x1f\x7f]]=]) }>
+rxQueryFragment   = <{ regex.new([[^([^?#]*)]]) }>
+rxFileExtension   = <{ regex.new([[\.([^.]+)$]]) }>
+rxCookiePair      = <{ regex.new([[\s*([^=]+)=(.+)]]) }>
+rxTrimWhitespace  = <{ regex.new([[^\s*(.*?)\s*$]]) }>
+rxRequestLine     = <{ regex.new([[(\S+)\s+(\S+)\s+(\S+)]]) }>
+rxPathQuery       = <{ regex.new([[([^?]*)\??(.*)]]) }>
+rxHeaderLine      = <{ regex.new([[([^:]+):\s*(.+)]]) }>
+rxRouteParam      = <{ regex.new([[:(\w+)]]) }>
+rxPercentEncoded  = <{ regex.new([[%([0-9A-Fa-f]{2})]]) }>
+rxRouteParamSub   = <{ regex.new([[:[\w_]+]]) }>
+rxEscapedWildcard = <{ regex.new([[\\\*]]) }>
+rxPathComponent   = <{ regex.new([[([^\/]+)]]) }>
+rxHexChunkSize    = <{ regex.new([[^([0-9a-fA-F]+)]]) }>
+rxQueryPair       = <{ regex.new([[([^&]+)]]) }>
+rxKeyValue        = <{ regex.new([[([^=]+)=(.+)]]) }>
+rxCookieItem      = <{ regex.new([[([^;]+)]]) }>
+rxLineIterator    = <{ regex.new([[([^\r\n]+)]]) }>
+rxParentPath      = <{ regex.new([[(.+)\/.+\/]]) }>
+
+glStatusTexts = {
+      [200] = 'OK', [201] = 'Created', [204] = 'No Content',
+      [301] = 'Moved Permanently', [302] = 'Found', [304] = 'Not Modified',
+      [400] = 'Bad Request', [401] = 'Unauthorized', [403] = 'Forbidden',
+      [404] = 'Not Found', [405] = 'Method Not Allowed', [429] = 'Too Many Requests',
+      [500] = 'Internal Server Error', [501] = 'Not Implemented', [502] = 'Bad Gateway'
+}
+
+glMimeTypes = {
+   -- Text
+   html = 'text/html',
+   htm  = 'text/html',
+   css  = 'text/css',
+   js   = 'application/javascript',
+   mjs  = 'application/javascript',
+   json = 'application/json',
+   xml  = 'application/xml',
+   txt  = 'text/plain',
+   md   = 'text/markdown',
+   csv  = 'text/csv',
+
+   -- Images
+   png  = 'image/png',
+   jpg  = 'image/jpeg',
+   jpeg = 'image/jpeg',
+   gif  = 'image/gif',
+   svg  = 'image/svg+xml',
+   ico  = 'image/x-icon',
+   webp = 'image/webp',
+   bmp  = 'image/bmp',
+   tiff = 'image/tiff',
+
+   -- Documents
+   pdf = 'application/pdf',
+   doc = 'application/msword',
+   docx = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+
+   -- Fonts
+   woff = 'font/woff',
+   woff2 = 'font/woff2',
+   ttf = 'font/ttf',
+   otf = 'font/otf',
+
+   -- Audio/Video
+   mp3 = 'audio/mpeg',
+   wav = 'audio/wav',
+   ogg = 'audio/ogg',
+   mp4 = 'video/mp4',
+   webm = 'video/webm',
+   avi = 'video/x-msvideo',
+
+   -- Archives
+   zip = 'application/zip',
+   tar = 'application/x-tar',
+   gz = 'application/gzip'
+}
+
+----------------------------------------------------------------------------------------------------------------------
+-- HTML escape function for security
+
+function escHTML(str:str):str
+   str ?? return ''
+   str = str:replace('&', '&amp;')
+   str = str:replace('<', '&lt;')
+   str = str:replace('>', '&gt;')
+   str = str:replace('"', '&quot;')
+   str = str:replace("'", '&#39;')
+   return str
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function validatePort(port:num):bool
+   port_num = port
+   if not port_num or port_num < 1 or port_num > 65535 then
+      return false
+   end
+   return true
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Decode percent-encoded characters in URLs
+
+function urlDecode(String:str):str
+   if String then
+      String = String:replace('+', ' ') -- Replace + with space
+      local result = ''
+      local last_stop = 0
+      for start, stop, cap in rxPercentEncoded.findAll(String) do
+         if start > last_stop then result ..= String:sub(last_stop, start) end
+         result ..= string.char(tonumber(cap[0], 16))
+         last_stop = stop
+      end
+      String = result .. String:sub(last_stop)
+   end
+   return String
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Canonicalize path to prevent directory traversal attacks
+
+function canonicalizePath(self, Path:str):str
+   Path ?? return
+
+   Path = rxControlChars.replace(Path, '')   -- Remove any control characters
+   Path = urlDecode(Path)         -- Decode URL encoding first
+   Path = rxQueryFragment.extract(Path)  -- Remove query parameters and fragments
+
+   -- Normalize slashes
+   Path = Path:replace('\\', '/') -- Backslashes -> forward slashes
+   Path = Path:replace('//', '/') -- Eliminate duplication
+
+   -- Split into components
+   components = {}
+   for start, stop, cap in rxPathComponent.findAll(Path) do
+      local component = cap[0]
+      if component is '..' then
+         -- Attempt to go up - block this
+         logMessage(self, 'Security: Blocked directory traversal attempt with ..')
+         return
+      elseif component != '.' and component != '' then
+         table.insert(components, component)
+      end
+   end
+
+   -- Rebuild clean path
+   cleanPath = '/' .. table.concat(components, '/')
+   if Path:endsWith('/') and cleanPath != '/' then
+      cleanPath ..= '/'
+   end
+
+   return cleanPath
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function getMimeType(Filename)
+   extension = rxFileExtension.extract(Filename)
+   if not extension then return 'application/octet-stream' end
+   return glMimeTypes[extension:lower()] or 'application/octet-stream'
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function timestamp()
+   glTime.acQuery()
+   return string.format('%04d-%02d-%02d %02d:%02d:%02d', glTime.year, glTime.month, glTime.day, glTime.hour, glTime.minute, glTime.second)
+end
+
+function logMessage(self:table, message:str)
+   if self.logMessage then
+      self.logMessage(f'[{timestamp()}] {message}')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Process chunked request body incrementally
+-- Returns true when chunking is complete, false if still reading
+
+function processChunkedBody(state, server)
+   while #state.buffer > 0 do
+      if state.chunk_state is 'SIZE' then
+         -- Look for chunk size line ending with \r\n
+         line_end = state.buffer:find('\r\n')
+         if not line_end then
+            return false -- Need more data for chunk size line
+         end
+
+         size_line = state.buffer:substr(0, line_end)
+         state.buffer = state.buffer:substr(line_end + 2) -- Remove \r\n
+
+         -- Parse chunk size (ignore extensions after semicolon)
+         hex_size = rxHexChunkSize.extract(size_line)
+         if not hex_size then
+            logMessage(server, 'Invalid chunk size format: ' .. size_line)
+            return false -- Invalid format
+         end
+
+         state.chunk_size = tonumber(hex_size, 16)
+         if not state.chunk_size then
+            logMessage(server, f'Could not parse chunk size: {hex_size}')
+            return false -- Invalid hex
+         end
+
+         logMessage(server, f'Chunk size: {state.chunk_size} bytes')
+
+         if state.chunk_size is 0 then -- End of chunks
+            state.chunk_state = 'TRAILER'
+         else
+            state.chunk_state = 'DATA'
+            state.chunk_received = 0
+         end
+
+      elseif state.chunk_state is 'DATA' then
+         -- Read chunk data
+         needed = state.chunk_size - state.chunk_received
+         available = #state.buffer
+
+         if available is 0 then
+            return false -- Need more data
+         end
+
+         to_take = math.min(available, needed)
+         state.request.body   = state.request.body .. state.buffer:substr(0, to_take)
+         state.buffer         = state.buffer:substr(to_take)
+         state.chunk_received = state.chunk_received + to_take
+         state.body_received  = state.body_received + to_take
+
+         if state.chunk_received >= state.chunk_size then
+            -- Chunk data complete, expect trailing \r\n
+            state.chunk_state = 'CRLF'
+         end
+
+      elseif state.chunk_state is 'CRLF' then
+         -- Expect \r\n after chunk data
+         if #state.buffer < 2 then return false end -- Need more data
+
+         if state.buffer:startsWith('\r\n') then
+            state.buffer = state.buffer:substr(2)
+            state.chunk_state = 'SIZE' -- Ready for next chunk
+         else
+            -- Be lenient - some clients might not send proper CRLF
+            logMessage(server, 'Warning: Missing CRLF after chunk, continuing')
+            state.chunk_state = 'SIZE'
+         end
+
+      elseif state.chunk_state is 'TRAILER' then
+         -- Look for final \r\n (trailer headers are ignored for now)
+         trailer_end = state.buffer:find('\r\n')
+         if trailer_end then
+            state.buffer = state.buffer:substr(trailer_end + 1)
+            return true -- Chunked reading complete
+         else
+            return false -- Need more data for trailer
+         end
+      end
+   end
+
+   return false -- Need more data
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function readRequestWithTimeout(client:table, maxSize:num, timeoutSeconds:num):<str, str>
+   buffer = string.alloc(1024) -- Start with 1KB buffer
+   requestData = ''
+   totalRead = 0
+   startTime = mSys.PreciseTime()
+
+   while totalRead < maxSize do
+      err, bytes_read = client.acRead(buffer, 1024)
+
+      if err != ERR_Okay then
+         if err is ERR_TimeOut then
+            logMessage(self, 'Request timeout after ' .. (mSys.PreciseTime() - startTime)/1000000 .. ' seconds')
+            return nil, 'timeout'
+         else
+            logMessage(self, 'Failed to read request: ' .. mSys.GetErrorMsg(err))
+            return nil, 'read_error'
+         end
+      end
+
+      if bytes_read is 0 then
+         break -- No more data
+      end
+
+      requestData ..= buffer:substr(0, bytes_read)
+      totalRead += bytes_read
+
+      -- Check for end of HTTP headers (\r\n\r\n)
+      if requestData:find('\r\n\r\n') then
+         break
+      end
+
+      -- Check timeout
+      if (mSys.PreciseTime() - startTime) / 1000000 > timeoutSeconds then
+         logMessage(self, 'Request timeout exceeded')
+         return nil, 'timeout'
+      end
+   end
+
+   if totalRead >= maxSize then
+      logMessage(self, 'Request too large: ' .. totalRead .. ' bytes')
+      return nil, 'too_large'
+   end
+
+   return requestData, nil
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Read chunked request body (Transfer-Encoding: chunked)
+-- Returns body, error_msg, connection_status
+
+function readChunkedRequestBody(client, maxSize, timeoutSeconds)
+   body = ''
+   totalSize = 0
+   startTime = mSys.PreciseTime()
+   buffer = string.alloc(8192) -- Buffer for reading
+   earlyTermination = false
+
+   while true do
+      -- Check timeout
+      if (mSys.PreciseTime() - startTime)/1000000 > timeoutSeconds then
+         return nil, 'timeout', false
+      end
+
+      -- Read chunk size line (hexadecimal number followed by optional extensions and CRLF)
+      chunkSizeLine = ''
+      char = ''
+      while not chunkSizeLine:endsWith('\r\n') do
+         err, bytes_read = client.acRead(buffer, 1)
+         if err != ERR_Okay then
+            if err is ERR_TimeOut then
+               return nil, 'timeout', false
+            elseif err is ERR_Disconnected then
+               -- Connection closed - treat as valid termination if we have data
+               if #body > 0 then
+                  return body, nil, true  -- Mark as early termination
+               else
+                  return nil, 'connection_closed', false
+               end
+            else
+               return nil, 'read_error', false
+            end
+         end
+
+         if bytes_read is 0 then
+            -- No more data available - treat as valid termination if we have data
+            if #body > 0 then
+               return body, nil, true  -- Mark as early termination
+            else
+               return nil, 'unexpected_end', false
+            end
+         end
+
+         chunkSizeLine ..= buffer:substr(0, 1)
+
+         -- Prevent infinite line reading
+         if #chunkSizeLine > 100 then
+            return nil, 'invalid_chunk_size', false
+         end
+      end
+
+      -- Parse chunk size (ignore chunk extensions after semicolon if present)
+      chunkSizeHex = rxHexChunkSize.extract(chunkSizeLine)
+      if not chunkSizeHex then
+         return nil, 'invalid_chunk_format', false
+      end
+
+      chunkSize = tonumber(chunkSizeHex, 16)
+      if not chunkSize then
+         return nil, 'invalid_chunk_size', false
+      end
+
+      -- If chunk size is 0, we've reached the end
+      if chunkSize is 0 then
+         -- Read trailing CRLF after last chunk (if present)
+         err, bytes_read = client.acRead(buffer, 2)
+         -- Ignore any errors here - the 0 chunk is sufficient termination
+         break  -- Normal termination
+      end
+
+      -- Check if total size would exceed limit
+      totalSize += chunkSize
+      if totalSize > maxSize then
+         return nil, 'body_too_large', false
+      end
+
+      -- Read chunk data
+      chunkData = ''
+      chunkRead = 0
+      while chunkRead < chunkSize do
+         toRead = math.min(8192, chunkSize - chunkRead)
+         err, bytes_read = client.acRead(buffer, toRead)
+         if err != ERR_Okay then
+            if err is ERR_TimeOut then
+               return nil, 'timeout', false
+            elseif err is ERR_Disconnected then
+               -- Connection closed while reading chunk data
+               -- Return what we have so far if it's valid
+               if chunkRead > 0 then
+                  body ..= chunkData:substr(0, chunkRead)
+               end
+               if #body > 0 then
+                  return body, nil, true  -- Mark as early termination
+               else
+                  return nil, 'connection_closed', false
+               end
+            else
+               return nil, 'read_error', false
+            end
+         end
+         if bytes_read is 0 then
+            -- No more data - return what we have
+            if chunkRead > 0 then
+               body ..= chunkData:substr(0, chunkRead)
+            end
+
+            if #body > 0 then
+               return body, nil, true  -- Mark as early termination
+            else
+               return nil, 'unexpected_end', false
+            end
+         end
+         chunkData ..= buffer:substr(0, bytes_read)
+         chunkRead += bytes_read
+      end
+
+      body ..= chunkData
+
+      -- Read trailing CRLF after chunk data
+      crlf = ''
+      crlf_attempts = 0
+      while #crlf < 2 and crlf_attempts < 2 do
+         err, bytes_read = client.acRead(buffer, 1)
+         crlf_attempts++
+         if err != ERR_Okay then
+            if err is ERR_TimeOut then
+               return nil, 'timeout', false
+            elseif err is ERR_Disconnected then
+               -- Connection closed - we got the chunk data, that's good enough
+               -- Mark as early termination but continue
+               earlyTermination = true
+               break
+            else
+               -- For other errors, be lenient if we have the chunk data
+               break
+            end
+         end
+
+         if bytes_read is 0 then
+            -- No CRLF but we have the chunk data - continue
+            earlyTermination = true
+            break
+         end
+         crlf ..= buffer:substr(0, 1)
+      end
+
+      -- Be lenient about CRLF validation - some clients may not send it properly
+      -- or the connection may close before sending it
+   end
+
+   -- Note: We're ignoring any trailing headers after the last chunk for now
+   -- A full implementation would read headers until an empty line is found
+
+   return body, nil, earlyTermination
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Parse query string into key-value pairs
+
+function parseQueryString(QueryString:str):table
+   query = {}
+   QueryString ?? return query
+
+   for start, stop, cap in rxQueryPair.findAll(QueryString) do
+      local pair = cap[0]
+      key, value = rxKeyValue.extract(pair)
+      if key and value then
+         key = urlDecode(key)
+         value = urlDecode(value)
+         if query[key] then
+            -- Handle multiple values for same key by converting to array
+            if type(query[key]) != 'table' then
+               query[key] = { query[key] }
+            end
+            table.insert(query[key], value)
+         else
+            query[key] = value
+         end
+      elseif pair then -- Handle keys without values (e.g., ?debug&verbose)
+         query[urlDecode(pair)] = true
+      end
+   end
+
+   return query
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Parse JSON body
+
+function parseJsonBody(Body:str):table
+   Body ?? return {}
+
+   try
+      return json.decode(Body)
+   except e
+      return {}
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Parse form-encoded body (application/x-www-form-urlencoded)
+
+function parseFormBody(Body:str):table
+   return parseQueryString(Body) -- Same parsing logic as query strings
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Parse cookies from Cookie header
+
+function parseCookies(CookieHeader:str):table
+   cookies = {}
+   CookieHeader ?? return cookies
+
+   for start, stop, cap in rxCookieItem.findAll(CookieHeader) do
+      local cookie = cap[0]
+      name, value = rxCookiePair.extract(cookie)
+      if name and value then
+         -- Trim whitespace
+         name = rxTrimWhitespace.extract(name)
+         value = rxTrimWhitespace.extract(value)
+         cookies[name] = value
+      end
+   end
+
+   return cookies
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Returns: { method, path, fullPath, version, headers[k,v], query[k,v], cookies[k,v], params[k,v], body, parsedBody, range }
+
+function parseHttpRequest(Req)
+   lines = {}
+   for start, stop, cap in rxLineIterator.findAll(Req) do
+      table.insert(lines, cap[0])
+   end
+
+   if #lines is 0 then return nil end
+
+   req_line = lines[0]
+   method, full_path, version = rxRequestLine.extract(req_line)
+
+   if (not method) or (not full_path) then return nil end
+
+   -- Separate path from query string
+   path, queryString = rxPathQuery.extract(full_path)
+   if not path then
+      path = full_path
+      queryString = ''
+   end
+
+   headers = {}
+   for i = 1, #lines-1 do -- Skip the METHOD
+      line = lines[i]
+      name, value = rxHeaderLine.extract(line)
+      if name and value then
+         headers[name:lower()] = value
+      end
+   end
+
+   query = parseQueryString(queryString)
+
+   cookies = parseCookies(headers['cookie'])
+
+   return {
+      method     = method,
+      path       = path,
+      fullPath   = full_path,
+      version    = version,
+      headers    = headers,
+      query      = query,
+      cookies    = cookies,
+      params     = {}, -- Will be populated by route matching
+      body       = nil, -- Raw body string
+      parsedBody = {}, -- Will be populated with parsed body data
+      range      = headers['range'], -- Store range header for partial content
+      brokenConnection = false -- Will be set to true if chunked transfer terminated early
+   }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function sendHttpResponse(self, client, statusCode, statusText, headers, body)
+   response = "HTTP/1.1 " .. statusCode .. " " .. statusText .. "\r\n"
+
+   if (not headers['content-length']) and (body) then headers['content-length'] = tostring(#body)end
+
+   if (not headers['connection']) then headers['connection'] = 'close' end
+
+   -- Add security headers
+   if self.enableCSP then
+      if not headers['content-security-policy'] then
+         headers['content-security-policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+      end
+      if not headers['x-content-type-options'] then
+         headers['x-content-type-options'] = 'nosniff'
+      end
+      if not headers['x-frame-options'] then
+         headers['x-frame-options'] = 'SAMEORIGIN'
+      end
+      if not headers['referrer-policy'] then
+         headers['referrer-policy'] = 'strict-origin-when-cross-origin'
+      end
+   end
+
+   for name, value in pairs(headers) do
+      response ..= name .. ": " .. value .. "\r\n"
+   end
+
+   response ..= "\r\n"
+
+   if body then response ..= body end
+
+   err, written = client.acWrite(response)
+   if err != ERR_Okay then
+      logMessage(self, 'Failed to send response: ' .. mSys.GetErrorMsg(err))
+   end
+
+   if headers['connection'] is 'close' then -- The HTTP server is responsible for socket closure, so do it now.
+      msg('Closing client socket per connection: close')
+      client.acDeactivate()
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Create enhanced response object with helper methods
+
+function createResponseObject(self, client)
+   res = {
+      _self = self,
+      _client = client,
+      _statusCode = 200,
+      _statusText = 'OK',
+      _headers = {},
+      _sent = false
+   }
+
+   -- Set status code and optional status text
+   res.status = function(code, text)
+      assert(not res._sent, 'Cannot set status after response sent')
+
+      res._statusCode = code
+      if text then
+         res._statusText = text
+      else
+         -- Set default status text based on common codes
+         res._statusText = glStatusTexts[code] or 'Unknown'
+      end
+      return res
+   end
+
+   -- Set response header
+   res.header = function(name, value)
+      assert(not res._sent, 'Cannot set headers after response sent')
+      res._headers[name:lower()] = value
+      return res
+   end
+
+   -- Set cookie
+   res.cookie = function(name, value, options)
+      assert(not res._sent, 'Cannot set cookies after response sent')
+
+      options = options or {}
+      cookieStr = name .. '=' .. tostring(value)
+
+      if options.maxAge then
+         cookieStr ..= '; Max-Age=' .. tostring(options.maxAge)
+      end
+      if options.expires then
+         cookieStr ..= '; Expires=' .. tostring(options.expires)
+      end
+      if options.path then
+         cookieStr ..= '; Path=' .. tostring(options.path)
+      end
+      if options.domain then
+         cookieStr ..= '; Domain=' .. tostring(options.domain)
+      end
+      if options.secure then
+         cookieStr ..= '; Secure'
+      end
+      if options.httpOnly then
+         cookieStr ..= '; HttpOnly'
+      end
+      if options.sameSite then
+         cookieStr ..= '; SameSite=' .. tostring(options.sameSite)
+      end
+
+      -- Handle multiple cookies by making set-cookie an array
+      existing = res._headers['set-cookie']
+      if existing then
+         if type(existing) != 'table' then
+            existing = { existing }
+         end
+         table.insert(existing, cookieStr)
+         res._headers['set-cookie'] = existing
+      else
+         res._headers['set-cookie'] = cookieStr
+      end
+      return res
+   end
+
+   -- Send JSON response
+   res.json = function(data)
+      assert(not res._sent, 'Response already sent')
+
+      jsonStr = type(data) is 'string' ? data :> json.encode(data)
+
+      res._headers['content-type'] = 'application/json'
+      sendHttpResponse(res._self, res._client, res._statusCode, res._statusText, res._headers, jsonStr)
+      res._sent = true
+      return res
+   end
+
+   -- Send redirect response
+   res.redirect = function(url, code)
+      assert(not res._sent, 'Response already sent')
+
+      code = code or 302
+      res._headers['location'] = url
+      res:status(code)
+      sendHttpResponse(res._self, res._client, res._statusCode, res._statusText, res._headers)
+      res._sent = true
+      return res
+   end
+
+   -- Send text response
+   res.send = function(body, contentType)
+      assert(not res._sent, 'Response already sent')
+
+      contentType = contentType or 'text/html'
+      res._headers['content-type'] = contentType
+      sendHttpResponse(res._self, res._client, res._statusCode, res._statusText, res._headers, tostring(body))
+      res._sent = true
+      return res
+   end
+
+   return res
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function createErrorPage(statusCode:num, statusText:str, message:str, details:str)
+   html = [[<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>]] .. statusCode .. ' ' .. statusText .. [[</title>
+<style>
+body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+.error-container { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 600px; margin: 0 auto; }
+h1 { color: #d32f2f; margin-top: 0; }
+p { color: #666; line-height: 1.6; }
+.details { background: #f9f9f9; padding: 15px; border-radius: 4px; margin: 20px 0; font-family: monospace; }
+</style>
+</head>
+<body>
+<div class="error-container">
+<h1>]] .. statusCode .. ' ' .. statusText .. [[</h1>
+<p>]] .. message .. '</p>\n'
+
+   if details then
+      html ..= '<div class="details">' .. escHTML(details) .. '</div>\n'
+   end
+
+   html ..= [[<p><a href="/">Return to home</a></p>
+</div>
+</body>
+</html>]]
+
+   return html
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function serveFile(self, ClientSocket, FilePath:str, Request)
+   local file
+   try
+      file = obj.new('file', { path = FilePath, flags = 'READ' })
+   except ex
+      local errorBody
+      if Request.method != 'HEAD' then
+         errorBody = createErrorPage(404, 'Not Found', 'The requested file was not found.', 'Path: ' .. FilePath)
+      end
+      sendHttpResponse(self, ClientSocket, 404, "Not Found", { ['content-type'] = 'text/html' }, errorBody)
+      return
+   end
+
+   fileSize = file.size
+   mimeType = getMimeType(FilePath)
+
+   -- For HEAD requests, only send headers without body
+   if Request.method is 'HEAD' then
+      sendHttpResponse(self, ClientSocket, 200, "OK", {
+         ['content-type'] = mimeType,
+         ['content-length'] = tostring(fileSize),
+         ['accept-ranges'] = 'bytes'
+      })
+      return
+   end
+
+   -- Stream large files in chunks
+   if fileSize > self.fileChunkSize then
+      sendHttpResponse(self, ClientSocket, 200, "OK", {
+         ['content-type'] = mimeType,
+         ['content-length'] = tostring(fileSize),
+         ['accept-ranges'] = 'bytes'
+      })
+
+      buffer = string.alloc(self.fileChunkSize)
+      totalSent = 0
+
+      while totalSent < fileSize do
+         toRead = math.min(self.fileChunkSize, fileSize - totalSent)
+         err, bytes_read = file.acRead(buffer, toRead)
+
+         if err != ERR_Okay then
+            logMessage(self, 'Error streaming file: ' .. mSys.GetErrorMsg(err))
+            return
+         end
+
+         if bytes_read > 0 then
+            err = ClientSocket.acWrite(buffer:substr(0, bytes_read))
+            if err != ERR_Okay then
+               logMessage(self, 'Error writing to ClientSocket: ' .. mSys.GetErrorMsg(err))
+               return
+            end
+            totalSent += bytes_read
+         else
+            break
+         end
+      end
+   else
+      -- Small files: read all at once
+      buffer = string.alloc(fileSize)
+      err, bytes_read = file.acRead(buffer)
+
+      if err != ERR_Okay then
+         errorBody = createErrorPage(500, 'Internal Server Error', 'Error reading file.', 'Read error: ' .. mSys.GetErrorMsg(err))
+         sendHttpResponse(self, ClientSocket, 500, "Internal Server Error", {
+            ['content-type'] = 'text/html'
+         }, errorBody)
+         return
+      end
+
+      if bytes_read < fileSize then
+         logMessage(self, 'Warning: Read ' .. bytes_read .. ' bytes, expected ' .. fileSize)
+      end
+
+      sendHttpResponse(self, ClientSocket, 200, "OK", {
+         ['content-type'] = mimeType
+      }, buffer:substr(0, bytes_read))
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function formatFileSize(Bytes)
+   if Bytes < 1024 then
+      return tostring(Bytes) .. ' B'
+   elseif Bytes < 1024 * 1024 then
+      return string.format('%.1f KB', Bytes / 1024)
+   elseif Bytes < 1024 * 1024 * 1024 then
+      return string.format('%.1f MB', Bytes / (1024 * 1024))
+   else
+      return string.format('%.1f GB', Bytes / (1024 * 1024 * 1024))
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function printableTime(Time)
+   return string.format('%04d-%02d-%02d %02d:%02d:%02d',
+      Time.Year, Time.Month, Time.Day, Time.Hour, Time.Minute, Time.Second)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function generateDirectoryListing(self, DirPath, URIPath)
+   safeUrlPath = escHTML(URIPath)
+   html = [[<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Directory listing for ]] .. safeUrlPath .. [[</title>
+<style>
+body { font-family: Arial, sans-serif; margin: 40px; }
+h1 { color: #333; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #ddd; }
+th { background-color: #f5f5f5; font-weight: bold; }
+tr:hover { background-color: #f9f9f9; }
+a { text-decoration: none; color: #0066cc; }
+a:hover { text-decoration: underline; }
+.dir { font-weight: bold; }
+.size { text-align: right; }
+</style>
+</head>
+<body>
+<h1>Directory listing for ]] .. safeUrlPath .. [[</h1>
+<table>
+<thead>
+<tr><th>Name</th><th>Size</th><th>Last Modified</th></tr>
+</thead>
+<tbody>]]
+
+   -- Add parent directory link if not root
+   if URIPath != '/' then
+      parentPath = rxParentPath.extract(URIPath)
+      if not parentPath then parentPath = '/' end
+      html ..= '<tr><td><a href="' .. parentPath .. '" class="dir">../</a></td><td>-</td><td>-</td></tr>\n'
+   end
+
+   -- List directory contents
+   logMessage(self, 'Scanning folder ' .. DirPath)
+   err, dir = mSys.OpenDir(DirPath, bit.bor(RDF_FOLDERS, RDF_FILES, RDF_PERMISSIONS, RDF_DATE, RDF_SIZE, RDF_TAGS))
+   if err is ERR_Okay then
+      count = 0
+      maxEntries = 1000 -- Limit directory entries to prevent DoS
+      while mSys.ScanDir(dir) is ERR_Okay and count < maxEntries do
+         info = dir.info
+         name = info.Name
+
+         -- Skip hidden files and system files for security
+         if name:startsWith('.') then
+            isFolder = info.flags has RDF_FOLDER
+            size     = isFolder ? '-' :> formatFileSize(info.size)
+            modTime  = printableTime(info.modified)
+            href     = URIPath .. name
+            if isFolder then href ..= '/' end
+
+            displayName = escHTML(name)
+            if isFolder then displayName ..= '/' end
+
+            safeHref = escHTML(href)
+            cssClass = ''
+            if isFolder then
+               cssClass = ' class="dir"'
+            end
+            html ..= '<tr><td><a href="' .. safeHref .. '"' .. cssClass .. '>' .. displayName .. '</a></td>'
+            html ..= '<td class="size">' .. escHTML(size) .. '</td>'
+            html ..= '<td>' .. escHTML(modTime) .. '</td></tr>\n'
+            count++
+         end
+      end
+
+      if count >= maxEntries then
+         html = html .. '<tr><td colspan="3"><em>Directory listing truncated at ' .. maxEntries .. ' entries</em></td></tr>\n'
+      end
+   else
+      logMessage(self, 'Failed to open folder ' .. (DirPath ?? 'NIL'))
+   end
+
+   html ..= '</tbody>\n</table>\n'
+   html ..= '</body>\n</html>\n'
+
+   return html
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function serveDirectory(self, Client, DirPath, URIPath, Request)
+   -- Check for configured index files in order
+   for indexFile in values(self.indexFiles) do
+      indexPath = DirPath .. indexFile
+      file_type = [_*]mSys.AnalysePath(indexPath)
+      if file_type is LOC_FILE then
+         logMessage(self, 'Serving index file: ' .. indexFile)
+         serveFile(self, Client, indexPath, Request)
+         return
+      end
+   end
+
+   -- If no index file found and auto-indexing is enabled, generate directory listing
+   if self.autoIndex then
+      logMessage(self, 'No index file found, generating directory listing for: ' .. URIPath)
+      local html
+      if Request.method != 'HEAD' then
+         html = generateDirectoryListing(self, DirPath, URIPath)
+      end
+      sendHttpResponse(self, Client, 200, 'OK', {
+         ['content-type'] = 'text/html; charset=utf-8'
+      }, html)
+   else
+      -- Auto-indexing disabled, return 403 Forbidden
+      local errorBody
+      if Request.method != 'HEAD' then
+         errorBody = createErrorPage(403, 'Forbidden', 'Directory listing is disabled.', 'Path: ' .. URIPath)
+      end
+      sendHttpResponse(self, Client, 403, 'Forbidden', {
+         ['content-type'] = 'text/html'
+      }, errorBody)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- MIDDLEWARE SYSTEM
+
+-- Execute middleware pipeline with next() chaining
+
+function executeMiddleware(middlewareList, request, response, finalCallback)
+   currentIndex = 0
+
+   function next(error)
+      if error then
+         if not response._sent then
+            errorBody = createErrorPage(500, 'Internal Server Error', 'Middleware error.', 'Error: ' .. tostring(error))
+            sendHttpResponse(response._self, response._client, 500, "Internal Server Error", {
+               ['content-type'] = 'text/html'
+            }, errorBody)
+         end
+         return
+      end
+
+      if currentIndex >= #middlewareList then -- All middleware executed, call final callback
+         if finalCallback then finalCallback(request, response) end
+         return
+      end
+
+      middleware = middlewareList[currentIndex]
+      currentIndex++
+
+      -- Execute middleware function safely
+      try
+         result = middleware(request, response, next)
+      except e -- Middleware failed, pass error to next()
+         next(e.message)
+      end
+   end
+
+   next()
+end
+
+-- Built-in CORS middleware
+
+function corsMiddleware(request, response, next)
+   -- Set CORS headers
+   response.header('Access-Control-Allow-Origin', '*')
+   response.header('Access-Control-Allow-Methods', 'GET, HEAD, POST, PUT, DELETE, PATCH, OPTIONS')
+   response.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
+   response.header('Access-Control-Max-Age', '86400')
+
+   -- Handle preflight requests
+   if request.method is 'OPTIONS' then
+      response.status(200).send('')
+      return
+   end
+
+   next()
+end
+
+-- Built-in request logging middleware
+
+function loggingMiddleware(request:table, response:table, next:func)
+   startTime = mSys.PreciseTime()
+
+   logMessage(response._self, request.method .. ' ' .. request.path .. ' from ' .. (request.ip or 'unknown'))
+
+   -- Wrap response.send to log completion
+   originalSend = response.send
+   originalJson = response.json
+   originalRedirect = response.redirect
+
+   function logResponse()
+      duration = (mSys.PreciseTime() - startTime) / 1000 -- Convert to milliseconds
+      logMessage(response._self, response._statusCode .. ' ' .. request.path .. ' (' .. string.format('%.2f', duration) .. 'ms)')
+   end
+
+   response.send = function(...)
+      result = originalSend(...)
+      logResponse()
+      return result
+   end
+
+   response.json = function(...)
+      result = originalJson(...)
+      logResponse()
+      return result
+   end
+
+   response.redirect = function(...)
+      result = originalRedirect(...)
+      logResponse()
+      return result
+   end
+
+   next()
+end
+
+-- Built-in authentication middleware template
+
+function authMiddleware(options:table)
+   options ?= {}
+   tokenHeader = options.header or 'authorization'
+   tokenPrefix = options.prefix or 'Bearer '
+
+   return function(request:table, response:table, next:func)
+      authHeader = request.headers[tokenHeader:lower()]
+
+      if not authHeader then
+         response.status(401).json({ error = 'Missing authorization header' })
+         return
+      end
+
+      token = authHeader
+      if tokenPrefix and authHeader:startsWith(tokenPrefix) then
+         token = authHeader:substr(#tokenPrefix)
+      end
+
+      if not token or token is '' then
+         response.status(401).json({ error = 'Invalid authorization token' })
+         return
+      end
+
+      -- Add token to request for use in route handlers
+      request.auth = {
+         token = token,
+         user = nil -- Can be populated by custom validation logic
+      }
+
+      -- In a real implementation, you would validate the token here
+      -- For now, just pass through
+      next()
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- ROUTING SYSTEM
+
+-- Add a route with method, pattern, callback, and optional middleware to a server instance
+
+function addRoute(self:table, route:table)
+   if not self._routes then self._routes = {} end
+
+   if route.pattern and route.method and route.handler then
+      method = route.method:upper()
+      pattern = tostring(route.pattern)
+
+      if not self._routes[method] then self._routes[method] = {} end
+
+      if type(route.handler) is 'function' then
+         -- Validate route-specific middleware
+         if type(route.middleware) is 'table' then
+            for j, mw in ipairs(route.middleware) do
+               if type(mw) != 'function' then
+                  error('Invalid middleware for route ' .. method .. ' ' .. pattern .. ' at index ' .. j .. ' - must be a function')
+               end
+            end
+         end
+
+         table.insert(self._routes[method], {
+            pattern        = pattern,
+            callback       = route.handler,
+            validateHeader = route.validateHeader,
+            middleware     = route.middleware,
+            compiledRegex  = nil -- Will be set when first used
+         })
+
+         msg('Route registered: ' .. method .. ' ' .. pattern)
+      else
+         error('Invalid handler for route ' .. method .. ' ' .. pattern .. ' - must be a function')
+      end
+   else
+      error('Invalid route configuration - missing pattern, method, or handler')
+   end
+end
+
+-- Extract parameters from a matched path using route pattern and regex match results
+
+function extractParams(pattern:str, matchResults):table
+   params = {}
+
+   -- Extract parameter names from the original pattern
+   paramNames = {}
+   for start, stop, cap in rxRouteParam.findAll(pattern) do
+      table.insert(paramNames, cap[0])
+   end
+
+   -- Map parameter names to captured group values (skip index 1 which is full match)
+   for i, name in ipairs(paramNames) do
+      if matchResults[i + 1] then
+         params[name] = urlDecode(matchResults[i + 1])
+      end
+   end
+
+   return params
+end
+
+-- Find matching route for a request from a server instance
+
+function matchRoute(serverInstance, method, path)
+   serverInstance._routes ?? return
+
+   methodRoutes = serverInstance._routes[method]
+   methodRoutes ?? return
+
+   for route in values(methodRoutes) do
+      pattern = route.pattern
+
+      if not route.compiledRegex then
+         -- Convert route pattern to proper regex pattern
+         -- :param becomes ([^/]+), * becomes (.*), escape regex special chars
+
+         regexPattern = regex.escape(pattern)
+         regexPattern = rxRouteParamSub.replace(regexPattern, '([^\\/]+)')   -- :param -> ([^/]+)
+         regexPattern = rxEscapedWildcard.replace(regexPattern, '(.*)')    -- \* -> (.*)
+
+         try
+            route.compiledRegex = regex.new(f'^{regexPattern}$')
+         except ex
+            error('matchRoute: Failed to compile regex: ' .. ex.message)
+         end
+      end
+
+      -- Test if path matches this route (skip invalid regex patterns)
+
+      if route.compiledRegex then
+         testResult = route.compiledRegex.test(path)
+
+         if testResult then -- Get capture groups for parameter extraction
+            matchResults = route.compiledRegex.match(path)
+            params = extractParams(pattern, matchResults)
+            return route, params
+         end
+      end
+   end
+
+   return nil
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Check rate limiting for client IP
+
+function checkRateLimit(self:table, IP:str):bool
+   if not self.rateLimit or self.rateLimit <= 0 then
+      return true -- Rate limiting disabled
+   end
+
+   currentTime = mSys.PreciseTime() / 1000000 -- Convert to seconds
+
+   -- Clean up old entries every minute
+   if currentTime - self._lastCleanup > 60 then
+      cutoff = currentTime - self.rateLimitWindow
+      for ip, data in pairs(self._rateLimits) do
+         newRequests = {}
+         for timestamp in values(data.requests) do
+            if timestamp > cutoff then
+               table.insert(newRequests, timestamp)
+            end
+         end
+         if #newRequests is 0 then
+            self._rateLimits[ip] = nil
+         else
+            data.requests = newRequests
+         end
+      end
+      self._lastCleanup = currentTime
+   end
+
+   -- Check this client's rate
+   if not self._rateLimits[IP] then
+      self._rateLimits[IP] = { requests = {} }
+   end
+
+   clientData = self._rateLimits[IP]
+   cutoff = currentTime - self.rateLimitWindow
+
+   -- Count recent requests
+   recentRequests = {}
+   for _, timestamp in ipairs(clientData.requests) do
+      if timestamp > cutoff then
+         table.insert(recentRequests, timestamp)
+      end
+   end
+
+   if #recentRequests >= self.rateLimit then
+      logMessage(self, 'Rate limit exceeded for ' .. IP)
+      return false
+   end
+
+   -- Add current request
+   table.insert(recentRequests, currentTime)
+   clientData.requests = recentRequests
+
+   return true
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- This is the incoming data handler for client sockets.  acRead() is used to read data from the ClientSocket.
+
+function serverIncoming(self, ClientSocket)
+   state = ClientSocket._state()
+
+   if not state.initialised then
+      state.buffer            = ''
+      state.phase             = 'READING_HEADERS'
+      state.headers_complete  = false
+      state.content_length    = nil
+      state.body_received     = 0
+      state.start_time        = mSys.PreciseTime()
+      state.request           = nil
+      state.initialised       = true
+      state.transfer_encoding = nil
+      state.invalid_header    = false
+      state.chunk_state       = 'SIZE' -- For chunked encoding: SIZE, DATA, TRAILER
+      state.chunk_size        = 0
+      state.chunk_received    = 0
+
+      -- Get client IP for rate limiting
+      ip_array = ClientSocket.client.ip
+      state.ip = ip_array[0] .. '.' .. ip_array[1] .. '.' .. ip_array[2] .. '.' .. ip_array[3]
+
+      -- Check rate limit
+      if not checkRateLimit(self, state.ip) then
+         errorBody = createErrorPage(429, 'Too Many Requests', 'Rate limit exceeded. Please try again later.', 'Limit: ' .. self.rateLimit .. ' requests per ' .. self.rateLimitWindow .. ' seconds')
+         sendHttpResponse(self, ClientSocket, 429, "Too Many Requests", {
+            ['content-type'] = 'text/html',
+            ['retry-after'] = tostring(self.rateLimitWindow)
+         }, errorBody)
+         return
+      end
+   end
+
+   -- Check for timeout
+   if (mSys.PreciseTime() - state.start_time)/1000000 > self.timeout then
+      errorBody = createErrorPage(408, 'Request Timeout', 'The server did not receive a complete request within the timeout period.', 'Timeout: ' .. self.timeout .. ' seconds')
+      sendHttpResponse(self, ClientSocket, 408, "Request Timeout", {
+         ['content-type'] = 'text/html'
+      }, errorBody)
+      return
+   end
+
+   buffer = string.alloc(8192)
+   err, bytes_read = ClientSocket.acRead(buffer, 8192)
+
+   if err != ERR_Okay then
+      logMessage(self, 'Failed to read from client: ' .. mSys.GetErrorMsg(err))
+      return
+   end
+
+   if bytes_read is 0 then return end -- Sometimes happens with SSL sockets
+
+   if state.phase is 'CANCELLED' then
+      msg('Processing cancelled.')
+      return
+   end
+
+   -- Accumulate data
+
+   state.buffer ..= buffer:substr(0, bytes_read)
+   if #state.buffer > self.maxRequestSize then
+      errorBody = createErrorPage(413, 'Payload Too Large', 'Request exceeds maximum allowed size.', 'Maximum size: ' .. self.maxRequestSize .. ' bytes')
+      sendHttpResponse(self, ClientSocket, 413, "Payload Too Large", {
+         ['content-type'] = 'text/html'
+      }, errorBody)
+      return
+   end
+
+   -- Read and parse headers
+   if state.phase is 'READING_HEADERS' then
+      -- Look for end of headers marker
+      header_end = state.buffer:find('\r\n\r\n')
+      header_end ?? return -- Wait for more data
+
+      -- Extract header section
+      header_section = state.buffer:substr(0, header_end + 3) -- Include the \r\n\r\n
+      state.request = parseHttpRequest(header_section)
+
+      if not state.request then
+         errorBody = createErrorPage(400, 'Bad Request', 'Invalid HTTP request format.', 'The request could not be parsed as valid HTTP.')
+         sendHttpResponse(self, ClientSocket, 400, "Bad Request", {
+            ['content-type'] = 'text/html'
+         }, errorBody)
+         return
+      end
+
+      logMessage(self, state.request.method .. ' ' .. state.request.path)
+      if self.verbose then
+         logMessage(self, 'Headers:')
+         for k, v in pairs(state.request.headers) do
+            logMessage(self, '  ' .. k .. ': ' .. v)
+         end
+      end
+
+      -- Check if method is supported
+      supportedMethods = { 'GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS' }
+      methodSupported = false
+      for _, method in ipairs(supportedMethods) do
+         if state.request.method is method then
+            methodSupported = true
+            break
+         end
+      end
+
+      if not methodSupported then
+         errorBody = createErrorPage(405, 'Method Not Allowed', 'HTTP method not supported.', 'Requested method: ' .. state.request.method)
+         sendHttpResponse(self, ClientSocket, 405, "Method Not Allowed", {
+            ['content-type'] = 'text/html',
+            ['allow'] = 'GET, HEAD, POST, PUT, DELETE, PATCH, OPTIONS'
+         }, errorBody)
+         return
+      end
+
+      -- Remove processed headers from buffer
+      state.buffer = state.buffer:substr(header_end + 4) -- Remove \r\n\r\n as well
+      state.headers_complete = true
+
+      -- Call validateHeader callback if route has one
+      matchedRoute, params = matchRoute(self, state.request.method, state.request.path)
+
+      if matchedRoute and matchedRoute.validateHeader then
+         local vres
+         try
+            vres = matchedRoute.validateHeader(state.request.headers)
+         except e -- validateHeader threw an error
+            logMessage(self, 'validateHeader callback error: ' .. e.message)
+            errorBody = createErrorPage(500, 'Internal Server Error', 'Header validation failed.', 'Internal server error during header validation.')
+            sendHttpResponse(self, ClientSocket, 500, "Internal Server Error", { ['content-type'] = 'text/html' }, errorBody)
+            state.invalid_header = true
+            state.phase = 'CANCELLED'
+         success
+            if vres is false then -- Headers failed validation, send 400 Bad Request
+               errorBody = createErrorPage(400, 'Bad Request', 'Request headers failed validation.', 'The request headers do not meet server requirements.')
+               sendHttpResponse(self, ClientSocket, 400, "Bad Request", { ['content-type'] = 'text/html' }, errorBody)
+               state.invalid_header = true
+               state.phase = 'CANCELLED'
+            elseif type(vres) is 'table' and vres.status then
+               -- Custom error response from validateHeader
+               statusCode = vres.status or 400
+               statusText = vres.statusText or 'Bad Request'
+               message    = vres.message or 'Request headers failed validation.'
+               details    = vres.details or 'The request headers do not meet server requirements.'
+
+               errorBody = createErrorPage(statusCode, statusText, message, details)
+               sendHttpResponse(self, ClientSocket, statusCode, statusText, { ['content-type'] = 'text/html' }, errorBody)
+               state.invalid_header = true
+               state.phase = 'CANCELLED'
+            end
+         end
+
+         -- If validateHeader returns true or nil, continue processing
+      end
+
+      -- If header validation failed, don't continue processing
+      if state.invalid_header or state.phase is 'CANCELLED' then
+         return
+      end
+
+      -- Determine if we need to read a body
+      state.content_length = tonumber(state.request.headers['content-length'])
+      state.transfer_encoding = state.request.headers['transfer-encoding']
+
+      if state.request.method is 'POST' or state.request.method is 'PUT' or state.request.method is 'PATCH' then
+         if (state.transfer_encoding and state.transfer_encoding:lower():find('chunked')) or
+            (state.content_length and state.content_length > 0) then
+            -- Need to read body
+            state.phase = 'READING_BODY'
+            state.request.body = ''
+            -- Continue processing in body reading phase
+         else -- No body expected
+            state.phase = 'PROCESSING'
+         end
+      else -- GET, HEAD, DELETE, OPTIONS don't typically have bodies
+         state.phase = 'PROCESSING'
+      end
+   end
+
+   -- Read request body
+   if state.phase is 'READING_BODY' then
+      if state.transfer_encoding and state.transfer_encoding:lower():find('chunked') then
+         if not processChunkedBody(state, self) then
+            return -- Still reading chunks or error occurred
+         end
+      elseif state.content_length and state.content_length > 0 then
+         -- Accumulate body data from buffer
+         needed = state.content_length - state.body_received
+         available = #state.buffer
+
+         if available > 0 then
+            to_take = math.min(available, needed)
+            state.request.body = state.request.body .. state.buffer:substr(0, to_take)
+            state.buffer = state.buffer:substr(to_take)
+            state.body_received = state.body_received + to_take
+
+            logMessage(self, 'Body progress: ' .. state.body_received .. '/' .. state.content_length .. ' bytes')
+         end
+
+         if state.body_received < state.content_length then
+            return -- Still need more body data
+         end
+      end
+
+      -- Body reading complete, parse it
+      if state.request.body then
+         contentType = state.request.headers['content-type'] or ''
+         if contentType:find('application/json') then
+            logMessage(self, 'Parsing JSON encoded data')
+            state.request.parsedBody = parseJsonBody(state.request.body)
+         elseif contentType:find('application/x-www-form-urlencoded') then
+            logMessage(self, 'Parsing URL-encoded form data')
+            state.request.parsedBody = parseFormBody(state.request.body)
+         else
+            -- Keep raw body for other content types
+            state.request.parsedBody = { _raw = state.request.body }
+         end
+      end
+
+      state.phase = 'PROCESSING'
+   end
+
+   -- Process complete request
+   if state.phase is 'PROCESSING' then
+      request = state.request
+
+      -- Handle OPTIONS requests for CORS
+      if request.method is 'OPTIONS' then
+         sendHttpResponse(self, ClientSocket, 200, "OK", {
+            ['access-control-allow-origin'] = '*',
+            ['access-control-allow-methods'] = 'GET, HEAD, POST, PUT, DELETE, PATCH, OPTIONS',
+            ['access-control-allow-headers'] = 'Content-Type, Authorization',
+            ['access-control-max-age'] = '86400'
+         })
+         return
+      end
+
+      -- Canonicalize and validate path
+      URIPath = canonicalizePath(self, request.path)
+      if not URIPath then
+         errorBody = createErrorPage(400, 'Bad Request', 'Invalid path in request.', 'Original path: ' .. request.path)
+         logMessage(self, 'Security: Invalid path blocked: ' .. request.path)
+         sendHttpResponse(self, ClientSocket, 400, "Bad Request", { ['content-type'] = 'text/html' }, errorBody)
+         return
+      end
+
+      -- Add client IP to request for middleware
+      request.ip = state.ip
+
+      -- Try to match against registered routes first
+      matchedRoute, params = matchRoute(self, request.method, URIPath)
+      if matchedRoute then
+         logMessage(self, 'Found matching route: ' .. matchedRoute.pattern)
+         -- Populate request params and create response object
+         request.params = params
+         response = createResponseObject(self, ClientSocket)
+
+         -- Combine global middleware with route-specific middleware
+         middlewareChain = {}
+
+         -- Add global middleware first
+         if self._middleware then
+            for _, middleware in ipairs(self._middleware) do
+               table.insert(middlewareChain, middleware)
+            end
+         end
+
+         -- Add route-specific middleware
+         if matchedRoute.middleware then
+            for _, middleware in ipairs(matchedRoute.middleware) do
+               table.insert(middlewareChain, middleware)
+            end
+         end
+
+         -- Execute middleware pipeline followed by route handler
+         function routeHandler(req, res)
+            try
+               matchedRoute.callback(req, res)
+            except e
+               -- Route callback failed, send 500 error
+               logMessage(self, 'Route handler error: ' .. e.message)
+               if not res._sent then
+                  errorBody = createErrorPage(500, 'Internal Server Error', 'Route handler failed.', 'Error: ' .. e.message)
+                  sendHttpResponse(self, ClientSocket, 500, "Internal Server Error", { ['content-type'] = 'text/html' }, errorBody)
+               end
+            success
+               if not res._sent then
+                  -- Route executed successfully but didn't send a response
+                  logMessage(self, 'Warning: Route handler completed without sending response')
+                  errorBody = createErrorPage(500, 'Internal Server Error', 'Route handler did not send a response.', 'Path: ' .. URIPath)
+                  sendHttpResponse(self, ClientSocket, 500, "Internal Server Error", { ['content-type'] = 'text/html' }, errorBody)
+               end
+            end
+         end
+
+         -- Execute middleware chain
+         executeMiddleware(middlewareChain, request, response, routeHandler)
+
+         return -- Route was handled, don't continue to static file serving
+      end
+
+      -- Validate path doesn't contain dangerous patterns
+
+      dangerous = array<any> {
+         regex.new("\\.\\.[\\/\\\\]"), -- Directory traversal
+         regex.new("^[\\/\\\\]*\\."), -- Hidden files
+         regex.new([[\.(?:exe|bat|cmd|ps1|dll|so|ini|conf|config)$]], regex.ICASE)
+      }
+
+      for pattern in values(dangerous) do
+         if pattern.test(URIPath) then
+            errorBody = createErrorPage(403, 'Forbidden', 'Access to this file type is forbidden.', 'Path: ' .. URIPath)
+            logMessage(self, 'Security: Blocked access to dangerous path: ' .. URIPath)
+            sendHttpResponse(self, ClientSocket, 403, "Forbidden", { ['content-type'] = 'text/html' }, errorBody)
+            return
+         end
+      end
+
+      file_path = self.folder .. URIPath
+
+      -- Check if path exists and determine if it's a file or directory
+      err, fileType = mSys.AnalysePath(file_path)
+      if err != ERR_Okay then
+         errorBody = createErrorPage(404, 'Not Found', 'The requested resource was not found.', 'Path: ' .. URIPath .. '\nResolved to: ' .. file_path)
+         sendHttpResponse(self, ClientSocket, 404, "Not Found", {
+            ['content-type'] = 'text/html'
+         }, errorBody)
+         return
+      end
+
+      if request.method != 'GET' and request.method != 'HEAD' then
+         errorBody = createErrorPage(405, 'Method Not Allowed',
+            'This method is not allowed for static file serving. Use routing system for API endpoints.',
+            'Method: ' .. request.method .. ', Path: ' .. URIPath)
+         sendHttpResponse(self, ClientSocket, 405, "Method Not Allowed", {
+            ['content-type'] = 'text/html',
+            ['allow'] = 'GET, HEAD'
+         }, errorBody)
+         return
+      end
+
+      if fileType is LOC_FOLDER then
+         -- Ensure directory URLs end with /
+         if not URIPath:endsWith('/') then
+            sendHttpResponse(self, ClientSocket, 301, 'Moved Permanently', {
+               ['location'] = URIPath .. '/'
+            })
+            return
+         end
+         serveDirectory(self, ClientSocket, file_path, URIPath, request)
+      else
+         serveFile(self, ClientSocket, file_path, request)
+      end
+   end -- End of PROCESSING phase
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+hslib.start = function(Options)
+   self = {
+      port            = 8080,   -- Server port number
+      folder          = nil,    -- Path from which to serve files
+      bind            = nil,    -- Bind to specific address (e.g., '127.0.0.1', '0.0.0.0', or specific IP)
+      maxRequestSize  = 65536,  -- 64KB max request size
+      fileChunkSize   = 65536,  -- 64KB chunks for file streaming
+      timeout         = 30,     -- 30 second timeout
+      verbose         = false,  -- Enable verbose logging
+      indexFiles      = {'index.html', 'index.htm', 'default.html', 'default.htm'}, -- Default index files to serve
+      autoIndex       = true,   -- Enable automatic directory listing if no index file found
+      rateLimit       = 100,    -- Max requests per minute per IP
+      rateLimitWindow = 60,     -- Rate limit window in seconds
+      enableCSP       = true,    -- Enable Content-Security-Policy headers
+      _socket         = nil,
+      -- Rate limiting
+      _lastCleanup = 0,
+      _rateLimits = {}
+   }
+
+   if Options.port then
+      if validatePort(Options.port) then
+         self.port = tonumber(Options.port)
+      else
+         error(f'Invalid port number: {Options.port}. Port must be between 1 and 65535.')
+      end
+   end
+
+   if Options.folder then
+      -- Validate folder input
+      folder = Options.folder
+      if folder:find('..') or folder:startsWith('~') then
+         error(f'Invalid folder path: security violation for: {folder}')
+      end
+
+      err, resolvedPath = mSys.ResolvePath(folder)
+      if err is ERR_Okay then
+         self.folder = resolvedPath
+      end
+
+      file_type = [_*]mSys.AnalysePath(self.folder)
+      assert(file_type is LOC_FOLDER, f'Folder "{self.folder}" does not exist')
+   end
+
+   assert(self.folder, 'The folder option is required')
+
+   if Options.verbose then
+      if type(Options.verbose) is 'boolean' then
+         self.verbose = Options.verbose
+      else
+         verbose = tostring(Options.verbose):lower()
+         self.verbose = (verbose is 'true' or verbose is '1')
+      end
+   end
+
+   if Options.timeout then
+      timeout = tonumber(Options.timeout)
+      if timeout and (timeout > 0) and (timeout <= 300) then
+         self.timeout = timeout
+      else
+         error('Invalid timeout: must be between 1 and 300 seconds')
+      end
+   end
+
+   if Options.autoIndex then
+      if type(Options.autoIndex) is 'boolean' then
+         self.autoIndex = Options.autoIndex
+      else
+         autoindex = tostring(Options.autoIndex):lower()
+         self.autoIndex = (autoindex is 'true' or autoindex is '1')
+      end
+   end
+
+   if Options.rateLimit then
+      limit = tonumber(Options.rateLimit)
+      if limit and (limit >= 0) and (limit <= 1000) then
+         self.rateLimit = limit
+      end
+   end
+
+   if Options.bind then
+      self.bind = Options.bind
+   end
+
+   if Options.logMessage then
+      if type(Options.logMessage) is 'function' then
+         self.logMessage = Options.logMessage
+      elseif Options.logMessage is true then
+         self.logMessage = msg
+      else
+         error('logMessage option must be a function')
+      end
+   end
+
+   -- Process middleware configuration
+   middlewareCount = 0
+   if Options.middleware then
+      if type(Options.middleware) is 'table' then
+         self._middleware = {}
+         for i, middleware in ipairs(Options.middleware) do
+            if type(middleware) is 'function' then
+               table.insert(self._middleware, middleware)
+               middlewareCount++
+               logMessage(self, f'Global middleware configured at index {i}')
+            else
+               error(f'Invalid middleware at index {i} - must be a function')
+            end
+         end
+      else
+         error('middleware option must be a table')
+      end
+   end
+
+   -- Process routes configuration
+   routeCount = 0
+   if Options.routes then
+      if type(Options.routes) is 'table' then
+         for route in values(Options.routes) do
+            if type(route) is 'table' then
+               addRoute(self, route)
+               routeCount++
+            end
+         end
+      else
+         error('routes option must be a table')
+      end
+   end
+
+   bindMsg = ''
+   if self.bind then
+      bindMsg = ' bound to ' .. self.bind
+   end
+
+   msg(f'\nStarting HTTP server on port {self.port}{bindMsg}')
+   msg(f'Serving files from: {self.folder}')
+   msg('Configuration:')
+   msg(f'  Port: {self.port}')
+   msg(f'  Bind address: {self.bind or "all interfaces"}')
+   msg(f'  Folder: {self.folder}')
+   msg(f'  Max request size: {self.maxRequestSize} bytes')
+   msg(f'  File chunk size: {self.fileChunkSize} bytes')
+   msg(f'  Timeout: {self.timeout} seconds')
+   msg(f'  Verbose logging: {self.verbose}')
+   msg('  Index files: ' .. table.concat(self.indexFiles, ', '))
+   msg(f'  Auto-indexing: {self.autoIndex}')
+   msg('  Rate limit: ' .. (self.rateLimit > 0 and (f'{self.rateLimit} requests per {self.rateLimitWindow} seconds') or 'disabled'))
+   msg('  Security headers: ' .. (self.enableCSP and 'enabled' or 'disabled'))
+   msg('  Global middleware: ' .. middlewareCount)
+   msg('  Routes configured: ' .. routeCount)
+
+   cfg = {
+      port     = self.port,
+      flags    = 'SERVER|MULTI_CONNECT',
+      feedback = function(Server, ClientSocket, State)
+         if State is NTC_CONNECTED then
+            -- New client connection
+            msg('New client connection')
+         elseif State is NTC_DISCONNECTED then
+            -- Client disconnected
+         end
+      end,
+      incoming = function(Server, ClientSocket)
+         serverIncoming(self, ClientSocket)
+      end
+   }
+
+   if self.bind then
+      cfg.address = self.bind
+   end
+
+   self._socket = obj.new('netsocket', cfg)
+
+   self.stop = function()
+      if self._socket then
+         self._socket = nil
+         processing.collect()
+      end
+   end
+
+   -- Generic route registration with optional middleware
+
+   self.newRoute = function(Route)
+      addRoute(self, Route)
+   end
+
+   -- Add global middleware
+   self.newMiddleware = function(middleware)
+      self._middleware ?= {}
+
+      if type(middleware) is 'function' then
+         table.insert(self._middleware, middleware)
+         logMessage(self, 'Global middleware added')
+      else
+         error('Middleware must be a function')
+      end
+   end
+
+   -- Built-in middleware factory functions
+   self.middleware = {
+      cors = function(options)
+         options ?= {}
+         return function(request, response, next)
+            -- Set CORS headers with custom options
+            response.header('Access-Control-Allow-Origin', options.origin or '*')
+            response.header('Access-Control-Allow-Methods', options.methods or 'GET, HEAD, POST, PUT, DELETE, PATCH, OPTIONS')
+            response.header('Access-Control-Allow-Headers', options.headers or 'Content-Type, Authorization, X-Requested-With')
+            response.header('Access-Control-Max-Age', tostring(options.maxAge or 86400))
+
+            if options.credentials then
+               response.header('Access-Control-Allow-Credentials', 'true')
+            end
+
+            -- Handle preflight requests
+            if request.method is 'OPTIONS' then
+               response.status(200).send('')
+               return
+            end
+
+            next()
+         end
+      end,
+
+      logging = function(options)
+         options ?= {}
+         return loggingMiddleware
+      end,
+
+      auth = function(options)
+         return authMiddleware(options)
+      end
+   }
+
+   return self
+end

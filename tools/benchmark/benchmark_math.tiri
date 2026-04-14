@@ -1,0 +1,213 @@
+
+----------------------------------------------------------------------------------------------------------------------
+-- MATHEMATICAL OPERATIONS
+----------------------------------------------------------------------------------------------------------------------
+-- Integer Arithmetic: add, sub, mul, div, mod with integer operands
+
+@Test function MathIntegerArithmetic()
+   local a, b, c, d, e = 1, 2, 3, 4, 5
+   for i in {0..100000} do
+      a = i + 17
+      b = a - 13
+      c = b * 7
+      d = c / 3
+      e = d % 11
+
+      -- Chain operations
+      a = ((i + 100) * 3 - 50) / 2
+      b = (a % 97) + (c % 53)
+      c = a * b + c * d - e
+
+      -- Nested arithmetic
+      d = (a + b) * (c - d) / (e + 1)
+      e = ((a * 2) + (b * 3) - (c / 4)) % 1000
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Floating-Point Arithmetic: add, sub, mul, div with double precision
+
+@Test function MathFloatingPoint()
+   local a, b, c, d = 1.0, 2.0, 3.0, 4.0
+   local pi <const> = 3.14159265358979
+   local e <const> = 2.71828182845905
+   local phi <const> = 1.61803398874989
+
+   for i in {0..100000} do
+      a = i * pi
+      b = a / e
+      c = b + phi
+      d = c - 0.57721566490153  -- Euler-Mascheroni constant
+
+      -- Mixed precision chain
+      a = (i + 0.5) * 3.14159
+      b = a / 2.71828 + 1.41421  -- sqrt(2)
+      c = (a * b) - (b / a)
+      d = c * 0.001 + d * 1000.0
+
+      -- Scientific notation
+      a = i * 1.23e-5
+      b = a + 9.87e6
+      c = b * 4.56e-3
+      d = c / 7.89e2
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Bitwise Operations: and, or, xor, not, left shift, right shift (Tiri C-style operators)
+
+@Test function MathBitwiseOperations()
+   local a, b, c, d = 0xFF, 0xAA, 0x55, 0x0F
+   for i in {0..100000} do
+      -- Basic bitwise operations
+      a = i & 0xFF          -- AND
+      b = i | 0xF0          -- OR
+      c = i ^ 0xAA          -- XOR
+      d = ~i                -- NOT (bitwise complement)
+
+      -- Shift operations
+      a = i << 4            -- Left shift
+      b = i >> 2            -- Right shift
+      c = (i << 8) | (i >> 8)  -- Byte swap pattern
+
+      -- Combined bitwise expressions
+      d = (a & 0x0F) | (b & 0xF0)
+      a = ((i & 0xFF) << 8) | ((i >> 8) & 0xFF)
+      b = (c ^ d) & 0xFFFF
+      c = (~a & b) | (a & ~b)  -- XOR via AND/OR/NOT
+
+      -- Mask and flag operations
+      d = i | (1 << (i % 8))   -- Set bit
+      a = i & ~(1 << (i % 8))  -- Clear bit
+      b = i ^ (1 << (i % 8))   -- Toggle bit
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Math Library Functions: trigonometric, exponential, logarithmic, rounding, random
+
+@Test function MathTrigFunctions()
+   local a, b, c, d = 0.0, 0.0, 0.0, 0.0
+   for i in {0..100000} do
+      local x = i * 0.001  -- Scale to reasonable range
+
+      a = math.sin(x)
+      b = math.cos(x)
+      c = math.tan(x % 1.5)  -- Avoid asymptotes
+      d = math.asin(a)
+      a = math.acos(b)
+      b = math.atan(c)
+      c = math.atan2(a, b)
+   end
+end
+
+@Test function MathExpLogFunctions()
+   local a, b, c, d = 0.0, 0.0, 0.0, 0.0
+   for i in {0..100000} do
+      local x = i * 0.001  -- Scale to reasonable range
+
+      d = math.exp(x % 10)   -- Limit to avoid overflow
+      a = math.log(i + 1)
+      b = math.log10(i + 1)
+      c = math.pow(2, x % 20)
+      d = math.sqrt(i + 1)
+   end
+end
+
+@Test function MathRoundingFunctions()
+   local a, b, c, d = 0.0, 0.0, 0.0, 0.0
+   for i in {0..300000} do
+      local x = (i * 0.1) % 100.0  -- Scale to reasonable range
+
+      -- Rounding functions
+      a = math.floor(x * 100)
+      b = math.ceil(x * 100)
+      c = math.abs(x - 50)
+      d = math.min(a, b, c)
+      a = math.max(a, b, c)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Compound Operators: +=, -=, *=, /=, %=, ++, --
+
+@Test function MathCompoundOperators()
+   local a, b, c, d, e = 1.0, 100.0, 1000.0, 10000.0, 50000.0
+   for i in {0..100000} do
+      -- Compound assignment operators
+      a += 1.5
+      b -= 0.7
+      c *= 1.001
+      d /= 1.0001
+      e %= 99999
+
+      -- Increment and decrement
+      a++
+      b--
+      c++
+      d--
+
+      -- Reset periodically to avoid overflow/underflow
+      if i % 1000 is 0 then
+         a = 1.0
+         b = 100.0
+         c = 1000.0
+         d = 10000.0
+         e = 50000.0
+      end
+
+      -- Mixed compound operations
+      a += b
+      b -= c * 0.001
+      c *= 1.0 + (d * 0.00001)
+      d /= 1.0 + (a * 0.0001)
+
+      -- String concatenation compound (..=)
+      local s = "test"
+      s ..= "a"
+      s ..= "b"
+      s ..= "c"
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Numeric Comparisons: equality, ordering, min/max chains
+
+@Test function MathNumericComparisons()
+   local a, b, c, d = 0, 0, 0, 0
+   local result = false
+   for i in {0..100000} do
+      local x = i * 1.1
+      local y = i * 1.2
+      local z = i * 0.9
+
+      -- Equality comparisons (using 'is' per Tiri convention)
+      result = (i % 10) is 0
+      result = x is y
+      result = (i & 0xFF) is 0
+
+      -- Inequality comparisons
+      result = x != y
+      result = i != 0
+
+      -- Ordering comparisons
+      result = x < y
+      result = x <= y
+      result = x > z
+      result = x >= z
+
+      -- Chained comparisons (evaluated left-to-right)
+      result = z < x and x < y
+      result = x >= z and x <= y
+
+      -- Conditional assignments based on comparisons
+      a = x < y and 1 or 0
+      b = x > z and x or z
+      c = (i % 2 is 0) and i or -i
+
+      -- Ternary operator
+      d = x < y ? x :> y
+      a = i % 2 is 0 ? i * 2 :> i * 3
+      b = x > 100 ? (x > 1000 ? 2 :> 1) :> 0
+   end
+end

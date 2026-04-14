@@ -7,4 +7,4 @@ add_library (${MOD})
 set_module_defaults (${MOD} "Json")
 target_sources (${MOD} PRIVATE ${MOD}.cpp)
 
-flute_test (json "test_json.fluid")
+flute_test (json "test_json.tiri")

@@ -3,7 +3,7 @@
 set (MOD "font")
 set (INC_MOD_FONT TRUE PARENT_SCOPE)
 
-idl_gen ("${MOD}.fdl"
+idl_gen ("${MOD}.tdl"
    NAME ${MOD}_defs
    OUTPUT "${INCLUDE_OUTPUT}/modules/font.h"
    FILES "font.cpp"
@@ -27,4 +27,4 @@ target_link_libraries (${MOD} PUBLIC unicode)
 target_link_libraries (${MOD} PRIVATE ${MATH_LINK} freetype)
 
 # TODO: Kerning tests aren't working with the latest version of Freetype
-flute_test(${MOD} "${CMAKE_CURRENT_SOURCE_DIR}/tests/font_tests.fluid")
+flute_test(${MOD} "${CMAKE_CURRENT_SOURCE_DIR}/tests/font_tests.tiri")

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="NetLookup" mod="Network" c="Resolve network IP addresses and names using Domain Name Servers." cat="Network" id="1af615e6" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="NetLookup" mod="Network" c="Resolve network IP addresses and names using Domain Name Servers." cat="Network" id="1af615e6" v="1">
   <ai:a n="Free" c="Terminate the object." p="ERR FreeResource(*Object)"/>
   <ai:m n="BlockingResolveAddress" c="Resolves an IP address to a host name." p="ERR nl::BlockingResolveAddress(OBJECTPTR Object, CSTRING Address)">
     <ai:i n="Address" t="CSTRING" c="IP address to be resolved, e.g. 123.111.94.82."/>

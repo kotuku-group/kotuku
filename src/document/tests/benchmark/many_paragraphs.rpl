@@ -1,0 +1,45 @@
+<?xml version="1.0"?>
+<!DOCTYPE rpl PUBLIC "-//ROCKLYTE//DTD RPL 1.0//EN">
+
+<body face="Noto Sans" font-size="10pt" margins="24"/>
+
+<page name="Index">
+   <h1>Many Paragraphs Benchmark</h1>
+
+   <p>Paragraph 01. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 02. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 03. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 04. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 05. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 06. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 07. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 08. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 09. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 10. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 11. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 12. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 13. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 14. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 15. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 16. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 17. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 18. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 19. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 20. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 21. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 22. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 23. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 24. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 25. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 26. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 27. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 28. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 29. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 30. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 31. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 32. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 33. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 34. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 35. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+   <p>Paragraph 36. Compact paragraph flow is useful for stressing paragraph start and paragraph end handling.</p>
+</page>

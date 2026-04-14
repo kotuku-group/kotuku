@@ -11,7 +11,7 @@ static void debug_branch(CSTRING Header, OBJECTPTR Vector, int &Level)
    pf::Log log(Header);
 
    auto spacing = std::string(Level + 1, ' ');
-   Level = Level + 1;
+   Level++;
 
    while (Vector) {
       if (Vector->classID() IS CLASSID::VECTORSCENE) {
@@ -27,7 +27,7 @@ static void debug_branch(CSTRING Header, OBJECTPTR Vector, int &Level)
       else break;
    }
 
-   Level = Level - 1;
+   Level--;
 }
 
 static void debug_tree(CSTRING Header, OBJECTPTR Vector)
@@ -80,7 +80,7 @@ static FRGB hsl_to_rgb(HSV Colour)
       return p;
    };
 
-   if (Colour.Saturation == 0) {
+   if (Colour.Saturation IS 0) {
       return { float(Colour.Value), float(Colour.Value), float(Colour.Value), float(Colour.Alpha) };
    }
    else {
@@ -260,7 +260,7 @@ static const std::string uri_name(const std::string Ref)
 
 //********************************************************************************************************************
 
-static XMLTag * find_href_tag(extSVG *Self, std::string Ref)
+static XTag * find_href_tag(extSVG *Self, std::string Ref)
 {
    auto ref = uri_name(Ref);
    if ((!ref.empty()) and (Self->IDs.contains(ref))) {
@@ -428,7 +428,7 @@ template<class T = double> std::vector<T> read_array(const std::string Value, in
 // This function is called before fully parsing the document so that we can extract all tags making use of the
 // 'id' attribute.
 
-static void parse_ids(extSVG *Self, XMLTag &Tag)
+static void parse_ids(extSVG *Self, XTag &Tag)
 {
    for (int a=1; a < std::ssize(Tag.Attribs); a++) {
       auto &name = Tag.Attribs[a].Name;

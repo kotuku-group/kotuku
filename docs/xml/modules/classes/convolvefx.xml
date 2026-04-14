@@ -11,7 +11,7 @@
     <id>522bdc4f</id>
     <idstring>CONVOLVEFX</idstring>
     <category>Graphics</category>
-    <copyright>Paul Manias © 2010-2025</copyright>
+    <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>Convolve applies a matrix convolution filter effect to an input source.  A convolution combines pixels in the input image with neighbouring pixels to produce a resulting image.  A wide variety of imaging operations can be achieved through convolutions, including blurring, edge detection, sharpening, embossing and beveling.</p>
 <p>A matrix convolution is based on an <code>n-by-m</code> matrix (the convolution kernel) which describes how a given pixel value in the input image is combined with its neighbouring pixel values to produce a resulting pixel value. Each result pixel is determined by applying the kernel matrix to the corresponding source pixel and its neighbouring pixels.  The basic convolution formula which is applied to each colour value for a given pixel is:</p>

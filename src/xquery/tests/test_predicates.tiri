@@ -1,0 +1,817 @@
+-- Predicate and Function XPath tests
+
+   include 'xml'
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test XPath 1.0 comparison operators
+
+@Test function ComparisonOperators()
+   local xml = obj.new("xml", {
+      statement = '<root><item value="10"/><item value="20"/><item value="30"/></root>'
+   })
+
+   local err, itemId = xml.mtSearch('/root/item[@value > 15]')
+   assert(err is ERR_Okay, "Greater than operator should locate the first item above the threshold")
+   local err2, value = xml.mtGetAttrib(itemId, 'value')
+   assert(err2 is ERR_Okay and value is '20', "@value > 15 should return the item with value 20")
+
+   err, itemId = xml.mtSearch('/root/item[@value < 25]')
+   assert(err is ERR_Okay, "Less than operator should locate an item below the threshold")
+   err2, value = xml.mtGetAttrib(itemId, 'value')
+   assert(err2 is ERR_Okay and value is '10', "@value < 25 should return the item with value 10")
+
+   err, itemId = xml.mtSearch('/root/item[@value >= 20]')
+   assert(err is ERR_Okay, "Greater than or equal operator should locate a matching item")
+   err2, value = xml.mtGetAttrib(itemId, 'value')
+   assert(err2 is ERR_Okay and value is '20', "@value >= 20 should return the item with value 20")
+
+   err, itemId = xml.mtSearch('/root/item[@value != "10"]')
+   assert(err is ERR_Okay, "Not equal operator should locate an item different from the provided value")
+   err2, value = xml.mtGetAttrib(itemId, 'value')
+   assert(err2 is ERR_Okay and value is '20', "@value != 10 should return the first item whose value is not 10")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test XPath 1.0 mathematical expressions
+
+@Test function MathematicalExpressions()
+   local xml = obj.new("xml", {
+      statement = '<root><item price="100" tax="10"/><item price="200" tax="20"/></root>'
+   })
+
+   -- Test arithmetic addition
+   local err, itemId = xml.mtSearch('/root/item[@price + @tax = 110]')
+   assert(err is ERR_Okay, 'Addition predicate should locate matching item: ' .. mSys.GetErrorMsg(err))
+   local err2, price = xml.mtGetAttrib(itemId, 'price')
+   assert(err2 is ERR_Okay and price is '100', 'Addition predicate should return the first item')
+
+   -- Test arithmetic multiplication
+   err, itemId = xml.mtSearch('/root/item[@price * 2 = 200]')
+   assert(err is ERR_Okay, 'Multiplication predicate should locate matching item: ' .. mSys.GetErrorMsg(err))
+   err2, price = xml.mtGetAttrib(itemId, 'price')
+   assert(err2 is ERR_Okay and price is '100', 'Multiplication predicate should return the first item')
+
+   -- Test arithmetic subtraction
+   err, itemId = xml.mtSearch('/root/item[@price - @tax = 90]')
+   assert(err is ERR_Okay, 'Subtraction predicate should locate matching item: ' .. mSys.GetErrorMsg(err))
+   err2, price = xml.mtGetAttrib(itemId, 'price')
+   assert(err2 is ERR_Okay and price is '100', 'Subtraction predicate should return the first item')
+
+   -- Test arithmetic division
+   err, itemId = xml.mtSearch('/root/item[@price div 2 = 50]')
+   assert(err is ERR_Okay, 'Division predicate should locate matching item: ' .. mSys.GetErrorMsg(err))
+   err2, price = xml.mtGetAttrib(itemId, 'price')
+   assert(err2 is ERR_Okay and price is '100', 'Division predicate should return the first item')
+
+   -- Test arithmetic modulo
+   err, itemId = xml.mtSearch('/root/item[@price mod 90 = 10]')
+   assert(err is ERR_Okay, 'Modulo predicate should locate matching item: ' .. mSys.GetErrorMsg(err))
+   err2, price = xml.mtGetAttrib(itemId, 'price')
+   assert(err2 is ERR_Okay and price is '100', 'Modulo predicate should return the first item')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Regression: Attribute filters should allow broader XML name syntax
+
+@Test function AttributeNameVariants()
+   local xml = obj.new("xml", {
+      statement = '<root><item data-id="123" xml:lang="en" version1="yes"/></root>'
+   })
+
+   local err, dataId = xml.mtSearch('/root/item[@data-id="123"]')
+   assert(err is ERR_Okay, "Attribute names containing hyphens should parse (bug: tokenizer rejects '-')")
+
+   local err, langId = xml.mtSearch('/root/item[@xml:lang="en"]')
+   assert(err is ERR_Okay, "Attribute names with namespace prefixes should parse")
+
+   local err, versionId = xml.mtSearch('/root/item[@version1]')
+   assert(err is ERR_Okay, "Attribute names containing digits should be accepted")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test XPath 1.0 variables
+
+@Test function Variables()
+   local xml = obj.new("xml", {
+      statement = '<root><item id="test"/></root>'
+   })
+
+   -- Test variable reference
+   local err, itemId = xml.mtSearch('/root/item[@id=$testvar]')
+   assert(err != ERR_Okay, "Variable references should not be supported yet")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test complex nested predicates
+
+@Test function ComplexNestedPredicates()
+   local xml = obj.new("xml", {
+      statement = '<library><section name="fiction"><book title="Novel" author="Smith"><chapter num="1">Intro</chapter><chapter num="2">Plot</chapter></book></section></library>'
+   })
+
+   -- Test nested bracket expressions with current syntax
+   local err, chapterId = xml.mtSearch('/library/section[@name="fiction"]/book[@author="Smith"]/chapter[@num="2"]')
+   assert(err is ERR_Okay, "Complex nested predicates should work with current syntax")
+
+   local err, content = xml.mtGetTag(chapterId)
+   assert(err is ERR_Okay, "Should be able to get chapter tag")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Regression: Multi-step predicates should coordinate across helpers
+
+@Test function MultiStepNodePredicates()
+   local xml = obj.new("xml", {
+      statement = [[
+         <catalog>
+            <section name="fiction" status="active">
+               <book id="b1" author="Smith" edition="first">
+                  <chapter num="1">Intro</chapter>
+                  <chapter num="2">Plot Twist</chapter>
+               </book>
+               <book id="b2" author="Smith" edition="second">
+                  <chapter num="1">Recap</chapter>
+               </book>
+            </section>
+            <section name="fiction" status="archived">
+               <book id="b3" author="Doe" edition="first">
+                  <chapter num="2">Archive</chapter>
+               </book>
+            </section>
+         </catalog>
+      ]]
+   })
+
+   local err, chapterId = xml.mtSearch('/catalog/section[@name="fiction"][@status="active"]/book[@author="Smith"][@edition="first"]/chapter[@num="2"][contains(., "Plot")]')
+   assert(err is ERR_Okay, 'Multi-step predicates should locate the Plot Twist chapter: ' .. mSys.GetErrorMsg(err))
+
+   local err, chapterText = xml.mtEvaluate('/catalog/section[@name="fiction"][@status="active"]/book[@author="Smith"][@edition="first"]/chapter[@num="2"][contains(., "Plot")]')
+   assert(chapterText is 'Plot Twist', 'Plot Twist chapter should be returned, got ' .. tostring(chapterText))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Regression: Attribute axis predicates should share buffers across helpers
+
+@Test function MultiStepAttributePredicates()
+   local xml = obj.new("xml", {
+      statement = [[
+         <catalog>
+            <section name="fiction" status="active">
+               <book id="b1" author="Smith" edition="first" code="fic-001" />
+               <book id="b2" author="Smith" edition="second" code="fic-002" />
+            </section>
+            <section name="reference" status="active">
+               <book id="b3" author="Adams" edition="first" code="ref-101" />
+            </section>
+         </catalog>
+      ]]
+   })
+
+   local err, attrValue = xml.mtEvaluate('/catalog/section[@name="fiction"][@status="active"]/book[@author="Smith"][@edition="first"]/@code[starts-with(., "fic-")][contains(., "001")]')
+   assert(attrValue is 'fic-001', 'Attribute predicates should retain matches across helpers, got ' .. tostring(attrValue))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Predicate dispatcher coverage for specialised handlers
+
+@Test function PredicateOperationHandlers()
+   local xml = obj.new("xml", {
+      statement = [[
+         <root>
+            <item id="book-1" category="Fiction" data-code="fic-001">
+               <title>Plot Twist</title>
+            </item>
+            <item id="book-2" data-code="ref-002">
+               <title>Reference Manual</title>
+            </item>
+         </root>
+      ]]
+   })
+
+   local err, itemId = xml.mtSearch('/root/item[@category]')
+   assert(err is ERR_Okay, 'attribute-exists should match explicit attribute names: ' .. mSys.GetErrorMsg(err))
+
+   local errWildcard, wildcardId = xml.mtSearch('/root/item[@*]')
+   assert(errWildcard is ERR_Okay and wildcardId is itemId, '@* should resolve via attribute-exists wildcard, got ' .. mSys.GetErrorMsg(errWildcard))
+
+   local errEquals, equalsId = xml.mtSearch('/root/item[@data-code="fic-*"]')
+   assert(errEquals is ERR_Okay, 'attribute-equals should honour wildcard patterns: ' .. mSys.GetErrorMsg(errEquals))
+   local errAttrib, attribValue = xml.mtGetAttrib(equalsId, 'id')
+   assert(errAttrib is ERR_Okay and attribValue is 'book-1', 'Wildcard attribute-equals should return book-1, got ' .. tostring(attribValue))
+
+   local errContent, titleId = xml.mtSearch('/root/item/title[="Plot*"]')
+   assert(errContent is ERR_Okay, 'content-equals should permit wildcard text matches: ' .. mSys.GetErrorMsg(errContent))
+   local err, titleText = xml.mtEvaluate('/root/item/title[="Plot*"]')
+   assert(titleText is 'Plot Twist', 'content-equals wildcard should resolve Plot Twist title, got ' .. tostring(titleText))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Regression: Round bracket predicates are deprecated
+
+@Test function RoundBracketAlternatives()
+   local xml = obj.new("xml", {
+      statement = '<root><item type="book">Novel</item><item type="magazine">News</item></root>'
+   })
+
+   -- XPath 1.0 requires predicates to use square brackets; round brackets should fail
+   local err, itemId = xml.mtSearch('/root/item(@type="book")')
+   assert(err != ERR_Okay, "Round bracket predicate should be rejected after deprecation, got " .. mSys.GetErrorMsg(err))
+
+   err, itemId = xml.mtSearch('/root/item(="Novel")')
+   assert(err != ERR_Okay, "Round bracket content predicate should be rejected, got " .. mSys.GetErrorMsg(err))
+
+   -- Square bracket predicate remains supported and should continue to succeed
+   local squareErr, squareId = xml.mtSearch('/root/item[@type="book"]')
+   assert(squareErr is ERR_Okay, "Square bracket predicate should remain supported")
+
+   local attribErr, typeValue = xml.mtGetAttrib(squareId, 'type')
+   assert(attribErr is ERR_Okay and typeValue is "book", "Square bracket predicate should locate the correct item")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- XPath 1.0 function library predicates
+
+@Test function XPathStringFunctions()
+   local xml = obj.new("xml", {
+      statement = '<root><item>alpha</item><item>beta</item></root>'
+   })
+
+   local err, itemId = xml.mtSearch('/root/item[string-length(.) = 5]')
+   assert(err is ERR_Okay, 'string-length(.) predicate should select five-character strings, err=' .. mSys.GetErrorMsg(err))
+
+   local err, value = xml.mtEvaluate('/root/item[string-length(.) = 5]')
+   assert(value is 'alpha', 'string-length(.) predicate should locate the "alpha" element, got ' .. tostring(value))
+
+   local xmlWhitespace = obj.new("xml", {
+      statement = '<root><item>  alpha  </item><item>beta</item></root>'
+   })
+
+   err, itemId = xmlWhitespace.mtSearch('/root/item[normalize-space(.) = "alpha"]')
+   assert(err is ERR_Okay, 'normalize-space(.) predicate should trim surrounding whitespace, err=' .. mSys.GetErrorMsg(err))
+
+   local err, value = xmlWhitespace.mtEvaluate('/root/item[normalize-space(.) = "alpha"]')
+   assert(value is '  alpha  ', 'normalize-space(.) predicate should select the whitespace entry, got ' .. tostring(value))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function XPathAdditionalStringFunctions()
+   local xml = obj.new("xml", {
+      statement = [[
+         <root>
+            <item id="1" name="AlphaStart" code="pre:post">Alpha Start</item>
+            <item id="2" name="gammaValue" code="mid:tail">Gamma Middle</item>
+            <item id="3" prefix="pre" suffix="fix" code="auxiliary"/>
+            <item id="4" name="delta" code="value"/>
+         </root>
+      ]]
+   })
+
+   local err, itemId = xml.mtSearch('/root/item[starts-with(@name, "Alpha")]')
+   assert(err is ERR_Okay, 'starts-with() should match the AlphaStart element: ' .. mSys.GetErrorMsg(err))
+   local err2, attrValue = xml.mtGetAttrib(itemId, 'id')
+   assert(err2 is ERR_Okay and attrValue is '1', 'starts-with() should select id="1"')
+
+   err, itemId = xml.mtSearch('/root/item[contains(translate(@name, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "gamma")]')
+   assert(err is ERR_Okay, 'translate()+contains() should perform case-insensitive matching: ' .. mSys.GetErrorMsg(err))
+   err2, attrValue = xml.mtGetAttrib(itemId, 'id')
+   assert(err2 is ERR_Okay and attrValue is '2', 'Case-insensitive contains() should select id="2"')
+
+   err, itemId = xml.mtSearch('/root/item[substring-before(@code, ":") = "pre"]')
+   assert(err is ERR_Okay, 'substring-before() should extract the prefix before the colon: ' .. mSys.GetErrorMsg(err))
+   err2, attrValue = xml.mtGetAttrib(itemId, 'id')
+   assert(err2 is ERR_Okay and attrValue is '1', 'substring-before() should target id="1"')
+
+   err, itemId = xml.mtSearch('/root/item[substring-after(@code, ":") = "tail"]')
+   assert(err is ERR_Okay, 'substring-after() should extract the suffix after the colon: ' .. mSys.GetErrorMsg(err))
+   err2, attrValue = xml.mtGetAttrib(itemId, 'id')
+   assert(err2 is ERR_Okay and attrValue is '2', 'substring-after() should target id="2"')
+
+   err, itemId = xml.mtSearch('/root/item[substring(@code, 1, 3) = "pre"]')
+   assert(err is ERR_Okay, 'substring() should honour one-based indexing: ' .. mSys.GetErrorMsg(err))
+   err2, attrValue = xml.mtGetAttrib(itemId, 'id')
+   assert(err2 is ERR_Okay and attrValue is '1', 'substring() should select the prefix-bearing item')
+
+   err, itemId = xml.mtSearch('/root/item[concat(@prefix, "-", @suffix) = "pre-fix"]')
+   assert(err is ERR_Okay, 'concat() should join attribute values with literal separators: ' .. mSys.GetErrorMsg(err))
+   err2, attrValue = xml.mtGetAttrib(itemId, 'id')
+   assert(err2 is ERR_Okay and attrValue is '3', 'concat() should target the element with prefix/suffix attributes')
+
+   err, itemId = xml.mtSearch('/root/item[string(@code) = "value"]')
+   assert(err is ERR_Okay, 'string() should coerce attribute values to strings: ' .. mSys.GetErrorMsg(err))
+   err2, attrValue = xml.mtGetAttrib(itemId, 'id')
+   assert(err2 is ERR_Okay and attrValue is '4', 'string() should select the element whose code equals "value"')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function XPathNumberFunctions()
+   local xml = obj.new("xml", {
+      statement = '<root><item value="1"/><item value="2"/><item value="3"/></root>'
+   })
+
+   local err, itemId = xml.mtSearch('/root/item[floor(@value) = 1]')
+   assert(err is ERR_Okay, 'floor() predicate should evaluate numeric attributes, err=' .. mSys.GetErrorMsg(err))
+
+   local attribErr, attribValue = xml.mtGetAttrib(itemId, 'value')
+   assert(attribErr is ERR_Okay and attribValue is '1', 'floor() predicate should target the item with value="1"')
+
+   -- The expectation is that the root tag is selected if the sum of child item values equals 6
+
+   local err, itemId = xml.mtSearch('/root[sum(item/@value) = 6]')
+   assert(err is ERR_Okay, 'sum() should aggregate numeric attribute values across a node-set: ' .. mSys.GetErrorMsg(err))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function XPathExtendedNumberFunctions()
+   local xml = obj.new("xml", {
+      statement = [[
+         <root>
+            <item value="10" price="1.2"/>
+            <item value="20" price="2.6"/>
+            <item value="30" price="3.0"/>
+         </root>
+      ]]
+   })
+
+   local err, itemId = xml.mtSearch('/root/item[number(@value) = 20]')
+   assert(err is ERR_Okay, 'number() should convert attribute strings to numbers: ' .. mSys.GetErrorMsg(err))
+   local err2, attrValue = xml.mtGetAttrib(itemId, 'value')
+   assert(err2 is ERR_Okay and attrValue is '20', 'number() should select the item whose value equals 20')
+
+   err, itemId = xml.mtSearch('/root/item[ceiling(@price) = 3]')
+   assert(err is ERR_Okay, 'ceiling() should round fractional values upward: ' .. mSys.GetErrorMsg(err))
+   err2, attrValue = xml.mtGetAttrib(itemId, 'price')
+   assert(err2 is ERR_Okay and attrValue is '2.6', 'ceiling() should return the element with price="2.6"')
+
+   -- Note that there are two matching nodes, FindTag() will return the first.
+
+   err, itemId = xml.mtSearch('/root/item[round(@price) = 3]')
+   assert(err is ERR_Okay, 'round() should return the nearest integer: ' .. mSys.GetErrorMsg(err))
+   err2, attrValue = xml.mtGetAttrib(itemId, 'price')
+   assert(err2 is ERR_Okay and attrValue is '2.6', 'round() should select the element with price="2.6", got ' .. tostring(attrValue))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function XPathBooleanFunctions()
+   local xml = obj.new("xml", {
+      statement = [[
+         <root xml:lang="en">
+            <flagged id="A" enabled="1"/>
+            <flagged id="B"/>
+            <section xml:lang="fr">
+               <para id="P1">Texte français</para>
+            </section>
+            <section>
+               <para id="P2">Default language</para>
+            </section>
+         </root>
+      ]]
+   })
+
+   local err, itemId = xml.mtSearch('/root/flagged[boolean(@enabled)]')
+   assert(err is ERR_Okay, 'boolean() should treat non-empty attributes as true: ' .. mSys.GetErrorMsg(err))
+   local err2, attrValue = xml.mtGetAttrib(itemId, 'id')
+   assert(err2 is ERR_Okay and attrValue is 'A', 'boolean() should select the enabled flag entry')
+
+   err, itemId = xml.mtSearch('/root/flagged[not(boolean(@enabled))]')
+   assert(err is ERR_Okay, 'not(boolean()) should detect missing attributes: ' .. mSys.GetErrorMsg(err))
+   err2, attrValue = xml.mtGetAttrib(itemId, 'id')
+   assert(err2 is ERR_Okay and attrValue is 'B', 'not(boolean()) should select the disabled flag entry')
+
+   err, itemId = xml.mtSearch('/root/flagged[boolean(@enabled) = true()]')
+   assert(err is ERR_Okay, 'true() should compare successfully against boolean() results: ' .. mSys.GetErrorMsg(err))
+   err2, attrValue = xml.mtGetAttrib(itemId, 'id')
+   assert(err2 is ERR_Okay and attrValue is 'A', 'boolean() = true() should resolve to the enabled element')
+
+   err, itemId = xml.mtSearch('/root/flagged[boolean(@enabled) = false()]')
+   assert(err is ERR_Okay, 'false() should compare successfully against boolean() results: ' .. mSys.GetErrorMsg(err))
+   err2, attrValue = xml.mtGetAttrib(itemId, 'id')
+   assert(err2 is ERR_Okay and attrValue is 'B', 'boolean() = false() should resolve to the disabled element')
+
+   err, itemId = xml.mtSearch('/root/section/para[lang("fr")]')
+   assert(err is ERR_Okay, 'lang() should honour xml:lang attributes on ancestors: ' .. mSys.GetErrorMsg(err))
+   err2, attrValue = xml.mtGetAttrib(itemId, 'id')
+   assert(err2 is ERR_Okay and attrValue is 'P1', 'lang("fr") should select the paragraph in the French section')
+
+   err, itemId = xml.mtSearch('/root/section/para[lang("en")]')
+   assert(err is ERR_Okay, 'lang() should fall back to root xml:lang when descendants lack overrides: ' .. mSys.GetErrorMsg(err))
+   err2, attrValue = xml.mtGetAttrib(itemId, 'id')
+   assert(err2 is ERR_Okay and attrValue is 'P2', 'lang("en") should select the paragraph inheriting the root language')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function XPathIdFunction()
+   local xml = obj.new("xml", {
+      statement = [[
+         <root>
+            <section id="intro">
+               <para>Introduction</para>
+            </section>
+            <section xml:id="target">
+               <para id="child">Target Content</para>
+            </section>
+            <refs>
+               <ref ids="intro target"/>
+            </refs>
+         </root>
+      ]]
+   })
+
+   local err, sectionId = xml.mtSearch('id("target")')
+   assert(err is ERR_Okay, 'id() should locate elements by xml:id attribute: ' .. mSys.GetErrorMsg(err))
+   local err2, attrValue = xml.mtGetAttrib(sectionId, 'xml:id')
+   assert(err2 is ERR_Okay and attrValue is 'target', 'id("target") should return the xml:id="target" section')
+
+   err, sectionId = xml.mtSearch('id("intro")')
+   assert(err is ERR_Okay, 'id() should also match plain id attributes: ' .. mSys.GetErrorMsg(err))
+   err2, attrValue = xml.mtGetAttrib(sectionId, 'id')
+   assert(err2 is ERR_Okay and attrValue is 'intro', 'id("intro") should return the id="intro" section')
+
+   err, sectionId = xml.mtSearch('id(/root/refs/ref/@ids)/para[@id]')
+   assert(err is ERR_Okay, 'id() should accept node-set arguments containing whitespace separated tokens: ' .. mSys.GetErrorMsg(err))
+   local err3, childId = xml.mtGetAttrib(sectionId, 'id')
+   assert(err3 is ERR_Okay and childId is 'child', 'id() with node-set argument should resolve the referenced child paragraph')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function XPathNameFunctions()
+   local xml = obj.new("xml", {
+      statement = [[
+         <root xmlns:ns="http://example.com/ns">
+            <ns:item ns:code="X1" data-id="A1">Value</ns:item>
+         </root>
+      ]]
+   })
+
+   local err, itemId = xml.mtSearch('/root/ns:item[name() = "ns:item"]')
+   assert(err is ERR_Okay, 'name() should return the qualified element name: ' .. mSys.GetErrorMsg(err))
+
+   local err, attrValue = xml.mtEvaluate('/root/ns:item/@ns:code[local-name() = "code" and name() = "ns:code"]')
+   assert(attrValue is 'X1', 'local-name() and name() should operate on attribute nodes, got ' .. tostring(attrValue))
+
+   local err, itemId = xml.mtSearch('/root/ns:item[local-name() = "item" and name() = "ns:item"]')
+   assert(err is ERR_Okay, 'local-name() and name() should resolve element names correctly: ' .. mSys.GetErrorMsg(err))
+
+   local err, itemId = xml.mtSearch('/root/ns:item[local-name() = "item" and namespace-uri() = "http://example.com/ns"]')
+   assert(err is ERR_Okay, 'local-name() and namespace-uri() should resolve element namespaces: ' .. mSys.GetErrorMsg(err))
+
+   local err, attrValue = xml.mtEvaluate('/root/ns:item/@ns:code[namespace-uri() = "http://example.com/ns" and local-name() = "code"]')
+   assert(attrValue is 'X1', 'namespace-uri() and local-name() should operate on attribute nodes, got ' .. tostring(attrValue))
+
+   local err, attrValue = xml.mtEvaluate('/root/ns:item/@data-id[name() = "data-id"]')
+   assert(attrValue is 'A1', 'name() should expose unqualified attribute names, got ' .. tostring(attrValue))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test escape characters in attribute strings
+
+@Test function EscapeCharacters()
+   local xml = obj.new("xml", {
+      statement = '<root><item title="Simple test" special="asterisk*value"/></root>'
+   })
+
+   -- Test basic attribute matching (escaping may not be fully supported yet)
+   local err, itemId = xml.mtSearch('/root/item[@title="Simple test"]')
+   assert(err is ERR_Okay, "Basic attribute matching should work")
+
+   -- Test wildcard matching in attribute values
+   local err, itemId = xml.mtSearch('/root/item[@special="asterisk*"]')
+   if err is ERR_Okay then
+      -- Wildcard matching works
+   else
+      -- Try exact match instead
+      local err, itemId = xml.mtSearch('/root/item[@special="asterisk*value"]')
+      assert(err is ERR_Okay, "Exact attribute matching should work")
+   end
+
+   -- Escaped wildcard should be treated literally
+
+   local err, itemId = xml.mtSearch('/root/item[@special="asterisk\\*value"]')
+   assert(err is ERR_Okay, "Escaped wildcard should match literal asterisk in value")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test edge cases and error conditions
+
+@Test function EdgeCases()
+   local xml = obj.new("xml", {
+      statement = '<root><empty/><selfclosing attr="value"/><nested><deep><deeper>content</deeper></deep></nested></root>'
+   })
+
+   -- Test empty element access
+   local err, emptyId = xml.mtSearch('/root/empty')
+   assert(err is ERR_Okay, "Should be able to find empty elements")
+
+   -- Test self-closing element with attributes
+   local err, selfId = xml.mtSearch('/root/selfclosing[@attr="value"]')
+   assert(err is ERR_Okay, "Should be able to find self-closing elements with attributes")
+
+   -- Test deeply nested elements
+   local err, deepId = xml.mtSearch('/root/nested/deep/deeper')
+   assert(err is ERR_Okay, "Should be able to navigate deeply nested elements")
+
+   -- Test invalid XPath syntax
+   local err, invalidId = xml.mtSearch('/root/[invalid]')
+   assert(err != ERR_Okay, "Invalid XPath syntax should return error")
+
+   -- Test missing elements
+   local err, missingId = xml.mtSearch('/root/nonexistent')
+   assert(err != ERR_Okay, "Missing elements should return search error")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test performance with larger documents
+
+@Test function PerformanceScenarios()
+   -- Build a larger XML document for performance testing
+   local xmlContent = '<root>'
+   for i = 1, 50 do  -- Reduced from 100 to 50 for faster testing
+      xmlContent = xmlContent .. '<section id="' .. i .. '">'
+      for j = 1, 5 do  -- Reduced from 10 to 5 for faster testing
+         xmlContent = xmlContent .. '<item type="' .. (j % 3 is 0 and "special" or "normal") .. '" value="' .. (i * 10 + j) .. '">Content ' .. i .. '.' .. j .. '</item>'
+      end
+      xmlContent = xmlContent .. '</section>'
+   end
+   xmlContent = xmlContent .. '</root>'
+
+   local xml = obj.new("xml", { statement = xmlContent })
+
+   -- Test deep scanning functionality (without timing)
+   local specialCount = 0
+   local err, index = xml.mtSearch('//item[@type="special"]', function(XML, TagID, Attrib)
+      specialCount = specialCount + 1
+   end)
+
+   assert(err is ERR_Okay, "Deep scanning should work on larger documents")
+   assert(specialCount > 0, "Should find special items in large document")
+
+   -- Test that we found the expected number of special items
+   -- Every 3rd item (j=3) in each section should be special
+   local expectedSpecialCount = 50  -- 50 sections * 1 special item per section
+   assert(specialCount is expectedSpecialCount, "Expected " .. expectedSpecialCount .. " special items, found " .. specialCount)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Function Library Infrastructure
+-- These tests verify basic functionality without requiring full AST evaluation
+
+@Test function FunctionLibrary()
+   local xml = obj.new("xml", {
+      statement = [[
+         <library>
+            <books>
+               <book id="1" rating="4.5">Programming Pearls</book>
+               <book id="2" rating="5.0">The Art of Computer Programming</book>
+               <book id="3" rating="4.2">Clean Code</book>
+            </books>
+            <authors count="3">
+               <author name="Jon Bentley">Author bio content</author>
+               <author name="Donald Knuth">Mathematician and computer scientist</author>
+               <author name="Robert Martin">Clean code advocate</author>
+            </authors>
+         </library>
+      ]]
+   })
+
+   -- Test that basic XPath functionality continues to work with infrastructure
+
+   local err, bookContent = xml.mtEvaluate('/library/books/book[@id="2"]/text()')
+   assert(bookContent, "Book should have content")
+
+   -- Test content extraction (important for function library string operations)
+   local err, authorContent = xml.mtEvaluate('/library/authors/author[@name="Donald Knuth"]/text()')
+   assert(authorContent, "Author should have content")
+
+   -- Test navigation to container elements (important for node-set functions)
+   err, authorsId = xml.mtSearch('/library/authors')
+   assert(err is ERR_Okay, "Should navigate to authors container")
+
+   local err, authorsTag = xml.mtGetTag(authorsId)
+   assert(authorsTag, "Should retrieve authors container")
+
+   -- Verify multiple child access patterns work
+   local childCount = 0
+   xml.mtSearch('/library/authors/author', function(XML, TagID, Attrib)
+      childCount++
+   end)
+   assert(childCount is 3, "Should find all 3 authors, found " .. childCount)
+
+   -- Test that wildcards work (important for node matching in functions)
+   local allCount = 0
+   xml.mtSearch('/library/*/author', function(XML, TagID, Attrib)
+      allCount = allCount + 1
+   end)
+   assert(allCount is 3, "Wildcard matching should find 3 authors, found " .. allCount)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Operators and Expressions
+
+@Test function XPathOperators()
+   local xml = obj.new("xml", {
+      statement = [[
+         <root>
+            <numbers>
+               <value>10</value>
+               <value>20</value>
+               <value>30</value>
+               <value>5</value>
+            </numbers>
+            <books>
+               <book id="1" rating="4.5" year="2020">Programming Pearls</book>
+               <book id="2" rating="5.0" year="2019">The Art of Computer Programming</book>
+               <book id="3" rating="4.2" year="2021">Clean Code</book>
+               <book id="4" rating="3.8" year="2020">Refactoring</book>
+            </books>
+            <status enabled="true">active</status>
+            <status enabled="false">inactive</status>
+         </root>
+      ]]
+   })
+
+   -- Test Boolean Operators (and, or, not)
+   local err, id = xml.mtSearch('/root/books/book[@rating="5.0" and @year="2019"]')
+   assert(err is ERR_Okay, "Boolean AND operator should locate the 2019 five-star book: " .. mSys.GetErrorMsg(err))
+   local err2, bookId = xml.mtGetAttrib(id, 'id')
+   assert(err2 is ERR_Okay and bookId is '2', "Boolean AND should return book id=2")
+
+   err, id = xml.mtSearch('/root/books/book[@rating="5.0" or @year="2021"]')
+   assert(err is ERR_Okay, "Boolean OR operator should match a qualifying book: " .. mSys.GetErrorMsg(err))
+   err2, bookId = xml.mtGetAttrib(id, 'id')
+   assert(err2 is ERR_Okay and bookId is '2', "Boolean OR should return the first matching book (id=2)")
+
+   err, id = xml.mtSearch('/root/status[not(@enabled="false")]')
+   assert(err is ERR_Okay, "not() operator should filter the disabled status: " .. mSys.GetErrorMsg(err))
+   local err3, enabled = xml.mtGetAttrib(id, 'enabled')
+   assert(err3 is ERR_Okay and enabled is 'true', "not() should leave only the enabled status entry")
+
+   -- Test Comparison Operators
+   err, id = xml.mtSearch('/root/books/book[@id != "1"]')
+   assert(err is ERR_Okay, "Not-equal operator should skip the first book: " .. mSys.GetErrorMsg(err))
+   err2, bookId = xml.mtGetAttrib(id, 'id')
+   assert(err2 is ERR_Okay and bookId is '2', "@id != \"1\" should return the second book")
+
+   err, id = xml.mtSearch('/root/books/book[@year > 2020]')
+   assert(err is ERR_Okay, "Greater-than operator should locate later publications: " .. mSys.GetErrorMsg(err))
+   err2, bookId = xml.mtGetAttrib(id, 'id')
+   assert(err2 is ERR_Okay and bookId is '3', "@year > 2020 should return the 2021 release")
+
+   err, id = xml.mtSearch('/root/books/book[@year <= 2019]')
+   assert(err is ERR_Okay, "Less-than-or-equal operator should locate early publications: " .. mSys.GetErrorMsg(err))
+   err2, bookId = xml.mtGetAttrib(id, 'id')
+   assert(err2 is ERR_Okay and bookId is '2', "@year <= 2019 should return the 2019 release")
+
+   err, id = xml.mtSearch('/root/books/book[position() + 1 = 3]')
+   assert(err is ERR_Okay, "position()+1 should evaluate arithmetic inside predicates: " .. mSys.GetErrorMsg(err))
+   local err4, plusBook = xml.mtGetAttrib(id, 'id')
+   assert(err4 is ERR_Okay and plusBook is '2', "position()+1=3 should return the second book")
+
+   err, id = xml.mtSearch('/root/books/book[position() * 2 >= 4]')
+   assert(err is ERR_Okay, "position()*2 should honour multiplication semantics: " .. mSys.GetErrorMsg(err))
+   local err5, multBook = xml.mtGetAttrib(id, 'id')
+   assert(err5 is ERR_Okay and multBook is '2', "position()*2>=4 should return the second entry")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function XPathExpressions()
+   local xml = obj.new("xml", {
+      statement = [[
+         <library>
+            <section name="fiction">
+               <book title="1984" pages="328">George Orwell</book>
+               <book title="Brave New World" pages="268">Aldous Huxley</book>
+            </section>
+            <section name="technical">
+               <book title="Clean Code" pages="464">Robert Martin</book>
+               <book title="Design Patterns" pages="395">Gang of Four</book>
+            </section>
+         </library>
+      ]]
+   })
+
+   -- contains() should resolve string functions against attribute values
+   local err, id = xml.mtSearch('/library/section[@name="fiction"]/book[contains(@title,"1984")]')
+   assert(err is ERR_Okay, "contains() should match titles within the fiction section: " .. mSys.GetErrorMsg(err))
+   local err2, title = xml.mtGetAttrib(id, 'title')
+   assert(err2 is ERR_Okay and title is '1984', "contains() predicate should return the 1984 novel")
+
+   -- position() combined with comparison operators should filter later sections
+   err, id = xml.mtSearch('/library/section[position()>1]/book[@pages > 400]')
+   assert(err is ERR_Okay, "position()>1 should allow filtering second section books: " .. mSys.GetErrorMsg(err))
+   err2, title = xml.mtGetAttrib(id, 'title')
+   assert(err2 is ERR_Okay and title is 'Clean Code', "Filtered query should return the 464-page technical book")
+
+   -- Union operator should execute successfully across multiple branches
+   local unionTitles = {}
+   local unionErr = xml.mtSearch('/library/section[@name="fiction"]/book | /library/section[@name="technical"]/book', function(XML, TagID, Attrib)
+      local titleErr, unionTitle = xml.mtGetAttrib(TagID, 'title')
+      table.insert(unionTitles, titleErr is ERR_Okay and unionTitle or '')
+   end)
+   assert(unionErr is ERR_Okay, "Union operator should execute successfully")
+   assert(#unionTitles >= 2, "Union should return at least two nodes, found " .. #unionTitles)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function XPathArithmetic()
+   local xml = obj.new("xml", {
+      statement = [[
+         <math>
+            <numbers>
+               <num>10</num>
+               <num>20</num>
+               <num>30</num>
+            </numbers>
+            <calculations>
+               <result value="15">Addition result</result>
+               <result value="100">Multiplication result</result>
+               <result value="5">Division result</result>
+            </calculations>
+         </math>
+      ]]
+   })
+
+   -- Division and modulo on attribute values
+   local err, id = xml.mtSearch('/math/calculations/result[@value div 3 = 5]')
+   assert(err is ERR_Okay, "Division operator should evaluate attribute arithmetic: " .. mSys.GetErrorMsg(err))
+   local err2, resultValue = xml.mtGetAttrib(id, 'value')
+   assert(err2 is ERR_Okay and resultValue is '15', "@value div 3 = 5 should target the 15 result node")
+
+   err, id = xml.mtSearch('/math/calculations/result[@value mod 10 = 5]')
+   assert(err is ERR_Okay, "Modulo operator should evaluate attribute arithmetic: " .. mSys.GetErrorMsg(err))
+   err2, resultValue = xml.mtGetAttrib(id, 'value')
+   assert(err2 is ERR_Okay and resultValue is '15', "@value mod 10 = 5 should reuse the 15 result node")
+
+   err, id = xml.mtSearch('/math/calculations/result[@value div 20 = 5]')
+   assert(err is ERR_Okay, "Division should also match the 100 result when dividing by 20: " .. mSys.GetErrorMsg(err))
+   err2, resultValue = xml.mtGetAttrib(id, 'value')
+   assert(err2 is ERR_Okay and resultValue is '100', "@value div 20 = 5 should return the 100 result node")
+
+   -- Additional arithmetic on attribute values
+   err, id = xml.mtSearch('/math/calculations/result[@value + 5 = 20]')
+   assert(err is ERR_Okay, "Addition on attributes should evaluate numerically: " .. mSys.GetErrorMsg(err))
+   local err3, addedValue = xml.mtGetAttrib(id, 'value')
+   assert(err3 is ERR_Okay and addedValue is '15', "@value + 5 = 20 should return the 15 result node")
+
+   err, id = xml.mtSearch('/math/calculations/result[@value - 80 = 20]')
+   assert(err is ERR_Okay, "Subtraction on attributes should evaluate numerically: " .. mSys.GetErrorMsg(err))
+   local err4, subValue = xml.mtGetAttrib(id, 'value')
+   assert(err4 is ERR_Okay and subValue is '100', "@value - 80 = 20 should return the 100 result node")
+
+   err, id = xml.mtSearch('/math/calculations/result[@value * 2 = 10]')
+   assert(err is ERR_Okay, "Multiplication on attributes should evaluate numerically: " .. mSys.GetErrorMsg(err))
+   local err5, multValue = xml.mtGetAttrib(id, 'value')
+   assert(err5 is ERR_Okay and multValue is '5', "@value * 2 = 10 should return the 5 result node")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function XPathMultiplicationOutsidePredicates()
+   local xml = obj.new("xml", {
+      statement = '<root><item price="3" tax="4"><value>2</value></item><rates><exchangeRate>2</exchangeRate></rates></root>'
+   })
+
+   err = xml.mtEvaluate('number(/root/item/@price) * number(/root/item/@tax) = 12')
+   assert(err is ERR_Okay, 'Attribute multiplication outside predicates should evaluate: ' .. mSys.GetErrorMsg(err))
+
+   err = xml.mtEvaluate('substring("abcdef", 2 * 1, 3) = "bcd"')
+   assert(err is ERR_Okay, 'Function argument multiplication should parse: ' .. mSys.GetErrorMsg(err))
+
+   err = xml.mtEvaluate('/root/item[number(@price) * -2 = -6]')
+   assert(err is ERR_Okay, 'Predicate multiplication should permit unary minus operands: ' .. mSys.GetErrorMsg(err))
+
+   err = xml.mtEvaluate('/root/item[@price * /root/rates/exchangeRate = 6]')
+   assert(err is ERR_Okay, 'Predicate multiplication should treat absolute paths as operands: ' .. mSys.GetErrorMsg(err))
+
+   err = xml.mtEvaluate('/root/item[./value * 3 = 6]')
+   assert(err is ERR_Okay, 'Predicate multiplication should treat relative paths starting with "." as operands: ' .. mSys.GetErrorMsg(err))
+
+   err = xml.mtEvaluate('/root/item[number(@price) * ../rates/exchangeRate = 6]')
+   assert(err is ERR_Okay, 'Predicate multiplication should treat ".." path prefixes as operands: ' .. mSys.GetErrorMsg(err))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function XPathFullEvaluation()
+   local xml = obj.new("xml", {
+      statement = '<root><item>A</item><item>B</item><item>C</item><section><item>D</item></section></root>'
+   })
+
+   local err, count = xml.mtEvaluate('count(/root/item)')
+   assert(count is "3", "Expected count of 3 items, got " .. tostring(count))
+
+   local err, total_count = xml.mtEvaluate('count(/root/*)')
+   assert(total_count is "4", "Expected count of 4 elements, got " .. tostring(total_count))
+
+   local err, if_result = xml.mtEvaluate('if (/root/item[1]) then /root/item[1] else /root/item[2]')
+   assert(if_result is "A", "Expected if result 'A', got " .. tostring(if_result))
+
+   local err, length = xml.mtEvaluate('string-length(/root/item[1])')
+   assert(length is "1", "Expected string length of 1, got " .. tostring(length))
+end

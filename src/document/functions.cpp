@@ -2,12 +2,12 @@
 static const int MAXLOOP = 1000;
 
 static const char glDefaultStyles[] =
-"<template name=\"h1\"><p leading=\"1.5\" font-size=\"2em\" font-style=\"bold\"><inject/></p></template>\n\
-<template name=\"h2\"><p leading=\"1.5\"  font-size=\"1.8em\" font-style=\"bold\"><inject/></p></template>\n\
-<template name=\"h3\"><p leading=\"1.25\" font-size=\"1.6em\" font-style=\"bold\"><inject/></p></template>\n\
-<template name=\"h4\"><p leading=\"1.25\" font-size=\"1.4em\"><inject/></p></template>\n\
-<template name=\"h5\"><p leading=\"1.0\"  font-size=\"1.2em\"><inject/></p></template>\n\
-<template name=\"h6\"><p leading=\"1.0\"  font-size=\"1em\"><inject/></p></template>\n";
+"<template name=\"h1\"><p leading=\"1.5\" font-size=\"2em\" font-style=\"bold\"><inject/></p></>\n\
+<template name=\"h2\"><p leading=\"1.25\" font-size=\"1.8em\" font-style=\"bold\"><inject/></p></>\n\
+<template name=\"h3\"><p leading=\"1.25\" font-size=\"1.6em\" font-style=\"bold\"><inject/></p></>\n\
+<template name=\"h4\"><p leading=\"1.25\" font-size=\"1.4em\"><inject/></p></>\n\
+<template name=\"h5\"><p leading=\"1.0\"  font-size=\"1.2em\"><inject/></p></>\n\
+<template name=\"h6\"><p leading=\"1.0\"  font-size=\"1em\"><inject/></p></>\n";
 
 static const Field * find_field(OBJECTPTR Object, std::string_view Name, OBJECTPTR *Source) // Read-only, thread safe function.
 {
@@ -113,9 +113,9 @@ Special operators include:
 
 static std::string write_calc(double Value, int16_t Precision)
 {
-   if (!Precision) return std::to_string(F2T(Value));
+   if (!Precision) return std::to_string(int(Value));
 
-   int64_t wholepart = F2T(Value);
+   int64_t wholepart = int(Value);
    auto out = std::to_string(wholepart);
 
    double fraction = std::abs(Value) - std::abs(wholepart);
@@ -124,7 +124,7 @@ static std::string write_calc(double Value, int16_t Precision)
       fraction *= 10;
       auto px = std::abs(Precision);
       while ((fraction > 0.00001) and (px > 0)) {
-         auto ival = F2T(fraction);
+         auto ival = int(fraction);
          out += char(ival) + '0';
          fraction = (fraction - ival) * 10;
          px--;
@@ -279,6 +279,33 @@ static ERR insert_xml(extDocument *Self, RSTREAM *Stream, objXML *XML, objXML::T
 //
 // Preformat must be set to true if all consecutive whitespace characters in Text are to be inserted.
 
+static constexpr size_t MAX_BC_TEXT_BYTES = 0xffff;
+
+static inline size_t utf8_split_boundary(std::string_view Text, size_t Limit)
+{
+   if (Text.size() <= Limit) return Text.size();
+   if (!Limit) return 0;
+
+   auto split = Limit;
+   while ((split > 0) and ((uint8_t(Text[split]) & 0xc0) IS 0x80)) split--;
+   if (!split) return Limit;
+   return split;
+}
+
+static void emit_bc_text(RSTREAM *Stream, stream_char &Index, std::string_view Text, bool Formatted)
+{
+   if (Text.empty()) return;
+
+   for (size_t offset = 0; offset < Text.size(); ) {
+      auto split = utf8_split_boundary(Text.substr(offset), MAX_BC_TEXT_BYTES);
+      if (!split) split = std::min(MAX_BC_TEXT_BYTES, Text.size() - offset);
+
+      bc_text et(Text.substr(offset, split), Formatted);
+      Stream->emplace<bc_text>(Index, et);
+      offset += split;
+   }
+}
+
 static ERR insert_text(extDocument *Self, RSTREAM *Stream, stream_char &Index, const std::string_view Text, bool Preformat)
 {
    // Check if there is content to be processed
@@ -290,26 +317,25 @@ static ERR insert_text(extDocument *Self, RSTREAM *Stream, stream_char &Index, c
    }
 
    if (Preformat) {
-      bc_text et(Text, true);
-      Stream->emplace<bc_text>(Index, et);
+      emit_bc_text(Stream, Index, Text, true);
    }
    else {
-      bc_text et;
-      et.text.reserve(Text.size());
+      std::string normalised_text;
+      normalised_text.reserve(Text.size());
       auto ws = Self->NoWhitespace; // Retrieve previous whitespace state
       for (unsigned i=0; i < Text.size(); ) {
          if (unsigned(Text[i]) <= 0x20) { // Whitespace encountered
             for (++i; (i < Text.size()) and (unsigned(Text[i]) <= 0x20); i++);
-            if (!ws) et.text += ' ';
+            if (!ws) normalised_text += ' ';
             ws = true;
          }
          else {
-            et.text += Text[i++];
+            normalised_text += Text[i++];
             ws = false;
          }
       }
       Self->NoWhitespace = ws;
-      Stream->emplace(Index, et);
+      emit_bc_text(Stream, Index, normalised_text, false);
    }
 
    return ERR::Okay;
@@ -393,11 +419,11 @@ static ERR unload_doc(extDocument *Self, ULD Flags)
 
    Self->Highlight = glHighlight;
 
-   Self->CursorStroke   = "rgba(102,102,204,1.0)";
-   Self->FontFill       = "rgb(0,0,0)";
-   Self->LinkFill       = "rgb(0,0,255)";
-   Self->LinkSelectFill = "rgb(255,0,0)";
-   Self->Background     = "rgba(255,255,255,1.0)";
+   Self->CursorStroke   = "rgb(102 102 204 / 1)";
+   Self->FontFill       = "rgb(0 0 0)";
+   Self->LinkFill       = "rgb(0 0 255)";
+   Self->LinkSelectFill = "rgb(255 0 0)";
+   Self->Background     = "rgb(255 255 255 / 1)";
 
    Self->LeftMargin    = 10;
    Self->RightMargin   = 10;
@@ -425,10 +451,10 @@ static ERR unload_doc(extDocument *Self, ULD Flags)
 
    Self->Links.clear();
 
-   Self->FontFace = DEFAULT_FONTFACE;
-   Self->FontSize = DEFAULT_FONTSIZE;
+   Self->FontFace  = DEFAULT_FONTFACE;
+   Self->FontSize  = DEFAULT_FONTSIZE;
    Self->FontStyle = DEFAULT_FONTSTYLE;
-   Self->PageTag = nullptr;
+   Self->PageTag   = nullptr;
 
    Self->EditCells.clear();
    Self->Stream.clear();
@@ -601,6 +627,42 @@ static int getutf8(CSTRING Value, int *Unicode)
       if (Unicode) *Unicode = code;
       return len;
    }
+}
+
+//********************************************************************************************************************
+// Build the token list for a bc_text from its text string.  Tokens represent word, whitespace, and newline boundaries.
+// This avoids repeated byte-by-byte scanning during layout restarts.
+
+void bc_text::tokenise()
+{
+   tokens.clear();
+   tokens_dirty = false;
+
+   auto &str = text;
+   if (str.empty()) return;
+
+   // Reserve a reasonable estimate to reduce allocations (average ~5 chars per token)
+
+   tokens.reserve(str.size() / 5 + 1);
+
+   for (unsigned i = 0; i < str.size(); ) {
+      if (str[i] IS '\n') {
+         tokens.push_back({ uint16_t(i), uint16_t(i + 1), -1, 0, text_token_kind::NEWLINE });
+         i++;
+      }
+      else if (unsigned(str[i]) <= 0x20) {
+         auto start = i;
+         i++;
+         tokens.push_back({ uint16_t(start), uint16_t(i), -1, 0, text_token_kind::WHITESPACE });
+      }
+      else {
+         auto start = i;
+         while ((i < str.size()) and (unsigned(str[i]) > 0x20) and (str[i] != '\n')) i++;
+         tokens.push_back({ uint16_t(start), uint16_t(i), -1, 0, text_token_kind::WORD });
+      }
+   }
+
+   widths_dirty = true;
 }
 
 //********************************************************************************************************************
@@ -872,11 +934,11 @@ void ui_link::exec(extDocument *Self)
          params.emplace("href", origin.ref);
       }
 
-      for (size_t i=0; i < origin.args.size(); i++) {
-         if ((origin.args[i].first[0] IS '@') or (origin.args[i].first[0] IS '$')) {
-            params.emplace(origin.args[i].first.c_str()+1, origin.args[i].second);
+      for (const auto& [key, value] : origin.args) {
+         if ((key[0] IS '@') or (key[0] IS '$')) {
+            params.emplace(key.c_str()+1, value);
          }
-         else params.emplace(origin.args[i].first, origin.args[i].second);
+         else params.emplace(key, value);
       }
 
       ERR result = report_event(Self, DEF::LINK_ACTIVATED, &origin, &params);
@@ -889,11 +951,11 @@ void ui_link::exec(extDocument *Self)
          std::vector<ScriptArg> sa;
 
          if (!origin.args.empty()) {
-            for (auto &arg : origin.args) {
-               if (arg.first.starts_with('_')) { // Global variable setting
-                  acSetKey(script, arg.first.c_str()+1, arg.second.c_str());
+            for (const auto& [key, value] : origin.args) {
+               if (key.starts_with('_')) { // Global variable setting
+                  acSetKey(script, key.c_str()+1, value.c_str());
                }
-               else sa.emplace_back("", arg.second.data());
+               else sa.emplace_back("", value.data());
             }
          }
 
@@ -1035,7 +1097,8 @@ static ERR report_event(extDocument *Self, DEF Event, entity *Entity, KEYVALUE *
 
 void padding::parse(const std::string &Value)
 {
-   auto str = Value.c_str();
+   std::string value_str(Value);
+   auto str = value_str.c_str();
    str = read_unit(str, left, left_scl);
 
    if (*str) str = read_unit(str, top, top_scl);

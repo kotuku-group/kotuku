@@ -4,8 +4,8 @@ Test for Regex matching
 
 *********************************************************************************************************************/
 
-#include <parasol/startup.h>
-#include <parasol/modules/regex.h>
+#include <kotuku/startup.h>
+#include <kotuku/modules/regex.h>
 #include <format>
 
 JUMPTABLE_REGEX
@@ -537,7 +537,7 @@ int main(int argc, CSTRING *argv)
 {
    pf::Log log;
 
-   if (auto msg = init_parasol(argc, argv)) {
+   if (auto msg = init_kotuku(argc, argv)) {
       printf("%s", msg);
       return -1;
    }
@@ -583,6 +583,6 @@ int main(int argc, CSTRING *argv)
    printf("\n=== Test Complete ===\n");
 
    FreeResource(modRegex);
-   close_parasol();
+   close_kotuku();
    return result;
 }

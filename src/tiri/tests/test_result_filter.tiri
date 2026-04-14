@@ -1,0 +1,229 @@
+-- Test Result Filter Feature
+-- Tests the [pattern]func() syntax for selective return value extraction
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+-- Helper function returning multiple values
+function multi()
+   return 1, 2, 3, 4, 5
+end
+
+-- Helper function returning 3 values
+function three()
+   return "a", "b", "c"
+end
+
+-- Helper function with method syntax
+local obj = {
+   method = function(self)
+      return 10, 20, 30
+   end
+}
+
+@Test function FilterKeepAll()
+   a, b, c, d, e = [*]multi()
+   assert(a is 1, "filter keep all: expected a=1, got " .. tostring(a))
+   assert(b is 2, "filter keep all: expected b=2, got " .. tostring(b))
+   assert(c is 3, "filter keep all: expected c=3, got " .. tostring(c))
+   assert(d is 4, "filter keep all: expected d=4, got " .. tostring(d))
+   assert(e is 5, "filter keep all: expected e=5, got " .. tostring(e))
+end
+
+@Test function FilterDropFirst()
+   a, b, c, d = [_*]multi()
+   assert(a is 2, "filter drop first: expected a=2, got " .. tostring(a))
+   assert(b is 3, "filter drop first: expected b=3, got " .. tostring(b))
+   assert(c is 4, "filter drop first: expected c=4, got " .. tostring(c))
+   assert(d is 5, "filter drop first: expected d=5, got " .. tostring(d))
+end
+
+@Test function FilterDropFirstTwo()
+   a, b, c = [__*]multi()
+   assert(a is 3, "filter drop first two: expected a=3, got " .. tostring(a))
+   assert(b is 4, "filter drop first two: expected b=4, got " .. tostring(b))
+   assert(c is 5, "filter drop first two: expected c=5, got " .. tostring(c))
+end
+
+@Test function FilterKeepFirstOnly()
+   a, b = [*_]multi()
+   assert(a is 1, "filter keep first only: expected a=1, got " .. tostring(a))
+   assert(b is nil, "filter keep first only: expected b=nil, got " .. tostring(b))
+end
+
+@Test function FilterDropFirstKeepSecondDropRest()
+   a, b = [_*_]multi()
+   assert(a is 2, "filter drop first keep second drop rest: expected a=2, got " .. tostring(a))
+   assert(b is nil, "filter drop first keep second drop rest: expected b=nil, got " .. tostring(b))
+end
+
+@Test function FilterKeepValues234Only()
+   a, b, c, d = [_***_]multi()
+   assert(a is 2, "filter keep 2,3,4: expected a=2, got " .. tostring(a))
+   assert(b is 3, "filter keep 2,3,4: expected b=3, got " .. tostring(b))
+   assert(c is 4, "filter keep 2,3,4: expected c=4, got " .. tostring(c))
+   assert(d is nil, "filter keep 2,3,4: expected d=nil, got " .. tostring(d))
+end
+
+@Test function FilterKeepSecondAndFourthOnwards()
+   a, b, c = [_*_*]multi()
+   assert(a is 2, "filter keep 2nd and 4th+: expected a=2, got " .. tostring(a))
+   assert(b is 4, "filter keep 2nd and 4th+: expected b=4, got " .. tostring(b))
+   assert(c is 5, "filter keep 2nd and 4th+: expected c=5, got " .. tostring(c))
+end
+
+@Test function EmptyFilterDropsAll()
+   x = []multi()
+   assert(x is nil, "empty filter drops all: expected nil, got " .. tostring(x))
+end
+
+@Test function FilterWithMethodCalls()
+   for i=0,100 do -- JIT warmup
+      a = [_*]obj:method()
+      assert(a is 20, "filter with method: expected 20, got " .. tostring(a))
+   end
+end
+
+@Test function FilterWithThreeReturnValues()
+   a, b = [*_*]three()
+   assert(a is "a", "filter first and third: expected a='a', got " .. tostring(a))
+   assert(b is "c", "filter first and third: expected b='c', got " .. tostring(b))
+end
+
+@Test function FilterFirstAndSecond()
+   a, b = [**_]three()
+   assert(a is "a", "filter first and second: expected a='a', got " .. tostring(a))
+   assert(b is "b", "filter first and second: expected b='b', got " .. tostring(b))
+end
+
+-- Edge case: Filter with more positions than return values
+@Test function FilterMorePositionsThanValues()
+   a, b = [_____*]three()  -- Request 6th value from function returning 3
+   assert(a is nil, "filter beyond values: expected nil, got " .. tostring(a))
+   assert(b is nil, "filter beyond values: expected b=nil, got " .. tostring(b))
+end
+
+-- Edge case: Filter with exact number of positions
+@Test function FilterExactPositions()
+   a, b, c = [*_*]three()  -- Keep 1st and 3rd of 3
+   assert(a is "a", "filter exact: expected a='a', got " .. tostring(a))
+   assert(b is "c", "filter exact: expected b='c', got " .. tostring(b))
+   assert(c is nil, "filter exact: expected c=nil, got " .. tostring(c))
+end
+
+-- Edge case: Filter on function returning single value
+@Test function FilterSingleValue()
+   function single()
+      return 42
+   end
+   a = [*]single()
+   assert(a is 42, "filter single value: expected 42, got " .. tostring(a))
+
+   b = [_]single()
+   assert(b is nil, "filter drop single: expected nil, got " .. tostring(b))
+end
+
+-- Edge case: Filter on function returning no values
+@Test function FilterNoValues()
+   function none()
+      -- returns nothing
+   end
+   a = [*]none()
+   assert(a is nil, "filter no values: expected nil, got " .. tostring(a))
+
+   b = []none()
+   assert(b is nil, "empty filter no values: expected nil, got " .. tostring(b))
+end
+
+-- Edge case: Nested filters
+@Test function NestedFilters()
+   function outer()
+      return [_*]multi()  -- Returns 2, 3, 4, 5
+   end
+   a, b, c, d = outer()
+   assert(a is 2, "nested filter: expected a=2, got " .. tostring(a))
+   assert(b is 3, "nested filter: expected b=3, got " .. tostring(b))
+   assert(c is 4, "nested filter: expected c=4, got " .. tostring(c))
+   assert(d is 5, "nested filter: expected d=5, got " .. tostring(d))
+end
+
+-- Edge case: Filter applied via wrapper function
+@Test function FilterOnFilteredResult()
+   -- Use a wrapper function to chain filters
+   function filtered()
+      return [_*]multi()  -- Returns 2, 3, 4, 5
+   end
+   a = [*_]filtered()  -- Keep only first of (2, 3, 4, 5)
+   assert(a is 2, "filter on filter: expected 2, got " .. tostring(a))
+end
+
+-- Edge case: Very long underscore pattern
+@Test function LongUnderscorePattern()
+   function many()
+      return 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+   end
+   -- Use multiple underscores to skip to 8th value
+   a = [_______*]many()
+   assert(a is 8, "long underscore pattern: expected 8, got " .. tostring(a))
+end
+
+-- Edge case: Alternating keep/drop pattern
+@Test function AlternatingPattern()
+   function six()
+      return 1, 2, 3, 4, 5, 6
+   end
+
+   for i=0,100 do -- JIT warmup
+      a, b, c = [*_*_*_]six()  -- Keep 1, 3, 5
+      assert(a is 1, "alternating: expected a=1, got " .. tostring(a))
+      assert(b is 3, "alternating: expected b=3, got " .. tostring(b))
+      assert(c is 5, "alternating: expected c=5, got " .. tostring(c))
+   end
+end
+
+-- Edge case: Filter with mixed types
+@Test function FilterMixedTypes()
+   function mixed()
+      return 1, "two", true, nil, { x = 5 }
+   end
+   a, b, c = [_*_*_]mixed()  -- Keep "two" and nil
+   assert(a is "two", "mixed types: expected 'two', got " .. tostring(a))
+   assert(b is nil, "mixed types: expected nil for 4th value")
+end
+
+-- Edge case: Filter preserves table references
+@Test function FilterPreservesReferences()
+   t = { value = 123 }
+   function returnTable()
+      return "prefix", t, "suffix"
+   end
+   tbl = [_*_]returnTable()
+   assert(tbl is t, "filter preserves reference: tables should be identical")
+   assert(tbl.value is 123, "filter preserves reference: value should be 123")
+end
+
+-- Test error case: Invalid pattern should fail at parse time
+
+@Test function ErrorInvalidPatternCharacter()
+   try
+      loadstring("[x]multi()")()
+   success
+      error("Invalid pattern char 'x' should fail to parse")
+   end
+end
+
+@Test function ErrorFilterOnNonCall()
+   try
+      loadstring("x = [_*]42")()
+   success
+      error("filter on non-call should fail to parse")
+   end
+end
+
+@Test function ErrorFilterOnVariable()
+   try
+      loadstring("t = {}; x = [_*]t")()
+   success
+      error("filter on variable should fail to parse")
+   end
+end

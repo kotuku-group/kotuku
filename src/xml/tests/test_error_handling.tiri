@@ -1,0 +1,250 @@
+-- Comprehensive error handling and edge case tests
+
+   include 'xml'
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test malformed XML handling
+
+@Test function MalformedXML()
+   -- Test unclosed tags
+   xml = obj.new("xml", { flags = XMF_WELL_FORMED })
+   err = xml.setKey("Statement", "<root><unclosed></root>")
+   assert(err != ERR_Okay, "Should reject unclosed tags in well-formed mode")
+
+   -- Test invalid characters in tag names
+   xml2 = obj.new("xml")
+   err = xml2.setKey("Statement", "<123invalid>content</123invalid>")
+   -- Should still parse in loose mode but may generate warnings
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test empty XML document
+
+@Test function EmptyDocument()
+   xml = obj.new("xml", { statement = "" })
+   assert(not xml.tags or #xml.tags is 0, "Empty document should have no tags")
+
+   -- Test whitespace-only document
+   try
+      xml2 = obj.new("xml", { statement = "   \n\t  " })
+      assert(not xml2.tags or #xml2.tags is 0, "Whitespace-only document should have no tags")
+   end -- Raising an exception because there is no data to parse is acceptable
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test very large XML documents
+
+@Test function LargeDocument()
+   -- Generate a large XML document
+   parts = {'<root>'}
+   for i = 1, 1000 do
+      table.insert(parts, '<item id="' .. i .. '">Content ' .. i .. '</item>')
+   end
+   table.insert(parts, '</root>')
+   largeXML = table.concat(parts)
+
+   xml = obj.new("xml", { statement = largeXML })
+   assert(xml.tags, "Large document should parse successfully")
+   assert(#xml.tags[1].children is 1000, "All 1000 items should be parsed")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test invalid method parameters
+
+@Test function InvalidParameters()
+   xml = obj.new("xml", {
+      statement = '<root><child id="test"/></root>'
+   })
+
+   -- Test invalid tag ID
+   err, value = xml.mtGetAttrib(99999, 'id')
+   assert(err is ERR_NotFound, "Should return NotFound for invalid tag ID")
+
+   -- Test nil XPath
+   err, result = xml.mtSearch(nil)
+   assert(err is ERR_NullArgs, "Should return NullArgs for nil XPath")
+
+   -- Test empty XPath
+   err, result = xml.mtSearch("")
+   assert(err != ERR_Okay, "Should fail for empty XPath")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test readonly mode
+
+@Test function ReadOnlyMode()
+   xml = obj.new("xml", {
+      statement = '<root><child/></root>',
+      readOnly = true
+   })
+
+   rootId = xml.tags[1].id
+
+   -- Attempt to modify readonly XML
+   err = xml.mtSetAttrib(rootId, XMS_NEW, 'newattr', 'value')
+   assert(err is ERR_ReadOnly, "Should reject modifications in readonly mode")
+
+   err, newId = xml.mtInsertXML(rootId, XMI_CHILD, '<newchild/>')
+   assert(err is ERR_ReadOnly, "Should reject insertions in readonly mode")
+
+   err = xml.mtRemoveTag(rootId, 1)
+   assert(err is ERR_ReadOnly, "Should reject removals in readonly mode")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test namespace handling
+
+@Test function NamespaceHandling()
+   xml = obj.new("xml", {
+      statement = '<root xmlns:ns="http://example.com"><ns:child ns:attr="value"/></root>'
+   })
+
+   -- Namespaces should be preserved as part of tag/attribute names
+   assert(xml.tags, "Namespace XML should parse")
+
+   err, nsId = xml.mtSearch('/root/ns:child')
+   if err is ERR_Okay then
+      err, value = xml.mtGetAttrib(nsId, 'ns:attr')
+      assert(err is ERR_Okay and value is "value", "Namespace attribute not preserved")
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test special characters and encoding
+
+@Test function SpecialCharacters()
+   xml = obj.new("xml", {
+      statement = '<root attr="&lt;&gt;&amp;&quot;">&lt;special&gt; &amp; content</root>'
+   })
+
+   assert(xml.tags, "XML with escaped characters should parse")
+
+   rootId = xml.tags[1].id
+   err, attrValue = xml.mtGetAttrib(rootId, 'attr')
+   assert(err is ERR_Okay, "Should retrieve escaped attribute")
+   -- Note: Values should be unescaped after parsing
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test concurrent access (if supported)
+
+@Test function ConcurrentAccess()
+   xml = obj.new("xml", {
+      statement = '<root><item>1</item><item>2</item><item>3</item></root>',
+      readOnly = true  -- Readonly for safe concurrent access
+   })
+
+   -- Multiple FindTag operations should work safely
+   count1 = 0
+   err1, result1 = xml.mtSearch('/root/item', function(XML, TagID, Attrib)
+      count1 = count1 + 1
+   end)
+
+   count2 = 0
+   err2, result2 = xml.mtSearch('//item', function(XML, TagID, Attrib)
+      count2 = count2 + 1
+   end)
+
+   assert(count1 is 3 and count2 is 3, "Concurrent access should work correctly")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test memory limits and cleanup
+
+@Test function MemoryHandling()
+   -- Test creating and destroying many XML objects
+   for i = 1, 100 do
+      xml = obj.new("xml", {
+         statement = '<root><data>' .. string.rep("x", 1000) .. '</data></root>'
+      })
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test XPath edge cases
+
+@Test function XPathEdgeCases()
+   xml = obj.new("xml", {
+      statement = '<root><item name="test[1]"/><item name="test@attr"/></root>'
+   })
+
+   -- Test escaping special XPath characters in attribute values
+   err, id = xml.mtSearch('/root/item[@name="test[1]"]')
+   -- This may or may not work depending on XPath implementation
+
+   -- Test very long XPath expressions
+   longPath = '/root' .. string.rep('/item', 50)
+   err, result = xml.mtSearch(longPath)
+   assert(err is ERR_Search, "Should fail gracefully for invalid long paths")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test serialization edge cases
+
+@Test function SerializationEdgeCases()
+   xml = obj.new("xml", {
+      statement = '<root><empty/><cdata><![CDATA[Special <content>]]></cdata></root>'
+   })
+
+   -- Test serialization of various node types
+   err, serialized = xml.mtSerialise(0, XMF_INCLUDE_SIBLINGS)
+   assert(err is ERR_Okay, "Serialization should succeed")
+   assert(string.len(serialized) > 0, "Serialized string should not be empty")
+
+   -- Test partial serialization
+   childId = xml.tags[1].children[1].id
+   err, partialSerialized = xml.mtSerialise(childId, 0)
+   assert(err is ERR_Okay, "Partial serialization should succeed")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test performance with deep nesting
+
+@Test function DeepNesting()
+   -- Create deeply nested XML
+   parts = {}
+   depth = 100
+
+   for i = 1, depth do
+      table.insert(parts, '<level' .. i .. '>')
+   end
+   table.insert(parts, 'Deep content')
+   for i = depth, 1, -1 do
+      table.insert(parts, '</level' .. i .. '>')
+   end
+
+   deepXML = table.concat(parts)
+   xml = obj.new("xml", { statement = deepXML })
+
+   assert(xml.tags, "Deep nesting should parse successfully")
+
+   -- Test deep XPath navigation
+   deepPath = '/level1'
+   for i = 2, depth do
+      deepPath = deepPath .. '/level' .. i
+   end
+
+   err, deepId = xml.mtSearch(deepPath)
+   assert(err is ERR_Okay, "Deep XPath should succeed")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test attribute limits
+
+@Test function AttributeLimits()
+   -- Create element with many attributes
+   parts = {'<root'}
+   for i = 1, 100 do
+      table.insert(parts, ' attr' .. i .. '="value' .. i .. '"')
+   end
+   table.insert(parts, '/>')
+
+   manyAttrsXML = table.concat(parts)
+   xml = obj.new("xml", { statement = manyAttrsXML })
+
+   assert(xml.tags, "Many attributes should parse successfully")
+
+   rootId = xml.tags[1].id
+   err, value = xml.mtGetAttrib(rootId, 'attr50')
+   assert(err is ERR_Okay and value is 'value50', "Middle attribute should be accessible")
+end

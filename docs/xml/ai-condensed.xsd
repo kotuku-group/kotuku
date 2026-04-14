@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="http://parasol.ws/ai-docs" xmlns="http://parasol.ws/ai-docs" elementFormDefault="qualified">
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="http://kotuku.dev/ai-docs" xmlns="http://kotuku.dev/ai-docs" elementFormDefault="qualified">
 
-  <!-- AI-Optimized XML Schema for Parasol Framework Documentation -->
+  <!-- AI-Optimized XML Schema for Kotuku Documentation -->
   <!-- Designed for maximum compression while preserving essential API information -->
 
   <xs:element name="api-docs" type="ApiDocsType"/>

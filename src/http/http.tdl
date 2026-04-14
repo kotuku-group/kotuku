@@ -1,0 +1,134 @@
+--$TIRI:Include
+
+module({ name="HTTP", copyright="Paul Manias © 2005-2026", version=1.0, timestamp=20240611 }, function()
+  restrict(function()
+    loadFile(glPath .. 'common.tdl')
+  end)
+
+  c_include("<kotuku/modules/network.h>")
+
+  enum("HOM", { type="int", start=0, comment="Output mode." },
+    "DATA_FEED: Use the DataFeed() action to send data to the targeted object.",
+    "READ_WRITE|READ|WRITE: Use the Write() action to send data to the targeted object.")
+
+  enum("HGS", { type="int", start=0, comment="Options for defining an HTTP object's state." },
+   "READING_HEADER: The default state - this value will be indicated when no data is being written to the server and the client is waiting for a complete header from the server.",
+   "AUTHENTICATING: If authentication is requested from the server, the HTTP object will enter this state.",
+   "AUTHENTICATED: Following successful authentication, this state value will be set.",
+   "SENDING_CONTENT: During the uploading of data to the server (e.g. `POST`), the HTTP object will remain in this state.",
+   "SEND_COMPLETE: On successful completion of the send phase, the state changes to `SEND_COMPLETE`.  Successful completion requires either that the number of bytes indicated in #ContentLength have been sent, or `ERR::Terminate` has been returned by the callback functions.",
+   "READING_CONTENT: The client will remain in this state when the server is sending data to the client.",
+   // 'Finished' codes start from HGS_COMPLETED
+   "COMPLETED: This state indicates that the HTTP request was completed in a normal manner.",
+   "TERMINATED: If an HTTP command fails to complete normally - for instance if the connection is broken before completion - then the state is set to `TERMINATED`.",
+   "END: Private")
+
+  enum("HTM", { type="int", start=0, comment="The HTTP Method to use when the object is activated." },
+    "GET: Retrieves files from the HTTP server.  The Path field will indicate which file to retrieve.",
+    "POST: Sends information to the HTTP server.",
+    "PUT: Uploads a file to the HTTP server.  The data will be read from the #InputFile or #InputObject references.",
+    "HEAD: A HEAD request is equivalent to a `GET` without the content.",
+    "DELETE: Deletes a file from the HTTP server, location indicated by the #Path field.",
+    "OPTIONS: Request permitted communication options for a given URL or server.",
+    "TRACE: Perform a message loop-back test along the path to the target resource.",
+    "MKCOL: WebDAV instruction.",
+    "BCOPY: WebDAV instruction.",
+    "BDELETE: WebDAV instruction.",
+    "BMOVE: WebDAV instruction.",
+    "BPROPFIND: WebDAV instruction.",
+    "BPROPPATCH: WebDAV instruction.",
+    "COPY: WebDAV instruction.",
+    "LOCK: WebDAV instruction.",
+    "MOVE: WebDAV instruction.",
+    "NOTIFY: WebDAV instruction.",
+    "POLL: WebDAV instruction.",
+    "PROPFIND: WebDAV instruction.",
+    "PROPPATCH: WebDAV instruction.",
+    "SEARCH: WebDAV instruction.",
+    "SUBSCRIBE: WebDAV instruction.",
+    "UNLOCK: WebDAV instruction.",
+    "UNSUBSCRIBE: WebDAV instruction.")
+
+  constants("HTS", { type="int", comment="HTTP status codes" }, {
+    CONTINUE             = 100,
+    SWITCH_PROTOCOLS     = 101,
+    OKAY                 = 200,
+    CREATED              = 201,
+    ACCEPTED             = 202,
+    UNVERIFIED_CONTENT   = 203,
+    NO_CONTENT           = 204,
+    RESET_CONTENT        = 205,
+    PARTIAL_CONTENT      = 206,
+    MULTIPLE_CHOICES     = 300,
+    MOVED_PERMANENTLY    = 301,
+    FOUND                = 302,
+    SEE_OTHER            = 303,
+    NOT_MODIFIED         = 304,
+    USE_PROXY            = 305,
+    TEMP_REDIRECT        = 307,
+    BAD_REQUEST          = 400,
+    UNAUTHORISED         = 401,
+    PAYMENT_REQUIRED     = 402,
+    FORBIDDEN            = 403,
+    NOT_FOUND            = 404,
+    METHOD_NOT_ALLOWED   = 405,
+    NOT_ACCEPTABLE       = 406,
+    PROXY_AUTHENTICATION = 407,
+    REQUEST_TIMEOUT      = 408,
+    CONFLICT             = 409,
+    GONE                 = 410,
+    LENGTH_REQUIRED      = 411,
+    PRECONDITION_FAILED  = 412,
+    ENTITY_TOO_LARGE     = 413,
+    URI_TOO_LONG         = 414,
+    UNSUPPORTED_MEDIA    = 415,
+    OUT_OF_RANGE         = 416,
+    EXPECTATION_FAILED   = 417,
+    SERVER_ERROR         = 500,
+    NOT_IMPLEMENTED      = 501,
+    BAD_GATEWAY          = 502,
+    SERVICE_UNAVAILABLE  = 503,
+    GATEWAY_TIMEOUT      = 504,
+    VERSION_UNSUPPORTED  = 505
+  })
+
+  flags("HTF", { comment="HTTP flags" },
+    "RESUME: Enables resuming when downloading content.  Only applies when a file is being targeted and the file already exists.",
+    "MESSAGE: When activating child objects, send delayed messages to postpone execution rather than making direct calls.",
+    "MOVED: Read-only.  Indicates that the HTTP source was moved (`HTS::MOVED_PERMANENTLY`).",
+    "REDIRECTED: Read-only.  Indicates that the HTTP request was redirected (`HTS::TEMP_REDIRECT`).",
+    "NO_HEAD: Do not send a `HEAD` prior to executing a `PUT` or `POST` (removes the authentication check).",
+    "NO_DIALOG: Turn off the username/password dialog.",
+    "RAW: Forcibly turns off chunk detection and chunk handling on incoming data.  Also turns off automatic chunk encoding for outgoing data.",
+    "DEBUG_SOCKET: Log all HTTP headers and data that goes out through the socket.  This should only be used when sending plain-text data.",
+    "RECV_BUFFER: Enables buffering of all received HTTP content into a local buffer.  The buffer information can be read at any time during and after the transaction through the #RecvBuffer field.  Note that this option should only be used for limited data transfers to avoid excessive memory usage.",
+    "SSL: Force SSL connectivity, irrespective of the HTTP port.  Note that this flag is automatically set (and remains set for all future transfers) if the #Port field is set to `443`.",
+    "DISABLE_SERVER_VERIFY: Disable SSL server certificate verification (use with caution).")
+
+  class("HTTP", { src={ "http.cpp", "http_fields.cpp" }, output="http_def.c" }, [[
+   double DataTimeout     # Timeout for receiving data, measured in seconds
+   double ConnectTimeout  # Timeout for initial connection, measured in seconds
+   large Index            # Current read/write index, relative to content length so always starts from zero
+   large ContentLength    # Content length as reported in the content length response field, -1 if streamed or unknown
+   large Size             # Content size to use when sending data
+   str Host               # Host / Domain
+   str Path               # Path for file retrieval
+   str OutputFile         # Target file for downloaded content
+   str InputFile          # Source file for uploads
+   str UserAgent          # User agent to pass in the HTTP headers
+   oid InputObject        # An object to send HTTP content
+   oid OutputObject       # An object to receive HTTP content
+   int(HTM) Method        # HTTP Request: GET, HEAD, POST, PUT..
+   int Port               # Socket port number, usually port 80
+   int(HOM) ObjectMode    # Type of I/O transfer to objects
+   int(HTF) Flags         # Optional flags
+   int(HTS) Status        # Status code received in the HTTP response header
+   error Error            # Result of the operation
+   int(DATA) Datatype     # Datatype to use when sending HTTP data to a target object
+   int(HGS) CurrentState  # Current state of the http get operation
+   str ProxyServer        # If using a proxy server, this is the name or IP address of the server
+   int ProxyPort          # The port of the proxy server
+   int BufferSize         # Preferred buffer size for things like outgoing operations (sending data)
+  ]])
+end)
+

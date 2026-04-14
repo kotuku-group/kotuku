@@ -1,12 +1,12 @@
 #!/bin/bash
-# Version consistency check for Parasol package
+# Version consistency check for Kōtuku package
 
 set -e
 
-echo "Testing Parasol version consistency..."
+echo "Testing Kōtuku version consistency..."
 
 # Get installed package version
-PACKAGE_VERSION=$(dpkg-query -W -f='${Version}' parasol 2>/dev/null || echo "unknown")
+PACKAGE_VERSION=$(dpkg-query -W -f='${Version}' kotuku 2>/dev/null || echo "unknown")
 
 echo "Installed package version: $PACKAGE_VERSION"
 

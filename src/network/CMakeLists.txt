@@ -1,11 +1,11 @@
 # Network module
-# If you need to do a deep debug of the network log, enable PARASOL_VLOG at project level (it won't work
+# If you need to do a deep debug of the network log, enable KOTUKU_VLOG at project level (it won't work
 # at module level).
 
 set (MOD network)
 set (INC_MOD_NETWORK TRUE PARENT_SCOPE)
 
-idl_gen ("${MOD}.fdl" NAME "${MOD}_defs" OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.h"
+idl_gen ("${MOD}.tdl" NAME "${MOD}_defs" OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.h"
    APPEND_IDL "module_def.c"
    FILES "network.cpp"
    ARGS "output-defs=module_def.c" "output-proto=module_def.c")
@@ -18,7 +18,7 @@ target_sources (${MOD} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/network.cpp")
 
 if (DISABLE_SSL)
    message (STATUS "Network module will not be compiled with SSL support (disabled by DISABLE_SSL).")
-   add_compile_definitions ("DISABLE_SSL")
+   target_compile_definitions (${MOD} PRIVATE "DISABLE_SSL")
 elseif (WIN32)
    message (STATUS "Using Windows native SSL support.")
    target_sources (${MOD} PRIVATE "win32/ssl_wrapper.cpp")
@@ -30,18 +30,18 @@ elseif (OPENSSL_FOUND)
    target_include_directories (${MOD} PRIVATE "${OPENSSL_INCLUDE_DIR}")
 else ()
    message (STATUS "Network module will not be compiled with SSL support (OpenSSL not found).")
-   add_compile_definitions ("DISABLE_SSL")
+   target_compile_definitions (${MOD} PRIVATE "DISABLE_SSL")
 endif ()
 
 if (WIN32)
-   add_compile_definitions ("_WINSOCK_DEPRECATED_NO_WARNINGS")
+   target_compile_definitions (${MOD} PRIVATE "_WINSOCK_DEPRECATED_NO_WARNINGS")
    target_sources (${MOD} PRIVATE "win32/winsockwrappers.cpp")
    list (APPEND NETWORK_LIBS wsock32 gdi32 ws2_32)
 endif ()
 
 target_link_libraries (${MOD} PRIVATE ${NETWORK_LIBS})
 
-add_compile_definitions ("MAX_ALIASES=64" "MAX_ADDRESSES=32" "HAVE_CONFIG_H=1")
+target_compile_definitions (${MOD} PRIVATE "MAX_ALIASES=64" "MAX_ADDRESSES=32" "HAVE_CONFIG_H=1")
 
 # SSL Certificate Generation
 find_program(MKCERT_EXECUTABLE mkcert PATHS ${CMAKE_SOURCE_DIR}/tools ENV PATH)
@@ -82,23 +82,20 @@ else()
       message(STATUS "mkcert not found - SSL certificates will not be auto-generated")
       message(STATUS "Install mkcert from: https://github.com/FiloSottile/mkcert")
    endif()
+
    if(NOT OPENSSL_EXECUTABLE)
       message(STATUS "openssl not found - SSL certificates will not be auto-generated")
    endif()
 endif()
 
-flute_test (network_bind "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_bind_address.fluid")
-flute_test (network_dns "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_dns_parallel.fluid")
-flute_test (network_server_io "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_server_io.fluid")
-flute_test (network_client_server "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_client_server.fluid")
-flute_test (network_error_handling "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_error_handling.fluid")
-flute_test (network_ipv6 "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ipv6.fluid")
-flute_test (network_concurrency "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_concurrency.fluid")
-flute_test (network_ssl "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ssl.fluid")
-# UDP Tests
-flute_test (network_udp_basic "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_udp_basic.fluid")
-flute_test (network_udp_ipv6 "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_udp_ipv6.fluid")
-flute_test (network_udp_broadcast_multicast "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_udp_broadcast_multicast.fluid")
-flute_test (network_udp_tcp_coexistence "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_udp_tcp_coexistence.fluid")
-# Performance test (may take a while)
-#flute_test (network_udp_performance "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_udp_performance.fluid")
+set (NETWORK_TESTS
+   bind_address dns_parallel server_io client_server error_handling ipv6 concurrency ssl
+   # UDP Tests
+   udp_basic udp_ipv6 udp_broadcast_multicast udp_tcp_coexistence
+   # Performance test (may take a while)
+   # udp_performance
+)
+
+foreach (TEST_NAME ${NETWORK_TESTS})
+   flute_test(network_${TEST_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_${TEST_NAME}.tiri")
+endforeach ()

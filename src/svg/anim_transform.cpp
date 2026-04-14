@@ -20,7 +20,7 @@ void anim_transform::perform()
                   seek_to = std::clamp((dist_pos - distances[i]) / (distances[i+1] - distances[i]), 0.0, 1.0);
                }
                else {
-                  i = F2T((values.size()-1) * seek);
+                  i = int((values.size()-1) * seek);
 
                   const double mod = 1.0 / double(values.size() - 1);
                   seek_to = (seek >= 1.0) ? 1.0 : fmod(seek, mod) / mod;
@@ -76,7 +76,7 @@ void anim_transform::perform()
                   seek_to = (dist_pos - distances[i]) / (distances[i+1] - distances[i]);
                }
                else {
-                  i = F2T((values.size()-1) * seek);
+                  i = int((values.size()-1) * seek);
                   if (i >= std::ssize(values)-1) i = std::ssize(values) - 2;
 
                   const double mod = 1.0 / double(values.size() - 1);
@@ -144,7 +144,7 @@ void anim_transform::perform()
                   // keyTiming is not permitted in PACED mode.
                }
                else {
-                  i = F2T((values.size()-1) * seek);
+                  i = int((values.size()-1) * seek);
                   if (i >= std::ssize(values)-1) i = std::ssize(values) - 2;
 
                   const double mod = 1.0 / double(values.size() - 1);
@@ -195,7 +195,7 @@ void anim_transform::perform()
             double t_from = 0, t_to = 0;
 
             if (not values.empty()) {
-               int vi = F2T((values.size()-1) * seek);
+               int vi = int((values.size()-1) * seek);
                if (vi >= std::ssize(values)-1) vi = std::ssize(values) - 2;
 
                read_numseq(values[vi], { &t_from });
@@ -240,7 +240,7 @@ void anim_transform::perform()
             double t_from = 0, t_to = 0;
 
             if (not values.empty()) {
-               int vi = F2T((values.size()-1) * seek);
+               int vi = int((values.size()-1) * seek);
                if (vi >= std::ssize(values)-1) vi = std::ssize(values) - 2;
 
                read_numseq(values[vi], { &t_from });

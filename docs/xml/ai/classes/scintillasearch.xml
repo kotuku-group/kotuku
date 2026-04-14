@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="ScintillaSearch" mod="Scintilla" c="Provides search functionality for use on Scintilla objects." cat="Tool" id="97a9057e" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="ScintillaSearch" mod="Scintilla" c="Provides search functionality for use on Scintilla objects." cat="Tool" id="97a9057e" v="1">
   <ai:m n="Find" c="Searches for a specific text string." p="ERR ss::Find(OBJECTPTR Object, INT * Pos, STF Flags)">
     <ai:i n="Pos" t="INT *" c="The position to start searching from. Set to -1 to start from the cursor position. This parameter is updated with the byte position of the discovered string sequence."/>
     <ai:i n="Flags" t="STF" c="Optional flags."/>

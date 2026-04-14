@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="VectorSpiral" mod="Vector" c="Extends the Vector class with support for spiral path generation." cat="Graphics" id="ab3e8003" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="VectorSpiral" mod="Vector" c="Extends the Vector class with support for spiral path generation." cat="Graphics" id="ab3e8003" v="1">
   <ai:f n="CenterX" c="The horizontal center of the spiral. Expressed as a fixed or scaled coordinate." t="DOUBLE" a="GS"/>
   <ai:f n="CenterY" c="The vertical center of the spiral. Expressed as a fixed or scaled coordinate." t="DOUBLE" a="GS"/>
   <ai:f n="Height" c="The height (vertical diameter) of the spiral." t="DOUBLE" a="GS"/>

@@ -58,7 +58,6 @@
 #define SRELL_HAS_TYPE_TRAITS
 #define SRELL_NOEXCEPT noexcept
 
-// Parasol project coding standard
 #ifndef IS
 #define IS ==
 #endif
@@ -268,7 +267,7 @@ concept allocator_type = requires(T alloc) {
    namespace regex_constants
    {
       using error_type = unsigned int;
-      
+
       inline constexpr error_type error_collate{100};
       inline constexpr error_type error_ctype{101};
       inline constexpr error_type error_escape{102};

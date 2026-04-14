@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -30,7 +30,7 @@ areas.
 
 #undef __xwindows__
 #include "../defs.h"
-#include <parasol/modules/picture.h>
+#include <kotuku/modules/picture.h>
 #include <numeric> // For std::gcd
 
 #ifdef _WIN32
@@ -582,7 +582,7 @@ object performs a redraw event, all functions inserted by this method will be ca
 order with a direct reference to the Surface's target bitmap.  The C/C++ prototype is
 `Function(APTR Context, *Surface, *Bitmap, APTR Meta)`.
 
-The Fluid prototype is `function draw(Surface, Bitmap)`
+The Tiri prototype is `function draw(Surface, Bitmap)`
 
 The subscriber can draw to the bitmap surface as it would with any freshly allocated bitmap object (refer to the
 @Bitmap class).  To get the width and height of the available drawing space, please read the Width and
@@ -614,7 +614,7 @@ static ERR SURFACE_AddCallback(extSurface *Self, struct drw::AddCallback *Args)
 
    if (context->UID < 0) {
       log.warning("Public objects may not draw directly to surfaces.");
-      return ERR::Failed;
+      return ERR::NoPermission;
    }
 
    log.msg("Context: %d, Callback Context: %d, Routine: %p (Count: %d)", context->UID, call_context ? call_context->UID : 0, Args->Callback->Routine, Self->CallbackCount);

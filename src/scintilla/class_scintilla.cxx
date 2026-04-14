@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -95,15 +95,15 @@ capabilities.
 #include "ScintillaBase.h"
 #include "UniConversion.h"
 
-#include <parasol/main.h>
-#include <parasol/modules/xml.h>
-#include <parasol/modules/font.h>
-#include <parasol/modules/display.h>
-#include <parasol/modules/font.h>
-#include <parasol/modules/vector.h>
-#include <parasol/strings.hpp>
+#include <kotuku/main.h>
+#include <kotuku/modules/xml.h>
+#include <kotuku/modules/font.h>
+#include <kotuku/modules/display.h>
+#include <kotuku/modules/font.h>
+#include <kotuku/modules/vector.h>
+#include <kotuku/strings.hpp>
 
-#include "scintillaparasol.h"
+#include "scintillakotuku.h"
 
 #include "module_def.c"
 
@@ -140,7 +140,7 @@ static const struct {
    { "*.css",         SCLEX::CSS },
    { "*.diff",        SCLEX::DIFF },
    { "*.errorlist",   SCLEX::ERRORLIST },
-   { "*.lua|*.fluid", SCLEX::FLUID },
+   { "*.lua|*.tiri", SCLEX::TIRI },
    { "*.dmd",         SCLEX::HTML },
    { "*.html",        SCLEX::HTML },
    { "makefile|*.make", SCLEX::MAKEFILE },
@@ -222,10 +222,10 @@ static bool read_rgb8(CSTRING Value, RGB8 *RGB)
 {
    VectorPainter painter;
    if (vec::ReadPainter(nullptr, Value, &painter, nullptr) IS ERR::Okay) {
-      RGB->Red   = F2T(painter.Colour.Red   * 255.0);
-      RGB->Green = F2T(painter.Colour.Green * 255.0);
-      RGB->Blue  = F2T(painter.Colour.Blue  * 255.0);
-      RGB->Alpha = F2T(painter.Colour.Alpha * 255.0);
+      RGB->Red   = int(painter.Colour.Red   * 255.0);
+      RGB->Green = int(painter.Colour.Green * 255.0);
+      RGB->Blue  = int(painter.Colour.Blue  * 255.0);
+      RGB->Alpha = int(painter.Colour.Alpha * 255.0);
       return true;
    }
    else return false;
@@ -360,13 +360,13 @@ static void notify_redimension(OBJECTPTR Object, ACTIONID ActionID, ERR Result, 
 
    auto Self = (extScintilla *)CurrentContext();
    bool resized;
-   if ((Self->Surface.Width != F2T(Args->Width)) or (Self->Surface.Height != F2T(Args->Height))) resized = true;
+   if ((Self->Surface.Width != int(Args->Width)) or (Self->Surface.Height != int(Args->Height))) resized = true;
    else resized = false;
 
-   Self->Surface.X = F2T(Args->X);
-   Self->Surface.Y = F2T(Args->Y);
-   Self->Surface.Width  = F2T(Args->Width);
-   Self->Surface.Height = F2T(Args->Height);
+   Self->Surface.X = int(Args->X);
+   Self->Surface.Y = int(Args->Y);
+   Self->Surface.Width  = int(Args->Width);
+   Self->Surface.Height = int(Args->Height);
 
    if (resized) Self->API->panResized();
 }
@@ -827,7 +827,7 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
    // Create a Scintilla class object, passing it the target surface and a pointer to our own structure to link us
    // together.
 
-   if (!(Self->API = new ScintillaParasol(Self->SurfaceID, Self))) {
+   if (!(Self->API = new ScintillaKTK(Self->SurfaceID, Self))) {
       return ERR::Failed;
    }
 
@@ -893,7 +893,7 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
    if (Self->ShowWhitespace) SCICALL(SCI_SETVIEWWS, (long unsigned int)SCWS_VISIBLEALWAYS);
    else SCICALL(SCI_SETVIEWWS, (long unsigned int)SCWS_INVISIBLE);
 
-   // Turn off buffered drawing because Parasol surfaces already include buffer support
+   // Turn off buffered drawing because Kotuku surfaces already include buffer support
 
    SCICALL(SCI_SETBUFFEREDDRAW, 0UL);
 
@@ -2163,7 +2163,7 @@ static void error_dialog(CSTRING Title, CSTRING Message, ERR Error)
 
    OBJECTPTR dialog;
    if (NewObject(CLASSID::SCRIPT, &dialog) IS ERR::Okay) {
-      dialog->setFields(fl::Name("scDialog"), fl::Owner(CurrentTaskID()), fl::Path("system:scripts/gui/dialog.fluid"));
+      dialog->setFields(fl::Name("scDialog"), fl::Owner(CurrentTaskID()), fl::Path("system:scripts/gui/dialog.tiri"));
 
       acSetKey(dialog, "modal", "1");
       acSetKey(dialog, "title", Title);
@@ -2509,5 +2509,5 @@ static ERR create_scintilla(void)
 
 //********************************************************************************************************************
 
-PARASOL_MOD(MODInit, nullptr, nullptr, MODExpunge, MOD_IDL, nullptr)
+KOTUKU_MOD(MODInit, nullptr, nullptr, MODExpunge, nullptr, MOD_IDL, nullptr)
 extern "C" struct ModHeader * register_scintilla_module() { return &ModHeader; }

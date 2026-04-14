@@ -1,0 +1,145 @@
+#!/usr/bin/env origo
+--[[
+WaveFunction Demonstration
+--]]
+
+   import 'gui'
+   import 'gui/window'
+   import 'gui/combobox'
+   import 'gui/slider'
+   include 'vector'
+
+   local win, viewport, waveFunction, waveVP, rect, filter, text
+   config = { n = 3, l = 2, m = 1, scale = 0.2 }
+
+function updateText()
+   text.string = 'L: ' .. config.l .. ' < N\nM: -L >= ' .. config.m .. ' <= L\nN: ' .. config.n .. '\nScale: ' .. string.format('%.2f', config.scale)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+   win = gui.window({ title='Wave Function Demo', insideWidth=1024, insideHeight=800 })
+
+   viewport = win:clientViewport({
+      aspectRatio = ARF_MEET
+   })
+
+   filter = viewport.scene.new('VectorFilter', {
+      x = 0, y = 0, width = 1, height = 1, units = VUNIT_BOUNDING_BOX
+   })
+
+   waveFunction = filter.new('WaveFunctionFX', {
+      n = config.n, l = config.l, m = config.m, scale = config.scale,
+      colourMap = 'cmap:plasma', resolution = 0,
+      aspectRatio = ARF_X_MID|ARF_Y_MID|ARF_SLICE
+   })
+
+   viewport.scene.mtAddDef('wavefunction', filter)
+
+   waveVP = viewport.new('VectorViewport', { x = 0, y = 20, xOffset = 0, yOffset=0, overflow='hidden' })
+   rect = waveVP.new('VectorRectangle', { x = 0, y = 0, width='100%', height='100%', filter='url(#wavefunction)' })
+   text = waveVP.new('VectorText', { x=10, y=30, string='N', fill='white', face='Source Sans Pro', fontSize=14 })
+
+   cmbColours = gui.combobox({
+      target = viewport,
+      label  = 'Colour Map:',
+      text   = 'Plasma',
+      x      = win.margins.left,
+      y      = 10,
+      items  = {
+         { item='Magma' }, { item='Rocket' }, { item='Mako' }, { item='IceFire' },
+         { item='Flare' }, { item='Crest' }, { item='Viridis' }, { item='Plasma' }, { item='Inferno' } },
+      events = {
+         activate = function(Widget, Text)
+            waveFunction.colourMap = 'cmap:' .. Text:lower()
+            waveVP.scene.surface.mtScheduleRedraw()
+         end
+      }
+   })
+
+   slL = gui.slider({
+      target = viewport,
+      label  = 'L:',
+      value  = waveFunction.l,
+      min    = 1,
+      max    = 10,
+      x      = cmbColours.viewport.x + cmbColours.viewport.width + 10,
+      y      = 10,
+      events = {
+         activate = function(Widget, Value)
+            config.l = math.floor(Value + 0.5)
+            waveFunction.l = config.l
+            waveFunction.n = config.n
+            waveFunction.m = config.m
+            updateText()
+            waveVP.scene.surface.mtScheduleRedraw()
+         end
+      }
+   })
+
+   slM = gui.slider({
+      target = viewport,
+      label  = 'M:',
+      value  = waveFunction.m,
+      min    = 0,
+      max    = 10,
+      x      = slL.viewport.x + slL.viewport.width + 10,
+      y      = 10,
+      events = {
+         activate = function(Widget, Value)
+            config.m = math.floor(Value + 0.5)
+            waveFunction.l = config.l
+            waveFunction.n = config.n
+            waveFunction.m = config.m
+            updateText()
+            waveVP.scene.surface.mtScheduleRedraw()
+         end
+      }
+   })
+
+   slN = gui.slider({
+      target = viewport,
+      label  = 'N:',
+      value  = waveFunction.n,
+      min    = 2,
+      max    = 10,
+      x      = slM.viewport.x + slM.viewport.width + 10,
+      y      = 10,
+      events = {
+         activate = function(Widget, Value)
+            config.n = math.floor(Value + 0.5)
+            waveFunction.l = config.l
+            waveFunction.n = config.n
+            waveFunction.m = config.m
+            updateText()
+            waveVP.scene.surface.mtScheduleRedraw()
+         end
+      }
+   })
+
+   slScale = gui.slider({
+      target = viewport,
+      label  = 'Scale:',
+      value  = waveFunction.scale,
+      min    = 0.05,
+      max    = 2,
+      x      = slN.viewport.x + slN.viewport.width + 10,
+      y      = 10,
+      events = {
+         activate = function(Widget, Value)
+            config.scale = Value
+            waveFunction.l = config.l
+            waveFunction.n = config.n
+            waveFunction.m = config.m
+            waveFunction.scale = config.scale
+            updateText()
+            waveVP.scene.surface.mtScheduleRedraw()
+         end
+      }
+   })
+
+   waveVP.y = cmbColours.viewport.y + cmbColours.viewport.height + 12
+   updateText()
+
+   win:show(true)
+   processing.sleep()

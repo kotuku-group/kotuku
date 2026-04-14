@@ -7,7 +7,7 @@
     <type>module</type>
     <comment>Provides an interface for the management of structured data.</comment>
     <version>1</version>
-    <copyright>Paul Manias © 2001-2025</copyright>
+    <copyright>Paul Manias © 2001-2026</copyright>
     <description>
 <p>The XML module provides comprehensive support for XML 1.0 document parsing, manipulation, and querying.  It integrates with the XPath module to deliver a standards-compliant XML processing environment with extensive querying capabilities.</p>
 <header>XML Processing</header>
@@ -33,10 +33,10 @@
   <function>
     <name>XValueNodes</name>
     <comment>For node-set XPathValue objects, returns the node-set as an array.</comment>
-    <prototype>ERR xml::XValueNodes(struct XPathValue * Value, pf::vector&lt;struct XMLTag *&gt; * Result)</prototype>
+    <prototype>ERR xml::XValueNodes(struct XPathValue * Value, pf::vector&lt;struct XTag *&gt; * Result)</prototype>
     <input>
       <param type="struct XPathValue *" name="Value">The XPathValue to convert.</param>
-      <param type="pf::vector&lt;struct XMLTag *&gt; *" name="Result">The node-set is returned here as an array of <st>XMLTag</st> structures.</param>
+      <param type="pf::vector&lt;struct XTag *&gt; *" name="Result">The node-set is returned here as an array of <st>XTag</st> structures.</param>
     </input>
     <description>
 <p>If an XPathValue represents a node-set (type <code>XPVT::NODE_SET</code>) then XValueToNodes() will return a direct pointer to the node-set array.</p>
@@ -119,9 +119,11 @@
     </constants>
 
     <constants lookup="XPVT" comment="Type descriptors for XPathValue">
+      <const name="Array"/>
       <const name="Boolean"/>
       <const name="Date"/>
       <const name="DateTime"/>
+      <const name="Map"/>
       <const name="NodeSet"/>
       <const name="Number"/>
       <const name="String"/>
@@ -133,7 +135,7 @@
       <const name="DESC">Sort in descending order.</const>
     </constants>
 
-    <constants lookup="XTF" comment="Standard flags for XMLTag.">
+    <constants lookup="XTF" comment="Standard flags for XTag.">
       <const name="CDATA">Tag represents <code>CDATA</code>.</const>
       <const name="COMMENT">Tag represents a comment of the format <code>&lt;!-- Comment --&gt;</code>.</const>
       <const name="INSTRUCTION">Tag represents an instruction of the format <code>&lt;?xml?&gt;</code>.</const>
@@ -147,20 +149,21 @@
       <field name="Value" type="std::string">Value of the attribute</field>
     </struct>
 
-    <struct name="XMLTag" typeName="XMLTAG">
-      <field name="ID" type="INT">Unique ID assigned to the tag on creation</field>
-      <field name="ParentID" type="INT">Unique ID of the parent tag</field>
-      <field name="LineNo" type="INT">Line number on which this tag was encountered</field>
-      <field name="Flags" type="XTF" lookup="XTF">Optional flags</field>
-      <field name="NamespaceID" type="UINT">Hash of namespace URI or 0 for no namespace</field>
-      <field name="Attribs" type="pf::vector&lt;XMLAttrib&gt;">Array of attributes for this tag</field>
-      <field name="Children" type="pf::vector&lt;XMLTag&gt;">Array of child tags</field>
-    </struct>
-
     <struct name="XPathValue" typeName="XPATHVALUE">
       <field name="Type" type="XPVT" lookup="XPVT">Identifies the type of value stored</field>
       <field name="NumberValue" type="DOUBLE">Defined if the type is Number or Boolean</field>
       <field name="StringValue" type="std::string">Defined if the type is String</field>
+    </struct>
+
+    <struct name="XTag" typeName="XTAG">
+      <field name="ID" type="INT">Globally unique ID assigned to the tag on creation.</field>
+      <field name="ParentID" type="INT">UID of the parent tag</field>
+      <field name="LineNo" type="INT">Line number on which this tag was encountered</field>
+      <field name="Flags" type="XTF" lookup="XTF">Optional flags</field>
+      <field name="NamespaceID" type="UINT">Hash of namespace URI or 0 for no namespace</field>
+      <field name="Reserved" type="INT">Private</field>
+      <field name="Attribs" type="pf::vector&lt;XMLAttrib&gt;">Array of attributes for this tag</field>
+      <field name="Children" type="pf::vector&lt;XTag&gt;">Array of child tags</field>
     </struct>
 
   </structs>

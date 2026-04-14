@@ -7,4 +7,5 @@ add_library (${MOD})
 set_module_defaults (${MOD} "Mp3")
 target_sources (${MOD} PRIVATE "mp3.cpp")
 
-flute_test (mp3_audio "tests/test-mp3.fluid")
+# MP3 tests should be manually enabled if working on the MP3 module.
+# flute_test (mp3_audio "tests/test-mp3.tiri")

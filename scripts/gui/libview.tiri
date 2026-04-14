@@ -1,0 +1,693 @@
+-- Internal support functions for listview, columnview etc
+
+   import 'gui'
+   import 'gui/scrollbar'
+
+   namespace 'gui'
+
+   global mGfx ?= mod.load('display')
+
+   glItemCounter = 1
+
+----------------------------------------------------------------------------------------------------------------------
+
+function checkCursorImage(View)
+   if View.pointerLocked and not View.activeZone then
+      mGfx.restoreCursor(PTC_DEFAULT, View.scene.surface)
+      View.pointerLocked = nil
+   end
+end
+
+function highlightItem(View, Item:table)  -- Simplifies the process of highlighting an item.  Item can be nil for deselection.
+   if Item is View.hItem then return end
+
+   if Item != View.hItem then
+      View.hItem?._highlightEvent(View, View.hItem, false)
+   end
+
+   View.hItem = Item
+   Item?._highlightEvent(View, Item, true)
+   View.viewport.acDraw()
+end
+
+function clearItems(View)
+   if View.items then
+      for item in values(View.items) do
+         item?:_free()
+      end
+   end
+
+   View.items = { }
+   View.lookup = { }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function deselectAll(View)
+   for i in values(View.items) do
+      if i._selected then
+         i._selected = false
+         i?._selectEvent(View, i)
+      end
+   end
+end
+
+function deselectItem(View, Item)
+   if View.sItem is Item then View.sItem = nil end
+
+   Item._selected = false
+   Item?._selectEvent(View, Item)
+end
+
+function lastItem(View)
+   return View.items[#View.items-1]
+end
+
+function selectItem(View, Item)
+   if Item is View.sItem then return end
+
+   View.sItem = Item
+
+   if Item then
+      Item._selected = true
+      Item?._selectEvent(View, Item)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Reasons for a reported change:
+--
+--   clear:     All items in the view were removed.
+--   inverted:  Item automatically deselected due to an invert operation.
+--   moved:     The item has been deselected due to moving position.
+--   user:      Selected by user interaction (click or keypress)
+--   manual:    Item was manually selected (by the application, not the user).
+
+function reportItemSelected(View, Reason, Item)
+   View?.itemSelected(View, Reason, Item)
+end
+
+function reportItemDeselected(View, Reason, Item)
+   View?.itemDeselected(View, Reason, Item)
+end
+
+function reportItemActivated(View, Reason, Item)
+   if Item.activity then Item.activity(Item) end
+   View?.itemActivated(View, Reason, Item)
+end
+
+function reportActiveChange(View, Reason, Item)
+   View?.activeChange(View, Reason, Item)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function simpleSelect(View, Item)
+   if View.sItem then
+      deselectItem(View, View.sItem)
+      reportItemDeselected(View, 'user', View.sItem)
+   end
+
+   selectItem(View, Item)
+   reportItemSelected(View, 'user', Item)
+   reportItemActivated(View, 'user', Item)
+   View.scene.surface.mtScheduleRedraw()
+end
+
+function selectNext(View, Filter)
+   if not View.sItem then
+      for item in values(View.items) do
+         if (not item.hidden) and Filter(item) then
+            simpleSelect(View, item)
+            return item
+         end
+      end
+   else
+      found = false
+      for item in values(View.items) do
+         if item is View.sItem then
+            found = true
+         elseif found and (not item.hidden) and Filter(item) then
+            simpleSelect(View, item)
+            return item
+         end
+      end
+   end
+end
+
+function selectPrev(View, Filter)
+   if not View.sItem then
+      for i=1, #View.items do
+         item = View.items[#View.items - i]
+         if (not item.hidden) and Filter(item) then
+            simpleSelect(View, item)
+            return item
+         end
+      end
+   else
+      found = false
+      for i=1, #View.items do
+         item = View.items[#View.items - i]
+         if item is View.sItem then
+            found = true
+         elseif found and (not item.hidden) and Filter(item) then
+            simpleSelect(View, item)
+            return item
+         end
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+gui.initView = function(Options, BuildUI, NewItems)
+   vw = {
+      lookup     = { }, -- Lookup items by ID
+      activeZone = nil,
+      zones      = { },
+      items      = { },
+      disabled   = false,
+      sensitive  = Options.sensitive ?? false,
+      hItem      = nil, -- Highlighted item
+      sItem      = nil, -- Selected item
+      activeItem = nil,
+      scene      = nil,
+      viewport   = nil,
+      page       = nil,
+      window     = nil, -- Host of the page
+      theme      = nil,
+      fontFace   = Options.fontFace ?? gui.fonts.page.face,
+      fontSize   = Options.fontSize ?? gui.fonts.page.size,
+      fontStyle  = Options.fontStyle ?? gui.fonts.page.style,
+      noIcons    = Options.noIcons,
+      itemSelected    = Options.itemSelected,
+      itemDeselected  = Options.itemDeselected,
+      itemActivated   = Options.itemActivated,
+      activeChange    = Options.activeChange,
+      events          = Options.events ?? {},
+      top             = { },
+      totalTop        = 0
+   }
+
+   vw.addItem = function(Item)
+      assert(Item, 'No Item provided')
+      vw.addItems({ Item })
+   end
+
+   vw.addItems = function(Items)
+      assert(Items, 'No Items provided')
+
+      new_items = { }
+      for k, item in pairs(Items) do
+         new_item = {
+            _id = glItemCounter,
+            _vectors = { },
+            _free = function(Item) -- This hook can be overridden by the client
+               vp = Item._vectors.viewport
+               Item._vectors.viewport = nil
+
+               for v in values(Item._vectors) do
+                  v.free()
+               end
+
+               vp?.free()
+
+               Item._vectors = { }
+            end
+         }
+
+         for k, v in pairs(item) do -- Copy all item key-values supplied by the user
+            new_item[k] = v
+         end
+
+         table.insert(vw.items, new_item)
+         if NewItems then table.insert(new_items, new_item) end
+         vw.lookup[glItemCounter] = new_item
+         glItemCounter++
+      end
+
+      if NewItems and (#new_items > 0) then NewItems(vw, new_items) end -- Report new items to view manager
+   end
+
+   -- Generic callback for the user hovering and interacting with listed items
+
+   function itemHoverCallback(Zone, CursorX, CursorY)
+      highlightItem(vw, Zone.item)
+
+      vw.hoveredItem = {
+         click = function(Input)
+            if Input.value is 0 then
+               if vw.sensitive and (not Zone.item.insensitive) then
+                  reportItemActivated(vw, 'user', Zone.item)
+               elseif Input.flags has JTYPE_DBL_CLICK then
+                  reportItemActivated(vw, 'user', Zone.item)
+               end
+            end
+         end
+      }
+   end
+
+   function cursorActivity()
+      if not vw.activeZone and vw.cursorX then
+         for zone in values(vw.zones) do
+            if (vw.cursorY >= zone.y) and (vw.cursorY < zone.y + zone.height) then
+               if ((not zone.width) or ((vw.cursorX >= zone.x) and (vw.cursorX < zone.x + zone.width))) then
+                  cursor = zone.hoverCallback(zone, vw.cursorX, vw.cursorY)
+                  if not cursor then checkCursorImage(vw) end
+                  break
+               end
+            end
+         end
+      end
+   end
+
+   vw.disable = function()
+      vw.disabled = true
+   end
+
+   vw.enable = function()
+      vw.disabled = false
+   end
+
+   -- Add a monitored click zone.  Not for client use.
+   -- If Width is nil then the click zone will span the entire width of the page and X is ignored.
+
+   vw.addZone = function(X, Y, Width, Height, Item, HoverCallback)
+      if not HoverCallback then HoverCallback = itemHoverCallback end
+
+      table.insert(vw.zones, {
+         x      = X,
+         y      = Y,
+         width  = Width,
+         height = Height,
+         item   = Item,
+         hoverCallback = HoverCallback
+      })
+
+      return vw.zones[#vw.zones-1]
+   end
+
+   -- Clears a view of all internal content and updates the display.
+
+   vw.clear = function()
+      activate = false
+      if vw.sItem then
+         reportItemDeselected(vw, 'clear', vw.sItem)
+         activate = true
+      end
+
+      if vw.activeItem then
+         reportActiveChange(vw, 'clear', vw.activeItem)
+      end
+
+      highlightItem(vw, nil)
+      deselectAll(vw, nil)
+      vw.activeItem = nil
+      vw.sItem = nil
+
+      clearItems(vw)
+      vw.rebuild()
+
+      --if activate and Options.notifyOnClear or vw.sensitive then
+         --reportItemActivated(vw, 'clear', nil)
+      --end
+   end
+
+   -- Inverts all currently selected items in the view.
+
+   vw.invertSelection = function()
+      if vw.sensitive then return end
+
+      highlightItem(vw, nil)
+
+      for item in values(vw.items) do
+         if item._selected then
+            deselectItem(vw, item)
+         else
+            selectItem(vw, item)
+         end
+      end
+
+      vw.activeItem = nil
+
+      if vw.sItem then
+         reportItemSelected(vw, 'inverted', vw.sItem)
+      else
+         reportItemDeselected(vw, 'inverted', nil)
+      end
+
+      vw.scene.surface.mtScheduleRedraw()
+   end
+
+   -- Returns the graphical dimensions of an item in the view.
+
+   vw.itemDimensions = function(Item)
+      return { x=0, y=0, width=0, height=0 }
+   end
+
+   -- Moves an item towards the bottom of the view.
+
+   vw.lowerItem = function(XPath, Item)
+
+   end
+
+   -- Moves an item towards the top of the view.
+
+   vw.raiseItem = function(XPath, Item)
+
+   end
+
+   -- Removes an item from the view.
+
+   vw.removeItem = function(XPath, Item, InvisibleRemoval)
+
+   end
+
+   -- Checks the visibility of an item, scrolling it into view if it is partially or fully hidden.
+
+   vw.revealItem = function(Item)
+
+   end
+
+   -- Selects all items in the view for the user.
+
+   vw.selectAll = function()
+      for item in values(vw.items) do
+         selectItem(vw, item)
+      end
+
+      highlightItem(vw, nil)
+      vw.activeItem = vw.items[0]
+      vw.sItem = vw.items[0]
+      reportItemSelected(vw, 'selected', vw.items[0])
+      reportActiveChange(vw, 'selected', vw.items[0])
+
+      vw.scene.surface.mtScheduleRedraw()
+   end
+
+   -- Manually select an item(s).  The client must provide the Conditional function that will receive
+   -- a reference to each known item.  It must return 'true' for any item that needs to be selected.
+
+   vw.selectItems = function(Conditional)
+      for item in values(vw.items) do
+         if Conditional(item) is true then
+            selectItem(vw, item)
+            vw.activeItem = item
+            reportItemSelected(vw, 'selected', item)
+            reportActiveChange(vw, 'selected', item)
+         end
+      end
+      vw.scene.surface.mtScheduleRedraw()
+   end
+
+   -- Return a table of all selected items
+
+   vw.selectedItems = function():array
+      list = array<table> { }
+      for item in values(vw.items) do
+         if item._selected then
+            list:push(item)
+         end
+      end
+      return list
+   end
+
+   vw.selectNext = function(Filter)
+      Filter ?= function() return true end
+      selectNext(vw, Filter)
+   end
+
+   vw.selectPrev = function(Filter)
+      Filter ?= function() return true end
+      selectPrev(vw, Filter)
+   end
+
+   -- Deselects all currently selected items.
+
+   vw.deselectAll = function()
+      deselectAll(vw)
+
+      vw.sItem = nil
+      vw.activeItem = nil
+      reportItemDeselected(vw, 'deselected', vw.items[0])
+      reportActiveChange(vw, 'deselected', vw.items[0])
+
+      vw.scene.surface.mtScheduleRedraw()
+   end
+
+   vw.free = function()
+      vw.clear()
+      vw.viewport.free()
+      for k,v in pairs(vw) do vw[k] = nil end
+      processing.collect()
+   end
+
+   -- TODO: Changes the underlying attributes of any item in the view.
+
+   vw.setItem = function(XPath, TagIndex, Key, Value)
+
+   end
+
+   -- Load a new set of items and display them for the user.  Any existing items will be cleared.
+
+   vw.loadItems = function(Items)
+      clearItems(vw)
+      vw.addItems(Items)
+      vw.rebuild()
+   end
+
+   -- Internal function for sorting items by any named attribute.  Clients must call sort() instead.
+
+   vw.sortItems = function(Attrib, Ascending)
+      Attrib ?= 'name'
+      Ascending ?= true
+
+      if #vw.items <= 1 then return end
+
+      if type(vw.items[0][Attrib]) is 'table' then
+         if vw.items[0][Attrib]['sort'] then
+            table.sort(vw.items, function(a,b)
+               return Ascending ? (a[Attrib].sort < b[Attrib].sort) :> (a[Attrib].sort > b[Attrib].sort)
+            end)
+         else
+            table.sort(vw.items, function(a,b)
+               return Ascending ? (a[Attrib].value < b[Attrib].value) :> (a[Attrib].value > b[Attrib].value)
+            end)
+         end
+      elseif type(vw.items[1][Attrib]) is 'string' then
+         table.sort(vw.items, function(a,b)
+            return Ascending ? (a[Attrib]:lower() < b[Attrib]:lower()) :> (a[Attrib]:lower() > b[Attrib]:lower())
+         end)
+      else
+         table.sort(vw.items, function(a,b)
+            return Ascending ? a[Attrib] < b[Attrib] :> a[Attrib] > b[Attrib]
+         end)
+      end
+
+      vw.scene.surface.mtScheduleRedraw()
+   end
+
+   -- Sort items by any named attribute (Attrib must appear in all items)
+   -- Functionality must be defined by the host.
+
+   vw.sort = function(Attrib, Ascending)
+      msg('The view implementation must override the sort() method.')
+   end
+
+   -- Internal function for building the view's UI
+
+   vw.rebuild = function()
+      vw.zones = { }
+      vw.hoveredItem = { }
+
+      vw.page.x = 0 -- Reset the page position
+      vw.page.y = 0
+
+      BuildUI(vw)
+      cursorActivity() -- Reset the cursor
+      vw?.border?.acMoveToFront()
+      vw.scene.surface.mtScheduleRedraw()
+   end
+
+   -- Internal function for offsetting the frame, e.g. to accommodate a toolbar.
+
+   vw.reserveTop = function(ID, Height)
+      if vw.top[ID] then return end
+      vw.top[ID] = { y=vw.totalTop, height=Height }
+      vw.totalTop = vw.totalTop + Height
+      if vw.frame then vw.frame.y = vw.totalTop end
+      if vw.scrollbar then vw.scrollbar.vbar.viewport.y = vw.totalTop end
+   end
+
+   -- Initialisation --
+
+   vw.parentViewport = Options.target
+
+   vw.scene    = vw.parentViewport.scene
+   vw.viewport = vw.parentViewport.new('VectorViewport', { name='view_main', overflow='hidden' }) -- Main viewport for vector graphics.
+   vw.frame    = vw.viewport.new('VectorViewport', { name='view_frame', x=0, xOffset=0, y=0, yOffset=0, overflow=VOF_HIDDEN })
+   vw.theme    = gui.getTheme(vw.scene)
+
+   vw.bkgd = vw.frame.new('VectorRectangle', {
+      name   = 'view_bkgd',
+      fill   = vw.theme.page.bkgd,
+      width  = '100%',
+      height = '100%'
+   })
+
+   vw.page = vw.frame.new('VectorViewport', { name='view_page', width='100%', height='100%', buffered=true })
+
+   if not Options.borderless then
+      vw.border = vw.viewport.new('VectorRectangle', {
+         name    = 'view_border',
+         x       = 0.5,
+         y       = 0.5,
+         xOffset = -0.5,
+         yOffset = -0.5,
+         stroke  = vw.theme.page.stroke,
+         strokeWidth = gui.sizing.page.strokeWidth
+      })
+   end
+
+   for v in values(array<string> { 'x', 'y', 'xOffset', 'yOffset', 'width', 'height'}) do
+      if Options[v] then vw.viewport[v] = Options[v] end
+   end
+
+   vw.parentViewport.subscribe('free', function(Surface, Args)
+      vw.parentViewport = nil
+   end)
+--[[
+   vw.parentViewport.mtSubscribeFeedback((FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS), function(Viewport, Event)
+      if (Event is FM_LOST_FOCUS) then
+
+      else
+
+      end
+   end)
+--]]
+
+   vw.scrollbar = gui.scrollbar({
+      target = vw.viewport,
+      view   = vw.frame,
+      page   = vw.page,
+      direction = 'all'
+   })
+
+   if not Options.borderless and vw.scrollbar then
+      vw.scrollbar.hbar.viewport.x = 1
+      vw.scrollbar.vbar.viewport.y = 1
+   end
+
+   vw.viewport.mtSubscribeFeedback((FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS), function(Viewport, Event)
+      if Event is FM_LOST_FOCUS then
+         vw.hasFocus = false
+         vw.events?.lostFocus(vw)
+      else
+         vw.hasFocus = true
+         vw.events?.focus(vw)
+      end
+      vw.viewport.acDraw()
+   end)
+
+   vw.viewport.mtSubscribeKeyboard(function(Viewport, Qualifiers, Code, Unicode)
+      if Qualifiers has KQ_PRESSED then
+         if (Code is KEY_ENTER) or (Code is KEY_NP_ENTER) or (Code is KEY_SPACE) then
+            -- TODO: item activation
+         elseif (Code is KEY_UP) or (Code is KEY_LEFT) then
+            if vw.hItem then
+               scan = vw.hItem.prev
+               while scan do
+                  scan = scan.prev -- TODO: prev is not supported yet
+               end
+               scan ?= lastItem(vw)
+               highlightItem(vw, scan)
+            else
+               highlightItem(vw, vw.items)
+            end
+         elseif (Code is KEY_DOWN) or (Code is KEY_RIGHT) then
+            if vw.hItem then
+               scan = vw.hItem.next
+               while scan do
+                  scan = scan.next -- TODO: next is not supported yet
+               end
+               scan ?= vw.items
+               highlightItem(vw, scan)
+            else
+               highlightItem(vw, vw.items)
+            end
+         end
+      end
+   end)
+
+   vw.page.mtSubscribeInput((JTYPE_MOVEMENT | JTYPE_BUTTON | JTYPE_CROSSING | JTYPE_EXT_MOVEMENT), function(Viewport, Events)
+      ev = Events
+      while ev do
+         if ev.type is JET_CROSSED_IN then
+            vw.cursorX = ev.x
+            vw.cursorY = ev.y
+            checkCursorImage(vw)
+         elseif ev.type is JET_CROSSED_OUT then
+            vw.cursorX = nil
+            vw.cursorY = nil
+            checkCursorImage(vw)
+            if vw.hItem then
+               highlightItem(vw, nil)
+            end
+         elseif ev.type is JET_BUTTON_1 then
+            if ev.flags has JTYPE_REPEATED then return end
+
+            if ev.value is 1 then
+               vw.clickAbsX = ev.absX
+               vw.clickAbsY = ev.absY
+               vw.clickX = ev.x
+               vw.clickY = ev.y
+            end
+
+            if vw.activeZone then -- Custom zone for click activity
+               vw.activeZone?.clickRelease(ev.x, ev.y, ev.absX, ev.absY)
+               vw.activeZone = nil
+               cursorActivity()
+               return
+            end
+
+            if vw.hoveredItem and vw.hoveredItem.click then -- Feedback for all click types.  Refer to hoveredItem()
+               if vw.hoveredItem.click(ev) then
+                  return
+               end
+            end
+
+            if (ev.value is 1) and vw.hItem then
+               if not Options.multiSelect and vw.sItem then
+                  deselectItem(vw, vw.sItem)
+               end
+
+               if vw.hItem._selected then
+                  deselectItem(vw, vw.hItem)
+                  reportItemDeselected(vw, 'user', vw.hItem)
+               else
+                  selectItem(vw, vw.hItem)
+                  reportItemSelected(vw, 'user', vw.hItem)
+               end
+
+               vw.scene.surface.mtScheduleRedraw()
+            end
+         elseif ev.type is JET_ABS_XY then
+            vw?.activeZone?.clickMove(ev)
+            vw.cursorX = ev.x
+            vw.cursorY = ev.y
+            vw.cursorAbsX = ev.absX
+            vw.cursorAbsY = ev.absY
+            cursorActivity()
+         end
+         ev = ev.next
+      end
+   end)
+
+   if Options.items then
+      vw.addItems(Options.items)
+   end
+
+   vw.rebuild()
+
+   return vw
+end

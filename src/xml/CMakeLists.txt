@@ -3,7 +3,7 @@
 set (MOD xml)
 set (INC_MOD_XML TRUE PARENT_SCOPE)
 
-idl_gen ("${MOD}.fdl"
+idl_gen ("${MOD}.tdl"
    NAME ${MOD}_defs
    OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.h"
    FILES "xml.cpp"
@@ -13,14 +13,12 @@ idl_gen ("${MOD}.fdl"
 add_library (${MOD})
 target_link_libraries (${MOD} PUBLIC unicode)
 set_module_defaults (${MOD} "Xml")
-add_compile_definitions("PRV_XML_MODULE" "PRV_XML")
 
 # Unescape Library
 
 add_library (xml_unescape OBJECT "${CMAKE_CURRENT_SOURCE_DIR}/unescape.cpp")
 target_include_directories (xml_unescape PRIVATE "${PROJECT_SOURCE_DIR}/include")
 set_target_properties (xml_unescape PROPERTIES CXX_STANDARD 20 POSITION_INDEPENDENT_CODE ON)
-add_dependencies (xml_unescape build_headers)
 
 # Schema Support Library
 
@@ -32,7 +30,14 @@ add_library (xml_schema OBJECT
 
 target_include_directories (xml_schema PRIVATE "${PROJECT_SOURCE_DIR}/include")
 set_target_properties (xml_schema PROPERTIES CXX_STANDARD 20 POSITION_INDEPENDENT_CODE ON)
+
 add_dependencies (xml build_headers)
+add_dependencies (xml_schema build_headers)
+add_dependencies (xml_unescape build_headers)
+
+target_compile_definitions (${MOD} PRIVATE "PRV_XML_MODULE" "PRV_XML")
+target_compile_definitions (xml_schema PRIVATE "PRV_XML_MODULE" "PRV_XML")
+target_compile_definitions (xml_unescape PRIVATE "PRV_XML_MODULE" "PRV_XML")
 
 # Module Code
 
@@ -43,10 +48,11 @@ target_sources (${MOD} PRIVATE
 
 # Tests
 
-flute_test (${MOD}_basic "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_basic.fluid")
-flute_test (${MOD}_advanced "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_advanced_features.fluid")
-flute_test (${MOD}_data_sources "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_data_sources.fluid")
-flute_test (${MOD}_manipulation "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_xml_manipulation.fluid")
-flute_test (${MOD}_parsing "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_xml_parsing.fluid")
-flute_test (${MOD}_namespaces "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_namespaces.fluid")
-flute_test (${MOD}_variables "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_setvariable.fluid")
+flute_test (${MOD}_basic "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_basic.tiri")
+flute_test (${MOD}_advanced "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_advanced_features.tiri")
+flute_test (${MOD}_data_sources "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_data_sources.tiri")
+flute_test (${MOD}_manipulation "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_xml_manipulation.tiri")
+flute_test (${MOD}_parsing "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_xml_parsing.tiri")
+flute_test (${MOD}_namespaces "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_namespaces.tiri")
+flute_test (${MOD}_variables "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_setvariable.tiri")
+flute_test (${MOD}_schema_validation "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_schema_validation.tiri")

@@ -407,7 +407,7 @@ SetCommandList: The fastest available mechanism for setting a series of path ins
 Use SetCommandList() to copy a series of path commands to a @VectorPath object.  All existing commands will be
 cleared as a result of this process.
 
-NOTE: This method is not compatible with Fluid calls.
+NOTE: This method is not compatible with Tiri calls.
 
 -INPUT-
 buf(ptr) Commands: An array of !PathCommand structures.

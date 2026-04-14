@@ -1,0 +1,255 @@
+-- Tiri LSP Static Definitions
+--
+-- Contains hover documentation for Tiri built-in functions and keywords.
+-- These are static definitions that don't need to be rebuilt from XML docs.
+
+----------------------------------------------------------------------------------------------------------------------
+-- Built-in Functions
+
+glBuiltins = {
+   -- Output
+   ['print'] = {
+      comment = 'Prints values to standard output.',
+      prototype = 'print(...)'
+   },
+   ['msg'] = {
+      comment = 'Prints a message to the system log.',
+      prototype = 'msg(...)'
+   },
+   ['error'] = {
+      comment = 'Raises an error with the given message.',
+      prototype = 'error(message, [level])'
+   },
+   ['assert'] = {
+      comment = 'Raises an error if condition is false.',
+      prototype = 'assert(condition, [message])'
+   },
+
+   -- Type conversion/introspection
+   ['type'] = {
+      comment = 'Returns the type of a value as a string.',
+      prototype = 'type(value)'
+   },
+   ['tonumber'] = {
+      comment = 'Converts a value to a number.',
+      prototype = 'tonumber(value, [base])'
+   },
+   ['tostring'] = {
+      comment = 'Converts a value to a string.',
+      prototype = 'tostring(value)'
+   },
+
+   -- Iteration
+   ['pairs'] = {
+      comment = 'Iterator for all key-value pairs in a table.',
+      prototype = 'pairs(table)'
+   },
+   ['ipairs'] = {
+      comment = 'Iterator for integer keys 0..n in a table.',
+      prototype = 'ipairs(table)'
+   },
+   ['next'] = {
+      comment = 'Returns the next key-value pair in a table.',
+      prototype = 'next(table, [key])'
+   },
+   ['keys'] = {
+      comment = 'Iterator for keys in a table or array.',
+      prototype = 'keys(table)'
+   },
+   ['values'] = {
+      comment = 'Iterator for values in a table or array.',
+      prototype = 'values(table)'
+   },
+
+   -- Table/array unpacking
+   ['unpack'] = {
+      comment = 'Returns elements from a table as separate values.',
+      prototype = 'unpack(table, [i], [j])'
+   },
+
+   -- Protected calls
+   ['pcall'] = {
+      comment = 'Calls a function in protected mode, catching errors.',
+      prototype = 'pcall(func, ...)'
+   },
+   ['xpcall'] = {
+      comment = 'Calls a function with a custom error handler.',
+      prototype = 'xpcall(func, errhandler, ...)'
+   },
+
+   -- Metatable access
+   ['setmetatable'] = {
+      comment = 'Sets the metatable for a table.',
+      prototype = 'setmetatable(table, metatable)'
+   },
+   ['getmetatable'] = {
+      comment = 'Returns the metatable of a value.',
+      prototype = 'getmetatable(value)'
+   },
+   ['rawget'] = {
+      comment = 'Gets a table value without invoking metamethods.',
+      prototype = 'rawget(table, key)'
+   },
+   ['rawset'] = {
+      comment = 'Sets a table value without invoking metamethods.',
+      prototype = 'rawset(table, key, value)'
+   },
+   ['rawequal'] = {
+      comment = 'Compares two values without invoking metamethods.',
+      prototype = 'rawequal(v1, v2)'
+   },
+
+   -- Script/module loading
+   ['require'] = {
+      comment = 'Loads and returns a Tiri module.',
+      prototype = 'require(modname)'
+   },
+   ['include'] = {
+      comment = 'Includes a Tiri module into the current environment.',
+      prototype = 'include(modname)'
+   },
+   ['loadFile'] = {
+      comment = 'Loads and executes a Tiri script file.',
+      prototype = 'loadFile(path, [env])'
+   },
+   ['load'] = {
+      comment = 'Loads a chunk from a string.',
+      prototype = 'load(chunk, [chunkname], [mode], [env])'
+   },
+   ['exec'] = {
+      comment = 'Executes an external program.',
+      prototype = 'exec(program, [args...])'
+   },
+
+   -- Memory management
+   ['processing.collect'] = {
+      comment = 'Runs the garbage collection process manually.',
+      prototype = 'collectgarbage([opt], [arg])'
+   },
+
+   -- Script parameters
+   ['arg'] = {
+      comment = 'Returns a command-line argument by name or index.',
+      prototype = 'arg(name, [default])'
+   },
+
+   -- Deferred expressions
+   ['resolve'] = {
+      comment = 'Forces evaluation of a deferred expression.',
+      prototype = 'resolve(thunk)'
+   },
+
+   -- Range constructor
+   ['range'] = {
+      comment = 'Creates an iterator over a numeric range.',
+      prototype = 'range(start, stop, [step])'
+   },
+
+   -- Events
+   ['subscribeEvent'] = {
+      comment = 'Subscribes to a system event.',
+      prototype = 'subscribeEvent(event, callback)'
+   },
+   ['unsubscribeEvent'] = {
+      comment = 'Unsubscribes from a system event.',
+      prototype = 'unsubscribeEvent(handle)'
+   },
+
+   -- Structures
+   ['MAKESTRUCT'] = {
+      comment = 'Creates a structured data type.',
+      prototype = 'MAKESTRUCT(name, fields)'
+   },
+
+   -- Kotuku object creation
+   ['obj.new'] = {
+      comment = 'Creates a new Kotuku object.',
+      prototype = 'obj.new(classname, [options])'
+   },
+   ['obj.find'] = {
+      comment = 'Finds an existing Kotuku object by name.',
+      prototype = 'obj.find(name)'
+   },
+
+   -- Module loading
+   ['mod.load'] = {
+      comment = 'Loads a Kotuku module.',
+      prototype = 'mod.load(modname)'
+   }
+}
+
+----------------------------------------------------------------------------------------------------------------------
+-- Keywords
+
+glKeywords = {
+   -- Control flow
+   ['if'] = { comment = 'Conditional statement. Executes code if condition is true.' },
+   ['then'] = { comment = 'Marks the start of an if/elseif block.' },
+   ['else'] = { comment = 'Alternative branch in an if statement.' },
+   ['elseif'] = { comment = 'Additional conditional branch.' },
+   ['end'] = { comment = 'Ends a block (function, if, for, while, etc.).' },
+
+   -- Loops
+   ['for'] = { comment = 'Numeric or generic for loop.' },
+   ['in'] = { comment = 'Used with for loops for iteration.' },
+   ['while'] = { comment = 'While loop - repeats while condition is true.' },
+   ['do'] = { comment = 'Marks the start of a loop body.' },
+   ['repeat'] = { comment = 'Repeat-until loop.' },
+   ['until'] = { comment = 'Ends a repeat loop with exit condition.' },
+   ['break'] = { comment = 'Exits the innermost loop.' },
+   ['continue'] = { comment = 'Skips to the next loop iteration.' },
+
+   -- Functions
+   ['function'] = { comment = 'Defines a function.' },
+   ['return'] = { comment = 'Returns values from a function.' },
+
+   -- Variables
+   ['local'] = { comment = 'Declares a local variable (block-scoped).' },
+   ['global'] = { comment = 'Declares a global variable.' },
+
+   -- Pattern matching
+   ['choose'] = { comment = 'Pattern matching expression (switch-like).' },
+   ['from'] = { comment = 'Specifies the value to match in choose.' },
+   ['when'] = { comment = 'A case in a choose expression.' },
+
+   -- Special
+   ['defer'] = { comment = 'Deferred execution - code runs when scope exits.' },
+   ['catch'] = { comment = 'Error handling block.' },
+   ['raise'] = { comment = 'Raises an error or exception.' },
+   ['check'] = { comment = 'Error checking statement - raises on failure.' },
+   ['thunk'] = { comment = 'Declares a deferred/lazy expression.' },
+
+   -- Operators (keyword form)
+   ['and'] = { comment = 'Logical AND operator.' },
+   ['or'] = { comment = 'Logical OR operator.' },
+   ['not'] = { comment = 'Logical NOT operator.' },
+   ['is'] = { comment = 'Equality comparison.' },
+
+   -- Constants
+   ['true'] = { comment = 'Boolean true value.' },
+   ['false'] = { comment = 'Boolean false value.' },
+   ['nil'] = { comment = 'Nil value (absence of value).' }
+}
+
+----------------------------------------------------------------------------------------------------------------------
+-- Module prefixes mapping
+
+glModulePrefixes = {
+   mAudio = 'Audio',
+   mFont = 'Font',
+   mGfx = 'Display',
+   mNet = 'Network',
+   mRegex = 'Regex',
+   mSys = 'Core',
+   mVec = 'Vector',
+   mXML = 'XML',
+   mXQuery = 'XQuery'
+}
+
+----------------------------------------------------------------------------------------------------------------------
+
+   return {
+      builtins = glBuiltins,
+      keywords = glKeywords,
+      modulePrefixes = glModulePrefixes
+   }

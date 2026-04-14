@@ -3,7 +3,7 @@
 set (MOD scintilla)
 set (INC_MOD_SCINTILLA TRUE PARENT_SCOPE)
 
-idl_gen ("${MOD}.fdl"
+idl_gen ("${MOD}.tdl"
    NAME ${MOD}_defs
    OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.h"
    ARGS "output-defs=module_def.c" "output-proto=module_def.c" "prototypes=static"
@@ -66,13 +66,13 @@ set (LEXERS
    "scintilla/lexers/LexSQL.cxx"
    "scintilla/lexers/LexVB.cxx")
 
+add_library (scintilla)
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-   add_compile_options ("-Wno-char-subscripts")
+   target_compile_options (scintilla PRIVATE "-Wno-char-subscripts")
 endif ()
 
-add_compile_definitions ("SCI_NAMESPACE" "__PARASOL__" "SCI_LEXER")
-
-add_library (scintilla)
+target_compile_definitions (scintilla PRIVATE "SCI_NAMESPACE" "__KOTUKU__" "SCI_LEXER")
 target_link_libraries (${MOD} PUBLIC unicode)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")

@@ -17,7 +17,7 @@
 
 #include "xpath_value.h"
 
-#include <parasol/modules/xml.h>
+#include <kotuku/modules/xml.h>
 
 #include "../xml/schema/schema_types.h"
 #include "../xml/schema/type_checker.h"
@@ -44,7 +44,7 @@ namespace
       return Value.substr(start, end - start + 1);
    }
 
-   void append_node_text(XMLTag *Node, std::string &Output)
+   void append_node_text(XTag *Node, std::string &Output)
    {
       if (!Node) return;
 
@@ -132,23 +132,39 @@ bool XPathVal::to_boolean() const
       case XPVT::DateTime:
          return !StringValue.empty();
       case XPVT::NodeSet: return !node_set.empty();
+      case XPVT::Map: return map_storage and !map_storage->empty();
+      case XPVT::Array: return array_storage and !array_storage->empty();
    }
    return false;
 }
 
 double XPathVal::string_to_number(const std::string &Value) {
-   if (Value.empty()) return std::numeric_limits<double>::quiet_NaN();
+   auto trimmed = trim_view(Value);
+   if (trimmed.empty()) return std::numeric_limits<double>::quiet_NaN();
 
+   if ((trimmed IS std::string_view("INF")) or (trimmed IS std::string_view("+INF"))) {
+      return std::numeric_limits<double>::infinity();
+   }
+
+   if (trimmed IS std::string_view("-INF")) {
+      return -std::numeric_limits<double>::infinity();
+   }
+
+   if (trimmed IS std::string_view("NaN")) {
+      return std::numeric_limits<double>::quiet_NaN();
+   }
+
+   std::string lexical(trimmed);
    char *end_ptr = nullptr;
-   double result = std::strtod(Value.c_str(), &end_ptr);
-   if ((end_ptr IS Value.c_str()) or (*end_ptr != '\0')) {
+   double result = std::strtod(lexical.c_str(), &end_ptr);
+   if ((end_ptr IS lexical.c_str()) or (*end_ptr != '\0')) {
       return std::numeric_limits<double>::quiet_NaN();
    }
 
    return result;
 }
 
-std::string XPathVal::node_string_value(XMLTag *Node)
+std::string XPathVal::node_string_value(XTag *Node)
 {
    if (not Node) return std::string();
 
@@ -187,6 +203,9 @@ double XPathVal::to_number() const
          if (not node_set_string_values.empty()) return string_to_number(node_set_string_values[0]);
          return string_to_number(node_string_value(node_set[0]));
       }
+      case XPVT::Map:
+      case XPVT::Array:
+         return std::numeric_limits<double>::quiet_NaN();
    }
    return 0.0;
 }
@@ -194,7 +213,8 @@ double XPathVal::to_number() const
 std::string XPathVal::to_string() const
 {
    auto schema_type = get_schema_type();
-   if (xml::schema::is_numeric(schema_type) and (Type != XPVT::NodeSet)) {
+   if (xml::schema::is_numeric(schema_type) and (Type != XPVT::NodeSet)
+      and (Type != XPVT::Map) and (Type != XPVT::Array)) {
       double numeric_value = to_number();
       if (!std::isnan(numeric_value)) return format_xpath_number(numeric_value);
    }
@@ -238,6 +258,20 @@ std::string XPathVal::to_string() const
          if (node_set.empty()) return std::string();
          return node_string_value(node_set[0]);
       }
+      case XPVT::Map: {
+         size_t entry_count = (map_storage) ? map_storage->size() : 0u;
+         std::string summary("[map entries=");
+         summary += std::to_string(entry_count);
+         summary.push_back(']');
+         return summary;
+      }
+      case XPVT::Array: {
+         size_t member_count = (array_storage) ? array_storage->size() : 0u;
+         std::string summary("[array members=");
+         summary += std::to_string(member_count);
+         summary.push_back(']');
+         return summary;
+      }
    }
    return "";
 }
@@ -259,6 +293,8 @@ bool XPathVal::is_empty() const
       case XPVT::DateTime:
          return StringValue.empty();
       case XPVT::NodeSet: return node_set.empty();
+      case XPVT::Map: return (!map_storage) or map_storage->empty();
+      case XPVT::Array: return (!array_storage) or array_storage->empty();
    }
    return true;
 }
@@ -268,6 +304,8 @@ size_t XPathVal::size() const
    switch (Type)
    {
       case XPVT::NodeSet: return node_set.size();
+      case XPVT::Map: return (map_storage) ? map_storage->size() : 0;
+      case XPVT::Array: return (array_storage) ? array_storage->size() : 0;
       case XPVT::String:
       case XPVT::Date:
       case XPVT::Time:
@@ -312,7 +350,7 @@ xml::schema::SchemaType XPathVal::get_schema_type() const
    return xml::schema::schema_type_for_xpath(Type);
 }
 
-XPathVal xpath_nodeset_from_components(pf::vector<XMLTag *> Nodes,
+XPathVal xpath_nodeset_from_components(pf::vector<XTag *> Nodes,
    std::vector<const XMLAttrib *> Attributes,
    std::vector<std::string> Strings,
    std::optional<std::string> Override)
@@ -326,10 +364,10 @@ XPathVal xpath_nodeset_from_components(pf::vector<XMLTag *> Nodes,
    return value;
 }
 
-XPathVal xpath_nodeset_singleton(XMLTag *Node, const XMLAttrib *Attribute,
+XPathVal xpath_nodeset_singleton(XTag *Node, const XMLAttrib *Attribute,
    std::string StringValue)
 {
-   pf::vector<XMLTag *> nodes;
+   pf::vector<XTag *> nodes;
    nodes.push_back(Node);
 
    std::vector<const XMLAttrib *> attributes;

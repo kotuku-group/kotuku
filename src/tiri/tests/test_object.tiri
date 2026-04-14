@@ -1,0 +1,387 @@
+-- Flute tests for the object interface.
+
+@BeforeEach(hotpath=false)
+function enforce_hotpath() end
+
+local glScript = obj.find("self")
+local glThunk  = <{ obj.find("self") }>
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Using pairs() on an object will iterate over its field meta data.
+
+@Test function Pairs()
+   script = obj.find("self")
+   for k,v in pairs(script) do
+      print(string.format("%20s", k), " ", string.format("$%.8x", v))
+   end
+end
+
+-- Using ipairs() on an object will iterate over its field meta data.
+
+@Test function IPairs()
+   script = obj.find("self")
+   for k,v in ipairs(script) do
+      print(k, " ", v)
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function Type()
+   script = obj.find("self")
+
+   assert(type(script) is 'object', 'Expected type of script to be object, got ' .. type(script))
+end
+
+@Test function reservedProperties()
+   f = obj.new('time')
+   assert(type(f.id) is 'number', "Expected 'id' to be present as a number type")
+   assert(f.class.name is 'Time', "Expected 'class' to be present")
+end
+
+@Test function ObjectToString()
+   as_string = tostring(glScript)
+   assert(type(as_string) is 'string', "Expected tostring to return a string")
+end
+
+@Test function ChildCreation()
+   f = obj.new('time')
+   child = f.new('time')
+   assert(type(child) is 'object', "Expected child to be an object")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ThunkResolution()
+   -- Resolve the thunk inside a string to see complex sequencing works
+   script = f"{glThunk} hello"
+   assert(regex.new('#\\d+ hello').test(script), f"Expected thunk to resolve to an object, got {script}")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test obj.find() with name and ID
+
+@Test function ObjFind()
+   -- Find by name
+   script = obj.find("self")
+   assert(script, "Expected obj.find('self') to return the script object")
+   assert(type(script) is 'object', "Expected object type from obj.find")
+
+   -- Find by ID
+   id = script.id
+   found = obj.find(id)
+   assert(found, "Expected obj.find(id) to return an object")
+   assert(found.id is id, f"Expected found object to have same ID {found.id} != {id}")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test obj.exists() method
+
+@Test function ObjExists()
+   f = obj.new('time')
+   assert(f.exists(), "Expected newly created object to exist")
+
+   id = f.id
+   f.free()
+
+   -- After freeing, we can't call exists() on the freed reference, but we can verify by trying to find it
+   found = obj.find(id)
+   assert(found is nil, "Expected freed object to not be findable")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test obj.detach() method
+
+@Test function ObjDetach()
+   f = obj.new('time')
+   f.detach()
+   -- Object should still be usable after detach
+   assert(f.exists(), "Expected detached object to still exist")
+   f.free() -- Clean up manually since it's detached
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test obj.init() method for manual initialisation
+
+@Test function ObjInit()
+   -- Create object without auto-init (no fields table)
+   f = obj.new('time')
+   -- Object is auto-initialised, so init() returns Okay
+   err = f.init()
+   assert(err is ERR_Okay, "Expected init() to return Okay, got " .. tostring(err))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test obj.get() explicit field access
+
+@Test(hotpath=true) function ObjGetField()
+   t = obj.new('time', { })
+
+   -- Get single field
+   year = t.get('year')
+   assert(type(year) is 'number', "Expected get('year') to return a number")
+
+   -- Get field with default option
+   result = t.get('no_field', 2020)
+   assert(result is 2020, "Expected get() to return default value for missing field")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Direct field access (most optimal route)
+
+@Test(hotpath=true) function ObjGetSetDirect()
+   t = obj.new('time', { })
+   f = obj.new('file')
+
+   -- Set and get string field that has function backing
+
+   f.path = 'temp:test.txt'
+   assert(f.path is 'temp:test.txt', "Expected path to be set and retrieved correctly")
+
+   -- Set and get numeric field with no function backing
+
+   t.year = 2025
+
+   year = t.year
+   assert(type(year) is 'number', "Expected get('year') to return a number")
+   assert(year is 2025, "Expected year field to be 2025, got " .. tostring(year))
+
+   -- Test compile-time detection of non-existent field (read)
+   try
+      exec([[
+         t = obj.new('time')
+         invalid = t.not_a_field
+      ]])
+   except ex
+      -- exec() doesn't preserve full error details, just check parsing failed
+      assert(ex.message:find("Parsing failed") or ex.message:find("not_a_field"),
+         "Expected parsing error for invalid field, got: " .. ex.message)
+   success
+      error("Expected error when accessing invalid field")
+   end
+
+   -- Test OBSETF - write to a read-only field (runtime error, timeStamp exists in dictionary)
+   try
+      t.timeStamp = 1
+   except ex
+      assert(ex.message:find('Time.timeStamp'), "Error message should mention the accessed field, got: " .. ex.message)
+   success
+      error("Expected error when writing a read-only field")
+   end
+
+   -- Test compile-time detection of non-existent field (write)
+   try
+      exec([[
+         t = obj.new('time')
+         t.does_not_exist = print
+      ]])
+   except ex
+      -- exec() doesn't preserve full error details, just check parsing failed
+      assert(ex.message:find("Parsing failed") or ex.message:find("does_not_exist"),
+         "Expected parsing error for invalid field, got: " .. ex.message)
+   success
+      error("Expected error when writing a non-existent field")
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test 'with' statement
+
+@Test(hotpath=true) function ObjLock()
+   f = obj.new('file')
+   f.path = 'temp:locktest.txt'
+
+   lock_executed = false
+   with f do
+      lock_executed = true
+   end
+
+   assert(lock_executed, "Expected lock block to execute")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test obj.children() method
+
+@Test function ObjChildren()
+   -- Script object may have children
+   script = obj.find("self")
+   children = script.children()
+   assert(type(children) is 'array', "Expected children() to return an array")
+
+   -- Test with class filter (may return empty array)
+   filtered = script.children("File")
+   assert(type(filtered) is 'array', "Expected children() with filter to return an array")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test obj.set() explicit field setting
+
+@Test function ObjSet()
+   f = obj.new('file')
+
+   -- Set single field
+   err = f.set('path', 'temp:settest.txt')
+   assert(err is ERR_Okay, "Expected set() to succeed")
+   assert(f.path is 'temp:settest.txt', "Expected path to be set correctly")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test obj._state() for per-object state storage
+
+@Test(hotpath=true) function ObjState()
+   f = obj.new('file')
+
+   state = f._state()
+   assert(type(state) is 'table', "Expected _state() to return a table")
+
+   -- Store something in state
+   state.myvalue = 42
+
+   -- Retrieve state again and verify
+   state2 = f._state()
+   assert(state2.myvalue is 42, "Expected state to persist value")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test action calling on objects
+
+@Test function ActionCalling()
+   f = obj.new('time', { })
+   err = f.acQuery()
+   assert(err is ERR_Okay, "Expected acQuery() to succeed, got " .. tostring(err))
+
+   f.free() -- Clean up
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test subscribe/unsubscribe to actions
+
+@Test function ActionSubscription()
+   f = obj.new('time', { })
+
+   callback_count = 0
+   f.subscribe('Free', function(obj, args)
+      callback_count++
+   end)
+
+   f.free()
+
+   assert(callback_count is 1, "Expected Free action callback to be called once")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test garbage collection of objects
+
+@Test function GarbageCollection()
+   -- Create and immediately lose reference
+   id = nil
+   do
+      temp = obj.new('time')
+      id = temp.id
+   end
+
+   processing.collect()
+
+   assert(obj.find(id) is nil, "Expected object to be collected")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test obj.class property returns MetaClass
+
+@Test function ObjClassProperty()
+   f = obj.new('file')
+   cls = f.class
+
+   assert(type(cls) is 'object', "Expected class property to return an object")
+   assert(cls.name is 'File', "Expected class name to be 'File'")
+   assert(cls.className is 'File', "Expected className field")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Create objects of different classes and expect failure on assignment
+
+@Test function ClassIDTracking()
+   try
+      exec([[
+         time_obj = obj.new('time')
+         file_obj = obj.new('file')
+         time_obj = file_obj
+      ]])
+   success
+      error("Expected error when assigning object of different class")
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Compile-time field type checking: assigning string field to number variable should fail
+
+@Test function FieldTypeCheckStrToNum()
+   try
+      exec([[
+         c = obj.new('config')
+         count = 0
+         count = c.path
+      ]])
+   except ex
+      assert(ex.message:find('Type mismatch'), "Expected type mismatch error, got: " .. ex.message)
+   success
+      error("Expected compile-time error when assigning str field to num variable")
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Compile-time field type checking: assigning number field to string variable should fail
+
+@Test function FieldTypeCheckNumToStr()
+   try
+      exec([[
+         c = obj.new('config')
+         local name: str = 'hello'
+         name = c.totalKeys
+      ]])
+   except ex
+      assert(ex.message:find('Type mismatch'), "Expected type mismatch error, got: " .. ex.message)
+   success
+      error("Expected compile-time error when assigning num field to str variable")
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Compile-time field type checking: matching types should succeed
+
+@Test function FieldTypeCheckMatchingTypes()
+   -- Number to number should work
+   t = obj.new('time')
+   t.year = 2025
+   local year_copy: num = t.year
+   assert(year_copy is 2025, "Expected year_copy to be 2025")
+
+   -- String to string should work (config.keyFilter is a string field)
+   c = obj.new('config', { keyFilter='a=b' })
+   local filter_copy: str = c.keyFilter
+   assert(type(filter_copy) is 'string', "Expected keyFilter to be a string")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Compile-time field type checking: inferred types from initialisation should be checked
+
+@Test function FieldTypeCheckInferredTypes()
+   -- Both year and day are numbers, so this should work
+   t = obj.new('time')
+   year = 0
+   year = t.day
+   assert(type(year) is 'number', "Expected year to be a number")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Compile-time field type checking: inferred types from field access are tracked
+
+@Test function FieldTypeCheckUntypedVariable()
+   -- Inferred types from field access are tracked correctly
+   c = obj.new('config', { keyFilter='x=y' })
+   num_value = c.totalKeys  -- num_value is inferred as num
+   assert(type(num_value) is 'number', "Expected num_value to be a number")
+
+   str_value = c.keyFilter  -- str_value is inferred as str
+   assert(type(str_value) is 'string', "Expected str_value to be a string")
+end

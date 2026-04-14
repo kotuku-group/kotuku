@@ -13,7 +13,7 @@
     <id>0b88abb5</id>
     <idstring>SVG</idstring>
     <category>GUI</category>
-    <copyright>Paul Manias © 2010-2025</copyright>
+    <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>The SVG class serves as a complete solution for integrating Scalable Vector Graphics documents into applications.  It parses SVG statements into a scene graph consisting of <class name="Vector">Vector</class> objects and related constructs, providing direct programmatic access to all graphical elements.  The generated scene graph is accessible via the <fl>Scene</fl> and <fl>Viewport</fl> fields, enabling real-time manipulation of individual elements.</p>
 <p>Key capabilities include:</p>
@@ -27,7 +27,7 @@
 <li>Export capabilities to multiple formats including PNG images</li>
 </list>
 <p>The class supports both file-based loading via <fl>Path</fl> and direct string-based parsing via <fl>Statement</fl>.  SVG documents can be integrated into existing scene graphs by setting the <fl>Target</fl> field, or rendered independently through the automatically created scene structure.</p>
-<p>Animation timing is controlled through the <fl>FrameRate</fl> field, with callback support via <fl>FrameCallback</fl> for custom rendering workflows.  The implementation maintains compatibility with the complete SVG specification while providing enhanced programmatic access unique to the Parasol framework.</p>
+<p>Animation timing is controlled through the <fl>FrameRate</fl> field, with callback support via <fl>FrameCallback</fl> for custom rendering workflows.  The implementation maintains compatibility with the complete SVG specification while providing enhanced programmatic access unique to Kotuku.</p>
 <p>Please refer to the W3C's online documentation for exhaustive information on the SVG standard.</p></description>
     <source>
       <file>class_svg.cpp</file>
@@ -251,7 +251,7 @@
 <p>
 <b>Supported file types:</b> Standard SVG files (*.svg) and compressed SVG files (*.svgz) are both supported, with automatic decompression handling for compressed formats.</p>
 <p>
-<b>Path resolution:</b> The file system path is resolved through the standard Parasol file access mechanisms, supporting virtual file systems, archives, and network-accessible resources where configured.</p>
+<b>Path resolution:</b> The file system path is resolved through the standard Kotuku file access mechanisms, supporting virtual file systems, archives, and network-accessible resources where configured.</p>
 <p>When both <fl>Path</fl> and <fl>Statement</fl> are specified, the Path field takes precedence and the Statement content is ignored during initialisation.</p>
       </description>
     </field>

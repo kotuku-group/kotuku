@@ -1,0 +1,36 @@
+-- Unit tests for IDL types and parsing
+
+   include 'core'
+   include 'xml'
+
+   import './include/utils'
+   import './include/parser'
+   import './include/functions'
+   import './include/types'
+   import './include/doc'
+
+   glHeader = array<string>
+   glOutput = array<string>
+   glConstants = { }
+
+   glSelf = obj.find('self')
+
+   local param_list = {
+      { str = "int Width: The width of the image in pixels.", type='int', name='Width' },
+      { str = "str Format: The format of the image, e.g., 'RGB', 'RGBA'.", type='str', name='Format' },
+      { str = "obj(XML) XML: Target XML object.", type='obj(XML)', name='XML' },
+      { str = "ptr(func) Callback: Optional callback.", type="ptr(func)", name='Callback' },
+      { str = "cstr Key: Keyname.", type="cstr", name='Key' },
+      { str = "int(XIF) ResultFlags: Bitmask.", type='int(XIF)', name='ResultFlags' },
+      { str = "ptr(cpp(str)) Result: Result.", type='ptr(cpp(str))', name='Result' }
+   }
+
+   for k, v in ipairs(param_list) do
+      print('Check: ' .. v.str)
+      local param = parseParameterString(v.str)
+
+      assert(param.type is v.type, "Type mismatch for parameter '" .. v.name .. "': expected '" .. v.type .. "', got '" .. param.type .. "'")
+      assert(param.name is v.name, "Name mismatch for parameter: expected '" .. v.name .. "', got '" .. param.name .. "'")
+
+      cType(param, name)
+   end

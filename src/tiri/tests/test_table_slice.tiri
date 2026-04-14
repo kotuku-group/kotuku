@@ -1,0 +1,341 @@
+-- Flute test suite for Table Slice Support (range-based indexing)
+----------------------------------------------------------------------------------------------------------------------
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+-- Basic Exclusive Slicing Tests
+
+@Test function TableSliceBasicExclusive()
+   t = {10, 20, 30, 40, 50}
+   result = t[{1..4}]  -- Should be {20, 30, 40}
+   assert(#result is 3, "slice should have 3 elements, got " .. #result)
+   assert(result[0] is 20, "first element should be 20, got " .. tostring(result[0]))
+   assert(result[1] is 30, "second element should be 30, got " .. tostring(result[1]))
+   assert(result[2] is 40, "third element should be 40, got " .. tostring(result[2]))
+end
+
+@Test function TableSliceFromStart()
+   t = {10, 20, 30, 40, 50}
+   result = t[{0..3}]  -- Should be {10, 20, 30}
+   assert(#result is 3, "slice from start should have 3 elements")
+   assert(result[0] is 10, "first element should be 10")
+   assert(result[2] is 30, "third element should be 30")
+end
+
+@Test function TableSliceToEnd()
+   t = {10, 20, 30, 40, 50}
+   result = t[{2..5}]  -- Should be {30, 40, 50}
+   assert(#result is 3, "slice to end should have 3 elements")
+   assert(result[0] is 30, "first element should be 30")
+   assert(result[2] is 50, "third element should be 50")
+end
+
+@Test function TableSliceFullTable()
+   t = {10, 20, 30, 40, 50}
+   result = t[{0..5}]  -- Should be {10, 20, 30, 40, 50}
+   assert(#result is 5, "full slice should have 5 elements")
+   assert(result[0] is 10)
+   assert(result[4] is 50)
+end
+
+-- Inclusive Slicing Tests
+
+@Test function TableSliceBasicInclusive()
+   t = {10, 20, 30, 40, 50}
+   result = t[{1...3}]  -- Should be {20, 30, 40}
+   assert(#result is 3, "inclusive slice should have 3 elements, got " .. #result)
+   assert(result[0] is 20, "first element should be 20")
+   assert(result[1] is 30, "second element should be 30")
+   assert(result[2] is 40, "third element should be 40")
+end
+
+@Test function TableSliceInclusiveSingleElement()
+   t = {10, 20, 30, 40, 50}
+   result = t[{2...2}]  -- Should be {30}
+   assert(#result is 1, "single element inclusive slice should have 1 element")
+   assert(result[0] is 30, "element should be 30")
+end
+
+@Test function TableSliceInclusiveToEnd()
+   t = {10, 20, 30, 40, 50}
+   result = t[{3...4}]  -- Should be {40, 50}
+   assert(#result is 2, "inclusive slice to end should have 2 elements")
+   assert(result[0] is 40)
+   assert(result[1] is 50)
+end
+
+-- Negative Index Tests
+
+@Test function TableSliceNegativeIndices()
+   t = {10, 20, 30, 40, 50}
+   result = t[{-3...-1}]  -- Last 3 elements: {30, 40, 50}
+   assert(#result is 3, "negative slice should have 3 elements, got " .. #result)
+   assert(result[0] is 30, "first element should be 30")
+   assert(result[1] is 40, "second element should be 40")
+   assert(result[2] is 50, "third element should be 50")
+end
+
+@Test function TableSliceNegativeStart()
+   t = {10, 20, 30, 40, 50}
+   -- Negative indices force inclusive mode per design doc
+   result = t[{-2..-1}]  -- {40, 50} (inclusive due to negative indices)
+   assert(#result is 2, "negative indices slice should have 2 elements, got " .. #result)
+   assert(result[0] is 40, "first element should be 40")
+   assert(result[1] is 50, "second element should be 50")
+end
+
+@Test function TableSliceNegativeEnd()
+   t = {10, 20, 30, 40, 50}
+   result = t[{0...-2}]  -- From start to second-to-last (inclusive)
+   assert(#result is 4, "slice to negative end should have 4 elements, got " .. #result)
+   assert(result[0] is 10)
+   assert(result[3] is 40)
+end
+
+@Test function TableSliceMixedIndices()
+   t = {10, 20, 30, 40, 50}
+   result = t[{1...-1}]  -- From index 1 to last (inclusive)
+   assert(#result is 4, "mixed indices slice should have 4 elements, got " .. #result)
+   assert(result[0] is 20)
+   assert(result[3] is 50)
+end
+
+-- Step/Stride Tests
+-- NOTE: Custom step requires range() constructor, which returns a runtime value.
+-- Parser can't detect range literals in this case, so we use table.slice() explicitly.
+
+@Test function TableSliceWithStep()
+   t = {10, 20, 30, 40, 50, 60, 70}
+   r = range(0, 7, true, 2)  -- Every 2nd element: {10, 30, 50, 70}
+   result = table.slice(t, r)
+   assert(#result is 4, "stepped slice should have 4 elements, got " .. #result)
+   assert(result[0] is 10, "first element should be 10")
+   assert(result[1] is 30, "second element should be 30")
+   assert(result[2] is 50, "third element should be 50")
+   assert(result[3] is 70, "fourth element should be 70")
+end
+
+@Test function TableSliceWithStepThree()
+   t = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
+   r = range(0, 9, true, 3)  -- Every 3rd: {0, 3, 6, 9}
+   result = table.slice(t, r)
+   assert(#result is 4, "step 3 slice should have 4 elements, got " .. #result)
+   assert(result[0] is 0)
+   assert(result[1] is 3)
+   assert(result[2] is 6)
+   assert(result[3] is 9)
+end
+
+-- Reverse Iteration Tests
+
+@Test function TableSliceReverse()
+   t = {10, 20, 30, 40, 50}
+   result = t[{4..0}]  -- Reverse exclusive: indices 4,3,2,1 (not 0)
+   assert(#result is 4, "reverse exclusive slice should have 4 elements, got " .. #result)
+   assert(result[0] is 50, "first element should be 50")
+   assert(result[1] is 40, "second element should be 40")
+   assert(result[2] is 30, "third element should be 30")
+   assert(result[3] is 20, "fourth element should be 20")
+end
+
+@Test function TableSliceReversePartial()
+   t = {10, 20, 30, 40, 50}
+   result = t[{3..1}]  -- Reverse exclusive: indices 3,2 (not 1)
+   assert(#result is 2, "reverse partial exclusive slice should have 2 elements, got " .. #result)
+   assert(result[0] is 40)
+   assert(result[1] is 30)
+end
+
+@Test function TableSliceReverseInclusive()
+   t = {10, 20, 30, 40, 50}
+   result = t[{4...0}]  -- Reverse inclusive: {50, 40, 30, 20, 10}
+   assert(#result is 5, "reverse inclusive slice should have 5 elements")
+   assert(result[0] is 50)
+   assert(result[4] is 10)
+end
+
+@Test function TableSliceReverseWithStep()
+   t = {10, 20, 30, 40, 50, 60, 70}
+   r = range(6, 0, true, -2)  -- 6, 4, 2, 0
+   -- Custom step requires explicit table.slice() call
+   result = table.slice(t, r)
+   assert(#result is 4, "reverse stepped slice should have 4 elements, got " .. #result)
+   assert(result[0] is 70, "first should be 70")
+   assert(result[1] is 50, "second should be 50")
+   assert(result[2] is 30, "third should be 30")
+   assert(result[3] is 10, "fourth should be 10")
+end
+
+-- Out-of-Bounds Handling
+
+@Test function TableSliceOutOfBoundsEnd()
+   t = {10, 20, 30}
+   result = t[{0..10}]  -- Should clip to {10, 20, 30}
+   assert(#result is 3, "out-of-bounds end slice should clip, got " .. #result)
+   assert(result[0] is 10)
+   assert(result[2] is 30)
+end
+
+@Test function TableSliceOutOfBoundsStart()
+   t = {10, 20, 30}
+   result = t[{-10..3}]  -- Should clip start to 0
+   assert(#result is 3, "negative out-of-bounds start should clip, got " .. #result)
+   assert(result[0] is 10)
+   assert(result[2] is 30)
+end
+
+@Test function TableSliceBothOutOfBounds()
+   t = {10, 20, 30}
+   result = t[{-10..10}]  -- Should clip both
+   assert(#result is 3, "both out-of-bounds should clip to full table")
+end
+
+-- Empty Range Handling
+
+@Test function TableSliceEmptyExclusiveRange()
+   t = {10, 20, 30}
+   result = t[{2..2}]  -- Empty exclusive range
+   assert(#result is 0, "empty exclusive range should return empty table, got " .. #result)
+end
+
+@Test function TableSliceEmptyBeyondLength()
+   t = {10, 20, 30}
+   result = t[{5..10}]  -- Beyond table length
+   assert(#result is 0, "beyond-length range should return empty table")
+end
+
+@Test function TableSliceAutoReverseRange()
+   t = {10, 20, 30}
+   result = t[{2..0}]  -- Auto-detects as reverse range: {30, 20, 10}
+   assert(#result is 2, "{2..0} exclusive reverse should have 2 elements, got " .. #result)
+   assert(result[0] is 30, "first element should be 30")
+   assert(result[1] is 20, "second element should be 20")
+end
+
+-- Regular Indexing Unaffected
+
+@Test function TableRegularNumericIndex()
+   t = {10, 20, 30}
+   assert(t[0] is 10, "numeric index 0 should work")
+   assert(t[1] is 20, "numeric index 1 should work")
+   assert(t[2] is 30, "numeric index 2 should work")
+end
+
+@Test function TableRegularStringKey()
+   t = {10, 20, 30}
+   t.name = "test"
+   t.value = 42
+   assert(t.name is "test", "string key should work")
+   assert(t["name"] is "test", "string key bracket syntax should work")
+   assert(t.value is 42, "numeric value with string key should work")
+end
+
+@Test function TableRegularNilAccess()
+   t = {10, 20, 30}
+   assert(t[10] is nil, "out-of-bounds numeric index should return nil")
+   assert(t.nonexistent is nil, "nonexistent key should return nil")
+end
+
+-- Mixed Content Tables
+
+@Test function TableSliceMixedContent()
+   t = {"a", 2, "c", 4, "e"}
+   result = t[{1..4}]
+   assert(#result is 3, "mixed content slice should work")
+   assert(result[0] is 2)
+   assert(result[1] is "c")
+   assert(result[2] is 4)
+end
+
+@Test function TableSliceWithNils()
+   t = {10, nil, 30, nil, 50}
+   result = t[{0..5}]
+   assert(result[0] is 10)
+   assert(result[1] is nil)
+   assert(result[2] is 30)
+   assert(result[3] is nil)
+   assert(result[4] is 50)
+end
+
+-- Edge Cases
+
+@Test function TableSliceEmptyTable()
+   t = {}
+   result = t[{0..5}]
+   assert(#result is 0, "slicing empty table should return empty table")
+end
+
+@Test function TableSliceSingleElementTable()
+   t = {42}
+   result = t[{0..1}]
+   assert(#result is 1, "single element slice should have 1 element")
+   assert(result[0] is 42)
+end
+
+@Test function TableSliceUsingRangeVariable()
+   t = {10, 20, 30, 40, 50}
+   r = {1..4}
+   -- Range variables require explicit table.slice() call
+   result = table.slice(t, r)
+   assert(#result is 3, "slice using range variable should work")
+   assert(result[0] is 20)
+   assert(result[2] is 40)
+end
+
+@Test function TableSliceUsingRangeConstructor()
+   t = {10, 20, 30, 40, 50}
+   -- Range constructor also requires explicit table.slice() call
+   result = table.slice(t, range(1, 4))
+   assert(#result is 3, "slice using range() constructor should work")
+   assert(result[0] is 20)
+   assert(result[2] is 40)
+end
+
+-- Verify slice returns a copy, not a view
+
+@Test function TableSliceReturnsCopy()
+   t = {10, 20, 30, 40, 50}
+   result = t[{1..4}]
+
+   -- Modify the result
+   result[0] = 999
+
+   -- Original should be unchanged
+   assert(t[1] is 20, "modifying slice should not affect original table")
+end
+
+-- Metatable Interaction Tests
+
+@Test function TableSliceWithUnrelatedMetatable()
+   -- Table with a metatable that defines __len but not __index
+   t = {10, 20, 30, 40, 50}
+   setmetatable(t, { __len = function() return 100 end })
+
+   -- This should still work even though table has a metatable
+   result = t[{1..4}]
+   assert(#result is 3, "slice should work even with unrelated metatable, got " .. #result)
+   assert(result[0] is 20, "first element should be 20")
+   assert(result[1] is 30, "second element should be 30")
+   assert(result[2] is 40, "third element should be 40")
+end
+
+@Test function TableSliceWithCustomIndex()
+   -- With parser-level range detection, t[{range}] is transformed to table.slice(t, range)
+   -- at parse time, so custom __index is NOT invoked for range literals.
+   -- This test verifies the slice operation works correctly even with a custom __index.
+   t = {10, 20, 30, 40, 50}
+   setmetatable(t, {
+      __index = function(tbl, key)
+         return 999  -- Would return 999 for non-existent keys
+      end
+   })
+
+   -- Parser transforms t[{1..4}] to range.slice(t, range(1,4,false))
+   -- so custom __index is bypassed and we get the actual slice
+   result = t[{1..4}]
+   assert(#result is 3, "slice should work even with custom __index")
+   assert(result[0] is 20, "first element should be 20")
+   assert(result[1] is 30, "second element should be 30")
+   assert(result[2] is 40, "third element should be 40")
+end

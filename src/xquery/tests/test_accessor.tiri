@@ -1,0 +1,122 @@
+-- XPath 2.0 accessor @Test function s
+
+   include 'xml'
+
+glBaseFolder = 'temp:xpath_accessor_tests/'
+glAccessorXML = nil
+glXMLPath = glBaseFolder .. 'primary.xml'
+
+function ensureFolder(path)
+   err = mSys.CreateFolder(path, 0)
+   if (err != ERR_Okay) and (err != ERR_FileExists) then
+      error('Failed to create folder ' .. path .. ': ' .. mSys.GetErrorMsg(err))
+   end
+end
+
+@BeforeAll
+function init(State)
+   mSys.DeleteFile(glBaseFolder)
+   ensureFolder(glBaseFolder)
+
+   io.writeAll(glXMLPath, [[
+<?xml version="1.0"?>
+<root xml:base="nested/">
+   <ns:child xmlns:ns="urn:test" xml:base="entries/">
+      <ns:leaf xml:base="leaf.xml" code="alpha">Alpha</ns:leaf>
+   </ns:child>
+   <nilExample xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:nil="true"/>
+   <values>
+      <item code="alpha">Alpha</item>
+      <item code="bravo">Bravo</item>
+   </values>
+</root>]])
+
+   glAccessorXML = obj.new('xml', { path = glXMLPath })
+end
+
+@AfterAll
+function cleanup()
+   mSys.DeleteFile(glBaseFolder)
+   glAccessorXML = nil
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- fn:base-uri should resolve xml:base attributes and fall back to the document path
+
+@Test function BaseUriResolvesXmlBase()
+   query = obj.new('xquery', { statement='ends-with(base-uri(/root/*[local-name()="child" and namespace-uri()="urn:test"]/*[local-name()="leaf" and namespace-uri()="urn:test"]), "leaf.xml")' })
+   assert(query.mtEvaluate(glAccessorXML) is ERR_Okay, 'Evaluate() failed: ' .. tostring(query.errorMsg))
+
+   assert(query.resultString is 'true', 'base-uri() should reflect xml:base inheritance and resolve to the leaf resource, got ' .. tostring(query.resultString))
+
+   query.statement = 'base-uri(/root)'
+   assert(query.mtEvaluate(glAccessorXML) is ERR_Okay, 'Evaluate() failed: ' .. tostring(query.errorMsg))
+   root_base = query.resultString
+
+   err, type = mSys.AnalysePath(root_base .. 'primary.xml')
+   assert(type is LOC_FILE, "base-uri() should return a path to the primary.xml file, got " .. tostring(root_base))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- fn:document-uri should expose the stable URI of the owning document
+
+@Test function DocumentUriReturnsDocumentPath()
+   query = obj.new('xquery', { statement='document-uri(/root/*[local-name()="child" and namespace-uri()="urn:test"])' })
+   assert(query.mtEvaluate(glAccessorXML) is ERR_Okay, 'Evaluate() failed: ' .. tostring(query.errorMsg))
+
+   assert(string.find(query.resultString, glXMLPath, 0, true) != nil,
+      'document-uri() should return the document path for descendant nodes, got ' .. tostring(query.resultString))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- fn:node-name should preserve namespace prefixes when present
+
+@Test function NodeNamePreservesPrefix()
+   query = obj.new('xquery', { statement='string(node-name(/root/*[local-name()="child" and namespace-uri()="urn:test"]))' })
+   assert(query.mtEvaluate(glAccessorXML) is ERR_Okay, 'Evaluate() failed: ' .. tostring(query.errorMsg))
+   assert(query.resultString is 'ns:child', 'node-name() should expose the QName using the parsed prefix, got ' .. tostring(query.resultString))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- fn:data should atomise nodes into their typed value representation
+
+@Test function DataExtractsAtomicValues()
+   query = obj.new('xquery', { statement='data(/root/*[local-name()="child" and namespace-uri()="urn:test"]/*[local-name()="leaf" and namespace-uri()="urn:test"])' })
+   assert(query.mtEvaluate(glAccessorXML) is ERR_Okay, 'Evaluate() failed: ' .. tostring(query.errorMsg))
+   assert(query.resultString is 'Alpha', 'data() should coerce element content into atomic values, got ' .. tostring(query.resultString))
+
+   query.statement = 'data(/root/values/item[2]/@code)'
+   assert(query.mtEvaluate(glAccessorXML) is ERR_Okay, 'Evaluate() failed: ' .. tostring(query.errorMsg))
+   assert(query.resultString is 'bravo', 'data() should coerce attribute nodes into atomic values, got ' .. tostring(query.resultString))
+
+   query.statement = 'data(42)'
+   assert(query.mtEvaluate() is ERR_Okay, 'Evaluate() failed: ' .. tostring(query.errorMsg))
+   assert(query.resultString is '42', 'data() should return numeric literals unchanged, got ' .. tostring(query.resultString))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- fn:nilled should report xsi:nil elements as true
+
+@Test function NilledReportsTrue()
+   err, nilled = glAccessorXML.mtEvaluate('nilled(/root/nilExample)')
+   assert(nilled is 'true', 'nilled() should report true for xsi:nil elements, got ' .. tostring(nilled))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- fn:static-base-uri should reflect the static context base of the primary document
+
+@Test function StaticBaseUriReflectsDocument()
+   err, staticBase = glAccessorXML.mtEvaluate('static-base-uri()')
+
+   err, type = mSys.AnalysePath(staticBase .. 'primary.xml')
+   assert(err is ERR_Okay and type is LOC_FILE, "static-base-uri() should return a path to the primary.xml file, got " .. tostring(staticBase))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- fn:default-collation should expose the W3C codepoint collation URI
+
+@Test function DefaultCollationIsCodepoint()
+   err, collation = glAccessorXML.mtEvaluate('default-collation()')
+   assert(collation is 'http://www.w3.org/2005/xpath-functions/collation/codepoint',
+      'default-collation() should return the codepoint collation URI, got ' .. tostring(collation))
+end

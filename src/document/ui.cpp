@@ -106,6 +106,7 @@ static bool delete_selected(extDocument *Self)
             auto &text = Self->Stream.lookup<bc_text>(start);
             if (start.index IS end.index) text.text.erase(start.offset, end.offset - start.offset);
             else text.text.erase(start.offset, text.text.size() - start.offset);
+            text.invalidate_tokens();
          }
          start.index++;
          start.offset = 0;
@@ -118,9 +119,11 @@ static bool delete_selected(extDocument *Self)
          if ((end.offset > 0) and (Self->Stream[end.index].code IS SCODE::TEXT)) {
             auto &text = Self->Stream.lookup<bc_text>(end);
             text.text.erase(0, end.offset);
+            text.invalidate_tokens();
          }
       }
 
+      Self->invalidate_text_width_cache();
       Self->CursorIndex = Self->SelectIndex;
       Self->SelectIndex.reset();
       return true;
@@ -272,6 +275,7 @@ static ERR key_event(objVectorViewport *Viewport, KQ Flags, KEY Value, int Unico
                      // Delete the character/escape code
                      Self->CursorIndex = index;
                      Self->CursorIndex.erase_char(Self->Stream);
+                     Self->invalidate_text_width_cache();
                   }
 
                   Self->UpdatingLayout = true;
@@ -286,6 +290,7 @@ static ERR key_event(objVectorViewport *Viewport, KQ Flags, KEY Value, int Unico
          case KEY::DELETE: {
             if (!delete_selected(Self)) {
                Self->CursorIndex.erase_char(Self->Stream);
+               Self->invalidate_text_width_cache();
             }
             Self->UpdatingLayout = true;
             layout_doc_fast(Self);
@@ -403,7 +408,7 @@ static void error_dialog(const std::string Title, const std::string Message)
 
    OBJECTPTR dialog;
    if (NewObject(CLASSID::SCRIPT, &dialog) IS ERR::Okay) {
-      dialog->setFields(fl::Name("scDialog"), fl::Owner(CurrentTaskID()), fl::Path("scripts:gui/dialog.fluid"));
+      dialog->setFields(fl::Name("scDialog"), fl::Owner(CurrentTaskID()), fl::Path("scripts:gui/dialog.tiri"));
 
       acSetKey(dialog, "modal", "1");
       acSetKey(dialog, "title", Title.c_str());
@@ -452,9 +457,9 @@ static ERR activate_cell_edit(extDocument *Self, INDEX CellIndex, stream_char Cu
       CursorIndex.set(CellIndex + 1);
    }
 
-   auto &stream = cell.stream;
+   auto &stream = *cell.stream;
 
-   if (stream->data[CursorIndex.index].code != SCODE::TEXT) {
+   if (stream.data[CursorIndex.index].code != SCODE::TEXT) {
       // Skip ahead to the first relevant control code - it's always best to place the cursor ahead of things like
       // font styles, paragraph formatting etc.
 
@@ -463,7 +468,7 @@ static ERR activate_cell_edit(extDocument *Self, INDEX CellIndex, stream_char Cu
          std::array<SCODE, 5> content = {
             SCODE::TABLE_START, SCODE::LINK_END, SCODE::IMAGE, SCODE::PARAGRAPH_END, SCODE::TEXT
          };
-         if (std::find(std::begin(content), std::end(content), stream->data[CursorIndex.index].code) != std::end(content)) break;
+         if (std::find(std::begin(content), std::end(content), stream.data[CursorIndex.index].code) != std::end(content)) break;
          CursorIndex.next_code();
       }
    }
@@ -561,7 +566,7 @@ static void deactivate_edit(extDocument *Self, bool Redraw)
                   //ScriptArg("End", i)
                };
 
-               for (auto &cell_arg : cell.args) args.emplace_back("", cell_arg.second);
+               for (const auto& [key, value] : cell.args) args.emplace_back("", value);
 
                script->exec(function_name.c_str(), args.data(), args.size());
             }

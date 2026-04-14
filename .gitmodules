@@ -1,5 +1,5 @@
 [submodule "docs/wiki"]
 	path = docs/wiki
-	url = https://github.com/parasol-framework/parasol.wiki.git
+	url = https://github.com/parasol-framework/kotuku.wiki.git
 	branch = master
 	update = merge

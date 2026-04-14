@@ -1,11 +1,11 @@
-#ifndef DEFS_H
-#define DEFS_H 1
+#pragma once
 
 #ifndef PLATFORM_CONFIG_H
-#include <parasol/config.h>
+#include <kotuku/config.h>
 #endif
 
 #include <set>
+#include <deque>
 #include <functional>
 #include <mutex>
 #include <sstream>
@@ -16,6 +16,7 @@
 #include <thread>
 #include <algorithm>
 #include <ankerl/unordered_dense.h>
+#include <unordered_set>
 
 using namespace std::chrono_literals;
 
@@ -77,9 +78,9 @@ constexpr int DRIVETYPE_USB       = 5;
 
 #define BREAKPOINT { uint8_t *nz = 0; nz[0] = 0; }
 
-#include <parasol/system/errors.h>
-#include <parasol/system/types.h>
-#include <parasol/system/registry.h>
+#include <kotuku/system/errors.h>
+#include <kotuku/system/types.h>
+#include <kotuku/system/registry.h>
 
 #include <stdarg.h>
 
@@ -151,11 +152,11 @@ struct rkWatchPath {
 #endif
 };
 
-#include <parasol/vector.hpp>
+#include <kotuku/vector.hpp>
 #include "prototypes.h"
 
-#include <parasol/main.h>
-#include <parasol/strings.hpp>
+#include <kotuku/main.h>
+#include <kotuku/strings.hpp>
 
 using namespace pf;
 
@@ -165,11 +166,20 @@ struct ThreadMessage {
 };
 
 struct ThreadActionMessage {
-   OBJECTPTR Object;    // Direct pointer to a target object.
    AC        ActionID;  // The action to execute.
-   int       Key;       // Internal
+   OBJECTID  ObjectID;  // ID of the target object (for queue dispatch).
    ERR       Error;     // The error code resulting from the action's execution.
    FUNCTION  Callback;  // Callback function to execute on action completion.
+};
+
+// Queued async action, waiting for the same-object action to complete.
+
+struct QueuedAction {
+   OBJECTID  ObjectID;
+   AC        ActionID;
+   int       ArgsSize;
+   std::vector<int8_t> Parameters;
+   FUNCTION  Callback;
 };
 
 //********************************************************************************************************************
@@ -189,8 +199,27 @@ extern std::recursive_mutex glmMemory;
 extern std::recursive_mutex glmMsgHandler;
 extern std::recursive_mutex glmAsyncActions;
 
+extern std::mutex glmActionQueue;
+extern std::unordered_map<OBJECTID, std::deque<QueuedAction>> glActionQueues;
+extern std::unordered_set<OBJECTID> glActiveAsyncObjects;
+extern std::unordered_map<OBJECTID, int> glAsyncObjectThreads;
+
 extern std::condition_variable_any cvResources;
 extern std::condition_variable_any cvObjects;
+
+// Per-thread record for the global thread registry.  Threads are registered on first use of get_thread_id() and
+// deregistered on thread destruction.  The condition variable allows other threads to interrupt a sleeping thread
+// via WakeThread().
+
+struct ThreadRecord {
+   std::mutex mutex;                            // Guards cv.wait() and compound updates from WakeThread()
+   std::condition_variable cv;
+   std::atomic<TSTATE> state = TSTATE::RUNNING; // Readable without locking; writes from other threads require mutex
+   std::atomic<bool> interrupted = false;        // Readable without locking; set by WakeThread() under mutex
+};
+
+extern std::mutex glmThreadRegistry;
+extern std::unordered_map<int, std::shared_ptr<ThreadRecord>> glThreadRegistry;
 
 //********************************************************************************************************************
 
@@ -307,21 +336,22 @@ extern ankerl::unordered_dense::map<uint32_t, virtual_drive> glVirtual;
   #define SHMKEY 0x0009f830 // Keep the key value low as we will be incrementing it
 
   #ifdef USE_SHM
-    #define MEMORYFILE           "/tmp/parasol.mem"
+    #define MEMORYFILE           "/tmp/kotuku.mem"
   #else
     // To mount a 32MB RAMFS filesystem for this method:
     //
     //    mkdir -p /RAM1
     //    mount -t ramfs none /tmp/ramfs -o maxsize=32000
 
-    #define MEMORYFILE           "/tmp/ramfs/parasol.mem"
+    #define MEMORYFILE           "/tmp/ramfs/kotuku.mem"
 
     extern int glMemoryFD;
   #endif
 #endif
 
 enum {
-   RT_OBJECT
+   RT_OBJECT,
+   RT_SLEEP // Thread is sleeping in ProcessMessages / sleep_task
 };
 
 //********************************************************************************************************************
@@ -720,8 +750,7 @@ extern Object glDummyObject;
 extern TIMER glProcessJanitor;
 extern int glEventMask;
 extern struct ModHeader glCoreHeader;
-
-#ifndef PARASOL_STATIC
+#ifndef KOTUKU_STATIC
 extern CSTRING glClassBinPath;
 #endif
 
@@ -955,8 +984,8 @@ class extObjectContext : public ObjectContext {
 //********************************************************************************************************************
 
 #ifdef __ANDROID__
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "Parasol:Core", __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "Parasol:Core", __VA_ARGS__)
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "Kotuku:Core", __VA_ARGS__)
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "Kotuku:Core", __VA_ARGS__)
 #endif
 
 //********************************************************************************************************************
@@ -1002,10 +1031,11 @@ class RootModule : public Object {
    MHF    Flags;
    bool   NoUnload;
    bool   DLL;                 // TRUE if the module is a Windows DLL
-   ERR    (*Init)(OBJECTPTR, struct CoreBase *);
-   void   (*Close)(OBJECTPTR);
-   ERR    (*Open)(OBJECTPTR);
-   ERR    (*Expunge)(void);
+   ModInit Init;
+   ModClose Close;
+   ModOpen Open;
+   ModExpunge Expunge;
+   ModTest Test;
    struct ActionEntry prvActions[int(AC::END)]; // Action routines to be intercepted by the program
    std::string LibraryName; // Name of the library loaded from disk
 
@@ -1013,6 +1043,9 @@ class RootModule : public Object {
 };
 
 THREADID get_thread_id(void);
+void deregister_thread(void);
+[[nodiscard]] std::shared_ptr<ThreadRecord> get_thread_record(void);
+ERR WakeThread(int Thread, int Stop = false);
 
 //********************************************************************************************************************
 
@@ -1054,12 +1087,13 @@ extern void remove_archive(class extCompression *);
 
 void   print_diagnosis(int);
 CSTRING action_name(OBJECTPTR Object, int ActionID);
-#ifndef PARASOL_STATIC
+#ifndef KOTUKU_STATIC
 APTR   build_jump_table(const Function *);
 #endif
 void   stop_async_actions(void);
 ERR    copy_args(const FunctionField *, int, int8_t *, std::vector<int8_t> &);
 ERR    create_archive_volume(void);
+void   dispatch_queued_action(OBJECTID);
 ERR    delete_tree(std::string &, FUNCTION *, FileFeedback *);
 struct ClassItem * find_class(CLASSID);
 ERR    find_private_object_entry(OBJECTID, int *);
@@ -1076,10 +1110,12 @@ ERR    msg_free(APTR, int, int, APTR, int);
 void   optimise_write_field(Field &);
 void   PrepareSleep(void);
 ERR    process_janitor(OBJECTID, int, int);
+void   register_sleep(int);
+void   deregister_sleep(void);
 void   remove_process_waitlocks(void);
 CLASSID lookup_class_by_ext(CLASSID, std::string_view);
 
-#ifndef PARASOL_STATIC
+#ifndef KOTUKU_STATIC
 void   scan_classes(void);
 #endif
 
@@ -1255,5 +1291,3 @@ typename Container::const_iterator binary_search(const Container& container, con
     }
     return container.end();
 }
-
-#endif // DEFS_H

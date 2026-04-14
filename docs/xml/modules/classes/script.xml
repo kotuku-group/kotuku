@@ -11,9 +11,9 @@
     <id>1b600fba</id>
     <idstring>SCRIPT</idstring>
     <category>Data</category>
-    <copyright>Paul Manias 1996-2025</copyright>
+    <copyright>Paul Manias 1996-2026</copyright>
     <description>
-<p>The Script class defines a common interface for the purpose of executing scripts, such as Fluid.  The base class does not include a default parser or execution process of any kind.</p>
+<p>The Script class defines a common interface for the purpose of executing scripts, such as Tiri.  The base class does not include a default parser or execution process of any kind.</p>
 <p>To execute a script file, choose a sub-class that matches the language and create the script object.  Set the <fl>Path</fl> field and then <action>Activate</action> the script.  Global input parameters for the script can be defined via the <action>SetKey</action> action.</p>
 <p>Note that client scripts may sometimes create objects that are unmanaged by the script object that created them. Terminating the script will not remove objects that are outside its resource hierarchy.</p></description>
     <source>
@@ -78,6 +78,24 @@
     </method>
 
     <method>
+      <name>DebugLog</name>
+      <comment>Acquire a debug log from a compiled Script.</comment>
+      <prototype>ERR sc::DebugLog(OBJECTPTR Object, CSTRING Options, CSTRING * Result)</prototype>
+      <input>
+        <param type="CSTRING" name="Options">Options to pass to the underlying language.</param>
+        <param type="CSTRING *" name="Result">Resulting log information.</param>
+      </input>
+      <description>
+<p>Use the DebugLog() method to acquire debug information from a compiled script.  The exact nature of the log will depend on the scripting language in use, but will typically dump readable bytecode for analysis.  The Options parameter is a comma-separated list that may be used to pass language-specific options to the underlying implementation.</p>
+<p>The resulting log information is returned as a string, which needs to be deallocated once no longer required.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+    </method>
+
+    <method>
       <name>DerefProcedure</name>
       <comment>Dereferences an acquired procedure.</comment>
       <prototype>ERR sc::DerefProcedure(OBJECTPTR Object, FUNCTION * Procedure)</prototype>
@@ -85,7 +103,7 @@
         <param type="FUNCTION *" name="Procedure">The procedure to be dereferenced.</param>
       </input>
       <description>
-<p>This method will release a procedure reference that has been acquired through <method>GetProcedureID</method>.  It is only necessary to make this call if the scripting language is managing function references as a keyed resource.  Fluid is one such language.  Languages that do not manage functions as a resource will ignore calls to this method.</p>
+<p>This method will release a procedure reference that has been acquired through <method>GetProcedureID</method>.  It is only necessary to make this call if the scripting language is managing function references as a keyed resource.  Tiri is one such language.  Languages that do not manage functions as a resource will ignore calls to this method.</p>
 <p>Note that acquiring a procedure reference and then failing to release it can result in the reference remaining in memory until the Script is terminated.  There may also be unforeseen consequences in the garbage collection process.</p>
       </description>
       <result>
@@ -127,7 +145,7 @@ struct ScriptArg {
    };
 };
 </pre>
-<p>The Field Descriptor <code>FD</code> specified in the <code>Type</code> must be a match to whatever value is defined in the union.  For instance if the <code>Int</code> field is defined then an <code>FD_INT</code> <code>Type</code> must be used.  Supplementary field definition information, e.g. <code>FD_OBJECT</code>, may be used to assist in clarifying the type of the value that is being passed.  Field Descriptors are documented in detail in the Parasol Wiki.</p>
+<p>The Field Descriptor <code>FD</code> specified in the <code>Type</code> must be a match to whatever value is defined in the union.  For instance if the <code>Int</code> field is defined then an <code>FD_INT</code> <code>Type</code> must be used.  Supplementary field definition information, e.g. <code>FD_OBJECT</code>, may be used to assist in clarifying the type of the value that is being passed.  Field Descriptors are documented in detail in the Kotuku Wiki.</p>
       </description>
       <result>
         <error code="Okay">The procedure was executed.</error>
@@ -193,7 +211,7 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
     </field>
 
     <field>
-      <name>ErrorString</name>
+      <name>ErrorMessage</name>
       <comment>A human readable error string may be declared here following a script execution failure.</comment>
       <access read="G" write="S">Get/Set</access>
       <type>STRING</type>

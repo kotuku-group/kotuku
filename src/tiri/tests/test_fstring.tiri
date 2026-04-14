@@ -1,0 +1,288 @@
+-- F-String Interpolation Tests
+--
+-- Tests the f"..." string interpolation feature
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+@Test function BasicInterpolation()
+   name = "World"
+   result = f"Hello {name}"
+   assert(result is "Hello World", "Basic interpolation failed: " .. tostring(result))
+end
+
+@Test function MultipleExpressions()
+   a = 1
+   b = 2
+   result = f"{a} + {b} = {a + b}"
+   assert(result is "1 + 2 = 3", "Multiple expressions failed: " .. tostring(result))
+end
+
+@Test function NestedBraces()
+   -- Table constructor inside interpolation
+   t = {x=10, y=20}
+   result = f"Point: {t.x}, {t.y}"
+   assert(result is "Point: 10, 20", "Nested braces failed: " .. tostring(result))
+end
+
+@Test function EscapedBraces()
+   result = f"Use {{braces}} for interpolation"
+   assert(result is "Use {braces} for interpolation", "Escaped braces failed: " .. tostring(result))
+end
+
+@Test function NilValue()
+   value = nil
+   result = f"Value is {value}"
+   assert(result is "Value is nil", "Nil value failed: " .. tostring(result))
+end
+
+@Test function BooleanValue()
+   flag = true
+   result = f"Flag is {flag}"
+   assert(result is "Flag is true", "Boolean value failed: " .. tostring(result))
+end
+
+@Test function NumberValue()
+   num = 42
+   result = f"Number is {num}"
+   assert(result is "Number is 42", "Number value failed: " .. tostring(result))
+end
+
+@Test function PlainFString()
+   -- No expressions - should be optimised to regular string
+   result = f"No interpolation here"
+   assert(result is "No interpolation here", "Plain f-string failed: " .. tostring(result))
+end
+
+@Test function EmptyFString()
+   result = f""
+   assert(result is "", "Empty f-string failed")
+end
+
+@Test function SingleQuotes()
+   name = "Test"
+   result = f'Single quote: {name}'
+   assert(result is "Single quote: Test", "Single quote f-string failed: " .. tostring(result))
+end
+
+@Test function FunctionCall()
+   result = f"Upper: {string.upper('hello')}"
+   assert(result is "Upper: HELLO", "Function call failed: " .. tostring(result))
+end
+
+@Test function TableFieldAccess()
+   user = {name = "Bob", age = 30}
+   result = f"{user.name} is {user.age} years old"
+   assert(result is "Bob is 30 years old", "Table field access failed: " .. tostring(result))
+end
+
+@Test function ArithmeticExpression()
+   result = f"Calculation: {1 + 2 * 3}"
+   assert(result is "Calculation: 7", "Arithmetic expression failed: " .. tostring(result))
+end
+
+@Test function NestedStringInExpression()
+   result = f"Nested: {string.substr('hello world', 0, 5)}"
+   assert(result is "Nested: hello", "Nested string in expression failed: " .. tostring(result))
+end
+
+@Test function ExpressionWithSpaces()
+   a = 10
+   b = 5
+   result = f"Result: { a + b }"
+   assert(result is "Result: 15", "Expression with spaces failed: " .. tostring(result))
+end
+
+@Test function OnlyExpression()
+   name = "Alice"
+   result = f"{name}"
+   assert(result is "Alice", "Only expression failed: " .. tostring(result))
+end
+
+@Test function AdjacentExpressions()
+   a = "Hello"
+   b = "World"
+   result = f"{a}{b}"
+   assert(result is "HelloWorld", "Adjacent expressions failed: " .. tostring(result))
+end
+
+@Test function ExpressionAtStart()
+   name = "Start"
+   result = f"{name} is at the beginning"
+   assert(result is "Start is at the beginning", "Expression at start failed: " .. tostring(result))
+end
+
+@Test function ExpressionAtEnd()
+   name = "End"
+   result = f"This is the {name}"
+   assert(result is "This is the End", "Expression at end failed: " .. tostring(result))
+end
+
+@Test function EscapeSequences()
+   result = f"Tab:\tNewline:\nDone"
+   assert(result is "Tab:\tNewline:\nDone", "Escape sequences failed")
+end
+
+@Test function HexEscapeSequences()
+   -- Test hexadecimal escape sequences in f-string literal parts
+   result = f"Hex: \x48\x65\x6C\x6C\x6F"  -- "Hello"
+   assert(result is "Hex: Hello", "Hex escape sequences failed: " .. tostring(result))
+end
+
+@Test function UnicodeEscapeSequences()
+   -- Test Unicode escape sequences in f-string literal parts
+   result = f"Unicode: \u{48}\u{65}\u{6C}\u{6C}\u{6F}"  -- "Hello"
+   assert(result is "Unicode: Hello", "Unicode escape sequences failed: " .. tostring(result))
+end
+
+@Test function DecimalEscapeSequences()
+   -- Test decimal escape sequences in f-string literal parts
+   result = f"Decimal: \072\101\108\108\111"  -- "Hello"
+   assert(result is "Decimal: Hello", "Decimal escape sequences failed: " .. tostring(result))
+end
+
+@Test function NewlineContinuation()
+   -- Test newline continuation in f-string literal parts
+   result = f"Line1\
+Line2"
+   assert(result is "Line1\nLine2", "Newline continuation failed: " .. tostring(result))
+end
+
+@Test function MixedEscapeSequences()
+   -- Test mixing different escape types in f-string literal parts
+   name = "World"
+   result = f"Hi \x48ello\t{name}\n\u{44}one"
+   assert(result is "Hi Hello\tWorld\nDone", "Mixed escape sequences failed: " .. tostring(result))
+end
+
+@Test function EscapeSequencesWithInterpolation()
+   -- Test escape sequences combined with interpolation
+   value = 42
+   result = f"Value:\t{value}\nNext:\x41"  -- A = 0x41
+   assert(result is "Value:\t42\nNext:A", "Escape sequences with interpolation failed: " .. tostring(result))
+end
+
+@Test function StrayClosingBrace()
+   -- Stray } should be treated as literal
+   result = f"Stray } here"
+   assert(result is "Stray } here", "Stray closing brace failed: " .. tostring(result))
+end
+
+@Test function MethodCall()
+   t = {
+      name = "Method",
+      getName = function(self) return self.name end
+   }
+   result = f"Name: {t:getName()}"
+   assert(result is "Name: Method", "Method call failed: " .. tostring(result))
+end
+
+@Test function PostfixIncrement()
+   i = 5
+   result = f"{i++}"
+   assert(result is "5", "Postfix increment failed: " .. tostring(result))
+   assert(i is 6, "Postfix increment side effect failed")
+end
+
+@Test function ArrowFunction()
+   fn = x => x * 2
+   result = f"{fn(3)}"
+   assert(result is "6", "Arrow function failed: " .. tostring(result))
+end
+
+@Test function IsKeyword()
+   result = f"{1 is 1}"
+   assert(result is "true", "Is keyword failed: " .. tostring(result))
+end
+
+@Test function LogicalOperators()
+   result = f"{true and false}"
+   assert(result is "false", "Logical and failed: " .. tostring(result))
+
+   result = f"{false or true}"
+   assert(result is "true", "Logical or failed: " .. tostring(result))
+
+   result = f"{not false}"
+   assert(result is "true", "Logical not failed: " .. tostring(result))
+end
+
+@Test function HexEscapeInString()
+   result = f"{'\x48\x69'}"  -- "Hi"
+   assert(result is "Hi", "Hex escape failed: " .. tostring(result))
+end
+
+@Test function TernaryOperator()
+   x = 5
+   result = f"{x > 3 ? 'big' :> 'small'}"
+   assert(result is "big", "Ternary operator failed: " .. tostring(result))
+end
+
+@Test function ConcatOperator()
+   a = "Hello"
+   b = "World"
+   result = f"{a .. ' ' .. b}"
+   assert(result is "Hello World", "Concat operator failed: " .. tostring(result))
+end
+
+@Test function BitwiseOperators()
+   result = f"{3 & 1}"
+   assert(result is "1", "Bitwise and failed: " .. tostring(result))
+
+   result = f"{2 | 1}"
+   assert(result is "3", "Bitwise or failed: " .. tostring(result))
+
+   result = f"{1 << 2}"
+   assert(result is "4", "Bitwise shift left failed: " .. tostring(result))
+end
+
+@Test function NestedTableConstructor()
+   result = f"{({a=1, b=2}).a}"
+   assert(result is "1", "Nested table constructor failed: " .. tostring(result))
+end
+
+@Test function CompoundExpressionWithParens()
+   result = f"{(1 + 2) * 3}"
+   assert(result is "9", "Compound expression with parens failed: " .. tostring(result))
+end
+
+@Test function LengthOperator()
+   t = {1, 2, 3}
+   result = f"{#t}"
+   assert(result is "3", "Length operator failed: " .. tostring(result))
+end
+
+@Test function ModuloOperator()
+   result = f"{10 % 3}"
+   assert(result is "1", "Modulo operator failed: " .. tostring(result))
+end
+
+@Test function NegativeNumber()
+   result = f"{-5}"
+   assert(result is "-5", "Negative number failed: " .. tostring(result))
+end
+
+@Test function ComparisonOperators()
+   result = f"{5 > 3}"
+   assert(result is "true", "Greater than failed: " .. tostring(result))
+
+   result = f"{5 < 3}"
+   assert(result is "false", "Less than failed: " .. tostring(result))
+
+   result = f"{5 >= 5}"
+   assert(result is "true", "Greater or equal failed: " .. tostring(result))
+
+   result = f"{5 <= 5}"
+   assert(result is "true", "Less or equal failed: " .. tostring(result))
+end
+
+@Test function ArrayIndexing()
+   arr = {10, 20, 30}
+   result = f"{arr[1]}"
+   assert(result is "20", "Array indexing failed: " .. tostring(result))
+end
+
+@Test function IfEmpty()
+   value = nil
+   result = f"{value ?? 'default'}"
+   assert(result is "default", "If-empty operator failed: " .. tostring(result))
+end

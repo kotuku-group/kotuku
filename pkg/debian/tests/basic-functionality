@@ -1,33 +1,33 @@
 #!/bin/bash
-# Basic functionality test for Parasol package
+# Basic functionality test for Kōtuku package
 
 set -e
 
-echo "Testing Parasol basic functionality..."
+echo "Testing Kotuku basic functionality..."
 
-# Check if parasol executable exists and is executable
-if [ ! -x /usr/bin/parasol ]; then
-    echo "FAIL: Parasol executable not found or not executable"
+# Check if origo executable exists and is executable
+if [ ! -x /usr/bin/origo ]; then
+    echo "FAIL: Origo executable not found or not executable"
     exit 1
 fi
 
 # Test version information
 echo "Checking version information..."
-if ! /usr/bin/parasol --version 2>/dev/null; then
+if ! /usr/bin/origo --version 2>/dev/null; then
     echo "Note: Version flag not available, trying help"
-    if ! /usr/bin/parasol --help 2>/dev/null; then
+    if ! /usr/bin/origo --help 2>/dev/null; then
         echo "WARNING: Neither --version nor --help flags work, but executable exists"
     fi
 fi
 
 # Check if configuration directory exists
-if [ ! -d /usr/share/parasol/config ]; then
+if [ ! -d /usr/share/kotuku/config ]; then
     echo "FAIL: Configuration directory not found"
     exit 1
 fi
 
 # Check if scripts directory exists
-if [ ! -d /usr/share/parasol/scripts ]; then
+if [ ! -d /usr/share/kotuku/scripts ]; then
     echo "FAIL: Scripts directory not found"
     exit 1
 fi

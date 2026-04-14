@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-8254DG7MT6"> </script><script>
+	   window.dataLayer = window.dataLayer || [];
+	   function gtag(){dataLayer.push(arguments);}
+	   gtag('js', new Date());
+      gtag('config', 'G-8254DG7MT6');</script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Kōtuku documentation, machine generated from source">
+<meta name="author" content="Paul Manias">
+<link rel="icon" href="/favicon.ico">
+<title>Kōtuku Wiki - Tiri IO API</title>
+<link href="../css/bootstrap.min.css" rel="stylesheet">
+<link href="../css/module-template.css" rel="stylesheet">
+<link href="../css/github-markdown.css" rel="stylesheet">
+</head>
+
+<body>
+<nav class="navbar navbar-expand-sm navbar-dark bg-dark">
+  <div class="container-fluid">
+    <div class="navbar-header"><a class="navbar-brand" href="../index.html">Kōtuku</a></div>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div id="navbar" class="collapse navbar-collapse">
+      <ul class="nav navbar-nav"><li class="nav-item">
+        <li class="nav-item"><a class="nav-link" href="../gallery.html">Gallery</a></li>
+        <li class="nav-item"><a class="nav-link" href="../modules/api.html">API</a></li>
+        <li class="nav-item"><a class="nav-link" href="Home.html">Wiki</a></li>
+        <li class="nav-item"><a class="nav-link" href="https://github.com/parasol-framework/kotuku">GitHub</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<div class="container-fluid">
+  <div class="row">
+    <div class="d-sm-block d-none col-3 sidebar" style="max-width: 230px;">
+      <div class="flex-shrink-1 pt-2 pe-2 sticky-top overflow-auto vh-100 b-shadow">
+
+<ul class="list-unstyled">
+  <li>
+    <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#wiki-collapse" aria-expanded="true">Wiki</button>
+    <div class="collapse show" id="wiki-collapse">
+      <ul class="btn-toggle-nav list-unstyled fw-normal pb-1 ps-3">
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#bp-collapse" aria-expanded="false">Build Process</button>
+         <div class="collapse" id="bp-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="Linux-Builds.html">Linux Builds</a></li>
+              <li class="api-ref"><a class="rounded" href="Windows-Builds.html">Windows Builds</a></li>
+              <li class="api-ref"><a class="rounded" href="Customising-Your-Build.html">Customising Your Build</a></li>
+            </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#tm-collapse" aria-expanded="false">Technical Manuals</button>
+         <div class="collapse" id="tm-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+             <li class="api-ref"><a class="rounded" href="Kotuku-Objects.html">Kōtuku Objects</a></li>
+             <li class="api-ref"><a class="rounded" href="Kotuku-In-Depth.html">Kōtuku In Depth</a></li>
+             <li class="api-ref"><a class="rounded" href="Coding-With-AI.html">Coding With AI</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#fg-collapse" aria-expanded="false">Tiri</button>
+         <div class="collapse" id="fg-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+            <li class="api-ref"><a class="rounded" href="Tiri-Reference-Manual.html">Tiri Reference Manual</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-GUI-API.html">GUI API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-HTTPServer-API.html">HTTPServer API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-IO-API.html">I/O API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-JSON-API.html">JSON API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-URL-API.html">URL API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-VFX-API.html">VFX API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-Widgets.html">Widgets</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#rrm-collapse" aria-expanded="false">RIPL</button>
+         <div class="collapse" id="rrm-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="RIPL-Reference-Manual.html">RIPL Reference Manual</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#tools-collapse" aria-expanded="false">Tools</button>
+         <div class="collapse" id="tools-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="Origo.html">Origo</a></li>
+              <li class="api-ref"><a class="rounded" href="Unit-Testing.html">Flute / Unit Testing</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#doc-collapse" aria-expanded="false">Doc Generation</button>
+         <div class="collapse" id="doc-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="Embedded-Document-Formatting.html">Embedded Document Format</a></li>
+              <li class="api-ref"><a class="rounded" href="TDL-Reference-Manual.html">TDL Reference Manual</a></li>
+              <li class="api-ref"><a class="rounded" href="TDL-Tools.html">TDL Tools</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#app-collapse" aria-expanded="false">Appendix</button>
+         <div class="collapse" id="app-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+             <li class="api-ref"><a class="rounded" href="Action-Reference-Manual.html">Action Reference Manual</a></li>
+             <li class="api-ref"><a class="rounded" href="System-Error-Codes.html">System Error Codes</a></li>
+           </ul>
+         </div></li>
+      </ul>
+    </div>
+  </li>
+</ul>
+
+<ul class="list-unstyled">
+  <li class="border-top my-3"></li>
+  <li>
+    <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#mod-collapse" aria-expanded="false">Modules</button>
+    <div class="collapse" id="mod-collapse">
+      <ul class="btn-toggle-nav list-unstyled fw-normal">
+      <li class="api-ref"><a href="../modules/audio.html" class="rounded">Audio</a></li>
+      <li class="api-ref"><a href="../modules/core.html" class="rounded">Core</a></li>
+      <li class="api-ref"><a href="../modules/display.html" class="rounded">Display</a></li>
+      <li class="api-ref"><a href="../modules/font.html" class="rounded">Font</a></li>
+      <li class="api-ref"><a href="../modules/network.html" class="rounded">Network</a></li>
+      <li class="api-ref"><a href="../modules/regex.html" class="rounded">Regex</a></li>
+      <li class="api-ref"><a href="../modules/tiri.html" class="rounded">Tiri</a></li>
+      <li class="api-ref"><a href="../modules/vector.html" class="rounded">Vector</a></li>
+      <li class="api-ref"><a href="../modules/xml.html" class="rounded">XML</a></li>
+      <li class="api-ref"><a href="../modules/xpath.html" class="rounded">XPath</a></li>
+      </ul>
+    </div>
+  </li>
+</ul>
+
+<ul class="list-unstyled">
+  <li class="border-top my-3"></li>
+  <li>
+    <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#class-collapse" aria-expanded="false">Classes</button>
+    <div class="collapse" id="class-collapse">
+      <ul class="btn-toggle-nav list-unstyled fw-normal pb-1 ps-3">
+        <li>
+          <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#audio-collapse" aria-expanded="false">Audio</button>
+          <div class="collapse" id="audio-collapse">
+            <ul class="btn-toggle-nav list-unstyled fw-normal pb-1">
+            <li><a href="../modules/classes/audio.html" class="rounded">Audio</a></li>
+            <li><a href="../modules/classes/sound.html" class="rounded">Sound</a></li>
+            </ul>
+          </div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#core-collapse" aria-expanded="false">Core</button><div class="collapse" id="core-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a href="../modules/classes/file.html" class="rounded">File</a></li>
+        <li><a href="../modules/classes/metaclass.html" class="rounded">MetaClass</a></li>
+        <li><a href="../modules/classes/module.html" class="rounded">Module</a></li>
+        <li><a href="../modules/classes/storagedevice.html" class="rounded">StorageDevice</a></li>
+        <li><a href="../modules/classes/task.html" class="rounded">Task</a></li>
+        <li><a href="../modules/classes/thread.html" class="rounded">Thread</a></li>
+        <li><a href="../modules/classes/time.html" class="rounded">Time</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#data-collapse" aria-expanded="false">Data</button><div class="collapse" id="data-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a href="../modules/classes/compression.html" class="rounded">Compression</a></li>
+        <li><a href="../modules/classes/compressedstream.html" class="rounded">CompressedStream</a></li>
+        <li><a href="../modules/classes/config.html" class="rounded">Config</a></li>
+        <li><a href="../modules/classes/script.html" class="rounded">Script</a></li>
+        <li><a href="../modules/classes/xml.html" class="rounded">XML</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#devices-collapse" aria-expanded="false">Devices</button><div class="collapse" id="devices-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li><a href="../modules/classes/controller.html" class="rounded">Controller</a></li></ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#effects-collapse" aria-expanded="false">Effects</button><div class="collapse" id="effects-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/blurfx.html">BlurFX</a></li>
+        <li><a class="rounded" href="../modules/classes/colourfx.html">ColourFX</a></li>
+        <li><a class="rounded" href="../modules/classes/compositefx.html">CompositeFX</a></li>
+        <li><a class="rounded" href="../modules/classes/convolvefx.html">ConvolveFX</a></li>
+        <li><a class="rounded" href="../modules/classes/displacementfx.html">DisplacementFX</a></li>
+        <li><a class="rounded" href="../modules/classes/filtereffect.html">FilterEffect</a></li>
+        <li><a class="rounded" href="../modules/classes/floodfx.html">FloodFX</a></li>
+        <li><a class="rounded" href="../modules/classes/imagefx.html">ImageFX</a></li>
+        <li><a class="rounded" href="../modules/classes/lightingfx.html">LightingFX</a></li>
+        <li><a class="rounded" href="../modules/classes/mergefx.html">MergeFX</a></li>
+        <li><a class="rounded" href="../modules/classes/morphologyfx.html">MorphologyFX</a></li>
+        <li><a class="rounded" href="../modules/classes/offsetfx.html">OffsetFX</a></li>
+        <li><a class="rounded" href="../modules/classes/remapfx.html">RemapFX</a></li>
+        <li><a class="rounded" href="../modules/classes/sourcefx.html">SourceFX</a></li>
+        <li><a class="rounded" href="../modules/classes/turbulencefx.html">TurbulenceFX</a></li>
+        <li><a class="rounded" href="../modules/classes/wavefunctionfx.html">WaveFunctionFX</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#ext-collapse" aria-expanded="false">Extensions</button><div class="collapse" id="ext-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/scintilla.html">Scintilla</a></li>
+        <li><a class="rounded" href="../modules/classes/scintillasearch.html">ScintillaSearch</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#gfx-collapse" aria-expanded="false">Graphics</button><div class="collapse" id="gfx-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/bitmap.html">Bitmap</a></li>
+        <li><a class="rounded" href="../modules/classes/clipboard.html">Clipboard</a></li>
+        <li><a class="rounded" href="../modules/classes/display.html">Display</a></li>
+        <li><a class="rounded" href="../modules/classes/document.html">Document</a></li>
+        <li><a class="rounded" href="../modules/classes/font.html">Font</a></li>
+        <li><a class="rounded" href="../modules/classes/picture.html">Picture</a></li>
+        <li><a class="rounded" href="../modules/classes/pointer.html">Pointer</a></li>
+        <li><a class="rounded" href="../modules/classes/surface.html">Surface</a></li>
+        <li><a class="rounded" href="../modules/classes/svg.html">SVG</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#net-collapse" aria-expanded="false">Network</button><div class="collapse" id="net-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/clientsocket.html">ClientSocket</a></li>
+        <li><a class="rounded" href="../modules/classes/http.html">HTTP</a></li>
+        <li><a class="rounded" href="../modules/classes/netclient.html">NetClient</a></li>
+        <li><a class="rounded" href="../modules/classes/netlookup.html">NetLookup</a></li>
+        <li><a class="rounded" href="../modules/classes/netsocket.html">NetSocket</a></li>
+        <li><a class="rounded" href="../modules/classes/proxy.html">Proxy</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#vectors-collapse" aria-expanded="false">Vectors</button><div class="collapse" id="vectors-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/vector.html">Vector</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorclip.html">VectorClip</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorcolour.html">VectorColour</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorellipse.html">VectorEllipse</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorfilter.html">VectorFilter</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorgradient.html">VectorGradient</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorgroup.html">VectorGroup</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorimage.html">VectorImage</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorpath.html">VectorPath</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorpattern.html">VectorPattern</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorpolygon.html">VectorPolygon</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorrectangle.html">VectorRectangle</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorscene.html">VectorScene</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorshape.html">VectorShape</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorspiral.html">VectorSpiral</a></li>
+        <li><a class="rounded" href="../modules/classes/vectortext.html">VectorText</a></li>
+        <li><a class="rounded" href="../modules/classes/vectortransition.html">VectorTransition</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorviewport.html">VectorViewport</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorwave.html">VectorWave</a></li>
+        </ul></div>
+        </li>
+      </ul>
+    </div>
+  </li>
+</ul>
+
+</div>
+</div>
+
+<div class="col-sm-9" style="max-width: 1200px;">
+<div class="docs-content" id="default-page">
+
+<h1>Tiri IO API</h1>
+<p>The I/O interface provides helper functions for file management and user interactivity. The majority of the functionality is built-in, but UI extensions and file searching are optional, requiring use of the <code>import</code> keyword to load them first.</p>
+<p>It should also be noted that while the io interfaces are largely backwards compatible with their Lua counterparts, a key difference is that filesystem failures will throw exceptions to make it easier to capture errors.</p>
+<p>The io interface is designed to provide basic filesystem services only. For more advanced filesystem functionality, the Core module and File class provide extensive features that are cross-platform compatible.</p>
+<h1 id="built-in-functions">Built-In Functions</h1>
+<h3 id="ioopen">io.open()</h3>
+<p><code>file = io.open(Path, [Mode])</code></p>
+<p>Opens the file at <code>Path</code>, requesting access permissions specified by <code>Mode</code>. If <code>Mode</code> is not set, the file is opened in read-only mode. If an error occurs, an exception is thrown with a descriptive error message.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="va">file</span> <span class="op">=</span> <span class="fu">io.open</span><span class="op">(</span><span class="st">&#39;temp:myfile.txt&#39;</span><span class="op">,</span> <span class="st">&#39;w&#39;</span><span class="op">)</span></span></code></pre></div>
+<p>Available options for <code>Mode</code> are as follows:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Option</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">r</td>
+<td style="text-align: left;">Read only.</td>
+</tr>
+<tr>
+<td style="text-align: left;">w</td>
+<td style="text-align: left;">Create new file in read/write mode.</td>
+</tr>
+<tr>
+<td style="text-align: left;">a</td>
+<td style="text-align: left;">Append to existing file in read/write mode. Automatically creates file if it does not exist.</td>
+</tr>
+<tr>
+<td style="text-align: left;">+</td>
+<td style="text-align: left;">Open existing file in read/write mode.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="ioclose">io.close()</h3>
+<p><code>io.close([File])</code></p>
+<p>Closes the given file handle. If no <code>File</code> is provided, the default output file is closed. Returns <code>true</code> on success.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="va">file</span> <span class="op">=</span> <span class="fu">io.open</span><span class="op">(</span><span class="st">&#39;temp:myfile.txt&#39;</span><span class="op">,</span> <span class="st">&#39;r&#39;</span><span class="op">)</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">io.close</span><span class="op">(</span><span class="va">file</span><span class="op">)</span></span></code></pre></div>
+<h3 id="ioread">io.read()</h3>
+<p><code>data1, data2, ... = io.read([Format, ...])</code></p>
+<p>Reads from the default input file according to the given format strings. If no format is provided, a single line is
+read. The default input file is initially <code>stdin</code> but can be changed with <code>io.input()</code>.</p>
+<p>See <code>file:read()</code> for a full description of format strings.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="va">line</span> <span class="op">=</span> <span class="fu">io.read</span><span class="op">()</span>            <span class="co">-- Read one line</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="va">num</span>  <span class="op">=</span> <span class="fu">io.read</span><span class="op">(</span><span class="st">&#39;*n&#39;</span><span class="op">)</span>        <span class="co">-- Read a number</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="va">all</span>  <span class="op">=</span> <span class="fu">io.read</span><span class="op">(</span><span class="st">&#39;*a&#39;</span><span class="op">)</span>        <span class="co">-- Read entire file</span></span></code></pre></div>
+<h3 id="iowrite">io.write()</h3>
+<p><code>io.write(Data, ...)</code></p>
+<p>Writes each argument to the default output file. The default output file is initially <code>stdout</code> but can be changed
+with <code>io.output()</code>. Arguments must be strings or numbers.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">io.write</span><span class="op">(</span><span class="st">&#39;Hello, &#39;</span><span class="op">)</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="fu">io.write</span><span class="op">(</span><span class="st">&#39;world!</span><span class="sc">\n</span><span class="st">&#39;</span><span class="op">)</span></span></code></pre></div>
+<h3 id="ioflush">io.flush()</h3>
+<p><code>io.flush()</code></p>
+<p>Flushes the default output file, ensuring that any buffered data is written to disk.</p>
+<h3 id="ioinput">io.input()</h3>
+<p><code>file = io.input([Source])</code></p>
+<p>When called with no arguments, returns the current default input file handle. When called with a string, opens the
+named file in read mode and sets it as the default input. When called with a file handle, sets that handle as the
+default input.</p>
+<p>The default input is initially <code>stdin</code>.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">io.input</span><span class="op">(</span><span class="st">&#39;temp:data.txt&#39;</span><span class="op">)</span>       <span class="co">-- Set default input to a file</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="va">line</span> <span class="op">=</span> <span class="fu">io.read</span><span class="op">()</span>                <span class="co">-- Read a line from that file</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="va">original</span> <span class="op">=</span> <span class="fu">io.input</span><span class="op">()</span>           <span class="co">-- Retrieve the current default input</span></span></code></pre></div>
+<h3 id="iooutput">io.output()</h3>
+<p><code>file = io.output([Source])</code></p>
+<p>When called with no arguments, returns the current default output file handle. When called with a string, opens the
+named file in write mode and sets it as the default output. When called with a file handle, sets that handle as the
+default output.</p>
+<p>The default output is initially <code>stdout</code>.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">io.output</span><span class="op">(</span><span class="st">&#39;temp:results.txt&#39;</span><span class="op">)</span>   <span class="co">-- Set default output to a file</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="fu">io.write</span><span class="op">(</span><span class="st">&#39;Result: 42</span><span class="sc">\n</span><span class="st">&#39;</span><span class="op">)</span>        <span class="co">-- Write to that file</span></span></code></pre></div>
+<h3 id="iolines">io.lines()</h3>
+<p><code>iterator = io.lines([Source])</code></p>
+<p>Returns an iterator function that reads lines from a file. When called with a filename, opens the file and closes
+it automatically when iteration completes or the iterator is garbage collected. When called with a file handle, iterates
+lines without closing the handle. When called with no arguments, iterates lines from the default input.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="va">line</span> <span class="kw">in</span> <span class="fu">io.lines</span><span class="op">(</span><span class="st">&#39;temp:data.txt&#39;</span><span class="op">)</span> <span class="cf">do</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>   <span class="fu">print</span><span class="op">(</span><span class="va">line</span><span class="op">)</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span></code></pre></div>
+<h3 id="iotype">io.type()</h3>
+<p><code>result = io.type(Value)</code></p>
+<p>Tests whether <code>Value</code> is a valid file handle. Returns <code>&quot;file&quot;</code> if <code>Value</code> is an open file handle, <code>&quot;closed file&quot;</code> if
+it is a closed file handle, or <code>nil</code> if it is not a file handle.</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="va">file</span> <span class="op">=</span> <span class="fu">io.open</span><span class="op">(</span><span class="st">&#39;temp:test.txt&#39;</span><span class="op">,</span> <span class="st">&#39;w&#39;</span><span class="op">)</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span><span class="op">(</span><span class="fu">io.type</span><span class="op">(</span><span class="va">file</span><span class="op">))</span>    <span class="co">-- &quot;file&quot;</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">:</span><span class="fu">close</span><span class="op">()</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span><span class="op">(</span><span class="fu">io.type</span><span class="op">(</span><span class="va">file</span><span class="op">))</span>    <span class="co">-- &quot;closed file&quot;</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span><span class="op">(</span><span class="fu">io.type</span><span class="op">(</span><span class="st">&#39;hello&#39;</span><span class="op">))</span> <span class="co">-- nil</span></span></code></pre></div>
+<h3 id="iotempfile">io.tempFile()</h3>
+<p><code>file = io.tempFile()</code></p>
+<p>Creates a temporary in-memory buffer file opened for both reading and writing. The buffer is backed by system memory,
+allowing the OS to use swap space for large files. The file is automatically freed when the handle is garbage collected
+or explicitly closed.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="va">tmp</span> <span class="op">=</span> <span class="va">io</span><span class="op">.</span>tempFile<span class="op">()</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="va">tmp</span><span class="op">:</span><span class="fu">write</span><span class="op">(</span><span class="st">&#39;temporary data&#39;</span><span class="op">)</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="va">tmp</span><span class="op">:</span><span class="fu">seek</span><span class="op">(</span><span class="st">&#39;set&#39;</span><span class="op">,</span> <span class="dv">0</span><span class="op">)</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span><span class="op">(</span><span class="va">tmp</span><span class="op">:</span><span class="fu">read</span><span class="op">(</span><span class="st">&#39;*a&#39;</span><span class="op">))</span>   <span class="co">-- &quot;temporary data&quot;</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="va">tmp</span><span class="op">:</span><span class="fu">close</span><span class="op">()</span></span></code></pre></div>
+<h3 id="ioreadall">io.readAll()</h3>
+<p><code>content = io.readAll(Path)</code></p>
+<p>Reads the entire contents of the file at <code>Path</code> and returns it as a string. This is a convenience function that
+opens the file, reads all data, and closes it in a single operation. Throws an exception if the file cannot be
+opened or read.</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="va">content</span> <span class="op">=</span> <span class="va">io</span><span class="op">.</span>readAll<span class="op">(</span><span class="st">&#39;config:settings.tiri&#39;</span><span class="op">)</span></span></code></pre></div>
+<h3 id="iowriteall">io.writeAll()</h3>
+<p><code>io.writeAll(Path, Content)</code></p>
+<p>Writes <code>Content</code> to the file at <code>Path</code>, creating the file if it does not exist or overwriting it if it does. Throws
+an exception if the file cannot be created or written to.</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="va">io</span><span class="op">.</span>writeAll<span class="op">(</span><span class="st">&#39;temp:output.txt&#39;</span><span class="op">,</span> <span class="st">&#39;Hello, world!</span><span class="sc">\n</span><span class="st">&#39;</span><span class="op">)</span></span></code></pre></div>
+<h3 id="ioisfolder">io.isFolder()</h3>
+<p><code>bool = io.isFolder(Path)</code></p>
+<p>Returns <code>true</code> if <code>Path</code> ends with a folder separator character (<code>/</code>, <code>\</code> or <code>:</code>), indicating that the path refers to
+a directory rather than a file.</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span><span class="op">(</span><span class="va">io</span><span class="op">.</span>isFolder<span class="op">(</span><span class="st">&#39;system:users/&#39;</span><span class="op">))</span>   <span class="co">-- true</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span><span class="op">(</span><span class="va">io</span><span class="op">.</span>isFolder<span class="op">(</span><span class="st">&#39;temp:file.txt&#39;</span><span class="op">))</span>   <span class="co">-- false</span></span></code></pre></div>
+<h3 id="iosplitpath">io.splitPath()</h3>
+<p><code>dir, file = io.splitPath(Path)</code></p>
+<p>Splits <code>Path</code> into its directory and filename components. The directory portion includes the trailing separator.
+Returns <code>nil, nil</code> if <code>Path</code> is nil or empty. Returns <code>nil, Path</code> if no separator is found.</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="va">dir</span><span class="op">,</span> <span class="va">file</span> <span class="op">=</span> <span class="va">io</span><span class="op">.</span>splitPath<span class="op">(</span><span class="st">&#39;system:users/readme.txt&#39;</span><span class="op">)</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- dir  = &quot;system:users/&quot;</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a><span class="co">-- file = &quot;readme.txt&quot;</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a><span class="va">dir</span><span class="op">,</span> <span class="va">file</span> <span class="op">=</span> <span class="va">io</span><span class="op">.</span>splitPath<span class="op">(</span><span class="st">&#39;readme.txt&#39;</span><span class="op">)</span></span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a><span class="co">-- dir  = nil</span></span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a><span class="co">-- file = &quot;readme.txt&quot;</span></span></code></pre></div>
+<h3 id="iosanitisepath">io.sanitisePath()</h3>
+<p><code>cleaned = io.sanitisePath(Path)</code></p>
+<p>Removes repeated consecutive path separator characters (<code>/</code>, <code>\</code>, <code>:</code>) from <code>Path</code>. Useful for cleaning up
+paths constructed by concatenation.</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span><span class="op">(</span><span class="va">io</span><span class="op">.</span>sanitisePath<span class="op">(</span><span class="st">&#39;system://users///file.txt&#39;</span><span class="op">))</span>  <span class="co">-- &quot;system:/users/file.txt&quot;</span></span></code></pre></div>
+<h1 id="file-handle-methods">File Handle Methods</h1>
+<p>File handles returned by <code>io.open()</code> and related functions support the following methods, called with the colon
+syntax (e.g. <code>file:read()</code>).</p>
+<h3 id="fileread">file:read()</h3>
+<p><code>data1, data2, ... = file:read([Format, ...])</code></p>
+<p>Reads from the file according to the given format strings. Multiple formats can be provided and each returns a
+separate value. If no format is provided, a single line is read.</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Format</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">*l</td>
+<td style="text-align: left;">Read a single line, stripping the newline character. This is the default.</td>
+</tr>
+<tr>
+<td style="text-align: left;">*a</td>
+<td style="text-align: left;">Read the entire remaining contents of the file.</td>
+</tr>
+<tr>
+<td style="text-align: left;">*n</td>
+<td style="text-align: left;">Read a line and convert it to a number.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><em>(number)</em></td>
+<td style="text-align: left;">Read the specified number of bytes.</td>
+</tr>
+</tbody>
+</table>
+<div class="sourceCode" id="cb15"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="va">file</span> <span class="op">=</span> <span class="fu">io.open</span><span class="op">(</span><span class="st">&#39;temp:data.txt&#39;</span><span class="op">,</span> <span class="st">&#39;r&#39;</span><span class="op">)</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="va">line</span> <span class="op">=</span> <span class="va">file</span><span class="op">:</span><span class="fu">read</span><span class="op">()</span>          <span class="co">-- Read one line</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">:</span><span class="fu">seek</span><span class="op">(</span><span class="st">&#39;set&#39;</span><span class="op">,</span> <span class="dv">0</span><span class="op">)</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="va">all</span>  <span class="op">=</span> <span class="va">file</span><span class="op">:</span><span class="fu">read</span><span class="op">(</span><span class="st">&#39;*a&#39;</span><span class="op">)</span>      <span class="co">-- Read entire file</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">:</span><span class="fu">close</span><span class="op">()</span></span></code></pre></div>
+<h3 id="filewrite">file:write()</h3>
+<p><code>file = file:write(Data, ...)</code></p>
+<p>Writes each argument to the file. Arguments must be strings or numbers. Returns the file handle to allow chained
+calls.</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="va">file</span> <span class="op">=</span> <span class="fu">io.open</span><span class="op">(</span><span class="st">&#39;temp:output.txt&#39;</span><span class="op">,</span> <span class="st">&#39;w&#39;</span><span class="op">)</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">:</span><span class="fu">write</span><span class="op">(</span><span class="st">&#39;Line 1</span><span class="sc">\n</span><span class="st">&#39;</span><span class="op">):</span><span class="fu">write</span><span class="op">(</span><span class="st">&#39;Line 2</span><span class="sc">\n</span><span class="st">&#39;</span><span class="op">)</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">:</span><span class="fu">close</span><span class="op">()</span></span></code></pre></div>
+<h3 id="fileclose">file:close()</h3>
+<p><code>file:close()</code></p>
+<p>Closes the file handle and releases the underlying file object. Returns <code>true</code> on success.</p>
+<h3 id="fileflush">file:flush()</h3>
+<p><code>file:flush()</code></p>
+<p>Flushes any buffered output data to disk, ensuring all writes are committed. Returns <code>true</code> on success.</p>
+<h3 id="fileseek">file:seek()</h3>
+<p><code>position = file:seek([Whence, [Offset]])</code></p>
+<p>Sets the file position for reading and writing. Returns the resulting absolute file position.</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Whence</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">set</td>
+<td style="text-align: left;">Position relative to the beginning of the file.</td>
+</tr>
+<tr>
+<td style="text-align: left;">cur</td>
+<td style="text-align: left;">Position relative to the current location. This is the default.</td>
+</tr>
+<tr>
+<td style="text-align: left;">end</td>
+<td style="text-align: left;">Position relative to the end of the file.</td>
+</tr>
+</tbody>
+</table>
+<p><code>Offset</code> defaults to <code>0</code>.</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="va">file</span> <span class="op">=</span> <span class="fu">io.open</span><span class="op">(</span><span class="st">&#39;temp:data.txt&#39;</span><span class="op">,</span> <span class="st">&#39;r&#39;</span><span class="op">)</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">:</span><span class="fu">seek</span><span class="op">(</span><span class="st">&#39;set&#39;</span><span class="op">,</span> <span class="dv">10</span><span class="op">)</span>     <span class="co">-- Move to byte 10</span></span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a><span class="va">pos</span> <span class="op">=</span> <span class="va">file</span><span class="op">:</span><span class="fu">seek</span><span class="op">(</span><span class="st">&#39;cur&#39;</span><span class="op">)</span>   <span class="co">-- Get current position</span></span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">:</span><span class="fu">seek</span><span class="op">(</span><span class="st">&#39;end&#39;</span><span class="op">,</span> <span class="dv">0</span><span class="op">)</span>      <span class="co">-- Move to end of file</span></span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">:</span><span class="fu">close</span><span class="op">()</span></span></code></pre></div>
+<h3 id="filelines">file:lines()</h3>
+<p><code>iterator = file:lines()</code></p>
+<p>Returns an iterator function that reads lines from the file. The file handle is not closed when iteration completes,
+unlike <code>io.lines()</code> with a filename argument.</p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="va">file</span> <span class="op">=</span> <span class="fu">io.open</span><span class="op">(</span><span class="st">&#39;temp:data.txt&#39;</span><span class="op">,</span> <span class="st">&#39;r&#39;</span><span class="op">)</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="va">line</span> <span class="kw">in</span> <span class="va">file</span><span class="op">:</span><span class="fu">lines</span><span class="op">()</span> <span class="cf">do</span></span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>   <span class="fu">print</span><span class="op">(</span><span class="va">line</span><span class="op">)</span></span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">:</span><span class="fu">close</span><span class="op">()</span></span></code></pre></div>
+<h1 id="io-extensions">I/O Extensions</h1>
+<h2 id="file-search">File Search</h2>
+<p>The FileSearch interface simplifies the process of searching for files and folders within the file system. Support is provided for both wildcard filters and content searching.</p>
+<p>It can be loaded with the line:</p>
+<div class="sourceCode" id="cb19"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>import <span class="st">&#39;io/filesearch&#39;</span></span></code></pre></div>
+<h2 id="functions">Functions</h2>
+<h3 id="iosearch">io.search()</h3>
+<p><code>io.search(Path | {PathA, PathB, ...}, Options)</code></p>
+<p>This example searches for text files in the <code>documents:</code> folder that include the word <code>tennis</code>:</p>
+<pre><code>   import &#39;io/filesearch&#39;
+
+io.search(&#39;documents:&#39;, {
+   nameFilter    = regex.new(&#39;\\.txt$&#39;),
+   contentFilter = &#39;tennis&#39;,
+   maxDepth      = 2,  -- Only search 2 levels deep
+   matchFeedback = function(Path, FileName, File)
+      print(Path, &#39; &#39;, FileName)
+   end
+})</code></pre>
+<p>Valid options to use when defining the search table are as follows:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Option</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">nameFilter</td>
+<td style="text-align: left;">Include file/folder names that match this filter string exactly, or provide a compiled regex for pattern matching.</td>
+</tr>
+<tr>
+<td style="text-align: left;">contentFilter</td>
+<td style="text-align: left;">Include files that contain this content.</td>
+</tr>
+<tr>
+<td style="text-align: left;">caseSensitive</td>
+<td style="text-align: left;">Enforces case-sensitive name comparisons if <code>true</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;">matchFeedback</td>
+<td style="text-align: left;">Call this function each time that a matched file is discovered. Returning <code>ERR_Terminate</code> will stop the search. Synopsis: <code>function(Path, File, Attributes)</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">ignoreFeedback</td>
+<td style="text-align: left;">Call this function each time that a file fails to pass filter matches.</td>
+</tr>
+<tr>
+<td style="text-align: left;">minSize</td>
+<td style="text-align: left;">Filter out files that do not meet or exceed this minimum size.</td>
+</tr>
+<tr>
+<td style="text-align: left;">maxSize</td>
+<td style="text-align: left;">Filter out files that exceed this size.</td>
+</tr>
+<tr>
+<td style="text-align: left;">minDate</td>
+<td style="text-align: left;">Filter out files with a modification time less than this timestamp.</td>
+</tr>
+<tr>
+<td style="text-align: left;">maxDate</td>
+<td style="text-align: left;">Filter out files with a modification time exceeding this timestamp.</td>
+</tr>
+<tr>
+<td style="text-align: left;">scanLinks</td>
+<td style="text-align: left;">Allows symbolically linked files and folders to be included in the file search.</td>
+</tr>
+<tr>
+<td style="text-align: left;">matchFolders</td>
+<td style="text-align: left;">Include matching folder names in the output of the search.</td>
+</tr>
+<tr>
+<td style="text-align: left;">ignoreFiles</td>
+<td style="text-align: left;">Do not scan files (useful only in conjunction with <code>matchFolders</code>).</td>
+</tr>
+<tr>
+<td style="text-align: left;">maxDepth</td>
+<td style="text-align: left;">Maximum depth to recurse into subdirectories (0 = current directory only, 1 = one level deep, etc.).</td>
+</tr>
+</tbody>
+</table>
+<p>When searching files for content, it is strongly recommended that a filter or size limit is applied so that only a limited number of files are opened for searching.</p>
+<h2 id="file-manager">File Manager</h2>
+<p>The File Manager API supports common file management needs such as mass file transfer and clipboard operations, and adds integrated UI support so that user interactions are managed in a consistent way across all Kōtuku applications.</p>
+<p>For example, copying a large number of files will pop-up a progress dialog to keep the user informed of progress. If an operation will overwrite an existing file, the user will be notified and given a choice of whether or not to continue.</p>
+<p>It can be loaded with the line:</p>
+<div class="sourceCode" id="cb21"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>import <span class="st">&#39;io/filemgr&#39;</span></span></code></pre></div>
+<h2 id="functions-1">Functions</h2>
+<h3 id="iouicopy">io.ui.copy()</h3>
+<p><code>error = io.ui.copy(Source, Dest, Move)</code></p>
+<p>Copy the <code>Source</code> path or paths (if provided as a list of strings) to the file or folder indicated by <code>Dest</code>.</p>
+<p>If <code>Move</code> is true then each file or folder copied from <code>Source</code> will be deleted when the copy is successful.</p>
+<p>Any errors that occur will be brought to the user&#39;s attention with a dialog box. Exceptions will only be thrown if there a catastrophic failure during the copy process. Otherwise, assume that the resulting <code>error</code> was handled and should only be used as an indicator of the final result. If the user cancels the operation then <code>ERR_Cancelled</code> is returned.</p>
+<h3 id="iouipaste">io.ui.paste()</h3>
+<p><code>io.ui.paste(Dest)</code></p>
+<p>Paste files from the clipboard to the destination path. The same behavioural rules for <code>io.ui.copy</code> apply.</p>
+<h3 id="iouidelete">io.ui.delete()</h3>
+<p><code>io.ui.delete(Paths)</code></p>
+<p>Delete the identified file or folder at <code>Paths</code>, which may be a string or list of strings. A progress window is opened if the operation takes longer than expected to run.</p>
+</div></div></div></div>
+
+<script src="../js/bootstrap.bundle.min.js"></script>
+<script src="../js/base.js"></script>
+<script>
+
+   // Auto-open the relevant sidebar branch
+
+   var url = window.location.pathname;
+   var filename = url.substring(url.lastIndexOf('/')+1);
+   var el = document.querySelector('li[class="api-ref"] > a[href="' + filename + '"]');
+   if (el) {
+      var parent = getParentNode(el, '[class="collapse"]');
+      if (parent) new bootstrap.Collapse(parent, { show: true }); // Causes animation
+
+      el.style.backgroundColor = '#d2f4ea';
+   }
+
+   cancelAnimations();
+    </script>
+  </body>
+</html>

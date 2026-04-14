@@ -1,0 +1,145 @@
+--[[
+UDP Broadcast and Multicast Test
+--]]
+
+   include 'network'
+   mNet ?= mod.load('network')
+
+   local glBasePort = 19820  -- Base port for broadcast/multicast tests
+   local glTestTimeout = 3.0
+
+------------------------------------------------------------------------------------------------------------------------
+-- Test multicast group operations
+
+function MulticastGroups()
+   local multicastSocket = obj.new('netsocket', { flags = 'UDP', multicastTTL = 2 })
+
+   assert(multicastSocket.multicastTTL is 2, 'MulticastTTL not set correctly')
+
+   -- Test joining IPv4 multicast group
+   local ipv4Group = '224.1.1.1'  -- Test multicast address
+   print('Testing join IPv4 multicast group: ' .. ipv4Group)
+   local err = multicastSocket.mtJoinMulticastGroup(ipv4Group)
+   if (err is ERR_Okay) then
+      print('Successfully joined IPv4 multicast group')
+
+      -- Test leaving the group
+      err = multicastSocket.mtLeaveMulticastGroup(ipv4Group)
+      assert(err is ERR_Okay, 'Failed to leave IPv4 multicast group: ' .. mSys.GetErrorMsg(err))
+   else
+      print('IPv4 multicast join failed (may be expected in some environments): ' .. mSys.GetErrorMsg(err))
+   end
+
+   -- Test joining IPv6 multicast group
+   local ipv6Group = 'ff02::1'  -- All-nodes multicast
+   err = multicastSocket.mtJoinMulticastGroup(ipv6Group)
+   if (err is ERR_Okay) then
+      -- Test leaving the group
+      err = multicastSocket.mtLeaveMulticastGroup(ipv6Group)
+      assert(err is ERR_Okay, 'Failed to leave IPv6 multicast group: ' .. mSys.GetErrorMsg(err))
+   else
+      print('IPv6 multicast join failed (may be expected in some environments): ' .. mSys.GetErrorMsg(err))
+   end
+end
+
+------------------------------------------------------------------------------------------------------------------------
+-- Test multicast error handling
+
+function MulticastErrorHandling()
+   local udpSocket = obj.new('netsocket', { flags = 'UDP' })
+
+   -- Test invalid multicast addresses
+   local invalidGroups = {
+      '127.0.0.1',      -- Unicast, not multicast
+      '192.168.1.1',    -- Private unicast
+      '300.1.1.1',      -- Invalid IPv4 address
+      'invalid::group', -- Invalid IPv6 address
+      '',               -- Empty address
+   }
+
+   for i, group in ipairs(invalidGroups) do
+      local err = udpSocket.mtJoinMulticastGroup(group)
+      assert(err != ERR_Okay, 'JoinMulticastGroup should fail with invalid address: ' .. group)
+   end
+
+   -- Test TCP socket (should not support multicast)
+   local tcpSocket = obj.new('netsocket', {
+      flags = 'SERVER', port = 38134  -- TCP socket
+   })
+
+   local err = tcpSocket.mtJoinMulticastGroup('224.1.1.1')
+   assert(err is ERR_NoSupport, 'Multicast should not be supported on TCP sockets')
+end
+
+------------------------------------------------------------------------------------------------------------------------
+-- Test multicast TTL/Hop limit configuration
+
+function MulticastTTL()
+   -- Test different TTL values
+   local ttlValues = { 1, 5, 10, 32, 255 }
+
+   for i, ttl in ipairs(ttlValues) do
+      local socket = obj.new('netsocket', { flags = 'UDP', multicastTTL = ttl })
+
+      assert(socket.multicastTTL is ttl, 'MulticastTTL not set correctly for value: ' .. ttl)
+      print('MulticastTTL set correctly to: ' .. ttl)
+   end
+
+   -- Test TTL = 0 (should not be set, use default)
+   local defaultSocket = obj.new('netsocket', { flags = 'UDP', multicastTTL = 0 })
+   assert(defaultSocket.multicastTTL is 0, 'MulticastTTL should remain 0 when not specified')
+end
+
+------------------------------------------------------------------------------------------------------------------------
+-- Test broadcast with loopback (safe test that doesn't require network broadcast permission)
+
+function BroadcastLoopback()
+   local serverPort = glBasePort + 3
+   local proc = processing.new({ timeout = glTestTimeout })
+   local broadcastReceived = false
+
+   -- Create server to listen for broadcast messages
+   local server = obj.new('netsocket', {
+      port = serverPort,
+      address = '0.0.0.0',  -- Listen on all interfaces
+      flags = 'SERVER|UDP',
+      incoming = function(Socket)
+         local buffer = string.alloc(1024)
+         local source = struct.new('IPAddress')
+         local err, bytesRead = Socket.mtRecvFrom(source, buffer)
+         if (err is ERR_Okay and bytesRead > 0) then
+            local msg = buffer:sub(0, bytesRead)
+            print('[Broadcast Server] Received: "' .. msg .. '" from ' .. mNet.AddressToStr(source) .. ':' .. source.port)
+            if (msg:startsWith('Broadcast Test')) then
+               broadcastReceived = true
+               proc.signal()
+            end
+         end
+      end
+   })
+
+   local client = obj.new('netsocket', { flags = 'UDP|BROADCAST' })
+
+   -- Send to loopback (not true broadcast, but tests the broadcast socket option)
+   print('[Broadcast Client] Sending message to 127.0.0.1:' .. serverPort)
+   local dest = struct.new('IPAddress')
+   check(mNet.StrToAddress('127.0.0.1', dest))
+   dest.port = server.port
+   local err, bytesSent = client.mtSendTo(dest, 'Broadcast Test Message')
+   assert(err is ERR_Okay, 'Failed to send broadcast message: ' .. mSys.GetErrorMsg(err))
+
+   proc.sleep()
+
+   assert(broadcastReceived, 'Broadcast message was not received')
+end
+
+------------------------------------------------------------------------------------------------------------------------
+
+   return {
+      tests = {
+         testBroadcastLoopback,
+         testMulticastTTL,
+         testMulticastErrorHandling,
+         testMulticastGroups
+      }
+   }

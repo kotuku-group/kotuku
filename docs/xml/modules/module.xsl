@@ -3,7 +3,7 @@
   xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
   xmlns="http://www.w3.org/1999/xhtml">
 
-  <!-- python3 -m http.server -d /parasol/docs/xml -->
+  <!-- python3 -m http.server -d /kotuku/docs/xml -->
 
   <xsl:output
     doctype-public="-//W3C//DTD XHTML 1.1//EN"
@@ -173,10 +173,10 @@
         <xsl:call-template name="addGoogleTracking"/>
         <meta name="viewport" content="width=device-width, initial-scale=1"/>
         <!-- The above 2 meta tags *must* come first in the head; any other head content must come *after* these tags -->
-        <meta name="description" content="Parasol Framework documentation, machine generated from source"/>
+        <meta name="description" content="Kōtuku documentation, machine generated from source"/>
         <meta name="author" content="Paul Manias"/>
         <link rel="icon" href="/favicon.ico"/>
-        <title>Parasol Framework Manual</title>
+        <title>Kōtuku Manual</title>
         <link href="../css/bootstrap.min.css" rel="stylesheet"/>
         <link href="../css/module-template.css" rel="stylesheet"/>
       </head>
@@ -184,7 +184,7 @@
       <body>
         <nav class="navbar navbar-expand-sm navbar-dark bg-dark">
           <div class="container-fluid">
-            <div class="navbar-header"><a class="navbar-brand" href="../index.html">Parasol Framework</a></div>
+            <div class="navbar-header"><a class="navbar-brand" href="../index.html">Kōtuku</a></div>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
               <span class="navbar-toggler-icon"></span>
             </button><xsl:text>&#xa;</xsl:text>
@@ -193,7 +193,7 @@
                 <li class="nav-item"><a class="nav-link" href="../gallery.html">Gallery</a></li>
                 <li class="nav-item"><a class="nav-link" href="api.html">API</a></li>
                 <li class="nav-item"><a class="nav-link" href="../wiki/Home.html">Wiki</a></li>
-                <li class="nav-item"><a class="nav-link" href="https://github.com/parasol-framework/parasol">GitHub</a></li>
+                <li class="nav-item"><a class="nav-link" href="https://github.com/parasol-framework/kotuku">GitHub</a></li>
               </ul><xsl:text>&#xa;</xsl:text>
             </div> <!-- nav-collapse -->
           </div>
@@ -250,10 +250,10 @@
         <li class="api-ref"><a href="audio.html" class="rounded">Audio</a></li>
         <li class="api-ref"><a href="core.html" class="rounded">Core</a></li>
         <li class="api-ref"><a href="display.html" class="rounded">Display</a></li>
-        <li class="api-ref"><a href="fluid.html" class="rounded">Fluid</a></li>
         <li class="api-ref"><a href="font.html" class="rounded">Font</a></li>
         <li class="api-ref"><a href="network.html" class="rounded">Network</a></li>
         <li class="api-ref"><a href="regex.html" class="rounded">Regex</a></li>
+        <li class="api-ref"><a href="tiri.html" class="rounded">Tiri</a></li>
         <li class="api-ref"><a href="vector.html" class="rounded">Vector</a></li>
         <li class="api-ref"><a href="xml.html" class="rounded">XML</a></li>
         <li class="api-ref"><a href="xpath.html" class="rounded">XPath</a></li>
@@ -300,6 +300,7 @@
               <li><a href="classes/config.html" class="rounded">Config</a></li>
               <li><a href="classes/script.html" class="rounded">Script</a></li>
               <li><a href="classes/xml.html" class="rounded">XML</a></li>
+              <li><a href="classes/xquery.html" class="rounded">XQuery</a></li>
             </ul>
           </div>
         </li>
@@ -423,20 +424,19 @@
          <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#tm-collapse" aria-expanded="false">Technical Manuals</button>
          <div class="collapse" id="tm-collapse">
             <ul class="btn-toggle-nav list-unstyled pb-1">
-             <li class="api-ref"><a class="rounded" href="../wiki/Parasol-Objects.html">Parasol Objects</a></li>
-             <li class="api-ref"><a class="rounded" href="../wiki/Parasol-In-Depth.html">Parasol In Depth</a></li>
+             <li class="api-ref"><a class="rounded" href="../wiki/Kotuku-Objects.html">Kōtuku Objects</a></li>
+             <li class="api-ref"><a class="rounded" href="../wiki/Kotuku-In-Depth.html">Kōtuku In Depth</a></li>
            </ul>
          </div></li>
 
-         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#fg-collapse" aria-expanded="false">Fluid</button>
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#fg-collapse" aria-expanded="false">Tiri</button>
          <div class="collapse" id="fg-collapse">
             <ul class="btn-toggle-nav list-unstyled pb-1">
-            <li class="api-ref"><a class="rounded" href="../wiki/Fluid-Reference-Manual.html">Fluid Reference Manual</a></li>
-            <li class="api-ref"><a class="rounded" href="../wiki/Fluid-Common-API.html">Common API</a></li>
-            <li class="api-ref"><a class="rounded" href="../wiki/Fluid-FileSearch-API.html">FileSearch API</a></li>
-            <li class="api-ref"><a class="rounded" href="../wiki/Fluid-GUI-API.html">GUI API</a></li>
-            <li class="api-ref"><a class="rounded" href="../wiki/Fluid-JSON-API.html">JSON API</a></li>
-            <li class="api-ref"><a class="rounded" href="../wiki/Fluid-VFX-API.html">VFX API</a></li>
+            <li class="api-ref"><a class="rounded" href="../wiki/Tiri-Reference-Manual.html">Tiri Reference Manual</a></li>
+            <li class="api-ref"><a class="rounded" href="../wiki/Tiri-FileSearch-API.html">FileSearch API</a></li>
+            <li class="api-ref"><a class="rounded" href="../wiki/Tiri-GUI-API.html">GUI API</a></li>
+            <li class="api-ref"><a class="rounded" href="../wiki/Tiri-JSON-API.html">JSON API</a></li>
+            <li class="api-ref"><a class="rounded" href="../wiki/Tiri-VFX-API.html">VFX API</a></li>
             <li class="api-ref"><a class="rounded" href="../wiki/Widgets.html">Widgets</a></li>
            </ul>
          </div></li>
@@ -451,7 +451,7 @@
          <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#tools-collapse" aria-expanded="false">Tools</button>
          <div class="collapse" id="tools-collapse">
             <ul class="btn-toggle-nav list-unstyled pb-1">
-              <li class="api-ref"><a class="rounded" href="../wiki/Parasol-Cmd-Tool.html">Parasol Cmd Tool</a></li>
+              <li class="api-ref"><a class="rounded" href="../wiki/Origo.html">Origo</a></li>
               <li class="api-ref"><a class="rounded" href="../wiki/Unit-Testing.html">Flute / Unit Testing</a></li>
            </ul>
          </div></li>
@@ -460,8 +460,8 @@
          <div class="collapse" id="doc-collapse">
             <ul class="btn-toggle-nav list-unstyled pb-1">
               <li class="api-ref"><a class="rounded" href="../wiki/Embedded-Document-Formatting.html">Embedded Document Format</a></li>
-              <li class="api-ref"><a class="rounded" href="../wiki/FDL-Reference-Manual.html">FDL Reference Manual</a></li>
-              <li class="api-ref"><a class="rounded" href="../wiki/FDL-Tools.html">FDL Tools</a></li>
+              <li class="api-ref"><a class="rounded" href="../wiki/TDL-Reference-Manual.html">TDL Reference Manual</a></li>
+              <li class="api-ref"><a class="rounded" href="../wiki/TDL-Tools.html">TDL Tools</a></li>
            </ul>
          </div></li>
 
@@ -652,7 +652,7 @@
 
         <script type="text/javascript" src="../js/bootstrap.bundle.min.js"></script>
         <script type="text/javascript" src="../js/base.js"></script>
-        <script type="text/javascript">
+        <script type="text/javascript"><xsl:text disable-output-escaping="yes">
 var glCurrentMethod;
 
 const ready = fn => document.readyState !== 'loading' ? fn() : document.addEventListener('DOMContentLoaded', fn);
@@ -726,7 +726,8 @@ function showPage(Name, NoHistory)
 
    return false;
 }
-         </script>
+         </xsl:text>
+        </script>
       </body>
     </html>
   </xsl:template>

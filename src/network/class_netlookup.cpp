@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -419,7 +419,7 @@ Callback: This function will be called on the completion of any name or address 
 The function referenced here will receive the results of the most recently resolved name or address.  The C++ prototype
 is `Function(*NetLookup, ERR Error, const std::string &amp;HostName, const std::vector&lt;IPAddress&gt; &amp;Addresses)`.
 
-The Fluid prototype is as follows, with results readable from the #HostName and #Addresses fields:
+The Tiri prototype is as follows, with results readable from the #HostName and #Addresses fields:
 `function(NetLookup, Error)`.
 
 *********************************************************************************************************************/
@@ -727,7 +727,7 @@ static void resolve_callback(extNetLookup *Self, ERR Error, const std::string &H
       routine(Self, Error, HostName, Addresses, Self->Callback.Meta);
    }
    else if (Self->Callback.isScript()) {
-      // Fluid scripts can retrieve the host and addresses from the NetLookup object - it's a more optimal solution
+      // Tiri scripts can retrieve the host and addresses from the NetLookup object - it's a more optimal solution
       sc::Call(Self->Callback, std::to_array<ScriptArg>({ { "NetLookup", Self, FDF_OBJECT }, { "Error", int(Error) } }));
    }
 }

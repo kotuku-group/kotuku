@@ -1,0 +1,372 @@
+#!/usr/bin/env origo
+
+-- Flute provides a standard framework for the execution of unit tests in Tiri.
+--
+-- TODO: Support for JSON output of test results.
+--       Support for parameterized tests from the command line.
+--       Support for test retries on failure.
+--       Support for test timeouts (mark as a fail after N seconds is exceeded).
+
+glHelp = [[
+Flute provides a standard framework for the execution of unit tests in Tiri.
+
+Example usage:
+
+   origo flute.tiri file=[file]
+]]
+
+   glFile    = arg('file')
+   glTest    = arg('test')?:split(',') ?? { }
+   glHotPath = arg('hotPath') -- Force hot-path execution for all tests.
+   glSelf    = obj.find('self')
+   glLabels  = arg('labels')?:split(',') ?? { }
+
+   jit.opt.start("hotloop=3") -- Lower threshold to trigger JIT sooner, simplifies debugging
+
+----------------------------------------------------------------------------------------------------------------------
+
+glNetworkAvailable = thunk():bool
+   try
+      global mNet ?= mod.load('network')
+   end
+   return mNet != nil
+end
+
+glAudioAvailable = thunk():bool
+   try
+      global mAudio ?= mod.load('audio')
+   end
+   return mAudio != nil
+end
+
+glFontAvailable = thunk():bool
+   try
+      global mFont ?= mod.load('font')
+   end
+   return mFont != nil
+end
+
+glDisplayAvailable = thunk():bool
+   try
+      global mGfx ?= mod.load('display')
+   end
+   return mGfx != nil
+end
+
+global glSSLAvailable = thunk():bool
+   glNetworkAvailable ?? return false
+
+   -- Test if SSL support is available by attempting to create SSL socket
+
+   local test_socket
+   try
+      test_socket = obj.new('netsocket', { name = 'SSLSupportTest', port = 0, flags = 'SERVER|SSL' })
+   end
+
+   if test_socket then
+      supported = test_socket.error is ERR_Okay
+      test_socket = nil
+      processing.collect()
+      return supported
+   end
+
+   return false
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function checkAvailable(Requirement:str, Expectation:bool):bool
+   if Requirement is 'network' then
+      return glNetworkAvailable is Expectation
+   elseif Requirement is 'ssl' then
+      return glSSLAvailable is Expectation
+   elseif Requirement is 'font' then
+      return glFontAvailable is Expectation
+   elseif Requirement is 'audio' then
+      return glAudioAvailable is Expectation
+   elseif Requirement is 'display' then
+      return glDisplayAvailable is Expectation
+   else
+      error('Invalid requirement: ' .. Requirement)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function sortTests(Tests:table)
+   if #Tests <= 1 then return end
+
+   table.sort(Tests, function(a:table, b:table):bool
+      return (a.priority ?? 255) < (b.priority ?? 255)
+   end)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+--[[
+_ANNO = {
+   [functionRef] = {
+      name = 'functionName',
+      source = 'path/to/file.tiri',
+      annotations = {
+         { name = 'Test', args = { key = value, ... } },
+         { name = 'Requires', args = { ... } }
+      }
+   }
+}
+--]]
+
+function runTests()
+   global glTestTotal = 0
+   global glTestsPassed = 0
+
+   err, glFile = mSys.ResolvePath(glFile)
+   if err != ERR_Okay then
+      print("The targeted source file doesn't exist: " .. glFile)
+      return
+   end
+
+   loadFile(glFile)
+
+   all = debug.anno.list()
+   before_each = {}
+   after_each  = {}
+   before_all  = {}
+   after_all   = {}
+
+   if all then
+      global body ?= {}
+      body.tests ?= {}
+
+      for func, entry in pairs(all) do
+         disabled = false
+         is_test  = false
+         test_name     = nil
+         test_timeout  = nil
+         test_priority = nil
+         test_labels   = nil
+         test_hotpath  = nil
+         for v in values(entry.annotations) do
+            if v.name is 'Test' then
+               -- @Test Arguments: name, timeout, priority, labels
+               is_test = true
+               for k, v in pairs(v.args) do
+                  choose k from
+                     'name'     -> test_name     = v
+                     'timeout'  -> test_timeout  = v
+                     'priority' -> test_priority = v
+                     'labels'   -> test_labels   = v
+                     'hotpath'  -> test_hotpath  = v -- Number or boolean permitted
+                  end
+               end
+            elseif v.name is 'Disabled' then
+               disabled = true
+            elseif v.name is 'BeforeEach' then
+               -- BeforeEach can carry arguments that determine the default parameters for all tests.
+               table.insert(before_each, { func=func, args=v.args })
+            elseif v.name is 'AfterEach' then
+               table.insert(after_each, func)
+            elseif v.name is 'BeforeAll' then
+               table.insert(before_all, func)
+            elseif v.name is 'AfterAll' then
+               table.insert(after_all, func)
+            elseif v.name is 'Requires' then
+               for req, expect in pairs(v.args) do
+                  if not checkAvailable(req, expect ?? true) then disabled = true end
+               end
+            end
+         end
+
+         if #glLabels > 0 then -- User is filtering on at least one label
+            if test_labels is nil then
+               disabled = true
+            else
+               label_present = false
+               inverse = false
+
+               for label_filter in values(glLabels) do
+                  if label_filter:startsWith('~') then
+                     inverse = true
+                     label_filter = label_filter:sub(1)
+                  end
+
+                  for test_label in values(test_labels) do
+                     if label_filter is test_label then
+                        label_present = true
+                        break
+                     end
+                  end
+                  if label_present then break end
+               end
+
+               disabled = inverse ? label_present :> not label_present
+            end
+         end
+
+         if not disabled and is_test then
+            table.insert(body.tests, {
+               func     = func,
+               name     = test_name ?? tostring(func),
+               timeout  = test_timeout,
+               priority = test_priority,
+               labels   = test_labels,
+               disabled = disabled,
+               is_test  = is_test,
+               hotpath  = test_hotpath
+            })
+         end
+      end
+   else
+      print("The Flute test file did not include annotations.  It is either not a Flute script or is misconfigured.")
+      return
+   end
+
+   if not body.tests then
+      -- Exporting no tests is considered legitimate - a test file may choose to have no tests.
+      print("The Flute test file did not return any tests to execute.")
+      glSelf.errorMessage = nil
+      return
+   end
+
+   glTestTotal += #body.tests
+
+   if #before_all > 0 then
+      state = {
+         folder = [*_]io.splitPath(glFile)
+      }
+
+      for func in values(before_all) do
+         func(state)
+      end
+   end
+
+   sortTests(body.tests)
+
+   i = 0
+   for test in values(body.tests) do
+      i++
+      skip = false
+      assert(test.name, 'Test function is missing a name.')
+      assert(test.func, 'Test function is missing a function reference.')
+
+      print('-- Test ' .. i .. ': ' .. test.name .. ' --')
+
+      -- Filter by test name if requested
+
+      if #glTest > 0 then
+         skip = true
+         for v in values(glTest) do
+            if test.name is v then
+               skip = false
+               break
+            end
+         end
+      end
+
+      if not skip and test.func then
+         -- Run the test
+         startTime = mSys.PreciseTime()
+
+         if #before_each > 0 then
+            for entry in values(before_each) do
+               if entry.args.hotpath then
+                  test.hotpath ?= entry.args.hotpath
+               end
+               entry.func()
+            end
+         end
+
+         local stop = 1 -- One attempt by default
+         if test.hotpath or glHotPath then
+            if type(test.hotpath) is 'number' then
+               stop = tonumber(test.hotpath)
+               if stop < 1 then stop = 1 end
+            else
+               stop = 5
+            end
+         end
+
+         local error_msg
+         local succeeded = true
+         success_count = 0
+
+         for i=0,stop-1 do
+            try
+               test.func()
+               success_count++
+            except e
+               succeeded = false
+               error_msg = e.message
+            end
+         end
+
+         totalTime = (mSys.PreciseTime() - startTime) / 1000000
+
+         if succeeded and test.timeout?? then
+            timeout = tonumber(test.timeout)
+            if timeout and timeout > 0 and totalTime > timeout then
+               succeeded = false
+               error_msg = string.format('Timeout exceeded: %.6f sec (limit %.6f sec)', totalTime, timeout)
+            end
+         end
+
+         if #after_each > 0 then
+            for f in values(after_each) do
+               f()
+            end
+         end
+
+         processing.collect()
+
+         if not succeeded then
+            not error_msg ?? print(error_msg)
+            if success_count is 0 then
+               print(string.format('FAIL: %.6f sec', totalTime))
+            else
+               print(string.format('FAIL (HOT-PATH: %d): %.6f sec', success_count, totalTime))
+            end
+         else
+            print(string.format('PASS: %.6f sec', totalTime))
+            glTestsPassed++
+         end
+      else
+         print('SKIPPED')
+         glTestTotal -= 1
+      end
+   end
+
+   if #after_all > 0 then
+      for func in values(after_all) do
+         func()
+      end
+   end
+
+   body?.cleanup()
+
+   if glTestsPassed < glTestTotal then
+      -- Setting the errorMessage will ensure that an error code is returned to the shell.
+      glSelf.errorMessage = f'Ran {glTestTotal} tests, passed {glTestsPassed}'
+   else
+      glSelf.errorMessage = nil
+   end
+
+   print(f'--\nRan {glTestTotal} tests, passed {glTestsPassed}')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Unit tests should call logOutput() for the purpose of formally logging output for the current test.
+
+global function logOutput(Message:str)
+   print(Message)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+   if not glFile?? then
+      print(glHelp)
+      return
+   end
+
+   -- Setting an error string ensures that ctest will register a failure if the tests do not complete as planned.
+   glSelf.errorMessage = 'Unexpected execution failure - tests not executed as planned.'
+
+   runTests()

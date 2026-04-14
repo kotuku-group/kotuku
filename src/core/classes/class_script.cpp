@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -8,7 +8,7 @@ that is distributed with this package.  Please refer to it for further informati
 -CLASS-
 Script: The Script class defines a common interface for script execution.
 
-The Script class defines a common interface for the purpose of executing scripts, such as Fluid.  The base class does
+The Script class defines a common interface for the purpose of executing scripts, such as Tiri.  The base class does
 not include a default parser or execution process of any kind.
 
 To execute a script file, choose a sub-class that matches the language and create the script object.  Set the #Path
@@ -23,7 +23,7 @@ Terminating the script will not remove objects that are outside its resource hie
 
 #define PRV_SCRIPT 1
 #include "../defs.h"
-#include <parasol/main.h>
+#include <kotuku/main.h>
 
 static ERR GET_Results(objScript *, STRING **, int *);
 
@@ -73,33 +73,6 @@ static ERR SCRIPT_DataFeed(objScript *Self, struct acDataFeed *Args)
 /*********************************************************************************************************************
 
 -METHOD-
-DerefProcedure: Dereferences an acquired procedure.
-
-This method will release a procedure reference that has been acquired through #GetProcedureID().  It is only necessary
-to make this call if the scripting language is managing function references as a keyed resource.  Fluid is one such
-language.  Languages that do not manage functions as a resource will ignore calls to this method.
-
-Note that acquiring a procedure reference and then failing to release it can result in the reference remaining in
-memory until the Script is terminated.  There may also be unforeseen consequences in the garbage collection process.
-
--INPUT-
-ptr(func) Procedure: The procedure to be dereferenced.
-
--ERRORS-
-Okay:
-NullArgs:
-
-*********************************************************************************************************************/
-
-static ERR SCRIPT_DerefProcedure(objScript *Self, struct sc::DerefProcedure *Args)
-{
-   // It is the responsibility of the sub-class to override this method with something appropriate.
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--METHOD-
 Callback: An internal method for managing callbacks.
 
 Not for client use.
@@ -136,8 +109,8 @@ static ERR SCRIPT_Callback(objScript *Self, struct sc::Callback *Args)
    auto save_total  = Self->TotalArgs;
    Self->TotalArgs  = Args->TotalArgs;
    auto saved_error = Self->Error;
-   auto saved_error_msg = Self->ErrorString;
-   Self->ErrorString = nullptr;
+   auto saved_error_msg = Self->ErrorMessage;
+   Self->ErrorMessage = nullptr;
    Self->Error       = ERR::Okay;
 
    ERR error = acActivate(Self);
@@ -148,10 +121,65 @@ static ERR SCRIPT_Callback(objScript *Self, struct sc::Callback *Args)
    Self->Procedure   = save_name;
    Self->ProcArgs    = save_args;
    Self->TotalArgs   = save_total;
-   if (Self->ErrorString) FreeResource(Self->ErrorString);
-   Self->ErrorString = saved_error_msg;
+   if (Self->ErrorMessage) FreeResource(Self->ErrorMessage);
+   Self->ErrorMessage = saved_error_msg;
 
    return error;
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+DebugLog: Acquire a debug log from a compiled Script.
+
+Use the DebugLog() method to acquire debug information from a compiled script.  The exact nature of the log
+will depend on the scripting language in use, but will typically dump readable bytecode for analysis.  The Options
+parameter is a comma-separated list that may be used to pass language-specific options to the underlying
+implementation.
+
+The resulting log information is returned as a string, which needs to be deallocated once no longer required.
+
+-INPUT-
+cstr Options: Options to pass to the underlying language.
+&!cstr Result: Resulting log information.
+
+-ERRORS-
+Okay:
+NullArgs:
+
+*********************************************************************************************************************/
+
+static ERR SCRIPT_DebugLog(objScript *Self, struct sc::DebugLog *Args)
+{
+   // It is the responsibility of the sub-class to override this method with something appropriate.
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+DerefProcedure: Dereferences an acquired procedure.
+
+This method will release a procedure reference that has been acquired through #GetProcedureID().  It is only necessary
+to make this call if the scripting language is managing function references as a keyed resource.  Tiri is one such
+language.  Languages that do not manage functions as a resource will ignore calls to this method.
+
+Note that acquiring a procedure reference and then failing to release it can result in the reference remaining in
+memory until the Script is terminated.  There may also be unforeseen consequences in the garbage collection process.
+
+-INPUT-
+ptr(func) Procedure: The procedure to be dereferenced.
+
+-ERRORS-
+Okay:
+NullArgs:
+
+*********************************************************************************************************************/
+
+static ERR SCRIPT_DerefProcedure(objScript *Self, struct sc::DerefProcedure *Args)
+{
+   // It is the responsibility of the sub-class to override this method with something appropriate.
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -193,7 +221,7 @@ struct ScriptArg {
 The Field Descriptor `FD` specified in the `Type` must be a match to whatever value is defined in the union.  For instance
 if the `Int` field is defined then an `FD_INT` `Type` must be used.  Supplementary field definition information, e.g.
 `FD_OBJECT`, may be used to assist in clarifying the type of the value that is being passed.  Field Descriptors are
-documented in detail in the Parasol Wiki.
+documented in detail in the Kotuku Wiki.
 
 -INPUT-
 cstr Procedure: The name of the procedure to execute, or NULL for the default entry point.
@@ -245,7 +273,7 @@ static ERR SCRIPT_Free(objScript *Self)
    if (Self->String)      { FreeResource(Self->String);      Self->String = nullptr; }
    if (Self->WorkingPath) { FreeResource(Self->WorkingPath); Self->WorkingPath = nullptr; }
    if (Self->Procedure)   { FreeResource(Self->Procedure);   Self->Procedure = nullptr; }
-   if (Self->ErrorString) { FreeResource(Self->ErrorString); Self->ErrorString = nullptr; }
+   if (Self->ErrorMessage) { FreeResource(Self->ErrorMessage); Self->ErrorMessage = nullptr; }
    if (Self->Results)     { FreeResource(Self->Results);     Self->Results = nullptr; }
    Self->~objScript();
    return ERR::Okay;
@@ -420,20 +448,20 @@ that if a script is likely to be executed recursively then the first thrown erro
 propagated through the call stack.
 
 -FIELD-
-ErrorString: A human readable error string may be declared here following a script execution failure.
+ErrorMessage: A human readable error string may be declared here following a script execution failure.
 
 *********************************************************************************************************************/
 
-static ERR GET_ErrorString(objScript *Self, STRING *Value)
+static ERR GET_ErrorMessage(objScript *Self, STRING *Value)
 {
-   *Value = Self->ErrorString;
+   *Value = Self->ErrorMessage;
    return ERR::Okay;
 }
 
-static ERR SET_ErrorString(objScript *Self, CSTRING Value)
+static ERR SET_ErrorMessage(objScript *Self, CSTRING Value)
 {
-   if (Self->ErrorString) { FreeResource(Self->ErrorString); Self->ErrorString = nullptr; }
-   if (Value) Self->ErrorString = strclone(Value);
+   if (Self->ErrorMessage) { FreeResource(Self->ErrorMessage); Self->ErrorMessage = nullptr; }
+   if (Value) Self->ErrorMessage = strclone(Value);
    return ERR::Okay;
 }
 
@@ -578,7 +606,6 @@ static ERR SET_Path(objScript *Self, CSTRING Value)
 }
 
 //********************************************************************************************************************
-// Internal: Name
 
 static ERR SET_Name(objScript *Self, CSTRING Name)
 {
@@ -654,7 +681,7 @@ static ERR SET_Results(objScript *Self, CSTRING *Value, int Elements)
    if (Value) {
       int len = 0;
       for (int i=0; i < Elements; i++) {
-         if (!Value[i]) return log.warning(ERR::InvalidData);
+         if (!Value[i]) return log.warning(ERR::SetValueNotString);
          len += strlen(Value[i]) + 1;
       }
       Self->ResultsTotal = Elements;
@@ -825,20 +852,20 @@ static const FieldArray clScriptFields[] = {
    { "CurrentLine", FDF_INT|FDF_R },
    { "LineOffset",  FDF_INT|FDF_RW },
    // Virtual Fields
-   { "CacheFile",   FDF_STRING|FDF_RW,              GET_CacheFile, SET_CacheFile },
-   { "ErrorString", FDF_STRING|FDF_RW,              GET_ErrorString, SET_ErrorString },
-   { "WorkingPath", FDF_STRING|FDF_RW,              GET_WorkingPath, SET_WorkingPath },
-   { "Language",    FDF_STRING|FDF_R,               GET_Language, nullptr },
-   { "Location",    FDF_SYNONYM|FDF_STRING|FDF_RI,  GET_Path, SET_Path },
-   { "Procedure",   FDF_STRING|FDF_RW,              GET_Procedure, SET_Procedure },
-   { "Name",        FDF_STRING|FDF_SYSTEM|FDF_RW,   nullptr, SET_Name },
-   { "Path",        FDF_STRING|FDF_RI,              GET_Path, SET_Path },
-   { "Results",     FDF_ARRAY|FDF_POINTER|FDF_STRING|FDF_RW, GET_Results, SET_Results },
-   { "Src",         FDF_SYNONYM|FDF_STRING|FDF_RI,  GET_Path, SET_Path },
-   { "Statement",   FDF_STRING|FDF_RW,              GET_String, SET_String },
-   { "String",      FDF_SYNONYM|FDF_STRING|FDF_RW,  GET_String, SET_String },
-   { "TotalArgs",   FDF_INT|FDF_R,                 GET_TotalArgs, nullptr },
-   { "Variables",   FDF_POINTER|FDF_SYSTEM|FDF_R,   GET_Variables, nullptr },
+   { "CacheFile",    FDF_STRING|FDF_RW,              GET_CacheFile, SET_CacheFile },
+   { "ErrorMessage", FDF_STRING|FDF_RW,              GET_ErrorMessage, SET_ErrorMessage },
+   { "WorkingPath",  FDF_STRING|FDF_RW,              GET_WorkingPath, SET_WorkingPath },
+   { "Language",     FDF_STRING|FDF_R,               GET_Language, nullptr },
+   { "Location",     FDF_SYNONYM|FDF_STRING|FDF_RI,  GET_Path, SET_Path },
+   { "Procedure",    FDF_STRING|FDF_RW,              GET_Procedure, SET_Procedure },
+   { "Name",         FDF_STRING|FDF_SYSTEM|FDF_RW,   nullptr, SET_Name },
+   { "Path",         FDF_STRING|FDF_RI,              GET_Path, SET_Path },
+   { "Results",      FDF_ARRAY|FDF_POINTER|FDF_STRING|FDF_RW, GET_Results, SET_Results },
+   { "Src",          FDF_SYNONYM|FDF_STRING|FDF_RI,  GET_Path, SET_Path },
+   { "Statement",    FDF_STRING|FDF_RW,              GET_String, SET_String },
+   { "String",       FDF_SYNONYM|FDF_STRING|FDF_RW,  GET_String, SET_String },
+   { "TotalArgs",    FDF_INT|FDF_R,                  GET_TotalArgs, nullptr },
+   { "Variables",    FDF_POINTER|FDF_SYSTEM|FDF_R,   GET_Variables, nullptr },
    END_FIELD
 };
 

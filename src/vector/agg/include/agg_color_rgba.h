@@ -6,10 +6,10 @@
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
 
-#ifndef AGG_COLOR_RGBA_INCLUDED
-#define AGG_COLOR_RGBA_INCLUDED
+#pragma once
 
 #include <math.h>
+#include <algorithm>
 #include "agg_basics.h"
 #include "../../../link/linear_rgb.h"
 
@@ -42,10 +42,10 @@ namespace agg {
             a((Alpha ? Alpha : RGB.Alpha) / 255.0), linear(false) {}
 
          rgba(FRGB &RGB, double Alpha) :
-            r(RGB.Red),
-            g(RGB.Green),
-            b(RGB.Blue),
-            a(Alpha),
+            r(std::clamp<float>(RGB.Red, 0, 1)),
+            g(std::clamp<float>(RGB.Green, 0, 1)),
+            b(std::clamp<float>(RGB.Blue, 0, 1)),
+            a(std::clamp<float>(Alpha, 0, 1)),
             linear(false) {}
 
          void clear() {
@@ -59,9 +59,9 @@ namespace agg {
             return *this;
          }
 
-         const rgba& opacity(double a_) {
+         const rgba & opacity(double a_) {
             if (a_ < 0.0) a_ = 0.0;
-            if (a_ > 1.0) a_ = 1.0;
+            else if (a_ > 1.0) a_ = 1.0;
             a = a_;
             return *this;
          }
@@ -159,16 +159,16 @@ namespace agg {
             a(value_type(Alpha)) {}
 
         rgba8(const FRGB &RGB) :
-            r((value_type)uround(RGB.Red * double(base_mask))),
-            g((value_type)uround(RGB.Green * double(base_mask))),
-            b((value_type)uround(RGB.Blue * double(base_mask))),
-            a((value_type)uround(RGB.Alpha * double(base_mask))) {}
+            r((value_type)uround(std::clamp<float>(RGB.Red, 0, 1) * double(base_mask))),
+            g((value_type)uround(std::clamp<float>(RGB.Green, 0, 1) * double(base_mask))),
+            b((value_type)uround(std::clamp<float>(RGB.Blue, 0, 1) * double(base_mask))),
+            a((value_type)uround(std::clamp<float>(RGB.Alpha, 0, 1) * double(base_mask))) {}
 
         rgba8(const FRGB &RGB, float Alpha) :
-            r((value_type)uround(RGB.Red * double(base_mask))),
-            g((value_type)uround(RGB.Green * double(base_mask))),
-            b((value_type)uround(RGB.Blue * double(base_mask))),
-            a((value_type)uround(Alpha * double(base_mask))) {}
+            r((value_type)uround(std::clamp<float>(RGB.Red, 0, 1) * double(base_mask))),
+            g((value_type)uround(std::clamp<float>(RGB.Green, 0, 1) * double(base_mask))),
+            b((value_type)uround(std::clamp<float>(RGB.Blue, 0, 1) * double(base_mask))),
+            a((value_type)uround(std::clamp<float>(Alpha, 0, 1) * double(base_mask))) {}
 
         rgba8(unsigned r_, unsigned g_, unsigned b_, unsigned a_=base_mask) :
             r(value_type(r_)),
@@ -542,8 +542,6 @@ namespace agg {
         static self_type no_color() { return self_type(0,0,0,0); }
     };
 
-    //--------------------------------------------------------------
-
     inline rgba16 rgba16_pre(unsigned r, unsigned g, unsigned b, unsigned a = rgba16::base_mask) {
         return rgba16(r,g,b,a).premultiply();
     }
@@ -580,5 +578,3 @@ namespace agg {
         return rgba16(gamma.inv(c.r), gamma.inv(c.g), gamma.inv(c.b), c.a);
     }
 }
-
-#endif

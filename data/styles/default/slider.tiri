@@ -1,0 +1,67 @@
+-- Styling for the 'gui/slider' script.
+
+   import 'gui'
+
+return {
+   background = function(Slider:table, Viewport:obj)
+      slider_bkgd = Slider._theme.slider.bkgd
+      stroke = Slider._theme.slider.stroke
+
+      if Slider.orientation is 'V' then
+         Slider._barBkgd = Viewport.new('VectorRectangle', {
+            x = '0', y = 0, width = '100%', height = '100%',
+            fill = slider_bkgd, stroke = stroke,
+            roundX = 4, roundY = 4
+         })
+      else
+         Slider._barBkgd = Viewport.new('VectorRectangle', {
+            x = 0, y = '0', width = '100%', height = '100%',
+            fill = slider_bkgd, stroke = stroke,
+            roundX = 4, roundY = 4
+         })
+      end
+   end,
+   slider = function(Slider:table, Viewport:obj)
+      button_face      = Slider._theme.slider.fore
+      button_highlight = Slider._theme.slider.foreHighlight
+      gap    = gui.sizing.widget.strokeWidth
+      stroke = Slider._theme.slider.foreStroke
+
+      Slider.button = Viewport.new('VectorRectangle', {
+         x = gap, y = gap, roundX = 4, roundY = 4,
+         width = Viewport.width-(gap*2), height = Viewport.height-(gap*2),
+         fill = button_face, stroke = stroke, strokeWidth = gui.sizing.widget.strokeWidth, opacity = 0.75
+      })
+
+      Viewport.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, function(Viewport, Event)
+         if Event is FM_LOST_FOCUS then
+            Slider.button.stroke = stroke
+            Slider.events?.lostFocus(Slider)
+         else
+            if Slider.disabled then
+               Slider.button.stroke = stroke
+            else
+               Slider.button.stroke = Slider._theme.slider.foreStrokeFocus
+               Slider.events?.focus(Slider)
+            end
+         end
+
+         Viewport.acDraw()
+      end)
+
+      Viewport.mtSubscribeInput(JTYPE_CROSSING, function(Viewport, Msg)
+         repeat
+            if Msg.type is JET_CROSSED_IN then
+               Slider.button.fill = button_highlight
+               Slider.button.opacity = 1
+            elseif Msg.type is JET_CROSSED_OUT then
+               Slider.button.fill = button_face
+               Slider.button.opacity = 0.75
+            end
+            Msg = Msg.next
+         until not Msg
+
+         Viewport.acDraw()
+      end)
+   end
+}

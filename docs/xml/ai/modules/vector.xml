@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:m xmlns:ai="http://parasol-framework.org/ai-docs" n="Vector" v="1" cl="BlurFX,ColourFX,CompositeFX,ConvolveFX,DisplacementFX,FilterEffect,FloodFX,ImageFX,LightingFX,MergeFX,MorphologyFX,OffsetFX,RemapFX,SourceFX,TurbulenceFX,Vector,VectorClip,VectorColour,VectorEllipse,VectorFilter,VectorGradient,VectorGroup,VectorImage,VectorPath,VectorPattern,VectorPolygon,VectorRectangle,VectorScene,VectorShape,VectorSpiral,VectorText,VectorTransition,VectorViewport,VectorWave,WaveFunctionFX">
+<ai:m xmlns:ai="http://kotuku.dev/ai-docs" n="Vector" v="1" cl="BlurFX,ColourFX,CompositeFX,ConvolveFX,DisplacementFX,FilterEffect,FloodFX,ImageFX,LightingFX,MergeFX,MorphologyFX,OffsetFX,RemapFX,SourceFX,TurbulenceFX,Vector,VectorClip,VectorColour,VectorEllipse,VectorFilter,VectorGradient,VectorGroup,VectorImage,VectorPath,VectorPattern,VectorPolygon,VectorRectangle,VectorScene,VectorShape,VectorSpiral,VectorText,VectorTransition,VectorViewport,VectorWave,WaveFunctionFX">
   <ai:f n="ApplyPath" c="Copy a pre-generated or custom path to a VectorPath object." p="ERR vec::ApplyPath(APTR Path, objVectorPath * VectorPath)" r="ERR">
     <ai:i n="Path" t="APTR" c="The source path to be copied."/>
     <ai:i n="VectorPath" t="objVectorPath *" c="The target VectorPath object."/>

@@ -11,11 +11,11 @@
     <id>4912a9b5</id>
     <idstring>CLIPBOARD</idstring>
     <category>IO</category>
-    <copyright>Paul Manias 2003-2025</copyright>
+    <copyright>Paul Manias © 2003-2026</copyright>
     <description>
 <p>The Clipboard class manages data transfer between applications on behalf of the user.  Depending on the host system, behaviour between platforms can vary.</p>
 <p>On Windows the clipboard is tightly integrated by default, allowing it to support native Windows applications.  This reduces the default feature set, but ensures that the clipboard behaves in a way that the user would expect it to. If historical buffering is enabled with the <code>CPF::HISTORY_BUFFER</code> option then the clipboard API will actively monitor the clipboard and store copied data in the local <code>clipboard:</code> file cache.  This results in additional overhead to clipboard management.</p>
-<p>On Linux the clipboard is localised and data is shared between Parasol applications only.</p>
+<p>On Linux the clipboard is localised and data is shared between Kōtuku applications only.</p>
 <p>Multiple clipboard objects can be created, but they will share the same group of clipped data for the logged-in user.</p>
 <p>There is a limit on the number of clipped items that can be stored in the clipboard.  Only 1 grouping of each datatype is permitted (for example, only one group of image clips may exist at any time).  In historical buffer mode there is a fixed limit to the clip count and the oldest members are automatically removed.</p></description>
     <source>

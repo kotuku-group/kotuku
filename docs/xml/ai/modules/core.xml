@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:m xmlns:ai="http://parasol-framework.org/ai-docs" n="Core" cl="CompressedStream,Compression,Config,File,MetaClass,Module,Script,StorageDevice,Task,Thread,Time">
+<ai:m xmlns:ai="http://kotuku.dev/ai-docs" n="Core" cl="CompressedStream,Compression,Config,File,MetaClass,Module,Script,StorageDevice,Task,Thread,Time">
   <ai:f n="AccessMemory" c="Grants access to memory blocks by identifier." p="ERR AccessMemory(MEMORYID Memory, MEM Flags, INT MilliSeconds, APTR * Result)" r="ERR">
     <ai:i n="Memory" t="MEMORYID" c="The ID of the memory block to access."/>
     <ai:i n="Flags" t="MEM" c="Set to READ, WRITE or READ_WRITE."/>
@@ -823,7 +823,7 @@
     <ai:k n="PTR_INTRESULT" c="Use for pointer-based value results only."/>
     <ai:k n="R" c="Synonym for READ"/>
     <ai:k n="READ" c="CLASSDEF"/>
-    <ai:k n="RESOURCE" c="The referenced struct or pointer is a special resource. Changes some behaviours, e.g. a resourced struct will use direct value references rather than being copied in Fluid."/>
+    <ai:k n="RESOURCE" c="The referenced struct or pointer is a special resource. Changes some behaviours, e.g. a resourced struct will use direct value references rather than being copied in Tiri."/>
     <ai:k n="RESULT" c="FUNCDEF Overrides READ"/>
     <ai:k n="RGB" c="Supplementary, if an int type then format is 0xAARRGGBB, if pointer then refers to an RGB structure."/>
     <ai:k n="RI" c="Synonym for READ | INIT"/>
@@ -1375,7 +1375,7 @@
   </ai:c>
   <ai:c l="RP" c="Path types for SetResourcePath()">
     <ai:k n="MODULE_PATH" c="An alternative path leading to the system modules (normally system:modules/). Introduced for platforms such as Android, where modules are stored in asset folders."/>
-    <ai:k n="ROOT_PATH" c="Overrides the root path, which defaults to the location at which Parasol is installed."/>
+    <ai:k n="ROOT_PATH" c="Overrides the root path, which defaults to the location at which Kotuku is installed."/>
     <ai:k n="SYSTEM_PATH" c="The path of the system: volume, which otherwise defaults to [root]:system/."/>
   </ai:c>
   <ai:c l="RSF" c="Flags for ResolvePath()">

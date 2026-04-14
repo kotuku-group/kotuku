@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="VectorText" mod="Vector" c="Extends the Vector class with support for generating text." cat="Graphics" id="51bb151d" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="VectorText" mod="Vector" c="Extends the Vector class with support for generating text." cat="Graphics" id="51bb151d" v="1">
   <ai:m n="DeleteLine" c="Deletes any line number." p="ERR vt::DeleteLine(OBJECTPTR Object, INT Line)">
     <ai:i n="Line" t="INT" c="The line number that you want to delete. If negative, the last line will be deleted."/>
     <ai:e c="Okay"/>

@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -35,7 +35,7 @@ To clarify the terminology used in this documentation, please note the definitio
 
 <list type="bullet">
 <li>'Point' determines the size of a font.  The value is relative only to other point sizes of the same font face, i.e. two faces at the same point size are not necessarily the same height.</li>
-<li>'Height' represents the 'vertical bearing' or point of the font, expressed as a pixel value.  The height does not cover for any leading at the top of the font, or the gutter space used for the tails on characters like 'g' and 'y'.</li>
+<li>'Height' represents the 'vertical bearing' or point of the font, expressed as a pixel value.  The height does not cover any leading at the top of the font, or the gutter space used for the tails on characters like 'g' and 'y'.</li>
 <li>'Gutter' is the amount of space that a character can descend below the base line.  Characters like 'g' and 'y' are examples of characters that utilise the gutter space.  The gutter is also sometimes known as the 'external leading' or 'descent' of a character.</li>
 <li>'LineSpacing' is the recommended pixel distance between each line that is printed with the font.</li>
 <li>'Glyph' refers to a single font character.</li>
@@ -585,7 +585,7 @@ static ERR SET_Opacity(extFont *Self, double Value)
 {
    if (Value >= 100) Self->Colour.Alpha = 255;
    else if (Value <= 0) Self->Colour.Alpha = 0;
-   else Self->Colour.Alpha = F2T(Value * (255.0 / 100.0));
+   else Self->Colour.Alpha = int(Value * (255.0 / 100.0));
    return ERR::Okay;
 }
 

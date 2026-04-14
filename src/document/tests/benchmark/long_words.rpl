@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<!DOCTYPE rpl PUBLIC "-//ROCKLYTE//DTD RPL 1.0//EN">
+
+<body face="Noto Sans" font-size="11pt" margins="28"/>
+
+<page name="Index">
+   <h1>Long Word Benchmark</h1>
+
+   <p>This paragraph is designed to force repeated word-width accumulation and difficult wrapping decisions. The token
+   supercalifragilisticexpialidocious_benchmark_segment_alpha_beta_gamma_delta_epsilon_zeta_eta_theta_iota_kappa_lambda
+   appears inside otherwise normal text so the surrounding line state must still be handled correctly.</p>
+
+   <p>A second paragraph repeats the same pattern with another deliberately large token:
+   documentation_performance_refactor_measurement_sequence_with_embedded_identifiers_and_no_natural_break_positions
+   and then continues with enough trailing text to force the line to resume normal wrapping after any width extension
+   or restart has occurred.</p>
+
+   <p no-wrap>This final paragraph disables wrapping and contains the token
+   no_wrap_layout_width_extension_probe_token_with_multiple_repeated_sections_for_page_growth_validation so that page
+   width extension paths can be exercised deterministically.</p>
+</page>

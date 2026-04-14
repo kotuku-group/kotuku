@@ -1,0 +1,46 @@
+-- Helper file for @if/@end import testing
+-- This file will be imported by test_compile_if_import.tiri
+
+global helper_always_visible = true
+global helper_message = "Hello from imported module!"
+global function add_numbers(a, b) return a + b end
+global function multiply(a, b) return a * b end
+
+@if(imported=false)
+   -- Only runs when this file is executed directly
+   global helper_main_only = true
+   print("compile_if_helper: Running as main script")
+@end
+
+@if(imported=true)
+   -- Only runs when this file is imported
+   global helper_import_only = true
+   print("compile_if_helper: Running as imported module")
+@end
+
+-- Test platform condition (we're on Windows)
+@if(platform="windows")
+   print("Platform is Windows - this should print on Windows")
+   global on_windows = true
+@end
+
+@if(platform="linux")
+   print("Platform is Linux - this should NOT print on Windows")
+   global on_linux = true
+@end
+
+@if(platform="osx")
+   print("Platform is OSX - this should NOT print on Windows")
+   global on_osx = true
+@end
+
+-- Test debug condition
+@if(debug=true)
+   print("Debug mode is ON (log level > 0)")
+   global debug_on = true
+@end
+
+@if(debug=false)
+   print("Debug mode is OFF (log level == 0)")
+   global debug_off = true
+@end

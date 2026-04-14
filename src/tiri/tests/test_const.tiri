@@ -1,0 +1,215 @@
+-- Tests for <const> attribute support.
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test valid local const declarations
+
+@Test function LocalConstDeclaration()
+   local max_size <const> = 100
+   local prefix <const>:str = "test_"
+   local data <const> = { x = 1, y = 2 }
+   local a <const>, b <const>:num = 5, 10
+
+   assert(max_size is 100, 'Local const should have correct value')
+   assert(prefix is "test_", 'Local const string should have correct value')
+   assert(data.x is 1, 'Local const table should have correct value')
+   assert(a is 5, 'First const in multiple declaration should have correct value')
+   assert(b is 10, 'Second const in multiple declaration should have correct value')
+
+   -- Verify table contents can be modified (const protects the binding, not contents)
+   data.x = 999
+   assert(data.x is 999, 'Table contents should be modifiable')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test const with expressions
+
+@Test function ConstWithExpressions()
+   local a <const> = 10 + 20
+   b <const> = "hello" .. " world"
+
+   assert(a is 30, 'Const with arithmetic expression should work')
+   assert(b is "hello world", 'Const with string concatenation should work')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test const in nested scopes
+
+@Test function ConstInNestedScopes()
+   outer <const> = "outer"
+   do
+      local inner <const> = "inner"
+      assert(inner is "inner", 'Inner const should be accessible')
+      assert(outer is "outer", 'Outer const should be accessible from inner scope')
+   end
+   assert(outer is "outer", 'Outer const should still be accessible')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test const with function values
+
+@Test function ConstWithFunction()
+   add <const> = function(a, b)
+      return a + b
+   end
+
+   assert(add(2, 3) is 5, 'Const function should be callable')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test const in for loop
+
+@Test function ConstInForLoop()
+   local sum = 0
+   for i = 1, 3 do
+      local val <const> = i * 10
+      sum += val
+   end
+   assert(sum is 60, 'Const in for loop should work: ' .. sum)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test const with multiple declarations
+
+@Test function MultipleConstDeclarations()
+   a <const>, b, c <const> = 1, 2, 3
+   assert(a is 1, 'First const should be 1')
+   assert(b is 2, 'Middle non-const should be 2')
+   assert(c is 3, 'Last const should be 3')
+
+   -- b can be reassigned (not const)
+   b = 20
+   assert(b is 20, 'Non-const should be reassignable')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test const with nil value (should fail - const requires initialiser)
+-- This is tested via compile error in separate tests below
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test that const values can be read multiple times
+
+@Test function ConstMultipleReads()
+   local value <const> = 42
+   local sum = 0
+   for i = 1, 5 do
+      sum += value
+   end
+   assert(sum is 210, 'Const should be readable multiple times: ' .. sum)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test const with complex expressions
+
+@Test function ConstWithComplexExpression()
+   local function calculate()
+      return 100
+   end
+   local result <const> = calculate() + 50
+   assert(result is 150, 'Const with function call expression should work')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test const with table constructor
+
+@Test function ConstWithTableConstructor()
+   local config <const> = {
+      debug = true,
+      level = 5,
+      name = "test"
+   }
+   assert(config.debug is true, 'Table field debug should be true')
+   assert(config.level is 5, 'Table field level should be 5')
+   assert(config.name is "test", 'Table field name should be test')
+
+   -- Modify table contents (allowed - const protects binding only)
+   config.level = 10
+   assert(config.level is 10, 'Table contents should be modifiable')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test const with type annotation
+
+@Test function ConstWithTypeAnnotation()
+   local num_const <const>:num = 3.14
+   local str_const <const>:str = "hello"
+   local bool_const <const>:bool = true
+
+   assert(num_const is 3.14, 'Typed num const should work')
+   assert(str_const is "hello", 'Typed str const should work')
+   assert(bool_const is true, 'Typed bool const should work')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test const in while loop
+
+@Test function ConstInWhileLoop()
+   local count = 0
+   local i = 0
+   while i < 3 do
+      local val <const> = i
+      count++
+      i++
+   end
+   assert(count is 3, 'Const in while loop should work')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test that reassigning local const fails at compile time
+
+@Test function LocalConstReassignmentError()
+   try
+      exec([[
+local x <const> = 1
+x = 2
+]])
+   except ex
+      assert(ex.message:find('cannot assign to const local'), f'Error should mention const local: {ex.message}')
+      return -- Happy path
+   end
+   error('Reassigning const local should fail to compile')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test that reassigning global const fails at compile time
+
+@Test function GlobalConstReassignmentError()
+   try
+      exec([[
+global X <const> = 1
+X = 2
+]])
+   except ex
+      assert(ex.message:find('cannot assign to const global'), f'Error should mention const global: {ex.message}')
+      return -- Happy path
+   end
+   error('Reassigning const global should fail to compile')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test that local const without initialiser fails at compile time
+
+@Test function LocalConstRequiresInitialiser()
+   try
+      exec([[local x <const>]])
+   except ex
+      assert(ex.message:find('requires an initialiser'), 'Error should mention initialiser: {ex.message}')
+      return -- Happy path
+   end
+   error('Local const without initialiser should fail to compile')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test that global const without initialiser fails at compile time
+
+@Test function GlobalConstRequiresInitialiser()
+   try
+      exec([[global X <const>]])
+   except ex
+      assert(ex.message:find('requires an initialiser'), 'Error should mention initialiser: {ex.message}')
+      return -- Happy path
+   end
+   error('Global const without initialiser should fail to compile')
+end

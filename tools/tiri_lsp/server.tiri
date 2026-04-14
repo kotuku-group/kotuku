@@ -1,0 +1,156 @@
+-- Tiri Language Server Protocol (LSP) Server
+--
+-- A TCP-based LSP server for IDE integration with Tiri scripts.
+--
+-- Usage: origo lsp_server.tiri port=5007 [options...]
+--
+-- See --help for full usage information.
+
+glHelp = [[
+Tiri Language Server Protocol (LSP) server for IDE integration.
+
+This server implements the Language Server Protocol over TCP, allowing IDEs
+and editors to provide features like autocompletion, hover information, and
+diagnostics for Tiri scripts.
+
+Usage: origo lsp_server.tiri [options...]
+
+Parameters:
+
+  port        - TCP port to listen on (default: 5007)
+  verbose     - Enable verbose/debug logging (true/false, default: false)
+  config      - Path to config file (default: user:config/lsp_server_cfg.tiri)
+  request-log - Path to log file for request/response debugging
+  help        - Display this help message
+
+Examples:
+
+  origo lsp_server.tiri port=5007
+  origo lsp_server.tiri port=5007 verbose=true
+  origo lsp_server.tiri port=5007 request-log=lsp_debug.log
+  origo lsp_server.tiri config=my_lsp_config.tiri
+
+Config File Format:
+
+  The config file should define a glOptions table:
+
+    glOptions = {
+       port = 5007,
+       verbose = false
+    }
+
+Testing with netcat/telnet:
+
+  1. Start the server: origo lsp_server.tiri port=5007
+  2. Connect: nc localhost 5007
+  3. Send initialize request:
+     Content-Length: 110
+
+     {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":1,"capabilities":{},"rootUri":null}}
+
+IDE Integration:
+
+  Configure your IDE's LSP client to connect to localhost on the specified port.
+  The server supports the standard LSP lifecycle: initialize, initialized, shutdown, exit.
+]]
+
+   import './lsp_lib'
+
+   local rx_sdk_path = <{ regex.new([[(.+)CMakeLists\.txt]]) }>
+
+----------------------------------------------------------------------------------------------------------------------
+-- Resolve the location of the Kotuku SDK and create an 'sdk:' volume.
+
+function resolveSDKPath(Path)
+   local sdk_path
+   err = ERR_Failed
+   search_list = array<string>
+   if not Path then
+      search_path = 'CMakeLists.txt'
+      limit = 5
+      while (err != ERR_Okay) and (limit > 0) do
+         search_list:push(search_path)
+         err, sdk_path = mSys.ResolvePath(search_path)
+         search_path = '../' .. search_path
+         limit -= 1
+      end
+   else
+      search_list:push(Path .. '/CMakeLists.txt')
+      err, sdk_path = mSys.ResolvePath(Path .. '/CMakeLists.txt')
+   end
+
+   if err is ERR_Okay then
+      sdk_path = rx_sdk_path.extract(sdk_path)
+   else
+      msg = ''
+      for path in values(search_list) do
+         msg ..= path .. '\n'
+      end
+      print('Unable to find CMakeLists.txt after searching the following paths:\n' .. msg)
+      error('A path to the Kotuku SDK could not be determined.')
+   end
+
+   mSys.SetVolume('sdk', sdk_path)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+   -- Load config file if available
+   glConfigFile = arg('config', 'user:config/lsp_server_cfg.tiri')
+   glDocPath = 'sdk:docs/xml/'
+   glOptions = { }
+
+   if mSys.AnalysePath(glConfigFile) is ERR_Okay then
+      loadFile(glConfigFile, glOptions)
+      print('Loaded config from: ' .. glConfigFile)
+   end
+
+   if arg('help') then
+      print(glHelp)
+      return
+   end
+
+   if arg('port') then
+      glOptions.port = tonumber(arg('port'))
+   end
+
+   if arg('verbose') then
+      verbose = arg('verbose'):lower()
+      glOptions.verbose = (verbose is 'true' or verbose is '1')
+   end
+
+   if arg('docs') then
+      glDocPath = arg('docs')
+   end
+
+   -- Set up request/response logging if requested
+
+   log_path = arg('request-log')
+   if log_path?? then
+      glReqLog = obj.new('file', { src=log_path, flags='NEW|WRITE' })
+      print('Request logging enabled: ' .. log_path)
+
+      tm = obj.new('time')
+      tm.acQuery()
+      glOptions.requestLog = function(Direction, Content)
+         timestamp = string.format('%04d-%02d-%02d %02d:%02d:%02d', tm.year, tm.month, tm.day, tm.hour, tm.minute, tm.second)
+         header = '\n=== ' .. Direction .. ' [' .. timestamp .. '] ===\n'
+         glReqLog.acWrite(header)
+         glReqLog.acWrite(Content)
+         glReqLog.acWrite('\n')
+      end
+   end
+
+   -- Set up logging to stdout
+   glOptions.logMessage = function(Message)
+      print(Message)
+   end
+
+   sdkPath = arg('sdk')
+   resolveSDKPath(sdkPath)
+
+   lspInitDocs(glDocPath) -- Initialize documentation for hover support
+
+   glServer = lspStart(glOptions)
+
+   processing.sleep()

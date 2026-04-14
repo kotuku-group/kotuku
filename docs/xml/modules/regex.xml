@@ -7,7 +7,7 @@
     <type>module</type>
     <comment>Provides support for regular expression pattern matching and text processing.</comment>
     <version>1</version>
-    <copyright>Paul Manias © 2025</copyright>
+    <copyright>Paul Manias © 2025-2026</copyright>
     <description>
 <p>The Regex module provides ECMAScript-compatible regex functionality with Unicode support. It offers efficient pattern compilation, flexible matching modes, and text manipulation capabilities including search, replace, and split operations.</p>
 <p>Key features include:</p>
@@ -18,7 +18,7 @@
 <li>Reusable compiled patterns for optimal performance.</li>
 <li>Callback-based result processing for custom handling.</li>
 </list>
-<p>Note: Fluid scripts are expected to use the built-in regex functions for better integration as opposed to this module.</p></description>
+<p>Note: Tiri scripts are expected to use the built-in regex functions for better integration as opposed to this module.</p></description>
   </info>
 
   <function>

@@ -1,0 +1,23 @@
+
+   import './compile_if_helper'
+
+@Test function ImportBasic()
+   assert(helper_message is "Hello from imported module!",
+      f"Expected 'Hello from imported module!', got '{helper_message}'")
+end
+
+@Test function ImportedFunction()
+   result = add_numbers(5, 3)
+   assert(result is 8, f"Expected 8, got {result}")
+
+   result = multiply(4, 7)
+   assert(result is 28, f"Expected 28, got {result}")
+end
+
+@Test function Platform()
+   assert(on_windows or on_linux or on_osx, "Platform state flags not set.")
+end
+
+@Test function DebugMode()
+   assert(debug_on or debug_off, "Debug state flags not set.")
+end

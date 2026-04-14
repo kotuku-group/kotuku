@@ -11,7 +11,7 @@
     <id>3eb33c98</id>
     <idstring>REMAPFX</idstring>
     <category>Graphics</category>
-    <copyright>Paul Manias © 2010-2025</copyright>
+    <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>The RemapFX class provides an implementation of the <code>feComponentTransfer</code> functionality in SVG.</p>
 <p>Internally the pixel rendering process is implemented using pixel lookup tables.  As such this particular effect carries minimal overhead compared to most other effect classes.</p></description>

@@ -1,0 +1,53 @@
+-- Anchors, boundaries, and runtime match flag coverage
+
+@Test function StartEndAnchors()
+   matcher = regex.new("^begin.*end$")
+   assert(matcher.test("begin middle end"), "Anchors should succeed for full string match")
+   assert(not matcher.test("in the beginning end"), "Caret anchor should reject embedded start")
+end
+
+@Test function AbsoluteAnchors()
+   try
+      matcher = regex.new("\\Astart.+finish\\Z")
+   success
+      error("\\A and \\Z are not supported by ECMAScript")
+   end
+end
+
+@Test function WordBoundaries()
+   matcher = regex.new("\\bword\\b")
+   assert(matcher.test("a word!"), "Word boundary should isolate token")
+   assert(not matcher.test("swordfish"), "Word boundary should prevent embedded matches")
+end
+
+@Test function BoundaryNegationFlags()
+   matcher = regex.new("\\bword")
+   assert(matcher.test("wordplay"), "Baseline word boundary should match at string start")
+   assert(not matcher.test("wordplay", regex.NOT_BEGIN_OF_WORD), "NOT_BEGIN_OF_WORD should disable boundary at start")
+
+   tail = regex.new("word\\b")
+   assert(tail.test("password"), "Word boundary should match at word end")
+   assert(not tail.test("password", regex.NOT_END_OF_WORD), "NOT_END_OF_WORD should suppress trailing boundary")
+end
+
+@Test function LineBoundaryFlags()
+   start_anchor = regex.new("^hello")
+   assert(start_anchor.test("hello world"), "Caret anchor should match at the start of the string")
+   assert(not start_anchor.test("hello world", regex.NOT_BEGIN_OF_LINE), "NOT_BEGIN_OF_LINE should suppress caret matches")
+
+   end_anchor = regex.new("world$")
+   assert(end_anchor.test("hello world"), "Dollar anchor should match at the end of the string")
+   assert(not end_anchor.test("hello world", regex.NOT_END_OF_LINE), "NOT_END_OF_LINE should suppress dollar matches")
+end
+
+@Test function ContinuousFlag()
+   matcher = regex.new("\\d+")
+   assert(matcher.search("abc123") != nil, "Search should find digits without CONTINUOUS flag")
+   assert(matcher.search("abc123", regex.CONTINUOUS) is nil, "CONTINUOUS should force match to start of string")
+end
+
+@Test function NotNullFlag()
+   matcher = regex.new("a*") -- Match zero or more of 'a'
+   assert(matcher.search("bbb"), "Zero length match should succeed by default")
+   assert(matcher.search("bbb", regex.NOT_NULL) is nil, "NOT_NULL should disallow zero length results")
+end

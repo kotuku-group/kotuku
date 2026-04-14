@@ -206,10 +206,10 @@ ERR read_path(std::vector<PathCommand> &Path, CSTRING Value)
          case 'A': case 'a': { // Arc
             double largearc, sweep;
             read_numseq_zero(Value, { &path.X2, &path.Y2, &path.Angle, &largearc, &sweep, &path.X, &path.Y });
-            path.LargeArc = F2T(largearc);
-            path.Sweep = F2T(sweep);
-            if ((path.LargeArc != 1) and (path.LargeArc != 0)) return ERR::Failed;
-            if ((path.Sweep != 1) and (path.Sweep != 0)) return ERR::Failed;
+            path.LargeArc = int(largearc);
+            path.Sweep = int(sweep);
+            if ((path.LargeArc != 1) and (path.LargeArc != 0)) return ERR::InvalidValue;
+            if ((path.Sweep != 1) and (path.Sweep != 0)) return ERR::InvalidValue;
             if (cmd IS 'A') path.Type = PE::Arc;
             else path.Type = PE::ArcRel;
             break;
@@ -230,7 +230,7 @@ ERR read_path(std::vector<PathCommand> &Path, CSTRING Value)
 
          default: {
             log.warning("Invalid path command '%c'", *Value);
-            return ERR::Failed;
+            return ERR::InvalidValue;
          }
       }
 
@@ -242,7 +242,7 @@ ERR read_path(std::vector<PathCommand> &Path, CSTRING Value)
       Path.push_back(path);
    }
 
-   return (Path.size() >= 2) ? ERR::Okay : ERR::Failed;
+   return (Path.size() >= 2) ? ERR::Okay : ERR::InvalidData;
 }
 
 //********************************************************************************************************************
@@ -485,7 +485,7 @@ ERR get_font(pf::Log &Log, CSTRING Family, CSTRING Style, int Weight, int Size, 
                FT_Open_Args openargs = { .flags = FT_OPEN_PATHNAME, .pathname = resolved.data() };
                if (FT_Open_Face(glFTLibrary, &openargs, 0, &ftface)) {
                   Log.warning("Fatal error in attempting to load font \"%s\".", resolved.c_str());
-                  return ERR::Failed;
+                  return ERR::File;
                }
 
                freetype_font::METRIC_TABLE metrics;

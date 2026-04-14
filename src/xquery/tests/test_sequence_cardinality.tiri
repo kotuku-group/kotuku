@@ -1,0 +1,82 @@
+-- Regression tests for sequence item counting on atomic sequences
+-- Ensures node-set sequences that carry atomic items via string values or override
+-- are counted correctly for treat-as, instance-of, cast, castable, and typeswitch.
+
+   include 'xml'
+
+-----------------------------------------------------------------------------------------------------------------------
+-- TYPESWITCH over data() should match xs:string when a single atomic item is present
+
+@Test function TypeswitchDataString()
+   local xml = obj.new("xml", { statement = '<root><s>hello</s></root>' })
+
+   local query = [[
+      typeswitch(data(/root/s/text()))
+         case $s as xs:string return "matched"
+         default return "nope"
+   ]]
+
+   local err, result = xml.mtEvaluate(query)
+   assert(err is ERR_Okay, "typeswitch over data() should evaluate: " .. mSys.GetErrorMsg(err))
+   assert(result is "matched", "typeswitch should match xs:string case, got: " .. tostring(result))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- treat as / instance of on data() sequence with a single atomic item
+
+@Test function TreatAndInstanceOnData()
+   local xml = obj.new("xml", { statement = '<root><n>42</n></root>' })
+
+   local err1, result1 = xml.mtEvaluate('data(/root/n/text()) treat as xs:string')
+   assert(err1 is ERR_Okay, "treat as xs:string should succeed on data() result: " .. mSys.GetErrorMsg(err1))
+
+   local err2, result2 = xml.mtEvaluate('data(/root/n/text()) instance of xs:string')
+   assert(err2 is ERR_Okay and result2 is "true", "data() result should be instance of xs:string, got: " .. tostring(result2))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- cast and castable on data() sequences
+
+@Test function CastAndCastableOnData()
+   local xml = obj.new("xml", { statement = '<root><n>123</n><s>abc</s></root>' })
+
+   local err1, result1 = xml.mtEvaluate('data(/root/n/text()) cast as xs:string')
+   assert(err1 is ERR_Okay and result1 is "123", "cast to xs:string should return '123', got: " .. tostring(result1))
+
+   local err2, result2 = xml.mtEvaluate('data(/root/n/text()) castable as xs:integer')
+   assert(err2 is ERR_Okay and result2 is "true", "numeric data() should be castable as xs:integer")
+
+   local err3, result3 = xml.mtEvaluate('data(/root/s/text()) castable as xs:integer')
+   assert(err3 is ERR_Okay and result3 is "false", "non-numeric data() should not be castable as xs:integer")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Attribute value via data() must also count as one item
+
+@Test function AttributeDataCardinality()
+   local xml = obj.new("xml", { statement = '<root val="yes"/>' })
+
+   local err1, result1 = xml.mtEvaluate('data(/root/@val) instance of xs:string')
+   assert(err1 is ERR_Okay and result1 is "true", "attribute data() should be xs:string")
+
+   local err2, result2 = xml.mtEvaluate([[typeswitch(data(/root/@val))
+      case $s as xs:string return "ok"
+      default return "bad"]])
+   assert(err2 is ERR_Okay and result2 is "ok", "typeswitch over attribute data() should match xs:string")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+-- Optional vs one-or-more cardinality on empty data()
+
+@Test function TreatOptionalEmptyData()
+   local xml = obj.new("xml", { statement = '<root/>' })
+   local err, result = xml.mtEvaluate('data(()) treat as xs:string?')
+   assert(err is ERR_Okay, "treat as xs:string? should accept empty data(): " .. mSys.GetErrorMsg(err))
+end
+
+@Test function TreatOneOrMoreEmptyData()
+   local xml = obj.new("xml", { statement = '<root/>' })
+   local err, result = xml.mtEvaluate('data(()) treat as xs:string+')
+   assert(err != ERR_Okay, "treat as xs:string+ should reject empty data()")
+end

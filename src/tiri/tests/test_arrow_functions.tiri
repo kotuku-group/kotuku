@@ -1,0 +1,59 @@
+-- Arrow function syntax tests
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+@Test function ArrowSingleParam()
+   double = i => i * 2
+   assert(double(5) is 10)
+end
+
+@Test function ArrowMultipleParams()
+   add = (a, b) => a + b
+   assert(add(3, 4) is 7)
+end
+
+@Test function ArrowNoParams()
+   constant = () => 42
+   assert(constant() is 42)
+end
+
+@Test function ArrowThreeParams()
+   sum3 = (x, y, z) => x + y + z
+   assert(sum3(1, 2, 3) is 6)
+end
+
+@Test function ArrowBlockForm()
+   process = i => do
+      doubled = i * 2
+      return doubled + 1
+   end
+   assert(process(5) is 11)
+end
+
+@Test function ArrowWithEach()
+   sum = 0
+   r = {1..6}
+   r:each(i => do sum += i end)
+   assert(sum is 15)
+end
+
+@Test function ArrowClosure()
+   multiplier = 3
+   fn = i => i * multiplier
+   assert(fn(4) is 12)
+end
+
+@Test function ArrowNested()
+   make_adder = n => (x => x + n)
+   add5 = make_adder(5)
+   assert(add5(10) is 15)
+end
+
+@Test function ArrowComparison()
+   items = {3, 1, 2}
+   table.sort(items, (a, b) => a < b)
+   assert(items[0] is 1)
+   assert(items[1] is 2)
+   assert(items[2] is 3)
+end

@@ -11,7 +11,7 @@
     <id>51b1de80</id>
     <idstring>VECTORCLIP</idstring>
     <category>Graphics</category>
-    <copyright>Paul Manias © 2010-2025</copyright>
+    <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>The VectorClip defines a clipping path that can be used by other vectors as a mask.  The clipping path is defined by creating Vector shapes that are initialised to the VectorClip's <fl>Viewport</fl> as child objects.</p>
 <p>Vector shapes can utilise a VectorClip by referring to it via the Vector's <class name="Vector" field="Mask">Vector.Mask</class> field.</p>

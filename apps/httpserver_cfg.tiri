@@ -1,0 +1,5 @@
+-- HTTP server config file.
+-- Copy this to user:config/http_server_cfg.tiri for http_server to automatically  use it.
+
+glOptions.port = 8080
+glOptions.folder = glPath .. '../docs/html/'

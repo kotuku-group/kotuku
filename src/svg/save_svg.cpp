@@ -1,5 +1,5 @@
 
-static void set_dimension(XMLTag *Tag, const std::string Attrib, double Value, bool Scaled)
+static void set_dimension(XTag *Tag, const std::string Attrib, double Value, bool Scaled)
 {
    if (Scaled) xml::NewAttrib(*Tag, Attrib, std::to_string(Value * 100.0) + "%");
    else xml::NewAttrib(*Tag, Attrib, std::to_string(Value));
@@ -16,7 +16,7 @@ static ERR save_vectorpath(extSVG *Self, objXML *XML, objVector *Vector, int Par
       int new_index;
       error = XML->insertXML(Parent, XMI::CHILD_END, "<path/>", &new_index);
       if (error IS ERR::Okay) {
-         XMLTag *tag;
+         XTag *tag;
          error = XML->getTag(new_index, &tag);
          if (error IS ERR::Okay) xml::NewAttrib(tag, "d", path);
       }
@@ -56,7 +56,7 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
                case VGT::LINEAR:
                default:           gradient_type = "<linearGradient/>"; break;
             }
-            XMLTag *tag = nullptr;
+            XTag *tag = nullptr;
             error = XML->insertStatement(def_index, XMI::CHILD_END, gradient_type, &tag);
 
             if (error IS ERR::Okay) xml::NewAttrib(tag, "id", key);
@@ -119,7 +119,7 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
                if (gradient->get(FID_Stops, stops, total_stops) IS ERR::Okay) {
                   for (int s=0; (s < total_stops) and (error IS ERR::Okay); s++) {
                      if ((error = XML->insertXML(def_index, XMI::CHILD_END, "<stop/>", &stop_index)) IS ERR::Okay) {
-                        XMLTag *stop_tag;
+                        XTag *stop_tag;
                         error = XML->getTag(stop_index, &stop_tag);
                         if (error IS ERR::Okay) xml::NewAttrib(stop_tag, "offset", std::to_string(stops[s].Offset));
 
@@ -143,7 +143,7 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
          else if (def->classID() IS CLASSID::VECTORFILTER) {
             objVectorFilter *filter = (objVectorFilter *)def;
 
-            XMLTag *tag;
+            XTag *tag;
             error = XML->insertStatement(def_index, XMI::CHILD_END, "<filter/>", &tag);
 
             if (error IS ERR::Okay) xml::NewAttrib(tag, "id", key);
@@ -232,7 +232,7 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
    int array_size;
    ERR error = ERR::Okay;
 
-   XMLTag *tag;
+   XTag *tag;
    if ((error = XML->getTag(TagID, &tag)) != ERR::Okay) return error;
 
    if (Vector->Opacity != 1.0) xml::NewAttrib(tag, "opacity", std::to_string(Vector->Opacity));
@@ -252,7 +252,7 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
       switch (line_join) {
          default:
          case VLJ::MITER:        break; // Default
-         case VLJ::MITER_SMART:  xml::NewAttrib(tag, "stroke-linejoin", "miter-clip"); break; // Parasol
+         case VLJ::MITER_SMART:  xml::NewAttrib(tag, "stroke-linejoin", "miter-clip"); break; // Kōtuku
          case VLJ::ROUND:        xml::NewAttrib(tag, "stroke-linejoin", "round"); break;
          case VLJ::BEVEL:        xml::NewAttrib(tag, "stroke-linejoin", "bevel"); break;
          case VLJ::MITER_ROUND:  xml::NewAttrib(tag, "stroke-linejoin", "arcs"); break; // (SVG2) Not sure if compliant
@@ -261,7 +261,7 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
    }
 
    VIJ inner_join;
-   if ((error IS ERR::Okay) and (Vector->get(FID_InnerJoin, (int &)inner_join) IS ERR::Okay)) { // Parasol only
+   if ((error IS ERR::Okay) and (Vector->get(FID_InnerJoin, (int &)inner_join) IS ERR::Okay)) { // Kōtuku only
       switch (inner_join) {
          default:
          case VIJ::MITER:   break; // Default
@@ -340,8 +340,8 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
    OBJECTPTR shape;
    if ((error IS ERR::Okay) and (Vector->get(FID_Morph, shape) IS ERR::Okay) and (shape)) {
       VMF morph_flags;
-      XMLTag *morph_tag;
-      error = XML->insertStatement(TagID, XMI::CHILD_END, "<parasol:morph/>", &morph_tag);
+      XTag *morph_tag;
+      error = XML->insertStatement(TagID, XMI::CHILD_END, "<kotuku:morph/>", &morph_tag);
 
       CSTRING shape_id;
       if ((error IS ERR::Okay) and (shape->get(FID_ID, shape_id) IS ERR::Okay) and (shape_id)) {
@@ -395,7 +395,7 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
 
    ERR error = ERR::Okay;
    if (Vector->classID() IS CLASSID::VECTORRECTANGLE) {
-      XMLTag *tag;
+      XTag *tag;
       double rx, ry, x, y, width, height;
 
       error = XML->insertXML(Parent, XMI::CHILD_END, "<rect/>", &new_index);
@@ -414,7 +414,7 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       }
    }
    else if (Vector->classID() IS CLASSID::VECTORELLIPSE) {
-      XMLTag *tag;
+      XTag *tag;
       double rx, ry, cx, cy;
 
       auto dim = Vector->get<DMF>(FID_Dimensions);
@@ -437,7 +437,7 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       error = save_vectorpath(Self, XML, Vector, Parent);
    }
    else if (Vector->classID() IS CLASSID::VECTORPOLYGON) { // Serves <polygon>, <line> and <polyline>
-      XMLTag *tag;
+      XTag *tag;
       VectorPoint *points;
       int total_points, i;
 
@@ -484,7 +484,7 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       if (error IS ERR::Okay) error = save_svg_scan_std(Self, XML, Vector, tag->ID);
    }
    else if (Vector->classID() IS CLASSID::VECTORTEXT) {
-      XMLTag *tag;
+      XTag *tag;
       double x, y, *dx, *dy, *rotate, text_length;
       int total, i, weight;
       CSTRING str;
@@ -548,12 +548,12 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       if (error IS ERR::Okay) error = save_svg_scan_std(Self, XML, Vector, tag->ID);
    }
    else if (Vector->classID() IS CLASSID::VECTORGROUP) {
-      XMLTag *tag;
+      XTag *tag;
       error = XML->insertStatement(Parent, XMI::CHILD_END, "<g/>", &tag);
       if (error IS ERR::Okay) error = save_svg_scan_std(Self, XML, Vector, tag->ID);
    }
    else if (Vector->classID() IS CLASSID::VECTORCLIP) {
-      XMLTag *tag;
+      XTag *tag;
       CSTRING str;
       if (((error = Vector->get(FID_ID, str)) IS ERR::Okay) and (str)) { // The id is an essential requirement
          error = XML->insertStatement(Parent, XMI::CHILD_END, "<clipPath/>", &tag);
@@ -571,10 +571,10 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       }
    }
    else if (Vector->classID() IS CLASSID::VECTORWAVE) {
-      XMLTag *tag;
+      XTag *tag;
       double dbl;
 
-      error = XML->insertStatement(Parent, XMI::CHILD_END, "<parasol:wave/>", &tag);
+      error = XML->insertStatement(Parent, XMI::CHILD_END, "<kotuku:wave/>", &tag);
 
       if (error IS ERR::Okay) {
          auto dim = Vector->get<DMF>(FID_Dimensions);
@@ -595,11 +595,11 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       }
    }
    else if (Vector->classID() IS CLASSID::VECTORSPIRAL) {
-      XMLTag *tag;
+      XTag *tag;
       double dbl;
       int length;
 
-      error = XML->insertStatement(Parent, XMI::CHILD_END, "<parasol:spiral/>", &tag);
+      error = XML->insertStatement(Parent, XMI::CHILD_END, "<kotuku:spiral/>", &tag);
       if (error != ERR::Okay) return error;
 
       if (error IS ERR::Okay) {
@@ -618,11 +618,11 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       }
    }
    else if (Vector->classID() IS CLASSID::VECTORSHAPE) {
-      XMLTag *tag;
+      XTag *tag;
       double dbl;
       int num;
 
-      error = XML->insertStatement(Parent, XMI::CHILD_END, "<parasol:shape/>", &tag);
+      error = XML->insertStatement(Parent, XMI::CHILD_END, "<kotuku:shape/>", &tag);
 
       if (error IS ERR::Okay) {
          auto dim = Vector->get<DMF>(FID_Dimensions);
@@ -647,7 +647,7 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       }
    }
    else if (Vector->classID() IS CLASSID::VECTORVIEWPORT) {
-      XMLTag *tag;
+      XTag *tag;
       double x, y, width, height;
 
       error = XML->insertStatement(Parent, XMI::CHILD_END, "<svg/>", &tag);

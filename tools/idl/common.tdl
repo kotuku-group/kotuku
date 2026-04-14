@@ -1,0 +1,352 @@
+-- These common constants are re-usable across all modules.
+
+flags("CLIPMODE", { comment="Clipboard modes", module="Core" },
+    "CUT: Cut from the clipboard.",
+    "COPY: Copy from the clipboard.",
+    "PASTE: Paste from the clipboard.")
+
+enum("SEEK", { type="int", start=0, comment="Seek positions", module="Core" },
+    "START: Use an index at position zero.",
+    "CURRENT: Use an index at the end of the last read/write operation.",
+    "END: Use an index at the end of the data buffer.",
+    "RELATIVE: The index is between 0 and 1.0 and relative to the data size.")
+
+flags("DEVICE", { bits=64, module="Core" },
+    "COMPACT_DISC: Compact disc style device",
+    "HARD_DISK: Hard disk style device",
+    "FLOPPY_DISK: Floppy disk style device",
+    "READ: Device is readable",
+    "WRITE: Device is writeable",
+    "REMOVABLE|REMOVEABLE: Device media is removable from the hardware",
+    "SOFTWARE: Device is virtual/software defined",
+    "NETWORK: Device represents a network link",
+    "TAPE: Tape/Stream style device",
+    "PRINTER: Device is a paper-based printer.",
+    "SCANNER: Device is a two dimensional scanner.",
+    "TEMPORARY: All storage is temporary",
+    "MEMORY: Device is RAM, ROM, WORM, NVRAM, flashdisk or other form of memory.  Does not guarantee a fast connection as it could be over a slow USB 1.1 connection for example",
+    "MODEM: Device is a modem.",
+    "USB: Removable USB storage device.  May be further qualified by `HARD_DISK`, `FLOPPY_DISK` etc",
+    "FIXED: Catch-all for fixed media devices that are not directly identifiable.",
+    "PRINTER_3D: Device is a three dimensional printer.",
+    "SCANNER_3D: Device is a three dimensional scanner.",
+    "BOOKMARK: This marker indicates that the presented volume is a bookmark and not a device name.")
+
+flags("CCF", { comment="Class categories", module="Core" },
+    "COMMAND: Command classes perform specific procedures, like copying or moving a file, managing volumes or executing a program.",
+    "FILESYSTEM: FileSystem classes are based on file management and interaction with file based data.",
+    "GRAPHICS: Graphics classes provide graphics management and drawing services.",
+    "GUI: GUI classes are used in the development of graphical user interfaces.",
+    "IO: I/O classes manage hardware and software based input and output.",
+    "SYSTEM: System classes are designed to provide low-level services related to system management.",
+    "TOOL: Tools provide interactive services for the user.",
+    "AUDIO: Audio classes interface with audio hardware and drivers for audio playback and recording purposes.",
+    "DATA: Data classes parse, query and manipulate data.",
+    "MISC: Miscellaneous classes do not fit into any of the other available categories.",
+    "NETWORK: Network classes interface with system drivers to simplify network communications.",
+    "MULTIMEDIA: Classes that represent more than one media type, e.g. video files.")
+
+enum("AC", { type="int", start=1, comment="Action identifiers.", module="Core" },
+    "Signal",       "Activate",       "Redimension",  "Clear",    "FreeWarning",  "Enable",       "CopyData",
+    "DataFeed",     "Deactivate",     "Draw",         "Flush",    "Focus",        "Free",         "SaveSettings",
+    "GetKey",       "DragDrop",       "Hide",         "Init",     "Lock",         "LostFocus",    "Move",
+    "MoveToBack",   "MoveToFront",    "NewChild",     "NewOwner", "NewObject",    "Redo",         "Query",
+    "Read",         "Rename",         "Reset",        "Resize",   "SaveImage",    "SaveToObject", "MoveToPoint",
+    "Seek",         "SetKey",         "Show",         "Undo",     "Unlock",       "Next",         "Prev",
+    "Write",        "SetField",       "Clipboard",    "Refresh",  "Disable",      "NewPlacement",
+    "END")
+
+flags("PERMIT", { comment="Permission flags", module="Core" },
+    "READ: User/Owner has read access.  This will not allow compiled code to be executed.",
+    "WRITE: User/Owner can write.",
+    "EXEC: User/Owner can execute.",
+    "DELETE: Owner can delete.  If the file system does not support this, deletion is enabled via the `WRITE` flag.",
+    "GROUP_READ: Group members can read.",
+    "GROUP_WRITE: Group members can write.",
+    "GROUP_EXEC: Group members can execute.",
+    "GROUP_DELETE: Group members can delete.",
+    "OTHERS_READ: Others can read.",
+    "OTHERS_WRITE: Others can write.",
+    "OTHERS_EXEC: Others can execute.",
+    "OTHERS_DELETE: Others can delete.",
+    "HIDDEN: Recommends that the file is hidden from view by default.",
+    "ARCHIVE: Marks the file for future backup.  The flag should be cleared after the backup has succeeded.",
+    "PASSWORD: File is password protected.",
+    "USERID: Allows executables to run with a set user id.",
+    "GROUPID: Allows executables to run with a set group id.",
+    "INHERIT: Inherit permissions from parent folder and logical OR them with preset permission flags.",
+    "OFFLINE: File content for this networked file has not been cached on the local PC.",
+    "NETWORK: File is hosted on another machine.",
+    { USER_READ          = "READ" },
+    { USER_WRITE         = "WRITE" },
+    { USER_EXEC          = "EXEC" },
+    { EVERYONE_READ      = "READ|GROUP_READ|OTHERS_READ" },
+    { EVERYONE_WRITE     = "WRITE|GROUP_WRITE|OTHERS_WRITE" },
+    { EVERYONE_EXEC      = "EXEC|GROUP_EXEC|OTHERS_EXEC" },
+    { EVERYONE_DELETE    = "DELETE|GROUP_DELETE|OTHERS_DELETE" },
+    { ALL_READ           = "EVERYONE_READ" },
+    { ALL_WRITE          = "EVERYONE_WRITE" },
+    { ALL_EXEC           = "EVERYONE_EXEC" },
+    { ALL_DELETE         = "EVERYONE_DELETE" },
+    { EVERYONE_ACCESS    = "EVERYONE_READ|EVERYONE_WRITE|EVERYONE_EXEC|EVERYONE_DELETE" },
+    { EVERYONE_READWRITE = "EVERYONE_READ|EVERYONE_WRITE" },
+    { USER               = "READ|WRITE|EXEC|DELETE" },
+    { GROUP              = "GROUP_READ|GROUP_WRITE|GROUP_EXEC|GROUP_DELETE" },
+    { OTHERS             = "OTHERS_READ|OTHERS_WRITE|OTHERS_EXEC|OTHERS_DELETE" }
+)
+
+flags("KQ", { comment="Special qualifier flags", module="Core" },
+    "L_SHIFT: Left Shift is held",
+    "R_SHIFT: Right Shift is held",
+    "CAPS_LOCK: Caps-Lock is on",
+    "L_CONTROL|L_CTRL: Control Key is held",
+    "R_CONTROL|R_CTRL: Control Key is held",
+    "L_ALT: Left Alt is held",
+    "R_ALT: Right Alt is held",
+    "L_COMMAND: Left Logo/Special",
+    "R_COMMAND: Right Logo/Special",
+    "NUM_PAD: Identifies numeric keypad keys",
+    "REPEAT: This is a repeated key",
+    "RELEASED: The key is being released",
+    "PRESSED: Key is being held or tapped",
+    "NOT_PRINTABLE: The represented key value is not printable",
+    "SCR_LOCK: Scroll Lock is on",
+    "NUM_LOCK: NumLock is on",
+    "DEAD_KEY: This key will be affected by a previously pressed dead-key",
+    "WIN_CONTROL: Internal control key used by Windows (not a real key)",
+    { SHIFT           = "L_SHIFT|R_SHIFT" },
+    { COMMAND         = "L_COMMAND|R_COMMAND" },
+    { ALT             = "L_ALT|R_ALT" },
+    { CONTROL         = "L_CONTROL|R_CONTROL" },
+    { CTRL            = "L_CONTROL|R_CONTROL" },
+    { ALTGR           = "R_ALT" },
+    { QUALIFIERS      = "SHIFT|COMMAND|ALT|CONTROL" },
+    { INSTRUCTION_KEYS = "ALT|CONTROL" },
+    { INFO            = "REPEAT|RELEASED|PRESSED|NOT_PRINTABLE|CAPS_LOCK" }
+)
+
+flags("MEM", { comment="Memory types used by AllocMemory().  The lower 16 bits are stored with allocated blocks, the upper 16 bits are function-relative only.", module="Core" },
+    "MANAGED: Enables custom resource management for the memory block.  The start of the block will need to be reserved with a pointer to a `ResourceManager` structure, which is included as part of the block's declared Size.  The `Free()` callback will be called when the block is removed.",
+    "VIDEO: The memory space is reserved by a video device such as a graphics card for display purposes, e.g. framebuffer.",
+    "TEXTURE: The memory space is reserved by a video driver for hosting texture graphics.",
+    "AUDIO: The memory space is reserved by an audio device such as a sound card.",
+    "CODE: Set if the memory will contain executable program code.",
+    "NO_POOL: Gives a hint to the allocator to allocate the block outside of the memory pool.",
+    "TMP_LOCK: Enables temporary locking restrictions.  Prevents processes from sleeping while holding a lock on the memory block.",
+    "UNTRACKED: Allocating an untracked memory block will prevent the memory block from being tracked back to the object holding the current context.",
+    "STRING: Identifies the memory content as a null terminated string. Useful for debugging and run-time type identification in scripts.",
+    "OBJECT: Internal - The memory block represents an object structure.",
+    "NO_LOCK: For AllocMemory() only, indicates that the (private) memory block should not be locked on return.",
+    "EXCLUSIVE: Internal - Used for lock management.",
+    "COLLECT: Internal - The memory block is marked for collection.",
+    "NO_BLOCK|NO_BLOCKING: Permanently turn off all accesses to this memory block.  This means that multiple threads can have full read/write access to the memory block at once regardless of other acces flags.",
+    "PROTECTED: Internal - Indicates that the block is using memory protection features.",
+    { DATA          = "0: The default type, `DATA`, is used to indicate a standard memory allocation from system RAM." },
+    { READ          = "0x00010000: The memory is explicitly marked as readable." },
+    { WRITE         = "0x00020000: The memory is explicitly marked as writeable." },
+    { NO_CLEAR      = "0x00040000: Do not clear the memory on allocation (saves time)." },
+    { HIDDEN        = "0x00100000: Hidden blocks are not recorded and are excluded from resource tracking." },
+    { CALLER        = "0x00800000: This flag is usable only in routines that are supporting a class method.  It forces the memory allocation to be tracked to the object that made the method call.  This is particularly important in methods that return memory blocks that do not form a part of the object itself." },
+    { READ_WRITE    = "READ|WRITE" })
+
+enum("EVG", { type="int", start=1, comment="Event categories.", module="Core" }, -- 5 bit limit (max 32 entries).  These constants are also managed in core.tiri and tiri_functions.c, line 493
+    "FILESYSTEM: File system events.",
+    "NETWORK: Network events.",
+    "SYSTEM: System-wide events",
+    "GUI: Events generated by the Graphical User Interface.",
+    "DISPLAY: Video display events.",
+    "IO: Input/Output events.",
+    "HARDWARE: Hardware device events that are not covered by other types.",
+    "AUDIO: Audio system events.",
+    "USER: User activity events (such as user login).",
+    "POWER: Power Management - can also include app-specific events relating to resource management.",
+    "CLASS: Custom event dispatched from a class that doesn't fit within the rest of the event framework",
+    "APP: Custom event dispatched from an application",
+    "ANDROID: Android specific events that do not already fit existing categories.",
+    "END: Private")
+
+enum("DATA", { type="int", start=1, comment="Data codes", module="Core" }, -- NB: Duplicated in display/win32/windows.c
+    "TEXT: Standard ASCII text",
+    "RAW: Raw unprocessed data",
+    "DEVICE_INPUT: Device activity",
+    "XML: Markup based text data.  NOTE - For clipboard data, the top-level encapsulating tag must declare the type of XML, e.g. 'html', 'ripple'.  For plain XML, use 'xml'",
+    "AUDIO: Audio file data, recognised by the Sound class",
+    "RECORD: Database record",
+    "IMAGE: Image file data, recognised by the Image class",
+    "REQUEST: Make a request for item data",
+    "RECEIPT: Receipt for item data, in response to an earlier request",
+    "FILE: File location (the data will reflect the complete file path)",
+    "CONTENT: Document content (between XML tags) - sent by document objects only",
+    "INPUT_READY: Device input that has been transformed into user input")
+
+flags("JTYPE", { comment="JTYPE flags are used to categorise input types.", module="Core" },
+    "SECONDARY: Indicates to the receiver of this message that it is not the primary/original recipient",
+    "ANCHORED: Cursor has been anchored with LockCursor()",
+    "DRAGGED: Set if sufficient movement occurred between the original click and its point of release (usually requires a 3 or more pixel difference).",
+    "CROSSING: Crossing events manage the entering and leaving of an area.",
+    "DIGITAL: D-Pad or digital joystick source (restricted to +/- 1)",
+    "ANALOG: Analog movement (ranging from -1.0 to 1.0)",
+    "EXT_MOVEMENT: Extended or indirect movement information.  This covers all types of movement that are unconnected to coordinate positioning -  mouse wheel movement and pen tilt are two such examples.",
+    "BUTTON: Input is a physical button or switch",
+    "MOVEMENT: X/Y coordinate movement only. Movement such as the wheel mouse spinning is not covered by this type as it does not influence the coordinate system.",
+    "DBL_CLICK: Set by the input system if the `Type` is a button and the button has been clicked in quick succession so as to be classed as a double-click.",
+    "REPEATED: Input is a repeated entry (i.e. user is holding down a button and a repetition timer is being triggered)",
+    "DRAG_ITEM: This special flag is set by the input system if the pointer is click-dragging an object at the time of the event.")
+
+flags("CON", { comment="Gamepad controller buttons.", module="core" },
+    "GAMEPAD_S:  South button (A)",
+    "GAMEPAD_E:  East button (B)",
+    "GAMEPAD_W:  West button (X)",
+    "GAMEPAD_N:  North button (Y)",
+    "DPAD_UP:    Directional pad up.",
+    "DPAD_DOWN:  Directional pad down.",
+    "DPAD_LEFT:  Directional pad left.",
+    "DPAD_RIGHT: Directional pad right.",
+    "START:      Gamepad start button.",
+    "SELECT:     Gamepad select or back button.",
+    "LEFT_BUMPER_1:  Gamepad left-hand bumper 1 (top, primary).",
+    "LEFT_BUMPER_2:  Gamepad left-hand bumper 2 (lower).",
+    "RIGHT_BUMPER_1: Gamepad right-hand bumper 1 (top, primary).",
+    "RIGHT_BUMPER_2: Gamepad right-hand bumper 2 (lower).",
+    "LEFT_THUMB:  Left thumb stick depressed.",
+    "RIGHT_THUMB: Right thumb stick depressed."
+    )
+
+enum("JET", { type="int", start=1, comment="JET constants are documented in GetInputEvent()", module="Core" },
+    "BUTTON_1|LMB: Left mouse button; XBox A button, PS square button.  Value is pressure sensitive, ranging between 0 - 1.0 (0 is released, 1.0 is fully depressed).",
+    "BUTTON_2|RMB: Right mouse button; XBox X button, PS cross button.",
+    "BUTTON_3|MMB: Middle mouse button; XBox Y button, PS triangle.",
+    "BUTTON_4: Alt. mouse button 1; XBox B button, PS circle.",
+    "BUTTON_5: Alt. mouse button 2.",
+    "BUTTON_6: Non-specific button assignment.",
+    "BUTTON_7: Non-specific button assignment.",
+    "BUTTON_8: Non-specific button assignment.",
+    "BUTTON_9: Non-specific button assignment.",
+    "BUTTON_10: Non-specific button assignment.",
+    "WHEEL: Mouse wheel rotation - the value generally reflects the number of 'clicks' rotated on the wheel.",
+    "WHEEL_TILT: Some mouse wheels can be tilted to the left or right.  Ranges from -1.0 to +1.0",
+    "PEN_TILT_XY: Pen tilt angle.  0 is pointing down directly with nib at bottom, 0.5 is 90 degrees, 1.0 is inversed (eraser at bottom)",
+    "ABS_XY: The X, Y values are defined as absolute coordinates, relative to the top-left of the display.",
+    "CROSSED_IN: This message is sent by the input system when the mouse pointer enters an area for the first time.  The message value refers to the object ID of the container being monitored for movement.",
+    "CROSSED_OUT: This message is sent by the input system when the mouse pointer leaves an area.  The message value refers to the object ID of the container being monitored for movement.",
+    "PRESSURE: Amount of pressure applied, ranges from 0 (none) to 1.0 (normal) and possibly higher if user presses hard enough",
+    "DEVICE_TILT_XY: Controller tilted on the X/Y axis.  Value indicates angle, -ve = left, +ve = right",
+    "DEVICE_TILT_Z: Controller is rising or falling.  Value expressed as 'speed',",
+    "DISPLAY_EDGE: Recently supplied input occurred at the edge of the display.",
+    "END: Private")
+
+-- Flags for defining fields, methods, actions and functions.  CLASSDEF's can only be used in field definitions for
+-- classes.  FUNCDEF's can only be used in argument definitions for methods, actions and functions.
+
+flags("FD", { weak=true, comment="Field descriptors.", module="Core" },
+  { DOUBLE     = "0x80000000: 64 bit float." },
+  { INT        = "0x40000000: 32 bit integer." },
+  { UNIT       = "0x20000000: A value that describes a display unit." },
+  { FLOAT      = "0x10000000: 32 bit float.  Not valid for use in class definitions." },
+  { POINTER    = "0x08000000: Pointer (32 or 64 bit)." },
+  { INT64      = "0x04000000: 64 bit integer." },
+  { FUNCTION   = "0x02000000: Intended for callbacks, uses the rkFunction structure." },
+  { BYTE       = "0x01000000: 8 bit integer." },
+  { STRING     = "0x00800000: Pointer to a string." },
+  { WORD       = "0x00400000: 16 bit integer." },
+  { SCALED     = "0x00200000: Supplementary, indicates a float value for multiplicative scaling." },
+  { RGB        = "0x00080000: Supplementary, if an int type then format is `0xAARRGGBB`, if pointer then refers to an RGB structure." },
+  { UNSIGNED   = "0x00040000: Supplementary, integer value is unsigned." },
+  { SYNONYM    = "0x00020000: CLASSDEF Use to declare fields that duplicate the functionality of another field." },
+  { SYSTEM     = "0x00010000: CLASSDEF System, internal and private fields." },
+  { CUSTOM     =  0x00008000 },
+  { CPP        = "0x00004000: Use the C++ variant of the indicated type, e.g. `ARRAY` is a `std::vector`." },
+  { RESOURCE   = "0x00002000: The referenced struct or pointer is a special resource.  Changes some behaviours, e.g. a resourced struct will use direct value references rather than being copied in Tiri." },
+  { ARRAY      = "0x00001000: Indicates an array of values.  Follow with `ARRAYSIZE` if used in a function." },
+  { INIT       = "0x00000400: CLASSDEF" },
+  { WRITE      = "0x00000200: CLASSDEF" },
+  { READ       = "0x00000100: CLASSDEF" },
+  { LOOKUP     = "0x00000080: CLASSDEF" },
+  { FLAGS      = "0x00000040: CLASSDEF" },
+  { ALLOC      = "0x00000020: CLASSDEF Indicates the returned value is a dynamic allocation that needs to be manually freed (by default is a memory pointer, can be an object if combined with `FD_OBJECT`)" },
+  { STRUCT     = "0x00000010: Supplementary, defines the field as a structure reference.  MUST be combined with `FD_POINTER`.  If used in a class, it is possible to name the structure definition in field->Arg" },
+  { VIRTUAL    = "0x00000008: CLASSDEF Ensures that the field has no physical representation in the structure." },
+  { LOCAL      = "0x00000002: CLASSDEF Pointer to an object that is local to the class" },
+  { OBJECT     = "0x00000001: Supplementary, can be used with ints (for IDs) or pointers" },
+  { ERROR      = "0x00000800: FUNCDEF" },
+  { TAGS       = "0x00000400: FUNCDEF Overrides `INIT`" },
+  { BUFFER     = "0x00000200: FUNCDEF Overrides `WRITE`.  Indicates a buffer that can be filled with data by the function if paired with `RESULT`; must be paired with `BUFSIZE` in second argument." },
+  { RESULT     = "0x00000100: FUNCDEF Overrides `READ`" },
+  { BUFSIZE    = "0x00000080: FUNCDEF Overrides `LOOKUP`.  Pair with `BUFFER` to indicate the byte size of the buffer memory." },
+  { ARRAYSIZE  = "0x00000080: FUNCDEF Overrides `LOOKUP`.  Pair with `ARRAY` to indicate total elements in the array.  It is preferred that any null terminator is not counted.  If `ARRAYSIZE` not specified, `ARRAY` must be null-terminated." },
+  { VARTAGS    = "0x00000040: FUNCDEF Overrides `FLAGS`.  Use for 64-bit taglists that require value definitions, e.g. `TDOUBLE`, `TINT` etc." },
+  { VOLATILE   = "0x00000000: [Not yet allocated a bit]  Used on result pointers, usually strings, to indicate that the consecutive reads will overwrite the content of previous return values.  This indicates to scripting languages to make a copy of the data before the next interaction with the object." },
+  { PRIVATE       = "SYSTEM" },
+  { STR           = "STRING" },
+  { PTR           = "POINTER" },
+  { PTRSIZE       = "BUFSIZE" },
+  { VOID          = 0 },
+  { FUNCTIONPTR   = "PTR|FUNCTION" },
+  { OBJECTPTR     = "PTR|OBJECT" },
+  { OBJECTID      = "INT|OBJECT" },
+  { PTRBUFFER     = "PTR|BUFFER: The next argument should be `INT|BUFSIZE`" },
+  { STRRESULT     = "STR|RESULT" },
+  { PTRRESULT     = "PTR|RESULT: Use for pointer-based value results only" },
+  { INTRESULT     = "INT|RESULT: For actions and methods" },
+  { INT64RESULT   = "INT64|RESULT: For actions and methods" },
+  { DOUBLERESULT  = "DOUBLE|RESULT: For actions and methods" },
+  { R             = "READ" },
+  { W             = "WRITE" },
+  { RW            = "READ|WRITE" },
+  { RI            = "READ|INIT" },
+  { I             = "INIT" },
+  { PTR_INTRESULT   = "INT|PTR|RESULT: Use for pointer-based value results only." },
+  { PTR_INT64RESULT  = "INT64|PTR|RESULT: Use for pointer-based value results only." },
+  { PTR_DOUBLERESULT = "DOUBLE|PTR|RESULT: Use for pointer-based value results only." }
+)
+
+  struct("InputEvent", { module="Core" }, [[
+    cstruct(*InputEvent) Next # Next event in the chain
+    double Value      # The value associated with the Type
+    large Timestamp   # PreciseTime() of the recorded input
+    oid RecipientID   # Surface that the input message is being conveyed to
+    oid OverID        # Surface that is directly under the mouse pointer at the time of the event
+    double AbsX       # Absolute horizontal position of mouse cursor (relative to the top left of the display)
+    double AbsY       # Absolute vertical position of mouse cursor (relative to the top left of the display)
+    double X          # Horizontal position relative to the surface that the pointer is over - unless a mouse button is held or pointer is anchored - then the coordinates are relative to the click-held surface
+    double Y          # Vertical position relative to the surface that the pointer is over - unless a mouse button is held or pointer is anchored - then the coordinates are relative to the click-held surface
+    oid DeviceID      # The hardware device that this event originated from
+    int(JET) Type     # JET constant that describes the event
+    int(JTYPE) Flags  # Broad descriptors for the given `Type` (see `JTYPE` flags).  Automatically defined when delivered to the pointer object
+    int(JTYPE) Mask   # Mask to use for checking against subscribers
+  ]])
+
+  struct("dcRequest", { comment="Data feed item request", module="Core" }, [[
+    int     Item        # Identifier for retrieval from the source
+    char(4) Preference  # Data preferences for the returned item(s)
+  ]])
+
+  struct("dcAudio", { comment="Data feed structure for Audio", module="Core" }, [[
+    int Size     # Byte size of this structure
+    int Format   # Format of the audio data
+  ]])
+
+  struct("dcKeyEntry", { comment="Data feed structure for Keypress", module="Core" }, [[
+    int   Flags      # Shift/Control/CapsLock...
+    int   Value      # ASCII value of the key A/B/C/D...
+    large Timestamp  # ~Core.PreciseTime() at which the keypress was recorded
+    int   Unicode    # Unicode value for pre-calculated key translations
+  ]])
+
+  struct("dcDeviceInput", { module="Core" }, [[
+    double(2) Values  # The value(s) associated with the Type
+    large  Timestamp  # ~Core.PreciseTime() of the recorded input
+    oid    DeviceID   # The hardware device that this event originated from (note: This ID can be to a private/inaccessible object, the point is that the ID is unique)
+    int(JTYPE) Flags  # Broad descriptors for the given `Type`.  Automatically defined when delivered to the pointer object
+    int(JET) Type     # `JET` constant
+  ]])
+
+  struct("DateTime", { comment="Generic structure for date-time management.", module="Core" }, [[
+    short Year      # Year
+    char  Month     # Month 1 to 12
+    char  Day       # Day 1 to 31
+    char  Hour      # Hour 0 to 23
+    char  Minute    # Minute 0 to 59
+    char  Second    # Second 0 to 59
+    char  TimeZone  # TimeZone -13 to +13
+  ]])

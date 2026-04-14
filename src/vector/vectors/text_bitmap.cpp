@@ -128,10 +128,10 @@ static void raster_text_to_bitmap(extVectorText *Vector)
          Vector->txBitmapFont->setString(str);
          Vector->txBitmapFont->X = 0;
          Vector->txBitmapFont->Y = y;
-         Vector->txBitmapFont->Colour.Red   = F2T(Vector->Fill[0].Colour.Red * 255.0);
-         Vector->txBitmapFont->Colour.Green = F2T(Vector->Fill[0].Colour.Green * 255.0);
-         Vector->txBitmapFont->Colour.Blue  = F2T(Vector->Fill[0].Colour.Blue * 255.0);
-         Vector->txBitmapFont->Colour.Alpha = F2T(Vector->Fill[0].Colour.Alpha * 255.0);
+         Vector->txBitmapFont->Colour.Red   = int(Vector->Fill[0].Colour.Red * 255.0);
+         Vector->txBitmapFont->Colour.Green = int(Vector->Fill[0].Colour.Green * 255.0);
+         Vector->txBitmapFont->Colour.Blue  = int(Vector->Fill[0].Colour.Blue * 255.0);
+         Vector->txBitmapFont->Colour.Alpha = int(Vector->Fill[0].Colour.Alpha * 255.0);
          acDraw(Vector->txBitmapFont);
 
          if (Vector->txInlineSize) y = Vector->txBitmapFont->EndY + Vector->txBitmapFont->LineSpacing;

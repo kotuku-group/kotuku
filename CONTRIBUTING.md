@@ -1,6 +1,6 @@
 # Contributions
 
-Parasol is an open source, open community project. If you'd like to contribute to this project then please do so via the [GitHub](https://github.com/team-parasol/parasol/) repository. Create a branch for your work and then make a pull request targeting the develop branch in order to have the changes accepted.
+Kōtuku is an open source, open community project. If you'd like to contribute to this project then please do so via the [GitHub](https://github.com/parasol-framework/kotuku/) repository. Create a branch for your work and then make a pull request targeting the develop branch in order to have the changes accepted.
 
 New contributors should commit code under the `submit` branch with a suitable name that relates to an existing folder or relevant subject.  For example:
 

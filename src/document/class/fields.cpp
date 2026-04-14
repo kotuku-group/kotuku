@@ -379,7 +379,7 @@ WorkingPath: Defines the working path (folder or URI).
 
 The working path for a document is defined here.  By default this is defined as the location from which the document
 was loaded, without the file name.  If this cannot be determined, the working path for the parent task is used
-(this is usually set to the location of the parasol executable).
+(this is usually set to the location of the origo executable).
 
 The working path is always fully qualified with a slash or colon at the end of the string.
 

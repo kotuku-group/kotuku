@@ -1,0 +1,89 @@
+
+   local glSelf = obj.find('self')
+   local http = glSelf.owner
+
+function accept()
+   if txtPassword.string?? then
+      http.username = txtName.string
+      http.password = txtPassword.string
+      win.mtClose()
+   end
+end
+
+   local win = obj.new('window', {
+      title     = 'Authorisation Required',
+      minWidth  = 260,
+      minHeight = 150,
+      focus     = 0,
+      maxWidth  = 260,
+      maxHeight = 150,
+      icon      = 'programs/netconnect',
+      quit      = 0,
+      center    = true,
+      stickToFront=true
+   })
+
+   local tabfocus = win.new('tabfocus', { })
+
+   local txtInfo = win.new('text', {
+      x = win.leftMargin,
+      y = win.topMargin,
+      xOffset = win.rightMargin,
+      flags   = '!wordwrap',
+      string  = 'Please enter a username and password to gain access to this Internet resource.'
+   })
+
+   local txtName = win.new('input', {
+      label      = 'Username:',
+      labelwidth = 90,
+      x          = win.leftMargin,
+      xoffset    = win.rightMargin,
+      y          = txtInfo.y + txtInfo.textHeight + 12,
+      tabfocus   = tabfocus.id,
+      flags      = '!enteractivate|ignorefocus',
+      string     = http.username,
+      feedback   = function(Button, Value, Activated)
+         if (Activated is 1) then accept() end
+      end
+   })
+
+   local txtPassword = win.new('input', {
+      label      = 'Password:'
+      labelwidth = txtName.labelWidth,
+      x          = win.leftMargin,
+      y          = txtName.bottom + 4,
+      xoffset    = win.rightMargin,
+      tabfocus   = tabfocus.id,
+      flags      = '!enteractivate|ignorefocus|secret',
+      feedback   = function(Button, Value, Activated)
+         if (Activated is 1) then accept() end
+      end
+   })
+
+   local btnCancel = win.new('button', {
+      text    = 'Cancel',
+      xOffset = win.rightMargin,
+      yOffset = win.bottomMargin,
+      feedback = function(Button)
+         http.username = ''
+         http.password = ''
+         win.close()
+      end
+   })
+
+   local btnOkay = win.new('button', {
+      text    = 'Okay',
+      xoffset = btnCancel.xOffset + btnCancel.width + 6,
+      yoffset = win.bottomMargin,
+      width   = btnCancel.width
+   })
+
+   tabfocus.objects = '[btnokay] [btncancel]'
+
+   //win.x = '=[[[@owner].window].x]+40'
+   //win.y = '=[[[@owner].window].y]+40'
+
+   txtName.acFocus()
+   txtName.mtSelectArea(0, 0, 0, 1000)
+
+   http.dialogWindow = win.id

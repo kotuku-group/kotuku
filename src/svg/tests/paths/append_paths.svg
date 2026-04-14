@@ -2,7 +2,7 @@
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
 
 <!--
-Test the append-path and join-path features, which are specific to Parasol only.
+Test the append-path and join-path features, which are specific to Kotuku only.
 
 RULES
 -----
@@ -38,32 +38,32 @@ RULES
 
   <rect fill="#ffffff" width="100%" height="100%"/>
 
-  <parasol:shape id="append1" visibility="hidden" cx="110" cy="110" r="70" n1="9" n2="4" n3="11" m="19"/>
-  <parasol:shape cx="110" cy="110" r="90" m="0" stroke="black" stroke-width="2"
+  <kotuku:shape id="append1" visibility="hidden" cx="110" cy="110" r="70" n1="9" n2="4" n3="11" m="19"/>
+  <kotuku:shape cx="110" cy="110" r="90" m="0" stroke="black" stroke-width="2"
     append-path="url(#append1)" fill="red" fill-rule="evenodd"/>
 
   <ellipse id="append2" visibility="hidden" cx="110" cy="350" r="70"/>
-  <parasol:shape cx="110" cy="350" r="90" m="0" append-path="url(#append2)" fill="lightblue" fill-rule="evenodd"/>
+  <kotuku:shape cx="110" cy="350" r="90" m="0" append-path="url(#append2)" fill="lightblue" fill-rule="evenodd"/>
 
   <ellipse id="append3" visibility="hidden" cx="110" cy="600" r="90" vertices="3" transform="rotate(180,110,600)"/>
   <ellipse cx="110" cy="600" r="90" vertices="3" stroke="url(#chain)" stroke-width="12" fill="yellow"
     append-path="url(#append3)" fill-rule="evenodd"/>
 
-  <parasol:spiral id="append4" visibility="hidden" cx="110" cy="850" loop-limit="9" spacing="10"/>
+  <kotuku:spiral id="append4" visibility="hidden" cx="110" cy="850" loop-limit="9" spacing="10"/>
   <ellipse cx="110" cy="850" r="100" stroke="red" stroke-width="6" fill="orange" append-path="url(#append4)"
     fill-rule="evenodd" stroke-dasharray="13 13" stroke-dashoffset="7"/>
 
   <!-- Joining two waves together gives them a seamless connection -->
 
-  <parasol:wave id="append5" visibility="hidden"
+  <kotuku:wave id="append5" visibility="hidden"
     x="500" y="0" width="250" height="15%" decay="0.5" amplitude="0.4" frequency="6"/>
-  <parasol:wave join-path="url(#append5)" fill="none" stroke="url(#helix)" stroke-width="8" clip-path="url(#myClip2)"
+  <kotuku:wave join-path="url(#append5)" fill="none" stroke="url(#helix)" stroke-width="8" clip-path="url(#myClip2)"
     x="250" y="0" width="250" height="15%" decay="0.5" amplitude="0.8" frequency="6"/>
 
-  <parasol:shape id="append6" visibility="hidden" cx="350" cy="350" r="90" mod="2" n1="1.5" n2="8" n3="8" m="0.7" phi="20"/>
+  <kotuku:shape id="append6" visibility="hidden" cx="350" cy="350" r="90" mod="2" n1="1.5" n2="8" n3="8" m="0.7" phi="20"/>
   <ellipse append-path="url(#append6)" cx="350" cy="350" r="100" fill="url(#BlueGradient)" fill-rule="evenodd"/>
 
-  <parasol:shape id="append7" visibility="hidden" cx="350" cy="600" r="70" mod="2" n1="1" n2="1" n3="1" m="6"/>
-  <parasol:shape append-path="url(#append7)" fill="url(#RadialGradient)" fill-rule="evenodd" cx="350" cy="600" r="90" mod="4" n1="1" n2="1" n3="1" m="6"
+  <kotuku:shape id="append7" visibility="hidden" cx="350" cy="600" r="70" mod="2" n1="1" n2="1" n3="1" m="6"/>
+  <kotuku:shape append-path="url(#append7)" fill="url(#RadialGradient)" fill-rule="evenodd" cx="350" cy="600" r="90" mod="4" n1="1" n2="1" n3="1" m="6"
     stroke="rgb(255,0,0,128)" stroke-width="1"/>
 </svg>

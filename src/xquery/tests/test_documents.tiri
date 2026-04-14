@@ -1,0 +1,149 @@
+-- XPath document and text retrieval @Test function s
+
+   include 'xml'
+
+glBaseFolder       = 'temp:xpath_documents/'
+glCollectionFolder = glBaseFolder .. 'collection/'
+glTextFolder       = glBaseFolder .. 'texts/'
+local glPrimaryXML
+
+function writeFile(path, content)
+   local file = obj.new('file', { path = path, flags = 'WRITE|NEW' })
+   file.acWrite(content)
+   file = nil
+end
+
+function ensureFolder(path)
+   err = mSys.CreateFolder(path, 0)
+   if (err != ERR_Okay) and (err != ERR_FileExists) then
+      error('Failed to create folder ' .. path .. ': ' .. mSys.GetErrorMsg(err))
+   end
+end
+
+function createPrimaryXml()
+   return obj.new('xml', { path = glBaseFolder .. 'primary.xml' })
+end
+
+@BeforeAll
+function init(State)
+   mSys.DeleteFile(glBaseFolder)
+   ensureFolder(glBaseFolder)
+   ensureFolder(glCollectionFolder)
+   ensureFolder(glTextFolder)
+
+   writeFile(glBaseFolder .. 'primary.xml', table.concat({
+      '<?xml version="1.0"?>',
+      '<library>',
+         '<section id="A" idrefs="B">',
+            '<book code="alpha">First</book>',
+         '</section>',
+         '<section id="B">',
+            '<book code="beta">Second</book>',
+         '</section>',
+         '<pointer href="secondary.xml"/>',
+      '</library>'
+   }))
+
+   writeFile(glBaseFolder .. 'secondary.xml', table.concat({
+      '<secondary>',
+         '<item code="B">Beta</item>',
+         '<item code="C">Gamma</item>',
+      '</secondary>'
+   }))
+
+   writeFile(glCollectionFolder .. 'alpha.xml', table.concat({
+      '<doc>',
+         '<entry code="alpha"/>',
+      '</doc>'
+   }))
+
+   writeFile(glCollectionFolder .. 'beta.xml', table.concat({
+      '<doc>',
+         '<entry code="beta"/>',
+      '</doc>'
+   }))
+
+   writeFile(glTextFolder .. 'sample.txt', 'First line\r\nSecond line\nThird line')
+
+   glPrimaryXML = obj.new('xml', { path = glBaseFolder .. 'primary.xml' })
+end
+
+@AfterAll
+function cleanup()
+   mSys.DeleteFile(glBaseFolder)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- doc() should load external documents relative to the current base
+
+@Test function DocLoadsSecondaryDocument()
+   err, value = glPrimaryXML.mtEvaluate(f'doc("{glBaseFolder}secondary.xml")/secondary/item[1]/@code')
+   assert(value is 'B', 'doc() should expose the first item code, got ' .. tostring(value))
+end
+
+@Test function DocSupportsStringUris()
+   err, value = glPrimaryXML.mtEvaluate('doc("string:<doc><item code=\'inline\'/></doc>")/doc/item/@code')
+   assert(value is 'inline', 'doc() should parse inline XML via string: URIs, got ' .. tostring(value))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- doc-available() should report readability without loading
+
+@Test function DocAvailable()
+   err, available = glPrimaryXML.mtEvaluate(f'doc-available("{glBaseFolder}secondary.xml")')
+   assert(available is 'true', 'doc-available() should report true for existing files')
+
+   err, missing = glPrimaryXML.mtEvaluate(f'doc-available("{glBaseFolder}missing.xml")')
+   assert(missing is 'false', 'doc-available() should report false for missing files')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- collection() should enumerate XML documents within a folder
+
+@Test function CollectionEnumeratesFolder()
+   err, count = glPrimaryXML.mtEvaluate(f'count(collection("{glCollectionFolder}"))')
+   assert(tonumber(count) is 2, 'collection() should return two documents, got ' .. count)
+
+   err, firstCode = glPrimaryXML.mtEvaluate(f'collection("{glCollectionFolder}")/doc/entry[1]/@code')
+   assert(firstCode is 'alpha', 'collection() should expose the first document entry, got ' .. tostring(firstCode))
+end
+
+@Test function UriCollectionReturnsPaths()
+   err, first = glPrimaryXML.mtEvaluate(f'uri-collection("{glCollectionFolder}")[1]')
+   assert(first:find('alpha.xml', 1, true), 'uri-collection() should return sorted file URIs, got ' .. tostring(first))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- unparsed-text functions should read and split text resources
+
+@Test function UnparsedTextNormalisesNewlines()
+   err, text = glPrimaryXML.mtEvaluate(f'unparsed-text("{glTextFolder}sample.txt")')
+   assert(text is 'First line\nSecond line\nThird line', 'unparsed-text() should normalise newline sequences, got ' .. tostring(text))
+end
+
+@Test function UnparsedTextAvailable()
+   err, available = glPrimaryXML.mtEvaluate(f'unparsed-text-available("{glTextFolder}sample.txt")')
+   assert(available is 'true', 'unparsed-text-available() should report true for readable files')
+
+   err, missing = glPrimaryXML.mtEvaluate(f'unparsed-text-available("{glTextFolder}missing.txt")')
+   assert(missing is 'false', 'unparsed-text-available() should report false for missing files')
+end
+
+@Test function UnparsedTextLinesSplitsContent()
+   err, second = glPrimaryXML.mtEvaluate(f'unparsed-text-lines("{glTextFolder}sample.txt")[2]')
+   assert(second is 'Second line', 'unparsed-text-lines() should split by linefeed, got ' .. tostring(second))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- root() should return the document root and idref() should resolve IDREF attributes
+
+@Test function RootReturnsDocumentElement()
+   err, name = glPrimaryXML.mtEvaluate('name(root(/library/section[1]/book))')
+   assert(name is 'library', 'root() should return the document element, got ' .. tostring(name))
+end
+
+@Test function IdrefResolvesReferencingElements()
+   err, refName = glPrimaryXML.mtEvaluate('name(idref("B")[1])')
+   assert(refName is 'section', 'idref() should return the referencing section element, got ' .. tostring(refName))
+end
+

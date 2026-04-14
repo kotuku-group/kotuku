@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<test-set name="qt3-map-array-subset">
+   <description>Subset of QT3 map/array/lookup tests exercised by the Tiri harness.</description>
+   <test-case name="map-constructor-001">
+      <test>string(map { "alpha": "beta" }?alpha)</test>
+      <result>
+         <assert-string-value>beta</assert-string-value>
+      </result>
+   </test-case>
+   <test-case name="map-wildcard-001">
+      <test>string-join(map { "a": 1, "b": 2 }?*, ",")</test>
+      <result>
+         <assert-string-value>1,2</assert-string-value>
+      </result>
+   </test-case>
+   <test-case name="lookup-chain-001">
+      <test>string((map { "items": array { map { "price": 19 }, map { "price": 25 } } })?items?2?price)</test>
+      <result>
+         <assert-string-value>25</assert-string-value>
+      </result>
+   </test-case>
+   <test-case name="array-sequence-001">
+      <test>string-join(array { (1, 2), 3 }?1, ",")</test>
+      <result>
+         <assert-string-value>1,2</assert-string-value>
+      </result>
+   </test-case>
+   <test-case name="array-wildcard-001">
+      <test>let $items := array { map { "name": "x" }, map { "name": "y" } } return string-join(($items?1?name, $items?2?name), "|")</test>
+      <result>
+         <assert-string-value>x|y</assert-string-value>
+      </result>
+   </test-case>
+   <test-case name="array-error-foay0001">
+      <test>array { 1 }?0</test>
+      <result>
+         <error code="FOAY0001" />
+      </result>
+   </test-case>
+</test-set>

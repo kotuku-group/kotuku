@@ -1,0 +1,264 @@
+-- Stress testing for the parser and JIT compiler.  For most of these tests the main objective is to not crash
+-- or fail during parsing, so use of assert() isn't strictly necessary.
+
+@Test function LongAdditionChain()
+   count = 40000
+   terms = {}
+   for index = 0, count do
+      terms[index] = tostring(index)
+   end
+
+   statement = table.concat(terms, ' + ')
+   assert(statement, "Addition chain constructed successfully")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function DeepNesting()
+   -- Test deeply nested expressions and function calls
+   count = 0
+
+   -- Create deeply nested function calls
+   function increment(Value)
+      count++
+      return Value + 1
+   end
+
+   -- Build a chain of 1000 nested function calls
+   expr = "increment(increment(increment(increment(increment("
+   for i = 1, 995 do
+      expr ..= "increment("
+   end
+   expr ..= "0"
+   for i = 1, 1000 do
+      expr ..= ")"
+   end
+
+   -- Test deeply nested table construction
+   deep_table = {}
+   current = deep_table
+   for i = 1, 500 do
+      current.next = {}
+      current = current.next
+   end
+   current.value = "deep"
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function LargeTableConstruction()
+   -- Test creating very large tables
+   large_array = {}
+   for i = 0, 50000 do
+      large_array[i] = i * 2
+   end
+
+   -- Test large hash table
+   large_hash = {}
+   for i = 0, 25000 do
+      large_hash["key_" .. i] = "value_" .. i
+   end
+
+   -- Verify some values
+   assert(large_array[1000] is 2000, "Array value mismatch")
+   assert(large_hash["key_100"] is "value_100", "Hash value mismatch")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function StringConcatenation()
+   -- Test very long string concatenation chains
+   result = ""
+   for i = 0, 10000 do
+      result ..= tostring(i)
+      if i < 10000 then
+         result ..= ","
+      end
+   end
+
+   -- Test the ..= operator with compound assignments
+   compound = "start"
+   for i = 0, 1000 do
+      compound ..= "_" .. i
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ManyLocalVariables()
+   -- Test parser/compiler handling of many variables in scope
+   v1, v2, v3, v4, v5 = 1, 2, 3, 4, 5
+   v6, v7, v8, v9, v10 = 6, 7, 8, 9, 10
+   v11, v12, v13, v14, v15 = 11, 12, 13, 14, 15
+   v16, v17, v18, v19, v20 = 16, 17, 18, 19, 20
+   v21, v22, v23, v24, v25 = 21, 22, 23, 24, 25
+   v26, v27, v28, v29, v30 = 26, 27, 28, 29, 30
+   v31, v32, v33, v34, v35 = 31, 32, 33, 34, 35
+   v36, v37, v38, v39, v40 = 36, 37, 38, 39, 40
+   v41, v42, v43, v44, v45 = 41, 42, 43, 44, 45
+   v46, v47, v48, v49, v50 = 46, 47, 48, 49, 50
+
+   -- Use all variables to prevent optimization
+   sum = v1 + v2 + v3 + v4 + v5 + v6 + v7 + v8 + v9 + v10 +
+         v11 + v12 + v13 + v14 + v15 + v16 + v17 + v18 + v19 + v20 +
+         v21 + v22 + v23 + v24 + v25 + v26 + v27 + v28 + v29 + v30 +
+         v31 + v32 + v33 + v34 + v35 + v36 + v37 + v38 + v39 + v40 +
+         v41 + v42 + v43 + v44 + v45 + v46 + v47 + v48 + v49 + v50
+
+   assert(sum is 1275, "Sum of variables incorrect")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ComplexExpressions()
+   -- Test deeply nested and complex expressions with various operators
+   a, b, c, d = 10, 20, 30, 40
+
+   -- Test ternary operator chains
+   --result1 = a > 5 ? b > 15 ? c > 25 ? d :> c :> b :> a
+   --assert(result1 is 40, "Nested ternary failed")
+
+   -- Test compound operators
+   x = 100
+   x += 50
+   x -= 20
+   x *= 2
+   x /= 5
+   assert(x is 52, "Compound operators failed")
+
+   -- Test bitwise operators
+   bits = 0xFF
+   bits = bits & 0xF0
+   bits = bits | 0x0F
+   bits = bits ^ 0xAA
+   assert(bits is 0x55, "Bitwise operators failed")
+
+   -- Test falsey value checks
+   val1 = nil
+   val2 = false
+   val3 = 0
+   val4 = ""
+
+   default1 = val1 ?? "default"
+   default2 = val2 ?? "default"
+   default3 = val3 ?? "default"
+   default4 = val4 ?? "default"
+
+   assert(default1 is "default", "Nil coalesce failed")
+   assert(default2 is "default", "False coalesce failed")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function LoopIntensity()
+   -- Test intensive nested loops
+   counter = 0
+
+   for i = 1, 100 do
+      for j = 1, 100 do
+         for k = 1, 10 do
+            counter++
+            if counter % 1000 is 0 then
+               continue
+            end
+         end
+      end
+   end
+
+   assert(counter is 100000, "Loop counter mismatch")
+
+   -- Test while loops with break and continue
+   n = 0
+   iterations = 0
+   while n < 10000 do
+      n++
+      iterations++
+      if n % 2 is 0 then
+         continue
+      end
+      if n > 9999 then
+         break
+      end
+   end
+
+   assert(iterations is 10000, "While loop iterations incorrect")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function Recursion()
+   -- Test deep recursion with tail-call optimization
+   -- Recursive function with return values requires explicit type declaration
+   function fibonacci(N, A, B):num
+      A = A ?? 0
+      B = B ?? 1
+      if N is 0 then
+         return A
+      elseif N is 1 then
+         return B
+      else
+         return fibonacci(N - 1, B, A + B)
+      end
+   end
+
+   -- Calculate fibonacci(500) - tests recursion depth
+   result = fibonacci(30)
+   assert(result is 832040, "Fibonacci calculation failed")
+
+   -- Test mutual recursion
+   global function is_even(N)
+      if N is 0 then
+         return true
+      else
+         return is_odd(N - 1)
+      end
+   end
+
+   global function is_odd(N)
+      if N is 0 then
+         return false
+      else
+         return is_even(N - 1)
+      end
+   end
+
+   assert(is_even(100) is true, "Mutual recursion failed")
+   assert(is_odd(99) is true, "Mutual recursion failed")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function DeferStatements()
+   -- Test defer statement under stress conditions
+   execution_order = {}
+
+   function test_defer_scope()
+      table.insert(execution_order, 1)
+
+      defer
+         table.insert(execution_order, 4)
+      end
+
+      table.insert(execution_order, 2)
+
+      defer
+         table.insert(execution_order, 3)
+      end
+   end
+
+   test_defer_scope()
+
+   assert(#execution_order is 4, "Defer execution count wrong")
+   assert(execution_order[0] is 1, "Defer order wrong")
+   assert(execution_order[1] is 2, "Defer order wrong")
+   assert(execution_order[2] is 3, "Defer order wrong")
+   assert(execution_order[3] is 4, "Defer order wrong")
+
+   -- Test multiple nested defer statements
+   defer_counter = 0
+   for i = 1, 100 do
+      defer
+         defer_counter++
+      end
+   end
+end

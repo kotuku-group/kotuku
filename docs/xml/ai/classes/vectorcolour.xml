@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="VectorColour" mod="Vector" c="This is a stub class for use with the Vector module's DrawPath() function." cat="Graphics" id="85db786c" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="VectorColour" mod="Vector" c="This is a stub class for use with the Vector module's DrawPath() function." cat="Graphics" id="85db786c" v="1">
   <ai:f n="Alpha" c="The alpha component value." t="DOUBLE" a="RW"/>
   <ai:f n="Blue" c="The blue component value." t="DOUBLE" a="RW"/>
   <ai:f n="Green" c="The green component value." t="DOUBLE" a="RW"/>

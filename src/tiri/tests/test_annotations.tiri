@@ -1,0 +1,257 @@
+-- Flute tests for the debug.anno interface
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AnnoSetTableInput()
+   function sampleFunc()
+      return "test"
+   end
+
+   entry = debug.anno.set(sampleFunc, array<table> {
+      { name = "Test", args = { name = "Sample Test", labels = { "unit", "smoke" } } },
+      { name = "Requires", args = { network = false } }
+   }, "test_file.tiri", "sampleFunc")
+
+   assert(entry != nil, "debug.anno.set should return entry table")
+   assert(entry.name is "sampleFunc", "Expected function name 'sampleFunc', got '" .. tostring(entry.name) .. "'")
+   assert(entry.source is "test_file.tiri", "Expected source 'test_file.tiri', got '" .. tostring(entry.source) .. "'")
+   assert(#entry.annotations is 2, "Expected 2 annotations, got " .. #entry.annotations)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AnnoGet()
+   function myFunction()
+      return 42
+   end
+
+   -- Set annotations first
+   debug.anno.set(myFunction, array<table> {
+      { name = "Test", args = { name = "My Test" } }
+   }, "<runtime>", "myFunction")
+
+   -- Now get them
+   entry = debug.anno.get(myFunction)
+   assert(entry != nil, "debug.anno.get should return entry for annotated function")
+   assert(entry.name is "myFunction", "Expected function name 'myFunction', got '" .. tostring(entry.name) .. "'")
+   assert(#entry.annotations is 1, "Expected 1 annotation, got " .. #entry.annotations)
+   assert(entry.annotations[0].name is "Test", "Expected annotation name 'Test', got '" .. tostring(entry.annotations[0].name) .. "'")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AnnoGetNonAnnotated()
+   function unannotatedFunc()
+      return "nothing"
+   end
+
+   entry = debug.anno.get(unannotatedFunc)
+   assert(entry is nil, "debug.anno.get should return nil for non-annotated function")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AnnoList()
+   function func1() end
+   function func2() end
+   function func3() end
+
+   -- Set annotations on multiple functions
+   debug.anno.set(func1, array<table> { { name = "Test", args = { name = "Test 1" } } }, "<runtime>", "func1")
+   debug.anno.set(func2, array<table> { { name = "Test", args = { name = "Test 2" } } }, "<runtime>", "func2")
+   debug.anno.set(func3, array<table> { { name = "BeforeEach", args = {} } }, "<runtime>", "func3")
+
+   all = debug.anno.list()
+   assert(all != nil, "debug.anno.list should return a table")
+
+   -- Verify all functions are present
+   count = 0
+   for func, entry in pairs(all) do
+      count++
+   end
+   assert(count >= 3, "Expected at least 3 annotated functions, got " .. count)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AnnoStringParsingSimple()
+   function testFunc() end
+
+   entry = debug.anno.set(testFunc, '@Test(name="Simple Test")')
+   assert(entry != nil, "String parsing should succeed")
+   assert(#entry.annotations is 1, "Expected 1 annotation, got " .. #entry.annotations)
+   assert(entry.annotations[0].name is "Test", "Expected annotation name 'Test', got '" .. tostring(entry.annotations[0].name) .. "'")
+   assert(entry.annotations[0].args.name is "Simple Test", "Expected name 'Simple Test', got '" .. tostring(entry.annotations[0].args.name) .. "'")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AnnoStringParsingMultiple()
+   function multiFunc() end
+
+   entry = debug.anno.set(multiFunc, '@Test(name="Multi Test"); @Requires(network=true)')
+   assert(entry != nil, "Multiple annotation parsing should succeed")
+   assert(#entry.annotations is 2, "Expected 2 annotations, got " .. #entry.annotations)
+   assert(entry.annotations[0].name is "Test", "Expected first annotation 'Test'")
+   assert(entry.annotations[1].name is "Requires", "Expected second annotation 'Requires'")
+   assert(entry.annotations[1].args.network is true, "Expected network=true")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AnnoStringParsingArray()
+   function arrayFunc() end
+
+   entry = debug.anno.set(arrayFunc, '@Test(labels=["unit", "smoke", "critical"])')
+   assert(entry != nil, "Array parsing should succeed")
+   assert(#entry.annotations is 1, "Expected 1 annotation")
+   labels = entry.annotations[0].args.labels
+   assert(labels != nil, "Expected labels array")
+   assert(#labels is 3, "Expected 3 labels, got " .. #labels)
+   assert(labels[0] is "unit", "Expected 'unit', got '" .. tostring(labels[0]) .. "'")
+   assert(labels[1] is "smoke", "Expected 'smoke', got '" .. tostring(labels[1]) .. "'")
+   assert(labels[2] is "critical", "Expected 'critical', got '" .. tostring(labels[2]) .. "'")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AnnoStringParsingBareIdentifiers()
+   function bareFunc() end
+
+   entry = debug.anno.set(bareFunc, '@SuppressWarnings(unused, deprecated)')
+   assert(entry != nil, "Bare identifier parsing should succeed")
+   assert(#entry.annotations is 1, "Expected 1 annotation")
+   local args = entry.annotations[0].args
+   assert(args.unused is true, "Expected unused=true")
+   assert(args.deprecated is true, "Expected deprecated=true")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AnnoStringParsingNumbers()
+   function numFunc() end
+
+   entry = debug.anno.set(numFunc, '@Test(timeoutMs=5000, priority=1)')
+   assert(entry != nil, "Number parsing should succeed")
+   assert(#entry.annotations is 1, "Expected 1 annotation")
+   local args = entry.annotations[0].args
+   assert(args.timeoutMs is 5000, "Expected timeoutMs=5000, got " .. tostring(args.timeoutMs))
+   assert(args.priority is 1, "Expected priority=1, got " .. tostring(args.priority))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AnnoStringParsingBooleans()
+   function boolFunc() end
+
+   entry = debug.anno.set(boolFunc, '@Requires(gfx=true, network=false)')
+   assert(entry != nil, "Boolean parsing should succeed")
+   assert(#entry.annotations is 1, "Expected 1 annotation")
+   local args = entry.annotations[0].args
+   assert(args.gfx is true, "Expected gfx=true")
+   assert(args.network is false, "Expected network=false")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AnnoStringParsingMixed()
+   function mixedFunc() end
+
+   entry = debug.anno.set(mixedFunc, '@Test(name="Complex Test", labels=["a","b"], timeoutMs=3000, enabled=true)')
+   assert(entry != nil, "Mixed type parsing should succeed")
+   assert(#entry.annotations is 1, "Expected 1 annotation")
+   local args = entry.annotations[0].args
+   assert(args.name is "Complex Test", "Expected name 'Complex Test'")
+   assert(#args.labels is 2, "Expected 2 labels")
+   assert(args.timeoutMs is 3000, "Expected timeoutMs=3000")
+   assert(args.enabled is true, "Expected enabled=true")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AnnoStringParsingNoArgs()
+   function noArgsFunc() end
+
+   entry = debug.anno.set(noArgsFunc, '@Disabled')
+   assert(entry != nil, "No-args annotation should succeed")
+   assert(#entry.annotations is 1, "Expected 1 annotation")
+   assert(entry.annotations[0].name is "Disabled", "Expected annotation name 'Disabled'")
+   assert(#entry.annotations[0].args is 0, "Expected empty args table, got " .. count .. " entries")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AnnoSourceDefaultValue()
+   function defaultSourceFunc() end
+
+   -- Don't provide source parameter
+   entry = debug.anno.set(defaultSourceFunc, array<table> { { name = "Test", args = {} } })
+   assert(entry.source is "<runtime>", "Expected default source '<runtime>', got '" .. tostring(entry.source) .. "'")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AnnoOverwriteExisting()
+   function overwriteFunc() end
+
+   -- Set initial annotations
+   debug.anno.set(overwriteFunc, array<table> { { name = "Test", args = { name = "First" } } })
+
+   -- Overwrite with new annotations
+   entry = debug.anno.set(overwriteFunc, array<table> { { name = "Test", args = { name = "Second" } } })
+
+   -- Verify overwrite
+   assert(#entry.annotations is 1, "Expected 1 annotation after overwrite")
+   assert(entry.annotations[0].args.name is "Second", "Expected overwritten name 'Second', got '" .. tostring(entry.annotations[0].args.name) .. "'")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AnnoAnonymousFunction()
+   anonymousFunc = function() return "anon" end
+
+   entry = debug.anno.set(anonymousFunc, array<table> { { name = "Test", args = {} } })
+   assert(entry != nil, "Anonymous function annotation should succeed")
+   assert(entry.name is "<anonymous>", "Expected name '<anonymous>' for anonymous function, got '" .. tostring(entry.name) .. "'")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AnnoLocalFunction()
+   function localFunc()
+      return "local"
+   end
+
+   entry = debug.anno.set(localFunc, array<table> { { name = "Test", args = {} } }, "<runtime>", "localFunc")
+   assert(entry != nil, "Local function annotation should succeed")
+   assert(entry.name is "localFunc", "Expected name 'localFunc', got '" .. tostring(entry.name) .. "'")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AnnoListReturnsShallowCopy()
+   function copyTestFunc() end
+   debug.anno.set(copyTestFunc, array<table> { { name = "Test", args = {} } }, "<runtime>", "copyTestFunc")
+
+   list1 = debug.anno.list()
+   list2 = debug.anno.list()
+
+   -- Lists should be different tables (shallow copy)
+   assert(list1 != list2, "debug.anno.list should return new table each time")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AnnoEmptyListWhenNoAnnotations()
+   -- Clear _ANNO if it exists
+   global _ANNO = nil
+
+   list = debug.anno.list()
+   assert(list != nil, "debug.anno.list should return empty table when no annotations exist")
+
+   count = 0
+   for k, v in pairs(list) do
+      count++
+   end
+   assert(count is 0, "Expected empty list, got " .. count .. " entries")
+end

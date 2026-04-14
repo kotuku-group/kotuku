@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -47,20 +47,20 @@ static objConfig * get_proxy_config(void)
 {
    std::lock_guard lock(glProxyMutex);
    if (!glProxyFileChecked) {
-      glProxyConfig = objConfig::create::untracked({ fl::Path("user:config/network/proxies.cfg") });
+      pf::SwitchContext ctx(glNetworkModule);
+      glProxyConfig = objConfig::create::global({ fl::Path("user:config/network/proxies.cfg") });
       glProxyFileChecked = true;
    }
 
    return glProxyConfig;
 }
 
+// Cleanup on module expunge
+
 static void cleanup_proxy_config(void)
 {
    std::lock_guard lock(glProxyMutex);
-   if (glProxyConfig) {
-      FreeResource(glProxyConfig);
-      glProxyConfig = nullptr;
-   }
+   if (glProxyConfig) { FreeResource(glProxyConfig); glProxyConfig = nullptr; }
    glProxyFileChecked = false;
 }
 

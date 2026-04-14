@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="ConvolveFX" mod="Vector" c="Applies a matrix convolution filter effect." cat="Graphics" id="522bdc4f" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="ConvolveFX" mod="Vector" c="Applies a matrix convolution filter effect." cat="Graphics" id="522bdc4f" v="1">
   <ai:a n="Draw" c="Draws object graphics to drawable areas." p="ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)">
     <ai:i n="X" t="INT" c="The X position of the region to be drawn."/>
     <ai:i n="Y" t="INT" c="The Y position of the region to be drawn."/>

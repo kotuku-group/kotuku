@@ -1,0 +1,149 @@
+-- Focused regression tests for XQuery atomic type constructors
+
+   include 'xml'
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Numeric constructor coverage
+
+@Test function NumericConstructors()
+   local xml = obj.new('xml', { statement = '<root/>' })
+
+   local err, infValue = xml.mtEvaluate("xs:double('INF')")
+   assert(err is ERR_Okay, 'xs:double should accept INF token: ' .. mSys.GetErrorMsg(err))
+   assert(infValue is 'Infinity', 'xs:double(\'INF\') should return Infinity, got: ' .. tostring(infValue))
+
+   local err2, negInfValue = xml.mtEvaluate("xs:double('-INF')")
+   assert(err2 is ERR_Okay, 'xs:double should accept -INF token: ' .. mSys.GetErrorMsg(err2))
+   assert(negInfValue is '-Infinity', 'xs:double(\'-INF\') should return -Infinity, got: ' .. tostring(negInfValue))
+
+   local err3, nanValue = xml.mtEvaluate("xs:double('NaN')")
+   assert(err3 is ERR_Okay, 'xs:double should accept NaN token: ' .. mSys.GetErrorMsg(err3))
+   assert(nanValue is 'NaN', 'xs:double(\'NaN\') should return NaN, got: ' .. tostring(nanValue))
+
+   local err4, floatEquality = xml.mtEvaluate("xs:float('1.23E4') = 12300")
+   assert(err4 is ERR_Okay, 'xs:float should parse scientific notation: ' .. mSys.GetErrorMsg(err4))
+   assert(floatEquality is 'true', 'xs:float(\'1.23E4\') should equal 12300, got: ' .. tostring(floatEquality))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Boolean and temporal constructors
+
+@Test function BooleanAndTemporalConstructors()
+   local xml = obj.new('xml', { statement = '<root/>' })
+
+   local err, booleanValue = xml.mtEvaluate('xs:boolean(1)')
+   assert(err is ERR_Okay, 'xs:boolean should accept numeric operands: ' .. mSys.GetErrorMsg(err))
+   assert(booleanValue is 'true', 'xs:boolean(1) should return true, got: ' .. tostring(booleanValue))
+
+   local err2, canonicalDate = xml.mtEvaluate("xs:date('2025-03-16Z')")
+   assert(err2 is ERR_Okay, 'xs:date should accept canonical lexical forms: ' .. mSys.GetErrorMsg(err2))
+   assert(canonicalDate is '2025-03-16Z', 'xs:date should preserve explicit timezone offsets, got: ' .. tostring(canonicalDate))
+
+   local err3, canonicalDateTime = xml.mtEvaluate("xs:dateTime('2025-03-16T12:34:56-05:00')")
+   assert(err3 is ERR_Okay, 'xs:dateTime should accept negative timezone offsets: ' .. mSys.GetErrorMsg(err3))
+   assert(canonicalDateTime is '2025-03-16T12:34:56-05:00',
+      'xs:dateTime should retain supplied timezone offsets, got: ' .. tostring(canonicalDateTime))
+
+   local err4, canonicalTime = xml.mtEvaluate("xs:time('06:30:00Z')")
+   assert(err4 is ERR_Okay, 'xs:time should accept canonical lexical forms: ' .. mSys.GetErrorMsg(err4))
+   assert(canonicalTime is '06:30:00Z', 'xs:time should preserve lexical values, got: ' .. tostring(canonicalTime))
+
+   local err5, durationValue = xml.mtEvaluate("xs:duration('P2DT3H4M')")
+   if err5 is ERR_Okay then
+      assert(durationValue is 'P2DT3H4M', 'xs:duration should preserve the canonical lexical string, got: ' .. tostring(durationValue))
+   else
+      local message = string.lower(xml.errorMsg ?? '')
+      assert(string.find(message, 'xpst0051', 1, true),
+         'xs:duration should only fail when the constructor is not implemented yet, got: ' .. message)
+   end
+
+   local err6, projectedDate = xml.mtEvaluate('string(xs:date(current-dateTime()))')
+   assert(err6 is ERR_Okay, 'xs:date(current-dateTime()) should be valid: ' .. mSys.GetErrorMsg(err6))
+   assert(string.len(projectedDate ?? '') > 0,
+      'xs:date(current-dateTime()) should yield a lexical value, got: ' .. tostring(projectedDate))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Node atomisation and sequence cardinality checks
+
+@Test function ConstructorNodeAtomisation()
+   local xml = obj.new('xml', { statement = '<root><value>42</value></root>' })
+
+   local err, intValue = xml.mtEvaluate('xs:int(/root/value)')
+   assert(err is ERR_Okay, 'xs:int should accept a singleton node-set: ' .. mSys.GetErrorMsg(err))
+   assert(intValue is '42', 'xs:int on a singleton node-set should yield the textual value, got: ' .. tostring(intValue))
+
+   local xmlMulti = obj.new('xml', { statement = '<root><value>1</value><value>2</value></root>' })
+   local errMulti = xmlMulti.mtEvaluate('xs:int(/root/value)')
+   assert(errMulti != ERR_Okay, 'xs:int should reject node-sets with more than one item')
+
+   local message = string.lower(xmlMulti.errorMsg ?? '')
+   assert(string.find(message, 'xpty0004', 0, true),
+      'Multiple-node constructor operands should report XPTY0004, got: ' .. message)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Namespace-sensitive constructor behaviour
+
+@Test function QNameConstructors()
+   local xml = obj.new('xml', { statement = '<root/>' })
+
+   local err, qnameInstance = xml.mtEvaluate("declare namespace p='http://example.com/ns'; xs:QName('p:local') instance of xs:QName")
+   if err is ERR_Okay then
+      assert(qnameInstance is 'true', 'xs:QName with a bound prefix should return an xs:QName value, got: ' .. tostring(qnameInstance))
+   else
+      local message = string.lower(xml.errorMsg ?? '')
+      assert(string.find(message, 'xpst0051', 0, true),
+         'xs:QName constructors should only fail when the schema type is unavailable, got: ' .. message)
+   end
+
+   local err2 = xml.mtEvaluate("xs:QName('p:local')")
+   assert(err2 != ERR_Okay, 'xs:QName should fail when the prefix is not bound')
+
+   local message = string.lower(xml.errorMsg ?? '')
+   assert(string.find(message, 'fons0004', 0, true) or string.find(message, 'xpst0051', 0, true),
+      'Unbound prefix in xs:QName should yield FONS0004 (or XPST0051 until QName constructors land), got: ' .. message)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Error coverage for invalid lexical inputs and arity
+
+@Test function ConstructorLexicalFailures()
+   local xml = obj.new('xml', { statement = '<root/>' })
+
+   local err = xml.mtEvaluate("xs:double('not-a-number')")
+   assert(err != ERR_Okay, 'Invalid numeric lexical string should raise FORG0001 for xs:double')
+
+   local err2 = xml.mtEvaluate("xs:date('2025-02-30Z')")
+   assert(err2 != ERR_Okay, 'Invalid calendar date should raise FORG0001 for xs:date')
+
+   local err3 = xml.mtEvaluate("xs:time('25:00:00')")
+   assert(err3 != ERR_Okay, 'Invalid clock value should raise FORG0001 for xs:time')
+
+   local message = string.lower(xml.errorMsg ?? '')
+   assert(string.find(message, 'forg0001', 0, true),
+      'Invalid constructor lexemes should report FORG0001, got: ' .. message)
+end
+
+@Test function ConstructorArityValidation()
+   local xml = obj.new('xml', { statement = '<root/>' })
+
+   local err = xml.mtEvaluate('xs:double()')
+   assert(err != ERR_Okay, 'Constructors invoked with zero arguments should raise XPTY0004')
+
+   local err2 = xml.mtEvaluate('xs:int(1, 2)')
+   assert(err2 != ERR_Okay, 'Constructors invoked with more than one argument should raise XPTY0004')
+
+   local message = string.lower(xml.errorMsg ?? '')
+   assert(string.find(message, 'xpty0004', 0, true), 'Constructor arity errors should include XPTY0004, got: ' .. message)
+end
+
+@Test function ConstructorUnsupportedType()
+   local xml = obj.new('xml', { statement = '<root/>' })
+
+   local err = xml.mtEvaluate("xs:notARealType('5')")
+   assert(err != ERR_Okay, 'Constructors targeting unknown schema types should fail at compile time')
+
+   local message = string.lower(xml.errorMsg ?? '')
+   assert(string.find(message, 'xpst0051', 0, true), 'Unknown schema constructors should report XPST0051, got: ' .. message)
+end

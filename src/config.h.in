@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 
-#cmakedefine PARASOL_STATIC
+#cmakedefine KOTUKU_STATIC
 
 #cmakedefine CMAKE_SYSTEM_NAME @CMAKE_SYSTEM_NAME@
 #cmakedefine CMAKE_SIZEOF_VOID_P @CMAKE_SIZEOF_VOID_P@
@@ -11,13 +11,12 @@
 #cmakedefine CMAKE_RC_COMPILER_INIT
 #cmakedefine REVERSE_BYTEORDER
 
-#ifdef PARASOL_STATIC
+#ifdef KOTUKU_STATIC
 // Note: Dependencies also exist in src/core/static_modules.cpp
 #cmakedefine INC_MOD_AUDIO
 #cmakedefine INC_MOD_BACKSTAGE
 #cmakedefine INC_MOD_DISPLAY
 #cmakedefine INC_MOD_DOCUMENT
-#cmakedefine INC_MOD_FLUID
 #cmakedefine INC_MOD_FONT
 #cmakedefine INC_MOD_HTTP
 #cmakedefine INC_MOD_JPEG
@@ -28,9 +27,10 @@
 #cmakedefine INC_MOD_REGEX
 #cmakedefine INC_MOD_SCINTILLA
 #cmakedefine INC_MOD_SVG
+#cmakedefine INC_MOD_TIRI
 #cmakedefine INC_MOD_VECTOR
 #cmakedefine INC_MOD_XML
-#cmakedefine INC_MOD_XPATH
+#cmakedefine INC_MOD_XQUERY
 #cmakedefine INC_MOD_XRANDR
 #cmakedefine INC_MOD_XSLT
 #endif
@@ -62,11 +62,11 @@ using WINHANDLE = void *;
 #undef ERROR
 #undef OBJECTID
 
-using ERROR = int;     // Standard error code
+using ERROR = int32_t;     // Standard error code
 #ifndef __OBJECTID_DEFINED
- using OBJECTID = int;  // 32-bit object ID
+ using OBJECTID = int32_t;  // 32-bit object ID
 #endif
-using MEMORYID = int;  // 32-bit memory ID
+using MEMORYID = int32_t;  // 32-bit memory ID
 using FIELD = int64_t;    // 64-bit field ID - used for flag combos
 
 // Pointer types.
@@ -115,4 +115,3 @@ using EVENTID = int64_t;
 #ifndef IS
 #define IS ==
 #endif
-

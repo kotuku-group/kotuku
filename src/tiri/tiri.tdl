@@ -1,0 +1,44 @@
+--$TIRI:Include
+
+module({
+  name="Tiri",
+  copyright="Paul Manias © 2006-2026",
+  version=1.0,
+  prefix="fl",
+  status="beta",
+  comment="Tiri is a JIT optimised language that extends the Script class."
+},
+function()
+  restrict(function()
+    loadFile(glPath .. 'common.tdl')
+  end)
+
+  flags("JOF", { comment="JIT behaviour options" },
+     "DIAGNOSE:        Cancels aborting on error so that the full script is parsed.  Enables deeper log tracing.",
+     "DUMP_BYTECODE:   Print a disassembly of bytecode instructions after parsing.",
+     "PROFILE:         Use timers to profile JIT parsing.  Required to configure run-time profiling.",
+     "TOP_TIPS:        Filter tips down to type safety and correctness issues.",
+     "TIPS:            Filter tips down to performance and code quality issues.",
+     "ALL_TIPS:        Include all tips and style suggestions.",
+     "DISABLE_JIT:     Disable the JIT compiler.",
+     "TRACE_CFG:       Trace ControlFlowGraph edge creation and patching.",
+     "TRACE_TYPES:     Trace type inference and type checking decisions.",
+     "TRACE_TOKENS:    Trace the emission of tokens.",
+     "TRACE_EXPECT:    Enable trace expectation messages during parsing.",
+     "TRACE_BOUNDARY:  Enable log messages for AST boundary crossing.",
+     "TRACE_OPERATORS: Trace OperatorEmitter method calls and decisions.",
+     "TRACE_REGISTERS: Trace RegisterAllocator reservations and releases.",
+     "TRACE_ASSIGNMENTS:    Trace PreparedAssignment lifecycle and hazard handling.",
+     "TRACE_VALUE_CATEGORY: Trace ValueUse/ValueSlot/LValue operations.",
+     { TRACE = "TRACE_TOKENS|TRACE_EXPECT|TRACE_BOUNDARY|TRACE_OPERATORS|TRACE_REGISTERS|TRACE_CFG|TRACE_ASSIGNMENTS|TRACE_VALUE_CATEGORY|TRACE_TYPES" }
+  )
+
+--[[
+  class('Tiri', {
+    src={ 'tiri_class.cpp' }
+  })
+--]]
+
+  functionNames("fl",
+    "SetVariable")
+end)

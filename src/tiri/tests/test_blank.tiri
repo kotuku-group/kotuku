@@ -1,0 +1,253 @@
+-- Flute tests for the blank identifier (_) feature
+-- The blank identifier allows explicitly ignoring values in assignments and for loops
+
+@Test(hotpath=true) function BasicAssignment()
+   x, _ = 10, 20
+   assert(x is 10, "Failed basic assignment: expected x=10, got " .. x)
+end
+
+@Test(hotpath=true) function BlankFirst()
+   _, x = 10, 20
+   assert(x is 20, "Failed blank first: expected x=20, got " .. x)
+end
+
+@Test function BlankLast()
+   x, _ = 10, 20
+   assert(x is 10, "Failed blank last: expected x=10, got " .. x)
+end
+
+@Test(hotpath=true) function BlankMiddle()
+   x, _, y = 1, 2, 3
+   assert(x is 1, "Failed blank middle: expected x=1, got " .. x)
+   assert(y is 3, "Failed blank middle: expected y=3, got " .. y)
+end
+
+@Test(hotpath=true) function MultipleBlanks()
+   _, _, x = 1, 2, 3
+   assert(x is 3, "Failed multiple blanks: expected x=3, got " .. x)
+end
+
+@Test function AllBlanks()
+   -- All blanks should work - values consumed but not stored
+   _, _, _ = 1, 2, 3
+end
+
+@Test(hotpath=true) function BlankWithNil()
+   x, _ = 10, nil
+   assert(x is 10, "Failed blank with nil: expected x=10, got " .. x)
+end
+
+@Test(hotpath=true) function BlankPartialAssignment()
+   -- When RHS has fewer values than LHS, blanks still work
+   x, _, y = 10, 20
+   assert(x is 10, "Failed partial assignment: expected x=10, got " .. x)
+   assert(y is nil, "Failed partial assignment: expected y=nil, got " .. tostring(y))
+end
+
+-- For loop tests
+
+@Test(hotpath=true) function ForLoopBlankIndex()
+   t = {10, 20, 30}
+   sum = 0
+   for _, value in ipairs(t) do
+      sum += value
+   end
+   assert(sum is 60, "Failed for loop blank index: expected sum=60, got " .. sum)
+end
+
+@Test(hotpath=true) function ForLoopBlankValue()
+   t = {10, 20, 30}
+   count = 0
+   for i, _ in ipairs(t) do
+      count += 1
+   end
+   assert(count is 3, "Failed for loop blank value: expected count=3, got " .. count)
+end
+
+@Test(hotpath=true) function ForLoopPairsBlank()
+   t = {a=1, b=2, c=3}
+   sum = 0
+   for _, val in pairs(t) do
+      sum += val
+   end
+   assert(sum is 6, "Failed for loop pairs blank: expected sum=6, got " .. sum)
+end
+
+@Test(hotpath=true) function ForLoopPairsBlankValue()
+   t = {a=1, b=2, c=3}
+   keys = {}
+   for key, _ in pairs(t) do
+      table.insert(keys, key)
+   end
+   assert(#keys is 3, "Failed for loop pairs blank value: expected 3 keys, got " .. #keys)
+end
+
+@Test(hotpath=true) function ForLoopMultipleBlanks()
+   -- In generic for, only first variable can be omitted in standard Lua
+   -- Additional blanks still work
+   t = {10, 20, 30}
+   iterations = 0
+   for _, _, _ in ipairs(t) do
+      iterations += 1
+   end
+   assert(iterations is 3, "Failed for loop multiple blanks: expected 3 iterations, got " .. iterations)
+end
+
+-- Function return tests
+
+@Test(hotpath=true) function FunctionReturn()
+   function getValues()
+      return 1, 2, 3
+   end
+   _, _, x = getValues()
+   assert(x is 3, "Failed function return: expected x=3, got " .. x)
+end
+
+@Test(hotpath=true) function FunctionReturnBlankFirst()
+   function getValues2()
+      return 10, 20
+   end
+   _, x = getValues2()
+   assert(x is 20, "Failed function return blank first: expected x=20, got " .. x)
+end
+
+-- Edge cases
+
+@Test(hotpath=true) function NestedFunctions()
+   function outer()
+      _, x = 1, 2
+      return x
+   end
+   result = outer()
+   assert(result is 2, "Failed nested function: expected result=2, got " .. result)
+end
+
+@Test(hotpath=true) function MultipleStatements()
+   x, _ = 10, 20
+   _, y = 30, 40
+   assert(x is 10, "Failed multiple statements: expected x=10, got " .. x)
+   assert(y is 40, "Failed multiple statements: expected y=40, got " .. y)
+end
+
+-- Mixed blank/unscoped assignment tests (blank becomes Global, others become Local)
+
+@Test function MixedBlankFirst()
+   -- Blank first, new local second
+   _, a = 100, 200
+   assert(a is 200, "Failed mixed blank first: expected a=200, got " .. a)
+end
+
+@Test function MixedBlankSecond()
+   -- New local first, blank second
+   b, _ = 300, 400
+   assert(b is 300, "Failed mixed blank second: expected b=300, got " .. b)
+end
+
+@Test function MixedBlankMiddle()
+   -- New locals around blank in middle
+   c, _, d = 1, 2, 3
+   assert(c is 1, "Failed mixed blank middle: expected c=1, got " .. c)
+   assert(d is 3, "Failed mixed blank middle: expected d=3, got " .. d)
+end
+
+@Test function MixedMultipleBlanks()
+   -- Multiple blanks with new locals
+   _, e, _, f = 10, 20, 30, 40
+   assert(e is 20, "Failed mixed multiple blanks: expected e=20, got " .. e)
+   assert(f is 40, "Failed mixed multiple blanks: expected f=40, got " .. f)
+end
+
+@Test function MixedBlankWithExisting()
+   -- Mix of existing local, blank, and new local
+   local existing = 0
+   existing, _, newvar = 5, 6, 7
+   assert(existing is 5, "Failed mixed with existing: expected existing=5, got " .. existing)
+   assert(newvar is 7, "Failed mixed with existing: expected newvar=7, got " .. newvar)
+end
+
+@Test(hotpath=true) function MixedSequentialAssignments()
+   -- Multiple sequential assignments mixing blanks and new locals
+   _, p = 1, 2
+   q, _ = 3, 4
+   _, r = 5, 6
+   assert(p is 2, "Failed sequential: expected p=2, got " .. p)
+   assert(q is 3, "Failed sequential: expected q=3, got " .. q)
+   assert(r is 6, "Failed sequential: expected r=6, got " .. r)
+end
+
+@Test(hotpath=true) function BlankInTable()
+   -- Blank identifiers work with table destructuring patterns
+   t = {1, 2, 3}
+   _, _, x = t[0], t[1], t[2]
+   assert(x is 3, "Failed blank in table: expected x=3, got " .. x)
+end
+
+-- Non-local assignment tests
+
+@Test(hotpath=true) function NonLocalAssignment()
+   -- Blank identifier in non-local assignment (not local declaration)
+   local function getValues()
+      return 1, 2, 3
+   end
+   global _, value, _ = getValues()
+   assert(value is 2, "Failed non-local assignment: expected value=2, got " .. value)
+end
+
+@Test function NonLocalAssignmentSimple()
+   -- Simple non-local assignment with blank identifier
+   global _ = 42
+   -- No assertion needed - just verify it doesn't error
+end
+
+@Test(hotpath=true) function NonLocalInFunction()
+   -- Non-local assignment inside a function
+   function test()
+      global _, x = 10, 20
+      return x
+   end
+   result = test()
+   assert(result is 20, "Failed non-local in function: expected result=20, got " .. result)
+end
+
+-- Error case tests
+
+@Test function BlankReadError()
+   try
+      exec("return _")
+   except ex
+      assert(ex.message:find("blank identifier") != nil, "Error message should mention 'blank identifier', got: " .. ex.message)
+   success
+      error("Expected parsing to fail when reading blank identifier")
+   end
+end
+
+@Test function BlankReadInExpressionError() -- Reading blank identifier in an expression context should fail
+   try
+      exec("print(_)")
+   except ex
+      assert(ex.message:find("blank identifier") != nil, "Error message should mention 'blank identifier', got: " .. ex.message)
+   success
+      error("Expected parsing to fail when reading blank identifier")
+   end
+end
+
+@Test function BlankReadInConcatError() -- Reading blank identifier in string concatenation should fail
+   try
+      exec("x = 'test' .. _")
+   except ex
+      assert(ex.message:find("blank identifier") != nil, "Error message should mention 'blank identifier', got: " .. ex.message)
+   success
+      error("Expected parsing to fail when reading blank identifier")
+   end
+end
+
+@Test function BlankReadInArithmeticError()
+   -- Reading blank identifier in arithmetic should fail
+   try
+      exec("x = 1 + _")
+   except ex
+      assert(ex.message:find("blank identifier") != nil, "Error message should mention 'blank identifier', got: " .. ex.message)
+   success
+      error("Expected parsing to fail when reading blank identifier")
+   end
+end

@@ -1,0 +1,424 @@
+-- Flute tests for the debug library interface
+-- Covers: getRegistry, getMetatable/setMetatable, getEnv/setEnv, getInfo,
+-- getLocal/setLocal, getUpvalue/setUpvalue, upvalueID/upvalueJoin,
+-- getUserValue/setUserValue, setHook/getHook, traceback, validate
+
+-----------------------------------------------------------------------------------------------------------------------
+-- debug.getRegistry()
+
+@Test function GetRegistry()
+   reg = debug.getRegistry()
+   assert(type(reg) is 'table', "debug.getRegistry() should return a table, got " .. type(reg))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- debug.getMetatable() / debug.setMetatable()
+
+@Test function GetMetatableNil()
+   t = {}
+   assert(debug.getMetatable(t) is nil, "Table without metatable should return nil")
+end
+
+@Test function SetAndGetMetatable()
+   t = {}
+   mt = { __index = function() return 'test' end }
+   debug.setMetatable(t, mt)
+   result = debug.getMetatable(t)
+   assert(result is mt, "debug.getMetatable should return the metatable set by debug.setMetatable")
+end
+
+@Test function SetMetatableReturnsObject()
+   t = {}
+   mt = {}
+   result = debug.setMetatable(t, mt)
+   assert(result is t, "debug.setMetatable should return the original object")
+end
+
+@Test function GetMetatableBypassesProtection()
+   -- debug.getMetatable bypasses __metatable, unlike getmetatable()
+   mt = { __metatable = 'protected' }
+   t = setmetatable({}, mt)
+
+   -- Standard getmetatable returns the __metatable value
+   assert(getmetatable(t) is 'protected', "getmetatable should return __metatable value")
+   -- debug.getMetatable bypasses protection
+   assert(debug.getMetatable(t) is mt, "debug.getMetatable should bypass __metatable protection")
+end
+
+@Test function SetMetatableOnString()
+   -- debug.setMetatable can set metatables on non-table types
+   original_mt = debug.getMetatable('')
+   test_mt = { __index = { custom = true } }
+   debug.setMetatable('', test_mt)
+   assert(debug.getMetatable('') is test_mt, "Should set string metatable")
+   -- Restore original
+   debug.setMetatable('', original_mt)
+end
+
+@Test function RemoveMetatableWithNil()
+   t = {}
+   mt = {}
+   debug.setMetatable(t, mt)
+   assert(debug.getMetatable(t) is mt, "Should have metatable before removal")
+   debug.setMetatable(t, nil)
+   assert(debug.getMetatable(t) is nil, "Should have no metatable after setting nil")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- debug.getEnv() / debug.setEnv()
+
+@Test function GetEnvOfFunction()
+   function testFunc() end
+   env = debug.getEnv(testFunc)
+   assert(type(env) is 'table', "Function environment should be a table")
+end
+
+@Test function SetEnvOfFunction()
+   function targetFunc()
+      return someVar
+   end
+   new_env = setmetatable({ someVar = 'from_env' }, { __index = _G })
+   debug.setEnv(targetFunc, new_env)
+   result = targetFunc()
+   assert(result is 'from_env', "Function should use new environment, got: " .. tostring(result))
+end
+
+@Test function SetEnvReturnsObject()
+   function testFunc() end
+   new_env = {}
+   result = debug.setEnv(testFunc, new_env)
+   assert(result is testFunc, "debug.setEnv should return the original object")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- debug.getInfo()
+
+@Test function GetInfoCurrentFunction()
+   info = debug.getInfo(1, "Sln")
+   assert(type(info) is 'table', "debug.getInfo should return a table")
+   assert(info.what is "Tiri", "Function 'what' should be 'Tiri', got: " .. tostring(info.what))
+   assert(info.currentLine > 0, "currentLine should be positive")
+end
+
+@Test function GetInfoByFunction()
+   function namedFunc()
+      return 42
+   end
+   info = debug.getInfo(namedFunc, "Su")
+   assert(type(info) is 'table', "debug.getInfo should return a table")
+   assert(info.what is "Tiri", "Function should be Tiri type")
+   assert(info.nups >= 0, "nups should be non-negative")
+end
+
+@Test function GetInfoSourceFields()
+   info = debug.getInfo(1, "S")
+   assert(info.source != nil, "source should be set")
+   assert(info.shortSource != nil, "shortSource should be set")
+   assert(info.lineDefined >= 0, "lineDefined should be non-negative")
+   assert(info.lastLineDefined >= info.lineDefined, "lastLineDefined should be >= lineDefined")
+end
+
+@Test function GetInfoNameFields()
+   function myNamedFunction() end
+   -- Call via wrapper so the name is resolved
+   function callIt()
+      myNamedFunction()
+   end
+   -- Use hook to capture info during the call
+   info = debug.getInfo(myNamedFunction, "n")
+   assert(type(info) is 'table', "getInfo with 'n' should return a table")
+end
+
+@Test function GetInfoUpvalueCount()
+   captured = 'hello'
+   function closureFunc()
+      return captured
+   end
+   info = debug.getInfo(closureFunc, "u")
+   assert(info.nups >= 1, "Closure should have at least 1 upvalue, got " .. info.nups)
+end
+
+@Test function GetInfoParamInfo()
+   function paramFunc(A, B, C) end
+   info = debug.getInfo(paramFunc, "u")
+   assert(info.nParams is 3, "Should have 3 params, got " .. info.nParams)
+   assert(info.isVarArg is false, "Should not be variadic")
+end
+
+@Test function GetInfoVarArgFunction()
+   function varArgFunc(...) end
+   info = debug.getInfo(varArgFunc, "u")
+   assert(info.isVarArg is true, "Should be variadic")
+end
+
+@Test function GetInfoInvalidLevel()
+   info = debug.getInfo(9999, "S")
+   assert(info is nil, "Invalid stack level should return nil")
+end
+
+@Test function GetInfoFuncField()
+   info = debug.getInfo(1, "f")
+   assert(info.func != nil, "Should include func field")
+   assert(type(info.func) is 'function', "func field should be a function")
+end
+
+@Test function GetInfoActiveLines()
+   info = debug.getInfo(1, "L")
+   assert(info.activeLines != nil, "Should include activeLines field")
+   assert(type(info.activeLines) is 'table', "activeLines should be a table")
+end
+
+@Test function GetInfoFileIndex()
+   info = debug.getInfo(1, "S")
+   assert(info.fileIndex != nil, "Should include fileIndex")
+   assert(info.fileIndex >= 0, "fileIndex should be non-negative")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- debug.getLocal() / debug.setLocal()
+
+@Test function GetLocalBasic()
+   localA = 'first'
+   localB = 'second'
+   name, value = debug.getLocal(1, 0)
+   assert(name != nil, "Should return local variable name")
+   assert(type(name) is 'string', "Local name should be a string")
+end
+
+@Test function GetLocalOutOfRange()
+   result = debug.getLocal(1, 999)
+   assert(result is nil, "Out of range index should return nil")
+end
+
+@Test function GetLocalFunctionParams()
+   function paramFunc(Alpha, Beta)
+      name0, val0 = debug.getLocal(1, 0)
+      name1, val1 = debug.getLocal(1, 1)
+      assert(name0 is 'Alpha', "First param should be 'Alpha', got '" .. tostring(name0) .. "'")
+      assert(val0 is 10, "First param value should be 10, got " .. tostring(val0))
+      assert(name1 is 'Beta', "Second param should be 'Beta', got '" .. tostring(name1) .. "'")
+      assert(val1 is 20, "Second param value should be 20, got " .. tostring(val1))
+   end
+   paramFunc(10, 20)
+end
+
+@Test function SetLocalBasic()
+   target = 'original'
+   name = debug.setLocal(1, 0, 'modified')
+   assert(name != nil, "debug.setLocal should return variable name")
+   -- Note: the variable is modified in the stack frame, so 'target' reflects the change
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- debug.getUpvalue() / debug.setUpvalue()
+
+@Test function GetUpvalue()
+   captured = 'upval_value'
+   function closureFunc()
+      return captured
+   end
+   name, value = debug.getUpvalue(closureFunc, 0)
+   assert(name != nil, "Should return upvalue name")
+   assert(value is 'upval_value', "Should return upvalue value, got: " .. tostring(value))
+end
+
+@Test function GetUpvalueOutOfRange()
+   function noUpvalues() return 1 end
+   result = debug.getUpvalue(noUpvalues, 99)
+   assert(result is nil, "Out of range upvalue index should return nil")
+end
+
+@Test function SetUpvalue()
+   captured = 'original'
+   function closureFunc()
+      return captured
+   end
+   assert(closureFunc() is 'original', "Initial value should be 'original'")
+
+   name = debug.setUpvalue(closureFunc, 0, 'modified')
+   assert(name != nil, "debug.setUpvalue should return upvalue name")
+   assert(closureFunc() is 'modified', "After setUpvalue, function should return 'modified'")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- debug.upvalueID()
+
+@Test function UpvalueIDBasic()
+   captured = 'shared'
+   function func1() return captured end
+   function func2() return captured end
+
+   id1 = debug.upvalueID(func1, 0)
+   id2 = debug.upvalueID(func2, 0)
+   assert(id1 != nil, "upvalueID should return a value")
+   assert(id2 != nil, "upvalueID should return a value")
+   -- Both closures capture the same local, so their upvalue IDs should match
+   assert(id1 is id2, "Same upvalue should have same ID")
+end
+
+@Test function UpvalueIDDifferent()
+   local a = 1
+   local b = 2
+   function funcA() return a end
+   function funcB() return b end
+
+   id_a = debug.upvalueID(funcA, 0)
+   id_b = debug.upvalueID(funcB, 0)
+   assert(id_a != id_b, "Different upvalues should have different IDs")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- debug.upvalueJoin()
+
+@Test function UpvalueJoin()
+   local counter1 = 0
+   local counter2 = 100
+
+   function inc1() counter1 = counter1 + 1; return counter1 end
+   function inc2() counter2 = counter2 + 1; return counter2 end
+
+   assert(inc1() is 1, "inc1 should return 1")
+   assert(inc2() is 101, "inc2 should return 101")
+
+   -- Make inc2's upvalue share inc1's storage
+   debug.upvalueJoin(inc2, 0, inc1, 0)
+
+   -- Now inc2 should see inc1's counter value (which is 1 after the first call)
+   result = inc2()
+   assert(result is 2, "After join, inc2 should share inc1's counter, got " .. result)
+
+   -- And inc1 should see the change too
+   result = inc1()
+   assert(result is 3, "After join, inc1 should see shared counter, got " .. result)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- debug.setHook() / debug.getHook()
+
+@Test function SetAndGetHook()
+   call_count = 0
+   function myHook(Event, Line)
+      call_count++
+   end
+
+   debug.setHook(myHook, "l")  -- Hook on line events
+   hook, mask, count = debug.getHook()
+
+   assert(hook is myHook, "getHook should return the hook function")
+   assert(mask is "l", "Hook mask should be 'l', got '" .. tostring(mask) .. "'")
+
+   -- Turn off hook
+   debug.setHook()
+   hook, mask, count = debug.getHook()
+   assert(mask is "", "After clearing, mask should be empty")
+end
+
+@Test function HookCallEvents()
+   events = {}
+   function myHook(Event, Line)
+      table.insert(events, Event)
+   end
+
+   debug.setHook(myHook, "c")  -- Hook on call events
+   function dummy() end
+   dummy()
+   debug.setHook()  -- Turn off
+
+   assert(#events > 0, "Should have captured call events")
+end
+
+@Test function HookMaskCombined()
+   debug.setHook(function() end, "crl")
+   hook, mask, count = debug.getHook()
+   -- Mask should contain all three characters (order may vary)
+   assert(mask:find('c'), "Mask should contain 'c'")
+   assert(mask:find('r'), "Mask should contain 'r'")
+   assert(mask:find('l'), "Mask should contain 'l'")
+   debug.setHook()
+end
+
+@Test function HookWithCount()
+   count_calls = 0
+   debug.setHook(function() count_calls++ end, "", 10)
+   hook, mask, count = debug.getHook()
+   assert(count is 10, "Hook count should be 10, got " .. count)
+   debug.setHook()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- debug.traceback()
+
+@Test function TracebackBasic()
+   tb = debug.traceback()
+   assert(type(tb) is 'string', "traceback should return a string")
+   assert(#tb > 0, "traceback should not be empty")
+end
+
+@Test function TracebackWithMessage()
+   tb = debug.traceback("my error")
+   assert(type(tb) is 'string', "traceback should return a string")
+   assert(tb:find("my error"), "traceback should contain the message")
+end
+
+@Test function TracebackWithLevel()
+   function inner()
+      return debug.traceback("from inner", 1)
+   end
+   tb = inner()
+   assert(type(tb) is 'string', "traceback should return a string")
+   assert(tb:find("from inner"), "traceback should contain the message")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- debug.validate()
+
+@Test function ValidateValidCode()
+   result = debug.validate("x = 1 + 2")
+   assert(type(result) is 'table', "validate should return a table")
+   assert(result.success is true, "Valid code should succeed")
+   assert(type(result.diagnostics) is 'table', "Should have diagnostics array")
+end
+
+@Test function ValidateInvalidCode()
+   result = debug.validate("if then end end")
+   assert(type(result) is 'table', "validate should return a table")
+   assert(result.success is false, "Invalid code should fail")
+   assert(#result.diagnostics > 0, "Should have diagnostic entries for invalid code")
+end
+
+@Test function ValidateDiagnosticFields()
+   result = debug.validate("if then")
+   assert(result.success is false, "Should fail")
+   assert(#result.diagnostics > 0, "Should have diagnostics")
+
+   diag = result.diagnostics[0]
+   assert(diag.line != nil, "Diagnostic should have line")
+   assert(diag.column != nil, "Diagnostic should have column")
+   assert(diag.severity != nil, "Diagnostic should have severity")
+   assert(diag.code != nil, "Diagnostic should have code")
+   assert(diag.message != nil, "Diagnostic should have message")
+end
+
+@Test function ValidateEmptyCode()
+   result = debug.validate("")
+   assert(type(result) is 'table', "validate should return a table for empty input")
+   assert(result.success is true, "Empty code should be valid")
+end
+
+@Test function ValidateTipsField()
+   result = debug.validate("x = 1")
+   assert(type(result) is 'table', "validate should return a table")
+   assert(result.tips != nil, "Should have tips field")
+   assert(type(result.tips) is 'table', "tips should be a table")
+end
+
+@Test function ValidateComplexCode()
+   code = [[
+      function hello(Name)
+         print("Hello, " .. Name)
+         return true
+      end
+   ]]
+   result = debug.validate(code)
+   assert(result.success is true, "Valid function definition should succeed")
+end

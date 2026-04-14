@@ -1,0 +1,275 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="-//W3C//DTD XHTML 1.1//EN" xml:lang="en" xsi:schemaLocation="http://www.w3.org/MarkUp/SCHEMA/xhtml11.xsd"><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"></meta><script type="text/javascript" async="async" src="https://www.googletagmanager.com/gtag/js?id=G-8254DG7MT6"> </script><script type="text/javascript">
+	   window.dataLayer = window.dataLayer || [];
+	   function gtag(){dataLayer.push(arguments);}
+	   gtag('js', new Date());
+      gtag('config', 'G-8254DG7MT6');</script><meta name="viewport" content="width=device-width, initial-scale=1"></meta><meta name="description" content="Kōtuku documentation, machine generated from source"></meta><meta name="author" content="Paul Manias"></meta><link rel="icon" href="/favicon.ico"></link><title>Kōtuku Manual</title><link href="../../css/bootstrap.min.css" rel="stylesheet"></link><link href="../../css/module-template.css" rel="stylesheet"></link><script type="text/javascript">
+          var shiftWindow = function() { scrollBy(0, -100) };
+          window.addEventListener("hashchange", shiftWindow);
+          function load() { if (window.location.hash) shiftWindow(); }
+        </script></head><body><nav class="navbar navbar-expand-sm navbar-dark bg-dark"><div class="container-fluid"><div class="navbar-header"><a class="navbar-brand" href="../../index.html">Kōtuku</a></div><button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation"><span class="navbar-toggler-icon"></span></button><div id="navbar" class="collapse navbar-collapse"><ul class="nav navbar-nav"><li class="nav-item"><a class="nav-link" href="../../gallery.html">Gallery</a></li><li class="nav-item"><a class="nav-link" href="../api.html">API</a></li><li class="nav-item"><a class="nav-link" href="../../wiki/Home.html">Wiki</a></li><li class="nav-item"><a class="nav-link" href="https://github.com/parasol-framework/kotuku">GitHub</a></li></ul></div></div></nav>
+<div class="container-fluid"><div class="row"><div class="d-sm-block d-none col-3 sidebar" style="max-width: 230px;"><div class="flex-shrink-1 pt-2 pe-2 sticky-top overflow-auto vh-100 b-shadow">
+<ul class="list-unstyled"><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#mod-collapse" aria-expanded="false">Modules</button><div class="collapse" id="mod-collapse"><ul class="btn-toggle-nav list-unstyled fw-normal"><li class="api-ref"><a class="rounded" href="../audio.html">Audio</a></li><li class="api-ref"><a class="rounded" href="../core.html">Core</a></li><li class="api-ref"><a class="rounded" href="../display.html">Display</a></li><li class="api-ref"><a class="rounded" href="../font.html">Font</a></li><li class="api-ref"><a class="rounded" href="../network.html">Network</a></li><li class="api-ref"><a class="rounded" href="../regex.html">Regex</a></li><li class="api-ref"><a class="rounded" href="../tiri.html">Tiri</a></li><li class="api-ref"><a class="rounded" href="../vector.html">Vector</a></li><li class="api-ref"><a class="rounded" href="../xml.html">XML</a></li><li class="api-ref"><a class="rounded" href="../xquery.html">XQuery</a></li></ul></div></li></ul>
+<ul class="list-unstyled"><li class="border-top my-3"></li><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#audio-collapse" aria-expanded="false">Audio</button><div class="collapse" id="audio-collapse"><ul class="btn-toggle-nav list-unstyled fw-normal pb-1"><li class="api-ref"><a class="rounded" href="audio.html">Audio</a></li><li class="api-ref"><a class="rounded" href="sound.html">Sound</a></li></ul></div></li>
+<li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#core-collapse" aria-expanded="false">Core</button><div class="collapse" id="core-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li class="api-ref"><a class="rounded" href="file.html">File</a></li><li class="api-ref"><a class="rounded" href="metaclass.html">MetaClass</a></li><li class="api-ref"><a class="rounded" href="module.html">Module</a></li><li class="api-ref"><a class="rounded" href="storagedevice.html">StorageDevice</a></li><li class="api-ref"><a class="rounded" href="task.html">Task</a></li><li class="api-ref"><a class="rounded" href="thread.html">Thread</a></li><li class="api-ref"><a class="rounded" href="time.html">Time</a></li></ul></div></li>
+<li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#data-collapse" aria-expanded="false">Data</button><div class="collapse" id="data-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li class="api-ref"><a class="rounded" href="compression.html">Compression</a></li><li class="api-ref"><a class="rounded" href="compressedstream.html">CompressedStream</a></li><li class="api-ref"><a class="rounded" href="config.html">Config</a></li><li class="api-ref"><a class="rounded" href="script.html">Script</a></li><li class="api-ref"><a class="rounded" href="xml.html">XML</a></li><li class="api-ref"><a class="rounded" href="xquery.html">XQuery</a></li></ul></div></li>
+<li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#devices-collapse" aria-expanded="false">Devices</button><div class="collapse" id="devices-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li class="api-ref"><a class="rounded" href="controller.html">Controller</a></li></ul></div></li>
+<li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#effects-collapse" aria-expanded="false">Effects</button><div class="collapse" id="effects-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li class="api-ref"><a class="rounded" href="blurfx.html">BlurFX</a></li><li class="api-ref"><a class="rounded" href="colourfx.html">ColourFX</a></li><li class="api-ref"><a class="rounded" href="compositefx.html">CompositeFX</a></li><li class="api-ref"><a class="rounded" href="convolvefx.html">ConvolveFX</a></li><li class="api-ref"><a class="rounded" href="displacementfx.html">DisplacementFX</a></li><li class="api-ref"><a class="rounded" href="filtereffect.html">FilterEffect</a></li><li class="api-ref"><a class="rounded" href="floodfx.html">FloodFX</a></li><li class="api-ref"><a class="rounded" href="imagefx.html">ImageFX</a></li><li class="api-ref"><a class="rounded" href="lightingfx.html">LightingFX</a></li><li class="api-ref"><a class="rounded" href="mergefx.html">MergeFX</a></li><li class="api-ref"><a class="rounded" href="morphologyfx.html">MorphologyFX</a></li><li class="api-ref"><a class="rounded" href="offsetfx.html">OffsetFX</a></li><li class="api-ref"><a class="rounded" href="remapfx.html">RemapFX</a></li><li class="api-ref"><a class="rounded" href="sourcefx.html">SourceFX</a></li><li class="api-ref"><a class="rounded" href="turbulencefx.html">TurbulenceFX</a></li><li class="api-ref"><a class="rounded" href="wavefunctionfx.html">WaveFunctionFX</a></li></ul></div></li>
+<li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#ext-collapse" aria-expanded="false">Extensions</button><div class="collapse" id="ext-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li class="api-ref"><a class="rounded" href="scintilla.html">Scintilla</a></li><li class="api-ref"><a class="rounded" href="scintillasearch.html">ScintillaSearch</a></li></ul></div></li>
+<li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#gfx-collapse" aria-expanded="false">Graphics</button><div class="collapse" id="gfx-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li class="api-ref"><a class="rounded" href="bitmap.html">Bitmap</a></li><li class="api-ref"><a class="rounded" href="clipboard.html">Clipboard</a></li><li class="api-ref"><a class="rounded" href="display.html">Display</a></li><li class="api-ref"><a class="rounded" href="document.html">Document</a></li><li class="api-ref"><a class="rounded" href="font.html">Font</a></li><li class="api-ref"><a class="rounded" href="picture.html">Picture</a></li><li class="api-ref"><a class="rounded" href="pointer.html">Pointer</a></li><li class="api-ref"><a class="rounded" href="surface.html">Surface</a></li><li class="api-ref"><a class="rounded" href="svg.html">SVG</a></li></ul></div></li>
+<li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#net-collapse" aria-expanded="false">Network</button><div class="collapse" id="net-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li class="api-ref"><a class="rounded" href="clientsocket.html">ClientSocket</a></li><li class="api-ref"><a class="rounded" href="http.html">HTTP</a></li><li class="api-ref"><a class="rounded" href="netclient.html">NetClient</a></li><li class="api-ref"><a class="rounded" href="netlookup.html">NetLookup</a></li><li class="api-ref"><a class="rounded" href="netsocket.html">NetSocket</a></li><li class="api-ref"><a class="rounded" href="proxy.html">Proxy</a></li></ul></div></li>
+<li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#vectors-collapse" aria-expanded="false">Vectors</button><div class="collapse" id="vectors-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li class="api-ref"><a class="rounded" href="vector.html">Vector</a></li><li class="api-ref"><a class="rounded" href="vectorclip.html">VectorClip</a></li><li class="api-ref"><a class="rounded" href="vectorcolour.html">VectorColour</a></li><li class="api-ref"><a class="rounded" href="vectorellipse.html">VectorEllipse</a></li><li class="api-ref"><a class="rounded" href="vectorfilter.html">VectorFilter</a></li><li class="api-ref"><a class="rounded" href="vectorgradient.html">VectorGradient</a></li><li class="api-ref"><a class="rounded" href="vectorgroup.html">VectorGroup</a></li><li class="api-ref"><a class="rounded" href="vectorimage.html">VectorImage</a></li><li class="api-ref"><a class="rounded" href="vectorpath.html">VectorPath</a></li><li class="api-ref"><a class="rounded" href="vectorpattern.html">VectorPattern</a></li><li class="api-ref"><a class="rounded" href="vectorpolygon.html">VectorPolygon</a></li><li class="api-ref"><a class="rounded" href="vectorrectangle.html">VectorRectangle</a></li><li class="api-ref"><a class="rounded" href="vectorscene.html">VectorScene</a></li><li class="api-ref"><a class="rounded" href="vectorshape.html">VectorShape</a></li><li class="api-ref"><a class="rounded" href="vectorspiral.html">VectorSpiral</a></li><li class="api-ref"><a class="rounded" href="vectortext.html">VectorText</a></li><li class="api-ref"><a class="rounded" href="vectortransition.html">VectorTransition</a></li><li class="api-ref"><a class="rounded" href="vectorviewport.html">VectorViewport</a></li><li class="api-ref"><a class="rounded" href="vectorwave.html">VectorWave</a></li></ul></div></li></ul></div></div>
+<div class="col-sm-9" style="max-width: 1200px;"><div class="docs-content" style="display:none;" id="default-page"><div class="page-header"><h1>XQuery Class</h1></div><p class="lead">Provides an interface for XQuery evaluation and execution.</p>
+<p>The XQuery class provides comprehensive support for executing XPath 2.0 and XQuery expressions, enabling navigation of XML documents.  It operates in conjunction with the <a href="xml.html">XML</a> class to provide a standards-compliant query engine with extensive functionality.</p>
+<h4>XPath 2.0 Path Expressions</h4>
+<p>The class supports the full XPath 2.0 specification for navigating XML documents, including all 13 standard axes (<code>child</code>, <code>descendant</code>, <code>descendant-or-self</code>, <code>following</code>, <code>following-sibling</code>, <code>parent</code>, <code>ancestor</code>, <code>ancestor-or-self</code>, <code>preceding</code>, <code>preceding-sibling</code>, <code>self</code>, <code>attribute</code>, and <code>namespace</code>), node tests for element names, wildcards (<code>*</code>), and attribute selectors (<code>@attr</code>), numeric position filters (<code>[1]</code>, <code>[2]</code>), comparison operators, and complex boolean expressions in predicates.  Both absolute paths (<code>/root/element</code>), relative paths (<code>element/subelement</code>), and recursive descent (<code>//element</code>) are supported.</p>
+<h4>XQuery Language Support</h4>
+<p>The class implements core XQuery 1.0 functionality including FLWOR expressions (<code>for</code>, <code>let</code>, <code>where</code>, <code>order by</code>, and <code>return</code> clauses) for advanced querying, sequence operations for constructing, filtering, and manipulating sequences of nodes and values, and a comprehensive type system supporting strings, numbers, booleans, node sets, dates, durations, and QNames.</p>
+<p>Informal support for XQuery 2.0 functionality is also included but the feature-set is not yet complete.</p>
+<h4>Function Library</h4>
+<p>A rich set of standard functions is provided across multiple categories:</p>
+<ul>
+<li>Node Functions: <code>position()</code>, <code>last()</code>, <code>count()</code>, <code>id()</code>, <code>name()</code>, <code>local-name()</code>, <code>namespace-uri()</code>, <code>root()</code>, <code>node-name()</code>, <code>base-uri()</code></li>
+<li>String Functions: <code>concat()</code>, <code>substring()</code>, <code>contains()</code>, <code>starts-with()</code>, <code>ends-with()</code>, <code>string-length()</code>, <code>normalize-space()</code>, <code>upper-case()</code>, <code>lower-case()</code>, <code>translate()</code>, <code>string-join()</code>, <code>encode-for-uri()</code>, <code>escape-html-uri()</code></li>
+<li>Numeric Functions: <code>number()</code>, <code>sum()</code>, <code>floor()</code>, <code>ceiling()</code>, <code>round()</code>, <code>round-half-to-even()</code>, <code>abs()</code>, <code>min()</code>, <code>max()</code>, <code>avg()</code></li>
+<li>Boolean Functions: <code>boolean()</code>, <code>not()</code>, <code>true()</code>, <code>false()</code>, <code>exists()</code>, <code>empty()</code>, <code>lang()</code></li>
+<li>Sequence Functions: <code>distinct-values()</code>, <code>index-of()</code>, <code>insert-before()</code>, <code>remove()</code>, <code>reverse()</code>, <code>subsequence()</code>, <code>unordered()</code>, <code>deep-equal()</code>, <code>zero-or-one()</code>, <code>one-or-more()</code>, <code>exactly-one()</code></li>
+<li>Regular Expressions: <code>matches()</code>, <code>replace()</code>, <code>tokenize()</code>, <code>analyze-string()</code></li>
+<li>Date and Time Functions: <code>current-date()</code>, <code>current-time()</code>, <code>current-dateTime()</code>, date and time component extractors, timezone adjustments, duration calculations</li>
+<li>Document Functions: <code>doc()</code>, <code>doc-available()</code>, <code>collection()</code>, <code>unparsed-text()</code>, <code>unparsed-text-lines()</code>, <code>document-uri()</code></li>
+<li>QName Functions: <code>QName()</code>, <code>resolve-QName()</code>, <code>prefix-from-QName()</code>, <code>local-name-from-QName()</code>, <code>namespace-uri-from-QName()</code>, <code>namespace-uri-for-prefix()</code>, <code>in-scope-prefixes()</code></li>
+<li>URI Functions: <code>resolve-uri()</code>, <code>iri-to-uri()</code></li>
+<li>Formatting Functions: <code>format-date()</code>, <code>format-time()</code>, <code>format-dateTime()</code>, <code>format-integer()</code></li>
+<li>Utility Functions: <code>error()</code>, <code>trace()</code></li>
+</ul>
+<h4>Expression Compilation</h4>
+<p>XPath and XQuery expressions are compiled into an optimised internal representation for efficient reuse.  Expressions can be run in their own thread, with the result available in <a data-bs-toggle="tooltip" title="Returns the results of the most recently executed query." href="#tf-Result">Result</a> and <a data-bs-toggle="tooltip" title="Returns the results of the most recently executed query as a string." href="#tf-ResultString">ResultString</a> on completion, but the targeted XML object will be locked for the duration of the query.</p>
+<h4>Evaluation Modes</h4>
+<p>There are two distinct methods for query evaluation.  Value evaluation returns typed results (XPathValue) that can represent node sets, strings, numbers, booleans, dates, or sequences.  Node iteration invokes a callback function for each matching node, enabling streaming processing of large result sets.</p>
+<h4>Usage Patterns</h4>
+<p>Compiling and evaluating queries:</p>
+<pre>objXQuery::create query { statement="/bookstore/book[@price &lt; 10]/title" };
+if (query.ok()) {
+   XPathValue *result;
+   if (query-&gt;evaluate(xml) IS ERR::Okay) {
+      log.msg("Got: %s", query-&gt;get&lt;CSTRING&gt;(FID_ResultString));
+   }
+}
+</pre>
+<p>Node iteration with callbacks:</p>
+<pre>objXQuery::create query { statement="//chapter[@status='draft']" };
+if (query.ok()) {
+   auto callback = C_FUNCTION(process_node);
+   query-&gt;search(xml, &amp;callback);
+}
+</pre>
+<h4>Extensions</h4>
+<p>The module includes several Kotuku-specific extensions beyond the standard specification.  Content matching with the <code>[=...]</code> syntax allows matching on encapsulated content, e.g., <code>/menu[=contentmatch]</code>.  Backslash (<code>\</code>) can be used as an escape character in attribute strings.</p>
+<h3>Structure</h3><p>The XQuery class consists of the following fields:</p><table class="table"><thead><th class="col-md-1"><div data-bs-toggle="tooltip" title="Read/Write access indicators are listed below">Access</div></th><th class="col-md-1">Name</th><th class="col-md-1">Type</th><th>Comment</th></thead><tbody><tr data-bs-toggle="collapse" data-bs-target="#fl-ErrorMsg" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-ErrorMsg"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i>
+                           
+                          <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">ErrorMsg</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>A readable description of the last parse or execution error.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-ErrorMsg" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<p>This field may provide a textual description of the last parse or execution error that occurred.</p>
+      
+</div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-FeatureFlags" style="scroll-margin:3em;"><td class="col-md-1" id="tf-FeatureFlags"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i>
+                           
+                          <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">FeatureFlags</th><td class="col-md-1"><span class="text-nowrap">INT</span></td><td>Flags indicating the features of a compiled XQuery expression.</td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-Functions" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Functions"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i>
+                           
+                          <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">Functions</th><td class="col-md-1"><span class="text-nowrap">pf::vector&lt;std::string&gt;</span></td><td>Returns an allocated list of all declared XQuery functions.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Functions" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<p>Provides a list of all XQuery functions that have been defined by the user or during evaluation of the XQuery expression (via the <code>declare</code> keyword).</p>
+<p>Example: For <code>declare function math:cube($x) { }</code> the name <code>math:cube</code> would appear in the list.</p>
+<p>Duplicate function names are not removed.</p>
+      
+</div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-MemoryUsage" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-MemoryUsage"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i>
+                           
+                          <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">MemoryUsage</th><td class="col-md-1"><span class="text-nowrap">INT64</span></td><td>Returns the total amount of memory allocated by the last compilation or evaluation.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-MemoryUsage" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<p>If the XQuery module has been compiled with ANALYSE_MEMORY_USAGE defined, this field will return the total amount of memory (in bytes) allocated during the last compilation or evaluation of the XQuery object.</p>
+      
+</div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-Path" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Path"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i>
+                           
+                          <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Path</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>Base path for resolving relative references.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Path" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<p>Set the Path field to define the base-uri for an XQuery expression.  If left unset, the path will be computed through automated means on-the-fly, which relies  on the working directory or XML document path.</p>
+      
+</div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-Result" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Result"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i>
+                           
+                          <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">Result</th><td class="col-md-1"><span class="text-nowrap">APTR</span></td><td>Returns the results of the most recently executed query.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Result" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<p>Following the successful execution of an XQuery expression, the results can be retrieved as an XPathValue object through this field.</p>
+      
+</div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-ResultString" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-ResultString"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i>
+                           
+                          <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">ResultString</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>Returns the results of the most recently executed query as a string.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-ResultString" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<p>Following the successful execution of an XQuery expression, the results can be retrieved as a string through this field.  The string representation is generated from the <a data-bs-toggle="tooltip" title="Returns the results of the most recently executed query." href="#tf-Result">Result</a> field, which holds the raw evaluation output.</p>
+<p>Note that if the result is empty, the returned string will also be empty (i.e. is not considered an error).  The string is managed internally and does not require manual deallocation.</p>
+<p>The string result becomes invalid if the XQuery object is modified, re-executed or destroyed.</p>
+      
+</div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-ResultType" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-ResultType"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i>
+                           
+                          <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">ResultType</th><td class="col-md-1"><span class="text-nowrap">INT</span></td><td>Returns the value type of the most recently executed query.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-ResultType" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<p>If an XQuery expression returns a <a data-bs-toggle="tooltip" title="Returns the results of the most recently executed query." href="#tf-Result">Result</a>, the type can be retrieved from this field.</p>
+      
+</div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-Statement" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Statement"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i>
+                           
+                          <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Statement</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>XQuery data is processed through this field.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Statement" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<p>Set the Statement field with an XPath or XQuery expression for compilation.</p>
+<p>If this field is set after initialisation then <a data-bs-toggle="tooltip" title="Clears all XQuery results and returns the object to its pre-compiled state." href="#ta-Clear">Clear()</a> will be applied to the object first.  The expression will be compiled on the next execution attempt.</p>
+<p>If the statement is an XQuery expression with base-uri references, the <a data-bs-toggle="tooltip" title="Base path for resolving relative references." href="#tf-Path">Path</a> field should be set to establish the base path for relative references.</p>
+      
+</div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-Variables" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Variables"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i>
+                           
+                          <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">Variables</th><td class="col-md-1"><span class="text-nowrap">pf::vector&lt;std::string&gt;</span></td><td>Returns an allocated list of all defined XQuery variables.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Variables" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<p>Provides a list of all XQuery variables that have been defined using the <a data-bs-toggle="tooltip" title="Set XQuery variable values." href="#ta-SetKey">SetKey()</a> action, or during evaluation of the XQuery expression (via the <code>declare</code> keyword).</p>
+<p>Example: For <code>declare variable $math:pi := 3.14159;</code> the variable name <code>math:pi</code> would appear in the list.</p>
+<p>Duplicate variable names are not removed.</p>
+      
+</div></div></td></tr>
+</tbody></table><h3>Actions</h3><p>The following actions are currently supported:</p><table class="table"><tbody><tr data-bs-toggle="collapse" data-bs-target="#tac-Activate" style="scroll-margin:3em;" id="ta-Activate" role="button"><td style="width:1%; border-top-style: none; border-bottom-style: none;"><i class="bi bi-chevron-double-right text-secondary"></i></td><th class="col-md-1 text-primary">Activate</th><td>Run an XQuery expression.</td></tr><tr><td class="hiddenRow" style="width:1%; border-top-style: none; border-bottom-style: none;"></td><td colspan="2" class="hiddenRow"><div id="tac-Activate" class="collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR acActivate(*Object)</samp></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
+<p>Use Activate to run a compiled XQuery expression without an XML document reference.  The result of the evaluation is returned in the <a data-bs-toggle="tooltip" title="Returns the results of the most recently executed query." href="#tf-Result">Result</a> field as XPathValue, which can represent various types of data including node sets, strings, numbers, or booleans.  On error, the <a data-bs-toggle="tooltip" title="A readable description of the last parse or execution error." href="#tf-ErrorMsg">ErrorMsg</a> field will contain a descriptive message.</p>
+<p>Use <a data-bs-toggle="tooltip" title="Run an XQuery expression against an XML document." href="#tm-Evaluate">Evaluate()</a> or <a data-bs-toggle="tooltip" title="For node-based queries, calls a function for each matching node." href="#tm-Search">Search()</a> for expressions expecting an XML document context.</p>
+      
+<div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
+<tr><th class="col-md-1">Syntax</th><td>Invalid syntax detected.</td></tr>
+</tbody></table></div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tac-Clear" style="scroll-margin:3em;" id="ta-Clear" role="button"><td style="width:1%; border-top-style: none; border-bottom-style: none;"><i class="bi bi-chevron-double-right text-secondary"></i></td><th class="col-md-1 text-primary">Clear</th><td>Clears all XQuery results and returns the object to its pre-compiled state.</td></tr><tr><td class="hiddenRow" style="width:1%; border-top-style: none; border-bottom-style: none;"></td><td colspan="2" class="hiddenRow"><div id="tac-Clear" class="collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR acClear(*Object)</samp></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
+<p>Use Clear() to remove the resources consumed by the XQuery and reset its state.  The <a data-bs-toggle="tooltip" title="XQuery data is processed through this field." href="#tf-Statement">Statement</a> and <a data-bs-toggle="tooltip" title="Base path for resolving relative references." href="#tf-Path">Path</a> field values are retained, allowing the object to be seamlessly re-activated at any time.</p>
+      
+</div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tac-GetKey" style="scroll-margin:3em;" id="ta-GetKey" role="button"><td style="width:1%; border-top-style: none; border-bottom-style: none;"><i class="bi bi-chevron-double-right text-secondary"></i></td><th class="col-md-1 text-primary">GetKey</th><td>Read XQuery variable values.</td></tr><tr><td class="hiddenRow" style="width:1%; border-top-style: none; border-bottom-style: none;"></td><td colspan="2" class="hiddenRow"><div id="tac-GetKey" class="collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Key</td><td>The name of a key value.</td></tr>
+<tr><td>Value</td><td>Pointer to a buffer space large enough to hold the retrieved value.</td></tr>
+<tr><td>Size</td><td>Indicates the byte size of the Buffer.</td></tr>
+</tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;"></div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tac-Init" style="scroll-margin:3em;" id="ta-Init" role="button"><td style="width:1%; border-top-style: none; border-bottom-style: none;"><i class="bi bi-chevron-double-right text-secondary"></i></td><th class="col-md-1 text-primary">Init</th><td>Compiles the XQuery statement.</td></tr><tr><td class="hiddenRow" style="width:1%; border-top-style: none; border-bottom-style: none;"></td><td colspan="2" class="hiddenRow"><div id="tac-Init" class="collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR InitObject(*Object)</samp></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
+<p>Initialisation will compile the XQuery <a data-bs-toggle="tooltip" title="XQuery data is processed through this field." href="#tf-Statement">Statement</a> string into a compiled form that can be executed.</p>
+<p>If parsing fails, the object will not be initialised and an error message will be defined in the <a data-bs-toggle="tooltip" title="A readable description of the last parse or execution error." href="#tf-ErrorMsg">ErrorMsg</a> field.</p>
+<p>Note: This function can hang temporarily if the expression references network URIs.  Consider calling it from a separate thread to avoid blocking in such cases.</p>
+      
+</div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tac-Reset" style="scroll-margin:3em;" id="ta-Reset"><td style="width:1%; border-top-style: none; border-bottom-style: none;"></td><th class="col-md-1 text-primary">Reset</th><td>Synonym for <a data-bs-toggle="tooltip" title="Clears all XQuery results and returns the object to its pre-compiled state." href="#ta-Clear">Clear()</a>.</td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tac-SetKey" style="scroll-margin:3em;" id="ta-SetKey" role="button"><td style="width:1%; border-top-style: none; border-bottom-style: none;"><i class="bi bi-chevron-double-right text-secondary"></i></td><th class="col-md-1 text-primary">SetKey</th><td>Set XQuery variable values.</td></tr><tr><td class="hiddenRow" style="width:1%; border-top-style: none; border-bottom-style: none;"></td><td colspan="2" class="hiddenRow"><div id="tac-SetKey" class="collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR acSetKey(*Object, CSTRING Key, CSTRING Value)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Key</td><td>The name of the target key.</td></tr>
+<tr><td>Value</td><td>The string value to associate with Key.</td></tr>
+</tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
+<p>Use SetKey to store key-value pairs that can be referenced in XQuery expressions using the variable syntax <code>$variableName</code>.</p>
+      
+<div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
+<tr><th class="col-md-1">NullArgs</th><td>The <code>Key</code> parameter was not specified.</td></tr>
+</tbody></table></div></div></td></tr>
+</tbody></table><h3>Methods</h3><p>The following methods are currently supported:</p><table class="table"><tbody><tr data-bs-toggle="collapse" data-bs-target="#tmx-Evaluate" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">Evaluate</th><td id="tm-Evaluate">Run an XQuery expression against an XML document.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-Evaluate" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR xq::Evaluate(OBJECTPTR Object, objXML * XML)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>XML</td><td>Targeted XML document to query.  Can be NULL for XQuery expressions that do not require a context.</td></tr>
+</tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
+<p>Use Evaluate to run a compiled XQuery expression against an XML document.  The result of the evaluation is returned in the <a data-bs-toggle="tooltip" title="Returns the results of the most recently executed query." href="#tf-Result">Result</a> field as XPathValue, which can represent various types of data including node sets, strings, numbers, or booleans.</p>
+      
+<div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
+<tr><th class="col-md-1">AllocMemory</th><td>AllocMemory() failed to create a new memory block.</td></tr>
+<tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
+</tbody></table></div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tmx-InspectFunctions" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">InspectFunctions</th><td id="tm-InspectFunctions">Returns information about compiled XQuery functions.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-InspectFunctions" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR xq::InspectFunctions(OBJECTPTR Object, CSTRING Name, XIF ResultFlags, CSTRING * Result)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Name</td><td>The name of the function or functions to inspect (supports wildcards).</td></tr>
+<tr><td><a href="?page=XIF">ResultFlags</a></td><td>Bitmask controlling the returned information.</td></tr>
+<tr><td>Result</td><td>Receives a serialised XML document describing the function(s).</td></tr>
+</tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
+<p>Use InspectFunctions to retrieve metadata about user-defined or standard XQuery functions available in the compiled XQuery object.  The function name can include wildcards to match multiple functions.</p>
+<p>The ResultFlags parameter controls which pieces of information are included in the output XML document.  If no flags are specified, all available information is returned.</p>
+<p>The structure of the returned XML document is as follows, with each matching function returned in series:</p>
+<pre>
+&lt;function&gt;
+  &lt;name&gt;function-name&lt;/name&gt;
+  &lt;parameters&gt;
+    &lt;parameter&gt;
+      &lt;name&gt;param1&lt;/name&gt;
+      &lt;type&gt;type1&lt;/type&gt;
+    &lt;/parameter&gt;
+    ...
+  &lt;/parameters&gt;
+  &lt;returnType&gt;type&lt;/returnType&gt;
+  &lt;userDefined&gt;true|false&lt;/userDefined&gt;
+  &lt;signature&gt;function-signature&lt;/signature&gt;
+  &lt;ast&gt;... serialized function body AST ...&lt;/ast&gt;
+&lt;/function&gt;
+ </pre>
+      
+<div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
+<tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
+</tbody></table></div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tmx-RegisterFunction" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">RegisterFunction</th><td id="tm-RegisterFunction">Register a custom XQuery function.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-RegisterFunction" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR xq::RegisterFunction(OBJECTPTR Object, CSTRING FunctionName, FUNCTION * Callback)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>FunctionName</td><td>The name of the function to register (e.g., "custom-function").</td></tr>
+<tr><td>Callback</td><td>The callback function to register for FunctionName.</td></tr>
+</tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
+<p>Use RegisterFunction to define a custom function that can be invoked within XQuery expressions.  The function will be associated with the specified name and can be called like any standard XQuery function.</p>
+      
+<div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
+<tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
+</tbody></table></div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tmx-Search" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">Search</th><td id="tm-Search">For node-based queries, calls a function for each matching node.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-Search" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR xq::Search(OBJECTPTR Object, objXML * XML, FUNCTION * Callback)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>XML</td><td>Target XML document to search.</td></tr>
+<tr><td>Callback</td><td>Optional callback function to invoke for each matching node.</td></tr>
+</tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
+<p>Use the Search method to scan an XML document for tags or attributes that match a compiled XQuery expression. For every matching node, a user-defined callback function is invoked, allowing custom processing of each result.</p>
+<p>If no callback is provided, the search stops after the first match and the <a href="xml.html">XML</a> object's cursor markers will reflect the position of the node.</p>
+<p>Note that valid function execution can return <code>ERR:Search</code> if zero matches are found.</p>
+<p>The C++ prototype for Callback is <code>ERR Function(*XML, int TagID, CSTRING Attrib, APTR Meta)</code>.  For Tiri, use <code>function(XML, TagID, Attrib)</code></p>
+      
+<div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>At least one matching node was found and processed.</td></tr>
+<tr><th class="col-md-1">Terminate</th><td>The callback function requested termination of the search.</td></tr>
+<tr><th class="col-md-1">Search</th><td>No matching node was found.</td></tr>
+<tr><th class="col-md-1">Syntax</th><td>The provided query expression has syntax errors.</td></tr>
+<tr><th class="col-md-1">NullArgs</th><td>At least one required parameter was not provided.</td></tr>
+</tbody></table></div></div></td></tr>
+</tbody></table><div class="footer copyright text-right">XQuery class documentation © Paul Manias © 2025-2026</div></div><div class="docs-content" style="display:none;" id="XIF"><h1>XIF Type</h1><p class="lead">Result flags for InspectFunctions().</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>XIF::ALL</th><td>Synonym for <code>AST | NAME | PARAMETERS | RETURN_TYPE | USER_DEFINED | SIGNATURE</code></td></tr>
+<tr><th>XIF::AST</th><td>Include the compiled function body in the inspection result.</td></tr>
+<tr><th>XIF::NAME</th><td>Include function name in the inspection result.</td></tr>
+<tr><th>XIF::PARAMETERS</th><td>Include function parameters in the inspection result.</td></tr>
+<tr><th>XIF::RETURN_TYPE</th><td>Include function return type in the inspection result.</td></tr>
+<tr><th>XIF::SIGNATURE</th><td>Include function signature in the inspection result.</td></tr>
+<tr><th>XIF::USER_DEFINED</th><td>Include user-defined status in the inspection result.</td></tr>
+</tbody></table><div class="footer copyright text-right">XQuery module documentation © Paul Manias © 2025-2026</div></div>
+</div></div></div><script type="text/javascript" src="../../js/bootstrap.bundle.min.js"></script><script type="text/javascript" src="../../js/base.js"></script><script type="text/javascript">
+const ready = fn => document.readyState !== 'loading' ? fn() : document.addEventListener('DOMContentLoaded', fn);
+
+   var xslt = false;
+   var url = window.location.pathname;
+   var filename = url.substring(url.lastIndexOf('/')+1);
+   if (filename.endsWith(".xml")) { // XSLT is being used to view this document
+      filename = filename.substr(0, filename.length-3) + 'html';
+      xslt = true;
+   }
+
+   // Auto-open the relevant sidebar branch
+
+   var nl = document.querySelectorAll('li[class="api-ref"] > a[href="' + filename + '"]');
+   if (nl.length > 0) {
+      // Target the last matching element to avoid confusion with matching module names (e.g. Audio module == Audio class)
+      var el = nl.item(nl.length-1)
+      var parent = getParentNode(el, '[class="collapse"]');
+      if (parent) new bootstrap.Collapse(parent, { show: true }); // Causes animation
+
+      el.style.backgroundColor = '#d2f4ea';
+   }
+
+   var page = glParameters["page"];
+   if (isEmpty(page)) page = glParameters["function"];
+   var div = document.getElementById(page);
+   if (!div) div = document.getElementById("default-page");
+   if (div) div.style.display = "block";
+
+   cancelAnimations();
+
+ready(function(){
+   // Initialise tooltips
+   var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+   var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+     return new bootstrap.Tooltip(tooltipTriggerEl)
+   })
+
+   // In XSLT mode, changing all HTML links to XML is helpful for navigation (if heavy handed)
+   if (xslt) {
+      var nl = document.querySelectorAll('a[href*=".html"]');
+      nl.forEach((el) => {
+         el.href = el.href.substr(0, el.href.length-5) + '.xml'
+      })
+   }
+});
+
+         </script></body></html>

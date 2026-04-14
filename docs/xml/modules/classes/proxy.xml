@@ -11,7 +11,7 @@
     <id>102a23e7</id>
     <idstring>PROXY</idstring>
     <category>Network</category>
-    <copyright>Paul Manias © 2005-2025</copyright>
+    <copyright>Paul Manias © 2005-2026</copyright>
     <description>
 <p>The proxy server class provides a global management service for a user's proxy servers.  You can alter proxy settings manually or present the user with a dialog box to edit and create new proxies.  Scanning functions are also provided with filtering, allowing you to scan for proxies that should be used with the user's network connection.</p>
 <p>Proxy objects are designed to work similarly to database recordsets. Creating a new proxy object will allow you to create a new proxy record if all required fields are set and the object is saved.</p>

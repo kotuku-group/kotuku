@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="Task" mod="Core" c="System processes are managed by the Task class." cat="System" id="7c9e5758" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="Task" mod="Core" c="System processes are managed by the Task class." cat="System" id="7c9e5758" v="1">
   <ai:a n="Activate" c="Activating a task object will execute it." p="ERR acActivate(*Object)">
     <ai:e c="Okay"/>
     <ai:e c="Failed"/>

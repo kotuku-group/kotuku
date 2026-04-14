@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="VectorShape" mod="Vector" c="Extends the Vector class with support for the Superformula algorithm." cat="Graphics" id="890ce369" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="VectorShape" mod="Vector" c="Extends the Vector class with support for the Superformula algorithm." cat="Graphics" id="890ce369" v="1">
   <ai:f n="A" c="A parameter for the Superformula." t="DOUBLE" a="GS"/>
   <ai:f n="B" c="A parameter for the Superformula." t="DOUBLE" a="GS"/>
   <ai:f n="CenterX" c="The center of the shape on the x-axis. Expressed as a fixed or scaled coordinate." t="DOUBLE" a="GS"/>

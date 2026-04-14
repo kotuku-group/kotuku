@@ -46,10 +46,10 @@ static ERR SURFACE_Redimension(extSurface *Self, struct acRedimension *Args)
 
    // Extract the new dimensions from the arguments
 
-   int newx = F2T(Args->X);
-   int newy = F2T(Args->Y);
-   int newwidth  = (!Args->Width) ? Self->Width : F2T(Args->Width);
-   int newheight = (!Args->Height) ? Self->Height : F2T(Args->Height);
+   int newx = int(Args->X);
+   int newy = int(Args->Y);
+   int newwidth  = (!Args->Width) ? Self->Width : int(Args->Width);
+   int newheight = (!Args->Height) ? Self->Height : int(Args->Height);
 
    // Ensure that the requested width does not exceed minimum and maximum values
 
@@ -85,9 +85,9 @@ static ERR SURFACE_Redimension(extSurface *Self, struct acRedimension *Args)
       return ERR::Okay|ERR::Notified;
    }
 
-   log.traceBranch("%dx%d %dx%d (req. %dx%d, %dx%d) Depth: %.0f $%.8x", newx, newy, newwidth, newheight, F2T(Args->X), F2T(Args->Y), F2T(Args->Width), F2T(Args->Height), Args->Depth, int(Self->Flags));
+   log.traceBranch("%dx%d %dx%d (req. %dx%d, %dx%d) Depth: %.0f $%.8x", newx, newy, newwidth, newheight, int(Args->X), int(Args->Y), int(Args->Width), int(Args->Height), Args->Depth, int(Self->Flags));
 
-   ERR error = resize_layer(Self, newx, newy, newwidth, newheight, newwidth, newheight, F2T(Args->Depth), 0.0, 0);
+   ERR error = resize_layer(Self, newx, newy, newwidth, newheight, newwidth, newheight, int(Args->Depth), 0.0, 0);
    return error|ERR::Notified;
 }
 
@@ -137,7 +137,7 @@ int Flags: Optional flags.
 -ERRORS-
 Okay
 Args
-Failed
+InvalidState: The surface is not a top-level surface object.
 -END-
 
 *********************************************************************************************************************/
@@ -147,7 +147,7 @@ static ERR SURFACE_SetDisplay(extSurface *Self, struct gfx::SetDisplay *Args)
    pf::Log log;
 
    if ((!Args) or (Args->Width < 0) or (Args->Height < 0)) return log.warning(ERR::Args);
-   if (Self->ParentID) return log.warning(ERR::Failed);
+   if (Self->ParentID) return log.warning(ERR::InvalidState);
 
    int newx = Args->X;
    int newy = Args->Y;

@@ -1,0 +1,107 @@
+-- Schema validation tests for XML module
+
+   include 'xml'
+
+global glScriptFolder
+global glXML
+
+@BeforeAll function init(State)
+   glScriptFolder = State.folder
+   glXML = obj.new("xml", { path = State.folder .. "schema_inventory.xml" })
+end
+
+@AfterAll function cleanup()
+   glXML = nil
+   glScriptFolder = nil
+end
+
+glInvalidXML = [[<?xml version="1.0" encoding="UTF-8"?>
+<inventory xmlns="http://example.com/inventory">
+   <item>
+      <name>Widget</name>
+   </item>
+</inventory>
+]]
+
+glMismatchedRootXML = [[<?xml version="1.0" encoding="UTF-8"?>
+<catalog xmlns="http://example.com/inventory">
+   <item>
+      <name>Widget</name>
+      <price>19.99</price>
+   </item>
+</catalog>
+]]
+
+glPrefixedRootXML = [[<?xml version="1.0" encoding="UTF-8"?>
+<inv:inventory xmlns="urn:default" xmlns:inv="http://example.com/inventory">
+   <inv:item>
+      <inv:name>Widget</inv:name>
+      <inv:price>19.99</inv:price>
+   </inv:item>
+</inv:inventory>
+]]
+
+@Test(priority=1) function LoadSchema()
+   err = glXML.mtLoadSchema(glScriptFolder .. "schema_inventory.xsd")
+   assert(err is ERR_Okay, "LoadSchema() failed: " .. mSys.GetErrorMsg(err))
+
+   assert(bit.band(glXML.flags, XMF_HAS_SCHEMA) != 0, "XMF_HAS_SCHEMA undefined")
+end
+
+@Test(priority=2) function ValidateDocumentPass()
+   err = glXML.mtValidateDocument()
+   assert(err is ERR_Okay, "ValidateDocument() returned error: " .. mSys.GetErrorMsg(err))
+   assert(glXML.errorMsg is "" or glXML.errorMsg is nil, "ErrorMsg should be cleared after successful validation.")
+end
+
+@Test(priority=3) function ValidateDocumentPrefixedRoot()
+   doc = obj.new("xml", { statement = glPrefixedRootXML })
+   err = doc.mtLoadSchema(glScriptFolder .. "schema_inventory.xsd")
+   assert(err is ERR_Okay, "Failed to load schema for prefixed root document: " .. mSys.GetErrorMsg(err))
+
+   err = doc.mtValidateDocument()
+   assert(err is ERR_Okay, "Prefixed root document failed validation: " .. mSys.GetErrorMsg(err))
+   assert(doc.errorMsg is "" or doc.errorMsg is nil,
+      "Prefixed root document should not report an error message, found: " .. tostring(doc.errorMsg))
+end
+
+@Test(priority=4) function ValidateDocumentFail()
+   invalid = obj.new("xml", { statement = glInvalidXML })
+   err = invalid.mtLoadSchema(glScriptFolder .. "schema_inventory.xsd")
+   assert(err is ERR_Okay, "Failed to load schema for invalid document: " .. mSys.GetErrorMsg(err))
+
+   err = invalid.mtValidateDocument()
+   assert(err is ERR_InvalidData, "ValidateDocument() should return InvalidData for schema violations, got: " .. mSys.GetErrorMsg(err))
+   assert(invalid.errorMsg != nil and invalid.errorMsg != "",
+      "ValidateDocument() did not populate errorMsg on failure.")
+end
+
+@Test(priority=5) function ValidateWithoutSchema()
+   doc = obj.new("xml", { path = glScriptFolder .. "schema_inventory.xml" })
+   err = doc.mtValidateDocument()
+   assert(err is ERR_NoSupport, "ValidateDocument() without schema should return NoSupport, got: " .. mSys.GetErrorMsg(err))
+   assert(doc.errorMsg is "No schema has been loaded for this document.",
+      "Unexpected error message when schema is missing: " .. tostring(doc.errorMsg))
+end
+
+@Test(priority=6) function ValidateDocumentWithoutContent()
+   doc = obj.new("xml")
+   err = doc.mtLoadSchema(glScriptFolder .. "schema_inventory.xsd")
+   assert(err is ERR_Okay, "Failed to load schema for empty document: " .. mSys.GetErrorMsg(err))
+
+   err = doc.mtValidateDocument()
+   assert(err is ERR_NoData, "ValidateDocument() should return NoData when no tags are parsed, got: " .. mSys.GetErrorMsg(err))
+   assert(doc.errorMsg is "XML document has no parsed tags to validate.",
+      "Unexpected error message for document without parsed tags: " .. tostring(doc.errorMsg))
+end
+
+@Test(priority=7) function ValidateDocumentMismatchedRoot()
+   doc = obj.new("xml", { statement = glMismatchedRootXML })
+   err = doc.mtLoadSchema(glScriptFolder .. "schema_inventory.xsd")
+   assert(err is ERR_Okay, "Failed to load schema for mismatched root document: " .. mSys.GetErrorMsg(err))
+
+   err = doc.mtValidateDocument()
+   assert(err is ERR_Search, "ValidateDocument() should return Search when the root element is undefined: " .. mSys.GetErrorMsg(err))
+   assert(doc.errorMsg is "Schema does not define root element 'catalog'.",
+      "Unexpected error message for mismatched root element: " .. tostring(doc.errorMsg))
+end

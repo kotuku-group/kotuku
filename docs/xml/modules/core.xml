@@ -5,7 +5,7 @@
   <info>
     <name>Core</name>
     <type>module</type>
-    <copyright>Paul Manias 1996-2025</copyright>
+    <copyright>Paul Manias 1996-2026</copyright>
     <classes>
       <class>CompressedStream</class>
       <class>Compression</class>
@@ -47,6 +47,7 @@
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="Cancelled">The thread has been requested to stop whilst sleeping.</error>
       <error code="Args">The <code>MilliSeconds</code> value is less or equal to zero.</error>
       <error code="TimeOut">Function timed-out before successful completion.</error>
       <error code="MemoryDoesNotExist">The supplied <code>Memory</code> ID does not refer to an existing memory block.</error>
@@ -98,7 +99,7 @@
       <param type="APTR" name="Parameters">Optional parameter structure associated with <code>Action</code>.</param>
     </input>
     <description>
-<p>This function is the key entry point for executing actions and method routines.  An action is a predefined function call that can be called on any object, while a method is a function call that is specific to a class implementation. You can find a complete list of available actions and their associated details in the Parasol Wiki. The actions and methods supported by any class will be referenced in their auto-generated documentation.</p>
+<p>This function is the key entry point for executing actions and method routines.  An action is a predefined function call that can be called on any object, while a method is a function call that is specific to a class implementation. You can find a complete list of available actions and their associated details in the Kotuku Wiki. The actions and methods supported by any class will be referenced in their auto-generated documentation.</p>
 <p>Here are two examples that demonstrate how to make an action call.  The first performs an activation, which does not require any additional arguments.  The second performs a move operation, which requires three additional arguments to be passed to the Action() function:</p>
 <pre>1. Action(AC::Activate, Picture, nullptr);
 
@@ -195,7 +196,7 @@ struct FunctionField argsResize[] = {
 <p>During a call to <function>ProcessMessages</function>, each incoming message will be scanned to determine if a message handler is able to process that message.  All handlers that accept the message type will be called with a copy of the message structure and any additional data.  The message is then removed from the message queue.</p>
 <p>When calling AddMsgHandler(), the <code>MsgType</code> acts as a filter so that only messages with the same type identifier will be passed to the handler.  The <code>Routine</code> parameter must point to the function handler, which will follow this definition:</p>
 <pre>ERR handler(APTR Meta, MSGID MsgID, INT MsgType, APTR Message, INT MsgSize)</pre>
-<p>The handler must return <code>ERR::Okay</code> if the message was handled.  This means that the message will not be passed to message handlers that are yet to receive the message.  Throw <code>ERR::NothingDone</code> if the message has been ignored or <code>ERR::Continue</code> if the message was processed but may be analysed by other handlers.  Throw <code>ERR::Terminate</code> to break the current <function>ProcessMessages</function> loop.  When using Fluid, this is best achieved by writing <code>check(errorcode)</code> in the handler.</p>
+<p>The handler must return <code>ERR::Okay</code> if the message was handled.  This means that the message will not be passed to message handlers that are yet to receive the message.  Throw <code>ERR::NothingDone</code> if the message has been ignored or <code>ERR::Continue</code> if the message was processed but may be analysed by other handlers.  Throw <code>ERR::Terminate</code> to break the current <function>ProcessMessages</function> loop.  When using Tiri, this is best achieved by writing <code>check(errorcode)</code> in the handler.</p>
 <p>The handler will be identified by a unique pointer returned in the Handle parameter.  This handle will be garbage collected or can be passed to <function>FreeResource</function> once it is no longer required.</p>
     </description>
     <result type="ERR">
@@ -298,20 +299,23 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) == ERR::Okay) {
   <function>
     <name>AsyncAction</name>
     <category>Objects</category>
-    <comment>Execute an action in parallel, via a separate thread.</comment>
+    <comment>Submit an action for asynchronous execution against an object.</comment>
     <prototype>ERR AsyncAction(AC Action, OBJECTPTR Object, APTR Args, FUNCTION * Callback)</prototype>
     <input>
       <param type="AC" name="Action" lookup="AC">An action or method ID must be specified here.</param>
-      <param type="OBJECTPTR" name="Object">A pointer to the object that is going to perform the action.</param>
+      <param type="OBJECTPTR" name="Object">The target object to execute the action against.</param>
       <param type="APTR" name="Args">If the action or method is documented as taking parameters, provide the correct parameter structure here.</param>
-      <param type="FUNCTION *" name="Callback">This function will be called after the thread has finished executing the action.</param>
+      <param type="FUNCTION *" name="Callback">Optional function called on the main thread after the action completes.</param>
     </input>
     <description>
-<p>This function follows the same principles of execution as the Action() function, with the difference of executing the action in parallel via a dynamically allocated thread.  Please refer to the <function>Action</function> function for general information on action execution.</p>
+<p>This function submits an action or method for asynchronous execution against <code>Object</code>.  The runtime allocates a worker thread to execute the action; the caller does not manage threads directly.  Please refer to the <function>Action</function> function for general information on action execution.</p>
 <p>To receive feedback of the action's completion, use the <code>Callback</code> parameter and supply a function.  The prototype for the callback routine is <code>callback(ACTIONID ActionID, OBJECTPTR Object, ERR Error, APTR Meta)</code></p>
-<p>It is crucial that the target object is not destroyed while the thread is executing.  Use the <code>Callback</code> routine to receive notification of the thread's completion and then free the object if desired.  The callback will be processed when the main thread makes a call to <function>ProcessMessages</function>, so as to maintain an orderly execution process within the application.</p>
-<p>The 'Error' parameter in the callback reflects the error code returned by the action after it has been called.  Note that if AsyncAction() fails, the callback will never be executed because the thread attempt will have been aborted.</p>
-<p>Please note that there is some overhead involved when safely initialising and executing a new thread.  This function is at its most effective when used to perform lengthy processes such as the loading and parsing of data.</p>
+<p>Actions targeting the same object are serialised through a per-object FIFO queue.  If an async action is already in-flight for the given object, subsequent calls to AsyncAction() will queue the request rather than spawning a competing thread.  The next queued action is dispatched after the current action's callback has been processed on the main thread (or immediately after the action completes if no callback was provided).  Actions targeting different objects execute in parallel as independent workers.  Any actions submitted during callback execution — including actions targeting the same object — are appended to the tail of the queue and do not preempt previously queued work.</p>
+<p>Execution proceeds in two phases per action.  During the 'worker phase', the worker thread holds an exclusive lock on the object and executes the action.  On completion, ownership transfers directly to the main thread for the 'callback phase'.  At no point between worker completion and callback return is the object available to another worker. Only after the callback returns does the next queued action begin.</p>
+<p>Callbacks are processed when the main thread makes a call to <function>ProcessMessages</function>, so as to maintain an orderly execution process within the application.  It is crucial that the target object is not destroyed while actions are executing or queued.  Use the <code>Callback</code> routine to receive notification of each action's completion.  If an object is freed while actions are still queued, the remaining callbacks will be invoked with an <code>ERR::DoesNotExist</code> error and a <code>NULL</code> object pointer.</p>
+<p>The 'Error' parameter in the callback reflects the error code returned by the action after it has been called.  Note that if AsyncAction() fails, the callback will never be executed because the attempt will have been aborted.</p>
+<p>This function is at its most effective when used to perform lengthy processes such as the loading and parsing of data.</p>
+<p>NOTE: Tiri scripts must use the <code>async.action|method()</code> interfaces for asynchronous activity instead of this function.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
@@ -319,6 +323,62 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) == ERR::Okay) {
       <error code="IllegalMethodID">Illegal method ID (outside of valid range).</error>
       <error code="MissingClass">The class could not be found in the system.</error>
       <error code="NewObject">NewObject() failed to produce a new object.</error>
+      <error code="NullArgs">Function call missing argument value(s)</error>
+    </result>
+  </function>
+
+  <function>
+    <name>AsyncCancel</name>
+    <category>Objects</category>
+    <comment>Drain the pending queue for listed objects without executing the remaining actions.</comment>
+    <prototype>ERR AsyncCancel(OBJECTID * Objects, INT Size)</prototype>
+    <input>
+      <param type="OBJECTID *" name="Objects">A list of object IDs to cancel.</param>
+      <param type="INT" name="Size">Total number of elements in the <code>Objects</code> list.</param>
+    </input>
+    <description>
+<p>Call AsyncCancel() to cancel all pending asynchronous actions for the listed objects.  Each object's currently active async thread (if any) is interrupted via <function>WakeThread</function> with Stop set to true, and the remaining action queue is drained without execution.</p>
+<p>Callbacks for queued actions will receive <code>ERR::DoesNotExist</code> to indicate cancellation.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">Operation successful.</error>
+      <error code="NullArgs">Function call missing argument value(s)</error>
+    </result>
+  </function>
+
+  <function>
+    <name>AsyncPending</name>
+    <category>Objects</category>
+    <comment>Return the number of queued and in-flight async actions for an object.</comment>
+    <prototype>INT AsyncPending(OBJECTID Object)</prototype>
+    <input>
+      <param type="OBJECTID" name="Object">The object to query.</param>
+    </input>
+    <description>
+<p>Call AsyncPending() to query the total number of asynchronous actions that are either currently executing or waiting in the queue for a given object.  The returned count includes the in-flight action (if any) plus all queued actions that have not yet been dispatched.</p>
+<p>A return value of zero indicates that no async activity is associated with the object.</p>
+    </description>
+    <result type="INT">The number of pending async actions (in-flight + queued), or zero if none.</result>
+  </function>
+
+  <function>
+    <name>AsyncWait</name>
+    <category>Objects</category>
+    <comment>Block until all queued async actions for the listed objects have completed.</comment>
+    <prototype>ERR AsyncWait(OBJECTID * Objects, INT Size, INT TimeOut)</prototype>
+    <input>
+      <param type="OBJECTID *" name="Objects">A list of object IDs to wait on.</param>
+      <param type="INT" name="Size">Total number of elements in the <code>Objects</code> list.</param>
+      <param type="INT" name="TimeOut">Maximum time to wait in milliseconds, or <code>-1</code> for an indefinite wait.</param>
+    </input>
+    <description>
+<p>Call AsyncWait() to suspend the current thread until every asynchronous action that is executing or queued against the listed objects has finished.  Messages continue to be processed while waiting, so async completion callbacks fire normally.</p>
+<p>Only one AsyncWait() call may be active at any time.  If a second call is made while the first is still blocking, <code>ERR::InUse</code> is returned.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">All async actions completed.</error>
+      <error code="InUse">Another AsyncWait() call is already active.</error>
+      <error code="TimeOut">The timeout expired before all actions completed.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -355,7 +415,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
       <param type="AC" name="Action" lookup="AC">A registered action or method ID.</param>
     </input>
     <description>
-<p>This function returns <code>ERR::True</code> if an object's class supports a given action or method ID.  For example:</p>
+<p>This function returns <code>ERR::True</code> if an object's class supports a given action ID.  For example:</p>
 <pre>if (CheckAction(pic, AC::Query) IS ERR::True) {
    // The Query action is supported.
 }
@@ -395,7 +455,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
       <param type="OBJECTID" name="Object">The object identity to verify.</param>
     </input>
     <description>
-<p>The CheckObjectExists() function verifies the presence of any object created by <function>NewObject</function>.</p>
+<p>The CheckObjectExists() function verifies the presence of any object created by <function>NewObject</function>. Objects that are marked for termination are considered to no longer exist for the purposes of this function, and will return <code>ERR::False</code>.</p>
     </description>
     <result type="ERR">
       <error code="True">The object exists.</error>
@@ -437,10 +497,10 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <description>
 <p>This function is used to copy files and folders to new locations.  When copying folders it will do so recursively, so as to copy all sub-folders and files within the location.</p>
 <p>It is important that you are aware that different types of string formatting can give different results.  The following examples illustrate:</p>
-<p>Copying <code>parasol:makefile</code> to <code>parasol:documents</code> results in a file called <code>parasol:documents</code>.</p>
-<p>Copying <code>parasol:makefile</code> to <code>parasol:documents/</code> results in a file called <code>parasol:documents/makefile</code>.</p>
-<p>Copying <code>parasol:pictures/</code> to <code>parasol:documents/</code> results in a folder at <code>parasol:documents/pictures</code> and includes a copy of all folders and files found within the pictures folder.</p>
-<p>Copying <code>parasol:pictures/</code> to <code>parasol:documents</code> results in a folder at <code>parasol:documents</code> (if the documents folder already exists, it receives additional content from the pictures folder).</p>
+<p>Copying <code>kotuku:makefile</code> to <code>kotuku:documents</code> results in a file called <code>kotuku:documents</code>.</p>
+<p>Copying <code>kotuku:makefile</code> to <code>kotuku:documents/</code> results in a file called <code>kotuku:documents/makefile</code>.</p>
+<p>Copying <code>kotuku:pictures/</code> to <code>kotuku:documents/</code> results in a folder at <code>kotuku:documents/pictures</code> and includes a copy of all folders and files found within the pictures folder.</p>
+<p>Copying <code>kotuku:pictures/</code> to <code>kotuku:documents</code> results in a folder at <code>kotuku:documents</code> (if the documents folder already exists, it receives additional content from the pictures folder).</p>
 <p>This function will overwrite any destination file(s) that already exist.</p>
 <p>The Source parameter should always clarify the type of location that is being copied.  For example if copying a folder, a forward slash must terminate the string or it will be assumed that a file is the source.</p>
 <p>The Callback parameter can be set with a function that matches this prototype:</p>
@@ -669,6 +729,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     </description>
     <result type="ERR">
       <error code="Okay">The memory block was successfully freed or marked for delayed collection.</error>
+      <error code="InUse">The memory block is a busy managed resource.  The removal behaviour rules are dependent on the manager (automatic termination may be employed).</error>
       <error code="InvalidData">Memory corruption detected - header or trailer markers are damaged.</error>
       <error code="MemoryDoesNotExist">The specified memory block identifier is not valid or already freed.</error>
       <error code="SystemLocked">Memory management system is currently locked by another thread.</error>
@@ -789,7 +850,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
       <param type="RES" name="Resource" lookup="RES">The ID of the resource that you want to obtain.</param>
     </input>
     <description>
-<p>The GetResource() function is used to retrieve miscellaneous resource information from the system core.  Refer to the Resource identifier for the full list of available resource codes and their meaning.</p>
+<p>The GetResource() function is used to retrieve miscellaneous resource and state information from the system core.  Refer to the Resource identifier for the full list of available resource codes and their meaning.</p>
 <p>C++ developers should use the <code>GetResourcePtr()</code> macro if a resource identifier is known to return a pointer.</p>
     </description>
     <result type="INT64">Returns the value of the resource that you have requested.  If the resource ID is not known by the Core, <code>NULL</code> is returned.</result>
@@ -818,7 +879,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
       <param type="CLASSID *" name="SubClass">Optional argument that can refer to a variable that will store the resulting sub-class ID (if the result is a base-class, this variable will receive a value of zero).</param>
     </input>
     <description>
-<p>This function examines the relationship between file data and Parasol classes.  For instance, a JPEG file would be identified as a datatype of the <class name="Picture">Picture</class> class.  An MP3 file would be identified as a datatype of the <class name="Sound">Sound</class> class.</p>
+<p>This function examines the relationship between file data and Kōtuku classes.  For instance, a JPEG file would be identified as a datatype of the <class name="Picture">Picture</class> class.  An MP3 file would be identified as a datatype of the <class name="Sound">Sound</class> class.</p>
 <p>The method involves analysing the <code>Path</code>'s file extension and comparing it to the supported extensions of all available classes.  If a class supports the file extension, the ID of that class will be returned. If the file extension is not listed in the class dictionary or if it is listed more than once, the first 80 bytes of the file's data will be loaded and checked against classes that can match against file header information.  If a match is found, the ID of the matching class will be returned.</p>
 <p>The <code>ERR::Search</code> code is returned if a suitable class does not match the targeted file.</p>
     </description>
@@ -847,7 +908,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     <result type="ERR">
       <error code="Okay">The object was initialised.</error>
       <error code="LostClass">The object has lost its class reference.</error>
-      <error code="DoubleInit">Warning - Attempt to initialise an object twice.</error>
+      <error code="DoubleInit">Warning - Attempt to initialise a resource twice.</error>
       <error code="ObjectCorrupt">The object structure is corrupt or has not been initialised.</error>
     </result>
   </function>
@@ -913,9 +974,12 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="Cancelled">The thread has been requested to stop and cannot pause.</error>
+      <error code="LockFailed">Failed to initialise the sleep record for the waiting thread.</error>
       <error code="TimeOut">Function timed-out before successful completion.</error>
       <error code="MarkedForDeletion">A resource cannot be accessed as it is marked for deletion.</error>
       <error code="SystemLocked">Part of the system is unreachable due to a persistent lock.</error>
+      <error code="DoesNotExist">The object was removed while waiting for the lock.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -990,10 +1054,10 @@ if (!MemoryPtrInfo(ptr, &amp;info)) {
 <p>It is important that you are aware that different types of string formatting can give different results.  The following examples illustrate:</p>
 <pre>
 <b>Source               Destination          Result</b>
-parasol:makefile     parasol:documents    parasol:documents
-parasol:makefile     parasol:documents/   parasol:documents/makefile
-parasol:pictures/    parasol:documents/   parasol:documents/pictures
-parasol:pictures/    parasol:documents    parasol:documents (Existing documents folder destroyed)
+kotuku:makefile     kotuku:documents    kotuku:documents
+kotuku:makefile     kotuku:documents/   kotuku:documents/makefile
+kotuku:pictures/    kotuku:documents/   kotuku:documents/pictures
+kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents folder destroyed)
 </pre>
 <p>This function will overwrite the destination location if it already exists.</p>
 <p>The <code>Source</code> argument should always clarify the type of location that is being copied - e.g. if you are copying a folder, you must specify a forward slash at the end of the string or the function will assume that you are moving a file.</p>
@@ -1021,7 +1085,7 @@ parasol:pictures/    parasol:documents    parasol:documents (Existing documents 
     </input>
     <description>
 <p>The NewObject() function is used to create new objects and register them for use within the Core.  After creating a new object, the client can proceed to set the object's field values and initialise it with <action>Init</action> so that it can be used as intended.</p>
-<p>The new object will be modeled according to the class blueprint indicated by <code>ClassID</code>.  Pre-defined class ID's are defined in their documentation and the <code>parasol/system/register.h</code> include file.  ID's for unregistered classes can be computed using the <function>ResolveClassName</function> function.</p>
+<p>The new object will be modeled according to the class blueprint indicated by <code>ClassID</code>.  Pre-defined class ID's are defined in their documentation and the <code>kotuku/system/register.h</code> include file.  ID's for unregistered classes can be computed using the <function>ResolveClassName</function> function.</p>
 <p>A pointer to the new object will be returned in the <code>Object</code> parameter.  By default, object allocations are context sensitive and will be collected when their owner is terminated.  It is possible to track an object to a different owner by using the <function>SetOwner</function> function.</p>
 <p>To destroy an object, call <function>FreeResource</function>.</p>
     </description>
@@ -1051,7 +1115,7 @@ parasol:pictures/    parasol:documents    parasol:documents (Existing documents 
 <p>In the following example the <class name="Surface">Surface</class> class uses NotifySubscribers() to convert a Move event to a Redimension event.  The parameter values are customised to support this, and the function returns <code>ERR::Notified</code> to prevent the core from sending out a Move notification.</p>
 <pre>ERR SURFACE_Move(extSurface *Self, struct acMove *Args)
 {
-   if (!Args) return ERR::NullArgs|ERR::Notified;
+   if (not Args) return ERR::NullArgs|ERR::Notified;
 
    ...
 
@@ -1562,7 +1626,7 @@ if (!OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <param type="struct ResourceManager *" name="Manager">Must refer to an initialised ResourceManager structure.</param>
     </input>
     <description>
-<p>SetResourceMgr() associates a ResourceManager with a memory block that was allocated with the <code>MEM::MANAGED</code> flag. This allows customised memory management logic to be used when an event is triggered on a memory block, such as the block being destroyed.  Most commonly, resource managers are used to allow C++ destructors to be integrated with Parasol's memory management system.</p>
+<p>SetResourceMgr() associates a ResourceManager with a memory block that was allocated with the <code>MEM::MANAGED</code> flag. This allows customised memory management logic to be used when an event is triggered on a memory block, such as the block being destroyed.  Most commonly, resource managers are used to allow C++ destructors to be integrated with Kōtuku's memory management system.</p>
 <p>This working example from the XPath module ensures that <code>XPathNode</code> objects are properly destructed when passed to <function>FreeResource</function>:</p>
 <pre>static ERR xpnode_free(APTR Address)
 {
@@ -1700,7 +1764,7 @@ static ResourceManager glNodeManager = {
     <description>
 <p>This function creates a new timer subscription that will be called at regular intervals for the calling object.</p>
 <p>A callback function must be provided that follows this prototype: <code>ERR Function(OBJECTPTR Subscriber, INT64 Elapsed, INT64 CurrentTime)</code></p>
-<p>The <code>Elapsed</code> parameter is the total number of microseconds that have elapsed since the last call.  The <code>CurrentTime</code> parameter is set to the <function>PreciseTime</function> value just prior to the <code>Callback</code> being called.  The callback function can return <code>ERR::Terminate</code> at any time to cancel the subscription.  All other error codes are ignored.  Fluid callbacks should call <code>check(ERR::Terminate)</code> to perform the equivalent of this behaviour.</p>
+<p>The <code>Elapsed</code> parameter is the total number of microseconds that have elapsed since the last call.  The <code>CurrentTime</code> parameter is set to the <function>PreciseTime</function> value just prior to the <code>Callback</code> being called.  The callback function can return <code>ERR::Terminate</code> at any time to cancel the subscription.  All other error codes are ignored.  Tiri callbacks should call <code>check(ERR::Terminate)</code> to perform the equivalent of this behaviour.</p>
 <p>To change the interval, call <function>UpdateTimer</function> with the new value.  To release a timer subscription, call <function>UpdateTimer</function> with the resulting <code>Subscription</code> handle and an <code>Interval</code> of zero.</p>
 <p>Timer management is provisioned by the <function>ProcessMessages</function> function.  Failure to regularly process incoming messages will lead to unreliable timer cycles.  It should be noted that the smaller the <code>Interval</code> that has been used, the more imperative regular message checking becomes.  Prolonged processing inside a timer routine can also impact on other timer subscriptions that are waiting to be processed.</p>
     </description>
@@ -1778,7 +1842,7 @@ static ResourceManager glNodeManager = {
     <result type="ERR">
       <error code="Okay">The message was successfully updated.</error>
       <error code="Search">The supplied <code>Message</code> ID does not refer to a message in the queue.</error>
-      <error code="AccessMemory">Access to a shared memory block was denied.</error>
+      <error code="AccessMemory">Access to a memory block was denied.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1814,7 +1878,7 @@ static ResourceManager glNodeManager = {
       <param type="struct ObjectSignal *" name="ObjectSignals">A null-terminated array of objects to monitor for signals.</param>
     </input>
     <description>
-<p>WaitForObjects() acts as a front-end to <function>ProcessMessages</function>, with an ability to wait for a list of objects that are expected to signal an end to their activities.  An object can be signalled via the Signal() action, or via termination. This function will only return once ALL of the objects are signalled or a time-out occurs.</p>
+<p>WaitForObjects() acts as a front-end to <function>ProcessMessages</function>, with an ability to wait for a list of objects that are expected to signal an end to their activities.  An object can be signalled via the Signal() action, or via termination. This function will only return once ALL of the objects are signalled or a time-out occurs.  It is guaranteed that the message queue will be processed at least once before returning.</p>
 <p>Note that if an object has been signalled prior to entry to this function, its signal flag will be cleared and the object will not be monitored.</p>
 <p>If this function is called recursively, the state of the earlier call will be preserved so that it will not be affected by subsequent calls.</p>
     </description>
@@ -1823,7 +1887,7 @@ static ResourceManager glNodeManager = {
       <error code="Failed">General failure.</error>
       <error code="TimeOut">Function timed-out before successful completion.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
-      <error code="OutsideMainThread">An operation has been attempted that is only possible from within the main thread.</error>
+      <error code="OutsideMainThread">Operation permitted from the main thread only.</error>
     </result>
   </function>
 
@@ -1831,14 +1895,39 @@ static ResourceManager glNodeManager = {
     <name>WaitTime</name>
     <category>System</category>
     <comment>Waits for a specified amount of seconds.</comment>
-    <prototype>void WaitTime(DOUBLE Seconds)</prototype>
+    <prototype>ERR WaitTime(DOUBLE Seconds)</prototype>
     <input>
       <param type="DOUBLE" name="Seconds">The number of seconds to wait for.  Fractional values are supported for sub-second precision.</param>
     </input>
     <description>
 <p>This function waits for a period of time as specified by the <code>Seconds</code> parameter.  While waiting, your process will continue to process incoming messages in order to prevent the process' message queue from developing a back-log.</p>
 <p>WaitTime() can return earlier than the indicated timeout if a message handler returns <code>ERR::Terminate</code>, or if a <code>MSGID::QUIT</code> message is sent to the task's message queue.</p>
+<p>For non-main threads, the sleep can be interrupted by another thread calling <function>WakeThread</function>.</p>
+<p>NOTE: If the thread is in a stopping state, e.g. from <function>WakeThread</function>, this function will return immediately.</p>
     </description>
+    <result type="ERR">
+      <error code="Okay">Operation successful.</error>
+      <error code="Cancelled">The thread has been requested to stop and cannot pause.</error>
+    </result>
+  </function>
+
+  <function>
+    <name>WakeThread</name>
+    <category>System</category>
+    <comment>Interrupt a sleeping thread.</comment>
+    <prototype>ERR WakeThread(INT Thread, INT Stop)</prototype>
+    <input>
+      <param type="INT" name="Thread">The target thread's unique ID, as returned by <code>GetResource(RES::THREAD_ID)</code>.</param>
+      <param type="INT" name="Stop">If <code>true</code>, the target thread will be put into a stopping state.</param>
+    </input>
+    <description>
+<p>Call WakeThread() to interrupt a thread that is blocked in <function>WaitTime</function> or similar, where supported.  The target thread will return from as soon as it is able to acquire its internal lock.  If the target thread is not currently sleeping, a pending interrupt is recorded so that its next sleep cycle will return immediately.</p>
+<p>If <code>Stop</code> is set to true then the target thread will be put into a stopping state.  This will cause all future sleep attempts in the target thread to be cancelled.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">The thread was successfully interrupted.</error>
+      <error code="Search">No thread with the given ID was found in the registry.</error>
+    </result>
   </function>
 
   <types>
@@ -2122,7 +2211,7 @@ static ResourceManager glNodeManager = {
       <const name="PTR_INTRESULT">Use for pointer-based value results only.</const>
       <const name="R">Synonym for <code>READ</code></const>
       <const name="READ">CLASSDEF</const>
-      <const name="RESOURCE">The referenced struct or pointer is a special resource.  Changes some behaviours, e.g. a resourced struct will use direct value references rather than being copied in Fluid.</const>
+      <const name="RESOURCE">The referenced struct or pointer is a special resource.  Changes some behaviours, e.g. a resourced struct will use direct value references rather than being copied in Tiri.</const>
       <const name="RESULT">FUNCDEF Overrides <code>READ</code></const>
       <const name="RGB">Supplementary, if an int type then format is <code>0xAARRGGBB</code>, if pointer then refers to an RGB structure.</const>
       <const name="RI">Synonym for <code>READ | INIT</code></const>
@@ -2215,7 +2304,7 @@ static ResourceManager glNodeManager = {
       <const name="DEVICE_TILT_XY">Controller tilted on the X/Y axis.  Value indicates angle, -ve = left, +ve = right</const>
       <const name="DEVICE_TILT_Z">Controller is rising or falling.  Value expressed as 'speed',</const>
       <const name="DISPLAY_EDGE">Recently supplied input occurred at the edge of the display.</const>
-      <const name="PEN_TILT_XY">For pen-based input, this type indicates the vertical tilt of the pen device.  A value of 0 indicates that the pen is laid flat with nib at the bottom, 0.5 is 90 degrees, 1.0 is laid flat with nib at the top.</const>
+      <const name="PEN_TILT_XY">Pen tilt angle.  0 is pointing down directly with nib at bottom, 0.5 is 90 degrees, 1.0 is inversed (eraser at bottom)</const>
       <const name="PRESSURE">Amount of pressure applied, ranges from 0 (none) to 1.0 (normal) and possibly higher if user presses hard enough</const>
       <const name="WHEEL">Mouse wheel rotation - the value generally reflects the number of 'clicks' rotated on the wheel.</const>
       <const name="WHEEL_TILT">Some mouse wheels can be tilted to the left or right.  Ranges from -1.0 to +1.0</const>
@@ -2524,11 +2613,11 @@ static ResourceManager glNodeManager = {
       <const name="CORE_END"/>
       <const name="DEBUG"/>
       <const name="EVENT"/>
-      <const name="FLUID_THREAD_CALLBACK"/>
       <const name="FREE"/>
       <const name="QUIT"/>
       <const name="THREAD_ACTION"/>
       <const name="THREAD_CALLBACK"/>
+      <const name="TIRI_THREAD_CALLBACK"/>
       <const name="VALIDATE_PROCESS"/>
       <const name="WAIT_FOR_OBJECTS"/>
     </constants>
@@ -2547,6 +2636,7 @@ static ResourceManager glNodeManager = {
     </constants>
 
     <constants lookup="NF" comment="Flags that can be passed to NewObject().  If a flag needs to be stored with the object, it must be specified in the lower word.">
+      <const name="ASYNC_ACTIVE">Read-only indicator that asynchronous actions are queued or executing against this object.</const>
       <const name="COLLECT">Marked for garbage collection.</const>
       <const name="FREE">Read-only indicator for when the object is being freed.</const>
       <const name="FREE_ON_UNLOCK">Read-only indicator for when the object is marked for deletion.</const>
@@ -2618,6 +2708,7 @@ static ResourceManager glNodeManager = {
     </constants>
 
     <constants lookup="PMF" comment="Flags for ProcessMessages">
+      <const name="EVENT_LOOP">Set if this is the program's main event loop.  Should be accompanied with an infinite timeout.</const>
     </constants>
 
     <constants lookup="PTC" comment="Predefined cursor styles">
@@ -2680,11 +2771,13 @@ static ResourceManager glNodeManager = {
       <const name="KEY_STATE">Maintains the state of key qualifiers such as caps-lock and the shift keys.</const>
       <const name="LOG_DEPTH">The current depth of log messages.</const>
       <const name="LOG_LEVEL">The current level of log detail (larger numbers indicate more detail).</const>
+      <const name="MAIN_THREAD">Read-only, returns <code>true</code> if called from the main thread.</const>
       <const name="MEMORY_USAGE">The total amount of memory used by the current process, in bytes.</const>
       <const name="OPEN_INFO">Pointer to the OpenInfo structure originally used to initialise the system.</const>
       <const name="PRIVILEGED">This is set to <code>true</code> if the process has elevated privileges (such as superuser or administrative rights).</const>
       <const name="PRIVILEGED_USER">If this value is set to 1, the process will operate in privileged mode (typically this enables full administrator rights).  This feature will only work for Unix processes that are granted admin rights when launched.  Setting the Value to 0 reverts to the user's permission settings.  SetResource() will return an error code indicating the level of success.</const>
       <const name="PROCESS_STATE">Life-cycle stage of the running process</const>
+      <const name="RELEASE_BUILD">Returns true if the runtime is a release build.</const>
       <const name="STATIC_BUILD">Returns true if the runtime is a statically linked build.</const>
       <const name="THREAD_ID">Return the ID of the current thread.</const>
       <const name="TOTAL_MEMORY">The total amount of installed memory.</const>
@@ -2704,7 +2797,7 @@ static ResourceManager glNodeManager = {
 
     <constants lookup="RP" comment="Path types for SetResourcePath()">
       <const name="MODULE_PATH">An alternative path leading to the system modules (normally <code>system:modules/</code>).  Introduced for platforms such as Android, where modules are stored in asset folders.</const>
-      <const name="ROOT_PATH">Overrides the root path, which defaults to the location at which Parasol is installed.</const>
+      <const name="ROOT_PATH">Overrides the root path, which defaults to the location at which Kōtuku is installed.</const>
       <const name="SYSTEM_PATH">The path of the <code>system:</code> volume, which otherwise defaults to <code>[root]:system/</code>.</const>
     </constants>
 
@@ -2827,6 +2920,13 @@ static ResourceManager glNodeManager = {
       <field name="Args" type="const struct FunctionField *">List of fields that are passed to this action.</field>
     </struct>
 
+    <struct name="CIEXYZ" comment="Colour structure for CIE X, Y and Z components.">
+      <field name="X" type="FLOAT">X is a mix of the three CIE RGB curves chosen to be non-negative</field>
+      <field name="Y" type="FLOAT">Luminance value from 0 to 1.0</field>
+      <field name="Z" type="FLOAT">Z is quasi-equal to blue</field>
+      <field name="Alpha" type="FLOAT">Alpha blending value from 0 to 1.0</field>
+    </struct>
+
     <struct name="ChildEntry" comment="Structure for ListChildren() function">
       <field name="ObjectID" type="OBJECTID">Object ID</field>
       <field name="ClassID" type="CLASSID">The class ID of the referenced object.</field>
@@ -2919,7 +3019,7 @@ static ResourceManager glNodeManager = {
       <field name="SetValue" type="APTR">A virtual function that will set the value for this field.</field>
       <field name="WriteValue" type="FUNCTION *" prototype="ERR (*WriteValue)(OBJECTPTR, struct Field *, int, const void *, int)">An internal function for writing to this field.</field>
       <field name="Name" type="CSTRING">The English name for the field, e.g. <code>Width</code></field>
-      <field name="FieldID" type="UINT">Provides a fast way of finding fields, e.g. <code>FID_Width</code></field>
+      <field name="FieldID" type="UINT">32-bit hash from fieldhash(). Represented by FID constants, e.g. <code>FID_Width</code></field>
       <field name="Offset" type="UINT16">Field offset within the object</field>
       <field name="Index" type="UINT16">Field array index</field>
       <field name="Flags" type="UINT">Special flags that describe the field</field>
@@ -2975,7 +3075,7 @@ static ResourceManager glNodeManager = {
       <field name="Hue" type="DOUBLE">Between 0 and 359.999</field>
       <field name="Saturation" type="DOUBLE">Between 0 and 1.0</field>
       <field name="Value" type="DOUBLE">Between 0 and 1.0.  Corresponds to Value, Lightness or Brightness</field>
-      <field name="Alpha" type="DOUBLE">Alpha blending value from 0 to 1.0.</field>
+      <field name="Alpha" type="DOUBLE">Alpha blending value from 0 to 1.0</field>
     </struct>
 
     <struct name="InputEvent">

@@ -11,7 +11,7 @@
     <id>b3782b37</id>
     <idstring>FLOODFX</idstring>
     <category>Graphics</category>
-    <copyright>Paul Manias © 2010-2025</copyright>
+    <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>The FloodFX class is an output-only effect that fills its target area with a single colour value.</p></description>
     <source>

@@ -3,7 +3,7 @@
 set (MOD picture)
 set (INC_MOD_PICTURE TRUE PARENT_SCOPE)
 
-idl_gen ("${MOD}.fdl" NAME ${MOD}_defs APPEND_IDL "${MOD}_def.c" OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.h")
+idl_gen ("${MOD}.tdl" NAME ${MOD}_defs APPEND_IDL "${MOD}_def.c" OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.h")
 
 set (SOURCES "${MOD}.cpp"
    "lib/png.c" "lib/pngset.c" "lib/pngget.c" "lib/pngread.c" "lib/pngpread.c"

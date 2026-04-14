@@ -1,37 +1,35 @@
-Source: parasol
+Source: kotuku
 Section: graphics
 Priority: optional
-Maintainer: Parasol Framework Team <team@parasol-framework.org>
+Maintainer: Kotuku Open Group <team@kotuku.dev>
 Build-Depends: debhelper (>= 9), cmake (>= 3.15), build-essential, libfreetype6-dev, zlib1g-dev, libasound2-dev, libx11-dev, libxext-dev, libxrandr-dev
 Standards-Version: 4.6.2
-Homepage: https://github.com/parasol-framework/parasol
-Vcs-Git: https://github.com/parasol-framework/parasol.git
-Vcs-Browser: https://github.com/parasol-framework/parasol
+Homepage: https://github.com/parasol-framework/kotuku
+Vcs-Git: https://github.com/parasol-framework/kotuku.git
+Vcs-Browser: https://github.com/parasol-framework/kotuku
 
-Package: parasol
+Package: kotuku
 Architecture: @DEBIAN_ARCH@
 Depends: ${shlibs:Depends}, ${misc:Depends}, libfreetype6, zlib1g, libasound2, libx11-6, libxext6, libxrandr2, libstdc++6
 Description: Vector graphics engine and application framework
- Parasol is a vector graphics engine and application framework designed for
+ Kotuku is a vector graphics engine and application framework designed for
  creating scalable user interfaces. The framework automatically handles display
  resolution and scaling concerns, allowing developers to focus on application
  logic rather than display technicalities.
  .
  Key features include:
   * Vector graphics rendering with scene graphs
-  * SVG support with W3C compliance and SMIL animation  
+  * SVG support with W3C compliance and SMIL animation
   * Cross-platform display management
-  * Lua-based scripting environment (Fluid)
+  * Lua-based scripting environment (Tiri)
   * Document engine for rich text layout
   * Modular architecture with dynamic loading
 
-Package: parasol-dev
+Package: kotuku-dev
 Architecture: @DEBIAN_ARCH@
 Section: libdevel
-Depends: ${misc:Depends}, parasol (= ${binary:Version}), libfreetype6-dev, zlib1g-dev, libasound2-dev, libx11-dev, libxext-dev, libxrandr-dev
-Description: Development files for Parasol framework
- This package contains the header files and development libraries needed
- to compile applications that use the Parasol framework.
+Depends: ${misc:Depends}, kotuku (= ${binary:Version}), libfreetype6-dev, zlib1g-dev, libasound2-dev, libx11-dev, libxext-dev, libxrandr-dev
+Description: Development files for Kotuku
+ This package contains the header files and development libraries needed to compile applications that use Kotuku.
  .
- Parasol is a vector graphics engine and application framework designed for
- creating scalable user interfaces with automatic resolution handling.
+ Kotuku is a vector graphics engine and application framework designed for creating scalable user interfaces with automatic resolution handling.

@@ -1,0 +1,792 @@
+-- Common interface for benchmarking
+
+   import 'json'
+
+   namespace 'bmark'
+
+   _LIB[_NS] = {
+      ['null'] = {}
+   }
+
+   bmark = _LIB[_NS]
+
+bmark.save = function(Results:table, Path:str)
+   local file = io.open(Path, 'w')
+   file:write(json.encode(Results))
+   file:close()
+end
+
+bmark.load = function(Path:str):table
+   local file = io.open(Path, 'r')
+   local jsonStr = file:read('*a')
+   file:close()
+   return json.decode(jsonStr)
+end
+
+-- Generate a text report from benchmark statistics
+
+bmark.textReport = function(Results:table):array
+   assert(Results, "Results are required")
+   local msg = array<string>
+   msg:push('=== BENCHMARK RESULTS ===')
+   msg:push(string.format('Total calls:    %d (%d warmup + %d benchmark)', Results.totalCalls, Results.warmupCount ?? 0, Results.benchmarkCalls))
+   msg:push(string.format('Total time:     %.2f seconds', Results.totalTime))
+   msg:push(string.format('Overall rate:   %.2f calls per second', Results.totalCalls / Results.totalTime))
+   msg:push(string.format('Benchmark time: %.2f seconds', Results.benchmarkTime))
+   msg:push(string.format('Benchmark rate: %.2f calls per second', Results.callsPerSecond))
+   msg:push('')
+   msg:push('=== CALL STATISTICS (ms) ===')
+   msg:push(string.format('Average:    %.3f ms', Results.stats.mean))
+   msg:push(string.format('Median:     %.3f ms', Results.stats.median))
+   msg:push(string.format('Minimum:    %.3f ms', Results.stats.min))
+   msg:push(string.format('Maximum:    %.3f ms', Results.stats.max ?? 0))
+   msg:push(string.format('95th %%ile:  %.3f ms', Results.stats.p95))
+   msg:push(string.format('99th %%ile:  %.3f ms', Results.stats.p99))
+   msg:push(string.format('Std Dev:    %.3f ms', Results.stats.stddev))
+   if Results.stats.ci95 then
+      msg:push(string.format('95%% CI:     %.3f - %.3f ms (±%.3f)',
+         Results.stats.ci95.lower, Results.stats.ci95.upper, Results.stats.ci95.margin))
+   end
+   msg:push('')
+   msg:push(string.format('Consistency: %.1f%% (lower is more consistent)', (Results.stats.stddev / Results.stats.mean) * 100))
+   msg:push('')
+   -- NB: For the most accurate reporting on memory usage, the caller should disable the Feedback mechanism
+   msg:push('=== MEMORY USAGE STATISTICS ===')
+   msg:push(string.format('Initial:    %.2f MB', Results.initialMemory / (1024*1024)))
+   msg:push(string.format('Peak:       %.2f MB', Results.peakMemory / (1024*1024)))
+   msg:push(string.format('Final:      %.2f MB', Results.finalMemory / (1024*1024)))
+   msg:push(string.format('Growth:     %.2f MB', Results.totalMemoryGrowth / (1024*1024)))
+   return msg
+end
+
+-- Benchmarks a provided Callback function and returns a table of the results
+
+bmark.run = function(Options:table, Feedback:func, Callback:func):table
+   Options ?= { }
+
+   Feedback ?= function() end
+   Options.feedbackRate ??= 100
+   Options.duration ?= 3
+   Options.showProgress ?= false
+   Options.maxCalls ?= 10000
+   Options.hotLoop ?= 5 -- Low threshold to trigger JIT sooner
+   Options.warmupCalls ?= 0
+
+   assert(Options.duration > 0 and Options.duration <= 300, 'Options.duration must be between 0 and 300.')
+   assert(Options.warmupCalls >= 0 and Options.warmupCalls <= 1000, 'Options.warmupCalls be between 0 and 1000.')
+   assert(Options.feedbackRate > 0, 'Options.feedbackRate must be greater than zero.')
+
+   jit.opt.start(f"hotloop={Options.hotLoop}")
+
+   local results = {}
+   local task = processing.task()
+
+   results.totalCalls = 0
+   results.warmupCount = 0
+
+   -- Set high process priority and CPU affinity for consistent benchmarking
+
+   local restore_priority = task.priority
+   try
+      task.priority = 20 -- Highest priority
+   except ex
+      Feedback(f'Warning: Failed to set high process priority: {ex.message}')
+   success
+      Feedback('Process priority set to HIGH for benchmarking')
+   end
+
+   defer
+      msg('Restore task priority')
+      task.priority = restore_priority
+   end
+
+   -- Set CPU affinity to cores 1-2 (avoid core 0 which handles system interrupts)
+   -- AffinityMask = 6 (binary 0110) = cores 1 and 2
+
+   local restore_affinity = task.affinityMask
+   local aff_mask = 6
+   try
+       task.affinityMask = aff_mask
+   except ex
+      Feedback(f'Warning: Failed to set CPU affinity: {ex.message}')
+   success
+      Feedback(f'CPU affinity set to mask {aff_mask} for consistent benchmarking')
+   end
+
+   defer
+      msg('Restore affinity mask')
+      task.affinityMask = restore_affinity
+   end
+
+   processing.stopCollector()
+
+   defer
+      processing.startCollector()
+   end
+
+   if Options.showProgress then Feedback('') end
+
+   processing.sleep(0.01) -- Consume messages
+
+   local RESERVOIR_SIZE <const>     = Options.reservoirSize ?? Options.maxCalls
+   local MAX_MEMORY_SAMPLES <const> = 10000
+
+   local reservoir <const> = array<double>
+   local mem_usage <const> = array<int64,MAX_MEMORY_SAMPLES>
+
+   local start_time = mSys.PreciseTime()
+   local end_time   = start_time + (Options.duration * 1000000)
+   local feedback_mem_adjust = 0
+   local call_limit = Options.maxCalls + Options.warmupCalls
+
+   -- Preset these values - they will be updated at the right time if warmup is enabled
+   benchmarkStartTime    = mSys.PreciseTime()
+   results.initialMemory = mSys.GetResource(RES_MEMORY_USAGE)
+   results.peakMemory    = results.initialMemory
+
+   msg(f'Starting benchmark loop for {Callback}()')
+   while mSys.PreciseTime() < end_time and results.totalCalls < call_limit do
+      op_start = mSys.PreciseTime()
+      Callback()
+      op_end = mSys.PreciseTime()
+
+      processing.collect()
+
+      results.totalCalls++
+      callTime = (op_end - op_start) / 1000.0 -- Convert to milliseconds
+      callsPerSecond = 1000.0 / callTime
+
+      -- Determine if this is a warmup cycle or benchmark cycle
+      if results.warmupCount < Options.warmupCalls then
+         results.warmupCount++
+         if results.warmupCount is Options.warmupCalls then
+            -- Warmup complete, reset timing and memory baseline
+            local mem_usage       = mSys.GetResource(RES_MEMORY_USAGE)
+            benchmarkStartTime    = mSys.PreciseTime()
+            results.initialMemory = mem_usage
+            results.peakMemory    = results.initialMemory
+            if Options.showProgress then
+               Feedback(string.format('Warmup completed (%d calls). Starting benchmark measurement...', Options.warmupCalls))
+            end
+            feedback_mem_adjust += mem_usage - results.initialMemory
+         end
+      else -- This is a benchmark call, include in statistics
+         if #reservoir < RESERVOIR_SIZE then
+            reservoir:push(callTime)
+         else
+            break
+         end
+      end
+
+      -- Track memory usage periodically to avoid performance impact
+      if results.totalCalls % (callsPerSecond/10) is 0 and #mem_usage < MAX_MEMORY_SAMPLES then
+         local cmem = mSys.GetResource(RES_MEMORY_USAGE)
+         if results.warmupCount >= Options.warmupCalls then
+            -- Only track memory during actual benchmark phase
+            mem_usage:push(cmem)
+            if cmem > results.peakMemory then
+               results.peakMemory = cmem
+            end
+         end
+      end
+
+      -- Print progress every N cycles
+
+      if results.totalCalls % Options.feedbackRate is 0 then
+         elapsed    = (mSys.PreciseTime() - start_time) / 1000000
+         currentMem = mSys.GetResource(RES_MEMORY_USAGE)
+         status     = results.warmupCount < Options.warmupCalls and "Warmup" or "Benchmark"
+         if Options.showProgress then
+            Feedback(string.format('%s: %d calls in %.1f seconds (%.1f calls/sec) | Memory: %.1f MB',
+               status, results.totalCalls, elapsed, results.totalCalls / elapsed, currentMem / (1024*1024)))
+            feedback_mem_adjust += mSys.GetResource(RES_MEMORY_USAGE) - currentMem
+         end
+      end
+   end
+
+   if results.warmupCount < Options.warmupCalls then
+      error('Failed to complete warmup phase within the allotted duration.')
+   end
+
+   processing.collect()
+   results.finalMemory       = mSys.GetResource(RES_MEMORY_USAGE) - feedback_mem_adjust
+   results.totalMemoryGrowth = results.finalMemory - results.initialMemory
+   results.totalTime         = (mSys.PreciseTime() - start_time) / 1000000
+   results.benchmarkTime     = (mSys.PreciseTime() - benchmarkStartTime) / 1000000
+   results.benchmarkCalls    = #reservoir
+   results.callsPerSecond    = results.benchmarkCalls / results.benchmarkTime
+
+   -- Pass streaming statistics to stats function
+   results.stats = bmark.stats(reservoir)
+
+   -- Calculate memory growth pattern
+   results.memoryLeakRate = 0
+   if #mem_usage > 1 and results.benchmarkTime > 0 then
+      results.memoryLeakRate = results.totalMemoryGrowth / results.benchmarkTime -- bytes per second
+   end
+
+   return results
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+bmark.stats = function(Values:any):table
+   local n, mean, stddev, min_val, max_val, sample_n
+   local sorted_sample  -- For percentile calculations
+
+   msg(f'Received {#Values} values.')
+
+   n = #Values
+   if n is 0 then
+      return { min = 0, max = 0, median = 0, p95 = 0, p99 = 0, stddev = 0, mean = 0, n = 0 }
+   end
+
+   -- Sort values for percentile calculations
+   sorted_sample = {}
+   for value in values(Values) do
+      if value?? then table.insert(sorted_sample, value) end
+   end
+   table.sort(sorted_sample)
+
+   -- Discard top 20% of outliers for min/max calculations
+   sample_n = math.max(1, math.floor(#sorted_sample * 0.8))
+
+   -- Min and Max from sorted data
+   min_val = sorted_sample[0]
+   max_val = sorted_sample[sample_n - 1]
+
+   -- Calculate mean
+   local sum = 0
+   for value in values(Values) do
+      sum += value
+   end
+   mean = sum / n
+
+   -- Calculate stddev
+   local variance = 0
+   for value in values(Values) do
+      variance += (value - mean) ** 2
+   end
+   variance /= n
+   stddev = math.sqrt(variance)
+
+   -- Percentile calculation from sorted sample (inversed since the lower values are better)
+   function getPercentile(SortedValues:array, Percentile:num):num
+      local sample_n = #SortedValues
+      if sample_n is 0 then return 0 end
+      local index = math.ceil(Percentile * sample_n / 100) - 1
+      if index < 0 then index = 0 end
+      if index > sample_n - 1 then index = sample_n - 1 end
+      return SortedValues[sample_n-index]
+   end
+
+   -- Median
+   local median
+   if sample_n % 2 is 0 then
+      median = (sorted_sample[sample_n/2 - 1] + sorted_sample[sample_n/2]) / 2
+   else
+      median = sorted_sample[math.floor(sample_n/2)]
+   end
+
+   local p95 = getPercentile(sorted_sample, 95)
+   local p99 = getPercentile(sorted_sample, 99)
+
+   -- 95% confidence interval for the mean using t-distribution approximation
+   -- For large samples (n > 30), z-value of 1.96 is used; for smaller samples, approximate t-value
+   local ci95 = { lower = 0, upper = 0, margin = 0 }
+   if n > 1 then
+      local stderr = stddev / math.sqrt(n)
+      -- Approximate t-value for 95% CI (converges to 1.96 for large n)
+      local t_val = n > 30 and 1.96 or (2.0 + 1.0 / (n - 1))
+      ci95.margin = t_val * stderr
+      ci95.lower = mean - ci95.margin
+      ci95.upper = mean + ci95.margin
+   end
+
+   return {
+      min = min_val, max = max_val, median = median, p95 = p95, p99 = p99,
+      stddev = stddev, mean = mean, ci95 = ci95, n = n,
+      sampleSize = sample_n
+   }
+end
+
+-- Calculate 95% confidence interval for an array of values.
+-- Returns table with lower, upper bounds and margin of error.
+
+bmark.confidenceInterval = function(Values:array, Confidence:num):table
+   Confidence ??= 0.95
+
+   local n = #Values
+   if n < 2 then
+      return { lower = 0, upper = 0, margin = 0, confidence = Confidence }
+   end
+
+   -- Calculate mean and standard deviation
+   local sum = 0
+   for value in values(Values) do
+      sum += value
+   end
+   local mean = sum / n
+
+   local variance = 0
+   for value in values(Values) do
+      variance += (value - mean) ** 2
+   end
+   variance /= (n - 1) -- Sample variance (Bessel's correction)
+   local stddev = math.sqrt(variance)
+
+   local stderr = stddev / math.sqrt(n)
+
+   -- Z-values for common confidence levels (approximation for large samples)
+   local z_values = {
+      [0.90] = 1.645,
+      [0.95] = 1.960,
+      [0.99] = 2.576
+   }
+
+   -- Use z-value or approximate t-value for small samples
+   local z_val = z_values[Confidence] ?? 1.96
+   if n <= 30 then
+      -- Rough t-distribution approximation for small samples
+      z_val = z_val * (1 + 1 / (2 * (n - 1)))
+   end
+
+   local margin = z_val * stderr
+
+   return {
+      lower  = mean - margin,
+      upper  = mean + margin,
+      margin = margin,
+      mean   = mean,
+      n      = n,
+      confidence = Confidence
+   }
+end
+
+-- Remove outliers from an array using the IQR (Interquartile Range) method.  Values outside [Q1 - k*IQR, Q3 + k*IQR]
+-- are considered outliers.  Default multiplier k is 1.5 (standard), use 3.0 for extreme outliers only.  Returns
+-- table with filtered values and outlier information.
+
+bmark.removeOutliers = function(Values:array, Multiplier:num):table
+   Multiplier ??= 1.5
+
+   local n = #Values
+   if n < 4 then
+      return {
+         values = Values,
+         outliers = array<double>,
+         removed = 0,
+         q1 = 0,
+         q3 = 0,
+         iqr = 0,
+         lowerBound = 0,
+         upperBound = 0
+      }
+   end
+
+   -- Sort values
+   local sorted = {}
+   for i, value in ipairs(Values) do
+      sorted[i] = value
+   end
+   table.sort(sorted)
+
+   -- Calculate Q1 (25th percentile) and Q3 (75th percentile)
+   local function getQuartile(SortedValues:array, Quartile:num):num
+      local n = #SortedValues
+      local index = (Quartile / 4) * (n + 1) - 1 -- Convert to 0-based
+      local lower_idx = math.floor(index)
+      local upper_idx = math.ceil(index)
+
+      if lower_idx < 0 then lower_idx = 0 end
+      if upper_idx > n - 1 then upper_idx = n - 1 end
+
+      if lower_idx is upper_idx then
+         return SortedValues[lower_idx]
+      end
+
+      -- Linear interpolation
+      local fraction = index - lower_idx
+      return SortedValues[lower_idx] + fraction * (SortedValues[upper_idx] - SortedValues[lower_idx])
+   end
+
+   local q1 = getQuartile(sorted, 1)
+   local q3 = getQuartile(sorted, 3)
+   local iqr = q3 - q1
+
+   local lower_bound = q1 - (Multiplier * iqr)
+   local upper_bound = q3 + (Multiplier * iqr)
+
+   -- Filter values
+   local filtered = array<double>
+   local outliers = array<double>
+
+   for value in values(Values) do
+      if value >= lower_bound and value <= upper_bound then
+         filtered:push(value)
+      else
+         outliers:push(value)
+      end
+   end
+
+   return {
+      values = filtered,
+      outliers = outliers,
+      removed = #outliers,
+      q1 = q1,
+      q3 = q3,
+      iqr = iqr,
+      lowerBound = lower_bound,
+      upperBound = upper_bound,
+      originalCount = n,
+      filteredCount = #filtered
+   }
+end
+
+-- Generate a histogram from an array of values.
+-- Returns table with bins, counts, and distribution information.
+
+bmark.histogram = function(Values:array, BinCount:num):table
+   BinCount ??= 10
+
+   local n = #Values
+   if n is 0 then
+      return { bins = {}, total = 0 }
+   end
+
+   -- Find min and max
+   local min_val = Values[0]
+   local max_val = Values[0]
+   for value in values(Values) do
+      if value < min_val then min_val = value end
+      if value > max_val then max_val = value end
+   end
+
+   -- Handle edge case where all values are the same
+   if min_val is max_val then
+      return {
+         bins = {{
+            lower = min_val,
+            upper = max_val,
+            count = n,
+            frequency = 1.0,
+            label = string.format('%.3f', min_val)
+         }},
+         total = n,
+         min = min_val,
+         max = max_val,
+         binWidth = 0
+      }
+   end
+
+   local bin_width = (max_val - min_val) / BinCount
+   local bins = {}
+
+   -- Initialise bins
+   for i = 0, BinCount - 1 do
+      local lower = min_val + (i * bin_width)
+      local upper = min_val + ((i + 1) * bin_width)
+      bins[i] = {
+         lower = lower,
+         upper = upper,
+         count = 0,
+         frequency = 0,
+         label = string.format('%.3f-%.3f', lower, upper)
+      }
+   end
+
+   -- Count values in each bin
+   for value in values(Values) do
+      local bin_idx = math.floor((value - min_val) / bin_width)
+      -- Handle edge case where value equals max_val
+      if bin_idx >= BinCount then bin_idx = BinCount - 1 end
+      bins[bin_idx].count++
+   end
+
+   -- Calculate frequencies
+   for i = 0, BinCount - 1 do
+      bins[i].frequency = bins[i].count / n
+   end
+
+   -- Find mode (bin with highest count)
+   local mode_bin = 0
+   local max_count = 0
+   for i = 0, BinCount - 1 do
+      if bins[i].count > max_count then
+         max_count = bins[i].count
+         mode_bin = i
+      end
+   end
+
+   return {
+      bins = bins,
+      total = n,
+      min = min_val,
+      max = max_val,
+      binWidth = bin_width,
+      binCount = BinCount,
+      modeBin = mode_bin,
+      modeRange = { lower = bins[mode_bin].lower, upper = bins[mode_bin].upper }
+   }
+end
+
+-- Generate an ASCII histogram representation for console output.
+
+bmark.histogramText = function(Histogram:table, Width:num):array
+   Width ??= 40
+
+   local msg = array<string>
+   msg:push('=== DISTRIBUTION HISTOGRAM ===')
+   msg:push(string.format('Total samples: %d', Histogram.total))
+   msg:push(string.format('Range: %.3f - %.3f (bin width: %.3f)', Histogram.min, Histogram.max, Histogram.binWidth))
+   msg:push('')
+
+   -- Find max count for scaling
+   local max_count = 0
+   for i = 0, Histogram.binCount - 1 do
+      if Histogram.bins[i].count > max_count then
+         max_count = Histogram.bins[i].count
+      end
+   end
+
+   -- Generate bars
+   for i = 0, Histogram.binCount - 1 do
+      local bin = Histogram.bins[i]
+      local bar_len = max_count > 0 and math.floor((bin.count / max_count) * Width) or 0
+      local bar = string.rep('█', bar_len) .. string.rep('░', Width - bar_len)
+      local marker = i is Histogram.modeBin and '*' or ' '
+      msg:push(string.format('%s %s |%s| %4d (%5.1f%%)',
+         marker, bin.label, bar, bin.count, bin.frequency * 100))
+   end
+
+   msg:push('')
+   msg:push(string.format('Mode: %.3f - %.3f', Histogram.modeRange.lower, Histogram.modeRange.upper))
+
+   return msg
+end
+
+-- Compare two benchmark results and return detailed comparison metrics.
+-- Positive percentages indicate Current is slower/worse than Baseline.
+-- Negative percentages indicate Current is faster/better than Baseline.
+
+bmark.compare = function(Baseline:table, Current:table):table
+   local function pctChange(Baseline:num, Current:num):num
+      if Baseline is 0 then return 0 end
+      return ((Current - Baseline) / Baseline) * 100
+   end
+
+   local comparison = {
+      throughput = {
+         baseline = Baseline.callsPerSecond,
+         current  = Current.callsPerSecond,
+         change   = pctChange(Baseline.callsPerSecond, Current.callsPerSecond),
+         improved = Current.callsPerSecond > Baseline.callsPerSecond
+      },
+      timing = {
+         mean = {
+            baseline = Baseline.stats.mean,
+            current  = Current.stats.mean,
+            change   = pctChange(Baseline.stats.mean, Current.stats.mean),
+            improved = Current.stats.mean < Baseline.stats.mean
+         },
+         median = {
+            baseline = Baseline.stats.median,
+            current  = Current.stats.median,
+            change   = pctChange(Baseline.stats.median, Current.stats.median),
+            improved = Current.stats.median < Baseline.stats.median
+         },
+         p95 = {
+            baseline = Baseline.stats.p95,
+            current  = Current.stats.p95,
+            change   = pctChange(Baseline.stats.p95, Current.stats.p95),
+            improved = Current.stats.p95 < Baseline.stats.p95
+         },
+         p99 = {
+            baseline = Baseline.stats.p99,
+            current  = Current.stats.p99,
+            change   = pctChange(Baseline.stats.p99, Current.stats.p99),
+            improved = Current.stats.p99 < Baseline.stats.p99
+         },
+         min = {
+            baseline = Baseline.stats.min,
+            current  = Current.stats.min,
+            change   = pctChange(Baseline.stats.min, Current.stats.min),
+            improved = Current.stats.min < Baseline.stats.min
+         },
+         max = {
+            baseline = Baseline.stats.max,
+            current  = Current.stats.max,
+            change   = pctChange(Baseline.stats.max, Current.stats.max),
+            improved = Current.stats.max < Baseline.stats.max
+         }
+      },
+      consistency = {
+         baseline = (Baseline.stats.stddev / Baseline.stats.mean) * 100,
+         current  = (Current.stats.stddev / Current.stats.mean) * 100,
+         improved = (Current.stats.stddev / Current.stats.mean) < (Baseline.stats.stddev / Baseline.stats.mean)
+      },
+      memory = {
+         growth = {
+            baseline = Baseline.totalMemoryGrowth,
+            current  = Current.totalMemoryGrowth,
+            change   = pctChange(Baseline.totalMemoryGrowth, Current.totalMemoryGrowth),
+            improved = Current.totalMemoryGrowth < Baseline.totalMemoryGrowth
+         },
+         peak = {
+            baseline = Baseline.peakMemory,
+            current  = Current.peakMemory,
+            change   = pctChange(Baseline.peakMemory, Current.peakMemory),
+            improved = Current.peakMemory < Baseline.peakMemory
+         }
+      }
+   }
+
+   -- Calculate consistency change percentage
+   comparison.consistency.change = pctChange(comparison.consistency.baseline, comparison.consistency.current)
+
+   return comparison
+end
+
+-- Compare current results against a saved baseline file.
+-- Returns comparison table with additional regression detection fields.
+-- Threshold is the percentage change that triggers a regression (default 5%).
+
+bmark.compareToBaseline = function(Current:table, BaselinePath:str, Threshold:num):table
+   Threshold ??= 5.0
+
+   local baseline = bmark.load(BaselinePath)
+   local comparison = bmark.compare(baseline, Current)
+
+   -- Check for regressions (performance degradation beyond threshold)
+   comparison.regressions = {}
+   comparison.threshold = Threshold
+
+   -- Throughput regression (lower is worse)
+   if comparison.throughput.change < -Threshold then
+      table.insert(comparison.regressions, {
+         metric = 'throughput',
+         message = string.format('Throughput decreased by %.1f%% (threshold: %.1f%%)',
+            -comparison.throughput.change, Threshold)
+      })
+   end
+
+   -- Timing regressions (higher is worse)
+   if comparison.timing.mean.change > Threshold then
+      table.insert(comparison.regressions, {
+         metric = 'mean_time',
+         message = string.format('Mean time increased by %.1f%% (threshold: %.1f%%)',
+            comparison.timing.mean.change, Threshold)
+      })
+   end
+
+   if comparison.timing.p95.change > Threshold then
+      table.insert(comparison.regressions, {
+         metric = 'p95_time',
+         message = string.format('95th percentile increased by %.1f%% (threshold: %.1f%%)',
+            comparison.timing.p95.change, Threshold)
+      })
+   end
+
+   if comparison.timing.p99.change > Threshold then
+      table.insert(comparison.regressions, {
+         metric = 'p99_time',
+         message = string.format('99th percentile increased by %.1f%% (threshold: %.1f%%)',
+            comparison.timing.p99.change, Threshold)
+      })
+   end
+
+   -- Memory regression (higher growth is worse)
+   if comparison.memory.growth.change > Threshold and baseline.totalMemoryGrowth > 0 then
+      table.insert(comparison.regressions, {
+         metric = 'memory_growth',
+         message = string.format('Memory growth increased by %.1f%% (threshold: %.1f%%)',
+            comparison.memory.growth.change, Threshold)
+      })
+   end
+
+   comparison.passed = #comparison.regressions is 0
+
+   return comparison
+end
+
+-- Check if results indicate a regression compared to baseline.
+-- Simple boolean check useful for CI/CD pipelines.
+
+bmark.hasRegression = function(Current:table, BaselinePath:str, Threshold:num):boolean
+   local comparison = bmark.compareToBaseline(Current, BaselinePath, Threshold)
+   return not comparison.passed
+end
+
+-- Generate a text report from a comparison result
+
+bmark.comparisonReport = function(Comparison:table):array
+   local msg = array<string>
+
+   local function formatChange(Change:num, Improved:boolean):string
+      local sign = Change >= 0 and '+' or ''
+      local indicator = Improved and '✓' or (math.abs(Change) > 5 and '✗' or '~')
+      return string.format('%s%.1f%% %s', sign, Change, indicator)
+   end
+
+   msg:push('=== BENCHMARK COMPARISON ===')
+   msg:push('')
+
+   -- Throughput comparison
+   msg:push('THROUGHPUT:')
+   msg:push(string.format('  Baseline: %.2f calls/sec', Comparison.throughput.baseline))
+   msg:push(string.format('  Current:  %.2f calls/sec', Comparison.throughput.current))
+   msg:push(string.format('  Change:   %s', formatChange(Comparison.throughput.change, Comparison.throughput.improved)))
+   msg:push('')
+
+   -- Timing comparison
+   msg:push('TIMING (ms):')
+   msg:push(string.format('  Mean:   %.3f -> %.3f (%s)',
+      Comparison.timing.mean.baseline, Comparison.timing.mean.current,
+      formatChange(Comparison.timing.mean.change, Comparison.timing.mean.improved)))
+   msg:push(string.format('  Median: %.3f -> %.3f (%s)',
+      Comparison.timing.median.baseline, Comparison.timing.median.current,
+      formatChange(Comparison.timing.median.change, Comparison.timing.median.improved)))
+   msg:push(string.format('  P95:    %.3f -> %.3f (%s)',
+      Comparison.timing.p95.baseline, Comparison.timing.p95.current,
+      formatChange(Comparison.timing.p95.change, Comparison.timing.p95.improved)))
+   msg:push(string.format('  P99:    %.3f -> %.3f (%s)',
+      Comparison.timing.p99.baseline, Comparison.timing.p99.current,
+      formatChange(Comparison.timing.p99.change, Comparison.timing.p99.improved)))
+   msg:push('')
+
+   -- Consistency comparison
+   msg:push('CONSISTENCY (coefficient of variation):')
+   msg:push(string.format('  Baseline: %.1f%%', Comparison.consistency.baseline))
+   msg:push(string.format('  Current:  %.1f%%', Comparison.consistency.current))
+   msg:push(string.format('  Change:   %s', formatChange(Comparison.consistency.change, Comparison.consistency.improved)))
+   msg:push('')
+
+   -- Memory comparison
+   msg:push('MEMORY:')
+   msg:push(string.format('  Growth: %.2f MB -> %.2f MB (%s)',
+      Comparison.memory.growth.baseline / (1024*1024),
+      Comparison.memory.growth.current / (1024*1024),
+      formatChange(Comparison.memory.growth.change, Comparison.memory.growth.improved)))
+   msg:push(string.format('  Peak:   %.2f MB -> %.2f MB (%s)',
+      Comparison.memory.peak.baseline / (1024*1024),
+      Comparison.memory.peak.current / (1024*1024),
+      formatChange(Comparison.memory.peak.change, Comparison.memory.peak.improved)))
+   msg:push('')
+
+   -- Regression summary
+   if Comparison.regressions then
+      if #Comparison.regressions is 0 then
+         msg:push('=== NO REGRESSIONS DETECTED ===')
+         msg:push(string.format('All metrics within %.1f%% threshold', Comparison.threshold))
+      else
+         msg:push('=== REGRESSIONS DETECTED ===')
+         msg:push(string.format('Threshold: %.1f%%', Comparison.threshold))
+         msg:push('')
+         for _, regression in ipairs(Comparison.regressions) do
+            msg:push(string.format('  ✗ %s', regression.message))
+         end
+      end
+   end
+
+   return msg
+end

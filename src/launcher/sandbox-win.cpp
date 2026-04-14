@@ -14,10 +14,10 @@
 #include <string>
 
 #ifndef PLATFORM_CONFIG_H
-#include <parasol/config.h>
+#include <kotuku/config.h>
 #endif
 
-#include <parasol/system/errors.h>
+#include <kotuku/system/errors.h>
 
 #include "common.h"
 

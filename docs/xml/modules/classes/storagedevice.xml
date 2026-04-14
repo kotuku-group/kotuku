@@ -11,7 +11,7 @@
     <id>63e19c4a</id>
     <idstring>STORAGEDEVICE</idstring>
     <category>System</category>
-    <copyright>Paul Manias 1996-2025</copyright>
+    <copyright>Paul Manias 1996-2026</copyright>
     <description>
 <p>The StorageDevice class returns the meta data of file system volumes.  A reference to an existing volume is required in the <fl>Volume</fl> field in order to make a successful analysis.  If the volume name cannot be resolved, initialisation will fail.</p>
 <p>Following initialisation, all meta fields describing the volume are readable for further information.</p></description>

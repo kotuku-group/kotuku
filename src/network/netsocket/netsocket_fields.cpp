@@ -105,7 +105,7 @@ Flags: Optional flags.
 Incoming: Callback that is triggered when the socket receives data.
 
 The Incoming field can be set with a custom function that will be called whenever the socket receives data.  The
-function prototype for C++ is `ERR Incoming(*NetSocket, APTR Meta)`.  For Fluid use `function Incoming(NetSocket)`.
+function prototype for C++ is `ERR Incoming(*NetSocket, APTR Meta)`.  For Tiri use `function Incoming(NetSocket)`.
 
 The `NetSocket` parameter refers to the NetSocket object.  `Meta` is optional userdata from the `FUNCTION`.
 

@@ -1,0 +1,208 @@
+----------------------------------------------------------------------------------------------------------------------
+-- TABLE OPERATIONS
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Create empty tables
+
+@Test function TableCreateEmpty()
+   for i in {0..1000} do
+      -- Create empty tables
+      local t1 = {}
+      local t2 = {}
+      local t3 = {}
+
+      -- Create multiple in sequence
+      local tables = {}
+      for j = 0, 9 do
+         tables[j] = {}
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Create tables with initial key-value pairs
+
+@Test function TableCreateWithKeyValues()
+   for i in {0..100000} do
+      -- Create with string keys
+      local person = { name = "Alice", age = 30, city = "London" }
+
+      -- Create with mixed keys
+      local mixed = { [0] = "zero", [1] = "one", key = "value" }
+
+      -- Create nested tables
+      local nested = {
+         user = { name = "Bob", id = 123 },
+         settings = { theme = "dark", language = "en" }
+      }
+
+      -- Create with computed values
+      local computed = { index = i, doubled = i * 2, squared = i * i }
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Read and write table entries using string keys
+
+@Test function TableAccessByStringKey()
+   local t = { alpha = 1, beta = 2, gamma = 3, delta = 4, epsilon = 5 }
+
+   for i in {0..1000000} do
+      -- Read by string key
+      local v1 = t.alpha
+      local v2 = t["beta"]
+      local v3 = t.gamma
+      local v4 = t["delta"]
+      local v5 = t.epsilon
+
+      -- Write by string key
+      t.alpha = i
+      t["beta"] = i + 1
+      t.gamma = i + 2
+      t["delta"] = i + 3
+      t.epsilon = i + 4
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Access deeply nested table properties
+
+@Test function TableNestedAccess()
+   local data = {
+      level1 = {
+         level2 = {
+            level3 = {
+               value = 42,
+               items = { a = 1, b = 2, c = 3 }
+            }
+         }
+      },
+      users = {
+         { name = "Alice", scores = { math = 95, science = 88 } },
+         { name = "Bob", scores = { math = 82, science = 91 } }
+      }
+   }
+
+   for i in {0..100000} do
+      -- Deep property access
+      local v1 = data.level1.level2.level3.value
+      local v2 = data.level1.level2.level3.items.a
+      local v3 = data.level1.level2.level3.items.b
+
+      -- Access array-like nested data
+      local name1 = data.users[0].name
+      local score1 = data.users[0].scores.math
+      local name2 = data.users[1].name
+      local score2 = data.users[1].scores.science
+
+      -- Write to nested properties
+      data.level1.level2.level3.value = i
+      data.users[0].scores.math = i % 100
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Insert and remove elements from array-like tables
+
+@Test function TableInsertRemove()
+   for i in {0..1000} do
+      local t = { 1, 2, 3, 4, 5 }
+
+      -- Insert at end
+      table.insert(t, 6)
+      table.insert(t, 7)
+      table.insert(t, 8)
+
+      -- Insert at specific position
+      table.insert(t, 0, 0)     -- Insert at beginning
+      table.insert(t, 5, 99)    -- Insert in middle
+
+      -- Remove from end
+      local last = table.remove(t)
+
+      -- Remove from specific position
+      local first = table.remove(t, 0)
+      local middle = table.remove(t, 3)
+
+      -- Build table with inserts
+      local built = {}
+      for j = 0, 19 do
+         table.insert(built, j * 10)
+      end
+
+      -- Empty table with removes
+      while #built > 0 do
+         table.remove(built)
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Sort table elements with custom comparator
+
+@Test function TableSort()
+   for i in {0..1000} do
+      -- Sort numbers ascending (default)
+      local nums = { 50, 30, 80, 10, 60, 40, 90, 20, 70, 100 }
+      table.sort(nums)
+
+      -- Sort numbers descending
+      local nums2 = { 50, 30, 80, 10, 60, 40, 90, 20, 70, 100 }
+      table.sort(nums2, function(a, b) return a > b end)
+
+      -- Sort strings
+      local words = { "cherry", "apple", "banana", "date", "elderberry" }
+      table.sort(words)
+
+      -- Sort by string length
+      local words2 = { "cherry", "apple", "banana", "date", "elderberry" }
+      table.sort(words2, function(a, b) return #a < #b end)
+
+      -- Sort table of tables by field
+      local people = {
+         { name = "Charlie", age = 35 },
+         { name = "Alice", age = 30 },
+         { name = "Bob", age = 25 }
+      }
+      table.sort(people, function(a, b) return a.age < b.age end)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Merge two tables into one
+
+@Test function TableMerge()
+   local t1 = { a = 1, b = 2, c = 3 }
+   local t2 = { d = 4, e = 5, f = 6 }
+   local arr1 = { 1, 2, 3 }
+   local arr2 = { 4, 5, 6 }
+
+   for i in {0..10000} do
+      -- Merge key-value tables (manual)
+      local merged = {}
+      for k, v in pairs(t1) do
+         merged[k] = v
+      end
+      for k, v in pairs(t2) do
+         merged[k] = v
+      end
+
+      -- Merge with overwrite
+      local base = { a = 1, b = 2, c = 3 }
+      local override = { b = 20, d = 40 }
+      for k, v in pairs(override) do
+         base[k] = v
+      end
+
+      -- Concatenate arrays
+      local combined = {}
+      local idx = 0
+      for _, v in ipairs(arr1) do
+         combined[idx] = v
+         idx++
+      end
+      for _, v in ipairs(arr2) do
+         combined[idx] = v
+         idx++
+      end
+   end
+end

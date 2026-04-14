@@ -1,0 +1,21 @@
+--[[
+This code illustrates how to read environment variables (any platform) and Windows registry keys.
+--]]
+
+   local task = mSys.CurrentTask()
+
+   local error, path = task.mtGetEnv("PATH")
+
+   if error is ERR_Okay then
+      print("PATH: " .. path)
+   else
+      print("Failed to read PATH variable.")
+   end
+
+   local error, progfiles = task.mtGetEnv("\\HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\ProgramFilesDir")
+
+   if error is ERR_Okay then
+      print("The Windows registry key for program files is \"" .. progfiles .. "\"")
+   else
+      print("Failed to read Windows registry.")
+   end

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="Time" mod="Core" c="Simplifies the management of date/time information." cat="System" id="7c9e7894" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="Time" mod="Core" c="Simplifies the management of date/time information." cat="System" id="7c9e7894" v="1">
   <ai:a n="Query" c="Updates the values in a time object with the current system date and time." p="ERR acQuery(*Object)"/>
   <ai:m n="SetTime" c="Apply the time to the system clock." p="ERR pt::SetTime(OBJECTPTR Object)"/>
   <ai:f n="Day" c="Day (1 - 31)" t="INT" a="RW"/>

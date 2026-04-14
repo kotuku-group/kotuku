@@ -1,0 +1,97 @@
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Wait for a single async script to complete.
+
+@Test function WaitSingleScript()
+   script = obj.new('script', { statement=[[ msg('WaitSingleScript: thread running.') ]] })
+   async.script(script)
+   check async.wait(script, 1.0)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Wait for multiple async scripts using array<object>.
+
+@Test function WaitMultipleScripts()
+   total = 5
+   scripts = array<object>
+   for i in {1...total} do
+      scripts:push(obj.new('script', { statement = "msg('WaitMultipleScripts: thread " .. i .. " running.')" }))
+   end
+
+   for script in values(scripts) do
+      async.script(script)
+   end
+
+   check async.wait(scripts, 1.0)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Timeout fires when tasks take too long.
+
+@Test; @Disabled function WaitTimeout()
+   script = obj.new('script', { statement=[[ mSys.WaitTime(0.5) ]] })
+   async.script(script)
+   err = async.wait(script, 0.1)
+   assert(err is ERR_TimeOut, f'Expected TimeOut, got {err}')
+
+   -- Clean up: wait for the actual completion so it doesn't bleed into later tests
+   check async.wait(script, 1.0)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Wait with no active async tasks returns immediately.
+
+@Test function WaitNoActiveTasks()
+   timer = obj.new('time', { })
+   check async.wait(timer, 1.0)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Callbacks still fire during async.wait().
+
+@Test function WaitCallbacksFire()
+   callback_fired = false
+
+   script = obj.new('script', { statement=[[ msg('WaitCallbacksFire: running.') ]] })
+   async.script(script, function(Object)
+      callback_fired = true
+   end)
+
+   check async.wait(script, 1.0)
+   assert(callback_fired, 'Expected callback to fire during async.wait()')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- async.wait() raises an exception inside a try block on timeout.
+
+@Test; @Disabled function WaitExceptionOnTimeout()
+   script = obj.new('script', { statement=[[ mSys.WaitTime(10) ]] })
+   script = obj.new('script', { statement=[[ mSys.WaitTime(1) ]] })
+   async.script(script)
+
+   mSys.WaitTime(0.3)
+
+   try
+      msg('--- Going to sleep ---')
+      async.wait(script, 0.1)
+   success
+      error('Expected exception on timeout inside try block')
+   end
+
+   async.wait(script, 2.0)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- async.wait() rejects bad argument types.
+
+@Test function WaitRejectsBadArgs()
+   for arg in values({ 'hello', 42, true, { } }) do
+      rejected = false
+      try
+         async.wait(arg, 1.0)
+      except
+         rejected = true
+      end
+      assert(rejected, f'Expected error for arg type {type(arg)}, got none')
+   end
+end

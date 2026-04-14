@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -17,7 +17,7 @@ If historical buffering is enabled with the `CPF::HISTORY_BUFFER` option then th
 the clipboard and store copied data in the local `clipboard:` file cache.  This results in additional overhead to
 clipboard management.
 
-On Linux the clipboard is localised and data is shared between Parasol applications only.
+On Linux the clipboard is localised and data is shared between Kōtuku applications only.
 
 Multiple clipboard objects can be created, but they will share the same group of clipped data for the logged-in user.
 

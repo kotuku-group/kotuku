@@ -190,10 +190,10 @@
         <xsl:call-template name="addGoogleTracking"/>
         <meta name="viewport" content="width=device-width, initial-scale=1"/>
         <!-- The above 2 meta tags *must* come first in the head; any other head content must come *after* these tags -->
-        <meta name="description" content="Parasol Framework documentation, machine generated from source"/>
+        <meta name="description" content="Kōtuku documentation, machine generated from source"/>
         <meta name="author" content="Paul Manias"/>
         <link rel="icon" href="/favicon.ico"/>
-        <title>Parasol Framework Manual</title>
+        <title>Kōtuku Manual</title>
         <link href="../../css/bootstrap.min.css" rel="stylesheet"/>
         <link href="../../css/module-template.css" rel="stylesheet"/>
         <script type="text/javascript">
@@ -206,7 +206,7 @@
       <body>
         <nav class="navbar navbar-expand-sm navbar-dark bg-dark">
           <div class="container-fluid">
-            <div class="navbar-header"><a class="navbar-brand" href="../../index.html">Parasol Framework</a></div>
+            <div class="navbar-header"><a class="navbar-brand" href="../../index.html">Kōtuku</a></div>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
               <span class="navbar-toggler-icon"></span>
             </button>
@@ -215,7 +215,7 @@
                 <li class="nav-item"><a class="nav-link" href="../../gallery.html">Gallery</a></li>
                 <li class="nav-item"><a class="nav-link" href="../api.html">API</a></li>
                 <li class="nav-item"><a class="nav-link" href="../../wiki/Home.html">Wiki</a></li>
-                <li class="nav-item"><a class="nav-link" href="https://github.com/parasol-framework/parasol">GitHub</a></li>
+                <li class="nav-item"><a class="nav-link" href="https://github.com/parasol-framework/kotuku">GitHub</a></li>
               </ul>
             </div> <!-- nav-collapse -->
           </div>
@@ -236,13 +236,13 @@
                         <li class="api-ref"><a class="rounded" href="../audio.html">Audio</a></li>
                         <li class="api-ref"><a class="rounded" href="../core.html">Core</a></li>
                         <li class="api-ref"><a class="rounded" href="../display.html">Display</a></li>
-                        <li class="api-ref"><a class="rounded" href="../fluid.html">Fluid</a></li>
                         <li class="api-ref"><a class="rounded" href="../font.html">Font</a></li>
                         <li class="api-ref"><a class="rounded" href="../network.html">Network</a></li>
                         <li class="api-ref"><a class="rounded" href="../regex.html">Regex</a></li>
+                        <li class="api-ref"><a class="rounded" href="../tiri.html">Tiri</a></li>
                         <li class="api-ref"><a class="rounded" href="../vector.html">Vector</a></li>
                         <li class="api-ref"><a class="rounded" href="../xml.html">XML</a></li>
-                        <li class="api-ref"><a class="rounded" href="../xpath.html">XPath</a></li>
+                        <li class="api-ref"><a class="rounded" href="../xquery.html">XQuery</a></li>
                       </ul>
                     </div>
                   </li>
@@ -281,6 +281,7 @@
                         <li class="api-ref"><a class="rounded" href="config.html">Config</a></li>
                         <li class="api-ref"><a class="rounded" href="script.html">Script</a></li>
                         <li class="api-ref"><a class="rounded" href="xml.html">XML</a></li>
+                        <li class="api-ref"><a class="rounded" href="xquery.html">XQuery</a></li>
                       </ul>
                     </div>
                   </li>
@@ -661,7 +662,7 @@
 
         <script type="text/javascript" src="../../js/bootstrap.bundle.min.js"></script>
         <script type="text/javascript" src="../../js/base.js"></script>
-        <script type="text/javascript">
+        <script type="text/javascript"><xsl:text disable-output-escaping="yes">
 const ready = fn => document.readyState !== 'loading' ? fn() : document.addEventListener('DOMContentLoaded', fn);
 
    var xslt = false;
@@ -708,7 +709,7 @@ ready(function(){
    }
 });
 
-         </script>
+         </xsl:text></script>
       </body>
     </html>
   </xsl:template>

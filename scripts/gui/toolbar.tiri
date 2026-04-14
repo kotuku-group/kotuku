@@ -1,0 +1,747 @@
+--[[
+Documentation is available in the Kotuku Wiki.
+--]]
+
+   import 'gui'
+   import 'gui/tooltip'
+   import 'translate'
+   include 'vector'
+
+   namespace 'gui'
+
+local lClickX, lClickY
+lCounter = 0
+lTipDelay <const> = 0.75
+
+TI_ICON  <const> = 1
+TI_BREAK <const> = 2
+TI_GROUP <const> = 3
+
+function counter()
+   lCounter++
+   return lCounter
+end
+
+gui.toolbar = function(Options)
+   local theme
+
+   self = { -- Public variables
+      host           = nil,
+      viewport       = nil,  -- The main viewport for the toolbar
+      _groupMargin   = 6,
+      _groupCount    = 0,
+      _round         = 4,
+      _disabled      = false,
+      _lookup        = { },
+      _hasFocus      = false,
+      _cellMargin    = Options.cellMargin ?? 6
+   }
+
+   function sendFeedback()
+      if self._current and self._current.callback then
+         self._current.callback(self, self._current)
+      end
+   end
+
+   function firstIcon() -- Return the first item that is an icon
+      item = self._first
+      while ((item != nil) and (item.type != TI_ICON)) do item = item.next end
+      return item
+   end
+
+   function lastIcon() -- Return the last item that is an icon
+      item = self._last
+      while ((item != nil) and (item.type != TI_ICON)) do item = item.prev end
+      return item
+   end
+
+   function newItem(Type, Name, ID)
+      if ID and self._lookup[ID] then error('An item with identifier ' .. ID .. ' already exists.') end
+
+      item = { type=Type, id=ID, name=Name, x=0, y=0, width=0, height=0 }
+      if Name?? then
+         item.displayName = string.translate(Name)
+      end
+
+      if self._last then self._last.next = item end
+      item.prev = self._last
+      item.next = nil
+      self._last = item
+      self._first ?= item
+
+      if ID then self._lookup[ID] = item end
+      return item
+   end
+
+   function cancelTipTimer()
+      if self._tipTimer then
+         mSys.UpdateTimer(self._tipTimer, 0)
+         self._tipTimer = nil
+      end
+   end
+
+   function startTipTimer()
+      if self._tipTimer then -- Reset existing timer
+         mSys.UpdateTimer(self._tipTimer, lTipDelay)
+      else
+         local err
+         err, self._tipTimer = mSys.SubscribeTimer(lTipDelay, function(Elapsed, CurrentTime)
+            if self._current and self._current.tip?? then
+               gui.tooltip({ text=self._current.tip })
+            end
+            self._tipTimer = nil
+            raise ERR_Terminate
+         end)
+      end
+   end
+
+   -- Return the toolbar item located at position (x,y)
+
+   function getCursorItem(X, Y)
+      item = self._first
+      while (item) do
+         if (X >= item.x) and (X < item.x + item.width) and (Y >= item.y) and (Y <  item.y + item.height) then
+            if item.type is TI_ICON then return item end
+         end
+         item = item.next
+      end
+   end
+
+   -- Highlight selected item (for keyboard item selection)
+
+   function highlightItem(Item)
+      if self.kbIcon.x is Item.x then return end
+
+      self._current = Item
+      self.kbIcon.x = Item.x
+      self.kbIcon.y = 0
+      self.kbIcon.width  = Item.width
+      self.kbIcon.height = self.viewport.height
+      self.kbIcon.visibility = 'visible'
+      if self._groupClip then
+         self.kbIcon.mask = self._groupClip
+      end
+
+      self.viewport.acDraw()
+   end
+
+   -- Main routine for arranging items within the toolbar's viewport.
+
+   function arrangeItems()
+      groupOffset = 0
+      if self._groupCount > 0 then
+         groupOffset = self._groupMargin
+      end
+
+      -- The _groupClip simplifies masking and 'vg' provides a container for hosting vectors.
+
+      self._groupClip?.free()
+      self.vg?.free()
+
+      if self._groupCount > 0 then
+         self._groupClip = self.viewport.scene.new('VectorClip', { name='GroupMask', units='UserSpace' })
+      end
+
+      self.vg = self.viewport.new('VectorGroup', { name='ItemGroup' })
+
+      if not self._vHover then -- Hover highlight
+         if self._groupCount > 0 then
+            self._vHover = self.vg.new('VectorRectangle', {
+               fill=self._hoverFill, x=0, y=0, width=1, height=1, visibility='hidden'
+            })
+         else
+            self._vHover = self.vg.new('VectorRectangle', {
+               fill=self._hoverFill, x=0, y=0, width=1, height=1, visibility='hidden', roundX=self._round, roundY=self._round
+            })
+         end
+      end
+
+      item = self._first
+
+      local x, y
+      if self._horizontal then
+         x = 0
+         y = groupOffset
+      else
+         x = groupOffset
+         y = 0
+      end
+
+      currentGroup = nil
+      spanCount = 0
+      while item do
+         -- Note that groups are converted to breaks when in flush mode.
+         if item.type is TI_BREAK then
+            item.x      = x
+            item.y      = y
+            item.width  = 6
+            item.height = self._iconSize + (self._cellMargin * 2)
+
+            seq = string.format('M%f,%f l0,%f', x+(item.width-1) * 0.5, y+1, item.height)
+            self.vg.new('VectorPath', {
+               name = 'break', stroke = self._groupBorder, sequence = seq, dashArray = '1, 1'
+            })
+
+            if self._horizontal then
+               x += item.width
+            else
+               y += item.height
+            end
+         elseif item.type is TI_GROUP then
+            if not Options.flush then
+               if self._horizontal then
+                  x += not item.prev ? groupOffset :> (self._iconSize * 0.25)
+               else
+                  y += not item.prev ? groupOffset :> (self._iconSize * 0.25)
+               end
+
+               currentGroup = item
+               spanCount = 0
+
+               item.x = x
+               item.y = y
+               if self._horizontal then
+                  item.height = self._iconSize + (self._cellMargin * 2)
+               else
+                  item.width = self._iconSize + (self._cellMargin * 2)
+               end
+
+               item.bkgd = self.vg.new('VectorRectangle', {
+                  fill = theme.toolbar.bkgd,
+                  name = 'groupbkgd', x = x, y = y, roundX = self._round, roundY = self._round, width = 1, height = 1
+               })
+
+               item.bkgd.acMoveToBack()
+
+               item.border = self.vg.new('VectorRectangle', {
+                  name = 'grouprect', stroke = theme.toolbar.groupStroke, strokeWidth = gui.sizing.widget.strokeWidth,
+                  x = x, y = y, roundX = self._round, roundY = self._round, width = 1, height = 1
+               })
+
+               if self._groupClip then
+                  item.clip = self._groupClip.viewport.new('VectorRectangle', {
+                     name = 'groupclip', x = x, y = y, roundX = self._round, roundY = self._round, width = 1, height = 1
+                  })
+               end
+            end
+         elseif item.type is TI_ICON then
+            item.x      = x
+            item.y      = y
+            item.width  = self._iconSize + (self._cellMargin * 2)
+            item.height = self._iconSize + (self._cellMargin * 2)
+
+            if item.icon then
+               item.icon.x = x + self._cellMargin
+               item.icon.y = y + self._cellMargin
+               if self._disabled or item.disabled then
+                  item.vectorIcon.opacity = 0.5
+               end
+               item.icon.acMoveToFront()
+            elseif item.displayName?? then
+               fill_name = f'tbar_{self._iconTheme}'
+               gui.simpleGradient(self.viewport.scene, fill_name, gui.iconThemes[self._iconTheme], 0, 0, 0, 1, 'boundingbox', true)
+               item.textFill = f'url(#{fill_name})'
+
+               if self._iconHighlight and (self._iconTheme != self._iconHighlight) then
+                  alt_name = f'tbar_{self._iconHighlight}'
+                  gui.simpleGradient(self.viewport.scene, alt_name, gui.iconThemes[self._iconHighlight], 0, 0, 0, 1, 'boundingbox', true)
+                  item.textAltFill = f'url(#{alt_name})'
+               end
+
+               item.vectorText = self.vg.new('VectorText', {
+                  x        = x + self._cellMargin,
+                  face     = gui.fonts.widget.face,
+                  fontSize = self._iconSize * 0.75,
+                  weight   = 500,
+                  fill     = item.textFill,
+                  string   = item.displayName
+               })
+
+               err, bx, by, bw, bh = item.vectorText.mtGetBoundary(0)
+               item.width = bw + (self._cellMargin * 2)
+               item.vectorText.y = (self.viewport.height * 0.5) + (item.vectorText.displaySize * 0.5)
+
+               if self._disabled or item.disabled then
+                  item.vectorText.opacity = 0.5
+               end
+            end
+
+            if item.sticker then
+               item.sticker.viewport.x = item.x + item.width - item.sticker.viewport.width - 1
+               item.sticker.viewport.y = item.y + 1
+               item.sticker.viewport.acMoveToFront()
+            end
+
+            if self._horizontal then
+               x += item.width
+            else
+               y += item.height
+            end
+
+            spanCount++
+
+            if currentGroup then
+               item.group = currentGroup
+               if self._horizontal then
+                  currentGroup.width  = x - currentGroup.x
+                  currentGroup.height = self.viewport.height - (groupOffset * 2)
+               else
+                  currentGroup.width  = self.viewport.width - (groupOffset * 2)
+                  currentGroup.height = y - currentGroup.y
+               end
+
+               if currentGroup.bkgd then
+                  currentGroup.bkgd.width  = currentGroup.width
+                  currentGroup.bkgd.height = currentGroup.height
+               end
+
+               if currentGroup.border then
+                  currentGroup.border.width  = currentGroup.width
+                  currentGroup.border.height = currentGroup.height
+               end
+
+               if currentGroup.clip then
+                  currentGroup.clip.width  = currentGroup.width
+                  currentGroup.clip.height = currentGroup.height
+               end
+
+               if spanCount is currentGroup.span then
+                  if self._horizontal then
+                     x += groupOffset -- Gap between groups
+                  else
+                     y += groupOffset
+                  end
+                  currentGroup = nil
+               end
+            end
+         end
+
+         item = item.next
+      end
+
+      if self._arrangedWidth then
+         self.viewport.width = x
+      end
+      self._arranged = true
+   end
+
+   -- Insert a visual break between items.
+
+   self.addBreak = function():table
+      if not self._first then return end -- At least one item must precede a break
+      item = newItem(TI_BREAK, 'break', nil)
+      self._arranged = false
+      return item
+   end
+
+   -- Add a clickable item to the toolbar.  The Name acts as the item text that is displayed in the toolbar if no
+   -- icon can be displayed.  Set the Tip string for a user hint during hover events.  The icon string must be in the
+   -- standard format of 'category/icon'.
+
+   self.addItem = function(ID:num, Name:str, Tip:str, Icon:str, Function:func)
+      item = newItem(TI_ICON, Name, ID)
+      item.callback = Function
+
+      if Tip then
+         item.tip = string.translate(Tip)
+      end
+
+      if Icon then
+         try
+            info = gui.createIcon(self.viewport.scene, Icon, self._iconSize, self._iconTheme)
+            item.iconFill = info.fill
+
+            if self._iconHighlight and (self._iconTheme != self._iconHighlight) then
+               local info = gui.createIcon(self.viewport.scene, Icon, self._iconSize, self._iconHighlight)
+               item.iconAltFill = info.fill
+            end
+
+            item.icon = self.viewport.new('VectorRectangle', {
+               fill = info.fill, x=0, y=0, width=self._iconSize, height=self._iconSize
+            })
+         end
+      end
+
+      self._arranged = false
+   end
+
+   -- Create a group of items with this method.  The total number of items that will be covered by the group must be
+   -- known ahead of time, then added with calls to addItem().
+
+   self.addGroup = function(ID, Name, Span)
+      if Options.flush then
+         return self.addBreak()
+      else
+         item = newItem(TI_GROUP, Name, ID)
+         item.group = { span=Span }
+         self._groupCount++
+         return item
+      end
+   end
+
+   -- Individual toolbar items can be disabled with this method.  Reverse this action with enableItem().
+
+   self.disableItem = function(ID)
+      item = self._lookup[ID]
+      if item and (not item.disabled) then
+         item.disabled = true
+         self.viewport.acDraw()
+      end
+   end
+
+   -- Items that have been disabled can be re-enabled by calling this method.
+
+   self.enableItem = function(ID)
+      item = self._lookup[ID]
+      if item and item.disabled then
+         item.disabled = false
+         self.viewport.acDraw()
+      end
+   end
+
+   -- This method will reverse a previous call to selectItem() for a given item.
+
+   self.deselectItem = function(ID)
+      item = self._lookup[ID]
+      if item and item.selected then
+         item.selected = false
+         self.viewport.acDraw()
+      else
+         raise ERR_Search
+      end
+   end
+
+   -- Annotate a toolbar item with a sticker.
+
+   self.applySticker = function(ID, Content)
+      item = self._lookup[ID]
+      item ?? return
+
+      sticker_size = math.floor(self._iconSize * 0.5)
+
+      item.sticker ?= { }
+
+      if not item.sticker.viewport then
+         item.sticker.viewport = self.viewport.new('VectorViewport', {
+            x=item.x + item.width - sticker_size - 1, y=item.y + 1, width=sticker_size, height=sticker_size
+         })
+
+         item.sticker.bkgd = item.sticker.viewport.new('VectorEllipse', {
+            cx='50%', cy='50%', radius=self._iconSize * 0.25, fill=theme.palette.prime
+         })
+      end
+
+      if item.sticker.content then
+         item.sticker.content.free()
+         item.sticker.content = nil
+      end
+
+      if Content then
+         if type(Content) is 'number' then
+            if Content > 9 then
+               size = math.floor(self._iconSize * 0.33)
+               gui.createIcon(self.viewport.scene, 'items/add', size, 'pearl', 'sticker_plus')
+               item.sticker.content = item.sticker.viewport.new('VectorRectangle', {
+                  fill = 'url(#sticker_plus)', x=math.floor((sticker_size - size)*0.5), y=math.floor((sticker_size - size)*0.5), width=size, height=size
+               })
+               return
+            elseif Content < 0 then
+               return
+            end
+         end
+
+         if type(Content) is 'string' then
+            if #Content > 1 then Content = Content:sub(0,1) end
+         end
+
+         font_size = sticker_size * 0.75
+         item.sticker.content = item.sticker.viewport.new('VectorText', {
+            face='Noto Sans', fontStyle='bold', fontSize=font_size,
+            x=math.floor(sticker_size*0.5), y=math.floor(sticker_size-((sticker_size-font_size))),
+            fill='white', string=Content, align='middle'
+         })
+      end
+   end
+
+   self.removeSticker = function(ID)
+      item = self._lookup[ID]
+      item ?? return
+      if item.sticker then
+         item.sticker.viewport.free()
+         item.sticker = { }
+      end
+   end
+
+   -- Mark a toolbar item as selected, which results in the toolbar item being drawn with a special
+   -- background to indicate that the item is active.  This operation can be reversed at any time by calling the
+   -- deselectItem() method.  If Exclusive is true, all other items are deselected.
+
+   self.selectItem = function(ID, Exclusive)
+      redraw = false
+      found  = false
+      item   = firstIcon()
+      while item do
+         if item.type is TI_ICON then
+            if item.id is ID then
+               if not item.selected then
+                  item.selected = true
+                  redraw = true
+                  found = true
+               end
+            elseif Exclusive and item.selected then
+               item.selected = false
+               redraw = true
+            end
+         end
+         item = item.next
+      end
+
+      if redraw then self.viewport.acDraw() end
+
+      found ?? raise ERR_Search
+   end
+
+   function hoverUpdate(Item, StateChanged) -- Highlight items that the user hovers over.
+      if (self._current is Item) and (StateChanged != true) then return end
+
+      if self._current then
+         if self._current.icon then
+            self._current.icon.fill = self._current.iconFill
+         elseif self._current.vectorText then
+            self._current.vectorText.fill = self._current.textFill
+         end
+      end
+
+      self.kbIcon.visibility = 'hidden'
+      self._current = Item
+
+      if self._current and (not self._current.disabled) and (not self._disabled) then
+         self._vHover.fill = self._clicked ? self._selectFill :> self._hoverFill
+
+         if Item.icon and Item.iconAltFill then
+            Item.icon.fill = Item.iconAltFill
+         elseif Item.vectorText and Item.textAltFill then
+            Item.vectorText.fill = Item.textAltFill
+         end
+
+         if self._horizontal then
+            self._vHover.x      = self._current.x
+            self._vHover.y      = 0
+            self._vHover.width  = self._current.width
+            self._vHover.height = self.viewport.height
+         else
+            self._vHover.x      = 0
+            self._vHover.y      = self._current.y
+            self._vHover.width  = self.viewport.width
+            self._vHover.height = self._current.height
+         end
+
+         self._vHover.visibility = 'visible'
+         if self._groupClip then
+            self._vHover.mask = self._groupClip
+         end
+      else
+         self._vHover.visibility = 'hidden'
+      end
+
+      self.viewport.acDraw()
+   end
+
+   function inputFeedback(Viewport, Events) -- Internal input handler
+      ev = Events
+      while ev do
+         if ev.type is JET_CROSSED_IN then
+
+         elseif ev.type is JET_CROSSED_OUT then
+            cancelTipTimer()
+            if self._current then
+               hoverUpdate(nil)
+            end
+         elseif ev.flags has JTYPE_MOVEMENT then
+            if self._clicked then return end
+
+            item = getCursorItem(ev.x, ev.y)
+            hoverUpdate(item)
+
+            if item and item.tip then
+               startTipTimer()
+            else
+               cancelTipTimer()
+            end
+         elseif ev.flags has JTYPE_BUTTON then
+            if ev.value > 0 then
+               if self._disabled then return end
+
+               cancelTipTimer()
+
+               if self._current then
+                  if self._current.disabled then return end
+
+                  if ev.type is JET_BUTTON_1 then
+                     self._clicked = self._current
+                     lClickX  = ev.x
+                     lClickY  = ev.y
+                     hoverUpdate(self._current, true)
+                  end
+               end
+            elseif ev.type is JET_BUTTON_1 then
+               if self._clicked then
+                  self._clicked = nil
+
+                  hoverUpdate(self._current, true)
+
+                  delta_x = ev.x - lClickX
+                  delta_y = ev.y - lClickY
+                  if delta_x < 0 then delta_x = -delta_x end
+                  if delta_y < 0 then delta_y = -delta_y end
+
+                  if (delta_x < 4) and (delta_y < 4) then
+                     sendFeedback()
+                  end
+               end
+            end
+         end
+
+         ev = ev.next
+      end
+   end
+
+   -- Main entry point
+
+   assert(Options.target, 'A target viewport is required.')
+
+   theme = gui.getTheme(Options.target)
+
+   self._iconSize      = Options.iconSize      ?? gui.interface.iconSize
+   self._iconTheme     = Options.iconTheme     ?? theme.toolbar.icon
+   self._iconHighlight = Options.iconHighlight ?? theme.toolbar.iconHighlight
+   self._hoverFill     = Options.hoverFill     ?? theme.button.highlight
+   self._selectFill    = Options.selectFill    ?? theme.palette.prime
+   self._groupBorder   = Options.groupBorder   ?? theme.window.stroke
+
+   if Options.groupMargin then
+      self._groupMargin = Options.groupMargin
+      if self._groupMargin < 1 then self._groupMargin = 1 end
+   end
+
+   self.host = Options.target
+   self.viewport = Options.target.new('VectorViewport')
+   self.viewport.x = Options.x ?? 0
+   self.viewport.y = Options.y ?? 0
+   self.viewport.overflow = 'hidden'
+
+   if Options.yOffset then
+      self.viewport.yOffset = Options.yOffset
+   else
+      self.viewport.height = 1
+   end
+
+   if Options.xOffset then
+      self.viewport.xOffset = Options.xOffset
+   else
+      self.viewport.width = Options.target.width - self.viewport.x
+      self._arrangedWidth = true
+   end
+
+   if Options.width then
+      self.viewport.width = Options.width
+      self._arrangedWidth = false
+   end
+
+   if Options.flush then
+      self._round = 0
+      self._groupMargin = 0
+   end
+
+   check self.viewport.init()
+
+   self.viewport.subscribe('free', function(Viewport, Args)
+      if self._tipTimer then mSys.UpdateTimer(self._tipTimer, 0) end
+      self = { }
+   end)
+
+   self.viewport.mtSubscribeFeedback(FM_HAS_FOCUS|FM_CHILD_HAS_FOCUS|FM_LOST_FOCUS, function(Viewport, Event)
+      if Event is FM_LOST_FOCUS then
+         self._hasFocus = false
+         if self._current then
+            self.kbIcon.visibility = 'hidden'
+            self._current = nil
+         end
+      else
+         self._hasFocus = true
+      end
+
+      self.viewport.acDraw()
+   end)
+
+   self.viewport.mtSubscribeKeyboard(function(Viewport, Qualifiers, Code, Unicode)
+      if Qualifiers has KQ_PRESSED then
+         if (Code is KEY_ENTER) or (Code is KEY_NP_ENTER) or (Code is KEY_SPACE) then
+            sendFeedback()
+         elseif (Code is KEY_UP) or (Code is KEY_LEFT) then
+            if self._current then
+               scan = self._current.prev
+               while scan and (scan.type != TI_ICON) do
+                  scan = scan.prev
+               end
+               scan ?= lastIcon()
+               highlightItem(scan)
+            else
+               highlightItem(firstIcon())
+            end
+         elseif (Code is KEY_DOWN) or (Code is KEY_RIGHT) then
+            if self._current then
+               scan = self._current.next
+               while scan and (scan.type != TI_ICON) do
+                  scan = scan.next
+               end
+               scan ?= firstIcon()
+               highlightItem(scan)
+            else
+               highlightItem(firstIcon())
+            end
+         end
+      end
+   end)
+
+   self.viewport.mtSubscribeInput(JTYPE_BUTTON | JTYPE_MOVEMENT | JTYPE_CROSSING, inputFeedback)
+
+   kbfill = 'rgba(0,0,0,.5)'
+   if Options.theme != 'light' then
+      kbfill = 'rgba(255,255,255,.78)'
+   end
+
+   self.kbIcon = self.viewport.new('VectorRectangle', { -- Icon highlighter, for keyboard-based selection
+      fill = kbfill, x = 0, y = 0, width = 16, height = 16, visibility = 'hidden'
+   })
+
+   Options.createItems(self)
+
+   self._colBreadth = self._iconSize + (self._cellMargin * 2)
+   if self._groupCount > 0 then
+      self._colBreadth += (self._groupMargin*2)
+   end
+
+   if Options.orientation is 'horizontal' then
+      self._horizontal = true
+   elseif Options.orientation is 'vertical' then
+      self._horizontal = false
+   end
+
+   if not self._horizontal and (Options.y and Options.yOffset) then
+      self._horizontal = false
+   else
+      self._horizontal = true
+   end
+
+   if self._horizontal then
+      self.viewport.height = self._colBreadth
+   else
+      self.viewport.width = self._colBreadth
+   end
+
+   arrangeItems()
+
+   processing.collect()
+   return self
+end

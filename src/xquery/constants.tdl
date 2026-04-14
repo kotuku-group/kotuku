@@ -1,0 +1,99 @@
+
+enum('XQueryNodeType', { type='int', start=0 },
+  -- Location path components
+  'LOCATION_PATH',
+  'STEP',
+  'NODE_TEST',
+  'PREDICATE',
+  'ROOT',
+
+  -- Expressions
+  'EXPRESSION',
+  'FILTER',
+  'BINARY_OP',
+  'UNARY_OP',
+  'CAST_EXPRESSION',
+  'CONDITIONAL',
+  'FOR_EXPRESSION',
+  'FOR_BINDING',
+  'LET_EXPRESSION',
+  'LET_BINDING',
+  -- FLWOR clauses are emitted in declaration order so the evaluator can stream them without reordering.
+  'FLWOR_EXPRESSION',
+  'WHERE_CLAUSE',
+  'GROUP_CLAUSE',
+  'GROUP_KEY',
+  'ORDER_CLAUSE',
+  'ORDER_SPEC',
+  'COUNT_CLAUSE',
+  'QUANTIFIED_EXPRESSION',
+  'QUANTIFIED_BINDING',
+  'FUNCTION_CALL',
+  'LITERAL',
+  'VARIABLE_REFERENCE',
+
+  -- Node tests
+  'NAME_TEST',
+  'NODE_TYPE_TEST',
+  'PROCESSING_INSTRUCTION_TEST',
+  'WILDCARD',
+
+  -- Axes
+  'AXIS_SPECIFIER',
+
+  -- Union / set expressions
+  'UNION',
+
+  -- Primary expressions
+  'NUMBER',
+  'STRING',
+  'PATH',
+
+  -- Constructor expressions
+  'DIRECT_ELEMENT_CONSTRUCTOR',
+  'DIRECT_ATTRIBUTE_CONSTRUCTOR',
+  'DIRECT_TEXT_CONSTRUCTOR',
+  'COMPUTED_ELEMENT_CONSTRUCTOR',
+  'COMPUTED_ATTRIBUTE_CONSTRUCTOR',
+  'TEXT_CONSTRUCTOR',
+  'COMMENT_CONSTRUCTOR',
+  'PI_CONSTRUCTOR',
+  'DOCUMENT_CONSTRUCTOR',
+  'MAP_CONSTRUCTOR',
+  'ARRAY_CONSTRUCTOR',
+  'LOOKUP_EXPRESSION',
+  'CONSTRUCTOR_CONTENT',
+  'ATTRIBUTE_VALUE_TEMPLATE',
+  'EMPTY_SEQUENCE',
+  'INSTANCE_OF_EXPRESSION',
+  'TREAT_AS_EXPRESSION',
+  'CASTABLE_EXPRESSION',
+  'TYPESWITCH_EXPRESSION',
+  'TYPESWITCH_CASE',
+  'TYPESWITCH_DEFAULT_CASE'
+)
+
+flags('XQF', { comment='Flags indicating the features of a compiled XQuery expression.' },
+  'XPATH: The expression is an XPath location string.',
+  'HAS_PROLOG: The XQuery declares a prolog.',
+  'LIBRARY_MODULE: Prolog declares a module namespace (library module).',
+  'MODULE_IMPORTS: One or more module imports are declared.',
+  'DEFAULT_FUNCTION_NS: Default function namespace declared.',
+  'DEFAULT_ELEMENT_NS: Default element namespace declared.',
+  'BASE_URI_DECLARED: Static base URI declared.',
+  'DEFAULT_COLLATION_DECLARED: Default collation declared.',
+  'BOUNDARY_PRESERVE: Boundary-space preserve mode.',
+  'CONSTRUCTION_PRESERVE: Construction preserve mode.',
+  'ORDERING_UNORDERED: Ordering mode is unordered.',
+  'HAS_WILDCARD_TESTS: Wildcard name tests present.'
+)
+
+flags('XIF', { comment='Result flags for InspectFunctions().' },
+  'AST: Include the compiled function body in the inspection result.',
+  'NAME: Include function name in the inspection result.',
+  'PARAMETERS: Include function parameters in the inspection result.',
+  'RETURN_TYPE: Include function return type in the inspection result.',
+  'USER_DEFINED: Include user-defined status in the inspection result.',
+  'SIGNATURE: Include function signature in the inspection result.',
+  { ALL = "AST|NAME|PARAMETERS|RETURN_TYPE|USER_DEFINED|SIGNATURE" }
+)

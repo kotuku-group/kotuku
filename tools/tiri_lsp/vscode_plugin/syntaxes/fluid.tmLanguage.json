@@ -1,0 +1,144 @@
+{
+   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+   "name": "Tiri",
+   "scopeName": "source.tiri",
+   "patterns": [
+      { "include": "#comments" },
+      { "include": "#strings" },
+      { "include": "#keywords" },
+      { "include": "#operators" },
+      { "include": "#numbers" },
+      { "include": "#functions" },
+      { "include": "#variables" }
+   ],
+   "repository": {
+      "comments": {
+         "patterns": [
+            {
+               "name": "comment.block.tiri",
+               "begin": "--\\[\\[",
+               "end": "\\]\\]"
+            },
+            {
+               "name": "comment.line.double-dash.tiri",
+               "match": "--.*$"
+            }
+         ]
+      },
+      "strings": {
+         "patterns": [
+            {
+               "name": "string.quoted.double.tiri",
+               "begin": "\"",
+               "end": "\"",
+               "patterns": [
+                  {
+                     "name": "constant.character.escape.tiri",
+                     "match": "\\\\."
+                  }
+               ]
+            },
+            {
+               "name": "string.quoted.single.tiri",
+               "begin": "'",
+               "end": "'",
+               "patterns": [
+                  {
+                     "name": "constant.character.escape.tiri",
+                     "match": "\\\\."
+                  }
+               ]
+            },
+            {
+               "name": "string.quoted.other.multiline.tiri",
+               "begin": "\\[\\[",
+               "end": "\\]\\]"
+            }
+         ]
+      },
+      "keywords": {
+         "patterns": [
+            {
+               "name": "keyword.control.tiri",
+               "match": "\\b(if|then|else|elseif|end|for|in|while|do|repeat|until|break|continue|return|function|local|global)\\b"
+            },
+            {
+               "name": "keyword.operator.logical.tiri",
+               "match": "\\b(and|or|not|is)\\b"
+            },
+            {
+               "name": "constant.language.tiri",
+               "match": "\\b(true|false|nil)\\b"
+            },
+            {
+               "name": "keyword.other.tiri",
+               "match": "\\b(require|include|defer|catch|raise|check|assert|pcall|print|msg|error|type|tonumber|tostring|pairs|ipairs|next|select|unpack|setmetatable|getmetatable|rawget|rawset|collectgarbage)\\b"
+            },
+            {
+               "name": "support.class.tiri",
+               "match": "\\b(obj|processing|mSys|arg|string|table|math|bit|io|os|debug|regex)\\b"
+            },
+            {
+               "name": "constant.other.error.tiri",
+               "match": "\\b(ERR_[A-Za-z]+)\\b"
+            }
+         ]
+      },
+      "operators": {
+         "patterns": [
+            {
+               "name": "keyword.operator.tiri",
+               "match": "(\\+|\\-|\\*|\\/|%|\\^|#|\\.\\.)"
+            },
+            {
+               "name": "keyword.operator.comparison.tiri",
+               "match": "(!=|<=|>=|<|>)"
+            },
+            {
+               "name": "keyword.operator.assignment.tiri",
+               "match": "(\\+=|\\-=|\\*=|\\/=|%=|\\.\\.=|\\?\\?=|\\?=|=)"
+            },
+            {
+               "name": "keyword.operator.ternary.tiri",
+               "match": "(\\?|:>)"
+            },
+            {
+               "name": "keyword.operator.nullish.tiri",
+               "match": "(\\?\\?)"
+            }
+         ]
+      },
+      "numbers": {
+         "patterns": [
+            {
+               "name": "constant.numeric.hex.tiri",
+               "match": "\\b0[xX][0-9a-fA-F]+\\b"
+            },
+            {
+               "name": "constant.numeric.float.tiri",
+               "match": "\\b[0-9]+\\.[0-9]+([eE][+-]?[0-9]+)?\\b"
+            },
+            {
+               "name": "constant.numeric.integer.tiri",
+               "match": "\\b[0-9]+\\b"
+            }
+         ]
+      },
+      "functions": {
+         "patterns": [
+            {
+               "name": "entity.name.function.tiri",
+               "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()"
+            }
+         ]
+      },
+      "variables": {
+         "patterns": [
+            {
+               "name": "variable.other.global.tiri",
+               "match": "\\bgl[A-Z][a-zA-Z0-9_]*\\b"
+            }
+         ]
+      }
+   }
+}

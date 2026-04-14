@@ -36,7 +36,7 @@ ERR svgState::set_paint_server(objVector *Vector, FIELD Field, const std::string
 // Use of 'inherit' is replaced with the actual state value at the time of the call.
 // Use of 'currentColor' is also replaced to a deeper level, because it plays by different rules to inherit.
 
-void svgState::process_inherit_refs(XMLTag &Tag) noexcept
+void svgState::process_inherit_refs(XTag &Tag) noexcept
 {
    for (int a=1; a < std::ssize(Tag.Attribs); a++) {
       if (iequals("inherit", Tag.Attribs[a].Value)) {
@@ -54,9 +54,9 @@ void svgState::process_inherit_refs(XMLTag &Tag) noexcept
 
    // Replace all use of currentColor in child tags
 
-   std::function<void(pf::vector<XMLTag> &, const std::string &)> process_color;
+   std::function<void(pf::vector<XTag> &, const std::string &)> process_color;
 
-   process_color = [&process_color](pf::vector<XMLTag> &Tags, const std::string &Colour) {
+   process_color = [&process_color](pf::vector<XTag> &Tags, const std::string &Colour) {
       for (auto &scan : Tags) {
          if (!scan.isTag()) continue;
          for (int a=1; a < std::ssize(scan.Attribs); a++) {
@@ -169,7 +169,7 @@ void svgState::applyStateToVector(objVector *Vector) const noexcept
 // Copy a tag's attributes to the current state.
 // If you're adding more to this, matching code is needed in svgState::applyStateToVector()
 
-void svgState::applyTag(const XMLTag &Tag) noexcept
+void svgState::applyTag(const XTag &Tag) noexcept
 {
    pf::Log log(__FUNCTION__);
 
@@ -283,7 +283,7 @@ void svgState::applyTag(const XMLTag &Tag) noexcept
 //********************************************************************************************************************
 // Process all child elements that belong to the target Tag.
 
-void svgState::process_children(XMLTag &Tag, OBJECTPTR Vector) noexcept
+void svgState::process_children(XTag &Tag, OBJECTPTR Vector) noexcept
 {
    objVector *sibling = nullptr;
    for (auto &child : Tag.Children) {
@@ -296,7 +296,7 @@ void svgState::process_children(XMLTag &Tag, OBJECTPTR Vector) noexcept
 //********************************************************************************************************************
 // Process a restricted set of children for shape objects.
 
-void svgState::process_shape_children(XMLTag &Tag, OBJECTPTR Vector) noexcept
+void svgState::process_shape_children(XTag &Tag, OBJECTPTR Vector) noexcept
 {
    pf::Log log;
 
@@ -309,7 +309,7 @@ void svgState::process_shape_children(XMLTag &Tag, OBJECTPTR Vector) noexcept
          case SVF_ANIMATETRANSFORM: proc_animate_transform(child, Vector); break;
          case SVF_ANIMATEMOTION:    proc_animate_motion(child, Vector); break;
          case SVF_SET:              proc_set(child, Tag, Vector); break;
-         case SVF_PARASOL_MORPH:    proc_morph(child, Vector); break;
+         case SVF_KOTUKU_MORPH:    proc_morph(child, Vector); break;
 
          case SVF_TEXTPATH:
             if (Vector->classID() IS CLASSID::VECTORTEXT) {
@@ -335,7 +335,7 @@ void svgState::process_shape_children(XMLTag &Tag, OBJECTPTR Vector) noexcept
 
 //********************************************************************************************************************
 
-void svgState::proc_pathtransition(XMLTag &Tag) noexcept
+void svgState::proc_pathtransition(XTag &Tag) noexcept
 {
    pf::Log log(__FUNCTION__);
 
@@ -378,7 +378,7 @@ void svgState::proc_pathtransition(XMLTag &Tag) noexcept
 
 //********************************************************************************************************************
 
-void svgState::proc_clippath(XMLTag &Tag) noexcept
+void svgState::proc_clippath(XTag &Tag) noexcept
 {
    pf::Log log(__FUNCTION__);
 
@@ -446,7 +446,7 @@ void svgState::proc_clippath(XMLTag &Tag) noexcept
 //
 // The formula used to get the luminance out of a given RGB value is: .2126R + .7152G + .0722B
 
-void svgState::proc_mask(XMLTag &Tag) noexcept
+void svgState::proc_mask(XTag &Tag) noexcept
 {
    pf::Log log(__FUNCTION__);
 
@@ -515,7 +515,7 @@ void svgState::proc_mask(XMLTag &Tag) noexcept
 
 //********************************************************************************************************************
 
-ERR svgState::parse_fe_blur(objVectorFilter *Filter, XMLTag &Tag) noexcept
+ERR svgState::parse_fe_blur(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    pf::Log log(__FUNCTION__);
    objFilterEffect *fx;
@@ -564,7 +564,7 @@ ERR svgState::parse_fe_blur(objVectorFilter *Filter, XMLTag &Tag) noexcept
 
 //********************************************************************************************************************
 
-ERR svgState::parse_fe_offset(objVectorFilter *Filter, XMLTag &Tag) noexcept
+ERR svgState::parse_fe_offset(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    pf::Log log(__FUNCTION__);
    objFilterEffect *fx;
@@ -597,7 +597,7 @@ ERR svgState::parse_fe_offset(objVectorFilter *Filter, XMLTag &Tag) noexcept
 
 //********************************************************************************************************************
 
-ERR svgState::parse_fe_merge(objVectorFilter *Filter, XMLTag &Tag) noexcept
+ERR svgState::parse_fe_merge(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    pf::Log log(__FUNCTION__);
    objFilterEffect *fx;
@@ -676,7 +676,7 @@ static const std::array<double,20> glTritanomaly = { 0.967,0.033,0,0,0, 0,0.733,
 static const std::array<double,20> glAchromatopsia = { 0.299,0.587,0.114,0,0, 0.299,0.587,0.114,0,0, 0.299,0.587,0.114,0,0, 0,0,0,1,0 };
 static const std::array<double,20> glAchromatomaly = { 0.618,0.320,0.062,0,0, 0.163,0.775,0.062,0,0, 0.163,0.320,0.516,0,0, 0,0,0,1,0 };
 
-ERR svgState::parse_fe_colour_matrix(objVectorFilter *Filter, XMLTag &Tag) noexcept
+ERR svgState::parse_fe_colour_matrix(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    pf::Log log(__FUNCTION__);
    objFilterEffect *fx;
@@ -753,7 +753,7 @@ ERR svgState::parse_fe_colour_matrix(objVectorFilter *Filter, XMLTag &Tag) noexc
 
 //********************************************************************************************************************
 
-ERR svgState::parse_fe_convolve_matrix(objVectorFilter *Filter, XMLTag &Tag) noexcept
+ERR svgState::parse_fe_convolve_matrix(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    pf::Log log(__FUNCTION__);
    objFilterEffect *fx;
@@ -772,7 +772,7 @@ ERR svgState::parse_fe_convolve_matrix(objVectorFilter *Filter, XMLTag &Tag) noe
             read_numseq(val, { &ox, &oy });
             if (ox < 1) ox = 3;
             if (oy < 1) oy = ox;
-            fx->setFields(fl::MatrixColumns(F2T(ox)), fl::MatrixRows(F2T(oy)));
+            fx->setFields(fl::MatrixColumns(int(ox)), fl::MatrixRows(int(oy)));
             break;
          }
 
@@ -843,7 +843,7 @@ ERR svgState::parse_fe_convolve_matrix(objVectorFilter *Filter, XMLTag &Tag) noe
 
 //********************************************************************************************************************
 
-ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XMLTag &Tag, LT Type) noexcept
+ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noexcept
 {
    pf::Log log(__FUNCTION__);
    objLightingFX *fx;
@@ -968,7 +968,7 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XMLTag &Tag, LT Type) n
 
 //********************************************************************************************************************
 
-ERR svgState::parse_fe_displacement_map(objVectorFilter *Filter, XMLTag &Tag) noexcept
+ERR svgState::parse_fe_displacement_map(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    pf::Log log(__FUNCTION__);
    objFilterEffect *fx;
@@ -1026,7 +1026,7 @@ ERR svgState::parse_fe_displacement_map(objVectorFilter *Filter, XMLTag &Tag) no
 
 //********************************************************************************************************************
 
-ERR svgState::parse_fe_wavefunction(objVectorFilter *Filter, XMLTag &Tag) noexcept
+ERR svgState::parse_fe_wavefunction(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    objFilterEffect *fx;
 
@@ -1072,7 +1072,7 @@ ERR svgState::parse_fe_wavefunction(objVectorFilter *Filter, XMLTag &Tag) noexce
 
 //********************************************************************************************************************
 
-ERR svgState::parse_fe_component_xfer(objVectorFilter *Filter, XMLTag &Tag) noexcept
+ERR svgState::parse_fe_component_xfer(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    pf::Log log(__FUNCTION__);
    objRemapFX *fx;
@@ -1135,7 +1135,7 @@ ERR svgState::parse_fe_component_xfer(objVectorFilter *Filter, XMLTag &Tag) noex
             case SVF_GAMMA:    fx->selectGamma(cmp, amp, offset, exp);  break;
             case SVF_DISCRETE: fx->selectDiscrete(cmp, values.data(), values.size());  break;
             case SVF_IDENTITY: fx->selectIdentity(cmp); break;
-            // The following additions are specific to Parasol and not SVG compatible.
+            // The following additions are specific to Kotuku and not SVG compatible.
             case SVF_INVERT:   fx->selectInvert(cmp); break;
             case SVF_MASK:     fx->selectMask(cmp, mask); break;
             default:
@@ -1158,7 +1158,7 @@ ERR svgState::parse_fe_component_xfer(objVectorFilter *Filter, XMLTag &Tag) noex
 
 //********************************************************************************************************************
 
-ERR svgState::parse_fe_composite(objVectorFilter *Filter, XMLTag &Tag) noexcept
+ERR svgState::parse_fe_composite(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    pf::Log log(__FUNCTION__);
    objFilterEffect *fx;
@@ -1188,7 +1188,7 @@ ERR svgState::parse_fe_composite(objVectorFilter *Filter, XMLTag &Tag) noexcept
                case SVF_MULTIPLY: fx->set(FID_Operator, int(OP::MULTIPLY)); break;
                case SVF_LIGHTEN:  fx->set(FID_Operator, int(OP::LIGHTEN)); break;
                case SVF_DARKEN:   fx->set(FID_Operator, int(OP::DARKEN)); break;
-               // Parasol modes
+               // Kotuku modes
                case SVF_INVERTRGB:  fx->set(FID_Operator, int(OP::INVERT_RGB)); break;
                case SVF_INVERT:     fx->set(FID_Operator, int(OP::INVERT)); break;
                case SVF_CONTRAST:   fx->set(FID_Operator, int(OP::CONTRAST)); break;
@@ -1259,7 +1259,7 @@ ERR svgState::parse_fe_composite(objVectorFilter *Filter, XMLTag &Tag) noexcept
 
 //********************************************************************************************************************
 
-ERR svgState::parse_fe_flood(objVectorFilter *Filter, XMLTag &Tag) noexcept
+ERR svgState::parse_fe_flood(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    pf::Log log(__FUNCTION__);
    objFilterEffect *fx;
@@ -1310,7 +1310,7 @@ ERR svgState::parse_fe_flood(objVectorFilter *Filter, XMLTag &Tag) noexcept
 
 //********************************************************************************************************************
 
-ERR svgState::parse_fe_turbulence(objVectorFilter *Filter, XMLTag &Tag) noexcept
+ERR svgState::parse_fe_turbulence(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    pf::Log log(__FUNCTION__);
    objFilterEffect *fx;
@@ -1368,7 +1368,7 @@ ERR svgState::parse_fe_turbulence(objVectorFilter *Filter, XMLTag &Tag) noexcept
 
 //********************************************************************************************************************
 
-ERR svgState::parse_fe_morphology(objVectorFilter *Filter, XMLTag &Tag) noexcept
+ERR svgState::parse_fe_morphology(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    pf::Log log(__FUNCTION__);
    objFilterEffect *fx;
@@ -1385,8 +1385,8 @@ ERR svgState::parse_fe_morphology(objVectorFilter *Filter, XMLTag &Tag) noexcept
          case SVF_RADIUS: {
             double x = -1, y = -1;
             read_numseq(val, { &x, &y });
-            if (x > 0) fx->set(FID_RadiusX, F2T(x));
-            if (y > 0) fx->set(FID_RadiusY, F2T(y));
+            if (x > 0) fx->set(FID_RadiusX, int(x));
+            if (y > 0) fx->set(FID_RadiusY, int(y));
             break;
          }
 
@@ -1413,7 +1413,7 @@ ERR svgState::parse_fe_morphology(objVectorFilter *Filter, XMLTag &Tag) noexcept
 //********************************************************************************************************************
 // This code replaces feImage elements where the href refers to a resource name.
 
-ERR svgState::parse_fe_source(objVectorFilter *Filter, XMLTag &Tag) noexcept
+ERR svgState::parse_fe_source(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    pf::Log log(__FUNCTION__);
    objFilterEffect *fx;
@@ -1472,7 +1472,7 @@ ERR svgState::parse_fe_source(objVectorFilter *Filter, XMLTag &Tag) noexcept
 
 //********************************************************************************************************************
 
-ERR svgState::parse_fe_image(objVectorFilter *Filter, XMLTag &Tag) noexcept
+ERR svgState::parse_fe_image(objVectorFilter *Filter, XTag &Tag) noexcept
 {
    pf::Log log(__FUNCTION__);
 
@@ -1574,7 +1574,7 @@ ERR svgState::parse_fe_image(objVectorFilter *Filter, XMLTag &Tag) noexcept
 
 //********************************************************************************************************************
 
-void svgState::proc_filter(XMLTag &Tag) noexcept
+void svgState::proc_filter(XTag &Tag) noexcept
 {
    pf::Log log(__FUNCTION__);
 
@@ -1610,7 +1610,7 @@ void svgState::proc_filter(XMLTag &Tag) noexcept
             case SVF_FILTERRES: {
                double x = 0, y = 0;
                read_numseq(val, { &x, &y });
-               filter->setFields(fl::ResX(F2T(x)), fl::ResY(F2T(y)));
+               filter->setFields(fl::ResX(int(x)), fl::ResY(int(y)));
                break;
             }
 
@@ -1690,7 +1690,7 @@ void svgState::proc_filter(XMLTag &Tag) noexcept
 // NB: In bounding-box mode, the default view-box is 0 0 1 1, where 1 is equivalent to 100% of the target space.
 // If the client sets a custom view-box then the dimensions are fixed, and no scaling will apply.
 
-void svgState::proc_pattern(XMLTag &Tag) noexcept
+void svgState::proc_pattern(XTag &Tag) noexcept
 {
    pf::Log log(__FUNCTION__);
    objVectorPattern *pattern;
@@ -1711,10 +1711,10 @@ void svgState::proc_pattern(XMLTag &Tag) noexcept
 
       bool rel_coords = true; // True because the default is 'objectBoundingBox'
       std::string x, y, width, height;
-      std::vector<XMLTag *> children; // Multiple retrieval points for children is possible due to the href attrib
+      std::vector<XTag *> children; // Multiple retrieval points for children is possible due to the href attrib
       std::string dummy;
 
-      const auto parse_pattern = [&](const auto &parse_self, XMLTag &Tags, std::string &ID) -> void {
+      const auto parse_pattern = [&](const auto &parse_self, XTag &Tags, std::string &ID) -> void {
          for (int a=1; a < std::ssize(Tags.Attribs); a++) {
             auto &val = Tags.Attribs[a].Value;
             if (val.empty()) continue;
@@ -1822,7 +1822,7 @@ void svgState::proc_pattern(XMLTag &Tag) noexcept
 
 //********************************************************************************************************************
 
-ERR svgState::proc_shape(CLASSID VectorID, XMLTag &Tag, OBJECTPTR Parent, objVector * &Result) noexcept
+ERR svgState::proc_shape(CLASSID VectorID, XTag &Tag, OBJECTPTR Parent, objVector * &Result) noexcept
 {
    objVector *vector;
 
@@ -1851,7 +1851,7 @@ ERR svgState::proc_shape(CLASSID VectorID, XMLTag &Tag, OBJECTPTR Parent, objVec
 //********************************************************************************************************************
 // See also process_children()
 
-ERR svgState::process_tag(XMLTag &Tag, XMLTag &ParentTag, OBJECTPTR Parent, objVector * &Vector) noexcept
+ERR svgState::process_tag(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent, objVector * &Vector) noexcept
 {
    pf::Log log(__FUNCTION__);
 
@@ -1869,9 +1869,9 @@ ERR svgState::process_tag(XMLTag &Tag, XMLTag &ParentTag, OBJECTPTR Parent, objV
       case SVF_CIRCLE:           proc_shape(CLASSID::VECTORELLIPSE, Tag, Parent, Vector); break;
       case SVF_PATH:             proc_shape(CLASSID::VECTORPATH, Tag, Parent, Vector); break;
       case SVF_POLYGON:          proc_shape(CLASSID::VECTORPOLYGON, Tag, Parent, Vector); break;
-      case SVF_PARASOL_SPIRAL:   proc_shape(CLASSID::VECTORSPIRAL, Tag, Parent, Vector); break;
-      case SVF_PARASOL_WAVE:     proc_shape(CLASSID::VECTORWAVE, Tag, Parent, Vector); break;
-      case SVF_PARASOL_SHAPE:    proc_shape(CLASSID::VECTORSHAPE, Tag, Parent, Vector); break;
+      case SVF_KOTUKU_SPIRAL:    proc_shape(CLASSID::VECTORSPIRAL, Tag, Parent, Vector); break;
+      case SVF_KOTUKU_WAVE:      proc_shape(CLASSID::VECTORWAVE, Tag, Parent, Vector); break;
+      case SVF_KOTUKU_SHAPE:     proc_shape(CLASSID::VECTORSHAPE, Tag, Parent, Vector); break;
       case SVF_IMAGE:            proc_image(Tag, Parent, Vector); break;
       // Paint servers are deferred and will only be processed if they are referenced via url()
       case SVF_CONTOURGRADIENT:  process_inherit_refs(Tag); break;
@@ -1950,7 +1950,7 @@ static ERR load_pic(extSVG *Self, std::string Path, objPicture **Picture, double
 
    ERR error = ERR::Okay;
    if (startswith("icons:", val)) {
-      // Parasol feature: Load an SVG image from the icon database.  Nothing needs to be done here
+      // Kotuku feature: Load an SVG image from the icon database.  Nothing needs to be done here
       // because the fielsystem volume is built-in.
    }
    else if (startswith("data:", val)) { // Check for embedded content
@@ -2011,7 +2011,7 @@ static ERR load_pic(extSVG *Self, std::string Path, objPicture **Picture, double
 //********************************************************************************************************************
 // Definition images are stored once, allowing them to be used multiple times via Fill and Stroke references.
 
-void svgState::proc_def_image(XMLTag &Tag) noexcept
+void svgState::proc_def_image(XTag &Tag) noexcept
 {
    pf::Log log(__FUNCTION__);
    objVectorImage *image;
@@ -2083,7 +2083,7 @@ void svgState::proc_def_image(XMLTag &Tag) noexcept
 
 //********************************************************************************************************************
 
-ERR svgState::proc_image(XMLTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexcept
+ERR svgState::proc_image(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexcept
 {
    pf::Log log(__FUNCTION__);
 
@@ -2187,7 +2187,7 @@ ERR svgState::proc_image(XMLTag &Tag, OBJECTPTR Parent, objVector * &Vector) noe
 
 //********************************************************************************************************************
 
-ERR svgState::proc_defs(XMLTag &Tag, OBJECTPTR Parent) noexcept
+ERR svgState::proc_defs(XTag &Tag, OBJECTPTR Parent) noexcept
 {
    pf::Log log(__FUNCTION__);
 
@@ -2208,7 +2208,7 @@ ERR svgState::proc_defs(XMLTag &Tag, OBJECTPTR Parent) noexcept
          case SVF_FILTER:          state.proc_filter(child); break;
          case SVF_CLIPPATH:        state.proc_clippath(child); break;
          case SVF_MASK:            state.proc_mask(child); break;
-         case SVF_PARASOL_TRANSITION: state.proc_pathtransition(child); break;
+         case SVF_KOTUKU_TRANSITION: state.proc_pathtransition(child); break;
       }
    }
 
@@ -2217,7 +2217,7 @@ ERR svgState::proc_defs(XMLTag &Tag, OBJECTPTR Parent) noexcept
 
 //********************************************************************************************************************
 
-ERR svgState::proc_style(XMLTag &Tag)
+ERR svgState::proc_style(XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
    ERR error = ERR::Okay;
@@ -2278,7 +2278,7 @@ ERR svgState::proc_style(XMLTag &Tag)
 // When a use element is encountered, it looks for the associated symbol ID and then processes the XML child tags that
 // belong to it.
 
-void svgState::proc_symbol(XMLTag &Tag) noexcept
+void svgState::proc_symbol(XTag &Tag) noexcept
 {
    // Symbols are ignored at these stage as they will already have been parsed for their 'id' reference.
 }
@@ -2286,7 +2286,7 @@ void svgState::proc_symbol(XMLTag &Tag) noexcept
 //********************************************************************************************************************
 // Most vector shapes can be morphed to the path of another vector.
 
-void svgState::proc_morph(XMLTag &Tag, OBJECTPTR Parent) noexcept
+void svgState::proc_morph(XTag &Tag, OBJECTPTR Parent) noexcept
 {
    pf::Log log(__FUNCTION__);
 
@@ -2356,14 +2356,14 @@ void svgState::proc_morph(XMLTag &Tag, OBJECTPTR Parent) noexcept
 
    auto class_id = CLASSID::NIL;
    switch (strihash(tagref->name())) {
-      case SVF_PATH:           class_id = CLASSID::VECTORPATH; break;
-      case SVF_RECT:           class_id = CLASSID::VECTORRECTANGLE; break;
-      case SVF_ELLIPSE:        class_id = CLASSID::VECTORELLIPSE; break;
-      case SVF_CIRCLE:         class_id = CLASSID::VECTORELLIPSE; break;
-      case SVF_POLYGON:        class_id = CLASSID::VECTORPOLYGON; break;
-      case SVF_PARASOL_SPIRAL: class_id = CLASSID::VECTORSPIRAL; break;
-      case SVF_PARASOL_WAVE:   class_id = CLASSID::VECTORWAVE; break;
-      case SVF_PARASOL_SHAPE:  class_id = CLASSID::VECTORSHAPE; break;
+      case SVF_PATH:          class_id = CLASSID::VECTORPATH; break;
+      case SVF_RECT:          class_id = CLASSID::VECTORRECTANGLE; break;
+      case SVF_ELLIPSE:       class_id = CLASSID::VECTORELLIPSE; break;
+      case SVF_CIRCLE:        class_id = CLASSID::VECTORELLIPSE; break;
+      case SVF_POLYGON:       class_id = CLASSID::VECTORPOLYGON; break;
+      case SVF_KOTUKU_SPIRAL: class_id = CLASSID::VECTORSPIRAL; break;
+      case SVF_KOTUKU_WAVE:   class_id = CLASSID::VECTORWAVE; break;
+      case SVF_KOTUKU_SHAPE:  class_id = CLASSID::VECTORSHAPE; break;
       default:
          log.warning("Invalid reference '%s', '%s' is not recognised by <morph>.", ref.c_str(), tagref->name());
    }
@@ -2391,7 +2391,7 @@ void svgState::proc_morph(XMLTag &Tag, OBJECTPTR Parent) noexcept
 // non-exposed DOM tree which had the 'use' element as its parent and all of the 'use' element's ancestors as its
 // higher-level ancestors.
 
-void svgState::proc_use(XMLTag &Tag, OBJECTPTR Parent) noexcept
+void svgState::proc_use(XTag &Tag, OBJECTPTR Parent) noexcept
 {
    pf::Log log(__FUNCTION__);
 
@@ -2554,7 +2554,7 @@ void svgState::proc_use(XMLTag &Tag, OBJECTPTR Parent) noexcept
          // (at least that appears to be the only way we can get our animations to match expected behaviour patterns in W3C
          // tests).
 
-         auto &subgroup = Tag.Children.emplace_back(XMLTag(0));
+         auto &subgroup = Tag.Children.emplace_back(XTag(0));
          subgroup.Attribs.push_back(XMLAttrib("g"));
          subgroup.Children.push_back(*tagref);
 
@@ -2619,7 +2619,7 @@ static ERR link_event(objVector *Vector, const InputEvent *Events, svgLink *Link
    return ERR::Okay;
 }
 
-void svgState::proc_link(XMLTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexcept
+void svgState::proc_link(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexcept
 {
    auto link = std::make_unique<svgLink>();
 
@@ -2665,7 +2665,7 @@ void svgState::proc_link(XMLTag &Tag, OBJECTPTR Parent, objVector * &Vector) noe
 // For each immediate child, evaluate any requiredFeatures, requiredExtensions and systemLanguage attributes.
 // The first child where these attributes evaluate to true is rendered, the rest are ignored.
 
-void svgState::proc_switch(XMLTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexcept
+void svgState::proc_switch(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexcept
 {
    for (auto &child : Tag.Children) {
       bool render = true;
@@ -2684,7 +2684,7 @@ void svgState::proc_switch(XMLTag &Tag, OBJECTPTR Parent, objVector * &Vector) n
                break;
 
             case SVF_REQUIREDEXTENSIONS: // Allows the client to check if a given customised extension is supported.
-               if (val IS "http://www.parasol.ws/TR/Parasol/1.0");
+               if (val IS "http://www.kotuku.dev/TR/Kotuku/1.0");
                else render = false;
                break;
 
@@ -2724,7 +2724,7 @@ void svgState::proc_switch(XMLTag &Tag, OBJECTPTR Parent, objVector * &Vector) n
 
 //********************************************************************************************************************
 
-void svgState::proc_group(XMLTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexcept
+void svgState::proc_group(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexcept
 {
    pf::Log log(__FUNCTION__);
 
@@ -2750,7 +2750,7 @@ void svgState::proc_group(XMLTag &Tag, OBJECTPTR Parent, objVector * &Vector) no
 // <svg/> tags can be embedded inside <svg/> tags - this establishes a new viewport.
 // Refer to section 7.9 of the SVG Specification for more information.
 
-void svgState::proc_svg(XMLTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexcept
+void svgState::proc_svg(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexcept
 {
    pf::Log log(__FUNCTION__);
    int a;
@@ -2906,7 +2906,7 @@ void svgState::proc_svg(XMLTag &Tag, OBJECTPTR Parent, objVector * &Vector) noex
 // <animateTransform attributeType="XML" attributeName="transform" type="rotate" from="0,150,150" to="360,150,150"
 //   begin="0s" dur="5s" repeatCount="indefinite"/>
 
-ERR svgState::proc_animate_transform(XMLTag &Tag, OBJECTPTR Parent) noexcept
+ERR svgState::proc_animate_transform(XTag &Tag, OBJECTPTR Parent) noexcept
 {
    pf::Log log(__FUNCTION__);
 
@@ -2942,7 +2942,7 @@ ERR svgState::proc_animate_transform(XMLTag &Tag, OBJECTPTR Parent) noexcept
 // The 'animate' element is used to animate a single attribute or property over time. For example, to make a
 // rectangle repeatedly fade away over 5 seconds:
 
-ERR svgState::proc_animate(XMLTag &Tag, XMLTag &ParentTag, OBJECTPTR Parent) noexcept
+ERR svgState::proc_animate(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent) noexcept
 {
    pf::Log log(__FUNCTION__);
 
@@ -2973,7 +2973,7 @@ ERR svgState::proc_animate(XMLTag &Tag, XMLTag &ParentTag, OBJECTPTR Parent) noe
 //********************************************************************************************************************
 // <set> is largely equivalent to <animate> but does not interpolate values.
 
-ERR svgState::proc_set(XMLTag &Tag, XMLTag &ParentTag, OBJECTPTR Parent) noexcept
+ERR svgState::proc_set(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent) noexcept
 {
    auto &new_anim = Self->Animations.emplace_back(anim_value { Self, Parent->UID, &ParentTag });
    auto &anim = std::get<anim_value>(new_anim);
@@ -3004,7 +3004,7 @@ ERR svgState::proc_set(XMLTag &Tag, XMLTag &ParentTag, OBJECTPTR Parent) noexcep
 // The <animateColour> tag is considered deprecated because its functionality can be represented entirely by the
 // existing <animate> tag.
 
-ERR svgState::proc_animate_colour(XMLTag &Tag, XMLTag &ParentTag, OBJECTPTR Parent) noexcept
+ERR svgState::proc_animate_colour(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent) noexcept
 {
    auto &new_anim = Self->Animations.emplace_back(anim_value { Self, Parent->UID, &ParentTag });
    auto &anim = std::get<anim_value>(new_anim);
@@ -3031,7 +3031,7 @@ ERR svgState::proc_animate_colour(XMLTag &Tag, XMLTag &ParentTag, OBJECTPTR Pare
 //********************************************************************************************************************
 // <animateMotion from="0,0" to="100,100" dur="4s" fill="freeze"/>
 
-ERR svgState::proc_animate_motion(XMLTag &Tag, OBJECTPTR Parent) noexcept
+ERR svgState::proc_animate_motion(XTag &Tag, OBJECTPTR Parent) noexcept
 {
    auto &new_anim = Self->Animations.emplace_back(anim_motion { Self, Parent->UID });
    auto &anim = std::get<anim_motion>(new_anim);
@@ -3105,7 +3105,7 @@ ERR svgState::proc_animate_motion(XMLTag &Tag, OBJECTPTR Parent) noexcept
 
 //********************************************************************************************************************
 
-void svgState::process_attrib(XMLTag &Tag, objVector *Vector) noexcept
+void svgState::process_attrib(XTag &Tag, objVector *Vector) noexcept
 {
    pf::Log log(__FUNCTION__);
 
@@ -3131,7 +3131,7 @@ void svgState::process_attrib(XMLTag &Tag, objVector *Vector) noexcept
 //********************************************************************************************************************
 // Apply all attributes in a rule to a target tag.
 
-static void apply_rule(extSVG *Self, KatanaArray *Properties, XMLTag &Tag)
+static void apply_rule(extSVG *Self, KatanaArray *Properties, XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -3308,7 +3308,7 @@ static void process_rule(extSVG *Self, objXML::TAGS &Tags, KatanaRule *Rule)
 
 //********************************************************************************************************************
 
-ERR svgState::set_property(objVector *Vector, uint32_t Hash, XMLTag &Tag, const std::string StrValue) noexcept
+ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const std::string StrValue) noexcept
 {
    pf::Log log(__FUNCTION__);
 
@@ -3367,8 +3367,8 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XMLTag &Tag, const 
             case SVF_RX:     UNIT(FID_RoundX, StrValue).set(Vector); return ERR::Okay;
             case SVF_RY:     UNIT(FID_RoundY, StrValue).set(Vector); return ERR::Okay;
 
-            case SVF_XOFFSET: UNIT(FID_XOffset, StrValue).set(Vector); return ERR::Okay; // Parasol only
-            case SVF_YOFFSET: UNIT(FID_YOffset, StrValue).set(Vector); return ERR::Okay; // Parasol only
+            case SVF_XOFFSET: UNIT(FID_XOffset, StrValue).set(Vector); return ERR::Okay; // Kotuku only
+            case SVF_YOFFSET: UNIT(FID_YOffset, StrValue).set(Vector); return ERR::Okay; // Kotuku only
 
             case SVF_X2: {
                // Note: For the time being, VectorRectangle doesn't support X2/Y2 as a concept.  This would
@@ -3566,7 +3566,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XMLTag &Tag, const 
 
    switch (Hash) {
       case SVF_APPEND_PATH: {
-         // The append-path option is a Parasol attribute that requires a reference to an instantiated vector with a path.
+         // The append-path option is a Kotuku attribute that requires a reference to an instantiated vector with a path.
          OBJECTPTR other = nullptr;
          if (Self->Scene->findDef(StrValue.c_str(), &other) IS ERR::Okay) Vector->setAppendPath(other);
          else log.warning("Unable to find element '%s' referenced at line %d", StrValue.c_str(), Tag.LineNo);
@@ -3574,7 +3574,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XMLTag &Tag, const 
       }
 
       case SVF_JOIN_PATH: {
-         // The join-path option is a Parasol attribute that requires a reference to an instantiated vector with a path.
+         // The join-path option is a Kotuku attribute that requires a reference to an instantiated vector with a path.
          OBJECTPTR other = nullptr;
          if (Self->Scene->findDef(StrValue.c_str(), &other) IS ERR::Okay) {
             Vector->set(FID_AppendPath, other);

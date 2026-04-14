@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://parasol-framework.org/ai-docs" n="Scintilla" mod="Scintilla" c="Provides advanced text display and editing facilities." cat="Tool" id="3f218968" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="Scintilla" mod="Scintilla" c="Provides advanced text display and editing facilities." cat="Tool" id="3f218968" v="1">
   <ai:a n="Clear" c="Clears all content from the editor." p="ERR acClear(*Object)"/>
   <ai:a n="Clipboard" c="Full support for clipboard activity is provided through this action." p="ERR acClipboard(*Object, OBJECTID Clipboard, CLIPMODE Mode)">
     <ai:i n="Mode" t="CLIPMODE" c="The mode that will be used to shift data between the target object and clipboard system."/>

@@ -19,7 +19,7 @@ Key capabilities include:
 
 The class supports both file-based loading via #Path and direct string-based parsing via #Statement.  SVG documents can be integrated into existing scene graphs by setting the #Target field, or rendered independently through the automatically created scene structure.
 
-Animation timing is controlled through the #FrameRate field, with callback support via #FrameCallback for custom rendering workflows.  The implementation maintains compatibility with the complete SVG specification while providing enhanced programmatic access unique to the Parasol framework.
+Animation timing is controlled through the #FrameRate field, with callback support via #FrameCallback for custom rendering workflows.  The implementation maintains compatibility with the complete SVG specification while providing enhanced programmatic access unique to Kotuku.
 
 Please refer to the W3C's online documentation for exhaustive information on the SVG standard.
 
@@ -370,8 +370,8 @@ static ERR SVG_SaveToObject(extSVG *Self, struct acSaveToObject *Args)
          ERR error = xml->insertXML(0, XMI::NIL, header, nullptr);
          int index = xml->Tags.back().ID;
 
-         XMLTag *tag;
-         if ((error = xml->insertStatement(index, XMI::NEXT, "<svg version=\"1.1\" xmlns=\"http://www.w3.org/2000/svg\" xmlns:parasol=\"http://www.parasol.ws/xmlns/svg\"/>", &tag)) IS ERR::Okay) {
+         XTag *tag;
+         if ((error = xml->insertStatement(index, XMI::NEXT, "<svg version=\"1.1\" xmlns=\"http://www.w3.org/2000/svg\" xmlns:kotuku=\"http://www.kotuku.dev/xmlns/svg\"/>", &tag)) IS ERR::Okay) {
             bool multiple_viewports = (Self->Scene->Viewport->Next) ? true : false;
             if (multiple_viewports) {
                if ((error = save_svg_defs(Self, *xml, Self->Scene, index)) IS ERR::Okay) {
@@ -566,7 +566,7 @@ The loading process occurs automatically during initialisation when a valid path
 
 <b>Supported file types:</b> Standard SVG files (*.svg) and compressed SVG files (*.svgz) are both supported, with automatic decompression handling for compressed formats.
 
-<b>Path resolution:</b> The file system path is resolved through the standard Parasol file access mechanisms, supporting virtual file systems, archives, and network-accessible resources where configured.
+<b>Path resolution:</b> The file system path is resolved through the standard Kotuku file access mechanisms, supporting virtual file systems, archives, and network-accessible resources where configured.
 
 When both #Path and #Statement are specified, the Path field takes precedence and the Statement content is ignored during initialisation.
 

@@ -1,6 +1,6 @@
 /*********************************************************************************************************************
 
-The source code of the Parasol project is made publicly available under the terms described in the LICENSE.TXT file
+The source code of the Kotuku project is made publicly available under the terms described in the LICENSE.TXT file
 that is distributed with this package.  Please refer to it for further information on licensing.
 
 **********************************************************************************************************************
@@ -54,7 +54,7 @@ The task object that represents the active process can be acquired from ~Current
 #endif
 
 #include "../defs.h"
-#include <parasol/main.h>
+#include <kotuku/main.h>
 
 // Buffer size constants
 static constexpr size_t TASK_STDIN_BUFFER_SIZE = 4096;
@@ -415,9 +415,9 @@ static ERR msg_action(APTR Custom, int MsgID, int MsgType, APTR Message, int Msg
       ERR error;
       if ((error = AccessObject(action->ObjectID, 5000, &obj)) IS ERR::Okay) {
          if (action->SendArgs IS false) {
-            obj->Flags |= NF::MESSAGE;
+            obj->setFlag(NF::MESSAGE);
             Action(action->ActionID, obj, nullptr);
-            obj->Flags = obj->Flags & (~NF::MESSAGE);
+            obj->clearFlag(NF::MESSAGE);
             ReleaseObject(obj);
          }
          else {
@@ -430,9 +430,9 @@ static ERR msg_action(APTR Custom, int MsgID, int MsgType, APTR Message, int Msg
             }
 
             if (fields) {
-               obj->Flags |= NF::MESSAGE;
+               obj->setFlag(NF::MESSAGE);
                Action(action->ActionID, obj, action+1);
-               obj->Flags = obj->Flags & (~NF::MESSAGE);
+               obj->clearFlag(NF::MESSAGE);
                ReleaseObject(obj);
             }
          }
@@ -1176,9 +1176,9 @@ cases, the system's environment variables are queried):
 \HKEY_USERS\
 </pre>
 
-Here is a valid example for reading the 'Parasol' key value `\HKEY_CURRENT_USER\Software\Parasol`
+Here is a valid example for reading the 'Kotuku' key value `\HKEY_CURRENT_USER\Software\Kotuku`
 
-Caution: If your programming language uses backslash as an escape character (true for Fluid developers), remember to
+Caution: If your programming language uses backslash as an escape character (true for Tiri developers), remember to
 use double-backslashes as the key value separator in your Name string.
 
 -INPUT-
@@ -1529,7 +1529,7 @@ static ERR TASK_SetEnv(extTask *Self, struct task::SetEnv *Args)
 
       for (ki=0; ki < std::ssize(keys); ki++) {
          if (startswith(keys[ki].HKey, Args->Name)) {
-            CSTRING str = Args->Name + strlen(keys[ki].HKey); // str = Parasol\Something
+            CSTRING str = Args->Name + strlen(keys[ki].HKey); // str = Kotuku\Something
 
             for (len=strlen(str); (len > 0) and (str[len] != '\\'); len--);
 
@@ -1642,7 +1642,7 @@ Actions: Used to gain direct access to a task's actions.
 
 This field provides direct access to the actions of a task, and is intended for use with the active task object
 returned from ~CurrentTask().  Hooking into the action table allows the running executable to 'blend-in' with
-Parasol's object oriented design.
+Kotuku's object oriented design.
 
 The Actions field points to a lookup table of !ActionEntry items.  Hooking into an action involves writing its `AC`
 index in the table with a pointer to the action routine.  For example:
@@ -1676,6 +1676,63 @@ Setting CPU affinity is particularly useful for benchmarking applications where 
 is required, as it prevents the OS from moving the process between different CPU cores during execution.
 
 Note: This field affects the current process only and requires appropriate system privileges on some platforms.
+
+*********************************************************************************************************************/
+
+static ERR GET_AffinityMask(extTask *Self, int64_t *Value)
+{
+#ifdef __unix__
+   cpu_set_t cpuset;
+   if (sched_getaffinity(0, sizeof(cpuset), &cpuset) != 0) {
+      return ERR::SystemCall;
+   }
+
+   // Convert cpu_set_t to bitmask
+   int64_t mask = 0;
+   for (int cpu = 0; cpu < CPU_SETSIZE; cpu++) {
+      if (CPU_ISSET(cpu, &cpuset)) {
+         mask |= (1LL << cpu);
+      }
+   }
+   *Value = mask;
+#elif _WIN32
+   auto mask = winGetProcessAffinityMask();
+   if (mask IS 0) return ERR::SystemCall;
+   *Value = mask;
+#endif
+
+   return ERR::Okay;
+}
+
+static ERR SET_AffinityMask(extTask *Self, int64_t Value)
+{
+   if (Value <= 0) return ERR::InvalidValue;
+
+   Self->AffinityMask = Value;
+
+#ifdef __unix__
+   cpu_set_t cpuset;
+   CPU_ZERO(&cpuset);
+
+   // Convert bitmask to cpu_set_t
+   for (int cpu = 0; cpu < CPU_SETSIZE; cpu++) {
+      if (Value & (1LL << cpu)) {
+         CPU_SET(cpu, &cpuset);
+      }
+   }
+
+   // Set affinity for current process
+   if (sched_setaffinity(0, sizeof(cpuset), &cpuset) != 0) {
+      return ERR::SystemCall;
+   }
+#elif _WIN32
+   if (winSetProcessAffinityMask(Value) != 0) return ERR::SystemCall;
+#endif
+
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
 
 -FIELD-
 Args: Command line arguments (string format).
@@ -1797,7 +1854,7 @@ InputCallback: This callback returns incoming data from STDIN.
 
 The InputCallback field is available to the active task object only (i.e. the current process).
 The referenced function will be called when process receives data from STDIN.  The callback must match the
-prototype `void Function(*Task, APTR Data, int Size, ERR Status)`.  In Fluid the prototype is
+prototype `void Function(*Task, APTR Data, int Size, ERR Status)`.  In Tiri the prototype is
 'function callback(Task, Array, Status)` where `Array` is an array interface.
 
 The information read from STDOUT will be returned in the `Data` pointer and the byte-length of the data will be indicated
@@ -1849,7 +1906,7 @@ static ERR SET_InputCallback(extTask *Self, FUNCTION *Value)
 OutputCallback: This callback returns incoming data from STDOUT.
 
 The OutputCallback field can be set with a function reference that will be called when an active process sends data via
-STDOUT.  For C++ the callback must match the prototype `void Function(*Task, APTR Data, int Size)`.  In Fluid the
+STDOUT.  For C++ the callback must match the prototype `void Function(*Task, APTR Data, int Size)`.  In Tiri the
 prototype is 'function callback(Task, Array)` where `Array` is an array interface.
 
 The information read from STDOUT will be returned in the `Data` pointer and the byte-length of the data will be indicated
@@ -2124,75 +2181,6 @@ static ERR SET_Priority(extTask *Self, int Value)
 #elif _WIN32
    if (winSetProcessPriority(Value) != 0) return ERR::SystemCall;
 #endif
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--FIELD-
-AffinityMask: Controls which CPU cores the process can run on.
-
-The AffinityMask field sets the CPU affinity for the current process, determining which CPU cores the process
-is allowed to run on. This is expressed as a bitmask where each bit represents a CPU core (bit 0 = core 0,
-bit 1 = core 1, etc.).
-
-Setting CPU affinity is particularly useful for benchmarking applications where consistent performance timing
-is required, as it prevents the OS from moving the process between different CPU cores during execution.
-
-Note: This field affects the current process only and requires appropriate system privileges on some platforms.
-
-*********************************************************************************************************************/
-
-static ERR GET_AffinityMask(extTask *Self, int64_t *Value)
-{
-#ifdef __unix__
-   cpu_set_t cpuset;
-   if (sched_getaffinity(0, sizeof(cpuset), &cpuset) != 0) {
-      return ERR::SystemCall;
-   }
-
-   // Convert cpu_set_t to bitmask
-   int64_t mask = 0;
-   for (int cpu = 0; cpu < CPU_SETSIZE; cpu++) {
-      if (CPU_ISSET(cpu, &cpuset)) {
-         mask |= (1LL << cpu);
-      }
-   }
-   *Value = mask;
-#elif _WIN32
-   auto mask = winGetProcessAffinityMask();
-   if (mask IS 0) return ERR::SystemCall;
-   *Value = mask;
-#endif
-
-   return ERR::Okay;
-}
-
-static ERR SET_AffinityMask(extTask *Self, int64_t Value)
-{
-   if (Value <= 0) return ERR::InvalidValue;
-
-   Self->AffinityMask = Value;
-
-#ifdef __unix__
-   cpu_set_t cpuset;
-   CPU_ZERO(&cpuset);
-
-   // Convert bitmask to cpu_set_t
-   for (int cpu = 0; cpu < CPU_SETSIZE; cpu++) {
-      if (Value & (1LL << cpu)) {
-         CPU_SET(cpu, &cpuset);
-      }
-   }
-
-   // Set affinity for current process
-   if (sched_setaffinity(0, sizeof(cpuset), &cpuset) != 0) {
-      return ERR::SystemCall;
-   }
-#elif _WIN32
-   if (winSetProcessAffinityMask(Value) != 0) return ERR::SystemCall;
-#endif
-
    return ERR::Okay;
 }
 

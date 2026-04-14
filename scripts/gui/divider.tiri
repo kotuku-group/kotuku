@@ -1,0 +1,194 @@
+--[[
+Documentation is available in the Kotuku Wiki.
+--]]
+
+   import 'gui'
+   include 'vector'
+
+   namespace 'gui'
+
+   global mGfx <const> ?= mod.load('display')
+
+GAP <const> = gui.sizing.widget.gap
+HALF_GAP <const> = gui.sizing.widget.gap / 2
+
+----------------------------------------------------------------------------------------------------------------------
+
+function arrangeAll(self:table, Middle:num)
+   local a_len
+
+   if Middle then
+      a_limit = math.floor(self._vp[self._length] - self._minB - GAP)
+      a_len   = math.floor(Middle - HALF_GAP)
+      minA    = math.floor(self._primary[self._anchor] + self._minA)
+      maxA    = math.floor(self._primary[self._anchor] + self._maxA)
+      if a_len < minA then a_len = minA end
+      if a_len > maxA then a_len = maxA end
+      if a_len > a_limit then a_len = a_limit end
+      self._primary[self._length] = a_len - self._primary[self._anchor]
+   else -- (A) side will stay the same, (B) side will be resized
+      a_len = self._primary[self._anchor] + self._primary[self._length]
+   end
+
+   if self._orientation is 'h' then -- Vertical divider
+      self._div = { x = a_len, y = self._primary.y + self._offsetA, width = GAP, height = self._primary.height - (self._offsetA + self._offsetB) }
+   else
+      self._div = { x = self._primary.x + self._offsetA, y = a_len, width = self._primary.width - (self._offsetA + self._offsetB), height = GAP }
+   end
+
+   self._secondary[self._anchor] = a_len + GAP -- Set x/y position of the other side
+   -- NB: It is presumed that _secondary [x|y]Offset is preset to a fixed value by the client.
+
+   self._dividerVP.acRedimension(self._div.x, self._div.y, 0, self._div.width, self._div.height, 0)
+
+   if self._anchored then -- If pointer is anchored, it must be moved manually.
+      if self._orientation is 'h' then
+         mGfx.setCursorPos(self._vp.absX + self._div.x + HALF_GAP, self._vp.absY + self._anchorY)
+      else
+         mGfx.setCursorPos(self._vp.absX + self._anchorX, self._vp.absY + self._div.y + HALF_GAP)
+      end
+   end
+
+   self._vp.acDraw()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+gui.divider = function(Options:table)
+   self = {
+      _pct          = 0.5,
+      _proportional = not Options.fixedSize,
+      _buttonHeld   = false,
+      _minA = Options.minA ?? 5,
+      _minB = Options.minB ?? 5,
+      _maxA = Options.maxA ?? 8000,
+      _maxB = Options.maxB ?? 8000,
+      _offsetA = Options.offsetA ?? 0,
+      _offsetB = Options.offsetB ?? 0,
+      _div  = { } -- Area of the 'strip' between the opposing regions.
+   }
+
+   if Options.left and Options.right then
+      self._orientation = 'h'
+      self._primary     = Options.left
+      self._secondary   = Options.right
+      self._anchor      = 'x'
+      self._length      = 'width'
+
+      sd = self._secondary.dimensions
+      assert((sd has DMF_FIXED_X and sd has DMF_FIXED_X_OFFSET), 'The opposing viewport must use fixed x and xOffset coordinates.')
+   elseif Options.top and Options.bottom then
+      self._orientation = 'v'
+      self._primary     = Options.top
+      self._secondary   = Options.bottom
+      self._anchor      = 'y'
+      self._length      = 'height'
+
+      sd = self._secondary.dimensions
+      assert((sd has DMF_FIXED_Y) and (sd has DMF_FIXED_Y_OFFSET), 'The opposing viewport must use fixed y and yOffset coordinates.')
+   else
+      error('A left/right or top/bottom pair must be specified.')
+   end
+
+   self._vp = self._primary.parent
+   assert(self._vp.id is self._secondary.parent.id, 'The provided viewports do not share the same parent.')
+
+   theme = gui.getTheme(self._vp)
+
+   div_name = f'divider-bkgd-{self._vp.id}'
+   if Options.style != 'none' then
+      colour = gui.strToRGB(theme.window.stroke):interpolate(gui.strToRGB(theme.window.bkgd), 0.85)
+      colour.a = 255
+
+      if self._orientation is 'h' then -- Top to bottom tiling
+         self._pattern = self._vp.scene.new('VectorPattern', {
+            name = 'div_pattern', x = 0, y = 0, pageWidth = GAP, pageHeight = GAP*4, width = GAP, height = GAP*4,
+            units = VUNIT_USERSPACE, spreadMethod = VSPREAD_REPEAT
+         })
+
+         pt = string.format('%d,%d, %d,%d, %d,%d %d,%d', 0, 0, GAP, GAP*2, GAP, GAP*4, 0, GAP*2)
+         self._pattern.viewport.new('VectorPolygon', { points = pt, fill = tostring(colour) })
+      else -- Left to right tiling
+         self._pattern = self._vp.scene.new('VectorPattern', {
+            name = 'div_pattern', x = 0, y = 0, pageWidth = GAP*4, pageHeight=GAP, width=GAP*4, height=GAP,
+            units = VUNIT_USERSPACE, spreadMethod = VSPREAD_REPEAT
+         })
+
+         pt = string.format('%d,%d, %d,%d, %d,%d %d,%d', GAP*2, 0, GAP*4, 0, GAP*2, GAP, 0, GAP)
+         self._pattern.viewport.new('VectorPolygon', { points = pt, fill = tostring(colour) })
+      end
+
+      check self._vp.scene.mtAddDef(div_name, self._pattern)
+   end
+
+   self._vp.subscribe('free', function(Viewport:obj)
+      if self._anchored then mGfx.unlockCursor(self._vp) end
+   end)
+
+   if self._orientation is 'h' then
+      self._dividerVP = self._vp.new('VectorViewport', {
+         name='div_vp', x=0, y=0, width=GAP, height='100%', cursor=PTC_SPLIT_HORIZONTAL
+      })
+   else
+      self._dividerVP = self._vp.new('VectorViewport', {
+         name='div_vp', x=0, y=0, width='100%', height=GAP, cursor=PTC_SPLIT_VERTICAL
+      })
+   end
+
+   self._dividerVP.acMoveToBack()
+
+   if Options.style != 'none' then
+      self._dividerVP.new('VectorRectangle', {
+         name='div_fill', x='0', y='0', width='100%', height='100%', fill=f'url(#{div_name})'
+      })
+   end
+
+   arrangeAll(self)
+
+   self._pct = (self._div[self._anchor] + HALF_GAP) / self._vp[self._length]
+
+   self._vp.mtSubscribeFeedback(FM_PATH_CHANGED, function(Viewport:obj, Event)
+      if self._proportional then
+         if self._orientation is 'h' then
+            arrangeAll(self, self._pct * Viewport.width)
+         else
+            arrangeAll(self, self._pct * Viewport.height)
+         end
+      else
+         arrangeAll(self)
+      end
+
+      Viewport.acDraw()
+   end)
+
+   check self._dividerVP.mtSubscribeInput(JTYPE_MOVEMENT|JTYPE_BUTTON, function(Viewport:obj, Events)
+      ev = Events
+      while ev do
+         if ev.type is JET_ABS_XY then
+            if self._buttonHeld then
+               arrangeAll(self, (self._orientation is 'h') ? ev.absX - self._vp.absX :> ev.absY - self._vp.absY)
+               self._pct = (self._div[self._anchor] + HALF_GAP) / self._vp[self._length]
+            end
+         elseif ev.type is JET_BUTTON_1 then -- LMB
+            if ev.value > 0 then
+               if mGfx.lockCursor(self._vp) is ERR_Okay then
+                  self._anchored = true
+                  self._anchorX  = input.x
+                  self._anchorY  = input.y
+               end
+               self._buttonHeld = true
+            elseif self._buttonHeld then
+               if self._anchored then
+                  self._anchored = false
+                  mGfx.unlockCursor(self._vp)
+               end
+
+               self._buttonHeld = false
+            end
+         end
+         ev = ev.next
+      end
+   end)
+
+   return self
+end

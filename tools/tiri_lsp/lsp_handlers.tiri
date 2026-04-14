@@ -1,0 +1,605 @@
+
+   -- Deferred regex patterns for keyword matching
+
+   rx_kw_function = <{ regex.new([[\bfunction\b]]) }>
+   rx_kw_if       = <{ regex.new([[\bif\b]]) }>
+   rx_kw_then     = <{ regex.new([[\bthen\b]]) }>
+   rx_kw_for      = <{ regex.new([[\bfor\b]]) }>
+   rx_kw_do       = <{ regex.new([[\bdo\b]]) }>
+   rx_kw_while    = <{ regex.new([[\bwhile\b]]) }>
+   rx_kw_repeat   = <{ regex.new([[\brepeat\b]]) }>
+   rx_kw_defer    = <{ regex.new([[\bdefer\b]]) }>
+   rx_kw_end      = <{ regex.new([[\bend\b]]) }>
+   rx_kw_until    = <{ regex.new([[\buntil\b]]) }>
+   rx_block_close = <{ regex.new("\\]\\]") }>
+   rx_block_open  = <{ regex.new("--\\[\\[") }>
+   rx_trim_start  = <{ regex.new([[^\s*(.*)]], regex.DOT_ALL) }>
+   rx_func_sig    = <{ regex.new([=[function\s+[\w]]=]) }>
+   rx_func_name   = <{ regex.new([[^function\s+([\w:.]+)]]) }>
+   rx_local_end   = <{ regex.new([[local\s*$]]) }>
+   rx_global_end  = <{ regex.new([[global\s*$]]) }>
+   rx_if_then     = <{ regex.new([[\bif\b.*\bthen\b]]) }>
+   rx_for_do      = <{ regex.new([[\bfor\b.*\bdo\b]]) }>
+   rx_while_do    = <{ regex.new([[\bwhile\b.*\bdo\b]]) }>
+
+   glNextResultId = 1
+
+   -- Token cache for delta semantic tokens.  URI indexed
+   -- Structure: { [uri] = { resultId = number, data = { ... } } }
+
+   glTokenCache = { }
+
+----------------------------------------------------------------------------------------------------------------------
+-- Text Edit Helper
+
+-- Convert line/character position to byte offset in document
+function positionToOffset(Content, Line, Character)
+   offset = 0
+   current_line = 0
+
+   while current_line < Line and offset < #Content do
+      c = Content:sub(offset, offset + 1)
+      if c is '\n' then
+         current_line++
+      end
+      offset++
+   end
+
+   -- Add character offset within the line
+   return offset + Character
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Apply a text edit to document content
+
+function applyTextEdit(Content, Range, NewText)
+   start_offset = positionToOffset(Content, Range.start.line, Range.start.character)
+   end_offset = positionToOffset(Content, Range['end'].line, Range['end'].character)
+
+   -- Build new content: before + new text + after
+   before = Content:sub(0, start_offset)
+   after = Content:sub(end_offset)
+
+   return before .. NewText .. after
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Find the line number of the matching 'end' for a block starting at StartLine
+
+function findMatchingEnd(Doc:table, StartLine:num):num
+   depth = 1
+   line_num = StartLine + 1
+   total_lines = getTotalLines(Doc)
+
+   while line_num < total_lines do
+      line_text = getLine(Doc, line_num)
+
+      -- Count block openers (simplified - doesn't handle strings/comments perfectly)
+      for start, stop, cap in rx_kw_function.findAll(line_text) do depth++ end
+      for start, stop, cap in rx_kw_if.findAll(line_text) do
+         if rx_if_then.test(line_text) then
+            depth++
+         end
+      end
+      for start, stop, cap in rx_kw_for.findAll(line_text) do
+         if rx_for_do.test(line_text) then
+            depth++
+         end
+      end
+      for start, stop, cap in rx_kw_while.findAll(line_text) do
+         if rx_while_do.test(line_text) then
+            depth++
+         end
+      end
+      for start, stop, cap in rx_kw_repeat.findAll(line_text) do depth++ end
+      for start, stop, cap in rx_kw_defer.findAll(line_text) do depth++ end
+
+      -- Count block closers
+      for start, stop, cap in rx_kw_end.findAll(line_text) do depth -= 1 end
+      for start, stop, cap in rx_kw_until.findAll(line_text) do depth -= 1 end
+
+      if depth <= 0 then
+         return line_num
+      end
+
+      line_num++
+   end
+
+   -- If no matching end found, return last line
+   return total_lines - 1
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Extract document symbols (functions, globals) from Tiri source
+-- Returns array of DocumentSymbol objects for the outline view
+
+function extractDocumentSymbols(Doc:table):array
+   symbols = array<table>
+   total_lines = getTotalLines(Doc)
+   in_block_comment = false
+
+   for line_num = 0, total_lines - 1 do
+      line_text = getLine(Doc, line_num)
+
+      -- Track block comments --[[ ... ]]
+      if in_block_comment then
+         if rx_block_close.test(line_text) then
+            in_block_comment = false
+         end
+         continue
+      end
+
+      -- Check for block comment start
+      if rx_block_open.test(line_text) then
+         in_block_comment = true
+         continue
+      end
+
+      -- Skip line comments (lines starting with --)
+      trimmed = rx_trim_start.extract(line_text)
+      if trimmed:sub(0, 2) is '--' then
+         continue
+      end
+
+      -- Check if 'function' appears before any line comment
+      comment_pos = line_text:find('--')
+      func_start, func_stop = rx_func_sig.findFirst(line_text)
+
+      -- Skip if function keyword is inside a line comment
+      if func_start and comment_pos and comment_pos < func_start then
+         continue
+      end
+
+      if func_start then
+         -- Extract everything after 'function '
+         after_func = line_text:sub(func_start)
+         name = rx_func_name.extract(after_func)
+
+         if name then
+            -- Determine scope by looking before 'function'
+            before_func = line_text:sub(0, func_start)
+            scope = nil
+            if rx_local_end.test(before_func) then
+               scope = 'local'
+            elseif rx_global_end.test(before_func) then
+               scope = 'global'
+            end
+
+            -- Find the column where the name starts (0-based)
+            name_start = line_text:find(name, func_pos, true)
+            name_start = name_start and (name_start - 1) or 0
+
+            -- Determine symbol kind based on name pattern
+            kind = SYMBOL_KIND.FUNCTION
+            if name:find(':') then
+               kind = SYMBOL_KIND.METHOD  -- Class:method style
+            end
+
+            -- Find the end of this function (matching 'end')
+            end_line = findMatchingEnd(Doc, line_num)
+
+            symbol = {
+               name = name,
+               kind = kind,
+               range = {
+                  start = { line = line_num, character = 0 },
+                  ['end'] = { line = end_line, character = #getLine(Doc, end_line) }
+               },
+               selectionRange = {
+                  start = { line = line_num, character = name_start },
+                  ['end'] = { line = line_num, character = name_start + #name }
+               }
+            }
+
+            if scope then
+               symbol.detail = scope
+            end
+
+            symbols:push(symbol)
+         end
+      end
+   end
+
+   return symbols
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Core LSP Handlers
+
+global function registerCoreHandlers(Self)
+   -- initialize: Client initiates handshake
+   Self._handlers['initialize'] = function(Msg, State)
+      State.initialized = true
+      logMessage(Self, 'LSP initialize request received')
+
+      return {
+         jsonrpc = '2.0',
+         id = Msg.id,
+         result = {
+            capabilities = {
+               -- Incremental sync: client sends only changed portions
+               textDocumentSync = {
+                  openClose = true,
+                  change = 2  -- Incremental sync
+               },
+               -- Semantic tokens for syntax highlighting
+               semanticTokensProvider = {
+                  legend = {
+                     tokenTypes = TOKEN_TYPES,
+                     tokenModifiers = TOKEN_MODIFIERS
+                  },
+                  full = {
+                     delta = true  -- Support delta updates for efficiency
+                  },
+                  range = false
+               },
+               -- Document symbols for outline view
+               documentSymbolProvider = true,
+               -- Folding ranges for code folding
+               foldingRangeProvider = true,
+               -- Hover information
+               hoverProvider = true
+            },
+            serverInfo = {
+               name = 'Tiri LSP Server',
+               version = '0.1.0'
+            }
+         }
+      }
+   end
+
+   -- initialized: Client confirms handshake complete (notification, no response)
+   Self._handlers['initialized'] = function(Msg, State)
+      logMessage(Self, 'LSP initialized notification received - handshake complete')
+      return nil
+   end
+
+   -- shutdown: Client requests shutdown preparation
+   Self._handlers['shutdown'] = function(Msg, State)
+      State.shutdown_requested = true
+      logMessage(Self, 'LSP shutdown request received')
+
+      return {
+         jsonrpc = '2.0',
+         id = Msg.id,
+         result = json.null
+      }
+   end
+
+   -- exit: Client requests termination (notification)
+   Self._handlers['exit'] = function(Msg, State)
+      if State.shutdown_requested then
+         logMessage(Self, 'LSP exit notification - clean shutdown')
+      else
+         logMessage(Self, 'LSP exit notification - unexpected (no prior shutdown)')
+      end
+      State.should_disconnect = true
+      return nil
+   end
+
+   -- $/cancelRequest: Client wants to cancel a pending request (notification)
+   -- Since we process requests synchronously, we just acknowledge and ignore
+   Self._handlers['$/cancelRequest'] = function(Msg, State)
+      logVerbose(Self, 'Cancel request received for id: ' .. tostring(Msg.params.id))
+      return nil  -- Notification, no response
+   end
+
+   -------------------------------------------------------------------------------------------------------------------
+   -- Document Synchronization
+
+   -- textDocument/didOpen: Client opened a document
+   Self._handlers['textDocument/didOpen'] = function(Msg, State)
+      doc = Msg.params.textDocument
+      glDocuments[doc.uri] = {
+         uri = doc.uri,
+         languageId = doc.languageId,
+         version = doc.version,
+         content = doc.text,
+         lineIndex = nil  -- Lazily computed line index
+      }
+      logMessage(Self, 'Document opened: ' .. doc.uri)
+
+      -- Compute and publish diagnostics
+      params = computeDiagnostics(glDocuments[doc.uri])
+      sendNotification(Self, State.clientSocket, 'textDocument/publishDiagnostics', params)
+
+      return nil  -- Notification, no response
+   end
+
+   -- textDocument/didChange: Document content changed
+   Self._handlers['textDocument/didChange'] = function(Msg, State)
+      uri = Msg.params.textDocument.uri
+      version = Msg.params.textDocument.version
+
+      if glDocuments[uri] then
+         edit_line = nil  -- Track earliest edited line for incremental index update
+         for change in values(Msg.params.contentChanges) do
+            if change.range then
+               -- Track the earliest line affected by edits
+               if not edit_line or change.range.start.line < edit_line then
+                  edit_line = change.range.start.line
+               end
+               -- Incremental sync: apply text edit at range
+               glDocuments[uri].content = applyTextEdit(
+                  glDocuments[uri].content,
+                  change.range,
+                  change.text
+               )
+            else
+               -- Full sync fallback: replace entire content
+               glDocuments[uri].content = change.text
+               edit_line = 0  -- Force full rebuild
+            end
+         end
+         glDocuments[uri].version = version
+
+         -- Incrementally rebuild line index from the edited line
+         markLineIndex(glDocuments[uri], edit_line)
+
+         logVerbose(Self, 'Document updated: ' .. uri .. ' (version ' .. version .. ')')
+
+         -- Compute and publish diagnostics
+         params = computeDiagnostics(glDocuments[uri])
+         sendNotification(Self, State.clientSocket, 'textDocument/publishDiagnostics', params)
+      end
+      return nil  -- Notification, no response
+   end
+
+   -- textDocument/didClose: Client closed a document
+   Self._handlers['textDocument/didClose'] = function(Msg, State)
+      uri = Msg.params.textDocument.uri
+      glDocuments[uri] = nil
+      glTokenCache[uri] = nil  -- Clear token cache to free memory
+      logMessage(Self, 'Document closed: ' .. uri)
+
+      -- Clear diagnostics for closed document
+      sendNotification(Self, State.clientSocket, 'textDocument/publishDiagnostics', {
+         uri = uri,
+         diagnostics = array<table>
+      })
+
+      return nil  -- Notification, no response
+   end
+
+   -------------------------------------------------------------------------------------------------------------------
+   -- Semantic Tokens
+
+   -- textDocument/semanticTokens/full: Return all semantic tokens for a document
+
+   Self._handlers['textDocument/semanticTokens/full'] = function(Msg, State)
+      uri = Msg.params.textDocument.uri
+      doc = glDocuments[uri]
+
+      if not doc then
+         logMessage(Self, 'Semantic tokens requested for unknown document: ' .. uri)
+         return {
+            jsonrpc = '2.0',
+            id = Msg.id,
+            result = { data = array<int> }
+         }
+      end
+
+      logVerbose(Self, 'Computing semantic tokens for: ' .. uri)
+
+      tokens = tokenizeTiri(doc.content)
+      encoded = encodeSemanticTokens(tokens)
+
+      -- Generate resultId and cache for delta requests
+      result_id = tostring(glNextResultId)
+      glNextResultId++
+
+      glTokenCache[uri] = {
+         resultId = result_id,
+         data = encoded
+      }
+
+      logVerbose(Self, 'Returning ' .. #tokens .. ' tokens (' .. #encoded .. ' integers), resultId=' .. result_id)
+
+      return {
+         jsonrpc = '2.0',
+         id = Msg.id,
+         result = {
+            resultId = result_id,
+            data = encoded
+         }
+      }
+   end
+
+   -- textDocument/semanticTokens/full/delta: Return only changed semantic tokens
+   Self._handlers['textDocument/semanticTokens/full/delta'] = function(Msg, State)
+      uri = Msg.params.textDocument.uri
+      previous_result_id = Msg.params.previousResultId
+      doc = glDocuments[uri]
+
+      if not doc then
+         logMessage(Self, 'Semantic tokens delta requested for unknown document: ' .. uri)
+         return {
+            jsonrpc = '2.0',
+            id = Msg.id,
+            result = { data = array<int> }
+         }
+      end
+
+      -- Check if we have the previous result cached
+      cached = glTokenCache[uri]
+      if not cached or cached.resultId != previous_result_id then
+         -- Can't compute delta, return full tokens
+         logWarning(Self, 'Cannot compute delta (no cache or resultId mismatch), returning full tokens')
+
+         tokens = tokenizeTiri(doc.content)
+         encoded = encodeSemanticTokens(tokens)
+
+         result_id = tostring(glNextResultId)
+         glNextResultId++
+
+         glTokenCache[uri] = {
+            resultId = result_id,
+            data = encoded
+         }
+
+         return {
+            jsonrpc = '2.0',
+            id = Msg.id,
+            result = {
+               resultId = result_id,
+               data = encoded
+            }
+         }
+      end
+
+      logVerbose(Self, 'Computing semantic tokens delta for: ' .. uri)
+
+      -- Compute new tokens
+      tokens = tokenizeTiri(doc.content)
+      new_encoded = encodeSemanticTokens(tokens)
+
+      -- Compute delta between old and new
+      edits = computeTokenEdits(cached.data, new_encoded)
+
+      -- Generate new resultId and update cache
+      result_id = tostring(glNextResultId)
+      glNextResultId++
+
+      glTokenCache[uri] = {
+         resultId = result_id,
+         data = new_encoded
+      }
+
+      -- Calculate edit size for logging
+      edit_size = 0
+      for edit in values(edits) do
+         edit_size += (edit.data and #edit.data or 0)
+      end
+
+      logVerbose(Self, 'Returning ' .. #edits .. ' edits (' .. edit_size .. ' integers vs ' .. #new_encoded .. ' full), resultId=' .. result_id)
+
+      return {
+         jsonrpc = '2.0',
+         id = Msg.id,
+         result = {
+            resultId = result_id,
+            edits = edits
+         }
+      }
+   end
+
+   -------------------------------------------------------------------------------------------------------------------
+   -- Document Symbols (Outline View)
+
+   -- textDocument/documentSymbol: Return symbols for outline view
+   Self._handlers['textDocument/documentSymbol'] = function(Msg, State)
+      uri = Msg.params.textDocument.uri
+      doc = glDocuments[uri]
+
+      if not doc then
+         logMessage(Self, 'Document symbols requested for unknown document: ' .. uri)
+         return {
+            jsonrpc = '2.0',
+            id = Msg.id,
+            result = array<table>
+         }
+      end
+
+      logVerbose(Self, 'Computing document symbols for: ' .. uri)
+
+      symbols = extractDocumentSymbols(doc)
+
+      logVerbose(Self, 'Returning ' .. #symbols .. ' symbols')
+
+      return {
+         jsonrpc = '2.0',
+         id = Msg.id,
+         result = symbols
+      }
+   end
+
+   -------------------------------------------------------------------------------------------------------------------
+   -- Folding Ranges (Code Folding)
+
+   -- textDocument/foldingRange: Return folding ranges for code folding
+   Self._handlers['textDocument/foldingRange'] = function(Msg, State)
+      uri = Msg.params.textDocument.uri
+      doc = glDocuments[uri]
+
+      if not doc then
+         logMessage(Self, 'Folding ranges requested for unknown document: ' .. uri)
+         return {
+            jsonrpc = '2.0',
+            id = Msg.id,
+            result = array<table>
+         }
+      end
+
+      logVerbose(Self, 'Computing folding ranges for: ' .. uri)
+
+      ranges = extractFoldingRanges(doc)
+
+      logVerbose(Self, 'Returning ' .. #ranges .. ' folding ranges')
+
+      return {
+         jsonrpc = '2.0',
+         id = Msg.id,
+         result = ranges
+      }
+   end
+
+   -------------------------------------------------------------------------------------------------------------------
+   -- Hover Information
+
+   -- textDocument/hover: Return documentation for symbol at cursor
+
+   Self._handlers['textDocument/hover'] = function(Msg, State)
+      uri = Msg.params.textDocument.uri
+      position = Msg.params.position
+      doc = glDocuments[uri]
+
+      if not doc then
+         logMessage(Self, 'Hover requested for unknown document: ' .. uri)
+         return {
+            jsonrpc = '2.0',
+            id = Msg.id,
+            result = json.null
+         }
+      end
+
+      -- Get the token at the hover position
+      tokenInfo = getTokenAtPosition(doc, position.line, position.character)
+
+      if not tokenInfo then
+         return {
+            jsonrpc = '2.0',
+            id = Msg.id,
+            result = json.null
+         }
+      end
+
+      logVerbose(Self, 'Hover: token="' .. tokenInfo.text .. '" context=' .. tokenInfo.context ..
+         (tokenInfo.object and (' object=' .. tokenInfo.object) or ''))
+
+      -- Attempt to resolve documentation
+      hoverContent = resolveHoverContent(tokenInfo, doc)
+
+      if not hoverContent then
+         return {
+            jsonrpc = '2.0',
+            id = Msg.id,
+            result = json.null
+         }
+      end
+
+      return {
+         jsonrpc = '2.0',
+         id = Msg.id,
+         result = {
+            contents = {
+               kind = 'markdown',
+               value = hoverContent
+            },
+            range = {
+               start = { line = position.line, character = tokenInfo.startCol },
+               ['end'] = { line = position.line, character = tokenInfo.endCol }
+            }
+         }
+      }
+   end
+end
