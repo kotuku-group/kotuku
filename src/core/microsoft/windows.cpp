@@ -185,6 +185,7 @@ typedef struct DateTime {
 #define MFF_DEEP 0x00001000
 #define MFF_RENAME (MFF_MOVED)
 #define MFF_WRITE (MFF_MODIFY)
+constexpr int WATCH_NOTIFY_SUBTREE = 0x40000000;
 
 // Return codes available to the feedback routine
 
@@ -731,7 +732,7 @@ extern "C" DWORD winGetExeDirectory(DWORD Length, LPSTR String)
 
             if (QueryDosDevice(szDrive, devname, sizeof(devname))) {
                int devlen = strlen(devname);
-               if (strnicmp(String, devname, devlen) IS devlen) {
+               if (strnicmp(String, devname, devlen) IS 0) {
                   if (String[devlen] IS '\\') {
                      // Replace device path with DOS path
                      std::string tmpfile = szDrive + std::string(String+devlen);
@@ -933,6 +934,7 @@ extern "C" int winGetCurrentProcessId(void)
 extern "C" size_t winGetProcessMemoryUsage(int ProcessID)
 {
    PROCESS_MEMORY_COUNTERS pmc;
+   ZeroMemory(&pmc, sizeof(pmc));
    HANDLE process = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, ProcessID);
    if (process) {
       if (GetProcessMemoryInfo(process, &pmc, sizeof(pmc))) {
@@ -941,7 +943,7 @@ extern "C" size_t winGetProcessMemoryUsage(int ProcessID)
       }
       CloseHandle(process);
    }
-   return -1; // Failed to retrieve memory usage
+   return 0; // Failed to retrieve memory usage
 }
 
 //********************************************************************************************************************
@@ -1561,18 +1563,18 @@ extern "C" ERR winCreateDir(const char *Path)
 //********************************************************************************************************************
 // Returns true on success.
 
-extern "C" int winGetFreeDiskSpace(char Drive, long long *TotalSpace, long long *BytesUsed)
+extern "C" int winGetFreeDiskSpace(char Drive, long long *BytesFree, long long *TotalSize)
 {
    DWORD sectors, bytes_per_sector, free_clusters, total_clusters;
 
-   *TotalSpace = 0;
-   *BytesUsed = 0;
+   *BytesFree = 0;
+   *TotalSize = 0;
 
    char location[4] = { Drive, ':', '\\', 0 };
 
    if (GetDiskFreeSpace(location, &sectors, &bytes_per_sector, &free_clusters, &total_clusters)) {
-      *TotalSpace = (double)sectors * (double)bytes_per_sector * (double)free_clusters;
-      *BytesUsed  = ((double)sectors * (double)bytes_per_sector * (double)total_clusters);
+      *BytesFree = (long long)sectors * (long long)bytes_per_sector * (long long)free_clusters;
+      *TotalSize = (long long)sectors * (long long)bytes_per_sector * (long long)total_clusters;
       return 1;
    }
    else return 0;
@@ -1585,14 +1587,16 @@ extern "C" int winResetDate(STRING Location)
 {
    HANDLE handle;
 
-   if ((handle = CreateFile(Location, GENERIC_WRITE, FILE_SHARE_READ|FILE_SHARE_WRITE, nullptr,
+   if ((handle = CreateFile(Location, GENERIC_READ|GENERIC_WRITE, FILE_SHARE_READ|FILE_SHARE_WRITE, nullptr,
          OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr)) != INVALID_HANDLE_VALUE) {
 
       FILETIME filetime;
-      GetFileTime(handle, &filetime, nullptr, nullptr);
-      int err = SetFileTime(handle, nullptr, &filetime, &filetime);
-      CloseHandle(handle);
-      if (err) return 1;
+      if (GetFileTime(handle, &filetime, nullptr, nullptr)) {
+         int err = SetFileTime(handle, nullptr, &filetime, &filetime);
+         CloseHandle(handle);
+         if (err) return 1;
+      }
+      else CloseHandle(handle);
    }
 
    return 0;
@@ -1756,7 +1760,7 @@ extern "C" ERR winWatchFile(int Flags, CSTRING Path, APTR WatchBuffer, HANDLE *H
          return (error IS ERROR_ACCESS_DENIED) ? ERR::NoPermission : ERR::SystemCall;
       }
 
-      *WinFlags = nflags;
+      *WinFlags = nflags | ((watch_folders) ? WATCH_NOTIFY_SUBTREE : 0);
       return ERR::Okay;
    }
    else {
@@ -1778,6 +1782,8 @@ extern "C" ERR winReadChanges(HANDLE Handle, APTR WatchBuffer, int NotifyFlags, 
    DWORD bytes_out = 0;
    auto ovlap = (OVERLAPPED *)WatchBuffer;
    auto fni = (FILE_NOTIFY_INFORMATION *)(ovlap + 1);
+   DWORD watch_flags = NotifyFlags & (~WATCH_NOTIFY_SUBTREE);
+   BOOL watch_folders = (NotifyFlags & WATCH_NOTIFY_SUBTREE) ? TRUE : FALSE;
 
    *Status = 0;
    PathOutput[0] = '\0';
@@ -1801,7 +1807,7 @@ extern "C" ERR winReadChanges(HANDLE Handle, APTR WatchBuffer, int NotifyFlags, 
 
       DWORD empty;
       const DWORD buffer_size = sizeof(FILE_NOTIFY_INFORMATION) + (MAX_PATH * sizeof(WCHAR)) + sizeof(DWORD);
-      ReadDirectoryChangesW(Handle, fni, buffer_size, true, NotifyFlags, &empty, ovlap, nullptr);
+      ReadDirectoryChangesW(Handle, fni, buffer_size, watch_folders, watch_flags, &empty, ovlap, nullptr);
       return ERR::NothingDone;
    }
 
@@ -1854,7 +1860,7 @@ extern "C" ERR winReadChanges(HANDLE Handle, APTR WatchBuffer, int NotifyFlags, 
 
       DWORD empty;
       const DWORD buffer_size = sizeof(FILE_NOTIFY_INFORMATION) + (MAX_PATH * sizeof(WCHAR)) + sizeof(DWORD);
-      if (!ReadDirectoryChangesW(Handle, fni, buffer_size, true, NotifyFlags, &empty, ovlap, nullptr)) {
+      if (!ReadDirectoryChangesW(Handle, fni, buffer_size, watch_folders, watch_flags, &empty, ovlap, nullptr)) {
          return ERR::SystemCall;
       }
    }
@@ -1916,7 +1922,7 @@ extern "C" int winReadKey(LPCSTR Key, LPCSTR Value, LPBYTE Buffer, int Length)
       if (RegQueryValueEx(handle, Value, 0, 0, Buffer, &length) IS ERROR_SUCCESS) {
          err = length-1;
       }
-      CloseHandle(handle);
+      RegCloseKey(handle);
    }
    return err;
 }
@@ -1932,7 +1938,7 @@ extern "C" int winReadRootKey(LPCSTR Key, LPCSTR Value, LPBYTE Buffer, int Lengt
       if (RegQueryValueEx(handle, Value, 0, 0, Buffer, &length) IS ERROR_SUCCESS) {
          err = length-1;
       }
-      CloseHandle(handle);
+      RegCloseKey(handle);
    }
    return err;
 }
