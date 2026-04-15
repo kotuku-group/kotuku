@@ -1,0 +1,119 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="module.xsl"?>
+
+<book>
+  <info>
+    <name>HTTP</name>
+    <type>module</type>
+    <version>1</version>
+    <copyright>Paul Manias © 2005-2026</copyright>
+    <classes>
+      <class>HTTP</class>
+    </classes>
+  </info>
+
+  <types>
+    <constants lookup="HGS" comment="Options for defining an HTTP object's state.">
+      <const name="AUTHENTICATED">Following successful authentication, this state value will be set.</const>
+      <const name="AUTHENTICATING">If authentication is requested from the server, the HTTP object will enter this state.</const>
+      <const name="COMPLETED">This state indicates that the HTTP request was completed in a normal manner.</const>
+      <const name="READING_CONTENT">The client will remain in this state when the server is sending data to the client.</const>
+      <const name="READING_HEADER">The default state - this value will be indicated when no data is being written to the server and the client is waiting for a complete header from the server.</const>
+      <const name="SENDING_CONTENT">During the uploading of data to the server (e.g. <code>POST</code>), the HTTP object will remain in this state.</const>
+      <const name="SEND_COMPLETE">On successful completion of the send phase, the state changes to <code>SEND_COMPLETE</code>.  Successful completion requires either that the number of bytes indicated in <fl>ContentLength</fl> have been sent, or <code>ERR::Terminate</code> has been returned by the callback functions.</const>
+      <const name="TERMINATED">If an HTTP command fails to complete normally - for instance if the connection is broken before completion - then the state is set to <code>TERMINATED</code>.</const>
+    </constants>
+
+    <constants lookup="HOM" comment="Output mode.">
+      <const name="DATA_FEED">Use the DataFeed() action to send data to the targeted object.</const>
+      <const name="READ_WRITE">Use the Write() action to send data to the targeted object.</const>
+    </constants>
+
+    <constants lookup="HTF" comment="HTTP flags">
+      <const name="DEBUG_SOCKET">Log all HTTP headers and data that goes out through the socket.  This should only be used when sending plain-text data.</const>
+      <const name="DISABLE_SERVER_VERIFY">Disable SSL server certificate verification (use with caution).</const>
+      <const name="MESSAGE">When activating child objects, send delayed messages to postpone execution rather than making direct calls.</const>
+      <const name="MOVED">Read-only.  Indicates that the HTTP source was moved (<code>HTS::MOVED_PERMANENTLY</code>).</const>
+      <const name="NO_DIALOG">Turn off the username/password dialog.</const>
+      <const name="NO_HEAD">Do not send a <code>HEAD</code> prior to executing a <code>PUT</code> or <code>POST</code> (removes the authentication check).</const>
+      <const name="RAW">Forcibly turns off chunk detection and chunk handling on incoming data.  Also turns off automatic chunk encoding for outgoing data.</const>
+      <const name="RECV_BUFFER">Enables buffering of all received HTTP content into a local buffer.  The buffer information can be read at any time during and after the transaction through the <fl>RecvBuffer</fl> field.  Note that this option should only be used for limited data transfers to avoid excessive memory usage.</const>
+      <const name="REDIRECTED">Read-only.  Indicates that the HTTP request was redirected (<code>HTS::TEMP_REDIRECT</code>).</const>
+      <const name="RESUME">Enables resuming when downloading content.  Only applies when a file is being targeted and the file already exists.</const>
+      <const name="SSL">Force SSL connectivity, irrespective of the HTTP port.  Note that this flag is automatically set (and remains set for all future transfers) if the <fl>Port</fl> field is set to <code>443</code>.</const>
+    </constants>
+
+    <constants lookup="HTM" comment="The HTTP Method to use when the object is activated.">
+      <const name="BCOPY">WebDAV instruction.</const>
+      <const name="BDELETE">WebDAV instruction.</const>
+      <const name="BMOVE">WebDAV instruction.</const>
+      <const name="BPROPFIND">WebDAV instruction.</const>
+      <const name="BPROPPATCH">WebDAV instruction.</const>
+      <const name="COPY">WebDAV instruction.</const>
+      <const name="DELETE">Deletes a file from the HTTP server, location indicated by the <fl>Path</fl> field.</const>
+      <const name="GET">Retrieves files from the HTTP server.  The Path field will indicate which file to retrieve.</const>
+      <const name="HEAD">A HEAD request is equivalent to a <code>GET</code> without the content.</const>
+      <const name="LOCK">WebDAV instruction.</const>
+      <const name="MKCOL">WebDAV instruction.</const>
+      <const name="MOVE">WebDAV instruction.</const>
+      <const name="NOTIFY">WebDAV instruction.</const>
+      <const name="OPTIONS">Request permitted communication options for a given URL or server.</const>
+      <const name="POLL">WebDAV instruction.</const>
+      <const name="POST">Sends information to the HTTP server.</const>
+      <const name="PROPFIND">WebDAV instruction.</const>
+      <const name="PROPPATCH">WebDAV instruction.</const>
+      <const name="PUT">Uploads a file to the HTTP server.  The data will be read from the <fl>InputFile</fl> or <fl>InputObject</fl> references.</const>
+      <const name="SEARCH">WebDAV instruction.</const>
+      <const name="SUBSCRIBE">WebDAV instruction.</const>
+      <const name="TRACE">Perform a message loop-back test along the path to the target resource.</const>
+      <const name="UNLOCK">WebDAV instruction.</const>
+      <const name="UNSUBSCRIBE">WebDAV instruction.</const>
+    </constants>
+
+    <constants lookup="HTS" comment="HTTP status codes">
+      <const name="ACCEPTED"/>
+      <const name="BAD_GATEWAY"/>
+      <const name="BAD_REQUEST"/>
+      <const name="CONFLICT"/>
+      <const name="CONTINUE"/>
+      <const name="CREATED"/>
+      <const name="ENTITY_TOO_LARGE"/>
+      <const name="EXPECTATION_FAILED"/>
+      <const name="FORBIDDEN"/>
+      <const name="FOUND"/>
+      <const name="GATEWAY_TIMEOUT"/>
+      <const name="GONE"/>
+      <const name="LENGTH_REQUIRED"/>
+      <const name="METHOD_NOT_ALLOWED"/>
+      <const name="MOVED_PERMANENTLY"/>
+      <const name="MULTIPLE_CHOICES"/>
+      <const name="NOT_ACCEPTABLE"/>
+      <const name="NOT_FOUND"/>
+      <const name="NOT_IMPLEMENTED"/>
+      <const name="NOT_MODIFIED"/>
+      <const name="NO_CONTENT"/>
+      <const name="OKAY"/>
+      <const name="OUT_OF_RANGE"/>
+      <const name="PARTIAL_CONTENT"/>
+      <const name="PAYMENT_REQUIRED"/>
+      <const name="PRECONDITION_FAILED"/>
+      <const name="PROXY_AUTHENTICATION"/>
+      <const name="REQUEST_TIMEOUT"/>
+      <const name="RESET_CONTENT"/>
+      <const name="SEE_OTHER"/>
+      <const name="SERVER_ERROR"/>
+      <const name="SERVICE_UNAVAILABLE"/>
+      <const name="SWITCH_PROTOCOLS"/>
+      <const name="TEMP_REDIRECT"/>
+      <const name="UNAUTHORISED"/>
+      <const name="UNSUPPORTED_MEDIA"/>
+      <const name="UNVERIFIED_CONTENT"/>
+      <const name="URI_TOO_LONG"/>
+      <const name="USE_PROXY"/>
+      <const name="VERSION_UNSUPPORTED"/>
+    </constants>
+
+  </types>
+  <structs>
+  </structs>
+</book>

@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="module.xsl"?>
+
+<book>
+  <info>
+    <name>SVG</name>
+    <type>module</type>
+    <version>1</version>
+    <copyright>Paul Manias © 2010-2026</copyright>
+    <classes>
+      <class>SVG</class>
+    </classes>
+  </info>
+
+  <types>
+    <constants lookup="SVF" comment="SVG flags.">
+      <const name="ALPHA">Generate an alpha channel in the rendered image.</const>
+      <const name="AUTOSCALE">In auto-resize mode, vector dimensions are scaled to the width and height of the vector page.  The <class name="VectorScene" field="PageWidth">VectorScene.PageWidth</class> and <class name="VectorScene" field="PageHeight">VectorScene.PageHeight</class> must be set for this.</const>
+      <const name="ENFORCE_TRACKING">Enforce tracking of definition objects when a Target is used.</const>
+    </constants>
+
+  </types>
+  <structs>
+  </structs>
+</book>

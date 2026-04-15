@@ -1,0 +1,468 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="module.xsl"?>
+
+<book>
+  <info>
+    <name>Document</name>
+    <type>module</type>
+    <version>1</version>
+    <copyright>Paul Manias © 2005-2026</copyright>
+    <classes>
+      <class>Document</class>
+    </classes>
+  </info>
+
+  <types>
+    <constants lookup="AC" comment="Action identifiers.">
+      <const name="Activate"/>
+      <const name="Clear"/>
+      <const name="Clipboard"/>
+      <const name="CopyData"/>
+      <const name="DataFeed"/>
+      <const name="Deactivate"/>
+      <const name="Disable"/>
+      <const name="DragDrop"/>
+      <const name="Draw"/>
+      <const name="END"/>
+      <const name="Enable"/>
+      <const name="Flush"/>
+      <const name="Focus"/>
+      <const name="Free"/>
+      <const name="FreeWarning"/>
+      <const name="GetKey"/>
+      <const name="Hide"/>
+      <const name="Init"/>
+      <const name="Lock"/>
+      <const name="LostFocus"/>
+      <const name="Move"/>
+      <const name="MoveToBack"/>
+      <const name="MoveToFront"/>
+      <const name="MoveToPoint"/>
+      <const name="NewChild"/>
+      <const name="NewObject"/>
+      <const name="NewOwner"/>
+      <const name="NewPlacement"/>
+      <const name="Next"/>
+      <const name="Prev"/>
+      <const name="Query"/>
+      <const name="Read"/>
+      <const name="Redimension"/>
+      <const name="Redo"/>
+      <const name="Refresh"/>
+      <const name="Rename"/>
+      <const name="Reset"/>
+      <const name="Resize"/>
+      <const name="SaveImage"/>
+      <const name="SaveSettings"/>
+      <const name="SaveToObject"/>
+      <const name="Seek"/>
+      <const name="SetField"/>
+      <const name="SetKey"/>
+      <const name="Show"/>
+      <const name="Signal"/>
+      <const name="Undo"/>
+      <const name="Unlock"/>
+      <const name="Write"/>
+    </constants>
+
+    <constants lookup="CCF" comment="Class categories">
+      <const name="AUDIO">Audio classes interface with audio hardware and drivers for audio playback and recording purposes.</const>
+      <const name="COMMAND">Command classes perform specific procedures, like copying or moving a file, managing volumes or executing a program.</const>
+      <const name="DATA">Data classes parse, query and manipulate data.</const>
+      <const name="FILESYSTEM">FileSystem classes are based on file management and interaction with file based data.</const>
+      <const name="GRAPHICS">Graphics classes provide graphics management and drawing services.</const>
+      <const name="GUI">GUI classes are used in the development of graphical user interfaces.</const>
+      <const name="IO">I/O classes manage hardware and software based input and output.</const>
+      <const name="MISC">Miscellaneous classes do not fit into any of the other available categories.</const>
+      <const name="MULTIMEDIA">Classes that represent more than one media type, e.g. video files.</const>
+      <const name="NETWORK">Network classes interface with system drivers to simplify network communications.</const>
+      <const name="SYSTEM">System classes are designed to provide low-level services related to system management.</const>
+      <const name="TOOL">Tools provide interactive services for the user.</const>
+    </constants>
+
+    <constants lookup="CLIPMODE" comment="Clipboard modes">
+      <const name="COPY">Copy from the clipboard.</const>
+      <const name="CUT">Cut from the clipboard.</const>
+      <const name="PASTE">Paste from the clipboard.</const>
+    </constants>
+
+    <constants lookup="CON" comment="Gamepad controller buttons.">
+      <const name="DPAD_DOWN">Directional pad down.</const>
+      <const name="DPAD_LEFT">Directional pad left.</const>
+      <const name="DPAD_RIGHT">Directional pad right.</const>
+      <const name="DPAD_UP">Directional pad up.</const>
+      <const name="GAMEPAD_E">East button (B)</const>
+      <const name="GAMEPAD_N">North button (Y)</const>
+      <const name="GAMEPAD_S">South button (A)</const>
+      <const name="GAMEPAD_W">West button (X)</const>
+      <const name="LEFT_BUMPER_1">Gamepad left-hand bumper 1 (top, primary).</const>
+      <const name="LEFT_BUMPER_2">Gamepad left-hand bumper 2 (lower).</const>
+      <const name="LEFT_THUMB">Left thumb stick depressed.</const>
+      <const name="RIGHT_BUMPER_1">Gamepad right-hand bumper 1 (top, primary).</const>
+      <const name="RIGHT_BUMPER_2">Gamepad right-hand bumper 2 (lower).</const>
+      <const name="RIGHT_THUMB">Right thumb stick depressed.</const>
+      <const name="SELECT">Gamepad select or back button.</const>
+      <const name="START">Gamepad start button.</const>
+    </constants>
+
+    <constants lookup="DATA" comment="Data codes">
+      <const name="AUDIO">Audio file data, recognised by the Sound class</const>
+      <const name="CONTENT">Document content (between XML tags) - sent by document objects only</const>
+      <const name="DEVICE_INPUT">Device activity</const>
+      <const name="FILE">File location (the data will reflect the complete file path)</const>
+      <const name="IMAGE">Image file data, recognised by the Image class</const>
+      <const name="INPUT_READY">Device input that has been transformed into user input</const>
+      <const name="RAW">Raw unprocessed data</const>
+      <const name="RECEIPT">Receipt for item data, in response to an earlier request</const>
+      <const name="RECORD">Database record</const>
+      <const name="REQUEST">Make a request for item data</const>
+      <const name="TEXT">Standard ASCII text</const>
+      <const name="XML">Markup based text data.  NOTE - For clipboard data, the top-level encapsulating tag must declare the type of XML, e.g. 'html', 'ripple'.  For plain XML, use 'xml'</const>
+    </constants>
+
+    <constants lookup="DCF" comment="Document flags">
+      <const name="DISABLED">This read-only flag is set if the UI has been disabled through the Disable action.</const>
+      <const name="EDIT">Allow direct keyboard input and document editing.</const>
+      <const name="NO_LAYOUT_MSG">Turn off debug output produced during document layout and processing - useful on refresh for example.</const>
+      <const name="NO_SYS_KEYS">System-keys provide standard key support for Ctrl-C, Ctrl-X etc.  Set this flag to turn them off.</const>
+      <const name="OVERWRITE">This flag forces overwrite mode when the user enters information through the keyboard.  If the flag is not set, then insert mode is used.</const>
+      <const name="UNRESTRICTED">Turn off all security measures - may only be set prior to initialisation.</const>
+    </constants>
+
+    <constants lookup="DEF" comment="Event flags for selectively receiving events from the Document object.">
+      <const name="LINK_ACTIVATED">The user has interacted with a hyperlink.  This event can be cancelled by returning ERR::Skip.</const>
+      <const name="ON_CLICK">The user has interacted with an element that has an on-click definition.</const>
+      <const name="ON_CROSSING">Synonym for <code>ON_CROSSING_IN | ON_CROSSING_OUT</code></const>
+      <const name="ON_CROSSING_IN">The mouse pointer has crossed into an element.</const>
+      <const name="ON_CROSSING_OUT">The mouse pointer has crossed out of an element.</const>
+      <const name="ON_MOTION">The user has triggered a motion event in an element that supports motion monitoring.</const>
+      <const name="PATH">The source file path has changed.  Useful for detecting when the user has left the page.</const>
+      <const name="WIDGET_STATE">The state value of a widget has changed (e.g. input, checkbox, text).  <code>name</code> and <code>value</code> keys will be defined in the event parameters.</const>
+    </constants>
+
+    <constants lookup="DEVICE">
+      <const name="BOOKMARK">This marker indicates that the presented volume is a bookmark and not a device name.</const>
+      <const name="COMPACT_DISC">Compact disc style device</const>
+      <const name="FIXED">Catch-all for fixed media devices that are not directly identifiable.</const>
+      <const name="FLOPPY_DISK">Floppy disk style device</const>
+      <const name="HARD_DISK">Hard disk style device</const>
+      <const name="MEMORY">Device is RAM, ROM, WORM, NVRAM, flashdisk or other form of memory.  Does not guarantee a fast connection as it could be over a slow USB 1.1 connection for example</const>
+      <const name="MODEM">Device is a modem.</const>
+      <const name="NETWORK">Device represents a network link</const>
+      <const name="PRINTER">Device is a paper-based printer.</const>
+      <const name="PRINTER_3D">Device is a three dimensional printer.</const>
+      <const name="READ">Device is readable</const>
+      <const name="REMOVABLE">Device media is removable from the hardware</const>
+      <const name="REMOVEABLE">Device media is removable from the hardware</const>
+      <const name="SCANNER">Device is a two dimensional scanner.</const>
+      <const name="SCANNER_3D">Device is a three dimensional scanner.</const>
+      <const name="SOFTWARE">Device is virtual/software defined</const>
+      <const name="TAPE">Tape/Stream style device</const>
+      <const name="TEMPORARY">All storage is temporary</const>
+      <const name="USB">Removable USB storage device.  May be further qualified by <code>HARD_DISK</code>, <code>FLOPPY_DISK</code> etc</const>
+      <const name="WRITE">Device is writeable</const>
+    </constants>
+
+    <constants lookup="DRT" comment="Internal trigger codes">
+      <const name="AFTER_LAYOUT"/>
+      <const name="BEFORE_LAYOUT"/>
+      <const name="END"/>
+      <const name="GOT_FOCUS"/>
+      <const name="LEAVING_PAGE"/>
+      <const name="LOST_FOCUS"/>
+      <const name="PAGE_PROCESSED"/>
+      <const name="REFRESH"/>
+      <const name="USER_CLICK"/>
+      <const name="USER_CLICK_RELEASE"/>
+      <const name="USER_MOVEMENT"/>
+    </constants>
+
+    <constants lookup="EVG" comment="Event categories.">
+      <const name="ANDROID">Android specific events that do not already fit existing categories.</const>
+      <const name="APP">Custom event dispatched from an application</const>
+      <const name="AUDIO">Audio system events.</const>
+      <const name="CLASS">Custom event dispatched from a class that doesn't fit within the rest of the event framework</const>
+      <const name="DISPLAY">Video display events.</const>
+      <const name="FILESYSTEM">File system events.</const>
+      <const name="GUI">Events generated by the Graphical User Interface.</const>
+      <const name="HARDWARE">Hardware device events that are not covered by other types.</const>
+      <const name="IO">Input/Output events.</const>
+      <const name="NETWORK">Network events.</const>
+      <const name="POWER">Power Management - can also include app-specific events relating to resource management.</const>
+      <const name="SYSTEM">System-wide events</const>
+      <const name="USER">User activity events (such as user login).</const>
+    </constants>
+
+    <constants lookup="FD" comment="Field descriptors.">
+      <const name="ALLOC">CLASSDEF Indicates the returned value is a dynamic allocation that needs to be manually freed (by default is a memory pointer, can be an object if combined with <code>FD_OBJECT</code>)</const>
+      <const name="ARRAY">Indicates an array of values.  Follow with <code>ARRAYSIZE</code> if used in a function.</const>
+      <const name="ARRAYSIZE">FUNCDEF Overrides <code>LOOKUP</code>.  Pair with <code>ARRAY</code> to indicate total elements in the array.  It is preferred that any null terminator is not counted.  If <code>ARRAYSIZE</code> not specified, <code>ARRAY</code> must be null-terminated.</const>
+      <const name="BUFFER">FUNCDEF Overrides <code>WRITE</code>.  Indicates a buffer that can be filled with data by the function if paired with <code>RESULT</code>; must be paired with <code>BUFSIZE</code> in second argument.</const>
+      <const name="BUFSIZE">FUNCDEF Overrides <code>LOOKUP</code>.  Pair with <code>BUFFER</code> to indicate the byte size of the buffer memory.</const>
+      <const name="BYTE">8 bit integer.</const>
+      <const name="CPP">Use the C++ variant of the indicated type, e.g. <code>ARRAY</code> is a <code>std::vector</code>.</const>
+      <const name="CUSTOM"/>
+      <const name="DOUBLE">64 bit float.</const>
+      <const name="DOUBLERESULT">For actions and methods</const>
+      <const name="ERROR">FUNCDEF</const>
+      <const name="FLAGS">CLASSDEF</const>
+      <const name="FLOAT">32 bit float.  Not valid for use in class definitions.</const>
+      <const name="FUNCTION">Intended for callbacks, uses the rkFunction structure.</const>
+      <const name="FUNCTIONPTR">Synonym for <code>PTR | FUNCTION</code></const>
+      <const name="I">Synonym for <code>INIT</code></const>
+      <const name="INIT">CLASSDEF</const>
+      <const name="INT">32 bit integer.</const>
+      <const name="INT64">64 bit integer.</const>
+      <const name="INT64RESULT">For actions and methods</const>
+      <const name="INTRESULT">For actions and methods</const>
+      <const name="LOCAL">CLASSDEF Pointer to an object that is local to the class</const>
+      <const name="LOOKUP">CLASSDEF</const>
+      <const name="OBJECT">Supplementary, can be used with ints (for IDs) or pointers</const>
+      <const name="OBJECTID">Synonym for <code>INT | OBJECT</code></const>
+      <const name="OBJECTPTR">Synonym for <code>PTR | OBJECT</code></const>
+      <const name="POINTER">Pointer (32 or 64 bit).</const>
+      <const name="PRIVATE">Synonym for <code>SYSTEM</code></const>
+      <const name="PTR">Synonym for <code>POINTER</code></const>
+      <const name="PTRBUFFER">The next argument should be <code>INT|BUFSIZE</code></const>
+      <const name="PTRRESULT">Use for pointer-based value results only</const>
+      <const name="PTRSIZE">Synonym for <code>BUFSIZE</code></const>
+      <const name="PTR_DOUBLERESULT">Use for pointer-based value results only.</const>
+      <const name="PTR_INT64RESULT">Use for pointer-based value results only.</const>
+      <const name="PTR_INTRESULT">Use for pointer-based value results only.</const>
+      <const name="R">Synonym for <code>READ</code></const>
+      <const name="READ">CLASSDEF</const>
+      <const name="RESOURCE">The referenced struct or pointer is a special resource.  Changes some behaviours, e.g. a resourced struct will use direct value references rather than being copied in Tiri.</const>
+      <const name="RESULT">FUNCDEF Overrides <code>READ</code></const>
+      <const name="RGB">Supplementary, if an int type then format is <code>0xAARRGGBB</code>, if pointer then refers to an RGB structure.</const>
+      <const name="RI">Synonym for <code>READ | INIT</code></const>
+      <const name="RW">Synonym for <code>READ | WRITE</code></const>
+      <const name="SCALED">Supplementary, indicates a float value for multiplicative scaling.</const>
+      <const name="STR">Synonym for <code>STRING</code></const>
+      <const name="STRING">Pointer to a string.</const>
+      <const name="STRRESULT">Synonym for <code>STR | RESULT</code></const>
+      <const name="STRUCT">Supplementary, defines the field as a structure reference.  MUST be combined with <code>FD_POINTER</code>.  If used in a class, it is possible to name the structure definition in field-&gt;Arg</const>
+      <const name="SYNONYM">CLASSDEF Use to declare fields that duplicate the functionality of another field.</const>
+      <const name="SYSTEM">CLASSDEF System, internal and private fields.</const>
+      <const name="TAGS">FUNCDEF Overrides <code>INIT</code></const>
+      <const name="UNIT">A value that describes a display unit.</const>
+      <const name="UNSIGNED">Supplementary, integer value is unsigned.</const>
+      <const name="VARTAGS">FUNCDEF Overrides <code>FLAGS</code>.  Use for 64-bit taglists that require value definitions, e.g. <code>TDOUBLE</code>, <code>TINT</code> etc.</const>
+      <const name="VIRTUAL">CLASSDEF Ensures that the field has no physical representation in the structure.</const>
+      <const name="VOID"/>
+      <const name="VOLATILE">[Not yet allocated a bit]  Used on result pointers, usually strings, to indicate that the consecutive reads will overwrite the content of previous return values.  This indicates to scripting languages to make a copy of the data before the next interaction with the object.</const>
+      <const name="W">Synonym for <code>WRITE</code></const>
+      <const name="WORD">16 bit integer.</const>
+      <const name="WRITE">CLASSDEF</const>
+    </constants>
+
+    <constants lookup="FSO" comment="These are document style flags, as used in the DocStyle structure">
+      <const name="ALIGN_CENTER">Align to the centre.</const>
+      <const name="ALIGN_RIGHT">Align to the right.</const>
+      <const name="NO_WRAP">Do not wrap the text.</const>
+      <const name="PREFORMAT">All white-space is taken into account.</const>
+      <const name="STYLES">Synonym for <code>UNDERLINE</code></const>
+      <const name="UNDERLINE">Draw a line under the text.</const>
+    </constants>
+
+    <constants lookup="JET" comment="JET constants are documented in GetInputEvent()">
+      <const name="ABS_XY">The X, Y values are defined as absolute coordinates, relative to the top-left of the display.</const>
+      <const name="BUTTON_1">Left mouse button; XBox A button, PS square button.  Value is pressure sensitive, ranging between 0 - 1.0 (0 is released, 1.0 is fully depressed).</const>
+      <const name="BUTTON_10">Non-specific button assignment.</const>
+      <const name="BUTTON_2">Right mouse button; XBox X button, PS cross button.</const>
+      <const name="BUTTON_3">Middle mouse button; XBox Y button, PS triangle.</const>
+      <const name="BUTTON_4">Alt. mouse button 1; XBox B button, PS circle.</const>
+      <const name="BUTTON_5">Alt. mouse button 2.</const>
+      <const name="BUTTON_6">Non-specific button assignment.</const>
+      <const name="BUTTON_7">Non-specific button assignment.</const>
+      <const name="BUTTON_8">Non-specific button assignment.</const>
+      <const name="BUTTON_9">Non-specific button assignment.</const>
+      <const name="CROSSED_IN">This message is sent by the input system when the mouse pointer enters an area for the first time.  The message value refers to the object ID of the container being monitored for movement.</const>
+      <const name="CROSSED_OUT">This message is sent by the input system when the mouse pointer leaves an area.  The message value refers to the object ID of the container being monitored for movement.</const>
+      <const name="DEVICE_TILT_XY">Controller tilted on the X/Y axis.  Value indicates angle, -ve = left, +ve = right</const>
+      <const name="DEVICE_TILT_Z">Controller is rising or falling.  Value expressed as 'speed',</const>
+      <const name="DISPLAY_EDGE">Recently supplied input occurred at the edge of the display.</const>
+      <const name="PEN_TILT_XY">Pen tilt angle.  0 is pointing down directly with nib at bottom, 0.5 is 90 degrees, 1.0 is inversed (eraser at bottom)</const>
+      <const name="PRESSURE">Amount of pressure applied, ranges from 0 (none) to 1.0 (normal) and possibly higher if user presses hard enough</const>
+      <const name="WHEEL">Mouse wheel rotation - the value generally reflects the number of 'clicks' rotated on the wheel.</const>
+      <const name="WHEEL_TILT">Some mouse wheels can be tilted to the left or right.  Ranges from -1.0 to +1.0</const>
+    </constants>
+
+    <constants lookup="JTYPE" comment="JTYPE flags are used to categorise input types.">
+      <const name="ANALOG">Analog movement (ranging from -1.0 to 1.0)</const>
+      <const name="ANCHORED">Cursor has been anchored with LockCursor()</const>
+      <const name="BUTTON">Input is a physical button or switch</const>
+      <const name="CROSSING">Crossing events manage the entering and leaving of an area.</const>
+      <const name="DBL_CLICK">Set by the input system if the <code>Type</code> is a button and the button has been clicked in quick succession so as to be classed as a double-click.</const>
+      <const name="DIGITAL">D-Pad or digital joystick source (restricted to +/- 1)</const>
+      <const name="DRAGGED">Set if sufficient movement occurred between the original click and its point of release (usually requires a 3 or more pixel difference).</const>
+      <const name="DRAG_ITEM">This special flag is set by the input system if the pointer is click-dragging an object at the time of the event.</const>
+      <const name="EXT_MOVEMENT">Extended or indirect movement information.  This covers all types of movement that are unconnected to coordinate positioning -  mouse wheel movement and pen tilt are two such examples.</const>
+      <const name="MOVEMENT">X/Y coordinate movement only. Movement such as the wheel mouse spinning is not covered by this type as it does not influence the coordinate system.</const>
+      <const name="REPEATED">Input is a repeated entry (i.e. user is holding down a button and a repetition timer is being triggered)</const>
+      <const name="SECONDARY">Indicates to the receiver of this message that it is not the primary/original recipient</const>
+    </constants>
+
+    <constants lookup="KQ" comment="Special qualifier flags">
+      <const name="ALT">Synonym for <code>L_ALT | R_ALT</code></const>
+      <const name="ALTGR">Synonym for <code>R_ALT</code></const>
+      <const name="CAPS_LOCK">Caps-Lock is on</const>
+      <const name="COMMAND">Synonym for <code>L_COMMAND | R_COMMAND</code></const>
+      <const name="CONTROL">Synonym for <code>L_CONTROL | R_CONTROL</code></const>
+      <const name="CTRL">Synonym for <code>L_CONTROL | R_CONTROL</code></const>
+      <const name="DEAD_KEY">This key will be affected by a previously pressed dead-key</const>
+      <const name="INFO">Synonym for <code>REPEAT | RELEASED | PRESSED | NOT_PRINTABLE | CAPS_LOCK</code></const>
+      <const name="INSTRUCTION_KEYS">Synonym for <code>ALT | CONTROL</code></const>
+      <const name="L_ALT">Left Alt is held</const>
+      <const name="L_COMMAND">Left Logo/Special</const>
+      <const name="L_CONTROL">Control Key is held</const>
+      <const name="L_CTRL">Control Key is held</const>
+      <const name="L_SHIFT">Left Shift is held</const>
+      <const name="NOT_PRINTABLE">The represented key value is not printable</const>
+      <const name="NUM_LOCK">NumLock is on</const>
+      <const name="NUM_PAD">Identifies numeric keypad keys</const>
+      <const name="PRESSED">Key is being held or tapped</const>
+      <const name="QUALIFIERS">Synonym for <code>SHIFT | COMMAND | ALT | CONTROL</code></const>
+      <const name="RELEASED">The key is being released</const>
+      <const name="REPEAT">This is a repeated key</const>
+      <const name="R_ALT">Right Alt is held</const>
+      <const name="R_COMMAND">Right Logo/Special</const>
+      <const name="R_CONTROL">Control Key is held</const>
+      <const name="R_CTRL">Control Key is held</const>
+      <const name="R_SHIFT">Right Shift is held</const>
+      <const name="SCR_LOCK">Scroll Lock is on</const>
+      <const name="SHIFT">Synonym for <code>L_SHIFT | R_SHIFT</code></const>
+    </constants>
+
+    <constants lookup="MEM" comment="Memory types used by AllocMemory().  The lower 16 bits are stored with allocated blocks, the upper 16 bits are function-relative only.">
+      <const name="AUDIO">The memory space is reserved by an audio device such as a sound card.</const>
+      <const name="CALLER">This flag is usable only in routines that are supporting a class method.  It forces the memory allocation to be tracked to the object that made the method call.  This is particularly important in methods that return memory blocks that do not form a part of the object itself.</const>
+      <const name="CODE">Set if the memory will contain executable program code.</const>
+      <const name="DATA">The default type, <code>DATA</code>, is used to indicate a standard memory allocation from system RAM.</const>
+      <const name="HIDDEN">Hidden blocks are not recorded and are excluded from resource tracking.</const>
+      <const name="MANAGED">Enables custom resource management for the memory block.  The start of the block will need to be reserved with a pointer to a <code>ResourceManager</code> structure, which is included as part of the block's declared Size.  The <code>Free()</code> callback will be called when the block is removed.</const>
+      <const name="NO_BLOCK">Permanently turn off all accesses to this memory block.  This means that multiple threads can have full read/write access to the memory block at once regardless of other acces flags.</const>
+      <const name="NO_BLOCKING">Permanently turn off all accesses to this memory block.  This means that multiple threads can have full read/write access to the memory block at once regardless of other acces flags.</const>
+      <const name="NO_CLEAR">Do not clear the memory on allocation (saves time).</const>
+      <const name="NO_LOCK">For AllocMemory() only, indicates that the (private) memory block should not be locked on return.</const>
+      <const name="NO_POOL">Gives a hint to the allocator to allocate the block outside of the memory pool.</const>
+      <const name="READ">The memory is explicitly marked as readable.</const>
+      <const name="READ_WRITE">Synonym for <code>READ | WRITE</code></const>
+      <const name="STRING">Identifies the memory content as a null terminated string. Useful for debugging and run-time type identification in scripts.</const>
+      <const name="TEXTURE">The memory space is reserved by a video driver for hosting texture graphics.</const>
+      <const name="TMP_LOCK">Enables temporary locking restrictions.  Prevents processes from sleeping while holding a lock on the memory block.</const>
+      <const name="UNTRACKED">Allocating an untracked memory block will prevent the memory block from being tracked back to the object holding the current context.</const>
+      <const name="VIDEO">The memory space is reserved by a video device such as a graphics card for display purposes, e.g. framebuffer.</const>
+      <const name="WRITE">The memory is explicitly marked as writeable.</const>
+    </constants>
+
+    <constants lookup="PERMIT" comment="Permission flags">
+      <const name="ALL_DELETE">Synonym for <code>EVERYONE_DELETE</code></const>
+      <const name="ALL_EXEC">Synonym for <code>EVERYONE_EXEC</code></const>
+      <const name="ALL_READ">Synonym for <code>EVERYONE_READ</code></const>
+      <const name="ALL_WRITE">Synonym for <code>EVERYONE_WRITE</code></const>
+      <const name="ARCHIVE">Marks the file for future backup.  The flag should be cleared after the backup has succeeded.</const>
+      <const name="DELETE">Owner can delete.  If the file system does not support this, deletion is enabled via the <code>WRITE</code> flag.</const>
+      <const name="EVERYONE_ACCESS">Synonym for <code>EVERYONE_READ | EVERYONE_WRITE | EVERYONE_EXEC | EVERYONE_DELETE</code></const>
+      <const name="EVERYONE_DELETE">Synonym for <code>DELETE | GROUP_DELETE | OTHERS_DELETE</code></const>
+      <const name="EVERYONE_EXEC">Synonym for <code>EXEC | GROUP_EXEC | OTHERS_EXEC</code></const>
+      <const name="EVERYONE_READ">Synonym for <code>READ | GROUP_READ | OTHERS_READ</code></const>
+      <const name="EVERYONE_READWRITE">Synonym for <code>EVERYONE_READ | EVERYONE_WRITE</code></const>
+      <const name="EVERYONE_WRITE">Synonym for <code>WRITE | GROUP_WRITE | OTHERS_WRITE</code></const>
+      <const name="EXEC">User/Owner can execute.</const>
+      <const name="GROUP">Synonym for <code>GROUP_READ | GROUP_WRITE | GROUP_EXEC | GROUP_DELETE</code></const>
+      <const name="GROUPID">Allows executables to run with a set group id.</const>
+      <const name="GROUP_DELETE">Group members can delete.</const>
+      <const name="GROUP_EXEC">Group members can execute.</const>
+      <const name="GROUP_READ">Group members can read.</const>
+      <const name="GROUP_WRITE">Group members can write.</const>
+      <const name="HIDDEN">Recommends that the file is hidden from view by default.</const>
+      <const name="INHERIT">Inherit permissions from parent folder and logical OR them with preset permission flags.</const>
+      <const name="NETWORK">File is hosted on another machine.</const>
+      <const name="OFFLINE">File content for this networked file has not been cached on the local PC.</const>
+      <const name="OTHERS">Synonym for <code>OTHERS_READ | OTHERS_WRITE | OTHERS_EXEC | OTHERS_DELETE</code></const>
+      <const name="OTHERS_DELETE">Others can delete.</const>
+      <const name="OTHERS_EXEC">Others can execute.</const>
+      <const name="OTHERS_READ">Others can read.</const>
+      <const name="OTHERS_WRITE">Others can write.</const>
+      <const name="PASSWORD">File is password protected.</const>
+      <const name="READ">User/Owner has read access.  This will not allow compiled code to be executed.</const>
+      <const name="USER">Synonym for <code>READ | WRITE | EXEC | DELETE</code></const>
+      <const name="USERID">Allows executables to run with a set user id.</const>
+      <const name="USER_EXEC">Synonym for <code>EXEC</code></const>
+      <const name="USER_READ">Synonym for <code>READ</code></const>
+      <const name="USER_WRITE">Synonym for <code>WRITE</code></const>
+      <const name="WRITE">User/Owner can write.</const>
+    </constants>
+
+    <constants lookup="RIPL" comment="Official version number (date format).  Any changes to the handling of document content require that this number be updated.">
+      <const name="VERSION"/>
+    </constants>
+
+    <constants lookup="SEEK" comment="Seek positions">
+      <const name="CURRENT">Use an index at the end of the last read/write operation.</const>
+      <const name="END">Use an index at the end of the data buffer.</const>
+      <const name="RELATIVE">The index is between 0 and 1.0 and relative to the data size.</const>
+      <const name="START">Use an index at position zero.</const>
+    </constants>
+
+    <constants lookup="TT">
+      <const name="EDIT"/>
+      <const name="LINK"/>
+      <const name="VECTOR"/>
+    </constants>
+
+  </types>
+  <structs>
+    <struct name="DateTime" comment="Generic structure for date-time management.">
+      <field name="Year" type="INT16">Year</field>
+      <field name="Month" type="INT8">Month 1 to 12</field>
+      <field name="Day" type="INT8">Day 1 to 31</field>
+      <field name="Hour" type="INT8">Hour 0 to 23</field>
+      <field name="Minute" type="INT8">Minute 0 to 59</field>
+      <field name="Second" type="INT8">Second 0 to 59</field>
+      <field name="TimeZone" type="INT8">TimeZone -13 to +13</field>
+    </struct>
+
+    <struct name="InputEvent">
+      <field name="Next" type="const struct InputEvent *">Next event in the chain</field>
+      <field name="Value" type="DOUBLE">The value associated with the Type</field>
+      <field name="Timestamp" type="INT64">PreciseTime() of the recorded input</field>
+      <field name="RecipientID" type="OBJECTID">Surface that the input message is being conveyed to</field>
+      <field name="OverID" type="OBJECTID">Surface that is directly under the mouse pointer at the time of the event</field>
+      <field name="AbsX" type="DOUBLE">Absolute horizontal position of mouse cursor (relative to the top left of the display)</field>
+      <field name="AbsY" type="DOUBLE">Absolute vertical position of mouse cursor (relative to the top left of the display)</field>
+      <field name="X" type="DOUBLE">Horizontal position relative to the surface that the pointer is over - unless a mouse button is held or pointer is anchored - then the coordinates are relative to the click-held surface</field>
+      <field name="Y" type="DOUBLE">Vertical position relative to the surface that the pointer is over - unless a mouse button is held or pointer is anchored - then the coordinates are relative to the click-held surface</field>
+      <field name="DeviceID" type="OBJECTID">The hardware device that this event originated from</field>
+      <field name="Type" type="JET" lookup="JET">JET constant that describes the event</field>
+      <field name="Flags" type="JTYPE" lookup="JTYPE">Broad descriptors for the given <code>Type</code> (see <code>JTYPE</code> flags).  Automatically defined when delivered to the pointer object</field>
+      <field name="Mask" type="JTYPE" lookup="JTYPE">Mask to use for checking against subscribers</field>
+    </struct>
+
+    <struct name="dcAudio" comment="Data feed structure for Audio">
+      <field name="Size" type="INT">Byte size of this structure</field>
+      <field name="Format" type="INT">Format of the audio data</field>
+    </struct>
+
+    <struct name="dcDeviceInput">
+      <field name="Values" type="DOUBLE" size="2">The value(s) associated with the Type</field>
+      <field name="Timestamp" type="INT64"><function module="Core">PreciseTime</function> of the recorded input</field>
+      <field name="DeviceID" type="OBJECTID">The hardware device that this event originated from (note: This ID can be to a private/inaccessible object, the point is that the ID is unique)</field>
+      <field name="Flags" type="JTYPE" lookup="JTYPE">Broad descriptors for the given <code>Type</code>.  Automatically defined when delivered to the pointer object</field>
+      <field name="Type" type="JET" lookup="JET"><code>JET</code> constant</field>
+    </struct>
+
+    <struct name="dcKeyEntry" comment="Data feed structure for Keypress">
+      <field name="Flags" type="INT">Shift/Control/CapsLock...</field>
+      <field name="Value" type="INT">ASCII value of the key A/B/C/D...</field>
+      <field name="Timestamp" type="INT64"><function module="Core">PreciseTime</function> at which the keypress was recorded</field>
+      <field name="Unicode" type="INT">Unicode value for pre-calculated key translations</field>
+    </struct>
+
+    <struct name="dcRequest" comment="Data feed item request">
+      <field name="Item" type="INT">Identifier for retrieval from the source</field>
+      <field name="Preference" type="INT8" size="4">Data preferences for the returned item(s)</field>
+    </struct>
+
+  </structs>
+</book>
