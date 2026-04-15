@@ -31,6 +31,16 @@ function feedAndRead(Content:str, PageWidth:num)
    return xml_str
 end
 
+function feedExpectError(Content:str, PageWidth:num)
+   scene = obj.new('VectorScene', { pageWidth=PageWidth ?? 1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp })
+   err = doc.acDataFeed(nil, DATA_XML, Content)
+   if err != ERR_Okay then return err end
+   err, _ = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   return err
+end
+
 function loadAndRead(Path:str)
    scene = obj.new('VectorScene', { pageWidth=1024, pageHeight=768 })
    vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
@@ -60,6 +70,7 @@ end
 
    -- print@select
    assert(contains(xml_str, 'a-b-c'), 'print@select must evaluate XQuery and emit joined string')
+   assert(contains(xml_str, 'PAGE-NAME-Index'), 'print@select must be able to query the active XML document context')
 
    -- print@value with AVT
    assert(contains(xml_str, 'VAL 3'), 'print@value AVT must emit "VAL 3"')
@@ -79,12 +90,24 @@ end
    assert(contains(xml_str, 'HELLO'), 'print@select must upper-case "hello" via XQuery, got: ' .. xml_str)
 end
 
+@Test function PrintSelectDocumentContext()
+   xml_str = feedAndRead('<body/><page name="Ctx"><p><print select="string((/page/@name)[1])"/></p></page>')
+   assert(contains(xml_str, 'Ctx'),
+      'print@select must evaluate against the active XML context, got: ' .. xml_str)
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- print@value supports `{...}` AVT fragments.
 
 @Test function PrintValueAVT()
    xml_str = feedAndRead('<body/><page><p><print value="sum={1 + 2 + 3}"/></p></page>')
    assert(contains(xml_str, 'sum=6'), 'print@value AVT must evaluate embedded XQuery, got: ' .. xml_str)
+end
+
+@Test function PrintValueAVTDocumentContext()
+   xml_str = feedAndRead('<body/><page name="AVT"><p><print value="page={string((/page/@name)[1])}"/></p></page>')
+   assert(contains(xml_str, 'page=AVT'),
+      'print@value AVT must evaluate embedded XQuery against the active XML context, got: ' .. xml_str)
 end
 
 @Test function PrintValueEscapedBraces()
@@ -116,6 +139,13 @@ end
    assert(not contains(xml_str, 'FAIL-ELSE'), 'else must not run when elseif matches')
 end
 
+@Test function IfTestDocumentContext()
+   xml_str = feedAndRead(
+      '<body/><page name="Ctx"><if test="exists(/page[@name=\'Ctx\'])"><p>CTX-HIT</p></if></page>')
+   assert(contains(xml_str, 'CTX-HIT'),
+      'if@test must evaluate against the active XML context')
+end
+
 @Test function WhileTestFalseSkipsBody()
    xml_str = feedAndRead(
       '<body/><page><while test="false()"><p>SHOULD-NOT-EMIT</p></while></page>')
@@ -132,16 +162,22 @@ end
       'parse@select must evaluate XQuery and parse the result as XML, got: ' .. xml_str)
 end
 
+@Test function ParseSelectDocumentContext()
+   xml_str = feedAndRead(
+      '<body/><page name="ParseCtx"><parse select="concat(\'&lt;p&gt;\', string((/page/@name)[1]), \'&lt;/p&gt;\')"/></page>')
+   assert(contains(xml_str, 'ParseCtx'),
+      'parse@select must evaluate against the active XML context, got: ' .. xml_str)
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- Failure cases
 
 @Test function MalformedTestExpression()
-   -- A malformed XQuery expression in test should evaluate as false, not crash.
-   xml_str = feedAndRead(
+   -- A malformed XQuery expression in test must fail document parsing, not silently fall through.
+   err = feedExpectError(
       '<body/><page><if test="this is not valid xquery @@"><p>SHOULD-NOT-HIT</p></if>' ..
       '<else><p>MALFORMED-FELL-THROUGH</p></else></page>')
-   assert(not contains(xml_str, 'SHOULD-NOT-HIT'),
-      'Malformed test expression must not take the true branch')
+   assert(err != ERR_Okay, 'Malformed test expression must fail parsing')
 end
 
 -----------------------------------------------------------------------------------------------------------------------

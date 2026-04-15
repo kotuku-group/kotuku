@@ -354,7 +354,7 @@ void parser::translate_attrib_args(pf::vector<XMLAttrib> &Attribs)
 
 enum class XQEval { STRING, BOOLEAN };
 
-static ERR xquery_eval_helper(extDocument *Self, objXML *XMLContext, const std::string &Expression,
+static ERR xquery_eval_helper(extDocument *Self, objXML *XMLContext, XTag *ContextTag, const std::string &Expression,
    XQEval Mode, std::string &OutString, bool &OutBoolean)
 {
    pf::Log log(__FUNCTION__);
@@ -364,18 +364,21 @@ static ERR xquery_eval_helper(extDocument *Self, objXML *XMLContext, const std::
 
    if (Expression.empty()) return ERR::Okay;
 
+   std::string eval_expression;
+   if (Mode IS XQEval::BOOLEAN) eval_expression = "boolean(" + Expression + ")";
+   else eval_expression = Expression;
+
    objXQuery *xq;
    if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) != ERR::Okay) {
       log.warning("Failed to allocate XQuery object.");
+      if (Self) Self->Error = ERR::NewObject;
       return ERR::NewObject;
    }
 
-   xq->set(FID_Statement, Expression.c_str());
+   xq->set(FID_Statement, eval_expression.c_str());
 
    ERR err = xq->init();
-   if (err IS ERR::Okay) {
-      err = xq->evaluate(XMLContext);
-   }
+   if (err IS ERR::Okay) err = xq->evaluate(XMLContext, ContextTag ? ContextTag->ID : 0);
 
    if (err != ERR::Okay) {
       CSTRING msg;
@@ -383,30 +386,17 @@ static ERR xquery_eval_helper(extDocument *Self, objXML *XMLContext, const std::
          log.warning("XQuery error evaluating \"%s\": %s", Expression.c_str(), msg ? msg : "(none)");
       }
       else log.warning("XQuery error evaluating \"%s\".", Expression.c_str());
+      if (Self) Self->Error = err;
       FreeResource(xq);
       return err;
    }
 
-   if (Mode IS XQEval::STRING) {
-      CSTRING result;
-      if (xq->get(FID_ResultString, result) IS ERR::Okay) {
+   CSTRING result;
+   if (xq->get(FID_ResultString, result) IS ERR::Okay) {
+      if (Mode IS XQEval::STRING) {
          if (result) OutString.assign(result);
       }
-   }
-   else {
-      // XPath effective boolean value: evaluate as boolean via wrapping in boolean(...) to reuse XQuery's coercion.
-      objXQuery *xqb;
-      if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xqb) IS ERR::Okay) {
-         std::string bool_expr = "boolean(" + Expression + ")";
-         xqb->set(FID_Statement, bool_expr.c_str());
-         if ((xqb->init() IS ERR::Okay) and (xqb->evaluate(XMLContext) IS ERR::Okay)) {
-            CSTRING result;
-            if (xqb->get(FID_ResultString, result) IS ERR::Okay) {
-               if (result and iequals("true", result)) OutBoolean = true;
-            }
-         }
-         FreeResource(xqb);
-      }
+      else if (result and iequals("true", result)) OutBoolean = true;
    }
 
    FreeResource(xq);
@@ -417,7 +407,8 @@ static ERR xquery_eval_helper(extDocument *Self, objXML *XMLContext, const std::
 // and concatenating the result with literal parts.  Follows the same escaping rules as the XQuery tokeniser so that
 // `{{` and `}}` are preserved as literal `{` and `}`.
 
-static ERR xquery_expand_avt(extDocument *Self, objXML *XMLContext, const std::string &Input, std::string &Output)
+static ERR xquery_expand_avt(extDocument *Self, objXML *XMLContext, XTag *ContextTag,
+   const std::string &Input, std::string &Output)
 {
    pf::Log log(__FUNCTION__);
    Output.clear();
@@ -466,7 +457,7 @@ static ERR xquery_expand_avt(extDocument *Self, objXML *XMLContext, const std::s
 
          std::string evaluated;
          bool unused;
-         ERR err = xquery_eval_helper(Self, XMLContext, expr, XQEval::STRING, evaluated, unused);
+         ERR err = xquery_eval_helper(Self, XMLContext, ContextTag, expr, XQEval::STRING, evaluated, unused);
          if (err != ERR::Okay) return err;
          Output += evaluated;
       }
@@ -1029,7 +1020,7 @@ static bool eval_condition(const std::string &String)
 // takes precedence over the legacy statement/exists/notnull/null/not attributes.  The result of the expression is
 // coerced via XQuery's effective boolean value rules (boolean(...)).
 
-static bool check_tag_conditions(extDocument *Self, XTag &Tag)
+static bool check_tag_conditions(extDocument *Self, objXML *XMLContext, XTag &Tag)
 {
    pf::Log log("eval");
 
@@ -1040,10 +1031,11 @@ static bool check_tag_conditions(extDocument *Self, XTag &Tag)
       if (iequals("test", name)) {
          std::string result;
          bool boolean_result = false;
-         auto err = xquery_eval_helper(Self, nullptr, Tag.Attribs[i].Value,
+         auto err = xquery_eval_helper(Self, XMLContext, &Tag, Tag.Attribs[i].Value,
             XQEval::BOOLEAN, result, boolean_result);
          if (err != ERR::Okay) {
             log.warning("XQuery test failed: %s", Tag.Attribs[i].Value.c_str());
+            Self->Error = err;
             return false;
          }
          log.trace("Test: %s -> %s", Tag.Attribs[i].Value.c_str(), boolean_result ? "true" : "false");
@@ -1277,7 +1269,7 @@ TRF parser::parse_tag(XTag &Tag, IPF &Flags)
          break;
 
       case HASH_if:
-         if (check_tag_conditions(Self, Tag)) { // Statement is true
+         if (check_tag_conditions(Self, m_xml, Tag)) { // Statement is true
             m_check_else = false;
             result = parse_tags(Tag.Children, Flags);
          }
@@ -1286,7 +1278,7 @@ TRF parser::parse_tag(XTag &Tag, IPF &Flags)
 
       case HASH_elseif:
          if (m_check_else) {
-            if (check_tag_conditions(Self, Tag)) { // Statement is true
+            if (check_tag_conditions(Self, m_xml, Tag)) { // Statement is true
                m_check_else = false;
                result = parse_tags(Tag.Children, Flags);
             }
@@ -1304,12 +1296,12 @@ TRF parser::parse_tag(XTag &Tag, IPF &Flags)
          auto saveindex = m_loop_index;
          m_loop_index = 0;
 
-         if ((!Tag.Children.empty()) and (check_tag_conditions(Self, Tag))) {
+         if ((!Tag.Children.empty()) and (check_tag_conditions(Self, m_xml, Tag))) {
             // Save/restore the statement string on each cycle to fully evaluate the condition each time.
 
             bool state = true;
             while (state) {
-               state = check_tag_conditions(Self, Tag);
+               state = check_tag_conditions(Self, m_xml, Tag);
                Tag.Attribs = saved_attribs;
                translate_attrib_args(Tag.Attribs);
 
@@ -2522,7 +2514,7 @@ void parser::tag_parse(XTag &Tag)
          if (iequals("select", name)) {
             std::string result;
             bool unused;
-            auto err = xquery_eval_helper(Self, nullptr, Tag.Attribs[i].Value,
+            auto err = xquery_eval_helper(Self, m_xml, &Tag, Tag.Attribs[i].Value,
                XQEval::STRING, result, unused);
             if (err != ERR::Okay) {
                log.warning("<parse select=\"%s\"> failed.", Tag.Attribs[i].Value.c_str());
@@ -2922,10 +2914,11 @@ void parser::tag_print(XTag &Tag)
          if (iequals("select", name)) {
             std::string result;
             bool unused;
-            auto err = xquery_eval_helper(Self, nullptr, Tag.Attribs[i].Value,
+            auto err = xquery_eval_helper(Self, m_xml, &Tag, Tag.Attribs[i].Value,
                XQEval::STRING, result, unused);
             if (err != ERR::Okay) {
                log.warning("<print select=\"%s\"> failed.", Tag.Attribs[i].Value.c_str());
+               Self->Error = err;
                return;
             }
             insert_text(Self, m_stream, m_index, result, (m_style.options & FSO::PREFORMAT) != FSO::NIL);
@@ -2943,9 +2936,10 @@ void parser::tag_print(XTag &Tag)
 
          if (has_avt) {
             std::string expanded;
-            auto err = xquery_expand_avt(Self, nullptr, raw, expanded);
+            auto err = xquery_expand_avt(Self, m_xml, &Tag, raw, expanded);
             if (err != ERR::Okay) {
                log.warning("<print value=\"%s\"> AVT expansion failed.", raw.c_str());
+               Self->Error = err;
                return;
             }
             insert_text(Self, m_stream, m_index, expanded, (m_style.options & FSO::PREFORMAT) != FSO::NIL);

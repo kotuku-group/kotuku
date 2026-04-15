@@ -47,6 +47,7 @@
 
 <!-- print@select -->
 <p><print select="string-join(('a', 'b', 'c'), '-')"/></p>
+<p><print select="concat('PAGE-NAME-', string((/page/@name)[1]))"/></p>
 
 <!-- print@value with AVT -->
 <p><print value="VAL {1 + 2}"/></p>
