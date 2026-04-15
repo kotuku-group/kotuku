@@ -316,8 +316,9 @@
 <tr><td>End</td><td>An index in the document stream at which extraction will stop.</td></tr>
 <tr><td>Result</td><td>The data is returned in this parameter as an allocated string.</td></tr>
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
-<p>The ReadContent() method extracts content from the document stream, covering a specific area.  It can return the data as a RIPL binary stream, or translate the content into plain-text (control codes are removed).</p>
-<p>If data is extracted in its original format, no post-processing is performed to fix validity errors that may arise from an invalid data range.  For instance, if an opening paragraph code is not closed with a matching paragraph end point, this will remain the case in the resulting data.</p>
+<p>The ReadContent() method extracts content from the document stream, covering a specific area.  It can return the data as a RIPL binary stream, translated into plain-text (control codes are removed), or serialised as an XML document describing the byte stream.</p>
+<p>The XML format is a linear, non-nested serialisation of the byte stream intended for inspection, diffing and tooling. Each byte code becomes one XML element wrapped in a <code>&lt;extract&gt;</code> root, followed by the requested content in a <code>&lt;stream&gt;</code> element, and text content appears inside <code>&lt;text&gt;</code> elements with the usual XML escaping applied.  Start/end markers such as paragraphs and font runs are emitted as sibling self-closing elements rather than nested, reflecting the underlying linear storage model.  A trailing <code>&lt;fonts&gt;</code> section lists information for the shared cached fonts.</p>
+<p>No post-processing is performed to fix validity errors that may arise from an invalid data range.  For instance, if an opening paragraph code is not closed with a matching paragraph end point, this will remain the case in the resulting data.</p>
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function.</td></tr>

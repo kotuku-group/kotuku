@@ -1623,10 +1623,10 @@ as a RIPL binary stream, translated into plain-text (control codes are removed),
 describing the byte stream.
 
 The XML format is a linear, non-nested serialisation of the byte stream intended for inspection, diffing and tooling.
-Each byte code becomes one XML element wrapped in a `<extract>` root, followed by the requested content in a `<stream>`
-element, and text content appears inside `<text>` elements with the usual XML escaping applied.  Start/end markers
+Each byte code becomes one XML element wrapped in a `&lt;extract&gt;` root, followed by the requested content in a `&lt;stream&gt;`
+element, and text content appears inside `&lt;text&gt;` elements with the usual XML escaping applied.  Start/end markers
 such as paragraphs and font runs are emitted as sibling self-closing elements rather than nested, reflecting the
-underlying linear storage model.  A trailing `<fonts>` section lists information for the shared cached fonts.
+underlying linear storage model.  A trailing `&lt;fonts&gt;` section lists information for the shared cached fonts.
 
 No post-processing is performed to fix validity errors that may arise from an invalid data range.  For instance, if
 an opening paragraph code is not closed with a matching paragraph end point, this will remain the case in the

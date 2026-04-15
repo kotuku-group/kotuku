@@ -11,7 +11,7 @@
 
    import 'io/filesearch'
 
-   local rx_sdk_path = <{ regex.new([[(.+)CMakeLists\.txt]]) }>
+rx_sdk_path = <{ regex.new([[(.+)CMakeLists\.txt]]) }>
 
 -----------------------------------------------------------------------------------------------------------------------
 -- Resolve the location of the Kōtuku SDK and create an 'sdk:' volume.
@@ -52,8 +52,14 @@ end
 
    resolveSDKPath(arg('sdk'))
 
-   err, xsltproc_path = mSys.ResolvePath("xsltproc", RSF_PATH)
-   assert(xsltproc_path, 'xsltproc not found on system path, please install it first.')
+   platform = mSys.GetSystemState().platform
+
+   if platform is 'Windows' then
+      error('Windows not supported.')
+   else
+      err, xsltproc_path = mSys.ResolvePath("xsltproc", RSF_PATH)
+      assert(xsltproc_path, 'xsltproc not found on system path, please install it first.')
+   end
 
    cmdlist = ''
 
@@ -78,16 +84,18 @@ end
          err, res_class_folder = mSys.ResolvePath(class_folder)
          assert(err is ERR_Okay, f'Failed to resolve XML folder {class_folder}')
 
-         parameters = f'"{res_src_path}" --encoding UTF-8 -o "{res_output_path}" --path "{res_module_folder} {res_class_folder}"'
+         if platform is 'Windows' then
 
-         cmdlist ..= f'xsltproc {parameters}\n'
+         else
+            parameters = f'"{res_src_path}" --encoding UTF-8 -o "{res_output_path}" --path "{res_module_folder} {res_class_folder}"'
+            cmdlist ..= f'xsltproc {parameters}\n'
+         end
       end
    })
 
    output_path = arg('output') -- Optional output path for the generated script.
 
-   state = mSys.GetSystemState()
-   if state.platform is 'Windows' then
+   if platform is 'Windows' then
       output_path ??= 'temp:docgen.bat'
       cmdlist = cmdlist:replace('\\','\\\\')
    else
