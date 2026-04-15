@@ -378,7 +378,7 @@ static ERR xquery_eval_helper(extDocument *Self, objXML *XMLContext, XTag *Conte
    xq->set(FID_Statement, eval_expression.c_str());
 
    ERR err = xq->init();
-   if (err IS ERR::Okay) err = xq->evaluate(XMLContext, ContextTag ? ContextTag->ID : 0);
+   if (err IS ERR::Okay) err = xq->evaluate(XMLContext, ContextTag ? ContextTag->ID : 0, XEF::NIL);
 
    if (err != ERR::Okay) {
       CSTRING msg;
