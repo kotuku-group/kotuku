@@ -95,7 +95,7 @@ constexpr int REG_DWORD = 4;
 constexpr int REG_DWORD_BIG_ENDIAN = 5;
 constexpr int REG_QWORD = 11;
 constexpr int REG_SZ = 1;
-constexpr int REG_EXPAND_SZ = 0x00020000;
+constexpr int REG_EXPAND_SZ = 2;
 
 #define KEY_READ  0x20019
 #define KEY_WRITE 0x20006
@@ -106,6 +106,8 @@ constexpr int MAX_PATH = 260;
 extern "C" DLLCALL int WINAPI RegOpenKeyExA(int,CSTRING,int,int,APTR *);
 extern "C" DLLCALL int WINAPI RegQueryValueExA(APTR,CSTRING,int *,int *,int8_t *,int *);
 extern "C" DLLCALL int WINAPI RegSetValueExA(APTR hKey, CSTRING lpValueName, int Reserved, int dwType, const void *lpData, int cbData);
+extern "C" DLLCALL int WINAPI RegEnumValueA(APTR hKey, int dwIndex, STRING lpValueName, int *lpcchValueName, int *lpReserved, int *lpType, int8_t *lpData, int *lpcbData);
+extern "C" DLLCALL int WINAPI RegEnumKeyExA(APTR hKey, int dwIndex, STRING lpName, int *lpcchName, int *lpReserved, STRING lpClass, int *lpcchClass, void *lpftLastWriteTime);
 
 static MSGID glProcessBreak = MSGID::NIL;
 #endif
@@ -1176,10 +1178,13 @@ cases, the system's environment variables are queried):
 \HKEY_USERS\
 </pre>
 
-Here is a valid example for reading the 'Kotuku' key value `\HKEY_CURRENT_USER\Software\Kotuku`
+If the `Name` string ends with a trailing backslash, all keys and sub-keys held at that location are returned as a
+tab-separated list in the form `Name1\tName2...`.  Sub-key names are distinguished from values by a trailing
+backslash, e.g. `SubKey\\`.  This is useful for enumerating the complete contents of a registry key without needing
+to know names in advance.
 
-Caution: If your programming language uses backslash as an escape character (true for Tiri developers), remember to
-use double-backslashes as the key value separator in your Name string.
+NOTE: If your programming language uses backslash as an escape character, remember to use double-backslashes in the
+`Name` string.
 
 -INPUT-
 cstr Name:  The name of the environment variable to retrieve.
@@ -1218,61 +1223,109 @@ static ERR TASK_GetEnv(extTask *Self, struct task::GetEnv *Args)
       };
 
       std::string full_path(Args->Name);
+
+      auto format_value = [](int Type, int8_t *Buffer, int Length, std::string &Output) -> bool {
+         switch(Type) {
+            case REG_DWORD:
+               if (unsigned(Length) >= sizeof(int)) Output = std::to_string(((int *)Buffer)[0]);
+               return true;
+
+            case REG_DWORD_BIG_ENDIAN:
+               if (unsigned(Length) >= sizeof(int)) {
+                  if constexpr (std::endian::native == std::endian::little) {
+                     Output = std::to_string(reverse_long(((int *)Buffer)[0]));
+                  }
+                  else Output = std::to_string(((int *)Buffer)[0]);
+               }
+               return true;
+
+            case REG_QWORD:
+               if (unsigned(Length) >= sizeof(int64_t)) {
+                  Output = std::to_string(((int64_t *)Buffer)[0]);
+               }
+               return true;
+
+            case REG_SZ:
+            case REG_EXPAND_SZ:
+               Output.assign((char *)Buffer, Length);
+               while ((!Output.empty()) and (Output.back() IS 0)) Output.pop_back();
+               return true;
+
+            default:
+               return false;
+         }
+      };
+
       for (auto &key : keys) {
          if (not full_path.starts_with(key.HKey)) continue;
+
+         // A trailing backslash signals enumeration of all values at the given sub-key.
+
+         bool enumerate = full_path.back() IS '\\';
 
          auto sep = full_path.find_last_of('\\');
          if (sep IS std::string::npos) return log.warning(ERR::Syntax);
 
-         std::string folder = full_path.substr(key.HKey.size(), sep - key.HKey.size() + 1);
+         std::string folder;
+         std::string name;
+         if (enumerate) {
+            folder = full_path.substr(key.HKey.size());
+         }
+         else {
+            folder = full_path.substr(key.HKey.size(), sep - key.HKey.size() + 1);
+            name = full_path.substr(sep+1);
+         }
 
          APTR keyhandle;
          if (not RegOpenKeyExA(key.ID, folder.c_str(), 0, KEY_READ, &keyhandle)) {
-            int type;
-            int8_t buffer[4096];
-            int envlen = sizeof(buffer);
-            std::string name = full_path.substr(sep+1);
-            if (not RegQueryValueExA(keyhandle, name.c_str(), 0, &type, buffer, &envlen)) {
-               // Numerical registry types can be converted into strings
+            if (enumerate) {
+               Self->Env.clear();
+               char value_name[256];
+               int8_t buffer[4096];
 
-               switch(type) {
-                  case REG_DWORD:
-                     if (unsigned(envlen) >= sizeof(int)) Self->Env = std::to_string(((int *)buffer)[0]);
-                     break;
+               // Enumerate all key-value names stored at this key.
 
-                  case REG_DWORD_BIG_ENDIAN:
-                     if (unsigned(envlen) >= sizeof(int)) {
-                        if constexpr (std::endian::native == std::endian::little) {
-                           Self->Env = std::to_string(reverse_long(((int *)buffer)[0]));
-                        }
-                        else Self->Env = std::to_string(((int *)buffer)[0]);
-                     }
-                     break;
-
-                  case REG_QWORD:
-                     if (unsigned(envlen) >= sizeof(int64_t)) {
-                        Self->Env = std::to_string(((int64_t *)buffer)[0]);
-                     }
-                     break;
-
-                  case REG_SZ:
-                  case REG_EXPAND_SZ:
-                     Self->Env.assign((char *)buffer, envlen);
-                     // Remove any trailing null characters
-                     while ((!Self->Env.empty()) and (Self->Env.back() IS 0)) Self->Env.pop_back();
-                     break;
-
-                  default:
-                     log.warning("Unsupported registry type %d for key %s", type, Args->Name);
-                     break;
+               for (int index = 0; ; index++) {
+                  int name_len = sizeof(value_name);
+                  int data_len = sizeof(buffer);
+                  int type;
+                  if (RegEnumValueA(keyhandle, index, value_name, &name_len, 0, &type, buffer, &data_len)) break;
+                  if (not Self->Env.empty()) Self->Env += '\t';
+                  Self->Env.append(value_name, name_len);
                }
 
-               Args->Value = Self->Env.c_str();
-            }
-            winCloseHandle(keyhandle);
+               // Enumerate all sub-keys (folders) at this key.  Each sub-key name is
+               // suffixed with '\' so callers can distinguish folders from values.
 
-            if (Args->Value) return ERR::Okay;
-            else return ERR::DoesNotExist;
+               for (int index = 0; ; index++) {
+                  int name_len = sizeof(value_name);
+                  if (RegEnumKeyExA(keyhandle, index, value_name, &name_len, 0, nullptr, nullptr, nullptr)) break;
+
+                  if (not Self->Env.empty()) Self->Env += '\t';
+                  Self->Env.append(value_name, name_len);
+                  Self->Env += '\\';
+               }
+
+               winCloseHandle(keyhandle);
+               if (Self->Env.empty()) return ERR::DoesNotExist;
+               Args->Value = Self->Env.c_str();
+               return ERR::Okay;
+            }
+            else {
+               int type;
+               int8_t buffer[4096];
+               int envlen = sizeof(buffer);
+               if (not RegQueryValueExA(keyhandle, name.c_str(), 0, &type, buffer, &envlen)) {
+                  if (not format_value(type, buffer, envlen, Self->Env)) {
+                     log.warning("Unsupported registry type %d for key %s", type, Args->Name);
+                  }
+                  else Args->Value = Self->Env.c_str();
+               }
+               winCloseHandle(keyhandle);
+
+               if (Args->Value) return ERR::Okay;
+               else return ERR::DoesNotExist;
+            }
          }
          else return ERR::DoesNotExist;
       }

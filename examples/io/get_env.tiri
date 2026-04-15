@@ -2,20 +2,54 @@
 This code illustrates how to read environment variables (any platform) and Windows registry keys.
 --]]
 
-   local task = mSys.CurrentTask()
+   task = mSys.CurrentTask()
 
-   local error, path = task.mtGetEnv("PATH")
+   err, path = task.mtGetEnv('PATH')
 
-   if error is ERR_Okay then
-      print("PATH: " .. path)
+   if err is ERR_Okay then
+      print(f'PATH: {path}\n')
    else
-      print("Failed to read PATH variable.")
+      print('Failed to read PATH variable.\n')
    end
 
-   local error, progfiles = task.mtGetEnv("\\HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\ProgramFilesDir")
+   if mSys.GetSystemState().platform is 'Windows' then
+      err, prog_files = task.mtGetEnv('\\HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\ProgramFilesDir')
 
-   if error is ERR_Okay then
-      print("The Windows registry key for program files is \"" .. progfiles .. "\"")
-   else
-      print("Failed to read Windows registry.")
+      if err is ERR_Okay then
+         print(f"The Windows registry key for program files is '{prog_files}'\n")
+      else
+         print('Failed to read Windows registry.\n')
+      end
+
+      -- A trailing backslash enumerates all values and sub-keys at that registry
+      -- location, returned as tab-separated 'Name\tValue\t...' pairs.  Sub-keys
+      -- are distinguished by a trailing '\' on their name and an empty value field.
+
+      err, entries = task.mtGetEnv('\\HKEY_CURRENT_USER\\Environment\\')
+
+      if err is ERR_Okay then
+         print('User environment registry values:\n')
+         parts = string.split(entries, '\t')
+         for i = 0, #parts-1 do
+            if parts[i]:endsWith('\\') then
+               print(f"  [folder] {parts[i]}")
+            else
+               print(f"  {parts[i]}")
+            end
+         end
+         print('')
+      else
+         print('Failed to enumerate user environment registry values.\n')
+      end
+
+      -- HKCU\Software contains only sub-keys, illustrating folder enumeration.
+
+      err, entries = task.mtGetEnv('\\HKEY_CURRENT_USER\\Software\\')
+
+      if err is ERR_Okay then
+         print('Sub-keys under HKEY_CURRENT_USER\\Software:\n')
+         print(string.split(entries, '\t'):join(', '))
+      else
+         print('Failed to enumerate HKEY_CURRENT_USER\\Software.\n')
+      end
    end
