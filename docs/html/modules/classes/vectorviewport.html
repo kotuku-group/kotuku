@@ -252,10 +252,10 @@
 <tr><th>DMF::STATUS_CHANGE_H</th><td></td></tr>
 <tr><th>DMF::STATUS_CHANGE_V</th><td></td></tr>
 </tbody></table><div class="footer copyright text-right">VectorViewport module documentation © Paul Manias © 2010-2026</div></div>
-<div class="docs-content" style="display:none;" id="struct-FontMetrics"><h1>FontMetrics Structure</h1><p class="lead">Font metrics, measured in pixels relative to the display</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Height</th><td><span class="text-nowrap">INT</span></td><td>Capitalised font height</td></tr>
-<tr><th>LineSpacing</th><td><span class="text-nowrap">INT</span></td><td>Vertical advance from one line to the next</td></tr>
-<tr><th>Ascent</th><td><span class="text-nowrap">INT</span></td><td>Height from the baseline to the top of the font, including accents.</td></tr>
-<tr><th>Descent</th><td><span class="text-nowrap">INT</span></td><td>Height from the baseline to the bottom of the font</td></tr>
+<div class="docs-content" style="display:none;" id="struct-FontMetrics"><h1>FontMetrics Structure</h1><p class="lead">Font metrics, measured in pixels relative to the display</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Height</th><td><span class="text-nowrap">INT</span></td><td>Full font height equivalent to <code>Ascent (cap-height) + Descent (gutter)</code>.  Does NOT include accents.</td></tr>
+<tr><th>LineSpacing</th><td><span class="text-nowrap">INT</span></td><td>Vertical advance from one line to the next.  Includes coverage for accents and additional whitespace.</td></tr>
+<tr><th>Ascent</th><td><span class="text-nowrap">INT</span></td><td>Height from the baseline to the top (cap-height) of the font.  Does NOT include accents.</td></tr>
+<tr><th>Descent</th><td><span class="text-nowrap">INT</span></td><td>Height from the baseline to the bottom of the font (gutter)</td></tr>
 </tbody></table><div class="footer copyright text-right">VectorViewport class documentation © Paul Manias © 2010-2026</div></div>
 <div class="docs-content" style="display:none;" id="struct-VectorMatrix"><h1>VectorMatrix Structure</h1><p class="lead">Vector transformation matrix.</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Next</th><td><span class="text-nowrap">struct VectorMatrix *</span></td><td>The next transform in the list.</td></tr>
 <tr><th>Vector</th><td><span class="text-nowrap">objVector *</span></td><td>The vector associated with the transform.</td></tr>

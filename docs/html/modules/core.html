@@ -386,7 +386,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="CheckObjectExists"><h2>CheckObjectExists()</h2><p class="lead">Checks if a particular object is still available in the system.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR CheckObjectExists(OBJECTID Object)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Object</td><td>The object identity to verify.</td></tr>
 </tbody></table></div></div>
-<p>The CheckObjectExists() function verifies the presence of any object created by <a href="?page=NewObject">NewObject()</a>.</p>
+<p>The CheckObjectExists() function verifies the presence of any object created by <a href="?page=NewObject">NewObject()</a>. Objects that are marked for termination are considered to no longer exist for the purposes of this function, and will return <code>ERR::False</code>.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">True</th><td>The object exists.</td></tr>
 <tr><th class="col-md-1">False</th><td>The object ID does not exist.</td></tr>
 <tr><th class="col-md-1">LockFailed</th><td>Failed to lock a required resource.</td></tr>
@@ -581,7 +581,7 @@ FindObject("SystemPointer", CLASSID::POINTER, FOF::NIL, &amp;id);
     <h3>Result</h3><p>Returns the ID of the object's owner.  If the object does not have a owner (i.e. if it is untracked) or if the provided ID is invalid, this function will return 0.</p><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="GetResource"><h2>GetResource()</h2><p class="lead">Retrieves miscellaneous resource identifiers.</p><div class="card card-info mb-3"><div class="card-header"><samp>INT64 GetResource(RES Resource)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td><a onclick="showPage('RES');">Resource</a></td><td>The ID of the resource that you want to obtain.</td></tr>
 </tbody></table></div></div>
-<p>The GetResource() function is used to retrieve miscellaneous resource information from the system core.  Refer to the Resource identifier for the full list of available resource codes and their meaning.</p>
+<p>The GetResource() function is used to retrieve miscellaneous resource and state information from the system core.  Refer to the Resource identifier for the full list of available resource codes and their meaning.</p>
 <p>C++ developers should use the <code>GetResourcePtr()</code> macro if a resource identifier is known to return a pointer.</p>
     <h3>Result</h3><p>Returns the value of the resource that you have requested.  If the resource ID is not known by the Core, <code>NULL</code> is returned.</p><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="GetSystemState"><h2>GetSystemState()</h2><p class="lead">Returns miscellaneous data values from the Core.</p><div class="card card-info mb-3"><div class="card-header"><samp>const struct SystemState * GetSystemState()</samp></div></div>
@@ -1905,6 +1905,7 @@ static ResourceManager glNodeManager = {
 <tr><th>RES::PRIVILEGED</th><td>This is set to <code>true</code> if the process has elevated privileges (such as superuser or administrative rights).</td></tr>
 <tr><th>RES::PRIVILEGED_USER</th><td>If this value is set to 1, the process will operate in privileged mode (typically this enables full administrator rights).  This feature will only work for Unix processes that are granted admin rights when launched.  Setting the Value to 0 reverts to the user's permission settings.  SetResource() will return an error code indicating the level of success.</td></tr>
 <tr><th>RES::PROCESS_STATE</th><td>Life-cycle stage of the running process</td></tr>
+<tr><th>RES::RELEASE_BUILD</th><td>Returns true if the runtime is a release build.</td></tr>
 <tr><th>RES::STATIC_BUILD</th><td>Returns true if the runtime is a statically linked build.</td></tr>
 <tr><th>RES::THREAD_ID</th><td>Return the ID of the current thread.</td></tr>
 <tr><th>RES::TOTAL_MEMORY</th><td>The total amount of installed memory.</td></tr>

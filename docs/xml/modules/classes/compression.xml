@@ -223,7 +223,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
         <error code="Args">Invalid arguments passed to function.</error>
         <error code="NoData">No data is available for use.</error>
         <error code="Write">Failed to write uncompressed information to a destination file.</error>
-        <error code="MissingPath">The object is missing a setting in the Path or Location field.</error>
+        <error code="MissingPath">The object is missing a path reference.</error>
         <error code="Seek">An error occurred during a seek operation.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
@@ -246,7 +246,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
         <error code="Okay">Operation successful.</error>
         <error code="Failed">General failure.</error>
         <error code="Write">Error writing data.</error>
-        <error code="MissingPath">The object is missing a setting in the Path or Location field.</error>
+        <error code="MissingPath">The object is missing a path reference.</error>
         <error code="Seek">An error occurred during a seek operation.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>

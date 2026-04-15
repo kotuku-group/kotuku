@@ -65,22 +65,22 @@ end
          output_path = output_path:replace('.xml', '.html')
 
          err, res_output_path = mSys.ResolvePath(output_path, RSF_NO_FILE_CHECK)
-         assert(err is ERR_Okay, 'Failed to resolve path ' .. output_path)
+         assert(err is ERR_Okay, f'Failed to resolve path {output_path}')
 
          err, res_src_path = mSys.ResolvePath(src_path)
-         assert(err is ERR_Okay, 'Failed to resolve path ' .. src_path)
+         assert(err is ERR_Okay, f'Failed to resolve path {src_path}')
 
          module_folder = 'sdk:docs/xml/modules/'
          err, res_module_folder = mSys.ResolvePath(module_folder)
-         assert(err is ERR_Okay, 'Failed to resolve XML folder ' .. module_folder)
+         assert(err is ERR_Okay, f'Failed to resolve XML folder {module_folder}')
 
          class_folder = 'sdk:docs/xml/modules/classes'
          err, res_class_folder = mSys.ResolvePath(class_folder)
-         assert(err is ERR_Okay, 'Failed to resolve XML folder ' .. class_folder)
+         assert(err is ERR_Okay, f'Failed to resolve XML folder {class_folder}')
 
-         parameters = '"' .. res_src_path .. '" --encoding UTF-8 -o "' .. res_output_path .. '" --path "' .. res_module_folder .. ' ' .. res_class_folder .. '"'
+         parameters = f'"{res_src_path}" --encoding UTF-8 -o "{res_output_path}" --path "{res_module_folder} {res_class_folder}"'
 
-         cmdlist ..= 'xsltproc ' .. parameters .. '\n'
+         cmdlist ..= f'xsltproc {parameters}\n'
       end
    })
 

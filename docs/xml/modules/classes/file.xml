@@ -60,7 +60,7 @@
         <error code="FileNotFound">File not found.</error>
         <error code="NoPermission">Permission was denied when accessing or creating the file.</error>
         <error code="SetField">An error occurred while updating the <fl>Path</fl> field.</error>
-        <error code="MissingPath">The object is missing a setting in the Path or Location field.</error>
+        <error code="MissingPath">The object is missing a path reference.</error>
         <error code="ResolvePath">A volume could not be resolved.</error>
       </result>
     </action>
@@ -90,7 +90,7 @@
         <error code="Args">Invalid arguments passed to function.</error>
         <error code="OutOfRange">Invalid <code>Length</code> parameter.</error>
         <error code="FileReadFlag">The <code>FL::READ</code> flag was not specified on initialisation.</error>
-        <error code="NotInitialised">The object has not been initialised.</error>
+        <error code="NotInitialised">The resource has not been initialised.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
         <error code="ExpectedFolder">The file object refers to a folder.</error>
       </result>
@@ -204,7 +204,7 @@
         <error code="Okay">File deleted successfully.</error>
         <error code="Failed">The deletion attempt failed (specific condition not available).</error>
         <error code="NoPermission">The user does not have the necessary permissions to delete the file.</error>
-        <error code="MissingPath">The object is missing a setting in the Path or Location field.</error>
+        <error code="MissingPath">The object is missing a path reference.</error>
         <error code="BufferOverflow">The file path string is too long.</error>
         <error code="ResolvePath">A volume could not be resolved.</error>
         <error code="ReadOnly">The file is on a read-only filesystem.</error>

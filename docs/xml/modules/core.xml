@@ -908,7 +908,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     <result type="ERR">
       <error code="Okay">The object was initialised.</error>
       <error code="LostClass">The object has lost its class reference.</error>
-      <error code="DoubleInit">Warning - Attempt to initialise an object twice.</error>
+      <error code="DoubleInit">Warning - Attempt to initialise a resource twice.</error>
       <error code="ObjectCorrupt">The object structure is corrupt or has not been initialised.</error>
     </result>
   </function>
@@ -1842,7 +1842,7 @@ static ResourceManager glNodeManager = {
     <result type="ERR">
       <error code="Okay">The message was successfully updated.</error>
       <error code="Search">The supplied <code>Message</code> ID does not refer to a message in the queue.</error>
-      <error code="AccessMemory">Access to a shared memory block was denied.</error>
+      <error code="AccessMemory">Access to a memory block was denied.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1887,7 +1887,7 @@ static ResourceManager glNodeManager = {
       <error code="Failed">General failure.</error>
       <error code="TimeOut">Function timed-out before successful completion.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
-      <error code="OutsideMainThread">An operation has been attempted that is only possible from within the main thread.</error>
+      <error code="OutsideMainThread">Operation permitted from the main thread only.</error>
     </result>
   </function>
 
