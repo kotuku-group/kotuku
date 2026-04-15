@@ -19,10 +19,6 @@ This documentation is intended for technical reference and is not suitable as an
 #define PRV_CORE
 #define PRV_CORE_MODULE
 
-#ifdef __CYGWIN__
-#undef __unix__
-#endif
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>

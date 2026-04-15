@@ -160,11 +160,14 @@ if (query.ok()) {
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>The <code>Key</code> parameter was not specified.</td></tr>
 </tbody></table></div></div></td></tr>
-</tbody></table><h3>Methods</h3><p>The following methods are currently supported:</p><table class="table"><tbody><tr data-bs-toggle="collapse" data-bs-target="#tmx-Evaluate" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">Evaluate</th><td id="tm-Evaluate">Run an XQuery expression against an XML document.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-Evaluate" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR xq::Evaluate(OBJECTPTR Object, objXML * XML)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>XML</td><td>Targeted XML document to query.  Can be NULL for XQuery expressions that do not require a context.</td></tr>
+</tbody></table><h3>Methods</h3><p>The following methods are currently supported:</p><table class="table"><tbody><tr data-bs-toggle="collapse" data-bs-target="#tmx-Evaluate" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">Evaluate</th><td id="tm-Evaluate">Run an XQuery expression against an XML document.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-Evaluate" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR xq::Evaluate(OBJECTPTR Object, objXML * XML, INT Index, XEF Flags)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>XML</td><td>Targeted XML document to query.  Can be NULL for XQuery expressions that do not require a context.</td></tr>
+<tr><td>Index</td><td>Optional tag index that establishes the initial context for the query.</td></tr>
+<tr><td><a href="?page=XEF">Flags</a></td><td>Optional flags.</td></tr>
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
 <p>Use Evaluate to run a compiled XQuery expression against an XML document.  The result of the evaluation is returned in the <a data-bs-toggle="tooltip" title="Returns the results of the most recently executed query." href="#tf-Result">Result</a> field as XPathValue, which can represent various types of data including node sets, strings, numbers, or booleans.</p>
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
+<tr><th class="col-md-1">NotFound</th><td>A search routine in this function failed.</td></tr>
 <tr><th class="col-md-1">AllocMemory</th><td>AllocMemory() failed to create a new memory block.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table></div></div></td></tr>
@@ -203,8 +206,10 @@ if (query.ok()) {
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table></div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#tmx-Search" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">Search</th><td id="tm-Search">For node-based queries, calls a function for each matching node.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-Search" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR xq::Search(OBJECTPTR Object, objXML * XML, FUNCTION * Callback)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>XML</td><td>Target XML document to search.</td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tmx-Search" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">Search</th><td id="tm-Search">For node-based queries, calls a function for each matching node.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-Search" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR xq::Search(OBJECTPTR Object, objXML * XML, FUNCTION * Callback, INT Index, XEF Flags)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>XML</td><td>Target XML document to search.</td></tr>
 <tr><td>Callback</td><td>Optional callback function to invoke for each matching node.</td></tr>
+<tr><td>Index</td><td>Optional tag index that establishes the initial context for the query.</td></tr>
+<tr><td><a href="?page=XEF">Flags</a></td><td>Optional flags.</td></tr>
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
 <p>Use the Search method to scan an XML document for tags or attributes that match a compiled XQuery expression. For every matching node, a user-defined callback function is invoked, allowing custom processing of each result.</p>
 <p>If no callback is provided, the search stops after the first match and the <a href="xml.html">XML</a> object's cursor markers will reflect the position of the node.</p>
@@ -214,10 +219,13 @@ if (query.ok()) {
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>At least one matching node was found and processed.</td></tr>
 <tr><th class="col-md-1">Terminate</th><td>The callback function requested termination of the search.</td></tr>
 <tr><th class="col-md-1">Search</th><td>No matching node was found.</td></tr>
+<tr><th class="col-md-1">NotFound</th><td>The specified Index does not correspond to a valid XML tag.</td></tr>
 <tr><th class="col-md-1">Syntax</th><td>The provided query expression has syntax errors.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>At least one required parameter was not provided.</td></tr>
 </tbody></table></div></div></td></tr>
-</tbody></table><div class="footer copyright text-right">XQuery class documentation © Paul Manias © 2025-2026</div></div><div class="docs-content" style="display:none;" id="XIF"><h1>XIF Type</h1><p class="lead">Result flags for InspectFunctions().</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>XIF::ALL</th><td>Synonym for <code>AST | NAME | PARAMETERS | RETURN_TYPE | USER_DEFINED | SIGNATURE</code></td></tr>
+</tbody></table><div class="footer copyright text-right">XQuery class documentation © Paul Manias © 2025-2026</div></div><div class="docs-content" style="display:none;" id="XEF"><h1>XEF Type</h1><p class="lead">Options for XQuery evaluation flags.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>XEF::LIMIT_SCOPE</th><td>For tag specific queries, limit the scope to the specified element.</td></tr>
+</tbody></table><div class="footer copyright text-right">XQuery module documentation © Paul Manias © 2025-2026</div></div>
+<div class="docs-content" style="display:none;" id="XIF"><h1>XIF Type</h1><p class="lead">Result flags for InspectFunctions().</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>XIF::ALL</th><td>Synonym for <code>AST | NAME | PARAMETERS | RETURN_TYPE | USER_DEFINED | SIGNATURE</code></td></tr>
 <tr><th>XIF::AST</th><td>Include the compiled function body in the inspection result.</td></tr>
 <tr><th>XIF::NAME</th><td>Include function name in the inspection result.</td></tr>
 <tr><th>XIF::PARAMETERS</th><td>Include function parameters in the inspection result.</td></tr>

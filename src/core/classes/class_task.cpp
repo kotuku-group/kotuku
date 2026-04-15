@@ -24,10 +24,6 @@ The task object that represents the active process can be acquired from ~Current
 
 #define PRV_TASK
 
-#ifdef __CYGWIN__
-#undef __unix__
-#endif
-
 #ifdef __unix__
  #include <unistd.h>
  #include <stdio.h>
@@ -45,11 +41,7 @@ The task object that represents the active process can be acquired from ~Current
 #endif
 
 #ifdef _WIN32
- #ifdef __CYGWIN__
-  #include <unistd.h>
- #else
-  #include <direct.h>
- #endif
+ #include <direct.h>
  #include <stdio.h>
 #endif
 
@@ -95,7 +87,7 @@ constexpr int REG_DWORD = 4;
 constexpr int REG_DWORD_BIG_ENDIAN = 5;
 constexpr int REG_QWORD = 11;
 constexpr int REG_SZ = 1;
-constexpr int REG_EXPAND_SZ = 0x00020000;
+constexpr int REG_EXPAND_SZ = 2;
 
 #define KEY_READ  0x20019
 #define KEY_WRITE 0x20006
@@ -106,6 +98,8 @@ constexpr int MAX_PATH = 260;
 extern "C" DLLCALL int WINAPI RegOpenKeyExA(int,CSTRING,int,int,APTR *);
 extern "C" DLLCALL int WINAPI RegQueryValueExA(APTR,CSTRING,int *,int *,int8_t *,int *);
 extern "C" DLLCALL int WINAPI RegSetValueExA(APTR hKey, CSTRING lpValueName, int Reserved, int dwType, const void *lpData, int cbData);
+extern "C" DLLCALL int WINAPI RegEnumValueA(APTR hKey, int dwIndex, STRING lpValueName, int *lpcchValueName, int *lpReserved, int *lpType, int8_t *lpData, int *lpcbData);
+extern "C" DLLCALL int WINAPI RegEnumKeyExA(APTR hKey, int dwIndex, STRING lpName, int *lpcchName, int *lpReserved, STRING lpClass, int *lpcchClass, void *lpftLastWriteTime);
 
 static MSGID glProcessBreak = MSGID::NIL;
 #endif
@@ -627,10 +621,11 @@ static ERR TASK_Activate(extTask *Self)
       bool hide_output;
       int winerror;
    #endif
-   #ifdef __unix__
+#ifdef __unix__
       int pid;
       int8_t privileged, shell;
-   #endif
+      int8_t requested_shell;
+#endif
 
    Self->ReturnCodeSet = false;
 
@@ -772,7 +767,8 @@ static ERR TASK_Activate(extTask *Self)
    if ((Self->Flags & TSF::PIPE) != TSF::NIL) internal_redirect |= TSTD_IN;
 
    if (not (winerror = winLaunchProcess(Self, final_buffer.data(), (!launchdir.empty()) ? launchdir.data() : 0, group,
-         internal_redirect, &Self->Platform, hide_output, redirect_stdout.data(), redirect_stderr.data(), &Self->ProcessID))) {
+         internal_redirect, &Self->Platform, hide_output, (!redirect_stdout.empty()) ? redirect_stdout.data() : nullptr,
+         (!redirect_stderr.empty()) ? redirect_stderr.data() : nullptr, &Self->ProcessID))) {
 
       error = ERR::Okay;
       if (((Self->Flags & TSF::WAIT) != TSF::NIL) and (Self->TimeOut > 0)) {
@@ -798,10 +794,25 @@ static ERR TASK_Activate(extTask *Self)
 
    // Add a 'cd' command so that the application starts in its own folder
 
+   auto shell_quote = [](std::string_view Value) {
+      std::string quoted;
+      quoted.reserve(Value.size() + 2);
+      quoted += '\'';
+      for (auto ch : Value) {
+         if (ch != '\'') quoted += ch;
+         else quoted.append("'\\''");
+      }
+      quoted += '\'';
+      return quoted;
+   };
+
    CSTRING path = nullptr;
    GET_LaunchPath(Self, &path);
+   if ((path) and (not *path)) path = nullptr;
+   requested_shell = ((Self->Flags & TSF::SHELL) != TSF::NIL) ? 1 : 0;
 
    std::ostringstream buffer;
+   std::string fallback_path;
 
    i = 0;
    if (((Self->Flags & TSF::RESET_PATH) != TSF::NIL) or (path)) {
@@ -809,26 +820,37 @@ static ERR TASK_Activate(extTask *Self)
 
       buffer << "cd ";
 
-      if (not path) path = Self->Location.c_str();
+      if (not path) {
+         fallback_path.assign(Self->Location);
+         if (auto i = fallback_path.find_last_of("/\\:"); i != std::string::npos) fallback_path.resize(i+1);
+         else fallback_path.clear();
+         path = fallback_path.c_str();
+      }
       std::string rpath;
       if (ResolvePath(path, RSF::APPROXIMATE|RSF::PATH, &rpath) IS ERR::Okay) {
          while (rpath.ends_with('/')) rpath.pop_back();
-         buffer << rpath;
+         buffer << shell_quote(rpath);
       }
       else {
          auto p = std::string_view(path);
          while (p.ends_with('/')) p.remove_suffix(1);
-         buffer << p;
+         buffer << shell_quote(p);
       }
+
+      buffer << " && ";
    }
 
    // Resolve the location of the executable (may contain an volume) and copy it to the command line buffer.
 
    std::string rpath;
    if (ResolvePath(Self->Location, RSF::APPROXIMATE|RSF::PATH, &rpath) IS ERR::Okay) {
-      buffer << rpath;
+      if (((Self->Flags & TSF::SHELL) != TSF::NIL) and (!requested_shell)) buffer << shell_quote(rpath);
+      else buffer << rpath;
    }
-   else buffer << Self->Location;
+   else {
+      if (((Self->Flags & TSF::SHELL) != TSF::NIL) and (!requested_shell)) buffer << shell_quote(Self->Location);
+      else buffer << Self->Location;
+   }
 
    // Following the executable path are any arguments that have been used. NOTE: This isn't needed if TSF::SHELL is used,
    // however it is extremely useful in the debug printout to see what is being executed.
@@ -836,16 +858,11 @@ static ERR TASK_Activate(extTask *Self)
    std::ostringstream params;
    if ((Self->Flags & TSF::SHELL) != TSF::NIL) {
       for (auto &param : Self->Parameters) {
-         params << ' ';
-         if (param.find(' ') != std::string::npos) params << '"' << param << '"';
-         else params << param;
+         params << ' ' << shell_quote(param);
       }
    }
 
-   // Convert single quotes into double quotes
-
    auto final_buffer = buffer.str();
-   for (int i=0; i < std::ssize(final_buffer); i++) if (final_buffer[i] IS '\'') final_buffer[i] = '"';
 
    log.msg("%s", final_buffer.c_str());
 
@@ -897,7 +914,7 @@ static ERR TASK_Activate(extTask *Self)
 
    if ((out_fd IS -1) and ((Self->Flags & TSF::QUIET) != TSF::NIL)) {
       log.msg("Output will go to NULL");
-      out_fd = open("/dev/null", O_RDONLY);
+      out_fd = open("/dev/null", O_WRONLY);
    }
 
    if (Self->ErrorCallback.defined()) {
@@ -914,7 +931,7 @@ static ERR TASK_Activate(extTask *Self)
    }
 
    if ((out_errfd IS -1) and ((Self->Flags & TSF::QUIET) != TSF::NIL)) {
-      out_errfd = open("/dev/null", O_RDONLY);
+      out_errfd = open("/dev/null", O_WRONLY);
    }
 
    // Fork a new task.  Remember that forking produces an exact duplicate of the process that made the fork.
@@ -922,26 +939,12 @@ static ERR TASK_Activate(extTask *Self)
    privileged = ((Self->Flags & TSF::PRIVILEGED) != TSF::NIL) ? 1 : 0;
    shell = ((Self->Flags & TSF::SHELL) != TSF::NIL) ? 1 : 0;
 
-   // Check system resource limits before forking
-   struct rlimit rlim;
-   if (getrlimit(RLIMIT_NPROC, &rlim) IS 0) {
-      if (rlim.rlim_cur != RLIM_INFINITY) {
-         // Count current processes to see if we're near the limit
-         // Leave some margin (10% or at least 5 processes) before hitting the limit
-         auto margin = std::max(5UL, rlim.rlim_cur / 10);
-         if ((rlim.rlim_cur + margin) >= rlim.rlim_max) {
-            log.warning("Too close to process limit (%lu/%lu), refusing to fork", rlim.rlim_cur, rlim.rlim_max);
-            cleanup_task_fds(input_fd, out_fd, out_errfd, in_fd, in_errfd);
-            return ERR::ProcessCreation;
-         }
-      }
-   }
-
    pid = fork();
 
    if (pid IS -1) {
       cleanup_task_fds(input_fd, out_fd, out_errfd, in_fd, in_errfd);
-      log.warning("Failed in an attempt to fork(): %s", strerror(errno));
+      if (errno IS EAGAIN) log.warning("Failed in an attempt to fork(): process limit or system resources exhausted.");
+      else log.warning("Failed in an attempt to fork(): %s", strerror(errno));
       return ERR::ProcessCreation;
    }
 
@@ -1051,16 +1054,12 @@ static ERR TASK_Activate(extTask *Self)
    }
 
    final_buffer.append(params.str());
-   if (shell) { // For some reason, bash terminates the argument list if it encounters a # symbol, so we'll strip those out.
-      for (j=0,i=0; i < std::ssize(final_buffer); i++) {
-         if (final_buffer[i] != '#') final_buffer[j++] = final_buffer[i];
-      }
-
+   if (shell) {
       execl("/bin/sh", "sh", "-c", final_buffer.c_str(), (char *)nullptr);
    }
    else execv(final_buffer.c_str(), (char * const *)&argslist);
 
-   exit(EXIT_FAILURE);
+   _exit(EXIT_FAILURE);
 #endif
 }
 
@@ -1176,10 +1175,13 @@ cases, the system's environment variables are queried):
 \HKEY_USERS\
 </pre>
 
-Here is a valid example for reading the 'Kotuku' key value `\HKEY_CURRENT_USER\Software\Kotuku`
+If the `Name` string ends with a trailing backslash, all keys and sub-keys held at that location are returned as a
+tab-separated list in the form `Name1\tName2...`.  Sub-key names are distinguished from values by a trailing
+backslash, e.g. `SubKey\\`.  This is useful for enumerating the complete contents of a registry key without needing
+to know names in advance.
 
-Caution: If your programming language uses backslash as an escape character (true for Tiri developers), remember to
-use double-backslashes as the key value separator in your Name string.
+NOTE: If your programming language uses backslash as an escape character, remember to use double-backslashes in the
+`Name` string.
 
 -INPUT-
 cstr Name:  The name of the environment variable to retrieve.
@@ -1218,61 +1220,109 @@ static ERR TASK_GetEnv(extTask *Self, struct task::GetEnv *Args)
       };
 
       std::string full_path(Args->Name);
+
+      auto format_value = [](int Type, int8_t *Buffer, int Length, std::string &Output) -> bool {
+         switch(Type) {
+            case REG_DWORD:
+               if (unsigned(Length) >= sizeof(int)) Output = std::to_string(((int *)Buffer)[0]);
+               return true;
+
+            case REG_DWORD_BIG_ENDIAN:
+               if (unsigned(Length) >= sizeof(int)) {
+                  if constexpr (std::endian::native == std::endian::little) {
+                     Output = std::to_string(reverse_long(((int *)Buffer)[0]));
+                  }
+                  else Output = std::to_string(((int *)Buffer)[0]);
+               }
+               return true;
+
+            case REG_QWORD:
+               if (unsigned(Length) >= sizeof(int64_t)) {
+                  Output = std::to_string(((int64_t *)Buffer)[0]);
+               }
+               return true;
+
+            case REG_SZ:
+            case REG_EXPAND_SZ:
+               Output.assign((char *)Buffer, Length);
+               while ((!Output.empty()) and (Output.back() IS 0)) Output.pop_back();
+               return true;
+
+            default:
+               return false;
+         }
+      };
+
       for (auto &key : keys) {
          if (not full_path.starts_with(key.HKey)) continue;
+
+         // A trailing backslash signals enumeration of all values at the given sub-key.
+
+         bool enumerate = full_path.back() IS '\\';
 
          auto sep = full_path.find_last_of('\\');
          if (sep IS std::string::npos) return log.warning(ERR::Syntax);
 
-         std::string folder = full_path.substr(key.HKey.size(), sep - key.HKey.size() + 1);
+         std::string folder;
+         std::string name;
+         if (enumerate) {
+            folder = full_path.substr(key.HKey.size());
+         }
+         else {
+            folder = full_path.substr(key.HKey.size(), sep - key.HKey.size() + 1);
+            name = full_path.substr(sep+1);
+         }
 
          APTR keyhandle;
          if (not RegOpenKeyExA(key.ID, folder.c_str(), 0, KEY_READ, &keyhandle)) {
-            int type;
-            int8_t buffer[4096];
-            int envlen = sizeof(buffer);
-            std::string name = full_path.substr(sep+1);
-            if (not RegQueryValueExA(keyhandle, name.c_str(), 0, &type, buffer, &envlen)) {
-               // Numerical registry types can be converted into strings
+            if (enumerate) {
+               Self->Env.clear();
+               char value_name[256];
+               int8_t buffer[4096];
 
-               switch(type) {
-                  case REG_DWORD:
-                     if (unsigned(envlen) >= sizeof(int)) Self->Env = std::to_string(((int *)buffer)[0]);
-                     break;
+               // Enumerate all key-value names stored at this key.
 
-                  case REG_DWORD_BIG_ENDIAN:
-                     if (unsigned(envlen) >= sizeof(int)) {
-                        if constexpr (std::endian::native == std::endian::little) {
-                           Self->Env = std::to_string(reverse_long(((int *)buffer)[0]));
-                        }
-                        else Self->Env = std::to_string(((int *)buffer)[0]);
-                     }
-                     break;
-
-                  case REG_QWORD:
-                     if (unsigned(envlen) >= sizeof(int64_t)) {
-                        Self->Env = std::to_string(((int64_t *)buffer)[0]);
-                     }
-                     break;
-
-                  case REG_SZ:
-                  case REG_EXPAND_SZ:
-                     Self->Env.assign((char *)buffer, envlen);
-                     // Remove any trailing null characters
-                     while ((!Self->Env.empty()) and (Self->Env.back() IS 0)) Self->Env.pop_back();
-                     break;
-
-                  default:
-                     log.warning("Unsupported registry type %d for key %s", type, Args->Name);
-                     break;
+               for (int index = 0; ; index++) {
+                  int name_len = sizeof(value_name);
+                  int data_len = sizeof(buffer);
+                  int type;
+                  if (RegEnumValueA(keyhandle, index, value_name, &name_len, 0, &type, buffer, &data_len)) break;
+                  if (not Self->Env.empty()) Self->Env += '\t';
+                  Self->Env.append(value_name, name_len);
                }
 
-               Args->Value = Self->Env.c_str();
-            }
-            winCloseHandle(keyhandle);
+               // Enumerate all sub-keys (folders) at this key.  Each sub-key name is
+               // suffixed with '\' so callers can distinguish folders from values.
 
-            if (Args->Value) return ERR::Okay;
-            else return ERR::DoesNotExist;
+               for (int index = 0; ; index++) {
+                  int name_len = sizeof(value_name);
+                  if (RegEnumKeyExA(keyhandle, index, value_name, &name_len, 0, nullptr, nullptr, nullptr)) break;
+
+                  if (not Self->Env.empty()) Self->Env += '\t';
+                  Self->Env.append(value_name, name_len);
+                  Self->Env += '\\';
+               }
+
+               winCloseHandle(keyhandle);
+               if (Self->Env.empty()) return ERR::DoesNotExist;
+               Args->Value = Self->Env.c_str();
+               return ERR::Okay;
+            }
+            else {
+               int type;
+               int8_t buffer[4096];
+               int envlen = sizeof(buffer);
+               if (not RegQueryValueExA(keyhandle, name.c_str(), 0, &type, buffer, &envlen)) {
+                  if (not format_value(type, buffer, envlen, Self->Env)) {
+                     log.warning("Unsupported registry type %d for key %s", type, Args->Name);
+                  }
+                  else Args->Value = Self->Env.c_str();
+               }
+               winCloseHandle(keyhandle);
+
+               if (Args->Value) return ERR::Okay;
+               else return ERR::DoesNotExist;
+            }
          }
          else return ERR::DoesNotExist;
       }

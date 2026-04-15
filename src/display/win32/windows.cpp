@@ -1,6 +1,3 @@
-// Cygwin users: libuuid-devel will interfere with the resolution of IID_Unknown if installed.
-// Removing lib/libuuid.la and lib/uuid.dll.a will resolve the compilation issue.
-
 //#define DEBUG
 //#define DBGMSG
 

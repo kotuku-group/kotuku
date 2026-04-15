@@ -112,7 +112,7 @@ Kōtuku uses Interface Definition Language (IDL) files with `.tdl` extension to 
 - Exception handling with `try-except-when` statements
 - `pcall()` and `xpcall()` are deprecated in favour of `try-except` statements.
 - String interpolation supporting expressions, e.g. `f"My {expression} here"`
-- Lua patterns are deprecated in favour regular expressions offered by the `regex.*` methods.
+- Lua patterns are deprecated, replaced by regex support in the `regex.*` API.
 - `string.gsub()`, `string.match()`, `string.gmatch()` are obsolete.
 
 A complete breakdown of these features is located in `docs/wiki/Tiri-Reference-Manual.md`

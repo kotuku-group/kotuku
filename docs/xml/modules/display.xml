@@ -136,7 +136,7 @@
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="Search">The supplied <code>Surface</code> ID did not refer to a recognised surface object</error>
-      <error code="AccessObject">An attempt to gain exclusive access to a shared object failed.</error>
+      <error code="AccessObject">Attempting to lock an object failed.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -396,7 +396,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="AccessMemory">Access to a shared memory block was denied.</error>
+      <error code="AccessMemory">Access to a memory block was denied.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -727,7 +727,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <error code="Okay">Operation successful.</error>
       <error code="InUse">A drag and drop operation has already been started.</error>
       <error code="Failed">The left mouse button is not held by the user.</error>
-      <error code="AccessObject">An attempt to gain exclusive access to a shared object failed.</error>
+      <error code="AccessObject">Attempting to lock an object failed.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -800,7 +800,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="ResourceNotLocked">The pointer is not anchored to the given Surface.</error>
-      <error code="AccessObject">An attempt to gain exclusive access to a shared object failed.</error>
+      <error code="AccessObject">Attempting to lock an object failed.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>

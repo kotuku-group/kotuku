@@ -1,0 +1,484 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"></meta><script type="text/javascript" async="async" src="https://www.googletagmanager.com/gtag/js?id=G-8254DG7MT6"> </script><script type="text/javascript">
+	   window.dataLayer = window.dataLayer || [];
+	   function gtag(){dataLayer.push(arguments);}
+	   gtag('js', new Date());
+      gtag('config', 'G-8254DG7MT6');</script><meta name="viewport" content="width=device-width, initial-scale=1"></meta><meta name="description" content="Kōtuku documentation, machine generated from source"></meta><meta name="author" content="Paul Manias"></meta><link rel="icon" href="/favicon.ico"></link><title>Kōtuku Manual</title><link href="../css/bootstrap.min.css" rel="stylesheet"></link><link href="../css/module-template.css" rel="stylesheet"></link></head><body><nav class="navbar navbar-expand-sm navbar-dark bg-dark"><div class="container-fluid"><div class="navbar-header"><a class="navbar-brand" href="../index.html">Kōtuku</a></div><button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation"><span class="navbar-toggler-icon"></span></button>
+<div id="navbar" class="collapse navbar-collapse"><ul class="nav navbar-nav"><li class="nav-item"><a class="nav-link" href="../gallery.html">Gallery</a></li><li class="nav-item"><a class="nav-link" href="api.html">API</a></li><li class="nav-item"><a class="nav-link" href="../wiki/Home.html">Wiki</a></li><li class="nav-item"><a class="nav-link" href="https://github.com/parasol-framework/kotuku">GitHub</a></li></ul>
+</div></div></nav>
+<div class="container-fluid"><div class="row"><div class="d-sm-block d-none col-3 sidebar" style="max-width: 230px;"><div class="flex-shrink-1 pt-2 pe-2 sticky-top overflow-auto vh-100 b-shadow"><ul class="list-unstyled"><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#func-collapse" aria-expanded="true">Document API</button><div class="collapse show" id="func-collapse">
+<ul class="btn-toggle-nav list-unstyled fw-normal">
+<li><a class="rounded" role="button" onclick="showPage('default-page');"><i class="bi bi-house"></i> Overview</a></li><li class="border-top my-1"></li>
+
+</ul></div></li></ul><ul class="list-unstyled"><li class="border-top my-3"></li><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#mod-collapse" aria-expanded="false">Modules</button><div class="collapse" id="mod-collapse"><ul class="btn-toggle-nav list-unstyled fw-normal"><li class="api-ref"><a href="audio.html" class="rounded">Audio</a></li><li class="api-ref"><a href="core.html" class="rounded">Core</a></li><li class="api-ref"><a href="display.html" class="rounded">Display</a></li><li class="api-ref"><a href="font.html" class="rounded">Font</a></li><li class="api-ref"><a href="network.html" class="rounded">Network</a></li><li class="api-ref"><a href="regex.html" class="rounded">Regex</a></li><li class="api-ref"><a href="tiri.html" class="rounded">Tiri</a></li><li class="api-ref"><a href="vector.html" class="rounded">Vector</a></li><li class="api-ref"><a href="xml.html" class="rounded">XML</a></li><li class="api-ref"><a href="xpath.html" class="rounded">XPath</a></li></ul></div></li></ul><ul class="list-unstyled"><li class="border-top my-3"></li><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#class-collapse" aria-expanded="false">Classes</button><div class="collapse" id="class-collapse"><ul class="btn-toggle-nav list-unstyled fw-normal pb-1 ps-3"><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#audio-collapse" aria-expanded="false">Audio</button><div class="collapse" id="audio-collapse"><ul class="btn-toggle-nav list-unstyled fw-normal pb-1"><li><a href="classes/audio.html" class="rounded">Audio</a></li><li><a href="classes/sound.html" class="rounded">Sound</a></li></ul></div></li><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#core-collapse" aria-expanded="false">Core</button><div class="collapse" id="core-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li><a href="classes/file.html" class="rounded">File</a></li><li><a href="classes/metaclass.html" class="rounded">MetaClass</a></li><li><a href="classes/module.html" class="rounded">Module</a></li><li><a href="classes/storagedevice.html" class="rounded">StorageDevice</a></li><li><a href="classes/task.html" class="rounded">Task</a></li><li><a href="classes/thread.html" class="rounded">Thread</a></li><li><a href="classes/time.html" class="rounded">Time</a></li></ul></div></li><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#data-collapse" aria-expanded="false">Data</button><div class="collapse" id="data-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li><a href="classes/compression.html" class="rounded">Compression</a></li><li><a href="classes/compressedstream.html" class="rounded">CompressedStream</a></li><li><a href="classes/config.html" class="rounded">Config</a></li><li><a href="classes/script.html" class="rounded">Script</a></li><li><a href="classes/xml.html" class="rounded">XML</a></li><li><a href="classes/xquery.html" class="rounded">XQuery</a></li></ul></div></li><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#devices-collapse" aria-expanded="false">Devices</button><div class="collapse" id="devices-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li><a href="classes/controller.html" class="rounded">Controller</a></li></ul></div></li><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#effects-collapse" aria-expanded="false">Effects</button><div class="collapse" id="effects-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li><a class="rounded" href="classes/blurfx.html">BlurFX</a></li><li><a class="rounded" href="classes/colourfx.html">ColourFX</a></li><li><a class="rounded" href="classes/compositefx.html">CompositeFX</a></li><li><a class="rounded" href="classes/convolvefx.html">ConvolveFX</a></li><li><a class="rounded" href="classes/displacementfx.html">DisplacementFX</a></li><li><a class="rounded" href="classes/filtereffect.html">FilterEffect</a></li><li><a class="rounded" href="classes/floodfx.html">FloodFX</a></li><li><a class="rounded" href="classes/imagefx.html">ImageFX</a></li><li><a class="rounded" href="classes/lightingfx.html">LightingFX</a></li><li><a class="rounded" href="classes/mergefx.html">MergeFX</a></li><li><a class="rounded" href="classes/morphologyfx.html">MorphologyFX</a></li><li><a class="rounded" href="classes/offsetfx.html">OffsetFX</a></li><li><a class="rounded" href="classes/remapfx.html">RemapFX</a></li><li><a class="rounded" href="classes/sourcefx.html">SourceFX</a></li><li><a class="rounded" href="classes/turbulencefx.html">TurbulenceFX</a></li><li><a class="rounded" href="classes/wavefunctionfx.html">WaveFunctionFX</a></li></ul></div></li><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#ext-collapse" aria-expanded="false">Extensions</button><div class="collapse" id="ext-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li><a class="rounded" href="classes/scintilla.html">Scintilla</a></li><li><a class="rounded" href="classes/scintillasearch.html">ScintillaSearch</a></li></ul></div></li><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#gfx-collapse" aria-expanded="false">Graphics</button><div class="collapse" id="gfx-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li><a class="rounded" href="classes/bitmap.html">Bitmap</a></li><li><a class="rounded" href="classes/clipboard.html">Clipboard</a></li><li><a class="rounded" href="classes/display.html">Display</a></li><li><a class="rounded" href="classes/document.html">Document</a></li><li><a class="rounded" href="classes/font.html">Font</a></li><li><a class="rounded" href="classes/picture.html">Picture</a></li><li><a class="rounded" href="classes/pointer.html">Pointer</a></li><li><a class="rounded" href="classes/surface.html">Surface</a></li><li><a class="rounded" href="classes/svg.html">SVG</a></li></ul></div></li><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#net-collapse" aria-expanded="false">Network</button><div class="collapse" id="net-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li><a class="rounded" href="classes/clientsocket.html">ClientSocket</a></li><li><a class="rounded" href="classes/http.html">HTTP</a></li><li><a class="rounded" href="classes/netclient.html">NetClient</a></li><li><a class="rounded" href="classes/netlookup.html">NetLookup</a></li><li><a class="rounded" href="classes/netsocket.html">NetSocket</a></li><li><a class="rounded" href="classes/proxy.html">Proxy</a></li></ul></div></li><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#vectors-collapse" aria-expanded="false">Vectors</button><div class="collapse" id="vectors-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li><a class="rounded" href="classes/vector.html">Vector</a></li><li><a class="rounded" href="classes/vectorclip.html">VectorClip</a></li><li><a class="rounded" href="classes/vectorcolour.html">VectorColour</a></li><li><a class="rounded" href="classes/vectorellipse.html">VectorEllipse</a></li><li><a class="rounded" href="classes/vectorfilter.html">VectorFilter</a></li><li><a class="rounded" href="classes/vectorgradient.html">VectorGradient</a></li><li><a class="rounded" href="classes/vectorgroup.html">VectorGroup</a></li><li><a class="rounded" href="classes/vectorimage.html">VectorImage</a></li><li><a class="rounded" href="classes/vectorpath.html">VectorPath</a></li><li><a class="rounded" href="classes/vectorpattern.html">VectorPattern</a></li><li><a class="rounded" href="classes/vectorpolygon.html">VectorPolygon</a></li><li><a class="rounded" href="classes/vectorrectangle.html">VectorRectangle</a></li><li><a class="rounded" href="classes/vectorscene.html">VectorScene</a></li><li><a class="rounded" href="classes/vectorshape.html">VectorShape</a></li><li><a class="rounded" href="classes/vectorspiral.html">VectorSpiral</a></li><li><a class="rounded" href="classes/vectortext.html">VectorText</a></li><li><a class="rounded" href="classes/vectortransition.html">VectorTransition</a></li><li><a class="rounded" href="classes/vectorviewport.html">VectorViewport</a></li><li><a class="rounded" href="classes/vectorwave.html">VectorWave</a></li></ul></div></li></ul></div></li></ul><ul class="list-unstyled"><li class="border-top my-3"></li><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#wiki-collapse" aria-expanded="false">Wiki</button><div class="collapse" id="wiki-collapse"><ul class="btn-toggle-nav list-unstyled fw-normal pb-1 ps-3"><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#bp-collapse" aria-expanded="false">Build Process</button><div class="collapse" id="bp-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li class="api-ref"><a class="rounded" href="../wiki/Linux-Builds.html">Linux Builds</a></li><li class="api-ref"><a class="rounded" href="../wiki/Windows-Builds.html">Windows Builds</a></li><li class="api-ref"><a class="rounded" href="../wiki/Customising-Your-Build.html">Customising Your Build</a></li></ul></div></li><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#tm-collapse" aria-expanded="false">Technical Manuals</button><div class="collapse" id="tm-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li class="api-ref"><a class="rounded" href="../wiki/Kotuku-Objects.html">Kōtuku Objects</a></li><li class="api-ref"><a class="rounded" href="../wiki/Kotuku-In-Depth.html">Kōtuku In Depth</a></li></ul></div></li><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#fg-collapse" aria-expanded="false">Tiri</button><div class="collapse" id="fg-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li class="api-ref"><a class="rounded" href="../wiki/Tiri-Reference-Manual.html">Tiri Reference Manual</a></li><li class="api-ref"><a class="rounded" href="../wiki/Tiri-FileSearch-API.html">FileSearch API</a></li><li class="api-ref"><a class="rounded" href="../wiki/Tiri-GUI-API.html">GUI API</a></li><li class="api-ref"><a class="rounded" href="../wiki/Tiri-JSON-API.html">JSON API</a></li><li class="api-ref"><a class="rounded" href="../wiki/Tiri-VFX-API.html">VFX API</a></li><li class="api-ref"><a class="rounded" href="../wiki/Widgets.html">Widgets</a></li></ul></div></li><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#rrm-collapse" aria-expanded="false">RIPL</button><div class="collapse" id="rrm-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li class="api-ref"><a class="rounded" href="../wiki/RIPL-Reference-Manual.html">RIPL Reference Manual</a></li></ul></div></li><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#tools-collapse" aria-expanded="false">Tools</button><div class="collapse" id="tools-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li class="api-ref"><a class="rounded" href="../wiki/Origo.html">Origo</a></li><li class="api-ref"><a class="rounded" href="../wiki/Unit-Testing.html">Flute / Unit Testing</a></li></ul></div></li><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#doc-collapse" aria-expanded="false">Doc Generation</button><div class="collapse" id="doc-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li class="api-ref"><a class="rounded" href="../wiki/Embedded-Document-Formatting.html">Embedded Document Format</a></li><li class="api-ref"><a class="rounded" href="../wiki/TDL-Reference-Manual.html">TDL Reference Manual</a></li><li class="api-ref"><a class="rounded" href="../wiki/TDL-Tools.html">TDL Tools</a></li></ul></div></li><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#app-collapse" aria-expanded="false">Appendix</button><div class="collapse" id="app-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li class="api-ref"><a class="rounded" href="../wiki/Action-Reference-Manual.html">Action Reference Manual</a></li><li class="api-ref"><a class="rounded" href="../wiki/System-Error-Codes.html">System Error Codes</a></li></ul></div></li></ul></div></li></ul></div></div><div class="col-sm-9" style="max-width: 1200px;"><div class="docs-content" style="display:none;" id="default-page"><div class="page-header"><h1>Document Module</h1></div><p class="lead"></p><h3>Functions</h3><p class="appendix"></p><h3>Structures</h3><p class="appendix"><a role="button" onclick="showPage('struct-DateTime');">DateTime</a> | <a role="button" onclick="showPage('struct-InputEvent');">InputEvent</a> | <a role="button" onclick="showPage('struct-dcAudio');">dcAudio</a> | <a role="button" onclick="showPage('struct-dcDeviceInput');">dcDeviceInput</a> | <a role="button" onclick="showPage('struct-dcKeyEntry');">dcKeyEntry</a> | <a role="button" onclick="showPage('struct-dcRequest');">dcRequest</a></p><h3>Classes</h3><p class="appendix"><a role="button" onclick="" href="classes/document.html">Document</a></p><h3>Constants</h3><p class="appendix"><a role="button" onclick="showPage('AC');">AC</a> | <a role="button" onclick="showPage('CCF');">CCF</a> | <a role="button" onclick="showPage('CLIPMODE');">CLIPMODE</a> | <a role="button" onclick="showPage('CON');">CON</a> | <a role="button" onclick="showPage('DATA');">DATA</a> | <a role="button" onclick="showPage('DCF');">DCF</a> | <a role="button" onclick="showPage('DEF');">DEF</a> | <a role="button" onclick="showPage('DEVICE');">DEVICE</a> | <a role="button" onclick="showPage('DRT');">DRT</a> | <a role="button" onclick="showPage('EVG');">EVG</a> | <a role="button" onclick="showPage('FD');">FD</a> | <a role="button" onclick="showPage('FSO');">FSO</a> | <a role="button" onclick="showPage('JET');">JET</a> | <a role="button" onclick="showPage('JTYPE');">JTYPE</a> | <a role="button" onclick="showPage('KQ');">KQ</a> | <a role="button" onclick="showPage('MEM');">MEM</a> | <a role="button" onclick="showPage('PERMIT');">PERMIT</a> | <a role="button" onclick="showPage('RIPL');">RIPL</a> | <a role="button" onclick="showPage('SEEK');">SEEK</a> | <a role="button" onclick="showPage('TT');">TT</a></p></div><div class="docs-content" style="display:none;" id="AC"><h1>AC Type</h1><p class="lead">Action identifiers.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>AC::Activate</th><td></td></tr>
+<tr><th>AC::Clear</th><td></td></tr>
+<tr><th>AC::Clipboard</th><td></td></tr>
+<tr><th>AC::CopyData</th><td></td></tr>
+<tr><th>AC::DataFeed</th><td></td></tr>
+<tr><th>AC::Deactivate</th><td></td></tr>
+<tr><th>AC::Disable</th><td></td></tr>
+<tr><th>AC::DragDrop</th><td></td></tr>
+<tr><th>AC::Draw</th><td></td></tr>
+<tr><th>AC::END</th><td></td></tr>
+<tr><th>AC::Enable</th><td></td></tr>
+<tr><th>AC::Flush</th><td></td></tr>
+<tr><th>AC::Focus</th><td></td></tr>
+<tr><th>AC::Free</th><td></td></tr>
+<tr><th>AC::FreeWarning</th><td></td></tr>
+<tr><th>AC::GetKey</th><td></td></tr>
+<tr><th>AC::Hide</th><td></td></tr>
+<tr><th>AC::Init</th><td></td></tr>
+<tr><th>AC::Lock</th><td></td></tr>
+<tr><th>AC::LostFocus</th><td></td></tr>
+<tr><th>AC::Move</th><td></td></tr>
+<tr><th>AC::MoveToBack</th><td></td></tr>
+<tr><th>AC::MoveToFront</th><td></td></tr>
+<tr><th>AC::MoveToPoint</th><td></td></tr>
+<tr><th>AC::NewChild</th><td></td></tr>
+<tr><th>AC::NewObject</th><td></td></tr>
+<tr><th>AC::NewOwner</th><td></td></tr>
+<tr><th>AC::NewPlacement</th><td></td></tr>
+<tr><th>AC::Next</th><td></td></tr>
+<tr><th>AC::Prev</th><td></td></tr>
+<tr><th>AC::Query</th><td></td></tr>
+<tr><th>AC::Read</th><td></td></tr>
+<tr><th>AC::Redimension</th><td></td></tr>
+<tr><th>AC::Redo</th><td></td></tr>
+<tr><th>AC::Refresh</th><td></td></tr>
+<tr><th>AC::Rename</th><td></td></tr>
+<tr><th>AC::Reset</th><td></td></tr>
+<tr><th>AC::Resize</th><td></td></tr>
+<tr><th>AC::SaveImage</th><td></td></tr>
+<tr><th>AC::SaveSettings</th><td></td></tr>
+<tr><th>AC::SaveToObject</th><td></td></tr>
+<tr><th>AC::Seek</th><td></td></tr>
+<tr><th>AC::SetField</th><td></td></tr>
+<tr><th>AC::SetKey</th><td></td></tr>
+<tr><th>AC::Show</th><td></td></tr>
+<tr><th>AC::Signal</th><td></td></tr>
+<tr><th>AC::Undo</th><td></td></tr>
+<tr><th>AC::Unlock</th><td></td></tr>
+<tr><th>AC::Write</th><td></td></tr>
+</tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
+<div class="docs-content" style="display:none;" id="CCF"><h1>CCF Type</h1><p class="lead">Class categories</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>CCF::AUDIO</th><td>Audio classes interface with audio hardware and drivers for audio playback and recording purposes.</td></tr>
+<tr><th>CCF::COMMAND</th><td>Command classes perform specific procedures, like copying or moving a file, managing volumes or executing a program.</td></tr>
+<tr><th>CCF::DATA</th><td>Data classes parse, query and manipulate data.</td></tr>
+<tr><th>CCF::FILESYSTEM</th><td>FileSystem classes are based on file management and interaction with file based data.</td></tr>
+<tr><th>CCF::GRAPHICS</th><td>Graphics classes provide graphics management and drawing services.</td></tr>
+<tr><th>CCF::GUI</th><td>GUI classes are used in the development of graphical user interfaces.</td></tr>
+<tr><th>CCF::IO</th><td>I/O classes manage hardware and software based input and output.</td></tr>
+<tr><th>CCF::MISC</th><td>Miscellaneous classes do not fit into any of the other available categories.</td></tr>
+<tr><th>CCF::MULTIMEDIA</th><td>Classes that represent more than one media type, e.g. video files.</td></tr>
+<tr><th>CCF::NETWORK</th><td>Network classes interface with system drivers to simplify network communications.</td></tr>
+<tr><th>CCF::SYSTEM</th><td>System classes are designed to provide low-level services related to system management.</td></tr>
+<tr><th>CCF::TOOL</th><td>Tools provide interactive services for the user.</td></tr>
+</tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
+<div class="docs-content" style="display:none;" id="CLIPMODE"><h1>CLIPMODE Type</h1><p class="lead">Clipboard modes</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>CLIPMODE::COPY</th><td>Copy from the clipboard.</td></tr>
+<tr><th>CLIPMODE::CUT</th><td>Cut from the clipboard.</td></tr>
+<tr><th>CLIPMODE::PASTE</th><td>Paste from the clipboard.</td></tr>
+</tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
+<div class="docs-content" style="display:none;" id="CON"><h1>CON Type</h1><p class="lead">Gamepad controller buttons.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>CON::DPAD_DOWN</th><td>Directional pad down.</td></tr>
+<tr><th>CON::DPAD_LEFT</th><td>Directional pad left.</td></tr>
+<tr><th>CON::DPAD_RIGHT</th><td>Directional pad right.</td></tr>
+<tr><th>CON::DPAD_UP</th><td>Directional pad up.</td></tr>
+<tr><th>CON::GAMEPAD_E</th><td>East button (B)</td></tr>
+<tr><th>CON::GAMEPAD_N</th><td>North button (Y)</td></tr>
+<tr><th>CON::GAMEPAD_S</th><td>South button (A)</td></tr>
+<tr><th>CON::GAMEPAD_W</th><td>West button (X)</td></tr>
+<tr><th>CON::LEFT_BUMPER_1</th><td>Gamepad left-hand bumper 1 (top, primary).</td></tr>
+<tr><th>CON::LEFT_BUMPER_2</th><td>Gamepad left-hand bumper 2 (lower).</td></tr>
+<tr><th>CON::LEFT_THUMB</th><td>Left thumb stick depressed.</td></tr>
+<tr><th>CON::RIGHT_BUMPER_1</th><td>Gamepad right-hand bumper 1 (top, primary).</td></tr>
+<tr><th>CON::RIGHT_BUMPER_2</th><td>Gamepad right-hand bumper 2 (lower).</td></tr>
+<tr><th>CON::RIGHT_THUMB</th><td>Right thumb stick depressed.</td></tr>
+<tr><th>CON::SELECT</th><td>Gamepad select or back button.</td></tr>
+<tr><th>CON::START</th><td>Gamepad start button.</td></tr>
+</tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
+<div class="docs-content" style="display:none;" id="DATA"><h1>DATA Type</h1><p class="lead">Data codes</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>DATA::AUDIO</th><td>Audio file data, recognised by the Sound class</td></tr>
+<tr><th>DATA::CONTENT</th><td>Document content (between XML tags) - sent by document objects only</td></tr>
+<tr><th>DATA::DEVICE_INPUT</th><td>Device activity</td></tr>
+<tr><th>DATA::FILE</th><td>File location (the data will reflect the complete file path)</td></tr>
+<tr><th>DATA::IMAGE</th><td>Image file data, recognised by the Image class</td></tr>
+<tr><th>DATA::INPUT_READY</th><td>Device input that has been transformed into user input</td></tr>
+<tr><th>DATA::RAW</th><td>Raw unprocessed data</td></tr>
+<tr><th>DATA::RECEIPT</th><td>Receipt for item data, in response to an earlier request</td></tr>
+<tr><th>DATA::RECORD</th><td>Database record</td></tr>
+<tr><th>DATA::REQUEST</th><td>Make a request for item data</td></tr>
+<tr><th>DATA::TEXT</th><td>Standard ASCII text</td></tr>
+<tr><th>DATA::XML</th><td>Markup based text data.  NOTE - For clipboard data, the top-level encapsulating tag must declare the type of XML, e.g. 'html', 'ripple'.  For plain XML, use 'xml'</td></tr>
+</tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
+<div class="docs-content" style="display:none;" id="DCF"><h1>DCF Type</h1><p class="lead">Document flags</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>DCF::DISABLED</th><td>This read-only flag is set if the UI has been disabled through the Disable action.</td></tr>
+<tr><th>DCF::EDIT</th><td>Allow direct keyboard input and document editing.</td></tr>
+<tr><th>DCF::NO_LAYOUT_MSG</th><td>Turn off debug output produced during document layout and processing - useful on refresh for example.</td></tr>
+<tr><th>DCF::NO_SYS_KEYS</th><td>System-keys provide standard key support for Ctrl-C, Ctrl-X etc.  Set this flag to turn them off.</td></tr>
+<tr><th>DCF::OVERWRITE</th><td>This flag forces overwrite mode when the user enters information through the keyboard.  If the flag is not set, then insert mode is used.</td></tr>
+<tr><th>DCF::UNRESTRICTED</th><td>Turn off all security measures - may only be set prior to initialisation.</td></tr>
+</tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
+<div class="docs-content" style="display:none;" id="DEF"><h1>DEF Type</h1><p class="lead">Event flags for selectively receiving events from the Document object.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>DEF::LINK_ACTIVATED</th><td>The user has interacted with a hyperlink.  This event can be cancelled by returning ERR::Skip.</td></tr>
+<tr><th>DEF::ON_CLICK</th><td>The user has interacted with an element that has an on-click definition.</td></tr>
+<tr><th>DEF::ON_CROSSING</th><td>Synonym for <code>ON_CROSSING_IN | ON_CROSSING_OUT</code></td></tr>
+<tr><th>DEF::ON_CROSSING_IN</th><td>The mouse pointer has crossed into an element.</td></tr>
+<tr><th>DEF::ON_CROSSING_OUT</th><td>The mouse pointer has crossed out of an element.</td></tr>
+<tr><th>DEF::ON_MOTION</th><td>The user has triggered a motion event in an element that supports motion monitoring.</td></tr>
+<tr><th>DEF::PATH</th><td>The source file path has changed.  Useful for detecting when the user has left the page.</td></tr>
+<tr><th>DEF::WIDGET_STATE</th><td>The state value of a widget has changed (e.g. input, checkbox, text).  <code>name</code> and <code>value</code> keys will be defined in the event parameters.</td></tr>
+</tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
+<div class="docs-content" style="display:none;" id="DEVICE"><h1>DEVICE Type</h1><p class="lead"></p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>DEVICE::BOOKMARK</th><td>This marker indicates that the presented volume is a bookmark and not a device name.</td></tr>
+<tr><th>DEVICE::COMPACT_DISC</th><td>Compact disc style device</td></tr>
+<tr><th>DEVICE::FIXED</th><td>Catch-all for fixed media devices that are not directly identifiable.</td></tr>
+<tr><th>DEVICE::FLOPPY_DISK</th><td>Floppy disk style device</td></tr>
+<tr><th>DEVICE::HARD_DISK</th><td>Hard disk style device</td></tr>
+<tr><th>DEVICE::MEMORY</th><td>Device is RAM, ROM, WORM, NVRAM, flashdisk or other form of memory.  Does not guarantee a fast connection as it could be over a slow USB 1.1 connection for example</td></tr>
+<tr><th>DEVICE::MODEM</th><td>Device is a modem.</td></tr>
+<tr><th>DEVICE::NETWORK</th><td>Device represents a network link</td></tr>
+<tr><th>DEVICE::PRINTER</th><td>Device is a paper-based printer.</td></tr>
+<tr><th>DEVICE::PRINTER_3D</th><td>Device is a three dimensional printer.</td></tr>
+<tr><th>DEVICE::READ</th><td>Device is readable</td></tr>
+<tr><th>DEVICE::REMOVABLE</th><td>Device media is removable from the hardware</td></tr>
+<tr><th>DEVICE::REMOVEABLE</th><td>Device media is removable from the hardware</td></tr>
+<tr><th>DEVICE::SCANNER</th><td>Device is a two dimensional scanner.</td></tr>
+<tr><th>DEVICE::SCANNER_3D</th><td>Device is a three dimensional scanner.</td></tr>
+<tr><th>DEVICE::SOFTWARE</th><td>Device is virtual/software defined</td></tr>
+<tr><th>DEVICE::TAPE</th><td>Tape/Stream style device</td></tr>
+<tr><th>DEVICE::TEMPORARY</th><td>All storage is temporary</td></tr>
+<tr><th>DEVICE::USB</th><td>Removable USB storage device.  May be further qualified by <code>HARD_DISK</code>, <code>FLOPPY_DISK</code> etc</td></tr>
+<tr><th>DEVICE::WRITE</th><td>Device is writeable</td></tr>
+</tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
+<div class="docs-content" style="display:none;" id="DRT"><h1>DRT Type</h1><p class="lead">Internal trigger codes</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>DRT::AFTER_LAYOUT</th><td></td></tr>
+<tr><th>DRT::BEFORE_LAYOUT</th><td></td></tr>
+<tr><th>DRT::END</th><td></td></tr>
+<tr><th>DRT::GOT_FOCUS</th><td></td></tr>
+<tr><th>DRT::LEAVING_PAGE</th><td></td></tr>
+<tr><th>DRT::LOST_FOCUS</th><td></td></tr>
+<tr><th>DRT::PAGE_PROCESSED</th><td></td></tr>
+<tr><th>DRT::REFRESH</th><td></td></tr>
+<tr><th>DRT::USER_CLICK</th><td></td></tr>
+<tr><th>DRT::USER_CLICK_RELEASE</th><td></td></tr>
+<tr><th>DRT::USER_MOVEMENT</th><td></td></tr>
+</tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
+<div class="docs-content" style="display:none;" id="EVG"><h1>EVG Type</h1><p class="lead">Event categories.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>EVG::ANDROID</th><td>Android specific events that do not already fit existing categories.</td></tr>
+<tr><th>EVG::APP</th><td>Custom event dispatched from an application</td></tr>
+<tr><th>EVG::AUDIO</th><td>Audio system events.</td></tr>
+<tr><th>EVG::CLASS</th><td>Custom event dispatched from a class that doesn't fit within the rest of the event framework</td></tr>
+<tr><th>EVG::DISPLAY</th><td>Video display events.</td></tr>
+<tr><th>EVG::FILESYSTEM</th><td>File system events.</td></tr>
+<tr><th>EVG::GUI</th><td>Events generated by the Graphical User Interface.</td></tr>
+<tr><th>EVG::HARDWARE</th><td>Hardware device events that are not covered by other types.</td></tr>
+<tr><th>EVG::IO</th><td>Input/Output events.</td></tr>
+<tr><th>EVG::NETWORK</th><td>Network events.</td></tr>
+<tr><th>EVG::POWER</th><td>Power Management - can also include app-specific events relating to resource management.</td></tr>
+<tr><th>EVG::SYSTEM</th><td>System-wide events</td></tr>
+<tr><th>EVG::USER</th><td>User activity events (such as user login).</td></tr>
+</tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
+<div class="docs-content" style="display:none;" id="FD"><h1>FD Type</h1><p class="lead">Field descriptors.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>FD::ALLOC</th><td>CLASSDEF Indicates the returned value is a dynamic allocation that needs to be manually freed (by default is a memory pointer, can be an object if combined with <code>FD_OBJECT</code>)</td></tr>
+<tr><th>FD::ARRAY</th><td>Indicates an array of values.  Follow with <code>ARRAYSIZE</code> if used in a function.</td></tr>
+<tr><th>FD::ARRAYSIZE</th><td>FUNCDEF Overrides <code>LOOKUP</code>.  Pair with <code>ARRAY</code> to indicate total elements in the array.  It is preferred that any null terminator is not counted.  If <code>ARRAYSIZE</code> not specified, <code>ARRAY</code> must be null-terminated.</td></tr>
+<tr><th>FD::BUFFER</th><td>FUNCDEF Overrides <code>WRITE</code>.  Indicates a buffer that can be filled with data by the function if paired with <code>RESULT</code>; must be paired with <code>BUFSIZE</code> in second argument.</td></tr>
+<tr><th>FD::BUFSIZE</th><td>FUNCDEF Overrides <code>LOOKUP</code>.  Pair with <code>BUFFER</code> to indicate the byte size of the buffer memory.</td></tr>
+<tr><th>FD::BYTE</th><td>8 bit integer.</td></tr>
+<tr><th>FD::CPP</th><td>Use the C++ variant of the indicated type, e.g. <code>ARRAY</code> is a <code>std::vector</code>.</td></tr>
+<tr><th>FD::CUSTOM</th><td></td></tr>
+<tr><th>FD::DOUBLE</th><td>64 bit float.</td></tr>
+<tr><th>FD::DOUBLERESULT</th><td>For actions and methods</td></tr>
+<tr><th>FD::ERROR</th><td>FUNCDEF</td></tr>
+<tr><th>FD::FLAGS</th><td>CLASSDEF</td></tr>
+<tr><th>FD::FLOAT</th><td>32 bit float.  Not valid for use in class definitions.</td></tr>
+<tr><th>FD::FUNCTION</th><td>Intended for callbacks, uses the rkFunction structure.</td></tr>
+<tr><th>FD::FUNCTIONPTR</th><td>Synonym for <code>PTR | FUNCTION</code></td></tr>
+<tr><th>FD::I</th><td>Synonym for <code>INIT</code></td></tr>
+<tr><th>FD::INIT</th><td>CLASSDEF</td></tr>
+<tr><th>FD::INT</th><td>32 bit integer.</td></tr>
+<tr><th>FD::INT64</th><td>64 bit integer.</td></tr>
+<tr><th>FD::INT64RESULT</th><td>For actions and methods</td></tr>
+<tr><th>FD::INTRESULT</th><td>For actions and methods</td></tr>
+<tr><th>FD::LOCAL</th><td>CLASSDEF Pointer to an object that is local to the class</td></tr>
+<tr><th>FD::LOOKUP</th><td>CLASSDEF</td></tr>
+<tr><th>FD::OBJECT</th><td>Supplementary, can be used with ints (for IDs) or pointers</td></tr>
+<tr><th>FD::OBJECTID</th><td>Synonym for <code>INT | OBJECT</code></td></tr>
+<tr><th>FD::OBJECTPTR</th><td>Synonym for <code>PTR | OBJECT</code></td></tr>
+<tr><th>FD::POINTER</th><td>Pointer (32 or 64 bit).</td></tr>
+<tr><th>FD::PRIVATE</th><td>Synonym for <code>SYSTEM</code></td></tr>
+<tr><th>FD::PTR</th><td>Synonym for <code>POINTER</code></td></tr>
+<tr><th>FD::PTRBUFFER</th><td>The next argument should be <code>INT|BUFSIZE</code></td></tr>
+<tr><th>FD::PTRRESULT</th><td>Use for pointer-based value results only</td></tr>
+<tr><th>FD::PTRSIZE</th><td>Synonym for <code>BUFSIZE</code></td></tr>
+<tr><th>FD::PTR_DOUBLERESULT</th><td>Use for pointer-based value results only.</td></tr>
+<tr><th>FD::PTR_INT64RESULT</th><td>Use for pointer-based value results only.</td></tr>
+<tr><th>FD::PTR_INTRESULT</th><td>Use for pointer-based value results only.</td></tr>
+<tr><th>FD::R</th><td>Synonym for <code>READ</code></td></tr>
+<tr><th>FD::READ</th><td>CLASSDEF</td></tr>
+<tr><th>FD::RESOURCE</th><td>The referenced struct or pointer is a special resource.  Changes some behaviours, e.g. a resourced struct will use direct value references rather than being copied in Tiri.</td></tr>
+<tr><th>FD::RESULT</th><td>FUNCDEF Overrides <code>READ</code></td></tr>
+<tr><th>FD::RGB</th><td>Supplementary, if an int type then format is <code>0xAARRGGBB</code>, if pointer then refers to an RGB structure.</td></tr>
+<tr><th>FD::RI</th><td>Synonym for <code>READ | INIT</code></td></tr>
+<tr><th>FD::RW</th><td>Synonym for <code>READ | WRITE</code></td></tr>
+<tr><th>FD::SCALED</th><td>Supplementary, indicates a float value for multiplicative scaling.</td></tr>
+<tr><th>FD::STR</th><td>Synonym for <code>STRING</code></td></tr>
+<tr><th>FD::STRING</th><td>Pointer to a string.</td></tr>
+<tr><th>FD::STRRESULT</th><td>Synonym for <code>STR | RESULT</code></td></tr>
+<tr><th>FD::STRUCT</th><td>Supplementary, defines the field as a structure reference.  MUST be combined with <code>FD_POINTER</code>.  If used in a class, it is possible to name the structure definition in field-&gt;Arg</td></tr>
+<tr><th>FD::SYNONYM</th><td>CLASSDEF Use to declare fields that duplicate the functionality of another field.</td></tr>
+<tr><th>FD::SYSTEM</th><td>CLASSDEF System, internal and private fields.</td></tr>
+<tr><th>FD::TAGS</th><td>FUNCDEF Overrides <code>INIT</code></td></tr>
+<tr><th>FD::UNIT</th><td>A value that describes a display unit.</td></tr>
+<tr><th>FD::UNSIGNED</th><td>Supplementary, integer value is unsigned.</td></tr>
+<tr><th>FD::VARTAGS</th><td>FUNCDEF Overrides <code>FLAGS</code>.  Use for 64-bit taglists that require value definitions, e.g. <code>TDOUBLE</code>, <code>TINT</code> etc.</td></tr>
+<tr><th>FD::VIRTUAL</th><td>CLASSDEF Ensures that the field has no physical representation in the structure.</td></tr>
+<tr><th>FD::VOID</th><td></td></tr>
+<tr><th>FD::VOLATILE</th><td>[Not yet allocated a bit]  Used on result pointers, usually strings, to indicate that the consecutive reads will overwrite the content of previous return values.  This indicates to scripting languages to make a copy of the data before the next interaction with the object.</td></tr>
+<tr><th>FD::W</th><td>Synonym for <code>WRITE</code></td></tr>
+<tr><th>FD::WORD</th><td>16 bit integer.</td></tr>
+<tr><th>FD::WRITE</th><td>CLASSDEF</td></tr>
+</tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
+<div class="docs-content" style="display:none;" id="FSO"><h1>FSO Type</h1><p class="lead">These are document style flags, as used in the DocStyle structure</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>FSO::ALIGN_CENTER</th><td>Align to the centre.</td></tr>
+<tr><th>FSO::ALIGN_RIGHT</th><td>Align to the right.</td></tr>
+<tr><th>FSO::NO_WRAP</th><td>Do not wrap the text.</td></tr>
+<tr><th>FSO::PREFORMAT</th><td>All white-space is taken into account.</td></tr>
+<tr><th>FSO::STYLES</th><td>Synonym for <code>UNDERLINE</code></td></tr>
+<tr><th>FSO::UNDERLINE</th><td>Draw a line under the text.</td></tr>
+</tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
+<div class="docs-content" style="display:none;" id="JET"><h1>JET Type</h1><p class="lead">JET constants are documented in GetInputEvent()</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>JET::ABS_XY</th><td>The X, Y values are defined as absolute coordinates, relative to the top-left of the display.</td></tr>
+<tr><th>JET::BUTTON_1</th><td>Left mouse button; XBox A button, PS square button.  Value is pressure sensitive, ranging between 0 - 1.0 (0 is released, 1.0 is fully depressed).</td></tr>
+<tr><th>JET::BUTTON_10</th><td>Non-specific button assignment.</td></tr>
+<tr><th>JET::BUTTON_2</th><td>Right mouse button; XBox X button, PS cross button.</td></tr>
+<tr><th>JET::BUTTON_3</th><td>Middle mouse button; XBox Y button, PS triangle.</td></tr>
+<tr><th>JET::BUTTON_4</th><td>Alt. mouse button 1; XBox B button, PS circle.</td></tr>
+<tr><th>JET::BUTTON_5</th><td>Alt. mouse button 2.</td></tr>
+<tr><th>JET::BUTTON_6</th><td>Non-specific button assignment.</td></tr>
+<tr><th>JET::BUTTON_7</th><td>Non-specific button assignment.</td></tr>
+<tr><th>JET::BUTTON_8</th><td>Non-specific button assignment.</td></tr>
+<tr><th>JET::BUTTON_9</th><td>Non-specific button assignment.</td></tr>
+<tr><th>JET::CROSSED_IN</th><td>This message is sent by the input system when the mouse pointer enters an area for the first time.  The message value refers to the object ID of the container being monitored for movement.</td></tr>
+<tr><th>JET::CROSSED_OUT</th><td>This message is sent by the input system when the mouse pointer leaves an area.  The message value refers to the object ID of the container being monitored for movement.</td></tr>
+<tr><th>JET::DEVICE_TILT_XY</th><td>Controller tilted on the X/Y axis.  Value indicates angle, -ve = left, +ve = right</td></tr>
+<tr><th>JET::DEVICE_TILT_Z</th><td>Controller is rising or falling.  Value expressed as 'speed',</td></tr>
+<tr><th>JET::DISPLAY_EDGE</th><td>Recently supplied input occurred at the edge of the display.</td></tr>
+<tr><th>JET::PEN_TILT_XY</th><td>Pen tilt angle.  0 is pointing down directly with nib at bottom, 0.5 is 90 degrees, 1.0 is inversed (eraser at bottom)</td></tr>
+<tr><th>JET::PRESSURE</th><td>Amount of pressure applied, ranges from 0 (none) to 1.0 (normal) and possibly higher if user presses hard enough</td></tr>
+<tr><th>JET::WHEEL</th><td>Mouse wheel rotation - the value generally reflects the number of 'clicks' rotated on the wheel.</td></tr>
+<tr><th>JET::WHEEL_TILT</th><td>Some mouse wheels can be tilted to the left or right.  Ranges from -1.0 to +1.0</td></tr>
+</tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
+<div class="docs-content" style="display:none;" id="JTYPE"><h1>JTYPE Type</h1><p class="lead">JTYPE flags are used to categorise input types.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>JTYPE::ANALOG</th><td>Analog movement (ranging from -1.0 to 1.0)</td></tr>
+<tr><th>JTYPE::ANCHORED</th><td>Cursor has been anchored with LockCursor()</td></tr>
+<tr><th>JTYPE::BUTTON</th><td>Input is a physical button or switch</td></tr>
+<tr><th>JTYPE::CROSSING</th><td>Crossing events manage the entering and leaving of an area.</td></tr>
+<tr><th>JTYPE::DBL_CLICK</th><td>Set by the input system if the <code>Type</code> is a button and the button has been clicked in quick succession so as to be classed as a double-click.</td></tr>
+<tr><th>JTYPE::DIGITAL</th><td>D-Pad or digital joystick source (restricted to +/- 1)</td></tr>
+<tr><th>JTYPE::DRAGGED</th><td>Set if sufficient movement occurred between the original click and its point of release (usually requires a 3 or more pixel difference).</td></tr>
+<tr><th>JTYPE::DRAG_ITEM</th><td>This special flag is set by the input system if the pointer is click-dragging an object at the time of the event.</td></tr>
+<tr><th>JTYPE::EXT_MOVEMENT</th><td>Extended or indirect movement information.  This covers all types of movement that are unconnected to coordinate positioning -  mouse wheel movement and pen tilt are two such examples.</td></tr>
+<tr><th>JTYPE::MOVEMENT</th><td>X/Y coordinate movement only. Movement such as the wheel mouse spinning is not covered by this type as it does not influence the coordinate system.</td></tr>
+<tr><th>JTYPE::REPEATED</th><td>Input is a repeated entry (i.e. user is holding down a button and a repetition timer is being triggered)</td></tr>
+<tr><th>JTYPE::SECONDARY</th><td>Indicates to the receiver of this message that it is not the primary/original recipient</td></tr>
+</tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
+<div class="docs-content" style="display:none;" id="KQ"><h1>KQ Type</h1><p class="lead">Special qualifier flags</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>KQ::ALT</th><td>Synonym for <code>L_ALT | R_ALT</code></td></tr>
+<tr><th>KQ::ALTGR</th><td>Synonym for <code>R_ALT</code></td></tr>
+<tr><th>KQ::CAPS_LOCK</th><td>Caps-Lock is on</td></tr>
+<tr><th>KQ::COMMAND</th><td>Synonym for <code>L_COMMAND | R_COMMAND</code></td></tr>
+<tr><th>KQ::CONTROL</th><td>Synonym for <code>L_CONTROL | R_CONTROL</code></td></tr>
+<tr><th>KQ::CTRL</th><td>Synonym for <code>L_CONTROL | R_CONTROL</code></td></tr>
+<tr><th>KQ::DEAD_KEY</th><td>This key will be affected by a previously pressed dead-key</td></tr>
+<tr><th>KQ::INFO</th><td>Synonym for <code>REPEAT | RELEASED | PRESSED | NOT_PRINTABLE | CAPS_LOCK</code></td></tr>
+<tr><th>KQ::INSTRUCTION_KEYS</th><td>Synonym for <code>ALT | CONTROL</code></td></tr>
+<tr><th>KQ::L_ALT</th><td>Left Alt is held</td></tr>
+<tr><th>KQ::L_COMMAND</th><td>Left Logo/Special</td></tr>
+<tr><th>KQ::L_CONTROL</th><td>Control Key is held</td></tr>
+<tr><th>KQ::L_CTRL</th><td>Control Key is held</td></tr>
+<tr><th>KQ::L_SHIFT</th><td>Left Shift is held</td></tr>
+<tr><th>KQ::NOT_PRINTABLE</th><td>The represented key value is not printable</td></tr>
+<tr><th>KQ::NUM_LOCK</th><td>NumLock is on</td></tr>
+<tr><th>KQ::NUM_PAD</th><td>Identifies numeric keypad keys</td></tr>
+<tr><th>KQ::PRESSED</th><td>Key is being held or tapped</td></tr>
+<tr><th>KQ::QUALIFIERS</th><td>Synonym for <code>SHIFT | COMMAND | ALT | CONTROL</code></td></tr>
+<tr><th>KQ::RELEASED</th><td>The key is being released</td></tr>
+<tr><th>KQ::REPEAT</th><td>This is a repeated key</td></tr>
+<tr><th>KQ::R_ALT</th><td>Right Alt is held</td></tr>
+<tr><th>KQ::R_COMMAND</th><td>Right Logo/Special</td></tr>
+<tr><th>KQ::R_CONTROL</th><td>Control Key is held</td></tr>
+<tr><th>KQ::R_CTRL</th><td>Control Key is held</td></tr>
+<tr><th>KQ::R_SHIFT</th><td>Right Shift is held</td></tr>
+<tr><th>KQ::SCR_LOCK</th><td>Scroll Lock is on</td></tr>
+<tr><th>KQ::SHIFT</th><td>Synonym for <code>L_SHIFT | R_SHIFT</code></td></tr>
+</tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
+<div class="docs-content" style="display:none;" id="MEM"><h1>MEM Type</h1><p class="lead">Memory types used by AllocMemory().  The lower 16 bits are stored with allocated blocks, the upper 16 bits are function-relative only.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>MEM::AUDIO</th><td>The memory space is reserved by an audio device such as a sound card.</td></tr>
+<tr><th>MEM::CALLER</th><td>This flag is usable only in routines that are supporting a class method.  It forces the memory allocation to be tracked to the object that made the method call.  This is particularly important in methods that return memory blocks that do not form a part of the object itself.</td></tr>
+<tr><th>MEM::CODE</th><td>Set if the memory will contain executable program code.</td></tr>
+<tr><th>MEM::DATA</th><td>The default type, <code>DATA</code>, is used to indicate a standard memory allocation from system RAM.</td></tr>
+<tr><th>MEM::HIDDEN</th><td>Hidden blocks are not recorded and are excluded from resource tracking.</td></tr>
+<tr><th>MEM::MANAGED</th><td>Enables custom resource management for the memory block.  The start of the block will need to be reserved with a pointer to a <code>ResourceManager</code> structure, which is included as part of the block's declared Size.  The <code>Free()</code> callback will be called when the block is removed.</td></tr>
+<tr><th>MEM::NO_BLOCK</th><td>Permanently turn off all accesses to this memory block.  This means that multiple threads can have full read/write access to the memory block at once regardless of other acces flags.</td></tr>
+<tr><th>MEM::NO_BLOCKING</th><td>Permanently turn off all accesses to this memory block.  This means that multiple threads can have full read/write access to the memory block at once regardless of other acces flags.</td></tr>
+<tr><th>MEM::NO_CLEAR</th><td>Do not clear the memory on allocation (saves time).</td></tr>
+<tr><th>MEM::NO_LOCK</th><td>For AllocMemory() only, indicates that the (private) memory block should not be locked on return.</td></tr>
+<tr><th>MEM::NO_POOL</th><td>Gives a hint to the allocator to allocate the block outside of the memory pool.</td></tr>
+<tr><th>MEM::READ</th><td>The memory is explicitly marked as readable.</td></tr>
+<tr><th>MEM::READ_WRITE</th><td>Synonym for <code>READ | WRITE</code></td></tr>
+<tr><th>MEM::STRING</th><td>Identifies the memory content as a null terminated string. Useful for debugging and run-time type identification in scripts.</td></tr>
+<tr><th>MEM::TEXTURE</th><td>The memory space is reserved by a video driver for hosting texture graphics.</td></tr>
+<tr><th>MEM::TMP_LOCK</th><td>Enables temporary locking restrictions.  Prevents processes from sleeping while holding a lock on the memory block.</td></tr>
+<tr><th>MEM::UNTRACKED</th><td>Allocating an untracked memory block will prevent the memory block from being tracked back to the object holding the current context.</td></tr>
+<tr><th>MEM::VIDEO</th><td>The memory space is reserved by a video device such as a graphics card for display purposes, e.g. framebuffer.</td></tr>
+<tr><th>MEM::WRITE</th><td>The memory is explicitly marked as writeable.</td></tr>
+</tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
+<div class="docs-content" style="display:none;" id="PERMIT"><h1>PERMIT Type</h1><p class="lead">Permission flags</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>PERMIT::ALL_DELETE</th><td>Synonym for <code>EVERYONE_DELETE</code></td></tr>
+<tr><th>PERMIT::ALL_EXEC</th><td>Synonym for <code>EVERYONE_EXEC</code></td></tr>
+<tr><th>PERMIT::ALL_READ</th><td>Synonym for <code>EVERYONE_READ</code></td></tr>
+<tr><th>PERMIT::ALL_WRITE</th><td>Synonym for <code>EVERYONE_WRITE</code></td></tr>
+<tr><th>PERMIT::ARCHIVE</th><td>Marks the file for future backup.  The flag should be cleared after the backup has succeeded.</td></tr>
+<tr><th>PERMIT::DELETE</th><td>Owner can delete.  If the file system does not support this, deletion is enabled via the <code>WRITE</code> flag.</td></tr>
+<tr><th>PERMIT::EVERYONE_ACCESS</th><td>Synonym for <code>EVERYONE_READ | EVERYONE_WRITE | EVERYONE_EXEC | EVERYONE_DELETE</code></td></tr>
+<tr><th>PERMIT::EVERYONE_DELETE</th><td>Synonym for <code>DELETE | GROUP_DELETE | OTHERS_DELETE</code></td></tr>
+<tr><th>PERMIT::EVERYONE_EXEC</th><td>Synonym for <code>EXEC | GROUP_EXEC | OTHERS_EXEC</code></td></tr>
+<tr><th>PERMIT::EVERYONE_READ</th><td>Synonym for <code>READ | GROUP_READ | OTHERS_READ</code></td></tr>
+<tr><th>PERMIT::EVERYONE_READWRITE</th><td>Synonym for <code>EVERYONE_READ | EVERYONE_WRITE</code></td></tr>
+<tr><th>PERMIT::EVERYONE_WRITE</th><td>Synonym for <code>WRITE | GROUP_WRITE | OTHERS_WRITE</code></td></tr>
+<tr><th>PERMIT::EXEC</th><td>User/Owner can execute.</td></tr>
+<tr><th>PERMIT::GROUP</th><td>Synonym for <code>GROUP_READ | GROUP_WRITE | GROUP_EXEC | GROUP_DELETE</code></td></tr>
+<tr><th>PERMIT::GROUPID</th><td>Allows executables to run with a set group id.</td></tr>
+<tr><th>PERMIT::GROUP_DELETE</th><td>Group members can delete.</td></tr>
+<tr><th>PERMIT::GROUP_EXEC</th><td>Group members can execute.</td></tr>
+<tr><th>PERMIT::GROUP_READ</th><td>Group members can read.</td></tr>
+<tr><th>PERMIT::GROUP_WRITE</th><td>Group members can write.</td></tr>
+<tr><th>PERMIT::HIDDEN</th><td>Recommends that the file is hidden from view by default.</td></tr>
+<tr><th>PERMIT::INHERIT</th><td>Inherit permissions from parent folder and logical OR them with preset permission flags.</td></tr>
+<tr><th>PERMIT::NETWORK</th><td>File is hosted on another machine.</td></tr>
+<tr><th>PERMIT::OFFLINE</th><td>File content for this networked file has not been cached on the local PC.</td></tr>
+<tr><th>PERMIT::OTHERS</th><td>Synonym for <code>OTHERS_READ | OTHERS_WRITE | OTHERS_EXEC | OTHERS_DELETE</code></td></tr>
+<tr><th>PERMIT::OTHERS_DELETE</th><td>Others can delete.</td></tr>
+<tr><th>PERMIT::OTHERS_EXEC</th><td>Others can execute.</td></tr>
+<tr><th>PERMIT::OTHERS_READ</th><td>Others can read.</td></tr>
+<tr><th>PERMIT::OTHERS_WRITE</th><td>Others can write.</td></tr>
+<tr><th>PERMIT::PASSWORD</th><td>File is password protected.</td></tr>
+<tr><th>PERMIT::READ</th><td>User/Owner has read access.  This will not allow compiled code to be executed.</td></tr>
+<tr><th>PERMIT::USER</th><td>Synonym for <code>READ | WRITE | EXEC | DELETE</code></td></tr>
+<tr><th>PERMIT::USERID</th><td>Allows executables to run with a set user id.</td></tr>
+<tr><th>PERMIT::USER_EXEC</th><td>Synonym for <code>EXEC</code></td></tr>
+<tr><th>PERMIT::USER_READ</th><td>Synonym for <code>READ</code></td></tr>
+<tr><th>PERMIT::USER_WRITE</th><td>Synonym for <code>WRITE</code></td></tr>
+<tr><th>PERMIT::WRITE</th><td>User/Owner can write.</td></tr>
+</tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
+<div class="docs-content" style="display:none;" id="RIPL"><h1>RIPL Type</h1><p class="lead">Official version number (date format).  Any changes to the handling of document content require that this number be updated.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>RIPL::VERSION</th><td></td></tr>
+</tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
+<div class="docs-content" style="display:none;" id="SEEK"><h1>SEEK Type</h1><p class="lead">Seek positions</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>SEEK::CURRENT</th><td>Use an index at the end of the last read/write operation.</td></tr>
+<tr><th>SEEK::END</th><td>Use an index at the end of the data buffer.</td></tr>
+<tr><th>SEEK::RELATIVE</th><td>The index is between 0 and 1.0 and relative to the data size.</td></tr>
+<tr><th>SEEK::START</th><td>Use an index at position zero.</td></tr>
+</tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
+<div class="docs-content" style="display:none;" id="TT"><h1>TT Type</h1><p class="lead"></p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>TT::EDIT</th><td></td></tr>
+<tr><th>TT::LINK</th><td></td></tr>
+<tr><th>TT::VECTOR</th><td></td></tr>
+</tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
+<div class="docs-content" style="display:none;" id="struct-DateTime"><h1>DateTime Structure</h1><p class="lead">Generic structure for date-time management.</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Year</th><td><span class="text-nowrap">INT16</span></td><td>Year</td></tr>
+<tr><th>Month</th><td><span class="text-nowrap">INT8</span></td><td>Month 1 to 12</td></tr>
+<tr><th>Day</th><td><span class="text-nowrap">INT8</span></td><td>Day 1 to 31</td></tr>
+<tr><th>Hour</th><td><span class="text-nowrap">INT8</span></td><td>Hour 0 to 23</td></tr>
+<tr><th>Minute</th><td><span class="text-nowrap">INT8</span></td><td>Minute 0 to 59</td></tr>
+<tr><th>Second</th><td><span class="text-nowrap">INT8</span></td><td>Second 0 to 59</td></tr>
+<tr><th>TimeZone</th><td><span class="text-nowrap">INT8</span></td><td>TimeZone -13 to +13</td></tr>
+</tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
+<div class="docs-content" style="display:none;" id="struct-InputEvent"><h1>InputEvent Structure</h1><p class="lead"></p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Next</th><td><span class="text-nowrap">const struct InputEvent *</span></td><td>Next event in the chain</td></tr>
+<tr><th>Value</th><td><span class="text-nowrap">DOUBLE</span></td><td>The value associated with the Type</td></tr>
+<tr><th>Timestamp</th><td><span class="text-nowrap">INT64</span></td><td>PreciseTime() of the recorded input</td></tr>
+<tr><th>RecipientID</th><td><span class="text-nowrap">OBJECTID</span></td><td>Surface that the input message is being conveyed to</td></tr>
+<tr><th>OverID</th><td><span class="text-nowrap">OBJECTID</span></td><td>Surface that is directly under the mouse pointer at the time of the event</td></tr>
+<tr><th>AbsX</th><td><span class="text-nowrap">DOUBLE</span></td><td>Absolute horizontal position of mouse cursor (relative to the top left of the display)</td></tr>
+<tr><th>AbsY</th><td><span class="text-nowrap">DOUBLE</span></td><td>Absolute vertical position of mouse cursor (relative to the top left of the display)</td></tr>
+<tr><th>X</th><td><span class="text-nowrap">DOUBLE</span></td><td>Horizontal position relative to the surface that the pointer is over - unless a mouse button is held or pointer is anchored - then the coordinates are relative to the click-held surface</td></tr>
+<tr><th>Y</th><td><span class="text-nowrap">DOUBLE</span></td><td>Vertical position relative to the surface that the pointer is over - unless a mouse button is held or pointer is anchored - then the coordinates are relative to the click-held surface</td></tr>
+<tr><th>DeviceID</th><td><span class="text-nowrap">OBJECTID</span></td><td>The hardware device that this event originated from</td></tr>
+<tr><th>Type</th><td><span class="text-nowrap">JET</span></td><td>JET constant that describes the event</td></tr>
+<tr><th>Flags</th><td><span class="text-nowrap">JTYPE</span></td><td>Broad descriptors for the given <code>Type</code> (see <code>JTYPE</code> flags).  Automatically defined when delivered to the pointer object</td></tr>
+<tr><th>Mask</th><td><span class="text-nowrap">JTYPE</span></td><td>Mask to use for checking against subscribers</td></tr>
+</tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
+<div class="docs-content" style="display:none;" id="struct-dcAudio"><h1>dcAudio Structure</h1><p class="lead">Data feed structure for Audio</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Size</th><td><span class="text-nowrap">INT</span></td><td>Byte size of this structure</td></tr>
+<tr><th>Format</th><td><span class="text-nowrap">INT</span></td><td>Format of the audio data</td></tr>
+</tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
+<div class="docs-content" style="display:none;" id="struct-dcDeviceInput"><h1>dcDeviceInput Structure</h1><p class="lead"></p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Values</th><td><span class="text-nowrap">DOUBLE</span></td><td>The value(s) associated with the Type</td></tr>
+<tr><th>Timestamp</th><td><span class="text-nowrap">INT64</span></td><td><a href="core.html?page=PreciseTime">PreciseTime()</a> of the recorded input</td></tr>
+<tr><th>DeviceID</th><td><span class="text-nowrap">OBJECTID</span></td><td>The hardware device that this event originated from (note: This ID can be to a private/inaccessible object, the point is that the ID is unique)</td></tr>
+<tr><th>Flags</th><td><span class="text-nowrap">JTYPE</span></td><td>Broad descriptors for the given <code>Type</code>.  Automatically defined when delivered to the pointer object</td></tr>
+<tr><th>Type</th><td><span class="text-nowrap">JET</span></td><td><code>JET</code> constant</td></tr>
+</tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
+<div class="docs-content" style="display:none;" id="struct-dcKeyEntry"><h1>dcKeyEntry Structure</h1><p class="lead">Data feed structure for Keypress</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Flags</th><td><span class="text-nowrap">INT</span></td><td>Shift/Control/CapsLock...</td></tr>
+<tr><th>Value</th><td><span class="text-nowrap">INT</span></td><td>ASCII value of the key A/B/C/D...</td></tr>
+<tr><th>Timestamp</th><td><span class="text-nowrap">INT64</span></td><td><a href="core.html?page=PreciseTime">PreciseTime()</a> at which the keypress was recorded</td></tr>
+<tr><th>Unicode</th><td><span class="text-nowrap">INT</span></td><td>Unicode value for pre-calculated key translations</td></tr>
+</tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
+<div class="docs-content" style="display:none;" id="struct-dcRequest"><h1>dcRequest Structure</h1><p class="lead">Data feed item request</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Item</th><td><span class="text-nowrap">INT</span></td><td>Identifier for retrieval from the source</td></tr>
+<tr><th>Preference</th><td><span class="text-nowrap">INT8</span></td><td>Data preferences for the returned item(s)</td></tr>
+</tbody></table><div class="footer copyright text-right">Document module documentation © Paul Manias © 2005-2026</div></div>
+</div></div></div><script type="text/javascript" src="../js/bootstrap.bundle.min.js"></script><script type="text/javascript" src="../js/base.js"></script><script type="text/javascript">
+var glCurrentMethod;
+
+const ready = fn => document.readyState !== 'loading' ? fn() : document.addEventListener('DOMContentLoaded', fn);
+
+   var xslt = false;
+   var url = window.location.pathname;
+   var filename = url.substring(url.lastIndexOf('/')+1);
+   if (filename.endsWith(".xml")) { // XSLT is being used to view this document
+      filename = filename.substr(0, filename.length-3) + 'html';
+      xslt = true;
+   }
+
+ready(function(){
+   // Initialise tooltips
+   var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+   var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+     return new bootstrap.Tooltip(tooltipTriggerEl)
+   })
+
+   glCurrentMethod = document.getElementById("Introduction");
+
+   var page = glParameters["page"];
+   if (isEmpty(page)) page = glParameters["function"];
+
+   if (isEmpty(page)) showPage("default-page", true);
+   else showPage(page, true);
+
+   window.onpopstate = popState;
+
+   // In XSLT mode, changing all HTML links to XML is helpful for navigation (if heavy handed)
+   if (xslt) {
+      var nl = document.querySelectorAll('a[href$=".html"]');
+      nl.forEach((el) => {
+         el.href = el.href.substr(0, el.href.length-5) + '.xml'
+      })
+   }
+});
+
+function popState(event) {
+   console.log("popState() to " + JSON.stringify(event.state));
+
+   state = event.state
+   if (!state) state = { page: 'default-page' }
+
+   var div
+   if (state.page) div = document.getElementById(state.page);
+   else div =  document.getElementById('default-page');
+
+   if (div) {
+      if (glCurrentMethod) glCurrentMethod.style.display = "none"; // Hide previous method.
+      div.style.display = "block"; // Show selected method.
+      glCurrentMethod = div;
+   }
+   else console.log("Div for '" + state.page + "' not found.");
+}
+
+function showPage(Name, NoHistory)
+{
+   var div = document.getElementById(Name);
+   if (div) {
+      if (glCurrentMethod) glCurrentMethod.style.display = "none"; // Hide previous method.
+      div.style.display = "block"; // Show selected method.
+      glCurrentMethod = div;
+
+      if (!NoHistory) {
+         history.pushState({ page: Name }, null, "?page=" + Name);
+      }
+      window.scrollTo(0, 0)
+   }
+   else console.log("Div for '" + Name + "' not found.");
+
+   return false;
+}
+         </script></body></html>

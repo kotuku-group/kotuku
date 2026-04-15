@@ -261,6 +261,7 @@
 <tr><th>RES::PRIVILEGED</th><td>This is set to <code>true</code> if the process has elevated privileges (such as superuser or administrative rights).</td></tr>
 <tr><th>RES::PRIVILEGED_USER</th><td>If this value is set to 1, the process will operate in privileged mode (typically this enables full administrator rights).  This feature will only work for Unix processes that are granted admin rights when launched.  Setting the Value to 0 reverts to the user's permission settings.  SetResource() will return an error code indicating the level of success.</td></tr>
 <tr><th>RES::PROCESS_STATE</th><td>Life-cycle stage of the running process</td></tr>
+<tr><th>RES::RELEASE_BUILD</th><td>Returns true if the runtime is a release build.</td></tr>
 <tr><th>RES::STATIC_BUILD</th><td>Returns true if the runtime is a statically linked build.</td></tr>
 <tr><th>RES::THREAD_ID</th><td>Return the ID of the current thread.</td></tr>
 <tr><th>RES::TOTAL_MEMORY</th><td>The total amount of installed memory.</td></tr>

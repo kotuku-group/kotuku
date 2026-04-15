@@ -310,13 +310,8 @@
       </input>
       <description>
 <p>The ReadContent() method extracts content from the document stream, covering a specific area.  It can return the data as a RIPL binary stream, translated into plain-text (control codes are removed), or serialised as an XML document describing the byte stream.</p>
-<p>The XML format is a linear, non-nested serialisation of the byte stream intended for inspection, diffing and tooling. Each byte code becomes one XML element wrapped in a <code>
-<extract/> root, followed by the requested content in a <code>
-<stream/> element, and text content appears inside <code>
-<text/> elements with the usual XML escaping applied.  Start/end markers such as paragraphs and font runs are emitted as sibling self-closing elements rather than nested, reflecting the underlying linear storage model.  A trailing <code>
-<fonts/> section lists information for the shared cached fonts.</code>
+<p>The XML format is a linear, non-nested serialisation of the byte stream intended for inspection, diffing and tooling. Each byte code becomes one XML element wrapped in a <code>&lt;extract&gt;</code> root, followed by the requested content in a <code>&lt;stream&gt;</code> element, and text content appears inside <code>&lt;text&gt;</code> elements with the usual XML escaping applied.  Start/end markers such as paragraphs and font runs are emitted as sibling self-closing elements rather than nested, reflecting the underlying linear storage model.  A trailing <code>&lt;fonts&gt;</code> section lists information for the shared cached fonts.</p>
 <p>No post-processing is performed to fix validity errors that may arise from an invalid data range.  For instance, if an opening paragraph code is not closed with a matching paragraph end point, this will remain the case in the resulting data.</p>
-</code></code></code></p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>

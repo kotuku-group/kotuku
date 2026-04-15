@@ -34,9 +34,6 @@
 #include <winioctl.h>
 #include <shlobj.h>
 
-#ifdef __CYGWIN__
-#include <sys/timespec.h>
-#endif
 #include <tchar.h>
 #include <imagehlp.h>
 
@@ -188,6 +185,7 @@ typedef struct DateTime {
 #define MFF_DEEP 0x00001000
 #define MFF_RENAME (MFF_MOVED)
 #define MFF_WRITE (MFF_MODIFY)
+constexpr int WATCH_NOTIFY_SUBTREE = 0x40000000;
 
 // Return codes available to the feedback routine
 
@@ -278,9 +276,9 @@ static void printerror(void)
 }
 
 //********************************************************************************************************************
-// Console checker for Cygwin
+// Check if a handle refers to a console
 
-int8_t is_console(HANDLE h)
+static int8_t is_console(HANDLE h)
 {
    if (FILE_TYPE_UNKNOWN IS GetFileType(h) and ERROR_INVALID_HANDLE IS GetLastError()) {
        if ((h = CreateFile("CONOUT$", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr))) {
@@ -306,20 +304,20 @@ extern "C" void activate_console(int8_t AllowOpenConsole)
       if (GetEnvironmentVariable("TERM", value, sizeof(value)) or
           GetEnvironmentVariable("PROMPT", value, sizeof(value))) { // TERM defined by Cygwin, Mingw, PROMPT defined by cmd.exe
 
-         // NB: Cygwin stdout/err handling is broken and requires the following workaround for ensuring that stdout
-         // and stderr are managed correctly for both standard console output and file redirection.
-
          HANDLE current_out = GetStdHandle(STD_OUTPUT_HANDLE);
          HANDLE current_err = GetStdHandle(STD_ERROR_HANDLE);
 
          AttachConsole(ATTACH_PARENT_PROCESS);
+
+         // Double-check if we're attached to the console with is_console() because the parent process may have
+         // redirected the std* descriptors to a file for instance.  If we freopen() blindly then we otherwise
+         // revert output back to the console.
 
          if (is_console(current_out)) freopen("CON", "w", stdout);  // Redirect stdout and stderr descriptors to the attached console.
          if (is_console(current_err)) freopen("CON", "w", stderr);
       }
       else if (AllowOpenConsole) { // Assume that executable was launched from desktop without a console
          AllocConsole();
-         AttachConsole(GetCurrentProcessId());
          freopen("CON", "w", stdout);  // Redirect stdout and stderr descriptors to the attached console.
          freopen("CON", "w", stderr);
       }
@@ -703,24 +701,6 @@ extern "C" ERR wake_waitlock(HANDLE Lock, int TotalSleepers) noexcept
 
 //********************************************************************************************************************
 
-#ifdef __CYGWIN__
-static int strnicmp(const char *s1, const char *s2, size_t n)
-{
-   for (; n > 0; s1++, s2++, --n) {
-      unsigned char c1 = *s1;
-      unsigned char c2 = *s2;
-      if ((c1 >= 'A') or (c1 <= 'Z')) c1 = c1 - 'A' + 'a';
-      if ((c2 >= 'A') or (c2 <= 'Z')) c2 = c2 - 'A' + 'a';
-
-      if (c1 != c2) return ((*(unsigned char *)s1 < *(unsigned char *)s2) ? -1 : +1);
-      else if (c1 IS '\0') return 0;
-   }
-   return 0;
-}
-#endif
-
-//********************************************************************************************************************
-
 extern "C" DWORD winGetExeDirectory(DWORD Length, LPSTR String)
 {
    if (!String or Length < 4) return 0; // Need at least "C:\\" + null terminator
@@ -775,11 +755,15 @@ extern "C" DWORD winGetExeDirectory(DWORD Length, LPSTR String)
 
             if (QueryDosDevice(szDrive, devname, sizeof(devname))) {
                int devlen = strlen(devname);
-               if (strnicmp(String, devname, devlen) IS devlen) {
+               if (strnicmp(String, devname, devlen) IS 0) {
                   if (String[devlen] IS '\\') {
                      // Replace device path with DOS path
                      std::string tmpfile = szDrive + std::string(String+devlen);
                      if ((tmpfile.size() > 0) and (tmpfile.size() < MAX_PATH)) {
+                        size_t last_slash = tmpfile.find_last_of('\\');
+                        if (last_slash != std::string::npos) tmpfile.resize(last_slash + 1);
+                        else return 0;
+
                         size_t copy_len = std::min<size_t>(tmpfile.size(), Length - 1);
                         memcpy(String, tmpfile.c_str(), copy_len);
                         String[copy_len] = 0;
@@ -977,6 +961,7 @@ extern "C" int winGetCurrentProcessId(void)
 extern "C" size_t winGetProcessMemoryUsage(int ProcessID)
 {
    PROCESS_MEMORY_COUNTERS pmc;
+   ZeroMemory(&pmc, sizeof(pmc));
    HANDLE process = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, ProcessID);
    if (process) {
       if (GetProcessMemoryInfo(process, &pmc, sizeof(pmc))) {
@@ -985,7 +970,7 @@ extern "C" size_t winGetProcessMemoryUsage(int ProcessID)
       }
       CloseHandle(process);
    }
-   return -1; // Failed to retrieve memory usage
+   return 0; // Failed to retrieve memory usage
 }
 
 //********************************************************************************************************************
@@ -1605,18 +1590,18 @@ extern "C" ERR winCreateDir(const char *Path)
 //********************************************************************************************************************
 // Returns true on success.
 
-extern "C" int winGetFreeDiskSpace(char Drive, long long *TotalSpace, long long *BytesUsed)
+extern "C" int winGetFreeDiskSpace(char Drive, long long *BytesFree, long long *TotalSize)
 {
    DWORD sectors, bytes_per_sector, free_clusters, total_clusters;
 
-   *TotalSpace = 0;
-   *BytesUsed = 0;
+   *BytesFree = 0;
+   *TotalSize = 0;
 
    char location[4] = { Drive, ':', '\\', 0 };
 
    if (GetDiskFreeSpace(location, &sectors, &bytes_per_sector, &free_clusters, &total_clusters)) {
-      *TotalSpace = (double)sectors * (double)bytes_per_sector * (double)free_clusters;
-      *BytesUsed  = ((double)sectors * (double)bytes_per_sector * (double)total_clusters);
+      *BytesFree = (long long)sectors * (long long)bytes_per_sector * (long long)free_clusters;
+      *TotalSize = (long long)sectors * (long long)bytes_per_sector * (long long)total_clusters;
       return 1;
    }
    else return 0;
@@ -1629,14 +1614,16 @@ extern "C" int winResetDate(STRING Location)
 {
    HANDLE handle;
 
-   if ((handle = CreateFile(Location, GENERIC_WRITE, FILE_SHARE_READ|FILE_SHARE_WRITE, nullptr,
+   if ((handle = CreateFile(Location, GENERIC_READ|GENERIC_WRITE, FILE_SHARE_READ|FILE_SHARE_WRITE, nullptr,
          OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr)) != INVALID_HANDLE_VALUE) {
 
       FILETIME filetime;
-      GetFileTime(handle, &filetime, nullptr, nullptr);
-      int err = SetFileTime(handle, nullptr, &filetime, &filetime);
-      CloseHandle(handle);
-      if (err) return 1;
+      if (GetFileTime(handle, &filetime, nullptr, nullptr)) {
+         int err = SetFileTime(handle, nullptr, &filetime, &filetime);
+         CloseHandle(handle);
+         if (err) return 1;
+      }
+      else CloseHandle(handle);
    }
 
    return 0;
@@ -1800,7 +1787,7 @@ extern "C" ERR winWatchFile(int Flags, CSTRING Path, APTR WatchBuffer, HANDLE *H
          return (error IS ERROR_ACCESS_DENIED) ? ERR::NoPermission : ERR::SystemCall;
       }
 
-      *WinFlags = nflags;
+      *WinFlags = nflags | ((watch_folders) ? WATCH_NOTIFY_SUBTREE : 0);
       return ERR::Okay;
    }
    else {
@@ -1822,6 +1809,8 @@ extern "C" ERR winReadChanges(HANDLE Handle, APTR WatchBuffer, int NotifyFlags, 
    DWORD bytes_out = 0;
    auto ovlap = (OVERLAPPED *)WatchBuffer;
    auto fni = (FILE_NOTIFY_INFORMATION *)(ovlap + 1);
+   DWORD watch_flags = NotifyFlags & (~WATCH_NOTIFY_SUBTREE);
+   BOOL watch_folders = (NotifyFlags & WATCH_NOTIFY_SUBTREE) ? TRUE : FALSE;
 
    *Status = 0;
    PathOutput[0] = '\0';
@@ -1845,7 +1834,7 @@ extern "C" ERR winReadChanges(HANDLE Handle, APTR WatchBuffer, int NotifyFlags, 
 
       DWORD empty;
       const DWORD buffer_size = sizeof(FILE_NOTIFY_INFORMATION) + (MAX_PATH * sizeof(WCHAR)) + sizeof(DWORD);
-      ReadDirectoryChangesW(Handle, fni, buffer_size, true, NotifyFlags, &empty, ovlap, nullptr);
+      ReadDirectoryChangesW(Handle, fni, buffer_size, watch_folders, watch_flags, &empty, ovlap, nullptr);
       return ERR::NothingDone;
    }
 
@@ -1898,7 +1887,7 @@ extern "C" ERR winReadChanges(HANDLE Handle, APTR WatchBuffer, int NotifyFlags, 
 
       DWORD empty;
       const DWORD buffer_size = sizeof(FILE_NOTIFY_INFORMATION) + (MAX_PATH * sizeof(WCHAR)) + sizeof(DWORD);
-      if (!ReadDirectoryChangesW(Handle, fni, buffer_size, true, NotifyFlags, &empty, ovlap, nullptr)) {
+      if (!ReadDirectoryChangesW(Handle, fni, buffer_size, watch_folders, watch_flags, &empty, ovlap, nullptr)) {
          return ERR::SystemCall;
       }
    }
@@ -1960,7 +1949,7 @@ extern "C" int winReadKey(LPCSTR Key, LPCSTR Value, LPBYTE Buffer, int Length)
       if (RegQueryValueEx(handle, Value, 0, 0, Buffer, &length) IS ERROR_SUCCESS) {
          err = length-1;
       }
-      CloseHandle(handle);
+      RegCloseKey(handle);
    }
    return err;
 }
@@ -1976,7 +1965,7 @@ extern "C" int winReadRootKey(LPCSTR Key, LPCSTR Value, LPBYTE Buffer, int Lengt
       if (RegQueryValueEx(handle, Value, 0, 0, Buffer, &length) IS ERROR_SUCCESS) {
          err = length-1;
       }
-      CloseHandle(handle);
+      RegCloseKey(handle);
    }
    return err;
 }
@@ -2195,13 +2184,7 @@ static ERR delete_file_helper(const std::string &FilePath)
    }
 
    if (unlink(FilePath.c_str()) IS 0) return ERR::Okay;
-   else {
-      #ifdef __CYGWIN__
-      return convert_errno(*__errno(), ERR::SystemCall);
-      #else
-      return convert_errno(errno, ERR::SystemCall);
-      #endif
-   }
+   else return convert_errno(errno, ERR::SystemCall);
 }
 
 //********************************************************************************************************************

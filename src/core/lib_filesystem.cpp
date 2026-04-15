@@ -2505,13 +2505,13 @@ restart:
 
 #ifdef _WIN32
 
-   int64_t bytes_avail, total_size;
+   int64_t bytes_free, total_size;
 
    if (location.empty()) error = ResolvePath(Path, RSF::NO_FILE_CHECK, &location);
    else error = ERR::Okay;
 
    if (error IS ERR::Okay) {
-      if (!(winGetFreeDiskSpace(location[0], &bytes_avail, &total_size))) {
+      if (!(winGetFreeDiskSpace(location[0], &bytes_free, &total_size))) {
          log.msg("Failed to read disk space for \"%s\" (%s)", location.c_str(), Path.data());
          Info->BytesFree  = -1;
          Info->BytesUsed  = 0;
@@ -2519,8 +2519,8 @@ restart:
          return ERR::Okay; // Even though the disk space calculation failed, we succeeded on resolving other device information
       }
       else {
-         Info->BytesFree  = bytes_avail;
-         Info->BytesUsed  = total_size - bytes_avail;
+         Info->BytesFree  = bytes_free;
+         Info->BytesUsed  = total_size - bytes_free;
          Info->DeviceSize = total_size;
          return ERR::Okay;
       }
