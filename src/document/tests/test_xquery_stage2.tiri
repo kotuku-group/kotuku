@@ -1,0 +1,80 @@
+-- $TIRI
+-- Flute tests for Stage 2 XQuery runtime-scope bindings in RIPL documents.
+
+@BeforeAll function init(State)
+   global glDocFolder = State.folder
+end
+
+function contains(Haystack:str, Needle:str)
+   return regex.new(Needle).test(Haystack)
+end
+
+function feedAndRead(Content:str, PageWidth:num, Username:str)
+   scene = obj.new('VectorScene', { pageWidth=PageWidth ?? 1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp })
+   if Username?? then check doc.acSetKey('username', Username) end
+   check doc.acDataFeed(nil, DATA_XML, Content)
+   err, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed: ' .. mSys.GetErrorMsg(err))
+   assert(xml_str, 'ReadContent(DATA_XML) returned nil')
+   return xml_str
+end
+
+function feedExpectError(Content:str, Username:str)
+   scene = obj.new('VectorScene', { pageWidth=1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp })
+   if Username?? then check doc.acSetKey('username', Username) end
+   err = doc.acDataFeed(nil, DATA_XML, Content)
+   if err != ERR_Okay then return err end
+   err, _ = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   return err
+end
+
+function loadAndRead(Path:str, Username:str)
+   scene = obj.new('VectorScene', { pageWidth=1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp, path=glDocFolder .. Path })
+   if Username?? then check doc.acSetKey('username', Username) end
+   err, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for ' .. Path .. ': ' .. mSys.GetErrorMsg(err))
+   return xml_str
+end
+
+@Test function StageTwoFixture()
+   xml_str = loadAndRead('xquery_stage2.rpl?mode=preview', 'alice')
+
+   assert(contains(xml_str, 'PARAM-MODE-PREVIEW'), '$params must be visible in test attributes')
+   assert(contains(xml_str, 'VAR-USERNAME-ALICE'), '$vars must be visible in test attributes')
+   assert(contains(xml_str, 'XQuery Stage 2 Tests / Stage2 / 1024'), '$meta and $layout must be visible in select attributes')
+   assert(contains(xml_str, 'PARSE-alice'), '$vars must be visible in parse@select')
+   assert(contains(xml_str, 'ARG-OUTER Outer Arg'), '$args must expose the outer template call arguments')
+   assert(contains(xml_str, 'ARG-INNER Inner Arg'), 'Inner template call arguments must override outer $args')
+   assert(contains(xml_str, 'VARS-VIS alice'), '$vars must remain visible while $args changes')
+   assert(contains(xml_str, 'LOOP-TEST 0'), '$loop?index must be visible in repeat test attributes')
+   assert(contains(xml_str, 'LOOP-TEST 1'), '$loop?index must update across repeat iterations')
+   assert(not contains(xml_str, 'LOOP-TEST 2'), '$loop?index test must stop matching once the condition becomes false')
+   assert(contains(xml_str, 'LOOP-VALUE 0'), '$loop?index must be visible in AVT expansion')
+   assert(contains(xml_str, 'LOOP-VALUE 1'), '$loop?index must emit the second repeat iteration')
+   assert(contains(xml_str, 'LOOP-VALUE 2'), '$loop?index must emit the third repeat iteration')
+   assert(contains(xml_str, 'MISSING fallback'), 'Missing map lookups must fall through to defaults')
+end
+
+@Test function VarsInDirectFeed()
+   xml_str = feedAndRead(
+      '<body/><page><if test="$vars?username = \'alice\'"><p>DIRECT-VAR-HIT</p></if>' ..
+      '<p><print value="user={$vars?username}"/></p>' ..
+      '<parse select="concat(\'&lt;p&gt;\', $vars?username, \'&lt;/p&gt;\')"/></page>',
+      800,
+      'alice')
+
+   assert(contains(xml_str, 'DIRECT-VAR-HIT'), '$vars must resolve in direct feed test expressions')
+   assert(contains(xml_str, 'user=alice'), '$vars must resolve in direct feed AVTs')
+   assert(contains(xml_str, '>alice<'), '$vars must resolve in direct feed parse@select expressions')
+end
+
+@Test function MalformedAVTExpression()
+   err = feedExpectError('<body/><page><p><print value="broken {$vars?}"/></p></page>', 'alice')
+   assert(err != ERR_Okay, 'Malformed AVT expression must fail document parsing')
+end
