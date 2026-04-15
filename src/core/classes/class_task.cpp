@@ -629,10 +629,11 @@ static ERR TASK_Activate(extTask *Self)
       bool hide_output;
       int winerror;
    #endif
-   #ifdef __unix__
+#ifdef __unix__
       int pid;
       int8_t privileged, shell;
-   #endif
+      int8_t requested_shell;
+#endif
 
    Self->ReturnCodeSet = false;
 
@@ -816,6 +817,7 @@ static ERR TASK_Activate(extTask *Self)
    CSTRING path = nullptr;
    GET_LaunchPath(Self, &path);
    if ((path) and (not *path)) path = nullptr;
+   requested_shell = ((Self->Flags & TSF::SHELL) != TSF::NIL) ? 1 : 0;
 
    std::ostringstream buffer;
    std::string fallback_path;
@@ -850,11 +852,11 @@ static ERR TASK_Activate(extTask *Self)
 
    std::string rpath;
    if (ResolvePath(Self->Location, RSF::APPROXIMATE|RSF::PATH, &rpath) IS ERR::Okay) {
-      if ((Self->Flags & TSF::SHELL) != TSF::NIL) buffer << shell_quote(rpath);
+      if (((Self->Flags & TSF::SHELL) != TSF::NIL) and (!requested_shell)) buffer << shell_quote(rpath);
       else buffer << rpath;
    }
    else {
-      if ((Self->Flags & TSF::SHELL) != TSF::NIL) buffer << shell_quote(Self->Location);
+      if (((Self->Flags & TSF::SHELL) != TSF::NIL) and (!requested_shell)) buffer << shell_quote(Self->Location);
       else buffer << Self->Location;
    }
 
