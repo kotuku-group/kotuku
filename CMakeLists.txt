@@ -596,6 +596,44 @@ if (NOT DISABLE_JPEG AND NOT DISABLE_PICTURE)
       set(LIBJPEG_TURBO_LIB_PATH "${CMAKE_CURRENT_BINARY_DIR}/libjpeg-turbo/lib/libjpeg.a")
    endif ()
 
+   set(LIBJPEG_TURBO_CMAKE_ARGS
+      -DENABLE_SHARED=OFF
+      -DENABLE_STATIC=ON
+      -DWITH_TURBOJPEG=ON
+      -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+      -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+      -DCMAKE_INSTALL_LIBDIR=<INSTALL_DIR>/lib
+      -DCMAKE_POSITION_INDEPENDENT_CODE=ON)
+
+   if (WIN32)
+      unset(LIBJPEG_TURBO_NASM_COMPILER)
+      unset(LIBJPEG_TURBO_NASM_COMPILER CACHE)
+
+      if (DEFINED CMAKE_ASM_NASM_COMPILER AND EXISTS "${CMAKE_ASM_NASM_COMPILER}")
+         set(LIBJPEG_TURBO_NASM_COMPILER "${CMAKE_ASM_NASM_COMPILER}")
+      elseif (DEFINED ENV{ASM_NASM} AND EXISTS "$ENV{ASM_NASM}")
+         set(LIBJPEG_TURBO_NASM_COMPILER "$ENV{ASM_NASM}")
+      else ()
+         find_program(LIBJPEG_TURBO_NASM_COMPILER
+            NAMES nasm yasm
+            HINTS
+               "$ENV{ProgramFiles}/NASM"
+               "$ENV{ProgramW6432}/NASM"
+               "C:/Program Files/NASM"
+               "C:/Program Files (x86)/NASM"
+            PATH_SUFFIXES
+               ""
+               bin)
+      endif ()
+
+      if (LIBJPEG_TURBO_NASM_COMPILER)
+         file(TO_CMAKE_PATH "${LIBJPEG_TURBO_NASM_COMPILER}" LIBJPEG_TURBO_NASM_COMPILER)
+         list(APPEND LIBJPEG_TURBO_CMAKE_ARGS
+            -DCMAKE_ASM_NASM_COMPILER:FILEPATH=${LIBJPEG_TURBO_NASM_COMPILER})
+         message(STATUS "libjpeg-turbo NASM compiler: ${LIBJPEG_TURBO_NASM_COMPILER}")
+      endif ()
+   endif ()
+
    ExternalProject_Add(libjpeg-turbo-project
       URL https://github.com/libjpeg-turbo/libjpeg-turbo/archive/refs/tags/3.1.1.tar.gz
       URL_HASH SHA512=4937b63a27818cdb5087091b2d78837f7f385fd6b4d3e3fcaf4d9ad2944fed4a00020dcacb33e9c2fd4b0f9d9851fb4051ed3da86f606aca5167357262a73e89
@@ -604,13 +642,7 @@ if (NOT DISABLE_JPEG AND NOT DISABLE_PICTURE)
       INSTALL_DIR "${CMAKE_CURRENT_BINARY_DIR}/libjpeg-turbo"
       BUILD_BYPRODUCTS ${LIBJPEG_TURBO_LIB_PATH}
       CMAKE_ARGS
-         -DENABLE_SHARED=OFF
-         -DENABLE_STATIC=ON
-         -DWITH_TURBOJPEG=ON
-         -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-         -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
-         -DCMAKE_INSTALL_LIBDIR=<INSTALL_DIR>/lib
-         -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+         ${LIBJPEG_TURBO_CMAKE_ARGS}
       BUILD_ALWAYS FALSE
    )
 
