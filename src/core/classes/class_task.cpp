@@ -801,6 +801,18 @@ static ERR TASK_Activate(extTask *Self)
 
    // Add a 'cd' command so that the application starts in its own folder
 
+   auto shell_quote = [](std::string_view Value) {
+      std::string quoted;
+      quoted.reserve(Value.size() + 2);
+      quoted += '\'';
+      for (auto ch : Value) {
+         if (ch != '\'') quoted += ch;
+         else quoted.append("'\\''");
+      }
+      quoted += '\'';
+      return quoted;
+   };
+
    CSTRING path = nullptr;
    GET_LaunchPath(Self, &path);
    if ((path) and (not *path)) path = nullptr;
@@ -823,12 +835,12 @@ static ERR TASK_Activate(extTask *Self)
       std::string rpath;
       if (ResolvePath(path, RSF::APPROXIMATE|RSF::PATH, &rpath) IS ERR::Okay) {
          while (rpath.ends_with('/')) rpath.pop_back();
-         buffer << '"' << rpath << '"';
+         buffer << shell_quote(rpath);
       }
       else {
          auto p = std::string_view(path);
          while (p.ends_with('/')) p.remove_suffix(1);
-         buffer << '"' << p << '"';
+         buffer << shell_quote(p);
       }
 
       buffer << " && ";
@@ -838,11 +850,11 @@ static ERR TASK_Activate(extTask *Self)
 
    std::string rpath;
    if (ResolvePath(Self->Location, RSF::APPROXIMATE|RSF::PATH, &rpath) IS ERR::Okay) {
-      if ((Self->Flags & TSF::SHELL) != TSF::NIL) buffer << '"' << rpath << '"';
+      if ((Self->Flags & TSF::SHELL) != TSF::NIL) buffer << shell_quote(rpath);
       else buffer << rpath;
    }
    else {
-      if ((Self->Flags & TSF::SHELL) != TSF::NIL) buffer << '"' << Self->Location << '"';
+      if ((Self->Flags & TSF::SHELL) != TSF::NIL) buffer << shell_quote(Self->Location);
       else buffer << Self->Location;
    }
 
@@ -852,16 +864,11 @@ static ERR TASK_Activate(extTask *Self)
    std::ostringstream params;
    if ((Self->Flags & TSF::SHELL) != TSF::NIL) {
       for (auto &param : Self->Parameters) {
-         params << ' ';
-         if (param.find(' ') != std::string::npos) params << '"' << param << '"';
-         else params << param;
+         params << ' ' << shell_quote(param);
       }
    }
 
-   // Convert single quotes into double quotes
-
    auto final_buffer = buffer.str();
-   for (int i=0; i < std::ssize(final_buffer); i++) if (final_buffer[i] IS '\'') final_buffer[i] = '"';
 
    log.msg("%s", final_buffer.c_str());
 
@@ -1053,11 +1060,7 @@ static ERR TASK_Activate(extTask *Self)
    }
 
    final_buffer.append(params.str());
-   if (shell) { // For some reason, bash terminates the argument list if it encounters a # symbol, so we'll strip those out.
-      for (j=0,i=0; i < std::ssize(final_buffer); i++) {
-         if (final_buffer[i] != '#') final_buffer[j++] = final_buffer[i];
-      }
-
+   if (shell) {
       execl("/bin/sh", "sh", "-c", final_buffer.c_str(), (char *)nullptr);
    }
    else execv(final_buffer.c_str(), (char * const *)&argslist);
