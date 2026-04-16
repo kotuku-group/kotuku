@@ -1,0 +1,138 @@
+-- $TIRI
+-- Flute tests for Stage 3 XQuery loop-frame integration in RIPL documents.
+
+@BeforeAll function init(State)
+   global glDocFolder = State.folder
+end
+
+function contains(Haystack:str, Needle:str)
+   return regex.new(Needle).test(Haystack)
+end
+
+function feedAndRead(Content:str)
+   scene = obj.new('VectorScene', { pageWidth=1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp })
+   check doc.acDataFeed(nil, DATA_XML, Content)
+   err, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed: ' .. mSys.GetErrorMsg(err))
+   assert(xml_str, 'ReadContent(DATA_XML) returned nil')
+   return xml_str
+end
+
+function loadAndRead(Path:str)
+   scene = obj.new('VectorScene', { pageWidth=1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp, path=glDocFolder .. Path })
+   err, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for ' .. Path .. ': ' .. mSys.GetErrorMsg(err))
+   return xml_str
+end
+
+@Test function StageThreeFixture()
+   xml_str = loadAndRead('xquery_stage3.rpl')
+
+   assert(contains(xml_str, 'REPEAT-FRAME idx=2 iter=0 start=2 step=1 count=4 end=6'),
+      '$loop metadata must expose the first repeat iteration state')
+   assert(contains(xml_str, 'REPEAT-FRAME idx=5 iter=3 start=2 step=1 count=4 end=6'),
+      '$loop metadata must rebind on later repeat iterations')
+
+   assert(contains(xml_str, 'OUTER-BEFORE-ALIAS 0'),
+      'Named outer indexes must resolve inside the outer loop body')
+   assert(contains(xml_str, 'OUTER-BEFORE-LEGACY 0'),
+      'Legacy [%index] must resolve for the outer loop before entering an inner loop')
+   assert(contains(xml_str, 'OUTER-BEFORE-XQ 0'),
+      '$loop?index must resolve for the outer loop before entering an inner loop')
+   assert(contains(xml_str, 'INNER-OUTER 0'),
+      'Inner loops must retain access to the outer named loop alias')
+   assert(contains(xml_str, 'INNER-INNER 1'),
+      'Inner named indexes must rebind per iteration')
+   assert(contains(xml_str, 'INNER-LEGACY 0'),
+      'Legacy [%index] must resolve against the innermost active loop')
+   assert(contains(xml_str, 'INNER-LEGACY 1'),
+      'Legacy [%index] must update across inner loop iterations')
+   assert(contains(xml_str, 'INNER-XQ 1'),
+      '$loop?index must resolve inside the inner loop body')
+   assert(contains(xml_str, 'OUTER-AFTER-ALIAS 1'),
+      'The outer named index must be restored after the inner loop exits')
+   assert(contains(xml_str, 'OUTER-AFTER-LEGACY 1'),
+      'Legacy [%index] must be restored to the outer loop after the inner loop exits')
+   assert(contains(xml_str, 'OUTER-AFTER-XQ 1'),
+      '$loop?index must be restored to the outer loop after the inner loop exits')
+   assert(contains(xml_str, 'OUTSIDE-ALIAS missing'),
+      'Named loop indexes must not leak beyond the loop body')
+   assert(contains(xml_str, 'OUTSIDE-LOOP missing'),
+      '$loop must fall back to empty outside any active loop')
+
+   assert(contains(xml_str, 'REPEAT-CONTROL 0'),
+      'repeat must execute its first iteration')
+   assert(contains(xml_str, 'REPEAT-CONTROL 2'),
+      'repeat must continue after a continue tag')
+   assert(not contains(xml_str, 'REPEAT-CONTROL 1'),
+      'repeat continue must skip the remainder of the current iteration')
+   assert(not contains(xml_str, 'REPEAT-CONTROL 3'),
+      'repeat break must exit the innermost loop')
+   assert(contains(xml_str, 'REPEAT-CONTROL-AFTER'),
+      'repeat break/continue must not leak control flow beyond the loop')
+
+   assert(contains(xml_str, 'WHILE-XQ 0'),
+      'while@test must evaluate with the first loop frame bound')
+   assert(contains(xml_str, 'WHILE-XQ 2'),
+      'while@test must advance the loop frame across iterations')
+   assert(contains(xml_str, 'WHILE-IF-HIT'),
+      'Nested if@test inside while must observe the current loop frame')
+   assert(contains(xml_str, 'WHILE-LEGACY 0'),
+      'Legacy while statement evaluation must see the current loop index')
+   assert(contains(xml_str, 'WHILE-LEGACY 2'),
+      'Legacy while statement evaluation must rebind per iteration')
+   assert(contains(xml_str, 'WHILE-LEGACY-XQ 2'),
+      'Legacy and XQuery loop views must stay aligned inside the same while iteration')
+   assert(contains(xml_str, 'WHILE-CONTROL 0'),
+      'while control-flow testing must execute its first iteration')
+   assert(contains(xml_str, 'WHILE-CONTROL 2'),
+      'while continue must proceed to the next iteration')
+   assert(not contains(xml_str, 'WHILE-CONTROL 1'),
+      'while continue must skip the remainder of the current iteration')
+   assert(not contains(xml_str, 'WHILE-CONTROL 3'),
+      'while break must exit the loop')
+   assert(contains(xml_str, 'WHILE-CONTROL-AFTER'),
+      'while break/continue must not leak control flow beyond the loop')
+
+   assert(contains(xml_str, 'DESC 3'),
+      'Descending repeat loops must emit the starting value')
+   assert(contains(xml_str, 'DESC 1'),
+      'Descending repeat loops must continue down to the exclusive end')
+   assert(not contains(xml_str, 'DESC 0'),
+      'Descending repeat loops must keep the end bound exclusive')
+end
+
+@Test function WhileLoopStartsAtZero()
+   xml_str = feedAndRead(
+      '<body/><page><while test="$loop?index lt 2">'
+      .. '<p><print value="idx={$loop?index} iter={$loop?iteration} start={$loop?start} step={$loop?step}"/></p>'
+      .. '</while></page>')
+
+   assert(contains(xml_str, 'idx=0 iter=0 start=0 step=1'),
+      'while loops must expose a zero-based initial loop frame')
+   assert(contains(xml_str, 'idx=1 iter=1 start=0 step=1'),
+      'while loops must increment both index and iteration together')
+end
+
+@Test function RepeatLegacyAliasDoesNotOverrideDocumentVars()
+   scene = obj.new('VectorScene', { pageWidth=1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp })
+   check doc.acSetKey('item', 'document-var')
+   check doc.acDataFeed(nil, DATA_XML,
+      '<body/><page>'
+      .. '<repeat count="2" index="item"><p><print value="INNER [@item]"/></p></repeat>'
+      .. '<p><print value="OUTER [@item]"/></p>'
+      .. '</page>')
+   err, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed: ' .. mSys.GetErrorMsg(err))
+
+   assert(contains(xml_str, 'INNER 0'), 'Loop-local named indexes must shadow document variables inside the loop')
+   assert(contains(xml_str, 'INNER 1'), 'Loop-local named indexes must rebind per iteration')
+   assert(contains(xml_str, 'OUTER document-var'),
+      'Document variables must be restored automatically after the loop exits')
+end

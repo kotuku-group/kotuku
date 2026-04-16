@@ -20,6 +20,43 @@ struct parser {
       int row_col;
    };
 
+   struct loop_frame {
+      int index = 0;
+      int iteration = 0;
+      int start = 0;
+      int end = 0;
+      int step = 1;
+      int count = 0;
+      bool count_known = false;
+      bool end_known = false;
+      std::string alias_name;
+   };
+
+   struct loop_guard {
+      parser *owner = nullptr;
+      bool active = false;
+
+      loop_guard(parser *Owner, const loop_frame &Frame) : owner(Owner), active(true) {
+         owner->m_loop_stack.push_back(Frame);
+      }
+
+      ~loop_guard() {
+         if ((active) and (owner) and (!owner->m_loop_stack.empty())) {
+            owner->m_loop_stack.pop_back();
+         }
+      }
+
+      inline loop_frame * frame() {
+         if ((!active) or (!owner) or (owner->m_loop_stack.empty())) return nullptr;
+         return &owner->m_loop_stack.back();
+      }
+
+      inline const loop_frame * frame() const {
+         if ((!active) or (!owner) or (owner->m_loop_stack.empty())) return nullptr;
+         return &owner->m_loop_stack.back();
+      }
+   };
+
    extDocument *Self;
    objXML *m_xml;
 
@@ -28,7 +65,7 @@ struct parser {
    objXML *m_inject_xml = nullptr;
    objXML::TAGS *m_inject_tag = nullptr, *m_header_tag = nullptr, *m_footer_tag = nullptr, *m_body_tag = nullptr;
    objTime *m_time = nullptr;
-   int  m_loop_index  = 0;
+   pf::vector<loop_frame> m_loop_stack;
    uint16_t m_paragraph_depth = 0;     // Incremented when inside <p> tags
    char  m_in_template = 0;
    bool  m_strip_feeds = false;
@@ -125,6 +162,31 @@ struct parser {
    inline void tag_object(XTag &);
    inline bool check_para_attrib(const XMLAttrib &, bc_paragraph *, bc_font &);
    inline bool check_font_attrib(const XMLAttrib &, bc_font &);
+   inline loop_frame * active_loop() {
+      if (m_loop_stack.empty()) return nullptr;
+      return &m_loop_stack.back();
+   }
+
+   inline const loop_frame * active_loop() const {
+      if (m_loop_stack.empty()) return nullptr;
+      return &m_loop_stack.back();
+   }
+
+   inline int current_loop_index() const {
+      if (auto frame = active_loop()) return frame->index;
+      else return 0;
+   }
+
+   inline bool resolve_loop_alias(std::string_view Name, std::string &Value) const {
+      for (int i = std::ssize(m_loop_stack) - 1; i >= 0; i--) {
+         auto &frame = m_loop_stack[i];
+         if ((!frame.alias_name.empty()) and (iequals(frame.alias_name, Name))) {
+            Value = std::to_string(frame.index);
+            return true;
+         }
+      }
+      return false;
+   }
 
    ~parser() {
       if (m_time) FreeResource(m_time);
@@ -458,8 +520,38 @@ static XPathValue xq_loop_to_map(parser *Parser)
 {
    XPathValue result(XPVT::Map);
    result.map_storage = std::make_shared<XPathMapStorage>();
-   xq_map_append_number(result.map_storage, "index", Parser->m_loop_index);
+
+   auto frame = Parser->active_loop();
+   if (!frame) return result;
+
+   xq_map_append_number(result.map_storage, "index", frame->index);
+   xq_map_append_number(result.map_storage, "iteration", frame->iteration);
+   xq_map_append_number(result.map_storage, "start", frame->start);
+   xq_map_append_number(result.map_storage, "step", frame->step);
+   if (frame->count_known) xq_map_append_number(result.map_storage, "count", frame->count);
+   if (frame->end_known) xq_map_append_number(result.map_storage, "end", frame->end);
    return result;
+}
+
+static bool loop_index_in_range(int Index, int End, int Step)
+{
+   if (Step > 0) return Index < End;
+   else if (Step < 0) return Index > End;
+   else return false;
+}
+
+static int compute_numeric_loop_count(int Start, int End, int Step)
+{
+   if (Step > 0) {
+      if (Start >= End) return 0;
+      return ((End - Start - 1) / Step) + 1;
+   }
+   else if (Step < 0) {
+      auto distance = Start - End;
+      if (distance <= 0) return 0;
+      return ((distance - 1) / (-Step)) + 1;
+   }
+   else return 0;
 }
 
 static ERR xq_resolve_runtime_scope(objXQuery *Query, std::string_view Name, XPathValue *Result, APTR Meta)
@@ -855,7 +947,11 @@ void parser::translate_param(std::string &Output, size_t pos)
 
    // Check against global arguments / variables
 
-   if (Self->Vars.contains(argname)) {
+   std::string loop_value;
+   if (resolve_loop_alias(argname, loop_value)) {
+      Output.replace(pos, true_end+1-pos, loop_value);
+   }
+   else if (Self->Vars.contains(argname)) {
       Output.replace(pos, true_end+1-pos, Self->Vars[argname]);
    }
    else if (Self->Params.contains(argname)) {
@@ -880,7 +976,7 @@ void parser::translate_param(std::string &Output, size_t pos)
 void parser::translate_reserved(std::string &Output, size_t pos, bool &time_queried)
 {
    if (!Output.compare(pos, sizeof("[%index]")-1, "[%index]")) {
-      Output.replace(pos, sizeof("[%index]")-1, std::to_string(m_loop_index));
+      Output.replace(pos, sizeof("[%index]")-1, std::to_string(current_loop_index()));
    }
    else if (!Output.compare(pos, sizeof("[%id]")-1, "[%id]")) {
       Output.replace(pos, sizeof("[%id]")-1, std::to_string(Self->UID));
@@ -1203,7 +1299,7 @@ static bool check_tag_conditions(parser *Parser, XTag &Tag)
       else if (iequals("exists", Tag.Attribs[i].Name)) {
          OBJECTID object_id;
          if (FindObject(Tag.Attribs[i].Value.c_str(), CLASSID::NIL, FOF::SMART_NAMES, &object_id) IS ERR::Okay) {
-            satisfied = valid_objectid(Self, object_id) ? true : false;
+            satisfied = valid_objectid(Parser->Self, object_id) ? true : false;
          }
          break;
       }
@@ -1442,25 +1538,42 @@ TRF parser::parse_tag(XTag &Tag, IPF &Flags)
          break;
 
       case HASH_while: {
-         auto saveindex = m_loop_index;
-         m_loop_index = 0;
+         if (!Tag.Children.empty()) {
+            loop_frame frame;
+            frame.index = 0;
+            frame.iteration = 0;
+            frame.start = 0;
+            frame.step = 1;
 
-         if ((!Tag.Children.empty()) and (check_tag_conditions(this, Tag))) {
-            // Save/restore the statement string on each cycle to fully evaluate the condition each time.
+            loop_guard loop(this, frame);
 
-            bool state = true;
-            while (state) {
-               state = check_tag_conditions(this, Tag);
-               Tag.Attribs = saved_attribs;
-               translate_attrib_args(Tag.Attribs);
+            while (true) {
+               XTag condition_tag = Tag;
+               condition_tag.Attribs = saved_attribs;
+               translate_attrib_args(condition_tag.Attribs);
 
-               if ((state) and ((parse_tags(Tag.Children, Flags) & TRF::BREAK) != TRF::NIL)) break;
+               if (!check_tag_conditions(this, condition_tag)) break;
+               if (Self->Error != ERR::Okay) break;
 
-               m_loop_index++;
+               result = parse_tags(Tag.Children, Flags);
+               if (Self->Error != ERR::Okay) break;
+
+               if ((result & TRF::BREAK) != TRF::NIL) {
+                  result = TRF::NIL;
+                  break;
+               }
+
+               if (auto active_loop = loop.frame()) {
+                  active_loop->index += active_loop->step;
+                  active_loop->iteration++;
+               }
+
+               if ((result & TRF::CONTINUE) != TRF::NIL) {
+                  result = TRF::NIL;
+                  continue;
+               }
             }
          }
-
-         m_loop_index = saveindex;
          break;
       }
 
@@ -3990,7 +4103,9 @@ void parser::tag_repeat(XTag &Tag)
    pf::Log log(__FUNCTION__);
 
    std::string index_name;
-   int loop_start = 0, loop_end = 0, count = 0, step  = 0;
+   int loop_start = 0, loop_end = 0, count = 0, step = 0;
+   bool have_end = false;
+   bool have_count = false;
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
       if (iequals("start", Tag.Attribs[i].Name)) {
@@ -4003,9 +4118,11 @@ void parser::tag_repeat(XTag &Tag)
             log.warning("Invalid count value of %d", count);
             return;
          }
+         have_count = true;
       }
       else if (iequals("end", Tag.Attribs[i].Name)) {
-         loop_end = std::stoi(Tag.Attribs[i].Value) + 1;
+         loop_end = std::stoi(Tag.Attribs[i].Value);
+         have_end = true;
       }
       else if (iequals("step", Tag.Attribs[i].Name)) {
          step = std::stoi(Tag.Attribs[i].Value);
@@ -4019,7 +4136,7 @@ void parser::tag_repeat(XTag &Tag)
    }
 
    if (!step) {
-      if (loop_end < loop_start) step = -1;
+      if ((have_end) and (loop_end < loop_start)) step = -1;
       else step = 1;
    }
 
@@ -4028,7 +4145,12 @@ void parser::tag_repeat(XTag &Tag)
    //
    // If the user set both count and end attributes, the count attribute will be given the priority here.
 
-   if (count > 0) loop_end = loop_start + (count * step);
+   if (have_count) {
+      if (count IS 0) return;
+      loop_end = loop_start + (count * step);
+      have_end = true;
+   }
+   else if (!have_end) return;
 
    if (step > 0) {
       if (loop_end < loop_start) step = -step;
@@ -4037,17 +4159,37 @@ void parser::tag_repeat(XTag &Tag)
 
    log.traceBranch("Performing a repeat loop (start: %d, end: %d, step: %d).", loop_start, loop_end, step);
 
-   auto save_index = m_loop_index;
+   auto loop_count = compute_numeric_loop_count(loop_start, loop_end, step);
+   if (loop_count <= 0) return;
 
-   while (loop_start < loop_end) {
-      if (index_name.empty()) m_loop_index = loop_start;
-      else acSetKey(Self, index_name.c_str(), std::to_string(loop_start).c_str());
+   loop_frame frame;
+   frame.index = loop_start;
+   frame.iteration = 0;
+   frame.start = loop_start;
+   frame.end = loop_end;
+   frame.step = step;
+   frame.count = loop_count;
+   frame.count_known = true;
+   frame.end_known = true;
+   frame.alias_name = index_name;
 
-      parse_tags(Tag.Children);
-      loop_start += step;
+   loop_guard loop(this, frame);
+
+   while (auto active_loop = loop.frame()) {
+      if (!loop_index_in_range(active_loop->index, active_loop->end, active_loop->step)) break;
+
+      auto result = parse_tags(Tag.Children);
+      if (Self->Error != ERR::Okay) break;
+      if ((result & TRF::BREAK) != TRF::NIL) break;
+
+      active_loop = loop.frame();
+      if (!active_loop) break;
+
+      active_loop->index += active_loop->step;
+      active_loop->iteration++;
+
+      if ((result & TRF::CONTINUE) != TRF::NIL) continue;
    }
-
-   if (index_name.empty()) m_loop_index = save_index;
 
    log.trace("insert_child:","Repeat loop ends.");
 }
