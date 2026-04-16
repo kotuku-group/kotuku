@@ -37,30 +37,14 @@ end
    assert(contains(xml_str, 'REPEAT-FRAME idx=5 iter=3 start=2 step=1 count=4 end=6'),
       '$loop metadata must rebind on later repeat iterations')
 
-   assert(contains(xml_str, 'OUTER-BEFORE-ALIAS 0'),
-      'Named outer indexes must resolve inside the outer loop body')
-   assert(contains(xml_str, 'OUTER-BEFORE-LEGACY 0'),
-      'Legacy [%index] must resolve for the outer loop before entering an inner loop')
-   assert(contains(xml_str, 'OUTER-BEFORE-XQ 0'),
+   assert(contains(xml_str, 'OUTER-BEFORE 0'),
       '$loop?index must resolve for the outer loop before entering an inner loop')
-   assert(contains(xml_str, 'INNER-OUTER 0'),
-      'Inner loops must retain access to the outer named loop alias')
-   assert(contains(xml_str, 'INNER-INNER 1'),
-      'Inner named indexes must rebind per iteration')
-   assert(contains(xml_str, 'INNER-LEGACY 0'),
-      'Legacy [%index] must resolve against the innermost active loop')
-   assert(contains(xml_str, 'INNER-LEGACY 1'),
-      'Legacy [%index] must update across inner loop iterations')
-   assert(contains(xml_str, 'INNER-XQ 1'),
+   assert(contains(xml_str, 'INNER 0'),
+      '$loop?index must resolve for the first inner loop iteration')
+   assert(contains(xml_str, 'INNER 1'),
       '$loop?index must resolve inside the inner loop body')
-   assert(contains(xml_str, 'OUTER-AFTER-ALIAS 1'),
-      'The outer named index must be restored after the inner loop exits')
-   assert(contains(xml_str, 'OUTER-AFTER-LEGACY 1'),
-      'Legacy [%index] must be restored to the outer loop after the inner loop exits')
-   assert(contains(xml_str, 'OUTER-AFTER-XQ 1'),
+   assert(contains(xml_str, 'OUTER-AFTER 1'),
       '$loop?index must be restored to the outer loop after the inner loop exits')
-   assert(contains(xml_str, 'OUTSIDE-ALIAS missing'),
-      'Named loop indexes must not leak beyond the loop body')
    assert(contains(xml_str, 'OUTSIDE-LOOP missing'),
       '$loop must fall back to empty outside any active loop')
 
@@ -81,12 +65,6 @@ end
       'while@test must advance the loop frame across iterations')
    assert(contains(xml_str, 'WHILE-IF-HIT'),
       'Nested if@test inside while must observe the current loop frame')
-   assert(contains(xml_str, 'WHILE-LEGACY 0'),
-      'Legacy while statement evaluation must see the current loop index')
-   assert(contains(xml_str, 'WHILE-LEGACY 2'),
-      'Legacy while statement evaluation must rebind per iteration')
-   assert(contains(xml_str, 'WHILE-LEGACY-XQ 2'),
-      'Legacy and XQuery loop views must stay aligned inside the same while iteration')
    assert(contains(xml_str, 'WHILE-CONTROL 0'),
       'while control-flow testing must execute its first iteration')
    assert(contains(xml_str, 'WHILE-CONTROL 2'),

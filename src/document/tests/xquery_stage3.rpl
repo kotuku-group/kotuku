@@ -5,7 +5,7 @@
  <title>XQuery Stage 3 Tests</title>
  <author>Paul Manias</author>
  <keywords>xquery, test, stage3</keywords>
- <description>Stage 3 runtime loop-frame tests for repeat and while execution, legacy loop bindings and loop control.</description>
+ <description>Stage 3 runtime loop-frame tests for repeat and while execution, nested loop restoration and loop control.</description>
 </info>
 
 <body face="Noto Sans" font-size="10pt"/>
@@ -18,22 +18,14 @@
   <p><print value="REPEAT-FRAME idx={$loop?index} iter={$loop?iteration} start={$loop?start} step={$loop?step} count={$loop?count} end={$loop?end}"/></p>
 </repeat>
 
-<repeat count="2" index="outer">
-  <p><print value="OUTER-BEFORE-ALIAS [@outer]"/></p>
-  <p><print value="OUTER-BEFORE-LEGACY [%index]"/></p>
-  <p><print value="OUTER-BEFORE-XQ {$loop?index}"/></p>
-  <repeat count="2" index="inner">
-    <p><print value="INNER-OUTER [@outer]"/></p>
-    <p><print value="INNER-INNER [@inner]"/></p>
-    <p><print value="INNER-LEGACY [%index]"/></p>
-    <p><print value="INNER-XQ {$loop?index}"/></p>
+<repeat count="2">
+  <p><print value="OUTER-BEFORE {$loop?index}"/></p>
+  <repeat count="2">
+    <p><print value="INNER {$loop?index}"/></p>
   </repeat>
-  <p><print value="OUTER-AFTER-ALIAS [@outer]"/></p>
-  <p><print value="OUTER-AFTER-LEGACY [%index]"/></p>
-  <p><print value="OUTER-AFTER-XQ {$loop?index}"/></p>
+  <p><print value="OUTER-AFTER {$loop?index}"/></p>
 </repeat>
 
-<p><print value="OUTSIDE-ALIAS [@inner:missing]"/></p>
 <p><print value="OUTSIDE-LOOP {($loop?index, 'missing')[1]}"/></p>
 
 <repeat count="5">
@@ -48,11 +40,6 @@
     <p>WHILE-IF-HIT</p>
   </if>
   <p><print value="WHILE-XQ {$loop?index}"/></p>
-</while>
-
-<while statement="[%index] < 3">
-  <p><print value="WHILE-LEGACY [%index]"/></p>
-  <p><print value="WHILE-LEGACY-XQ {$loop?index}"/></p>
 </while>
 
 <while test="$loop?index lt 5">

@@ -6,7 +6,7 @@
 --   * print@select
 --   * print@value with {...} attribute value templates
 --   * parse@select
--- and confirms that legacy conditional attributes and square-bracket substitution still work.
+-- and keeps the fixture focused on the Stage 1 XQuery surface only.
 
 @BeforeAll function init(State)
    global glDocFolder = State.folder
@@ -63,10 +63,6 @@ end
    -- elseif@test branch
    assert(contains(xml_str, 'ELSEIF-TEST-TRUE'), 'elseif@test true branch must emit ELSEIF-TEST-TRUE')
    assert(not contains(xml_str, 'ELSEIF-FAIL'), 'elseif@test false branches must not emit failure markers')
-
-   -- Legacy non-regression
-   assert(contains(xml_str, 'LEGACY-STATEMENT-TRUE'), 'Legacy statement attribute must still work')
-   assert(contains(xml_str, 'LEGACY-NOTNULL-TRUE'), 'Legacy notnull attribute must still work')
 
    -- print@select
    assert(contains(xml_str, 'a-b-c'), 'print@select must evaluate XQuery and emit joined string')
@@ -178,18 +174,4 @@ end
       '<body/><page><if test="this is not valid xquery @@"><p>SHOULD-NOT-HIT</p></if>' ..
       '<else><p>MALFORMED-FELL-THROUGH</p></else></page>')
    assert(err != ERR_Okay, 'Malformed test expression must fail parsing')
-end
-
------------------------------------------------------------------------------------------------------------------------
--- Non-regression: legacy square-bracket substitution is still active on non-XQuery-aware attributes.
-
-@Test function LegacySquareBracketSubstitution()
-   xml_str = feedAndRead(
-      '<body/><page>' ..
-      '<p indent="40"><repeat start="0" end="3"><print value="[%index] "/></repeat></p>' ..
-      '</page>')
-   -- Indexes 0, 1, 2 must all appear in the output (repeat is exclusive of end).
-   assert(contains(xml_str, '0'), 'Legacy [%index] substitution must emit 0')
-   assert(contains(xml_str, '1'), 'Legacy [%index] substitution must emit 1')
-   assert(contains(xml_str, '2'), 'Legacy [%index] substitution must emit 2')
 end

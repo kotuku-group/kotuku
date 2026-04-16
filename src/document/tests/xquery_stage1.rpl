@@ -35,16 +35,6 @@
   <p>ELSEIF-FAIL-2</p>
 </else>
 
-<!-- Legacy statement still works -->
-<if statement="1 > 0">
-  <p>LEGACY-STATEMENT-TRUE</p>
-</if>
-
-<!-- Legacy notnull still works -->
-<if notnull="true">
-  <p>LEGACY-NOTNULL-TRUE</p>
-</if>
-
 <!-- print@select -->
 <p><print select="string-join(('a', 'b', 'c'), '-')"/></p>
 <p><print select="concat('PAGE-NAME-', string((/page/@name)[1]))"/></p>

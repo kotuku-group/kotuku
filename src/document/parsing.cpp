@@ -348,7 +348,6 @@ void parser::process_page(objXML *pXML)
 // bypassed by translate_attrib_args() so that their source text is preserved for late XQuery evaluation by the tag
 // handler.
 //
-// Stage 1 scope:
 //   if@test, elseif@test, while@test       -> XQuery expression attributes
 //   print@select, parse@select             -> XQuery expression attributes
 //   print@value                            -> AVT
@@ -407,7 +406,7 @@ void parser::translate_attrib_args(pf::vector<XMLAttrib> &Attribs)
 }
 
 //********************************************************************************************************************
-// XQuery evaluation helpers for Stage 1.
+// XQuery evaluation helpers
 //
 // These helpers are intentionally thin wrappers around the XQuery object class so that parser-visible behaviour mirrors
 // a standard xml:evaluate() call.  The XML context is optional; when absent, the evaluator still supports literal and
@@ -415,6 +414,8 @@ void parser::translate_attrib_args(pf::vector<XMLAttrib> &Attribs)
 // the document Self->Error field.
 
 enum class XQEval { STRING, BOOLEAN };
+
+static constexpr std::string_view XQ_OBJECT_EXISTS_FUNCTION = "kt-object-exists";
 
 static inline void xq_map_append_value(std::shared_ptr<XPathMapStorage> &Storage, std::string_view Key,
    const XPathValue &Value)
@@ -438,6 +439,26 @@ static inline void xq_map_append_number(std::shared_ptr<XPathMapStorage> &Storag
    XPathValue result(XPVT::Number);
    result.NumberValue = Value;
    xq_map_append_value(Storage, Key, result);
+}
+
+static std::string xq_format_font_size(const bc_font &Style)
+{
+   char buffer[28];
+   switch(Style.req_size.type) {
+      case DU::PIXEL:
+         snprintf(buffer, sizeof(buffer), "%gpx", Style.req_size.value);
+         break;
+      case DU::FONT_SIZE:
+         snprintf(buffer, sizeof(buffer), "%gem", Style.req_size.value);
+         break;
+      case DU::SCALED:
+         snprintf(buffer, sizeof(buffer), "%g%%", Style.req_size.value * 100.0);
+         break;
+      default:
+         snprintf(buffer, sizeof(buffer), "%dpx", DEFAULT_FONTSIZE);
+         break;
+   }
+   return std::string(buffer);
 }
 
 static XPathValue xq_keyvalue_to_map(const KEYVALUE &Source)
@@ -477,12 +498,13 @@ static XPathValue xq_meta_to_map(extDocument *Self)
    XPathValue result(XPVT::Map);
    result.map_storage = std::make_shared<XPathMapStorage>();
 
-   if (Self->Title) xq_map_append_string(result.map_storage, "title", Self->Title);
-   if (Self->Author) xq_map_append_string(result.map_storage, "author", Self->Author);
-   if (Self->Description) xq_map_append_string(result.map_storage, "description", Self->Description);
-   if (Self->Copyright) xq_map_append_string(result.map_storage, "copyright", Self->Copyright);
-   if (Self->Keywords) xq_map_append_string(result.map_storage, "keywords", Self->Keywords);
+   if (Self->Title)         xq_map_append_string(result.map_storage, "title", Self->Title);
+   if (Self->Author)        xq_map_append_string(result.map_storage, "author", Self->Author);
+   if (Self->Description)   xq_map_append_string(result.map_storage, "description", Self->Description);
+   if (Self->Copyright)     xq_map_append_string(result.map_storage, "copyright", Self->Copyright);
+   if (Self->Keywords)      xq_map_append_string(result.map_storage, "keywords", Self->Keywords);
    if (!Self->Path.empty()) xq_map_append_string(result.map_storage, "path", Self->Path);
+   xq_map_append_number(result.map_storage, "line-no", double(Self->Segments.size()));
 
    if (Self->PageTag) {
       if (auto current_page = Self->PageTag->attrib("name")) {
@@ -533,6 +555,18 @@ static XPathValue xq_loop_to_map(parser *Parser)
    return result;
 }
 
+static XPathValue xq_style_to_map(parser *Parser)
+{
+   XPathValue result(XPVT::Map);
+   result.map_storage = std::make_shared<XPathMapStorage>();
+
+   xq_map_append_string(result.map_storage, "font-face", Parser->m_style.face);
+   xq_map_append_string(result.map_storage, "font-style", Parser->m_style.style);
+   xq_map_append_string(result.map_storage, "font-fill", Parser->m_style.fill);
+   xq_map_append_string(result.map_storage, "font-size", xq_format_font_size(Parser->m_style));
+   return result;
+}
+
 static bool loop_index_in_range(int Index, int End, int Step)
 {
    if (Step > 0) return Index < End;
@@ -560,29 +594,59 @@ static ERR xq_resolve_runtime_scope(objXQuery *Query, std::string_view Name, XPa
 
    if (Name IS "params") {
       *Result = xq_keyvalue_to_map(Self->Params);
-      return ERR::Okay;
    }
    else if (Name IS "args") {
       *Result = xq_template_args_to_map(Self);
-      return ERR::Okay;
    }
    else if (Name IS "vars") {
       *Result = xq_keyvalue_to_map(Self->Vars);
-      return ERR::Okay;
    }
    else if (Name IS "meta") {
       *Result = xq_meta_to_map(Self);
-      return ERR::Okay;
    }
    else if (Name IS "layout") {
       *Result = xq_layout_to_map(Self);
-      return ERR::Okay;
    }
    else if (Name IS "loop") {
       *Result = xq_loop_to_map((parser *)Meta);
-      return ERR::Okay;
+   }
+   else if (Name IS "style") {
+      *Result = xq_style_to_map((parser *)Meta);
    }
    else return ERR::Search;
+
+   return ERR::Okay;
+}
+
+static ERR xq_document_object_exists(objXQuery *, std::string_view, const std::vector<XPathValue> &Input,
+   XPathValue &Result, APTR Meta)
+{
+   pf::Log log(__FUNCTION__);
+
+   auto Parser = (parser *)Meta;
+   Result = XPathValue(XPVT::Boolean);
+   Result.reset();
+
+   if ((not Parser) or Input.empty()) return ERR::Args;
+
+   std::string object_name;
+   auto &value = Input[0];
+   if (value.Type IS XPVT::String) object_name = value.StringValue;
+   else if ((value.Type IS XPVT::Number) or (value.Type IS XPVT::Boolean)) object_name = std::to_string(value.NumberValue);
+   else if (value.node_set_string_override.has_value()) object_name = *value.node_set_string_override;
+   else if (!value.node_set_string_values.empty()) object_name = value.node_set_string_values[0];
+   else return log.warning(ERR::Args);
+
+   OBJECTID object_id = 0;
+   bool exists = false;
+   if ((!object_name.empty()) and
+      (FindObject(object_name.c_str(), CLASSID::NIL, FOF::NIL, &object_id) IS ERR::Okay)) {
+      exists = valid_objectid(Parser->Self, object_id) ? true : false;
+   }
+
+   Result.Type = XPVT::Boolean;
+   Result.NumberValue = exists ? 1.0 : 0.0;
+   return ERR::Okay;
 }
 
 static ERR xq_eval_helper(parser *Parser, objXML *XMLContext, XTag *ContextTag, const std::string &Expression,
@@ -616,6 +680,7 @@ static ERR xq_eval_helper(parser *Parser, objXML *XMLContext, XTag *ContextTag, 
    }
 
    Self->Query->setResolveVariable(C_FUNCTION(xq_resolve_runtime_scope, Parser));
+   Self->Query->registerFunction(XQ_OBJECT_EXISTS_FUNCTION.data(), C_FUNCTION(xq_document_object_exists, Parser));
 
    if (Self->Query->setStatement(eval_expression) IS ERR::Okay) {
       if (auto err = Self->Query->evaluate(XMLContext, ContextTag ? ContextTag->ID : 0, XEF::NIL); err != ERR::Okay) {
@@ -1046,22 +1111,7 @@ void parser::translate_reserved(std::string &Output, size_t pos, bool &time_quer
       Output.replace(pos, sizeof("[%font-fill]")-1, m_style.fill);
    }
    else if (!Output.compare(pos, sizeof("[%font-size]")-1, "[%font-size]")) {
-      char buffer[28];
-      switch(m_style.req_size.type) {
-         case DU::PIXEL:
-            snprintf(buffer, sizeof(buffer), "%gpx", m_style.req_size.value);
-            break;
-         case DU::FONT_SIZE:
-            snprintf(buffer, sizeof(buffer), "%gem", m_style.req_size.value);
-            break;
-         case DU::SCALED:
-            snprintf(buffer, sizeof(buffer), "%g%%", m_style.req_size.value * 100.0);
-            break;
-         default:
-            snprintf(buffer, sizeof(buffer), "%dpx", DEFAULT_FONTSIZE);
-            break;
-      }
-      Output.replace(pos, sizeof("[%font-size]")-1, buffer);
+      Output.replace(pos, sizeof("[%font-size]")-1, xq_format_font_size(m_style));
    }
    else if (!Output.compare(pos, sizeof("[%line-no]")-1, "[%line-no]")) {
       auto num = std::to_string(Self->Segments.size());
@@ -1261,15 +1311,58 @@ static bool eval_condition(const std::string &String)
 //********************************************************************************************************************
 // Used by if, elseif, while statements to check the satisfaction of conditions.
 //
-// Stage 1 XQuery integration: the `test` attribute is recognised as a standalone XQuery expression.  When present it
+// XQuery integration: the `test` attribute is recognised as a standalone XQuery expression.  When present it
 // takes precedence over the legacy statement/exists/notnull/null/not attributes.  The result of the expression is
 // coerced via XQuery's effective boolean value rules (boolean(...)).
+
+static ERR reject_legacy_condition(parser *Parser, const XTag &Tag, std::string_view Name, std::string_view Value)
+{
+   pf::Log log("eval");
+
+   std::string_view tag_name(Tag.Attribs[0].Name);
+   if ((!tag_name.empty()) and (tag_name.front() IS '$')) tag_name.remove_prefix(1);
+
+   std::string hint;
+   if (iequals(Name, "statement")) {
+      hint = "Use <" + std::string(tag_name) + " test=\"" + std::string(Value) + "\"> instead.";
+   }
+   else if (iequals(Name, "exists")) {
+      hint = "Use <" + std::string(tag_name) + " test=\"" + std::string(XQ_OBJECT_EXISTS_FUNCTION) + "('" +
+         std::string(Value) + "')\"> instead.";
+   }
+   else if (iequals(Name, "not")) {
+      hint = "Wrap the condition in not(...), for example <" + std::string(tag_name) + " test=\"not(...)\">.";
+   }
+   else if ((iequals(Name, "null")) or (iequals(Name, "isnull"))) {
+      hint = "Use an ordinary XQuery test, for example <" + std::string(tag_name) +
+         " test=\"empty(...) or ... = ''\">.";
+   }
+   else if (iequals(Name, "notnull")) {
+      hint = "Use an ordinary XQuery test, for example <" + std::string(tag_name) +
+         " test=\"exists(...) and ... != ''\">.";
+   }
+   else hint = "Use <" + std::string(tag_name) + " test=\"...\"> instead.";
+
+   log.warning("Legacy conditional attribute '%.*s' is no longer supported on <%.*s>. %s",
+      int(Name.size()), Name.data(), int(tag_name.size()), tag_name.data(), hint.c_str());
+   Parser->Self->Error = ERR::InvalidData;
+   return ERR::InvalidData;
+}
 
 static bool check_tag_conditions(parser *Parser, XTag &Tag)
 {
    pf::Log log("eval");
+   for (unsigned i=1; i < Tag.Attribs.size(); i++) {
+      auto name = std::string_view(Tag.Attribs[i].Name);
+      if ((!name.empty()) and (name.front() IS '$')) name.remove_prefix(1);
 
-   // Check for an XQuery test attribute first so that it overrides legacy condition attributes.
+      if (iequals("statement", name) or iequals("exists", name) or iequals("notnull", name) or
+         iequals("null", name) or iequals("isnull", name) or iequals("not", name)) {
+         reject_legacy_condition(Parser, Tag, name, Tag.Attribs[i].Value);
+         return false;
+      }
+   }
+
    for (unsigned i=1; i < Tag.Attribs.size(); i++) {
       auto name = std::string_view(Tag.Attribs[i].Name);
       if ((!name.empty()) and (name.front() IS '$')) name.remove_prefix(1);
@@ -1288,43 +1381,7 @@ static bool check_tag_conditions(parser *Parser, XTag &Tag)
       }
    }
 
-   bool satisfied = false;
-   bool reverse = false;
-   for (unsigned i=1; i < Tag.Attribs.size(); i++) {
-      if (iequals("statement", Tag.Attribs[i].Name)) {
-         satisfied = eval_condition(Tag.Attribs[i].Value);
-         log.trace("Statement: %s", Tag.Attribs[i].Value);
-         break;
-      }
-      else if (iequals("exists", Tag.Attribs[i].Name)) {
-         OBJECTID object_id;
-         if (FindObject(Tag.Attribs[i].Value.c_str(), CLASSID::NIL, FOF::SMART_NAMES, &object_id) IS ERR::Okay) {
-            satisfied = valid_objectid(Parser->Self, object_id) ? true : false;
-         }
-         break;
-      }
-      else if (iequals("notnull", Tag.Attribs[i].Name)) {
-         log.trace("NotNull: %s", Tag.Attribs[i].Value);
-         if (Tag.Attribs[i].Value.empty()) satisfied = false;
-         else if (Tag.Attribs[i].Value IS "0") satisfied = false;
-         else satisfied = true;
-      }
-      else if ((iequals("isnull", Tag.Attribs[i].Name)) or (iequals("null", Tag.Attribs[i].Name))) {
-         log.trace("IsNull: %s", Tag.Attribs[i].Value);
-            if (Tag.Attribs[i].Value.empty()) satisfied = true;
-            else if (Tag.Attribs[i].Value IS "0") satisfied = true;
-            else satisfied = false;
-      }
-      else if (iequals("not", Tag.Attribs[i].Name)) {
-         reverse = true;
-      }
-   }
-
-   // Check for a not condition and invert the satisfied value if found
-
-   if (reverse) satisfied = satisfied ^ 1;
-
-   return satisfied;
+   return false;
 }
 
 //********************************************************************************************************************
@@ -1548,11 +1605,7 @@ TRF parser::parse_tag(XTag &Tag, IPF &Flags)
             loop_guard loop(this, frame);
 
             while (true) {
-               XTag condition_tag = Tag;
-               condition_tag.Attribs = saved_attribs;
-               translate_attrib_args(condition_tag.Attribs);
-
-               if (!check_tag_conditions(this, condition_tag)) break;
+               if (!check_tag_conditions(this, Tag)) break;
                if (Self->Error != ERR::Okay) break;
 
                result = parse_tags(Tag.Children, Flags);
@@ -2765,7 +2818,6 @@ void parser::tag_parse(XTag &Tag)
    // The value attribute will contain XML.  We will parse the XML as if it were part of the document source.  This feature
    // is typically used when pulling XML information out of an object field.
    //
-   // Stage 1 XQuery integration:
    //   select="..."  evaluates an XQuery expression and parses the resulting string as XML/RIPL content.
 
    if (std::ssize(Tag.Attribs) > 1) {
@@ -3164,7 +3216,6 @@ void parser::tag_print(XTag &Tag)
    // Copy the content from the value attribute into the document stream.  If used inside an object, the data is sent
    // to that object as XML.
    //
-   // Stage 1 XQuery integration:
    //   select="..."  evaluates an XQuery expression and inserts its string value
    //   value="..."   may contain `{...}` attribute value template fragments
 
