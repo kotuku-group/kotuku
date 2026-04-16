@@ -311,6 +311,27 @@ static std::optional<std::string> resolve_default_element_namespace(const XPathC
    return std::nullopt;
 }
 
+[[nodiscard]] static bool is_expanded_qname(std::string_view QName)
+{
+   if ((QName.size() <= 3) or (not (QName[0] IS 'Q')) or (not (QName[1] IS '{'))) return false;
+
+   size_t closing = QName.find('}');
+   if (closing IS std::string_view::npos) return false;
+   return (closing + 1) < QName.size();
+}
+
+[[nodiscard]] static std::string canonicalise_registered_function_qname(std::string_view FunctionName,
+   const XPathContext &Context)
+{
+   if (is_expanded_qname(FunctionName)) return std::string(FunctionName);
+
+   if (auto prolog = Context.prolog) {
+      return prolog->normalise_function_qname(FunctionName, nullptr);
+   }
+
+   return std::string(FunctionName);
+}
+
 } // namespace
 
 //********************************************************************************************************************
@@ -488,6 +509,65 @@ std::optional<XPathVal> XPathEvaluator::resolve_user_defined_function(std::strin
    context.module_cache = previous_cache;
 
    return resolved_value;
+}
+
+//********************************************************************************************************************
+// Invokes a function registered directly on the XQuery object instance.
+
+static std::optional<XPathVal> resolve_registered_function(XPathEvaluator &Evaluator,
+   std::string_view FunctionName, const std::vector<XPathVal> &Args, const XPathNode *FuncNode)
+{
+   if ((not Evaluator.query) or (Evaluator.query->RegisteredFunctions.empty())) return std::nullopt;
+
+   auto canonical_name = canonicalise_registered_function_qname(FunctionName, Evaluator.context);
+
+   auto callback = Evaluator.query->RegisteredFunctions.find(canonical_name);
+   if (callback IS Evaluator.query->RegisteredFunctions.end()) {
+      std::string_view canonical_view(canonical_name);
+
+      for (auto iter = Evaluator.query->RegisteredFunctions.begin(); iter != Evaluator.query->RegisteredFunctions.end(); ++iter) {
+         auto registered_name = canonicalise_registered_function_qname(iter->first, Evaluator.context);
+         if (std::string_view(registered_name) IS canonical_view) {
+            callback = iter;
+            break;
+         }
+      }
+   }
+
+   if (callback IS Evaluator.query->RegisteredFunctions.end()) return std::nullopt;
+
+   std::vector<XPathValue> public_args;
+   public_args.reserve(Args.size());
+   for (const auto &arg : Args) public_args.push_back((const XPathValue &)arg);
+
+   XPathValue public_result(XPVT::Boolean);
+   public_result.reset();
+
+   if (callback->second.isC()) {
+      pf::SwitchContext ctx(callback->second.Context);
+      auto routine = (ERR (*)(objXQuery *, std::string_view, const std::vector<XPathValue> &, XPathValue &, APTR))
+         callback->second.Routine;
+      auto error = routine(Evaluator.query, FunctionName, public_args, public_result, callback->second.Meta);
+      if (error != ERR::Okay) {
+         auto message = std::format("Registered function '{}' failed: {}.", FunctionName, GetErrorMsg(error));
+         Evaluator.record_error(message, FuncNode, true);
+         return XPathVal();
+      }
+   }
+
+   XPathVal result;
+   result.Type                      = public_result.Type;
+   result.NumberValue               = public_result.NumberValue;
+   result.StringValue               = public_result.StringValue;
+   result.node_set                  = public_result.node_set;
+   result.node_set_string_override  = public_result.node_set_string_override;
+   result.node_set_string_values    = public_result.node_set_string_values;
+   result.node_set_attributes       = public_result.node_set_attributes;
+   result.node_set_composite_values = public_result.node_set_composite_values;
+   result.preserve_node_order       = public_result.preserve_node_order;
+   result.map_storage               = public_result.map_storage;
+   result.array_storage             = public_result.array_storage;
+   return result;
 }
 
 //********************************************************************************************************************
@@ -2484,6 +2564,10 @@ XPathVal XPathEvaluator::evaluate_function_call(const XPathNode *FuncNode, uint3
 
    if (auto user_result = resolve_user_defined_function(function_name, args, CurrentPrefix, FuncNode)) {
       return *user_result;
+   }
+
+   if (auto registered_result = resolve_registered_function(*this, function_name, args, FuncNode)) {
+      return *registered_result;
    }
 
    auto &library = XPathFunctionLibrary::instance();

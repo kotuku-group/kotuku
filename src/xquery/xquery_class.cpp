@@ -597,6 +597,10 @@ RegisterFunction: Register a custom XQuery function.
 
 Use RegisterFunction to define a custom function that can be invoked within XQuery expressions.  The function
 will be associated with the specified name and can be called like any standard XQuery function.
+   
+The C++ function prototype is `ERR (*XQuery, std::string_view FunctionName, const std::vector<XPathValue> &Args, XPathValue &Result, APTR Meta))`
+
+Script callbacks are not currently supported.
 
 -INPUT-
 cstr FunctionName: The name of the function to register (e.g., "custom-function").
@@ -605,6 +609,7 @@ ptr(func) Callback: The callback function to register for FunctionName.
 -ERRORS-
 Okay
 NullArgs
+NoSupport: The provided callback is not a C function reference.
 
 -END-
 
@@ -615,7 +620,11 @@ static ERR XQUERY_RegisterFunction(extXQuery *Self, struct xq::RegisterFunction 
    pf::Log log;
 
    if (not Args) return log.warning(ERR::NullArgs);
+   if ((not Args->FunctionName) or (!Args->FunctionName[0])) return log.warning(ERR::NullArgs);
+   if ((not Args->Callback) or (not Args->Callback->defined())) return log.warning(ERR::NullArgs);
+   if (not Args->Callback->isC()) return log.warning(ERR::NoSupport);
 
+   Self->RegisteredFunctions[Args->FunctionName] = *Args->Callback;
    return ERR::Okay;
 }
 
