@@ -91,7 +91,7 @@ end
 @Test(priority=4) function Links1()      crcTest('Links1', 'links.rpl', 0x8de8dbec, 0.02) end
 @Test(priority=4) function Links2()      crcTest('Links2', 'links.rpl?font=Noto Sans&font-size=16', 0x0f242431, 0.03) end
 @Test(priority=4) function Lists()       crcTest('Lists', 'lists.rpl', 0x8e0f76e2, 0.05) end
-@Test(priority=4) function Logic()       crcTest('Logic', 'logic.rpl', 0x18a87849, 0.03) end
+@Test(priority=4) function Logic()       crcTest('Logic', 'logic.rpl', 0x5dd7f5c3, 0.03) end
 @Test(priority=4) function Paragraphs()  crcTest('Paragraphs', 'paragraphs.rpl', 0x1d1921c5, 0.05) end
 @Test(priority=2) function Tables()      crcTest('Tables', 'tables.rpl', 0x7ebd53e7, 0.1) end
 --@Test(priority=3) function Widgets()     crcTest('Widgets', 'widgets.rpl', 0xbf1021d5, 0.01) end

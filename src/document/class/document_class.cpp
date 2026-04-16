@@ -423,13 +423,15 @@ static ERR DOCUMENT_DataFeed(extDocument *Self, struct acDataFeed *Args)
             Self->Error = insert_xml(Self, &Self->Stream, *xml, xml->Tags, Self->Stream.size(), STYLE::NIL);
          }
 
+         auto process_error = Self->Error;
          Self->UpdatingLayout = true;
-         if (Self->initialised()) redraw(Self, true);
+         if ((Self->initialised()) and (process_error IS ERR::Okay)) redraw(Self, true);
 
          #ifdef DBG_STREAM
             print_stream(Self->Stream);
          #endif
-         return Self->Error;
+         if (process_error != ERR::Okay) return process_error;
+         else return Self->Error;
       }
       else return log.warning(ERR::CreateObject);
    }
@@ -637,8 +639,8 @@ static ERR DOCUMENT_Free(extDocument *Self)
 
    unload_doc(Self, ULD::TERMINATE);
 
+   if (Self->Query) { FreeResource(Self->Query); Self->Query = nullptr; }
    if (Self->Templates) { FreeResource(Self->Templates); Self->Templates = nullptr; }
-
    if (Self->Page) { FreeResource(Self->Page); Self->Page = nullptr; }
    if (Self->View) { FreeResource(Self->View); Self->View = nullptr; }
 

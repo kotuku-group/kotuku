@@ -1,0 +1,77 @@
+-- $TIRI
+-- Flute tests for Stage 4 XQuery migration in RIPL documents.
+
+   include 'document'
+
+@BeforeAll function init(State)
+   global glDocFolder = State.folder
+end
+
+function contains(Haystack:str, Needle:str)
+   return regex.new(Needle).test(Haystack)
+end
+
+function buildDoc(Path:str, ObjectName:str)
+   scene = obj.new('VectorScene', { pageWidth=1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+
+   doc = vp.new('document')
+   doc.viewport = vp
+   doc.flags    = DCF_UNRESTRICTED
+   if Path?? then doc.path = glDocFolder .. Path end
+   if ObjectName?? then doc.new('xml', { name=ObjectName, flags=XMF_NEW }) end
+   check doc.init()
+   return doc
+end
+
+function loadAndRead(Path:str, ObjectName:str)
+   doc = buildDoc(Path, ObjectName)
+   err, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for ' .. Path .. ': ' .. mSys.GetErrorMsg(err))
+   return xml_str
+end
+
+function feedExpectError(Content:str, ObjectName:str)
+   scene = obj.new('VectorScene', { pageWidth=1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp })
+   if ObjectName?? then doc.name = ObjectName end
+   err = doc.acDataFeed(nil, DATA_XML, Content)
+   if err != ERR_Okay then return err end
+   err, _ = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   return err
+end
+
+@Test function StageFourFixture()
+   xml_str = loadAndRead('xquery_stage4.rpl', 'stage4document')
+
+   assert(contains(xml_str, 'IF-TEST-TRUE'), 'if@test must remain the canonical conditional surface')
+   assert(not contains(xml_str, 'IF-TEST-FAIL'), 'if@test must not fall through to the else branch when true')
+   assert(contains(xml_str, 'ELSEIF-TEST-TRUE'), 'elseif@test must evaluate XQuery conditions')
+   assert(not contains(xml_str, 'ELSEIF-FAIL'), 'elseif@test must suppress failure markers')
+   assert(contains(xml_str, 'OBJECT-EXISTS-TRUE'), 'kt-object-exists() must resolve known objects')
+   assert(contains(xml_str, 'OBJECT-EXISTS-FALSE'), 'kt-object-exists() must report missing objects cleanly')
+   assert(contains(xml_str, 'REPEAT 0'), '$loop?index must drive migrated repeat output')
+   assert(contains(xml_str, 'REPEAT 2'), '$loop?index must rebind across repeat iterations')
+   assert(contains(xml_str, 'WHILE 0'), '$loop?index must drive migrated while output')
+   assert(contains(xml_str, 'WHILE 2'), '$loop?index must keep incrementing inside while loops')
+   assert(contains(xml_str, 'STYLE italic courier 20px red'), '$style must expose the active parser style')
+   assert(contains(xml_str, 'PAGE Stage4'), '$meta?current-page must remain available after migration')
+   assert(contains(xml_str, 'LAYOUT 1024 x 768'), '$layout view dimensions must remain available after migration')
+   assert(regex.new('LINE [0-9]+').test(xml_str), '$meta?line-no must expose the current line number')
+end
+
+@Test function LegacyStatementRejected()
+   err = feedExpectError('<body/><page><if statement="1 &gt; 0"><p>FAIL</p></if></page>')
+   assert(err != ERR_Okay, 'Legacy statement= must now fail parsing')
+end
+
+@Test function LegacyExistsRejected()
+   err = feedExpectError('<body/><page><if exists="stage4document"><p>FAIL</p></if></page>', 'stage4document')
+   assert(err != ERR_Okay, 'Legacy exists= must now fail parsing')
+end
+
+@Test function LegacyNotNullRejected()
+   err = feedExpectError('<body/><page><if notnull="true"><p>FAIL</p></if></page>')
+   assert(err != ERR_Okay, 'Legacy notnull= must now fail parsing')
+end

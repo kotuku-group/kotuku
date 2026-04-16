@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<!DOCTYPE rpl PUBLIC "-//ROCKLYTE//DTD RPL 1.0//EN">
+
+<info>
+ <title>XQuery Stage 1 Tests</title>
+ <author>Paul Manias</author>
+ <keywords>xquery, test, stage1</keywords>
+ <description>Stage 1 XQuery-backed RIPL tests for if/elseif/while@test, print@select, parse@select and AVT expansion on print@value.</description>
+</info>
+
+<body font-size="10pt"/>
+
+<page name="Index">
+
+<h1>XQuery Stage 1</h1>
+
+<p>The following lines verify the Stage 1 XQuery integration.</p>
+
+<!-- if@test true -->
+<if test="1 lt 2">
+  <p>IF-TEST-TRUE</p>
+</if>
+<else>
+  <p>IF-TEST-FAIL</p>
+</else>
+
+<!-- if@test false -> elseif@test -->
+<if test="1 gt 2">
+  <p>ELSEIF-FAIL-1</p>
+</if>
+<elseif test="contains('warning', 'warn')">
+  <p>ELSEIF-TEST-TRUE</p>
+</elseif>
+<else>
+  <p>ELSEIF-FAIL-2</p>
+</else>
+
+<!-- print@select -->
+<p><print select="string-join(('a', 'b', 'c'), '-')"/></p>
+<p><print select="concat('PAGE-NAME-', string((/page/@name)[1]))"/></p>
+
+<!-- print@value with AVT -->
+<p><print value="VAL {1 + 2}"/></p>
+
+<!-- parse@select -->
+<parse select="'&lt;p&gt;PARSE-SELECT-INJECTED&lt;/p&gt;'"/>
+
+<!-- while@test counting to 3, using XQuery against a legacy loop counter placeholder is not valid in Stage 1
+     (no $loop binding yet), so we keep the loop deterministic via a literal condition that will iterate once. -->
+<while test="false()">
+  <p>WHILE-SHOULD-NOT-APPEAR</p>
+</while>
+
+</page>

@@ -20,6 +20,43 @@ struct parser {
       int row_col;
    };
 
+   struct loop_frame {
+      int index = 0;
+      int iteration = 0;
+      int start = 0;
+      int end = 0;
+      int step = 1;
+      int count = 0;
+      bool count_known = false;
+      bool end_known = false;
+      std::string alias_name;
+   };
+
+   struct loop_guard {
+      parser *owner = nullptr;
+      bool active = false;
+
+      loop_guard(parser *Owner, const loop_frame &Frame) : owner(Owner), active(true) {
+         owner->m_loop_stack.push_back(Frame);
+      }
+
+      ~loop_guard() {
+         if ((active) and (owner) and (!owner->m_loop_stack.empty())) {
+            owner->m_loop_stack.pop_back();
+         }
+      }
+
+      inline loop_frame * frame() {
+         if ((!active) or (!owner) or (owner->m_loop_stack.empty())) return nullptr;
+         return &owner->m_loop_stack.back();
+      }
+
+      inline const loop_frame * frame() const {
+         if ((!active) or (!owner) or (owner->m_loop_stack.empty())) return nullptr;
+         return &owner->m_loop_stack.back();
+      }
+   };
+
    extDocument *Self;
    objXML *m_xml;
 
@@ -28,7 +65,7 @@ struct parser {
    objXML *m_inject_xml = nullptr;
    objXML::TAGS *m_inject_tag = nullptr, *m_header_tag = nullptr, *m_footer_tag = nullptr, *m_body_tag = nullptr;
    objTime *m_time = nullptr;
-   int  m_loop_index  = 0;
+   pf::vector<loop_frame> m_loop_stack;
    uint16_t m_paragraph_depth = 0;     // Incremented when inside <p> tags
    char  m_in_template = 0;
    bool  m_strip_feeds = false;
@@ -125,6 +162,31 @@ struct parser {
    inline void tag_object(XTag &);
    inline bool check_para_attrib(const XMLAttrib &, bc_paragraph *, bc_font &);
    inline bool check_font_attrib(const XMLAttrib &, bc_font &);
+   inline loop_frame * active_loop() {
+      if (m_loop_stack.empty()) return nullptr;
+      return &m_loop_stack.back();
+   }
+
+   inline const loop_frame * active_loop() const {
+      if (m_loop_stack.empty()) return nullptr;
+      return &m_loop_stack.back();
+   }
+
+   inline int current_loop_index() const {
+      if (auto frame = active_loop()) return frame->index;
+      else return 0;
+   }
+
+   inline bool resolve_loop_alias(std::string_view Name, std::string &Value) const {
+      for (int i = std::ssize(m_loop_stack) - 1; i >= 0; i--) {
+         auto &frame = m_loop_stack[i];
+         if ((!frame.alias_name.empty()) and (iequals(frame.alias_name, Name))) {
+            Value = std::to_string(frame.index);
+            return true;
+         }
+      }
+      return false;
+   }
 
    ~parser() {
       if (m_time) FreeResource(m_time);
@@ -281,19 +343,441 @@ void parser::process_page(objXML *pXML)
 }
 
 //********************************************************************************************************************
+// Determine whether an attribute on a given tag should be treated as an XQuery expression (evaluated as a whole) or
+// as an attribute value template (AVT) with embedded `{...}` expression fragments.  Attributes so classified are
+// bypassed by translate_attrib_args() so that their source text is preserved for late XQuery evaluation by the tag
+// handler.
+//
+//   if@test, elseif@test, while@test       -> XQuery expression attributes
+//   print@select, parse@select             -> XQuery expression attributes
+//   print@value                            -> AVT
+
+static bool is_xq_expression_attrib(uint32_t TagHash, std::string_view AttribName)
+{
+   auto name = AttribName;
+   if ((!name.empty()) and (name.front() IS '$')) name.remove_prefix(1);
+
+   if (iequals("test", name)) {
+      return (TagHash IS HASH_if) or (TagHash IS HASH_elseif) or (TagHash IS HASH_while);
+   }
+   else if (iequals("select", name)) {
+      return (TagHash IS HASH_print) or (TagHash IS HASH_parse);
+   }
+   return false;
+}
+
+static bool is_xq_avt_attrib(uint32_t TagHash, std::string_view AttribName, std::string_view AttribValue)
+{
+   auto name = AttribName;
+   if ((!name.empty()) and (name.front() IS '$')) name.remove_prefix(1);
+
+   if ((TagHash IS HASH_print) and (iequals("value", name))) {
+      // Only bypass legacy [%...] substitution when the value contains AVT markers.
+      return (AttribValue.find('{') != std::string_view::npos) or
+             (AttribValue.find('}') != std::string_view::npos);
+   }
+   return false;
+}
+
+//********************************************************************************************************************
 // Translate all arguments found in a list of XML attributes.
+//
+// XQuery-aware attributes (test, select, and AVT-capable value attributes on selected tags) are bypassed here so that
+// their source text is preserved untouched for evaluation by the tag handler.
 
 void parser::translate_attrib_args(pf::vector<XMLAttrib> &Attribs)
 {
    if (Attribs[0].isContent()) return;
 
+   std::string_view tag_name(Attribs[0].Name);
+   if ((!tag_name.empty()) and (tag_name.front() IS '$')) tag_name.remove_prefix(1);
+   auto tag_hash = strihash(tag_name);
+
    for (int attrib=1; attrib < std::ssize(Attribs); attrib++) {
       if (Attribs[attrib].Name.starts_with('$')) continue;
+
+      if (is_xq_expression_attrib(tag_hash, Attribs[attrib].Name)) continue;
+      if (is_xq_avt_attrib(tag_hash, Attribs[attrib].Name, Attribs[attrib].Value)) continue;
 
       std::string output;
       translate_args(Attribs[attrib].Value, output);
       Attribs[attrib].Value = output;
    }
+}
+
+//********************************************************************************************************************
+// XQuery evaluation helpers
+//
+// These helpers are intentionally thin wrappers around the XQuery object class so that parser-visible behaviour mirrors
+// a standard xml:evaluate() call.  The XML context is optional; when absent, the evaluator still supports literal and
+// function-based expressions.  Errors from compilation or evaluation propagate to the caller via the returned ERR and
+// the document Self->Error field.
+
+enum class XQEval { STRING, BOOLEAN };
+
+static constexpr std::string_view XQ_OBJECT_EXISTS_FUNCTION = "kt-object-exists";
+
+static inline void xq_map_append_value(std::shared_ptr<XPathMapStorage> &Storage, std::string_view Key,
+   const XPathValue &Value)
+{
+   XPathMapEntry entry;
+   entry.key.assign(Key);
+   entry.value.items.push_back(Value);
+   Storage->entries.push_back(std::move(entry));
+}
+
+static inline void xq_map_append_string(std::shared_ptr<XPathMapStorage> &Storage, std::string_view Key,
+   std::string_view Value)
+{
+   XPathValue result(XPVT::String);
+   result.StringValue.assign(Value);
+   xq_map_append_value(Storage, Key, result);
+}
+
+static inline void xq_map_append_number(std::shared_ptr<XPathMapStorage> &Storage, std::string_view Key, double Value)
+{
+   XPathValue result(XPVT::Number);
+   result.NumberValue = Value;
+   xq_map_append_value(Storage, Key, result);
+}
+
+static std::string xq_format_font_size(const bc_font &Style)
+{
+   char buffer[28];
+   switch(Style.req_size.type) {
+      case DU::PIXEL:
+         snprintf(buffer, sizeof(buffer), "%gpx", Style.req_size.value);
+         break;
+      case DU::FONT_SIZE:
+         snprintf(buffer, sizeof(buffer), "%gem", Style.req_size.value);
+         break;
+      case DU::SCALED:
+         snprintf(buffer, sizeof(buffer), "%g%%", Style.req_size.value * 100.0);
+         break;
+      default:
+         snprintf(buffer, sizeof(buffer), "%dpx", DEFAULT_FONTSIZE);
+         break;
+   }
+   return std::string(buffer);
+}
+
+static XPathValue xq_keyvalue_to_map(const KEYVALUE &Source)
+{
+   XPathValue result(XPVT::Map);
+   result.map_storage = std::make_shared<XPathMapStorage>();
+
+   for (const auto &entry : Source) {
+      xq_map_append_string(result.map_storage, entry.first, entry.second);
+   }
+
+   return result;
+}
+
+static XPathValue xq_template_args_to_map(extDocument *Self)
+{
+   XPathValue result(XPVT::Map);
+   result.map_storage = std::make_shared<XPathMapStorage>();
+
+   if (Self->TemplateArgs.empty()) return result;
+
+   auto args = Self->TemplateArgs.back();
+   if (!args) return result;
+
+   for (int i=1; i < std::ssize(args->Attribs); i++) {
+      auto name = std::string_view(args->Attribs[i].Name);
+      if ((!name.empty()) and (name.front() IS '$')) name.remove_prefix(1);
+      if (name.empty()) continue;
+      xq_map_append_string(result.map_storage, name, args->Attribs[i].Value);
+   }
+
+   return result;
+}
+
+static XPathValue xq_meta_to_map(extDocument *Self)
+{
+   XPathValue result(XPVT::Map);
+   result.map_storage = std::make_shared<XPathMapStorage>();
+
+   if (Self->Title)         xq_map_append_string(result.map_storage, "title", Self->Title);
+   if (Self->Author)        xq_map_append_string(result.map_storage, "author", Self->Author);
+   if (Self->Description)   xq_map_append_string(result.map_storage, "description", Self->Description);
+   if (Self->Copyright)     xq_map_append_string(result.map_storage, "copyright", Self->Copyright);
+   if (Self->Keywords)      xq_map_append_string(result.map_storage, "keywords", Self->Keywords);
+   if (!Self->Path.empty()) xq_map_append_string(result.map_storage, "path", Self->Path);
+   xq_map_append_number(result.map_storage, "line-no", double(Self->Segments.size()));
+
+   if (Self->PageTag) {
+      if (auto current_page = Self->PageTag->attrib("name")) {
+         xq_map_append_string(result.map_storage, "current-page", *current_page);
+      }
+
+      if (auto next_page = Self->PageTag->attrib("next-page")) {
+         xq_map_append_string(result.map_storage, "next-page", *next_page);
+      }
+
+      if (auto prev_page = Self->PageTag->attrib("prev-page")) {
+         xq_map_append_string(result.map_storage, "prev-page", *prev_page);
+      }
+   }
+
+   return result;
+}
+
+static XPathValue xq_layout_to_map(extDocument *Self)
+{
+   XPathValue result(XPVT::Map);
+   result.map_storage = std::make_shared<XPathMapStorage>();
+
+   xq_map_append_number(result.map_storage, "view-width", Self->VPWidth);
+   xq_map_append_number(result.map_storage, "view-height", Self->VPHeight);
+   xq_map_append_number(result.map_storage, "page-height", Self->PageHeight);
+
+   if (Self->CalcWidth > 0) xq_map_append_number(result.map_storage, "page-width", Self->CalcWidth);
+   else if (Self->VPWidth > 0) xq_map_append_number(result.map_storage, "page-width", Self->VPWidth);
+
+   return result;
+}
+
+static XPathValue xq_loop_to_map(parser *Parser)
+{
+   XPathValue result(XPVT::Map);
+   result.map_storage = std::make_shared<XPathMapStorage>();
+
+   auto frame = Parser->active_loop();
+   if (!frame) return result;
+
+   xq_map_append_number(result.map_storage, "index", frame->index);
+   xq_map_append_number(result.map_storage, "iteration", frame->iteration);
+   xq_map_append_number(result.map_storage, "start", frame->start);
+   xq_map_append_number(result.map_storage, "step", frame->step);
+   if (frame->count_known) xq_map_append_number(result.map_storage, "count", frame->count);
+   if (frame->end_known) xq_map_append_number(result.map_storage, "end", frame->end);
+   return result;
+}
+
+static XPathValue xq_style_to_map(parser *Parser)
+{
+   XPathValue result(XPVT::Map);
+   result.map_storage = std::make_shared<XPathMapStorage>();
+
+   xq_map_append_string(result.map_storage, "font-face", Parser->m_style.face);
+   xq_map_append_string(result.map_storage, "font-style", Parser->m_style.style);
+   xq_map_append_string(result.map_storage, "font-fill", Parser->m_style.fill);
+   xq_map_append_string(result.map_storage, "font-size", xq_format_font_size(Parser->m_style));
+   return result;
+}
+
+static bool loop_index_in_range(int Index, int End, int Step)
+{
+   if (Step > 0) return Index < End;
+   else if (Step < 0) return Index > End;
+   else return false;
+}
+
+static int compute_numeric_loop_count(int Start, int End, int Step)
+{
+   if (Step > 0) {
+      if (Start >= End) return 0;
+      return ((End - Start - 1) / Step) + 1;
+   }
+   else if (Step < 0) {
+      auto distance = Start - End;
+      if (distance <= 0) return 0;
+      return ((distance - 1) / (-Step)) + 1;
+   }
+   else return 0;
+}
+
+static ERR xq_resolve_runtime_scope(objXQuery *Query, std::string_view Name, XPathValue *Result, APTR Meta)
+{
+   auto Self = (extDocument *)CurrentContext();
+
+   if (Name IS "params") {
+      *Result = xq_keyvalue_to_map(Self->Params);
+   }
+   else if (Name IS "args") {
+      *Result = xq_template_args_to_map(Self);
+   }
+   else if (Name IS "vars") {
+      *Result = xq_keyvalue_to_map(Self->Vars);
+   }
+   else if (Name IS "meta") {
+      *Result = xq_meta_to_map(Self);
+   }
+   else if (Name IS "layout") {
+      *Result = xq_layout_to_map(Self);
+   }
+   else if (Name IS "loop") {
+      *Result = xq_loop_to_map((parser *)Meta);
+   }
+   else if (Name IS "style") {
+      *Result = xq_style_to_map((parser *)Meta);
+   }
+   else return ERR::Search;
+
+   return ERR::Okay;
+}
+
+static ERR xq_document_object_exists(objXQuery *, std::string_view, const std::vector<XPathValue> &Input,
+   XPathValue &Result, APTR Meta)
+{
+   pf::Log log(__FUNCTION__);
+
+   auto Parser = (parser *)Meta;
+   Result = XPathValue(XPVT::Boolean);
+   Result.reset();
+
+   if ((not Parser) or Input.empty()) return ERR::Args;
+
+   std::string object_name;
+   auto &value = Input[0];
+   if (value.Type IS XPVT::String) object_name = value.StringValue;
+   else if ((value.Type IS XPVT::Number) or (value.Type IS XPVT::Boolean)) object_name = std::to_string(value.NumberValue);
+   else if (value.node_set_string_override.has_value()) object_name = *value.node_set_string_override;
+   else if (!value.node_set_string_values.empty()) object_name = value.node_set_string_values[0];
+   else return log.warning(ERR::Args);
+
+   OBJECTID object_id = 0;
+   bool exists = false;
+   if ((!object_name.empty()) and
+      (FindObject(object_name.c_str(), CLASSID::NIL, FOF::NIL, &object_id) IS ERR::Okay)) {
+      exists = valid_objectid(Parser->Self, object_id) ? true : false;
+   }
+
+   Result.Type = XPVT::Boolean;
+   Result.NumberValue = exists ? 1.0 : 0.0;
+   return ERR::Okay;
+}
+
+static ERR xq_eval_helper(parser *Parser, objXML *XMLContext, XTag *ContextTag, const std::string &Expression,
+   XQEval Mode, std::string &OutString, bool &OutBoolean)
+{
+   pf::Log log(__FUNCTION__);
+   auto Self = Parser->Self;
+
+   OutString.clear();
+   OutBoolean = false;
+
+   if (Expression.empty()) return ERR::Okay;
+
+   std::string eval_expression;
+   if (Mode IS XQEval::BOOLEAN) eval_expression = "boolean(" + Expression + ")";
+   else eval_expression = Expression;
+
+   if (not Self->Query) {
+      if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&Self->Query) IS ERR::Okay) {
+         if (Self->Query->init() != ERR::Okay) {
+            Self->Error = ERR::Init;
+            FreeResource(Self->Query);
+            Self->Query = nullptr;
+            return log.warning(ERR::Init);
+         }
+      }
+      else {
+         Self->Error = ERR::NewObject;
+         return log.warning(ERR::NewObject);
+      }
+   }
+
+   Self->Query->setResolveVariable(C_FUNCTION(xq_resolve_runtime_scope, Parser));
+   Self->Query->registerFunction(XQ_OBJECT_EXISTS_FUNCTION.data(), C_FUNCTION(xq_document_object_exists, Parser));
+
+   if (Self->Query->setStatement(eval_expression) IS ERR::Okay) {
+      if (auto err = Self->Query->evaluate(XMLContext, ContextTag ? ContextTag->ID : 0, XEF::NIL); err != ERR::Okay) {
+         CSTRING msg;
+         if (Self->Query->get(FID_ErrorMsg, msg) IS ERR::Okay) {
+            log.warning("XQuery error evaluating \"%s\": %s", Expression.c_str(), msg ? msg : "(none)");
+         }
+         else log.warning("XQuery error evaluating \"%s\".", Expression.c_str());
+         Self->Error = err;
+         return err;
+      }
+
+      CSTRING result;
+      if (Self->Query->get(FID_ResultString, result) IS ERR::Okay) {
+         if (Mode IS XQEval::STRING) {
+            if (result) OutString.assign(result);
+         }
+         else if (result and iequals("true", result)) OutBoolean = true;
+      }
+
+      return ERR::Okay;
+   }
+   else {
+      Self->Error = ERR::SetField;
+      return ERR::SetField;
+   }
+}
+
+// Expand a string containing attribute value template fragments `{...}`, evaluating each embedded XQuery expression
+// and concatenating the result with literal parts.  Follows the same escaping rules as the XQuery tokeniser so that
+// `{{` and `}}` are preserved as literal `{` and `}`.
+
+static ERR xq_expand_avt(parser *Parser, objXML *XMLContext, XTag *ContextTag, const std::string &Input,
+   std::string &Output)
+{
+   pf::Log log(__FUNCTION__);
+   Output.clear();
+
+   size_t pos = 0;
+   const size_t len = Input.size();
+
+   while (pos < len) {
+      char ch = Input[pos];
+
+      if (ch IS '{') {
+         if ((pos + 1 < len) and (Input[pos + 1] IS '{')) {
+            Output += '{';
+            pos += 2;
+            continue;
+         }
+
+         // Scan expression body, respecting nested braces and quoted strings.
+         size_t expr_start = pos + 1;
+         size_t scan = expr_start;
+         int depth = 1;
+         while ((scan < len) and (depth > 0)) {
+            char sc = Input[scan];
+            if ((sc IS '\'') or (sc IS '"')) {
+               char quote = sc;
+               scan++;
+               while (scan < len) {
+                  char inner = Input[scan++];
+                  if (inner IS '\\' and scan < len) { scan++; continue; }
+                  if (inner IS quote) break;
+               }
+               continue;
+            }
+            else if (sc IS '{') { depth++; scan++; }
+            else if (sc IS '}') { depth--; if (depth IS 0) break; else scan++; }
+            else scan++;
+         }
+
+         if (depth != 0) {
+            log.warning("Unterminated attribute value template: %s", Input.c_str());
+            return ERR::Syntax;
+         }
+
+         std::string expr = Input.substr(expr_start, scan - expr_start);
+         pos = scan + 1;
+
+         std::string evaluated;
+         bool unused;
+         auto err = xq_eval_helper(Parser, XMLContext, ContextTag, expr, XQEval::STRING, evaluated, unused);
+         if (err != ERR::Okay) return err;
+         Output += evaluated;
+      }
+      else if (ch IS '}' and (pos + 1 < len) and (Input[pos + 1] IS '}')) {
+         Output += '}';
+         pos += 2;
+      }
+      else {
+         Output += ch;
+         pos++;
+      }
+   }
+
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -528,7 +1012,11 @@ void parser::translate_param(std::string &Output, size_t pos)
 
    // Check against global arguments / variables
 
-   if (Self->Vars.contains(argname)) {
+   std::string loop_value;
+   if (resolve_loop_alias(argname, loop_value)) {
+      Output.replace(pos, true_end+1-pos, loop_value);
+   }
+   else if (Self->Vars.contains(argname)) {
       Output.replace(pos, true_end+1-pos, Self->Vars[argname]);
    }
    else if (Self->Params.contains(argname)) {
@@ -553,7 +1041,7 @@ void parser::translate_param(std::string &Output, size_t pos)
 void parser::translate_reserved(std::string &Output, size_t pos, bool &time_queried)
 {
    if (!Output.compare(pos, sizeof("[%index]")-1, "[%index]")) {
-      Output.replace(pos, sizeof("[%index]")-1, std::to_string(m_loop_index));
+      Output.replace(pos, sizeof("[%index]")-1, std::to_string(current_loop_index()));
    }
    else if (!Output.compare(pos, sizeof("[%id]")-1, "[%id]")) {
       Output.replace(pos, sizeof("[%id]")-1, std::to_string(Self->UID));
@@ -623,22 +1111,7 @@ void parser::translate_reserved(std::string &Output, size_t pos, bool &time_quer
       Output.replace(pos, sizeof("[%font-fill]")-1, m_style.fill);
    }
    else if (!Output.compare(pos, sizeof("[%font-size]")-1, "[%font-size]")) {
-      char buffer[28];
-      switch(m_style.req_size.type) {
-         case DU::PIXEL:
-            snprintf(buffer, sizeof(buffer), "%gpx", m_style.req_size.value);
-            break;
-         case DU::FONT_SIZE:
-            snprintf(buffer, sizeof(buffer), "%gem", m_style.req_size.value);
-            break;
-         case DU::SCALED:
-            snprintf(buffer, sizeof(buffer), "%g%%", m_style.req_size.value * 100.0);
-            break;
-         default:
-            snprintf(buffer, sizeof(buffer), "%dpx", DEFAULT_FONTSIZE);
-            break;
-      }
-      Output.replace(pos, sizeof("[%font-size]")-1, buffer);
+      Output.replace(pos, sizeof("[%font-size]")-1, xq_format_font_size(m_style));
    }
    else if (!Output.compare(pos, sizeof("[%line-no]")-1, "[%line-no]")) {
       auto num = std::to_string(Self->Segments.size());
@@ -837,48 +1310,78 @@ static bool eval_condition(const std::string &String)
 
 //********************************************************************************************************************
 // Used by if, elseif, while statements to check the satisfaction of conditions.
+//
+// XQuery integration: the `test` attribute is recognised as a standalone XQuery expression.  When present it
+// takes precedence over the legacy statement/exists/notnull/null/not attributes.  The result of the expression is
+// coerced via XQuery's effective boolean value rules (boolean(...)).
 
-static bool check_tag_conditions(extDocument *Self, XTag &Tag)
+static ERR reject_legacy_condition(parser *Parser, const XTag &Tag, std::string_view Name, std::string_view Value)
 {
    pf::Log log("eval");
 
-   bool satisfied = false;
-   bool reverse = false;
+   std::string_view tag_name(Tag.Attribs[0].Name);
+   if ((!tag_name.empty()) and (tag_name.front() IS '$')) tag_name.remove_prefix(1);
+
+   std::string hint;
+   if (iequals(Name, "statement")) {
+      hint = "Use <" + std::string(tag_name) + " test=\"" + std::string(Value) + "\"> instead.";
+   }
+   else if (iequals(Name, "exists")) {
+      hint = "Use <" + std::string(tag_name) + " test=\"" + std::string(XQ_OBJECT_EXISTS_FUNCTION) + "('" +
+         std::string(Value) + "')\"> instead.";
+   }
+   else if (iequals(Name, "not")) {
+      hint = "Wrap the condition in not(...), for example <" + std::string(tag_name) + " test=\"not(...)\">.";
+   }
+   else if ((iequals(Name, "null")) or (iequals(Name, "isnull"))) {
+      hint = "Use an ordinary XQuery test, for example <" + std::string(tag_name) +
+         " test=\"empty(...) or ... = ''\">.";
+   }
+   else if (iequals(Name, "notnull")) {
+      hint = "Use an ordinary XQuery test, for example <" + std::string(tag_name) +
+         " test=\"exists(...) and ... != ''\">.";
+   }
+   else hint = "Use <" + std::string(tag_name) + " test=\"...\"> instead.";
+
+   log.warning("Legacy conditional attribute '%.*s' is no longer supported on <%.*s>. %s",
+      int(Name.size()), Name.data(), int(tag_name.size()), tag_name.data(), hint.c_str());
+   Parser->Self->Error = ERR::InvalidData;
+   return ERR::InvalidData;
+}
+
+static bool check_tag_conditions(parser *Parser, XTag &Tag)
+{
+   pf::Log log("eval");
    for (unsigned i=1; i < Tag.Attribs.size(); i++) {
-      if (iequals("statement", Tag.Attribs[i].Name)) {
-         satisfied = eval_condition(Tag.Attribs[i].Value);
-         log.trace("Statement: %s", Tag.Attribs[i].Value);
-         break;
-      }
-      else if (iequals("exists", Tag.Attribs[i].Name)) {
-         OBJECTID object_id;
-         if (FindObject(Tag.Attribs[i].Value.c_str(), CLASSID::NIL, FOF::SMART_NAMES, &object_id) IS ERR::Okay) {
-            satisfied = valid_objectid(Self, object_id) ? true : false;
-         }
-         break;
-      }
-      else if (iequals("notnull", Tag.Attribs[i].Name)) {
-         log.trace("NotNull: %s", Tag.Attribs[i].Value);
-         if (Tag.Attribs[i].Value.empty()) satisfied = false;
-         else if (Tag.Attribs[i].Value IS "0") satisfied = false;
-         else satisfied = true;
-      }
-      else if ((iequals("isnull", Tag.Attribs[i].Name)) or (iequals("null", Tag.Attribs[i].Name))) {
-         log.trace("IsNull: %s", Tag.Attribs[i].Value);
-            if (Tag.Attribs[i].Value.empty()) satisfied = true;
-            else if (Tag.Attribs[i].Value IS "0") satisfied = true;
-            else satisfied = false;
-      }
-      else if (iequals("not", Tag.Attribs[i].Name)) {
-         reverse = true;
+      auto name = std::string_view(Tag.Attribs[i].Name);
+      if ((!name.empty()) and (name.front() IS '$')) name.remove_prefix(1);
+
+      if (iequals("statement", name) or iequals("exists", name) or iequals("notnull", name) or
+         iequals("null", name) or iequals("isnull", name) or iequals("not", name)) {
+         reject_legacy_condition(Parser, Tag, name, Tag.Attribs[i].Value);
+         return false;
       }
    }
 
-   // Check for a not condition and invert the satisfied value if found
+   for (unsigned i=1; i < Tag.Attribs.size(); i++) {
+      auto name = std::string_view(Tag.Attribs[i].Name);
+      if ((!name.empty()) and (name.front() IS '$')) name.remove_prefix(1);
+      if (iequals("test", name)) {
+         std::string result;
+         bool boolean_result = false;
+         auto err = xq_eval_helper(Parser, Parser->m_xml, &Tag, Tag.Attribs[i].Value,
+            XQEval::BOOLEAN, result, boolean_result);
+         if (err != ERR::Okay) {
+            log.warning("XQuery test failed: %s", Tag.Attribs[i].Value.c_str());
+            Parser->Self->Error = err;
+            return false;
+         }
+         log.trace("Test: %s -> %s", Tag.Attribs[i].Value.c_str(), boolean_result ? "true" : "false");
+         return boolean_result;
+      }
+   }
 
-   if (reverse) satisfied = satisfied ^ 1;
-
-   return satisfied;
+   return false;
 }
 
 //********************************************************************************************************************
@@ -1068,7 +1571,7 @@ TRF parser::parse_tag(XTag &Tag, IPF &Flags)
          break;
 
       case HASH_if:
-         if (check_tag_conditions(Self, Tag)) { // Statement is true
+         if (check_tag_conditions(this, Tag)) { // Statement is true
             m_check_else = false;
             result = parse_tags(Tag.Children, Flags);
          }
@@ -1077,7 +1580,7 @@ TRF parser::parse_tag(XTag &Tag, IPF &Flags)
 
       case HASH_elseif:
          if (m_check_else) {
-            if (check_tag_conditions(Self, Tag)) { // Statement is true
+            if (check_tag_conditions(this, Tag)) { // Statement is true
                m_check_else = false;
                result = parse_tags(Tag.Children, Flags);
             }
@@ -1092,25 +1595,38 @@ TRF parser::parse_tag(XTag &Tag, IPF &Flags)
          break;
 
       case HASH_while: {
-         auto saveindex = m_loop_index;
-         m_loop_index = 0;
+         if (!Tag.Children.empty()) {
+            loop_frame frame;
+            frame.index = 0;
+            frame.iteration = 0;
+            frame.start = 0;
+            frame.step = 1;
 
-         if ((!Tag.Children.empty()) and (check_tag_conditions(Self, Tag))) {
-            // Save/restore the statement string on each cycle to fully evaluate the condition each time.
+            loop_guard loop(this, frame);
 
-            bool state = true;
-            while (state) {
-               state = check_tag_conditions(Self, Tag);
-               Tag.Attribs = saved_attribs;
-               translate_attrib_args(Tag.Attribs);
+            while (true) {
+               if (!check_tag_conditions(this, Tag)) break;
+               if (Self->Error != ERR::Okay) break;
 
-               if ((state) and ((parse_tags(Tag.Children, Flags) & TRF::BREAK) != TRF::NIL)) break;
+               result = parse_tags(Tag.Children, Flags);
+               if (Self->Error != ERR::Okay) break;
 
-               m_loop_index++;
+               if ((result & TRF::BREAK) != TRF::NIL) {
+                  result = TRF::NIL;
+                  break;
+               }
+
+               if (auto active_loop = loop.frame()) {
+                  active_loop->index += active_loop->step;
+                  active_loop->iteration++;
+               }
+
+               if ((result & TRF::CONTINUE) != TRF::NIL) {
+                  result = TRF::NIL;
+                  continue;
+               }
             }
          }
-
-         m_loop_index = saveindex;
          break;
       }
 
@@ -2301,8 +2817,41 @@ void parser::tag_parse(XTag &Tag)
 
    // The value attribute will contain XML.  We will parse the XML as if it were part of the document source.  This feature
    // is typically used when pulling XML information out of an object field.
+   //
+   //   select="..."  evaluates an XQuery expression and parses the resulting string as XML/RIPL content.
 
    if (std::ssize(Tag.Attribs) > 1) {
+      // Prefer select over value when both are present.
+      for (int i=1; i < std::ssize(Tag.Attribs); i++) {
+         auto name = std::string_view(Tag.Attribs[i].Name);
+         if ((!name.empty()) and (name.front() IS '$')) name.remove_prefix(1);
+         if (iequals("select", name)) {
+            std::string result;
+            bool unused;
+            auto err = xq_eval_helper(this, m_xml, &Tag, Tag.Attribs[i].Value,
+               XQEval::STRING, result, unused);
+            if (err != ERR::Okay) {
+               log.warning("<parse select=\"%s\"> failed.", Tag.Attribs[i].Value.c_str());
+               Self->Error = err;
+               return;
+            }
+
+            log.traceBranch("Parsing XQuery result as XML...");
+            auto xmlinc = objXML::create::local(fl::Statement(result),
+               fl::Flags(XMF::PARSE_HTML|XMF::STRIP_HEADERS));
+            if (!xmlinc) {
+               log.warning("<parse select> produced non-parseable XML: %.120s", result.c_str());
+               Self->Error = ERR::Syntax;
+               return;
+            }
+            auto old_xml = change_xml(xmlinc);
+            parse_tags(xmlinc->Tags);
+            change_xml(old_xml);
+            Self->Resources.emplace_back(xmlinc->UID, RTD::OBJECT_TEMP);
+            return;
+         }
+      }
+
       if ((iequals("value", Tag.Attribs[1].Name)) or
           (iequals("$value", Tag.Attribs[1].Name))) {
          log.traceBranch("Parsing string value as XML...");
@@ -2666,13 +3215,48 @@ void parser::tag_print(XTag &Tag)
 
    // Copy the content from the value attribute into the document stream.  If used inside an object, the data is sent
    // to that object as XML.
+   //
+   //   select="..."  evaluates an XQuery expression and inserts its string value
+   //   value="..."   may contain `{...}` attribute value template fragments
 
    if (Tag.Attribs.size() > 1) {
+      // Prefer select over value when both are present.
+      for (int i=1; i < std::ssize(Tag.Attribs); i++) {
+         auto name = std::string_view(Tag.Attribs[i].Name);
+         if ((!name.empty()) and (name.front() IS '$')) name.remove_prefix(1);
+         if (iequals("select", name)) {
+            std::string result;
+            bool unused;
+            auto err = xq_eval_helper(this, m_xml, &Tag, Tag.Attribs[i].Value,
+               XQEval::STRING, result, unused);
+            if (err != ERR::Okay) {
+               log.warning("<print select=\"%s\"> failed.", Tag.Attribs[i].Value.c_str());
+               Self->Error = err;
+               return;
+            }
+            insert_text(Self, m_stream, m_index, result, (m_style.options & FSO::PREFORMAT) != FSO::NIL);
+            return;
+         }
+      }
+
       auto tagname = Tag.Attribs[1].Name.c_str();
       if (*tagname IS '$') tagname++;
 
       if (iequals("value", tagname)) {
-         insert_text(Self, m_stream, m_index, Tag.Attribs[1].Value, (m_style.options & FSO::PREFORMAT) != FSO::NIL);
+         // If the attribute contains AVT fragments, expand them via XQuery.  Otherwise preserve existing behaviour.
+         const auto &raw = Tag.Attribs[1].Value;
+         bool has_avt = (raw.find('{') != std::string::npos) or (raw.find('}') != std::string::npos);
+
+         if (has_avt) {
+            std::string expanded;
+            if (auto err = xq_expand_avt(this, m_xml, &Tag, raw, expanded); err != ERR::Okay) {
+               log.warning("<print value=\"%s\"> AVT expansion failed.", raw.c_str());
+               Self->Error = err;
+               return;
+            }
+            insert_text(Self, m_stream, m_index, expanded, (m_style.options & FSO::PREFORMAT) != FSO::NIL);
+         }
+         else insert_text(Self, m_stream, m_index, raw, (m_style.options & FSO::PREFORMAT) != FSO::NIL);
       }
       else if (iequals("src", Tag.Attribs[1].Name)) {
          // This option is only supported in unrestricted mode
@@ -3570,7 +4154,9 @@ void parser::tag_repeat(XTag &Tag)
    pf::Log log(__FUNCTION__);
 
    std::string index_name;
-   int loop_start = 0, loop_end = 0, count = 0, step  = 0;
+   int loop_start = 0, loop_end = 0, count = 0, step = 0;
+   bool have_end = false;
+   bool have_count = false;
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
       if (iequals("start", Tag.Attribs[i].Name)) {
@@ -3583,9 +4169,11 @@ void parser::tag_repeat(XTag &Tag)
             log.warning("Invalid count value of %d", count);
             return;
          }
+         have_count = true;
       }
       else if (iequals("end", Tag.Attribs[i].Name)) {
-         loop_end = std::stoi(Tag.Attribs[i].Value) + 1;
+         loop_end = std::stoi(Tag.Attribs[i].Value);
+         have_end = true;
       }
       else if (iequals("step", Tag.Attribs[i].Name)) {
          step = std::stoi(Tag.Attribs[i].Value);
@@ -3599,7 +4187,7 @@ void parser::tag_repeat(XTag &Tag)
    }
 
    if (!step) {
-      if (loop_end < loop_start) step = -1;
+      if ((have_end) and (loop_end < loop_start)) step = -1;
       else step = 1;
    }
 
@@ -3608,7 +4196,12 @@ void parser::tag_repeat(XTag &Tag)
    //
    // If the user set both count and end attributes, the count attribute will be given the priority here.
 
-   if (count > 0) loop_end = loop_start + (count * step);
+   if (have_count) {
+      if (count IS 0) return;
+      loop_end = loop_start + (count * step);
+      have_end = true;
+   }
+   else if (!have_end) return;
 
    if (step > 0) {
       if (loop_end < loop_start) step = -step;
@@ -3617,17 +4210,37 @@ void parser::tag_repeat(XTag &Tag)
 
    log.traceBranch("Performing a repeat loop (start: %d, end: %d, step: %d).", loop_start, loop_end, step);
 
-   auto save_index = m_loop_index;
+   auto loop_count = compute_numeric_loop_count(loop_start, loop_end, step);
+   if (loop_count <= 0) return;
 
-   while (loop_start < loop_end) {
-      if (index_name.empty()) m_loop_index = loop_start;
-      else acSetKey(Self, index_name.c_str(), std::to_string(loop_start).c_str());
+   loop_frame frame;
+   frame.index = loop_start;
+   frame.iteration = 0;
+   frame.start = loop_start;
+   frame.end = loop_end;
+   frame.step = step;
+   frame.count = loop_count;
+   frame.count_known = true;
+   frame.end_known = true;
+   frame.alias_name = index_name;
 
-      parse_tags(Tag.Children);
-      loop_start += step;
+   loop_guard loop(this, frame);
+
+   while (auto active_loop = loop.frame()) {
+      if (!loop_index_in_range(active_loop->index, active_loop->end, active_loop->step)) break;
+
+      auto result = parse_tags(Tag.Children);
+      if (Self->Error != ERR::Okay) break;
+      if ((result & TRF::BREAK) != TRF::NIL) break;
+
+      active_loop = loop.frame();
+      if (!active_loop) break;
+
+      active_loop->index += active_loop->step;
+      active_loop->iteration++;
+
+      if ((result & TRF::CONTINUE) != TRF::NIL) continue;
    }
-
-   if (index_name.empty()) m_loop_index = save_index;
 
    log.trace("insert_child:","Repeat loop ends.");
 }

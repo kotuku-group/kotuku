@@ -1,0 +1,177 @@
+-- $TIRI
+-- Flute tests for Stage 1 XQuery integration in RIPL documents.
+--
+-- Exercises:
+--   * if@test, elseif@test, while@test
+--   * print@select
+--   * print@value with {...} attribute value templates
+--   * parse@select
+-- and keeps the fixture focused on the Stage 1 XQuery surface only.
+
+@BeforeAll function init(State)
+   global glDocFolder = State.folder
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Helpers
+
+function contains(Haystack:str, Needle:str)
+   -- Needles in this file contain only alphanumerics, hyphens, spaces, '=' and braces — safe as literal regex.
+   return regex.new(Needle).test(Haystack)
+end
+
+function feedAndRead(Content:str, PageWidth:num)
+   scene = obj.new('VectorScene', { pageWidth=PageWidth ?? 1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp })
+   check doc.acDataFeed(nil, DATA_XML, Content)
+   err, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed: ' .. mSys.GetErrorMsg(err))
+   assert(xml_str, 'ReadContent(DATA_XML) returned nil')
+   return xml_str
+end
+
+function feedExpectError(Content:str, PageWidth:num)
+   scene = obj.new('VectorScene', { pageWidth=PageWidth ?? 1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp })
+   err = doc.acDataFeed(nil, DATA_XML, Content)
+   if err != ERR_Okay then return err end
+   err, _ = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   return err
+end
+
+function loadAndRead(Path:str)
+   scene = obj.new('VectorScene', { pageWidth=1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp, path=glDocFolder .. Path })
+   err, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for ' .. Path .. ': ' .. mSys.GetErrorMsg(err))
+   return xml_str
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Fixture-based smoke test covering the full Stage 1 surface.
+
+@Test function StageOneFixture()
+   xml_str = loadAndRead('xquery_stage1.rpl')
+
+   -- if@test true branch
+   assert(contains(xml_str, 'IF-TEST-TRUE'), 'if@test true branch must emit IF-TEST-TRUE')
+   assert(not contains(xml_str, 'IF-TEST-FAIL'), 'if@test false branch must not emit IF-TEST-FAIL')
+
+   -- elseif@test branch
+   assert(contains(xml_str, 'ELSEIF-TEST-TRUE'), 'elseif@test true branch must emit ELSEIF-TEST-TRUE')
+   assert(not contains(xml_str, 'ELSEIF-FAIL'), 'elseif@test false branches must not emit failure markers')
+
+   -- print@select
+   assert(contains(xml_str, 'a-b-c'), 'print@select must evaluate XQuery and emit joined string')
+   assert(contains(xml_str, 'PAGE-NAME-Index'), 'print@select must be able to query the active XML document context')
+
+   -- print@value with AVT
+   assert(contains(xml_str, 'VAL 3'), 'print@value AVT must emit "VAL 3"')
+
+   -- parse@select
+   assert(contains(xml_str, 'PARSE-SELECT-INJECTED'), 'parse@select must inject parsed content')
+
+   -- while@test with false() must not emit body
+   assert(not contains(xml_str, 'WHILE-SHOULD-NOT-APPEAR'), 'while@test false must skip the loop body')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- print@select evaluates an XQuery expression and inserts its string value.
+
+@Test function PrintSelect()
+   xml_str = feedAndRead('<body/><page><p><print select="upper-case(\'hello\')"/></p></page>')
+   assert(contains(xml_str, 'HELLO'), 'print@select must upper-case "hello" via XQuery, got: ' .. xml_str)
+end
+
+@Test function PrintSelectDocumentContext()
+   xml_str = feedAndRead('<body/><page name="Ctx"><p><print select="string((/page/@name)[1])"/></p></page>')
+   assert(contains(xml_str, 'Ctx'),
+      'print@select must evaluate against the active XML context, got: ' .. xml_str)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- print@value supports `{...}` AVT fragments.
+
+@Test function PrintValueAVT()
+   xml_str = feedAndRead('<body/><page><p><print value="sum={1 + 2 + 3}"/></p></page>')
+   assert(contains(xml_str, 'sum=6'), 'print@value AVT must evaluate embedded XQuery, got: ' .. xml_str)
+end
+
+@Test function PrintValueAVTDocumentContext()
+   xml_str = feedAndRead('<body/><page name="AVT"><p><print value="page={string((/page/@name)[1])}"/></p></page>')
+   assert(contains(xml_str, 'page=AVT'),
+      'print@value AVT must evaluate embedded XQuery against the active XML context, got: ' .. xml_str)
+end
+
+@Test function PrintValueEscapedBraces()
+   -- `{{` and `}}` must be preserved as literal braces.
+   xml_str = feedAndRead('<body/><page><p><print value="literal {{ and }} braces"/></p></page>')
+   assert(regex.new('literal \\{ and \\} braces').test(xml_str),
+      'print@value AVT must treat {{/}} as literal braces, got: ' .. xml_str)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- if/elseif/while @test
+
+@Test function IfTestTrue()
+   xml_str = feedAndRead(
+      '<body/><page><if test="2 gt 1"><p>HIT-TRUE</p></if><else><p>HIT-FALSE</p></else></page>')
+   assert(contains(xml_str, 'HIT-TRUE'), 'if@test=2 gt 1 must take the true branch')
+   assert(not contains(xml_str, 'HIT-FALSE'), 'if@test=2 gt 1 must not run the else branch')
+end
+
+@Test function IfTestFalseWithElseif()
+   xml_str = feedAndRead(
+      '<body/><page>'
+      .. '<if test="1 gt 2"><p>FAIL-IF</p></if>'
+      .. '<elseif test="starts-with(\'warning\', \'warn\')"><p>HIT-ELSEIF</p></elseif>'
+      .. '<else><p>FAIL-ELSE</p></else>'
+      .. '</page>')
+   assert(contains(xml_str, 'HIT-ELSEIF'), 'elseif@test must match')
+   assert(not contains(xml_str, 'FAIL-IF'), 'if@test false branch must not run')
+   assert(not contains(xml_str, 'FAIL-ELSE'), 'else must not run when elseif matches')
+end
+
+@Test function IfTestDocumentContext()
+   xml_str = feedAndRead(
+      '<body/><page name="Ctx"><if test="exists(/page[@name=\'Ctx\'])"><p>CTX-HIT</p></if></page>')
+   assert(contains(xml_str, 'CTX-HIT'),
+      'if@test must evaluate against the active XML context')
+end
+
+@Test function WhileTestFalseSkipsBody()
+   xml_str = feedAndRead(
+      '<body/><page><while test="false()"><p>SHOULD-NOT-EMIT</p></while></page>')
+   assert(not contains(xml_str, 'SHOULD-NOT-EMIT'), 'while@test=false() must not emit the body')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- parse@select
+
+@Test function ParseSelect()
+   xml_str = feedAndRead(
+      '<body/><page><parse select="\'&lt;p&gt;PARSED-FROM-XQUERY&lt;/p&gt;\'"/></page>')
+   assert(contains(xml_str, 'PARSED-FROM-XQUERY'),
+      'parse@select must evaluate XQuery and parse the result as XML, got: ' .. xml_str)
+end
+
+@Test function ParseSelectDocumentContext()
+   xml_str = feedAndRead(
+      '<body/><page name="ParseCtx"><parse select="concat(\'&lt;p&gt;\', string((/page/@name)[1]), \'&lt;/p&gt;\')"/></page>')
+   assert(contains(xml_str, 'ParseCtx'),
+      'parse@select must evaluate against the active XML context, got: ' .. xml_str)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Failure cases
+
+@Test function MalformedTestExpression()
+   -- A malformed XQuery expression in test must fail document parsing, not silently fall through.
+   err = feedExpectError(
+      '<body/><page><if test="this is not valid xquery @@"><p>SHOULD-NOT-HIT</p></if>' ..
+      '<else><p>MALFORMED-FELL-THROUGH</p></else></page>')
+   assert(err != ERR_Okay, 'Malformed test expression must fail parsing')
+end

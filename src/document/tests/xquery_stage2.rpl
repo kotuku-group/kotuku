@@ -1,0 +1,50 @@
+<?xml version="1.0"?>
+<!DOCTYPE rpl PUBLIC "-//ROCKLYTE//DTD RPL 1.0//EN">
+
+<info>
+ <title>XQuery Stage 2 Tests</title>
+ <author>Paul Manias</author>
+ <keywords>xquery, test, stage2</keywords>
+ <description>Stage 2 runtime-scope XQuery tests for params, args, vars, meta, layout and loop bindings.</description>
+</info>
+
+<body face="Noto Sans" font-size="10pt"/>
+
+<template name="outer">
+  <p><print value="ARG-OUTER {($args?name, 'missing')[1]}"/></p>
+  <inner name="Inner Arg"/>
+  <p><print value="VARS-VIS {$vars?username}"/></p>
+</template>
+
+<template name="inner">
+  <p><print value="ARG-INNER {($args?name, 'missing')[1]}"/></p>
+</template>
+
+<page name="Stage2" next-page="NextPage" prev-page="PrevPage">
+
+<p>XQuery Stage 2</p>
+
+<if test="$params?mode = 'preview'">
+  <p>PARAM-MODE-PREVIEW</p>
+</if>
+
+<if test="$vars?username = 'alice'">
+  <p>VAR-USERNAME-ALICE</p>
+</if>
+
+<p><print select="concat($meta?title, ' / ', $meta?current-page, ' / ', $layout?view-width)"/></p>
+
+<parse select="concat('&lt;p&gt;PARSE-', $vars?username, '&lt;/p&gt;')"/>
+
+<outer name="Outer Arg"/>
+
+<repeat count="3">
+  <if test="$loop?index lt 2">
+    <p><print value="LOOP-TEST {$loop?index}"/></p>
+  </if>
+  <p><print value="LOOP-VALUE {$loop?index}"/></p>
+</repeat>
+
+<p><print value="MISSING {($params?does-not-exist, 'fallback')[1]}"/></p>
+
+</page>

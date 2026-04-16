@@ -380,7 +380,9 @@ static ERR load_doc(extDocument *Self, std::string Path, bool Unload, ULD Unload
 
          parse.process_page(*xml);
 
-         if (Self->initialised()) {
+         auto process_error = Self->Error;
+
+         if ((Self->initialised()) and (process_error IS ERR::Okay)) {
             Self->UpdatingLayout = true;
             redraw(Self, true);
          }
@@ -388,7 +390,8 @@ static ERR load_doc(extDocument *Self, std::string Path, bool Unload, ULD Unload
          #ifdef DBG_STREAM
             print_stream(Self->Stream);
          #endif
-         return Self->Error;
+         if (process_error != ERR::Okay) return process_error;
+         else return Self->Error;
       }
       else {
          error_dialog("Document Load Error", std::string("Failed to load document file '") + Path + "'");

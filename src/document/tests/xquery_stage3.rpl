@@ -1,0 +1,56 @@
+<?xml version="1.0"?>
+<!DOCTYPE rpl PUBLIC "-//ROCKLYTE//DTD RPL 1.0//EN">
+
+<info>
+ <title>XQuery Stage 3 Tests</title>
+ <author>Paul Manias</author>
+ <keywords>xquery, test, stage3</keywords>
+ <description>Stage 3 runtime loop-frame tests for repeat and while execution, nested loop restoration and loop control.</description>
+</info>
+
+<body face="Noto Sans" font-size="10pt"/>
+
+<page name="Stage3">
+
+<p>XQuery Stage 3</p>
+
+<repeat start="2" end="6">
+  <p><print value="REPEAT-FRAME idx={$loop?index} iter={$loop?iteration} start={$loop?start} step={$loop?step} count={$loop?count} end={$loop?end}"/></p>
+</repeat>
+
+<repeat count="2">
+  <p><print value="OUTER-BEFORE {$loop?index}"/></p>
+  <repeat count="2">
+    <p><print value="INNER {$loop?index}"/></p>
+  </repeat>
+  <p><print value="OUTER-AFTER {$loop?index}"/></p>
+</repeat>
+
+<p><print value="OUTSIDE-LOOP {($loop?index, 'missing')[1]}"/></p>
+
+<repeat count="5">
+  <if test="$loop?index = 1"><continue/></if>
+  <if test="$loop?index = 3"><break/></if>
+  <p><print value="REPEAT-CONTROL {$loop?index}"/></p>
+</repeat>
+<p>REPEAT-CONTROL-AFTER</p>
+
+<while test="$loop?index lt 3">
+  <if test="$loop?index = 1">
+    <p>WHILE-IF-HIT</p>
+  </if>
+  <p><print value="WHILE-XQ {$loop?index}"/></p>
+</while>
+
+<while test="$loop?index lt 5">
+  <if test="$loop?index = 1"><continue/></if>
+  <if test="$loop?index = 3"><break/></if>
+  <p><print value="WHILE-CONTROL {$loop?index}"/></p>
+</while>
+<p>WHILE-CONTROL-AFTER</p>
+
+<repeat start="3" end="0" step="-1">
+  <p><print value="DESC {$loop?index}"/></p>
+</repeat>
+
+</page>

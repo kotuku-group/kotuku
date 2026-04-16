@@ -32,6 +32,7 @@ that is distributed with this package.  Please refer to it for further informati
 
 #include "defs/hashes.h"
 #include "../link/unicode.h"
+#include <kotuku/modules/xquery.h>
 
 using BYTECODE = uint32_t;
 using CELL_ID = uint32_t;
