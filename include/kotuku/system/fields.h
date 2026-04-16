@@ -1005,6 +1005,7 @@
 #define FID_NetworkFilter 0xb59066b5LL
 #define FID_GatewayFilter 0xa69f31fdLL
 #define FID_ProxyName 0x9f043008LL
+#define FID_ResolveVariable 0x4013102bLL
 #define FID_Server 0x1b84769cLL
 #define FID_ServerPort 0xa0042a41LL
 #define FID_Enabled 0x6a23e990LL

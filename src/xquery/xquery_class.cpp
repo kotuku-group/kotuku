@@ -383,6 +383,11 @@ static ERR XQUERY_Evaluate(extXQuery *Self, struct xq::Evaluate *Args)
 
 static ERR XQUERY_Free(extXQuery *Self)
 {
+   if (Self->ResolveVariable.isScript()) {
+      UnsubscribeAction(Self->ResolveVariable.Context, AC::Free);
+      Self->ResolveVariable.clear();
+   }
+
    Self->~extXQuery();
    return ERR::Okay;
 }
@@ -894,6 +899,46 @@ static ERR SET_Path(extXQuery *Self, CSTRING Value)
 /*********************************************************************************************************************
 
 -FIELD-
+ResolveVariable: Callback function for resolving unknown variables.
+
+This callback is invoked when an XQuery expression refers to a variable that has not been declared in the
+XQuery expression or XQuery module.  Variable resolution precedence is:
+
+<list type="bullet">
+<li>Evaluator-local bindings</li>
+<li>#SetKey() string variables</li>
+<li>Declared/internal XQuery variables</li>
+<li>This callback for otherwise unresolved names</li>
+</list>
+
+The C++ prototype is `ERR ResolveVariable(objXQuery *Query, std::string_view Name, XPathValue *Result, APTR Meta)`.
+Script callbacks are not supported.
+
+Return `ERR::Okay` when the variable is recognised and `Result` has been populated, `ERR::Search` when the name is
+unknown, or another error code to abort evaluation.
+
+*********************************************************************************************************************/
+
+static ERR GET_ResolveVariable(extXQuery *Self, FUNCTION *Value)
+{
+   *Value = Self->ResolveVariable;
+   return ERR::Okay;
+}
+
+static ERR SET_ResolveVariable(extXQuery *Self, FUNCTION *Value)
+{
+   if (Value) {
+      if (not Value->isC()) return ERR::NoSupport;
+      Self->ResolveVariable = *Value;
+   }
+   else Self->ResolveVariable.clear();
+
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 Result: Returns the results of the most recently executed query.
 
 Following the successful execution of an XQuery expression, the results can be retrieved as an XPathValue object
@@ -1068,17 +1113,17 @@ static ERR GET_Variables(extXQuery *Self, pf::vector<std::string> **Value)
 #include "xquery_class_def.cpp"
 
 static const FieldArray clFields[] = {
-   // Virtual fields
-   { "ErrorMsg",     FDF_STRING|FDF_R,         GET_ErrorMsg },
-   { "FeatureFlags", FDF_INTFLAGS|FDF_R,       GET_FeatureFlags, nullptr, &clXQueryXQF },
-   { "MemoryUsage",  FDF_INT64|FDF_R,          GET_MemoryUsage },
-   { "Path",         FDF_STRING|FDF_RW,        GET_Path, SET_Path },
-   { "Result",       FDF_PTR|FDF_STRUCT|FDF_R, GET_Result, nullptr, "XPathValue" },
-   { "ResultString", FDF_STRING|FDF_R,         GET_ResultString },
-   { "ResultType",   FDF_INT|FDF_LOOKUP|FDF_R, GET_ResultType, nullptr, &clXQueryXPVT },
-   { "Statement",    FDF_STRING|FDF_RW,        GET_Statement, SET_Statement },
-   { "Functions",    FDF_ARRAY|FDF_CPP|FDF_STRING|FDF_R, GET_Functions },
-   { "Variables",    FDF_ARRAY|FDF_CPP|FDF_STRING|FDF_R, GET_Variables },
+   { "ErrorMsg",        FDF_VIRTUAL|FDF_STRING|FDF_R,         GET_ErrorMsg },
+   { "MemoryUsage",     FDF_VIRTUAL|FDF_INT64|FDF_R,          GET_MemoryUsage },
+   { "Path",            FDF_VIRTUAL|FDF_STRING|FDF_RW,        GET_Path, SET_Path },
+   { "Result",          FDF_VIRTUAL|FDF_PTR|FDF_STRUCT|FDF_R, GET_Result, nullptr, "XPathValue" },
+   { "ResultString",    FDF_VIRTUAL|FDF_STRING|FDF_R,         GET_ResultString },
+   { "Statement",       FDF_VIRTUAL|FDF_STRING|FDF_RW,        GET_Statement, SET_Statement },
+   { "FeatureFlags",    FDF_VIRTUAL|FDF_INTFLAGS|FDF_R,       GET_FeatureFlags, nullptr, &clXQueryXQF },
+   { "ResultType",      FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_R, GET_ResultType, nullptr, &clXQueryXPVT },
+   { "ResolveVariable", FDF_VIRTUAL|FDF_FUNCTION|FDF_RW,      GET_ResolveVariable, SET_ResolveVariable },
+   { "Functions",       FDF_VIRTUAL|FDF_ARRAY|FDF_CPP|FDF_STRING|FDF_R, GET_Functions },
+   { "Variables",       FDF_VIRTUAL|FDF_ARRAY|FDF_CPP|FDF_STRING|FDF_R, GET_Variables },
    END_FIELD
 };
 

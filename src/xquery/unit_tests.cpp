@@ -7,8 +7,14 @@
 #include "../xml/xml.h"
 
 #include <iostream>
+#include <cmath>
 #include <sstream>
 #include <string>
+
+//********************************************************************************************************************
+// Forward declarations for implementation-local helpers compiled into the same translation unit.
+
+static ERR build_query(extXQuery *Self);
 
 //********************************************************************************************************************
 // Test helper functions
@@ -36,6 +42,136 @@ static const XPathNode * expression_body(const std::unique_ptr<XPathNode> &node)
    if (not current) return nullptr;
    if (current->type IS XQueryNodeType::EXPRESSION) return current->get_child_safe(0);
    return current;
+}
+
+//********************************************************************************************************************
+
+struct resolve_variable_test_context {
+   int call_count = 0;
+   ankerl::unordered_dense::map<std::string, XPathValue> values;
+   ankerl::unordered_dense::map<std::string, ERR> errors;
+};
+
+struct search_result_context {
+   std::vector<std::string> ids;
+};
+
+static XPathValue make_string_value(std::string_view Value)
+{
+   XPathValue result(XPVT::String);
+   result.StringValue.assign(Value);
+   return result;
+}
+
+static XPathValue make_number_value(double Value)
+{
+   XPathValue result(XPVT::Number);
+   result.NumberValue = Value;
+   return result;
+}
+
+static XPathValue make_boolean_value(bool Value)
+{
+   XPathValue result(XPVT::Boolean);
+   result.NumberValue = Value ? 1.0 : 0.0;
+   return result;
+}
+
+static XPathValue make_map_value(std::string_view Key, const XPathValue &Value)
+{
+   XPathValue result(XPVT::Map);
+   result.map_storage = std::make_shared<XPathMapStorage>();
+   XPathMapEntry entry;
+   entry.key.assign(Key);
+   entry.value.items.push_back(Value);
+   result.map_storage->entries.push_back(std::move(entry));
+   return result;
+}
+
+static XPathValue make_array_value(std::initializer_list<XPathValue> Values)
+{
+   XPathValue result(XPVT::Array);
+   result.array_storage = std::make_shared<XPathArrayStorage>();
+   for (const auto &value : Values) {
+      XPathValueSequence member;
+      member.items.push_back(value);
+      result.array_storage->members.push_back(std::move(member));
+   }
+   return result;
+}
+
+static ERR resolve_variable_test_callback(objXQuery *Query, std::string_view Name, XPathValue *Result, APTR Meta)
+{
+   auto &context = *(resolve_variable_test_context *)Meta;
+   context.call_count++;
+
+   std::string name(Name);
+
+   if (auto error = context.errors.find(name); error != context.errors.end()) {
+      return error->second;
+   }
+
+   if (auto value = context.values.find(name); value != context.values.end()) {
+      *Result = value->second;
+      return ERR::Okay;
+   }
+
+   return ERR::Search;
+}
+
+static std::string tag_attribute_value(extXML *XML, int TagID, std::string_view AttributeName)
+{
+   if (not XML) return std::string();
+
+   XTag *tag = XML->getTag(TagID);
+   if (not tag) return std::string();
+
+   for (const auto &attrib : tag->Attribs) {
+      if (attrib.Name IS AttributeName) return attrib.Value;
+   }
+
+   return std::string();
+}
+
+static ERR collect_search_result(extXML *XML, int TagID, CSTRING Attrib, APTR Meta)
+{
+   auto &context = *(search_result_context *)Meta;
+   context.ids.push_back(tag_attribute_value(XML, TagID, "id"));
+   return ERR::Okay;
+}
+
+static bool compile_query_for_test(extXQuery &Query, std::string_view Statement, FUNCTION ResolveVariable = FUNCTION())
+{
+   Query.Statement.assign(Statement);
+   Query.ResolveVariable = ResolveVariable;
+   Query.ParseResult = CompiledXQuery();
+   Query.ModuleCache.reset();
+   Query.ErrorMsg.clear();
+   Query.StaleBuild = true;
+   return build_query(&Query) IS ERR::Okay;
+}
+
+static bool evaluate_query_text(extXQuery &Query, std::string_view Statement, XPathVal &Result,
+   resolve_variable_test_context *Context = nullptr)
+{
+   FUNCTION callback;
+   if (Context) callback = C_FUNCTION(resolve_variable_test_callback, Context);
+
+   if (not compile_query_for_test(Query, Statement, callback)) return false;
+
+   XPathEvaluator evaluator(&Query, nullptr, Query.ParseResult.expression.get(), &Query.ParseResult);
+   return evaluator.evaluate_xpath_expression(*Query.ParseResult.expression.get(), &Result) IS ERR::Okay;
+}
+
+static ERR search_query_text(extXQuery &Query, extXML *XML, std::string_view Statement,
+   resolve_variable_test_context *ResolveContext, search_result_context &SearchResults)
+{
+   Query.Callback = C_FUNCTION(collect_search_result, &SearchResults);
+   FUNCTION resolver = ResolveContext ? C_FUNCTION(resolve_variable_test_callback, ResolveContext) : FUNCTION();
+   if (not compile_query_for_test(Query, Statement, resolver)) return ERR::Syntax;
+
+   XPathEvaluator evaluator(&Query, XML, Query.ParseResult.expression.get(), &Query.ParseResult);
+   return evaluator.find_tag(*Query.ParseResult.expression.get(), 0);
 }
 
 //********************************************************************************************************************
@@ -352,6 +488,212 @@ static void test_parser_operator_cache_population()
    test_assert(flags.unary_negate_cached, "Unary operator '-' cache", "Parser should cache negation operator kind");
 }
 
+//********************************************************************************************************************
+// ResolveVariable callback integration tests.
+
+static void test_resolve_variable_callback()
+{
+   pf::Log log("ResolveVariableTests");
+
+   {
+      extXQuery query;
+      resolve_variable_test_context context;
+      context.values.insert_or_assign("city", make_string_value("London"));
+
+      XPathVal result;
+      bool ok = evaluate_query_text(query, "concat($city, '-', $city)", result, &context);
+
+      test_assert(ok, "ResolveVariable string callback", "String callback-backed variables should evaluate successfully");
+      if (ok) {
+         test_assert(result.to_string() IS "London-London", "ResolveVariable string result",
+            "String callback should supply the requested variable value");
+      }
+      test_assert(context.call_count IS 1, "ResolveVariable positive cache",
+         "Repeated variable references in one evaluation should hit the callback only once");
+   }
+
+   {
+      extXQuery query;
+      resolve_variable_test_context context;
+      context.values.insert_or_assign("price", make_number_value(12.5));
+
+      XPathVal result;
+      bool ok = evaluate_query_text(query, "$price * 2", result, &context);
+
+      test_assert(ok, "ResolveVariable number callback", "Numeric callback-backed variables should evaluate successfully");
+      if (ok) {
+         test_assert(std::abs(result.to_number() - 25.0) < 0.0001, "ResolveVariable numeric result",
+            "Numeric callback should preserve typed arithmetic semantics");
+      }
+   }
+
+   {
+      extXQuery query;
+      resolve_variable_test_context context;
+      context.values.insert_or_assign("enabled", make_boolean_value(true));
+
+      XPathVal result;
+      bool ok = evaluate_query_text(query, "if ($enabled) then 'yes' else 'no'", result, &context);
+
+      test_assert(ok, "ResolveVariable boolean callback", "Boolean callback-backed variables should evaluate successfully");
+      if (ok) {
+         test_assert(result.to_string() IS "yes", "ResolveVariable boolean result",
+            "Boolean callback should participate in conditional evaluation");
+      }
+   }
+
+   {
+      extXQuery query;
+      resolve_variable_test_context context;
+      context.values.insert_or_assign("cfg", make_map_value("mode", make_string_value("strict")));
+
+      XPathVal result;
+      bool ok = evaluate_query_text(query,
+         "declare namespace map = 'http://www.w3.org/2005/xpath-functions/map'; string(map:get($cfg, 'mode'))",
+         result, &context);
+
+      test_assert(ok, "ResolveVariable map callback", "Map callback-backed variables should evaluate successfully");
+      if (ok) {
+         test_assert(result.to_string() IS "strict", "ResolveVariable map result",
+            "Map callback should preserve composite map values");
+      }
+   }
+
+   {
+      extXQuery query;
+      resolve_variable_test_context context;
+      context.values.insert_or_assign("items",
+         make_array_value({ make_string_value("red"), make_string_value("green"), make_string_value("blue") }));
+
+      XPathVal result;
+      bool ok = evaluate_query_text(query,
+         "declare namespace array = 'http://www.w3.org/2005/xpath-functions/array'; string-join($items?*, ',')",
+         result, &context);
+
+      test_assert(ok, "ResolveVariable array callback", "Array callback-backed variables should evaluate successfully");
+      if (ok) {
+         test_assert(result.to_string() IS "red,green,blue", "ResolveVariable array result",
+            "Array callback should preserve composite array members");
+      }
+   }
+
+   {
+      extXQuery query;
+      resolve_variable_test_context context;
+      context.values.insert_or_assign("city", make_string_value("Ignored"));
+      query.Variables["city"] = "Paris";
+
+      XPathVal result;
+      bool ok = evaluate_query_text(query, "$city", result, &context);
+
+      test_assert(ok, "ResolveVariable SetKey precedence", "SetKey variables should resolve before the callback");
+      if (ok) {
+         test_assert(result.to_string() IS "Paris", "ResolveVariable SetKey value",
+            "SetKey should win over the callback for matching variable names");
+      }
+      test_assert(context.call_count IS 0, "ResolveVariable SetKey bypass",
+         "SetKey variables should not invoke the callback");
+   }
+
+   {
+      extXQuery query;
+      resolve_variable_test_context context;
+      context.values.insert_or_assign("city", make_string_value("Ignored"));
+
+      XPathVal result;
+      bool ok = evaluate_query_text(query, "let $city := 'Rome' return $city", result, &context);
+
+      test_assert(ok, "ResolveVariable local precedence", "Local FLWOR variables should resolve before the callback");
+      if (ok) {
+         test_assert(result.to_string() IS "Rome", "ResolveVariable local value",
+            "Local FLWOR bindings should override the callback");
+      }
+      test_assert(context.call_count IS 0, "ResolveVariable local bypass",
+         "Local FLWOR bindings should not invoke the callback");
+   }
+
+   {
+      extXQuery query;
+      resolve_variable_test_context context;
+      context.values.insert_or_assign("city", make_string_value("Ignored"));
+
+      XPathVal result;
+      bool ok = evaluate_query_text(query, "declare variable $city := 'Berlin'; $city", result, &context);
+
+      test_assert(ok, "ResolveVariable declared precedence", "Declared prolog variables should resolve before the callback");
+      if (ok) {
+         test_assert(result.to_string() IS "Berlin", "ResolveVariable declared value",
+            "Declared prolog variables should override the callback");
+      }
+      test_assert(context.call_count IS 0, "ResolveVariable declared bypass",
+         "Declared prolog variables should not invoke the callback");
+   }
+
+   {
+      auto xml = pf::Create<objXML>({ fl::Statement("<root><item id='a'/><item id='b'/><item id='c'/></root>") });
+      bool xml_ok = xml.ok() and (*xml);
+      test_assert(xml_ok, "ResolveVariable search XML setup", "Search integration test requires a valid XML document");
+
+      if (xml_ok) {
+         extXQuery query;
+         resolve_variable_test_context resolve_context;
+         resolve_context.values.insert_or_assign("wanted", make_string_value("b"));
+         search_result_context search_results;
+
+         auto error = search_query_text(query, (extXML *)*xml, "/root/item[@id = $wanted]",
+            &resolve_context, search_results);
+
+         bool matched = (error IS ERR::Okay) and (search_results.ids.size() IS 1) and (search_results.ids[0] IS "b");
+         test_assert(matched, "ResolveVariable search callback",
+            "Search() evaluation should accept callback-backed variables inside predicates");
+         test_assert(resolve_context.call_count IS 1, "ResolveVariable search cache",
+            "Search() should still use evaluator-local callback caching");
+      }
+   }
+
+   {
+      extXQuery query;
+      resolve_variable_test_context context;
+
+      XPathVal result;
+      bool ok = evaluate_query_text(query, "$counter + $counter", result, &context);
+      test_assert(not ok, "ResolveVariable missing variable failure",
+         "Unknown callback-backed variables should fail when the callback reports ERR::Search");
+      test_assert(context.call_count IS 1, "ResolveVariable missing cache",
+         "Missing callback-backed variables should be cached as misses within one evaluation");
+   }
+
+   {
+      extXQuery query;
+      resolve_variable_test_context context;
+      context.errors.insert_or_assign("explode", ERR::AccessObject);
+
+      XPathVal result;
+      bool ok = evaluate_query_text(query, "$explode", result, &context);
+      test_assert(not ok, "ResolveVariable callback error", "Callback failures should abort evaluation");
+      test_assert(query.ParseResult.error_msg.find("ResolveVariable callback failed") != std::string::npos,
+         "ResolveVariable callback error message",
+         "Callback failures should report a specific diagnostic");
+   }
+
+   {
+      extXQuery query;
+      resolve_variable_test_context context;
+      context.values.insert_or_assign("city", make_string_value("Lisbon"));
+
+      XPathVal first_result;
+      XPathVal second_result;
+
+      bool first_ok = evaluate_query_text(query, "concat($city, '')", first_result, &context);
+      bool second_ok = evaluate_query_text(query, "concat($city, '')", second_result, &context);
+
+      test_assert(first_ok and second_ok, "ResolveVariable per-evaluation reset",
+         "Separate evaluations should each resolve callback-backed variables successfully");
+      test_assert(context.call_count IS 2, "ResolveVariable cache lifetime",
+         "Callback caches must be evaluator-local and not leak across evaluations");
+   }
+}
+
 static void test_parser_map_array_lookup_nodes()
 {
    pf::Log log("ParserMapArrayNodes");
@@ -470,20 +812,27 @@ static void test_prolog_in_xpath()
 
 //********************************************************************************************************************
 
-static void run_unit_tests(int &Passed, int &Total)
+static void run_unit_tests(CSTRING Options, int &Passed, int &Total)
 {
    pf::Log log("XQueryTests");
+   std::string_view options = Options ? std::string_view(Options) : std::string_view();
 
    test_count = 0;
    pass_count = 0;
    fail_count = 0;
 
-   test_tokeniser_prolog_keywords();
-   test_tokeniser_map_array_lookup();
-   test_parser_operator_cache_population();
-   test_parser_map_array_lookup_nodes();
-   test_prolog_api();
-   test_prolog_in_xpath();
+   if (options IS "resolve_variable") {
+      test_resolve_variable_callback();
+   }
+   else {
+      test_tokeniser_prolog_keywords();
+      test_tokeniser_map_array_lookup();
+      test_parser_operator_cache_population();
+      test_parser_map_array_lookup_nodes();
+      test_prolog_api();
+      test_prolog_in_xpath();
+      test_resolve_variable_callback();
+   }
 
    Passed = pass_count;
    Total = test_count;

@@ -115,5 +115,5 @@ flute_test (${MOD}_qt_math "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_qt_math.tiri"
 flute_test (${MOD}_qt_maps_arrays "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_qt_maps_arrays.tiri")
 
 if (ENABLE_UNIT_TESTS)
-   flute_test (xquery_unit_tests "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_unit_tests.tiri")
+   flute_test (${MOD}_unit_tests "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_unit_tests.tiri")
 endif ()

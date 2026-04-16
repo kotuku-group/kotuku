@@ -956,6 +956,7 @@ class extXQuery : public objXQuery {
 public:
    ankerl::unordered_dense::map<std::string, std::string> Variables; // XPath variable references
    FUNCTION Callback;
+   FUNCTION ResolveVariable;
    std::string Statement;
    std::string ErrorMsg;
    CompiledXQuery ParseResult; // Result of parsing the query.
@@ -1362,6 +1363,8 @@ class XPathEvaluator : public XPathErrorReporter {
    // Variable storage owned by the evaluator
    ankerl::unordered_dense::map<std::string, XPathVal> variable_storage;
    ankerl::unordered_dense::map<std::string, XPathVal> prolog_variable_cache;
+   ankerl::unordered_dense::map<std::string, XPathVal> resolved_callback_variables;
+   std::unordered_set<std::string> missing_callback_variables;
    std::unordered_set<std::string> variables_in_evaluation;
 
    // Tracks in-scope namespace declarations while building constructed nodes so nested
@@ -1519,7 +1522,7 @@ class XPathEvaluator : public XPathErrorReporter {
       const std::vector<XPathVal> &Args, uint32_t CurrentPrefix, const XPathNode *FuncNode);
    XPathVal evaluate_user_defined_function(const XQueryFunction &Function,
       const std::vector<XPathVal> &Args, uint32_t CurrentPrefix, const XPathNode *FuncNode);
-   bool resolve_variable_value(std::string_view QName, uint32_t CurrentPrefix,
+   ERR resolve_variable_value(std::string_view QName, uint32_t CurrentPrefix,
       XPathVal &OutValue, const XPathNode *ReferenceNode);
 
    public:

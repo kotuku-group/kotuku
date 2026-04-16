@@ -76,7 +76,7 @@ static ERR MODExpunge(void)
 static void MODTest(CSTRING Options, int *Passed, int *Total)
 {
 #ifdef ENABLE_UNIT_TESTS
-   run_unit_tests(*Passed, *Total);
+   run_unit_tests(Options, *Passed, *Total);
 #else
    pf::Log log(__FUNCTION__);
    log.warning("Unit tests are disabled in this build.");
