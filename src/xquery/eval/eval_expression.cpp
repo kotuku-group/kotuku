@@ -284,31 +284,23 @@ static ERR resolve_variable_callback(XPathEvaluator &Evaluator, std::string_view
       return ERR::Search;
    }
 
-   if (Evaluator.query->ResolveVariable.Type IS CALL::SCRIPT) {
-      Evaluator.record_error("ResolveVariable script callbacks are not supported.", ReferenceNode, true);
-      return ERR::NoSupport;
-   }
-
-   if ((Evaluator.query->ResolveVariable.Type != CALL::STD_C) or (not Evaluator.query->ResolveVariable.Routine)) {
-      Evaluator.record_error("ResolveVariable callback is invalid.", ReferenceNode, true);
-      return ERR::Args;
-   }
-
    auto routine = (ERR (*)(objXQuery *, std::string_view, XPathValue *, APTR))Evaluator.query->ResolveVariable.Routine;
 
    XPathValue resolved_public(XPVT::Boolean);
    resolved_public.reset();
 
-   auto error = routine(Evaluator.query, Name, &resolved_public, Evaluator.query->ResolveVariable.Meta);
-   if (error IS ERR::Search) {
-      Evaluator.missing_callback_variables.insert(std::move(cache_key));
-      return ERR::Search;
-   }
-
-   if (error != ERR::Okay) {
-      std::string message = "ResolveVariable callback failed for $" + std::string(Name) + ": " + GetErrorMsg(error);
-      Evaluator.record_error(message, ReferenceNode, true);
-      return error;
+   {
+      pf::SwitchContext ctx(Evaluator.query->ResolveVariable.Context);
+      auto error = routine(Evaluator.query, Name, &resolved_public, Evaluator.query->ResolveVariable.Meta);
+      if (error IS ERR::Search) {
+         Evaluator.missing_callback_variables.insert(std::move(cache_key));
+         return ERR::Search;
+      }
+      else if (error != ERR::Okay) {
+         std::string message = "ResolveVariable callback failed for $" + std::string(Name) + ": " + GetErrorMsg(error);
+         Evaluator.record_error(message, ReferenceNode, true);
+         return error;
+      }
    }
 
    XPathVal resolved_value = clone_xpath_value(resolved_public);

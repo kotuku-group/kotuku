@@ -928,7 +928,7 @@ static ERR GET_ResolveVariable(extXQuery *Self, FUNCTION *Value)
 static ERR SET_ResolveVariable(extXQuery *Self, FUNCTION *Value)
 {
    if (Value) {
-      if (not Self->ResolveVariable.isC()) return ERR::NoSupport;
+      if (not Value->isC()) return ERR::NoSupport;
       Self->ResolveVariable = *Value;
    }
    else Self->ResolveVariable.clear();

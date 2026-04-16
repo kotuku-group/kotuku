@@ -1014,15 +1014,12 @@ header({ path="system/fields", copyright="Paul Manias © 1996-2026" }, function(
     "NetworkFilter",
     "GatewayFilter",
     "ProxyName",
+    "ResolveVariable",
     "Server",
     "ServerPort",
     "Enabled",
     "SSLCertificate",
     "SSLPrivateKey",
     "SSLKeyPassword"
-
-
-
-
     )
 end)

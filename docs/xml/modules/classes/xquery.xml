@@ -289,6 +289,25 @@ if (query.ok()) {
     </field>
 
     <field>
+      <name>ResolveVariable</name>
+      <comment>Callback function for resolving unknown variables.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>FUNCTION</type>
+      <description>
+<p>This callback is invoked when an XQuery expression refers to a variable that has not been declared in the XQuery expression or XQuery module.  Variable resolution precedence is:</p>
+<list type="bullet">
+<li>Evaluator-local bindings</li>
+<li>
+<action>SetKey</action> string variables</li>
+<li>Declared/internal XQuery variables</li>
+<li>This callback for otherwise unresolved names</li>
+</list>
+<p>The C++ prototype is <code>ERR ResolveVariable(objXQuery *Query, std::string_view Name, XPathValue *Result, APTR Meta)</code>. Script callbacks are not supported.</p>
+<p>Return <code>ERR::Okay</code> when the variable is recognised and <code>Result</code> has been populated, <code>ERR::Search</code> when the name is unknown, or another error code to abort evaluation.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Result</name>
       <comment>Returns the results of the most recently executed query.</comment>
       <access read="G">Get</access>
