@@ -56,6 +56,11 @@ struct search_result_context {
    std::vector<std::string> ids;
 };
 
+struct registered_function_test_context {
+   int call_count = 0;
+   std::vector<std::string> names;
+};
+
 static XPathValue make_string_value(std::string_view Value)
 {
    XPathValue result(XPVT::String);
@@ -137,6 +142,20 @@ static ERR collect_search_result(extXML *XML, int TagID, CSTRING Attrib, APTR Me
 {
    auto &context = *(search_result_context *)Meta;
    context.ids.push_back(tag_attribute_value(XML, TagID, "id"));
+   return ERR::Okay;
+}
+
+static ERR registered_function_test_callback(objXQuery *Query, std::string_view Name,
+   const std::vector<XPathValue> &Args, XPathValue &Result, APTR Meta)
+{
+   (void)Query;
+   auto &context = *(registered_function_test_context *)Meta;
+   context.call_count++;
+   context.names.emplace_back(Name);
+
+   if (Args.empty()) return ERR::Args;
+
+   Result = make_number_value(Args[0].to_number() * 2.0);
    return ERR::Okay;
 }
 
@@ -694,6 +713,61 @@ static void test_resolve_variable_callback()
    }
 }
 
+static void test_registered_function_qname_normalisation()
+{
+   pf::Log log("RegisteredFunctionTests");
+
+   {
+      extXQuery query;
+      registered_function_test_context context;
+      FUNCTION callback = C_FUNCTION(registered_function_test_callback, &context);
+      query.RegisteredFunctions["ext:double"] = callback;
+
+      XPathVal result;
+      bool ok = evaluate_query_text(query,
+         "declare namespace ext = 'urn:test'; ext:double(21)",
+         result);
+
+      test_assert(ok, "Registered function prefix lookup",
+         "Prefixed registrations should resolve against canonical QNames");
+      if (ok) {
+         test_assert(std::abs(result.to_number() - 42.0) < 0.0001, "Registered function prefix result",
+            "Prefixed registered functions should evaluate successfully");
+      }
+      test_assert(context.call_count IS 1, "Registered function prefix callback count",
+         "Prefixed registered functions should invoke the callback once");
+      if (context.call_count IS 1) {
+         test_assert(context.names[0] IS "Q{urn:test}double", "Registered function prefix callback name",
+            "Callback should receive the canonical expanded QName");
+      }
+   }
+
+   {
+      extXQuery query;
+      registered_function_test_context context;
+      FUNCTION callback = C_FUNCTION(registered_function_test_callback, &context);
+      query.RegisteredFunctions["double"] = callback;
+
+      XPathVal result;
+      bool ok = evaluate_query_text(query,
+         "declare default function namespace 'urn:test'; double(21)",
+         result);
+
+      test_assert(ok, "Registered function default namespace lookup",
+         "Default-function-namespace registrations should resolve against canonical QNames");
+      if (ok) {
+         test_assert(std::abs(result.to_number() - 42.0) < 0.0001, "Registered function default namespace result",
+            "Default-function-namespace registered functions should evaluate successfully");
+      }
+      test_assert(context.call_count IS 1, "Registered function default namespace callback count",
+         "Default-function-namespace registered functions should invoke the callback once");
+      if (context.call_count IS 1) {
+         test_assert(context.names[0] IS "Q{urn:test}double", "Registered function default namespace callback name",
+            "Callback should receive the canonical expanded QName");
+      }
+   }
+}
+
 static void test_parser_map_array_lookup_nodes()
 {
    pf::Log log("ParserMapArrayNodes");
@@ -824,6 +898,9 @@ static void run_unit_tests(CSTRING Options, int &Passed, int &Total)
    if (options IS "resolve_variable") {
       test_resolve_variable_callback();
    }
+   else if (options IS "registered_function") {
+      test_registered_function_qname_normalisation();
+   }
    else {
       test_tokeniser_prolog_keywords();
       test_tokeniser_map_array_lookup();
@@ -832,6 +909,7 @@ static void run_unit_tests(CSTRING Options, int &Passed, int &Total)
       test_prolog_api();
       test_prolog_in_xpath();
       test_resolve_variable_callback();
+      test_registered_function_qname_normalisation();
    }
 
    Passed = pass_count;

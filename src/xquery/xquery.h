@@ -955,6 +955,7 @@ class XPathParser {
 class extXQuery : public objXQuery {
 public:
    ankerl::unordered_dense::map<std::string, std::string> Variables; // XPath variable references
+   ankerl::unordered_dense::map<std::string, FUNCTION> RegisteredFunctions;
    FUNCTION Callback;
    FUNCTION ResolveVariable;
    std::string Statement;
