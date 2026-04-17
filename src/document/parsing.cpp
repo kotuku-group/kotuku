@@ -484,20 +484,6 @@ TRF parser::parse_tag(XTag &Tag, IPF &Flags)
       return TRF::NIL;
    }
 
-   XTag *object_template = nullptr;
-
-   auto saved_attribs = Tag.Attribs;
-   if (auto err = xq_prepare_attribs(this, Tag); err != ERR::Okay) {
-      Tag.Attribs = saved_attribs;
-      Self->Error = err;
-      return TRF::NIL;
-   }
-
-   auto tagname = Tag.Attribs[0].Name;
-   if (tagname.starts_with('$')) tagname.erase(0, 1);
-   auto tag_hash = strihash(tagname);
-   object_template = nullptr;
-
    auto result = TRF::NIL;
    if (Tag.isContent()) {
       if ((Flags & IPF::NO_CONTENT) IS IPF::NIL) {
@@ -517,9 +503,22 @@ TRF parser::parse_tag(XTag &Tag, IPF &Flags)
             insert_text(Self, m_stream, m_index, Tag.Attribs[0].Value, ((m_style.options & FSO::PREFORMAT) != FSO::NIL));
          }
       }
-      Tag.Attribs = saved_attribs;
       return result;
    }
+
+   pf::vector<xq_attrib_change> prepared_attribs;
+   if (auto err = xq_prepare_attribs(this, Tag, prepared_attribs); err != ERR::Okay) {
+      Self->Error = err;
+      return TRF::NIL;
+   }
+
+   auto restore_attribs = pf::Defer([&]() {
+      xq_restore_attribs(Tag, prepared_attribs);
+   });
+
+   auto tagname = Tag.Attribs[0].Name;
+   if (tagname.starts_with('$')) tagname.erase(0, 1);
+   auto tag_hash = strihash(tagname);
 
    if (Self->Templates) { // Check for templates first, as they can be used to override the default tag names.
       if (Self->RefreshTemplates) {
@@ -556,8 +555,6 @@ TRF parser::parse_tag(XTag &Tag, IPF &Flags)
          change_xml(old_xml);
          Self->TemplateArgs.pop_back();
 
-         Tag.Attribs = saved_attribs;
-
          m_in_template--;
          m_inject_tag = tags;
          m_inject_xml = xml;
@@ -580,7 +577,6 @@ TRF parser::parse_tag(XTag &Tag, IPF &Flags)
          case HASH_u:
          case HASH_list:
             log.trace("Content disabled on '%s', tag not processed.", tagname.c_str());
-            Tag.Attribs = saved_attribs;
             return result;
          default:
             break;
@@ -589,12 +585,10 @@ TRF parser::parse_tag(XTag &Tag, IPF &Flags)
 
    if (iequals(tagname, "let")) {
       result = tag_let(Tag, Flags);
-      Tag.Attribs = saved_attribs;
       return result;
    }
    else if (iequals(tagname, "for-each")) {
       result = tag_for_each(Tag, Flags);
-      Tag.Attribs = saved_attribs;
       return result;
    }
 
@@ -821,7 +815,6 @@ TRF parser::parse_tag(XTag &Tag, IPF &Flags)
          break;
    } // switch
 
-   Tag.Attribs = saved_attribs;
    return result;
 }
 

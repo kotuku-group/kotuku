@@ -1206,11 +1206,32 @@ static ERR xq_select_to_xml_fragment(parser *Parser, const XPathValue &Value, st
    return xq_value_to_xml_fragment(stored_value.value, OutXml);
 }
 
+struct xq_attrib_change {
+   int index = 0;
+   std::string original_value;
+};
+
+static void xq_restore_attribs(XTag &Tag, pf::vector<xq_attrib_change> &Changes)
+{
+   for (int i = std::ssize(Changes) - 1; i >= 0; i--) {
+      auto &change = Changes[i];
+      if ((change.index >= 0) and (change.index < std::ssize(Tag.Attribs))) {
+         Tag.Attribs[change.index].Value = std::move(change.original_value);
+      }
+   }
+
+   Changes.clear();
+}
+
 static ERR xq_expand_avt(parser *Parser, objXML *XMLContext, XTag *ContextTag, const std::string &Input,
    std::string &Output);
 
-static ERR xq_prepare_attribs(parser *Parser, XTag &Tag)
+static ERR xq_prepare_attribs(parser *Parser, XTag &Tag, pf::vector<xq_attrib_change> &Changes)
 {
+   Changes.clear();
+
+   if (Tag.Attribs.size() < 2) return ERR::Okay;
+
    auto tag_name = std::string_view(Tag.Attribs[0].Name);
    if ((not tag_name.empty()) and (tag_name.front() IS '$')) return ERR::Okay;
    auto tag_hash = strihash(tag_name);
@@ -1225,9 +1246,14 @@ static ERR xq_prepare_attribs(parser *Parser, XTag &Tag)
       if ((not is_xq_expression_attrib(tag_hash, name)) and has_avt_markers(value)) {
          std::string expanded;
          if (auto err = xq_expand_avt(Parser, Parser->m_xml, &Tag, value, expanded); err != ERR::Okay) {
+            xq_restore_attribs(Tag, Changes);
             return err;
          }
-         value = std::move(expanded);
+
+         if (expanded != value) {
+            Changes.push_back({ i, value });
+            value = std::move(expanded);
+         }
       }
    }
 
