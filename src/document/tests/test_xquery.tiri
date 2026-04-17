@@ -333,6 +333,26 @@ end
       'parse@select must serialise constructed nodes in mixed node sequences')
 end
 
+@Test function ParseSelectConstructedPageScaffolding()
+   text_str = feedAndRead([[
+      <body/>
+      <parse select="(
+         element header { element p { 'PARSE-CONSTRUCTED-HEADER' } },
+         element body { element p { 'PARSE-CONSTRUCTED-BODY' } },
+         element footer { element p { 'PARSE-CONSTRUCTED-FOOTER' } }
+      )"/>
+      <page>
+      </page>
+   ]])
+
+   assert(contains(text_str, 'PARSE-CONSTRUCTED-HEADER'),
+      'parse@select must keep constructed header nodes alive until page rendering completes')
+   assert(contains(text_str, 'PARSE-CONSTRUCTED-BODY'),
+      'parse@select must keep constructed body nodes alive until page rendering completes')
+   assert(contains(text_str, 'PARSE-CONSTRUCTED-FOOTER'),
+      'parse@select must keep constructed footer nodes alive until page rendering completes')
+end
+
 @Test function RegexMatchesInTest()
    xml_str = feedAndRead(
       '<body/><page>'

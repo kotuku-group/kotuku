@@ -123,9 +123,12 @@ struct parser {
    struct xq_value_binding {
       XPathValue value;
       xq_xml_owner owned_xml;
+      pf::vector<objXML *> node_owners; // Aligned with value.node_set so preserved node sequences can reuse owner lookups.
 
       xq_value_binding() : value(XPVT::String) { }
-      explicit xq_value_binding(const XPathValue &Value) : value(Value) { }
+      explicit xq_value_binding(const XPathValue &Value) : value(Value) {
+         if (Value.Type IS XPVT::NodeSet) node_owners.resize(Value.node_set.size(), nullptr);
+      }
    };
 
    struct state_guard {
@@ -244,7 +247,7 @@ struct parser {
    inline TRF  parse_tags_with_embedded_style(const objXML::TAGS &, bc_font &, IPF = IPF::NIL);
    inline void process_page(objXML *pXML);
    inline void tag_xml_content(XTag &, PXF);
-   inline void trim_preformat(extDocument *);
+   inline void trim_preformat();
 
    // Switching out the XML object is sometimes done for things like template injection
 
@@ -262,7 +265,7 @@ struct parser {
    inline void tag_checkbox(const tag_view &);
    inline void tag_combobox(const tag_view &);
    inline void tag_data(const tag_view &);
-   inline void tag_debug(const tag_view &);
+   inline void tag_debug(const tag_view &) const;
    inline void tag_div(const tag_view &);
    inline void tag_editdef(const tag_view &);
    inline TRF  tag_for_each(const tag_view &, IPF &);
@@ -277,7 +280,7 @@ struct parser {
    inline void tag_li(const tag_view &);
    inline void tag_link(const tag_view &);
    inline void tag_list(const tag_view &);
-   inline void tag_page(const tag_view &);
+   inline void tag_page(const tag_view &) const;
    inline void tag_paragraph(const tag_view &);
    inline void tag_parse(const tag_view &);
    inline void tag_pre(const objXML::TAGS &);
@@ -1057,7 +1060,7 @@ bool parser::check_font_attrib(const XMLAttrib &Attrib, bc_font &Style)
 
 //********************************************************************************************************************
 
-void parser::trim_preformat(extDocument *Self)
+void parser::trim_preformat()
 {
    auto i = m_index.index - 1;
    for (; i > 0; i--) {
@@ -1706,7 +1709,7 @@ void parser::tag_input(const tag_view &Tag)
 
 //********************************************************************************************************************
 
-void parser::tag_debug(const tag_view &Tag)
+void parser::tag_debug(const tag_view &Tag) const
 {
    pf::Log log("DocMsg");
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
@@ -2335,7 +2338,7 @@ void parser::tag_font(const tag_view &Tag)
 
    parse_tags_with_style(Tag.Children, new_style);
 
-   if (preformat) trim_preformat(Self);
+   if (preformat) trim_preformat();
 }
 
 //********************************************************************************************************************
@@ -2356,7 +2359,7 @@ void parser::tag_pre(const objXML::TAGS &Children)
 
    m_strip_feeds = save;
 
-   trim_preformat(Self);
+   trim_preformat();
 }
 
 //********************************************************************************************************************
@@ -3036,7 +3039,7 @@ void parser::tag_cell(const tag_view &Tag)
 //********************************************************************************************************************
 // No response is required for page tags, but we can check for validity.
 
-void parser::tag_page(const tag_view &Tag)
+void parser::tag_page(const tag_view &Tag) const
 {
    pf::Log log(__FUNCTION__);
    if (auto name = Tag.attrib("name")) {
