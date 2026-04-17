@@ -1209,6 +1209,18 @@ static ERR xq_select_to_xml_fragment(parser *Parser, const XPathValue &Value, st
 static ERR xq_expand_avt(parser *Parser, objXML *XMLContext, const XTag *ContextTag, const std::string &Input,
    std::string &Output);
 
+static void xq_copy_tag_shell(const XTag &Source, XTag &Target)
+{
+   Target.ID = Source.ID;
+   Target.ParentID = Source.ParentID;
+   Target.LineNo = Source.LineNo;
+   Target.Flags = Source.Flags;
+   Target.NamespaceID = Source.NamespaceID;
+   Target.Reserved = Source.Reserved;
+   Target.Attribs = Source.Attribs;
+   Target.Children.clear();
+}
+
 static ERR xq_prepare_tag(parser *Parser, const XTag &Tag, XTag &PreparedTag, const XTag *&ActiveTag)
 {
    ActiveTag = &Tag;
@@ -1233,7 +1245,10 @@ static ERR xq_prepare_tag(parser *Parser, const XTag &Tag, XTag &PreparedTag, co
 
    if (not requires_prepare) return ERR::Okay;
 
-   PreparedTag = Tag;
+   // Most AVT-bearing instruction tags are leaves.  Avoid cloning the child tree unless the tag
+   // actually owns children that later parse stages may consume.
+   if (Tag.Children.empty()) xq_copy_tag_shell(Tag, PreparedTag);
+   else PreparedTag = Tag;
 
    for (int i=1; i < std::ssize(PreparedTag.Attribs); i++) {
       auto name = std::string_view(PreparedTag.Attribs[i].Name);
