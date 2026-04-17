@@ -126,7 +126,7 @@ static parser::xq_xml_owner xq_adopt_xml(objXML *XML)
 
 static void xq_clone_tag_tree(const XTag &Source, XTag &Target, int ParentID, int &NextID)
 {
-   Target = XTag(NextID--, Source.LineNo, Source.Attribs);
+   Target = XTag(NextID++, Source.LineNo, Source.Attribs);
    Target.ParentID = ParentID;
    Target.Flags = Source.Flags;
    Target.NamespaceID = Source.NamespaceID;
@@ -1177,7 +1177,7 @@ static ERR xq_make_stored_value(parser *Parser, const XPathValue &Source, parser
 
    xml->Tags.clear();
    xml->Tags.reserve(owned_node_count);
-   int next_id = -1;
+   int next_id = 1;
 
    for (size_t index = 0; index < Source.node_set.size(); ++index) {
       auto *node = Source.node_set[index];
@@ -1198,6 +1198,90 @@ static ERR xq_make_stored_value(parser *Parser, const XPathValue &Source, parser
    }
 
    Result.owned_xml = xq_adopt_xml(xml);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Clone a concrete node sequence directly into a new XML tree so <data select> can replace $doc without paying a
+// serialise/reparse round-trip.  RequireTag preserves the existing distinction between document roots and loose
+// fragments.
+
+static ERR xq_clone_nodes_to_xml(parser *Parser, const XPathValue &Value, objXML *&OutXML, bool RequireTag)
+{
+   OutXML = nullptr;
+
+   if ((not Parser) or (Value.Type != XPVT::NodeSet)) return ERR::Args;
+   if (xq_nodeset_has_real_attributes(Value) or xq_nodeset_has_real_composites(Value)) return ERR::InvalidData;
+   if (Value.node_set.empty()) return RequireTag ? ERR::Syntax : ERR::Args;
+
+   parser::xq_value_binding stored_value;
+   if (auto err = xq_make_stored_value(Parser, Value, stored_value); err != ERR::Okay) return err;
+
+   auto xml = objXML::create::local(fl::Flags(XMF::NEW|XMF::READABLE));
+   if (not xml) return ERR::NewObject;
+
+   xml->Tags.clear();
+   xml->Tags.reserve(stored_value.value.node_set.size());
+
+   int next_id = 1;
+   bool has_top_level_tag = false;
+
+   for (auto *node : stored_value.value.node_set) {
+      if (not node) {
+         FreeResource(xml);
+         return ERR::InvalidData;
+      }
+
+      xml->Tags.emplace_back();
+      auto &clone = xml->Tags.back();
+      xq_clone_tag_tree(*node, clone, 0, next_id);
+      if (clone.isTag()) has_top_level_tag = true;
+   }
+
+   if (xml->Tags.empty() or (RequireTag and (not has_top_level_tag))) {
+      FreeResource(xml);
+      return ERR::Syntax;
+   }
+
+   OutXML = xml;
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Parse a concrete node sequence in-place by rebinding the parser's active XML to the owning tree of each selected
+// top-level node.  This preserves direct node access for parse@select without reparsing generated markup text.
+
+static ERR xq_parse_selected_nodes(parser *Parser, const XPathValue &Value)
+{
+   if ((not Parser) or (Value.Type != XPVT::NodeSet)) return ERR::Args;
+   if (xq_nodeset_has_real_attributes(Value) or xq_nodeset_has_real_composites(Value)) return ERR::InvalidData;
+   if (Value.node_set.empty()) return ERR::Args;
+
+   parser::xq_value_binding stored_value;
+   if (auto err = xq_make_stored_value(Parser, Value, stored_value); err != ERR::Okay) return err;
+
+   IPF flags = IPF::NIL;
+
+   for (auto *node : stored_value.value.node_set) {
+      if (not node) return ERR::InvalidData;
+
+      auto node_xml = xq_find_known_node_owner(Parser, node);
+      if ((not node_xml) and stored_value.owned_xml and xq_xml_owns_node(stored_value.owned_xml.get(), node)) {
+         node_xml = stored_value.owned_xml.get();
+      }
+
+      if (not node_xml) return ERR::InvalidData;
+
+      auto old_xml = Parser->change_xml(node_xml);
+      auto restore_xml = pf::Defer([&]() {
+         Parser->change_xml(old_xml);
+      });
+
+      auto result = Parser->parse_tag(*node, flags);
+      if (Parser->Self->Error != ERR::Okay) return Parser->Self->Error;
+      if ((result & (TRF::CONTINUE|TRF::BREAK)) != TRF::NIL) break;
+   }
+
    return ERR::Okay;
 }
 
@@ -1231,8 +1315,8 @@ static ERR xq_select_to_print_text(const XPathValue &Value, std::string_view Fal
 }
 
 //********************************************************************************************************************
-// data@select and parse@select are the XML/RIPL injection surfaces.  Concrete node sequences are serialised back
-// into markup, while scalar results are only accepted via their string value.
+// Fallback used by XML/RIPL injection surfaces when the select result has to be treated as markup text.  Concrete
+// node sequences are handled directly by the caller to avoid reparsing serialised XML.
 
 static ERR xq_select_to_xml_fragment(parser *Parser, const XPathValue &Value, std::string_view Fallback,
    bool HasValue, std::string &OutXml)
@@ -1434,6 +1518,27 @@ void parser::tag_data(const tag_view &Tag)
       return;
    }
 
+   if (has_value and (value.Type IS XPVT::NodeSet)) {
+      if (xq_nodeset_has_real_attributes(value) or xq_nodeset_has_real_composites(value)) {
+         log.warning("<data select> requires parseable XML/RIPL markup or a concrete XML node sequence.");
+         Self->Error = ERR::InvalidData;
+         return;
+      }
+
+      if (not value.node_set.empty()) {
+         objXML *new_doc = nullptr;
+         err = xq_clone_nodes_to_xml(this, value, new_doc, true);
+         if (err != ERR::Okay) {
+            log.warning("<data select> requires parseable XML/RIPL markup or a concrete XML node sequence.");
+            Self->Error = err;
+            return;
+         }
+
+         replace_doc_xml(new_doc);
+         return;
+      }
+   }
+
    std::string xml_fragment;
    err = xq_select_to_xml_fragment(this, value, result, has_value, xml_fragment);
    if (err != ERR::Okay) {
@@ -1480,6 +1585,24 @@ void parser::tag_parse(const tag_view &Tag)
                log.warning("<parse select=\"%s\"> failed.", Tag.Attribs[i].Value.c_str());
                Self->Error = err;
                return;
+            }
+
+            if (has_value and (value.Type IS XPVT::NodeSet)) {
+               if (xq_nodeset_has_real_attributes(value) or xq_nodeset_has_real_composites(value)) {
+                  log.warning("<parse select> requires parseable XML/RIPL markup or a concrete XML node sequence.");
+                  Self->Error = ERR::InvalidData;
+                  return;
+               }
+
+               if (not value.node_set.empty()) {
+                  log.traceBranch("Parsing XQuery node sequence directly...");
+                  err = xq_parse_selected_nodes(this, value);
+                  if (err != ERR::Okay) {
+                     log.warning("<parse select> requires parseable XML/RIPL markup or a concrete XML node sequence.");
+                     Self->Error = err;
+                  }
+                  return;
+               }
             }
 
             std::string xml_fragment;
