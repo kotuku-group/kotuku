@@ -124,7 +124,7 @@ static int  find_tabfocus(extDocument *, TT, BYTECODE);
 static ERR  flash_cursor(extDocument *, int64_t, int64_t);
 static int getutf8(CSTRING, int *);
 static ERR  insert_text(extDocument *, RSTREAM *, stream_char &, const std::string_view, bool);
-static ERR  insert_xml(extDocument *, RSTREAM *, objXML *, objXML::TAGS &, int, STYLE = STYLE::NIL, IPF = IPF::NIL);
+static ERR  insert_xml(extDocument *, RSTREAM *, objXML *, const objXML::TAGS &, int, STYLE = STYLE::NIL, IPF = IPF::NIL);
 static ERR  key_event(objVectorViewport *, KQ, KEY, int);
 static void layout_doc(extDocument *);
 static ERR  load_doc(extDocument *, std::string, bool, ULD = ULD::NIL);

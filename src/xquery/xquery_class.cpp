@@ -327,6 +327,11 @@ static ERR XQUERY_Evaluate(extXQuery *Self, struct xq::Evaluate *Args)
    if (not Args) return log.warning(ERR::NullArgs);
    if (not Self->initialised()) return log.warning(ERR::NotInitialised);
 
+   Self->ErrorMsg.clear();
+   Self->ResultString.clear();
+   Self->Result = XPathVal();
+   Self->ConstructedNodes.clear();
+
    int len = 0, max_len = std::min<int>(std::ssize(Self->Statement), 40);
    while ((Self->Statement[len] != '\n') and (len < max_len)) len++;
    log.branch("Expression: %.*s, BasePath: %s", len, Self->Statement.c_str(), Self->Path.c_str());
@@ -355,7 +360,6 @@ static ERR XQUERY_Evaluate(extXQuery *Self, struct xq::Evaluate *Args)
    if (xml) {
       pf::ScopedObjectLock lock(xml);
       XTag *root_tag = nullptr;
-      Self->ConstructedNodes.clear();
 
       if (Self->Path.empty() and (xml->Path)) Self->Path = xml->Path;
       if (Args->Index != 0) {
@@ -377,7 +381,6 @@ static ERR XQUERY_Evaluate(extXQuery *Self, struct xq::Evaluate *Args)
       return err;
    }
    else {
-      Self->ConstructedNodes.clear();
       XPathEvaluator eval(Self, nullptr, Self->ParseResult.expression.get(), &Self->ParseResult);
       auto err = eval.evaluate_xpath_expression(*(Self->ParseResult.expression.get()), &Self->Result);
       if (err IS ERR::Okay) Self->ConstructedNodes = std::move(eval.constructed_nodes);

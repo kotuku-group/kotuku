@@ -361,7 +361,7 @@ static XPathValue xq_page_to_nodeset(parser *Parser)
    XPathValue result(XPVT::NodeSet);
    if ((not Parser) or (not Parser->Self) or (not Parser->Self->PageTag)) return result;
 
-   result.node_set.push_back(Parser->Self->PageTag);
+   result.node_set.push_back((XTag *)Parser->Self->PageTag);
    return result;
 }
 
@@ -377,7 +377,7 @@ static XPathValue xq_template_content_to_nodeset(parser *Parser)
    result.preserve_node_order = true;
    result.node_set.reserve(Parser->m_inject_tag[0].size());
    for (auto &tag : Parser->m_inject_tag[0]) {
-      result.node_set.push_back(&tag);
+      result.node_set.push_back((XTag *)&tag);
    }
 
    return result;
@@ -762,46 +762,52 @@ static ERR xq_document_template_content(objXQuery *, std::string_view, const std
 }
 
 //********************************************************************************************************************
-// Shared setup for all document-side XQuery surfaces.  The query object is cached on the document and reconfigured
-// for the current parser instance each time so the runtime variable resolver and helper functions see the active
-// page/document state.
+// Shared setup for all document-side XQuery surfaces.  Compiled XQuery objects are cached for the lifetime of the
+// current parser so repeated AVT/test/select expressions can reuse the compiled AST rather than rebuilding it on
+// every evaluation.
 
-static ERR xq_prepare_query(parser *Parser, const std::string &Expression, XQEval Mode)
+static ERR xq_prepare_query(parser *Parser, const std::string &Expression, XQEval Mode, objXQuery *&Query)
 {
    auto Self = Parser->Self;
+   Query = nullptr;
 
    auto eval_expression = xq_build_eval_expression(Expression, Mode);
 
-   if (not Self->Query) {
-      if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&Self->Query) IS ERR::Okay) {
-         if (Self->Query->init() != ERR::Okay) {
-            Self->Error = ERR::Init;
-            FreeResource(Self->Query);
-            Self->Query = nullptr;
-            return ERR::Init;
-         }
-      }
-      else {
-         Self->Error = ERR::NewObject;
-         return ERR::NewObject;
-      }
+   if (auto cached = Parser->m_xq_query_cache.find(eval_expression); cached != Parser->m_xq_query_cache.end()) {
+      Query = cached->second;
+      return ERR::Okay;
    }
 
-   Self->Query->setResolveVariable(C_FUNCTION(xq_resolve_runtime_scope, Parser));
-   Self->Query->registerFunction(XQ_OBJECT_EXISTS_FUNCTION.data(), C_FUNCTION(xq_document_object_exists, Parser));
-   Self->Query->registerFunction(XQ_OBJECT_ID_FUNCTION.data(), C_FUNCTION(xq_document_object_id, Parser));
-   Self->Query->registerFunction(XQ_SELF_ID_FUNCTION.data(), C_FUNCTION(xq_document_self_id, Parser));
-   Self->Query->registerFunction(XQ_UID_FUNCTION.data(), C_FUNCTION(xq_document_uid, Parser));
-   Self->Query->registerFunction(XQ_PLATFORM_FUNCTION.data(), C_FUNCTION(xq_document_platform, Parser));
-   Self->Query->registerFunction(XQ_FIELD_FUNCTION.data(), C_FUNCTION(xq_document_field, Parser));
-   Self->Query->registerFunction(XQ_KEY_FUNCTION.data(), C_FUNCTION(xq_document_key, Parser));
-   Self->Query->registerFunction(XQ_TEMPLATE_CONTENT_FUNCTION.data(), C_FUNCTION(xq_document_template_content, Parser));
+   objXQuery *query = nullptr;
+   if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&query) != ERR::Okay) {
+      Self->Error = ERR::NewObject;
+      return ERR::NewObject;
+   }
 
-   if (Self->Query->setStatement(eval_expression) != ERR::Okay) {
+   if (query->init() != ERR::Okay) {
+      Self->Error = ERR::Init;
+      FreeResource(query);
+      return ERR::Init;
+   }
+
+   query->setResolveVariable(C_FUNCTION(xq_resolve_runtime_scope, Parser));
+   query->registerFunction(XQ_OBJECT_EXISTS_FUNCTION.data(), C_FUNCTION(xq_document_object_exists, Parser));
+   query->registerFunction(XQ_OBJECT_ID_FUNCTION.data(), C_FUNCTION(xq_document_object_id, Parser));
+   query->registerFunction(XQ_SELF_ID_FUNCTION.data(), C_FUNCTION(xq_document_self_id, Parser));
+   query->registerFunction(XQ_UID_FUNCTION.data(), C_FUNCTION(xq_document_uid, Parser));
+   query->registerFunction(XQ_PLATFORM_FUNCTION.data(), C_FUNCTION(xq_document_platform, Parser));
+   query->registerFunction(XQ_FIELD_FUNCTION.data(), C_FUNCTION(xq_document_field, Parser));
+   query->registerFunction(XQ_KEY_FUNCTION.data(), C_FUNCTION(xq_document_key, Parser));
+   query->registerFunction(XQ_TEMPLATE_CONTENT_FUNCTION.data(), C_FUNCTION(xq_document_template_content, Parser));
+
+   if (query->setStatement(eval_expression) != ERR::Okay) {
       Self->Error = ERR::SetField;
+      FreeResource(query);
       return ERR::SetField;
    }
 
+   Parser->m_xq_query_cache.emplace(std::move(eval_expression), query);
+   Query = query;
    return ERR::Okay;
 }
 
@@ -810,11 +816,14 @@ static ERR xq_prepare_query(parser *Parser, const std::string &Expression, XQEva
 // caller, but <for-each> may temporarily override them via m_xq_context_stack so relative paths evaluate against
 // the current item.
 
-static ERR xq_execute_query(parser *Parser, objXML *XMLContext, XTag *ContextTag, const std::string &Expression,
+static ERR xq_execute_query(parser *Parser, objXML *XMLContext, const XTag *ContextTag, const std::string &Expression,
    XQEval Mode, std::string *OutString, bool *OutBoolean, XPathValue *OutValue, bool *OutHasValue)
 {
    pf::Log log(__FUNCTION__);
    auto Self = Parser->Self;
+   objXQuery *query = nullptr;
+   XPathValue raw_value(XPVT::String);
+   bool have_raw_value = false;
 
    if (OutString) OutString->clear();
    if (OutBoolean) *OutBoolean = false;
@@ -822,20 +831,20 @@ static ERR xq_execute_query(parser *Parser, objXML *XMLContext, XTag *ContextTag
 
    if (Expression.empty()) return ERR::Okay;
 
-   if (auto err = xq_prepare_query(Parser, Expression, Mode); err != ERR::Okay) {
+   if (auto err = xq_prepare_query(Parser, Expression, Mode, query); err != ERR::Okay) {
       return log.warning(err);
    }
 
    objXML *effective_xml = XMLContext;
-   XTag *effective_tag = ContextTag;
+   const XTag *effective_tag = ContextTag;
    if (auto xq_context = Parser->active_xq_context()) {
       if (xq_context->xml) effective_xml = xq_context->xml;
       if (xq_context->node) effective_tag = xq_context->node;
    }
 
-   if (auto err = Self->Query->evaluate(effective_xml, effective_tag ? effective_tag->ID : 0, XEF::NIL); err != ERR::Okay) {
+   if (auto err = query->evaluate(effective_xml, effective_tag ? effective_tag->ID : 0, XEF::NIL); err != ERR::Okay) {
       CSTRING msg;
-      if (Self->Query->get(FID_ErrorMsg, msg) IS ERR::Okay) {
+      if (query->get(FID_ErrorMsg, msg) IS ERR::Okay) {
          log.warning("XQuery error evaluating \"%s\": %s", Expression.c_str(), msg ? msg : "(none)");
       }
       else log.warning("XQuery error evaluating \"%s\".", Expression.c_str());
@@ -843,24 +852,41 @@ static ERR xq_execute_query(parser *Parser, objXML *XMLContext, XTag *ContextTag
       return err;
    }
 
-   CSTRING result = nullptr;
-   if (Self->Query->get(FID_ResultString, result) IS ERR::Okay) {
-      if ((OutString) and result) OutString->assign(result);
-      if ((OutBoolean) and result and iequals("true", result)) *OutBoolean = true;
+   XPathValue *query_value = nullptr;
+   if ((query->get(FID_Result, query_value) IS ERR::Okay) and query_value) {
+      raw_value = *query_value;
+      have_raw_value = true;
+      if (OutValue) *OutValue = raw_value;
+      if (OutHasValue) *OutHasValue = true;
    }
 
-   if ((OutValue) or (OutHasValue)) {
-      XPathValue *query_value = nullptr;
-      if ((Self->Query->get(FID_Result, query_value) IS ERR::Okay) and query_value) {
-         if (OutValue) *OutValue = *query_value;
-         if (OutHasValue) *OutHasValue = true;
+   if (have_raw_value) {
+      if (OutString) {
+         (void)xq_value_to_string(raw_value, *OutString);
+      }
+
+      if (OutBoolean) {
+         if (raw_value.Type IS XPVT::Boolean) *OutBoolean = raw_value.NumberValue != 0.0;
+         else {
+            std::string boolean_text;
+            if ((xq_value_to_string(raw_value, boolean_text) IS ERR::Okay) and (iequals("true", boolean_text))) {
+               *OutBoolean = true;
+            }
+         }
+      }
+   }
+   else {
+      CSTRING result = nullptr;
+      if (query->get(FID_ResultString, result) IS ERR::Okay) {
+         if ((OutString) and result) OutString->assign(result);
+         if ((OutBoolean) and result and iequals("true", result)) *OutBoolean = true;
       }
    }
 
    return ERR::Okay;
 }
 
-static ERR xq_eval_helper(parser *Parser, objXML *XMLContext, XTag *ContextTag, const std::string &Expression,
+static ERR xq_eval_helper(parser *Parser, objXML *XMLContext, const XTag *ContextTag, const std::string &Expression,
    XQEval Mode, std::string &OutString, bool &OutBoolean)
 {
    return xq_execute_query(Parser, XMLContext, ContextTag, Expression, Mode, &OutString, &OutBoolean, nullptr, nullptr);
@@ -871,7 +897,7 @@ static ERR xq_eval_helper(parser *Parser, objXML *XMLContext, XTag *ContextTag, 
 // <for-each>, and parse@select.  If the query only exposes a string value, callers still receive a string-typed
 // XPathValue.
 
-static ERR xq_eval_value_helper(parser *Parser, objXML *XMLContext, XTag *ContextTag, const std::string &Expression,
+static ERR xq_eval_value_helper(parser *Parser, objXML *XMLContext, const XTag *ContextTag, const std::string &Expression,
    XPathValue &OutValue, std::string &OutString, bool &OutHasValue)
 {
    bool unused_boolean = false;
@@ -933,7 +959,7 @@ static void xq_append_xml_escaped(std::ostringstream &Buffer, std::string_view T
 // Serialise an XTag subtree into XML fragment form.  This is used when <data> or <parse> receives a
 // node-sequence result and needs reparsing through the document parser rather than ordinary XQuery string-value rules.
 
-static void xq_serialise_tag_fragment(XTag &Tag, std::ostringstream &Buffer)
+static void xq_serialise_tag_fragment(const XTag &Tag, std::ostringstream &Buffer)
 {
    if (Tag.Attribs.empty()) return;
 
@@ -1043,7 +1069,7 @@ static ERR xq_parse_xml_fragment(std::string_view Fragment, objXML *&OutXML, boo
 // Best-effort ownership test for XTag pointers drawn from mixed XML sources such as the original RIPL, $doc,
 // included XML, or templates.
 
-static bool xq_xml_owns_node(objXML *XML, XTag *Node)
+static bool xq_xml_owns_node(objXML *XML, const XTag *Node)
 {
    if ((not XML) or (not Node)) return false;
 
@@ -1056,7 +1082,7 @@ static bool xq_xml_owns_node(objXML *XML, XTag *Node)
 // Resolve which XML object currently owns a node so <for-each> can rebind the XQuery context against the correct
 // tree when evaluating relative paths.
 
-static objXML * xq_find_known_node_owner(parser *Parser, XTag *Node)
+static objXML * xq_find_known_node_owner(parser *Parser, const XTag *Node)
 {
    if ((not Parser) or (not Node)) return nullptr;
 
@@ -1072,7 +1098,7 @@ static objXML * xq_find_known_node_owner(parser *Parser, XTag *Node)
    return nullptr;
 }
 
-static objXML * xq_resolve_node_owner(parser *Parser, XTag *Node)
+static objXML * xq_resolve_node_owner(parser *Parser, const XTag *Node)
 {
    if (auto owner = xq_find_known_node_owner(Parser, Node)) return owner;
    return (Parser and Parser->m_xml) ? Parser->m_xml : (Parser ? Parser->m_source_xml : nullptr);
@@ -1084,10 +1110,11 @@ static ERR xq_make_stored_value(parser *Parser, const XPathValue &Source, parser
    if ((not Parser) or (Source.Type != XPVT::NodeSet)) return ERR::Okay;
 
    bool requires_owned_xml = false;
+   size_t owned_node_count = 0;
    for (auto *node : Source.node_set) {
       if (node and (not xq_find_known_node_owner(Parser, node))) {
          requires_owned_xml = true;
-         break;
+         owned_node_count++;
       }
    }
 
@@ -1097,6 +1124,7 @@ static ERR xq_make_stored_value(parser *Parser, const XPathValue &Source, parser
    if (not xml) return ERR::NewObject;
 
    xml->Tags.clear();
+   xml->Tags.reserve(owned_node_count);
    int next_id = -1;
 
    for (size_t index = 0; index < Source.node_set.size(); ++index) {
@@ -1178,31 +1206,66 @@ static ERR xq_select_to_xml_fragment(parser *Parser, const XPathValue &Value, st
    return xq_value_to_xml_fragment(stored_value.value, OutXml);
 }
 
-static ERR xq_expand_avt(parser *Parser, objXML *XMLContext, XTag *ContextTag, const std::string &Input,
+static ERR xq_expand_avt(parser *Parser, objXML *XMLContext, const XTag *ContextTag, const std::string &Input,
    std::string &Output);
 
-static ERR xq_prepare_attribs(parser *Parser, XTag &Tag)
+static void xq_copy_tag_shell(const XTag &Source, XTag &Target)
 {
+   Target.ID = Source.ID;
+   Target.ParentID = Source.ParentID;
+   Target.LineNo = Source.LineNo;
+   Target.Flags = Source.Flags;
+   Target.NamespaceID = Source.NamespaceID;
+   Target.Reserved = Source.Reserved;
+   Target.Attribs = Source.Attribs;
+   Target.Children.clear();
+}
+
+static ERR xq_prepare_tag(parser *Parser, const XTag &Tag, XTag &PreparedTag, const XTag *&ActiveTag)
+{
+   ActiveTag = &Tag;
+
+   if (Tag.Attribs.size() < 2) return ERR::Okay;
+
    auto tag_name = std::string_view(Tag.Attribs[0].Name);
    if ((not tag_name.empty()) and (tag_name.front() IS '$')) return ERR::Okay;
    auto tag_hash = strihash(tag_name);
 
+   bool requires_prepare = false;
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
       auto name = std::string_view(Tag.Attribs[i].Name);
       if ((not name.empty()) and (name.front() IS '$')) continue;
       if (name.empty()) continue;
 
-      auto &value = Tag.Attribs[i].Value;
-
-      if ((not is_xq_expression_attrib(tag_hash, name)) and has_avt_markers(value)) {
-         std::string expanded;
-         if (auto err = xq_expand_avt(Parser, Parser->m_xml, &Tag, value, expanded); err != ERR::Okay) {
-            return err;
-         }
-         value = std::move(expanded);
+      if ((not is_xq_expression_attrib(tag_hash, name)) and has_avt_markers(Tag.Attribs[i].Value)) {
+         requires_prepare = true;
+         break;
       }
    }
 
+   if (not requires_prepare) return ERR::Okay;
+
+   // Most AVT-bearing instruction tags are leaves.  Avoid cloning the child tree unless the tag
+   // actually owns children that later parse stages may consume.
+   if (Tag.Children.empty()) xq_copy_tag_shell(Tag, PreparedTag);
+   else PreparedTag = Tag;
+
+   for (int i=1; i < std::ssize(PreparedTag.Attribs); i++) {
+      auto name = std::string_view(PreparedTag.Attribs[i].Name);
+      if ((not name.empty()) and (name.front() IS '$')) continue;
+      if (name.empty()) continue;
+
+      auto &value = PreparedTag.Attribs[i].Value;
+
+      if ((not is_xq_expression_attrib(tag_hash, name)) and has_avt_markers(value)) {
+         std::string expanded;
+         if (auto err = xq_expand_avt(Parser, Parser->m_xml, &PreparedTag, value, expanded); err != ERR::Okay) return err;
+
+         if (expanded != value) value = std::move(expanded);
+      }
+   }
+
+   ActiveTag = &PreparedTag;
    return ERR::Okay;
 }
 
@@ -1210,7 +1273,7 @@ static ERR xq_prepare_attribs(parser *Parser, XTag &Tag)
 // and concatenating the result with literal parts.  Follows the same escaping rules as the XQuery tokeniser so that
 // {{ and }} are preserved as literal { and }.
 
-static ERR xq_expand_avt(parser *Parser, objXML *XMLContext, XTag *ContextTag, const std::string &Input,
+static ERR xq_expand_avt(parser *Parser, objXML *XMLContext, const XTag *ContextTag, const std::string &Input,
    std::string &Output)
 {
    pf::Log log(__FUNCTION__);
@@ -1283,7 +1346,7 @@ static ERR xq_expand_avt(parser *Parser, objXML *XMLContext, XTag *ContextTag, c
 // XQuery integration: the test attribute is recognised as a standalone XQuery expression.  The result of the
 // expression is coerced via XQuery's effective boolean value rules (boolean(...)).
 
-static bool check_tag_conditions(parser *Parser, XTag &Tag)
+static bool check_tag_conditions(parser *Parser, const XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -1316,7 +1379,7 @@ static bool check_tag_conditions(parser *Parser, XTag &Tag)
 //********************************************************************************************************************
 // Load or replace the parser-local document data scope.
 
-void parser::tag_data(XTag &Tag)
+void parser::tag_data(const XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -1356,7 +1419,7 @@ void parser::tag_data(XTag &Tag)
 //********************************************************************************************************************
 // Parse a string value as XML
 
-void parser::tag_parse(XTag &Tag)
+void parser::tag_parse(const XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -1424,7 +1487,7 @@ void parser::tag_parse(XTag &Tag)
 
 //********************************************************************************************************************
 
-void parser::tag_print(XTag &Tag)
+void parser::tag_print(const XTag &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -1485,7 +1548,7 @@ void parser::tag_print(XTag &Tag)
 // <let> introduces a lexical $state binding that is visible only to the element's children.  The state_guard above
 // restores any previous binding automatically.
 
-TRF parser::tag_let(XTag &Tag, IPF &Flags)
+TRF parser::tag_let(const XTag &Tag, IPF &Flags)
 {
    pf::Log log(__FUNCTION__);
 
@@ -1541,7 +1604,7 @@ TRF parser::tag_let(XTag &Tag, IPF &Flags)
 // <for-each> evaluates its select expression once, requires a node sequence, and then parses its children once for
 // each item with both $loop and the XQuery context item rebound to that node.
 
-TRF parser::tag_for_each(XTag &Tag, IPF &Flags)
+TRF parser::tag_for_each(const XTag &Tag, IPF &Flags)
 {
    pf::Log log(__FUNCTION__);
 

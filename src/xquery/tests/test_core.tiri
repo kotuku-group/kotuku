@@ -397,6 +397,29 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
+-- Re-evaluating the same compiled query must clear the previous string cache before empty results
+
+@Test function ResultStringClearsOnEmptyReevaluation()
+   populated_xml = obj.new("xml", {
+      statement = '<root><item>Found</item></root>'
+   })
+
+   empty_xml = obj.new("xml", {
+      statement = '<root/>'
+   })
+
+   xq = obj.new('xquery', { statement = 'string(/root/item[1])' })
+
+   err = xq.mtEvaluate(populated_xml)
+   assert(err is ERR_Okay, 'Initial evaluation should succeed: ' .. mSys.GetErrorMsg(err))
+   assert(xq.resultString is 'Found', 'Initial evaluation should cache the non-empty string result')
+
+   err = xq.mtEvaluate(empty_xml)
+   assert(err is ERR_Okay, 'Second evaluation should succeed: ' .. mSys.GetErrorMsg(err))
+   assert(xq.resultString is '', 'Empty re-evaluation must clear the previous string result')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
 -- Test serialisation operations
 
 @Test function ExtractOperations()

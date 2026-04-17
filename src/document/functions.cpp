@@ -201,7 +201,7 @@ static int safe_file_path(extDocument *Self, const std::string &Path)
 //********************************************************************************************************************
 // Process an XML tree by setting correct style information and then calling parse_tags().
 
-static ERR insert_xml(extDocument *Self, RSTREAM *Stream, objXML *XML, objXML::TAGS &Tag, INDEX TargetIndex,
+static ERR insert_xml(extDocument *Self, RSTREAM *Stream, objXML *XML, const objXML::TAGS &Tag, INDEX TargetIndex,
    STYLE StyleFlags, IPF Options)
 {
    pf::Log log(__FUNCTION__);

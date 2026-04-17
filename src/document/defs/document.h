@@ -1243,7 +1243,7 @@ class extDocument : public objDocument {
    FUNCTION EventCallback;
    KEYVALUE Vars;   // Variables as defined by the client program.  Transparently accessible like URI params.  Names have priority over params.
    KEYVALUE Params; // Incoming parameters provided via the URI
-   std::map<uint32_t, XTag *>   TemplateIndex;
+   std::map<uint32_t, const XTag *> TemplateIndex;
    std::vector<OBJECTID>       UIObjects;    // List of temporary objects in the UI
    std::vector<doc_segment>    Segments;
    std::vector<sorted_segment> SortSegments; // Used for UI interactivity when determining who is front-most
@@ -1279,7 +1279,7 @@ class extDocument : public objDocument {
    objXQuery *Query;           // Standard XQuery object for xquery evaluations
    objSVG *SVG;                // Allocated by the <svg> tag
    objVectorRectangle *Bkgd;   // Background fill object
-   XTag    *PageTag;           // Refers to a specific page that is being processed for the layout
+   const XTag *PageTag;        // Refers to a specific page that is being processed for the layout
    objScript *ClientScript;    // Allows the developer to define a custom default script.
    objScript *DefaultScript;
    doc_edit  *ActiveEditDef; // As for ActiveEditCell, but refers to the active editing definition
