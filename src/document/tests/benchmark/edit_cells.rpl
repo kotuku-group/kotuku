@@ -7,7 +7,7 @@
 <editdef name="bench_min" min-width="80"/>
 
 <page name="Index">
-   <script persistent type="fluid" name="flProject" @doc="[%self]">
+   <script persistent type="fluid" name="flProject" @doc="{kt:self-id()}">
 <![NDATA[
 
 function bench_change()

@@ -963,6 +963,7 @@ public:
    CompiledXQuery ParseResult; // Result of parsing the query.
    std::shared_ptr<XQueryModuleCache> ModuleCache; // Strong reference; ParseResult.module_cache is weak to break cycles
    XPathVal Result; // Result of the last execution.
+   std::vector<std::unique_ptr<XTag>> ConstructedNodes; // Keeps constructed-node results alive after evaluation.
    pf::vector<std::string> ListVariables; // List of variable names.
    pf::vector<std::string> ListFunctions; // List of function names.
    std::string ResultString; // Cached string representation of the result.

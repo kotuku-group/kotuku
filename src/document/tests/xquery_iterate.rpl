@@ -1,0 +1,101 @@
+<?xml version="1.0"?>
+<!DOCTYPE rpl PUBLIC "-//ROCKLYTE//DTD RPL 1.0//EN">
+
+<info>
+ <title>XQuery Iteration Tests</title>
+ <author>Paul Manias</author>
+ <description>Loop-frame tests for repeat and while execution, nested loop restoration and loop control.</description>
+</info>
+
+<body face="Noto Sans" font-size="10pt"/>
+
+<page>
+
+<p>XQuery Iteration Tests</p>
+
+<data select="element data {
+   element item { attribute code {'A'}, element name {'Alpha'} },
+   element item { attribute code {'B'}, element name {'Bravo'} },
+   element item { attribute code {'C'}, element name {'Charlie'} }
+}"/>
+
+<repeat start="2" end="6">
+  <p><print value="REPEAT-FRAME idx={$loop?index} iter={$loop?iteration} start={$loop?start} step={$loop?step} count={$loop?count} end={$loop?end}"/></p>
+</repeat>
+
+<repeat count="2">
+  <p><print value="OUTER-BEFORE {$loop?index}"/></p>
+  <repeat count="2">
+    <p><print value="INNER {$loop?index}"/></p>
+  </repeat>
+  <p><print value="OUTER-AFTER {$loop?index}"/></p>
+</repeat>
+
+<p><print value="OUTSIDE-LOOP {($loop?index, 'missing')[1]}"/></p>
+
+<repeat count="5">
+  <if test="$loop?index = 1"><continue/></if>
+  <if test="$loop?index = 3"><break/></if>
+  <p><print value="REPEAT-CONTROL {$loop?index}"/></p>
+</repeat>
+<p>REPEAT-CONTROL-AFTER</p>
+
+<while test="$loop?index lt 3">
+  <if test="$loop?index = 1">
+    <p>WHILE-IF-HIT</p>
+  </if>
+  <p><print value="WHILE-XQ {$loop?index}"/></p>
+</while>
+
+<while test="$loop?index lt 5">
+  <if test="$loop?index = 1"><continue/></if>
+  <if test="$loop?index = 3"><break/></if>
+  <p><print value="WHILE-CONTROL {$loop?index}"/></p>
+</while>
+<p>WHILE-CONTROL-AFTER</p>
+
+<repeat start="3" end="0" step="-1">
+  <p><print value="DESC {$loop?index}"/></p>
+</repeat>
+
+<for-each select="$doc/item">
+  <p><print value="FOR-EACH code={string(@code)} loop-pos={$loop?iteration} idx={$loop?index} count={$loop?count}"/></p>
+</for-each>
+
+<data select="element rows {
+   element row { attribute name {'R1'}, element cell {'A'}, element cell {'B'} },
+   element row { attribute name {'R2'}, element cell {'C'} }
+}"/>
+
+<for-each select="$doc/row">
+  <p><print value="OUTER-BEFORE {string(@name)} {$loop?index}"/></p>
+  <for-each select="cell">
+    <p><print value="INNER {string(.)} {$loop?index} {$loop?iteration}"/></p>
+  </for-each>
+  <p><print value="OUTER-AFTER {string(@name)} {$loop?index}"/></p>
+</for-each>
+
+<data select="element rows {
+   element row { attribute name {'R1'}, element cell {'skip'}, element cell {'stop'}, element cell {'after'} },
+   element row { attribute name {'R2'}, element cell {'keep'} }
+}"/>
+
+<for-each select="$doc/row">
+  <p><print value="CONTROL-ROW {string(@name)}"/></p>
+  <for-each select="cell">
+    <if test=". = 'skip'"><continue/></if>
+    <if test=". = 'stop'"><break/></if>
+    <p><print value="CONTROL-CELL {string(.)}"/></p>
+  </for-each>
+</for-each>
+
+<p>CONTROL-AFTER</p>
+
+<data select="(element p {'PARSE-NODE-A'}, element p {'PARSE-NODE-B'})"/>
+<parse select="$doc"/>
+
+<repeat count="2">
+  <p><print value="REPEAT-STILL {$loop?index}"/></p>
+</repeat>
+
+</page>

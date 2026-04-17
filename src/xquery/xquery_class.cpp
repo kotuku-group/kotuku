@@ -267,8 +267,10 @@ static ERR XQUERY_Activate(extXQuery *Self)
    }
 
    Self->XML = nullptr;
+   Self->ConstructedNodes.clear();
    XPathEvaluator eval(Self, nullptr, Self->ParseResult.expression.get(), &Self->ParseResult);
    auto err = eval.evaluate_xpath_expression(*(Self->ParseResult.expression.get()), &Self->Result);
+   if (err IS ERR::Okay) Self->ConstructedNodes = std::move(eval.constructed_nodes);
    Self->ErrorMsg = Self->ParseResult.error_msg;
    return err;
 }
@@ -291,6 +293,7 @@ static ERR XQUERY_Clear(extXQuery *Self)
    Self->ParseResult = CompiledXQuery();
    Self->ResultString.clear();
    Self->Result = XPathVal();
+   Self->ConstructedNodes.clear();
    Self->StaleBuild = true;
    return ERR::Okay;
 }
@@ -352,6 +355,7 @@ static ERR XQUERY_Evaluate(extXQuery *Self, struct xq::Evaluate *Args)
    if (xml) {
       pf::ScopedObjectLock lock(xml);
       XTag *root_tag = nullptr;
+      Self->ConstructedNodes.clear();
 
       if (Self->Path.empty() and (xml->Path)) Self->Path = xml->Path;
       if (Args->Index != 0) {
@@ -368,12 +372,15 @@ static ERR XQUERY_Evaluate(extXQuery *Self, struct xq::Evaluate *Args)
          eval.push_context(root_tag, 1, 1);
       }
       auto err = eval.evaluate_xpath_expression(*(Self->ParseResult.expression.get()), &Self->Result);
+      if (err IS ERR::Okay) Self->ConstructedNodes = std::move(eval.constructed_nodes);
       Self->ErrorMsg = Self->ParseResult.error_msg;
       return err;
    }
    else {
+      Self->ConstructedNodes.clear();
       XPathEvaluator eval(Self, nullptr, Self->ParseResult.expression.get(), &Self->ParseResult);
       auto err = eval.evaluate_xpath_expression(*(Self->ParseResult.expression.get()), &Self->Result);
+      if (err IS ERR::Okay) Self->ConstructedNodes = std::move(eval.constructed_nodes);
       Self->ErrorMsg = Self->ParseResult.error_msg;
       return err;
    }
@@ -597,7 +604,7 @@ RegisterFunction: Register a custom XQuery function.
 
 Use RegisterFunction to define a custom function that can be invoked within XQuery expressions.  The function
 will be associated with the specified name and can be called like any standard XQuery function.
-   
+
 The C++ function prototype is `ERR (*XQuery, std::string_view FunctionName, const std::vector<XPathValue> &Args, XPathValue &Result, APTR Meta))`
 
 Script callbacks are not currently supported.

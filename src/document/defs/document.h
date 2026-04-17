@@ -1267,6 +1267,7 @@ class extDocument : public objDocument {
    std::string Path;           // Optional file to load on Init()
    std::string PageName;       // Page name to load from the Path
    std::string Bookmark;       // Bookmark name processed from the Path
+   std::string RuntimeUID;     // Refresh-local generated ID used by document-side XQuery helpers.
    std::string WorkingPath;    // String storage for the WorkingPath field
    std::string LinkFill, VisitedLinkFill, LinkSelectFill, FontFill, Highlight;
    std::string Background;     // Background fill instruction
@@ -1275,9 +1276,10 @@ class extDocument : public objDocument {
    std::string WidthCacheFontStyle;
    objXML *Templates;          // All templates for the current document are stored here
    objXML *PretextXML;         // Execute this XML prior to loading a new page.
+   objXQuery *Query;           // Standard XQuery object for xquery evaluations
    objSVG *SVG;                // Allocated by the <svg> tag
    objVectorRectangle *Bkgd;   // Background fill object
-   XTag    *PageTag;         // Refers to a specific page that is being processed for the layout
+   XTag    *PageTag;           // Refers to a specific page that is being processed for the layout
    objScript *ClientScript;    // Allows the developer to define a custom default script.
    objScript *DefaultScript;
    doc_edit  *ActiveEditDef; // As for ActiveEditCell, but refers to the active editing definition

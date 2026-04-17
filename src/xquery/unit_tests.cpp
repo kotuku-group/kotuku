@@ -155,7 +155,7 @@ static ERR registered_function_test_callback(objXQuery *Query, std::string_view 
 
    if (Args.empty()) return ERR::Args;
 
-   Result = make_number_value(Args[0].to_number() * 2.0);
+   Result = make_number_value(Args[0].NumberValue * 2.0);
    return ERR::Okay;
 }
 

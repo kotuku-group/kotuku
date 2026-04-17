@@ -1,0 +1,515 @@
+-- $TIRI
+-- Flute tests for XQuery support in RIPL documents.
+
+include 'document'
+
+@BeforeAll function init(State)
+   global glDocFolder = State.folder
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Helpers
+
+function contains(Haystack:str, Needle:str)
+   return regex.new(Needle).test(Haystack)
+end
+
+function feedAndRead(Content:str, PageWidth:num, Username:str, ObjectName:str)
+   scene = obj.new('VectorScene', { pageWidth=PageWidth ?? 1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp })
+
+   if Username?? then check doc.acSetKey('username', Username) end
+   if ObjectName?? then doc.name = ObjectName end
+
+   check doc.acDataFeed(nil, DATA_XML, Content)
+   err, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed: ' .. mSys.GetErrorMsg(err))
+   assert(xml_str, 'ReadContent(DATA_XML) returned nil')
+   return xml_str
+end
+
+function feedExpectError(Content:str, PageWidth:num, Username:str, ObjectName:str)
+   scene = obj.new('VectorScene', { pageWidth=PageWidth ?? 1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp })
+
+   if Username?? then check doc.acSetKey('username', Username) end
+   if ObjectName?? then doc.name = ObjectName end
+
+   err = doc.acDataFeed(nil, DATA_XML, Content)
+   if err != ERR_Okay then return err end
+   err, _ = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   return err
+end
+
+function loadAndRead(Path:str, PageWidth:num, Username:str, ObjectName:str, Unrestricted:any)
+   scene = obj.new('VectorScene', { pageWidth=PageWidth ?? 1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document')
+
+   doc.viewport = vp
+   doc.path = glDocFolder .. Path
+
+   if Unrestricted then doc.flags = DCF_UNRESTRICTED end
+   if Username?? then check doc.acSetKey('username', Username) end
+
+   if ObjectName?? then
+      if Unrestricted then doc.new('xml', { name=ObjectName, flags=XMF_NEW })
+      else doc.name = ObjectName
+      end
+   end
+
+   check doc.init()
+   err, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for ' .. Path .. ': ' .. mSys.GetErrorMsg(err))
+   assert(xml_str, 'ReadContent(DATA_XML) returned nil')
+   return xml_str
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Fixture coverage
+
+@Test function Conditionals()
+   xml_str = loadAndRead('xquery.rpl')
+
+   assert(contains(xml_str, 'IF-TEST-TRUE'), 'if@test true branch must emit IF-TEST-TRUE')
+   assert(not contains(xml_str, 'IF-TEST-FAIL'), 'if@test false branch must not emit IF-TEST-FAIL')
+   assert(contains(xml_str, 'ELSEIF-TEST-TRUE'), 'elseif@test true branch must emit ELSEIF-TEST-TRUE')
+   assert(not contains(xml_str, 'ELSEIF-FAIL'), 'elseif@test false branches must not emit failure markers')
+   assert(contains(xml_str, 'a-b-c'), 'print@select must evaluate XQuery and emit joined string')
+   assert(contains(xml_str, 'PAGE-NAME-Index'), 'print@select must query the active XML document context')
+   assert(contains(xml_str, 'VAL 3'), 'print@value AVT must emit "VAL 3"')
+   assert(contains(xml_str, 'PARSE-SELECT-INJECTED'), 'parse@select must inject parsed content')
+   assert(not contains(xml_str, 'WHILE-SHOULD-NOT-APPEAR'), 'while@test false must skip the loop body')
+
+   assert(contains(xml_str, 'DOC-EMPTY'), '$doc must be empty before the first <data select>')
+   assert(contains(xml_str, 'PAGE-DIRECT Index'), '$page must expose the active source page directly')
+   assert(contains(xml_str, 'PAGE-TEMPLATE Index'), '$page must remain stable inside templates')
+   assert(contains(xml_str, 'DOC-LOADED'), '$doc must become queryable after <data select> loads XML')
+
+   assert(contains(xml_str, 'LET-TEST OUTER'), '<let> bindings must be visible in test attributes')
+   assert(contains(xml_str, 'LET-AVT outer'), '<let> bindings must be visible in AVTs')
+   assert(contains(xml_str, 'LET-SELECT outer'), '<let> bindings must be visible in print@select')
+   assert(contains(xml_str, 'LET-PARSE outer'), '<let> bindings must be visible in parse@select')
+   assert(contains(xml_str, 'LET-INNER inner'), 'Inner <let> bindings must shadow outer bindings')
+   assert(contains(xml_str, 'LET-RESTORED outer'), 'Outer <let> bindings must be restored after inner scope exit')
+   assert(contains(xml_str, 'LET-NODE B'), '$state bindings must support node-sequence values')
+end
+
+@Test function FixtureRuntimeScopeBindings()
+   xml_str = loadAndRead('xquery.rpl?mode=preview', 1024, 'alice')
+
+   assert(contains(xml_str, 'PARAM-MODE-PREVIEW'), '$params must be visible in test attributes')
+   assert(contains(xml_str, 'VAR-USERNAME-ALICE'), '$vars must be visible in test attributes')
+   assert(contains(xml_str, 'XQuery Tests / Index / 1024'), '$meta and $layout must be visible in select attributes')
+   assert(contains(xml_str, 'PARSE-alice'), '$vars must be visible in parse@select')
+   assert(contains(xml_str, 'ARG-OUTER Outer Arg'), '$args must expose the outer template call arguments')
+   assert(contains(xml_str, 'ARG-INNER Inner Arg'), 'Inner template call arguments must override outer $args')
+   assert(contains(xml_str, 'VARS-VIS alice'), '$vars must remain visible while $args changes')
+   assert(contains(xml_str, 'LOOP-TEST 0'), '$loop?index must be visible in repeat test attributes')
+   assert(contains(xml_str, 'LOOP-TEST 1'), '$loop?index must update across repeat iterations')
+   assert(not contains(xml_str, 'LOOP-TEST 2'), '$loop?index test must stop matching once the condition becomes false')
+   assert(contains(xml_str, 'LOOP-VALUE 0'), '$loop?index must be visible in AVT expansion')
+   assert(contains(xml_str, 'LOOP-VALUE 1'), '$loop?index must emit the second repeat iteration')
+   assert(contains(xml_str, 'LOOP-VALUE 2'), '$loop?index must emit the third repeat iteration')
+   assert(contains(xml_str, 'MISSING fallback'), 'Missing map lookups must fall through to defaults')
+end
+
+@Test function LoopFrameIntegration()
+   xml_str = loadAndRead('xquery_iterate.rpl')
+
+   assert(contains(xml_str, 'REPEAT-FRAME idx=2 iter=0 start=2 step=1 count=4 end=6'), '$loop metadata must expose the first repeat iteration state')
+   assert(contains(xml_str, 'REPEAT-FRAME idx=5 iter=3 start=2 step=1 count=4 end=6'), '$loop metadata must rebind on later repeat iterations')
+   assert(contains(xml_str, 'OUTER-BEFORE 0'), '$loop?index must resolve for the outer loop before entering an inner loop')
+   assert(contains(xml_str, 'INNER 0'), '$loop?index must resolve for the first inner loop iteration')
+   assert(contains(xml_str, 'INNER 1'), '$loop?index must resolve inside the inner loop body')
+   assert(contains(xml_str, 'OUTER-AFTER 1'), '$loop?index must be restored to the outer loop after the inner loop exits')
+   assert(contains(xml_str, 'OUTSIDE-LOOP missing'), '$loop must fall back to empty outside any active loop')
+   assert(contains(xml_str, 'REPEAT-CONTROL 0'), 'repeat must execute its first iteration')
+   assert(contains(xml_str, 'REPEAT-CONTROL 2'), 'repeat must continue after a continue tag')
+   assert(not contains(xml_str, 'REPEAT-CONTROL 1'), 'repeat continue must skip the remainder of the current iteration')
+   assert(not contains(xml_str, 'REPEAT-CONTROL 3'), 'repeat break must exit the innermost loop')
+   assert(contains(xml_str, 'REPEAT-CONTROL-AFTER'), 'repeat break/continue must not leak control flow beyond the loop')
+   assert(contains(xml_str, 'WHILE-XQ 0'), 'while@test must evaluate with the first loop frame bound')
+   assert(contains(xml_str, 'WHILE-XQ 2'), 'while@test must advance the loop frame across iterations')
+   assert(contains(xml_str, 'WHILE-IF-HIT'), 'Nested if@test inside while must observe the current loop frame')
+   assert(contains(xml_str, 'WHILE-CONTROL 0'), 'while control-flow testing must execute its first iteration')
+   assert(contains(xml_str, 'WHILE-CONTROL 2'), 'while continue must proceed to the next iteration')
+   assert(not contains(xml_str, 'WHILE-CONTROL 1'), 'while continue must skip the remainder of the current iteration')
+   assert(not contains(xml_str, 'WHILE-CONTROL 3'), 'while break must exit the loop')
+   assert(contains(xml_str, 'WHILE-CONTROL-AFTER'), 'while break/continue must not leak control flow beyond the loop')
+   assert(contains(xml_str, 'DESC 3'), 'Descending repeat loops must emit the starting value')
+   assert(contains(xml_str, 'DESC 1'), 'Descending repeat loops must continue down to the exclusive end')
+   assert(not contains(xml_str, 'DESC 0'), 'Descending repeat loops must keep the end bound exclusive')
+
+   assert(contains(xml_str, 'FOR-EACH code=A loop-pos=0 idx=0 count=3'), '<for-each> must rebind the context item and expose the loop frame position')
+   assert(contains(xml_str, 'FOR-EACH code=C loop-pos=2 idx=2 count=3'), '<for-each> must keep zero-based index and stable total count on later iterations')
+
+   assert(contains(xml_str, 'OUTER-BEFORE R1 0'), 'Outer <for-each> loop state must start at zero')
+   assert(contains(xml_str, 'INNER A 0 0'), 'Inner <for-each> must expose its own loop frame')
+   assert(contains(xml_str, 'INNER B 1 1'), 'Inner <for-each> must advance $loop correctly')
+   assert(contains(xml_str, 'OUTER-AFTER R2 1'), 'Outer <for-each> loop state must be restored after nested loops')
+
+   assert(contains(xml_str, 'CONTROL-ROW R1'), 'Nested control-flow fixture must enter the first outer row')
+   assert(contains(xml_str, 'CONTROL-ROW R2'), 'Inner break must not stop the outer <for-each>')
+   assert(not contains(xml_str, 'CONTROL-CELL skip'), 'continue must skip the remainder of the current inner iteration')
+   assert(not contains(xml_str, 'CONTROL-CELL after'), 'break must stop the innermost active <for-each>')
+   assert(contains(xml_str, 'CONTROL-CELL keep'), 'Outer iteration must continue after an inner break')
+   assert(contains(xml_str, 'CONTROL-AFTER'), 'break/continue must not leak outside the enclosing <for-each>')
+
+   assert(contains(xml_str, 'PARSE-NODE-A'), 'parse@select must accept node-sequence results directly')
+   assert(contains(xml_str, 'PARSE-NODE-B'), 'parse@select must serialise and reparse each selected node')
+   assert(contains(xml_str, 'REPEAT-STILL 0'), 'Numeric repeat loops must remain unchanged')
+   assert(contains(xml_str, 'REPEAT-STILL 1'), 'Numeric repeat loops must still advance normally')
+end
+
+@Test function BuiltInVariables()
+   xml_str = loadAndRead('xquery.rpl', 1024, nil, 'stage4document', true)
+
+   assert(contains(xml_str, 'OBJECT-EXISTS-TRUE'), 'kt:object-exists() must resolve known objects')
+   assert(contains(xml_str, 'OBJECT-EXISTS-FALSE'), 'kt:object-exists() must report missing objects cleanly')
+   assert(contains(xml_str, 'STYLE italic courier 20px red'), '$style must expose the active parser style')
+   assert(contains(xml_str, 'PAGE Index'), '$meta?current-page must remain available after migration')
+   assert(contains(xml_str, 'LAYOUT 1024 x 768'), '$layout view dimensions must remain available after migration')
+   assert(regex.new('LINE [0-9]+').test(xml_str), '$meta?line-no must expose the current line number')
+end
+
+@Test function HelperUid()
+   xml_str = feedAndRead(
+      '<body/><page><p><print select="concat(\'UID \', kt:uid())"/></p></page>')
+
+   assert(regex.new('UID [0-9]+').test(xml_str),
+      'kt:uid() must expose a refresh-local generated ID, got: ' .. xml_str)
+end
+
+@Test function HelperPlatform()
+   xml_str = feedAndRead(
+      '<body/><page><p><print select="kt:platform()"/></p></page>')
+
+   assert(regex.new('(Windows|Linux|OSX|Unknown)').test(xml_str),
+      'kt:platform() must expose the host platform string, got: ' .. xml_str)
+end
+
+@Test function HelperTemplateContentAvt()
+   xml_str = feedAndRead(
+      '<body/><template name="content_probe"><p><print value="TEMPLATE-CONTENT-AVT {kt:template-content()}"/></p></template>'
+      .. '<page><content_probe>Alpha</content_probe></page>')
+
+   assert(contains(xml_str, 'TEMPLATE-CONTENT-AVT Alpha'),
+      'kt:template-content() must expose template caller text to AVTs, got: ' .. xml_str)
+end
+
+@Test function HelperTemplateContentParseSelect()
+   xml_str = feedAndRead(
+      '<body/><template name="content_probe"><parse select="kt:template-content()"/></template>'
+      .. '<page><content_probe><p>TEMPLATE-CONTENT-PARSE</p></content_probe></page>')
+
+   assert(contains(xml_str, 'TEMPLATE-CONTENT-PARSE'),
+      'kt:template-content() must let parse@select inject caller markup like <inject/>, got: ' .. xml_str)
+end
+
+@Test function HelperTemplateContentForEach()
+   xml_str = feedAndRead(
+      '<body/><template name="content_probe"><for-each select="kt:template-content()"><p><print value="TEMPLATE-CONTENT-NODE {local-name(.)} {string(.)} {$loop?index}"/></p></for-each></template>'
+      .. '<page><content_probe><item>A</item><item>B</item></content_probe></page>')
+
+   assert(contains(xml_str, 'TEMPLATE-CONTENT-NODE item A 0'),
+      'kt:template-content() must return caller nodes that for-each can iterate with relative queries')
+   assert(contains(xml_str, 'TEMPLATE-CONTENT-NODE item B 1'),
+      'kt:template-content() must preserve caller node order for later template content items')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Surface behaviour
+
+@Test function PrintSelect()
+   xml_str = feedAndRead('<body/><page><p><print select="upper-case(\'hello\')"/></p></page>')
+   assert(contains(xml_str, 'HELLO'), 'print@select must upper-case "hello" via XQuery, got: ' .. xml_str)
+end
+
+@Test function PrintSelectStringifiesRealNodes()
+   xml_str = feedAndRead(
+      '<body/><page><data select="\'&lt;root&gt;&lt;item&gt;REAL-NODE&lt;/item&gt;&lt;/root&gt;\'"/>'
+      .. '<p><print select="$doc/item"/></p></page>')
+   assert(contains(xml_str, 'REAL-NODE'),
+      'print@select must stringify real XML nodes instead of dropping their string value, got: ' .. xml_str)
+end
+
+@Test function PrintSelectStringifiesConstructedNodes()
+   xml_str = feedAndRead('<body/><page><p><print select="element em { \'CONSTRUCTED-NODE\' }"/></p></page>')
+   assert(contains(xml_str, 'CONSTRUCTED-NODE'),
+      'print@select must stringify constructed nodes instead of dropping their string value, got: ' .. xml_str)
+   assert((#xml_str:split('<em>CONSTRUCTED-NODE</em>') - 1) is 0,
+      'print@select must not inject constructed-node markup, got: ' .. xml_str)
+end
+
+@Test function PrintSelectDocumentContext()
+   xml_str = feedAndRead('<body/><page name="Ctx"><p><print select="string((/page/@name)[1])"/></p></page>')
+   assert(contains(xml_str, 'Ctx'),
+      'print@select must evaluate against the active XML context, got: ' .. xml_str)
+end
+
+@Test function PrintValueAVT()
+   xml_str = feedAndRead('<body/><page><p><print value="sum={1 + 2 + 3}"/></p></page>')
+   assert(contains(xml_str, 'sum=6'), 'print@value AVT must evaluate embedded XQuery, got: ' .. xml_str)
+end
+
+@Test function PrintValueAVTDocumentContext()
+   xml_str = feedAndRead('<body/><page name="AVT"><p><print value="page={string((/page/@name)[1])}"/></p></page>')
+   assert(contains(xml_str, 'page=AVT'),
+      'print@value AVT must evaluate embedded XQuery against the active XML context, got: ' .. xml_str)
+end
+
+@Test function PrintValueEscapedBraces()
+   xml_str = feedAndRead('<body/><page><p><print value="literal {{ and }} braces"/></p></page>')
+   assert(regex.new('literal \\{ and \\} braces').test(xml_str),
+      'print@value AVT must treat {{/}} as literal braces, got: ' .. xml_str)
+end
+
+@Test function IfTestTrue()
+   xml_str = feedAndRead(
+      '<body/><page><if test="2 gt 1"><p>HIT-TRUE</p></if><else><p>HIT-FALSE</p></else></page>')
+   assert(contains(xml_str, 'HIT-TRUE'), 'if@test=2 gt 1 must take the true branch')
+   assert(not contains(xml_str, 'HIT-FALSE'), 'if@test=2 gt 1 must not run the else branch')
+end
+
+@Test function IfTestFalseWithElseif()
+   xml_str = feedAndRead(
+      '<body/><page>'
+      .. '<if test="1 gt 2"><p>FAIL-IF</p></if>'
+      .. '<elseif test="starts-with(\'warning\', \'warn\')"><p>HIT-ELSEIF</p></elseif>'
+      .. '<else><p>FAIL-ELSE</p></else>'
+      .. '</page>')
+   assert(contains(xml_str, 'HIT-ELSEIF'), 'elseif@test must match')
+   assert(not contains(xml_str, 'FAIL-IF'), 'if@test false branch must not run')
+   assert(not contains(xml_str, 'FAIL-ELSE'), 'else must not run when elseif matches')
+end
+
+@Test function IfTestDocumentContext()
+   xml_str = feedAndRead(
+      '<body/><page name="Ctx"><if test="exists(/page[@name=\'Ctx\'])"><p>CTX-HIT</p></if></page>')
+   assert(contains(xml_str, 'CTX-HIT'),
+      'if@test must evaluate against the active XML context')
+end
+
+@Test function WhileTestFalseSkipsBody()
+   xml_str = feedAndRead(
+      '<body/><page><while test="false()"><p>SHOULD-NOT-EMIT</p></while></page>')
+   assert(not contains(xml_str, 'SHOULD-NOT-EMIT'), 'while@test=false() must not emit the body')
+end
+
+@Test function ParseSelect()
+   xml_str = feedAndRead(
+      '<body/><page><parse select="\'&lt;p&gt;PARSED-FROM-XQUERY&lt;/p&gt;\'"/></page>')
+   assert(contains(xml_str, 'PARSED-FROM-XQUERY'),
+      'parse@select must evaluate XQuery and parse the result as XML, got: ' .. xml_str)
+end
+
+@Test function ParseSelectDocumentContext()
+   xml_str = feedAndRead(
+      '<body/><page name="ParseCtx"><parse select="concat(\'&lt;p&gt;\', string((/page/@name)[1]), \'&lt;/p&gt;\')"/></page>')
+   assert(contains(xml_str, 'ParseCtx'),
+      'parse@select must evaluate against the active XML context, got: ' .. xml_str)
+end
+
+@Test function ParseSelectRejectsNonXmlScalar()
+   err = feedExpectError('<body/><page><parse select="\'plain text\'"/></page>')
+   assert(err != ERR_Okay, 'parse@select must reject non-XML scalar results')
+end
+
+@Test function ParseSelectMixedNodeSequence()
+   xml_str = feedAndRead([[
+      <body/>
+      <page>
+         <fixture><p>PARSE-MIXED-REAL</p></fixture>
+         <parse select="(/page/fixture/p, element p {'PARSE-MIXED-CONSTRUCTED'})"/>
+      </page>
+   ]])
+
+   assert(contains(xml_str, 'PARSE-MIXED-REAL'),
+      'parse@select must serialise real XML nodes in mixed node sequences')
+   assert(contains(xml_str, 'PARSE-MIXED-CONSTRUCTED'),
+      'parse@select must serialise constructed nodes in mixed node sequences')
+end
+
+@Test function RegexMatchesInTest()
+   xml_str = feedAndRead(
+      '<body/><page>'
+      .. '<if test="matches(\'Item-42\', \'^[A-Za-z]+-[0-9]+$\')"><p>REGEX-MATCH-HIT</p></if>'
+      .. '<if test="matches(\'Item-42\', \'^[0-9]+$\')"><p>REGEX-MATCH-FAIL</p></if>'
+      .. '</page>')
+
+   assert(contains(xml_str, 'REGEX-MATCH-HIT'),
+      'if@test must allow XQuery matches() expressions')
+   assert(not contains(xml_str, 'REGEX-MATCH-FAIL'),
+      'if@test must honour false matches() results')
+end
+
+@Test function RegexReplaceInPrintSelect()
+   xml_str = feedAndRead(
+      '<body/><page><p><print select="replace(\'abc-123-def\', \'[0-9]+\', \'NUM\')"/></p></page>')
+
+   assert(contains(xml_str, 'abc-NUM-def'),
+      'print@select must allow XQuery replace() expressions, got: ' .. xml_str)
+end
+
+@Test function RegexTokenizeInPrintSelect()
+   xml_str = feedAndRead(
+      '<body/><page><p><print select="string-join(tokenize(\'alpha, beta,gamma\', \'\\s*,\\s*\'), \'|\')"/></p></page>')
+
+   assert(contains(xml_str, 'alpha|beta|gamma'),
+      'print@select must allow XQuery tokenize() expressions, got: ' .. xml_str)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Runtime bindings and loop frames
+
+@Test function VarsInDirectFeed()
+   xml_str = feedAndRead(
+      '<body/><page><if test="$vars?username = \'alice\'"><p>DIRECT-VAR-HIT</p></if>'
+      .. '<p><print value="user={$vars?username}"/></p>'
+      .. '<parse select="concat(\'&lt;p&gt;\', $vars?username, \'&lt;/p&gt;\')"/></page>',
+      800,
+      'alice')
+
+   assert(contains(xml_str, 'DIRECT-VAR-HIT'), '$vars must resolve in direct feed test expressions')
+   assert(contains(xml_str, 'user=alice'), '$vars must resolve in direct feed AVTs')
+   assert(contains(xml_str, '>alice<'), '$vars must resolve in direct feed parse@select expressions')
+end
+
+@Test function WhileLoopStartsAtZero()
+   xml_str = feedAndRead(
+      '<body/><page><while test="$loop?index lt 2">'
+      .. '<p><print value="idx={$loop?index} iter={$loop?iteration} start={$loop?start} step={$loop?step}"/></p>'
+      .. '</while></page>')
+
+   assert(contains(xml_str, 'idx=0 iter=0 start=0 step=1'),
+      'while loops must expose a zero-based initial loop frame')
+   assert(contains(xml_str, 'idx=1 iter=1 start=0 step=1'),
+      'while loops must increment both index and iteration together')
+end
+
+@Test function LayoutAttributeAVT()
+   xml_str = feedAndRead(
+      '<body face="{\'courier\'}" font-size="{12}pt"/><page><p><advance x="{0.5}lh"/>AVT-LAYOUT</p></page>')
+   assert(contains(xml_str, 'AVT-LAYOUT'), 'AVTs on managed layout/style attributes must parse successfully')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Migration and failure cases
+
+@Test function MalformedTestExpression()
+   err = feedExpectError(
+      '<body/><page><if test="this is not valid xquery @@"><p>SHOULD-NOT-HIT</p></if>'
+      .. '<else><p>MALFORMED-FELL-THROUGH</p></else></page>')
+   assert(err != ERR_Okay, 'Malformed test expression must fail parsing')
+end
+
+@Test function MalformedAVTExpression()
+   err = feedExpectError('<body/><page><p><print value="broken {$vars?}"/></p></page>', 1024, 'alice')
+   assert(err != ERR_Okay, 'Malformed AVT expression must fail document parsing')
+end
+
+@Test function MalformedAVTBraces()
+   err = feedExpectError('<body/><page><p><print value="broken {"/></p></page>')
+   assert(err != ERR_Okay, 'Unterminated AVT braces must fail document parsing')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function DataSelectRejectsNonXmlScalar()
+   err = feedExpectError('<body/><page><data select="\'plain text\'"/></page>')
+   assert(err != ERR_Okay, '<data select> must reject non-XML scalar results')
+end
+
+@Test function RepeatSelectRejected()
+   err = feedExpectError('<body/><page><repeat select="(1, 2)"><p>BAD</p></repeat></page>')
+   assert(err != ERR_Okay, 'repeat select="..." must be rejected')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function LetConstructedNodeBindingSurvivesChildQueries()
+   xml_str = feedAndRead([[
+      <body/>
+      <page>
+         <let name="x" select="element item { attribute code {'A'} }">
+            <p><print select="concat('LET-SELECT ', string($state?x/@code))"/></p>
+            <p><print value="LET-AVT {$state?x/@code}"/></p>
+            <if test="string($state?x/@code) = 'A'">
+               <p>LET-CONSTRUCTED-HIT</p>
+            </if>
+         </let>
+      </page>
+   ]])
+
+   assert(contains(xml_str, 'LET-SELECT A'), 'Constructed-node <let> bindings must survive print@select lookups')
+   assert(contains(xml_str, 'LET-AVT A'), 'Constructed-node <let> bindings must survive AVT lookups')
+   assert(contains(xml_str, 'LET-CONSTRUCTED-HIT'), 'Constructed-node <let> bindings must survive nested if@test queries')
+end
+
+@Test function LetDocSnapshotSurvivesDataReplacement()
+   xml_str = feedAndRead([[
+      <body/>
+      <page>
+         <data select="'&lt;root&gt;&lt;item code=&quot;A&quot;&gt;&lt;name&gt;Alpha&lt;/name&gt;&lt;/item&gt;&lt;/root&gt;'"/>
+         <let name="saved" select="$doc/item">
+            <data select="'&lt;root&gt;&lt;item code=&quot;R1&quot;&gt;&lt;name&gt;Replace1&lt;/name&gt;&lt;/item&gt;&lt;/root&gt;'"/>
+            <data select="'&lt;root&gt;&lt;item code=&quot;R2&quot;&gt;&lt;name&gt;Replace2&lt;/name&gt;&lt;/item&gt;&lt;/root&gt;'"/>
+            <p><print select="concat('LET-DOC-SNAPSHOT ', string($state?saved/@code), ' ', string($state?saved/name))"/></p>
+            <if test="string($state?saved/@code) = 'A'">
+               <p>LET-DOC-SNAPSHOT-HIT</p>
+            </if>
+         </let>
+      </page>
+   ]])
+
+   assert(contains(xml_str, 'LET-DOC-SNAPSHOT A Alpha'),
+      '$state bindings selected from $doc must survive later <data select> replacements')
+   assert(contains(xml_str, 'LET-DOC-SNAPSHOT-HIT'),
+      '$state bindings selected from $doc must remain queryable after repeated <data select> replacements')
+end
+
+@Test function ForEachConstructedNodeContext()
+   xml_str = feedAndRead([[
+      <body/>
+      <page>
+         <for-each select="(
+            element item { attribute code {'A'}, element name {'Alpha'} },
+            element item { attribute code {'B'}, element name {'Bravo'} }
+         )">
+            <p><print value="FOR-EACH-ITEM {string(@code)} {local-name(.)} {string(name)}"/></p>
+         </for-each>
+      </page>
+   ]])
+
+   assert(contains(xml_str, 'FOR-EACH-ITEM A item Alpha'),
+      'Constructed-node <for-each> must bind relative queries against the current constructed item')
+   assert(contains(xml_str, 'FOR-EACH-ITEM B item Bravo'),
+      'Constructed-node <for-each> must advance across constructed-node sequences')
+end
+
+@Test function ForEachDocContextSurvivesDataReplacement()
+   xml_str = feedAndRead([[
+      <body/>
+      <page>
+         <data select="'&lt;root&gt;&lt;item code=&quot;A&quot;&gt;&lt;name&gt;Alpha&lt;/name&gt;&lt;/item&gt;&lt;item code=&quot;B&quot;&gt;&lt;name&gt;Bravo&lt;/name&gt;&lt;/item&gt;&lt;/root&gt;'"/>
+         <for-each select="$doc/item">
+            <data select="'&lt;root&gt;&lt;item code=&quot;R1&quot;&gt;&lt;name&gt;Replace1&lt;/name&gt;&lt;/item&gt;&lt;/root&gt;'"/>
+            <data select="'&lt;root&gt;&lt;item code=&quot;R2&quot;&gt;&lt;name&gt;Replace2&lt;/name&gt;&lt;/item&gt;&lt;/root&gt;'"/>
+            <p><print value="FOR-EACH-DOC-SNAPSHOT {string(@code)} {string(name)} {$loop?index}"/></p>
+         </for-each>
+      </page>
+   ]])
+
+   assert(contains(xml_str, 'FOR-EACH-DOC-SNAPSHOT A Alpha 0'),
+      '<for-each> items selected from $doc must survive later <data select> replacements in the same iteration')
+   assert(contains(xml_str, 'FOR-EACH-DOC-SNAPSHOT B Bravo 1'),
+      '<for-each> must keep later $doc-selected items alive after earlier iterations replace $doc')
+end
+
+@Test function ForEachRejectsAtomicSequence()
+   err = feedExpectError('<body/><page><for-each select="1 to 2"><p>BAD</p></for-each></page>')
+   assert(err != ERR_Okay, '<for-each> must reject atomic sequences instead of treating them as empty')
+end
