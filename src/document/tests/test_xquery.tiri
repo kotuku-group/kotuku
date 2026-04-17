@@ -382,6 +382,11 @@ end
    assert(err != ERR_Okay, 'Malformed AVT expression must fail document parsing')
 end
 
+@Test function MalformedAVTBraces()
+   err = feedExpectError('<body/><page><p><print value="broken {"/></p></page>')
+   assert(err != ERR_Okay, 'Unterminated AVT braces must fail document parsing')
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 
 @Test function DataSelectRejectsNonXmlScalar()

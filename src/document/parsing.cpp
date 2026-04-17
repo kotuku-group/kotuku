@@ -480,8 +480,9 @@ TRF parser::parse_tag(XTag &Tag, IPF &Flags)
    XTag *object_template = nullptr;
 
    auto saved_attribs = Tag.Attribs;
-   if (xq_prepare_attribs(this, Tag) != ERR::Okay) {
+   if (auto err = xq_prepare_attribs(this, Tag); err != ERR::Okay) {
       Tag.Attribs = saved_attribs;
+      Self->Error = err;
       return TRF::NIL;
    }
 
