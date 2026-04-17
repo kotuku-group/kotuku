@@ -1257,7 +1257,12 @@ class extDocument : public objDocument {
    ankerl::unordered_dense::map<glyph_cache_key, glyph_cache_value, glyph_cache_hash> GlyphAdvanceCache;
    ankerl::unordered_dense::map<std::string_view, doc_edit> EditDefs;
    std::array<std::vector<FUNCTION>, size_t(DRT::END)> Triggers;
-   std::vector<const XTag *> TemplateArgs; // If a template is called, the tag is referred here so that args can be pulled from it
+   struct template_arg_view {
+      const XTag *Tag = nullptr;
+      const pf::vector<XMLAttrib> *Attribs = nullptr;
+   };
+
+   std::vector<template_arg_view> TemplateArgs; // If a template is called, the tag is referred here so that args can be pulled from it
    std::string FontFace;       // Default font face
    std::string WidthCacheFontFace;
    RSTREAM Stream;             // Internal stream buffer

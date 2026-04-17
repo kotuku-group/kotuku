@@ -140,7 +140,7 @@ static void xq_clone_tag_tree(const XTag &Source, XTag &Target, int ParentID, in
    }
 }
 
-static size_t xq_find_attrib_index(const XTag *Node, const XMLAttrib *Attrib)
+static size_t find_attrib_index(const XTag *Node, const XMLAttrib *Attrib)
 {
    if ((not Node) or (not Attrib)) return std::numeric_limits<size_t>::max();
 
@@ -249,13 +249,14 @@ static XPathValue xq_template_args_to_map(extDocument *Self)
    if (Self->TemplateArgs.empty()) return result;
 
    auto args = Self->TemplateArgs.back();
-   if (not args) return result;
+   if (not args.Tag) return result;
 
-   for (int i=1; i < std::ssize(args->Attribs); i++) {
-      auto name = std::string_view(args->Attribs[i].Name);
+   auto &attribs = args.Attribs ? *args.Attribs : args.Tag->Attribs;
+   for (int i=1; i < std::ssize(attribs); i++) {
+      auto name = std::string_view(attribs[i].Name);
       if ((not name.empty()) and (name.front() IS '$')) name.remove_prefix(1);
       if (name.empty()) continue;
-      xq_map_append_string(result.map_storage, name, args->Attribs[i].Value);
+      xq_map_append_string(result.map_storage, name, attribs[i].Value);
    }
 
    return result;
@@ -920,7 +921,7 @@ static ERR xq_eval_value_helper(parser *Parser, objXML *XMLContext, const XTag *
 // Attribute lookup.  Attribute names may still carry a leading $ after preprocessing, so the lookup normalises
 // that away.
 
-static const std::string * xq_find_attrib(const XTag &Tag, std::string_view Name)
+static const std::string * find_attrib(const tag_view &Tag, std::string_view Name)
 {
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
       auto attrib_name = std::string_view(Tag.Attribs[i].Name);
@@ -933,7 +934,7 @@ static const std::string * xq_find_attrib(const XTag &Tag, std::string_view Name
 //********************************************************************************************************************
 // Minimal XML escaping helper for serialising XQuery node sequences back into markup.
 
-static void xq_append_xml_escaped(std::ostringstream &Buffer, std::string_view Text, bool AttributeMode)
+static void append_xml_escaped(std::ostringstream &Buffer, std::string_view Text, bool AttributeMode)
 {
    for (char ch : Text) {
       switch (ch) {
@@ -959,24 +960,24 @@ static void xq_append_xml_escaped(std::ostringstream &Buffer, std::string_view T
 // Serialise an XTag subtree into XML fragment form.  This is used when <data> or <parse> receives a
 // node-sequence result and needs reparsing through the document parser rather than ordinary XQuery string-value rules.
 
-static void xq_serialise_tag_fragment(const XTag &Tag, std::ostringstream &Buffer)
+static void serialise_tag_fragment(const XTag &Tag, std::ostringstream &Buffer)
 {
    if (Tag.Attribs.empty()) return;
 
    if (Tag.Attribs[0].isContent()) {
-      if (not Tag.Attribs[0].Value.empty()) xq_append_xml_escaped(Buffer, Tag.Attribs[0].Value, false);
+      if (not Tag.Attribs[0].Value.empty()) append_xml_escaped(Buffer, Tag.Attribs[0].Value, false);
       return;
    }
 
    Buffer << '<';
-   xq_append_xml_escaped(Buffer, Tag.Attribs[0].Name, false);
+   append_xml_escaped(Buffer, Tag.Attribs[0].Name, false);
 
    for (size_t index = 1; index < Tag.Attribs.size(); ++index) {
       auto &attrib = Tag.Attribs[index];
       Buffer << ' ';
-      xq_append_xml_escaped(Buffer, attrib.Name, false);
+      append_xml_escaped(Buffer, attrib.Name, false);
       Buffer << "=\"";
-      xq_append_xml_escaped(Buffer, attrib.Value, true);
+      append_xml_escaped(Buffer, attrib.Value, true);
       Buffer << '"';
    }
 
@@ -997,11 +998,62 @@ static void xq_serialise_tag_fragment(const XTag &Tag, std::ostringstream &Buffe
 
    Buffer << '>';
    for (auto &child : Tag.Children) {
-      xq_serialise_tag_fragment(child, Buffer);
+      serialise_tag_fragment(child, Buffer);
    }
 
    Buffer << "</";
-   xq_append_xml_escaped(Buffer, Tag.Attribs[0].Name, false);
+   append_xml_escaped(Buffer, Tag.Attribs[0].Name, false);
+   Buffer << '>';
+}
+
+//********************************************************************************************************************
+// Serialise a tag view using the original child tree but the currently active attribute set, so AVT-expanded
+// attributes can be emitted without constructing a duplicate XTag subtree.
+
+static void serialise_tag_fragment(const tag_view &Tag, std::ostringstream &Buffer)
+{
+   if (Tag.Attribs.empty()) return;
+
+   if (Tag.Attribs[0].isContent()) {
+      if (not Tag.Attribs[0].Value.empty()) append_xml_escaped(Buffer, Tag.Attribs[0].Value, false);
+      return;
+   }
+
+   Buffer << '<';
+   append_xml_escaped(Buffer, Tag.Attribs[0].Name, false);
+
+   for (size_t index = 1; index < Tag.Attribs.size(); ++index) {
+      auto &attrib = Tag.Attribs[index];
+      Buffer << ' ';
+      append_xml_escaped(Buffer, attrib.Name, false);
+      Buffer << "=\"";
+      append_xml_escaped(Buffer, attrib.Value, true);
+      Buffer << '"';
+   }
+
+   if ((Tag.Flags & XTF::INSTRUCTION) != XTF::NIL) {
+      Buffer << "/>";
+      return;
+   }
+
+   if ((Tag.Flags & XTF::NOTATION) != XTF::NIL) {
+      Buffer << '>';
+      return;
+   }
+
+   if (Tag.Children.empty()) {
+      Buffer << "/>";
+      return;
+   }
+
+   Buffer << '>';
+
+   for (auto &child : Tag.Children) {
+      serialise_tag_fragment(child, Buffer);
+   }
+
+   Buffer << "</";
+   append_xml_escaped(Buffer, Tag.Attribs[0].Name, false);
    Buffer << '>';
 }
 
@@ -1022,7 +1074,7 @@ static ERR xq_value_to_xml_fragment(const XPathValue &Value, std::string &OutXml
    std::ostringstream buffer;
    for (auto *node : Value.node_set) {
       if (not node) return ERR::Args;
-      xq_serialise_tag_fragment(*node, buffer);
+      serialise_tag_fragment(*node, buffer);
    }
 
    OutXml = buffer.str();
@@ -1137,7 +1189,7 @@ static ERR xq_make_stored_value(parser *Parser, const XPathValue &Source, parser
       Result.value.node_set[index] = &clone;
 
       if ((index < Source.node_set_attributes.size()) and Source.node_set_attributes[index]) {
-         auto attrib_index = xq_find_attrib_index(node, Source.node_set_attributes[index]);
+         auto attrib_index = find_attrib_index(node, Source.node_set_attributes[index]);
          if ((attrib_index != std::numeric_limits<size_t>::max()) and (attrib_index < clone.Attribs.size())) {
             Result.value.node_set_attributes[index] = &clone.Attribs[attrib_index];
          }
@@ -1209,27 +1261,16 @@ static ERR xq_select_to_xml_fragment(parser *Parser, const XPathValue &Value, st
 static ERR xq_expand_avt(parser *Parser, objXML *XMLContext, const XTag *ContextTag, const std::string &Input,
    std::string &Output);
 
-static void xq_copy_tag_shell(const XTag &Source, XTag &Target)
+static ERR xq_prepare_tag(parser *Parser, const XTag &Tag, pf::vector<XMLAttrib> &PreparedAttribs,
+   const pf::vector<XMLAttrib> *&ActiveAttribs)
 {
-   Target.ID = Source.ID;
-   Target.ParentID = Source.ParentID;
-   Target.LineNo = Source.LineNo;
-   Target.Flags = Source.Flags;
-   Target.NamespaceID = Source.NamespaceID;
-   Target.Reserved = Source.Reserved;
-   Target.Attribs = Source.Attribs;
-   Target.Children.clear();
-}
-
-static ERR xq_prepare_tag(parser *Parser, const XTag &Tag, XTag &PreparedTag, const XTag *&ActiveTag)
-{
-   ActiveTag = &Tag;
+   ActiveAttribs = &Tag.Attribs;
 
    if (Tag.Attribs.size() < 2) return ERR::Okay;
 
    auto tag_name = std::string_view(Tag.Attribs[0].Name);
    if ((not tag_name.empty()) and (tag_name.front() IS '$')) return ERR::Okay;
-   auto tag_hash = strihash(tag_name);
+   auto tag_hash = strhash(tag_name);
 
    bool requires_prepare = false;
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
@@ -1245,27 +1286,24 @@ static ERR xq_prepare_tag(parser *Parser, const XTag &Tag, XTag &PreparedTag, co
 
    if (not requires_prepare) return ERR::Okay;
 
-   // Most AVT-bearing instruction tags are leaves.  Avoid cloning the child tree unless the tag
-   // actually owns children that later parse stages may consume.
-   if (Tag.Children.empty()) xq_copy_tag_shell(Tag, PreparedTag);
-   else PreparedTag = Tag;
+   PreparedAttribs = Tag.Attribs;
 
-   for (int i=1; i < std::ssize(PreparedTag.Attribs); i++) {
-      auto name = std::string_view(PreparedTag.Attribs[i].Name);
+   for (int i=1; i < std::ssize(PreparedAttribs); i++) {
+      auto name = std::string_view(PreparedAttribs[i].Name);
       if ((not name.empty()) and (name.front() IS '$')) continue;
       if (name.empty()) continue;
 
-      auto &value = PreparedTag.Attribs[i].Value;
+      auto &value = PreparedAttribs[i].Value;
 
       if ((not is_xq_expression_attrib(tag_hash, name)) and has_avt_markers(value)) {
          std::string expanded;
-         if (auto err = xq_expand_avt(Parser, Parser->m_xml, &PreparedTag, value, expanded); err != ERR::Okay) return err;
+         if (auto err = xq_expand_avt(Parser, Parser->m_xml, &Tag, value, expanded); err != ERR::Okay) return err;
 
          if (expanded != value) value = std::move(expanded);
       }
    }
 
-   ActiveTag = &PreparedTag;
+   ActiveAttribs = &PreparedAttribs;
    return ERR::Okay;
 }
 
@@ -1346,7 +1384,7 @@ static ERR xq_expand_avt(parser *Parser, objXML *XMLContext, const XTag *Context
 // XQuery integration: the test attribute is recognised as a standalone XQuery expression.  The result of the
 // expression is coerced via XQuery's effective boolean value rules (boolean(...)).
 
-static bool check_tag_conditions(parser *Parser, const XTag &Tag)
+static bool check_tag_conditions(parser *Parser, const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -1358,10 +1396,10 @@ static bool check_tag_conditions(parser *Parser, const XTag &Tag)
    for (unsigned i=1; i < Tag.Attribs.size(); i++) {
       auto name = std::string_view(Tag.Attribs[i].Name);
       if ((not name.empty()) and (name.front() IS '$')) name.remove_prefix(1);
-      if (iequals("test", name)) {
+      if ("test" IS name) {
          std::string result;
          bool boolean_result = false;
-         auto err = xq_eval_helper(Parser, Parser->m_xml, &Tag, Tag.Attribs[i].Value,
+         auto err = xq_eval_helper(Parser, Parser->m_xml, Tag.Source, Tag.Attribs[i].Value,
             XQEval::BOOLEAN, result, boolean_result);
          if (err != ERR::Okay) {
             log.warning("XQuery test failed: %s", Tag.Attribs[i].Value.c_str());
@@ -1379,17 +1417,17 @@ static bool check_tag_conditions(parser *Parser, const XTag &Tag)
 //********************************************************************************************************************
 // Load or replace the parser-local document data scope.
 
-void parser::tag_data(const XTag &Tag)
+void parser::tag_data(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
 
-   auto select = xq_find_attrib(Tag, "select");
+   auto select = find_attrib(Tag, "select");
    if (not select) return;
 
    XPathValue value(XPVT::String);
    std::string result;
    bool has_value = false;
-   auto err = xq_eval_value_helper(this, m_xml, &Tag, *select, value, result, has_value);
+   auto err = xq_eval_value_helper(this, m_xml, Tag.Source, *select, value, result, has_value);
    if (err != ERR::Okay) {
       log.warning("<data select=\"%s\"> failed.", select->c_str());
       Self->Error = err;
@@ -1419,7 +1457,7 @@ void parser::tag_data(const XTag &Tag)
 //********************************************************************************************************************
 // Parse a string value as XML
 
-void parser::tag_parse(const XTag &Tag)
+void parser::tag_parse(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -1433,11 +1471,11 @@ void parser::tag_parse(const XTag &Tag)
       for (int i=1; i < std::ssize(Tag.Attribs); i++) {
          auto name = std::string_view(Tag.Attribs[i].Name);
          if ((not name.empty()) and (name.front() IS '$')) name.remove_prefix(1);
-         if (iequals("select", name)) {
+         if ("select" IS name) {
             XPathValue value(XPVT::String);
             std::string result;
             bool has_value = false;
-            auto err = xq_eval_value_helper(this, m_xml, &Tag, Tag.Attribs[i].Value, value, result, has_value);
+            auto err = xq_eval_value_helper(this, m_xml, Tag.Source, Tag.Attribs[i].Value, value, result, has_value);
             if (err != ERR::Okay) {
                log.warning("<parse select=\"%s\"> failed.", Tag.Attribs[i].Value.c_str());
                Self->Error = err;
@@ -1468,8 +1506,7 @@ void parser::tag_parse(const XTag &Tag)
          }
       }
 
-      if ((iequals("value", Tag.Attribs[1].Name)) or
-          (iequals("$value", Tag.Attribs[1].Name))) {
+      if (("value" IS Tag.Attribs[1].Name) or ("$value" IS Tag.Attribs[1].Name)) {
          log.traceBranch("Parsing string value as XML...");
 
          if (auto xmlinc = objXML::create::local(fl::Statement(Tag.Attribs[1].Value), fl::Flags(XMF::PARSE_HTML|XMF::STRIP_HEADERS))) {
@@ -1487,7 +1524,7 @@ void parser::tag_parse(const XTag &Tag)
 
 //********************************************************************************************************************
 
-void parser::tag_print(const XTag &Tag)
+void parser::tag_print(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -1502,11 +1539,11 @@ void parser::tag_print(const XTag &Tag)
       for (int i=1; i < std::ssize(Tag.Attribs); i++) {
          auto name = std::string_view(Tag.Attribs[i].Name);
          if ((not name.empty()) and (name.front() IS '$')) name.remove_prefix(1);
-         if (iequals("select", name)) {
+         if ("select" IS name) {
             XPathValue value(XPVT::String);
             std::string result;
             bool has_value = false;
-            auto err = xq_eval_value_helper(this, m_xml, &Tag, Tag.Attribs[i].Value, value, result, has_value);
+            auto err = xq_eval_value_helper(this, m_xml, Tag.Source, Tag.Attribs[i].Value, value, result, has_value);
             if (err != ERR::Okay) {
                log.warning("<print select=\"%s\"> failed.", Tag.Attribs[i].Value.c_str());
                Self->Error = err;
@@ -1548,7 +1585,7 @@ void parser::tag_print(const XTag &Tag)
 // <let> introduces a lexical $state binding that is visible only to the element's children.  The state_guard above
 // restores any previous binding automatically.
 
-TRF parser::tag_let(const XTag &Tag, IPF &Flags)
+TRF parser::tag_let(const tag_view &Tag, IPF &Flags)
 {
    pf::Log log(__FUNCTION__);
 
@@ -1558,8 +1595,8 @@ TRF parser::tag_let(const XTag &Tag, IPF &Flags)
       return TRF::NIL;
    }
 
-   auto name = xq_find_attrib(Tag, "name");
-   auto select = xq_find_attrib(Tag, "select");
+   auto name = find_attrib(Tag, "name");
+   auto select = find_attrib(Tag, "select");
    if ((not name) or name->empty() or (not select)) {
       log.warning("<let> requires both name and select attributes.");
       Self->Error = ERR::InvalidData;
@@ -1577,7 +1614,7 @@ TRF parser::tag_let(const XTag &Tag, IPF &Flags)
    XPathValue value(XPVT::String);
    std::string result;
    bool has_value = false;
-   auto err = xq_eval_value_helper(this, m_xml, &Tag, *select, value, result, has_value);
+   auto err = xq_eval_value_helper(this, m_xml, Tag.Source, *select, value, result, has_value);
    if (err != ERR::Okay) {
       log.warning("<let select=\"%s\"> failed.", select->c_str());
       Self->Error = err;
@@ -1604,11 +1641,11 @@ TRF parser::tag_let(const XTag &Tag, IPF &Flags)
 // <for-each> evaluates its select expression once, requires a node sequence, and then parses its children once for
 // each item with both $loop and the XQuery context item rebound to that node.
 
-TRF parser::tag_for_each(const XTag &Tag, IPF &Flags)
+TRF parser::tag_for_each(const tag_view &Tag, IPF &Flags)
 {
    pf::Log log(__FUNCTION__);
 
-   auto select = xq_find_attrib(Tag, "select");
+   auto select = find_attrib(Tag, "select");
    if (not select) {
       log.warning("<for-each> requires a select attribute.");
       Self->Error = ERR::InvalidData;
@@ -1618,7 +1655,7 @@ TRF parser::tag_for_each(const XTag &Tag, IPF &Flags)
    XPathValue value(XPVT::String);
    std::string result;
    bool has_value = false;
-   auto err = xq_eval_value_helper(this, m_xml, &Tag, *select, value, result, has_value);
+   auto err = xq_eval_value_helper(this, m_xml, Tag.Source, *select, value, result, has_value);
    if (err != ERR::Okay) {
       log.warning("<for-each select=\"%s\"> failed.", select->c_str());
       Self->Error = err;

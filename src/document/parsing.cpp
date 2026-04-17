@@ -32,6 +32,43 @@ static constexpr uint32_t HASH_loop          = strhash("loop");
 static constexpr uint32_t HASH_doc           = strhash("doc");
 static constexpr uint32_t HASH_state         = strhash("state");
 
+//********************************************************************************************************************
+// Presents a source XTag with either its original attributes or an AVT-expanded attribute overlay,
+// whilst preserving the original child tree and identity fields for the rest of the parser.
+
+struct tag_view {
+   const XTag *Source = nullptr;
+   const pf::vector<XMLAttrib> *AttribPtr = nullptr;
+   int ID = 0;
+   int ParentID = 0;
+   int LineNo = 0;
+   XTF Flags = XTF::NIL;
+   uint32_t NamespaceID = 0;
+   const pf::vector<XMLAttrib> &Attribs;
+   const objXML::TAGS &Children;
+
+   explicit tag_view(const XTag &Tag) :
+      Source(&Tag), AttribPtr(&Tag.Attribs), ID(Tag.ID), ParentID(Tag.ParentID), LineNo(Tag.LineNo),
+      Flags(Tag.Flags), NamespaceID(Tag.NamespaceID), Attribs(Tag.Attribs), Children(Tag.Children) { }
+
+   tag_view(const XTag &Tag, const pf::vector<XMLAttrib> &PreparedAttribs) :
+      Source(&Tag), AttribPtr(&PreparedAttribs), ID(Tag.ID), ParentID(Tag.ParentID), LineNo(Tag.LineNo),
+      Flags(Tag.Flags), NamespaceID(Tag.NamespaceID), Attribs(PreparedAttribs), Children(Tag.Children) { }
+
+   inline CSTRING name() const { return Attribs[0].Name.c_str(); }
+   inline bool hasContent() const { return (!Children.empty()) and (Children[0].Attribs[0].Name.empty()); }
+   inline bool isContent() const { return Attribs[0].Name.empty(); }
+   inline bool isTag() const { return !Attribs[0].Name.empty(); }
+
+   inline const std::string * attrib(std::string_view Name) const {
+      for (unsigned a=1; a < Attribs.size(); a++) {
+         if (iequals(Attribs[a].Name, Name)) return &Attribs[a].Value;
+      }
+      return nullptr;
+   }
+};
+
+//********************************************************************************************************************
 // State machine for the parser.  This information is discarded after parsing.
 
 struct parser {
@@ -217,42 +254,42 @@ struct parser {
       return old;
    }
 
-   inline void tag_advance(const XTag &);
-   inline void tag_body(const XTag &);
-   inline void tag_button(const XTag &);
-   inline void tag_call(const XTag &);
-   inline void tag_cell(const XTag &);
-   inline void tag_checkbox(const XTag &);
-   inline void tag_combobox(const XTag &);
-   inline void tag_data(const XTag &);
-   inline void tag_debug(const XTag &);
-   inline void tag_div(const XTag &);
-   inline void tag_editdef(const XTag &);
-   inline TRF  tag_for_each(const XTag &, IPF &);
-   inline void tag_font(const XTag &);
+   inline void tag_advance(const tag_view &);
+   inline void tag_body(const tag_view &);
+   inline void tag_button(const tag_view &);
+   inline void tag_call(const tag_view &);
+   inline void tag_cell(const tag_view &);
+   inline void tag_checkbox(const tag_view &);
+   inline void tag_combobox(const tag_view &);
+   inline void tag_data(const tag_view &);
+   inline void tag_debug(const tag_view &);
+   inline void tag_div(const tag_view &);
+   inline void tag_editdef(const tag_view &);
+   inline TRF  tag_for_each(const tag_view &, IPF &);
+   inline void tag_font(const tag_view &);
    inline void tag_font_style(const objXML::TAGS &, FSO, std::string_view);
-   inline void tag_head(const XTag &);
-   inline void tag_image(const XTag &);
-   inline void tag_include(const XTag &);
-   inline void tag_index(const XTag &);
-   inline void tag_input(const XTag &);
-   inline TRF  tag_let(const XTag &, IPF &);
-   inline void tag_li(const XTag &);
-   inline void tag_link(const XTag &);
-   inline void tag_list(const XTag &);
-   inline void tag_page(const XTag &);
-   inline void tag_paragraph(const XTag &);
-   inline void tag_parse(const XTag &);
+   inline void tag_head(const tag_view &);
+   inline void tag_image(const tag_view &);
+   inline void tag_include(const tag_view &);
+   inline void tag_index(const tag_view &);
+   inline void tag_input(const tag_view &);
+   inline TRF  tag_let(const tag_view &, IPF &);
+   inline void tag_li(const tag_view &);
+   inline void tag_link(const tag_view &);
+   inline void tag_list(const tag_view &);
+   inline void tag_page(const tag_view &);
+   inline void tag_paragraph(const tag_view &);
+   inline void tag_parse(const tag_view &);
    inline void tag_pre(const objXML::TAGS &);
-   inline void tag_print(const XTag &);
-   inline void tag_repeat(const XTag &);
-   inline void tag_row(const XTag &);
-   inline void tag_script(const XTag &);
-   inline void tag_svg(const XTag &);
-   inline void tag_table(const XTag &);
-   inline void tag_template(const XTag &);
-   inline void tag_trigger(const XTag &);
-   inline void tag_use(const XTag &);
+   inline void tag_print(const tag_view &);
+   inline void tag_repeat(const tag_view &);
+   inline void tag_row(const tag_view &);
+   inline void tag_script(const tag_view &);
+   inline void tag_svg(const tag_view &);
+   inline void tag_table(const tag_view &);
+   inline void tag_template(const tag_view &);
+   inline void tag_trigger(const tag_view &);
+   inline void tag_use(const tag_view &);
    inline bool check_para_attrib(const XMLAttrib &, bc_paragraph *, bc_font &);
    inline bool check_font_attrib(const XMLAttrib &, bc_font &);
 
@@ -506,18 +543,18 @@ TRF parser::parse_tag(const XTag &Tag, IPF &Flags)
       return result;
    }
 
-   XTag prepared_tag(0);
-   const XTag *active_tag = &Tag;
-   if (auto err = xq_prepare_tag(this, Tag, prepared_tag, active_tag); err != ERR::Okay) {
+   pf::vector<XMLAttrib> prepared_attribs;
+   const pf::vector<XMLAttrib> *active_attribs = &Tag.Attribs;
+   if (auto err = xq_prepare_tag(this, Tag, prepared_attribs, active_attribs); err != ERR::Okay) {
       Self->Error = err;
       return TRF::NIL;
    }
 
-   auto &resolved_tag = *active_tag;
+   auto resolved_tag = (active_attribs IS &Tag.Attribs) ? tag_view(Tag) : tag_view(Tag, *active_attribs);
 
    auto tagname = resolved_tag.Attribs[0].Name;
    if (tagname.starts_with('$')) tagname.erase(0, 1);
-   auto tag_hash = strihash(tagname);
+   auto tag_hash = strhash(tagname);
 
    if (Self->Templates) { // Check for templates first, as they can be used to override the default tag names.
       if (Self->RefreshTemplates) {
@@ -526,7 +563,7 @@ TRF parser::parse_tag(const XTag &Tag, IPF &Flags)
          for (const XTag &scan : Self->Templates->Tags) {
             for (unsigned i=0; i < scan.Attribs.size(); i++) {
                if (iequals("name", scan.Attribs[i].Name)) {
-                  Self->TemplateIndex[strihash(scan.Attribs[i].Value)] = &scan;
+                  Self->TemplateIndex[strhash(scan.Attribs[i].Value)] = &scan;
                }
             }
          }
@@ -546,7 +583,7 @@ TRF parser::parse_tag(const XTag &Tag, IPF &Flags)
          pf::Log log(__FUNCTION__);
          log.traceBranch("Executing template '%s'.", tagname.c_str());
 
-         Self->TemplateArgs.push_back(active_tag);
+         Self->TemplateArgs.push_back({ &Tag, active_attribs });
          auto old_xml = change_xml(Self->Templates);
 
          parse_tags(Self->TemplateIndex[tag_hash]->Children, Flags);
@@ -920,7 +957,7 @@ TRF parser::parse_tags_with_embedded_style(const objXML::TAGS &Tags, bc_font &St
 
 bool parser::check_para_attrib(const XMLAttrib &Attrib, bc_paragraph *Para, bc_font &Style)
 {
-   switch (strihash(Attrib.Name)) {
+   switch (strhash(Attrib.Name)) {
       case HASH_no_wrap:
          Style.options |= FSO::NO_WRAP;
          return true;
@@ -973,7 +1010,7 @@ bool parser::check_font_attrib(const XMLAttrib &Attrib, bc_font &Style)
 {
    pf::Log log;
 
-   switch (strihash(Attrib.Name)) {
+   switch (strhash(Attrib.Name)) {
       case HASH_colour:
          log.warning("Font 'colour' attrib is deprecated, use 'fill'");
          [[fallthrough]];
@@ -1046,12 +1083,12 @@ void parser::trim_preformat(extDocument *Self)
 //********************************************************************************************************************
 // Advances the cursor.  It is only possible to advance positively on either axis.
 
-void parser::tag_advance(const XTag &Tag)
+void parser::tag_advance(const tag_view &Tag)
 {
    auto &adv = m_stream->emplace<bc_advance>(m_index);
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      switch (strihash(Tag.Attribs[i].Name)) {
+      switch (strhash(Tag.Attribs[i].Name)) {
          case HASH_x: adv.x = DUNIT(Tag.Attribs[i].Value, DU::PIXEL); break;
          case HASH_y: adv.y = DUNIT(Tag.Attribs[i].Value, DU::PIXEL); break;
       }
@@ -1065,7 +1102,7 @@ void parser::tag_advance(const XTag &Tag)
 // NB: If a <body> tag contains any children, it is treated as a template and must contain an <inject/> tag so that
 // the XML insertion point is known.
 
-void parser::tag_body(const XTag &Tag)
+void parser::tag_body(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -1074,7 +1111,7 @@ void parser::tag_body(const XTag &Tag)
    // Body tag needs to be placed before any content
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      switch (strihash(Tag.Attribs[i].Name)) {
+      switch (strhash(Tag.Attribs[i].Name)) {
          case HASH_clip_path: {
             OBJECTPTR clip;
             if (Self->Scene->findDef(Tag.Attribs[i].Value.c_str(), &clip) IS ERR::Okay) {
@@ -1206,7 +1243,7 @@ void parser::tag_body(const XTag &Tag)
 //
 // <call function="[script].function" arg1="" arg2="" _global=""/>
 
-void parser::tag_call(const XTag &Tag)
+void parser::tag_call(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
    objScript *script = Self->DefaultScript;
@@ -1312,14 +1349,14 @@ static const char glButtonSVG[] = R"-(
   <rect rx="7.5%" ry="7.5%" width="95%" height="93%" x="2.5%" y="2.5%" fill="url(#shading)"/>
 </svg>)-";
 
-void parser::tag_button(const XTag &Tag)
+void parser::tag_button(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
 
    bc_button &widget = m_stream->emplace<bc_button>(m_index);
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      auto hash = strihash(Tag.Attribs[i].Name);
+      auto hash = strhash(Tag.Attribs[i].Name);
       auto &value = Tag.Attribs[i].Value;
       if (hash IS HASH_fill)          widget.fill   = value;
       else if (hash IS HASH_alt_fill) widget.alt_fill = value;
@@ -1412,14 +1449,14 @@ void parser::tag_button(const XTag &Tag)
 
 //********************************************************************************************************************
 
-void parser::tag_checkbox(const XTag &Tag)
+void parser::tag_checkbox(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
 
    bc_checkbox &widget = m_stream->emplace<bc_checkbox>(m_index);
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      auto hash = strihash(Tag.Attribs[i].Name);
+      auto hash = strhash(Tag.Attribs[i].Name);
       auto &value = Tag.Attribs[i].Value;
 
       if (hash IS HASH_label)      widget.label = value;
@@ -1507,14 +1544,14 @@ void parser::tag_checkbox(const XTag &Tag)
 
 //********************************************************************************************************************
 
-void parser::tag_combobox(const XTag &Tag)
+void parser::tag_combobox(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
 
    bc_combobox &widget = m_stream->emplace<bc_combobox>(m_index);
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      auto hash = strihash(Tag.Attribs[i].Name);
+      auto hash = strhash(Tag.Attribs[i].Name);
       auto &value = Tag.Attribs[i].Value;
       if (hash IS HASH_label)          widget.label = value;
       else if (hash IS HASH_value)     widget.value = value;
@@ -1626,7 +1663,7 @@ void parser::tag_combobox(const XTag &Tag)
 
 //********************************************************************************************************************
 
-void parser::tag_input(const XTag &Tag)
+void parser::tag_input(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -1634,7 +1671,7 @@ void parser::tag_input(const XTag &Tag)
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
       auto &value = Tag.Attribs[i].Value;
-      switch (strihash(Tag.Attribs[i].Name)) {
+      switch (strhash(Tag.Attribs[i].Name)) {
          case HASH_label:     widget.label = value; break;
          case HASH_value:     widget.value = value; break;
          case HASH_fill:      widget.fill  = value; break;
@@ -1669,7 +1706,7 @@ void parser::tag_input(const XTag &Tag)
 
 //********************************************************************************************************************
 
-void parser::tag_debug(const XTag &Tag)
+void parser::tag_debug(const tag_view &Tag)
 {
    pf::Log log("DocMsg");
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
@@ -1685,7 +1722,7 @@ void parser::tag_debug(const XTag &Tag)
 // This tag can only be used ONCE per document.  Potentially we could improve this by appending to the existing
 // SVG object via data feeds.
 
-void parser::tag_svg(const XTag &Tag)
+void parser::tag_svg(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -1696,18 +1733,18 @@ void parser::tag_svg(const XTag &Tag)
    }
 
    objVectorViewport *target = Self->Page;
-   XTag filtered_tag = Tag;
-   for (int i=1; i < std::ssize(filtered_tag.Attribs); i++) {
-      if (iequals("placement", filtered_tag.Attribs[i].Name)) {
-         if (iequals("foreground", filtered_tag.Attribs[i].Value)) target = Self->Page;
-         else if (iequals("background", filtered_tag.Attribs[i].Value)) target = Self->View;
-         filtered_tag.Attribs.erase(filtered_tag.Attribs.begin() + i);
+   auto filtered_attribs = Tag.Attribs;
+   for (int i=1; i < std::ssize(filtered_attribs); i++) {
+      if (iequals("placement", filtered_attribs[i].Name)) {
+         if (iequals("foreground", filtered_attribs[i].Value)) target = Self->Page;
+         else if (iequals("background", filtered_attribs[i].Value)) target = Self->View;
+         filtered_attribs.erase(filtered_attribs.begin() + i);
          i--;
       }
    }
 
    std::ostringstream buffer;
-   xq_serialise_tag_fragment(filtered_tag, buffer);
+   serialise_tag_fragment(tag_view(*Tag.Source, filtered_attribs), buffer);
 
    auto xml_svg = buffer.str();
    if (not xml_svg.empty()) {
@@ -1726,7 +1763,7 @@ void parser::tag_svg(const XTag &Tag)
 // If more sophisticated inline or float embedding is required, the <image> tag is probably more applicable to the
 // client.
 
-void parser::tag_use(const XTag &Tag)
+void parser::tag_use(const tag_view &Tag)
 {
    std::string id;
    for (int i = 1; i < std::ssize(Tag.Attribs); i++) {
@@ -1745,7 +1782,7 @@ void parser::tag_use(const XTag &Tag)
 // Use div to structure the document in a similar way to paragraphs.  The main difference is that it impacts on style
 // attributes only, avoiding the declaration of paragraph start and end points and won't cause line breaks.
 
-void parser::tag_div(const XTag &Tag)
+void parser::tag_div(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -1782,7 +1819,7 @@ void parser::tag_div(const XTag &Tag)
 // Creates a new edit definition.  These are stored in a linked list.  Edit definitions are used by referring to them
 // by name in table cells.
 
-void parser::tag_editdef(const XTag &Tag)
+void parser::tag_editdef(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -1790,7 +1827,7 @@ void parser::tag_editdef(const XTag &Tag)
    std::string name;
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      switch (strihash(Tag.Attribs[i].Name)) {
+      switch (strhash(Tag.Attribs[i].Name)) {
          case HASH_max_chars:
             edit.max_chars = std::stoi(Tag.Attribs[i].Value);
             if (edit.max_chars < 0) edit.max_chars = -1;
@@ -1839,7 +1876,7 @@ void parser::tag_editdef(const XTag &Tag)
 //********************************************************************************************************************
 // Use of <meta> for custom information is allowed and is ignored by the parser.
 
-void parser::tag_head(const XTag &Tag)
+void parser::tag_head(const tag_view &Tag)
 {
    // The head contains information about the document
 
@@ -1881,7 +1918,7 @@ void parser::tag_head(const XTag &Tag)
 //********************************************************************************************************************
 // Include XML from another RIPL file.
 
-void parser::tag_include(const XTag &Tag)
+void parser::tag_include(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -1915,7 +1952,7 @@ void parser::tag_include(const XTag &Tag)
 // A benefit to rendering SVG images in the <defs> area is that they are converted to cached bitmap textures ahead of
 // time.  This provides a considerable speed boost when drawing them, at a potential cost to image quality.
 
-void parser::tag_image(const XTag &Tag)
+void parser::tag_image(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -1925,7 +1962,7 @@ void parser::tag_image(const XTag &Tag)
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
       auto &value = Tag.Attribs[i].Value;
 
-      switch (strihash(Tag.Attribs[i].Name)) {
+      switch (strhash(Tag.Attribs[i].Name)) {
          case HASH_float:
          case HASH_align:
             // Setting the horizontal alignment of an image will cause it to float above the text.
@@ -1933,7 +1970,7 @@ void parser::tag_image(const XTag &Tag)
             {
                auto align = ALIGN::NIL;
                auto valid = true;
-            switch (strihash(value)) {
+            switch (strhash(value)) {
                case HASH_left:   align = ALIGN::LEFT; break;
                case HASH_right:  align = ALIGN::RIGHT; break;
                case HASH_center: align = ALIGN::HORIZONTAL; break;
@@ -1955,7 +1992,7 @@ void parser::tag_image(const XTag &Tag)
             {
                auto align = ALIGN::NIL;
                auto valid = true;
-            switch(strihash(value)) {
+            switch(strhash(value)) {
                case HASH_top:    align = ALIGN::TOP; break;
                case HASH_center: align = ALIGN::VERTICAL; break;
                case HASH_middle: align = ALIGN::VERTICAL; break; // synonym
@@ -2012,7 +2049,7 @@ void parser::tag_image(const XTag &Tag)
 // The developer can use indexes to bookmark areas of code that are of interest.  The FindIndex() method is used for
 // this purpose.
 
-void parser::tag_index(const XTag &Tag)
+void parser::tag_index(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -2020,7 +2057,7 @@ void parser::tag_index(const XTag &Tag)
    bool visible = true;
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
       if (iequals("name", Tag.Attribs[i].Name)) {
-         name = strihash(Tag.Attribs[i].Value);
+         name = strhash(Tag.Attribs[i].Value);
       }
       else if (iequals("hide", Tag.Attribs[i].Name)) {
          visible = false;
@@ -2029,7 +2066,7 @@ void parser::tag_index(const XTag &Tag)
    }
 
    if ((not name) and (not Tag.Children.empty())) {
-      if (Tag.Children[0].isContent()) name = strihash(Tag.Children[0].Attribs[0].Value);
+      if (Tag.Children[0].isContent()) name = strhash(Tag.Children[0].Attribs[0].Value);
    }
 
    if (name) {
@@ -2062,7 +2099,7 @@ void parser::tag_index(const XTag &Tag)
 // Dummy links that specify neither an href or onclick value can be useful in embedded documents if the
 // EventCallback feature is used.
 
-void parser::tag_link(const XTag &Tag)
+void parser::tag_link(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -2071,7 +2108,7 @@ void parser::tag_link(const XTag &Tag)
    link.fill = Self->LinkFill;
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      switch (strihash(Tag.Attribs[i].Name)) {
+      switch (strhash(Tag.Attribs[i].Name)) {
          case HASH_href:
             if (link.type IS LINK::NIL) {
                link.ref = Tag.Attribs[i].Value;
@@ -2135,7 +2172,7 @@ void parser::tag_link(const XTag &Tag)
 
 //********************************************************************************************************************
 
-void parser::tag_list(const XTag &Tag)
+void parser::tag_list(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
    bc_list list;
@@ -2191,7 +2228,7 @@ void parser::tag_list(const XTag &Tag)
 //********************************************************************************************************************
 // Also see check_para_attrib() for paragraph attributes.
 
-void parser::tag_paragraph(const XTag &Tag)
+void parser::tag_paragraph(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -2245,7 +2282,7 @@ void parser::tag_paragraph(const XTag &Tag)
 //********************************************************************************************************************
 // Templates can be used to create custom tags.
 
-void parser::tag_template(const XTag &Tag)
+void parser::tag_template(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -2266,7 +2303,7 @@ void parser::tag_template(const XTag &Tag)
    STRING strxml;
    if (m_xml->serialise(Tag.ID, XMF::NIL, &strxml) IS ERR::Okay) {
       // Remove any existing tag that uses the same name.
-      if (Self->TemplateIndex.contains(strihash(Tag.Attribs[n].Value))) {
+      if (Self->TemplateIndex.contains(strhash(Tag.Attribs[n].Value))) {
          Self->Templates->removeTag(Tag.ID, 1);
       }
 
@@ -2280,7 +2317,7 @@ void parser::tag_template(const XTag &Tag)
 
 //********************************************************************************************************************
 
-void parser::tag_font(const XTag &Tag)
+void parser::tag_font(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -2334,7 +2371,7 @@ void parser::tag_pre(const objXML::TAGS &Children)
 //
 // Only the first section of content enclosed within the <script> tag (CDATA) is accepted by the script parser.
 
-void parser::tag_script(const XTag &Tag)
+void parser::tag_script(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
    objScript *script;
@@ -2442,7 +2479,7 @@ void parser::tag_script(const XTag &Tag)
 
       if (not src.empty()) script->setPath(src);
       else {
-         std::string content = xml::GetContent(Tag);
+         std::string content = xml::GetContent(*Tag.Source);
          if (not content.empty()) script->setStatement(content);
       }
 
@@ -2517,7 +2554,7 @@ void parser::tag_font_style(const objXML::TAGS &Children, FSO StyleFlag, std::st
 //********************************************************************************************************************
 // List item parser.  List items are essentially paragraphs with automated indentation management.
 
-void parser::tag_li(const XTag &Tag)
+void parser::tag_li(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -2591,7 +2628,7 @@ void parser::tag_li(const XTag &Tag)
 }
 
 //********************************************************************************************************************
-void parser::tag_repeat(const XTag &Tag)
+void parser::tag_repeat(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -2707,7 +2744,7 @@ void parser::tag_repeat(const XTag &Tag)
 // (repeat, if statements, etc).  The table byte code is typically generated as SCODE::TABLE_START, SCODE::ROW,
 // SCODE::CELL..., SCODE::ROW_END, SCODE::TABLE_END.
 
-void parser::tag_table(const XTag &Tag)
+void parser::tag_table(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -2718,7 +2755,7 @@ void parser::tag_table(const XTag &Tag)
    std::string columns;
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
       auto &value = Tag.Attribs[i].Value;
-      switch (strihash(Tag.Attribs[i].Name)) {
+      switch (strhash(Tag.Attribs[i].Name)) {
          case HASH_columns:
             // Column preferences are processed only when the end of the table marker has been reached.
             columns = value;
@@ -2759,7 +2796,7 @@ void parser::tag_table(const XTag &Tag)
             break;
 
          case HASH_align:
-            switch(strihash(value)) {
+            switch(strhash(value)) {
                case HASH_left:   table.align = ALIGN::LEFT; break;
                case HASH_right:  table.align = ALIGN::RIGHT; break;
                case HASH_center: table.align = ALIGN::HORIZONTAL; break;
@@ -2820,7 +2857,7 @@ void parser::tag_table(const XTag &Tag)
 
 //********************************************************************************************************************
 
-void parser::tag_row(const XTag &Tag)
+void parser::tag_row(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
 
@@ -2861,7 +2898,7 @@ void parser::tag_row(const XTag &Tag)
 
 //********************************************************************************************************************
 
-void parser::tag_cell(const XTag &Tag)
+void parser::tag_cell(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
    auto new_style = m_style;
@@ -2876,7 +2913,7 @@ void parser::tag_cell(const XTag &Tag)
    bc_cell cell(glUID++, m_table_stack.top().row_col);
    bool select = false;
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      switch (strihash(Tag.Attribs[i].Name)) {
+      switch (strhash(Tag.Attribs[i].Name)) {
          case HASH_border: {
             std::vector<std::string> list;
             pf::split(Tag.Attribs[i].Value, std::back_inserter(list));
@@ -2999,7 +3036,7 @@ void parser::tag_cell(const XTag &Tag)
 //********************************************************************************************************************
 // No response is required for page tags, but we can check for validity.
 
-void parser::tag_page(const XTag &Tag)
+void parser::tag_page(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
    if (auto name = Tag.attrib("name")) {
@@ -3022,7 +3059,7 @@ void parser::tag_page(const XTag &Tag)
 //********************************************************************************************************************
 // Usage: <trigger event="resize" function="script.function"/>
 
-void parser::tag_trigger(const XTag &Tag)
+void parser::tag_trigger(const tag_view &Tag)
 {
    pf::Log log(__FUNCTION__);
    DRT trigger_code;
@@ -3031,7 +3068,7 @@ void parser::tag_trigger(const XTag &Tag)
 
    std::string event, function_name;
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      switch (strihash(Tag.Attribs[i].Name)) {
+      switch (strhash(Tag.Attribs[i].Name)) {
          case HASH_event: event = Tag.Attribs[i].Value; break;
          case HASH_function: function_name = Tag.Attribs[i].Value; break;
       }
@@ -3040,7 +3077,7 @@ void parser::tag_trigger(const XTag &Tag)
    if ((not event.empty()) and (not function_name.empty())) {
       // These are described in the documentation for the AddListener method
 
-      switch(strihash(event)) {
+      switch(strhash(event)) {
          case HASH_after_layout:    trigger_code = DRT::AFTER_LAYOUT; break;
          case HASH_before_layout:   trigger_code = DRT::BEFORE_LAYOUT; break;
          case HASH_on_click:        trigger_code = DRT::USER_CLICK; break;
