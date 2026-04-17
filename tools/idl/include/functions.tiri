@@ -740,7 +740,7 @@ global function class(Name, Options:table, Spec, Private, Custom)
 
    if type(class.src) is 'string' then class.src = { class.src } end -- Convert string to an array of strings
 
-   if mSys.GetResource(RES_STATIC_BUILD) is 0 then
+   if mSys.GetSystemState().StaticBuild is 0 then
       -- Attempt to load the class into memory.  This introduces a circular reference when the module is not yet
       -- compiled, so the meta information may only be used for phase 2 output (i.e. documentation).
 

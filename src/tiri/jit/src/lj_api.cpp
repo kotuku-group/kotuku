@@ -814,6 +814,14 @@ extern void lua_pushstring(lua_State *L, CSTRING str)
    incr_top(L);
 }
 
+extern void lua_pushstring(lua_State *L, std::string_view str)
+{
+   lj_gc_check(L);
+   auto s = lj_str_new(L, str.data(), str.size());
+   setstrV(L, L->top, s);
+   incr_top(L);
+}
+
 //********************************************************************************************************************
 // Push formatted string onto stack with varargs
 

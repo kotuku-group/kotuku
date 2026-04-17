@@ -165,8 +165,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
    int i;
 
    if (!Info) return ERR::NullArgs;
-   if ((Info->Flags & OPF::ERROR) != OPF::NIL) Info->Error = ERR::Failed;
-   glOpenInfo   = Info;
+   glOpenInfo   = *Info;
    tlMainThread = true;
    glCodeIndex  = 0; // Reset the code index so that CloseCore() will work.
 
@@ -239,9 +238,9 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
       #error Require code to obtain the process ID.
    #endif
 
-   if ((Info->Flags & OPF::ROOT_PATH) != OPF::NIL) SetResourcePath(RP::ROOT_PATH, Info->RootPath);
-   if ((Info->Flags & OPF::MODULE_PATH) != OPF::NIL) SetResourcePath(RP::MODULE_PATH, Info->ModulePath);
-   if ((Info->Flags & OPF::SYSTEM_PATH) != OPF::NIL) SetResourcePath(RP::SYSTEM_PATH, Info->SystemPath);
+   if ((Info->Flags & OPF::ROOT_PATH) != OPF::NIL) SetResourcePath(RP::ROOT_PATH, Info->RootPath.c_str());
+   if ((Info->Flags & OPF::MODULE_PATH) != OPF::NIL) SetResourcePath(RP::MODULE_PATH, Info->ModulePath.c_str());
+   if ((Info->Flags & OPF::SYSTEM_PATH) != OPF::NIL) SetResourcePath(RP::SYSTEM_PATH, Info->SystemPath.c_str());
 
    if (glRootPath.empty())   {
       #ifdef _WIN32
@@ -451,19 +450,16 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
 
                KMSG("Attempting to re-use an earlier bind().\n");
                if (setsockopt(glSocket, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) IS -1) {
-                  if ((Info->Flags & OPF::ERROR) != OPF::NIL) Info->Error = ERR::SystemCall;
                   return ERR::SystemCall;
                }
             }
             else {
-               if ((Info->Flags & OPF::ERROR) != OPF::NIL) Info->Error = ERR::SystemCall;
                return ERR::SystemCall;
             }
          }
       }
       else {
          KERR("Failed to create a new socket communication point.\n");
-         if ((Info->Flags & OPF::ERROR) != OPF::NIL) Info->Error = ERR::SystemCall;
          return ERR::SystemCall;
       }
 
@@ -598,7 +594,6 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
    log.msg("PROGRAM OPENED");
 
    glSystemState = 0; // Indicates that initialisation is complete.
-   if ((Info->Flags & OPF::ERROR) != OPF::NIL) Info->Error = ERR::Okay;
 
    *JumpTable = LocalCoreBase;
    return ERR::Okay;
@@ -1115,15 +1110,15 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
    // Some platforms need to have special volumes added - these are provided in the OpenInfo structure passed to
    // the Core.
 
-   if (((glOpenInfo->Flags & OPF::OPTIONS) != OPF::NIL) and (glOpenInfo->Options)) {
-      for (int i=0; int(glOpenInfo->Options[i].Tag) != TAGEND; i++) {
-         switch (glOpenInfo->Options[i].Tag) {
+   if (((glOpenInfo.Flags & OPF::OPTIONS) != OPF::NIL) and (glOpenInfo.Options)) {
+      for (int i=0; int(glOpenInfo.Options[i].Tag) != TAGEND; i++) {
+         switch (glOpenInfo.Options[i].Tag) {
             case TOI::LOCAL_CACHE: {
-               SetVolume("localcache", glOpenInfo->Options[i].Value.String, nullptr, nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+               SetVolume("localcache", glOpenInfo.Options[i].Value.String, nullptr, nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
                break;
             }
             case TOI::LOCAL_STORAGE: {
-               SetVolume("localstorage", glOpenInfo->Options[i].Value.String, nullptr, nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+               SetVolume("localstorage", glOpenInfo.Options[i].Value.String, nullptr, nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
                break;
             }
             default:

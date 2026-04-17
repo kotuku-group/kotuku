@@ -54,7 +54,7 @@ function crcTest(Name:str, Path:str, ExpectedCRC:any, TimeLimit:num)
             error(f'The CRC for "{Path}" @ page width {res} is {string.format("0x%.8x", bmp_crc)}, expected {string.format("0x%.8x", crc)}')
          end
 
-         if TimeLimit and (timeTaken > TimeLimit) and (mSys.GetResource(RES_RELEASE_BUILD) is 1) then
+         if TimeLimit and (timeTaken > TimeLimit) and (mSys.GetSystemState().ReleaseBuild is 1) then
             error(f'File "{Path}" @ page width {res} took {timeTaken}s to render, expected {TimeLimit}s')
          end
       end
@@ -76,7 +76,7 @@ function crcTest(Name:str, Path:str, ExpectedCRC:any, TimeLimit:num)
       --saveBitmap(bmp, Name)
    end
 
-   if TimeLimit and (timeTaken > TimeLimit) and (mSys.GetResource(RES_RELEASE_BUILD) is 1) then
+   if TimeLimit and (timeTaken > TimeLimit) and (mSys.GetSystemState().ReleaseBuild is 1) then
       error(f'File "{Path}" took {timeTaken}s to render, expected {TimeLimit}s')
    end
 end

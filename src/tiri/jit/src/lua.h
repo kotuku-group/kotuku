@@ -138,6 +138,7 @@ extern void  (lua_pushnumber) (lua_State *L, lua_Number n);
 extern void  (lua_pushinteger) (lua_State *L, lua_Integer n);
 extern void  (lua_pushlstring) (lua_State *L, const char *s, size_t l);
 extern void  (lua_pushstring) (lua_State *L, const char *s);
+extern void  (lua_pushstring)(lua_State *L, std::string_view str);
 extern const char *(lua_pushvfstring) (lua_State *L, const char *fmt, va_list argp);
 extern const char *(lua_pushfstring) (lua_State *L, const char *fmt, ...);
 extern void  (lua_pushcclosure) (lua_State *L, lua_CFunction fn, int n);

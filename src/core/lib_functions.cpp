@@ -307,17 +307,14 @@ int64_t GetResource(RES Resource)
 #ifdef __linux__
    struct sysinfo sys;
 #endif
-   extern char glIDL[];
 
    switch(Resource) {
       case RES::PRIVILEGED:      return glPrivileged;
       case RES::LOG_LEVEL:       return glLogLevel;
       case RES::PROCESS_STATE:   return MAXINT(glTaskState);
       case RES::LOG_DEPTH:       return tlDepth;
-      case RES::OPEN_INFO:       return (MAXINT)glOpenInfo;
       case RES::JNI_ENV:         return (MAXINT)glJNIEnv;
       case RES::THREAD_ID:       return int(get_thread_id());
-      case RES::CORE_IDL:        return (MAXINT)glIDL;
       case RES::DISPLAY_DRIVER:  if (not glDisplayDriver.empty()) return (MAXINT)glDisplayDriver.c_str(); else return 0;
       case RES::MAIN_THREAD:     return tlMainThread ? true : false;
 
@@ -335,20 +332,6 @@ int64_t GetResource(RES Resource)
             return -1;
          #endif
       }
-
-      case RES::RELEASE_BUILD:
-         #ifdef KOTUKU_RELEASE_BUILD
-            return 1;
-         #else
-            return 0;
-         #endif
-
-      case RES::STATIC_BUILD:
-         #ifdef KOTUKU_STATIC
-            return 1;
-         #else
-            return 0;
-         #endif
 
 #ifdef __linux__
       // NB: This value is not cached.  Although unlikely, it is feasible that the total amount of physical RAM could
@@ -440,6 +423,7 @@ const SystemState * GetSystemState(void)
    static SystemState state;
 
    if (not initialised) {
+      // Initialise constants that won't change
       initialised = true;
 
       state.ConsoleFD = glConsoleFD;
@@ -452,6 +436,23 @@ const SystemState * GetSystemState(void)
       #else
          state.Platform = "Unknown";
       #endif
+
+      #ifdef KOTUKU_RELEASE_BUILD
+         state.ReleaseBuild = 1;
+      #else
+         state.ReleaseBuild = 0;
+      #endif
+
+      #ifdef KOTUKU_STATIC
+         state.StaticBuild = 1;
+      #else
+         state.StaticBuild = 0;
+      #endif
+
+      extern char glIDL[];
+      state.IDL = glIDL;
+
+      state.OpenInfo = &glOpenInfo;
    }
 
    state.Stage = glSystemState;

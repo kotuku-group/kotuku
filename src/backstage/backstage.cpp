@@ -49,11 +49,11 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
    // Parse commandline arguments to confirm if the user wants to enable Backstage.
 
-   if (auto info = (OpenInfo *)GetResourcePtr(RES::OPEN_INFO)) {
-      for (int i=0; i < info->ArgCount; i++) {
-         if (pf::iequals(info->Args[i], "--backstage")) {
-      	   if (i + 1 < info->ArgCount) {
-      		   int port = atoi(info->Args[i + 1]);
+   if (auto state = GetSystemState()) {
+      for (int i=0; i < state->OpenInfo->ArgCount; i++) {
+         if (pf::iequals(state->OpenInfo->Args[i], "--backstage")) {
+      	   if (i + 1 < state->OpenInfo->ArgCount) {
+      		   int port = atoi(state->OpenInfo->Args[i + 1]);
       		   if (port > 0) {
       		      init_backstage(port);
       		      break;

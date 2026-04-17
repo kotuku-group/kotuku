@@ -49,20 +49,20 @@ extern "C" const char * init_kotuku(int argc, CSTRING *argv)
 #endif
 
    struct OpenInfo info;
+   info.Options     = nullptr;
    info.Detail      = 0;
    info.MaxDepth    = 14;
    info.Args        = argv;
    info.ArgCount    = argc;
-   info.Error = ERR::Okay;
-   info.Flags = OPF::ARGS|OPF::ERROR;
+   info.Flags       = OPF::ARGS;
 
-   if (OpenCore(&info, &CoreBase) IS ERR::Okay) return nullptr;
-   else if (info.Error IS ERR::CoreVersion) {
+   if (auto error = OpenCore(&info, &CoreBase); error IS ERR::Okay) return nullptr;
+   else if (error IS ERR::CoreVersion) {
       return "This program requires the latest version of the Kotuku framework.\nPlease visit www.kotuku.dev to upgrade.";
    }
    else {
       static char msgbuf[120];
-      snprintf(msgbuf, sizeof(msgbuf), "Failed to initialise Kotuku, error code %d.", int(info.Error));
+      snprintf(msgbuf, sizeof(msgbuf), "Failed to initialise Kotuku, error code %d.", int(error));
       return msgbuf;
    }
 }

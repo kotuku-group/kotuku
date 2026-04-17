@@ -867,12 +867,11 @@ enum class OPF : uint32_t {
    SHOW_IO = 0x00000010,
    SHOW_ERRORS = 0x00000020,
    ARGS = 0x00000040,
-   ERROR = 0x00000080,
-   PRIVILEGED = 0x00000100,
-   SYSTEM_PATH = 0x00000200,
-   MODULE_PATH = 0x00000400,
-   ROOT_PATH = 0x00000800,
-   SCAN_MODULES = 0x00001000,
+   PRIVILEGED = 0x00000080,
+   SYSTEM_PATH = 0x00000100,
+   MODULE_PATH = 0x00000200,
+   ROOT_PATH = 0x00000400,
+   SCAN_MODULES = 0x00000800,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(OPF)
@@ -1101,24 +1100,20 @@ enum class RES : int {
    DISPLAY_DRIVER = 5,
    PRIVILEGED_USER = 6,
    PRIVILEGED = 7,
-   CORE_IDL = 8,
-   STATIC_BUILD = 9,
-   RELEASE_BUILD = 10,
-   LOG_LEVEL = 11,
-   TOTAL_SHARED_MEMORY = 12,
-   LOG_DEPTH = 13,
-   JNI_ENV = 14,
-   THREAD_ID = 15,
-   OPEN_INFO = 16,
-   EXCEPTION_HANDLER = 17,
-   NET_PROCESSING = 18,
-   PROCESS_STATE = 19,
-   TOTAL_MEMORY = 20,
-   TOTAL_SWAP = 21,
-   CPU_SPEED = 22,
-   FREE_MEMORY = 23,
-   MEMORY_USAGE = 24,
-   MAIN_THREAD = 25,
+   LOG_LEVEL = 8,
+   TOTAL_SHARED_MEMORY = 9,
+   LOG_DEPTH = 10,
+   JNI_ENV = 11,
+   THREAD_ID = 12,
+   EXCEPTION_HANDLER = 13,
+   NET_PROCESSING = 14,
+   PROCESS_STATE = 15,
+   TOTAL_MEMORY = 16,
+   TOTAL_SWAP = 17,
+   CPU_SPEED = 18,
+   FREE_MEMORY = 19,
+   MEMORY_USAGE = 20,
+   MAIN_THREAD = 21,
 };
 
 // Path types for SetResourcePath()
@@ -1685,20 +1680,6 @@ struct OpenTag {
    } Value;
 };
 
-struct OpenInfo {
-   CSTRING Name;            // OPF::NAME
-   CSTRING *Args;           // OPF::ARGS
-   CSTRING SystemPath;      // OPF::SYSTEM_PATH
-   CSTRING ModulePath;      // OPF::MODULE_PATH
-   CSTRING RootPath;        // OPF::ROOT_PATH
-   OpenTag *Options;        // OPF::OPTIONS Typecast to va_list (defined in stdarg.h)
-   OPF     Flags;           // OPF::flags need to be set for fields that have been defined in this structure.
-   int     MaxDepth;        // OPF::MAX_DEPTH
-   int     Detail;          // OPF::DETAIL
-   int     ArgCount;        // OPF::ARGS
-   ERR     Error;           // OPF::ERROR
-};
-
 #ifdef _LP64
 #define FD_PTR64 FD_POINTER
 #else
@@ -1725,6 +1706,19 @@ class FloatRect {
 
 }
 
+
+struct OpenInfo {
+   std::string Name;                  // Program name
+   std::string SystemPath;            // Path to system files
+   std::string ModulePath;            // Path to module files
+   std::string RootPath;              // Kotuku root directory
+   CSTRING *Args;                     // Command-line arguments
+   const struct OpenTag * Options;    // Tag-list of additional options.  Typecast to va_list.
+   OPF     Flags;                     // Client flags indicating the values that have been defined in this structure.
+   int     MaxDepth;                  // Maximum debug depth
+   int     Detail;                    // Debug detail level (0 none - 9 trace)
+   int     ArgCount;                  // Total arguments in Args
+};
 
 struct ObjectSignal {
    OBJECTPTR Object;    // Reference to an object to monitor.
@@ -1798,9 +1792,13 @@ struct FieldDef {
 };
 
 struct SystemState {
-   CSTRING Platform;        // String-based field indicating the user's platform.  Currently returns Native, Windows, OSX or Linux.
-   HOSTHANDLE ConsoleFD;    // Internal
-   int     Stage;           // The current operating stage.  -1 = Initialising, 0 indicates normal operating status; 1 means that the program is shutting down; 2 indicates a program restart; 3 is for mode switches.
+   CSTRING Platform;                    // String-based field indicating the user's platform.  Currently returns Native, Windows, OSX or Linux.
+   CSTRING IDL;                         // The Core module's compressed IDL string
+   const struct OpenInfo * OpenInfo;    // The OpenInfo structure originally used to initialise the system
+   HOSTHANDLE ConsoleFD;                // Internal
+   int     Stage;                       // The current operating stage.  -1 = Initialising, 0 indicates normal operating status; 1 means that the program is shutting down; 2 indicates a program restart; 3 is for mode switches.
+   int     ReleaseBuild;                // 1 = Release build, 0 = Debug build
+   int     StaticBuild;                 // 1 = Static build, 0 = Dynamic build
 };
 
 struct Unit {

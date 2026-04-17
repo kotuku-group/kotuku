@@ -708,7 +708,7 @@ extern int16_t glLogLevel, glMaxDepth;
 extern TSTATE glTaskState;
 extern int64_t glTimeLog;
 extern RootModule *glModuleList;    // Locked with glmGeneric.  Maintained as a linked-list; hashmap unsuitable.
-extern OpenInfo *glOpenInfo;      // Read-only.  The OpenInfo structure initially passed to OpenCore()
+extern OpenInfo glOpenInfo;         // Read-only.  The OpenInfo structure initially passed to OpenCore()
 extern extTask *glCurrentTask;
 extern "C" const ActionTable ActionTable[];
 extern const Function    glFunctions[];

@@ -177,7 +177,6 @@ constexpr bool defined(T flags, T test_flag) noexcept {
     "SHOW_IO",
     "SHOW_ERRORS",
     "ARGS",
-    "ERROR",
     "PRIVILEGED",
     "SYSTEM_PATH",
     "MODULE_PATH",
@@ -338,15 +337,11 @@ constexpr bool defined(T flags, T test_flag) noexcept {
     "DISPLAY_DRIVER: Internal.  Passes the name of the preferred display driver to the display module.",
     "PRIVILEGED_USER: If this value is set to 1, the process will operate in privileged mode (typically this enables full administrator rights).  This feature will only work for Unix processes that are granted admin rights when launched.  Setting the Value to 0 reverts to the user's permission settings.  SetResource() will return an error code indicating the level of success.",
     "PRIVILEGED: This is set to `true` if the process has elevated privileges (such as superuser or administrative rights).",
-    "CORE_IDL: Refers to the Core module's compressed IDL string.",
-    "STATIC_BUILD: Returns true if the runtime is a statically linked build.",
-    "RELEASE_BUILD: Returns true if the runtime is a release build.",
     "LOG_LEVEL: The current level of log detail (larger numbers indicate more detail).",
     "TOTAL_SHARED_MEMORY: The total amount of shared memory in use (system wide).",
     "LOG_DEPTH: The current depth of log messages.",
     "JNI_ENV: Return the current JNI environment string.",
     "THREAD_ID: Return the ID of the current thread.",
-    "OPEN_INFO: Pointer to the OpenInfo structure originally used to initialise the system.",
     "EXCEPTION_HANDLER: Internal",
     "NET_PROCESSING: Internal windows resource for Network module",
     "PROCESS_STATE: Life-cycle stage of the running process",
@@ -635,20 +630,6 @@ struct OpenTag {
    } Value;
 };
 
-struct OpenInfo {
-   CSTRING Name;            // OPF::NAME
-   CSTRING *Args;           // OPF::ARGS
-   CSTRING SystemPath;      // OPF::SYSTEM_PATH
-   CSTRING ModulePath;      // OPF::MODULE_PATH
-   CSTRING RootPath;        // OPF::ROOT_PATH
-   OpenTag *Options;        // OPF::OPTIONS Typecast to va_list (defined in stdarg.h)
-   OPF     Flags;           // OPF::flags need to be set for fields that have been defined in this structure.
-   int     MaxDepth;        // OPF::MAX_DEPTH
-   int     Detail;          // OPF::DETAIL
-   int     ArgCount;        // OPF::ARGS
-   ERR     Error;           // OPF::ERROR
-};
-
 #ifdef _LP64
 #define FD_PTR64 FD_POINTER
 #else
@@ -676,6 +657,19 @@ class FloatRect {
 }
 
 ]==])
+
+  struct('OpenInfo', { comment='Client options for passing to Kotuku on startup' }, [[
+     cpp(str) Name             # Program name
+     cpp(str) SystemPath       # Path to system files
+     cpp(str) ModulePath       # Path to module files
+     cpp(str) RootPath         # Kotuku root directory
+     cstr *Args                # Command-line arguments
+     cstruct(*OpenTag) Options # Tag-list of additional options.  Typecast to va_list.
+     int(OPF) Flags        # Client flags indicating the values that have been defined in this structure.
+     int MaxDepth          # Maximum debug depth
+     int Detail            # Debug detail level (0 none - 9 trace)
+     int ArgCount          # Total arguments in Args
+  ]])
 
   struct("ObjectSignal", { comment="Required in calls to WaitForObjects()." }, [[
      obj Object # Reference to an object to monitor.
@@ -760,8 +754,12 @@ using ModTest    = void (*)(CSTRING, int *, int *);
 
   struct("SystemState", { comment="Returned by the GetSystemState() function." }, [[
     cstr Platform      # String-based field indicating the user's platform.  Currently returns `Native`, `Windows`, `OSX` or `Linux`.
+    cstr IDL           # The Core module's compressed IDL string
+    cstruct(*OpenInfo) OpenInfo # The OpenInfo structure originally used to initialise the system
     hhandle ConsoleFD  # Internal
     int  Stage         # The current operating stage.  `-1` = Initialising, `0` indicates normal operating status; `1` means that the program is shutting down; `2` indicates a program restart; `3` is for mode switches.
+    int  ReleaseBuild  # `1` = Release build, `0` = Debug build
+    int  StaticBuild   # `1` = Static build, `0` = Dynamic build
   ]])
 
   struct("Unit", { }, [[

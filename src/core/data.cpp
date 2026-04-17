@@ -111,7 +111,7 @@ std::vector<FDRecord> glRegisterFD;
 std::vector<TaskRecord> glTasks;
 
 class RootModule  *glModuleList  = nullptr;
-struct OpenInfo   *glOpenInfo    = nullptr;
+struct OpenInfo   glOpenInfo;
 struct MsgHandler *glMsgHandlers = nullptr, *glLastMsgHandler = 0;
 
 objFile *glClassFile   = nullptr;

@@ -2655,7 +2655,6 @@ static ResourceManager glNodeManager = {
     <constants lookup="OPF">
       <const name="ARGS"/>
       <const name="DETAIL"/>
-      <const name="ERROR"/>
       <const name="MAX_DEPTH"/>
       <const name="MODULE_PATH"/>
       <const name="OPTIONS"/>
@@ -2763,7 +2762,6 @@ static ResourceManager glNodeManager = {
     </constants>
 
     <constants lookup="RES">
-      <const name="CORE_IDL">Refers to the Core module's compressed IDL string.</const>
       <const name="CPU_SPEED">The average top-speed of all CPU cores in Mhz.</const>
       <const name="FREE_MEMORY">The total amount of free memory.</const>
       <const name="FREE_SWAP">The total amount of free swap memory.</const>
@@ -2773,12 +2771,9 @@ static ResourceManager glNodeManager = {
       <const name="LOG_LEVEL">The current level of log detail (larger numbers indicate more detail).</const>
       <const name="MAIN_THREAD">Read-only, returns <code>true</code> if called from the main thread.</const>
       <const name="MEMORY_USAGE">The total amount of memory used by the current process, in bytes.</const>
-      <const name="OPEN_INFO">Pointer to the OpenInfo structure originally used to initialise the system.</const>
       <const name="PRIVILEGED">This is set to <code>true</code> if the process has elevated privileges (such as superuser or administrative rights).</const>
       <const name="PRIVILEGED_USER">If this value is set to 1, the process will operate in privileged mode (typically this enables full administrator rights).  This feature will only work for Unix processes that are granted admin rights when launched.  Setting the Value to 0 reverts to the user's permission settings.  SetResource() will return an error code indicating the level of success.</const>
       <const name="PROCESS_STATE">Life-cycle stage of the running process</const>
-      <const name="RELEASE_BUILD">Returns true if the runtime is a release build.</const>
-      <const name="STATIC_BUILD">Returns true if the runtime is a statically linked build.</const>
       <const name="THREAD_ID">Return the ID of the current thread.</const>
       <const name="TOTAL_MEMORY">The total amount of installed memory.</const>
       <const name="TOTAL_SHARED_MEMORY">The total amount of shared memory in use (system wide).</const>
@@ -3114,6 +3109,19 @@ static ResourceManager glNodeManager = {
       <field name="Object" type="OBJECTPTR">Reference to an object to monitor.</field>
     </struct>
 
+    <struct name="OpenInfo" comment="Client options for passing to Kotuku on startup">
+      <field name="Name" type="std::string">Program name</field>
+      <field name="SystemPath" type="std::string">Path to system files</field>
+      <field name="ModulePath" type="std::string">Path to module files</field>
+      <field name="RootPath" type="std::string">Kotuku root directory</field>
+      <field name="*Args" type="CSTRING">Command-line arguments</field>
+      <field name="Options" type="const struct OpenTag *">Tag-list of additional options.  Typecast to va_list.</field>
+      <field name="Flags" type="OPF" lookup="OPF">Client flags indicating the values that have been defined in this structure.</field>
+      <field name="MaxDepth" type="INT">Maximum debug depth</field>
+      <field name="Detail" type="INT">Debug detail level (0 none - 9 trace)</field>
+      <field name="ArgCount" type="INT">Total arguments in Args</field>
+    </struct>
+
     <struct name="RGB16" comment="16-bit RGB colour value.">
       <field name="Red" type="UINT16">Red component value</field>
       <field name="Green" type="UINT16">Green component value</field>
@@ -3142,8 +3150,12 @@ static ResourceManager glNodeManager = {
 
     <struct name="SystemState" comment="Returned by the GetSystemState() function.">
       <field name="Platform" type="CSTRING">String-based field indicating the user's platform.  Currently returns <code>Native</code>, <code>Windows</code>, <code>OSX</code> or <code>Linux</code>.</field>
+      <field name="IDL" type="CSTRING">The Core module's compressed IDL string</field>
+      <field name="OpenInfo" type="const struct OpenInfo *">The OpenInfo structure originally used to initialise the system</field>
       <field name="ConsoleFD" type="HOSTHANDLE">Internal</field>
       <field name="Stage" type="INT">The current operating stage.  <code>-1</code> = Initialising, <code>0</code> indicates normal operating status; <code>1</code> means that the program is shutting down; <code>2</code> indicates a program restart; <code>3</code> is for mode switches.</field>
+      <field name="ReleaseBuild" type="INT"><code>1</code> = Release build, <code>0</code> = Debug build</field>
+      <field name="StaticBuild" type="INT"><code>1</code> = Static build, <code>0</code> = Dynamic build</field>
     </struct>
 
     <struct name="Unit">

@@ -241,9 +241,13 @@ static constexpr int MAX_STRUCT_DEF = 2048; // Struct definitions are typically 
             }
             else if (struct_to_table(Lua, References, def->second, address) != ERR::Okay) lua_pushnil(Lua);
          }
+         else {
+            log.msg("Struct '%s' not found for field '%s'", field.StructRef.c_str(), field.Name.c_str());
+            lua_pushnil(Lua);
+         }
       }
       else if (type & FD_STRING) {
-         if (type & FD_CPP) lua_pushstring(Lua, (((std::string *)address)[0]).c_str());
+         if (type & FD_CPP) lua_pushstring(Lua, ((std::string *)address)[0]);
          else lua_pushstring(Lua, ((STRING *)address)[0]);
       }
       else if (type & FD_OBJECT) push_object(Lua, ((OBJECTPTR *)address)[0]);
