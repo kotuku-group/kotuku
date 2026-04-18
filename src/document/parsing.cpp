@@ -1071,8 +1071,7 @@ void parser::trim_preformat()
          auto &text = m_stream->lookup<bc_text>(i);
 
          static const std::string ws(" \t\f\v\n\r");
-         auto found = text.text.find_last_not_of(ws);
-         if (found != std::string::npos) {
+         if (auto found = text.text.find_last_not_of(ws); found != std::string::npos) {
             text.text.erase(found + 1);
             text.invalidate_tokens();
             break;
@@ -2833,9 +2832,9 @@ void parser::tag_table(const tag_view &Tag)
    m_table_stack.pop();
 
    if (not columns.empty()) { // The columns value, if supplied is arranged as a CSV list of column widths
-      size_t i = 0;
+      size_t parsed_columns = 0;
       auto remaining = std::string_view(columns);
-      for (; (i < table.columns.size()) and (not remaining.empty()); i++) {
+      for (; (parsed_columns < table.columns.size()) and (not remaining.empty()); parsed_columns++) {
          auto end = remaining.find(',');
          auto value = (end IS std::string_view::npos) ? remaining : remaining.substr(0, end);
 
@@ -2847,11 +2846,11 @@ void parser::tag_table(const tag_view &Tag)
          }
 
          auto column_value = std::string(value);
-         table.columns[i].preset_width = strtod(column_value.c_str(), nullptr);
+         table.columns[parsed_columns].preset_width = strtod(column_value.c_str(), nullptr);
          if (value.find('%') != std::string_view::npos) {
-            table.columns[i].preset_width *= 0.01;
-            table.columns[i].preset_width_rel = true;
-            if ((table.columns[i].preset_width < 0.0000001) or (table.columns[i].preset_width > 1.0)) {
+            table.columns[parsed_columns].preset_width *= 0.01;
+            table.columns[parsed_columns].preset_width_rel = true;
+            if ((table.columns[parsed_columns].preset_width < 0.0000001) or (table.columns[parsed_columns].preset_width > 1.0)) {
                log.warning("A <table> column value is invalid.");
                Self->Error = ERR::InvalidDimension;
             }
@@ -2861,7 +2860,7 @@ void parser::tag_table(const tag_view &Tag)
          remaining.remove_prefix(end + 1);
       }
 
-      if (i < table.columns.size()) log.warning("Warning - columns attribute '%s' did not define %d columns.", columns.c_str(), int(table.columns.size()));
+      if (parsed_columns < table.columns.size()) log.warning("Warning - columns attribute '%s' did not define %d columns.", columns.c_str(), int(table.columns.size()));
    }
 
    bc_table_end end;
