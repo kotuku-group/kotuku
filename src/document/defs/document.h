@@ -76,6 +76,28 @@ enum class LINK : uint8_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(LINK)
 
+enum class doc_diag_severity : uint8_t {
+   HINT = 0,
+   WARNING = 1,
+   ERROR = 2,
+};
+
+class doc_diagnostic {
+   public:
+   doc_diag_severity severity = doc_diag_severity::WARNING;
+   ERR error = ERR::Okay;
+   std::string code;
+   std::string message;
+   std::string path;
+   std::string page_name;
+   int line_no = 0;
+   int tag_id = 0;
+   int parent_id = 0;
+   uint32_t namespace_id = 0;
+   std::string tag_name;
+   std::string attrib_name;
+};
+
 enum {
    COND_NOT_EQUAL=1,
    COND_EQUAL,
@@ -1256,6 +1278,7 @@ class extDocument : public objDocument {
    std::vector<docresource>    Resources; // Tracks resources that are page related.  Terminated on page unload.
    std::vector<tab>            Tabs;
    std::vector<edit_cell>      EditCells;
+   std::vector<doc_diagnostic> Diagnostics;
    doc_layout_metrics          LayoutMetrics;
    ankerl::unordered_dense::map<glyph_cache_key, glyph_cache_value, glyph_cache_hash> GlyphAdvanceCache;
    ankerl::unordered_dense::map<std::string_view, doc_edit> EditDefs;

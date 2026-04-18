@@ -12,7 +12,7 @@ static bool has_avt_markers(std::string_view Value)
    return (Value.find('{') != std::string_view::npos) or (Value.find('}') != std::string_view::npos);
 }
 
-static bool is_xq_expression_attrib(uint32_t TagHash, std::string_view AttribName)
+static bool is_expression_attrib(uint32_t TagHash, std::string_view AttribName)
 {
    auto name = AttribName;
    if ((not name.empty()) and (name.front() IS '$')) name.remove_prefix(1);
@@ -27,7 +27,7 @@ static bool is_xq_expression_attrib(uint32_t TagHash, std::string_view AttribNam
    return false;
 }
 
-inline bool is_xq_avt_attrib(uint32_t TagHash, std::string_view AttribName, std::string_view AttribValue)
+inline bool is_avt_attrib(uint32_t TagHash, std::string_view AttribName, std::string_view AttribValue)
 {
    return (AttribValue.find('{') != std::string_view::npos) or (AttribValue.find('}') != std::string_view::npos);
 }
@@ -42,14 +42,14 @@ inline bool is_xq_avt_attrib(uint32_t TagHash, std::string_view AttribName, std:
 
 enum class XQEval { STRING, BOOLEAN };
 
-static constexpr std::string_view XQ_KOTUKU_NAMESPACE_URI = "http://www.kotuku.dev/namespaces/kotuku";
+static constexpr std::string_view XQ_KOTUKU_NAMESPACE_URI   = "http://www.kotuku.dev/namespaces/kotuku";
 static constexpr std::string_view XQ_OBJECT_EXISTS_FUNCTION = "kt:object-exists";
-static constexpr std::string_view XQ_OBJECT_ID_FUNCTION = "kt:object-id";
-static constexpr std::string_view XQ_SELF_ID_FUNCTION = "kt:self-id";
-static constexpr std::string_view XQ_UID_FUNCTION = "kt:uid";
-static constexpr std::string_view XQ_PLATFORM_FUNCTION = "kt:platform";
-static constexpr std::string_view XQ_FIELD_FUNCTION = "kt:field";
-static constexpr std::string_view XQ_KEY_FUNCTION = "kt:key";
+static constexpr std::string_view XQ_OBJECT_ID_FUNCTION     = "kt:object-id";
+static constexpr std::string_view XQ_SELF_ID_FUNCTION       = "kt:self-id";
+static constexpr std::string_view XQ_UID_FUNCTION           = "kt:uid";
+static constexpr std::string_view XQ_PLATFORM_FUNCTION      = "kt:platform";
+static constexpr std::string_view XQ_FIELD_FUNCTION         = "kt:field";
+static constexpr std::string_view XQ_KEY_FUNCTION           = "kt:key";
 static constexpr std::string_view XQ_TEMPLATE_CONTENT_FUNCTION = "kt:template-content";
 
 static std::string xq_build_eval_expression(std::string_view Expression, XQEval Mode)
@@ -75,7 +75,7 @@ static std::string xq_build_eval_expression(std::string_view Expression, XQEval 
    return eval_expression;
 }
 
-static inline void xq_map_append_value(std::shared_ptr<XPathMapStorage> &Storage, std::string_view Key,
+static inline void map_append_value(std::shared_ptr<XPathMapStorage> &Storage, std::string_view Key,
    const XPathValue &Value)
 {
    XPathMapEntry entry;
@@ -84,7 +84,7 @@ static inline void xq_map_append_value(std::shared_ptr<XPathMapStorage> &Storage
    Storage->entries.push_back(std::move(entry));
 }
 
-static bool xq_value_is_empty_sequence(const XPathValue &Value)
+static bool value_is_empty_sequence(const XPathValue &Value)
 {
    if (Value.Type != XPVT::NodeSet) return false;
 
@@ -98,7 +98,7 @@ static bool xq_value_is_empty_sequence(const XPathValue &Value)
 // A node-set may carry parallel attribute slots, but Stage 6 only treats the value as
 // attribute-backed if at least one slot actually points to a live attribute.
 
-static bool xq_nodeset_has_real_attributes(const XPathValue &Value)
+static bool nodeset_has_real_attributes(const XPathValue &Value)
 {
    for (auto *attribute : Value.node_set_attributes) {
       if (attribute) return true;
@@ -109,7 +109,7 @@ static bool xq_nodeset_has_real_attributes(const XPathValue &Value)
 // Likewise for composite entries: null placeholders are tolerated, but real composite
 // items mean the sequence is not serialisable as plain XML markup.
 
-static bool xq_nodeset_has_real_composites(const XPathValue &Value)
+static bool nodeset_has_real_composites(const XPathValue &Value)
 {
    for (const auto &composite : Value.node_set_composite_values) {
       if (composite) return true;
@@ -127,10 +127,10 @@ static parser::xq_xml_owner xq_adopt_xml(objXML *XML)
 static void xq_clone_tag_tree(const XTag &Source, XTag &Target, int ParentID, int &NextID)
 {
    Target = XTag(NextID++, Source.LineNo, Source.Attribs);
-   Target.ParentID = ParentID;
-   Target.Flags = Source.Flags;
+   Target.ParentID    = ParentID;
+   Target.Flags       = Source.Flags;
    Target.NamespaceID = Source.NamespaceID;
-   Target.Reserved = Source.Reserved;
+   Target.Reserved    = Source.Reserved;
    Target.Children.clear();
    Target.Children.reserve(Source.Children.size());
 
@@ -190,7 +190,7 @@ static inline void xq_map_append_runtime_value(std::shared_ptr<XPathMapStorage> 
 {
    XPathMapEntry entry;
    entry.key.assign(Key);
-   if (not xq_value_is_empty_sequence(Value)) entry.value.items.push_back(Value);
+   if (not value_is_empty_sequence(Value)) entry.value.items.push_back(Value);
    Storage->entries.push_back(std::move(entry));
 }
 
@@ -199,37 +199,38 @@ static inline void xq_map_append_string(std::shared_ptr<XPathMapStorage> &Storag
 {
    XPathValue result(XPVT::String);
    result.StringValue.assign(Value);
-   xq_map_append_value(Storage, Key, result);
+   map_append_value(Storage, Key, result);
 }
 
 static inline void xq_map_append_number(std::shared_ptr<XPathMapStorage> &Storage, std::string_view Key, double Value)
 {
    XPathValue result(XPVT::Number);
    result.NumberValue = Value;
-   xq_map_append_value(Storage, Key, result);
+   map_append_value(Storage, Key, result);
 }
 
 static std::string xq_format_font_size(const bc_font &Style)
 {
    auto append_suffix = [](double Value, std::string_view Suffix) {
       char buffer[32];
-      auto [ptr, error] = std::to_chars(buffer, buffer + sizeof(buffer), Value, std::chars_format::general);
+      auto [ptr, error] = std::to_chars(buffer, buffer + sizeof(buffer), Value, std::chars_format::fixed, 3);
       if (error != std::errc()) return std::to_string(Value) + std::string(Suffix);
 
       std::string result(buffer, ptr);
+      auto decimal = result.find('.');
+      if (decimal != std::string::npos) {
+         while ((not result.empty()) and (result.back() IS '0')) result.pop_back();
+         if ((not result.empty()) and (result.back() IS '.')) result.pop_back();
+      }
       result += Suffix;
       return result;
    };
 
    switch(Style.req_size.type) {
-      case DU::PIXEL:
-         return append_suffix(Style.req_size.value, "px");
-      case DU::FONT_SIZE:
-         return append_suffix(Style.req_size.value, "em");
-      case DU::SCALED:
-         return append_suffix(Style.req_size.value * 100.0, "%");
-      default:
-         return std::to_string(DEFAULT_FONTSIZE) + "px";
+      case DU::PIXEL:     return append_suffix(int(Style.req_size.value), "px");
+      case DU::FONT_SIZE: return append_suffix(Style.req_size.value, "em");
+      case DU::SCALED:    return append_suffix(Style.req_size.value * 100.0, "%");
+      default:            return std::to_string(DEFAULT_FONTSIZE) + "px";
    }
 }
 
@@ -271,11 +272,11 @@ static XPathValue xq_meta_to_map(const extDocument *Self)
    XPathValue result(XPVT::Map);
    result.map_storage = std::make_shared<XPathMapStorage>();
 
-   if (Self->Title)         xq_map_append_string(result.map_storage, "title", Self->Title);
-   if (Self->Author)        xq_map_append_string(result.map_storage, "author", Self->Author);
-   if (Self->Description)   xq_map_append_string(result.map_storage, "description", Self->Description);
-   if (Self->Copyright)     xq_map_append_string(result.map_storage, "copyright", Self->Copyright);
-   if (Self->Keywords)      xq_map_append_string(result.map_storage, "keywords", Self->Keywords);
+   if (Self->Title)       xq_map_append_string(result.map_storage, "title", Self->Title);
+   if (Self->Author)      xq_map_append_string(result.map_storage, "author", Self->Author);
+   if (Self->Description) xq_map_append_string(result.map_storage, "description", Self->Description);
+   if (Self->Copyright)   xq_map_append_string(result.map_storage, "copyright", Self->Copyright);
+   if (Self->Keywords)    xq_map_append_string(result.map_storage, "keywords", Self->Keywords);
    if (not Self->Path.empty()) xq_map_append_string(result.map_storage, "path", Self->Path);
    xq_map_append_number(result.map_storage, "line-no", double(Self->Segments.size()));
 
@@ -509,7 +510,7 @@ static ERR xq_value_to_string(const XPathValue &Value, std::string &Result)
    Result.clear();
 
    if (Value.Type IS XPVT::NodeSet) {
-      if (xq_value_is_empty_sequence(Value)) return ERR::Okay;
+      if (value_is_empty_sequence(Value)) return ERR::Okay;
 
       if (Value.node_set_string_override.has_value()) {
          Result = *Value.node_set_string_override;
@@ -849,10 +850,11 @@ static ERR xq_execute_query(parser *Parser, objXML *XMLContext, const XTag *Cont
    if (auto err = query->evaluate(effective_xml, effective_tag ? effective_tag->ID : 0, XEF::NIL); err != ERR::Okay) {
       CSTRING msg;
       if (query->get(FID_ErrorMsg, msg) IS ERR::Okay) {
-         log.warning("XQuery error evaluating \"%.*s\": %s", int(Expression.size()), Expression.data(), msg ? msg : "(none)");
+         Parser->log_error(effective_tag, err, "doc.xquery-evaluation-failed",
+            "XQuery error evaluating \"{}\": {}.", Expression, msg ? msg : "(none)");
       }
-      else log.warning("XQuery error evaluating \"%.*s\".", int(Expression.size()), Expression.data());
-      Self->Error = err;
+      else Parser->log_error(effective_tag, err, "doc.xquery-evaluation-failed",
+         "XQuery error evaluating \"{}\".", Expression);
       return err;
    }
 
@@ -1070,7 +1072,7 @@ static ERR xq_value_to_xml_fragment(const XPathValue &Value, std::string &OutXml
 
    if (Value.Type != XPVT::NodeSet) return ERR::Args;
    if (Value.node_set.empty()) return ERR::Args;
-   if (xq_nodeset_has_real_attributes(Value) or xq_nodeset_has_real_composites(Value)) {
+   if (nodeset_has_real_attributes(Value) or nodeset_has_real_composites(Value)) {
       return ERR::Args;
    }
 
@@ -1232,7 +1234,7 @@ static ERR xq_clone_nodes_to_xml(parser *Parser, const XPathValue &Value, objXML
    OutXML = nullptr;
 
    if ((not Parser) or (Value.Type != XPVT::NodeSet)) return ERR::Args;
-   if (xq_nodeset_has_real_attributes(Value) or xq_nodeset_has_real_composites(Value)) return ERR::InvalidData;
+   if (nodeset_has_real_attributes(Value) or nodeset_has_real_composites(Value)) return ERR::InvalidData;
    if (Value.node_set.empty()) return RequireTag ? ERR::Syntax : ERR::Args;
 
    parser::xq_value_binding stored_value;
@@ -1275,7 +1277,7 @@ static ERR xq_clone_nodes_to_xml(parser *Parser, const XPathValue &Value, objXML
 static ERR xq_parse_selected_nodes(parser *Parser, const XPathValue &Value)
 {
    if ((not Parser) or (Value.Type != XPVT::NodeSet)) return ERR::Args;
-   if (xq_nodeset_has_real_attributes(Value) or xq_nodeset_has_real_composites(Value)) return ERR::InvalidData;
+   if (nodeset_has_real_attributes(Value) or nodeset_has_real_composites(Value)) return ERR::InvalidData;
    if (Value.node_set.empty()) return ERR::Args;
 
    parser::xq_value_binding stored_value;
@@ -1314,7 +1316,7 @@ static ERR xq_stringify_select_value(const XPathValue &Value, std::string &Resul
 {
    Result.clear();
 
-   if ((Value.Type IS XPVT::NodeSet) and xq_value_is_empty_sequence(Value)) return ERR::Okay;
+   if ((Value.Type IS XPVT::NodeSet) and value_is_empty_sequence(Value)) return ERR::Okay;
    return xq_value_to_string(Value, Result);
 }
 
@@ -1351,10 +1353,10 @@ static ERR xq_select_to_xml_fragment(parser *Parser, const XPathValue &Value, st
 
    if (Value.Type != XPVT::NodeSet) return xq_stringify_select_value(Value, OutXml);
 
-   if (xq_nodeset_has_real_attributes(Value) or xq_nodeset_has_real_composites(Value)) return ERR::InvalidData;
+   if (nodeset_has_real_attributes(Value) or nodeset_has_real_composites(Value)) return ERR::InvalidData;
 
    if (Value.node_set.empty()) {
-      if (xq_value_is_empty_sequence(Value)) return ERR::Okay;
+      if (value_is_empty_sequence(Value)) return ERR::Okay;
       return xq_stringify_select_value(Value, OutXml);
    }
 
@@ -1383,7 +1385,7 @@ static ERR xq_prepare_tag(parser *Parser, const XTag &Tag, pf::vector<XMLAttrib>
       if ((not name.empty()) and (name.front() IS '$')) continue;
       if (name.empty()) continue;
 
-      if ((not is_xq_expression_attrib(tag_hash, name)) and has_avt_markers(Tag.Attribs[i].Value)) {
+      if ((not is_expression_attrib(tag_hash, name)) and has_avt_markers(Tag.Attribs[i].Value)) {
          requires_prepare = true;
          break;
       }
@@ -1400,7 +1402,7 @@ static ERR xq_prepare_tag(parser *Parser, const XTag &Tag, pf::vector<XMLAttrib>
 
       auto &value = PreparedAttribs[i].Value;
 
-      if ((not is_xq_expression_attrib(tag_hash, name)) and has_avt_markers(value)) {
+      if ((not is_expression_attrib(tag_hash, name)) and has_avt_markers(value)) {
          std::string expanded;
          if (auto err = xq_expand_avt(Parser, Parser->m_xml, &Tag, value, expanded); err != ERR::Okay) return err;
 
@@ -1457,7 +1459,7 @@ static ERR xq_expand_avt(parser *Parser, objXML *XMLContext, const XTag *Context
          }
 
          if (depth != 0) {
-            log.warning("Unterminated attribute value template: %.*s", int(Input.size()), Input.data());
+            Parser->log_error(ContextTag, ERR::Syntax, "doc.avt-unterminated", "Unterminated attribute value template: {}.", Input);
             return ERR::Syntax;
          }
 
@@ -1504,11 +1506,10 @@ static bool check_tag_conditions(parser *Parser, const tag_view &Tag)
       if ("test" IS name) {
          std::string result;
          bool boolean_result = false;
-         auto err = xq_eval_helper(Parser, Parser->m_xml, Tag.Source, Tag.Attribs[i].Value,
+        auto err = xq_eval_helper(Parser, Parser->m_xml, Tag.Source, Tag.Attribs[i].Value,
             XQEval::BOOLEAN, result, boolean_result);
          if (err != ERR::Okay) {
-            log.warning("XQuery test failed: %s", Tag.Attribs[i].Value.c_str());
-            Parser->Self->Error = err;
+            Parser->log_error(&Tag, err, "doc.xquery-test-failed", "test", "XQuery test failed: {}.", Tag.Attribs[i].Value);
             return false;
          }
          log.trace("Test: %s -> %s", Tag.Attribs[i].Value.c_str(), boolean_result ? "true" : "false");
@@ -1534,15 +1535,14 @@ void parser::tag_data(const tag_view &Tag)
    bool has_value = false;
    auto err = xq_eval_value_helper(this, m_xml, Tag.Source, *select, value, result, has_value);
    if (err != ERR::Okay) {
-      log.warning("<data select=\"%s\"> failed.", select->c_str());
-      Self->Error = err;
+      log_error(&Tag, err, "doc.data-select-failed", "select", "<data select=\"{}\"> failed.", *select);
       return;
    }
 
    if (has_value and (value.Type IS XPVT::NodeSet)) {
-      if (xq_nodeset_has_real_attributes(value) or xq_nodeset_has_real_composites(value)) {
-         log.warning("<data select> requires parseable XML/RIPL markup or a concrete XML node sequence.");
-         Self->Error = ERR::InvalidData;
+      if (nodeset_has_real_attributes(value) or nodeset_has_real_composites(value)) {
+         log_error(&Tag, ERR::InvalidData, "doc.data-select-invalid-result",
+            "<data select> requires parseable XML/RIPL markup or a concrete XML node sequence.");
          return;
       }
 
@@ -1550,8 +1550,8 @@ void parser::tag_data(const tag_view &Tag)
          objXML *new_doc = nullptr;
          err = xq_clone_nodes_to_xml(this, value, new_doc, true);
          if (err != ERR::Okay) {
-            log.warning("<data select> requires parseable XML/RIPL markup or a concrete XML node sequence.");
-            Self->Error = err;
+            log_error(&Tag, err, "doc.data-select-invalid-result",
+               "<data select> requires parseable XML/RIPL markup or a concrete XML node sequence.");
             return;
          }
 
@@ -1563,17 +1563,16 @@ void parser::tag_data(const tag_view &Tag)
    std::string xml_fragment;
    err = xq_select_to_xml_fragment(this, value, result, has_value, xml_fragment);
    if (err != ERR::Okay) {
-      log.warning("<data select> requires parseable XML/RIPL markup or a concrete XML node sequence.");
-      Self->Error = err;
+      log_error(&Tag, err, "doc.data-select-invalid-result",
+         "<data select> requires parseable XML/RIPL markup or a concrete XML node sequence.");
       return;
    }
 
    objXML *new_doc = nullptr;
    err = xq_parse_xml_fragment(xml_fragment, new_doc, true);
    if (err != ERR::Okay) {
-      log.warning("<data select> requires parseable XML/RIPL markup or an XML node sequence, got: %.120s",
-         xml_fragment.c_str());
-      Self->Error = err;
+      log_error(&Tag, err, "doc.data-select-xml-parse-failed",
+         "<data select> requires parseable XML/RIPL markup or an XML node sequence, got: {}.", xml_fragment);
       return;
    }
 
@@ -1603,15 +1602,15 @@ void parser::tag_parse(const tag_view &Tag)
             bool has_value = false;
             auto err = xq_eval_value_helper(this, m_xml, Tag.Source, Tag.Attribs[i].Value, value, result, has_value);
             if (err != ERR::Okay) {
-               log.warning("<parse select=\"%s\"> failed.", Tag.Attribs[i].Value.c_str());
-               Self->Error = err;
+               log_error(&Tag, err, "doc.parse-select-failed", "select",
+                  "<parse select=\"{}\"> failed.", Tag.Attribs[i].Value);
                return;
             }
 
             if (has_value and (value.Type IS XPVT::NodeSet)) {
-               if (xq_nodeset_has_real_attributes(value) or xq_nodeset_has_real_composites(value)) {
-                  log.warning("<parse select> requires parseable XML/RIPL markup or a concrete XML node sequence.");
-                  Self->Error = ERR::InvalidData;
+               if (nodeset_has_real_attributes(value) or nodeset_has_real_composites(value)) {
+                  log_error(&Tag, ERR::InvalidData, "doc.parse-select-invalid-result",
+                     "<parse select> requires parseable XML/RIPL markup or a concrete XML node sequence.");
                   return;
                }
 
@@ -1619,8 +1618,8 @@ void parser::tag_parse(const tag_view &Tag)
                   log.traceBranch("Parsing XQuery node sequence directly...");
                   err = xq_parse_selected_nodes(this, value);
                   if (err != ERR::Okay) {
-                     log.warning("<parse select> requires parseable XML/RIPL markup or a concrete XML node sequence.");
-                     Self->Error = err;
+                     log_error(&Tag, err, "doc.parse-select-invalid-result",
+                        "<parse select> requires parseable XML/RIPL markup or a concrete XML node sequence.");
                   }
                   return;
                }
@@ -1629,17 +1628,16 @@ void parser::tag_parse(const tag_view &Tag)
             std::string xml_fragment;
             err = xq_select_to_xml_fragment(this, value, result, has_value, xml_fragment);
             if (err != ERR::Okay) {
-               log.warning("<parse select> requires parseable XML/RIPL markup or a concrete XML node sequence.");
-               Self->Error = err;
+               log_error(&Tag, err, "doc.parse-select-invalid-result",
+                  "<parse select> requires parseable XML/RIPL markup or a concrete XML node sequence.");
                return;
             }
 
             log.traceBranch("Parsing XQuery result as XML...");
             objXML *xmlinc = nullptr;
             if (xq_parse_xml_fragment(xml_fragment, xmlinc, false) != ERR::Okay) {
-               log.warning("<parse select> requires parseable XML/RIPL markup or an XML node sequence, got: %.120s",
-                  xml_fragment.c_str());
-               Self->Error = ERR::Syntax;
+               log_error(&Tag, ERR::Syntax, "doc.parse-select-xml-parse-failed",
+                  "<parse select> requires parseable XML/RIPL markup or an XML node sequence, got: {}.", xml_fragment);
                return;
             }
             auto old_xml = change_xml(xmlinc);
@@ -1689,14 +1687,14 @@ void parser::tag_print(const tag_view &Tag)
             bool has_value = false;
             auto err = xq_eval_value_helper(this, m_xml, Tag.Source, Tag.Attribs[i].Value, value, result, has_value);
             if (err != ERR::Okay) {
-               log.warning("<print select=\"%s\"> failed.", Tag.Attribs[i].Value.c_str());
-               Self->Error = err;
+               log_error(&Tag, err, "doc.print-select-failed", "select",
+                  "<print select=\"{}\"> failed.", Tag.Attribs[i].Value);
                return;
             }
             err = xq_select_to_print_text(value, result, has_value, result);
             if (err != ERR::Okay) {
-               log.warning("<print select=\"%s\"> could not be converted into text.", Tag.Attribs[i].Value.c_str());
-               Self->Error = err;
+               log_error(&Tag, err, "doc.print-select-text-conversion-failed", "select",
+                  "<print select=\"{}\"> could not be converted into text.", Tag.Attribs[i].Value);
                return;
             }
             insert_text(Self, m_stream, m_index, result, (m_style.options & FSO::PREFORMAT) != FSO::NIL);
@@ -1719,9 +1717,10 @@ void parser::tag_print(const tag_view &Tag)
                UnloadFile(cache);
             }
          }
-         else log.warning("Cannot <print src.../> unless in unrestricted mode.");
+         else log_warning(&Tag, "doc.print-src-restricted", "src",
+            "Cannot <print src.../> unless in unrestricted mode.");
       }
-      else log.warning("<print/> element does nothing");
+      else log_hint(&Tag, "doc.print-noop", "<print/> element does nothing.");
    }
 }
 
@@ -1734,24 +1733,21 @@ TRF parser::tag_let(const tag_view &Tag, IPF &Flags)
    pf::Log log(__FUNCTION__);
 
    if (Tag.Children.empty()) {
-      log.warning("<let> requires child content.");
-      Self->Error = ERR::InvalidData;
+      log_error(&Tag, ERR::InvalidData, "doc.let-missing-content", "<let> requires child content.");
       return TRF::NIL;
    }
 
    auto name = find_attrib(Tag, "name");
    auto select = find_attrib(Tag, "select");
    if ((not name) or name->empty() or (not select)) {
-      log.warning("<let> requires both name and select attributes.");
-      Self->Error = ERR::InvalidData;
+      log_error(&Tag, ERR::InvalidData, "doc.let-missing-attrib", "<let> requires both name and select attributes.");
       return TRF::NIL;
    }
 
    std::string binding_name = *name;
    if ((not binding_name.empty()) and (binding_name.front() IS '$')) binding_name.erase(0, 1);
    if (binding_name.empty()) {
-      log.warning("<let name=\"...\"> resolved to an empty binding name.");
-      Self->Error = ERR::InvalidData;
+      log_error(&Tag, ERR::InvalidData, "doc.let-empty-name", "name", "<let name=\"...\"> resolved to an empty binding name.");
       return TRF::NIL;
    }
 
@@ -1760,8 +1756,7 @@ TRF parser::tag_let(const tag_view &Tag, IPF &Flags)
    bool has_value = false;
    auto err = xq_eval_value_helper(this, m_xml, Tag.Source, *select, value, result, has_value);
    if (err != ERR::Okay) {
-      log.warning("<let select=\"%s\"> failed.", select->c_str());
-      Self->Error = err;
+      log_error(&Tag, err, "doc.let-select-failed", "select", "<let select=\"{}\"> failed.", *select);
       return TRF::NIL;
    }
 
@@ -1772,8 +1767,7 @@ TRF parser::tag_let(const tag_view &Tag, IPF &Flags)
 
    xq_value_binding binding_value;
    if ((err = xq_make_stored_value(this, value, binding_value)) != ERR::Okay) {
-      log.warning("<let select=\"%s\"> could not preserve the selected value.", select->c_str());
-      Self->Error = err;
+      log_error(&Tag, err, "doc.let-preserve-failed", "select", "<let select=\"{}\"> could not preserve the selected value.", *select);
       return TRF::NIL;
    }
 
@@ -1791,8 +1785,7 @@ TRF parser::tag_for_each(const tag_view &Tag, IPF &Flags)
 
    auto select = find_attrib(Tag, "select");
    if (not select) {
-      log.warning("<for-each> requires a select attribute.");
-      Self->Error = ERR::InvalidData;
+      log_error(&Tag, ERR::InvalidData, "doc.for-each-missing-select", "<for-each> requires a select attribute.");
       return TRF::NIL;
    }
 
@@ -1801,8 +1794,7 @@ TRF parser::tag_for_each(const tag_view &Tag, IPF &Flags)
    bool has_value = false;
    auto err = xq_eval_value_helper(this, m_xml, Tag.Source, *select, value, result, has_value);
    if (err != ERR::Okay) {
-      log.warning("<for-each select=\"%s\"> failed.", select->c_str());
-      Self->Error = err;
+      log_error(&Tag, err, "doc.for-each-select-failed", "select", "<for-each select=\"{}\"> failed.", *select);
       return TRF::NIL;
    }
 
@@ -1810,32 +1802,28 @@ TRF parser::tag_for_each(const tag_view &Tag, IPF &Flags)
 
    xq_value_binding sequence_value;
    if ((err = xq_make_stored_value(this, value, sequence_value)) != ERR::Okay) {
-      log.warning("<for-each select=\"%s\"> could not preserve the selected sequence.", select->c_str());
-      Self->Error = err;
+      log_error(&Tag, err, "doc.for-each-preserve-failed", "select",
+         "<for-each select=\"{}\"> could not preserve the selected sequence.", *select);
       return TRF::NIL;
    }
 
    auto &stored_value = sequence_value.value;
 
    if ((not has_value) or (not (stored_value.Type IS XPVT::NodeSet)) or
-      xq_nodeset_has_real_attributes(stored_value) or xq_nodeset_has_real_composites(stored_value)) {
-      log.warning("<for-each> currently requires a node sequence result.");
-      Self->Error = ERR::InvalidData;
+      nodeset_has_real_attributes(stored_value) or nodeset_has_real_composites(stored_value)) {
+      log_error(&Tag, ERR::InvalidData, "doc.for-each-invalid-result", "<for-each> currently requires a node sequence result.");
       return TRF::NIL;
    }
 
    if (stored_value.node_set.empty()) {
-      if (xq_value_is_empty_sequence(stored_value)) return TRF::NIL;
-
-      log.warning("<for-each> currently requires a node sequence result.");
-      Self->Error = ERR::InvalidData;
+      if (value_is_empty_sequence(stored_value)) return TRF::NIL;
+      log_error(&Tag, ERR::InvalidData, "doc.for-each-invalid-result", "<for-each> currently requires a node sequence result.");
       return TRF::NIL;
    }
 
    for (auto *node : stored_value.node_set) {
       if (not node) {
-         log.warning("<for-each> currently requires a node sequence result.");
-         Self->Error = ERR::InvalidData;
+         log_error(&Tag, ERR::InvalidData, "doc.for-each-invalid-result", "<for-each> currently requires a node sequence result.");
          return TRF::NIL;
       }
    }
@@ -1862,8 +1850,8 @@ TRF parser::tag_for_each(const tag_view &Tag, IPF &Flags)
 
       auto item_xml = xq_resolve_binding_node_owner(this, sequence_value, item_index, item);
       if (not item_xml) {
-         log.warning("<for-each> could not resolve the owning XML document for the current item.");
-         Self->Error = ERR::InvalidData;
+         log_error(&Tag, ERR::InvalidData, "doc.for-each-owner-missing",
+            "<for-each> could not resolve the owning XML document for the current item.");
          return TRF::NIL;
       }
 
