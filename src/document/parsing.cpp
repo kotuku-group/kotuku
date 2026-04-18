@@ -2873,11 +2873,11 @@ void parser::tag_row(const tag_view &Tag)
    bc_row escrow;
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      if (iequals("height", Tag.Attribs[i].Name)) {
+      if ("height" IS Tag.Attribs[i].Name) {
          escrow.min_height = std::clamp(strtod(Tag.Attribs[i].Value.c_str(), nullptr), 0.0, 4000.0);
       }
-      else if (iequals("fill", Tag.Attribs[i].Name))   escrow.fill   = Tag.Attribs[i].Value;
-      else if (iequals("stroke", Tag.Attribs[i].Name)) escrow.stroke = Tag.Attribs[i].Value;
+      else if ("fill" IS Tag.Attribs[i].Name)   escrow.fill   = Tag.Attribs[i].Value;
+      else if ("stroke" IS Tag.Attribs[i].Name) escrow.stroke = Tag.Attribs[i].Value;
    }
 
    auto &table = m_table_stack.top();
@@ -2922,11 +2922,11 @@ void parser::tag_cell(const tag_view &Tag)
             pf::split(Tag.Attribs[i].Value, std::back_inserter(list));
 
             for (auto &v : list) {
-               if (iequals("all", v))         cell.border = CB::ALL;
-               else if (iequals("top", v))    cell.border |= CB::TOP;
-               else if (iequals("left", v))   cell.border |= CB::LEFT;
-               else if (iequals("bottom", v)) cell.border |= CB::BOTTOM;
-               else if (iequals("right", v))  cell.border |= CB::RIGHT;
+               if ("all" IS v)         cell.border = CB::ALL;
+               else if ("top" IS v)    cell.border |= CB::TOP;
+               else if ("left" IS v)   cell.border |= CB::LEFT;
+               else if ("bottom" IS v) cell.border |= CB::BOTTOM;
+               else if ("right" IS v)  cell.border |= CB::RIGHT;
             }
 
             break;
