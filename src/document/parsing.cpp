@@ -62,7 +62,7 @@ struct tag_view {
 
    inline const std::string * attrib(std::string_view Name) const {
       for (unsigned a=1; a < Attribs.size(); a++) {
-         if (iequals(Attribs[a].Name, Name)) return &Attribs[a].Value;
+         if (Attribs[a].Name IS Name) return &Attribs[a].Value;
       }
       return nullptr;
    }
@@ -406,7 +406,7 @@ void parser::process_page(objXML *pXML)
 
       if (Self->PageName.empty()) break;
       else if (auto name = scan.attrib("name")) {
-         if (iequals(Self->PageName, *name)) page = &scan;
+         if (Self->PageName IS *name) page = &scan;
       }
    }
 
@@ -622,11 +622,11 @@ TRF parser::parse_tag(const XTag &Tag, IPF &Flags)
       }
    }
 
-   if (iequals(tagname, "let")) {
+   if (tagname IS "let") {
       result = tag_let(resolved_tag, Flags);
       return result;
    }
-   else if (iequals(tagname, "for-each")) {
+   else if (tagname IS "for-each") {
       result = tag_for_each(resolved_tag, Flags);
       return result;
    }
@@ -1801,7 +1801,7 @@ void parser::tag_div(const tag_view &Tag)
          else if (Tag.Attribs[i].Value IS "right") {
             align = FSO::ALIGN_RIGHT;
          }
-         else if (not iequals(Tag.Attribs[i].Value, "left")) {
+         else if (not (Tag.Attribs[i].Value IS "left")) {
             log.warning("Alignment type '%s' not supported.", Tag.Attribs[i].Value.c_str());
             valid = false;
          }
@@ -2195,7 +2195,7 @@ void parser::tag_list(const tag_view &Tag)
          // Affects the indenting to apply to child items.
          list.block_indent = DUNIT(value, DU::PIXEL);
       }
-      else if (iequals("v-spacing", name)) {
+      else if ("v-spacing" IS name) {
          // Affects the vertical advance from one list-item paragraph to the next.
          // Equivalent to paragraph leading, not v-spacing, which affects each line
          list.v_spacing = DUNIT(value, DU::LINE_HEIGHT);
@@ -2392,14 +2392,14 @@ void parser::tag_script(const tag_view &Tag)
       if (*tagname IS '$') tagname++;
       if (*tagname IS '@') continue; // Variables are set later
 
-      if (iequals("type", tagname)) {
+      if ("type" IS tagname) {
          type = Tag.Attribs[i].Value;
       }
-      else if (iequals("persistent", tagname)) {
+      else if ("persistent" IS tagname) {
          // A script that is marked as persistent will survive refreshes
          persistent = true;
       }
-      else if (iequals("src", tagname)) {
+      else if ("src" IS tagname) {
          if (safe_file_path(Self, Tag.Attribs[i].Value)) {
             src = Tag.Attribs[i].Value;
          }
@@ -2408,7 +2408,7 @@ void parser::tag_script(const tag_view &Tag)
             return;
          }
       }
-      else if (iequals("cache-file", tagname)) {
+      else if ("cache-file" IS tagname) {
          // Currently the security risk of specifying a cache file is that you could overwrite files on the user's PC,
          // so for the time being this requires unrestricted mode.
 
@@ -2420,13 +2420,13 @@ void parser::tag_script(const tag_view &Tag)
             return;
          }
       }
-      else if (iequals("name", tagname)) {
+      else if ("name" IS tagname) {
          name = Tag.Attribs[i].Value;
       }
-      else if (iequals("default", tagname)) {
+      else if ("default" IS tagname) {
          defaultscript = true;
       }
-      else if (iequals("external", tagname)) {
+      else if ("external" IS tagname) {
          // Reference an external script as the default for function calls
          if ((Self->Flags & DCF::UNRESTRICTED) != DCF::NIL) {
             OBJECTID id;
@@ -2471,7 +2471,7 @@ void parser::tag_script(const tag_view &Tag)
       }
    }
 
-   if (iequals("tiri", type)) {
+   if ("tiri" IS type) {
       error = NewLocalObject(CLASSID::TIRI, &script);
    }
    else {
@@ -2575,13 +2575,13 @@ void parser::tag_li(const tag_view &Tag)
    para.item_indent = list->item_indent;
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      auto tagname = Tag.Attribs[i].Name.c_str();
-      if (*tagname IS '$') tagname++;
+      std::string_view tagname = Tag.Attribs[i].Name;
+      if (tagname.starts_with('$')) tagname.remove_prefix(1);
 
-      if (iequals("value", tagname)) {
+      if ("value" IS tagname) {
          para.value = Tag.Attribs[i].Value;
       }
-      else if (iequals("aggregate", tagname)) {
+      else if ("aggregate" IS tagname) {
          if (Tag.Attribs[i].Value IS "true") para.aggregate = true;
          else if (Tag.Attribs[i].Value IS "1") para.aggregate = true;
       }
@@ -2655,20 +2655,20 @@ void parser::tag_repeat(const tag_view &Tag)
          }
          have_count = true;
       }
-      else if (iequals("end", Tag.Attribs[i].Name)) {
+      else if ("end" IS Tag.Attribs[i].Name) {
          loop_end = std::stoi(Tag.Attribs[i].Value);
          have_end = true;
       }
-      else if (iequals("step", Tag.Attribs[i].Name)) {
+      else if ("step" IS Tag.Attribs[i].Name) {
          step = std::stoi(Tag.Attribs[i].Value);
       }
-      else if (iequals("index", Tag.Attribs[i].Name)) {
+      else if ("index" IS Tag.Attribs[i].Name) {
          // If an index name is specified, the programmer will need to refer to it as [@indexname] and [%index] will
          // remain unchanged from any parent repeat loop.
 
          index_name = Tag.Attribs[i].Value;
       }
-      else if (iequals("select", Tag.Attribs[i].Name)) {
+      else if ("select" IS Tag.Attribs[i].Name) {
          log.warning("<repeat select=\"...\"> is not supported.  Use <for-each select=\"...\"> for sequence iteration.");
          Self->Error = ERR::InvalidData;
          return;
