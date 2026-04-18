@@ -457,6 +457,15 @@ struct parser {
       append_diagnostic(doc_diag_severity::ERROR, Error, Code, std::move(message), Tag);
    }
 
+   template <class... Args> inline void log_error(const tag_view *Tag, ERR Error, std::string_view Code,
+      std::string_view AttribName, std::string_view Format, Args&&... ArgsList) const
+   {
+      Self->Error = Error;
+      auto message = std::vformat(Format, std::make_format_args(ArgsList...));
+      emit_diagnostic_log(doc_diag_severity::ERROR, message);
+      append_diagnostic(doc_diag_severity::ERROR, Error, Code, std::move(message), Tag, AttribName);
+   }
+
    template <class... Args> inline void log_error(const XTag *Tag, ERR Error, std::string_view Code,
       std::string_view Format, Args&&... ArgsList) const
    {
@@ -464,6 +473,15 @@ struct parser {
       auto message = std::vformat(Format, std::make_format_args(ArgsList...));
       emit_diagnostic_log(doc_diag_severity::ERROR, message);
       append_diagnostic(doc_diag_severity::ERROR, Error, Code, std::move(message), Tag);
+   }
+
+   template <class... Args> inline void log_error(const XTag *Tag, ERR Error, std::string_view Code,
+      std::string_view AttribName, std::string_view Format, Args&&... ArgsList) const
+   {
+      Self->Error = Error;
+      auto message = std::vformat(Format, std::make_format_args(ArgsList...));
+      emit_diagnostic_log(doc_diag_severity::ERROR, message);
+      append_diagnostic(doc_diag_severity::ERROR, Error, Code, std::move(message), Tag, {}, AttribName);
    }
 
    void config_default_pattern() {
