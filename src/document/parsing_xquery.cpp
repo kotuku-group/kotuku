@@ -1509,7 +1509,8 @@ static bool check_tag_conditions(parser *Parser, const tag_view &Tag)
         auto err = xq_eval_helper(Parser, Parser->m_xml, Tag.Source, Tag.Attribs[i].Value,
             XQEval::BOOLEAN, result, boolean_result);
          if (err != ERR::Okay) {
-            Parser->log_error(&Tag, err, "doc.xquery-test-failed", "test", "XQuery test failed: {}.", Tag.Attribs[i].Value);
+            Parser->log_error(&Tag, err, "doc.xquery-test-failed", attrib_name("test"),
+               "XQuery test failed: {}.", Tag.Attribs[i].Value);
             return false;
          }
          log.trace("Test: %s -> %s", Tag.Attribs[i].Value.c_str(), boolean_result ? "true" : "false");
@@ -1535,7 +1536,7 @@ void parser::tag_data(const tag_view &Tag)
    bool has_value = false;
    auto err = xq_eval_value_helper(this, m_xml, Tag.Source, *select, value, result, has_value);
    if (err != ERR::Okay) {
-      log_error(&Tag, err, "doc.data-select-failed", "select", "<data select=\"{}\"> failed.", *select);
+      log_error(&Tag, err, "doc.data-select-failed", attrib_name("select"), "<data select=\"{}\"> failed.", *select);
       return;
    }
 
@@ -1602,7 +1603,7 @@ void parser::tag_parse(const tag_view &Tag)
             bool has_value = false;
             auto err = xq_eval_value_helper(this, m_xml, Tag.Source, Tag.Attribs[i].Value, value, result, has_value);
             if (err != ERR::Okay) {
-               log_error(&Tag, err, "doc.parse-select-failed", "select",
+               log_error(&Tag, err, "doc.parse-select-failed", attrib_name("select"),
                   "<parse select=\"{}\"> failed.", Tag.Attribs[i].Value);
                return;
             }
@@ -1687,13 +1688,13 @@ void parser::tag_print(const tag_view &Tag)
             bool has_value = false;
             auto err = xq_eval_value_helper(this, m_xml, Tag.Source, Tag.Attribs[i].Value, value, result, has_value);
             if (err != ERR::Okay) {
-               log_error(&Tag, err, "doc.print-select-failed", "select",
+               log_error(&Tag, err, "doc.print-select-failed", attrib_name("select"),
                   "<print select=\"{}\"> failed.", Tag.Attribs[i].Value);
                return;
             }
             err = xq_select_to_print_text(value, result, has_value, result);
             if (err != ERR::Okay) {
-               log_error(&Tag, err, "doc.print-select-text-conversion-failed", "select",
+               log_error(&Tag, err, "doc.print-select-text-conversion-failed", attrib_name("select"),
                   "<print select=\"{}\"> could not be converted into text.", Tag.Attribs[i].Value);
                return;
             }
@@ -1717,7 +1718,7 @@ void parser::tag_print(const tag_view &Tag)
                UnloadFile(cache);
             }
          }
-         else log_warning(&Tag, "doc.print-src-restricted", "src",
+         else log_warning(&Tag, "doc.print-src-restricted", attrib_name("src"),
             "Cannot <print src.../> unless in unrestricted mode.");
       }
       else log_hint(&Tag, "doc.print-noop", "<print/> element does nothing.");
@@ -1747,7 +1748,8 @@ TRF parser::tag_let(const tag_view &Tag, IPF &Flags)
    std::string binding_name = *name;
    if ((not binding_name.empty()) and (binding_name.front() IS '$')) binding_name.erase(0, 1);
    if (binding_name.empty()) {
-      log_error(&Tag, ERR::InvalidData, "doc.let-empty-name", "name", "<let name=\"...\"> resolved to an empty binding name.");
+      log_error(&Tag, ERR::InvalidData, "doc.let-empty-name", attrib_name("name"),
+         "<let name=\"...\"> resolved to an empty binding name.");
       return TRF::NIL;
    }
 
@@ -1756,7 +1758,7 @@ TRF parser::tag_let(const tag_view &Tag, IPF &Flags)
    bool has_value = false;
    auto err = xq_eval_value_helper(this, m_xml, Tag.Source, *select, value, result, has_value);
    if (err != ERR::Okay) {
-      log_error(&Tag, err, "doc.let-select-failed", "select", "<let select=\"{}\"> failed.", *select);
+      log_error(&Tag, err, "doc.let-select-failed", attrib_name("select"), "<let select=\"{}\"> failed.", *select);
       return TRF::NIL;
    }
 
@@ -1767,7 +1769,8 @@ TRF parser::tag_let(const tag_view &Tag, IPF &Flags)
 
    xq_value_binding binding_value;
    if ((err = xq_make_stored_value(this, value, binding_value)) != ERR::Okay) {
-      log_error(&Tag, err, "doc.let-preserve-failed", "select", "<let select=\"{}\"> could not preserve the selected value.", *select);
+      log_error(&Tag, err, "doc.let-preserve-failed", attrib_name("select"),
+         "<let select=\"{}\"> could not preserve the selected value.", *select);
       return TRF::NIL;
    }
 
@@ -1794,7 +1797,7 @@ TRF parser::tag_for_each(const tag_view &Tag, IPF &Flags)
    bool has_value = false;
    auto err = xq_eval_value_helper(this, m_xml, Tag.Source, *select, value, result, has_value);
    if (err != ERR::Okay) {
-      log_error(&Tag, err, "doc.for-each-select-failed", "select", "<for-each select=\"{}\"> failed.", *select);
+      log_error(&Tag, err, "doc.for-each-select-failed", attrib_name("select"), "<for-each select=\"{}\"> failed.", *select);
       return TRF::NIL;
    }
 
@@ -1802,7 +1805,7 @@ TRF parser::tag_for_each(const tag_view &Tag, IPF &Flags)
 
    xq_value_binding sequence_value;
    if ((err = xq_make_stored_value(this, value, sequence_value)) != ERR::Okay) {
-      log_error(&Tag, err, "doc.for-each-preserve-failed", "select",
+      log_error(&Tag, err, "doc.for-each-preserve-failed", attrib_name("select"),
          "<for-each select=\"{}\"> could not preserve the selected sequence.", *select);
       return TRF::NIL;
    }

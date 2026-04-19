@@ -72,6 +72,15 @@ struct tag_view {
    }
 };
 
+struct diag_attrib_name {
+   std::string_view Value;
+};
+
+static inline diag_attrib_name attrib_name(std::string_view Name)
+{
+   return { Name };
+}
+
 //********************************************************************************************************************
 // State machine for the parser.  This information is discarded after parsing.
 
@@ -409,11 +418,11 @@ struct parser {
    }
 
    template <class... Args> inline void log_hint(const tag_view *Tag, std::string_view Code,
-      std::string_view AttribName, std::string_view Format, Args&&... ArgsList) const
+      diag_attrib_name AttribName, std::string_view Format, Args&&... ArgsList) const
    {
       auto message = std::vformat(Format, std::make_format_args(ArgsList...));
       emit_diagnostic_log(doc_diag_severity::HINT, message);
-      append_diagnostic(doc_diag_severity::HINT, ERR::Okay, Code, std::move(message), Tag, AttribName);
+      append_diagnostic(doc_diag_severity::HINT, ERR::Okay, Code, std::move(message), Tag, AttribName.Value);
    }
 
    template <class... Args> inline void log_hint(const XTag *Tag, std::string_view Code,
@@ -424,6 +433,14 @@ struct parser {
       append_diagnostic(doc_diag_severity::HINT, ERR::Okay, Code, std::move(message), Tag);
    }
 
+   template <class... Args> inline void log_hint(const XTag *Tag, std::string_view Code,
+      diag_attrib_name AttribName, std::string_view Format, Args&&... ArgsList) const
+   {
+      auto message = std::vformat(Format, std::make_format_args(ArgsList...));
+      emit_diagnostic_log(doc_diag_severity::HINT, message);
+      append_diagnostic(doc_diag_severity::HINT, ERR::Okay, Code, std::move(message), Tag, {}, AttribName.Value);
+   }
+
    template <class... Args> inline void log_warning(const tag_view *Tag, std::string_view Code,
       std::string_view Format, Args&&... ArgsList) const
    {
@@ -433,11 +450,11 @@ struct parser {
    }
 
    template <class... Args> inline void log_warning(const tag_view *Tag, std::string_view Code,
-      std::string_view AttribName, std::string_view Format, Args&&... ArgsList) const
+      diag_attrib_name AttribName, std::string_view Format, Args&&... ArgsList) const
    {
       auto message = std::vformat(Format, std::make_format_args(ArgsList...));
       emit_diagnostic_log(doc_diag_severity::WARNING, message);
-      append_diagnostic(doc_diag_severity::WARNING, ERR::Okay, Code, std::move(message), Tag, AttribName);
+      append_diagnostic(doc_diag_severity::WARNING, ERR::Okay, Code, std::move(message), Tag, AttribName.Value);
    }
 
    template <class... Args> inline void log_warning(const XTag *Tag, std::string_view Code,
@@ -448,6 +465,14 @@ struct parser {
       append_diagnostic(doc_diag_severity::WARNING, ERR::Okay, Code, std::move(message), Tag);
    }
 
+   template <class... Args> inline void log_warning(const XTag *Tag, std::string_view Code,
+      diag_attrib_name AttribName, std::string_view Format, Args&&... ArgsList) const
+   {
+      auto message = std::vformat(Format, std::make_format_args(ArgsList...));
+      emit_diagnostic_log(doc_diag_severity::WARNING, message);
+      append_diagnostic(doc_diag_severity::WARNING, ERR::Okay, Code, std::move(message), Tag, {}, AttribName.Value);
+   }
+
    template <class... Args> inline void log_error(const tag_view *Tag, ERR Error, std::string_view Code,
       std::string_view Format, Args&&... ArgsList) const
    {
@@ -458,12 +483,12 @@ struct parser {
    }
 
    template <class... Args> inline void log_error(const tag_view *Tag, ERR Error, std::string_view Code,
-      std::string_view AttribName, std::string_view Format, Args&&... ArgsList) const
+      diag_attrib_name AttribName, std::string_view Format, Args&&... ArgsList) const
    {
       Self->Error = Error;
       auto message = std::vformat(Format, std::make_format_args(ArgsList...));
       emit_diagnostic_log(doc_diag_severity::ERROR, message);
-      append_diagnostic(doc_diag_severity::ERROR, Error, Code, std::move(message), Tag, AttribName);
+      append_diagnostic(doc_diag_severity::ERROR, Error, Code, std::move(message), Tag, AttribName.Value);
    }
 
    template <class... Args> inline void log_error(const XTag *Tag, ERR Error, std::string_view Code,
@@ -476,12 +501,12 @@ struct parser {
    }
 
    template <class... Args> inline void log_error(const XTag *Tag, ERR Error, std::string_view Code,
-      std::string_view AttribName, std::string_view Format, Args&&... ArgsList) const
+      diag_attrib_name AttribName, std::string_view Format, Args&&... ArgsList) const
    {
       Self->Error = Error;
       auto message = std::vformat(Format, std::make_format_args(ArgsList...));
       emit_diagnostic_log(doc_diag_severity::ERROR, message);
-      append_diagnostic(doc_diag_severity::ERROR, Error, Code, std::move(message), Tag, {}, AttribName);
+      append_diagnostic(doc_diag_severity::ERROR, Error, Code, std::move(message), Tag, {}, AttribName.Value);
    }
 
    void config_default_pattern() {
@@ -1147,7 +1172,7 @@ bool parser::check_font_attrib(const XMLAttrib &Attrib, bc_font &Style, const ta
 {
    switch (strhash(Attrib.Name)) {
       case HASH_colour:
-         log_hint(Tag, "doc.deprecated-attribute", Attrib.Name,
+         log_hint(Tag, "doc.deprecated-attribute", attrib_name(Attrib.Name),
             "Font '{}' attrib is deprecated, use 'fill'.", Attrib.Name);
          [[fallthrough]];
       case HASH_font_fill:
@@ -1324,14 +1349,14 @@ void parser::tag_body(const tag_view &Tag)
             switch (val.type) {
                case DU::PIXEL: Self->FontSize = val.value; break;
                default:
-                  log_warning(&Tag, "doc.invalid-font-unit", Tag.Attribs[i].Name,
+                  log_warning(&Tag, "doc.invalid-font-unit", attrib_name(Tag.Attribs[i].Name),
                      "Invalid font size unit '{}'.", Tag.Attribs[i].Value);
             }
             break;
          }
 
          case HASH_font_colour: // DEPRECATED, use font fill
-            log_hint(&Tag, "doc.deprecated-attribute", Tag.Attribs[i].Name,
+            log_hint(&Tag, "doc.deprecated-attribute", attrib_name(Tag.Attribs[i].Name),
                "The font-colour attribute is deprecated, use font-fill.");
             [[fallthrough]];
          case HASH_font_fill: // Default font fill
@@ -1354,7 +1379,7 @@ void parser::tag_body(const tag_view &Tag)
             break;
 
          default:
-            log_warning(&Tag, "doc.unsupported-attribute", Tag.Attribs[i].Name,
+            log_warning(&Tag, "doc.unsupported-attribute", attrib_name(Tag.Attribs[i].Name),
                "Body attribute {}={} is not supported.", Tag.Attribs[i].Name, Tag.Attribs[i].Value);
             break;
       }
@@ -1506,7 +1531,7 @@ void parser::tag_button(const tag_view &Tag)
       else if (hash IS HASH_height)   widget.height = DUNIT(value);
       else if (hash IS HASH_padding)  widget.pad.parse(value); // Outer padding
       else if (hash IS HASH_cell_padding) widget.inner_padding.parse(value); // Inner padding
-      else log_warning(&Tag, "doc.unsupported-attribute", Tag.Attribs[i].Name,
+      else log_warning(&Tag, "doc.unsupported-attribute", attrib_name(Tag.Attribs[i].Name),
          "<button> unsupported attribute '{}'.", Tag.Attribs[i].Name);
    }
 
@@ -1612,7 +1637,7 @@ void parser::tag_checkbox(const tag_view &Tag)
       else if (hash IS HASH_value) {
          widget.alt_state = (value IS "1") or (value IS "true");
       }
-      else log_warning(&Tag, "doc.unsupported-attribute", Tag.Attribs[i].Name,
+      else log_warning(&Tag, "doc.unsupported-attribute", attrib_name(Tag.Attribs[i].Name),
          "<checkbox> unsupported attribute '{}'.", Tag.Attribs[i].Name);
    }
 
@@ -1706,7 +1731,7 @@ void parser::tag_combobox(const tag_view &Tag)
          else if ("right" IS value) widget.label_pos = 1;
       }
       else if (hash IS HASH_width) widget.width = DUNIT(value);
-      else log_warning(&Tag, "doc.unsupported-attribute", Tag.Attribs[i].Name,
+      else log_warning(&Tag, "doc.unsupported-attribute", attrib_name(Tag.Attribs[i].Name),
          "<combobox> unsupported attribute '{}'.", Tag.Attribs[i].Name);
    }
 
@@ -1828,7 +1853,7 @@ void parser::tag_input(const tag_view &Tag)
             else if ("right" IS value) widget.label_pos = 1;
             break;
         default:
-            log_warning(&Tag, "doc.unsupported-attribute", Tag.Attribs[i].Name,
+            log_warning(&Tag, "doc.unsupported-attribute", attrib_name(Tag.Attribs[i].Name),
                "<input> unsupported attribute '{}'.", Tag.Attribs[i].Name);
             break;
       }
@@ -1855,7 +1880,7 @@ void parser::tag_debug(const tag_view &Tag) const
 {
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
       if ("msg" IS Tag.Attribs[i].Name) {
-         log_hint(&Tag, "doc.debug-message", Tag.Attribs[i].Name, "{}", Tag.Attribs[i].Value);
+         log_hint(&Tag, "doc.debug-message", attrib_name(Tag.Attribs[i].Name), "{}", Tag.Attribs[i].Value);
       }
    }
 }
@@ -1944,7 +1969,7 @@ void parser::tag_div(const tag_view &Tag)
             align = FSO::ALIGN_RIGHT;
          }
          else if (not (Tag.Attribs[i].Value IS "left")) {
-            log_warning(&Tag, "doc.invalid-alignment", Tag.Attribs[i].Name,
+            log_warning(&Tag, "doc.invalid-alignment", attrib_name(Tag.Attribs[i].Name),
                "Alignment type '{}' is not supported.", Tag.Attribs[i].Value);
             valid = false;
          }
@@ -2078,7 +2103,7 @@ void parser::tag_include(const tag_view &Tag)
             Self->Resources.emplace_back(xmlinc->UID, RTD::OBJECT_TEMP);
             change_xml(old_xml);
          }
-         else log_warning(&Tag, "doc.include-failed", Tag.Attribs[i].Name,
+         else log_warning(&Tag, "doc.include-failed", attrib_name(Tag.Attribs[i].Name),
             "Failed to include '{}'.", Tag.Attribs[i].Value);
       }
       else if ("volatile" IS Tag.Attribs[i].Name) {
@@ -2126,7 +2151,7 @@ void parser::tag_image(const tag_view &Tag)
                case HASH_center: align = ALIGN::HORIZONTAL; break;
                case HASH_middle: align = ALIGN::HORIZONTAL; break; // synonym
                default:
-                  log_warning(&Tag, "doc.invalid-alignment", Tag.Attribs[i].Name,
+                  log_warning(&Tag, "doc.invalid-alignment", attrib_name(Tag.Attribs[i].Name),
                      "Invalid alignment value '{}'.", value);
                   valid = false;
                   break;
@@ -2149,7 +2174,7 @@ void parser::tag_image(const tag_view &Tag)
                case HASH_middle: align = ALIGN::VERTICAL; break; // synonym
                case HASH_bottom: align = ALIGN::BOTTOM; break;
                default:
-                  log_warning(&Tag, "doc.invalid-vertical-alignment", Tag.Attribs[i].Name,
+                  log_warning(&Tag, "doc.invalid-vertical-alignment", attrib_name(Tag.Attribs[i].Name),
                      "Invalid valign value '{}'.", value);
                   valid = false;
                   break;
@@ -2168,7 +2193,7 @@ void parser::tag_image(const tag_view &Tag)
          case HASH_height:  img.height = DUNIT(value); break;
 
          default:
-            log_warning(&Tag, "doc.unsupported-attribute", Tag.Attribs[i].Name,
+            log_warning(&Tag, "doc.unsupported-attribute", attrib_name(Tag.Attribs[i].Name),
                "<image> unsupported attribute '{}'.", Tag.Attribs[i].Name);
       }
    }
@@ -2215,7 +2240,7 @@ void parser::tag_index(const tag_view &Tag)
       else if ("hide" IS Tag.Attribs[i].Name) {
          visible = false;
       }
-      else log_warning(&Tag, "doc.unsupported-attribute", Tag.Attribs[i].Name,
+      else log_warning(&Tag, "doc.unsupported-attribute", attrib_name(Tag.Attribs[i].Name),
          "<index> unsupported attribute '{}'.", Tag.Attribs[i].Name);
    }
 
@@ -2298,7 +2323,7 @@ void parser::tag_link(const tag_view &Tag)
          default:
             if (Tag.Attribs[i].Name.starts_with('@')) link.args.push_back(make_pair(Tag.Attribs[i].Name, Tag.Attribs[i].Value));
             else if (Tag.Attribs[i].Name.starts_with('_')) link.args.push_back(make_pair(Tag.Attribs[i].Name, Tag.Attribs[i].Value));
-            else log_warning(&Tag, "doc.unsupported-attribute", Tag.Attribs[i].Name,
+            else log_warning(&Tag, "doc.unsupported-attribute", attrib_name(Tag.Attribs[i].Name),
                "<a|link> unsupported attribute '{}'.", Tag.Attribs[i].Name);
       }
    }
@@ -2403,7 +2428,7 @@ void parser::tag_paragraph(const tag_view &Tag)
             align = FSO::ALIGN_RIGHT;
          }
          else if (not iequals(Tag.Attribs[i].Value, "left")) {
-            log_warning(&Tag, "doc.invalid-alignment", Tag.Attribs[i].Name,
+            log_warning(&Tag, "doc.invalid-alignment", attrib_name(Tag.Attribs[i].Name),
                "Alignment type '{}' is not supported.", Tag.Attribs[i].Value);
             valid = false;
          }
@@ -2557,7 +2582,7 @@ void parser::tag_script(const tag_view &Tag)
             src = Tag.Attribs[i].Value;
          }
          else {
-            log_error(&Tag, ERR::NoPermission, "doc.script-src-denied", Tag.Attribs[i].Name,
+            log_error(&Tag, ERR::NoPermission, "doc.script-src-denied", attrib_name(Tag.Attribs[i].Name),
                "Security violation - cannot set script src to '{}'.", Tag.Attribs[i].Value);
             return;
          }
@@ -2570,7 +2595,7 @@ void parser::tag_script(const tag_view &Tag)
             cachefile = Tag.Attribs[i].Value;
          }
          else {
-            log_error(&Tag, ERR::NoPermission, "doc.script-cachefile-denied", Tag.Attribs[i].Name,
+            log_error(&Tag, ERR::NoPermission, "doc.script-cachefile-denied", attrib_name(Tag.Attribs[i].Name),
                "Security violation - cannot set script cachefile to '{}'.", Tag.Attribs[i].Value);
             return;
          }
@@ -2590,13 +2615,13 @@ void parser::tag_script(const tag_view &Tag)
                return;
             }
             else {
-               log_warning(&Tag, "doc.script-reference-missing", Tag.Attribs[i].Name,
+               log_warning(&Tag, "doc.script-reference-missing", attrib_name(Tag.Attribs[i].Name),
                   "Failed to find external script '{}'.", Tag.Attribs[i].Value);
                return;
             }
          }
          else {
-            log_error(&Tag, ERR::NoPermission, "doc.script-reference-denied", Tag.Attribs[i].Name,
+            log_error(&Tag, ERR::NoPermission, "doc.script-reference-denied", attrib_name(Tag.Attribs[i].Name),
                "Security violation - cannot reference external script '{}'.", Tag.Attribs[i].Value);
             return;
          }
@@ -2807,7 +2832,7 @@ void parser::tag_repeat(const tag_view &Tag)
       else if ("count" IS Tag.Attribs[i].Name) {
          count = std::stoi(Tag.Attribs[i].Value);
          if (count < 0) {
-            log_warning(&Tag, "doc.invalid-repeat-count", Tag.Attribs[i].Name,
+            log_warning(&Tag, "doc.invalid-repeat-count", attrib_name(Tag.Attribs[i].Name),
                "Invalid count value of {}.", count);
             return;
          }
@@ -2827,7 +2852,7 @@ void parser::tag_repeat(const tag_view &Tag)
          index_name = Tag.Attribs[i].Value;
       }
       else if ("select" IS Tag.Attribs[i].Name) {
-         log_warning(&Tag, "doc.repeat-select-unsupported", Tag.Attribs[i].Name,
+         log_warning(&Tag, "doc.repeat-select-unsupported", attrib_name(Tag.Attribs[i].Name),
             "<repeat select=\"...\"> is not supported. Use <for-each select=\"...\"> for sequence iteration.");
          Self->Error = ERR::InvalidData;
          return;
@@ -2966,7 +2991,7 @@ void parser::tag_table(const tag_view &Tag)
                case HASH_center: table.align = ALIGN::HORIZONTAL; break;
                case HASH_middle: table.align = ALIGN::HORIZONTAL; break; // synonym
                default:
-                  log_warning(&Tag, "doc.invalid-alignment", Tag.Attribs[i].Name,
+                  log_warning(&Tag, "doc.invalid-alignment", attrib_name(Tag.Attribs[i].Name),
                      "Invalid alignment value '{}'.", value);
                   break;
             }
@@ -3019,7 +3044,7 @@ void parser::tag_table(const tag_view &Tag)
       }
 
       if (parsed_columns < table.columns.size()) {
-         log_warning(&Tag, "doc.incomplete-table-columns", "columns",
+         log_warning(&Tag, "doc.incomplete-table-columns", attrib_name("columns"),
             "columns attribute '{}' did not define all {} columns.", columns, int(table.columns.size()));
       }
    }
@@ -3119,7 +3144,7 @@ void parser::tag_cell(const tag_view &Tag)
             cell.edit_def = Tag.Attribs[i].Value;
 
             if (not Self->EditDefs.contains(Tag.Attribs[i].Value)) {
-               log_warning(&Tag, "doc.missing-edit-definition", Tag.Attribs[i].Name,
+               log_warning(&Tag, "doc.missing-edit-definition", attrib_name(Tag.Attribs[i].Name),
                   "Edit definition '{}' does not exist.", Tag.Attribs[i].Value);
                cell.edit_def.clear();
             }
@@ -3218,7 +3243,7 @@ void parser::tag_page(const tag_view &Tag) const
       if (not std::ranges::all_of(page_name, [](char Character) {
          return std::isalnum((unsigned char)Character) != 0;
       })) {
-         log_warning(&Tag, "doc.invalid-page-name", "name",
+         log_warning(&Tag, "doc.invalid-page-name", attrib_name("name"),
             "Page has an invalid name of '{}'. Character support is limited to [A-Z,a-z,0-9].", *name);
       }
    }
@@ -3257,7 +3282,7 @@ void parser::tag_trigger(const tag_view &Tag)
          case HASH_leaving_page:    trigger_code = DRT::LEAVING_PAGE; break;
          case HASH_page_processed:  trigger_code = DRT::PAGE_PROCESSED; break;
          default:
-            log_warning(&Tag, "doc.invalid-trigger-event", "event",
+            log_warning(&Tag, "doc.invalid-trigger-event", attrib_name("event"),
                "Trigger event '{}' for function '{}' is not recognised.", event, function_name);
             return;
       }
@@ -3269,11 +3294,11 @@ void parser::tag_trigger(const tag_view &Tag)
          if (script->getProcedureID(function_name.c_str(), &function_id) IS ERR::Okay) {
             Self->Triggers[int(trigger_code)].emplace_back(FUNCTION(script, function_id));
          }
-         else log_warning(&Tag, "doc.trigger-procedure-missing", "function",
+         else log_warning(&Tag, "doc.trigger-procedure-missing", attrib_name("function"),
             "Unable to resolve '{}' in script #{} to a function ID (the procedure may not exist).",
             function_name, script->UID);
       }
-      else log_warning(&Tag, "doc.trigger-script-missing", "function",
+      else log_warning(&Tag, "doc.trigger-script-missing", attrib_name("function"),
          "The script for '{}' is not available - check if it is declared prior to the trigger tag.", function_name);
    }
 }
