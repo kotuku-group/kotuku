@@ -281,10 +281,13 @@ static void printerror(void)
 static int8_t is_console(HANDLE h)
 {
    if (FILE_TYPE_UNKNOWN IS GetFileType(h) and ERROR_INVALID_HANDLE IS GetLastError()) {
-       if ((h = CreateFile("CONOUT$", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr))) {
-           CloseHandle(h);
-           return true;
-       }
+      auto console_handle = CreateFile("CONOUT$", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+      if (console_handle != INVALID_HANDLE_VALUE) {
+         CloseHandle(console_handle);
+         return true;
+      }
+
+      return false;
    }
 
    CONSOLE_FONT_INFO cfi;
@@ -459,7 +462,8 @@ extern "C" ERR winInitialise(unsigned int *PathHash, BREAK_HANDLER BreakHandler)
 
       SetLastError(ERROR_SUCCESS);
       if (VirtualQuery(LPCVOID(winInitialise), &mbiInfo, sizeof(mbiInfo))) {
-         if ((len = GetModuleFileName((HINSTANCE)mbiInfo.AllocationBase, path, sizeof(path)))) {
+         if ((len = GetModuleFileName((HINSTANCE)mbiInfo.AllocationBase, path, sizeof(path) - 1))) {
+            path[sizeof(path) - 1] = 0;
             *PathHash = LCASEHASH(path);
          }
       }
@@ -734,7 +738,7 @@ extern "C" DWORD winGetExeDirectory(DWORD Length, LPSTR String)
       while (i > 0) {
          if ((String[i] IS '/') or (String[i] IS '\\')) {
             String[i+1] = 0;
-            return i;
+            return i + 1;
          }
          i--;
       }
@@ -742,7 +746,8 @@ extern "C" DWORD winGetExeDirectory(DWORD Length, LPSTR String)
 
    // Windows has not prepended the path to the executable.  (Observed in Windows 7 64).  Try another method...
 
-   if ((len = GetProcessImageFileNameA(GetCurrentProcess(), String, Length)) > 0) {
+   if ((len = GetProcessImageFileNameA(GetCurrentProcess(), String, Length - 1)) > 0) {
+      String[Length - 1] = 0;
       char tmp[MAX_PATH] = "";
 
       if (GetLogicalDriveStrings(sizeof(tmp)-1, tmp)) {
@@ -1504,11 +1509,14 @@ extern "C" int8_t winGetCommand(char *Path, char *Buffer, int BufferSize)
 
 extern "C" int winCurrentDirectory(char *Buffer, int BufferSize)
 {
+   if (!Buffer or BufferSize <= 0) return 0;
+
    Buffer[0] = 0;
-   if (auto len = GetModuleFileNameA(nullptr, Buffer, BufferSize)) {
+   if (auto len = GetModuleFileNameA(nullptr, Buffer, BufferSize - 1)) {
+      Buffer[BufferSize - 1] = 0;
       for (auto i=len; i > 0; i--) {
-         if (Buffer[i] IS '\\') {
-            Buffer[i+1] = 0;
+         if (Buffer[i-1] IS '\\') {
+            Buffer[i] = 0;
             break;
          }
       }
@@ -1979,8 +1987,19 @@ extern "C" int winGetUserName(STRING Buffer, int Length)
 
    DWORD len = Length;
    auto result = GetUserName(Buffer, &len);
-   if (result and (int(len) < Length)) Buffer[len] = 0;
-   return result ? len : 0;
+   if (!result or !len) return 0;
+
+   Buffer[len - 1] = 0;
+   return len - 1;
+}
+
+//********************************************************************************************************************
+
+static bool case_sensitive_name_match(CSTRING Location, int NameStart, int NameEnd, CSTRING ActualName)
+{
+   int index = 0;
+   while ((NameStart + index < NameEnd) and (Location[NameStart + index] IS ActualName[index]) and ActualName[index]) index++;
+   return (NameStart + index IS NameEnd) and (ActualName[index] IS 0);
 }
 
 //********************************************************************************************************************
@@ -2100,8 +2119,11 @@ extern "C" int winTestLocation(STRING Location, int8_t CaseSensitive)
    WIN32_FIND_DATA find;
    char save;
    int i, savepos;
+   bool found = false;
 
    for (len=0; Location[len]; len++);
+   if (len < 1) return 0;
+
    if ((Location[len-1] IS '/') or (Location[len-1] IS '\\')) {
 
       if (len IS 3) {
@@ -2123,6 +2145,7 @@ extern "C" int winTestLocation(STRING Location, int8_t CaseSensitive)
          save = Location[savepos];
          Location[savepos] = 0; // Remove the trailing slash
          if ((handle = FindFirstFile(Location, &find)) != INVALID_HANDLE_VALUE) {
+            found = true;
             if (find.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) result = LOC_DIRECTORY;
             else while (FindNextFile(handle, &find)) {
                if (find.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
@@ -2136,11 +2159,12 @@ extern "C" int winTestLocation(STRING Location, int8_t CaseSensitive)
          if (CaseSensitive) {
             // Check that the filename of the given location matches that of the actual name set on the file system.
 
-            len--;
-            while ((len > 0) and (Location[len-1] != '/') and (Location[len-1] != '\\')) len--;
-            for (i=0; (Location[len+i] IS find.cFileName[i]) and (find.cFileName[i]) and (Location[len+i]); i++);
-            if ((!Location[len+i]) and (!find.cFileName[i])) return result; // Match
-            else return 0; // Not a case sensitive match
+            if (found and result) {
+               i = savepos;
+               while ((i > 0) and (Location[i-1] != '/') and (Location[i-1] != '\\')) i--;
+               if (!case_sensitive_name_match(Location, i, savepos, find.cFileName)) result = 0; // Not a case sensitive match
+            }
+            else result = 0;
          }
 
          Location[savepos] = save;
@@ -2159,10 +2183,9 @@ extern "C" int winTestLocation(STRING Location, int8_t CaseSensitive)
       if (CaseSensitive) {
          // Check that the filename of the given location matches that of the actual name set on the file system.
 
-         while ((len > 0) and (Location[len-1] != '/') and (Location[len-1] != '\\')) len--;
-         for (i=0; (Location[len+i] IS find.cFileName[i]) and (find.cFileName[i]) and (Location[len+i]); i++);
-         if ((!Location[len+i]) and (!find.cFileName[i])) return result; /* Match */
-         else return 0; /* Not a case sensitive match */
+         i = len;
+         while ((i > 0) and (Location[i-1] != '/') and (Location[i-1] != '\\')) i--;
+         if (!case_sensitive_name_match(Location, i, len, find.cFileName)) return 0; /* Not a case sensitive match */
       }
 
       return result;
