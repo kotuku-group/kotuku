@@ -761,21 +761,38 @@ void SetDefaultPermissions(int User, int Group, PERMIT Permissions)
    glDefaultPermissions = Permissions;
 }
 
-//********************************************************************************************************************
-// Internal function for getting information from files, particularly virtual volumes.  If you know that a path
-// refers directly to the client's filesystem then you can revert to calling fs_getinfo() instead.
+/*********************************************************************************************************************
 
-static thread_local char glNameBuffer[MAX_FILENAME]; // Not thread-safe
+-FUNCTION-
+GetFileInfo: Gets information about a file or folder.
 
-ERR get_file_info(std::string_view Path, FileInfo *Info, int InfoSize)
+This function will return information about a file or folder when given a valid file location.  The current user
+must have read access to the given file.  This function does not allow for the approximation of file names.  To
+approximate a file location, open it as a @File object or use ~ResolvePath() first.
+
+-INPUT-
+cpp(strview) Path: String referring to the file or folder to be queried.
+struct(*FileInfo) Info: Pointer to a !FileInfo structure to be populated.
+int InfoSize: Size of the !FileInfo structure in bytes.
+
+-ERRORS-
+Okay:
+Args:
+LockFailed:
+NoSupport: The target filesystem does not support the operation.
+
+-END-
+
+*********************************************************************************************************************/
+
+// NB: If you know that a path refers directly to the client's filesystem then you can revert to calling
+// fs_getinfo() instead.
+
+ERR GetFileInfo(const std::string_view &Path, FileInfo *Info, int InfoSize)
 {
    pf::Log log(__FUNCTION__);
-   int i;
 
    if (Path.empty() or (!Info) or (InfoSize <= 0)) return log.warning(ERR::Args);
-
-   clearmem(Info, InfoSize);
-   Info->Name = glNameBuffer;
 
    // Check if the location is a volume with no file reference
 
@@ -783,32 +800,29 @@ ERR get_file_info(std::string_view Path, FileInfo *Info, int InfoSize)
       const virtual_drive *vfs = get_fs(Path);
 
       Info->Flags = RDF::VOLUME;
+      Info->Name.clear();
 
-      for (i=0; (i < MAX_FILENAME-1) and (i < std::ssize(Path)) and (Path[i] != ':'); i++) glNameBuffer[i] = Path[i];
-      int pos = i;
-      glNameBuffer[i] = 0;
+      auto pos = Path.find(':');
+      if (pos != std::string::npos) Info->Name = Path.substr(0, pos);
+      else Info->Name = Path;
 
       auto error = ERR::Okay;
 
       if (auto lock = std::unique_lock{glmVolumes, 4s}) {
-         if (glVolumes.contains(glNameBuffer)) {
-            if (glVolumes[glNameBuffer]["Hidden"] IS "Yes") Info->Flags |= RDF::HIDDEN;
+         if (glVolumes.contains(Info->Name)) {
+            if (glVolumes[Info->Name]["Hidden"] IS "Yes") Info->Flags |= RDF::HIDDEN;
          }
       }
       else error = ERR::LockFailed;
 
-      if (pos < MAX_FILENAME-2) {
-         glNameBuffer[pos++] = ':';
-         glNameBuffer[pos] = 0;
+      Info->Name += ':';
 
-         if (vfs->is_virtual()) {
-            Info->Flags |= RDF::VIRTUAL;
-            if (vfs->GetInfo) error = vfs->GetInfo(Path, Info, InfoSize);
-         }
-
-         return error;
+      if (vfs->is_virtual()) {
+         Info->Flags |= RDF::VIRTUAL;
+         if (vfs->GetInfo) error = vfs->GetInfo(Path, Info, InfoSize);
       }
-      else return log.warning(ERR::BufferOverflow);
+
+      return error;
    }
 
    log.traceBranch("%s", Path.data());
@@ -1715,8 +1729,7 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
          if (winCheckDirectoryExists(src.c_str()));
          else return ERR::File;
       #else
-         DIR *dirhandle;
-         if ((dirhandle = opendir(src.c_str()))) closedir(dirhandle);
+         if (auto dirhandle = opendir(src.c_str())) closedir(dirhandle);
          else return ERR::File;
       #endif
 
@@ -2006,7 +2019,7 @@ PERMIT get_parent_permissions(std::string_view Path, int *UserID, int *GroupID)
 
       if (!folder.empty()) {
          FileInfo info;
-         if (get_file_info(folder, &info, sizeof(info)) IS ERR::Okay) {
+         if (GetFileInfo(folder, &info, sizeof(info)) IS ERR::Okay) {
             if (UserID) *UserID = info.UserID;
             if (GroupID) *GroupID = info.GroupID;
             return info.Permissions;
@@ -2082,7 +2095,6 @@ ERR fs_scandir(DirInfo *Dir)
    struct dirent *de;
    struct stat64 info, link;
    struct tm *local;
-   int j;
 
    char pathbuf[256];
    int path_end = strcopy(Dir->prvResolvedPath, pathbuf, sizeof(pathbuf));
@@ -2116,12 +2128,8 @@ ERR fs_scandir(DirInfo *Dir)
          if (S_ISLNK(link.st_mode)) file->Flags |= RDF::LINK;
       }
 
-      j = strcopy(de->d_name, file->Name, MAX_FILENAME);
-
-      if (((file->Flags & RDF::FOLDER) != RDF::NIL) and ((Dir->prvFlags & RDF::QUALIFY) != RDF::NIL)) {
-         file->Name[j++] = '/';
-         file->Name[j] = 0;
-      }
+      file->Name = de->d_name;
+      if (((file->Flags & RDF::FOLDER) != RDF::NIL) and ((Dir->prvFlags & RDF::QUALIFY) != RDF::NIL)) file->Name += '/';
 
       if ((file->Flags & RDF::FILE) != RDF::NIL) file->Size = info.st_size;
       else file->Size = 0;
@@ -2165,7 +2173,6 @@ ERR fs_scandir(DirInfo *Dir)
 #elif _WIN32
 
    int8_t dir, hidden, readonly, archive;
-   int i;
 
    while (winScan(&Dir->prvHandle, Dir->prvResolvedPath, Dir->Info->Name, &Dir->Info->Size, &Dir->Info->Created, &Dir->Info->Modified, &dir, &hidden, &readonly, &archive)) {
       if (hidden)   Dir->Info->Flags |= RDF::HIDDEN;
@@ -2173,17 +2180,13 @@ ERR fs_scandir(DirInfo *Dir)
       if (archive)  Dir->Info->Flags |= RDF::ARCHIVE;
 
       if (dir) {
-         if ((Dir->prvFlags & RDF::FOLDER) IS RDF::NIL) { Dir->Info->Name[0] = 0; continue; }
+         if ((Dir->prvFlags & RDF::FOLDER) IS RDF::NIL) { Dir->Info->Name.clear(); continue; }
          Dir->Info->Flags |= RDF::FOLDER;
 
-         if ((Dir->prvFlags & RDF::QUALIFY) != RDF::NIL) {
-            i = strlen(Dir->Info->Name);
-            Dir->Info->Name[i++] = '/';
-            Dir->Info->Name[i] = 0;
-         }
+         if ((Dir->prvFlags & RDF::QUALIFY) != RDF::NIL) Dir->Info->Name += '/';
       }
       else {
-         if ((Dir->prvFlags & RDF::FILE) IS RDF::NIL) { Dir->Info->Name[0] = 0; continue; }
+         if ((Dir->prvFlags & RDF::FILE) IS RDF::NIL) { Dir->Info->Name.clear(); continue; }
          Dir->Info->Flags |= RDF::FILE|RDF::SIZE|RDF::DATE;
       }
 
@@ -2353,12 +2356,9 @@ ERR fs_getinfo(std::string_view Path, FileInfo *Info, int InfoSize)
 
    int i = len;
    while ((i > 0) and (path_ref[i-1] != '/') and (path_ref[i-1] != '\\') and (path_ref[i-1] != ':')) i--;
-   i = strcopy(path_ref + i, Info->Name, MAX_FILENAME-2);
+   Info->Name = path_ref + i;
 
-   if ((Info->Flags & RDF::FOLDER) != RDF::NIL) {
-      Info->Name[i++] = '/';
-      Info->Name[i] = 0;
-   }
+   if ((Info->Flags & RDF::FOLDER) != RDF::NIL) Info->Name += '/';
 
    Info->Tags = nullptr;
    Info->Size = info.st_size;
@@ -2396,7 +2396,6 @@ ERR fs_getinfo(std::string_view Path, FileInfo *Info, int InfoSize)
 
 #else
    int8_t dir;
-   int i;
 
    Info->Flags = RDF::NIL;
    size_t isize;
@@ -2427,15 +2426,12 @@ ERR fs_getinfo(std::string_view Path, FileInfo *Info, int InfoSize)
    if (Path.ends_with('/') or Path.ends_with('\\')) fi = Path.find_last_of("/\\:", Path.size()-2);
    else fi = Path.find_last_of("/\\:");
 
-   if (fi IS std::string::npos) i = strcopy(Path.data(), Info->Name, MAX_FILENAME - 2);
-   else i = strcopy(Path.data() + fi + 1, Info->Name, MAX_FILENAME - 2);
+   if (fi IS std::string::npos) Info->Name = Path;
+   else Info->Name.assign(Path, fi + 1, std::string::npos);
 
    if ((Info->Flags & RDF::FOLDER) != RDF::NIL) {
-      if (Info->Name[i-1] IS '\\') Info->Name[i-1] = '/';
-      else if (Info->Name[i-1] != '/') {
-         Info->Name[i++] = '/';
-         Info->Name[i] = 0;
-      }
+      if (Info->Name.ends_with('\\')) Info->Name[Info->Name.size() - 1] = '/';
+      else if (not Info->Name.ends_with('/')) Info->Name += '/';
    }
 
    Info->Permissions = PERMIT::NIL;
@@ -2458,8 +2454,8 @@ ERR fs_getdeviceinfo(std::string_view Path, objStorageDevice *Info)
    ERR error;
 
 restart:
-   auto pathend = Path.find(':');
-   std::string vol(Path, 0, pathend);
+   auto path_end = Path.find(':');
+   std::string vol(Path, 0, path_end);
 
    if (auto lock = std::unique_lock{glmVolumes, 2s}) {
       // We keep this lock localised so that it doesn't impact ResolvePath()
@@ -2468,11 +2464,11 @@ restart:
 
          if (glVolumes[vol].contains("Device")) {
             auto &device = glVolumes[vol]["Device"];
-            if (!device.compare("disk"))     Info->DeviceFlags |= DEVICE::FLOPPY_DISK|DEVICE::REMOVABLE|DEVICE::READ|DEVICE::WRITE;
+            if (!device.compare("disk"))       Info->DeviceFlags |= DEVICE::FLOPPY_DISK|DEVICE::REMOVABLE|DEVICE::READ|DEVICE::WRITE;
             else if (!device.compare("fixed")) Info->DeviceFlags |= DEVICE::HARD_DISK|DEVICE::READ|DEVICE::WRITE;
-            else if (!device.compare("hd"))  Info->DeviceFlags |= DEVICE::HARD_DISK|DEVICE::READ|DEVICE::WRITE;
-            else if (!device.compare("cd"))  Info->DeviceFlags |= DEVICE::COMPACT_DISC|DEVICE::REMOVABLE|DEVICE::READ;
-            else if (!device.compare("usb")) Info->DeviceFlags |= DEVICE::USB|DEVICE::REMOVABLE;
+            else if (!device.compare("hd"))    Info->DeviceFlags |= DEVICE::HARD_DISK|DEVICE::READ|DEVICE::WRITE;
+            else if (!device.compare("cd"))    Info->DeviceFlags |= DEVICE::COMPACT_DISC|DEVICE::REMOVABLE|DEVICE::READ;
+            else if (!device.compare("usb"))   Info->DeviceFlags |= DEVICE::USB|DEVICE::REMOVABLE;
             else if (!device.compare("portable")) Info->DeviceFlags |= DEVICE::REMOVABLE;
             else log.warning("Device '%s' unrecognised.", device.c_str());
          }

@@ -899,7 +899,7 @@ using ModTest    = void (*)(CSTRING, int *, int *);
     large Size                 # The size of the file's content.
     large TimeStamp            # 64-bit time stamp - usable only for comparison (e.g. sorting).
     struct(*FileInfo) Next     # Next structure in the list, or `NULL`.
-    str Name                   # The name of the file.
+    cpp(str) Name              # The name of the file.
     int(RDF) Flags             # Additional flags to describe the file.
     int(PERMIT) Permissions    # Standard permission flags.
     int UserID                 # User  ID (Unix systems only).
@@ -1076,7 +1076,8 @@ struct ScriptArg { // For use with sc::Exec
     "WakeThread",
     "AsyncCancel",
     "AsyncPending",
-    "AsyncWait")
+    "AsyncWait",
+    "GetFileInfo")
 
   c_insert([==[
 

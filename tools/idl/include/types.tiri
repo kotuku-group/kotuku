@@ -55,7 +55,7 @@ global glTypes = {
    ptr        = { fd='FD_PTR',                c_type='APTR' },
    resource   = { fd='FD_STRUCT|FD_RESOURCE', c_type='APTR' },
    short      = { fd='FD_WORD',               c_type='int16_t', doc_type='INT16' },
-   strview    = { fd='FD_STR',                c_type='STRING', cpp_type='const std::string_view &' }, -- For API calls only
+   strview    = { fd='FD_STR',                c_type='std::string_view &', cpp_type='const std::string_view &' }, -- For API calls only
    str        = { fd='FD_STR',                c_type='STRING', cpp_type='std::string' },
    struct     = { fd='FD_STRUCT',             c_type='APTR' },
    structsize = { fd='FD_INT|FD_BUFSIZE',     c_type='int', doc_type='INT' },

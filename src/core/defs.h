@@ -1079,7 +1079,6 @@ ERR    RenameVolume(CSTRING, CSTRING);
 ERR    findfile(std::string &);
 PERMIT convert_fs_permissions(int);
 int   convert_permissions(PERMIT);
-ERR    get_file_info(std::string_view, FileInfo *, int);
 extern "C" ERR convert_errno(int Error, ERR Default);
 void free_file_cache(void);
 
@@ -1226,7 +1225,7 @@ extern "C" ERR winReadChanges(WINHANDLE, APTR, int NotifyFlags, char *, int, int
 extern "C" int winReadKey(CSTRING, CSTRING, STRING, int);
 extern "C" int winReadRootKey(CSTRING, STRING, STRING, int);
 extern "C" int winReadStdInput(WINHANDLE FD, APTR Buffer, int BufferSize, int *Size);
-extern "C" int winScan(APTR *, STRING, STRING, int64_t *, struct DateTime *, struct DateTime *, int8_t *, int8_t *, int8_t *, int8_t *);
+extern "C" int winScan(APTR *, STRING, std::string &, int64_t *, struct DateTime *, struct DateTime *, int8_t *, int8_t *, int8_t *, int8_t *);
 extern "C" int winSetAttrib(CSTRING, int);
 extern "C" int winSetEOF(CSTRING, int64_t);
 extern "C" int winTestLocation(CSTRING, int8_t);

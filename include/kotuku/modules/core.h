@@ -1926,7 +1926,7 @@ struct FileInfo {
    int64_t Size;              // The size of the file's content.
    int64_t TimeStamp;         // 64-bit time stamp - usable only for comparison (e.g. sorting).
    struct FileInfo * Next;    // Next structure in the list, or NULL.
-   STRING  Name;              // The name of the file.
+   std::string Name;          // The name of the file.
    RDF     Flags;             // Additional flags to describe the file.
    PERMIT  Permissions;       // Standard permission flags.
    int     UserID;            // User  ID (Unix systems only).
@@ -2100,6 +2100,7 @@ struct CoreBase {
    ERR (*_AsyncCancel)(OBJECTID *Objects, int Size);
    int (*_AsyncPending)(OBJECTID Object);
    ERR (*_AsyncWait)(OBJECTID *Objects, int Size, int TimeOut);
+   ERR (*_GetFileInfo)(const std::string_view & Path, struct FileInfo *Info, int InfoSize);
 #endif // KOTUKU_STATIC
 };
 
@@ -2198,6 +2199,7 @@ inline ERR WakeThread(int Thread, int Stop) { return CoreBase->_WakeThread(Threa
 inline ERR AsyncCancel(OBJECTID *Objects, int Size) { return CoreBase->_AsyncCancel(Objects,Size); }
 inline int AsyncPending(OBJECTID Object) { return CoreBase->_AsyncPending(Object); }
 inline ERR AsyncWait(OBJECTID *Objects, int Size, int TimeOut) { return CoreBase->_AsyncWait(Objects,Size,TimeOut); }
+inline ERR GetFileInfo(const std::string_view & Path, struct FileInfo *Info, int InfoSize) { return CoreBase->_GetFileInfo(Path,Info,InfoSize); }
 #else
 extern "C" ERR AccessMemory(MEMORYID Memory, MEM Flags, int MilliSeconds, APTR *Result);
 extern "C" ERR Action(AC Action, OBJECTPTR Object, APTR Parameters);
@@ -2291,6 +2293,7 @@ extern "C" ERR WakeThread(int Thread, int Stop);
 extern "C" ERR AsyncCancel(OBJECTID *Objects, int Size);
 extern "C" int AsyncPending(OBJECTID Object);
 extern "C" ERR AsyncWait(OBJECTID *Objects, int Size, int TimeOut);
+extern "C" ERR GetFileInfo(const std::string_view & Path, struct FileInfo *Info, int InfoSize);
 #endif // KOTUKU_STATIC
 
 

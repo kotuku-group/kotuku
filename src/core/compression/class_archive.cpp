@@ -220,7 +220,7 @@ static ERR ARCHIVE_Init(extFile *Self)
 
             auto it = prv->Archive->Files.begin();
             for (; it != prv->Archive->Files.end(); it++) {
-               if (file_path == it->Name) break;
+               if (file_path IS it->Name) break;
             }
 
             if ((it IS prv->Archive->Files.end()) and ((Self->Flags & FL::APPROXIMATE) != FL::NIL)) {
@@ -294,7 +294,7 @@ static ERR ARCHIVE_Read(extFile *Self, struct acRead *Args)
    Log log;
 
    if ((!Args) or (!Args->Buffer)) return log.warning(ERR::NullArgs);
-   else if (Args->Length == 0) return ERR::Okay;
+   else if (Args->Length IS 0) return ERR::Okay;
    else if (Args->Length < 0) return ERR::OutOfRange;
 
    auto prv = (prvFileArchive *)Self->ChildPrivate;
@@ -548,9 +548,7 @@ static ERR scan_folder(DirInfo *Dir)
 
          Dir->Info->Flags |= RDF::FILE;
          auto offset = zf.Name.find_last_of("/\\");
-         if (offset IS std::string::npos) offset = 0;
-         else offset++;
-         strcopy(zf.Name.c_str() + offset, Dir->Info->Name, MAX_FILENAME);
+         Dir->Info->Name.assign(zf.Name, (offset IS std::string::npos) ? 0 : offset + 1, std::string::npos);
 
          ((ArchiveDriver *)Dir->Driver)->Index = it;
          Dir->prvTotal++;
@@ -561,13 +559,9 @@ static ERR scan_folder(DirInfo *Dir)
          Dir->Info->Flags |= RDF::FOLDER;
 
          auto offset = zf.Name.find_last_of("/\\");
-         if (offset IS std::string::npos) offset = 0;
-         int i = strcopy(zf.Name.c_str() + offset, Dir->Info->Name, MAX_FILENAME-2);
+         Dir->Info->Name.assign(zf.Name, (offset IS std::string::npos) ? 0 : offset, std::string::npos);
 
-         if ((Dir->prvFlags & RDF::QUALIFY) != RDF::NIL) {
-            Dir->Info->Name[i++] = '/';
-            Dir->Info->Name[i++] = 0;
-         }
+         if ((Dir->prvFlags & RDF::QUALIFY) != RDF::NIL) Dir->Info->Name += '/';
 
          if ((Dir->prvFlags & RDF::PERMISSIONS) != RDF::NIL) {
             Dir->Info->Flags |= RDF::PERMISSIONS;
@@ -620,11 +614,10 @@ static ERR get_info(std::string_view Path, FileInfo *Info, int InfoSize)
    auto i = Path.find_last_of("/\\:");
    if (i != std::string::npos) i++;
    if (Path.size()-i+1 > MAX_FILENAME) return ERR::BufferOverflow;
-   i = strcopy(Path.data() + i, Info->Name, Path.size()-i);
+   Info->Name.assign(Path, i, std::string::npos);
 
-   if ((Info->Flags & RDF::FOLDER) != RDF::NIL) Info->Name[i++] = '/';
+   if ((Info->Flags & RDF::FOLDER) != RDF::NIL) Info->Name += '/';
 
-   Info->Name[i] = 0;
    Info->Permissions = item->Permissions;
    Info->UserID      = item->UserID;
    Info->GroupID     = item->GroupID;

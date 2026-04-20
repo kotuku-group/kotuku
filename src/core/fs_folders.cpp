@@ -19,8 +19,7 @@ public:
       prvResolveLen   = 0;
 
       prvInfo      = { };
-      prvInfo.Name = prvName;
-      prvName[0]   = 0;
+      prvInfo.Name.clear();
 
       #ifdef _WIN32
          prvHandle = (WINHANDLE)-1;
@@ -64,7 +63,6 @@ public:
       prvDriverStorage = driver_storage;
 
       Info = &prvInfo;
-      Info->Name = prvName;
       Driver = prvDriverStorage;
       prvPath = prvPathBuffer;
       prvResolvedPath = prvResolvedPathBuffer;
@@ -73,8 +71,7 @@ public:
       prvResolveLen = resolved_len;
 
       prvInfo = { };
-      prvInfo.Name = prvName;
-      prvName[0] = 0;
+      prvInfo.Name.clear();
 
       copymem(Path.data(), prvPathBuffer, Path.size() + 1);
       copymem(ResolvedPath.data(), prvResolvedPathBuffer, resolved_len);
@@ -85,7 +82,6 @@ public:
 
 private:
    FileInfo prvInfo;
-   char prvName[MAX_FILENAME];
    char *prvPathBuffer = nullptr;
    char *prvResolvedPathBuffer = nullptr;
    APTR prvDriverStorage = nullptr;
@@ -244,9 +240,8 @@ ERR ScanDir(DirInfo *Dir)
 
    FileInfo *file;
    if (not (file = Dir->Info)) { log.trace("Missing Dir->Info"); return log.warning(ERR::InvalidData); }
-   if (not file->Name) { log.trace("Missing Dir->Info->Name"); return log.warning(ERR::InvalidData); }
 
-   file->Name[0] = 0;
+   file->Name.clear();
    file->Flags   = RDF::NIL;
    file->Permissions = PERMIT::NIL;
    file->Size    = 0;
@@ -264,15 +259,9 @@ ERR ScanDir(DirInfo *Dir)
             if (count IS Dir->prvIndex) {
                Dir->prvIndex++;
                auto &volume = pair.first;
-               int j = strcopy(volume, file->Name, MAX_FILENAME-2);
-               if ((Dir->prvFlags & RDF::QUALIFY) != RDF::NIL) {
-                  file->Name[j++] = ':';
-                  file->Name[j] = 0;
-               }
-
-               if (glVolumes[volume]["Hidden"] == "Yes") {
-                  file->Flags |= RDF::HIDDEN;
-               }
+               file->Name = volume;
+               if ((Dir->prvFlags & RDF::QUALIFY) != RDF::NIL) file->Name += ':';
+               if (glVolumes[volume]["Hidden"] IS "Yes") file->Flags |= RDF::HIDDEN;
 
                if (glVolumes[volume].contains("Label")) {
                   AddInfoTag(file, "Label", glVolumes[volume]["Label"].c_str());
@@ -299,7 +288,7 @@ ERR ScanDir(DirInfo *Dir)
       if (glVirtual[Dir->prvVirtualID].ScanDir) error = glVirtual[Dir->prvVirtualID].ScanDir(Dir);
    }
 
-   if ((file->Name[0]) and ((Dir->prvFlags & RDF::DATE) != RDF::NIL)) {
+   if ((not file->Name.empty()) and ((Dir->prvFlags & RDF::DATE) != RDF::NIL)) {
       file->TimeStamp = calc_timestamp(&file->Modified);
    }
 
