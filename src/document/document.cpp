@@ -118,7 +118,6 @@ static void deactivate_edit(extDocument *, bool);
 static ERR  extract_script(extDocument *, std::string_view, objScript **, std::string &, std::string &);
 static void error_dialog(const std::string, const std::string);
 static void error_dialog(const std::string, ERR);
-static const Field * find_field(OBJECTPTR, std::string_view, OBJECTPTR *);
 static SEGINDEX find_segment(std::vector<doc_segment> &, stream_char, bool);
 static int  find_tabfocus(extDocument *, TT, BYTECODE);
 static ERR  flash_cursor(extDocument *, int64_t, int64_t);
@@ -147,7 +146,6 @@ static std::string stream_to_string(RSTREAM &, stream_char, stream_char);
 static ERR  unload_doc(extDocument *, ULD = ULD::NIL);
 static bool valid_objectid(extDocument *, OBJECTID);
 static bool view_area(extDocument *, double, double, double, double);
-static std::string write_calc(double, int16_t);
 
 static ERR GET_WorkingPath(extDocument *, CSTRING *);
 
