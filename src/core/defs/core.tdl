@@ -618,18 +618,6 @@ inline int F2I(double val) {
 
 } // namespace
 
-// Structures to pass to OpenCore()
-
-struct OpenTag {
-   TOI Tag;
-   union {
-      int Int;
-      int64_t Int64;
-      APTR Pointer;
-      CSTRING String;
-   } Value;
-};
-
 #ifdef _LP64
 #define FD_PTR64 FD_POINTER
 #else
@@ -658,17 +646,29 @@ class FloatRect {
 
 ]==])
 
+  struct('OpenTag', { comment='Tags for OpenInfo.Options' }, [[
+   int(TOI) Tag          # Tag identifier
+   ]],
+   [[
+   union {
+      int Int;
+      int64_t Int64;
+      APTR Pointer;
+      CSTRING String;
+   } Value;
+  ]])
+
   struct('OpenInfo', { comment='Client options for passing to Kotuku on startup' }, [[
-     cpp(str) Name             # Program name
-     cpp(str) SystemPath       # Path to system files
-     cpp(str) ModulePath       # Path to module files
-     cpp(str) RootPath         # Kotuku root directory
-     cstr *Args                # Command-line arguments
+     cpp(str) Name        # Program name
+     cpp(str) SystemPath  # Path to system files
+     cpp(str) ModulePath  # Path to module files
+     cpp(str) RootPath    # Kotuku root directory
+     cstr *Args           # Command-line arguments
      cstruct(*OpenTag) Options # Tag-list of additional options.  Typecast to va_list.
-     int(OPF) Flags        # Client flags indicating the values that have been defined in this structure.
-     int MaxDepth          # Maximum debug depth
-     int Detail            # Debug detail level (0 none - 9 trace)
-     int ArgCount          # Total arguments in Args
+     int(OPF) Flags       # Client flags indicating the values that have been defined in this structure.
+     int MaxDepth         # Maximum debug depth
+     int Detail           # Debug detail level (0 none - 9 trace)
+     int ArgCount         # Total arguments in Args
   ]])
 
   struct("ObjectSignal", { comment="Required in calls to WaitForObjects()." }, [[
@@ -907,9 +907,37 @@ using ModTest    = void (*)(CSTRING, int *, int *);
     struct(DateTime) Created   # The date/time of the file's creation.
     struct(DateTime) Modified  # The date/time of the last file modification.
   ]],
-  [[
-    ankerl::unordered_dense::map<std::string, std::string> *Tags;
-  ]]) -- NB: Private fields can follow this structure.
+  [==[
+   private:
+
+   struct TransparentStringHash {
+      using is_transparent = void;
+
+      [[nodiscard]] size_t operator()(std::string_view Value) const noexcept { return std::hash<std::string_view>{}(Value); }
+   };
+
+   struct TransparentStringEqual {
+      using is_transparent = void;
+
+      [[nodiscard]] bool operator()(const std::string_view &Lhs, const std::string_view &Rhs) const noexcept { return Lhs IS Rhs; }
+   };
+
+   using TagMap = ankerl::unordered_dense::map<std::string, std::string, TransparentStringHash, TransparentStringEqual>;
+
+   public:
+
+   TagMap *Tags;
+
+   inline void clearTags() { if (Tags) { delete Tags; Tags = nullptr; } }
+
+   inline TagMap * getTags() {
+      if (not Tags) {
+         Tags = new (std::nothrow) TagMap();
+         if (not Tags) return nullptr;
+      }
+      return Tags;
+   }
+  ]==]) -- NB: Private fields can follow this structure.
 
   struct("DirInfo", { comment="Used by OpenDir() only" }, [[
     struct(*FileInfo) Info # Pointer to a !FileInfo structure

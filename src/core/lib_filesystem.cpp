@@ -271,8 +271,8 @@ in an MP3 file.
 
 -INPUT-
 struct(FileInfo) Info: Pointer to a valid !FileInfo structure.
-cstr Name: The name of the tag, which must be declared in camel-case.
-cstr Value: The value to associate with the tag name.  If `NULL`, any existing tag with a matching `Name` will be removed.
+cpp(strview) Name: The name of the tag, which must be declared in camel-case.
+cpp(strview) Value: The value to associate with the tag name.  If empty, any existing tag with a matching `Name` will be removed.
 
 -ERRORS-
 Okay:
@@ -280,21 +280,15 @@ NullArgs:
 
 *********************************************************************************************************************/
 
-ERR AddInfoTag(FileInfo *Info, CSTRING Name, CSTRING Value)
+ERR AddInfoTag(FileInfo *Info, const std::string_view &Name, const std::string_view &Value)
 {
-   if ((not Info) or (not Name)) return ERR::NullArgs;
+   if (not Info) return ERR::NullArgs;
 
-   if (not Value) {
-      if (Info->Tags) Info->Tags->erase(Name);
-      return ERR::Okay;
-   }
+   auto tags = Info->getTags();
+   if (not tags) return ERR::CreateResource;
 
-   if (not Info->Tags) {
-      Info->Tags = new (std::nothrow) ankerl::unordered_dense::map<std::string, std::string>();
-      if (not Info->Tags) return ERR::CreateResource;
-   }
-
-   (*Info->Tags)[Name] = Value;
+   if (Value.empty()) tags->erase(Name);
+   else tags->insert_or_assign(Name, Value);
    return ERR::Okay;
 }
 
@@ -2270,13 +2264,13 @@ ERR fs_closedir(DirInfo *Dir)
       if ((Dir->prvFlags & RDF::OPENDIR) != RDF::NIL) {
          // OpenDir() allocates Dir->Info as part of the Dir structure, so no need for a FreeResource(Dir->Info) here.
 
-         if (Dir->Info->Tags) { delete Dir->Info->Tags; Dir->Info->Tags = nullptr; }
+         Dir->Info->clearTags();
       }
       else {
          FileInfo *list = Dir->Info;
          while (list) {
             FileInfo *next = list->Next;
-            if (list->Tags) { delete list->Tags; list->Tags = nullptr; }
+            list->clearTags();
             FreeResource(list);
             list = next;
          }

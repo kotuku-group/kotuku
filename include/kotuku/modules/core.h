@@ -1677,18 +1677,6 @@ inline int F2I(double val) {
 
 } // namespace
 
-// Structures to pass to OpenCore()
-
-struct OpenTag {
-   TOI Tag;
-   union {
-      int Int;
-      int64_t Int64;
-      APTR Pointer;
-      CSTRING String;
-   } Value;
-};
-
 #ifdef _LP64
 #define FD_PTR64 FD_POINTER
 #else
@@ -1715,6 +1703,16 @@ class FloatRect {
 
 }
 
+
+struct OpenTag {
+   TOI Tag;    // Tag identifier
+   union {
+      int Int;
+      int64_t Int64;
+      APTR Pointer;
+      CSTRING String;
+   } Value;
+};
 
 struct OpenInfo {
    std::string Name;                  // Program name
@@ -1942,7 +1940,35 @@ struct FileInfo {
    int     GroupID;           // Group ID (Unix systems only).
    struct DateTime Created;   // The date/time of the file's creation.
    struct DateTime Modified;  // The date/time of the last file modification.
-    ankerl::unordered_dense::map<std::string, std::string> *Tags;
+   private:
+
+   struct TransparentStringHash {
+      using is_transparent = void;
+
+      [[nodiscard]] size_t operator()(std::string_view Value) const noexcept { return std::hash<std::string_view>{}(Value); }
+   };
+
+   struct TransparentStringEqual {
+      using is_transparent = void;
+
+      [[nodiscard]] bool operator()(const std::string_view &Lhs, const std::string_view &Rhs) const noexcept { return Lhs IS Rhs; }
+   };
+
+   using TagMap = ankerl::unordered_dense::map<std::string, std::string, TransparentStringHash, TransparentStringEqual>;
+
+   public:
+
+   TagMap *Tags;
+
+   inline void clearTags() { if (Tags) { delete Tags; Tags = nullptr; } }
+
+   inline TagMap * getTags() {
+      if (not Tags) {
+         Tags = new (std::nothrow) TagMap();
+         if (not Tags) return nullptr;
+      }
+      return Tags;
+   }
 };
 
 struct DirInfo {
@@ -2094,7 +2120,7 @@ struct CoreBase {
    ERR (*_LockObject)(OBJECTPTR Object, int MilliSeconds);
    void (*_ReleaseObject)(OBJECTPTR Object);
    ERR (*_AsyncAction)(AC Action, OBJECTPTR Object, APTR Args, FUNCTION *Callback);
-   ERR (*_AddInfoTag)(struct FileInfo *Info, CSTRING Name, CSTRING Value);
+   ERR (*_AddInfoTag)(struct FileInfo *Info, const std::string_view & Name, const std::string_view & Value);
    void (*_SetDefaultPermissions)(int User, int Group, PERMIT Permissions);
    void (*_VLogF)(VLF Flags, const char *Header, const char *Message, va_list Args);
    ERR (*_ReadInfoTag)(struct FileInfo *Info, CSTRING Name, CSTRING *Value);
@@ -2193,7 +2219,7 @@ inline ERR FuncError(CSTRING Header, ERR Error) { return CoreBase->_FuncError(He
 inline ERR LockObject(OBJECTPTR Object, int MilliSeconds) { return CoreBase->_LockObject(Object,MilliSeconds); }
 inline void ReleaseObject(OBJECTPTR Object) { return CoreBase->_ReleaseObject(Object); }
 inline ERR AsyncAction(AC Action, OBJECTPTR Object, APTR Args, FUNCTION *Callback) { return CoreBase->_AsyncAction(Action,Object,Args,Callback); }
-inline ERR AddInfoTag(struct FileInfo *Info, CSTRING Name, CSTRING Value) { return CoreBase->_AddInfoTag(Info,Name,Value); }
+inline ERR AddInfoTag(struct FileInfo *Info, const std::string_view & Name, const std::string_view & Value) { return CoreBase->_AddInfoTag(Info,Name,Value); }
 inline void SetDefaultPermissions(int User, int Group, PERMIT Permissions) { return CoreBase->_SetDefaultPermissions(User,Group,Permissions); }
 inline void VLogF(VLF Flags, const char *Header, const char *Message, va_list Args) { return CoreBase->_VLogF(Flags,Header,Message,Args); }
 inline ERR ReadInfoTag(struct FileInfo *Info, CSTRING Name, CSTRING *Value) { return CoreBase->_ReadInfoTag(Info,Name,Value); }
@@ -2287,7 +2313,7 @@ extern "C" ERR FuncError(CSTRING Header, ERR Error);
 extern "C" ERR LockObject(OBJECTPTR Object, int MilliSeconds);
 extern "C" void ReleaseObject(OBJECTPTR Object);
 extern "C" ERR AsyncAction(AC Action, OBJECTPTR Object, APTR Args, FUNCTION *Callback);
-extern "C" ERR AddInfoTag(struct FileInfo *Info, CSTRING Name, CSTRING Value);
+extern "C" ERR AddInfoTag(struct FileInfo *Info, const std::string_view & Name, const std::string_view & Value);
 extern "C" void SetDefaultPermissions(int User, int Group, PERMIT Permissions);
 extern "C" void VLogF(VLF Flags, const char *Header, const char *Message, va_list Args);
 extern "C" ERR ReadInfoTag(struct FileInfo *Info, CSTRING Name, CSTRING *Value);

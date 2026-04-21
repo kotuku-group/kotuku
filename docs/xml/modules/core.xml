@@ -166,11 +166,11 @@ struct FunctionField argsResize[] = {
     <name>AddInfoTag</name>
     <category>Files</category>
     <comment>Adds new tags to <st>FileInfo</st> structures.</comment>
-    <prototype>ERR AddInfoTag(struct FileInfo * Info, CSTRING Name, CSTRING Value)</prototype>
+    <prototype>ERR AddInfoTag(struct FileInfo * Info, const std::string_view &amp; Name, const std::string_view &amp; Value)</prototype>
     <input>
       <param type="struct FileInfo *" name="Info">Pointer to a valid <st>FileInfo</st> structure.</param>
-      <param type="CSTRING" name="Name">The name of the tag, which must be declared in camel-case.</param>
-      <param type="CSTRING" name="Value">The value to associate with the tag name.  If <code>NULL</code>, any existing tag with a matching <code>Name</code> will be removed.</param>
+      <param type="const std::string_view &amp;" name="Name">The name of the tag, which must be declared in camel-case.</param>
+      <param type="const std::string_view &amp;" name="Value">The value to associate with the tag name.  If empty, any existing tag with a matching <code>Name</code> will be removed.</param>
     </input>
     <description>
 <p>This function adds file tags to <st>FileInfo</st> structures.  It is intended for use by the Core and external drivers only.  Tags allow extended attributes to be associated with a file, for example the number of seconds of audio in an MP3 file.</p>
@@ -3141,6 +3141,10 @@ static ResourceManager glNodeManager = {
       <field name="MaxDepth" type="INT">Maximum debug depth</field>
       <field name="Detail" type="INT">Debug detail level (0 none - 9 trace)</field>
       <field name="ArgCount" type="INT">Total arguments in Args</field>
+    </struct>
+
+    <struct name="OpenTag" comment="Tags for OpenInfo.Options">
+      <field name="Tag" type="TOI" lookup="TOI">Tag identifier</field>
     </struct>
 
     <struct name="RGB16" comment="16-bit RGB colour value.">

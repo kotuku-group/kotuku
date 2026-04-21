@@ -1987,7 +1987,7 @@ static ERR GET_Icon(extFile *Self, CSTRING *Value)
       if ((info.Flags & RDF::LINK) != RDF::NIL) link = true;
 
       if ((info.Flags & RDF::VIRTUAL) != RDF::NIL) { // Virtual drives can specify custom icons, even for folders
-         Self->prvIcon = info.Tags[0]["Icon"];
+         Self->prvIcon = info.getTags()->at("Icon");
          *Value = Self->prvIcon.c_str();
          if (*Value) return ERR::Okay;
       }

@@ -78,7 +78,7 @@ extern "C" ERR FuncError(CSTRING Header, ERR Error);
 extern "C" ERR LockObject(OBJECTPTR Object, int MilliSeconds);
 extern "C" void ReleaseObject(OBJECTPTR Object);
 extern "C" ERR AsyncAction(AC Action, OBJECTPTR Object, APTR Args, FUNCTION * Callback);
-extern "C" ERR AddInfoTag(struct FileInfo * Info, CSTRING Name, CSTRING Value);
+extern "C" ERR AddInfoTag(struct FileInfo * Info, const std::string_view & Name, const std::string_view & Value);
 extern "C" void SetDefaultPermissions(int User, int Group, PERMIT Permissions);
 extern "C" void VLogF(VLF Flags, CSTRING Header, CSTRING Message, va_list Args);
 extern "C" ERR ReadInfoTag(struct FileInfo * Info, CSTRING Name, CSTRING * Value);

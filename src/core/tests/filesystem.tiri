@@ -3,11 +3,39 @@ Tests for file functions
 --]]
 
 glPath = 'kotuku:'
+glTempRoot = 'temp:filesystem_tests/'
 
 rx_path = regex.new([[[^:\/]+[:\/](.*)]])
 
+function ensureFolder(Path)
+   err = mSys.CreateFolder(Path, 0)
+   if (err != ERR_Okay) and (err != ERR_FileExists) then
+      error('CreateFolder() failed for ' .. Path .. ': ' .. mSys.GetErrorMsg(err))
+   end
+end
+
+function resetPath(Path)
+   mSys.DeleteFile(Path)
+end
+
+function writeFile(Path, Content)
+   file = obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE })
+   file.acWrite(Content, #Content)
+   file.free()
+end
+
+function readFile(Path)
+   file = obj.new('file', { path=Path })
+   buffer = array<byte, file.size>
+   err = mSys.ReadFileToBuffer(Path, buffer)
+   assert(err is ERR_Okay, 'ReadFileToBuffer() failed for ' .. Path .. ': ' .. mSys.GetErrorMsg(err))
+   return buffer:getString()
+end
+
 @BeforeAll function init()
-   global glRawPath = 'temp:test.out'
+   global glRawPath = glTempRoot .. 'test.out'
+   mSys.DeleteFile(glTempRoot)
+   ensureFolder(glTempRoot)
    out = obj.new('file', { src=glRawPath, flags=FL_NEW|FL_WRITE } )
    out.acWrite('ABCD', 4)
    out = nil
@@ -15,7 +43,7 @@ rx_path = regex.new([[[^:\/]+[:\/](.*)]])
 end
 
 @AfterAll function cleanup()
-   mSys.DeleteFile(glRawPath)
+   mSys.DeleteFile(glTempRoot)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -144,6 +172,192 @@ end
    err, type = mSys.AnalysePath('scripts:gui.tiri')
    assert(err is ERR_Okay, 'AnalysePath() failed with error: ' .. mSys.GetErrorMsg(err))
    assert(type is LOC_FILE, 'AnalysePath() returned type ' .. type .. ' and not LOC_FILE')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ResolvePathNoFileCheck()
+   missing_path = glTempRoot .. 'resolve_path.tmp'
+   resetPath(missing_path)
+
+   err = mSys.ResolvePath(missing_path)
+   assert(err is ERR_FileNotFound, 'ResolvePath() without RSF_NO_FILE_CHECK should fail for a missing file, got: ' .. mSys.GetErrorMsg(err))
+
+   err, resolved_path = mSys.ResolvePath(missing_path, RSF_NO_FILE_CHECK)
+   assert(err is ERR_Okay, 'ResolvePath() with RSF_NO_FILE_CHECK failed: ' .. mSys.GetErrorMsg(err))
+   assert(type(resolved_path) is 'string', 'ResolvePath() should return a string result.')
+   assert(#resolved_path > 0, 'ResolvePath() returned an empty path string.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ResolvePathApproximateAndCanonical()
+   test_root = glTempRoot .. 'resolve_path/'
+   nested_path = test_root .. 'nested/'
+   target_path = test_root .. 'resolve_approx.txt'
+
+   resetPath(test_root)
+   ensureFolder(nested_path)
+   writeFile(target_path, 'Resolve path content')
+
+   err, exact_path = mSys.ResolvePath(target_path)
+   assert(err is ERR_Okay, 'ResolvePath() failed for the exact path: ' .. mSys.GetErrorMsg(err))
+
+   err, approx_path = mSys.ResolvePath('~' .. test_root .. 'resolve_approx')
+   assert(err is ERR_Okay, 'ResolvePath() failed for the approximated path: ' .. mSys.GetErrorMsg(err))
+   assert(approx_path is exact_path, 'ResolvePath() should resolve approximated paths to the same target.')
+
+   err, flag_approx_path = mSys.ResolvePath(test_root .. 'resolve_approx', RSF_APPROXIMATE)
+   assert(err is ERR_Okay, 'ResolvePath() with RSF_APPROXIMATE failed: ' .. mSys.GetErrorMsg(err))
+   assert(flag_approx_path is exact_path, 'RSF_APPROXIMATE should resolve to the same canonical path as the exact reference.')
+
+   err, normalised_path = mSys.ResolvePath(test_root .. 'nested/../resolve_approx.txt')
+   assert(err is ERR_Okay, 'ResolvePath() failed for a path requiring canonicalisation: ' .. mSys.GetErrorMsg(err))
+   assert(normalised_path is exact_path, 'ResolvePath() should canonicalise "." and ".." segments.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ResolvePathSpecialCases()
+   err = mSys.ResolvePath('codex_missing_volume:missing.file')
+   assert(err is ERR_Search, 'ResolvePath() should return ERR_Search for an unknown volume, got: ' .. mSys.GetErrorMsg(err))
+
+   err, string_path = mSys.ResolvePath('string:hello world')
+   assert(err is ERR_Okay, 'ResolvePath() failed for a string: path: ' .. mSys.GetErrorMsg(err))
+   assert(string_path is 'string:hello world', 'ResolvePath() should return string: paths unchanged.')
+
+   err = mSys.ResolvePath(':', RSF_CHECK_VIRTUAL)
+   assert(err is ERR_VirtualVolume, 'ResolvePath() with RSF_CHECK_VIRTUAL should report the virtual root, got: ' .. mSys.GetErrorMsg(err))
+
+   err, root_path = mSys.ResolvePath(':')
+   assert(err is ERR_Okay, 'ResolvePath() should accept the virtual root path: ' .. mSys.GetErrorMsg(err))
+   assert(type(root_path) is 'string', 'ResolvePath() should return a string for the virtual root path.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CompareFilePaths()
+   compare_path = glTempRoot .. 'compare_file.tmp'
+
+   resetPath(compare_path)
+
+   writeFile(compare_path, 'Compare me')
+
+   err, resolved_path = mSys.ResolvePath(compare_path)
+   assert(err is ERR_Okay, 'ResolvePath() failed for CompareFilePaths() test: ' .. mSys.GetErrorMsg(err))
+
+   err = mSys.CompareFilePaths(compare_path, resolved_path)
+   assert(err is ERR_Okay, 'CompareFilePaths() should match equivalent paths, got: ' .. mSys.GetErrorMsg(err))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CreateFolderAndDeleteTree()
+   root_path = glTempRoot .. 'create_folder/'
+   folder_path = root_path .. 'alpha/beta/'
+   child_path = folder_path .. 'child.txt'
+
+   resetPath(root_path)
+
+   err = mSys.CreateFolder(folder_path, 0)
+   assert(err is ERR_Okay, 'CreateFolder() failed: ' .. mSys.GetErrorMsg(err))
+
+   err = mSys.CreateFolder(folder_path, 0)
+   assert(err is ERR_FileExists, 'CreateFolder() should report ERR_FileExists for an existing folder, got: ' .. mSys.GetErrorMsg(err))
+
+   err, type = mSys.AnalysePath(folder_path)
+   assert(err is ERR_Okay, 'AnalysePath() failed for created folder: ' .. mSys.GetErrorMsg(err))
+   assert(type is LOC_FOLDER, 'AnalysePath() returned type ' .. type .. ' and not LOC_FOLDER')
+
+   writeFile(child_path, 'Nested content')
+
+   err = mSys.DeleteFile(root_path)
+   assert(err is ERR_Okay, 'DeleteFile() failed to remove a folder tree: ' .. mSys.GetErrorMsg(err))
+
+   err = mSys.AnalysePath(root_path)
+   assert(err != ERR_Okay, 'Folder tree should no longer exist after DeleteFile().')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CopyFile()
+   src_path = glTempRoot .. 'copy_source.tmp'
+   dest_path = glTempRoot .. 'copy_dest.tmp'
+   callback_hits = 0
+
+   resetPath(src_path)
+   resetPath(dest_path)
+
+   writeFile(src_path, 'Copied content')
+
+   err = mSys.CopyFile(src_path, dest_path, function(Size, Position, Path, Dest, User, FeedbackID)
+      callback_hits++
+      return FFR_OKAY
+   end)
+
+   assert(err is ERR_Okay, 'CopyFile() failed: ' .. mSys.GetErrorMsg(err))
+   assert(callback_hits > 0, 'CopyFile() callback was not invoked.')
+   assert(readFile(dest_path) is 'Copied content', 'CopyFile() did not preserve the source file content.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function MoveFile()
+   src_path = glTempRoot .. 'move_source.tmp'
+   dest_path = glTempRoot .. 'move_dest.tmp'
+
+   resetPath(src_path)
+   resetPath(dest_path)
+
+   writeFile(src_path, 'Moved content')
+
+   err = mSys.MoveFile(src_path, dest_path)
+   assert(err is ERR_Okay, 'MoveFile() failed: ' .. mSys.GetErrorMsg(err))
+
+   err = mSys.AnalysePath(src_path)
+   assert(err != ERR_Okay, 'MoveFile() should remove the source file.')
+
+   assert(readFile(dest_path) is 'Moved content', 'MoveFile() did not preserve the file content.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ReadFileToBuffer()
+   read_path = glTempRoot .. 'buffer_read.txt'
+   expected = 'Buffer content'
+
+   resetPath(read_path)
+   writeFile(read_path, expected)
+
+   buffer = array<byte, #expected>
+   err = mSys.ReadFileToBuffer(read_path, buffer)
+   assert(err is ERR_Okay, 'ReadFileToBuffer() failed: ' .. mSys.GetErrorMsg(err))
+   assert(buffer:getString() is expected, 'ReadFileToBuffer() did not return the expected text.')
+
+   approx_buffer = array<byte, #expected>
+   err = mSys.ReadFileToBuffer('~' .. glTempRoot .. 'buffer_read', approx_buffer)
+   assert(err is ERR_Okay, 'ReadFileToBuffer() failed for an approximated path: ' .. mSys.GetErrorMsg(err))
+   assert(approx_buffer:getString() is expected, 'ReadFileToBuffer() did not resolve the approximated path correctly.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function InfoTags()
+   info = struct.new('FileInfo')
+
+   err = mSys.AddInfoTag(info, 'Label', 'Filesystem test')
+   assert(err is ERR_Okay, 'AddInfoTag() failed: ' .. mSys.GetErrorMsg(err))
+
+   err, value = mSys.ReadInfoTag(info, 'Label')
+   assert(err is ERR_Okay, 'ReadInfoTag() failed to retrieve an existing tag: ' .. mSys.GetErrorMsg(err))
+   assert(value is 'Filesystem test', 'ReadInfoTag() returned an unexpected value: ' .. tostring(value))
+
+   err = mSys.AddInfoTag(info, 'Label', nil)
+   assert(err is ERR_Okay, 'AddInfoTag() failed to remove a tag: ' .. mSys.GetErrorMsg(err))
+
+   err, value = mSys.ReadInfoTag(info, 'Label')
+   assert(err is ERR_Search, 'ReadInfoTag() should report ERR_Search after a tag is removed, got: ' .. mSys.GetErrorMsg(err))
+   assert(value is nil, 'ReadInfoTag() should return nil for a removed tag.')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
