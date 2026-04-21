@@ -4,10 +4,93 @@ Name: Files
 -END-
 *********************************************************************************************************************/
 
+class extDirInfo : public DirInfo {
+public:
+   extDirInfo() {
+      Info            = &prvInfo;
+      Driver          = nullptr;
+      prvHandle       = nullptr;
+      prvPath         = nullptr;
+      prvResolvedPath = nullptr;
+      prvFlags        = RDF::OPENDIR;
+      prvTotal        = 0;
+      prvVirtualID    = DEFAULT_VIRTUALID;
+      prvIndex        = 0;
+      prvResolveLen   = 0;
+
+      prvInfo      = { };
+      prvInfo.Name.clear();
+
+      #ifdef _WIN32
+         prvHandle = (WINHANDLE)-1;
+      #endif
+   }
+
+   ~extDirInfo() {
+      if (prvDriverStorage) {
+         ::operator delete(prvDriverStorage);
+         prvDriverStorage = nullptr;
+      }
+
+      delete[] prvResolvedPathBuffer;
+      delete[] prvPathBuffer;
+   }
+
+   ERR initialise(std::string_view Path, std::string_view ResolvedPath, RDF Flags, int DriverSize) {
+      auto resolved_len = ResolvedPath.size() + 1;
+
+      auto path_buffer = new (std::nothrow) char[Path.size() + 1];
+      if (not path_buffer) return ERR::AllocMemory;
+
+      auto resolved_buffer = new (std::nothrow) char[resolved_len + 1];
+      if (not resolved_buffer) {
+         delete[] path_buffer;
+         return ERR::AllocMemory;
+      }
+
+      APTR driver_storage = nullptr;
+      if (DriverSize > 0) {
+         driver_storage = ::operator new((size_t)DriverSize, std::nothrow);
+         if (not driver_storage) {
+            delete[] resolved_buffer;
+            delete[] path_buffer;
+            return ERR::AllocMemory;
+         }
+      }
+
+      prvPathBuffer = path_buffer;
+      prvResolvedPathBuffer = resolved_buffer;
+      prvDriverStorage = driver_storage;
+
+      Info = &prvInfo;
+      Driver = prvDriverStorage;
+      prvPath = prvPathBuffer;
+      prvResolvedPath = prvResolvedPathBuffer;
+      prvFlags = Flags | RDF::OPENDIR;
+      prvVirtualID = DEFAULT_VIRTUALID;
+      prvResolveLen = resolved_len;
+
+      prvInfo = { };
+      prvInfo.Name.clear();
+
+      copymem(Path.data(), prvPathBuffer, Path.size() + 1);
+      copymem(ResolvedPath.data(), prvResolvedPathBuffer, resolved_len);
+      prvResolvedPathBuffer[resolved_len] = 0; // Reserve one extra byte for temporary win32 wildcard expansion.
+
+      return ERR::Okay;
+   }
+
+private:
+   FileInfo prvInfo;
+   char *prvPathBuffer = nullptr;
+   char *prvResolvedPathBuffer = nullptr;
+   APTR prvDriverStorage = nullptr;
+};
+
 static ERR folder_free(APTR Address)
 {
    pf::Log log("CloseDir");
-   auto folder = (DirInfo *)Address;
+   auto folder = (extDirInfo *)Address;
 
    // Note: Virtual file systems should focus on destroying handles as fs_closedir() will take care of memory and list
    // deallocations.
@@ -21,6 +104,7 @@ static ERR folder_free(APTR Address)
    }
 
    fs_closedir(folder);
+   folder->~extDirInfo();
    return ERR::Okay;
 }
 
@@ -60,7 +144,7 @@ ERR OpenDir(CSTRING Path, RDF Flags, DirInfo **Result)
 {
    pf::Log log(__FUNCTION__);
 
-   if ((!Path) or (!Result)) return log.warning(ERR::NullArgs);
+   if ((not Path) or (not Result)) return log.warning(ERR::NullArgs);
 
    log.traceBranch("Path: '%s'", Path);
 
@@ -69,36 +153,23 @@ ERR OpenDir(CSTRING Path, RDF Flags, DirInfo **Result)
    if ((Flags & (RDF::FOLDER|RDF::FILE)) IS RDF::NIL) Flags |= RDF::FOLDER|RDF::FILE;
 
    std::string resolved_path;
-   if (!Path[0]) Path = ":"; // A path of ':' will return all known volumes.
+   if (not Path[0]) Path = ":"; // A path of ':' will return all known volumes.
    if (auto error = ResolvePath(Path, RSF::NIL, &resolved_path); error IS ERR::Okay) {
       auto vd = get_fs(resolved_path);
 
-      // NB: We use MAX_FILENAME rather than resolve_len in the allocation size because fs_opendir() requires more space.
-      int path_len = strlen(Path) + 1;
-      DirInfo *dir;
-      // Layout: [DirInfo] [FileInfo] [Driver] [Name] [Path]
-      int size = sizeof(DirInfo) + sizeof(FileInfo) + vd->DriverSize + MAX_FILENAME + path_len + MAX_FILENAME;
-      if (AllocMemory(size, MEM::DATA|MEM::MANAGED, (APTR *)&dir, nullptr) != ERR::Okay) {
+      extDirInfo *dir;
+      if (AllocMemory(sizeof(extDirInfo), MEM::DATA|MEM::MANAGED, (APTR *)&dir, nullptr) != ERR::Okay) {
          return ERR::AllocMemory;
       }
 
+      new (dir) extDirInfo();
       SetResourceMgr(dir, &glResourceFolder);
+      if (auto error = dir->initialise(Path, resolved_path, Flags, vd->DriverSize); error != ERR::Okay) {
+         FreeResource(dir);
+         return error;
+      }
 
-      dir->Info            = (FileInfo *)(dir + 1);
-      dir->Info->Name      = STRING(dir->Info + 1) + vd->DriverSize;
-      dir->Driver          = dir->Info + 1;
-      dir->prvPath         = dir->Info->Name + MAX_FILENAME;
-      dir->prvFlags        = Flags | RDF::OPENDIR;
-      dir->prvVirtualID    = DEFAULT_VIRTUALID;
-      dir->prvResolvedPath = dir->prvPath + path_len;
-      dir->prvResolveLen   = resolved_path.size() + 1;
-      #ifdef _WIN32
-         dir->prvHandle = (WINHANDLE)-1;
-      #endif
-      copymem(Path, dir->prvPath, path_len);
-      copymem(resolved_path.c_str(), dir->prvResolvedPath, resolved_path.size() + 1);
-
-      if ((Path[0] IS ':') or (!Path[0])) {
+      if ((Path[0] IS ':') or (not Path[0])) {
          if ((Flags & RDF::FOLDER) IS RDF::NIL) {
             FreeResource(dir);
             return ERR::DirEmpty;
@@ -107,7 +178,7 @@ ERR OpenDir(CSTRING Path, RDF Flags, DirInfo **Result)
          return ERR::Okay;
       }
 
-      if (!vd->OpenDir) {
+      if (not vd->OpenDir) {
          FreeResource(dir);
          return ERR::DirEmpty;
       }
@@ -135,8 +206,8 @@ for each function call that you make.  The following code sample illustrates typ
 
 <pre>
 DirInfo *info;
-if (!OpenDir(path, RDF::FILE|RDF::FOLDER, &info)) {
-   while (!ScanDir(info)) {
+if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &info)) {
+   while (not ScanDir(info)) {
       log.msg("File: %s", info->Name);
    }
    FreeResource(info);
@@ -165,13 +236,12 @@ ERR ScanDir(DirInfo *Dir)
 {
    pf::Log log(__FUNCTION__);
 
-   if (!Dir) return log.warning(ERR::NullArgs);
+   if (not Dir) return log.warning(ERR::NullArgs);
 
    FileInfo *file;
-   if (!(file = Dir->Info)) { log.trace("Missing Dir->Info"); return log.warning(ERR::InvalidData); }
-   if (!file->Name) { log.trace("Missing Dir->Info->Name"); return log.warning(ERR::InvalidData); }
+   if (not (file = Dir->Info)) { log.trace("Missing Dir->Info"); return log.warning(ERR::InvalidData); }
 
-   file->Name[0] = 0;
+   file->Name.clear();
    file->Flags   = RDF::NIL;
    file->Permissions = PERMIT::NIL;
    file->Size    = 0;
@@ -182,22 +252,16 @@ ERR ScanDir(DirInfo *Dir)
 
    // Support for scanning of volume names
 
-   if ((Dir->prvPath[0] IS ':') or (!Dir->prvPath[0])) {
+   if ((Dir->prvPath[0] IS ':') or (not Dir->prvPath[0])) {
       if (auto lock = std::unique_lock{glmVolumes, 4s}) {
          int count = 0;
          for (auto const &pair : glVolumes) {
             if (count IS Dir->prvIndex) {
                Dir->prvIndex++;
                auto &volume = pair.first;
-               int j = strcopy(volume, file->Name, MAX_FILENAME-2);
-               if ((Dir->prvFlags & RDF::QUALIFY) != RDF::NIL) {
-                  file->Name[j++] = ':';
-                  file->Name[j] = 0;
-               }
-
-               if (glVolumes[volume]["Hidden"] == "Yes") {
-                  file->Flags |= RDF::HIDDEN;
-               }
+               file->Name = volume;
+               if ((Dir->prvFlags & RDF::QUALIFY) != RDF::NIL) file->Name += ':';
+               if (glVolumes[volume]["Hidden"] IS "Yes") file->Flags |= RDF::HIDDEN;
 
                if (glVolumes[volume].contains("Label")) {
                   AddInfoTag(file, "Label", glVolumes[volume]["Label"].c_str());
@@ -224,7 +288,7 @@ ERR ScanDir(DirInfo *Dir)
       if (glVirtual[Dir->prvVirtualID].ScanDir) error = glVirtual[Dir->prvVirtualID].ScanDir(Dir);
    }
 
-   if ((file->Name[0]) and ((Dir->prvFlags & RDF::DATE) != RDF::NIL)) {
+   if ((not file->Name.empty()) and ((Dir->prvFlags & RDF::DATE) != RDF::NIL)) {
       file->TimeStamp = calc_timestamp(&file->Modified);
    }
 

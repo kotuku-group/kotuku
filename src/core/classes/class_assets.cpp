@@ -417,7 +417,7 @@ static ERR scan_dir(DirInfo *Dir)
             Dir->Info->Flags |= RDF::FILE;
             if ((Dir->prvFlags & RDF::SIZE) != RDF::NIL) Dir->Info->Size = AAsset_getLength(asset);
             AAsset_close(asset);
-            StrCopy(filename, Dir->Info->Name, MAX_FILENAME);
+            Dir->Info->Name = filename;
 
             Dir->prvIndex++;
             Dir->prvTotal++;
@@ -431,7 +431,7 @@ static ERR scan_dir(DirInfo *Dir)
             Dir->Info->Flags |= RDF::FOLDER;
             AAssetDir_close(dir);
 
-            StrCopy(filename, Dir->Info->Name, MAX_FILENAME);
+            Dir->Info->Name = filename;
 
             Dir->prvIndex++;
             Dir->prvTotal++;
@@ -507,14 +507,11 @@ static ERR get_info(std::string_view Path, FileInfo *Info, int InfoSize)
    i = len;
    if ((Path[i-1] IS '/') or (Path[i-1] IS '\\')) i--;
    while ((i > 0) and (Path[i-1] != '/') and (Path[i-1] != '\\') and (Path[i-1] != ':')) i--;
-   i = StrCopy(Path + i, Info->Name, MAX_FILENAME-2);
+   Info->Name.assign(Path, i, std::string::npos);
 
    if ((Info->Flags & RDF::FOLDER) != RDF::NIL) {
-      if (Info->Name[i-1] IS '\\') Info->Name[i-1] = '/';
-      else if (Info->Name[i-1] != '/') {
-         Info->Name[i++] = '/';
-         Info->Name[i] = 0;
-      }
+      if (Info->Name.ends_with('\\')) Info->Name[Info->Name.size() - 1] = '/';
+      else if (not Info->Name.ends_with('/')) Info->Name += '/';
    }
 
    Info->Permissions = 0;

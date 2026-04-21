@@ -66,6 +66,8 @@ ERR fs_watch_path(extFile *File)
 
 #elif _WIN32
 
+static void path_monitor(HOSTHANDLE Handle, extFile *File);
+
 ERR fs_watch_path(extFile *File)
 {
    pf::Log log(__FUNCTION__);
@@ -76,7 +78,7 @@ ERR fs_watch_path(extFile *File)
    // The path_monitor() function will be called whenever the Path or its content is modified.
 
    if ((error = winWatchFile(int(File->prvWatch->Flags), File->prvResolvedPath.c_str(), (File->prvWatch + 1), &handle, &winflags)) IS ERR::Okay) {
-      if ((error = RegisterFD(handle, RFD::READ, (void (*)(HOSTHANDLE, void*))&path_monitor, File)) IS ERR::Okay) {
+      if ((error = RegisterFD(handle, RFD::READ, (void (*)(HOSTHANDLE, APTR))&path_monitor, File)) IS ERR::Okay) {
          File->prvWatch->Handle   = handle;
          File->prvWatch->WinFlags = winflags;
       }
@@ -202,7 +204,7 @@ void path_monitor(HOSTHANDLE FD, OBJECTPTR)
 
 #elif _WIN32
 
-void path_monitor(HOSTHANDLE Handle, extFile *File)
+static void path_monitor(HOSTHANDLE Handle, extFile *File)
 {
    pf::Log log(__FUNCTION__);
 

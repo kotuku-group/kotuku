@@ -396,15 +396,23 @@ static int module_call(lua_State *Lua)
    int i;
 
    // Track dynamically allocated objects for cleanup
+   struct allocated_struct_ref {
+      APTR Data;
+      struct_record *Def;
+   };
+
    std::vector<std::string*> allocated_strings;
    std::vector<std::string_view*> allocated_string_views;
-   std::vector<APTR> allocated_structs;
+   std::vector<allocated_struct_ref> allocated_structs;
 
    // Cleanup lambda for early exits.  Note that we can't rely on RAII because luaL_error() breaks out of the function.
    auto cleanup = [&]() {
       for (auto ptr : allocated_strings) delete ptr;
       for (auto ptr : allocated_string_views) delete ptr;
-      for (auto ptr : allocated_structs) FreeResource(ptr);
+      for (auto &entry : allocated_structs) {
+         if (entry.Def) destroy_struct_cpp_strings(*entry.Def, entry.Data);
+         FreeResource(entry.Data);
+      }
    };
 
    auto prv = (prvTiri *)Self->ChildPrivate;
@@ -791,7 +799,9 @@ static int module_call(lua_State *Lua)
                lua_pushvalue(Lua, i); // Duplicate table for table_to_struct (consumes stack)
                APTR struct_data;
                if (table_to_struct(Lua, args[i].Name, &struct_data) IS ERR::Okay) {
-                  allocated_structs.push_back(struct_data); // Track for cleanup
+                  auto def = glStructs.find(std::string_view(args[i].Name));
+                  if (def != glStructs.end()) allocated_structs.push_back({ struct_data, &def->second });
+                  else allocated_structs.push_back({ struct_data, nullptr });
                   ((APTR *)(buffer + j))[0] = struct_data;
                   arg_values[in] = buffer + j;
                   arg_types[in++] = &ffi_type_pointer;

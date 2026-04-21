@@ -391,7 +391,7 @@
       <field name="Size" type="INT64">The size of the file's content.</field>
       <field name="TimeStamp" type="INT64">64-bit time stamp - usable only for comparison (e.g. sorting).</field>
       <field name="Next" type="struct FileInfo *">Next structure in the list, or <code>NULL</code>.</field>
-      <field name="Name" type="STRING">The name of the file.</field>
+      <field name="Name" type="std::string">The name of the file.</field>
       <field name="Flags" type="RDF" lookup="RDF">Additional flags to describe the file.</field>
       <field name="Permissions" type="PERMIT" lookup="PERMIT">Standard permission flags.</field>
       <field name="UserID" type="INT">User  ID (Unix systems only).</field>

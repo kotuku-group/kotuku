@@ -2352,7 +2352,7 @@ extern "C" HANDLE winFindFile(CSTRING Location, HANDLE *Handle, STRING Result)
 ** Used by fs_scandir()
 */
 
-extern "C" int winScan(HANDLE *Handle, CSTRING Path, STRING Name, long long *Size, struct DateTime *CreateTime,
+extern "C" int winScan(HANDLE *Handle, CSTRING Path, std::string &Name, long long *Size, struct DateTime *CreateTime,
    struct DateTime *WriteTime, int8_t *Dir, int8_t *Hidden, int8_t *ReadOnly, int8_t *Archive)
 {
    WIN32_FIND_DATA find;
@@ -2386,8 +2386,7 @@ extern "C" int winScan(HANDLE *Handle, CSTRING Path, STRING Name, long long *Siz
       if (find.dwFileAttributes & FILE_ATTRIBUTE_ARCHIVE) *Archive = true;
       else *Archive = false;
 
-      for (i=0; (find.cFileName[i]) and (i < 254); i++) Name[i] = find.cFileName[i];
-      Name[i] = 0;
+      Name.assign(find.cFileName);
 
       if (CreateTime) convert_time(&find.ftCreationTime, CreateTime);
       if (WriteTime) convert_time(&find.ftLastWriteTime, WriteTime);

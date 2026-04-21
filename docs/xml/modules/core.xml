@@ -813,6 +813,27 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
   </function>
 
   <function>
+    <name>GetFileInfo</name>
+    <category>Files</category>
+    <comment>Gets information about a file or folder.</comment>
+    <prototype>ERR GetFileInfo(const std::string_view &amp; Path, struct FileInfo * Info, INT InfoSize)</prototype>
+    <input>
+      <param type="const std::string_view &amp;" name="Path">String referring to the file or folder to be queried.</param>
+      <param type="struct FileInfo *" name="Info">Pointer to a <st>FileInfo</st> structure to be populated.</param>
+      <param type="INT" name="InfoSize">Size of the <st>FileInfo</st> structure in bytes.</param>
+    </input>
+    <description>
+<p>This function will return information about a file or folder when given a valid file location.  The current user must have read access to the given file.  This function does not allow for the approximation of file names.  To approximate a file location, open it as a <class name="File">File</class> object or use <function>ResolvePath</function> first.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">Operation successful.</error>
+      <error code="Args">Invalid arguments passed to function.</error>
+      <error code="LockFailed">Failed to lock a required resource.</error>
+      <error code="NoSupport">The target filesystem does not support the operation.</error>
+    </result>
+  </function>
+
+  <function>
     <name>GetObjectPtr</name>
     <category>Objects</category>
     <comment>Returns a direct pointer for any object ID.</comment>
@@ -1467,8 +1488,8 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <description>
 <p>The ScanDir() function is used to scan for files and folders in a folder that you have opened using the <function>OpenDir</function> function. The ScanDir() function is intended to be used in a simple loop, returning a single item for each function call that you make.  The following code sample illustrates typical usage:</p>
 <pre>DirInfo *info;
-if (!OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
-   while (!ScanDir(info)) {
+if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
+   while (not ScanDir(info)) {
       log.msg(&quot;File: %s&quot;, info-&gt;Name);
    }
    FreeResource(info);
@@ -3046,7 +3067,7 @@ static ResourceManager glNodeManager = {
       <field name="Size" type="INT64">The size of the file's content.</field>
       <field name="TimeStamp" type="INT64">64-bit time stamp - usable only for comparison (e.g. sorting).</field>
       <field name="Next" type="struct FileInfo *">Next structure in the list, or <code>NULL</code>.</field>
-      <field name="Name" type="STRING">The name of the file.</field>
+      <field name="Name" type="std::string">The name of the file.</field>
       <field name="Flags" type="RDF" lookup="RDF">Additional flags to describe the file.</field>
       <field name="Permissions" type="PERMIT" lookup="PERMIT">Standard permission flags.</field>
       <field name="UserID" type="INT">User  ID (Unix systems only).</field>

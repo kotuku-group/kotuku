@@ -349,4 +349,15 @@ flags("FD", { weak=true, comment="Field descriptors.", module="Core" },
     char  Minute    # Minute 0 to 59
     char  Second    # Second 0 to 59
     char  TimeZone  # TimeZone -13 to +13
+  ]],
+  [[
+   inline void clear() {
+      Year      = 0;
+      Month     = 0;
+      Day       = 0;
+      Hour      = 0;
+      Minute    = 0;
+      Second    = 0;
+      TimeZone  = 0;
+   }
   ]])

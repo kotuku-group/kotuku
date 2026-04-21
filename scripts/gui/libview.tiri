@@ -347,20 +347,47 @@ gui.initView = function(Options, BuildUI, NewItems)
 
    -- Moves an item towards the bottom of the view.
 
-   vw.lowerItem = function(XPath, Item)
+   vw.lowerItem = function(Item)
 
    end
 
    -- Moves an item towards the top of the view.
 
-   vw.raiseItem = function(XPath, Item)
+   vw.raiseItem = function(Item)
 
    end
 
    -- Removes an item from the view.
 
-   vw.removeItem = function(XPath, Item, InvisibleRemoval)
+   vw.removeItem = function(Item)
+      assert(Item, 'No Item provided')
 
+      if Item is vw.hItem then
+         highlightItem(vw, nil)
+      end
+
+      if Item._selected then
+         deselectItem(vw, Item)
+         reportItemDeselected(vw, 'manual', Item)
+      end
+
+      if Item is vw.activeItem then
+         vw.activeItem = nil
+         reportActiveChange(vw, 'manual', nil)
+      end
+
+      for i=0, #vw.items-1 do
+         if vw.items[i] is Item then
+            table.remove(vw.items, i)
+            break
+         end
+      end
+
+      if Item._id then vw.lookup[Item._id] = nil end
+
+      Item:_free()
+
+      vw.rebuild()
    end
 
    -- Checks the visibility of an item, scrolling it into view if it is partially or fully hidden.
@@ -505,7 +532,7 @@ gui.initView = function(Options, BuildUI, NewItems)
 
       BuildUI(vw)
       cursorActivity() -- Reset the cursor
-      vw?.border?.acMoveToFront()
+      vw.border?.acMoveToFront()
       vw.scene.surface.mtScheduleRedraw()
    end
 

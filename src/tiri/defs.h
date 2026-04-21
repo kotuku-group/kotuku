@@ -417,6 +417,8 @@ int MAKESTRUCT(lua_State *);
 [[maybe_unused]] void make_array(lua_State *, AET, int = 0, CPTR = nullptr, std::string_view = {});
 [[maybe_unused]] ERR make_struct(objScript *, std::string_view, CSTRING);
 ERR named_struct_to_table(lua_State *, std::string_view, CPTR);
+void construct_struct_cpp_strings(const struct struct_record &, APTR);
+void destroy_struct_cpp_strings(const struct struct_record &, APTR);
 void make_struct_ptr_array(lua_State *, std::string_view, int, CPTR *);
 void make_struct_serial_array(lua_State *, std::string_view, int, CPTR);
 void notify_action(OBJECTPTR, ACTIONID, ERR, APTR);
