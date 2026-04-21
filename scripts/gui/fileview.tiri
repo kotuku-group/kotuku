@@ -591,7 +591,8 @@ gui.fileview = function(Options)
       if self.path then return end
 
       if not findItem(Info.name) then -- Add missing volume
-         err, info = mSys.GetFileInfo(Info.name .. ':')
+         info = struct.new('FileInfo')
+         err = mSys.GetFileInfo(Info.name .. ':', info)
          if (err is ERR_Okay) and not (info.flags has RDF_HIDDEN) then
             addFileItem(self, info)
             self.view.sort()
@@ -615,6 +616,7 @@ gui.fileview = function(Options)
          end
       end
 
+      msg('deleteItem() File not found: ' .. File)
       return false
    end
 
@@ -763,7 +765,8 @@ gui.fileview = function(Options)
 
       local info, info_err
       if not (Flags has MFF_DELETE) then
-         info_err, info = mSys.GetFileInfo(self.path .. (Path ?? ''))
+         info = struct.new('FileInfo')
+         info_err = mSys.GetFileInfo(self.path .. Path, info)
          if info_err is ERR_Okay then
             if self.hideFiles and (info.Flags has RDF_FILE) then return end
             -- Use the true file name with the trailing slash if it is a folder (important
@@ -1073,7 +1076,8 @@ gui.fileview = function(Options)
                   path = f'{self.path}{State.input}/'
                   if mSys.CreateFolder(path, 0) is ERR_Okay then
                      if not self.watch then
-                        err, info = mSys.GetFileInfo(path)
+                        info = struct.new('FileInfo')
+                        err = mSys.GetFileInfo(path, info)
                         if err is ERR_Okay then
                            addFileItem(self, info)
                            self.view.sort()
