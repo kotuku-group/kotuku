@@ -7,7 +7,7 @@ glPath = 'kotuku:'
 rx_path = regex.new([[([^:\/]+)\/-$]])
 
 @BeforeAll function init()
-   global glRawPath = 'user:test.out'
+   global glRawPath = 'temp:test.out'
    out = obj.new('file', { src=glRawPath, flags=FL_NEW|FL_WRITE } )
    out.acWrite('ABCD', 4)
    out = nil
@@ -119,7 +119,7 @@ end
    icon_pairs = {
       { path='fonts:fonts.cfg',            icon='icons:filetypes/text' },
       { path='fonts:truetype/Micro-6.ttf', icon='icons:filetypes/font' },
-      { path='scripts:common.tiri',       icon='icons:filetypes/source' }
+      { path='scripts:common.tiri',        icon='icons:filetypes/source' }
    }
 
    for v in values(icon_pairs) do
@@ -144,6 +144,74 @@ end
    err, type = mSys.AnalysePath('scripts:gui.tiri')
    assert(err is ERR_Okay, 'AnalysePath() failed with error: ' .. mSys.GetErrorMsg(err))
    assert(type is LOC_FILE, 'AnalysePath() returned type ' .. type .. ' and not LOC_FILE')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function WatchFolder()
+   folder = obj.new('file', { path='temp:' })
+
+   events = array<table> { }
+   err = folder.mtWatch(function(File, Path, Flags)
+      events:push({ path=tostring(Path), flags=Flags })
+      return ERR_Okay
+   end, MFF_CREATE|MFF_DELETE|MFF_CLOSED|MFF_MOVED|MFF_ATTRIB)
+
+   if err is ERR_NoSupport then
+      return 'Host platform does not support file system watching.'
+   end
+   assert(err is ERR_Okay, 'Watch() failed: ' .. mSys.GetErrorMsg(err))
+
+   watchFile = 'temp:watch_test.tmp'
+
+   out = obj.new('file', { src=watchFile, flags=FL_NEW|FL_WRITE })
+   out.acWrite('XYZ', 3)
+   out = nil
+   processing.collect()
+
+   -- Pump the message queue so inotify / ReadDirectoryChangesW events are delivered.
+   for i=0,20 do
+      processing.sleep(0.05)
+      if #events > 0 then break end
+   end
+
+   mSys.DeleteFile(watchFile)
+
+   processing.sleep(0.5)
+
+   -- Disable the watch prior to assertions so state is clean even on failure.
+   folder.mtWatch()
+
+   assert(#events > 0, 'No file system events were delivered to the watch callback.')
+
+   local created = false
+   for e in values(events) do
+      logOutput(f'Event path="{e.path}", flags=${string.format("%.8x", e.flags)}')
+      if (e.flags & MFF_CREATE) != 0 then created = true end
+   end
+
+   assert(created, 'Expected at least one MFF_CREATE event for ' .. watchFile)
+   return f'Received {#events} file system event(s).'
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function WatchDisable()
+   folder = obj.new('file', { path='temp:' })
+
+   err = folder.mtWatch(function(File, Path, Flags) return ERR_Okay end, MFF_CREATE|MFF_DELETE)
+   if err is ERR_NoSupport then
+      return 'Host platform does not support file system watching.'
+   end
+   assert(err is ERR_Okay, 'Initial Watch() failed: ' .. mSys.GetErrorMsg(err))
+
+   -- Disabling with no arguments must succeed cleanly.
+   err = folder.mtWatch()
+   assert(err is ERR_Okay, 'Disabling Watch() with no arguments failed: ' .. mSys.GetErrorMsg(err))
+
+   -- A second disable is a no-op and must still succeed.
+   err = folder.mtWatch()
+   assert(err is ERR_Okay, 'Second Watch() disable call failed: ' .. mSys.GetErrorMsg(err))
 end
 
 ----------------------------------------------------------------------------------------------------------------------

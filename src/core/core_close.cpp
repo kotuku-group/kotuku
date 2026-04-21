@@ -209,7 +209,13 @@ void CloseCore(void)
 
          free_file_cache();
 
-         if (glInotify != -1) { close(glInotify); glInotify = -1; }
+         #ifdef __linux__
+            if (glInotify != -1) {
+               RegisterFD(glInotify, RFD::REMOVE|RFD::READ, nullptr, nullptr);
+               close(glInotify);
+               glInotify = -1;
+            }
+         #endif
       }
 
       Expunge(true); // Third and final expunge.  Forcibly unloads modules.

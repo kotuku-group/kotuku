@@ -81,7 +81,9 @@ std::unordered_map<int, std::shared_ptr<ThreadRecord>> glThreadRegistry;
 
 std::list<CoreTimer> glTimers; // Locked with glmTimer.  std::list maintains stable pointers to elements.
 std::list<FDRecord> glFDTable;
+#ifdef __linux__
 std::unordered_map<int, OBJECTID> glInotifyLookup;
+#endif
 
 std::map<std::string, ConfigKeys, CaseInsensitiveMap> glVolumes;
 std::unordered_map<std::string, std::vector<Object *>, CaseInsensitiveHash, CaseInsensitiveEqual> glObjectLookup; // Name lookups
@@ -164,7 +166,9 @@ bool glSync         = false;
 bool glLogThreads   = false;
 int8_t glProgramStage = STAGE_STARTUP;
 TSTATE glTaskState  = TSTATE::RUNNING;
+#ifdef __linux__
 int glInotify = -1;
+#endif
 
 const struct virtual_drive glFSDefault = {
    0, 0, ":",
