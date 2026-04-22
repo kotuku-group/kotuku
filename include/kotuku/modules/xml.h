@@ -394,26 +394,26 @@ class objXML : public Object {
    // Customised field setting
 
    template <class T> inline ERR setPath(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[12];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Path, &target);
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 
    template <class T> inline ERR setDocType(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[9];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_DocType, &target);
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 
    template <class T> inline ERR setPublic(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[17];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Public, &target);
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 
    template <class T> inline ERR setSystem(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[7];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_System, &target);
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 
@@ -429,14 +429,14 @@ class objXML : public Object {
    }
 
    inline ERR setReadOnly(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[18];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_ReadOnly, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    template <class T> inline ERR setStatement(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[14];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Statement, &target);
       return field->WriteValue(target, field, 0x08800320, to_cstring(Value), 1);
    }
 

@@ -1018,6 +1018,7 @@ header({ path="system/fields", copyright="Paul Manias © 1996-2026" }, function(
     "Server",
     "ServerPort",
     "Enabled",
+    "SID",
     "SSLCertificate",
     "SSLPrivateKey",
     "SSLKeyPassword"

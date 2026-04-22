@@ -157,14 +157,15 @@ static std::mutex glCacheLock;
 {
    if ((Path.starts_with(':')) or (Path.empty())) return 0;
 
-   uint32_t hash = 5381;
-   for (char c : Path) {
+   size_t i = 0;
+   for (; i < Path.size(); i++) {
+      auto c = Path[i];
       if (c IS ':') break;
       if ((c IS '/') or (c IS '\\')) return 0; // If a slash is encountered early, the path belongs to the local FS
-      if ((c >= 'A') and (c <= 'Z')) hash = (hash<<5) + hash + c - 'A' + 'a';
-      else hash = (hash<<5) + hash + uint8_t(std::tolower(c));
    }
-   return hash;
+
+   if ((i >= Path.size()) or not (Path[i] IS ':')) return 0;
+   return strihash(Path.substr(0, i));
 }
 
 //********************************************************************************************************************

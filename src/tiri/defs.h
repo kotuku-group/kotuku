@@ -363,14 +363,16 @@ struct module {
    }
 };
 
-constexpr uint32_t simple_hash(CSTRING String, uint32_t Hash = 5381) {
-   while (auto c = *String++) Hash = ((Hash<<5) + Hash) + c;
-   return Hash;
+constexpr uint32_t simple_hash(CSTRING String, uint32_t Hash = 0) {
+   auto crc = pf::detail::crc32c_finalise(Hash);
+   while (auto c = *String++) crc = pf::detail::crc32c_byte(crc, uint8_t(c));
+   return pf::detail::crc32c_finalise(crc);
 }
 
-constexpr uint32_t char_hash(char Char, uint32_t Hash = 5381) {
-   Hash = ((Hash<<5) + Hash) + Char;
-   return Hash;
+constexpr uint32_t char_hash(char Char, uint32_t Hash = 0) {
+   auto crc = pf::detail::crc32c_finalise(Hash);
+   crc = pf::detail::crc32c_byte(crc, uint8_t(Char));
+   return pf::detail::crc32c_finalise(crc);
 }
 
 //********************************************************************************************************************

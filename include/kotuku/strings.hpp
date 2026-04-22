@@ -4,13 +4,28 @@
 
 #include <sstream>
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <string_view>
 #include <charconv>
 #include <concepts>
+#include <cstring>
 #include <ranges>
 #include <span>
 #include <cstdint>
+#include <type_traits>
+
+#if defined(_MSC_VER) && defined(_M_X64)
+   #include <intrin.h>
+   #define PF_HAS_HW_CRC32C 1
+   #define PF_CRC32C_RUNTIME_CHECK 1
+#elif defined(__x86_64__) && defined(__SSE4_2__)
+   #include <nmmintrin.h>
+   #define PF_HAS_HW_CRC32C 1
+#elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+   #include <arm_acle.h>
+   #define PF_HAS_HW_CRC32C 1
+#endif
 
 namespace pf {
 
@@ -185,25 +200,146 @@ inline void camelcase(std::string &s) noexcept {
    return true;
 }
 
+namespace detail {
+
+inline constexpr uint32_t crc32c_init = 0xffffffffu;
+
+[[nodiscard]] consteval std::array<uint32_t, 256> make_crc32c_table() noexcept
+{
+   std::array<uint32_t, 256> table = { };
+   for (std::size_t i = 0; i < table.size(); i++) {
+      uint32_t crc = uint32_t(i);
+      for (int j = 0; j < 8; j++) {
+         if (crc & 1u) crc = (crc >> 1) ^ 0x82f63b78u;
+         else crc >>= 1;
+      }
+      table[i] = crc;
+   }
+   return table;
+}
+
+inline constexpr auto glCRC32cTable = make_crc32c_table();
+
+[[nodiscard]] inline bool has_hw_crc32c() noexcept
+{
+#if defined(PF_CRC32C_RUNTIME_CHECK)
+   static const bool available = []() noexcept {
+      int cpu_info[4] = { };
+      __cpuid(cpu_info, 1);
+      return (cpu_info[2] & (1 << 20)) ? true : false;
+   }();
+   return available;
+#elif defined(PF_HAS_HW_CRC32C)
+   return true;
+#else
+   return false;
+#endif
+}
+
+[[nodiscard]] constexpr inline uint32_t crc32c_finalise(const uint32_t Crc) noexcept
+{
+   return Crc ^ crc32c_init;
+}
+
+[[nodiscard]] constexpr inline uint8_t to_lower_ascii(const char Value) noexcept
+{
+   auto byte = uint8_t(Value);
+   if ((byte >= 'A') and (byte <= 'Z')) return byte - 'A' + 'a';
+   return byte;
+}
+
+[[nodiscard]] constexpr inline uint32_t crc32c_byte(const uint32_t Crc, const uint8_t Byte) noexcept
+{
+   return (Crc >> 8) ^ glCRC32cTable[(Crc ^ Byte) & 0xffu];
+}
+
+[[nodiscard]] constexpr inline uint32_t crc32c_constexpr(const std::string_view String) noexcept
+{
+   uint32_t crc = crc32c_init;
+   for (char value : String) {
+      crc = crc32c_byte(crc, uint8_t(value));
+   }
+   return crc32c_finalise(crc);
+}
+
+[[nodiscard]] inline uint32_t crc32c_runtime_byte(const uint32_t Crc, const uint8_t Byte) noexcept
+{
+   if (has_hw_crc32c()) {
+      #if defined(PF_HAS_HW_CRC32C)
+         #if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+            return __crc32cb(Crc, Byte);
+         #else
+            return uint32_t(_mm_crc32_u8(Crc, Byte));
+         #endif
+      #endif
+   }
+
+   return crc32c_byte(Crc, Byte);
+}
+
+[[nodiscard]] inline uint32_t crc32c_runtime(const std::string_view String) noexcept
+{
+   uint32_t crc = crc32c_init;
+
+   if (has_hw_crc32c()) {
+      #if defined(PF_HAS_HW_CRC32C)
+         auto data = (const uint8_t *)String.data();
+         auto size = String.size();
+         while (size >= sizeof(uint64_t)) {
+            uint64_t chunk = 0;
+            std::memcpy(&chunk, data, sizeof(chunk));
+            #if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+               crc = __crc32cd(crc, chunk);
+            #else
+               crc = uint32_t(_mm_crc32_u64(crc, chunk));
+            #endif
+            data += sizeof(uint64_t);
+            size -= sizeof(uint64_t);
+         }
+
+         while (size > 0) {
+            #if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+               crc = __crc32cb(crc, *data++);
+            #else
+               crc = uint32_t(_mm_crc32_u8(crc, *data++));
+            #endif
+            size--;
+         }
+      #endif
+   }
+   else {
+      for (char value : String) {
+         crc = crc32c_byte(crc, uint8_t(value));
+      }
+   }
+
+   return crc32c_finalise(crc);
+}
+
+} // namespace detail
+
 // Standardised hash functions, case sensitive and insensitive versions
 
 [[nodiscard]] constexpr inline uint32_t strhash(const std::string_view String) noexcept
 {
-   uint32_t hash = 5381;
-   std::for_each(String.begin(), String.end(), [&hash](char a) {
-      hash = (hash<<5) + hash + a;
-   });
-   return hash;
+   if (std::is_constant_evaluated()) return detail::crc32c_constexpr(String);
+   else return detail::crc32c_runtime(String);
 }
 
 [[nodiscard]] constexpr inline uint32_t strihash(const std::string_view String) noexcept
 {
-   uint32_t hash = 5381;
-   std::for_each(String.begin(), String.end(), [&hash](char c) {
-      if ((c >= 'A') and (c <= 'Z')) c = c - 'A' + 'a';
-      hash = (hash<<5) + hash + c;
-   });
-   return hash;
+   uint32_t crc = detail::crc32c_init;
+   if (std::is_constant_evaluated()) {
+      for (char value : String) {
+         crc = detail::crc32c_byte(crc, detail::to_lower_ascii(value));
+      }
+   }
+   else {
+      for (char value : String) {
+         crc = detail::crc32c_runtime_byte(crc, detail::to_lower_ascii(value));
+      }
+   }
+   return detail::crc32c_finalise(crc);
 }
 
 // Hash designed to handle conversion from `UID` -> `uid` and `RGBValue` -> `rgbValue`.  This keeps hashes compatible
@@ -211,19 +347,22 @@ inline void camelcase(std::string &s) noexcept {
 
 [[nodiscard]] constexpr inline uint32_t fieldhash(const std::string_view String) noexcept
 {
-   uint32_t hash = 5381;
+   uint32_t crc = detail::crc32c_init;
    size_t k = 0;
    while ((k < String.size()) and (String[k] >= 'A') and (String[k] <= 'Z')) {
-      hash = (hash<<5) + hash + (String[k] - 'A' + 'a');
+      auto value = detail::to_lower_ascii(String[k]);
+      if (std::is_constant_evaluated()) crc = detail::crc32c_byte(crc, value);
+      else crc = detail::crc32c_runtime_byte(crc, value);
       if (++k >= String.size()) break;
       if ((k + 1 >= String.size()) or ((String[k+1] >= 'A') and (String[k+1] <= 'Z'))) continue;
       else break;
    }
    while (k < String.size()) {
-      hash = (hash<<5) + hash + String[k];
+      if (std::is_constant_evaluated()) crc = detail::crc32c_byte(crc, uint8_t(String[k]));
+      else crc = detail::crc32c_runtime_byte(crc, uint8_t(String[k]));
       k++;
    }
-   return hash;
+    return detail::crc32c_finalise(crc);
 }
 
 // Simple string copy.  Supports std::string and CSTRING only

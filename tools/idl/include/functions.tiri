@@ -320,21 +320,30 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- TDL function
 
-global function hash(Prefix:str, Format:str, ...)
-   for v in values({...}) do
-      hash_name = rx_non_word.replace(v, '_')
-      -- Note: This unusual formatting solution helps to resolve output problems on 64-bit Linux
-      hash_id = string.format('%08x', v:hash()):sub(-8)
-      output(f'#define {Prefix}_{hash_name} {string.format(Format, hash_id)}')
+local crc32c_table = { }
+
+local i = 0
+while i <= 255 do
+   local crc = i
+   local j = 0
+   while j < 8 do
+      if (crc & 1) != 0 then
+         crc = (crc >> 1) ^ 0x82f63b78
+      else
+         crc = crc >> 1
+      end
+      j++
    end
-   output()
+   crc32c_table[i] = crc
+   i++
 end
 
 global function calcFieldHash(String:str):num
-   local hash = 5381
-   k = 0
+   local crc = 0xffffffff
+   local k = 0
    while (k < #String) and (String[k] >= 'A') and (String[k] <= 'Z') do
-      hash = (hash<<5) + hash + (String[k]:lower():byte())
+      local byte = String[k]:lower():byte()
+      crc = (crc >> 8) ^ crc32c_table[(crc ^ byte) & 0xff]
       k++
       if k >= #String then break end
       if not ((k + 1 >= #String) or ((String[k+1] >= 'A') and (String[k+1] <= 'Z'))) then
@@ -343,10 +352,11 @@ global function calcFieldHash(String:str):num
    end
 
    while k < #String do
-      hash = (hash<<5) + hash + String[k]:byte()
+      local byte = String[k]:byte()
+      crc = (crc >> 8) ^ crc32c_table[(crc ^ byte) & 0xff]
       k++
    end
-   return hash
+   return crc ^ 0xffffffff
 end
 
 global function fieldHash(Prefix:str, Format:str, ...)
@@ -372,6 +382,16 @@ global function typedHash(Prefix:str, Type:str, ...)
       output(f'   {hash_name} = {string.format("0x%sUL", hash_id)},')
    end
    output('};')
+   output()
+end
+
+global function hash(Prefix:str, Format:str, ...)
+   for v in values({...}) do
+      hash_name = rx_non_word.replace(v, '_')
+      -- Note: This unusual formatting solution helps to resolve output problems on 64-bit Linux
+      hash_id = string.format('%08x', v:hash()):sub(-8)
+      output(f'#define {Prefix}_{hash_name} {string.format(Format, hash_id)}')
+   end
    output()
 end
 

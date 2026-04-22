@@ -253,10 +253,7 @@ static ERR VECTOR_Draw(extVector *Self, struct acDraw *Args)
       }
       else return ERR::AccessObject;
    }
-   else {
-      pf::Log log;
-      return log.warning(ERR::FieldNotSet);
-   }
+   else return pf::Log().warning(ERR::FieldNotSet);
 }
 
 /*********************************************************************************************************************
@@ -283,7 +280,7 @@ static ERR VECTOR_Free(extVector *Self)
    if (Self->Morph)      UnsubscribeAction(Self->Morph, AC::Free);
    if (Self->AppendPath) UnsubscribeAction(Self->AppendPath, AC::Free);
 
-   if (Self->SID)           { FreeResource(Self->SID); Self->SID = nullptr; }
+   if (Self->SID)          { FreeResource(Self->SID); Self->SID = nullptr; }
    if (Self->FillString)   { FreeResource(Self->FillString); Self->FillString = nullptr; }
    if (Self->StrokeString) { FreeResource(Self->StrokeString); Self->StrokeString = nullptr; }
    if (Self->FilterString) { FreeResource(Self->FilterString); Self->FilterString = nullptr; }
@@ -1573,8 +1570,8 @@ static ERR VECTOR_SET_FillRule(extVector *Self, VFR Value)
 -FIELD-
 SID: String identifier for a vector.
 
-The ID field is provided for the purpose of SVG support.  Where possible we would recommend that you use the
-existing object name and automatically assigned ID's for identifiers.
+The SID field is provided for SVG support.  Use the existing object name and UID for identification in all other 
+circumstances.
 
 *********************************************************************************************************************/
 

@@ -1539,56 +1539,56 @@ struct Edges {
    int Bottom;  // Bottom coordinate
 };
 
-#define AHASH_ACTIVATE 0xdbaf4876
-#define AHASH_CLEAR 0x0f3b6d8c
-#define AHASH_FREEWARNING 0xb903ddbd
-#define AHASH_COPYDATA 0x47b0d1fa
-#define AHASH_DATAFEED 0x05e6d293
-#define AHASH_DEACTIVATE 0x1ee323ff
-#define AHASH_DRAW 0x7c95d753
-#define AHASH_FLUSH 0x0f71fd67
-#define AHASH_FOCUS 0x0f735645
-#define AHASH_FREE 0x7c96f087
-#define AHASH_GETKEY 0xff87790e
-#define AHASH_DRAGDROP 0xf69e8a58
-#define AHASH_HIDE 0x7c97e2df
-#define AHASH_INIT 0x7c988539
-#define AHASH_LOCK 0x7c9a2dce
-#define AHASH_LOSTFOCUS 0x319b8e67
-#define AHASH_MOVE 0x7c9abc9c
-#define AHASH_MOVETOBACK 0xcbdb3170
-#define AHASH_MOVETOFRONT 0x479347c8
-#define AHASH_NEWCHILD 0x7b86ebf3
-#define AHASH_NEWOWNER 0x7c68601a
-#define AHASH_NEWOBJECT 0x07f62dc6
-#define AHASH_REDO 0x7c9d4daf
-#define AHASH_QUERY 0x103db63b
-#define AHASH_READ 0x7c9d4d41
-#define AHASH_RENAME 0x192cc41d
-#define AHASH_RESET 0x10474288
-#define AHASH_RESIZE 0x192fa5b7
-#define AHASH_SAVEIMAGE 0x398f7c57
-#define AHASH_SAVETOOBJECT 0x2878872e
-#define AHASH_SEEK 0x7c9dda2d
-#define AHASH_SETKEY 0x1b85609a
-#define AHASH_SHOW 0x7c9de846
-#define AHASH_TIMER 0x106d8b86
-#define AHASH_UNLOCK 0x20ce3c11
-#define AHASH_NEXT 0x7c9b1ec4
-#define AHASH_PREV 0x7c9c6c62
-#define AHASH_WRITE 0x10a8b550
-#define AHASH_SETFIELD 0x12075f55
-#define AHASH_CLIPBOARD 0x4912a9b5
-#define AHASH_REFRESH 0x3e3db654
-#define AHASH_DISABLE 0x12c4e4b9
-#define AHASH_ENABLE 0xfb7573ac
-#define AHASH_REDIMENSION 0x08a67fa2
-#define AHASH_MOVETOPOINT 0x48467e29
-#define AHASH_SORT 0x7c9e066d
-#define AHASH_SAVESETTINGS 0x475f7165
-#define AHASH_SIGNAL 0x1bc6ade3
-#define AHASH_NEWPLACEMENT 0x9b0a0468
-#define AHASH_UNDO 0x7c9f191b
+#define AHASH_ACTIVATE 0x725d52c7
+#define AHASH_CLEAR 0xce7ed463
+#define AHASH_FREEWARNING 0x09a5a3d1
+#define AHASH_COPYDATA 0xa7a6c30c
+#define AHASH_DATAFEED 0xa6ab005e
+#define AHASH_DEACTIVATE 0x0c6900b2
+#define AHASH_DRAW 0x6046e885
+#define AHASH_FLUSH 0x05b456cd
+#define AHASH_FOCUS 0x269d690f
+#define AHASH_FREE 0x60ce1d40
+#define AHASH_GETKEY 0x603bde11
+#define AHASH_DRAGDROP 0x59fb1b5c
+#define AHASH_HIDE 0xe3b0779f
+#define AHASH_INIT 0x680cc731
+#define AHASH_LOCK 0x9f36c619
+#define AHASH_LOSTFOCUS 0xb0bab76d
+#define AHASH_MOVE 0x8ce6dbac
+#define AHASH_MOVETOBACK 0x343f4edb
+#define AHASH_MOVETOFRONT 0x3eb5005d
+#define AHASH_NEWCHILD 0x8dae9f1d
+#define AHASH_NEWOWNER 0x62155f0c
+#define AHASH_NEWOBJECT 0xa96da206
+#define AHASH_REDO 0x8e9a3422
+#define AHASH_QUERY 0x61b0e0a8
+#define AHASH_READ 0x4a3b66b2
+#define AHASH_RENAME 0xea82e4d4
+#define AHASH_RESET 0x9b741eeb
+#define AHASH_RESIZE 0x2e3cab45
+#define AHASH_SAVEIMAGE 0x1a454349
+#define AHASH_SAVETOOBJECT 0xdaa9c534
+#define AHASH_SEEK 0x87e791f2
+#define AHASH_SETKEY 0x12c2d958
+#define AHASH_SHOW 0x636562ba
+#define AHASH_TIMER 0x39967fa6
+#define AHASH_UNLOCK 0xefbb65e2
+#define AHASH_NEXT 0x8f14e8bb
+#define AHASH_PREV 0x4ee18a94
+#define AHASH_WRITE 0x7a8afad8
+#define AHASH_SETFIELD 0xb4e04798
+#define AHASH_CLIPBOARD 0xb5bbe3e7
+#define AHASH_REFRESH 0x8dbbc14f
+#define AHASH_DISABLE 0x79a1d3cd
+#define AHASH_ENABLE 0x375b100a
+#define AHASH_REDIMENSION 0xab2e92ef
+#define AHASH_MOVETOPOINT 0x4906bfe1
+#define AHASH_SORT 0xfb3c3eb5
+#define AHASH_SAVESETTINGS 0x1f35f58b
+#define AHASH_SIGNAL 0xec1cd0b6
+#define AHASH_NEWPLACEMENT 0x25d84fc8
+#define AHASH_UNDO 0x45e5725e
 
 
 typedef AC ACTIONID;
@@ -2519,8 +2519,8 @@ class objMetaClass : public Object {
    }
 
    inline ERR setFields(const struct FieldArray * Value, int Elements) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[25];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Fields, &target);
       return field->WriteValue(target, field, 0x00001510, Value, Elements);
    }
 
@@ -2585,21 +2585,21 @@ class objMetaClass : public Object {
    }
 
    inline ERR setMethods(const APTR Value, int Elements) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[20];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Methods, &target);
       return field->WriteValue(target, field, 0x00001510, Value, Elements);
    }
 
    inline ERR setActions(APTR Value) noexcept {
       if (this->initialised()) return ERR::NoFieldAccess;
-      auto target = this;
-      auto field = &this->Class->Dictionary[6];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Actions, &target);
       return field->WriteValue(target, field, 0x08000400, Value, 1);
    }
 
    template <class T> inline ERR setName(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[15];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Name, &target);
       return field->WriteValue(target, field, 0x08810500, to_cstring(Value), 1);
    }
 
@@ -2632,8 +2632,8 @@ class objStorageDevice : public Object {
    // Customised field setting
 
    template <class T> inline ERR setVolume(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[5];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Volume, &target);
       return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
    }
 
@@ -2789,14 +2789,14 @@ class objFile : public Object {
    // Customised field setting
 
    inline ERR setPosition(const int64_t Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[10];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Position, &target);
       return field->WriteValue(target, field, FD_INT64, &Value, 1);
    }
 
    inline ERR setFlags(const FL Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[4];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Flags, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -2812,50 +2812,50 @@ class objFile : public Object {
    }
 
    inline ERR setDate(APTR Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[13];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Date, &target);
       return field->WriteValue(target, field, 0x08000310, Value, 1);
    }
 
    inline ERR setCreated(APTR Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[21];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Created, &target);
       return field->WriteValue(target, field, 0x08000310, Value, 1);
    }
 
    template <class T> inline ERR setPath(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[17];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Path, &target);
       return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
    }
 
    inline ERR setPermissions(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[23];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Permissions, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setSize(const int64_t Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[18];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Size, &target);
       return field->WriteValue(target, field, FD_INT64, &Value, 1);
    }
 
    template <class T> inline ERR setLink(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[15];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Link, &target);
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 
    inline ERR setUser(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[19];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_User, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setGroup(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[5];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Group, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -3005,20 +3005,20 @@ class objConfig : public Object {
    // Customised field setting
 
    template <class T> inline ERR setPath(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[7];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Path, &target);
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 
    template <class T> inline ERR setKeyFilter(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[10];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_KeyFilter, &target);
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 
    template <class T> inline ERR setGroupFilter(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[4];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_GroupFilter, &target);
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 
@@ -3141,50 +3141,50 @@ class objScript : public Object {
    }
 
    template <class T> inline ERR setCacheFile(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[9];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_CacheFile, &target);
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 
    template <class T> inline ERR setErrorMessage(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[18];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_ErrorMessage, &target);
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 
    template <class T> inline ERR setWorkingPath(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[21];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_WorkingPath, &target);
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 
    template <class T> inline ERR setProcedure(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[13];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Procedure, &target);
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 
    template <class T> inline ERR setName(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[15];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Name, &target);
       return field->WriteValue(target, field, 0x08810300, to_cstring(Value), 1);
    }
 
    template <class T> inline ERR setPath(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[16];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Path, &target);
       return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
    }
 
    inline ERR setResults(STRING * Value, int Elements) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[8];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Results, &target);
       return field->WriteValue(target, field, 0x08801300, Value, Elements);
    }
 
    template <class T> inline ERR setStatement(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[17];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Statement, &target);
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 
@@ -3322,8 +3322,8 @@ class objTask : public Object {
    }
 
    inline ERR setReturnCode(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[10];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_ReturnCode, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -3334,74 +3334,74 @@ class objTask : public Object {
    }
 
    inline ERR setAffinityMask(const int64_t Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[19];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_AffinityMask, &target);
       return field->WriteValue(target, field, FD_INT64, &Value, 1);
    }
 
    template <class T> inline ERR setArgs(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[14];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Args, &target);
       return field->WriteValue(target, field, 0x08800200, to_cstring(Value), 1);
    }
 
    inline ERR setParameters(pf::vector<std::string> *Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[17];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Parameters, &target);
       return field->WriteValue(target, field, 0x08805300, Value, int(Value->size()));
    }
 
    inline ERR setErrorCallback(FUNCTION Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[18];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_ErrorCallback, &target);
       return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
    }
 
    inline ERR setExitCallback(FUNCTION Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[20];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_ExitCallback, &target);
       return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
    }
 
    inline ERR setInputCallback(FUNCTION Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_InputCallback, &target);
       return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
    }
 
    template <class T> inline ERR setLaunchPath(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_LaunchPath, &target);
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 
    template <class T> inline ERR setLocation(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[13];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Location, &target);
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 
    template <class T> inline ERR setName(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[15];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Name, &target);
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 
    inline ERR setOutputCallback(FUNCTION Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[9];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_OutputCallback, &target);
       return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
    }
 
    template <class T> inline ERR setPath(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[16];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Path, &target);
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 
    inline ERR setPriority(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[7];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Priority, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -3449,14 +3449,14 @@ class objThread : public Object {
    }
 
    inline ERR setCallback(FUNCTION Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Callback, &target);
       return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
    }
 
    inline ERR setRoutine(FUNCTION Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[7];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Routine, &target);
       return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
    }
 
@@ -3531,8 +3531,8 @@ class objModule : public Object {
    }
 
    inline ERR setHeader(struct ModHeader * Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Header, &target);
       return field->WriteValue(target, field, 0x08000510, Value, 1);
    }
 
@@ -3543,8 +3543,8 @@ class objModule : public Object {
    }
 
    template <class T> inline ERR setName(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[7];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Name, &target);
       return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
    }
 
@@ -3761,8 +3761,8 @@ class objCompression : public Object {
    }
 
    inline ERR setCompressionLevel(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[6];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_CompressionLevel, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -3782,32 +3782,32 @@ class objCompression : public Object {
    }
 
    inline ERR setWindowBits(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[14];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_WindowBits, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    template <class T> inline ERR setArchiveName(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[19];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_ArchiveName, &target);
       return field->WriteValue(target, field, 0x08800200, to_cstring(Value), 1);
    }
 
    template <class T> inline ERR setPath(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[12];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Path, &target);
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 
    inline ERR setFeedback(FUNCTION Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[18];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Feedback, &target);
       return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
    }
 
    template <class T> inline ERR setPassword(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[8];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Password, &target);
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 

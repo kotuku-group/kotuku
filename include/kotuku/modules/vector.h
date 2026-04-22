@@ -571,11 +571,11 @@ struct VectorMatrix {
    int    Tag;                    // An optional tag value defined by the client for matrix identification.
 };
 
-#define MTAG_ANIMATE_MOTION 0x8b929127
-#define MTAG_ANIMATE_TRANSFORM 0x5374188d
-#define MTAG_SCENE_GRAPH 0xacc188f2
-#define MTAG_USE_TRANSFORM 0x35a3f7fb
-#define MTAG_SVG_TRANSFORM 0x3479679e
+#define MTAG_ANIMATE_MOTION 0xe7adf794
+#define MTAG_ANIMATE_TRANSFORM 0xa8348253
+#define MTAG_SCENE_GRAPH 0x0be1a484
+#define MTAG_USE_TRANSFORM 0x3629f654
+#define MTAG_SVG_TRANSFORM 0x4b7c7a89
 
 struct FontMetrics {
    int Height;         // Full font height equivalent to Ascent (cap-height) + Descent (gutter).  Does NOT include accents.
@@ -646,8 +646,8 @@ class objVectorTransition : public Object {
    // Customised field setting
 
    inline ERR setStops(const APTR Value, int Elements) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[3];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Stops, &target);
       return field->WriteValue(target, field, 0x00001218, Value, Elements);
    }
 
@@ -741,14 +741,14 @@ class objVectorScene : public Object {
    }
 
    inline ERR setBitmap(objBitmap * Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[15];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Bitmap, &target);
       return field->WriteValue(target, field, 0x08000301, Value, 1);
    }
 
    inline ERR setSurface(OBJECTID Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[12];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Surface, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -758,20 +758,20 @@ class objVectorScene : public Object {
    }
 
    inline ERR setPageWidth(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[7];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_PageWidth, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setPageHeight(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[5];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_PageHeight, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setSampleMethod(const VSM Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[6];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_SampleMethod, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -804,26 +804,26 @@ class objVectorImage : public Object {
    // Customised field setting
 
    inline ERR setX(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[0];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_X, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setY(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Y, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setPicture(objPicture * Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[9];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Picture, &target);
       return field->WriteValue(target, field, 0x08000301, Value, 1);
    }
 
    inline ERR setBitmap(objBitmap * Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[12];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Bitmap, &target);
       return field->WriteValue(target, field, 0x08000301, Value, 1);
    }
 
@@ -838,14 +838,14 @@ class objVectorImage : public Object {
    }
 
    inline ERR setSpreadMethod(const VSPREAD Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[10];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_SpreadMethod, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setAspectRatio(const ARF Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[6];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_AspectRatio, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -882,48 +882,48 @@ class objVectorPattern : public Object {
    // Customised field setting
 
    inline ERR setX(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[0];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_X, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setY(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Y, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setWidth(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[8];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Width, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setHeight(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[3];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Height, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setOpacity(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[11];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Opacity, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setInherit(objVectorPattern * Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[14];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Inherit, &target);
       return field->WriteValue(target, field, 0x08000301, Value, 1);
    }
 
    inline ERR setSpreadMethod(const VSPREAD Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[15];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_SpreadMethod, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -938,14 +938,14 @@ class objVectorPattern : public Object {
    }
 
    inline ERR setMatrices(APTR Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[10];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Matrices, &target);
       return field->WriteValue(target, field, 0x08000318, Value, 1);
    }
 
    template <class T> inline ERR setTransform(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[9];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Transform, &target);
       return field->WriteValue(target, field, 0x08800208, to_cstring(Value), 1);
    }
 
@@ -986,84 +986,84 @@ class objVectorGradient : public Object {
    // Customised field setting
 
    inline ERR setX1(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[6];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_X1, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setY1(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[8];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Y1, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setX2(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[7];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_X2, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setY2(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[9];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Y2, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setCenterX(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[24];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_CenterX, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setCenterY(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[25];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_CenterY, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setFocalX(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[31];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_FocalX, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setFocalY(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[32];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_FocalY, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setRadius(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[16];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Radius, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setFocalRadius(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[22];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_FocalRadius, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setResolution(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[21];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Resolution, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setSpreadMethod(const VSPREAD Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[26];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_SpreadMethod, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -1074,8 +1074,8 @@ class objVectorGradient : public Object {
    }
 
    inline ERR setType(const VGT Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[20];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Type, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -1091,44 +1091,44 @@ class objVectorGradient : public Object {
    }
 
    inline ERR setColour(const float * Value, int Elements) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[30];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Colour, &target);
       return field->WriteValue(target, field, 0x10001308, Value, Elements);
    }
 
    template <class T> inline ERR setColourMap(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[29];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_ColourMap, &target);
       return field->WriteValue(target, field, 0x08800208, to_cstring(Value), 1);
    }
 
    inline ERR setMatrices(APTR Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[18];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Matrices, &target);
       return field->WriteValue(target, field, 0x08000318, Value, 1);
    }
 
    inline ERR setNumeric(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[23];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Numeric, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    template <class T> inline ERR setID(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[4];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_ID, &target);
       return field->WriteValue(target, field, 0x08800308, to_cstring(Value), 1);
    }
 
    inline ERR setStops(const APTR Value, int Elements) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[13];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Stops, &target);
       return field->WriteValue(target, field, 0x00001318, Value, Elements);
    }
 
    template <class T> inline ERR setTransform(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[17];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Transform, &target);
       return field->WriteValue(target, field, 0x08800208, to_cstring(Value), 1);
    }
 
@@ -1182,41 +1182,41 @@ class objFilterEffect : public Object {
    }
 
    inline ERR setInput(objFilterEffect * Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[6];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Input, &target);
       return field->WriteValue(target, field, 0x08000301, Value, 1);
    }
 
    inline ERR setMix(objFilterEffect * Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[4];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Mix, &target);
       return field->WriteValue(target, field, 0x08000301, Value, 1);
    }
 
    inline ERR setX(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[0];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_X, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setY(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Y, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setWidth(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[8];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Width, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setHeight(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[3];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Height, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
@@ -1262,20 +1262,20 @@ class objImageFX : public objFilterEffect {
    // Customised field setting
 
    template <class T> inline ERR setPath(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Path, &target);
       return field->WriteValue(target, field, 0x08800508, to_cstring(Value), 1);
    }
 
    inline ERR setAspectRatio(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_AspectRatio, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setResampleMethod(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[3];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_ResampleMethod, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -1304,20 +1304,20 @@ class objSourceFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setAspectRatio(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_AspectRatio, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    template <class T> inline ERR setSourceName(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[3];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_SourceName, &target);
       return field->WriteValue(target, field, 0x08800408, to_cstring(Value), 1);
    }
 
    inline ERR setSource(OBJECTPTR Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[0];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Source, &target);
       return field->WriteValue(target, field, 0x08000109, Value, 1);
    }
 
@@ -1346,14 +1346,14 @@ class objBlurFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setSX(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[0];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_SX, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setSY(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_SY, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
@@ -1382,14 +1382,14 @@ class objColourFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setMode(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Mode, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setValues(const double * Value, int Elements) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[0];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Values, &target);
       return field->WriteValue(target, field, 0x80001508, Value, Elements);
    }
 
@@ -1418,32 +1418,32 @@ class objCompositeFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setOperator(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[5];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Operator, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setK1(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[0];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_K1, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setK2(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_K2, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setK3(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_K3, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setK4(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[3];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_K4, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
@@ -1472,68 +1472,68 @@ class objConvolveFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setBias(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[6];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Bias, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setDivisor(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[3];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Divisor, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setEdgeMode(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[8];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_EdgeMode, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setMatrixRows(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[5];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_MatrixRows, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setMatrixColumns(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[7];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_MatrixColumns, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setMatrix(const double * Value, int Elements) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[0];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Matrix, &target);
       return field->WriteValue(target, field, 0x80001508, Value, Elements);
    }
 
    inline ERR setPreserveAlpha(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[11];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_PreserveAlpha, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setTargetX(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[9];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_TargetX, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setTargetY(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[10];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_TargetY, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setUnitX(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_UnitX, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setUnitY(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_UnitY, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
@@ -1562,20 +1562,20 @@ class objDisplacementFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setScale(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[0];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Scale, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setXChannel(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[3];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_XChannel, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setYChannel(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_YChannel, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -1604,14 +1604,14 @@ class objFloodFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setColour(const float * Value, int Elements) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Colour, &target);
       return field->WriteValue(target, field, 0x10001308, Value, Elements);
    }
 
    inline ERR setOpacity(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Opacity, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
@@ -1661,44 +1661,44 @@ class objLightingFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setColour(const float * Value, int Elements) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[7];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Colour, &target);
       return field->WriteValue(target, field, 0x10001308, Value, Elements);
    }
 
    inline ERR setConstant(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[4];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Constant, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setExponent(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[6];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Exponent, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setScale(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[0];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Scale, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setType(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[5];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Type, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setUnitX(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_UnitX, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setUnitY(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_UnitY, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
@@ -1727,8 +1727,8 @@ class objMergeFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setSourceList(const APTR Value, int Elements) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_SourceList, &target);
       return field->WriteValue(target, field, 0x00001318, Value, Elements);
    }
 
@@ -1757,20 +1757,20 @@ class objMorphologyFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setOperator(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[3];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Operator, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setRadiusX(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_RadiusX, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setRadiusY(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_RadiusY, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -1799,14 +1799,14 @@ class objOffsetFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setXOffset(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_XOffset, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setYOffset(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[0];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_YOffset, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -1900,38 +1900,38 @@ class objTurbulenceFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setFX(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[0];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_FX, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setFY(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_FY, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setOctaves(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[4];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Octaves, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setSeed(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[5];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Seed, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setStitch(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Stitch, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setType(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[6];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Type, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -1960,50 +1960,50 @@ class objWaveFunctionFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setAspectRatio(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[6];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_AspectRatio, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    template <class T> inline ERR setColourMap(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[8];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_ColourMap, &target);
       return field->WriteValue(target, field, 0x08800308, to_cstring(Value), 1);
    }
 
    inline ERR setN(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_N, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setL(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[0];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_L, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setM(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_M, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setResolution(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[7];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Resolution, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setScale(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[3];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Scale, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setStops(const APTR Value, int Elements) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[4];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Stops, &target);
       return field->WriteValue(target, field, 0x00001318, Value, Elements);
    }
 
@@ -2031,14 +2031,14 @@ class objVectorClip : public Object {
    // Customised field setting
 
    inline ERR setUnits(const VUNIT Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[4];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Units, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setFlags(const VCLF Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Flags, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -2077,42 +2077,42 @@ class objVectorFilter : public Object {
    // Customised field setting
 
    inline ERR setX(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[0];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_X, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setY(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Y, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setWidth(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[7];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Width, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setHeight(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[3];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Height, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setOpacity(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[10];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Opacity, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setInherit(objVectorFilter * Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[15];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Inherit, &target);
       return field->WriteValue(target, field, 0x08000301, Value, 1);
    }
 
@@ -2260,38 +2260,38 @@ class objVector : public Object {
    // Customised field setting
 
    inline ERR setNext(objVector * Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[32];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Next, &target);
       return field->WriteValue(target, field, 0x08000301, Value, 1);
    }
 
    inline ERR setPrev(objVector * Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[33];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Prev, &target);
       return field->WriteValue(target, field, 0x08000301, Value, 1);
    }
 
    inline ERR setStrokeOpacity(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[14];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_StrokeOpacity, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setFillOpacity(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[22];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_FillOpacity, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setOpacity(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[25];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Opacity, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setMiterLimit(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[16];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_MiterLimit, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
@@ -2301,14 +2301,14 @@ class objVector : public Object {
    }
 
    inline ERR setDashOffset(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[11];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_DashOffset, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setVisibility(const VIS Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[27];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Visibility, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -2319,8 +2319,8 @@ class objVector : public Object {
    }
 
    inline ERR setCursor(const PTC Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[44];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Cursor, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -2335,129 +2335,123 @@ class objVector : public Object {
    }
 
    inline ERR setClipRule(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[21];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_ClipRule, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setDashArray(const double * Value, int Elements) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[34];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_DashArray, &target);
       return field->WriteValue(target, field, 0x80001308, Value, Elements);
    }
 
    inline ERR setMask(OBJECTPTR Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[30];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Mask, &target);
       return field->WriteValue(target, field, 0x08000309, Value, 1);
    }
 
    inline ERR setMorph(OBJECTPTR Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[7];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Morph, &target);
       return field->WriteValue(target, field, 0x08000309, Value, 1);
    }
 
    inline ERR setAppendPath(OBJECTPTR Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[26];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_AppendPath, &target);
       return field->WriteValue(target, field, 0x08000309, Value, 1);
    }
 
    inline ERR setMorphFlags(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[19];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_MorphFlags, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setNumeric(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[38];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Numeric, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
-   template <class T> inline ERR setSID(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
-      return field->WriteValue(target, field, 0x08800308, to_cstring(Value), 1);
-   }
-
    inline ERR setResizeEvent(const FUNCTION Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[39];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_ResizeEvent, &target);
       return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
    }
 
    template <class T> inline ERR setStroke(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[15];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Stroke, &target);
       return field->WriteValue(target, field, 0x08800308, to_cstring(Value), 1);
    }
 
    inline ERR setStrokeColour(const float * Value, int Elements) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[42];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_StrokeColour, &target);
       return field->WriteValue(target, field, 0x10001308, Value, Elements);
    }
 
    inline ERR setStrokeWidth(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[13];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_StrokeWidth, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setTransition(OBJECTPTR Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[35];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Transition, &target);
       return field->WriteValue(target, field, 0x08000309, Value, 1);
    }
 
    template <class T> inline ERR setFill(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[29];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Fill, &target);
       return field->WriteValue(target, field, 0x08800308, to_cstring(Value), 1);
    }
 
    inline ERR setFillColour(const float * Value, int Elements) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[24];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_FillColour, &target);
       return field->WriteValue(target, field, 0x10001308, Value, Elements);
    }
 
    inline ERR setFillRule(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[17];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_FillRule, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    template <class T> inline ERR setFilter(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[45];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Filter, &target);
       return field->WriteValue(target, field, 0x08800308, to_cstring(Value), 1);
    }
 
    inline ERR setLineJoin(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[40];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_LineJoin, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setLineCap(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[28];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_LineCap, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setInnerJoin(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[18];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_InnerJoin, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setTabOrder(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[36];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_TabOrder, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -2516,26 +2510,26 @@ class objVectorPath : public objVector {
    // Customised field setting
 
    template <class T> inline ERR setSequence(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[3];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Sequence, &target);
       return field->WriteValue(target, field, 0x08800308, to_cstring(Value), 1);
    }
 
    inline ERR setTotalCommands(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_TotalCommands, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setPathLength(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[0];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_PathLength, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setCommands(const APTR Value, int Elements) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Commands, &target);
       return field->WriteValue(target, field, 0x00001318, Value, Elements);
    }
 
@@ -2570,166 +2564,166 @@ class objVectorText : public objVector {
    // Customised field setting
 
    inline ERR setX(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[0];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_X, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setY(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Y, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setWeight(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[16];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Weight, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    template <class T> inline ERR setString(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[15];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_String, &target);
       return field->WriteValue(target, field, 0x08800308, to_cstring(Value), 1);
    }
 
    inline ERR setAlign(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[8];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Align, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    template <class T> inline ERR setFace(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[21];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Face, &target);
       return field->WriteValue(target, field, 0x08800308, to_cstring(Value), 1);
    }
 
    template <class T> inline ERR setFill(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[29];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Fill, &target);
       return field->WriteValue(target, field, 0x08800308, to_cstring(Value), 1);
    }
 
    template <class T> inline ERR setFontSize(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[5];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_FontSize, &target);
       return field->WriteValue(target, field, 0x08800328, to_cstring(Value), 1);
    }
 
    template <class T> inline ERR setFontStyle(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[34];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_FontStyle, &target);
       return field->WriteValue(target, field, 0x08800508, to_cstring(Value), 1);
    }
 
    inline ERR setDX(const double * Value, int Elements) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_DX, &target);
       return field->WriteValue(target, field, 0x80001308, Value, Elements);
    }
 
    inline ERR setDY(const double * Value, int Elements) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[3];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_DY, &target);
       return field->WriteValue(target, field, 0x80001308, Value, Elements);
    }
 
    inline ERR setInlineSize(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[17];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_InlineSize, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setLetterSpacing(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[27];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_LetterSpacing, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setRotate(const double * Value, int Elements) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[12];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Rotate, &target);
       return field->WriteValue(target, field, 0x80001308, Value, Elements);
    }
 
    inline ERR setShapeInside(OBJECTID Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[6];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_ShapeInside, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setShapeSubtract(OBJECTID Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[33];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_ShapeSubtract, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setTextLength(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[20];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_TextLength, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setTextFlags(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[11];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_TextFlags, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setStartOffset(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[24];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_StartOffset, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setSpacing(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[26];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Spacing, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setFont(OBJECTPTR Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[22];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Font, &target);
       return field->WriteValue(target, field, 0x08000409, Value, 1);
    }
 
    inline ERR setOnChange(FUNCTION Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[25];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_OnChange, &target);
       return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
    }
 
    inline ERR setFocus(OBJECTID Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[9];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Focus, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setCursorColumn(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[28];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_CursorColumn, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setCursorRow(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[19];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_CursorRow, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setLineLimit(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[4];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_LineLimit, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setCharLimit(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[18];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_CharLimit, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -2772,77 +2766,77 @@ class objVectorWave : public objVector {
    // Customised field setting
 
    inline ERR setAmplitude(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[8];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Amplitude, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setClose(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[3];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Close, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setDecay(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[4];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Decay, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setDegree(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[10];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Degree, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setDimensions(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[9];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Dimensions, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setFrequency(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[11];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Frequency, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setHeight(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Height, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setStyle(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[5];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Style, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setThickness(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[7];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Thickness, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setX(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[0];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_X, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setY(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Y, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setWidth(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[6];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Width, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
@@ -2867,70 +2861,70 @@ class objVectorRectangle : public objVector {
    // Customised field setting
 
    inline ERR setRounding(const double * Value, int Elements) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[7];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Rounding, &target);
       return field->WriteValue(target, field, 0x80001308, Value, Elements);
    }
 
    inline ERR setRoundX(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[4];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_RoundX, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setRoundY(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[5];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_RoundY, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setX(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[0];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_X, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setY(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Y, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setXOffset(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[9];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_XOffset, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setYOffset(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[6];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_YOffset, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setWidth(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[3];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Width, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setHeight(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Height, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setDimensions(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[8];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Dimensions, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -2954,53 +2948,53 @@ class objVectorPolygon : public objVector {
    // Customised field setting
 
    inline ERR setClosed(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[8];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Closed, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setPathLength(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[5];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_PathLength, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setPointsArray(APTR * Value, int Elements) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[6];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_PointsArray, &target);
       return field->WriteValue(target, field, 0x08001308, Value, Elements);
    }
 
    template <class T> inline ERR setPoints(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[4];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Points, &target);
       return field->WriteValue(target, field, 0x08800208, to_cstring(Value), 1);
    }
 
    inline ERR setX1(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[0];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_X1, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setY1(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Y1, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setX2(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_X2, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setY2(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[3];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Y2, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
@@ -3025,101 +3019,101 @@ class objVectorShape : public objVector {
    // Customised field setting
 
    inline ERR setCenterX(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[16];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_CenterX, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setCenterY(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[17];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_CenterY, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setRadius(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[12];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Radius, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setClose(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[11];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Close, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setDimensions(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[15];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Dimensions, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setPhi(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[10];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Phi, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setA(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[0];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_A, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setB(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_B, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setM(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_M, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setN1(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[6];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_N1, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setN2(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[7];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_N2, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setN3(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[8];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_N3, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setVertices(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[18];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Vertices, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setMod(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[9];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Mod, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setSpiral(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[14];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Spiral, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setRepeat(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[13];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Repeat, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -3143,67 +3137,67 @@ class objVectorSpiral : public objVector {
    // Customised field setting
 
    inline ERR setPathLength(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[7];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_PathLength, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setWidth(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[4];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Width, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setHeight(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[3];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Height, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setCenterX(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[10];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_CenterX, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setCenterY(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[11];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_CenterY, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setRadius(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[6];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Radius, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setOffset(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[5];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Offset, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setStep(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[8];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Step, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setSpacing(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[9];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Spacing, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setLoopLimit(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[12];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_LoopLimit, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
@@ -3227,63 +3221,63 @@ class objVectorEllipse : public objVector {
    // Customised field setting
 
    inline ERR setWidth(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[6];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Width, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setHeight(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[5];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Height, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setCenterX(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[11];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_CenterX, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setCenterY(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[12];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_CenterY, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setRadius(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[7];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Radius, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setRadiusX(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[8];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_RadiusX, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setRadiusY(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[9];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_RadiusY, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setDimensions(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[10];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Dimensions, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setVertices(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[13];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Vertices, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -3328,110 +3322,110 @@ class objVectorViewport : public objVector {
    // Customised field setting
 
    inline ERR setAspectRatio(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[10];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_AspectRatio, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setBuffered(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[6];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Buffered, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setDimensions(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[15];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Dimensions, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setDragCallback(FUNCTION Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[9];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_DragCallback, &target);
       return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
    }
 
    inline ERR setOverflow(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[11];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Overflow, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setOverflowX(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[16];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_OverflowX, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setOverflowY(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[17];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_OverflowY, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setX(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[0];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_X, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setY(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Y, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setXOffset(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[18];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_XOffset, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setYOffset(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[8];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_YOffset, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setWidth(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[7];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Width, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setHeight(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Height, &target);
       Unit var(Value);
       return field->WriteValue(target, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setViewX(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[4];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_ViewX, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setViewY(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[5];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_ViewY, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setViewWidth(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[3];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_ViewWidth, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setViewHeight(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[14];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_ViewHeight, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
@@ -3575,554 +3569,554 @@ inline void SET_VECTOR_COLOUR(objVectorColour *Colour, double Red, double Green,
    Colour->Blue  = Blue;
    Colour->Alpha = Alpha;
 }
-#define SVF_A 0x0002b606
-#define SVF_ACHROMATOMALY 0xc3f37036
-#define SVF_ACHROMATOPSIA 0xc3f56170
-#define SVF_ADDITIVE 0x035604af
-#define SVF_ALIGN 0x0f174e50
-#define SVF_ALT_FILL 0x8c3507fa
-#define SVF_AMPLITUDE 0x5e60600a
-#define SVF_ANIMATE 0x36d195e4
-#define SVF_ANIMATECOLOR 0xcd2d1683
-#define SVF_ANIMATEMOTION 0x8a27c6ba
-#define SVF_ANIMATETRANSFORM 0x6349c940
-#define SVF_ARITHMETIC 0x600354ef
-#define SVF_ATOP 0x7c943c79
-#define SVF_B 0x0002b607
-#define SVF_BACKGROUNDALPHA 0xaa3afeab
-#define SVF_BACKGROUNDIMAGE 0xaacc0f28
-#define SVF_BASEFREQUENCY 0xea1938b2
-#define SVF_BASEPROFILE 0xca40f031
-#define SVF_BEVEL 0x0f25c733
-#define SVF_BIAS 0x7c949844
-#define SVF_BOTTOM 0xf492ca7a
-#define SVF_BRIGHTNESS 0x7bdc2cbe
-#define SVF_BURN 0x7c94cd7c
-#define SVF_BUTT 0x7c94cdc4
-#define SVF_CIRCLE 0xf679fe97
-#define SVF_CLIP 0x7c95326d
-#define SVF_CLIP_PATH 0x455423a7
-#define SVF_CLIP_RULE 0x45559072
-#define SVF_CLIP_RULE 0x45559072
-#define SVF_CLIPPATH 0x4fd1b75a
-#define SVF_CLIPPATHUNITS 0x94efb24d
-#define SVF_CLOSE 0x0f3b9a5b
-#define SVF_COLOR 0x0f3d3244
-#define SVF_COLOUR 0xf6e37b99
-#define SVF_COLORMAP 0x3daf1862
-#define SVF_COLOURMAP 0xf3cb5d97
-#define SVF_COLOR_INTERPOLATION 0x6f2c0659
-#define SVF_COLOUR_INTERPOLATION 0x5655806e
-#define SVF_COLOR_INTERPOLATION_FILTERS 0x752d48ff
-#define SVF_COLOUR_INTERPOLATION_FILTERS 0x51660814
-#define SVF_COLOURISE 0xf3cb4eda
-#define SVF_CONTOURGRADIENT 0x82a83fdd
-#define SVF_CONTRAST 0x42b3b373
-#define SVF_CROSSORIGIN 0x8e204b17
-#define SVF_CX 0x00597780
-#define SVF_CY 0x00597781
-#define SVF_D 0x0002b609
-#define SVF_DESATURATE 0x226696d7
-#define SVF_DESC 0x7c95a244
-#define SVF_DEUTERANOMALY 0xe42f689f
-#define SVF_DEUTERANOPIA 0x1e300926
-#define SVF_DIFFERENCE 0x52a92470
-#define SVF_DISPLAY 0x12cd479b
-#define SVF_DIVISOR 0x12ffda05
-#define SVF_DODGE 0x0f4f27a8
-#define SVF_DUR 0x0b886bd0
-#define SVF_DX 0x005977a1
-#define SVF_DY 0x005977a2
-#define SVF_EDGEMODE 0xbb10b09f
-#define SVF_ELLIPSE 0x66448f53
-#define SVF_ENABLE_BACKGROUND 0xa1e664d9
-#define SVF_EXCLUSION 0x6f499bff
-#define SVF_EXTERNALRESOURCESREQUIRED 0x582d0624
-#define SVF_FEBLEND 0xa2373055
-#define SVF_FEBLUR 0xfd2877e5
-#define SVF_FECOLORMATRIX 0x92252784
-#define SVF_FECOLOURMATRIX 0x371a19f9
-#define SVF_FECOMPONENTTRANSFER 0xf4fa6788
-#define SVF_FECOMPOSITE 0xf71764e3
-#define SVF_FECONVOLVEMATRIX 0x0b05cd91
-#define SVF_FEDIFFUSELIGHTING 0xf094ecac
-#define SVF_FEDISPLACEMENTMAP 0xb9cf0a67
-#define SVF_FEDISTANTLIGHT 0x12a0c2ff
-#define SVF_FEDROPSHADOW 0x1c907ecb
-#define SVF_FEFLOOD 0xa27fbd04
-#define SVF_FEGAUSSIANBLUR 0xfdba17c0
-#define SVF_FEIMAGE 0xa2b65653
-#define SVF_FEMERGE 0xa2fa9da0
-#define SVF_FEMORPHOLOGY 0x8f1be720
-#define SVF_FEOFFSET 0x07045a57
-#define SVF_FEPOINTLIGHT 0xcebc7c12
-#define SVF_FESPECULARLIGHTING 0x68af6ee5
-#define SVF_FESPOTLIGHT 0xce2d968e
-#define SVF_FETILE 0xfd3248be
-#define SVF_FETURBULENCE 0x4eba1da9
-#define SVF_FEWAVEFUNCTION 0x6c252e69
-#define SVF_FILL 0x7c96cb2c
-#define SVF_FILL_OPACITY 0x59fd2152
-#define SVF_FILL_RULE 0xbb9f7891
-#define SVF_FILLPAINT 0xc0525d28
-#define SVF_FILTER 0xfd7675ab
-#define SVF_FILTERUNITS 0x5a2d0b3e
-#define SVF_FLOOD_COLOR 0x37459885
-#define SVF_FLOOD_COLOUR 0x1ff8a9fa
-#define SVF_FLOOD_OPACITY 0xbc50167f
-#define SVF_FONT 0x7c96e4fc
-#define SVF_FONT_FAMILY 0x673faacb
-#define SVF_FONT_SIZE 0xf1c88f84
-#define SVF_FONT_SIZE_ADJUST 0x2a32397c
-#define SVF_FONT_STRETCH 0x64948686
-#define SVF_FONT_STYLE 0x2ae0853a
-#define SVF_FONT_VARIANT 0x1f331afe
-#define SVF_FONT_WEIGHT 0x8f2d84f1
-#define SVF_FREQUENCY 0xffd1bad7
-#define SVF_FROM 0x7c96f1d9
-#define SVF_FX 0x005977e3
-#define SVF_FY 0x005977e4
-#define SVF_G 0x0002b60c
-#define SVF_GRADIENTTRANSFORM 0x31ccfa2f
-#define SVF_GRADIENTUNITS 0x6c7c4886
-#define SVF_HARDLIGHT 0x022cb75c
-#define SVF_HEIGHT 0x01d688de
-#define SVF_HUE 0x0b887cc7
-#define SVF_HUEROTATE 0xaf80b596
-#define SVF_ID 0x00597832
-#define SVF_IMAGE 0x0fa87ca8
-#define SVF_IMAGE 0x0fa87ca8
-#define SVF_IMAGE_RENDERING 0xfdb735d3
-#define SVF_IN 0x0059783c
-#define SVF_IN2 0x0b887fee
-#define SVF_INHERIT 0x9e8d4758
-#define SVF_INVERT 0x04d5a7bd
-#define SVF_INVERT_X_AXIS 0xa4fb3664
-#define SVF_INVERT_Y_AXIS 0xa7505f05
-#define SVF_INVERTRGB 0xacb1dd38
-#define SVF_JAG 0x0b8882b7
-#define SVF_K1 0x00597841
-#define SVF_K2 0x00597842
-#define SVF_K3 0x00597843
-#define SVF_K4 0x00597844
-#define SVF_KERNELMATRIX 0xfb05405b
-#define SVF_KERNELUNITLENGTH 0x05c04f48
-#define SVF_KERNING 0x243d11f3
-#define SVF_LENGTHADJUST 0x748cbc92
-#define SVF_LETTER_SPACING 0x982bebc7
-#define SVF_LIGHTEN 0x79c1c710
-#define SVF_LINE 0x7c9a15ad
-#define SVF_LINEARGRADIENT 0xe6871dce
-#define SVF_LUMINANCETOALPHA 0xc6ee7d8a
-#define SVF_M 0x0002b612
-#define SVF_MARKER 0x0d3cf207
-#define SVF_MARKER_END 0x66ff06cb
-#define SVF_MARKER_MID 0x66ff282e
-#define SVF_MARKER_START 0x23dc8942
-#define SVF_MASK 0x7c9a80b1
-#define SVF_MATRIX 0x0d3e291a
-#define SVF_METHOD 0x0d866146
-#define SVF_MINUS 0x0feee651
-#define SVF_MITER 0x0feefdc6
-#define SVF_MITER_CLIP 0x2f18fb1b
-#define SVF_MITER_REVERT 0x7bc9e50b
-#define SVF_MITER_ROUND 0x1349a65b
-#define SVF_MOD 0x0b889145
-#define SVF_MODE 0x7c9aba4a
-#define SVF_MULTIPLY 0x46746f05
-#define SVF_N1 0x005978a4
-#define SVF_N2 0x005978a5
-#define SVF_N3 0x005978a6
-#define SVF_NONE 0x7c9b47f5
-#define SVF_NUMERIC_ID 0x3768b852
-#define SVF_NUMOCTAVES 0x16f8e14a
-#define SVF_OFFSET 0x123b4b4c
-#define SVF_OPACITY 0x70951bfe
-#define SVF_OPERATOR 0x8d9849f1
-#define SVF_ORDER 0x1017da21
-#define SVF_OUT 0x0b889a9d
-#define SVF_OVER 0x7c9bf101
-#define SVF_OVERFLOW 0x5b785259
-#define SVF_OVERLAY 0x7ee4b5c7
-#define SVF_PATH 0x7c9c25f2
-#define SVF_PATHLENGTH 0x74403974
-#define SVF_PATTERN 0x9bf30a03
-#define SVF_PATTERNCONTENTUNITS 0x6bc53e31
-#define SVF_PATTERNTRANSFORM 0x6495503f
-#define SVF_PATTERNUNITS 0x6eec1696
-#define SVF_PHI 0x0b889d26
-#define SVF_PLUS 0x7c9c54e9
-#define SVF_POINTS 0x1534e242
-#define SVF_POLYGON 0xbc0d44cd
-#define SVF_POLYLINE 0x3db88331
-#define SVF_PRESERVEALPHA 0xf9b49d57
-#define SVF_PRIMITIVEUNITS 0xf4494b91
-#define SVF_PROTANOMALY 0xd3f5b4fb
-#define SVF_PROTANOPIA 0x15f03a02
-#define SVF_R 0x0002b617
-#define SVF_RADIALGRADIENT 0x4016b4c0
-#define SVF_RADIUS 0x18df096d
-#define SVF_RECT 0x7c9d4d93
-#define SVF_REPEAT 0x192dec66
-#define SVF_RESULT 0x192fd704
-#define SVF_ROTATE 0x19e50454
-#define SVF_ROUND 0x104cc7ed
-#define SVF_RX 0x0059796f
-#define SVF_RY 0x00597970
-#define SVF_SATURATE 0xdf32bb4e
-#define SVF_SCALE 0x1057f68d
-#define SVF_SCREEN 0x1b5ffd45
-#define SVF_SEED 0x7c9dda26
-#define SVF_SET 0x0b88a991
-#define SVF_SHAPE_RENDERING 0xeecea7a1
-#define SVF_SOFTLIGHT 0x78b6e7b9
-#define SVF_SOURCEALPHA 0xbe4b853c
-#define SVF_SOURCEGRAPHIC 0x5a1343b4
-#define SVF_SPACING 0xa47e0e2a
-#define SVF_SPIRAL 0x1c468330
-#define SVF_SPREADMETHOD 0x0caafac5
-#define SVF_SQUARE 0x1c5eea16
-#define SVF_STARTOFFSET 0xed10629a
-#define SVF_STDDEVIATION 0x861007d3
-#define SVF_STEP 0x7c9e1a01
-#define SVF_STITCHTILES 0x3d844d95
-#define SVF_STRING 0x1c93affc
-#define SVF_STYLE 0x1061af16
-#define SVF_SVG 0x0b88abb5
-#define SVF_SYMBOL 0x1ceb4efb
-#define SVF_TARGETX 0xcfb0ab64
-#define SVF_TARGETY 0xcfb0ab65
-#define SVF_TEXT 0x7c9e690a
-#define SVF_TEXTPATH 0x089ef477
-#define SVF_THICKNESS 0x369e2871
-#define SVF_TITLE 0x106daa27
-#define SVF_TO 0x005979a8
-#define SVF_TOP 0x0b88af18
-#define SVF_TRANSITION 0x96486f70
-#define SVF_TRITANOMALY 0x2e7de3f9
-#define SVF_TRITANOPIA 0x9c8f8140
-#define SVF_X 0x0002b61d
-#define SVF_X1 0x005979ee
-#define SVF_X2 0x005979ef
-#define SVF_XOFFSET 0x23685e64
-#define SVF_XLINK_HREF 0x379480aa
-#define SVF_XML_SPACE 0x2db612fc
-#define SVF_XMLNS 0x10b81bf7
-#define SVF_XOR 0x0b88c01e
-#define SVF_Y 0x0002b61e
-#define SVF_Y1 0x00597a0f
-#define SVF_Y2 0x00597a10
-#define SVF_YOFFSET 0x70629b25
-#define SVF_Z 0x0002b61f
+#define SVF_A 0xc1d04330
+#define SVF_ACHROMATOMALY 0xc16bc7de
+#define SVF_ACHROMATOPSIA 0x804ec7c2
+#define SVF_ADDITIVE 0x0fc7ffda
+#define SVF_ALIGN 0x2c01c869
+#define SVF_ALT_FILL 0x117439c0
+#define SVF_AMPLITUDE 0x03d76a6d
+#define SVF_ANIMATE 0xcdf5d33c
+#define SVF_ANIMATECOLOR 0x24aced9c
+#define SVF_ANIMATEMOTION 0x781b80cb
+#define SVF_ANIMATETRANSFORM 0xbca03b18
+#define SVF_ARITHMETIC 0x7e25e3d6
+#define SVF_ATOP 0x378173b8
+#define SVF_B 0xd280b0c4
+#define SVF_BACKGROUNDALPHA 0x777b65c4
+#define SVF_BACKGROUNDIMAGE 0x9a59b6fb
+#define SVF_BASEFREQUENCY 0xa667fb24
+#define SVF_BASEPROFILE 0x8732e574
+#define SVF_BEVEL 0xb54ed6fc
+#define SVF_BIAS 0xc144eed4
+#define SVF_BOTTOM 0xd92dd2b6
+#define SVF_BRIGHTNESS 0xa476534b
+#define SVF_BURN 0xb33ddb25
+#define SVF_BUTT 0xa14e6540
+#define SVF_CIRCLE 0xd8532380
+#define SVF_CLIP 0xa9da4244
+#define SVF_CLIP_PATH 0x21f4eca1
+#define SVF_CLIP_RULE 0x6d16685a
+#define SVF_CLIP_RULE 0x6d16685a
+#define SVF_CLIPPATH 0x471bca53
+#define SVF_CLIPPATHUNITS 0x3f970764
+#define SVF_CLOSE 0x6554da40
+#define SVF_COLOR 0xc597636b
+#define SVF_COLOUR 0x403911d4
+#define SVF_COLORMAP 0xa16aa9b7
+#define SVF_COLOURMAP 0x6125ecab
+#define SVF_COLOR_INTERPOLATION 0xa3648641
+#define SVF_COLOUR_INTERPOLATION 0x51318fe4
+#define SVF_COLOR_INTERPOLATION_FILTERS 0x8052894c
+#define SVF_COLOUR_INTERPOLATION_FILTERS 0xd9cad7f5
+#define SVF_COLOURISE 0xc2d45aad
+#define SVF_CONTOURGRADIENT 0x42ee6886
+#define SVF_CONTRAST 0x01051f6d
+#define SVF_CROSSORIGIN 0xf49a177c
+#define SVF_CX 0xbe5bf68f
+#define SVF_CY 0x4c30758c
+#define SVF_D 0xf421572c
+#define SVF_DESATURATE 0x1b434fd9
+#define SVF_DESC 0xab506079
+#define SVF_DEUTERANOMALY 0x0748a74f
+#define SVF_DEUTERANOPIA 0x56cfecad
+#define SVF_DIFFERENCE 0xf26a07f6
+#define SVF_DISPLAY 0x39413236
+#define SVF_DIVISOR 0x722185de
+#define SVF_DODGE 0x0c3033d6
+#define SVF_DUR 0xaa49757b
+#define SVF_DX 0xc4363fca
+#define SVF_DY 0x365dbcc9
+#define SVF_EDGEMODE 0x34104c57
+#define SVF_ELLIPSE 0xbf617070
+#define SVF_ENABLE_BACKGROUND 0xf1ae31f5
+#define SVF_EXCLUSION 0x40469a29
+#define SVF_EXTERNALRESOURCESREQUIRED 0x66c27f26
+#define SVF_FEBLEND 0x3d9a8463
+#define SVF_FEBLUR 0x70962894
+#define SVF_FECOLORMATRIX 0x857c41e1
+#define SVF_FECOLOURMATRIX 0x4252ddac
+#define SVF_FECOMPONENTTRANSFER 0xc217c63c
+#define SVF_FECOMPOSITE 0x7ec3993e
+#define SVF_FECONVOLVEMATRIX 0x63a9eb4a
+#define SVF_FEDIFFUSELIGHTING 0x60a478ee
+#define SVF_FEDISPLACEMENTMAP 0x3d6f8c1a
+#define SVF_FEDISTANTLIGHT 0xe1bb00d2
+#define SVF_FEDROPSHADOW 0x497e7e86
+#define SVF_FEFLOOD 0xb943ce6c
+#define SVF_FEGAUSSIANBLUR 0x101beb00
+#define SVF_FEIMAGE 0x8f88e968
+#define SVF_FEMERGE 0x030589c7
+#define SVF_FEMORPHOLOGY 0x02e7fe01
+#define SVF_FEOFFSET 0x1cbe9e8c
+#define SVF_FEPOINTLIGHT 0x07819080
+#define SVF_FESPECULARLIGHTING 0xcf7bed6f
+#define SVF_FESPOTLIGHT 0x5ad5f299
+#define SVF_FETILE 0x13cfb475
+#define SVF_FETURBULENCE 0x46415651
+#define SVF_FEWAVEFUNCTION 0xb9fbd726
+#define SVF_FILL 0x34171e7f
+#define SVF_FILL_OPACITY 0x23221962
+#define SVF_FILL_RULE 0xf0da7524
+#define SVF_FILLPAINT 0x21229bc9
+#define SVF_FILTER 0x10835eef
+#define SVF_FILTERUNITS 0x591030a0
+#define SVF_FLOOD_COLOR 0x27af2aee
+#define SVF_FLOOD_COLOUR 0xd7618827
+#define SVF_FLOOD_OPACITY 0x6d730b02
+#define SVF_FONT 0x58644726
+#define SVF_FONT_FAMILY 0x7cb2ebc6
+#define SVF_FONT_SIZE 0x6ed191e8
+#define SVF_FONT_SIZE_ADJUST 0x50050ff5
+#define SVF_FONT_STRETCH 0x12cc6d81
+#define SVF_FONT_STYLE 0x92afa999
+#define SVF_FONT_VARIANT 0x199cc39f
+#define SVF_FONT_WEIGHT 0xd0abda7f
+#define SVF_FREQUENCY 0x4f58465c
+#define SVF_FROM 0x5046b6d9
+#define SVF_FX 0xe3730f24
+#define SVF_FY 0x11188c27
+#define SVF_G 0xe771a4d8
+#define SVF_GRADIENTTRANSFORM 0xe9d62cec
+#define SVF_GRADIENTUNITS 0xc682a33b
+#define SVF_HARDLIGHT 0xf3c9d889
+#define SVF_HEIGHT 0xe6a89f2c
+#define SVF_HUE 0xc8524c20
+#define SVF_HUEROTATE 0x50c2a60f
+#define SVF_ID 0x59170d66
+#define SVF_IMAGE 0x95fbfcbe
+#define SVF_IMAGE 0x95fbfcbe
+#define SVF_IMAGE_RENDERING 0xf3c8e352
+#define SVF_IN 0x32f5255e
+#define SVF_IN2 0x014119c4
+#define SVF_INHERIT 0xcacd1022
+#define SVF_INVERT 0x4817759b
+#define SVF_INVERT_X_AXIS 0x990d08cf
+#define SVF_INVERT_Y_AXIS 0x763d63d6
+#define SVF_INVERTRGB 0x0c9b8279
+#define SVF_JAG 0x1749fe87
+#define SVF_K1 0x1a86f347
+#define SVF_K2 0x09d600b3
+#define SVF_K3 0xfbbd83b0
+#define SVF_K4 0x2f77e75b
+#define SVF_KERNELMATRIX 0x579987b9
+#define SVF_KERNELUNITLENGTH 0x99b2c0d5
+#define SVF_KERNING 0x3bcebb50
+#define SVF_LENGTHADJUST 0x60cce192
+#define SVF_LETTER_SPACING 0xe648347a
+#define SVF_LIGHTEN 0xc5c643ca
+#define SVF_LINE 0x22c3b53a
+#define SVF_LINEARGRADIENT 0x239400f6
+#define SVF_LUMINANCETOALPHA 0xc39c4ad8
+#define SVF_M 0x8c938ce0
+#define SVF_MARKER 0x66386134
+#define SVF_MARKER_END 0xf920a261
+#define SVF_MARKER_MID 0xbb1c55e1
+#define SVF_MARKER_START 0xd49a7b70
+#define SVF_MASK 0x945655f2
+#define SVF_MATRIX 0xf7b3282b
+#define SVF_METHOD 0x24b8de54
+#define SVF_MINUS 0x6c42c8b9
+#define SVF_MITER 0xa670ab79
+#define SVF_MITER_CLIP 0xbabd2750
+#define SVF_MITER_REVERT 0x2bbb449d
+#define SVF_MITER_ROUND 0x4d21bd1e
+#define SVF_MOD 0x8432fb90
+#define SVF_MODE 0x94661ac3
+#define SVF_MULTIPLY 0xe6d29e8b
+#define SVF_N1 0x47ae0aec
+#define SVF_N2 0x54fef918
+#define SVF_N3 0xa6957a1b
+#define SVF_NONE 0x4c1560ac
+#define SVF_NUMERIC_ID 0x7829752c
+#define SVF_NUMOCTAVES 0x1ee96945
+#define SVF_OFFSET 0xe9d6ebda
+#define SVF_OPACITY 0xad6741c4
+#define SVF_OPERATOR 0x63ec5b6c
+#define SVF_ORDER 0xdbf25249
+#define SVF_OUT 0x5e976c25
+#define SVF_OVER 0x1185d380
+#define SVF_OVERFLOW 0x720828b4
+#define SVF_OVERLAY 0x49084d0b
+#define SVF_PATH 0x442c26d3
+#define SVF_PATHLENGTH 0x9290eaf0
+#define SVF_PATTERN 0xe10e7cce
+#define SVF_PATTERNCONTENTUNITS 0x7675c6ac
+#define SVF_PATTERNTRANSFORM 0xb7125a26
+#define SVF_PATTERNUNITS 0xcd3a14ba
+#define SVF_PHI 0x321b0b2d
+#define SVF_PLUS 0xdd97da51
+#define SVF_POINTS 0x5666f871
+#define SVF_POLYGON 0x4281f815
+#define SVF_POLYLINE 0x66709a6c
+#define SVF_PRESERVEALPHA 0x322fd548
+#define SVF_PRIMITIVEUNITS 0xaef503a4
+#define SVF_PROTANOMALY 0xed7e2f19
+#define SVF_PROTANOPIA 0x7a606134
+#define SVF_R 0xc2de77ab
+#define SVF_RADIALGRADIENT 0x4c5ad3ec
+#define SVF_RADIUS 0xef9b3678
+#define SVF_RECT 0x7d209133
+#define SVF_REPEAT 0x9e92666f
+#define SVF_RESULT 0x4c2ea8cf
+#define SVF_ROTATE 0x4ef36b09
+#define SVF_ROUND 0xba4b04d5
+#define SVF_RX 0x923c9f79
+#define SVF_RY 0x60571c7a
+#define SVF_SATURATE 0x65771dac
+#define SVF_SCALE 0x346e5311
+#define SVF_SCREEN 0x6b94c194
+#define SVF_SEED 0xd9f4add6
+#define SVF_SET 0xb77f7af1
+#define SVF_SHAPE_RENDERING 0xe49a0e51
+#define SVF_SOFTLIGHT 0x2ff7c658
+#define SVF_SOURCEALPHA 0xeccfea8d
+#define SVF_SOURCEGRAPHIC 0xb7669641
+#define SVF_SPACING 0xe343f97f
+#define SVF_SPIRAL 0x7a644399
+#define SVF_SPREADMETHOD 0x41cb876a
+#define SVF_SQUARE 0xcf6bf030
+#define SVF_STARTOFFSET 0x00aee9ae
+#define SVF_STDDEVIATION 0x2f21533e
+#define SVF_STEP 0xdbd31252
+#define SVF_STITCHTILES 0xf4c2f3f2
+#define SVF_STRING 0x3b0e8431
+#define SVF_STYLE 0x8cf919a9
+#define SVF_SVG 0xbf531772
+#define SVF_SYMBOL 0x7849f957
+#define SVF_TARGETX 0x00ff9146
+#define SVF_TARGETY 0xf2941245
+#define SVF_TEXT 0x2f5319e1
+#define SVF_TEXTPATH 0xd063f2ef
+#define SVF_THICKNESS 0xbba696c7
+#define SVF_TITLE 0x9e0656dc
+#define SVF_TO 0x3f676dcf
+#define SVF_TOP 0xbe447ad1
+#define SVF_TRANSITION 0xbeb94f53
+#define SVF_TRITANOMALY 0x883f05ad
+#define SVF_TRITANOPIA 0xea686c90
+#define SVF_X 0xa93c5f93
+#define SVF_X1 0x11a4aa5f
+#define SVF_X2 0x02f459ab
+#define SVF_XOFFSET 0x90587e0f
+#define SVF_XLINK_HREF 0x2dad60f1
+#define SVF_XML_SPACE 0x7086c3bd
+#define SVF_XMLNS 0x994f8128
+#define SVF_XOR 0xf9f090f9
+#define SVF_Y 0x5b57dc90
+#define SVF_Y1 0x02063228
+#define SVF_Y2 0x1156c1dc
+#define SVF_YOFFSET 0xf85b52c7
+#define SVF_Z 0x48072f64
 
-#define SVF_ACCUMULATE 0x5c660bc9
-#define SVF_ADDITIVE 0x035604af
-#define SVF_ALICEBLUE 0x41f60f4b
-#define SVF_ANTIQUEWHITE 0x3a2d20fd
-#define SVF_AQUA 0x7c94306d
-#define SVF_AQUAMARINE 0x52e1f409
-#define SVF_ATTRIBUTENAME 0x658ead7a
-#define SVF_ATTRIBUTETYPE 0x65925e3b
-#define SVF_AZURE 0x0f1f300c
-#define SVF_BEGIN 0x0f2587ea
-#define SVF_BEIGE 0x0f259021
-#define SVF_BISQUE 0xf4259f0e
-#define SVF_BLACK 0x0f294442
-#define SVF_BLANCHEDALMOND 0x25a17751
-#define SVF_BLINK 0x0f2967b5
-#define SVF_BLUE 0x7c94a78d
-#define SVF_BLUEVIOLET 0x59f4db60
-#define SVF_BOLD 0x7c94b326
-#define SVF_BOLDER 0xf48e221d
-#define SVF_BROWN 0x0f2cccad
-#define SVF_BURLYWOOD 0xd00306ac
-#define SVF_CADETBLUE 0x88f15cae
-#define SVF_CHARTREUSE 0xfb91543b
-#define SVF_CHOCOLATE 0x487f4c37
-#define SVF_CLASS 0x0f3b5edb
-#define SVF_CONDENSED 0x72f37898
-#define SVF_CONICGRADIENT 0x9a0996df
-#define SVF_CORAL 0x0f3d49f6
-#define SVF_CORNFLOWERBLUE 0x68196cee
-#define SVF_CORNSILK 0x4b9c706a
-#define SVF_CRIMSON 0xda1afde0
-#define SVF_CYAN 0x7c9568b0
-#define SVF_DARKBLUE 0x01ef64af
-#define SVF_DARKCYAN 0x01f025d2
-#define SVF_DARKGOLDENROD 0xc6d90285
-#define SVF_DARKGRAY 0x01f2399a
-#define SVF_DARKGREEN 0x40397bb8
-#define SVF_DARKGREY 0x01f23a1e
-#define SVF_DARKKHAKI 0x407c51af
-#define SVF_DARKMAGENTA 0xdae143e4
-#define SVF_DARKOLIVEGREEN 0x092c7a97
-#define SVF_DARKORANGE 0x5a102c03
-#define SVF_DARKORCHID 0x5a112b80
-#define SVF_DARKRED 0x000f4622
-#define SVF_DARKSALMON 0x623732f1
-#define SVF_DARKSEAGREEN 0xe6a4e091
-#define SVF_DARKSLATEBLUE 0x4e741068
-#define SVF_DARKSLATEGRAY 0x4e76e553
-#define SVF_DARKSLATEGREY 0x4e76e5d7
-#define SVF_DARKTURQUOISE 0x28082838
-#define SVF_DARKVIOLET 0x69c9107a
-#define SVF_DEEPPINK 0x17e761b5
-#define SVF_DEEPSKYBLUE 0x84780222
-#define SVF_DIAMONDGRADIENT 0xe8db24af
-#define SVF_DIMGRAY 0x125bdeb2
-#define SVF_DIMGREY 0x125bdf36
-#define SVF_DODGERBLUE 0x8208b222
-#define SVF_END 0x0b886f1c
-#define SVF_EXTRA_CONDENSED 0x4cb18509
-#define SVF_FILTERRES 0xd23e0c35
-#define SVF_FIREBRICK 0x7ce7a736
-#define SVF_FLORALWHITE 0xa97767c6
-#define SVF_FORESTGREEN 0x8eda0a29
-#define SVF_FUCHSIA 0xc799dc48
-#define SVF_GAINSBORO 0xf0b2b209
-#define SVF_GHOSTWHITE 0x44ab668b
-#define SVF_GOLD 0x7c97710b
-#define SVF_GOLDENROD 0xaaf0c023
-#define SVF_GRAY 0x7c977c78
-#define SVF_GREEN 0x0f871a56
-#define SVF_GREENYELLOW 0xc0a3f4f2
-#define SVF_GREY 0x7c977cfc
-#define SVF_HONEYDEW 0xdef14de8
-#define SVF_HOTPINK 0x54c73bc2
-#define SVF_HREF 0x7c98094a
-#define SVF_INDIANRED 0x4b374f13
-#define SVF_INDIGO 0x04cbd87f
-#define SVF_IVORY 0x0fada91e
-#define SVF_KHAKI 0x0fc9f04d
-#define SVF_LAVENDER 0x6cec8bb6
-#define SVF_LAVENDERBLUSH 0x4d30e8b4
-#define SVF_LAWNGREEN 0x6bffad68
-#define SVF_LEMONCHIFFON 0x1aa3ab7d
-#define SVF_LIGHTBLUE 0xf14e2ce5
-#define SVF_LIGHTCORAL 0x1b277a4e
-#define SVF_LIGHTCYAN 0xf14eee08
-#define SVF_LIGHTER 0x79c1c714
-#define SVF_LIGHTGOLDENRODYELLOW 0x269c7ed7
-#define SVF_LIGHTGRAY 0xf15101d0
-#define SVF_LIGHTGREEN 0x1b714aae
-#define SVF_LIGHTGREY 0xf1510254
-#define SVF_LIGHTPINK 0xf155cc8f
-#define SVF_LIGHTSALMON 0xa468e0a7
-#define SVF_LIGHTSEAGREEN 0x7bf8d3c7
-#define SVF_LIGHTSKYBLUE 0x49bdb6bc
-#define SVF_LIGHTSLATEGRAY 0x8e493f49
-#define SVF_LIGHTSLATEGREY 0x8e493fcd
-#define SVF_LIGHTSTEELBLUE 0x01bf4e82
-#define SVF_LIGHTYELLOW 0xb2b03239
-#define SVF_LIME 0x7c9a158c
-#define SVF_LIMEGREEN 0xb749873d
-#define SVF_LINEN 0x0fdccbbb
-#define SVF_LINETHROUGH 0xf69720ce
-#define SVF_MAGENTA 0xb4110202
-#define SVF_MAROON 0x0d3d0451
-#define SVF_MAX 0x0b888f8b
-#define SVF_MEDIUMAQUAMARINE 0x5393448a
-#define SVF_MEDIUMBLUE 0xd877eb4e
-#define SVF_MEDIUMORCHID 0xf4d5d5df
-#define SVF_MEDIUMPURPLE 0xf769a41e
-#define SVF_MEDIUMSEAGREEN 0x453d9eb0
-#define SVF_MEDIUMSLATEBLUE 0x80249267
-#define SVF_MEDIUMSPRINGGREEN 0x814643ca
-#define SVF_MEDIUMTURQUOISE 0x59b8aa37
-#define SVF_MEDIUMVIOLETRED 0x3be46a94
-#define SVF_MIDDLE 0x0dc5ebd4
-#define SVF_MIDNIGHTBLUE 0x5f9313a1
-#define SVF_MIN 0x0b889089
-#define SVF_MINTCREAM 0x9b7533e5
-#define SVF_MISTYROSE 0x1de6ab94
-#define SVF_MOCCASIN 0x62609d92
-#define SVF_NARROWER 0x3d07aeb5
-#define SVF_NAVAJOWHITE 0xe2bc6625
-#define SVF_NAVY 0x7c9b0d83
-#define SVF_NORMAL 0x108f79ae
-#define SVF_OLDLACE 0x677b8e19
-#define SVF_OLIVE 0x1014a744
-#define SVF_OLIVEDRAB 0xcd1770fd
-#define SVF_ORANGE 0x13119e61
-#define SVF_ORANGERED 0xdc4c011c
-#define SVF_ORCHID 0x13129dde
-#define SVF_OVERLINE 0x5b7b8fa9
-#define SVF_PALEGOLDENROD 0x46e1ce45
-#define SVF_PALEGREEN 0xda326778
-#define SVF_PALETURQUOISE 0xa810f3f8
-#define SVF_PALEVIOLETRED 0x8a3cb455
-#define SVF_PAPAYAWHIP 0xc670dd19
-#define SVF_PEACHPUFF 0x37e01157
-#define SVF_PERU 0x7c9c36c1
-#define SVF_PINK 0x7c9c4737
-#define SVF_PLUM 0x7c9c54e3
-#define SVF_POWDERBLUE 0x547b961e
-#define SVF_PRESERVEASPECTRATIO 0x195673f0
-#define SVF_PURPLE 0x15a66c1d
-#define SVF_RED 0x0b88a540
-#define SVF_REPEATCOUNT 0x53edf46f
-#define SVF_REPEATDUR 0xa7b01391
-#define SVF_RESTART 0x3f29fc8a
-#define SVF_ROSYBROWN 0xf7e975fa
-#define SVF_ROYALBLUE 0x8e773554
-#define SVF_SADDLEBROWN 0x92bbf35a
-#define SVF_SALMON 0x1b38a54f
-#define SVF_SANDYBROWN 0xe10b172c
-#define SVF_SEAGREEN 0xe5cc626f
-#define SVF_SEASHELL 0xe6a00d96
-#define SVF_SEMI_CONDENSED 0xbc1627b3
-#define SVF_SIENNA 0x1bc596c3
-#define SVF_SILVER 0x1bc98e5a
-#define SVF_SKYBLUE 0x9a861064
-#define SVF_SLATEBLUE 0x328bce06
-#define SVF_SLATEGRAY 0x328ea2f1
-#define SVF_SLATEGREY 0x328ea375
-#define SVF_SNOW 0x7c9e01cc
-#define SVF_SPRINGGREEN 0x6a6ae329
-#define SVF_START 0x106149d3
-#define SVF_STEELBLUE 0xa604b22a
-#define SVF_STOP_COLOR 0x5d0c7df7
-#define SVF_STOP_OPACITY 0x6f662071
-#define SVF_STROKE 0x1c93c91d
-#define SVF_STROKE_DASHARRAY 0x5faa6be9
-#define SVF_STROKE_DASHOFFSET 0x74c0b1b1
-#define SVF_STROKE_INNER_MITERLIMIT 0x8ab099f3
-#define SVF_STROKE_INNERJOIN 0x1ebcf876
-#define SVF_STROKE_LINECAP 0xe476e8e6
-#define SVF_STROKE_LINEJOIN 0x73581762
-#define SVF_STROKE_MITERLIMIT 0x49c40b8a
-#define SVF_STROKE_MITERLIMIT_THETA 0x3dab0e2d
-#define SVF_STROKE_OPACITY 0xdacd8043
-#define SVF_STROKE_WIDTH 0xa27c3faa
-#define SVF_STROKEPAINT 0x1920b9b9
-#define SVF_TAN 0x0b88ad48
-#define SVF_TEAL 0x7c9e660b
-#define SVF_TEXT_ANCHOR 0x0c0046d2
-#define SVF_TEXT_DECORATION 0x2230061f
-#define SVF_TEXTLENGTH 0xa31e6e8c
-#define SVF_THISTLE 0xdf68be82
-#define SVF_TOMATO 0x1e8b7ef9
-#define SVF_TOTAL_POINTS 0x93249a53
-#define SVF_TRANSFORM 0x2393dd81
-#define SVF_TURQUOISE 0x0c1fe5d6
-#define SVF_TYPE 0x7c9ebd07
-#define SVF_ULTRA_CONDENSED 0xba25ad8d
-#define SVF_UNDERLINE 0xb8ea5b4b
-#define SVF_UNITS 0x108252d8
-#define SVF_USE 0x0b88b3d2
-#define SVF_VALUES 0x22383ff5
-#define SVF_VERSION 0x73006c4b
-#define SVF_VERTEX_SCALING 0x2363f691
-#define SVF_VERTICES 0xd31fda6a
-#define SVF_VIEW_HEIGHT 0x56219666
-#define SVF_VIEW_WIDTH 0x497f2d2d
-#define SVF_VIEW_X 0x22c52ea5
-#define SVF_VIEW_Y 0x22c52ea6
-#define SVF_VIEWBOX 0x7b6be409
-#define SVF_VIOLET 0x22ca82d8
-#define SVF_VISIBILITY 0x7a0f4bad
-#define SVF_WHEAT 0x10a3261e
-#define SVF_WHITE 0x10a33986
-#define SVF_WHITESMOKE 0x2580cae5
-#define SVF_WIDER 0x10a3aec0
-#define SVF_WIDTH 0x10a3b0a5
-#define SVF_WORD_SPACING 0x62976533
+#define SVF_ACCUMULATE 0xe9b4ecfb
+#define SVF_ADDITIVE 0x0fc7ffda
+#define SVF_ALICEBLUE 0xdf07766c
+#define SVF_ANTIQUEWHITE 0x2a18510a
+#define SVF_AQUA 0x6bbf0367
+#define SVF_AQUAMARINE 0x7641c87d
+#define SVF_ATTRIBUTENAME 0xc2f932dd
+#define SVF_ATTRIBUTETYPE 0xd5b44b5a
+#define SVF_AZURE 0x2c692f62
+#define SVF_BEGIN 0x5208eb9b
+#define SVF_BEIGE 0xd6ba1af8
+#define SVF_BISQUE 0x649867e8
+#define SVF_BLACK 0x27183398
+#define SVF_BLANCHEDALMOND 0x9f2dd0d1
+#define SVF_BLINK 0xdf75374e
+#define SVF_BLUE 0xbd6b686a
+#define SVF_BLUEVIOLET 0xf4f13a52
+#define SVF_BOLD 0x145d8154
+#define SVF_BOLDER 0x42b375fa
+#define SVF_BROWN 0x5123bfa2
+#define SVF_BURLYWOOD 0xbd372330
+#define SVF_CADETBLUE 0x4508da1c
+#define SVF_CHARTREUSE 0x0ce94dce
+#define SVF_CHOCOLATE 0xf14587aa
+#define SVF_CLASS 0xba4b3215
+#define SVF_CONDENSED 0x0eb560f1
+#define SVF_CONICGRADIENT 0xfaae2313
+#define SVF_CORAL 0x14283cf1
+#define SVF_CORNFLOWERBLUE 0x1beeea21
+#define SVF_CORNSILK 0x5a78216b
+#define SVF_CRIMSON 0x3f7e8be6
+#define SVF_CYAN 0xc3d5b25a
+#define SVF_DARKBLUE 0x510bace9
+#define SVF_DARKCYAN 0x2fb576d9
+#define SVF_DARKGOLDENROD 0x35395eaf
+#define SVF_DARKGRAY 0x427c1a18
+#define SVF_DARKGREEN 0x77836b51
+#define SVF_DARKGREY 0x0cf67bc4
+#define SVF_DARKKHAKI 0x4c297d51
+#define SVF_DARKMAGENTA 0xa299b2bf
+#define SVF_DARKOLIVEGREEN 0x814de411
+#define SVF_DARKORANGE 0xe29e8201
+#define SVF_DARKORCHID 0x8af8461e
+#define SVF_DARKRED 0x64ea415f
+#define SVF_DARKSALMON 0x89e01c2d
+#define SVF_DARKSEAGREEN 0x459f3d3b
+#define SVF_DARKSLATEBLUE 0x65a0cac7
+#define SVF_DARKSLATEGRAY 0x76d77c36
+#define SVF_DARKSLATEGREY 0x385d1dea
+#define SVF_DARKTURQUOISE 0xd97b592c
+#define SVF_DARKVIOLET 0x17cc4c94
+#define SVF_DEEPPINK 0xe70afe42
+#define SVF_DEEPSKYBLUE 0x6af9dd97
+#define SVF_DIAMONDGRADIENT 0xee00ef24
+#define SVF_DIMGRAY 0x8a458533
+#define SVF_DIMGREY 0xc4cfe4ef
+#define SVF_DODGERBLUE 0x3b2a8356
+#define SVF_END 0xafc15d22
+#define SVF_EXTRA_CONDENSED 0xcac4e64d
+#define SVF_FILTERRES 0x82fcb7d5
+#define SVF_FIREBRICK 0xf3b334ac
+#define SVF_FLORALWHITE 0xf5eadd61
+#define SVF_FORESTGREEN 0xe4091d70
+#define SVF_FUCHSIA 0x502abcc6
+#define SVF_GAINSBORO 0x1f64f0ea
+#define SVF_GHOSTWHITE 0x92ee6fd9
+#define SVF_GOLD 0xb23a1a1f
+#define SVF_GOLDENROD 0x1f6c9a7a
+#define SVF_GRAY 0xae1cde9b
+#define SVF_GREEN 0xe6c9c319
+#define SVF_GREENYELLOW 0x24fb7266
+#define SVF_GREY 0xe096bf47
+#define SVF_HONEYDEW 0xc5ea1d5d
+#define SVF_HOTPINK 0x3e001845
+#define SVF_HREF 0x419f9f20
+#define SVF_INDIANRED 0xf487f95c
+#define SVF_INDIGO 0x53a11986
+#define SVF_IVORY 0x3ee96f1b
+#define SVF_KHAKI 0xdd63d519
+#define SVF_LAVENDER 0xbaa3cbe8
+#define SVF_LAVENDERBLUSH 0x8e3cc246
+#define SVF_LAWNGREEN 0x5fd62cb1
+#define SVF_LEMONCHIFFON 0x30bc6ce5
+#define SVF_LIGHTBLUE 0xfde6d362
+#define SVF_LIGHTCORAL 0x9eb1e985
+#define SVF_LIGHTCYAN 0x83580952
+#define SVF_LIGHTER 0x98db4b75
+#define SVF_LIGHTGOLDENRODYELLOW 0xc8d13bc2
+#define SVF_LIGHTGRAY 0xee916593
+#define SVF_LIGHTGREEN 0x6c50166d
+#define SVF_LIGHTGREY 0xa01b044f
+#define SVF_LIGHTPINK 0xaa34523d
+#define SVF_LIGHTSALMON 0xf45b4931
+#define SVF_LIGHTSEAGREEN 0xcd10ddaa
+#define SVF_LIGHTSKYBLUE 0xbb96cc38
+#define SVF_LIGHTSLATEGRAY 0x169c8cc2
+#define SVF_LIGHTSLATEGREY 0x5816ed1e
+#define SVF_LIGHTSTEELBLUE 0xb40ccd96
+#define SVF_LIGHTYELLOW 0x6239c180
+#define SVF_LIME 0x16241da3
+#define SVF_LIMEGREEN 0x4b27a5cb
+#define SVF_LINEN 0xc4e0dd28
+#define SVF_LINETHROUGH 0x50cf4a84
+#define SVF_MAGENTA 0xe808cb20
+#define SVF_MAROON 0x1faa3ec7
+#define SVF_MAX 0x2df461a5
+#define SVF_MEDIUMAQUAMARINE 0xa7f0d7c8
+#define SVF_MEDIUMBLUE 0xfab00e21
+#define SVF_MEDIUMORCHID 0x5048d7b1
+#define SVF_MEDIUMPURPLE 0x0dec2f1b
+#define SVF_MEDIUMSEAGREEN 0x466d8b99
+#define SVF_MEDIUMSLATEBLUE 0x26d3fd20
+#define SVF_MEDIUMSPRINGGREEN 0xc7d593c0
+#define SVF_MEDIUMTURQUOISE 0x9a086ecb
+#define SVF_MEDIUMVIOLETRED 0x860f3bb7
+#define SVF_MIDDLE 0x88fd6b0d
+#define SVF_MIDNIGHTBLUE 0x5ff72640
+#define SVF_MIN 0x861f829a
+#define SVF_MINTCREAM 0x95bf7164
+#define SVF_MISTYROSE 0x552adffa
+#define SVF_MOCCASIN 0xa06fb271
+#define SVF_NARROWER 0xfab37e07
+#define SVF_NAVAJOWHITE 0x53d5278d
+#define SVF_NAVY 0x5a3992f8
+#define SVF_NORMAL 0x24992f14
+#define SVF_OLDLACE 0xa86c5a1c
+#define SVF_OLIVE 0xccef60dd
+#define SVF_OLIVEDRAB 0x3161a365
+#define SVF_ORANGE 0x29ad8dda
+#define SVF_ORANGERED 0x6f22f08e
+#define SVF_ORCHID 0x41cb49c5
+#define SVF_OVERLINE 0xe2737158
+#define SVF_PALEGOLDENROD 0x8f2fce7a
+#define SVF_PALEGREEN 0x72a82ea2
+#define SVF_PALETURQUOISE 0x636dc9f9
+#define SVF_PALEVIOLETRED 0x7f6a9c85
+#define SVF_PAPAYAWHIP 0x03951d1b
+#define SVF_PEACHPUFF 0xa5e884b9
+#define SVF_PERU 0x1c4b5847
+#define SVF_PINK 0xeab9e935
+#define SVF_PLUM 0x61b1a219
+#define SVF_POWDERBLUE 0x72c5db48
+#define SVF_PRESERVEASPECTRATIO 0xe9d982a7
+#define SVF_PURPLE 0x1c6fb16f
+#define SVF_RED 0x02602fe0
+#define SVF_REPEATCOUNT 0x603f8fc1
+#define SVF_REPEATDUR 0x5a09ac50
+#define SVF_RESTART 0xcee95720
+#define SVF_ROSYBROWN 0x04e15cab
+#define SVF_ROYALBLUE 0xd24650ab
+#define SVF_SADDLEBROWN 0xd62c1c46
+#define SVF_SALMON 0x42d313f6
+#define SVF_SANDYBROWN 0x0ed42fc4
+#define SVF_SEAGREEN 0x896e6c71
+#define SVF_SEASHELL 0x29c36970
+#define SVF_SEMI_CONDENSED 0x840c831d
+#define SVF_SIENNA 0x0b2ab519
+#define SVF_SILVER 0xc22560b2
+#define SVF_SKYBLUE 0xac67064d
+#define SVF_SLATEBLUE 0x4ff50e12
+#define SVF_SLATEGRAY 0x5c82b8e3
+#define SVF_SLATEGREY 0x1208d93f
+#define SVF_SNOW 0xb2d494ad
+#define SVF_SPRINGGREEN 0x40e0440a
+#define SVF_START 0xed217d81
+#define SVF_STEELBLUE 0xfe12f9b7
+#define SVF_STOP_COLOR 0x8644def2
+#define SVF_STOP_OPACITY 0xb5dc0166
+#define SVF_STROKE 0x56acfb7a
+#define SVF_STROKE_DASHARRAY 0xb0cfba70
+#define SVF_STROKE_DASHOFFSET 0x9222294e
+#define SVF_STROKE_INNER_MITERLIMIT 0x46f66141
+#define SVF_STROKE_INNERJOIN 0x4aa4e134
+#define SVF_STROKE_LINECAP 0x56f959ea
+#define SVF_STROKE_LINEJOIN 0x44682373
+#define SVF_STROKE_MITERLIMIT 0x335836aa
+#define SVF_STROKE_MITERLIMIT_THETA 0xc2aebedb
+#define SVF_STROKE_OPACITY 0x65f3c703
+#define SVF_STROKE_WIDTH 0x806b98d0
+#define SVF_STROKEPAINT 0x1e55494e
+#define SVF_TAN 0xf6b99013
+#define SVF_TEAL 0x04a72c0f
+#define SVF_TEXT_ANCHOR 0x489437d4
+#define SVF_TEXT_DECORATION 0x7f3be8a5
+#define SVF_TEXTLENGTH 0x7b8219d7
+#define SVF_THISTLE 0xc7bdee49
+#define SVF_TOMATO 0x8e0dace6
+#define SVF_TOTAL_POINTS 0x5ce55650
+#define SVF_TRANSFORM 0xf8c65d96
+#define SVF_TURQUOISE 0xf32e9df9
+#define SVF_TYPE 0x865f7960
+#define SVF_ULTRA_CONDENSED 0xa99bdac7
+#define SVF_UNDERLINE 0xb4f0ecf7
+#define SVF_UNITS 0x5855e62f
+#define SVF_USE 0xd2f16839
+#define SVF_VALUES 0x42c2743d
+#define SVF_VERSION 0xf60c5f97
+#define SVF_VERTEX_SCALING 0x5ebed0ef
+#define SVF_VERTICES 0xd12b9fb1
+#define SVF_VIEW_HEIGHT 0x61cd3e71
+#define SVF_VIEW_WIDTH 0x3aa96ddd
+#define SVF_VIEW_X 0xd9b83fb2
+#define SVF_VIEW_Y 0x2bd3bcb1
+#define SVF_VIEWBOX 0x9c09f0aa
+#define SVF_VIOLET 0xdcff434f
+#define SVF_VISIBILITY 0x907b5022
+#define SVF_WHEAT 0xfc9add1b
+#define SVF_WHITE 0xdacd0b82
+#define SVF_WHITESMOKE 0xd1c802d8
+#define SVF_WIDER 0xecb563e9
+#define SVF_WIDTH 0xbb6ee548
+#define SVF_WORD_SPACING 0xfb7f3dd6
 
-#define SVF_APPEND_PATH 0x64cbc017
-#define SVF_JOIN_PATH 0x34d6680f
-#define SVF_AZIMUTH 0x52cfd287
-#define SVF_DARKEN 0xf83e845a
-#define SVF_DECAY 0x0f49a6eb
-#define SVF_DECODING 0x13246362
-#define SVF_DEFS 0x7c95a0a7
-#define SVF_ELEVATION 0x0c12538c
-#define SVF_FEFUNCR 0xa284a6ae
-#define SVF_FEFUNCG 0xa284a6a3
-#define SVF_FEFUNCB 0xa284a69e
-#define SVF_FEFUNCA 0xa284a69d
-#define SVF_FOCALPOINT 0xe03591b4
-#define SVF_LIGHTING_COLOR 0x020fc127
-#define SVF_LIGHTING_COLOUR 0x4407e6dc
-#define SVF_LIMITINGCONEANGLE 0xbb90036e
-#define SVF_LOOP_LIMIT 0xfaf3e6cb
-#define SVF_MASKCONTENTUNITS 0x3fe629df
-#define SVF_MASKUNITS 0xa68eea04
-#define SVF_KOTUKU_MORPH 0x3056ff28
-#define SVF_KOTUKU_PATHTRANSITION 0x672b5f7a
-#define SVF_KOTUKU_SHAPE 0x30bf7333
-#define SVF_KOTUKU_SPIRAL 0x4943090d
-#define SVF_KOTUKU_TRANSITION 0x579e9bcd
-#define SVF_KOTUKU_WAVE 0x6e176775
-#define SVF_POINTSATX 0xf4c77f0f
-#define SVF_POINTSATY 0xf4c77f10
-#define SVF_POINTSATZ 0xf4c77f11
-#define SVF_SPECULARCONSTANT 0x8bb3ceae
-#define SVF_SPECULAREXPONENT 0x1d625135
-#define SVF_TABLEVALUES 0x9de92b7d
-#define SVF_EXPONENT 0xd4513596
-#define SVF_SLOPE 0x105d2208
-#define SVF_INTERCEPT 0x12b3db33
-#define SVF_INVERT 0x04d5a7bd
-#define SVF_IDENTITY 0x68144eaf
-#define SVF_L 0x0002b611
-#define SVF_M 0x0002b612
-#define SVF_N 0x0002b613
-#define SVF_LINEAR 0x0b7641e0
-#define SVF_TABLE 0x1068fa8d
-#define SVF_GAMMA 0x0f7deae8
-#define SVF_DISCRETE 0x6b8e5778
-#define SVF_DIFFUSECONSTANT 0x4f5eb9d5
-#define SVF_RESOLUTION 0x7e01ce59
-#define SVF_SURFACESCALE 0xbd475ab6
-#define SVF_SWITCH 0x1cc53777
-#define SVF_XCHANNELSELECTOR 0x57175337
-#define SVF_YCHANNELSELECTOR 0x634c7918
-#define SVF_ZOOMANDPAN 0xc606dfdc
-#define SVF_EXPANDED 0xd353d90e
-#define SVF_SEMI_EXPANDED 0xa6ff90c9
-#define SVF_EXTRA_EXPANDED 0x8c599b5f
-#define SVF_ULTRA_EXPANDED 0x87e8c363
-#define SVF_CALCMODE 0x0723eabd
-#define SVF_KEYPOINTS 0x47b5578b
-#define SVF_ORIGIN 0x1315e3ed
-#define SVF_KEYTIMES 0xbc9ffbb0
-#define SVF_KEYSPLINES 0x27d7988c
-#define SVF_BY 0x00597760
-#define SVF_YELLOW 0x297ff6e1
-#define SVF_YELLOWGREEN 0xda4a85b2
-#define SVF_REQUIREDFEATURES 0x01fd4085
-#define SVF_REQUIREDEXTENSIONS 0x0d7ab056
-#define SVF_SYSTEMLANGUAGE 0xa95fc64e
+#define SVF_APPEND_PATH 0xc9bcd430
+#define SVF_JOIN_PATH 0x7f8ef082
+#define SVF_AZIMUTH 0xee584136
+#define SVF_DARKEN 0xb4131a8d
+#define SVF_DECAY 0x05314e55
+#define SVF_DECODING 0xb34542ee
+#define SVF_DEFS 0xd9e3af3c
+#define SVF_ELEVATION 0x9d2a62fa
+#define SVF_FEFUNCR 0x3b06a692
+#define SVF_FEFUNCG 0x1ea975e1
+#define SVF_FEFUNCB 0x2b5861fd
+#define SVF_FEFUNCA 0x38089209
+#define SVF_FOCALPOINT 0xc77e27f3
+#define SVF_LIGHTING_COLOR 0x4d427379
+#define SVF_LIGHTING_COLOUR 0x9169fd82
+#define SVF_LIMITINGCONEANGLE 0xf4efd3a5
+#define SVF_LOOP_LIMIT 0xa1fc321b
+#define SVF_MASKCONTENTUNITS 0x048bd0e0
+#define SVF_MASKUNITS 0xed514670
+#define SVF_KOTUKU_MORPH 0x019115ac
+#define SVF_KOTUKU_PATHTRANSITION 0x092128eb
+#define SVF_KOTUKU_SHAPE 0xe71757e6
+#define SVF_KOTUKU_SPIRAL 0x26d7e3ed
+#define SVF_KOTUKU_TRANSITION 0xc044df05
+#define SVF_KOTUKU_WAVE 0xe0c648dd
+#define SVF_POINTSATX 0x84bdfe73
+#define SVF_POINTSATY 0x76d67d70
+#define SVF_POINTSATZ 0x65868e84
+#define SVF_SPECULARCONSTANT 0x6659eec6
+#define SVF_SPECULAREXPONENT 0x0968e2ed
+#define SVF_TABLEVALUES 0xbc8a5d29
+#define SVF_EXPONENT 0xfdfec4e2
+#define SVF_SLOPE 0xde91130a
+#define SVF_INTERCEPT 0x5bfcd3be
+#define SVF_INVERT 0x4817759b
+#define SVF_IDENTITY 0x70e2a60c
+#define SVF_L 0x7ef80fe3
+#define SVF_M 0x8c938ce0
+#define SVF_N 0x9fc37f14
+#define SVF_LINEAR 0x8f074b9a
+#define SVF_TABLE 0xc951bea7
+#define SVF_GAMMA 0x96d93a44
+#define SVF_DISCRETE 0x52a7b4c3
+#define SVF_DIFFUSECONSTANT 0x740f43be
+#define SVF_RESOLUTION 0x4eb139e6
+#define SVF_SURFACESCALE 0x5054681f
+#define SVF_SWITCH 0xe37c1c3b
+#define SVF_XCHANNELSELECTOR 0x99b2d745
+#define SVF_YCHANNELSELECTOR 0x6bbedabb
+#define SVF_ZOOMANDPAN 0xa56740cc
+#define SVF_EXPANDED 0xb41290ab
+#define SVF_SEMI_EXPANDED 0xd4a9b383
+#define SVF_EXTRA_EXPANDED 0x5137a89c
+#define SVF_ULTRA_EXPANDED 0xc340ad1e
+#define SVF_CALCMODE 0x8e4b6f40
+#define SVF_KEYPOINTS 0xa218f2ce
+#define SVF_ORIGIN 0x2fab7b36
+#define SVF_KEYTIMES 0xc21d7682
+#define SVF_KEYSPLINES 0x51660c4a
+#define SVF_BY 0x5f92edfb
+#define SVF_YELLOW 0xd4b19b47
+#define SVF_YELLOWGREEN 0x9c57fa2d
+#define SVF_REQUIREDFEATURES 0x93615737
+#define SVF_REQUIREDEXTENSIONS 0x085e0792
+#define SVF_SYSTEMLANGUAGE 0x75da6464
 
-#define SVF_ActiveBorder 0x454bda3f
-#define SVF_ActiveCaption 0x1afdcc2f
-#define SVF_AppWorkspace 0xe1d2e595
-#define SVF_Background 0x677e1785
-#define SVF_ButtonFace 0xf8bdce70
-#define SVF_ButtonHighlight 0x109df899
-#define SVF_ButtonShadow 0x3e3bd7e7
-#define SVF_ButtonText 0xf8c58f86
-#define SVF_CaptionText 0xa8222dd8
-#define SVF_GrayText 0xbcb251fd
-#define SVF_Highlight 0x1ecf649d
-#define SVF_HighlightText 0x0b3bc4a2
-#define SVF_InactiveBorder 0x613cc7f6
-#define SVF_InactiveCaption 0xb50c70c6
-#define SVF_InactiveCaptionText 0x5404bd4b
-#define SVF_InfoBackground 0xfa8db651
-#define SVF_InfoText 0x6c41ded6
-#define SVF_ISOLATION_MODE 0x19f91ec9
-#define SVF_Menu 0x7c9a911a
-#define SVF_MenuText 0x7b92e79f
-#define SVF_Scrollbar 0xf5b38a09
-#define SVF_ThreeDDarkShadow 0xe33a1e69
-#define SVF_ThreeDFace 0xe3f48150
-#define SVF_ThreeDHighlight 0xae577779
-#define SVF_ThreeDLightShadow 0x36b9979f
-#define SVF_ThreeDShadow 0xd1eac2c7
-#define SVF_Window 0x251efe5d
-#define SVF_WindowFrame 0x66937228
-#define SVF_WindowText 0x7f423e62
+#define SVF_ActiveBorder 0x23c8bda8
+#define SVF_ActiveCaption 0x163ec68b
+#define SVF_AppWorkspace 0x72d4291c
+#define SVF_Background 0x13fe30d5
+#define SVF_ButtonFace 0xe38fab4d
+#define SVF_ButtonHighlight 0x00fa16a9
+#define SVF_ButtonShadow 0x4da6d058
+#define SVF_ButtonText 0x5f514327
+#define SVF_CaptionText 0x0fde9208
+#define SVF_GrayText 0xe0bc8411
+#define SVF_Highlight 0x32b9e084
+#define SVF_HighlightText 0x981173db
+#define SVF_InactiveBorder 0x43db2792
+#define SVF_InactiveCaption 0x4d5fb498
+#define SVF_InactiveCaptionText 0xe8112f5e
+#define SVF_InfoBackground 0xdad7ddc5
+#define SVF_InfoText 0xff78c65a
+#define SVF_ISOLATION_MODE 0x80b4f69d
+#define SVF_Menu 0x49574232
+#define SVF_MenuText 0x722c6139
+#define SVF_Scrollbar 0xd4338d6b
+#define SVF_ThreeDDarkShadow 0x4efbf16c
+#define SVF_ThreeDFace 0x6bc48b51
+#define SVF_ThreeDHighlight 0x0e1291fe
+#define SVF_ThreeDLightShadow 0xaffdbf40
+#define SVF_ThreeDShadow 0x81408528
+#define SVF_Window 0x7fdabc89
+#define SVF_WindowFrame 0x3e9e6224
+#define SVF_WindowText 0x9352300a
 
 namespace vec {
 inline ERR SubscribeInput(APTR Ob, JTYPE Mask, FUNCTION Callback) {

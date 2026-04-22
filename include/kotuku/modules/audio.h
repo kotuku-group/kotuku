@@ -239,8 +239,8 @@ class objAudio : public Object {
    // Customised field setting
 
    inline ERR setOutputRate(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_OutputRate, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -251,8 +251,8 @@ class objAudio : public Object {
    }
 
    inline ERR setQuality(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[6];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Quality, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -263,44 +263,44 @@ class objAudio : public Object {
    }
 
    inline ERR setBitDepth(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[10];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_BitDepth, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setPeriods(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[12];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Periods, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setPeriodSize(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[13];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_PeriodSize, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    template <class T> inline ERR setDevice(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[16];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Device, &target);
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 
    inline ERR setMasterVolume(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[11];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_MasterVolume, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setMute(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[8];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Mute, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setStereo(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[7];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Stereo, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -385,44 +385,44 @@ class objSound : public Object {
    // Customised field setting
 
    inline ERR setVolume(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[15];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Volume, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setPan(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[5];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Pan, &target);
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setPosition(const int64_t Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[17];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Position, &target);
       return field->WriteValue(target, field, FD_INT64, &Value, 1);
    }
 
    inline ERR setPriority(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[14];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Priority, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setLength(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[4];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Length, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setOctave(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[11];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Octave, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setFlags(const SDF Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[9];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Flags, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -433,8 +433,8 @@ class objSound : public Object {
    }
 
    inline ERR setPlayback(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[16];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Playback, &target);
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -475,20 +475,20 @@ class objSound : public Object {
    }
 
    inline ERR setOnStop(FUNCTION Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[12];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_OnStop, &target);
       return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
    }
 
    template <class T> inline ERR setPath(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[21];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Path, &target);
       return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
    }
 
    template <class T> inline ERR setNote(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[20];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Note, &target);
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 

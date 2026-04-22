@@ -135,51 +135,51 @@ class objPicture : public Object {
    }
 
    template <class T> inline ERR setAuthor(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[19];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Author, &target);
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 
    template <class T> inline ERR setCopyright(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[8];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Copyright, &target);
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 
    template <class T> inline ERR setDescription(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[14];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Description, &target);
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 
    template <class T> inline ERR setDisclaimer(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[10];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Disclaimer, &target);
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 
    inline ERR setHeader(APTR Value) noexcept {
       if (this->initialised()) return ERR::NoFieldAccess;
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Header, &target);
       return field->WriteValue(target, field, 0x08000500, Value, 1);
    }
 
    template <class T> inline ERR setPath(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[13];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Path, &target);
       return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
    }
 
    template <class T> inline ERR setSoftware(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[21];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Software, &target);
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 
    template <class T> inline ERR setTitle(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[6];
+      OBJECTPTR target;
+      auto field = FindField(this, FID_Title, &target);
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 
