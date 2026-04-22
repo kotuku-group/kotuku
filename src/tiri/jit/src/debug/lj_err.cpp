@@ -55,6 +55,8 @@
 #define lj_err_c
 #define LUA_CORE
 
+#include <bit>
+
 #include <kotuku/main.h>
 
 #include "lj_obj.h"
@@ -126,26 +128,28 @@ static TValue * unwind_close_handlers(lua_State *L, TValue *frame, TValue *errob
 
    TValue *base = frame + 1;
    TValue *current_err = errobj;
-   for (int slot = 63; slot >= 0; slot--) {
-      if (closeslots & (1ULL << slot)) {
-         TValue *o = base + slot;
-         // Verify slot is within valid frame range: must be >= base and < L->top
-         if (o >= base and o < L->top and !tvisnil(o) and !tvisfalse(o)) {
-            int errcode = lj_meta_close(L, o, current_err);
-            if (errcode != 0) {
-               // Per Lua 5.4: error in __close replaces the original error.
-               // The new error is at L->top - 1 after the failed pcall.
-               // Continue calling other __close handlers with the new error.
-               current_err = L->top - 1;
-               // Update _G.__close_err with the new error
-               if (env) {
-                  GCstr *key = lj_str_newlit(L, "__close_err");
-                  TValue *slot = lj_tab_setstr(L, env, key);
-                  copyTV(L, slot, current_err);
-                  lj_gc_anybarriert(L, env);
-               }
-               copyTV(L, &L->close_err, current_err);
+   uint64_t pending_slots = closeslots;
+   while (pending_slots) {
+      int slot = int(std::bit_width(pending_slots) - 1);
+      pending_slots ^= uint64_t(1) << slot;
+
+      TValue *o = base + slot;
+      // Verify slot is within valid frame range: must be >= base and < L->top
+      if (o >= base and o < L->top and !tvisnil(o) and !tvisfalse(o)) {
+         int errcode = lj_meta_close(L, o, current_err);
+         if (errcode != 0) {
+            // Per Lua 5.4: error in __close replaces the original error.
+            // The new error is at L->top - 1 after the failed pcall.
+            // Continue calling other __close handlers with the new error.
+            current_err = L->top - 1;
+            // Update _G.__close_err with the new error
+            if (env) {
+               GCstr *key = lj_str_newlit(L, "__close_err");
+               TValue *slot = lj_tab_setstr(L, env, key);
+               copyTV(L, slot, current_err);
+               lj_gc_anybarriert(L, env);
             }
+            copyTV(L, &L->close_err, current_err);
          }
       }
    }
@@ -191,24 +195,29 @@ static TValue* unwind_close_try_block(lua_State *L, TValue* frame, TValue* errob
    lj_assertL(base >= tvref(L->stack) and base <= tvref(L->maxstack), "unwind_close_try_block: base out of range (%p)", base);
 
    TValue *current_err = errobj;
-   for (int slot = 63; slot >= min_slot_index; slot--) {
-      if (closeslots & (1ULL << slot)) {
-         TValue *o = base + slot;
+   uint64_t pending_slots = closeslots;
+   if (min_slot_index >= 64) pending_slots = 0;
+   else if (min_slot_index > 0) pending_slots &= ~((uint64_t(1) << min_slot_index) - 1);
 
-         // Only close if: slot is within valid stack range and not already nil/false
+   while (pending_slots) {
+      int slot = int(std::bit_width(pending_slots) - 1);
+      pending_slots ^= uint64_t(1) << slot;
 
-         if (o >= base and o < L->top and !tvisnil(o) and !tvisfalse(o)) {
-            int errcode = lj_meta_close(L, o, current_err);
-            if (errcode != 0) {
-               current_err = L->top - 1;
-               if (env) {
-                  GCstr *key = lj_str_newlit(L, "__close_err");
-                  TValue *slot_tv = lj_tab_setstr(L, env, key);
-                  copyTV(L, slot_tv, current_err);
-                  lj_gc_anybarriert(L, env);
-               }
-               copyTV(L, &L->close_err, current_err);
+      TValue *o = base + slot;
+
+      // Only close if: slot is within valid stack range and not already nil/false
+
+      if (o >= base and o < L->top and !tvisnil(o) and !tvisfalse(o)) {
+         int errcode = lj_meta_close(L, o, current_err);
+         if (errcode != 0) {
+            current_err = L->top - 1;
+            if (env) {
+               GCstr *key = lj_str_newlit(L, "__close_err");
+               TValue *slot_tv = lj_tab_setstr(L, env, key);
+               copyTV(L, slot_tv, current_err);
+               lj_gc_anybarriert(L, env);
             }
+            copyTV(L, &L->close_err, current_err);
          }
       }
    }

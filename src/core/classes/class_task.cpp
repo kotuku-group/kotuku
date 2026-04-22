@@ -45,6 +45,8 @@ The task object that represents the active process can be acquired from ~Current
  #include <stdio.h>
 #endif
 
+#include <bit>
+
 #include "../defs.h"
 #include <kotuku/main.h>
 
@@ -1739,7 +1741,9 @@ static ERR GET_AffinityMask(extTask *Self, int64_t *Value)
 
    // Convert cpu_set_t to bitmask
    int64_t mask = 0;
-   for (int cpu = 0; cpu < CPU_SETSIZE; cpu++) {
+   constexpr int max_mask_bits = sizeof(mask) * 8;
+   const int max_cpu = (CPU_SETSIZE < max_mask_bits) ? CPU_SETSIZE : max_mask_bits;
+   for (int cpu = 0; cpu < max_cpu; cpu++) {
       if (CPU_ISSET(cpu, &cpuset)) {
          mask |= (1LL << cpu);
       }
@@ -1765,10 +1769,11 @@ static ERR SET_AffinityMask(extTask *Self, int64_t Value)
    CPU_ZERO(&cpuset);
 
    // Convert bitmask to cpu_set_t
-   for (int cpu = 0; cpu < CPU_SETSIZE; cpu++) {
-      if (Value & (1LL << cpu)) {
-         CPU_SET(cpu, &cpuset);
-      }
+   auto mask = uint64_t(Value);
+   while (mask) {
+      int cpu = int(std::countr_zero(mask));
+      CPU_SET(cpu, &cpuset);
+      mask &= mask - 1;
    }
 
    // Set affinity for current process

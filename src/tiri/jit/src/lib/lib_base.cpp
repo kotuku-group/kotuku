@@ -5,6 +5,7 @@
 // Copyright (C) 1994-2011 Lua.org, PUC-Rio. See Copyright Notice in lua.h
 
 #include <stdio.h>
+#include <bit>
 #include <cctype>
 
 #define lib_base_c
@@ -41,6 +42,13 @@
 #include "debug/error_guard.h"
 
 #define LJLIB_MODULE_base
+
+static uint64_t low_bit_mask(int32_t Count)
+{
+   if (Count <= 0) return 0;
+   if (Count >= 64) return ~uint64_t(0);
+   return (uint64_t(1) << Count) - 1;
+}
 
 //********************************************************************************************************************
 // The implementation of assert() is a little strange in that it is specifically geared towards being optimised by
@@ -433,14 +441,19 @@ LJLIB_CF(__filter)      LJLIB_REC(.)
 
    // Values to filter start at position 4 (index 3, 0-based)
    int32_t value_count = nargs - 3;
+   int32_t masked_count = count;
+   int32_t trailing_start = count;
+   if (masked_count < 0) masked_count = 0;
+   if (masked_count > value_count) masked_count = value_count;
+   if (masked_count > 64) masked_count = 64;
+   if (trailing_start < 0) trailing_start = 0;
+   if (trailing_start > value_count) trailing_start = value_count;
+   uint64_t active_mask = mask & low_bit_mask(masked_count);
 
    // First pass: count how many values we'll keep (for stack check)
 
-   int32_t out_count = 0;
-   for (int32_t i = 0; i < value_count; i++) {
-      bool keep = (i < count) ? ((mask & (1ULL << i)) != 0) : trailing_keep;
-      if (keep) out_count++;
-   }
+   int32_t out_count = int32_t(std::popcount(active_mask));
+   if (trailing_keep and (trailing_start < value_count)) out_count += value_count - trailing_start;
 
    // Ensure we have enough stack space
 
@@ -455,9 +468,15 @@ LJLIB_CF(__filter)      LJLIB_REC(.)
    TValue *dst = L->base;      // Overwrite from the start
 
    int32_t written = 0;
-   for (int32_t i = 0; i < value_count; i++) {
-      bool keep = (i < count) ? ((mask & (1ULL << i)) != 0) : trailing_keep;
-      if (keep) {
+   uint64_t pending_mask = active_mask;
+   while (pending_mask) {
+      int32_t i = int32_t(std::countr_zero(pending_mask));
+      if (dst + written != src + i) copyTV(L, dst + written, src + i);
+      written++;
+      pending_mask &= pending_mask - 1;
+   }
+   if (trailing_keep) {
+      for (int32_t i = trailing_start; i < value_count; i++) {
          if (dst + written != src + i) copyTV(L, dst + written, src + i);
          written++;
       }

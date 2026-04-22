@@ -21,6 +21,8 @@
 #define lj_ffrecord_c
 #define LUA_CORE
 
+#include <bit>
+
 #include "lj_obj.h"
 #include "lj_err.h"
 #include "lj_buf.h"
@@ -51,6 +53,13 @@
 
 // Type of handler to record a fast function.
 typedef void (* RecordFunc)(jit_State* J, RecordFFData* rd);
+
+static uint64_t low_bit_mask(int32_t Count)
+{
+   if (Count <= 0) return 0;
+   if (Count >= 64) return ~uint64_t(0);
+   return (uint64_t(1) << Count) - 1;
+}
 
 //********************************************************************************************************************
 // Get runtime value of int argument.
@@ -371,15 +380,29 @@ static void recff___filter(jit_State* J, RecordFFData* rd)
    ptrdiff_t n = ptrdiff_t(J->maxslot);
    ptrdiff_t value_start = 3;  // Values start at slot 3
    ptrdiff_t value_count = n - value_start;
+   int32_t masked_count = count;
+   ptrdiff_t trailing_start = count;
+   if (masked_count < 0) masked_count = 0;
+   if (masked_count > value_count) masked_count = int32_t(value_count);
+   if (masked_count > 64) masked_count = 64;
+   if (trailing_start < 0) trailing_start = 0;
+   if (trailing_start > value_count) trailing_start = value_count;
+   uint64_t active_mask = mask & low_bit_mask(masked_count);
 
    // Build output by copying kept values
    int32_t out_idx = 0;
-   for (ptrdiff_t i = 0; i < value_count; i++) {
-      bool keep;
-      if (i < count) keep = (mask & (1ULL << i)) != 0;
-      else keep = trailing_keep;
-
-      if (keep) {
+   uint64_t pending_mask = active_mask;
+   while (pending_mask) {
+      ptrdiff_t i = ptrdiff_t(std::countr_zero(pending_mask));
+      TRef tr = J->base[value_start + i];
+      if (tr) {
+         J->base[out_idx] = tr;
+         out_idx++;
+      }
+      pending_mask &= pending_mask - 1;
+   }
+   if (trailing_keep) {
+      for (ptrdiff_t i = trailing_start; i < value_count; i++) {
          TRef tr = J->base[value_start + i];
          if (tr) {
             J->base[out_idx] = tr;

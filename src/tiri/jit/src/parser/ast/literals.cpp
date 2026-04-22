@@ -591,7 +591,10 @@ ParserResult<ExprNodePtr> AstBuilder::parse_result_filter_expr(const Token &Star
    // A mask of all 1s up to explicit_count means (1 << count) - 1
 
    auto &f = filter.value_ref();
-   uint64_t all_kept_mask = (f.explicit_count > 0) ? ((1ULL << f.explicit_count) - 1) : 0;
+   uint64_t all_kept_mask;
+   if (f.explicit_count IS 0) all_kept_mask = 0;
+   else if (f.explicit_count >= 64) all_kept_mask = ~uint64_t(0);
+   else all_kept_mask = (uint64_t(1) << f.explicit_count) - 1;
    if (f.trailing_keep and f.keep_mask IS all_kept_mask) return expr;  // No filtering needed, just return the call expression
 
    SourceSpan span = combine_spans(StartToken.span(), expr.value_ref()->span);
