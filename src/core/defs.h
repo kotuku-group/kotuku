@@ -1209,6 +1209,7 @@ extern "C" int winWriteStd(APTR, CPTR Buffer, int Size);
 extern "C" int winDeleteFile(char *Path);
 extern "C" int winCheckDirectoryExists(CSTRING);
 extern "C" ERR winCreateDir(CSTRING);
+extern "C" ERR winCreateLink(CSTRING Target, CSTRING Link);
 extern "C" int winCurrentDirectory(STRING, int);
 extern "C" int winFileInfo(CSTRING, size_t *, struct DateTime *, int8_t *);
 extern "C" void winFindClose(WINHANDLE);

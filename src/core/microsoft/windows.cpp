@@ -1596,6 +1596,85 @@ extern "C" ERR winCreateDir(const char *Path)
 }
 
 //********************************************************************************************************************
+
+static void trim_trailing_separators(std::string &Path)
+{
+   while ((Path.size() > 1) and ((Path.back() IS '/') or (Path.back() IS '\\'))) {
+      if (((Path.size() IS 3) and (Path[1] IS ':')) or
+          ((Path.size() >= 2) and (Path[Path.size() - 2] IS ':'))) break;
+      Path.pop_back();
+   }
+}
+
+//********************************************************************************************************************
+
+static ERR convert_link_error(DWORD Error)
+{
+   switch (Error) {
+      case ERROR_ACCESS_DENIED:
+      case ERROR_PRIVILEGE_NOT_HELD:
+         return ERR::NoPermission;
+      case ERROR_NOT_SUPPORTED:
+      case ERROR_INVALID_FUNCTION:
+         return ERR::NoSupport;
+      case ERROR_ALREADY_EXISTS:
+      case ERROR_FILE_EXISTS:
+         return ERR::FileExists;
+      case ERROR_BUFFER_OVERFLOW:
+      case ERROR_FILENAME_EXCED_RANGE:
+         return ERR::BufferOverflow;
+      case ERROR_PATH_NOT_FOUND:
+         return ERR::FileNotFound;
+      case ERROR_DISK_FULL:
+      case ERROR_HANDLE_DISK_FULL:
+         return ERR::OutOfSpace;
+      default:
+         return ERR::SystemCall;
+   }
+}
+
+//********************************************************************************************************************
+
+extern "C" ERR winCreateLink(CSTRING Target, CSTRING Link)
+{
+   if ((!Target) or (!Target[0]) or (!Link) or (!Link[0])) return ERR::NullArgs;
+
+   std::string symlink_path(Target);
+   std::string target_path(Link);
+
+   bool is_directory = target_path.ends_with('/') or target_path.ends_with('\\') or target_path.ends_with(':');
+
+   std::string target_probe(target_path);
+   trim_trailing_separators(target_probe);
+   if (auto attrs = GetFileAttributes(target_probe.c_str()); attrs != INVALID_FILE_ATTRIBUTES) {
+      if (attrs & FILE_ATTRIBUTE_DIRECTORY) is_directory = true;
+   }
+
+   trim_trailing_separators(symlink_path);
+   trim_trailing_separators(target_path);
+
+   if (symlink_path.empty() or target_path.empty()) return ERR::NullArgs;
+
+   DWORD flags = is_directory ? SYMBOLIC_LINK_FLAG_DIRECTORY : 0;
+#ifdef SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE
+   flags |= SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE;
+#endif
+
+   if (CreateSymbolicLink(symlink_path.c_str(), target_path.c_str(), flags)) return ERR::Okay;
+
+   auto error = GetLastError();
+#ifdef SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE
+   if (((flags & SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE) != 0) and (error IS ERROR_INVALID_PARAMETER)) {
+      flags &= ~SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE;
+      if (CreateSymbolicLink(symlink_path.c_str(), target_path.c_str(), flags)) return ERR::Okay;
+      error = GetLastError();
+   }
+#endif
+
+   return convert_link_error(error);
+}
+
+//********************************************************************************************************************
 // Returns true on success.
 
 extern "C" int winGetFreeDiskSpace(char Drive, long long *BytesFree, long long *TotalSize)

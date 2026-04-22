@@ -171,6 +171,13 @@ static int getutf8(CSTRING Value, uint32_t *Unicode)
 }
 
 //********************************************************************************************************************
+
+template <class T>
+constexpr T tab_advance(T Num, T Alignment) {
+   return ((Num + Alignment) / Alignment) * Alignment;
+}
+
+//********************************************************************************************************************
 // Returns the global point size for font scaling.  This is set to 10 by default, but the user can change the setting
 // in the interface style values.
 
@@ -254,7 +261,7 @@ static void string_size(extFont *Font, CSTRING String, int Chars, int Wrap, int 
          if (*String IS ' ') x += Font->prvChar[' '].Advance * Font->GlyphSpacing;
          else if (*String IS '\t') {
             tabwidth = (Font->prvChar[' '].Advance * Font->GlyphSpacing) * Font->TabSize;
-            if (tabwidth) x += pf::roundup(x, tabwidth);
+            if (tabwidth) x += tab_advance<int>(x, tabwidth);
          }
          else if (*String IS '\n') {
             if (lastword > longest) longest = lastword;
@@ -579,7 +586,7 @@ int StringWidth(objFont *Font, CSTRING String, int Chars)
       }
       else if (*str IS '\t') {
          int16_t tabwidth = (font->prvChar[' '].Advance * Font->GlyphSpacing) * Font->TabSize;
-         if (tabwidth) len = pf::roundup(len, tabwidth);
+         if (tabwidth) len = tab_advance<int>(len, tabwidth);
          str++;
          Chars--;
          whitespace = 0;

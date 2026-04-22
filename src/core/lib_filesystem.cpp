@@ -608,9 +608,9 @@ ERR CopyFile(CSTRING Source, CSTRING Dest, FUNCTION *Callback)
 /*********************************************************************************************************************
 
 -FUNCTION-
-CreateLink: Creates symbolic links on Unix file systems.
+CreateLink: Creates symbolic links on supported file systems.
 
-Use the CreateLink() function to create symbolic links on Unix file systems. The link connects a new file created at
+Use the CreateLink() function to create symbolic links on supported file systems. The link connects a new file created at
 `From` to an existing file referenced at `To`. The `To` link is allowed to be relative to the `From` location - for instance,
 you can link `documents:myfiles/newlink.txt` to `../readme.txt` or `folder/readme.txt`. The `..` path component must be
 used when making references to parent folders.
@@ -642,17 +642,23 @@ FileExists: The location referenced at From already exists.
 
 ERR CreateLink(CSTRING From, CSTRING To)
 {
-#ifdef _WIN32
-
-   return ERR::NoSupport;
-
-#else
-
    pf::Log log(__FUNCTION__);
 
    if ((not From) or (not To)) return ERR::NullArgs;
-
    log.branch("From: %.40s, To: %s", From, To);
+
+#ifdef _WIN32
+
+   std::string src, dest;
+   if (ResolvePath(From, RSF::NO_FILE_CHECK, &src) IS ERR::Okay) {
+      if (ResolvePath(To, RSF::NO_FILE_CHECK, &dest) IS ERR::Okay) {
+         return winCreateLink(src.c_str(), dest.c_str());
+      }
+      else return ERR::ResolvePath;
+   }
+   else return ERR::ResolvePath;
+
+#else
 
    std::string src, dest;
    if (ResolvePath(From, RSF::NO_FILE_CHECK, &src) IS ERR::Okay) {
@@ -2064,6 +2070,10 @@ ERR fs_createlink(std::string_view Target, std::string_view Link)
       return convert_errno(errno, ERR::CreateFile);
    }
    else return ERR::Okay;
+#elif defined(_WIN32)
+   std::string target(Target);
+   std::string link(Link);
+   return winCreateLink(target.c_str(), link.c_str());
 #else
    return ERR::NoSupport;
 #endif

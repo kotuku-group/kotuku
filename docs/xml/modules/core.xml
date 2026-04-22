@@ -540,14 +540,14 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
   <function>
     <name>CreateLink</name>
     <category>Files</category>
-    <comment>Creates symbolic links on Unix file systems.</comment>
+    <comment>Creates symbolic links on supported file systems.</comment>
     <prototype>ERR CreateLink(CSTRING From, CSTRING To)</prototype>
     <input>
       <param type="CSTRING" name="From">The symbolic link will be created at the location specified here.</param>
       <param type="CSTRING" name="To">The file that you are linking to is specified here.</param>
     </input>
     <description>
-<p>Use the CreateLink() function to create symbolic links on Unix file systems. The link connects a new file created at <code>From</code> to an existing file referenced at <code>To</code>. The <code>To</code> link is allowed to be relative to the <code>From</code> location - for instance, you can link <code>documents:myfiles/newlink.txt</code> to <code>../readme.txt</code> or <code>folder/readme.txt</code>. The <code>..</code> path component must be used when making references to parent folders.</p>
+<p>Use the CreateLink() function to create symbolic links on supported file systems. The link connects a new file created at <code>From</code> to an existing file referenced at <code>To</code>. The <code>To</code> link is allowed to be relative to the <code>From</code> location - for instance, you can link <code>documents:myfiles/newlink.txt</code> to <code>../readme.txt</code> or <code>folder/readme.txt</code>. The <code>..</code> path component must be used when making references to parent folders.</p>
 <p>The permission flags for the link are inherited from the file that you are linking to.  If the file location referenced at <code>From</code> already exists as a file or folder, the function will fail with an <code>ERR::FileExists</code> error code.</p>
 <p>This function does not automatically create folders in circumstances where new folders are required to complete the <code>From</code> link.  You will need to call <function>CreateFolder</function> to ensure that the necessary paths exist beforehand.  If the file referenced at To does not exist, the link will be created without error, but any attempts to open the link will fail until the target file or folder exists.</p>
     </description>

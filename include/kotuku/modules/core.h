@@ -1627,10 +1627,6 @@ __export struct ModHeader ModHeader;
 
 namespace pf {
 
-template <class T> T roundup(T Num, int Alignment) {
-   return (Num + Alignment) - (Num % Alignment); // Round up to Alignment value, e.g. (14,8) = 16
-}
-
 #ifdef PRINTF64I
   #define PF64 "I64d"
 #elif PRINTF64_PRID
@@ -1654,26 +1650,14 @@ template <class T> T roundup(T Num, int Alignment) {
  #define DEBUG_BREAK
 #endif
 
-// Fast float-2-int conversion, with rounding to the nearest integer (F2I)
-
-#if defined(__GNUC__) && defined(__x86__)
-
-constexpr int F2I(double val) noexcept {
-   if (std::is_constant_evaluated()) return (int)std::round(val);
-   // This will round if the CPU is kept in its default rounding mode
-   int ret;
-   asm ("fistpl %0" : "=m" (ret) : "t" (val) : "st");
-   return(ret);
+template <class T>
+constexpr T roundup(T Num, T Alignment) {
+   return ((Num + Alignment - 1) / Alignment) * Alignment;
 }
 
-#else
-
-inline int F2I(double val) {
-   double t = val + 6755399441055744.0;
-   return *((int *)(&t));
+[[deprecated]] inline int F2I(double val) noexcept {
+   return std::lrint(val);
 }
-
-#endif
 
 } // namespace
 
@@ -1683,7 +1667,12 @@ inline int F2I(double val) {
 #define FD_PTR64 0
 #endif
 
-#define nextutf8(str) if (*(str)) for (++(str); (*(str) & 0xc0) IS 0x80; (str)++);
+template <class T>
+inline void nextutf8(T *&Str) noexcept {
+   if (*Str) {
+      for (++Str; (((unsigned char)*Str) & 0xc0) IS 0x80; ++Str);
+   }
+}
 
 //********************************************************************************************************************
 
@@ -1940,23 +1929,17 @@ struct FileInfo {
    int     GroupID;           // Group ID (Unix systems only).
    struct DateTime Created;   // The date/time of the file's creation.
    struct DateTime Modified;  // The date/time of the last file modification.
-   private:
-
-   struct TransparentStringHash {
+   struct fi_hash {
       using is_transparent = void;
-
       [[nodiscard]] size_t operator()(std::string_view Value) const noexcept { return std::hash<std::string_view>{}(Value); }
    };
 
-   struct TransparentStringEqual {
+   struct fi_equal {
       using is_transparent = void;
-
       [[nodiscard]] bool operator()(const std::string_view &Lhs, const std::string_view &Rhs) const noexcept { return Lhs IS Rhs; }
    };
 
-   using TagMap = ankerl::unordered_dense::map<std::string, std::string, TransparentStringHash, TransparentStringEqual>;
-
-   public:
+   using TagMap = ankerl::unordered_dense::map<std::string, std::string, fi_hash, fi_equal>;
 
    TagMap *Tags;
 
@@ -3075,7 +3058,7 @@ class objScript : public Object {
    int      LineOffset; // For debugging purposes, this value is added to any message referencing a line number.
 
 #ifdef PRV_SCRIPT
-   int64_t    ProcedureID;          // For callbacks
+   int64_t  ProcedureID;          // For callbacks
    KEYVALUE Vars; // Global parameters
    STRING   *Results;
    char     Language[4];          // 3-character language code, null-terminated
@@ -3963,14 +3946,11 @@ struct evHotplug {
       int ProductID;    // USB product or device ID
       int DeviceID;
    };
-   char  ID[20];         // Typically the PCI bus ID or USB bus ID, serial number or unique identifier
-   char  Group[32];      // Group name in the config file
-   char  Class[32];      // Class identifier (USB)
-   union {
-      char Product[40];  // Name of product or the hardware device
-      char Device[40];
-   };
-   char Vendor[40];      // Name of vendor
+   char ID[20];         // Typically the PCI bus ID or USB bus ID, serial number or unique identifier
+   char Group[32];      // Group name in the config file
+   char Class[32];      // Class identifier (USB)
+   char Product[40];    // Name of product or the hardware device
+   char Vendor[40];     // Name of vendor
 };
 
 // Speed efficient way of setting a string field that is managed with AllocMemory().

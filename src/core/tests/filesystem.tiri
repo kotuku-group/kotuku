@@ -429,6 +429,29 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+@Test function CreateLink()
+   source = glTempRoot .. 'link_source.txt'
+   target = glTempRoot .. 'link_target.txt'
+
+   resetPath(target)
+   writeFile(source, 'Linked file content')
+
+   err = mSys.CreateLink(target, source)
+   if err is ERR_NoSupport then
+      return 'Host platform does not support symbolic link creation.'
+   end
+
+   if err is ERR_NoPermission then
+      return 'Symbolic link creation is blocked for the current user or host policy.'
+   end
+
+   assert(err is ERR_Okay, 'CreateLink() failed: ' .. mSys.GetErrorMsg(err))
+   assert(mSys.AnalysePath(target, nil) is ERR_Okay, 'Created link path could not be resolved.')
+   assert(readFile(target) is 'Linked file content', 'Reading through the created link returned unexpected content.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Test function FileInfoStructCppString()
    info = struct.new('FileInfo')
    assert(type(info.name) is 'string', 'FileInfo.Name should default to a valid string')
