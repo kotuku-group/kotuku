@@ -35,6 +35,15 @@ Name: System
  #include <string.h> // Required for memmove()
 #endif
 
+#if defined(__ARM_FEATURE_CRC32)
+ #ifdef _MSC_VER
+  #include <intrin.h>
+ #else
+  #include <arm_acle.h>
+ #endif
+ #define PF_HAS_HW_CRC32 1
+#endif
+
 #ifdef __ANDROID__
  #include <android/log.h>
 #endif
@@ -239,10 +248,8 @@ alignas(64) static constexpr uint32_t crc_table_0[256] = {
 alignas(64) static uint32_t crc_table[8][256];
 static std::once_flag glCRCInit;
 
-uint32_t GenCRC32(uint32_t CRC, APTR Data, uint32_t Length)
+static void init_crc32_tables(void)
 {
-   if (not Data) return 0;
-
    std::call_once(glCRCInit, []() {
       // Copy table 0
       std::copy(std::begin(crc_table_0), std::end(crc_table_0), crc_table[0]);
@@ -254,14 +261,18 @@ uint32_t GenCRC32(uint32_t CRC, APTR Data, uint32_t Length)
          }
       }
    });
+}
 
-   // Process 8 bytes at a time using slice-by-8 algorithm
+static uint32_t gen_crc32_slice_by_8(uint32_t CRC, const uint8_t *Data, uint32_t Length)
+{
+   init_crc32_tables();
 
-   auto data = (const uint8_t *)Data;
-   CRC = ~CRC;
    while (Length >= 8) {
-      const uint32_t one = CRC ^ *reinterpret_cast<const uint32_t*>(data);
-      const uint32_t two = *reinterpret_cast<const uint32_t*>(data + 4);
+      uint32_t one;
+      uint32_t two;
+      memcpy(&one, Data, sizeof(one));
+      memcpy(&two, Data + 4, sizeof(two));
+      one ^= CRC;
 
       CRC = crc_table[7][(one      ) & 0xff] ^
             crc_table[6][(one >>  8) & 0xff] ^
@@ -272,15 +283,66 @@ uint32_t GenCRC32(uint32_t CRC, APTR Data, uint32_t Length)
             crc_table[1][(two >> 16) & 0xff] ^
             crc_table[0][(two >> 24) & 0xff];
 
-      data += 8;
+      Data += 8;
       Length -= 8;
    }
 
-   // Process remaining bytes with single-byte table lookup
    while (Length > 0) {
-      CRC = crc_table[0][(CRC ^ *data++) & 0xff] ^ (CRC >> 8);
+      CRC = crc_table[0][(CRC ^ *Data++) & 0xff] ^ (CRC >> 8);
       Length--;
    }
+
+   return CRC;
+}
+
+#ifdef PF_HAS_HW_CRC32
+static uint32_t gen_crc32_hardware(uint32_t CRC, const uint8_t *Data, uint32_t Length)
+{
+   while (Length >= sizeof(uint64_t)) {
+      uint64_t chunk;
+      memcpy(&chunk, Data, sizeof(chunk));
+      CRC = __crc32d(CRC, chunk);
+      Data += sizeof(chunk);
+      Length -= sizeof(chunk);
+   }
+
+   while (Length >= sizeof(uint32_t)) {
+      uint32_t chunk;
+      memcpy(&chunk, Data, sizeof(chunk));
+      CRC = __crc32w(CRC, chunk);
+      Data += sizeof(chunk);
+      Length -= sizeof(chunk);
+   }
+
+   while (Length >= sizeof(uint16_t)) {
+      uint16_t chunk;
+      memcpy(&chunk, Data, sizeof(chunk));
+      CRC = __crc32h(CRC, chunk);
+      Data += sizeof(chunk);
+      Length -= sizeof(chunk);
+   }
+
+   while (Length > 0) {
+      CRC = __crc32b(CRC, *Data++);
+      Length--;
+   }
+
+   return CRC;
+}
+#endif
+
+uint32_t GenCRC32(uint32_t CRC, APTR Data, uint32_t Length)
+{
+   if (not Data) return 0;
+
+   auto data = (const uint8_t *)Data;
+   CRC = ~CRC;
+
+   #ifdef PF_HAS_HW_CRC32
+      CRC = gen_crc32_hardware(CRC, data, Length);
+   #else
+      CRC = gen_crc32_slice_by_8(CRC, data, Length);
+   #endif
 
    return ~CRC;
 }
