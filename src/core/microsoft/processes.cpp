@@ -345,6 +345,7 @@ extern "C" int winLaunchProcess(APTR Task, LPSTR commandline, LPSTR InitialDir, 
          if (Group) assign_group(info.hProcess);
 
          ResumeThread(info.hThread); // Required as process was created with CREATE_SUSPENDED
+         CloseHandle(info.hThread);
       }
       else winerror = GetLastError();
 

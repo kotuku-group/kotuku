@@ -779,10 +779,13 @@ static ERR TASK_Activate(extTask *Self)
          //if (not glProcessBreak) glProcessBreak = AllocateID(IDTYPE_MESSAGE);
          glProcessBreak = MSGID::BREAK;
 
-         ProcessMessages(PMF::NIL, Self->TimeOut * 1000.0);
+         auto wait_error = ProcessMessages(PMF::NIL, Self->TimeOut * 1000.0);
+         if (wait_error != ERR::Okay) error = wait_error;
 
-         winGetExitCodeProcess(Self->Platform, &Self->ReturnCode);
-         if (Self->ReturnCode != 259) Self->ReturnCodeSet = true;
+         if ((!Self->ReturnCodeSet) and (Self->Platform)) {
+            winGetExitCodeProcess(Self->Platform, &Self->ReturnCode);
+            if (Self->ReturnCode != 259) Self->ReturnCodeSet = true;
+         }
       }
    }
    else {

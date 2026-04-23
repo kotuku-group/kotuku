@@ -1314,7 +1314,7 @@ ERR findfile(std::string &Path)
    }
 
    auto len    = Path.find_last_of(":/\\");
-   auto folder = (len IS std::string::npos) ? "" : Path.substr(0, len);
+   auto folder = (len IS std::string::npos) ? "." : Path.substr(0, len);
    auto name   = (len IS std::string::npos) ? std::string_view(Path) : std::string_view(Path.c_str() + len + 1);
 
    // Scan the files at the Path to find a similar filename (ignore the filename extension).
@@ -1336,8 +1336,11 @@ ERR findfile(std::string &Path)
          if (dot != std::string::npos) filename.remove_suffix(filename.size() - dot);
 
          if (iequals(name, filename)) {
-            Path.resize(folder.size());
-            if (not Path.ends_with('/')) Path.append("/");
+            if (len IS std::string::npos) Path.clear();
+            else {
+               Path.resize(folder.size());
+               if (not Path.ends_with('/')) Path.append("/");
+            }
             Path.append(entry->d_name);
 
             // If it turns out that the Path is a folder, ignore it
@@ -2354,22 +2357,22 @@ ERR fs_getinfo(std::string_view Path, FileInfo *Info, int InfoSize)
 #ifdef __unix__
    // In order to tell if a folder is a symbolic link or not, we have to remove any trailing slash...
 
-   char path_ref[256];
-   int len = strcopy(Path.data(), path_ref, sizeof(path_ref));
-   if ((size_t)len >= sizeof(path_ref)-1) return ERR::BufferOverflow;
-   if ((path_ref[len-1] IS '/') or (path_ref[len-1] IS '\\')) path_ref[len-1] = 0;
+   std::string path_ref(Path);
+   while ((path_ref.size() > 1) and ((path_ref.back() IS '/') or (path_ref.back() IS '\\'))) {
+      path_ref.pop_back();
+   }
 
    // Get the file info.  Use lstat64() and if it turns out that the file is a symbolic link, set the RDF::LINK flag
    // and then switch to stat64().
 
    struct stat64 info;
-   if (lstat64(path_ref, &info) IS -1) return ERR::FileNotFound;
+   if (lstat64(path_ref.c_str(), &info) IS -1) return ERR::FileNotFound;
 
    Info->Flags = RDF::NIL;
 
    if (S_ISLNK(info.st_mode)) {
       Info->Flags |= RDF::LINK;
-      if (stat64(path_ref, &info) IS -1) {
+      if (stat64(path_ref.c_str(), &info) IS -1) {
          // We do not abort in the case of a broken link, just warn and treat it as an empty file
          log.warning("Broken link detected.");
       }
@@ -2380,9 +2383,9 @@ ERR fs_getinfo(std::string_view Path, FileInfo *Info, int InfoSize)
 
    // Extract file/folder name
 
-   int i = len;
+   int i = (int)path_ref.size();
    while ((i > 0) and (path_ref[i-1] != '/') and (path_ref[i-1] != '\\') and (path_ref[i-1] != ':')) i--;
-   Info->Name = path_ref + i;
+   Info->Name = path_ref.c_str() + i;
 
    if ((Info->Flags & RDF::FOLDER) != RDF::NIL) Info->Name += '/';
 

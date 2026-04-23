@@ -452,7 +452,9 @@ int64_t GetResource(RES Resource)
 
          if (file.ok()) {
             while ((line = file->readLine())) {
-               if (startswith("cpu Mhz", line)) cpu_mhz = strtol(line, nullptr, 0);
+               if (startswith("cpu MHz", line)) {
+                  if (auto value = strchr(line, ':')) cpu_mhz = int(strtod(value + 1, nullptr));
+               }
             }
          }
 
