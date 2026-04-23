@@ -513,6 +513,8 @@ static ERR AUDIO_Free(extAudio *Self)
 
    if (Self->Timer) { UpdateTimer(Self->Timer, 0); Self->Timer = nullptr; }
 
+   glSoundChannels.erase(Self->UID);
+
    acDeactivate(Self);
 
    if (Self->MixBuffer) { FreeResource(Self->MixBuffer); Self->MixBuffer = nullptr; }

@@ -259,6 +259,27 @@ void notify_action(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
          }
 
          SetResource(RES::LOG_DEPTH, depth);
+
+         if (ActionID IS AC::Free) {
+            std::erase_if(prv->ActionList, [&](auto &item) {
+               if (item.ObjectID IS Object->UID) {
+                  if (item.Function) {
+                     luaL_unref(prv->Lua, LUA_REGISTRYINDEX, item.Function);
+                     item.Function = 0;
+                  }
+                  if (item.Reference) {
+                     luaL_unref(prv->Lua, LUA_REGISTRYINDEX, item.Reference);
+                     item.Reference = 0;
+                  }
+
+                  // The object is already being destroyed, so suppress destructor-time unsubscribe attempts.
+                  item.ObjectID = 0;
+                  return true;
+               }
+               else return false;
+            });
+         }
+
          return;
       }
    }

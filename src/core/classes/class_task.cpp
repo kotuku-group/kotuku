@@ -408,8 +408,7 @@ static ERR msg_action(APTR Custom, int MsgID, int MsgType, APTR Message, int Msg
 
    if ((action->ObjectID) and (action->ActionID != AC::NIL)) {
       OBJECTPTR obj;
-      ERR error;
-      if ((error = AccessObject(action->ObjectID, 5000, &obj)) IS ERR::Okay) {
+      if (auto error = AccessObject(action->ObjectID, 5000, &obj); error IS ERR::Okay) {
          if (action->SendArgs IS false) {
             obj->setFlag(NF::MESSAGE);
             Action(action->ActionID, obj, nullptr);
@@ -433,11 +432,9 @@ static ERR msg_action(APTR Custom, int MsgID, int MsgType, APTR Message, int Msg
             }
          }
       }
-      else {
-         if ((error != ERR::NoMatchingObject) and (error != ERR::MarkedForDeletion)) {
-            if (action->ActionID > AC::NIL) log.warning("Could not gain access to object %d to execute action %s.", action->ObjectID, action_id_name(action->ActionID));
-            else log.warning("Could not gain access to object %d to execute method %d.", action->ObjectID, int(action->ActionID));
-         }
+      else if ((error != ERR::NoMatchingObject) and (error != ERR::MarkedForDeletion)) {
+         if (action->ActionID > AC::NIL) log.warning("Could not gain access to object %d to execute action %s.", action->ObjectID, action_id_name(action->ActionID));
+         else log.warning("Could not gain access to object %d to execute method %d.", action->ObjectID, int(action->ActionID));
       }
    }
    else log.warning("Action message %s specifies an object ID of #%d.", action_id_name(action->ActionID), action->ObjectID);
