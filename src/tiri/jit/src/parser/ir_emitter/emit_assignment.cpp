@@ -539,7 +539,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_if_empty_assignment(PreparedAssignment 
 
    if (count != 1) {
       return assignment_value_count_error(this, values,
-         "??= assignment expects exactly one RHS value");
+         "?" "?= assignment expects exactly one RHS value");
    }
 
    ExpDesc rhs = list.value_ref();

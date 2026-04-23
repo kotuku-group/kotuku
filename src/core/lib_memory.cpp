@@ -185,7 +185,8 @@ ERR AllocMemory(int Size, MEM Flags, APTR *Address, MEMORYID *MemoryID)
       // Remember the memory block's details such as the size, ID, flags and object that it belongs to.  This helps us
       // with resource tracking, identifying the memory block and freeing it later on.  Hidden blocks are never recorded.
 
-      if ((Flags & MEM::HIDDEN) IS MEM::NIL) {
+      bool tracked = ((Flags & MEM::HIDDEN) IS MEM::NIL);
+      if (tracked) {
          glPrivateMemory.insert(std::pair<MEMORYID, PrivateAddress>(unique_id, PrivateAddress(data_start, unique_id, object_id, (uint32_t)Size, Flags)));
          if ((Flags & MEM::OBJECT) != MEM::NIL) {
             if (object_id) glObjectChildren[object_id].insert(unique_id);
@@ -198,8 +199,35 @@ ERR AllocMemory(int Size, MEM Flags, APTR *Address, MEMORYID *MemoryID)
       if ((MemoryID) and (Address)) {
          if ((Flags & MEM::NO_LOCK) != MEM::NIL) *Address = data_start;
          else if (AccessMemory(unique_id, MEM::READ_WRITE, 2000, Address) != ERR::Okay) {
-            log.warning("Memory block %d stolen during allocation!", *MemoryID);
-            return ERR::AccessMemory;
+            // This failure path shouldn't happen, but rollback to a safe point just in case.
+            if (tracked) {
+               if ((Flags & MEM::OBJECT) != MEM::NIL) {
+                  if (auto object_it = glObjectChildren.find(object_id); object_it != glObjectChildren.end()) {
+                     object_it->second.erase(unique_id);
+                  }
+               }
+               else if (auto object_it = glObjectMemory.find(object_id); object_it != glObjectMemory.end()) {
+                  object_it->second.erase(unique_id);
+               }
+               glPrivateMemory.erase(unique_id);
+            }
+
+            if ((Flags & MEM::PROTECTED) != MEM::NIL) {
+               #ifdef _WIN32
+                  winFreeProtectedMemory(start_mem, aligned_size);
+               #else
+                  munmap(start_mem, aligned_size);
+               #endif
+            }
+            else {
+               #ifdef _WIN32
+                  _aligned_free(start_mem);
+               #else
+                  free(start_mem);
+               #endif
+            }
+
+            return log.warning(ERR::AccessMemory);
          }
          *MemoryID = unique_id;
       }

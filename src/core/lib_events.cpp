@@ -147,18 +147,26 @@ int64_t GetEventID(EVG Group, CSTRING SubGroup, CSTRING Event)
 
    if (Group IS EVG::NIL) return 0;
 
-   auto hash_subgroup = strhash(SubGroup) & 0x00ffffff;
-   auto hash_event = strhash(Event);
+   auto hash_subgroup = 0u;
+   auto hash_event = 0u;
+   auto subgroup_name = SubGroup;
+   auto event_name = Event;
+
+   if (SubGroup) hash_subgroup = strhash(SubGroup) & 0x00ffffff;
+   else subgroup_name = "*";
+
+   if (Event) hash_event = strhash(Event);
+   else event_name = "*";
 
    int64_t event_id = int64_t(uint8_t(Group))<<56;
    if ((SubGroup) and (SubGroup[0] != '*')) event_id |= int64_t(hash_subgroup)<<32;
    if ((Event) and (Event[0] != '*')) event_id |= hash_event;
 
-   glEventNames[hash_subgroup] = SubGroup;
-   glEventNames[hash_event]    = Event;
+   if (SubGroup) glEventNames[hash_subgroup] = SubGroup;
+   if (Event) glEventNames[hash_event] = Event;
 
    log.traceBranch("Group: %d, SubGroup: %s, Event: %s, Result: $%.8x%.8x",
-      int(Group), SubGroup, Event, uint32_t(event_id>>32), uint32_t(event_id));
+      int(Group), subgroup_name, event_name, uint32_t(event_id>>32), uint32_t(event_id));
 
    return event_id;
 }

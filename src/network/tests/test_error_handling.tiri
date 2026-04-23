@@ -229,6 +229,7 @@ end
    -- Try to connect to a routable but non-responsive address
    -- Using a reserved test address that should timeout
    print('[Client] Attempting connection to timeout address...')
+   start = mSys.PreciseTime()
    err = client.mtConnect('10.255.255.1', 80) -- Reserved test IP
 
    if err != ERR_Okay then
@@ -244,7 +245,9 @@ end
       end
    end
 
-   assert(timeout_handled, 'Timeout handling test did not complete as expected')
+   elapsed = (mSys.PreciseTime() - start) / 1000000
+
+   assert(timeout_handled, f'Timeout handling test did not complete as expected, elapsed time: {elapsed}s')
    print('Network timeout test completed successfully!')
 end
 

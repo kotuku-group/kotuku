@@ -296,7 +296,7 @@ static ERR writeval_long(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, i
    auto offset = (int *)((int8_t *)Object + Field->Offset);
    if (Flags & FD_INT)         *offset = *((int *)Data);
    else if (Flags & FD_INT64)  *offset = (int)(*((int64_t *)Data));
-   else if (Flags & (FD_DOUBLE|FD_FLOAT)) *offset = F2I(*((double *)Data));
+   else if (Flags & (FD_DOUBLE|FD_FLOAT)) *offset = std::lrint(*((double *)Data));
    else if (Flags & FD_STRING) *offset = strtol((STRING)Data, nullptr, 0);
    else return ERR::SetValueNotNumeric;
    return ERR::Okay;
@@ -307,7 +307,7 @@ static ERR writeval_large(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, 
    auto offset = (int64_t *)((int8_t *)Object + Field->Offset);
    if (Flags & FD_INT64)      *offset = *((int64_t *)Data);
    else if (Flags & FD_INT)   *offset = *((int *)Data);
-   else if (Flags & (FD_DOUBLE|FD_FLOAT)) *offset = F2I(*((double *)Data));
+   else if (Flags & (FD_DOUBLE|FD_FLOAT)) *offset = std::lrint(*((double *)Data));
    else if (Flags & FD_STRING) *offset = strtoll((STRING)Data, nullptr, 0);
    else return ERR::SetValueNotNumeric;
    return ERR::Okay;
@@ -436,7 +436,7 @@ static ERR setval_array(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, in
    }
    else if (Flags & FD_STRING) {
       APTR arraybuffer;
-      if ((arraybuffer = malloc(strlen((CSTRING)Data) * 8))) {
+      if ((arraybuffer = malloc(strlen((CSTRING)(Data ? Data : "")) * 8))) {
          if (!Data) {
             if (Field->Flags & FD_RGB) {
                Data = "0,0,0,0"; // A string of nullptr will 'clear' the colour (the alpha value will be zero)
@@ -490,10 +490,10 @@ static ERR setval_long(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int
 {
    int int32;
    if (Flags & FD_INT64)       int32 = (int)(*((int64_t *)Data));
-   else if (Flags & (FD_DOUBLE|FD_FLOAT)) int32 = F2I(*((double *)Data));
+   else if (Flags & (FD_DOUBLE|FD_FLOAT)) int32 = std::lrint(*((double *)Data));
    else if (Flags & FD_STRING) int32 = strtol((STRING)Data, nullptr, 0);
    else if (Flags & FD_INT)    int32 = *((int *)Data);
-   else if (Flags & FD_UNIT)   int32 = F2I(((Unit *)Data)->Value);
+   else if (Flags & FD_UNIT)   int32 = std::lrint(((Unit *)Data)->Value);
    else return ERR::SetValueNotNumeric;
 
    FieldContext ctx(Object, Field);

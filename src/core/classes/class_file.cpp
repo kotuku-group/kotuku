@@ -1468,9 +1468,12 @@ static ERR FILE_Watch(extFile *Self, struct fl::Watch *Args)
 
    if (Self->prvWatch) {
       auto id = Self->prvWatch->VirtualID;
-      if (glVirtual.contains(id)) {
-         if (glVirtual[id].IgnoreFile) glVirtual[id].IgnoreFile(Self);
+      void (*ignore_file)(extFile *) = nullptr;
+      {
+         std::lock_guard<std::mutex> lock(glmVirtual);
+         if (auto it = glVirtual.find(id); it != glVirtual.end()) ignore_file = it->second.IgnoreFile;
       }
+      if (ignore_file) ignore_file(Self);
       else log.warning("Failed to find virtual volume ID $%.8x", id);
 
       FreeResource(Self->prvWatch);
@@ -1497,17 +1500,17 @@ static ERR FILE_Watch(extFile *Self, struct fl::Watch *Args)
    if ((error = GET_ResolvedPath(Self, &resolve)) IS ERR::Okay) {
       auto vd = get_fs(resolve);
 
-      if (vd->WatchPath) {
+      if (vd.WatchPath) {
          #ifdef _WIN32
          if (AllocMemory(sizeof(rkWatchPath) + winGetWatchBufferSize(), MEM::DATA, (APTR *)&Self->prvWatch, nullptr) IS ERR::Okay) {
          #else
          if (AllocMemory(sizeof(rkWatchPath), MEM::DATA, (APTR *)&Self->prvWatch, nullptr) IS ERR::Okay) {
          #endif
-            Self->prvWatch->VirtualID = vd->VirtualID;
+            Self->prvWatch->VirtualID = vd.VirtualID;
             Self->prvWatch->Routine   = *Args->Callback;
             Self->prvWatch->Flags     = Args->Flags;
 
-            error = vd->WatchPath(Self);
+            error = vd.WatchPath(Self);
          }
          else error = ERR::AllocMemory;
       }

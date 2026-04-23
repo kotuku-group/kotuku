@@ -93,9 +93,9 @@ static void generate_supershape(extVectorShape *Vector, agg::path_storage &Path)
 
       // Prevent sub-pixel vertices from being generated.
 
-      if ((F2I(x) IS lx) and (F2I(y) IS ly)) continue;
-      lx = F2I(x);
-      ly = F2I(y);
+      if ((std::lrint(x) IS lx) and (std::lrint(y) IS ly)) continue;
+      lx = std::lrint(x);
+      ly = std::lrint(y);
 
       // If x or y is greater than the radius, we'll have to rescale the final result after the shape has been generated.
 

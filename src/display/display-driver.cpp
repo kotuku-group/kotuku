@@ -1077,7 +1077,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    for (int16_t iAlpha=0; iAlpha < 256; iAlpha++) {
       double fAlpha = (double)iAlpha * (1.0 / 255.0);
       for (int16_t iValue=0; iValue < 256; iValue++) {
-         glAlphaLookup[i++] = clipByte(F2I((double)iValue * fAlpha));
+         glAlphaLookup[i++] = clipByte(std::lrint((double)iValue * fAlpha));
       }
    }
 

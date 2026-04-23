@@ -503,7 +503,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
 
 #ifndef KOTUKU_STATIC
    if ((Info->Flags & OPF::SCAN_MODULES) IS OPF::NIL) {
-      ERR error;
+      ERR error = ERR::Okay;
       auto file = objFile::create { fl::Path(glClassBinPath), fl::Flags(FL::READ) };
 
       if (file.ok()) {
@@ -1047,7 +1047,10 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
 
    log.branch("Initialising filesystem volumes.");
 
-   glVirtual[0] = glFSDefault;
+   {
+      std::lock_guard<std::mutex> lock(glmVirtual);
+      glVirtual[0] = glFSDefault;
+   }
 
    log.trace("Attempting to create SystemVolumes object.");
 
@@ -1262,36 +1265,37 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
       if (size < 1) size = 8192;
 
       STRING buffer;
-      if (AllocMemory(size, MEM::NO_CLEAR, (APTR *)&buffer, nullptr) IS ERR::Okay) {
-         size = read(file, buffer, size);
-         buffer[size] = 0;
+      if (AllocMemory(size + 1, MEM::NO_CLEAR, (APTR *)&buffer, nullptr) IS ERR::Okay) {
+         if ((size = read(file, buffer, size)) > 0) {
+            buffer[size] = 0;
 
-         CSTRING str = buffer;
-         while (*str) {
-            if (std::string_view(str, size).starts_with("/dev/hd")) {
-               // Extract mount point
+            CSTRING str = buffer;
+            while (*str) {
+               if (std::string_view(str, size).starts_with("/dev/hd")) {
+                  // Extract mount point
 
-               int i = 0;
-               while ((*str) and (*str > 0x20)) {
-                  if (i < std::ssize(devpath)-1) devpath[i++] = *str;
-                  str++;
+                  int i = 0;
+                  while ((*str) and (*str > 0x20)) {
+                     if (i < std::ssize(devpath)-1) devpath[i++] = *str;
+                     str++;
+                  }
+                  devpath[i] = 0;
+
+                  while ((*str) and (*str <= 0x20)) str++;
+                  for (i=0; (*str) and (*str > 0x20) and (i < std::ssize(mount)-1); i++) mount[i] = *str++;
+                  mount[i] = 0;
+
+                  if ((mount[0] IS '/') and (!mount[1]));
+                  else {
+                     strcopy(std::to_string(driveno++), drivename+5, 3);
+                     SetVolume(drivename, mount, "devices/storage", nullptr, "fixed", VOLUME::NIL);
+                  }
                }
-               devpath[i] = 0;
 
+               // Next line
+               while ((*str) and (*str != '\n')) str++;
                while ((*str) and (*str <= 0x20)) str++;
-               for (i=0; (*str) and (*str > 0x20) and (i < std::ssize(mount)-1); i++) mount[i] = *str++;
-               mount[i] = 0;
-
-               if ((mount[0] IS '/') and (!mount[1]));
-               else {
-                  strcopy(std::to_string(driveno++), drivename+5, 3);
-                  SetVolume(drivename, mount, "devices/storage", nullptr, "fixed", VOLUME::NIL);
-               }
             }
-
-            // Next line
-            while ((*str) and (*str != '\n')) str++;
-            while ((*str) and (*str <= 0x20)) str++;
          }
          FreeResource(buffer);
       }

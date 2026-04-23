@@ -20,7 +20,7 @@ using namespace display;
 // Class definition at end of this source file.
 
 static ERR DISPLAY_Resize(extDisplay *, struct acResize *);
-static CSTRING dpms_name(DPMS Index);
+[[maybe_unused]] static CSTRING dpms_name(DPMS Index);
 
 static void alloc_display_buffer(extDisplay *Self);
 
@@ -2834,7 +2834,7 @@ static const FieldArray DisplayFields[] = {
 
 //********************************************************************************************************************
 
-CSTRING dpms_name(DPMS Index)
+static CSTRING dpms_name(DPMS Index)
 {
    return clDisplayPowerMode[int(Index)].Name;
 }

@@ -97,9 +97,9 @@ static ERR folder_free(APTR Address)
 
    if ((folder->prvVirtualID) and (folder->prvVirtualID != DEFAULT_VIRTUALID)) {
       auto id = folder->prvVirtualID;
-      if (glVirtual.contains(id)) {
-         log.trace("Virtual file driver function @ %p", glVirtual[id].CloseDir);
-         if (glVirtual[id].CloseDir) glVirtual[id].CloseDir(folder);
+      if (auto vd = get_virtual_drive(id)) {
+         log.trace("Virtual file driver function @ %p", vd->CloseDir);
+         if (vd->CloseDir) vd->CloseDir(folder);
       }
    }
 
@@ -164,7 +164,7 @@ ERR OpenDir(CSTRING Path, RDF Flags, DirInfo **Result)
 
       new (dir) extDirInfo();
       SetResourceMgr(dir, &glResourceFolder);
-      if (auto error = dir->initialise(Path, resolved_path, Flags, vd->DriverSize); error != ERR::Okay) {
+      if (auto error = dir->initialise(Path, resolved_path, Flags, vd.DriverSize); error != ERR::Okay) {
          FreeResource(dir);
          return error;
       }
@@ -178,13 +178,13 @@ ERR OpenDir(CSTRING Path, RDF Flags, DirInfo **Result)
          return ERR::Okay;
       }
 
-      if (not vd->OpenDir) {
+      if (not vd.OpenDir) {
          FreeResource(dir);
          return ERR::DirEmpty;
       }
 
-      if ((error = vd->OpenDir(dir)) IS ERR::Okay) {
-         dir->prvVirtualID = vd->VirtualID;
+      if ((error = vd.OpenDir(dir)) IS ERR::Okay) {
+         dir->prvVirtualID = vd.VirtualID;
          *Result = dir;
          return ERR::Okay;
       }
@@ -284,8 +284,8 @@ ERR ScanDir(DirInfo *Dir)
    if (Dir->prvVirtualID IS DEFAULT_VIRTUALID) {
       error = fs_scandir(Dir);
    }
-   else if (glVirtual.contains(Dir->prvVirtualID)) {
-      if (glVirtual[Dir->prvVirtualID].ScanDir) error = glVirtual[Dir->prvVirtualID].ScanDir(Dir);
+   else if (auto vd = get_virtual_drive(Dir->prvVirtualID)) {
+      if (vd->ScanDir) error = vd->ScanDir(Dir);
    }
 
    if ((not file->Name.empty()) and ((Dir->prvFlags & RDF::DATE) != RDF::NIL)) {

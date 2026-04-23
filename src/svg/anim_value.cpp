@@ -238,7 +238,7 @@ void anim_value::set_value(objVector &Vector)
             // transform.  Refer to xtag_use() for a working example as to why.
 
             VectorMatrix *m;
-            for (m=Vector.Matrices; (m) and (m->Tag != MTAG_SVG_TRANSFORM); m=m->Next);
+            for (m=Vector.Matrices; (m) and ((unsigned int)m->Tag != MTAG_SVG_TRANSFORM); m=m->Next);
 
             if (!m) {
                Vector.newMatrix(&m, false);
@@ -257,7 +257,7 @@ void anim_value::set_value(objVector &Vector)
       case SVF_Y: {
          if (Vector.Class->ClassID IS CLASSID::VECTORGROUP) {
             VectorMatrix *m;
-            for (m=Vector.Matrices; (m) and (m->Tag != MTAG_SVG_TRANSFORM); m=m->Next);
+            for (m=Vector.Matrices; (m) and ((unsigned int)m->Tag != MTAG_SVG_TRANSFORM); m=m->Next);
 
             if (!m) {
                Vector.newMatrix(&m, false);

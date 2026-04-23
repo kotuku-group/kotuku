@@ -17,11 +17,18 @@ static std::optional<std::string> true_path(CSTRING Path)
 #ifdef _WIN32
    std::string buffer;
    buffer.resize(256);
-   if (auto size = winGetFullPathName(Path, buffer.size(), buffer.data(), nullptr); size > 0) {
-      buffer.resize(size);
-      return std::make_optional<std::string>(buffer);
+   while (true) {
+      auto size = winGetFullPathName(Path, (int)buffer.size(), buffer.data(), nullptr);
+      if (size <= 0) break;
+      if ((size_t)size < buffer.size()) {
+         buffer.resize(size);
+         return std::make_optional<std::string>(buffer);
+      }
+
+      buffer.resize(size + 1);
    }
-   else return std::nullopt;
+
+   return std::nullopt;
 #else
    if (char *rp = realpath(Path, nullptr)) {
       std::string p(rp);

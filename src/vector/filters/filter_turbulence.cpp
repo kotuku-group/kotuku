@@ -187,8 +187,8 @@ static ERR TURBULENCEFX_Draw(extTurbulenceFX *Self, struct acDraw *Args)
 {
    if (Self->Target->BytesPerPixel != 4) return ERR::InvalidState;
 
-   const int width = F2I(Self->Filter->TargetWidth);
-   const int height = F2I(Self->Filter->TargetHeight);
+   const int width = std::lrint(Self->Filter->TargetWidth);
+   const int height = std::lrint(Self->Filter->TargetHeight);
 
    if ((width <= 0) or (height <= 0)) return ERR::Okay;
 
@@ -228,8 +228,8 @@ static ERR TURBULENCEFX_Draw(extTurbulenceFX *Self, struct acDraw *Args)
             if (Self->Stitch) {
                TClipRectangle<double> bounds = { Self->Filter->ClientViewport->vpFixedWidth, Self->Filter->ClientViewport->vpFixedHeight, 0, 0 };
                calc_full_boundary(Self->Filter->ClientVector, bounds, false, false);
-               const int tile_width  = F2I(bounds.width());
-               const int tile_height = F2I(bounds.height());
+               const int tile_width  = std::lrint(bounds.width());
+               const int tile_height = std::lrint(bounds.height());
 
                // When stitching tiled turbulence, the frequencies must be adjusted so that the tile borders will be continuous.
 
@@ -250,8 +250,8 @@ static ERR TURBULENCEFX_Draw(extTurbulenceFX *Self, struct acDraw *Args)
                   else fy = fHiFreq;
                }
 
-               auto stitch_width  = F2I(tile_width * fx);
-               auto stitch_height = F2I(tile_height * fy);
+               auto stitch_width  = std::lrint(tile_width * fx);
+               auto stitch_height = std::lrint(tile_height * fy);
 
                for (int y=Start; y < End; y++) {
                   uint8_t *pixel = data + (Self->Bitmap->LineWidth * y);

@@ -130,8 +130,8 @@ static ERR DISPLACEMENTFX_Draw(extDisplacementFX *Self, struct acDraw *Args)
          auto dy = m[y_type];
          // TODO: SVG recommends using interpolation between pixels rather than the dropping the fractional part
          // as done here.
-         const int cx = x + F2I(sx * (double(dx) - HALF8BIT));
-         const int cy = y + F2I(sy * (double(dy) - HALF8BIT));
+         const int cx = x + std::lrint(sx * (double(dx) - HALF8BIT));
+         const int cy = y + std::lrint(sy * (double(dy) - HALF8BIT));
          if ((cx < 0) or (cx >= in_width) or (cy < 0) or (cy >= in_height)) {
             // The source pixel is outside of retrievable bounds
             *d = 0;

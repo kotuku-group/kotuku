@@ -452,7 +452,9 @@ int64_t GetResource(RES Resource)
 
          if (file.ok()) {
             while ((line = file->readLine())) {
-               if (startswith("cpu Mhz", line)) cpu_mhz = strtol(line, nullptr, 0);
+               if (startswith("cpu MHz", line)) {
+                  if (auto value = strchr(line, ':')) cpu_mhz = int(strtod(value + 1, nullptr));
+               }
             }
          }
 
@@ -670,7 +672,7 @@ ERR SetResourcePath(RP PathType, CSTRING Path)
       case RP::ROOT_PATH:
          if (Path) {
             glRootPath = Path;
-            if ((glRootPath.back() != '/') and (glRootPath.back() != '\\')) {
+            if ((!glRootPath.empty()) and (glRootPath.back() != '/') and (glRootPath.back() != '\\')) {
                #ifdef _WIN32
                   glRootPath.push_back('\\');
                #else
@@ -683,7 +685,7 @@ ERR SetResourcePath(RP PathType, CSTRING Path)
       case RP::SYSTEM_PATH:
          if (Path) {
             glSystemPath = Path;
-            if ((glSystemPath.back() != '/') and (glSystemPath.back() != '\\')) {
+            if ((!glSystemPath.empty()) and (glSystemPath.back() != '/') and (glSystemPath.back() != '\\')) {
                #ifdef _WIN32
                   glSystemPath.push_back('\\');
                #else
@@ -696,7 +698,7 @@ ERR SetResourcePath(RP PathType, CSTRING Path)
       case RP::MODULE_PATH: // An alternative path to the system modules.  This was introduced for Android, which holds the module binaries in the assets folders.
          if (Path) {
             glModulePath = Path;
-            if ((glModulePath.back() != '/') and (glModulePath.back() != '\\')) {
+            if ((!glModulePath.empty()) and (glModulePath.back() != '/') and (glModulePath.back() != '\\')) {
                #ifdef _WIN32
                   glModulePath += '\\';
                #else

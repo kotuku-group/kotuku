@@ -226,7 +226,7 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
                copymem(str->c_str(), insert, str->length() + 1);
             }
             else ((STRING *)param)[0] = nullptr;
-            pos += sizeof(std::string);
+            pos += sizeof(APTR);
          }
          else {
             auto insert = (STRING)(Buffer.data() + Buffer.size());
@@ -234,7 +234,7 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
                auto len = strlen(str);
                Buffer.resize(Buffer.size() + len + 1);
                ((STRING *)param)[0] = insert;
-               copymem(str, Buffer.data() + Buffer.size(), len + 1);
+               copymem(str, insert, len + 1);
             }
             else ((STRING *)param)[0] = nullptr;
             pos += sizeof(STRING);

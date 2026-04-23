@@ -525,7 +525,7 @@ ERR ScanMessages(int *Handle, MSGID Type, APTR Buffer, int BufferSize)
             else copymem(it->getBuffer(), ((int8_t *)Buffer) + sizeof(Message), it->Size);
          }
 
-         *Handle = index + 1;
+         *Handle = int(std::distance(glQueue.begin(), it)) + 1;
          return ERR::Okay;
       }
    }
@@ -786,7 +786,7 @@ ERR write_nonblock(int Handle, APTR Data, int Size, int64_t EndTime)
                FD_SET(Handle, &wfds);
                tv.tv_sec = (EndTime - (PreciseTime() / 1000LL)) / 1000LL;
                tv.tv_usec = 0;
-               int total = select(1, &wfds, nullptr, nullptr, &tv);
+               int total = select(Handle + 1, nullptr, &wfds, nullptr, &tv);
                if (total IS -1) error = ERR::SystemCall;
                else if (!total) error = ERR::TimeOut;
                else break;

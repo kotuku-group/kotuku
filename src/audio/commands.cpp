@@ -430,7 +430,7 @@ ERR MixPlay(objAudio *Audio, int Handle, int Position)
                sec = double((sample.StreamLength - sample.PlayPos)>>sample_shift(sample.SampleType)) / double(channel->Frequency);
             }
             else sec = double(sample.SampleLength - Position) / double(channel->Frequency);
-            channel->EndTime = PreciseTime() + F2I(sec * 1000000.0);
+            channel->EndTime = PreciseTime() + std::lrint(sec * 1000000.0);
          }
          else channel->EndTime = 0;
 

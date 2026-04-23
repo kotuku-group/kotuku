@@ -168,34 +168,34 @@ static ERR SET_Dimensions(extSurface *Self, DMF Value)
 
       struct acRedimension resize;
       if (dmf::hasX(Self->Dimensions)) resize.X = Self->X;
-      else if (dmf::hasScaledX(Self->Dimensions)) resize.X = parent->Width * F2I(Self->XPercent);
+      else if (dmf::hasScaledX(Self->Dimensions)) resize.X = parent->Width * std::lrint(Self->XPercent);
       else if (dmf::hasXOffset(Self->Dimensions)) resize.X = parent->Width - Self->XOffset;
-      else if (dmf::hasScaledXOffset(Self->Dimensions)) resize.X = parent->Width - ((parent->Width * F2I(Self->XOffsetPercent)));
+      else if (dmf::hasScaledXOffset(Self->Dimensions)) resize.X = parent->Width - ((parent->Width * std::lrint(Self->XOffsetPercent)));
       else resize.X = 0;
 
       if (dmf::hasY(Self->Dimensions)) resize.Y = Self->Y;
-      else if (dmf::hasScaledY(Self->Dimensions)) resize.Y = parent->Height * F2I(Self->YPercent);
+      else if (dmf::hasScaledY(Self->Dimensions)) resize.Y = parent->Height * std::lrint(Self->YPercent);
       else if (dmf::hasYOffset(Self->Dimensions)) resize.Y = parent->Height - Self->YOffset;
-      else if (dmf::hasScaledYOffset(Self->Dimensions)) resize.Y = parent->Height - ((parent->Height * F2I(Self->YOffsetPercent)));
+      else if (dmf::hasScaledYOffset(Self->Dimensions)) resize.Y = parent->Height - ((parent->Height * std::lrint(Self->YOffsetPercent)));
       else resize.Y = 0;
 
       if (dmf::hasWidth(Self->Dimensions)) resize.Width = Self->Width;
-      else if (dmf::hasScaledWidth(Self->Dimensions)) resize.Width = parent->Width * F2I(Self->WidthPercent);
+      else if (dmf::hasScaledWidth(Self->Dimensions)) resize.Width = parent->Width * std::lrint(Self->WidthPercent);
       else {
-         if (dmf::hasScaledXOffset(Self->Dimensions)) resize.Width = parent->Width - (parent->Width * F2I(Self->XOffsetPercent));
+         if (dmf::hasScaledXOffset(Self->Dimensions)) resize.Width = parent->Width - (parent->Width * std::lrint(Self->XOffsetPercent));
          else resize.Width = parent->Width - Self->XOffset;
 
-         if (dmf::hasScaledX(Self->Dimensions)) resize.Width = resize.Width - ((parent->Width * F2I(Self->XPercent)));
+         if (dmf::hasScaledX(Self->Dimensions)) resize.Width = resize.Width - ((parent->Width * std::lrint(Self->XPercent)));
          else resize.Width = resize.Width - Self->X;
       }
 
       if (dmf::hasHeight(Self->Dimensions)) resize.Height = Self->Height;
-      else if (dmf::hasScaledHeight(Self->Dimensions)) resize.Height = parent->Height * F2I(Self->HeightPercent);
+      else if (dmf::hasScaledHeight(Self->Dimensions)) resize.Height = parent->Height * std::lrint(Self->HeightPercent);
       else {
-         if (dmf::hasScaledYOffset(Self->Dimensions)) resize.Height = parent->Height - (parent->Height * F2I(Self->YOffsetPercent));
+         if (dmf::hasScaledYOffset(Self->Dimensions)) resize.Height = parent->Height - (parent->Height * std::lrint(Self->YOffsetPercent));
          else resize.Height = parent->Height - Self->YOffset;
 
-         if (dmf::hasScaledY(Self->Dimensions)) resize.Height = resize.Height - ((parent->Height * F2I(Self->YPercent)));
+         if (dmf::hasScaledY(Self->Dimensions)) resize.Height = resize.Height - ((parent->Height * std::lrint(Self->YPercent)));
          else resize.Height = resize.Height - Self->Y;
       }
 
@@ -789,7 +789,7 @@ static ERR SET_XOffset(extSurface *Self, Unit *Value)
 
       if (Self->ParentID) {
          if (ScopedObjectLock<extSurface> parent(Self->ParentID, 500); parent.granted()) {
-            Self->XOffset = parent->Width * F2I(Self->XOffsetPercent);
+            Self->XOffset = parent->Width * std::lrint(Self->XOffsetPercent);
             if (!dmf::hasAnyX(Self->Dimensions)) Self->X = parent->Width - Self->XOffset - Self->Width;
             if (!dmf::hasAnyWidth(Self->Dimensions)) {
                resize_layer(Self, Self->X, Self->Y, parent->Width - Self->X - Self->XOffset, 0, 0, 0, 0, 0, 0);
@@ -912,7 +912,7 @@ static ERR SET_YOffset(extSurface *Self, Unit *Value)
 
       if (Self->ParentID) {
          if (ScopedObjectLock<extSurface> parent(Self->ParentID, 500); parent.granted()) {
-            Self->YOffset = parent->Height * F2I(Self->YOffsetPercent);
+            Self->YOffset = parent->Height * std::lrint(Self->YOffsetPercent);
             if (!dmf::hasAnyY(Self->Dimensions)) Self->Y = parent->Height - Self->YOffset - Self->Height;
             if (!dmf::hasAnyHeight(Self->Dimensions)) {
                resize_layer(Self, Self->X, Self->Y, 0, parent->Height - Self->Y - Self->YOffset, 0, 0, 0, 0, 0);

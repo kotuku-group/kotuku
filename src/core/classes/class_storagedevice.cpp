@@ -39,15 +39,15 @@ static ERR STORAGE_Init(extStorageDevice *Self)
 
    if (!Self->Volume) return log.warning(ERR::FieldNotSet);
 
-   const virtual_drive *vd = get_fs(Self->Volume);
+   auto vd = get_fs(Self->Volume);
 
-   if (vd->is_virtual()) Self->DeviceFlags |= DEVICE::SOFTWARE;
+   if (vd.is_virtual()) Self->DeviceFlags |= DEVICE::SOFTWARE;
 
    Self->BytesFree  = -1;
    Self->BytesUsed  = 0;
    Self->DeviceSize = -1;
 
-   if (vd->GetDeviceInfo) return vd->GetDeviceInfo(Self->Volume, Self);
+   if (vd.GetDeviceInfo) return vd.GetDeviceInfo(Self->Volume, Self);
    else return ERR::Okay;
 }
 

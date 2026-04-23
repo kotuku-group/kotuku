@@ -450,25 +450,29 @@ ERR AccessObject(OBJECTID ObjectID, int MilliSeconds, OBJECTPTR *Result)
    if ((not Result) or (not ObjectID)) return log.warning(ERR::NullArgs);
    if (MilliSeconds <= 0) log.warning(ERR::Args); // Warn but do not fail
 
-   if (auto lock = std::unique_lock{glmMemory}) {
-      auto mem = glPrivateMemory.find(ObjectID);
-      if ((mem != glPrivateMemory.end()) and (mem->second.Address)) {
-         if (auto error = LockObject((OBJECTPTR)mem->second.Address, MilliSeconds); error IS ERR::Okay) {
-            *Result = (OBJECTPTR)mem->second.Address;
-            return ERR::Okay;
-         }
-         else return error;
+   *Result = nullptr;
+
+   if (ObjectID IS glMetaClass.UID) { // Access to the MetaClass requires this special case handler.
+      if (auto error = LockObject(&glMetaClass, MilliSeconds); error IS ERR::Okay) {
+         *Result = &glMetaClass;
+         return ERR::Okay;
       }
-      else if (ObjectID IS glMetaClass.UID) { // Access to the MetaClass requires this special case handler.
-         if (auto error = LockObject(&glMetaClass, MilliSeconds); error IS ERR::Okay) {
-            *Result = &glMetaClass;
-            return ERR::Okay;
-         }
-         else return error;
-      }
-      else return ERR::NoMatchingObject;
+      else return error;
    }
-   else return log.warning(ERR::SystemLocked);
+
+   OBJECTPTR object = nullptr;
+   auto error = AccessMemory(ObjectID, MEM::READ, MilliSeconds, (APTR *)&object);
+   if (error IS ERR::MemoryDoesNotExist) return ERR::NoMatchingObject;
+   else if (error != ERR::Okay) return error;
+
+   error = LockObject(object, MilliSeconds);
+   ReleaseMemory(ObjectID);
+
+   if (error IS ERR::Okay) {
+      *Result = object;
+      return ERR::Okay;
+   }
+   else return error;
 }
 
 /*********************************************************************************************************************

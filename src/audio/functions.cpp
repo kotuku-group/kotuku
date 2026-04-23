@@ -208,7 +208,7 @@ static BYTELEN fill_stream_buffer(int Handle, AudioSample &Sample, int Offset)
 
 //********************************************************************************************************************
 
-static ERR get_mix_amount(extAudio *Self, SAMPLE *MixLeft)
+[[maybe_unused]] static ERR get_mix_amount(extAudio *Self, SAMPLE *MixLeft)
 {
    auto ml = SAMPLE(0x7fffffff);
    for (int i=1; i < (int)Self->Sets.size(); i++) {
@@ -323,7 +323,7 @@ static ERR set_channel_volume(extAudio *Self, AudioChannel *Channel)
 //********************************************************************************************************************
 // Process as many command batches as possible that will fit within MixLeft.
 
-ERR process_commands(extAudio *Self, SAMPLE Elements)
+[[maybe_unused]] static ERR process_commands(extAudio *Self, SAMPLE Elements)
 {
    pf::Log log(__FUNCTION__);
 
@@ -494,7 +494,7 @@ static ERR audio_timer(extAudio *Self, int64_t Elapsed, int64_t CurrentTime)
 
 #else
 
-   #warning No audio timer support on this platform.
+   // No audio timer support on this platform.
    return ERR::NoSupport;
 
 #endif
@@ -780,7 +780,7 @@ static bool handle_sample_end(extAudio *Self, AudioChannel &Channel)
 //********************************************************************************************************************
 // Main entry point for mixing sound data to destination
 
-static ERR mix_data(extAudio *Self, int Elements, APTR Dest)
+[[maybe_unused]] static ERR mix_data(extAudio *Self, int Elements, APTR Dest)
 {
    pf::Log log(__FUNCTION__);
 
