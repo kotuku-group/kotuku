@@ -390,7 +390,7 @@ ERR AccessMemory(MEMORYID MemoryID, MEM Flags, int MilliSeconds, APTR *Result)
          *Result = mem->second.Address;
          return ERR::Okay;
       }
-      else log.traceWarning("Cannot find memory ID #%d", MemoryID); // This is not uncommon, so trace only
+      else log.trace("Cannot find memory ID #%d", MemoryID); // Attempting a non-existing ID is allowed, so trace only
    }
    else return log.warning(ERR::SystemLocked);
 

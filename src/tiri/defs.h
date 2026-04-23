@@ -219,7 +219,19 @@ struct actionmonitor {
       move.ObjectID = 0;
    }
 
-   actionmonitor& operator=(actionmonitor &&move) = default;
+   actionmonitor& operator=(actionmonitor &&move) noexcept
+   {
+      if (this != &move) {
+         Object = move.Object;
+         Args = move.Args;
+         Function = move.Function;
+         Reference = move.Reference;
+         ActionID = move.ActionID;
+         ObjectID = move.ObjectID;
+         move.ObjectID = 0;
+      }
+      return *this;
+   }
 };
 
 //********************************************************************************************************************
