@@ -55,6 +55,7 @@ static ERR GET_Module(extMetaClass *, CSTRING *);
 static ERR GET_Objects(extMetaClass *, OBJECTID **, int *);
 static ERR GET_RootModule(extMetaClass *, class RootModule **);
 static ERR GET_Dictionary(extMetaClass *, struct Field **, int *);
+static ERR GET_SubClasses(extMetaClass *, extMetaClass ***, int *);
 static ERR GET_SubFields(extMetaClass *, const FieldArray **, int *);
 
 static ERR SET_Actions(extMetaClass *, const ActionArray *);
@@ -109,9 +110,10 @@ static const std::vector<Field> glMetaFieldsPreset = {
    { 0, (ERR (*)(APTR, APTR))GET_ClassName, (APTR)SET_ClassName, writeval_default, "Name", FID_Name,            sizeof(Object), 19, FDF_STRING|FDF_SYSTEM|FDF_RI },
    { 0, (ERR (*)(APTR, APTR))GET_Module, 0,       writeval_default,   "Module",            FID_Module,          sizeof(Object), 20, FDF_STRING|FDF_R },
    { 0, (ERR (*)(APTR, APTR))GET_Objects, 0,      writeval_default,   "Objects",           FID_Objects,         sizeof(Object), 21, FDF_ARRAY|FDF_INT|FDF_ALLOC|FDF_R },
-   { MAXINT("FieldArray"), (ERR (*)(APTR, APTR))GET_SubFields, 0, writeval_default, "SubFields", FID_SubFields, sizeof(Object), 22, FDF_ARRAY|FD_STRUCT|FDF_SYSTEM|FDF_R },
-   { MAXINT(CLASSID::ROOTMODULE), (ERR (*)(APTR, APTR))GET_RootModule, 0, writeval_default, "RootModule", FID_RootModule, sizeof(Object), 23, FDF_OBJECT|FDF_R },
-   { 0, (ERR (*)(APTR, APTR))OBJECT_GetID, 0,     writeval_default,   "ID",                FID_ID,              sizeof(Object), 24, FDF_INT|FDF_SYSTEM|FDF_R },
+   { MAXINT(CLASSID::METACLASS), (ERR (*)(APTR, APTR))GET_SubClasses, nullptr, writeval_default, "SubClasses", FID_SubClasses, sizeof(Object), 22, FDF_ARRAY|FD_OBJECT|FDF_R },
+   { MAXINT("FieldArray"), (ERR (*)(APTR, APTR))GET_SubFields, 0, writeval_default, "SubFields", FID_SubFields, sizeof(Object), 23, FDF_ARRAY|FD_STRUCT|FDF_SYSTEM|FDF_R },
+   { MAXINT(CLASSID::ROOTMODULE), (ERR (*)(APTR, APTR))GET_RootModule, 0, writeval_default, "RootModule", FID_RootModule, sizeof(Object), 24, FDF_OBJECT|FDF_R },
+   { 0, (ERR (*)(APTR, APTR))OBJECT_GetID, 0,     writeval_default,   "ID",                FID_ID,              sizeof(Object), 25, FDF_INT|FDF_SYSTEM|FDF_R },
    { 0, 0, 0, nullptr, "", 0, 0, 0,  0 }
 };
 
@@ -138,6 +140,7 @@ static const FieldArray glMetaFields[] = {
    { "Name",            FDF_STRING|FDF_SYSTEM|FDF_RI, GET_ClassName, SET_ClassName },
    { "Module",          FDF_STRING|FDF_R, GET_Module },
    { "Objects",         FDF_ARRAY|FDF_INT|FDF_ALLOC|FDF_R, GET_Objects },
+   { "SubClasses",      FDF_ARRAY|FD_OBJECT|FDF_R, GET_SubClasses, nullptr, CLASSID::METACLASS },
    { "SubFields",       FDF_ARRAY|FD_STRUCT|FDF_SYSTEM|FDF_R, GET_SubFields, nullptr, "FieldArray" },
    { "RootModule",      FDF_OBJECT|FDF_R, GET_RootModule, nullptr, CLASSID::ROOTMODULE },
    { "ID",              FDF_INT|FDF_SYSTEM|FDF_R, OBJECT_GetID },
@@ -352,11 +355,11 @@ ERR CLASS_Init(extMetaClass *Self)
                while ((i > 0) and (Self->Path[i] != '/') and (Self->Path[i] != '\\') and (Self->Path[i] != ':')) i--;
                if (i > 0) i++; // Skip folder separator.
 
-               return ClassRecord(Self, make_optional(Self->Path.substr(i)));
+               return extClassRecord(Self, make_optional(Self->Path.substr(i)));
             }
-            else return ClassRecord(Self);
+            else return extClassRecord(Self);
          #else
-            return ClassRecord(Self);
+            return extClassRecord(Self);
          #endif
       }();
    }
@@ -789,6 +792,23 @@ RootModule: Returns a direct reference to the RootModule object that hosts the c
 static ERR GET_RootModule(extMetaClass *Self, class RootModule **Value)
 {
    *Value = Self->Root;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+SubClasses: Returns a list of all sub-classes of the class.
+
+This field returns an array listing all active sub-classes of the class (classes that have not been loaded are not
+included).  This feature applies to base-classes only.
+
+*********************************************************************************************************************/
+
+static ERR GET_SubClasses(extMetaClass *Self, extMetaClass ***Values, int *Elements)
+{
+   *Values = Self->SubClasses.data();
+   *Elements = int(Self->SubClasses.size());
    return ERR::Okay;
 }
 

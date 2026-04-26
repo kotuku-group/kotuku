@@ -1984,9 +1984,9 @@ struct FileFeedback {
 
 struct Field {
    MAXINT   Arg;                                                             // An option to complement the field type.  Can be a pointer or an integer value
-   ERR (*GetValue)(APTR, APTR);                                              // A virtual function that will retrieve the value for this field.
-   APTR     SetValue;                                                        // A virtual function that will set the value for this field.
-   ERR (*WriteValue)(OBJECTPTR, struct Field *, int, const void *, int);     // An internal function for writing to this field.
+   ERR (*GetValue)(APTR, APTR);                                              // A virtual function that will retrieve the value for this field
+   APTR     SetValue;                                                        // A virtual function that will set the value for this field
+   ERR (*WriteValue)(OBJECTPTR, struct Field *, int, const void *, int);     // An internal function for writing to this field
    CSTRING  Name;                                                            // The English name for the field, e.g. Width
    uint32_t FieldID;                                                         // 32-bit hash from fieldhash(). Represented by FID constants, e.g. FID_Width
    uint16_t Offset;                                                          // Field offset within the object
@@ -1994,6 +1994,17 @@ struct Field {
    uint32_t Flags;                                                           // Special flags that describe the field
    inline bool readable() { return (Flags & FD_READ) ? true : false; }
    inline bool writeable() { return (Flags & (FD_WRITE|FD_INIT)) ? true : false; }
+};
+
+struct ClassRecord {
+   CLASSID ClassID;       // Unique class identifier (hash of Name)
+   CLASSID ParentID;      // Parent class ID if this is a sub-class
+   CCF     Category;      // Assigned category
+   std::string Name;      // Name of the class
+   std::string Path;      // Path to the class file
+   std::string Match;     // Wildcards for matching by file extension, e.g. *.png
+   std::string Header;    // File identification instruction, e.g. [0:$89504e470d0a1a0a]
+   std::string Icon;      // Icon reference in group/name format
 };
 
 struct ScriptArg { // For use with sc::Exec
@@ -2119,6 +2130,7 @@ struct CoreBase {
    int (*_AsyncPending)(OBJECTID Object);
    ERR (*_AsyncWait)(OBJECTID *Objects, int Size, int TimeOut);
    ERR (*_GetFileInfo)(const std::string_view & Path, struct FileInfo *Info, int InfoSize);
+   ERR (*_ClassDatabase)(struct ClassRecord * **Classes);
 #endif // KOTUKU_STATIC
 };
 
@@ -2218,6 +2230,7 @@ inline ERR AsyncCancel(OBJECTID *Objects, int Size) { return CoreBase->_AsyncCan
 inline int AsyncPending(OBJECTID Object) { return CoreBase->_AsyncPending(Object); }
 inline ERR AsyncWait(OBJECTID *Objects, int Size, int TimeOut) { return CoreBase->_AsyncWait(Objects,Size,TimeOut); }
 inline ERR GetFileInfo(const std::string_view & Path, struct FileInfo *Info, int InfoSize) { return CoreBase->_GetFileInfo(Path,Info,InfoSize); }
+inline ERR ClassDatabase(struct ClassRecord * **Classes) { return CoreBase->_ClassDatabase(Classes); }
 #else
 extern "C" ERR AccessMemory(MEMORYID Memory, MEM Flags, int MilliSeconds, APTR *Result);
 extern "C" ERR Action(AC Action, OBJECTPTR Object, APTR Parameters);
@@ -2312,6 +2325,7 @@ extern "C" ERR AsyncCancel(OBJECTID *Objects, int Size);
 extern "C" int AsyncPending(OBJECTID Object);
 extern "C" ERR AsyncWait(OBJECTID *Objects, int Size, int TimeOut);
 extern "C" ERR GetFileInfo(const std::string_view & Path, struct FileInfo *Info, int InfoSize);
+extern "C" ERR ClassDatabase(struct ClassRecord * **Classes);
 #endif // KOTUKU_STATIC
 
 
@@ -2520,7 +2534,7 @@ class objMetaClass : public Object {
 
    inline ERR setFields(const struct FieldArray * Value, int Elements) noexcept {
       auto target = this;
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(target, field, 0x00001510, Value, Elements);
    }
 
@@ -2586,7 +2600,7 @@ class objMetaClass : public Object {
 
    inline ERR setMethods(const APTR Value, int Elements) noexcept {
       auto target = this;
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(target, field, 0x00001510, Value, Elements);
    }
 
@@ -2599,7 +2613,7 @@ class objMetaClass : public Object {
 
    template <class T> inline ERR setName(T && Value) noexcept {
       auto target = this;
-      auto field = &this->Class->Dictionary[15];
+      auto field = &this->Class->Dictionary[16];
       return field->WriteValue(target, field, 0x08810500, to_cstring(Value), 1);
    }
 

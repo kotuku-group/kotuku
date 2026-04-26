@@ -283,6 +283,16 @@
       </description>
     </field>
 
+    <field>
+      <name>SubClasses</name>
+      <comment>Returns a list of all sub-classes of the class.</comment>
+      <access read="G">Get</access>
+      <type>ARRAY</type>
+      <description>
+<p>This field returns an array listing all active sub-classes of the class (classes that have not been loaded are not included).  This feature applies to base-classes only.</p>
+      </description>
+    </field>
+
   </fields>
   <types>
     <constants lookup="CCF" comment="Class categories">
@@ -314,9 +324,9 @@
 
     <struct name="Field" comment="Used to describe the public fields of a class.">
       <field name="Arg" type="MAXINT">An option to complement the field type.  Can be a pointer or an integer value</field>
-      <field name="GetValue" type="FUNCTION *" prototype="ERR (*GetValue)(APTR, APTR)">A virtual function that will retrieve the value for this field.</field>
-      <field name="SetValue" type="APTR">A virtual function that will set the value for this field.</field>
-      <field name="WriteValue" type="FUNCTION *" prototype="ERR (*WriteValue)(OBJECTPTR, struct Field *, int, const void *, int)">An internal function for writing to this field.</field>
+      <field name="GetValue" type="FUNCTION *" prototype="ERR (*GetValue)(APTR, APTR)">A virtual function that will retrieve the value for this field</field>
+      <field name="SetValue" type="APTR">A virtual function that will set the value for this field</field>
+      <field name="WriteValue" type="FUNCTION *" prototype="ERR (*WriteValue)(OBJECTPTR, struct Field *, int, const void *, int)">An internal function for writing to this field</field>
       <field name="Name" type="CSTRING">The English name for the field, e.g. <code>Width</code></field>
       <field name="FieldID" type="UINT">32-bit hash from fieldhash(). Represented by FID constants, e.g. <code>FID_Width</code></field>
       <field name="Offset" type="UINT16">Field offset within the object</field>

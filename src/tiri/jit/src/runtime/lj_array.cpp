@@ -8,6 +8,7 @@
 #include "lj_gc.h"
 #include "lj_err.h"
 #include "lj_array.h"
+#include "lj_object.h"
 #include "lj_tab.h"
 
 #include <cstring>
@@ -141,6 +142,26 @@ extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Dat
             // Table arrays not supported for caching (not used by the Kōtuku API)
             lj_err_callerv(L, ErrMsg::BADVAL);
             return nullptr;
+         }
+         else if (Type IS AET::OBJECT) {
+            // Object arrays returned by the Kōtuku API contain native OBJECTPTR values.  Tiri object arrays store
+            // GCobject references, so wrap each native object before exposing the array to the script.
+            size_t byte_size = Length * elem_size;
+            void *storage = (byte_size > 0) ? lj_mem_new(L, byte_size) : nullptr;
+            auto arr = (GCarray *)lj_mem_newgco(L, sizeof(GCarray));
+            arr->init(storage, Type, elem_size, Length, Length, Flags, sdef);
+
+            auto refs = arr->get<GCRef>();
+            auto objects = (OBJECTPTR *)Data;
+            for (uint32_t i=0; i < Length; i++) {
+               if (objects[i]) {
+                  auto obj = lj_object_new(L, objects[i]->UID, nullptr, objects[i]->Class, GCOBJ_DETACHED);
+                  setgcref(refs[i], obj2gco(obj));
+                  lj_gc_objbarrier(L, arr, obj);
+               }
+               else setgcrefnull(refs[i]);
+            }
+            return arr;
          }
          else {
             // Non-string cached array - allocate storage via GC, then copy data

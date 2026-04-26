@@ -371,15 +371,26 @@
       <field name="ClassID" type="CLASSID">The class ID of the referenced object.</field>
     </struct>
 
+    <struct name="ClassRecord" comment="Meta information for a class, as recorded in the class database.">
+      <field name="ClassID" type="CLASSID">Unique class identifier (hash of Name)</field>
+      <field name="ParentID" type="CLASSID">Parent class ID if this is a sub-class</field>
+      <field name="Category" type="CCF" lookup="CCF">Assigned category</field>
+      <field name="Name" type="std::string">Name of the class</field>
+      <field name="Path" type="std::string">Path to the class file</field>
+      <field name="Match" type="std::string">Wildcards for matching by file extension, e.g. <code>*.png</code></field>
+      <field name="Header" type="std::string">File identification instruction, e.g. <code>[0:$89504e470d0a1a0a]</code></field>
+      <field name="Icon" type="std::string">Icon reference in <code>group/name</code> format</field>
+    </struct>
+
     <struct name="DirInfo" comment="Used by OpenDir() only">
       <field name="Info" type="struct FileInfo *">Pointer to a <st>FileInfo</st> structure</field>
     </struct>
 
     <struct name="Field" comment="Used to describe the public fields of a class.">
       <field name="Arg" type="MAXINT">An option to complement the field type.  Can be a pointer or an integer value</field>
-      <field name="GetValue" type="FUNCTION *" prototype="ERR (*GetValue)(APTR, APTR)">A virtual function that will retrieve the value for this field.</field>
-      <field name="SetValue" type="APTR">A virtual function that will set the value for this field.</field>
-      <field name="WriteValue" type="FUNCTION *" prototype="ERR (*WriteValue)(OBJECTPTR, struct Field *, int, const void *, int)">An internal function for writing to this field.</field>
+      <field name="GetValue" type="FUNCTION *" prototype="ERR (*GetValue)(APTR, APTR)">A virtual function that will retrieve the value for this field</field>
+      <field name="SetValue" type="APTR">A virtual function that will set the value for this field</field>
+      <field name="WriteValue" type="FUNCTION *" prototype="ERR (*WriteValue)(OBJECTPTR, struct Field *, int, const void *, int)">An internal function for writing to this field</field>
       <field name="Name" type="CSTRING">The English name for the field, e.g. <code>Width</code></field>
       <field name="FieldID" type="UINT">32-bit hash from fieldhash(). Represented by FID constants, e.g. <code>FID_Width</code></field>
       <field name="Offset" type="UINT16">Field offset within the object</field>

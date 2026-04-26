@@ -6,38 +6,38 @@
 -- Use ! to refer to constants and struct definitions.  Note that if declared on a single line, a
 --   table will be substituted in its place.
 
-local rx_all_anchored = <{ regex.new([[^!([\w]*)$]]) }>
-local rx_paragraph    = <{ regex.new([[^<[A-Za-z]+(.*?)>.*?<\/[A-Za-z]*?>.*?$]]) }>
-local rx_insert       = <{ regex.new([[^<[A-Za-z]+(.*?)\/>$]]) }>
-local rx_balance      = <{ regex.new([=[^<[A-Za-z]]=]) }>
-local rx_header       = <{ regex.new([[^<h[0-9]>.*?]]) }>
-local rx_list         = <{ regex.new([[^<list.+?>]]) }>
-local rx_alphanum     = <{ regex.new('^\\w+$') }>
-local rx_path         = <{ regex.new([[(.*[:\/\\])(.*)]]) }>
+rx_all_anchored = <{ regex.new([[^!([\w]*)$]]) }>
+rx_paragraph    = <{ regex.new([[^<[A-Za-z]+(.*?)>.*?<\/[A-Za-z]*?>.*?$]]) }>
+rx_insert       = <{ regex.new([[^<[A-Za-z]+(.*?)\/>$]]) }>
+rx_balance      = <{ regex.new([=[^<[A-Za-z]]=]) }>
+rx_header       = <{ regex.new([[^<h[0-9]>.*?]]) }>
+rx_list         = <{ regex.new([[^<list.+?>]]) }>
+rx_alphanum     = <{ regex.new('^\\w+$') }>
+rx_path         = <{ regex.new([[(.*[:\/\\])(.*)]]) }>
 
 -- Patterns for extractParagraph()
-local rx_lt_sign       = <{ regex.new([[<([\s\-])]]) }>
-local rx_gt_sign       = <{ regex.new([[([\s\-])>]]) }>
-local rx_pre_section   = <{ regex.new([[<pre>\s*(.*?)</pre>]], regex.DOT_ALL) }>
-local rx_md_codeblock  = <{ regex.new([[```(.*?)```]], regex.DOT_ALL) }>
-local rx_inline_code   = <{ regex.new([[`(.*?)`]], regex.DOT_ALL) }>
-local rx_lookup_ref    = <{ regex.new([[!(\w+)]]) }> -- !CONSTANT
-local rx_xml_tag       = <{ regex.new([[<(.*?)>]], regex.DOT_ALL) }>
+rx_lt_sign       = <{ regex.new([[<([\s\-])]]) }>
+rx_gt_sign       = <{ regex.new([[([\s\-])>]]) }>
+rx_pre_section   = <{ regex.new([[<pre>\s*(.*?)</pre>]], regex.DOT_ALL) }>
+rx_md_codeblock  = <{ regex.new([[```(.*?)```]], regex.DOT_ALL) }>
+rx_inline_code   = <{ regex.new([[`(.*?)`]], regex.DOT_ALL) }>
+rx_lookup_ref    = <{ regex.new([[!(\w+)]]) }> -- !CONSTANT
+rx_xml_tag       = <{ regex.new([[<(.*?)>]], regex.DOT_ALL) }>
 
 -- Patterns for substituteReferences()
-local rx_struct_insert   = <{ regex.new([[!([A-Z]\w+)([,\n\s])]]) }> -- !Struct or !CONSTANT
-local rx_action_method   = <{ regex.new([[#([A-Z]\w+)\(\)]]) }> -- #Action()
-local rx_field_ref       = <{ regex.new([[#([A-Z]\w*)]]) }> -- #Field
-local rx_ext_func_ref    = <{ regex.new([[~([A-Z]\w+)\.([A-Z]\w+)\(\)]]) }> -- ~Module.Function()
-local rx_local_func_ref  = <{ regex.new([[~([A-Z]\w+)\(\)]]) }> -- ~Function()
-local rx_ext_method_ref  = <{ regex.new([[@([A-Z]\w+)\.([A-Z]\w+)\(\)]]) }> -- @Class.Method()
-local rx_ext_field_ref   = <{ regex.new([=[[@#]([A-Z]\w+)\.([A-Z]\w*)]=]) }> -- @Class.Field
-local rx_class_ref       = <{ regex.new([[@([A-Z]\w+)]]) }> -- @Class
-local rx_rgb             = <{ regex.new('[A-Fa-f0-9RGBA]{6,8}') }>
+rx_struct_insert   = <{ regex.new([[!([A-Z]\w+)([,\n\s])]]) }> -- !Struct or !CONSTANT
+rx_action_method   = <{ regex.new([[#([A-Z]\w+)\(\)]]) }> -- #Action()
+rx_field_ref       = <{ regex.new([[#([A-Z]\w*)]]) }> -- #Field
+rx_ext_func_ref    = <{ regex.new([[~([A-Z]\w+)\.([A-Z]\w+)\(\)]]) }> -- ~Module.Function()
+rx_local_func_ref  = <{ regex.new([[~([A-Z]\w+)\(\)]]) }> -- ~Function()
+rx_ext_method_ref  = <{ regex.new([[@([A-Z]\w+)\.([A-Z]\w+)\(\)]]) }> -- @Class.Method()
+rx_ext_field_ref   = <{ regex.new([=[[@#]([A-Z]\w+)\.([A-Z]\w*)]=]) }> -- @Class.Field
+rx_class_ref       = <{ regex.new([[@([A-Z]\w+)]]) }> -- @Class
+rx_rgb             = <{ regex.new('[A-Fa-f0-9RGBA]{6,8}') }>
 
 -- Patterns for docFunction()
-local rx_private_status  = <{ regex.new([[^[Pp]rivate]]) }>
-local rx_internal_status = <{ regex.new([[^[Ii]nternal]]) }>
+rx_private_status  = <{ regex.new([[^[Pp]rivate]]) }>
+rx_internal_status = <{ regex.new([[^[Ii]nternal]]) }>
 
 ----------------------------------------------------------------------------------------------------------------------
 
@@ -550,21 +550,21 @@ end
 global function substituteReferences(String:str, Class:table):str
    -- Substitute !Struct and !LOOKUP references, which allow injecting struct and lookup tables into documentation
 
-   local result = ''
-   local last_end = 0
+   result = ''
+   last_end = 0
    for start, stop, cap in rx_struct_insert.findAll(String) do
       if start > last_end then result ..= String:sub(last_end, start) end
-      local lookup = cap[0]
-      local whitespace = cap[1]
+      lookup = cap[0]
+      whitespace = cap[1]
       if glStructures[lookup] then
          if glStructures[lookup].restrict is 'c' then
             result ..= lookup .. whitespace
          else
-            if Class?.references then Class.references['STRUCT:' .. lookup] = 1 end
+            Class?.references['STRUCT:' .. lookup] = 1
             result ..= f'<st>{lookup}</st>{whitespace}'
          end
       elseif glCustomTypes[lookup] then
-         if Class?.references then Class.references['TYPE:' .. lookup] = 1 end
+         Class?.references['TYPE:' .. lookup] = 1
          result ..= f'<lk>{lookup}</lk>{whitespace}'
       else
          print('Unrecognised struct or constant "!' .. lookup .. '"')
@@ -580,10 +580,10 @@ global function substituteReferences(String:str, Class:table):str
    last_end = 0
    for start, stop, cap in rx_action_method.findAll(String) do
       if start > last_end then result ..= String:sub(last_end, start) end
-      local call_name = cap[0]
+      call_name = cap[0]
       if not Class then
          result ..= f'<action>{call_name}</action>'
-      elseif Class.lookupMethods and Class.lookupMethods[call_name] then
+      elseif Class.lookupMethods?[call_name] then
          result ..= f'<method>{call_name}</method>'
       elseif glActions[call_name] then
          result ..= f'<action>{call_name}</action>'
@@ -608,7 +608,7 @@ global function substituteReferences(String:str, Class:table):str
          else -- Localised field reference
             result ..= f'<fl>{field}</fl>'
          end
-      elseif (Class.lookupFields) and (Class.lookupFields[field]) then
+      elseif Class.lookupFields?[field] then
          result ..= f'<fl>{field}</fl>'
       else -- Failed to lookup external field reference
          if rx_rgb.test(field) then -- Ignore RGB values
@@ -641,7 +641,7 @@ global function substituteReferences(String:str, Class:table):str
    result = ''
    last_end = 0
    for start, stop, cap in rx_local_func_ref.findAll(String) do
-      local func_name = cap[0]
+      func_name = cap[0]
       if glFunctionLookup[func_name] then
          if start > last_end then
             result ..= String:sub(last_end, start)
@@ -661,8 +661,8 @@ global function substituteReferences(String:str, Class:table):str
    last_end = 0
    for start, stop, cap in rx_ext_method_ref.findAll(String) do
       if start > last_end then result ..= String:sub(last_end, start) end
-      local class_name = cap[0]
-      local method_name = cap[1]
+      class_name = cap[0]
+      method_name = cap[1]
       if mSys.FindClass(class_name:hash(), 0) then
          -- TODO: Check that the method name is valid according to the class spec
          result ..= f'<class name="{class_name}" method="{method_name}">{class_name}.{method_name}()</class>'
@@ -680,9 +680,9 @@ global function substituteReferences(String:str, Class:table):str
    last_end = 0
    for start, stop, cap in rx_ext_field_ref.findAll(String) do
       if start > last_end then result ..= String:sub(last_end, start) end
-      local class_name = cap[0]
-      local field_name = cap[1]
-      local meta = mSys.FindClass(class_name:hash(), 0)
+      class_name = cap[0]
+      field_name = cap[1]
+      meta = mSys.FindClass(class_name:hash(), 0)
       if meta then
          local err, field, src = meta.mtFindField(calcFieldHash(field_name))
          if field then
@@ -705,7 +705,7 @@ global function substituteReferences(String:str, Class:table):str
    last_end = 0
    for start, stop, cap in rx_class_ref.findAll(String) do
       if start > last_end then result ..= String:sub(last_end, start) end
-      local class_name = cap[0]
+      class_name = cap[0]
       if mSys.FindClass(class_name:hash(), 0) then
          result ..= f'<class name="{class_name}">{class_name}</class>'
       else
@@ -757,7 +757,7 @@ global function docClass(Class)
    if not table.empty(Class.src) then
       out ..= '    <source>\n'
       for path in values(Class.src) do
-         local dir, filename = rx_path.extract(path)
+         dir, filename = rx_path.extract(path)
          if not filename then
             filename = path
             dir = nil
@@ -772,7 +772,7 @@ global function docClass(Class)
 
    if not table.empty(Class.sortedActions) then
       out ..= "\n  <actions>\n"
-      for _, a in ipairs(Class.sortedActions) do
+      for a in values(Class.sortedActions) do
          if (ignoreAction(glActions[a.name].id) != true) or a.description?? then
             out ..= '    <action>\n'
             out ..= '      <name>' .. a.name .. '</name>\n'
@@ -786,7 +786,7 @@ global function docClass(Class)
 
             if glActions[a.name].params?? then
                out ..= '      <input>\n'
-               for _, param in ipairs(glActions[a.name].params) do
+               for param in values(glActions[a.name].params) do
                   ref = ''
                   if param.lookup?? then ref = ' lookup="' .. param.lookup .. '"' end
                   assert(param.comment, 'No comment provided for ' .. Class.name .. '.' .. a.name .. '()\'s parameter "' .. param.name .. '"')
@@ -803,7 +803,7 @@ global function docClass(Class)
 
             if not table.empty(a.results) then
                results = ''
-               for _, result in ipairs(a.results) do
+               for result in values(a.results) do
                   results ..= '        <error code="' .. result.codeName .. '">' .. substituteReferences(result.msg:escXML(), Class) .. '</error>\n'
                end
 
@@ -820,14 +820,14 @@ global function docClass(Class)
 
    if not table.empty(Class.methods) then
       Class.sortedMethods = { }
-      for _, f in pairs(Class.methods) do
+      for f in values(Class.methods) do
          table.insert(Class.sortedMethods, f)
       end
 
       table.sort(Class.sortedMethods, function(a,b) return a.name < b.name end)
 
       out ..= '\n  <methods>\n'
-      for _, method in ipairs(Class.sortedMethods) do
+      for method in values(Class.sortedMethods) do
          if method.comment?? and (method.comment:startsWith('Private')) then
             -- Ignore method
          else
@@ -838,7 +838,7 @@ global function docClass(Class)
 
             if not table.empty(method.params) then
                out ..= '      <input>\n'
-               for _, param in ipairs(method.params) do
+               for param in values(method.params) do
                   ref = ''
                   if param.ref?? then ref = " lookup=\"" .. param.lookup .. '"' end
                   assert(param.comment, 'No comment provided for ' .. Class.name .. '.' .. method.name .. '()\'s parameter "' .. param.name .. '"')
@@ -853,7 +853,7 @@ global function docClass(Class)
 
             if not table.empty(method.results) then
                results = ''
-               for _, result in ipairs(method.results) do
+               for result in values(method.results) do
                   results ..= f"        <error code=\"{result.codeName}\">{substituteReferences(result.msg:escXML(), Class)}</error>\n"
                end
 
@@ -1003,6 +1003,45 @@ global function docModuleHeader()
    return out
 end
 
+global function docFieldType(Field)
+   if not Field.type then return '?' end
+
+   type_name = Field.docType ?? Field.type
+   type_ptrs = #Field.type:split('*') - 1
+   doc_ptrs  = #type_name:split('*') - 1
+
+   if type_ptrs > doc_ptrs then
+      local ptrs = string.rep('*', type_ptrs - doc_ptrs)
+      if type_name:endsWith('*') then
+         type_name ..= ptrs
+      else
+         type_name ..= ' ' .. ptrs
+      end
+   end
+
+   return type_name
+end
+
+global function docFunctionPrototype(Function)
+   local response = Function.doc_response ?? 'void'
+   local prefix = glFunctionPrefix ? (glFunctionPrefix .. '::') :> ''
+   local proto = ''
+
+   if Function.input?? then
+      for param in values(Function.input) do
+         if proto?? then proto ..= ', ' end
+
+         if param.type is '...' then
+            proto ..= '...'
+         else
+            proto ..= docFieldType(param) .. ' ' .. cName(param)
+         end
+      end
+   end
+
+   return f'{response} {prefix}{Function.name}({proto})'
+end
+
 global function docFunction(Function)
    if rx_private_status.test(Function.status ?? '') or
       rx_internal_status.test(Function.status ?? '') or
@@ -1017,7 +1056,7 @@ global function docFunction(Function)
    if Function.version??   then out ..= '    <version>' .. Function.version .. '</version>\n' end
    if Function.synonym??   then out ..= '    <synonym>' .. Function.synonym .. '</synonym>\n' end
    if Function.comment??   then out ..= '    <comment>' .. substituteReferences(Function.comment:escXML()) .. '</comment>\n' end
-   if Function.prototype?? then out ..= '    <prototype>' .. Function.docPrototype:escXML() .. '</prototype>\n' end
+   if Function.prototype?? then out ..= '    <prototype>' .. docFunctionPrototype(Function):escXML() .. '</prototype>\n' end
    if Function.id??        then out ..= '    <id>' .. Function.id .. '</id>\n' end
 
    -- Function arguments
@@ -1035,7 +1074,7 @@ global function docFunction(Function)
                fa.name, substituteReferences(fa.comment:escXML()))
          else
             args ..= string.format("      <param type=\"%s\" name=\"%s\"" .. ref .. ">%s</param>\n",
-               fa.docType:escXML(), fa.name, substituteReferences(fa.comment:escXML()))
+               docFieldType(fa):escXML(), fa.name, substituteReferences(fa.comment:escXML()))
          end
 
          assert(fa.comment != 'Undocumented', f'{Function.name}() parameter "{fa.name}" is undocumented.')

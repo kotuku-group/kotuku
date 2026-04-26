@@ -13,21 +13,6 @@
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Test the ability to inspect the MetaClass Fields array.
-
-@Test function MetaClassArrays()
-   field_names = { }
-   metaFile = mSys.FindClass('File':hash(), 0)
-   fields = metaFile.fields
-   for i=0,#fields-1 do
-      print(i .. ' ' .. fields[i].name)
-      field_names[fields[i].name] = true
-   end
-   assert(#fields > 15, "Expected at least 15 fields in the File class.")
-   assert(field_names['Size'] is true, "Expected to find a field named 'size' in the File class.")
-end
-
------------------------------------------------------------------------------------------------------------------------
 
 @Test function EnvPath()
    task = mSys.CurrentTask()

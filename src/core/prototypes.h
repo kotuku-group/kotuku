@@ -94,3 +94,4 @@ extern "C" ERR AsyncCancel(OBJECTID * Objects, int Size);
 extern "C" int AsyncPending(OBJECTID Object);
 extern "C" ERR AsyncWait(OBJECTID * Objects, int Size, int TimeOut);
 extern "C" ERR GetFileInfo(const std::string_view & Path, struct FileInfo * Info, int InfoSize);
+extern "C" ERR ClassDatabase(struct ClassRecord * ** Classes);

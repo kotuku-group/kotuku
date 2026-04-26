@@ -503,18 +503,17 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
 
 #ifndef KOTUKU_STATIC
    if ((Info->Flags & OPF::SCAN_MODULES) IS OPF::NIL) {
-      ERR error = ERR::Okay;
-      auto file = objFile::create { fl::Path(glClassBinPath), fl::Flags(FL::READ) };
 
-      if (file.ok()) {
+      if (auto file = objFile::create { fl::Path(glClassBinPath), fl::Flags(FL::READ) }; file.ok()) {
          int filesize;
          file->get(FID_Size, filesize);
 
          int hdr;
          file->read(&hdr, sizeof(hdr));
          if (hdr IS CLASSDB_HEADER) {
-            while (file->Position + ClassRecord::MIN_SIZE < filesize) {
-               ClassRecord item;
+            ERR error = ERR::Okay;
+            while (file->Position + extClassRecord::MIN_SIZE < filesize) {
+               extClassRecord item;
                if ((error = item.read(*file)) != ERR::Okay) break;
 
                if (glClassDB.contains(item.ClassID)) {

@@ -465,6 +465,22 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
   </function>
 
   <function>
+    <name>ClassDatabase</name>
+    <category>Objects</category>
+    <comment>Returns an array of all classes known to the system.</comment>
+    <prototype>ERR ClassDatabase(struct ClassRecord *** Classes)</prototype>
+    <input>
+      <param type="struct ClassRecord ***" name="Classes">A pointer to an array of class records is returned here.</param>
+    </input>
+    <description>
+<p>Call ClassDatabase() to obtain an array of all classes known to the system.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">Operation successful.</error>
+    </result>
+  </function>
+
+  <function>
     <name>CompareFilePaths</name>
     <category>Files</category>
     <comment>Checks if two file paths refer to the same physical file.</comment>
@@ -658,6 +674,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
 <p>This function will find a specific class by ID and return its <class name="MetaClass">MetaClass</class>.  If the class is not already loaded, the internal dictionary is checked to discover a module binary registered with that ID.  If this succeeds, the module is loaded into memory and the correct MetaClass will be returned.</p>
 <p>In any event of failure, <code>NULL</code> is returned.</p>
 <p>If the ID of a named class is not known, call <function>ResolveClassName</function> first and pass the resulting ID to this function.</p>
+<p>NOTE: To retrieve a list of all sub-classes associated with a base-class, read the SubClasses field of the <class name="MetaClass">MetaClass</class>.</p>
     </description>
     <result type="objMetaClass *">Returns a pointer to the <class name="MetaClass">MetaClass</class> structure that has been found as a result of the search, or <code>NULL</code> if no matching class was found.</result>
   </function>
@@ -2949,6 +2966,17 @@ static ResourceManager glNodeManager = {
       <field name="ClassID" type="CLASSID">The class ID of the referenced object.</field>
     </struct>
 
+    <struct name="ClassRecord" comment="Meta information for a class, as recorded in the class database.">
+      <field name="ClassID" type="CLASSID">Unique class identifier (hash of Name)</field>
+      <field name="ParentID" type="CLASSID">Parent class ID if this is a sub-class</field>
+      <field name="Category" type="CCF" lookup="CCF">Assigned category</field>
+      <field name="Name" type="std::string">Name of the class</field>
+      <field name="Path" type="std::string">Path to the class file</field>
+      <field name="Match" type="std::string">Wildcards for matching by file extension, e.g. <code>*.png</code></field>
+      <field name="Header" type="std::string">File identification instruction, e.g. <code>[0:$89504e470d0a1a0a]</code></field>
+      <field name="Icon" type="std::string">Icon reference in <code>group/name</code> format</field>
+    </struct>
+
     <struct name="ClipRectangle" comment="Generic structure for rectangular clipping.">
       <field name="Left" type="INT">Left-most coordinate</field>
       <field name="Top" type="INT">Top coordinate</field>
@@ -3032,9 +3060,9 @@ static ResourceManager glNodeManager = {
 
     <struct name="Field" comment="Used to describe the public fields of a class.">
       <field name="Arg" type="MAXINT">An option to complement the field type.  Can be a pointer or an integer value</field>
-      <field name="GetValue" type="FUNCTION *" prototype="ERR (*GetValue)(APTR, APTR)">A virtual function that will retrieve the value for this field.</field>
-      <field name="SetValue" type="APTR">A virtual function that will set the value for this field.</field>
-      <field name="WriteValue" type="FUNCTION *" prototype="ERR (*WriteValue)(OBJECTPTR, struct Field *, int, const void *, int)">An internal function for writing to this field.</field>
+      <field name="GetValue" type="FUNCTION *" prototype="ERR (*GetValue)(APTR, APTR)">A virtual function that will retrieve the value for this field</field>
+      <field name="SetValue" type="APTR">A virtual function that will set the value for this field</field>
+      <field name="WriteValue" type="FUNCTION *" prototype="ERR (*WriteValue)(OBJECTPTR, struct Field *, int, const void *, int)">An internal function for writing to this field</field>
       <field name="Name" type="CSTRING">The English name for the field, e.g. <code>Width</code></field>
       <field name="FieldID" type="UINT">32-bit hash from fieldhash(). Represented by FID constants, e.g. <code>FID_Width</code></field>
       <field name="Offset" type="UINT16">Field offset within the object</field>

@@ -397,10 +397,10 @@ class extMetaClass : public objMetaClass {
    class extMetaClass *Base;            // Reference to the base class if this is a sub-class
    std::vector<Field> FieldLookup;      // Field dictionary for base-class fields
    std::vector<MethodEntry> Methods;    // Original method array supplied by the module.
-   std::vector<extMetaClass *> SubClasses;
+   std::vector<extMetaClass *> SubClasses; // List of all associated sub-classes
    const struct FieldArray *SubFields;  // Extra fields defined by the sub-class
    class RootModule *Root;              // Root module that owns this class, if any.
-   uint8_t Local[8];                      // Local object references (by field indexes), in order
+   uint8_t Local[8];                    // Local object references (by field indexes), in order
    STRING Location;                     // Location of the class binary, this field exists purely for caching the location string if the client reads it
    ActionEntry ActionTable[int(AC::END)];
    int16_t OriginalFieldTotal;
@@ -535,21 +535,12 @@ class extModule : public objModule {
 //********************************************************************************************************************
 // Class database.
 
-struct ClassRecord {
-   CLASSID ClassID;
-   CLASSID ParentID;
-   CCF Category;
-   std::string Name;
-   std::string Path;
-   std::string Match;
-   std::string Header;
-   std::string Icon;
+struct extClassRecord : public ClassRecord {
+   static constexpr int MIN_SIZE = sizeof(CLASSID) + sizeof(CLASSID) + sizeof(int) + (sizeof(int) * 5);
 
-   static constexpr int MIN_SIZE = sizeof(CLASSID) + sizeof(CLASSID) + sizeof(int) + (sizeof(int) * 4);
+   extClassRecord() { }
 
-   ClassRecord() { }
-
-   inline ClassRecord(extMetaClass *pClass, std::optional<std::string> pPath = std::nullopt) {
+   inline extClassRecord(extMetaClass *pClass, std::optional<std::string> pPath = std::nullopt) {
       ClassID  = pClass->ClassID;
       ParentID = (pClass->BaseClassID IS pClass->ClassID) ? CLASSID::NIL : pClass->BaseClassID;
       Category = pClass->Category;
@@ -564,7 +555,7 @@ struct ClassRecord {
       if (pClass->Icon) Icon.assign(pClass->Icon);
    }
 
-   inline ClassRecord(CLASSID pClassID, std::string pName, CSTRING pMatch = nullptr, CSTRING pHeader = nullptr, CSTRING pIcon = nullptr) {
+   inline extClassRecord(CLASSID pClassID, std::string pName, CSTRING pMatch = nullptr, CSTRING pHeader = nullptr, CSTRING pIcon = nullptr) {
       ClassID  = pClassID;
       ParentID = CLASSID::NIL;
       Category = CCF::SYSTEM;
@@ -719,7 +710,7 @@ extern "C" const ActionTable ActionTable[];
 extern const Function    glFunctions[];
 extern std::list<CoreTimer> glTimers;           // Locked with glmTimer
 extern ankerl::unordered_dense::map<std::string, struct ModHeader *> glStaticModules;
-extern ankerl::unordered_dense::map<CLASSID, ClassRecord> glClassDB; // Class DB populated either by static_modules.cpp or by pre-generated file if modular.
+extern ankerl::unordered_dense::map<CLASSID, extClassRecord> glClassDB; // Class DB populated either by static_modules.cpp or by pre-generated file if modular.
 extern ankerl::unordered_dense::map<CLASSID, extMetaClass *> glClassMap;
 extern ankerl::unordered_dense::map<uint32_t, std::string> glFields; // Reverse lookup for converting field hashes back to their respective names.
 extern std::set<std::shared_ptr<std::jthread>> glAsyncThreads;

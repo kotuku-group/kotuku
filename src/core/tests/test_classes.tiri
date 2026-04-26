@@ -1,0 +1,34 @@
+-- Core tests not covered by other test files.
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test the ability to inspect the MetaClass Fields array.
+
+@Test function MetaClassArrays()
+   field_names = { }
+   metaFile = mSys.FindClass('File':hash(), 0)
+   fields = metaFile.fields
+   for i=0,#fields-1 do
+      print(i .. ' ' .. fields[i].name)
+      field_names[fields[i].name] = true
+   end
+   assert(#fields > 15, "Expected at least 15 fields in the File class.")
+   assert(field_names['Size'] is true, "Expected to find a field named 'size' in the File class.")
+end
+
+@Test function MetaClassSubClasses()
+   mSys.FindClass('JPEG':hash())
+   picmeta = mSys.FindClass('Picture':hash())
+   pic_classes = picmeta.subClasses
+   assert(pic_classes, 'Picture has no sub-classes')
+   jpeg_found = false
+   for pic in values(pic_classes) do
+      if pic.name is 'JPEG' then jpeg_found = true end
+   end
+   assert(jpeg_found, 'Picture has no JPEG sub-class')
+end
+
+@Test function ClassDatabase()
+   err, class_list = mSys.ClassDatabase()
+   check err
+   assert(#class_list > 10, 'ClassDatabase() did not return any classes')
+end

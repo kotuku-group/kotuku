@@ -957,9 +957,9 @@ using ModTest    = void (*)(CSTRING, int *, int *);
 
   struct("Field", { comment="Used to describe the public fields of a class." }, [[
     maxint Arg         # An option to complement the field type.  Can be a pointer or an integer value
-    fptr(error ptr ptr) GetValue # A virtual function that will retrieve the value for this field.
-    ptr SetValue       # A virtual function that will set the value for this field.
-    fptr(error obj struct(*Field) int cptr int) WriteValue # An internal function for writing to this field.
+    fptr(error ptr ptr) GetValue # A virtual function that will retrieve the value for this field
+    ptr SetValue       # A virtual function that will set the value for this field
+    fptr(error obj struct(*Field) int cptr int) WriteValue # An internal function for writing to this field
     cstr Name          # The English name for the field, e.g. `Width`
     uint FieldID       # 32-bit hash from fieldhash(). Represented by FID constants, e.g. `FID_Width`
     ushort Offset      # Field offset within the object
@@ -970,6 +970,17 @@ using ModTest    = void (*)(CSTRING, int *, int *);
    inline bool readable() { return (Flags & FD_READ) ? true : false; }
    inline bool writeable() { return (Flags & (FD_WRITE|FD_INIT)) ? true : false; }
   ]]) -- [32/52]
+
+  struct("ClassRecord", { comment="Meta information for a class, as recorded in the class database." }, [[
+    cid ClassID        # Unique class identifier (hash of Name)
+    cid ParentID       # Parent class ID if this is a sub-class
+    int(CCF) Category  # Assigned category
+    cpp(str) Name      # Name of the class
+    cpp(str) Path      # Path to the class file
+    cpp(str) Match     # Wildcards for matching by file extension, e.g. `*.png`
+    cpp(str) Header    # File identification instruction, e.g. `[0:$89504e470d0a1a0a]`
+    cpp(str) Icon      # Icon reference in `group/name` format
+  ]])
 
   c_insert([[
 struct ScriptArg { // For use with sc::Exec
@@ -1088,7 +1099,8 @@ struct ScriptArg { // For use with sc::Exec
     "AsyncCancel",
     "AsyncPending",
     "AsyncWait",
-    "GetFileInfo")
+    "GetFileInfo",
+    "ClassDatabase")
 
   c_insert([==[
 

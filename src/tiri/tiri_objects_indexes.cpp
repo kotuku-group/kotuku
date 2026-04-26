@@ -559,6 +559,9 @@ static int object_get_array(lua_State *Lua, const obj_read &Handle, GCobject *De
          else if (field->Flags & FD_STRING) {
             make_array(Lua, AET::CSTR, total, list);
          }
+         else if (field->Flags & FD_OBJECT) {
+            make_array(Lua, AET::OBJECT, total, list);
+         }
          else if (field->Flags & (FD_INT|FD_INT64|FD_FLOAT|FD_DOUBLE|FD_POINTER|FD_BYTE|FD_WORD|FD_STRUCT)) {
             std::string_view struct_name = field->Flags & FD_STRUCT ? std::string_view((CSTRING)field->Arg) : std::string_view {};
             make_any_array(Lua, field->Flags, struct_name, total, list);

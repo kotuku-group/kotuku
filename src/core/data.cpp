@@ -102,7 +102,7 @@ std::timed_mutex glmObjectLocking;
 std::timed_mutex glmVolumes;
 
 ankerl::unordered_dense::map<std::string, struct ModHeader *> glStaticModules;
-ankerl::unordered_dense::map<CLASSID, ClassRecord> glClassDB;
+ankerl::unordered_dense::map<CLASSID, extClassRecord> glClassDB;
 ankerl::unordered_dense::map<CLASSID, extMetaClass *> glClassMap;
 std::unordered_map<OBJECTID, ObjectSignal> glWFOList;
 std::unordered_map<OBJECTID, ankerl::unordered_dense::set<MEMORYID>> glObjectMemory;

@@ -22,6 +22,7 @@ FDEF argsBroadcastEvent[] = { { "Error", FD_INT|FD_ERROR }, { "Event", FD_PTR },
 FDEF argsCheckAction[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTPTR }, { "Action", FD_INT }, { 0, 0 } };
 FDEF argsCheckMemoryExists[] = { { "Error", FD_INT|FD_ERROR }, { "ID", FD_INT }, { 0, 0 } };
 FDEF argsCheckObjectExists[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTID }, { 0, 0 } };
+FDEF argsClassDatabase[] = { { "Error", FD_INT|FD_ERROR }, { "ClassRecord:Classes", FD_ARRAY|FD_PTR|FD_STRUCT|FD_ALLOC|FD_RESULT }, { 0, 0 } };
 FDEF argsCompareFilePaths[] = { { "Error", FD_INT|FD_ERROR }, { "PathA", FD_STR }, { "PathB", FD_STR }, { 0, 0 } };
 FDEF argsCopyFile[] = { { "Error", FD_INT|FD_ERROR }, { "Source", FD_STR }, { "Dest", FD_STR }, { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
 FDEF argsCreateFolder[] = { { "Error", FD_INT|FD_ERROR }, { "Path", FD_STR }, { "Permissions", FD_INT }, { 0, 0 } };
@@ -194,6 +195,7 @@ const struct Function glFunctions[] = {
    { (APTR)AsyncPending, "AsyncPending", argsAsyncPending },
    { (APTR)AsyncWait, "AsyncWait", argsAsyncWait },
    { (APTR)GetFileInfo, "GetFileInfo", argsGetFileInfo },
+   { (APTR)ClassDatabase, "ClassDatabase", argsClassDatabase },
    { nullptr, nullptr, nullptr }
 };
 

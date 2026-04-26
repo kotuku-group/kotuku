@@ -147,13 +147,19 @@ end
    icon_pairs = {
       { path='fonts:fonts.cfg',            icon='icons:filetypes/text' },
       { path='fonts:truetype/Micro-6.ttf', icon='icons:filetypes/font' },
-      { path='scripts:common.tiri',        icon='icons:filetypes/source' }
+      { path='scripts:gui.tiri',           icon='icons:filetypes/source' }
    }
 
    for v in values(icon_pairs) do
-      icon = obj.new('file', { path=v.path }).icon
-      if icon != v.icon then
-         error('Icon for ' .. v.path .. ' evaluated to ' .. icon .. ' instead of expected "' .. v.icon .. '"')
+      local icon
+      try
+         icon = obj.new('file', { path=v.path }).icon
+      except ex
+         error(f'Failed to open path {v.path}: {ex.message}')
+      success
+         if icon != v.icon then
+            error(f'Icon for {v.path} evaluated to {icon} instead of expected "{v.icon}"')
+         end
       end
    end
 end
