@@ -651,6 +651,15 @@ struct extClassRecord : public ClassRecord {
       }
       else return ERR::BufferOverflow;
 
+      File->read(&size, sizeof(size));
+      if (size < std::ssize(buffer)) {
+         if (size > 0) {
+            File->read(buffer, size);
+            Description.assign(buffer, size);
+         }
+      }
+      else return ERR::BufferOverflow;
+
       return ERR::Okay;
    }
 };
