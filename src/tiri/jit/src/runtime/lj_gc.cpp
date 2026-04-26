@@ -351,7 +351,7 @@ static void gc_traverse_array(global_State *g, GCarray *Arr)
    GCtab *mt = tabref(Arr->metatable);
    if (mt) gc_markobj(g, mt);
 
-   if (Arr->elemtype IS AET::STR_GC or Arr->elemtype IS AET::TABLE or Arr->elemtype IS AET::ARRAY) {
+   if (Arr->elemtype IS AET::STR_GC or Arr->elemtype IS AET::TABLE or Arr->elemtype IS AET::ARRAY or Arr->elemtype IS AET::OBJECT) {
       GCRef *refs = Arr->get<GCRef>();
       for (MSize i = 0; i < Arr->len; i++) {
          if (gcref(refs[i])) gc_markobj(g, gcref(refs[i]));
