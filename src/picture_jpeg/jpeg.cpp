@@ -477,8 +477,8 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
       fl::ClassID(CLASSID::JPEG),
       fl::Name("JPEG"),
       fl::Category(CCF::GRAPHICS),
-      fl::FileExtension("*.jpeg|*.jpeg|*.jfif"),
-      fl::FileDescription("JPEG Picture"),
+      fl::FileExtension("*.jpeg|*.jpg|*.jfif"),
+      fl::FileDescription("JPEG Image"),
       fl::FileHeader("[0:$ffd8ffe0]|[0:$ffd8ffe1]|[0:$ffd8fffe]"),
       fl::Actions(clActions),
       fl::Path(MOD_PATH));

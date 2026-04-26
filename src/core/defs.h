@@ -363,13 +363,13 @@ enum {
 
 class CoreTimer {
 public:
-   int64_t     NextCall;       // Cycle when PreciseTime() reaches this value (us)
-   int64_t     LastCall;       // PreciseTime() recorded at the last call (us)
-   int64_t     Interval;       // The amount of microseconds to wait at each interval
+   int64_t   NextCall;       // Cycle when PreciseTime() reaches this value (us)
+   int64_t   LastCall;       // PreciseTime() recorded at the last call (us)
+   int64_t   Interval;       // The amount of microseconds to wait at each interval
    OBJECTPTR Subscriber;     // The object that is subscribed (pointer, if private)
    OBJECTID  SubscriberID;   // The object that is subscribed
    FUNCTION  Routine;        // Routine to call if not using AC::Timer - ERR Routine(OBJECTID, int, int);
-   uint8_t     Cycle;
+   uint8_t   Cycle;
    bool      Locked;
 };
 
@@ -550,20 +550,22 @@ struct extClassRecord : public ClassRecord {
       if (pPath.has_value()) Path.assign(pPath.value());
       else if (pClass->Path) Path.assign(pClass->Path);
 
-      if (pClass->FileExtension) Match.assign(pClass->FileExtension);
+      if (pClass->FileExtension) Extension.assign(pClass->FileExtension);
       if (pClass->FileHeader) Header.assign(pClass->FileHeader);
       if (pClass->Icon) Icon.assign(pClass->Icon);
+      if (pClass->FileDescription) Description.assign(pClass->FileDescription);
    }
 
-   inline extClassRecord(CLASSID pClassID, std::string pName, CSTRING pMatch = nullptr, CSTRING pHeader = nullptr, CSTRING pIcon = nullptr) {
+   inline extClassRecord(CLASSID pClassID, std::string pName, CSTRING pExtension = nullptr, CSTRING pHeader = nullptr, CSTRING pIcon = nullptr, CSTRING pDescription = nullptr) {
       ClassID  = pClassID;
       ParentID = CLASSID::NIL;
       Category = CCF::SYSTEM;
       Name     = pName;
       Path     = "modules:core";
-      if (pMatch)  Match  = pMatch;
-      if (pHeader) Header = pHeader;
-      if (pIcon)   Icon   = pIcon;
+      if (pExtension)   Extension   = pExtension;
+      if (pHeader)      Header      = pHeader;
+      if (pIcon)        Icon        = pIcon;
+      if (pDescription) Description = pDescription;
    }
 
    inline ERR write(objFile *File) {
@@ -579,9 +581,9 @@ struct extClassRecord : public ClassRecord {
       File->write(&size, sizeof(size));
       if (size) File->write(Path.c_str(), size);
 
-      size = Match.size();
+      size = Extension.size();
       File->write(&size, sizeof(size));
-      if (size) File->write(Match.c_str(), size);
+      if (size) File->write(Extension.c_str(), size);
 
       size = Header.size();
       File->write(&size, sizeof(size));
@@ -591,6 +593,9 @@ struct extClassRecord : public ClassRecord {
       File->write(&size, sizeof(size));
       if (size) File->write(Icon.c_str(), size);
 
+      size = Description.size();
+      File->write(&size, sizeof(size));
+      if (size) File->write(Description.c_str(), size);
       return ERR::Okay;
    }
 
@@ -623,7 +628,7 @@ struct extClassRecord : public ClassRecord {
       if (size < std::ssize(buffer)) {
          if (size > 0) {
             File->read(buffer, size);
-            Match.assign(buffer, size);
+            Extension.assign(buffer, size);
          }
       }
       else return ERR::BufferOverflow;

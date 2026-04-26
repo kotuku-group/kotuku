@@ -1356,7 +1356,7 @@ static ERR create_picture_class(void)
       fl::Category(CCF::GRAPHICS),
       fl::Flags(CLF::INHERIT_LOCAL),
       fl::FileExtension("*.png"),
-      fl::FileDescription("PNG Picture"),
+      fl::FileDescription("PNG Image"),
       fl::FileHeader("[0:$89504e470d0a1a0a]"),
       fl::Icon("filetypes/image"),
       fl::Actions(clPictureActions),
@@ -1371,4 +1371,3 @@ static ERR create_picture_class(void)
 
 KOTUKU_MOD(MODInit, nullptr, nullptr, MODExpunge, nullptr, MOD_IDL, nullptr)
 extern "C" struct ModHeader * register_picture_module() { return &ModHeader; }
-

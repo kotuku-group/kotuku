@@ -54,9 +54,9 @@ CLASSID lookup_class_by_ext(CLASSID Filter, std::string_view Ext)
    if (glWildClassMapTotal != std::ssize(glClassDB)) {
       // Build a lookup map based on file extensions
       for (auto it = glClassDB.begin(); it != glClassDB.end(); it++) {
-         if (auto &rec = it->second; !rec.Match.empty()) {
+         if (auto &rec = it->second; !rec.Extension.empty()) {
             std::vector<std::string> list;
-            pf::split(rec.Match, std::back_inserter(list), '|');
+            pf::split(rec.Extension, std::back_inserter(list), '|');
             for (auto & wild : list) {
                if (wild.starts_with("*.")) {
                   glWildClassMap.emplace(pf::strihash(wild.c_str() + 2), it->first);

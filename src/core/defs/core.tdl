@@ -972,14 +972,15 @@ using ModTest    = void (*)(CSTRING, int *, int *);
   ]]) -- [32/52]
 
   struct("ClassRecord", { comment="Meta information for a class, as recorded in the class database." }, [[
-    cid ClassID        # Unique class identifier (hash of Name)
-    cid ParentID       # Parent class ID if this is a sub-class
-    int(CCF) Category  # Assigned category
-    cpp(str) Name      # Name of the class
-    cpp(str) Path      # Path to the class file
-    cpp(str) Match     # Wildcards for matching by file extension, e.g. `*.png`
-    cpp(str) Header    # File identification instruction, e.g. `[0:$89504e470d0a1a0a]`
-    cpp(str) Icon      # Icon reference in `group/name` format
+    cid ClassID          # Unique class identifier (hash of Name)
+    cid ParentID         # Parent class ID if this is a sub-class
+    int(CCF) Category    # Assigned category
+    cpp(str) Name        # Name of the class
+    cpp(str) Path        # Path to the class file
+    cpp(str) Extension   # Wildcards for matching by file extension, e.g. `*.png`
+    cpp(str) Header      # File identification instruction, e.g. `[0:$89504e470d0a1a0a]`
+    cpp(str) Icon        # Icon reference in `group/name` format
+    cpp(str) Description # File description
   ]])
 
   c_insert([[

@@ -215,7 +215,7 @@ function getFilters(self):array
    if self.filterList then
       for filter in values(self.filterList) do
          if filter.selected then
-            if type(filter.ext) is 'table' then
+            if type(filter.ext) is 'table' or type(filter.ext) is 'array' then
                for ext in values(filter.ext) do
                   self._filters:push(ext)
                end

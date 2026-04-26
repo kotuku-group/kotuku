@@ -1997,14 +1997,15 @@ struct Field {
 };
 
 struct ClassRecord {
-   CLASSID ClassID;       // Unique class identifier (hash of Name)
-   CLASSID ParentID;      // Parent class ID if this is a sub-class
-   CCF     Category;      // Assigned category
-   std::string Name;      // Name of the class
-   std::string Path;      // Path to the class file
-   std::string Match;     // Wildcards for matching by file extension, e.g. *.png
-   std::string Header;    // File identification instruction, e.g. [0:$89504e470d0a1a0a]
-   std::string Icon;      // Icon reference in group/name format
+   CLASSID ClassID;          // Unique class identifier (hash of Name)
+   CLASSID ParentID;         // Parent class ID if this is a sub-class
+   CCF     Category;         // Assigned category
+   std::string Name;         // Name of the class
+   std::string Path;         // Path to the class file
+   std::string Extension;    // Wildcards for matching by file extension, e.g. *.png
+   std::string Header;       // File identification instruction, e.g. [0:$89504e470d0a1a0a]
+   std::string Icon;         // Icon reference in group/name format
+   std::string Description;  // File description
 };
 
 struct ScriptArg { // For use with sc::Exec

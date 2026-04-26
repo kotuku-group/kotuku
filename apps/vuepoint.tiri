@@ -52,8 +52,41 @@ glIntroduction = [[
 
    local glWindow, glFileView, glTerminateView, glScrollbar, glViewArea, glStats, glAppBar, glSaveRoutine
 
+   local glOpenFilter = array<table> {
+      { name='SVG Images', ext='.svg' },
+      { name='RIPL Documents', ext=array<string> { '.ripl', '.rpl' } }
+   }
+
    glScript = obj.find('self')
    mSys.SetVolume('vuepoint', glScript.workingPath)
+
+   picmeta = mSys.FindClass('Picture':hash())
+   file_ext = picmeta.fileExtension
+   if file_ext then
+      file_ext = file_ext:replace('*', '')
+      if file_ext:find('|') then file_ext = file_ext:split('|') end
+      desc = picmeta.fileDescription
+      if not desc then desc = picmeta.name .. ' Image' end
+      glOpenFilter:push({ name=desc, ext=file_ext })
+   end
+
+   pic_classes = picmeta.subClasses
+   if pic_classes then
+      err, class_list = mSys.ClassDatabase()
+      for c in values(class_list) do
+         if c.parentID is 'Picture':hash() then
+            if c.name is 'RSVG' then continue end
+            file_ext = c.extension
+            if file_ext then
+               file_ext = file_ext:replace('*', '')
+               if file_ext:find('|') then file_ext = file_ext:split('|') end
+               glOpenFilter:push({ name=c.description ? c.description :> c.name .. ' Image', ext=file_ext, icon=c.icon })
+            else
+               print('No file extension for class ' .. c.name)
+            end
+         end
+      end
+   end
 
 ----------------------------------------------------------------------------------------------------------------------
 
@@ -219,12 +252,7 @@ end
          toolBar     = { navigation=true, views=true },
          displayPath = true,
          path        = arg('path', ':'),
-         filterList = array<table> {
-            { name='SVG Images', ext='.svg' },
-            { name='RIPL Documents', ext={ '.ripl', '.rpl' } },
-            { name='JPEG Images', ext={ '.jpeg', '.jpg' } },
-            { name='PNG Images', ext='.png' }
-         },
+         filterList = glOpenFilter,
          fileSelected = function(FileView:table)
             displayFile(FileView.selectionPath())
             title = FileView.selectionFile()
