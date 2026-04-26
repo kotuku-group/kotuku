@@ -241,16 +241,17 @@ static void parse_transform(objVector *Vector, const std::string Value, int Tag)
 
 static const std::string uri_name(const std::string Ref)
 {
-   int skip = 0;
-   while ((Ref[skip]) and (Ref[skip] <= 0x20)) skip++;
+   std::size_t skip = 0;
+   while ((skip < Ref.size()) and (Ref[skip] <= 0x20)) skip++;
+   if (skip >= Ref.size()) return std::string("");
 
    if (Ref[skip] IS '#') {
       return Ref.substr(skip+1);
    }
    else if (startswith("url(#", Ref.c_str() + skip)) {
-      int i;
+      std::size_t i;
       skip += 5;
-      for (i=0; (Ref[skip+i] != ')') and (skip+i < int(Ref.size())); i++);
+      for (i=0; ((skip + i) < Ref.size()) and (Ref[skip+i] != ')'); i++);
       return Ref.substr(skip, i);
    }
    else return Ref.substr(skip);

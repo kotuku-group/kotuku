@@ -62,7 +62,8 @@ static ERR set_anim_property(anim_base &Anim, XTag &Tag, uint32_t Hash, const st
       case SVF_HREF:
       case SVF_XLINK_HREF: {
          OBJECTPTR ref_vector;
-         if (Anim.svg->Scene->findDef(Value.data(), &ref_vector) IS ERR::Okay) {
+         auto ref = uri_name(std::string(Value));
+         if (Anim.svg->Scene->findDef(ref.c_str(), &ref_vector) IS ERR::Okay) {
             Anim.target_vector = ref_vector->UID;
          }
          break;
@@ -213,12 +214,14 @@ static ERR set_anim_property(anim_base &Anim, XTag &Tag, uint32_t Hash, const st
             while (v < std::ssize(Value) and (Value[v] <= 0x20)) v++;
             for (s=v; s < std::ssize(Value) and (Value[s] != ';'); s++);
             std::string_view val = Value.substr(v, s-v);
-            double fv;
+            double fv = 0;
             auto [ ptr, error ] = std::from_chars(val.data(), val.data() + val.size(), fv);
-            fv = std::clamp(fv, 0.0, 1.0);
-            Anim.key_points.push_back(fv);
+            if ((error IS std::errc()) and (ptr IS val.data() + val.size())) {
+               fv = std::clamp(fv, 0.0, 1.0);
+               Anim.key_points.push_back(fv);
+            }
             v = s;
-            if (Value[v] IS ';') v++;
+            if ((v < std::ssize(Value)) and (Value[v] IS ';')) v++;
          }
          break;
       }
@@ -243,11 +246,13 @@ static ERR set_anim_property(anim_base &Anim, XTag &Tag, uint32_t Hash, const st
             while (v < std::ssize(Value) and (Value[v] <= 0x20)) v++;
             for (s=v; s < std::ssize(Value) and (Value[s] != ';'); s++);
             std::string_view val = Value.substr(v, s-v);
-            double fv;
+            double fv = 0;
             auto [ ptr, error ] = std::from_chars(val.data(), val.data() + val.size(), fv);
-            fv = std::clamp(fv, last_val, 1.0);
-            Anim.timing.push_back(fv);
-            last_val = fv;
+            if ((error IS std::errc()) and (ptr IS val.data() + val.size())) {
+               fv = std::clamp(fv, last_val, 1.0);
+               Anim.timing.push_back(fv);
+               last_val = fv;
+            }
             v = s;
             if ((v < std::ssize(Value)) and (Value[v] IS ';')) v++;
          }
