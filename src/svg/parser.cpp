@@ -2437,7 +2437,7 @@ void svgState::proc_use(XTag &Tag, OBJECTPTR Parent) noexcept
       auto state = *this;
       state.applyTag(Tag); // Apply all attribute values to the current state.
 
-      objVector *group;
+      objVector *group = nullptr;
       bool need_group = false;
       for (int a=1; (a < std::ssize(Tag.Attribs)) and (!need_group); a++) {
          switch(strihash(Tag.Attribs[a].Name)) {
@@ -2934,7 +2934,10 @@ ERR svgState::proc_animate_transform(XTag &Tag, OBJECTPTR Parent) noexcept
       }
    }
 
-   if (!anim.is_valid()) Self->Animations.pop_back();
+   if (!anim.is_valid()) {
+      remove_animation_triggers(anim);
+      Self->Animations.pop_back();
+   }
    return ERR::Okay;
 }
 
@@ -2966,7 +2969,10 @@ ERR svgState::proc_animate(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent) noexcep
 
    anim.set_orig_value(*this);
 
-   if (!anim.is_valid()) Self->Animations.pop_back();
+   if (!anim.is_valid()) {
+      remove_animation_triggers(anim);
+      Self->Animations.pop_back();
+   }
    return ERR::Okay;
 }
 
@@ -2996,7 +3002,10 @@ ERR svgState::proc_set(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent) noexcept
    anim.set_orig_value(*this);
    anim.calc_mode = CMODE::DISCRETE; // Disables interpolation
 
-   if (!anim.is_valid()) Self->Animations.pop_back();
+   if (!anim.is_valid()) {
+      remove_animation_triggers(anim);
+      Self->Animations.pop_back();
+   }
    return ERR::Okay;
 }
 
@@ -3024,7 +3033,10 @@ ERR svgState::proc_animate_colour(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent) 
       }
    }
 
-   if (!anim.is_valid()) Self->Animations.pop_back();
+   if (!anim.is_valid()) {
+      remove_animation_triggers(anim);
+      Self->Animations.pop_back();
+   }
    return ERR::Okay;
 }
 
@@ -3099,7 +3111,10 @@ ERR svgState::proc_animate_motion(XTag &Tag, OBJECTPTR Parent) noexcept
       }
    }
 
-   if (!anim.is_valid()) Self->Animations.pop_back();
+   if (!anim.is_valid()) {
+      remove_animation_triggers(anim);
+      Self->Animations.pop_back();
+   }
    return ERR::Okay;
 }
 

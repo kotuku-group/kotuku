@@ -166,7 +166,7 @@ public:
    virtual void perform() = 0;
 
    virtual bool is_valid() {
-      if (!values.empty()) return true;
+      if (values.size() >= 2) return true;
       if ((!to.empty()) or (!by.empty())) return true;
       return false;
    }
@@ -217,7 +217,7 @@ public:
    double get_total_dist();
 
    bool is_valid() {
-      if (!values.empty()) return true;
+      if (values.size() >= 2) return true;
       if (path.id) return true;
       if (mpath) return true;
       if ((!to.empty()) or (!by.empty())) return true;

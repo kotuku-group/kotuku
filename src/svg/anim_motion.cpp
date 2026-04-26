@@ -3,7 +3,7 @@
 
 void anim_motion::precalc_angles()
 {
-   if (points.empty()) return;
+   if (points.size() < 2) return;
 
    // Start by calculating all angles from point to point.
 
@@ -62,11 +62,13 @@ void anim_motion::perform()
 
          points.clear();
          if (mpath) {
-            if ((mpath->trace(call, vector->get<double>(FID_DisplayScale), false) != ERR::Okay) or (points.empty())) return;
+            if ((mpath->trace(call, vector->get<double>(FID_DisplayScale), false) != ERR::Okay) or (points.size() < 2)) return;
          }
-         else if ((path->trace(call, 1.0, false) != ERR::Okay) or (points.empty())) return;
+         else if ((path->trace(call, 1.0, false) != ERR::Okay) or (points.size() < 2)) return;
 
          path_timestamp = vector->get<int>(FID_PathTimestamp);
+         total_dist = 0;
+         distances.clear();
 
          if ((auto_rotate IS ART::AUTO) or (auto_rotate IS ART::AUTO_REVERSE)) {
             precalc_angles();

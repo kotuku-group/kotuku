@@ -1,5 +1,5 @@
 --$TIRI:Include
--- Tiri programs should use mSys.ResolveClassName() to convert class names to identifiers, as these constants are not exported.
+-- Tiri programs should use 'classname':hash() to convert class names to identifiers, as these constants are not exported.
 
 header({ path="system/registry", copyright="Paul Manias 1996-2026" }, function()
   typedHash("CLASSID", "uint",

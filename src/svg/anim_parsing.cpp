@@ -33,6 +33,23 @@ static double parse_begin(anim_base &Anim, std::string_view Value)
 }
 
 //********************************************************************************************************************
+
+static void remove_animation_triggers(anim_base &Anim)
+{
+   auto remove_anim = [&Anim](auto &Map) {
+      for (auto it = Map.begin(); it != Map.end(); ) {
+         auto &list = it->second;
+         list.erase(std::remove(list.begin(), list.end(), &Anim), list.end());
+         if (list.empty()) it = Map.erase(it);
+         else ++it;
+      }
+   };
+
+   remove_anim(Anim.svg->StartOnBegin);
+   remove_anim(Anim.svg->StartOnEnd);
+}
+
+//********************************************************************************************************************
 // Set common animation properties
 
 static ERR set_anim_property(anim_base &Anim, XTag &Tag, uint32_t Hash, const std::string_view Value)
@@ -295,4 +312,3 @@ static ERR set_anim_property(anim_base &Anim, XTag &Tag, uint32_t Hash, const st
 
    return ERR::Okay;
 }
-

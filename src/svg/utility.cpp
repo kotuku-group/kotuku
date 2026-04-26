@@ -463,6 +463,7 @@ static ERR parse_svg(extSVG *Self, CSTRING Path, CSTRING Buffer)
    AdjustLogLevel(1);
 #endif
 
+   Self->IDs.clear();
    if (Self->XML) { FreeResource(Self->XML); Self->XML = nullptr; }
 
    objXML *xml;
