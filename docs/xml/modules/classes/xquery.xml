@@ -264,7 +264,7 @@ if (query.ok()) {
       <name>Functions</name>
       <comment>Returns an allocated list of all declared XQuery functions.</comment>
       <access read="G">Get</access>
-      <type>pf::vector&lt;std::string&gt;</type>
+      <type>kt::vector&lt;std::string&gt;</type>
       <description>
 <p>Provides a list of all XQuery functions that have been defined by the user or during evaluation of the XQuery expression (via the <code>declare</code> keyword).</p>
 <p>Example: For <code>declare function math:cube($x) { }</code> the name <code>math:cube</code> would appear in the list.</p>
@@ -359,7 +359,7 @@ if (query.ok()) {
       <name>Variables</name>
       <comment>Returns an allocated list of all defined XQuery variables.</comment>
       <access read="G">Get</access>
-      <type>pf::vector&lt;std::string&gt;</type>
+      <type>kt::vector&lt;std::string&gt;</type>
       <description>
 <p>Provides a list of all XQuery variables that have been defined using the <action>SetKey</action> action, or during evaluation of the XQuery expression (via the <code>declare</code> keyword).</p>
 <p>Example: For <code>declare variable $math:pi := 3.14159;</code> the variable name <code>math:pi</code> would appear in the list.</p>

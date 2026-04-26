@@ -30,7 +30,7 @@
 <p>For batch processing scenarios, the <a data-bs-toggle="tooltip" title="Set this field if the XML document originates from a file source." href="#tf-Path">Path</a> or <a data-bs-toggle="tooltip" title="XML data is processed through this field." href="#tf-Statement">Statement</a> fields can be changed post-initialisation, causing the XML object to clear old data and parse the new.  This approach optimises memory usage by reusing existing object instances rather than creating new ones.</p>
 <h4>Document Structure and Access</h4>
 <p>Successfully parsed XML data is accessible through the <a data-bs-toggle="tooltip" title="Provides direct access to the XML document structure." href="#tf-Tags">Tags</a> field, which contains a hierarchical array of <a data-bs-toggle="tooltip" title="" href="?page=struct-XTag">XTag</a> structures.  Each XTag represents a complete XML element including its attributes, content and child elements. The structure maintains the original document hierarchy, enabling both tree traversal and direct element access.</p>
-<p>C++ developers benefit from direct access to the Tags field, represented as <code>pf::vector&lt;XTag&gt;</code>.  This provides efficient iteration and element access with standard STL semantics.  Altering tag attributes is permitted and methods to do so are provided in the C++ header for <code>objXML</code> and <code>XTag</code>, with additional functions in the <code>xml</code> namespace. Check the header for details.</p>
+<p>C++ developers benefit from direct access to the Tags field, represented as <code>kt::vector&lt;XTag&gt;</code>.  This provides efficient iteration and element access with standard STL semantics.  Altering tag attributes is permitted and methods to do so are provided in the C++ header for <code>objXML</code> and <code>XTag</code>, with additional functions in the <code>xml</code> namespace. Check the header for details.</p>
 <p>Tiri developers need to be aware that reading the <a data-bs-toggle="tooltip" title="Provides direct access to the XML document structure." href="#tf-Tags">Tags</a> field generates a copy of the entire tag structure - it should therefore be read only as needed and cached until the XML object is modified.</p>
 <h4>Not Supported</h4>
 <p>DTD processing and validation is intentionally not supported.  While the class can parse DOCTYPE declarations, it does not load or  validate against external DTDs as this is now a legacy technology.  Use XML Schema (XSD) for validation instead.</p>
@@ -501,8 +501,8 @@ local err = xml.acDataFeed(nil, DATA_XML, 'First element')
 <tr><th>Flags</th><td><span class="text-nowrap">XTF</span></td><td>Optional flags</td></tr>
 <tr><th>NamespaceID</th><td><span class="text-nowrap">UINT</span></td><td>Hash of namespace URI or 0 for no namespace</td></tr>
 <tr><th>Reserved</th><td><span class="text-nowrap">INT</span></td><td>Private</td></tr>
-<tr><th>Attribs</th><td><span class="text-nowrap">pf::vector&lt;XMLAttrib&gt;</span></td><td>Array of attributes for this tag</td></tr>
-<tr><th>Children</th><td><span class="text-nowrap">pf::vector&lt;XTag&gt;</span></td><td>Array of child tags</td></tr>
+<tr><th>Attribs</th><td><span class="text-nowrap">kt::vector&lt;XMLAttrib&gt;</span></td><td>Array of attributes for this tag</td></tr>
+<tr><th>Children</th><td><span class="text-nowrap">kt::vector&lt;XTag&gt;</span></td><td>Array of child tags</td></tr>
 </tbody></table><div class="footer copyright text-right">XML class documentation © Paul Manias © 2001-2026</div></div>
 </div></div></div><script type="text/javascript" src="../../js/bootstrap.bundle.min.js"></script><script type="text/javascript" src="../../js/base.js"></script><script type="text/javascript">
 const ready = fn => document.readyState !== 'loading' ? fn() : document.addEventListener('DOMContentLoaded', fn);

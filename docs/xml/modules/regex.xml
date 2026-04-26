@@ -45,11 +45,11 @@
   <function>
     <name>GetCaptureIndex</name>
     <comment>Retrieves capture indices for a named group.</comment>
-    <prototype>ERR rx::GetCaptureIndex(struct Regex * Regex, const std::string_view &amp; Name, pf::vector&lt;int&gt; * Indices)</prototype>
+    <prototype>ERR rx::GetCaptureIndex(struct Regex * Regex, const std::string_view &amp; Name, kt::vector&lt;int&gt; * Indices)</prototype>
     <input>
       <param type="struct Regex *" name="Regex">The compiled regex object.</param>
       <param type="const std::string_view &amp;" name="Name">The capture group name to resolve.</param>
-      <param type="pf::vector&lt;int&gt; *" name="Indices">Receives the resulting capture indices.</param>
+      <param type="kt::vector&lt;int&gt; *" name="Indices">Receives the resulting capture indices.</param>
     </input>
     <description>
 <p>Use GetCaptureIndex() to resolve the numeric capture indices associated with a named capture group. ECMAScript allows multiple groups to share the same name; this function therefore returns every index that matches the provided name. If no capture groups match the provided name, <code>ERR::Search</code> is returned.</p>
@@ -109,11 +109,11 @@
   <function>
     <name>Split</name>
     <comment>Split a string into tokens, using a regex pattern to denote the delimiter.</comment>
-    <prototype>ERR rx::Split(struct Regex * Regex, const std::string_view &amp; Text, pf::vector&lt;std::string&gt; * Output, RMATCH Flags)</prototype>
+    <prototype>ERR rx::Split(struct Regex * Regex, const std::string_view &amp; Text, kt::vector&lt;std::string&gt; * Output, RMATCH Flags)</prototype>
     <input>
       <param type="struct Regex *" name="Regex">The compiled regex object.</param>
       <param type="const std::string_view &amp;" name="Text">The input text to split.</param>
-      <param type="pf::vector&lt;std::string&gt; *" name="Output">Receives the resulting string tokens.</param>
+      <param type="kt::vector&lt;std::string&gt; *" name="Output">Receives the resulting string tokens.</param>
       <param type="RMATCH" name="Flags" lookup="RMATCH">Optional flags to modify the splitting behavior.</param>
     </input>
     <description>

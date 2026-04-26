@@ -122,11 +122,11 @@
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Parameters" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Parameters"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i>
                            
-                          <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Parameters</th><td class="col-md-1"><span class="text-nowrap">pf::vector&lt;std::string&gt;</span></td><td>Command line arguments (list format).</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Parameters" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+                          <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Parameters</th><td class="col-md-1"><span class="text-nowrap">kt::vector&lt;std::string&gt;</span></td><td>Command line arguments (list format).</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Parameters" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>Command line arguments for a program can be defined here as a vector list, whereby each argument is an independent string.  To illustrate, the following command-line string:</p>
 <pre>1&gt; YourProgram PREFS MyPrefs -file "documents:readme.txt"</pre>
 <p>Would be represented as follows:</p>
-<pre>pf::vector&lt;std::string&gt; Args = {
+<pre>kt::vector&lt;std::string&gt; Args = {
    "PREFS",
    "MyPrefs",
    "-file",

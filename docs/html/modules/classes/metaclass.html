@@ -192,6 +192,12 @@
 <p>If the size is not explicitly defined, the initialisation process will determine the structure size by evaluating the field definitions that have been provided.</p>
       
 </div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-SubClasses" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-SubClasses"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i>
+                           
+                          <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">SubClasses</th><td class="col-md-1"><span class="text-nowrap">ARRAY</span></td><td>Returns a list of all sub-classes of the class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-SubClasses" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<p>This field returns an array listing all active sub-classes of the class (classes that have not been loaded are not included).  This feature applies to base-classes only.</p>
+      
+</div></div></td></tr>
 </tbody></table><h3>Methods</h3><p>The following methods are currently supported:</p><table class="table"><tbody><tr data-bs-toggle="collapse" data-bs-target="#tmx-FindField" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">FindField</th><td id="tm-FindField">Search a class definition for a specific field.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-FindField" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR mc::FindField(OBJECTPTR Object, INT ID, struct Field ** Field, objMetaClass ** Source)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>ID</td><td>The field ID to search for.  Field names can be converted to ID's by using the <code>fieldhash()</code> function.</td></tr>
 <tr><td>Field</td><td>Pointer to the <a data-bs-toggle="tooltip" title="" href="?page=struct-Field">Field</a> if discovered, otherwise <code>NULL</code>.</td></tr>
 <tr><td>Source</td><td>Pointer to the class that is associated with the <code>Field</code> (which can match the caller), or <code>NULL</code> if the field was not found.</td></tr>
@@ -220,9 +226,9 @@
 <tr><th>ActionCode</th><td><span class="text-nowrap">AC</span></td><td>Action identifier</td></tr>
 </tbody></table><div class="footer copyright text-right">MetaClass class documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="struct-Field"><h1>Field Structure</h1><p class="lead">Used to describe the public fields of a class.</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Arg</th><td><span class="text-nowrap">MAXINT</span></td><td>An option to complement the field type.  Can be a pointer or an integer value</td></tr>
-<tr><th>GetValue</th><td><span class="text-nowrap">FUNCTION *</span></td><td>A virtual function that will retrieve the value for this field.</td></tr>
-<tr><th>SetValue</th><td><span class="text-nowrap">APTR</span></td><td>A virtual function that will set the value for this field.</td></tr>
-<tr><th>WriteValue</th><td><span class="text-nowrap">FUNCTION *</span></td><td>An internal function for writing to this field.</td></tr>
+<tr><th>GetValue</th><td><span class="text-nowrap">FUNCTION *</span></td><td>A virtual function that will retrieve the value for this field</td></tr>
+<tr><th>SetValue</th><td><span class="text-nowrap">APTR</span></td><td>A virtual function that will set the value for this field</td></tr>
+<tr><th>WriteValue</th><td><span class="text-nowrap">FUNCTION *</span></td><td>An internal function for writing to this field</td></tr>
 <tr><th>Name</th><td><span class="text-nowrap">CSTRING</span></td><td>The English name for the field, e.g. <code>Width</code></td></tr>
 <tr><th>FieldID</th><td><span class="text-nowrap">UINT</span></td><td>32-bit hash from fieldhash(). Represented by FID constants, e.g. <code>FID_Width</code></td></tr>
 <tr><th>Offset</th><td><span class="text-nowrap">UINT16</span></td><td>Field offset within the object</td></tr>
