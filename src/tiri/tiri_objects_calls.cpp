@@ -338,7 +338,7 @@ static int get_results(lua_State *Lua, const FunctionField *args, const int8_t *
          if (type & FD_RESULT) {
             int total_elements = -1;  // If -1, make_any_array() assumes the array is null terminated.
             if (args[i+1].Type & FD_ARRAYSIZE) {
-               const APTR size_var = ((APTR *)(ArgBuf + of + sizeof(APTR)))[0];
+               CPTR size_var = ArgBuf + of + sizeof(APTR);
                if (args[i+1].Type & FD_INT) total_elements = ((int *)size_var)[0];
                else if (args[i+1].Type & FD_INT64) total_elements = ((int64_t *)size_var)[0];
                else log.warning("Invalid parameter definition for '%s' of $%.8x", args[i+1].Name, args[i+1].Type);

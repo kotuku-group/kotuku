@@ -250,6 +250,17 @@ end
    assert(collected_lines[2] is 'Line 3', 'Third line should be "Line 3"')
 end
 
+@Test(labels=['io', "lines"]) function IOLinesPathIteratorSurvivesGC()
+   test_path = createTestFile('test_lines_gc.txt', 'First\nSecond\n')
+
+   iter = io.lines(test_path)
+   processing.collect()
+
+   assert(iter() is 'First', 'Path iterator should keep its file handle alive after GC')
+   assert(iter() is 'Second', 'Path iterator should continue reading after GC')
+   assert(iter() is nil, 'Path iterator should return nil at EOF')
+end
+
 @Test(labels=['io', "lines"]) function FileLines()
    lines_content = 'First\nSecond\nThird\n'
    test_path = createTestFile('test_file_lines.txt', lines_content)

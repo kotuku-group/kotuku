@@ -206,6 +206,9 @@ static int async_action(lua_State *Lua)
       auto arg_buffer = std::make_unique<int8_t[]>(arg_size+8); // +8 for overflow protection in build_args()
       int result_count;
 
+      // Remove the first 4 required arguments so that the user's custom parameters are left on the stack.
+      lua_rotate(Lua, 1, -4);
+      lua_pop(Lua, 4);
       if ((error = build_args(Lua, args, arg_size, arg_buffer.get(), &result_count)) IS ERR::Okay) {
          if (!result_count) {
             error = AsyncAction(action_id, gc_obj->ptr, arg_buffer.get(), &callback);

@@ -377,6 +377,7 @@ static int io_lines(lua_State *Lua)
 {
    FileHandle *file_handle = nullptr;
    bool close_on_finish = false;
+   int handle_index = 0;
 
    if (lua_gettop(Lua) IS 0) {
       // No arguments - use default input
@@ -396,6 +397,7 @@ static int io_lines(lua_State *Lua)
       }
 
       file_handle = check_file_handle(Lua, -1);
+      handle_index = lua_gettop(Lua);
       close_on_finish = false; // Don't close default input
    }
    else if (lua_type(Lua, 1) IS LUA_TSTRING) { // Filename provided - open file
@@ -404,6 +406,7 @@ static int io_lines(lua_State *Lua)
       if (auto file = objFile::create::local({ fl::Path(path), fl::Flags(FL::READ) })) {
          push_file_handle(Lua, file);
          file_handle = check_file_handle(Lua, -1);
+         handle_index = lua_gettop(Lua);
          close_on_finish = true; // Close when iteration ends
       }
       else luaL_error(Lua, ERR::File, "Cannot open file: %s", path);
@@ -411,6 +414,7 @@ static int io_lines(lua_State *Lua)
    else {
       // File handle provided
       file_handle = check_file_handle(Lua, 1);
+      handle_index = 1;
       close_on_finish = false; // Don't close provided handle - we don't own it
    }
 
@@ -425,8 +429,9 @@ static int io_lines(lua_State *Lua)
       lua_setfield(Lua, -2, "__gc");
       lua_setmetatable(Lua, -2);
 
-      // Return the iterator function with the state as upvalue
-      lua_pushcclosure(Lua, lines_iterator, 1);
+      // Return the iterator function with the state and file handle as upvalues.
+      lua_pushvalue(Lua, handle_index);
+      lua_pushcclosure(Lua, lines_iterator, 2);
       return 1;
    }
    else luaL_error(Lua, ERR::File);
@@ -657,8 +662,9 @@ static int file_lines(lua_State *Lua)
       lua_setfield(Lua, -2, "__gc");
       lua_setmetatable(Lua, -2);
 
-      // Return the iterator function with the state as upvalue
-      lua_pushcclosure(Lua, lines_iterator, 1);
+      // Return the iterator function with the state and file handle as upvalues.
+      lua_pushvalue(Lua, 1);
+      lua_pushcclosure(Lua, lines_iterator, 2);
       return 1;
    }
    else luaL_error(Lua, ERR::File);
