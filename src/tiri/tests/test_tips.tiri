@@ -171,7 +171,7 @@ end
 ]]
 
    msg('--- Testing nested loops with string concatenation ---')
-   script = obj.new('tiri', { statement = glNestedLoopScript, jitOptions = JOF_TIPS })
+   script = obj.new('tiri', { statement = statement, jitOptions = JOF_TIPS })
    err = script.acActivate()
    assert(err is ERR_Okay, 'Script should execute successfully')
 end

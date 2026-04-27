@@ -194,7 +194,6 @@ end
             return 42
          end
       ]])
-   end
    success
       error("should detect return type mismatch: num returned for str declaration")
    end
@@ -207,7 +206,6 @@ end
             return {}
          end
       ]])
-   end
    success
       error("should detect return type mismatch: table returned for bool declaration")
    end
@@ -220,7 +218,6 @@ end
             return "wrong", 42
          end
       ]])
-   end
    success
       error("should detect return type mismatch in multiple returns")
    end
@@ -296,7 +293,6 @@ end
             return N * factorial(N - 1)
          end
       ]])
-   end
    success
       error("recursive function without explicit return type should error")
    end
@@ -355,7 +351,6 @@ end
       exec([[
          bad = (x => num: "not a number")
       ]])
-   end
    success
       error("arrow function with mismatched return type should error")
    end
@@ -400,7 +395,6 @@ end
             end
          end
       ]])
-   end
    success
       error("inconsistent return types should error (first wins rule)")
    end
@@ -429,7 +423,6 @@ end
             end
          end
       ]])
-   end
    success
       error("inconsistent multiple return types should error")
    end
@@ -521,7 +514,7 @@ end
       return 42
    end
 
-   result: num = getNum()
+   local result: num = getNum()
    assert(result is 42, "typed variable from typed function should work")
 end
 
@@ -533,7 +526,7 @@ end
          function getNum():num
             return 42
          end
-         result: str = getNum()
+         local result: str = getNum()
       ]])
    success
       error("Expected exception to be raised from invalid typed assignment")
@@ -619,7 +612,7 @@ end
       mul = function(A: num, B: num):num return A * B end
    }
    assert(ops.add(3, 4) is 7, "typed function in table should work")
-   assert(ops.substr(10, 3) is 7, "second typed function should work")
+   assert(ops.sub(10, 3) is 7, "second typed function should work")
    assert(ops.mul(3, 4) is 12, "third typed function should work")
 end
 
@@ -667,12 +660,12 @@ end
             return "text"
          end
       ]])
-   success
-      error("should have caught type error")
    except ex
       -- Check that error message is helpful
       msg = ex.message
       assert(string.find(msg, "type") or string.find(msg, "num") or string.find(msg, "str"),
          "error message should mention type information")
+   success
+      error("should have caught type error")
    end
 end

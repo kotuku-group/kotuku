@@ -18,6 +18,7 @@ function printableState(State)
       NTC_CONNECTING -> 'CONNECTING'
       NTC_DISCONNECTED -> 'DISCONNECTED'
       NTC_HANDSHAKING -> 'HANDSHAKING'
+      NTC_RESOLVING -> 'RESOLVING'
       else -> tostring(State)
    end
 end
@@ -58,7 +59,7 @@ end
 
 @Test function ClientServer()
    proc = processing.new({ timeout = 5.0 })
-   
+
    server_buffer = string.alloc(1024)
 
    sockServer = obj.new('netsocket', {

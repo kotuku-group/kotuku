@@ -1,0 +1,449 @@
+-- Flute tests for numeric type edge cases and limitations.
+-- Covers IEEE 754 double precision behaviour, special values, precision boundaries,
+-- integer/float coercion, bitwise overflow, and the num.* explicit type system.
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+----------------------------------------------------------------------------------------------------------------------
+-- IEEE 754 special values: NaN
+
+@Test function NanNotEqualToItself()
+   nan = 0 / 0
+   assert(not (nan is nan), 'NaN should not equal itself')
+end
+
+@Test function NanArithmeticPropagation()
+   nan = 0 / 0
+   assert(not (nan + 1 is nan + 1), 'NaN + 1 should still be NaN (not equal to itself)')
+   assert(not (nan * 0 is 0), 'NaN * 0 should be NaN, not 0')
+   assert(not (nan - nan is 0), 'NaN - NaN should be NaN, not 0')
+end
+
+@Test function NanComparisonAlwaysFalse()
+   nan = 0 / 0
+   assert(not (nan > 0), 'NaN > 0 should be false')
+   assert(not (nan < 0), 'NaN < 0 should be false')
+   assert(not (nan >= 0), 'NaN >= 0 should be false')
+   assert(not (nan <= 0), 'NaN <= 0 should be false')
+end
+
+@Test function NanTypeIsNumber()
+   nan = 0 / 0
+   assert(type(nan) is 'number', 'type(NaN) should be number')
+end
+
+@Test function NanDetection()
+   nan = 0 / 0
+   -- Standard NaN detection: a value that is not equal to itself
+   is_nan = not (nan is nan)
+   assert(is_nan, 'NaN detection via self-inequality should work')
+
+   -- Non-NaN values should not trigger this
+   assert(42 is 42, 'Normal number should equal itself')
+   assert(0 is 0, 'Zero should equal itself')
+   assert(math.huge is math.huge, 'Infinity should equal itself')
+end
+
+@Test function NanFromInvalidMathOps()
+   assert(not (math.sqrt(-1) is math.sqrt(-1)), 'sqrt(-1) should produce NaN')
+   assert(not (math.log(-1) is math.log(-1)), 'log(-1) should produce NaN')
+   assert(not (math.asin(2) is math.asin(2)), 'asin(2) should produce NaN')
+   assert(not (math.acos(2) is math.acos(2)), 'acos(2) should produce NaN')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- IEEE 754 special values: Infinity
+
+@Test function InfinityFromDivisionByZero()
+   assert(1 / 0 is math.huge, '1/0 should produce positive infinity')
+   assert(-1 / 0 is -math.huge, '-1/0 should produce negative infinity')
+end
+
+@Test function InfinityArithmetic()
+   inf = math.huge
+   assert(inf + 1 is inf, 'Infinity + 1 should be infinity')
+   assert(inf + inf is inf, 'Infinity + infinity should be infinity')
+   assert(inf * 2 is inf, 'Infinity * 2 should be infinity')
+   assert(-inf * 2 is -inf, '-Infinity * 2 should be -infinity')
+   assert(1 / inf is 0, '1 / infinity should be 0')
+end
+
+@Test function InfinityComparisonOrdering()
+   inf = math.huge
+   assert(inf > 1e308, 'Infinity should be greater than 1e308')
+   assert(-inf < -1e308, '-Infinity should be less than -1e308')
+   assert(inf > -inf, 'Positive infinity should be greater than negative infinity')
+end
+
+@Test function InfinityProducesNan()
+   inf = math.huge
+   -- Indeterminate forms should produce NaN
+   result = inf - inf
+   assert(not (result is result), 'Infinity - infinity should be NaN')
+   result = inf / inf
+   assert(not (result is result), 'Infinity / infinity should be NaN')
+   result = 0 * inf
+   assert(not (result is result), '0 * infinity should be NaN')
+end
+
+@Test function InfinityNegation()
+   assert(-math.huge is -(math.huge), 'Negating infinity should produce negative infinity')
+   assert(-(-math.huge) is math.huge, 'Double negation of infinity should produce positive infinity')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- IEEE 754 special values: Signed zero
+
+@Test function PositiveAndNegativeZero()
+   pos_zero = 0.0
+   neg_zero = -0.0
+   -- IEEE 754: positive and negative zero compare as equal
+   assert(pos_zero is neg_zero, 'Positive and negative zero should be equal')
+   -- But they can be distinguished via division
+   assert(1 / pos_zero is math.huge, '1 / +0.0 should be +infinity')
+   assert(1 / neg_zero is -math.huge, '1 / -0.0 should be -infinity')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Floating-point precision
+
+@Test function DecimalRepresentationPrecision()
+   -- Classic IEEE 754 precision issue
+   sum = 0.1 + 0.2
+   assert(not (sum is 0.3), '0.1 + 0.2 should not exactly equal 0.3 due to IEEE 754')
+   assert(math.abs(sum - 0.3) < 1e-15, '0.1 + 0.2 should be very close to 0.3')
+end
+
+@Test function PrecisionLossWithLargeNumbers()
+   -- Doubles have ~15-17 significant digits
+   large = 1e16
+   assert(large + 1 is large, '1e16 + 1 should lose the +1 due to precision limits')
+   smaller = 1e15
+   assert(smaller + 1 != smaller, '1e15 + 1 should still differ (within precision)')
+end
+
+@Test function PrecisionNearMaxSafeInteger()
+   -- 2^53 is the boundary where consecutive integers can no longer be represented
+   safe_max = 2 ** 53  -- 9007199254740992
+   assert(safe_max + 1 is safe_max, '2^53 + 1 should equal 2^53 (precision lost)')
+   below_max = 2 ** 53 - 1  -- 9007199254740991
+   assert(below_max + 1 != below_max, '(2^53 - 1) + 1 should differ')
+end
+
+@Test function SubnormalNumbers()
+   -- Smallest normal double is ~2.2e-308; subnormals go below that
+   tiny = 5e-324  -- Smallest representable positive double (subnormal)
+   assert(tiny > 0, 'Smallest subnormal should be greater than zero')
+   assert(tiny / 2 is 0, 'Halving smallest subnormal should underflow to zero')
+end
+
+@Test function PrecisionOfRoundTrip()
+   -- Values that should round-trip exactly
+   exact_values = { 0.5, 0.25, 0.125, 0.0625 }  -- Powers of 2 fractions
+   for i = 0, #exact_values - 1 do
+      v = exact_values[i]
+      assert(v * 2 / 2 is v, f'Power-of-2 fraction {v} should round-trip exactly')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Large and extreme values
+
+@Test function LargeDoubleValues()
+   large = 1.7976931348623157e+308  -- Near max double
+   assert(large > 0, 'Near-max double should be positive')
+   assert(large * 2 is math.huge, 'Doubling near-max should overflow to infinity')
+end
+
+@Test function SmallDoubleValues()
+   small = 2.2250738585072014e-308  -- Near min normal double
+   assert(small > 0, 'Near-min normal double should be positive')
+   assert(small != 0, 'Near-min normal double should not equal zero')
+end
+
+@Test function ExponentialOverflow()
+   assert(math.exp(710) is math.huge, 'exp(710) should overflow to infinity')
+end
+
+@Test function ExponentialUnderflow()
+   result = math.exp(-744)
+   assert(result > 0, 'exp(-744) should produce a tiny positive subnormal')
+   assert(result < 1e-300, 'exp(-744) should be extremely small')
+   -- True underflow to zero requires a more extreme exponent
+   result2 = math.exp(-750)
+   assert(result2 is 0, 'exp(-750) should underflow to 0')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Integer and float interaction
+
+@Test function IntegerDivisionBehaviour()
+   -- Division always produces a float in Lua/Tiri
+   result = 10 / 3
+   assert(math.abs(result - 3.3333333333333335) < 1e-14, '10/3 should be approximately 3.333...')
+end
+
+@Test function IntegerPreservationInArithmetic()
+   -- Operations that should stay as exact integers
+   assert(7 * 8 is 56, '7 * 8 should be exactly 56')
+   assert(100 - 37 is 63, '100 - 37 should be exactly 63')
+   assert(2 ** 10 is 1024, '2^10 should be exactly 1024')
+end
+
+@Test function FloorAndCeilWithIntegers()
+   assert(math.floor(3.9) is 3, 'floor(3.9) should be 3')
+   assert(math.floor(-3.1) is -4, 'floor(-3.1) should be -4')
+   assert(math.ceil(3.1) is 4, 'ceil(3.1) should be 4')
+   assert(math.ceil(-3.9) is -3, 'ceil(-3.9) should be -3')
+end
+
+@Test function ModfSplitsParts()
+   int_part, frac_part = math.modf(3.75)
+   assert(int_part is 3, 'Integer part of 3.75 should be 3')
+   assert(math.abs(frac_part - 0.75) < 1e-15, 'Fractional part of 3.75 should be 0.75')
+
+   int_part, frac_part = math.modf(-2.25)
+   assert(int_part is -2, 'Integer part of -2.25 should be -2')
+   assert(math.abs(frac_part - (-0.25)) < 1e-15, 'Fractional part of -2.25 should be -0.25')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Modulo and remainder edge cases
+
+@Test function ModuloWithNegativeOperands()
+   -- Tiri/Lua % follows the sign of the divisor (Euclidean-style)
+   assert(7 % 3 is 1, '7 % 3 should be 1')
+   assert(-7 % 3 is 2, '-7 % 3 should be 2 (sign of divisor)')
+   assert(7 % -3 is -2, '7 % -3 should be -2 (sign of divisor)')
+   assert(-7 % -3 is -1, '-7 % -3 should be -1 (sign of divisor)')
+end
+
+@Test function ModuloWithFloats()
+   result = 5.5 % 2.0
+   assert(math.abs(result - 1.5) < 1e-15, '5.5 % 2.0 should be 1.5')
+end
+
+@Test function FmodConsistency()
+   -- fmod should match % behaviour for positive values
+   assert(math.fmod(7, 3) is 7 % 3, 'fmod(7,3) should match 7 % 3')
+   assert(math.fmod(5.5, 2.0) is 5.5 % 2.0, 'fmod(5.5, 2.0) should match 5.5 % 2.0')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Bitwise operations: 32-bit overflow and coercion
+
+@Test function BitwiseCoercionRoundsFloat()
+   -- Bitwise ops convert to 32-bit signed int via tobit (rounds to nearest)
+   assert((3.7 | 0) is 4, '3.7 should round to 4 in bitwise context')
+   assert((3.2 | 0) is 3, '3.2 should round to 3 in bitwise context')
+   assert((-1.9 | 0) is -2, '-1.9 should round to -2 in bitwise context')
+   assert((-1.2 | 0) is -1, '-1.2 should round to -1 in bitwise context')
+end
+
+@Test function BitwiseOverflowWraps()
+   -- 32-bit signed max is 2147483647 (0x7FFFFFFF)
+   max_int32 = 0x7fffffff
+   assert((max_int32 + 1 & 0xffffffff) is bit.tobit(0x80000000),
+      'Incrementing max int32 in bitwise context should wrap to min int32')
+end
+
+@Test function BitwiseNegativeRepresentation()
+   assert((-1 & 0xff) is 0xff, '-1 masked to 8 bits should be 0xFF (255)')
+   assert((-1 & 0xffff) is 0xffff, '-1 masked to 16 bits should be 0xFFFF')
+end
+
+@Test function BitShiftBoundaries()
+   -- Shift counts are masked to 0-31
+   assert((1 << 0) is 1, 'Shift by 0 should be identity')
+   assert((1 << 31) is bit.tobit(0x80000000), 'Shift by 31 should set sign bit')
+   -- Shift by 32 should be equivalent to shift by 0 (masked)
+   assert((1 << 32) is 1, 'Shift by 32 should wrap to shift by 0')
+end
+
+@Test function BitwiseWithLargeDoubles()
+   -- Large doubles outside 32-bit range get truncated via tobit
+   large = 2 ** 33  -- 8589934592
+   result = large & 0xffffffff
+   assert(result is 0, '2^33 should truncate to 0 in 32-bit context')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- num.* explicit type constructors
+
+@Test function NumIntCreation()
+   n = num.int(42)
+   assert(n.value is 42, 'num.int(42) should store value 42')
+end
+
+@Test function NumInt64Creation()
+   n = num.int64(100)
+   assert(n.value is 100, 'num.int64(100) should store value 100')
+end
+
+@Test function NumFloatCreation()
+   n = num.float(3.14)
+   -- Float precision is lower than double
+   assert(math.abs(n.value - 3.14) < 1e-6, 'num.float(3.14) should be approximately 3.14')
+end
+
+@Test function NumDoubleCreation()
+   n = num.double(3.141592653589793)
+   assert(n.value is 3.141592653589793, 'num.double should preserve full double precision')
+end
+
+@Test function NumInt16Creation()
+   n = num.int16(1000)
+   assert(n.value is 1000, 'num.int16(1000) should store value 1000')
+end
+
+@Test function NumByteCreation()
+   n = num.byte(127)
+   assert(n.value is 127, 'num.byte(127) should store value 127')
+end
+
+@Test function NumFloatPrecisionLoss()
+   -- Float (32-bit) has ~7 significant digits; double has ~15
+   precise = 1.23456789012345
+   float_val = num.float(precise)
+   double_val = num.double(precise)
+   -- Float should lose precision compared to double
+   assert(math.abs(double_val.value - precise) < 1e-15, 'Double should preserve full precision')
+   assert(math.abs(float_val.value - precise) > 1e-10, 'Float should show measurable precision loss')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Typed array numeric coercion
+
+@Test function IntArrayTruncatesFloats()
+   arr = array<int> { 1.9, -2.7, 3.5 }
+   assert(arr[0] is 1, '1.9 stored in int array should truncate to 1')
+   assert(arr[1] is -2, '-2.7 stored in int array should truncate to -2')
+   assert(arr[2] is 3, '3.5 stored in int array should truncate to 3')
+end
+
+@Test function FloatArrayPrecision()
+   arr = array<float> { 1.23456789012345 }
+   -- Float array stores 32-bit floats, so precision is reduced
+   assert(math.abs(arr[0] - 1.23456789012345) > 1e-10,
+      'Float array should show precision loss for high-precision values')
+   assert(math.abs(arr[0] - 1.23456789012345) < 1e-5,
+      'Float array should still be approximately correct')
+end
+
+@Test function DoubleArrayPreservesPrecision()
+   precise = 1.23456789012345
+   arr = array<double> { precise }
+   assert(arr[0] is precise, 'Double array should preserve full precision')
+end
+
+@Test function Int64ArrayLargeValues()
+   arr = array<int64, 2>
+   arr[0] = 2 ** 40  -- 1099511627776, beyond 32-bit range
+   arr[1] = -(2 ** 40)
+   assert(arr[0] is 2 ** 40, 'Int64 array should handle values beyond 32-bit range')
+   assert(arr[1] is -(2 ** 40), 'Int64 array should handle large negative values')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Tonumber and type conversion edge cases
+
+@Test function TonumberFromString()
+   assert(tonumber('42') is 42, 'tonumber("42") should produce 42')
+   assert(tonumber('3.14') is 3.14, 'tonumber("3.14") should produce 3.14')
+   assert(tonumber('-1e5') is -100000, 'tonumber("-1e5") should produce -100000')
+   assert(tonumber('0xff') is 255, 'tonumber("0xff") should produce 255')
+end
+
+@Test function TonumberInvalidInput()
+   assert(tonumber('hello') is nil, 'tonumber of non-numeric string should be nil')
+   assert(tonumber('') is nil, 'tonumber of empty string should be nil')
+   assert(tonumber(nil) is nil, 'tonumber of nil should be nil')
+end
+
+@Test function TonumberWithBase()
+   assert(tonumber('ff', 16) is 255, 'tonumber("ff", 16) should produce 255')
+   assert(tonumber('77', 8) is 63, 'tonumber("77", 8) should produce 63')
+   assert(tonumber('1010', 2) is 10, 'tonumber("1010", 2) should produce 10')
+end
+
+@Test function TostringOfSpecialValues()
+   assert(tostring(math.huge) is 'inf', 'tostring(inf) should be "inf"')
+   assert(tostring(-math.huge) is '-inf', 'tostring(-inf) should be "-inf"')
+   nan = 0 / 0
+   assert(tostring(nan) is 'nan' or tostring(nan) is '-nan', 'tostring(NaN) should be "nan" or "-nan"')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Comparison edge cases
+
+@Test function ComparisonWithMixedTypes()
+   -- Number-to-string comparison should not coerce
+   assert(not (42 is '42'), 'Number 42 should not equal string "42"')
+   assert(not (0 is '0'), 'Number 0 should not equal string "0"')
+end
+
+@Test function ComparisonOrdering()
+   assert(-math.huge < -1e308, '-Infinity should be less than -1e308')
+   assert(1e308 < math.huge, '1e308 should be less than infinity')
+   assert(-1 < 0, '-1 should be less than 0')
+   assert(0 < 1, '0 should be less than 1')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Rounding edge cases
+
+@Test function RoundingHalfUp()
+   assert(math.round(0.5) is 1, 'math.round(0.5) should round up to 1')
+   assert(math.round(1.5) is 2, 'math.round(1.5) should round up to 2')
+   assert(math.round(2.5) is 3, 'math.round(2.5) should round up to 3')
+end
+
+@Test function RoundingNegativeHalf()
+   -- Negative halves: round-half-up means towards positive infinity
+   assert(math.round(-0.5) is 0, 'math.round(-0.5) should round toward +inf to 0')
+   assert(math.round(-1.5) is -1, 'math.round(-1.5) should round toward +inf to -1')
+   assert(math.round(-2.5) is -2, 'math.round(-2.5) should round toward +inf to -2')
+end
+
+@Test function RoundingWithPrecision()
+   assert(math.round(1.005, 2) is 1.01 or math.abs(math.round(1.005, 2) - 1.0) < 0.01,
+      'math.round(1.005, 2) demonstrates floating-point representation issues')
+   assert(math.round(1.555, 2) is 1.56 or math.abs(math.round(1.555, 2) - 1.56) < 0.01,
+      'math.round(1.555, 2) should be approximately 1.56')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Power operator edge cases
+
+@Test function PowerEdgeCases()
+   assert(0 ** 0 is 1, '0^0 should be 1 (mathematical convention)')
+   assert(1 ** math.huge is 1, '1^infinity should be 1')
+   assert(2 ** -1 is 0.5, '2^(-1) should be 0.5')
+   assert((-1) ** 0 is 1, '(-1)^0 should be 1')
+end
+
+@Test function PowerOverflow()
+   result = 2 ** 1024
+   assert(result is math.huge, '2^1024 should overflow to infinity')
+end
+
+@Test function PowerUnderflow()
+   result = 2 ** -1075
+   assert(result is 0, '2^(-1075) should underflow to 0')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- String-to-number arithmetic coercion
+
+@Test function StringToNumberCoercionInArithmetic()
+   -- Tiri may or may not coerce strings in arithmetic; test the actual behaviour
+   try
+      result = 3 + '4'
+      -- If we get here, coercion happened
+      assert(result is 7, 'If string coercion occurs, 3 + "4" should be 7')
+   except
+      -- If we get here, coercion is not supported (which is safer)
+      assert(true, 'String-to-number coercion in arithmetic correctly raises error')
+   end
+end

@@ -53,7 +53,7 @@ rxPathSegment    = <{ regex.new('([^\\/]+)') }>
 -- Percent-encode a string for safe URL use
 
 url.encode = function(str, extraChars)
-   str ?? return
+   if str is nil then return nil end
 
    chars_to_encode = RESERVED_CHARS.general .. RESERVED_CHARS.query
    if extraChars then chars_to_encode = chars_to_encode .. extraChars end
@@ -62,7 +62,7 @@ url.encode = function(str, extraChars)
    result = {}
    for i = 0, #str-1 do
       c = str:sub(i, i+1)
-      if chars_to_encode:find(c, 1, true) then
+      if chars_to_encode:find(c, 0, true) then
          table.insert(result, string.format('%%%02X', string.byte(c)))
       else
          table.insert(result, c)
@@ -75,7 +75,7 @@ end
 -- Percent-encode with spaces as plus signs (for form data)
 
 url.encodePlus = function(str, extraChars)
-   str ?? return
+   if str is nil then return nil end
 
    encoded = url.encode(str, extraChars)
    if encoded then
@@ -235,14 +235,14 @@ url.parse = function(urlString)
 
    fragPos = remaining:find('#')
    if fragPos then
-      components.fragment = remaining:sub(fragPos)
-      remaining = remaining:sub(0, fragPos)
+      components.fragment = remaining:sub(fragPos + 1)
+      remaining = fragPos is 0 ? '' :> remaining:sub(0, fragPos)
    end
 
-   queryPos = remaining:find('?', 1, true)
+   queryPos = remaining:find('?', 0, true)
    if queryPos then
-      components.query = remaining:sub(queryPos)
-      remaining = remaining:sub(0, queryPos)
+      components.query = remaining:sub(queryPos + 1)
+      remaining = queryPos is 0 ? '' :> remaining:sub(0, queryPos)
    end
 
    schemeMatch = rxScheme.extract(remaining)
@@ -256,15 +256,15 @@ url.parse = function(urlString)
       remaining = remaining:sub(2) -- Remove //
 
       -- Find the end of authority (next /, ?, #, or end of string)
-      pathStart = remaining:find('/') or (#remaining + 1)
-      authority = remaining:sub(0, pathStart - 1)
+      pathStart = remaining:find('/') or #remaining
+      authority = remaining:sub(0, pathStart)
       remaining = remaining:sub(pathStart)
 
       -- Extract auth (user:pass@)
       authEnd = authority:find('@')
       if authEnd then
-         components.auth = authority:sub(0, authEnd - 1)
-         authority = authority:sub(authEnd)
+         components.auth = authority:sub(0, authEnd)
+         authority = authority:sub(authEnd + 1)
       end
 
       -- Handle IPv6 addresses [host]:port
@@ -277,10 +277,10 @@ url.parse = function(urlString)
          end
       else
          -- Handle regular host:port
-         colonPos = authority:find(':', 1, true)
+         colonPos = authority:find(':', 0, true)
          if colonPos then
-            components.host = authority:sub(0, colonPos - 1)
-            portStr = authority:sub(colonPos)
+            components.host = authority:sub(0, colonPos)
+            portStr = authority:sub(colonPos + 1)
             if portStr != '' then
                components.port = tonumber(portStr)
             end
@@ -299,8 +299,8 @@ url.parse = function(urlString)
    if components.path then
       paramPos = components.path:find(';')
       if paramPos then
-         components.params = components.path:sub(paramPos)
-         components.path = components.path:sub(0, paramPos - 1)
+         components.params = components.path:sub(paramPos + 1)
+         components.path = components.path:sub(0, paramPos)
       end
    end
 
@@ -388,7 +388,7 @@ url.defrag = function(urlString)
 
    fragPos = urlString:find('#')
    if fragPos then
-      base = urlString:sub(0, fragPos - 1)
+      base = fragPos is 0 ? '' :> urlString:sub(0, fragPos)
       fragment = urlString:sub(fragPos + 1)
       return base, fragment
    end
@@ -464,7 +464,7 @@ url.normalize = function(path)
    for start, stop, cap in rxPathSegment.findAll(path) do
       local segment = cap[0]
       if segment is '..' then
-         if #segments > 0 and segments[#segments] != '..' then
+         if #segments > 0 and segments[#segments - 1] != '..' then
             table.remove(segments)
          elseif not isAbsolute then
             table.insert(segments, '..')
