@@ -1074,7 +1074,7 @@ static uint32_t ir_khash(ASMState* as, IRIns* ir)
       lo = u32ptr(ir_kgc(ir));
       hi = (uint32_t)(u64ptr(ir_kgc(ir)) >> 32) | (irt_toitype(ir->t) << 15);
    }
-   return hashrot(lo, hi);
+   return hashlohi_bits(lo, hi);
 }
 
 // -- Allocations ---------------------------------------------------------

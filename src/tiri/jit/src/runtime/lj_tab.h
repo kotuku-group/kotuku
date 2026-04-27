@@ -12,6 +12,8 @@ inline constexpr int32_t HASH_BIAS = (-0x04c11db7);
 inline constexpr int HASH_ROT1 = 14;
 inline constexpr int HASH_ROT2 = 5;
 inline constexpr int HASH_ROT3 = 13;
+inline constexpr uint64_t HASH_MIX64_MUL1 = 0xbf58476d1ce4e5b9ull;
+inline constexpr uint64_t HASH_MIX64_MUL2 = 0x94d049bb133111ebull;
 
 // Scramble the bits of numbers and pointers.
 [[nodiscard]] inline constexpr uint32_t hashrot(uint32_t lo, uint32_t hi) noexcept
@@ -30,6 +32,20 @@ inline constexpr int HASH_ROT3 = 13;
    return hi;
 }
 
+// Scramble table hash bits. x64 can use full-width multiply cheaply; other targets keep the legacy JIT-matched mix.
+[[nodiscard]] inline constexpr uint32_t hashlohi_bits(uint32_t Lo, uint32_t Hi) noexcept
+{
+#if LJ_TARGET_X64
+   uint64_t hash = (uint64_t(Hi) << 32) | uint64_t(Lo);
+   hash = (hash ^ (hash >> 30)) * HASH_MIX64_MUL1;
+   hash = (hash ^ (hash >> 27)) * HASH_MIX64_MUL2;
+   hash ^= hash >> 31;
+   return uint32_t(hash);
+#else
+   return hashrot(Lo, Hi);
+#endif
+}
+
 // Hash values are masked with the table hash mask and used as an index.
 [[nodiscard]] inline constexpr Node* hashmask(const GCtab* t, uint32_t hash) noexcept
 {
@@ -45,7 +61,7 @@ inline constexpr int HASH_ROT3 = 13;
 
 [[nodiscard]] inline constexpr Node* hashlohi(const GCtab* t, uint32_t lo, uint32_t hi) noexcept
 {
-   return hashmask(t, hashrot(lo, hi));
+   return hashmask(t, hashlohi_bits(lo, hi));
 }
 
 [[nodiscard]] inline constexpr Node* hashnum(const GCtab* t, const TValue* o) noexcept

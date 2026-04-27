@@ -74,6 +74,48 @@ function constant_target(Value)
    return offset, label
 end
 
+@Test(hotpath=80) function JITVariableNumericHashLookup()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   lookup = {}
+   lookup[0.5] = 11
+   lookup[1.5] = 17
+   lookup[65536.5] = 23
+   lookup[131072.5] = 31
+   keys = { 0.5, 1.5, 65536.5, 131072.5 }
+
+   total = 0
+   for i = 0, 199 do
+      key = keys[i % 4]
+      total += lookup[key]
+   end
+
+   assert(total is 4100, "JIT variable numeric hash lookup returned " .. tostring(total))
+end
+
+@Test(hotpath=80) function JITVariableTableHashLookup()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   key_one = {}
+   key_two = {}
+   lookup = {}
+   lookup[key_one] = 7
+   lookup[key_two] = 13
+   keys = { key_one, key_two }
+
+   total = 0
+   for i = 0, 199 do
+      key = keys[i % 2]
+      total += lookup[key]
+   end
+
+   assert(total is 2000, "JIT variable table hash lookup returned " .. tostring(total))
+end
+
 @Test function EngineModeToggles()
    jit.on()
    enabled_on = jit.status()

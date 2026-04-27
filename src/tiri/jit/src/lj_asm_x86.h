@@ -852,6 +852,25 @@ static void asm_aref(ASMState* as, IRIns* ir)
    else if (as->mrm.base != dest) emit_rr(as, XO_MOV, dest | REX_GC64, as->mrm.base);
 }
 
+static void asm_href_mix64(ASMState* as, Reg Hash, Reg Scratch)
+{
+   emit_rr(as, XO_ARITH(XOg_XOR), Hash | REX_64, Scratch);
+   emit_shifti(as, XOg_SHR | REX_64, Scratch, 31);
+   emit_rr(as, XO_MOV, Scratch | REX_64, Hash | REX_64);
+   emit_mrm(as, XO_IMUL, Hash | REX_64, Scratch);
+   emit_loadu64(as, Scratch, HASH_MIX64_MUL2);
+   checkmclim(as);
+   emit_rr(as, XO_ARITH(XOg_XOR), Hash | REX_64, Scratch);
+   emit_shifti(as, XOg_SHR | REX_64, Scratch, 27);
+   emit_rr(as, XO_MOV, Scratch | REX_64, Hash | REX_64);
+   emit_mrm(as, XO_IMUL, Hash | REX_64, Scratch);
+   emit_loadu64(as, Scratch, HASH_MIX64_MUL1);
+   checkmclim(as);
+   emit_rr(as, XO_ARITH(XOg_XOR), Hash | REX_64, Scratch);
+   emit_shifti(as, XOg_SHR | REX_64, Scratch, 30);
+   emit_rr(as, XO_MOV, Scratch | REX_64, Hash | REX_64);
+}
+
 /* Inlined hash lookup. Specialized for key type and for const keys.
 ** The equivalent C code is:
 **   Node *n = hashkey(t, key);
@@ -952,34 +971,26 @@ static void asm_href(ASMState* as, IRIns* ir, IROp merge)
          emit_rmro(as, XO_ARITH(XOg_AND), dest, key, offsetof(GCstr, sid));
          emit_rmro(as, XO_MOV, dest, tab, offsetof(GCtab, hmask));
       }
-      else {  // Must match with hashrot() in lj_tab.c.
+      else {  // Must match with hashlohi_bits() in lj_tab.h.
          emit_rmro(as, XO_ARITH(XOg_AND), dest, tab, offsetof(GCtab, hmask));
-         emit_rr(as, XO_ARITH(XOg_SUB), dest, tmp);
-         emit_shifti(as, XOg_ROL, tmp, HASH_ROT3);
-         emit_rr(as, XO_ARITH(XOg_XOR), dest, tmp);
-         emit_shifti(as, XOg_ROL, dest, HASH_ROT2);
-         emit_rr(as, XO_ARITH(XOg_SUB), tmp, dest);
-         emit_shifti(as, XOg_ROL, dest, HASH_ROT1);
-         emit_rr(as, XO_ARITH(XOg_XOR), tmp, dest);
+         asm_href_mix64(as, dest, tmp);
+         checkmclim(as);
          if (irt_isnum(kt)) {
-            emit_rr(as, XO_ARITH(XOg_ADD), dest, dest);
-            emit_shifti(as, XOg_SHR | REX_64, dest, 32);
-            emit_rr(as, XO_MOV, tmp, dest);
+            emit_rr(as, XO_ARITH(XOg_OR), dest | REX_64, tmp);
+            emit_rr(as, XO_MOV, dest, dest);
+            emit_shifti(as, XOg_SHL | REX_64, tmp, 32);
+            emit_rr(as, XO_ARITH(XOg_ADD), tmp, tmp);
+            emit_shifti(as, XOg_SHR | REX_64, tmp, 32);
+            emit_rr(as, XO_MOV, tmp | REX_64, dest | REX_64);
             emit_rr(as, XO_MOVDto, key | REX_64, dest);
          }
          else {
-            emit_rr(as, XO_MOV, tmp, key);
             checkmclim(as);
-            emit_gri(as, XG_ARITHi(XOg_XOR), dest, irt_toitype(kt) << 15);
-            if ((as->flags & JIT_F_BMI2)) {
-               emit_i8(as, 32);
-               emit_mrm(as, (x86Op)(XV_RORX | VEX_64), dest, key);
-            }
-            else {
-               emit_shifti(as, XOg_SHR | REX_64, dest, 32);
-               emit_rr(as, XO_MOV, dest | REX_64, key | REX_64);
-            }
+            emit_rr(as, XO_ARITH(XOg_OR), dest | REX_64, tmp);
+            emit_loadu64(as, tmp, uint64_t(irt_toitype(kt)) << 47);
+            emit_rr(as, XO_MOV, dest | REX_64, key | REX_64);
          }
+         checkmclim(as);
       }
    }
 }
