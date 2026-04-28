@@ -757,7 +757,7 @@ static ERR init_svg(void)
    clSVG = objMetaClass::create::global(
       fl::ClassVersion(VER_SVG),
       fl::Name("SVG"),
-      fl::FileExtension("*.svg"),
+      fl::FileExtension("svg"),
       fl::FileDescription("Scalable Vector Graphics (SVG)"),
       fl::Icon("filetypes/vectorgfx"),
       fl::Category(CCF::GUI),

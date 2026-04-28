@@ -2356,7 +2356,7 @@ extern ERR add_task_class(void)
       fl::ClassVersion(VER_TASK),
       fl::Name("Task"),
       fl::Category(CCF::SYSTEM),
-      fl::FileExtension("*.exe|*.bat|*.com"),
+      fl::FileExtension("exe|bat|com"),
       fl::FileDescription("Executable File"),
       fl::FileHeader("[0:$4d5a]|[0:$7f454c46]"),
       fl::Icon("items/launch"),

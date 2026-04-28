@@ -1355,7 +1355,7 @@ static ERR create_picture_class(void)
       fl::Name("Picture"),
       fl::Category(CCF::GRAPHICS),
       fl::Flags(CLF::INHERIT_LOCAL),
-      fl::FileExtension("*.png"),
+      fl::FileExtension("png"),
       fl::FileDescription("PNG Image"),
       fl::FileHeader("[0:$89504e470d0a1a0a]"),
       fl::Icon("filetypes/image"),

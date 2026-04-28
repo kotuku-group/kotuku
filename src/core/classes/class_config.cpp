@@ -1162,7 +1162,7 @@ extern ERR add_config_class(void)
       fl::ClassVersion(VER_CONFIG),
       fl::Name("Config"),
       fl::Category(CCF::DATA),
-      fl::FileExtension("*.cfg|*.cnf|*.config"),
+      fl::FileExtension("cfg|cnf|config"),
       fl::FileDescription("Config File"),
       fl::Icon("filetypes/text"),
       fl::Actions(clConfigActions),

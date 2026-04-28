@@ -876,7 +876,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
       fl::BaseClassID(CLASSID::SOUND),
       fl::ClassID(CLASSID::MP3),
       fl::ClassVersion(VER_MP3),
-      fl::FileExtension("*.mp3"),
+      fl::FileExtension("mp3"),
       fl::FileDescription("MP3 Audio Stream"),
       fl::Icon("filetypes/audio"),
       fl::Name("MP3"),

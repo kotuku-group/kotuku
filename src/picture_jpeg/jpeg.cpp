@@ -132,8 +132,7 @@ typedef kotuku_destination_mgr *kotuku_dest_ptr;
 METHODDEF(void) init_kotuku_destination(j_compress_ptr cinfo) {
    kotuku_dest_ptr dest = (kotuku_dest_ptr)cinfo->dest;
    dest->buffer = (JOCTET *)
-      (*cinfo->mem->alloc_small)((j_common_ptr)cinfo, JPOOL_IMAGE,
-                                OUTPUT_BUF_SIZE * sizeof(JOCTET));
+      (*cinfo->mem->alloc_small)((j_common_ptr)cinfo, JPOOL_IMAGE, OUTPUT_BUF_SIZE * sizeof(JOCTET));
    dest->pub.next_output_byte = dest->buffer;
    dest->pub.free_in_buffer = OUTPUT_BUF_SIZE;
 }
@@ -477,7 +476,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
       fl::ClassID(CLASSID::JPEG),
       fl::Name("JPEG"),
       fl::Category(CCF::GRAPHICS),
-      fl::FileExtension("*.jpeg|*.jpg|*.jfif"),
+      fl::FileExtension("jpeg|jpg|jfif"),
       fl::FileDescription("JPEG Image"),
       fl::FileHeader("[0:$ffd8ffe0]|[0:$ffd8ffe1]|[0:$ffd8fffe]"),
       fl::Actions(clActions),

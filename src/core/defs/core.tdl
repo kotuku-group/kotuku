@@ -977,7 +977,7 @@ using ModTest    = void (*)(CSTRING, int *, int *);
     int(CCF) Category    # Assigned category
     cpp(str) Name        # Name of the class
     cpp(str) Path        # Path to the class file
-    cpp(str) Extension   # Wildcards for matching by file extension, e.g. `*.png`
+    cpp(str) Extension   # Wildcards for matching by file extension, e.g. `jpeg|jpg`
     cpp(str) Header      # File identification instruction, e.g. `[0:$89504e470d0a1a0a]`
     cpp(str) Icon        # Icon reference in `group/name` format
     cpp(str) Description # File description
@@ -1256,14 +1256,14 @@ typedef std::vector<obj_write> WRITE_TABLE;
 
   class("MetaClass", { src="../classes/class_metaclass.cpp" }, [[
     double ClassVersion    # Version of the class
-    cstruct(*FieldArray) Fields  # Original field array supplied by the module.
+    cstruct(*FieldArray) Fields  # Original field array supplied by the module
     array(struct(Field)) Dictionary # Field lookup by ID
     cstr ClassName         # Name of the class
-    cstr FileExtension     # File extension that is supported by this class.
+    cstr FileExtension     # File extension(s) supported by this class
     cstr FileDescription   # File description
     cstr FileHeader        # Internal file header for identifying the file
     cstr Path              # Module path to the class
-    cstr Icon              # An icon that can be used to represent class data.
+    cstr Icon              # An icon that can be used to represent class data
     int Size               # Byte-size of the class when produced as an object
     int(CLF) Flags         # Special flags
     cid ClassID            # ID of this class

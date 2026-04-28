@@ -13,6 +13,8 @@ A file viewer for recognised documents like SVG and RIPL
    include 'svg'
    include 'picture'
 
+CLASSID_PICTURE <const> = 'Picture':hash()
+
 glBody = [[<body fill="rgb(68 68 90)" font-fill="white" font-face="Noto Sans" font-size="12pt" margins="2em"/>]]
 
 glIntroduction = [[
@@ -52,34 +54,47 @@ glIntroduction = [[
 
    local glWindow, glFileView, glTerminateView, glScrollbar, glViewArea, glStats, glAppBar, glSaveRoutine
 
-   local glOpenFilter = array<table> {
+   glOpenFilter = array<table> {
       { name='SVG Images', ext='.svg' },
-      { name='RIPL Documents', ext=array<string> { '.ripl', '.rpl' } }
+      { name='RIPL Documents', ext=array<string> { 'ripl', 'rpl' } }
    }
+
+   glSaveFilter = array<table> { }
 
    glScript = obj.find('self')
    mSys.SetVolume('vuepoint', glScript.workingPath)
 
-   picmeta = mSys.FindClass('Picture':hash())
+   picmeta = mSys.FindClass(CLASSID_PICTURE)
    file_ext = picmeta.fileExtension
    if file_ext then
-      file_ext = file_ext:replace('*', '')
-      if file_ext:find('|') then file_ext = file_ext:split('|') end
+      local save_ext
+      if file_ext:find('|') then
+         file_ext = file_ext:split('|')
+         save_ext = file_ext[0]
+      else
+         save_ext = file_ext
+      end
       desc = picmeta.fileDescription
       if not desc then desc = picmeta.name .. ' Image' end
       glOpenFilter:push({ name=desc, ext=file_ext })
+      glSaveFilter:push({ name=desc, ext=save_ext })
    end
 
    pic_classes = picmeta.subClasses
    if pic_classes then
       err, class_list = mSys.ClassDatabase()
       for c in values(class_list) do
-         if c.parentID is 'Picture':hash() then
+         if c.parentID is CLASSID_PICTURE then
             if c.name is 'RSVG' then continue end
             file_ext = c.extension
             if file_ext then
-               file_ext = file_ext:replace('*', '')
-               if file_ext:find('|') then file_ext = file_ext:split('|') end
+               local save_ext
+               if file_ext:find('|') then
+                  file_ext = file_ext:split('|')
+                  save_ext = file_ext[0]
+               else
+                  save_ext = file_ext
+               end
                glOpenFilter:push({ name=c.description ? c.description :> c.name .. ' Image', ext=file_ext, icon=c.icon })
             else
                print('No file extension for class ' .. c.name)

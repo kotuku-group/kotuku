@@ -242,8 +242,9 @@ function filterCheck(self:table, Filename:str)
    Filename = Filename:lower()
    filters = getFilters(self)
    if #filters is 0 then return true end
-   for f in values(filters) do
-      if Filename:endsWith(f) then return true end
+   for ext in values(filters) do
+      if not ext:startsWith('.') then ext = '.' .. ext end
+      if Filename:endsWith(ext) then return true end
    end
    return false
 end
@@ -317,10 +318,12 @@ function displayFilters(self)
                if ev.flags has JTYPE_BUTTON then
                   if ev.type is JET_BUTTON_1 and ev.value is 1 then
                      if item.selected then
-                        item.highlight.visibility = VIS_HIDDEN
-                        item.selected = false
-                        item.txt.fill = self.theme.page.text
-                        self._filters = nil
+                        if (not self.strictFilter) or (selectedFilters(self) > 1) then
+                           item.highlight.visibility = VIS_HIDDEN
+                           item.selected = false
+                           item.txt.fill = self.theme.page.text
+                           self._filters = nil
+                        end
                      else
                         item.highlight.visibility = VIS_VISIBLE
                         item.selected = true
@@ -563,6 +566,7 @@ gui.fileview = function(Options)
       hideFiles      = Options.hideFiles,
       pathChanged    = Options.pathChanged,
       filterList     = Options.filterList,
+      strictFilter   = Options.strictFilter,
       theme          = nil -- Determined by target viewport
    }
 

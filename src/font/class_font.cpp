@@ -1143,7 +1143,7 @@ static ERR add_font_class(void)
       fl::ClassVersion(VER_FONT),
       fl::Name("Font"),
       fl::Category(CCF::GRAPHICS),
-      fl::FileExtension("*.font|*.fnt|*.ttf|*.fon"),
+      fl::FileExtension("font|fnt|ttf|fon"),
       fl::FileDescription("Font"),
       fl::Icon("filetypes/font"),
       fl::Actions(clFontActions),

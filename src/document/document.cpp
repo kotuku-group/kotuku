@@ -297,7 +297,7 @@ static ERR add_document_class(void)
       fl::Fields(clFields),
       fl::Size(sizeof(extDocument)),
       fl::Path(MOD_PATH),
-      fl::FileExtension("*.rpl|*.ripple|*.ripl"),
+      fl::FileExtension("rpl|ripple|ripl"),
       fl::Icon("filetypes/text"));
 
    return clDocument ? ERR::Okay : ERR::AddClass;

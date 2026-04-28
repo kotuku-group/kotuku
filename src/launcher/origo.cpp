@@ -64,6 +64,7 @@ static std::string glDialogScript =
 R"(STRING:import 'gui/filedialog'
 gui.dialog.file({
  filterList = { { name='Script Files', ext='.tiri' } },
+ strictFilter = true,
  title      = 'Run a Script',
  okText     = 'Run Script',
  cancelText = 'Exit',

@@ -377,7 +377,7 @@
       <field name="Category" type="CCF" lookup="CCF">Assigned category</field>
       <field name="Name" type="std::string">Name of the class</field>
       <field name="Path" type="std::string">Path to the class file</field>
-      <field name="Extension" type="std::string">Wildcards for matching by file extension, e.g. <code>*.png</code></field>
+      <field name="Extension" type="std::string">Wildcards for matching by file extension, e.g. <code>jpeg|jpg</code></field>
       <field name="Header" type="std::string">File identification instruction, e.g. <code>[0:$89504e470d0a1a0a]</code></field>
       <field name="Icon" type="std::string">Icon reference in <code>group/name</code> format</field>
       <field name="Description" type="std::string">File description</field>

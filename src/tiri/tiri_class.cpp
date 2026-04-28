@@ -1113,7 +1113,7 @@ ERR create_tiri(void)
       fl::ClassVersion(1.0),
       fl::Name("Tiri"),
       fl::Category(CCF::DATA),
-      fl::FileExtension("*.tiri|*.tbc"),
+      fl::FileExtension("tiri|tbc"),
       fl::FileDescription("Tiri"),
       fl::Actions(clActions),
       fl::Methods(clMethods),

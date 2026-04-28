@@ -2500,7 +2500,7 @@ static ERR create_scintilla(void)
       fl::Methods(clScintillaMethods),
       fl::Fields(clFields),
       fl::Size(sizeof(extScintilla)),
-      fl::FileExtension("*.txt|*.text"),
+      fl::FileExtension("txt|text"),
       fl::Icon("filetypes/text"),
       fl::Path("modules:scintilla"));
 

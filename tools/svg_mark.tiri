@@ -176,9 +176,9 @@ end
          okText     = 'Select',
          cancelText = 'Cancel',
          modal      = true,
+         strictFilter = true,
          filterList = {
-            { name = 'SVG Files', ext = '.svg' },
-            { name = 'All Files', ext = '*' }
+            { name = 'SVG Files', ext = { 'svg', 'svgz' }, selected = true }
          },
          feedback = function(Dialog, Path, Files)
             if Files and #Files > 0 then

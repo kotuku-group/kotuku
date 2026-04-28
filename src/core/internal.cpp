@@ -57,10 +57,8 @@ CLASSID lookup_class_by_ext(CLASSID Filter, std::string_view Ext)
          if (auto &rec = it->second; !rec.Extension.empty()) {
             std::vector<std::string> list;
             kt::split(rec.Extension, std::back_inserter(list), '|');
-            for (auto & wild : list) {
-               if (wild.starts_with("*.")) {
-                  glWildClassMap.emplace(kt::strihash(wild.c_str() + 2), it->first);
-               }
+            for (auto &wild : list) {
+               glWildClassMap.emplace(kt::strihash(wild), it->first);
             }
          }
       }

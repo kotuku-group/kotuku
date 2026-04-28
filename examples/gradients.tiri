@@ -193,7 +193,7 @@ function buildScene()
                popOver     = win.surface,
                warnExists  = true,
                allowNew    = true,
-               filterList  = { { name='PNG Images', ext='.png' } },
+               filterList  = { { name='PNG Images', ext='png' } },
                feedback    = function(Dialog, Path, Files)
                   Files ?? return
 

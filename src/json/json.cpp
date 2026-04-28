@@ -86,7 +86,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
       fl::ClassID(CLASSID::JSON),
       fl::Name("JSON"),
       fl::Category(CCF::DATA),
-      fl::FileExtension("*.json"),
+      fl::FileExtension("json"),
       fl::FileDescription("JSON Data"),
       fl::Actions(clActions),
       fl::Path("modules:json")))) return ERR::Okay;

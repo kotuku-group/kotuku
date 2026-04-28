@@ -1152,7 +1152,7 @@ static ERR add_xquery_class(void)
       fl::BaseClassID(CLASSID::XQUERY),
       fl::ClassVersion(VER_XQUERY),
       fl::Name("XQuery"),
-      fl::FileExtension("*.xqm|*.xq"),
+      fl::FileExtension("xqm|xq"),
       fl::FileDescription("XQuery Module"),
       fl::Icon("filetypes/xml"),
       fl::Category(CCF::DATA),

@@ -2097,7 +2097,7 @@ extern ERR add_compression_class(void)
    glCompressionClass = extMetaClass::create::global(
       fl::ClassVersion(VER_COMPRESSION),
       fl::Name("Compression"),
-      fl::FileExtension("*.zip"),
+      fl::FileExtension("zip"),
       fl::FileDescription("ZIP File"),
       fl::FileHeader("[0:$504b0304]"),
       fl::Icon("filetypes/archive"),

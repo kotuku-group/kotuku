@@ -1826,7 +1826,7 @@ ERR add_sound_class(void)
    clSound = objMetaClass::create::global(
       fl::BaseClassID(CLASSID::SOUND),
       fl::ClassVersion(VER_SOUND),
-      fl::FileExtension("*.wav|*.wave|*.snd"),
+      fl::FileExtension("wav|wave|snd"),
       fl::FileDescription("Sound Sample"),
       fl::FileHeader("[0:$52494646][8:$57415645]"),
       fl::Icon("filetypes/audio"),

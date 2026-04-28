@@ -802,7 +802,7 @@ extern ERR add_module_class(void)
       fl::ClassVersion(VER_MODULE),
       fl::Name("Module"),
       fl::Category(CCF::SYSTEM),
-      fl::FileExtension("*.mod|*.so|*.dll"),
+      fl::FileExtension("mod|so|dll"),
       fl::FileDescription("System Module"),
       fl::Icon("tools/cog"),
       fl::Actions(glModuleActions),

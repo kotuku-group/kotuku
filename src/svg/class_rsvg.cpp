@@ -218,7 +218,7 @@ static ERR init_rsvg(void)
       fl::ClassID(CLASSID::RSVG),
       fl::Name("RSVG"),
       fl::Category(CCF::GRAPHICS),
-      fl::FileExtension("*.svg|*.svgz"),
+      fl::FileExtension("svg|svgz"),
       fl::FileDescription("SVG image"),
       fl::Actions(clActions),
       fl::Path(MOD_PATH));

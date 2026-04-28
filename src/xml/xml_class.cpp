@@ -2367,7 +2367,7 @@ static ERR add_xml_class(void)
       fl::BaseClassID(CLASSID::XML),
       fl::ClassVersion(VER_XML),
       fl::Name("XML"),
-      fl::FileExtension("*.xml"),
+      fl::FileExtension("xml"),
       fl::FileDescription("Extendable Markup Language (XML)"),
       fl::Icon("filetypes/xml"),
       fl::Category(CCF::DATA),

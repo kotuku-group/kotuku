@@ -236,13 +236,14 @@ end
       events = {
          activate = function(Widget)
             gui.dialog.file({
-               filterList  = { { name='All Files', ext='' }, { name='MP3 Audio Files', ext='.mp3' }, { name='Text Files', ext='.txt' } },
+               filterList  = { { name='MP3 Audio Files', ext='mp3' }, { name='Text Files', ext='txt' } },
                okText      = 'Select File',
                cancelText  = 'Exit',
                modal       = true,
                popOver     = win.surface,
                warnExists  = true,
                multiSelect = true,
+               strictFilter = true,
                feedback = function(Dialog, Path, Files)
                   if not Files then
                      print('Dialog was cancelled or no files selected.')
