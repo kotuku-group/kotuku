@@ -11,11 +11,12 @@ static const char decoding[] = {62,-1,-1,-1,63,52,53,54,55,56,57,58,59,60,61,-1,
 
 static int base64_decode_block(CSTRING, int, char *, BASE64DECODE *);
 static int base64_encode_block(CSTRING, int, char *, BASE64ENCODE *);
+static int base64_encoded_size(const BASE64ENCODE *, int);
 
 inline int base64_decode_value(int value_in)
 {
    value_in -= 43;
-   if ((value_in < 0) or (value_in > (int)sizeof(decoding))) return -1;
+   if ((value_in < 0) or (value_in >= (int)sizeof(decoding))) return -1;
    return decoding[(int)value_in];
 }
 
@@ -52,11 +53,13 @@ int: The total number of bytes output is returned.
 
 int Base64Encode(BASE64ENCODE *State, const void *Input, int InputSize, STRING Output, int OutputSize)
 {
-   if ((!State) or (!Input) or (!Output) or (OutputSize < 1)) return 0;
+   if ((!State) or (!Output) or (OutputSize < 1) or (InputSize < 0)) return 0;
 
    if (InputSize > 0) {
-		return base64_encode_block((CSTRING)Input, InputSize, Output, State);
-	}
+      if (!Input) return 0;
+      if (OutputSize < base64_encoded_size(State, InputSize)) return 0;
+      return base64_encode_block((CSTRING)Input, InputSize, Output, State);
+   }
    else { // Final output once all input consumed.
       if (OutputSize >= 6) {
          auto codechar = Output;
@@ -83,6 +86,36 @@ int Base64Encode(BASE64ENCODE *State, const void *Input, int InputSize, STRING O
    }
 }
 
+static int base64_encoded_size(const BASE64ENCODE *State, int length_in)
+{
+   int step       = State->Step;
+   int step_count = State->StepCount;
+   int total      = 0;
+
+   while (length_in-- > 0) {
+      switch (step) {
+         case step_A:
+            total++;
+            step = step_B;
+            break;
+         case step_B:
+            total++;
+            step = step_C;
+            break;
+         case step_C:
+            total += 2;
+            step = step_A;
+            if (++step_count IS CHARS_PER_LINE/4) {
+               total++;
+               step_count = 0;
+            }
+            break;
+      }
+   }
+
+   return total;
+}
+
 static int base64_encode_block(CSTRING plaintext_in, int length_in, char *code_out, BASE64ENCODE *State)
 {
    const char *plainchar = plaintext_in;
@@ -95,7 +128,7 @@ static int base64_encode_block(CSTRING plaintext_in, int length_in, char *code_o
    switch (State->Step) {
       while (true) {
          case step_A:
-            if (plainchar == plaintextend) {
+            if (plainchar IS plaintextend) {
                State->Result = result;
                State->Step = step_A;
                return codechar - code_out;
@@ -106,7 +139,7 @@ static int base64_encode_block(CSTRING plaintext_in, int length_in, char *code_o
             result = (fragment & 0x003) << 4;
 
          case step_B:
-            if (plainchar == plaintextend) {
+            if (plainchar IS plaintextend) {
                State->Result = result;
                State->Step = step_B;
                return codechar - code_out;
@@ -117,7 +150,7 @@ static int base64_encode_block(CSTRING plaintext_in, int length_in, char *code_o
             result = (fragment & 0x00f) << 2;
 
          case step_C:
-            if (plainchar == plaintextend) {
+            if (plainchar IS plaintextend) {
                State->Result = result;
                State->Step = step_C;
                return codechar - code_out;
@@ -129,7 +162,7 @@ static int base64_encode_block(CSTRING plaintext_in, int length_in, char *code_o
             *codechar++ = base64_encode_value(result);
 
             ++(State->StepCount);
-            if (State->StepCount == CHARS_PER_LINE/4) {
+            if (State->StepCount IS CHARS_PER_LINE/4) {
                *codechar++ = '\n';
                State->StepCount = 0;
             }
@@ -187,7 +220,7 @@ static int base64_decode_block(CSTRING code_in, int length_in, char * plaintext_
       while (1) {
          case step_a:
             do {
-               if (codechar == code_in+length_in) {
+               if (codechar IS code_in+length_in) {
                   State->Step = step_a;
                   State->PlainChar = *plainchar;
                   return plainchar - plaintext_out;
@@ -198,7 +231,7 @@ static int base64_decode_block(CSTRING code_in, int length_in, char * plaintext_
 
          case step_b:
             do {
-               if (codechar == code_in+length_in) {
+               if (codechar IS code_in+length_in) {
                   State->Step = step_b;
                   State->PlainChar = *plainchar;
                   return plainchar - plaintext_out;
@@ -210,7 +243,7 @@ static int base64_decode_block(CSTRING code_in, int length_in, char * plaintext_
 
          case step_c:
             do {
-               if (codechar == code_in+length_in) {
+               if (codechar IS code_in+length_in) {
                   State->Step = step_c;
                   State->PlainChar = *plainchar;
                   return plainchar - plaintext_out;
@@ -222,7 +255,7 @@ static int base64_decode_block(CSTRING code_in, int length_in, char * plaintext_
 
          case step_d:
             do {
-               if (codechar == code_in+length_in) {
+               if (codechar IS code_in+length_in) {
                   State->Step = step_d;
                   State->PlainChar = *plainchar;
                   return plainchar - plaintext_out;

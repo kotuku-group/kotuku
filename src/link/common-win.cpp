@@ -141,7 +141,8 @@ static APTR find_core()
       // Check local directories for base installation
 
       if (auto len = GetModuleFileNameA(nullptr, buffer, sizeof(buffer))) {
-         for (int i = len; i > 0; i--) {
+         if (len >= sizeof(buffer)) len = sizeof(buffer) - 1;
+         for (int i = int(len) - 1; i >= 0; i--) {
             if (buffer[i] IS '\\') {
                buffer[i+1] = 0;
                AddDllDirectory(buffer);

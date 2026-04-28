@@ -388,6 +388,8 @@ int: Returns the total amount of characters written to the string buffer.
 
 int UTF8WriteValue(int Value, STRING String, int StringSize)
 {
+   if ((!String) or (StringSize < 1)) return 0;
+
    if (Value < 128) {
       if (Value < 0) return 0;
       *String = (uint8_t)Value;
