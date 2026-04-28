@@ -127,11 +127,11 @@ end
    end
 
    -- In stdio mode, stdout is reserved for LSP frames.
+   -- Note: print() in Tiri always writes to stderr, use io.output() for stdout
 
    if glOptions.port is 0 then
       glOptions.stdioInput = io.input()
       glOptions.stdioOutput = io.output()
-      io.output('stderr')
    end
 
    glOptions.logMessage = function(Message)

@@ -234,7 +234,10 @@ int fcmd_msg(lua_State *Lua)
 
 //********************************************************************************************************************
 // Usage: print(...)
-// Prints a message to stderr.  On Android stderr is unavailable, so the message is printed in the debug output.
+// Prints a message to stderr (because print is intended messages that are visible to the user without interfering
+// with stdout data).  On Android stderr is unavailable, so the message is printed in the debug output.
+//
+// Use io.write() when wanting to send strings to stdout.
 
 int fcmd_print(lua_State *Lua)
 {

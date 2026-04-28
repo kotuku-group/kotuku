@@ -1,14 +1,21 @@
 {
   "env": {
-     "BASH_DEFAULT_TIMEOUT_MS": 300000
+    "BASH_DEFAULT_TIMEOUT_MS": "300000"
   },
   "hooks": {
     "SessionStart": [
       {
         "matcher": "startup",
-        "hooks": [
-        ]
+        "hooks": []
       }
     ]
+  },
+  "extraKnownMarketplaces": {
+    "tiri-local": {
+      "source": {
+        "source": "directory",
+        "path": "tools/tiri_lsp"
+      }
+    }
   }
 }
