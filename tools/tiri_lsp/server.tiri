@@ -152,8 +152,9 @@ end
       tm = obj.new('time')
       tm.acQuery()
       glOptions.requestLog = function(Direction, Content)
-         timestamp = string.format('%04d-%02d-%02d %02d:%02d:%02d', tm.year, tm.month, tm.day, tm.hour, tm.minute, tm.second)
-         header = '\n=== ' .. Direction .. ' [' .. timestamp .. '] ===\n'
+         log_timestamp = string.format('%04d-%02d-%02d %02d:%02d:%02d',
+            tm.year, tm.month, tm.day, tm.hour, tm.minute, tm.second)
+         header = '\n=== ' .. Direction .. ' [' .. log_timestamp .. '] ===\n'
          glReqLog.acWrite(header)
          glReqLog.acWrite(Content)
          glReqLog.acWrite('\n')

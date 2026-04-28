@@ -1,5 +1,5 @@
 // Tiri Language Support for VS Code
-// Connects to the Tiri LSP server over TCP
+// Connects to the Tiri LSP server over stdio or TCP
 
 const vscode = require('vscode');
 const { LanguageClient } = require('vscode-languageclient/node');
@@ -16,7 +16,7 @@ function getSettings() {
    return {
       enabled: config.get('enable', true),
       host: config.get('host', '127.0.0.1'),
-      port: config.get('port', 5007),
+      port: config.get('port', 0),
       autoStart: config.get('autoStart', false),
       origoPath: config.get('origoPath', 'origo'),
       serverScript: config.get('serverScript', 'tools/tiri_lsp/server.tiri')
@@ -152,6 +152,28 @@ async function connectToServer(settings) {
    throw lastError;
 }
 
+function createStdioServerOptions(settings) {
+   const serverScript = resolveServerScript(settings.serverScript);
+   if (!serverScript) {
+      outputChannel.appendLine('Cannot start Tiri LSP server: server script is relative and no workspace is open');
+      vscode.window.showWarningMessage(
+         'Tiri LSP: Set tiri.lsp.serverScript to an absolute path, or open the Kōtuku workspace.'
+      );
+      throw new Error('Unable to resolve Tiri LSP server script');
+   }
+
+   outputChannel.appendLine(`Starting LSP server in stdio mode: ${settings.origoPath} ${serverScript} port=0`);
+
+   return {
+      command: settings.origoPath,
+      args: [serverScript, 'port=0'],
+      options: {
+         cwd: getWorkspacePath(),
+         windowsHide: true
+      }
+   };
+}
+
 async function stopLanguageClient() {
    if (client) {
       const oldClient = client;
@@ -161,7 +183,9 @@ async function stopLanguageClient() {
 }
 
 function createLanguageClient(settings) {
-   const serverOptions = () => connectToServer(settings);
+   const serverOptions = settings.port === 0
+      ? createStdioServerOptions(settings)
+      : () => connectToServer(settings);
 
    const clientOptions = {
       documentSelector: [
@@ -189,9 +213,23 @@ async function startLanguageClient() {
       return;
    }
 
-   outputChannel.appendLine(`Connecting to LSP server at ${settings.host}:${settings.port}`);
+   if (settings.port === 0) {
+      outputChannel.appendLine('Using stdio mode for LSP server');
+   }
+   else {
+      outputChannel.appendLine(`Connecting to LSP server at ${settings.host}:${settings.port}`);
+   }
 
-   const newClient = createLanguageClient(settings);
+   let newClient;
+
+   try {
+      newClient = createLanguageClient(settings);
+   }
+   catch (err) {
+      outputChannel.appendLine(`Failed to create LSP client: ${err.message}`);
+      return;
+   }
+
    client = newClient;
 
    try {

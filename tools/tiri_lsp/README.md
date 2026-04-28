@@ -140,7 +140,7 @@ Configure in VSCode settings:
 |-|-|-|
 |`tiri.lsp.enable`|true|Enable LSP server connection|
 |`tiri.lsp.host`|"127.0.0.1"|LSP server host address|
-|`tiri.lsp.port`|5007|LSP server TCP port|
+|`tiri.lsp.port`|5007|LSP server port. `0` runs the server over stdio; non-zero values use TCP.|
 
 ## Architecture
 

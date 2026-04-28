@@ -63,12 +63,12 @@
             "tiri.lsp.port": {
                "type": "number",
                "default": 5007,
-               "description": "LSP server TCP port"
+               "description": "LSP server port. Set to 0 to run the server over stdio."
             },
             "tiri.lsp.autoStart": {
                "type": "boolean",
                "default": false,
-               "description": "Automatically start the Tiri LSP server when connecting to a local host"
+               "description": "Automatically start the Tiri LSP server when connecting over TCP to a local host"
             },
             "tiri.lsp.origoPath": {
                "type": "string",

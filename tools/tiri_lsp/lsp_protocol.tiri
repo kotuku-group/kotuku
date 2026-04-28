@@ -67,15 +67,16 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Response Formatting
 
-function formatResponse(ResponseTable:table):str
+function formatResponse(ResponseTable:table, TextOutput:bool):str
    body = json.encode(ResponseTable)
-   return 'Content-Length: ' .. #body .. '\r\n\r\n' .. body
+   separator = TextOutput and '\n\n' or '\r\n\r\n'
+   return 'Content-Length: ' .. #body .. separator .. body
 end
 
 global function sendResponse(Self, ClientSocket, ResponseTable, RequestLog)
    ResponseTable ?? return -- Notifications don't get responses
 
-   formatted = formatResponse(ResponseTable)
+   formatted = formatResponse(ResponseTable, Self.stdioTextOutput)
    err = ClientSocket.acWrite(formatted)
    if err != ERR_Okay then
       logMessage(Self, 'Failed to send response: ' .. mSys.GetErrorMsg(err))
@@ -98,7 +99,7 @@ global function sendNotification(Self, ClientSocket, Method, Params)
       method = Method,
       params = Params
    }
-   formatted = formatResponse(notification)
+   formatted = formatResponse(notification, Self.stdioTextOutput)
    err = ClientSocket.acWrite(formatted)
    if err != ERR_Okay then
       logMessage(Self, 'Failed to send notification: ' .. mSys.GetErrorMsg(err))

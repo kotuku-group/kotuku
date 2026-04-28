@@ -536,6 +536,7 @@ global function lspStart(Options)
    self.requestLog = Options.requestLog  -- Optional request/response logging callback
    self.stdioInput  = Options.stdioInput
    self.stdioOutput = Options.stdioOutput
+   self.stdioTextOutput = false
    self._socket    = nil
    self._stdioClient = nil
    self._handlers  = {}
@@ -562,6 +563,7 @@ global function lspStart(Options)
    end
 
    if self.port is 0 then
+      self.stdioTextOutput = true
       runStdioServer(self)
       return self
    end

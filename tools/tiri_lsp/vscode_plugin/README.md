@@ -11,13 +11,15 @@ cd tools/tiri_lsp/vscode_plugin
 npm install
 ```
 
-### 2. Start the LSP Server
+### 2. LSP Server Startup
 
-By default, the extension starts the Tiri LSP server automatically for local connections. To start it manually instead, set `tiri.lsp.autoStart` to `false` and run:
+By default, the extension looks for an existing Tiri LSP server on port 5007.  This commandline starts the server manually with the default port:
 
 ```bash
 origo tools/tiri_lsp/server.tiri port=5007
 ```
+
+If `tiri.lsp.autoStart` is enabled, the plugin will start the server on the defined `port`.  If `port=0`, the server runs in stdio mode.
 
 ### 3. Install the Extension
 
@@ -48,12 +50,12 @@ code --install-extension tiri-language-0.1.0.vsix
 
 ### LSP Server Auto-Start
 
-The extension auto-starts the server with `origo tools/tiri_lsp/server.tiri port=5007`. Configure `tiri.lsp.origoPath` if `origo` is not in PATH, or `tiri.lsp.serverScript` if the server script is in another location.
+If `port=0` or `tiri.lsp.autoStart` is enabled, the server script is started automatically.  Configure `tiri.lsp.origoPath` if `origo` is not in PATH, or `tiri.lsp.serverScript` if the server script is in another location.
 
 ### "Could not connect to server"
 
-1. Ensure the LSP server is running.
-2. Check the port matches your VS Code settings
+1. For TCP mode, ensure the LSP server is running.
+2. Check the port matches your VS Code settings.
 3. View the Tiri LSP output channel for connection details:
    - View > Output > Select "Tiri LSP" from dropdown
 
