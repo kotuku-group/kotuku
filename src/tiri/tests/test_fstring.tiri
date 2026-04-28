@@ -124,6 +124,12 @@ end
    assert(result is "Hello>", "Expression before > literal failed: " .. tostring(result))
 end
 
+@Test function DeferredExpressionInterpolation()
+   value = "Hello"
+   result = f"{<{ value }>}"
+   assert(result is "Hello", "Deferred expression interpolation failed: " .. tostring(result))
+end
+
 @Test function EscapeSequences()
    result = f"Tab:\tNewline:\nDone"
    assert(result is "Tab:\tNewline:\nDone", "Escape sequences failed")

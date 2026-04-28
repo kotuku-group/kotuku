@@ -544,6 +544,7 @@ bool fstring_scan_expression(LexState *State, size_t Offset, bool &NeedConcat) {
    // Scan tokens using the main lexer until we hit the closing }
 
    int brace_depth = 1;  // We've already consumed the opening {
+   int defer_depth = 0;
 
    while (brace_depth > 0) {
       bool skipped_ws;
@@ -559,7 +560,7 @@ bool fstring_scan_expression(LexState *State, size_t Offset, bool &NeedConcat) {
          }
       } while (skipped_ws);
 
-      if (State->c IS '}') {
+      if (State->c IS '}' and not (defer_depth > 0 and State->peek_next() IS '>')) {
          BCLine close_line = State->linenumber;
          BCLine close_col = BCLine(State->current_offset - State->line_start_offset + 1);
          size_t close_offset = State->current_offset;
@@ -587,6 +588,12 @@ bool fstring_scan_expression(LexState *State, size_t Offset, bool &NeedConcat) {
 
       if (tok IS '{') { // Track brace depth
          brace_depth++;
+      }
+      else if (tok IS TK_defer_open or tok IS TK_defer_typed) {
+         defer_depth++;
+      }
+      else if (tok IS TK_defer_close and defer_depth > 0) {
+         defer_depth--;
       }
       else if (tok IS '}') {
          brace_depth--;
