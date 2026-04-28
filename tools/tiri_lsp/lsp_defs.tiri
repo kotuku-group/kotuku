@@ -206,14 +206,20 @@ glKeywords = {
    -- Variables
    ['local'] = { comment = 'Declares a local variable (block-scoped).' },
    ['global'] = { comment = 'Declares a global variable.' },
+   ['import'] = { comment = 'Loads a Tiri module into the current scope.' },
 
    -- Pattern matching
    ['choose'] = { comment = 'Pattern matching expression (switch-like).' },
    ['from'] = { comment = 'Specifies the value to match in choose.' },
-   ['when'] = { comment = 'A case in a choose expression.' },
+   ['when'] = { comment = 'A case in a `choose` expression, or a condition filter in an `except` ' ..
+      'clause.' },
 
    -- Special
    ['defer'] = { comment = 'Deferred execution - code runs when scope exits.' },
+   ['try'] = { comment = 'Opens an exception-handling block. Pair with `except`.' },
+   ['except'] = { comment = 'Catches an exception raised by the preceding `try` block. Use `when` ' ..
+      'to filter by condition.' },
+   ['throw'] = { comment = 'Raises an exception. Can be caught by an enclosing `try/except`.' },
    ['catch'] = { comment = 'Error handling block.' },
    ['raise'] = { comment = 'Raises an error or exception.' },
    ['check'] = { comment = 'Error checking statement - raises on failure.' },

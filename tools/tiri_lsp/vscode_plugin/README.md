@@ -13,6 +13,8 @@ npm install
 
 ### 2. LSP Server Startup
 
+Ensure that the release version of `origo` is available for execution in your terminal.  If not, check that Kōtuku is installed correctly and that the `origo` folder is referenced in the `PATH` environment variable.
+
 By default, the extension looks for an existing Tiri LSP server on port 5007.  This commandline starts the server manually with the default port:
 
 ```bash

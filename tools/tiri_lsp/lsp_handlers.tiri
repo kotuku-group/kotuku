@@ -1,26 +1,11 @@
 
-   -- Deferred regex patterns for keyword matching
+   -- Deferred regex patterns for symbol matching
 
-   rx_kw_function = <{ regex.new([[\bfunction\b]]) }>
-   rx_kw_if       = <{ regex.new([[\bif\b]]) }>
-   rx_kw_then     = <{ regex.new([[\bthen\b]]) }>
-   rx_kw_for      = <{ regex.new([[\bfor\b]]) }>
-   rx_kw_do       = <{ regex.new([[\bdo\b]]) }>
-   rx_kw_while    = <{ regex.new([[\bwhile\b]]) }>
-   rx_kw_repeat   = <{ regex.new([[\brepeat\b]]) }>
-   rx_kw_defer    = <{ regex.new([[\bdefer\b]]) }>
-   rx_kw_end      = <{ regex.new([[\bend\b]]) }>
-   rx_kw_until    = <{ regex.new([[\buntil\b]]) }>
-   rx_block_close = <{ regex.new("\\]\\]") }>
-   rx_block_open  = <{ regex.new("--\\[\\[") }>
    rx_trim_start  = <{ regex.new([[^\s*(.*)]], regex.DOT_ALL) }>
    rx_func_sig    = <{ regex.new([=[function\s+[\w]]=]) }>
    rx_func_name   = <{ regex.new([[^function\s+([\w:.]+)]]) }>
    rx_local_end   = <{ regex.new([[local\s*$]]) }>
    rx_global_end  = <{ regex.new([[global\s*$]]) }>
-   rx_if_then     = <{ regex.new([[\bif\b.*\bthen\b]]) }>
-   rx_for_do      = <{ regex.new([[\bfor\b.*\bdo\b]]) }>
-   rx_while_do    = <{ regex.new([[\bwhile\b.*\bdo\b]]) }>
 
    glNextResultId = 1
 
@@ -64,39 +49,138 @@ function applyTextEdit(Content, Range, NewText)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Replace strings and comments with spaces while preserving byte offsets for range calculations.
+
+function maskNonCode(LineText:str, InBlockComment:bool):<str, bool>
+   result = ''
+   pos = 0
+   len = #LineText
+
+   if InBlockComment then
+      close_pos = LineText:find(']]')
+      if close_pos then
+         result ..= string.rep(' ', close_pos + 2)
+         pos = close_pos + 2
+         InBlockComment = false
+      else
+         return string.rep(' ', len), true
+      end
+   end
+
+   while pos < len do
+      c = LineText:sub(pos, pos + 1)
+      next_two = LineText:sub(pos, pos + 2)
+
+      if c is '"' or c is "'" then
+         quote = c
+         result ..= ' '
+         pos++
+
+         while pos < len do
+            sc = LineText:sub(pos, pos + 1)
+            if sc is '\\' and pos + 1 < len then
+               result ..= '  '
+               pos += 2
+            elseif sc is quote then
+               result ..= ' '
+               pos++
+               break
+            else
+               result ..= ' '
+               pos++
+            end
+         end
+      elseif next_two is '--' then
+         if LineText:sub(pos, pos + 4) is '--[[' then
+            close_pos = LineText:find(']]', pos + 4)
+            if close_pos then
+               result ..= string.rep(' ', close_pos + 2 - pos)
+               pos = close_pos + 2
+            else
+               result ..= string.rep(' ', len - pos)
+               return result, true
+            end
+         else
+            result ..= string.rep(' ', len - pos)
+            return result, false
+         end
+      elseif next_two is '[[' then
+         close_pos = LineText:find(']]', pos + 2)
+         if close_pos then
+            result ..= string.rep(' ', close_pos + 2 - pos)
+            pos = close_pos + 2
+         else
+            result ..= string.rep(' ', len - pos)
+            return result, true
+         end
+      else
+         result ..= c
+         pos++
+      end
+   end
+
+   return result, InBlockComment
+end
+
+function isBlockTokenChar(Char:str):bool
+   return (Char >= 'a' and Char <= 'z') or (Char >= 'A' and Char <= 'Z') or
+      (Char >= '0' and Char <= '9') or Char is '_'
+end
+
+function countBlockKeyword(LineCode:str, Keyword:str):num
+   count = 0
+   pos = 0
+   len = #LineCode
+
+   while pos < len do
+      c = LineCode:sub(pos, pos + 1)
+      if isBlockTokenChar(c) then
+         token_start = pos
+         pos++
+
+         while pos < len and isBlockTokenChar(LineCode:sub(pos, pos + 1)) do
+            pos++
+         end
+
+         if LineCode:sub(token_start, pos) is Keyword then
+            count++
+         end
+      else
+         pos++
+      end
+   end
+
+   return count
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Find the line number of the matching 'end' for a block starting at StartLine
 
 function findMatchingEnd(Doc:table, StartLine:num):num
    depth = 1
    line_num = StartLine + 1
    total_lines = getTotalLines(Doc)
+   in_block_comment = false
 
    while line_num < total_lines do
       line_text = getLine(Doc, line_num)
+      line_code, in_block_comment = maskNonCode(line_text, in_block_comment)
 
-      -- Count block openers (simplified - doesn't handle strings/comments perfectly)
-      for start, stop, cap in rx_kw_function.findAll(line_text) do depth++ end
-      for start, stop, cap in rx_kw_if.findAll(line_text) do
-         if rx_if_then.test(line_text) then
-            depth++
-         end
+      -- Count block openers
+      depth += countBlockKeyword(line_code, 'function')
+      if countBlockKeyword(line_code, 'then') > 0 then
+         depth += countBlockKeyword(line_code, 'if')
       end
-      for start, stop, cap in rx_kw_for.findAll(line_text) do
-         if rx_for_do.test(line_text) then
-            depth++
-         end
+      if countBlockKeyword(line_code, 'do') > 0 then
+         depth += countBlockKeyword(line_code, 'for')
+         depth += countBlockKeyword(line_code, 'while')
       end
-      for start, stop, cap in rx_kw_while.findAll(line_text) do
-         if rx_while_do.test(line_text) then
-            depth++
-         end
-      end
-      for start, stop, cap in rx_kw_repeat.findAll(line_text) do depth++ end
-      for start, stop, cap in rx_kw_defer.findAll(line_text) do depth++ end
+      depth += countBlockKeyword(line_code, 'repeat')
+      depth += countBlockKeyword(line_code, 'defer')
 
       -- Count block closers
-      for start, stop, cap in rx_kw_end.findAll(line_text) do depth -= 1 end
-      for start, stop, cap in rx_kw_until.findAll(line_text) do depth -= 1 end
+      depth -= countBlockKeyword(line_code, 'end')
+      depth -= countBlockKeyword(line_code, 'until')
 
       if depth <= 0 then
          return line_num
@@ -120,44 +204,25 @@ function extractDocumentSymbols(Doc:table):array
 
    for line_num = 0, total_lines - 1 do
       line_text = getLine(Doc, line_num)
-
-      -- Track block comments --[[ ... ]]
-      if in_block_comment then
-         if rx_block_close.test(line_text) then
-            in_block_comment = false
-         end
-         continue
-      end
-
-      -- Check for block comment start
-      if rx_block_open.test(line_text) then
-         in_block_comment = true
-         continue
-      end
+      line_code, in_block_comment = maskNonCode(line_text, in_block_comment)
 
       -- Skip line comments (lines starting with --)
-      trimmed = rx_trim_start.extract(line_text)
-      if trimmed:sub(0, 2) is '--' then
+      trimmed = rx_trim_start.extract(line_code)
+      if trimmed is '' then
          continue
       end
 
       -- Check if 'function' appears before any line comment
-      comment_pos = line_text:find('--')
-      func_start, func_stop = rx_func_sig.findFirst(line_text)
-
-      -- Skip if function keyword is inside a line comment
-      if func_start and comment_pos and comment_pos < func_start then
-         continue
-      end
+      func_start, func_stop = rx_func_sig.findFirst(line_code)
 
       if func_start then
          -- Extract everything after 'function '
-         after_func = line_text:sub(func_start)
+         after_func = line_code:sub(func_start)
          name = rx_func_name.extract(after_func)
 
          if name then
             -- Determine scope by looking before 'function'
-            before_func = line_text:sub(0, func_start)
+            before_func = line_code:sub(0, func_start)
             scope = nil
             if rx_local_end.test(before_func) then
                scope = 'local'
@@ -166,8 +231,8 @@ function extractDocumentSymbols(Doc:table):array
             end
 
             -- Find the column where the name starts (0-based)
-            name_start = line_text:find(name, func_pos, true)
-            name_start = name_start and (name_start - 1) or 0
+            name_start = line_text:find(name, func_start, true)
+            name_start ?= 0
 
             -- Determine symbol kind based on name pattern
             kind = SYMBOL_KIND.FUNCTION
@@ -471,7 +536,8 @@ global function registerCoreHandlers(Self)
          edit_size += (edit.data and #edit.data or 0)
       end
 
-      logVerbose(Self, 'Returning ' .. #edits .. ' edits (' .. edit_size .. ' integers vs ' .. #new_encoded .. ' full), resultId=' .. result_id)
+      logVerbose(Self, 'Returning ' .. #edits .. ' edits (' .. edit_size .. ' integers vs ' .. #new_encoded ..
+         ' full), resultId=' .. result_id)
 
       return {
          jsonrpc = '2.0',

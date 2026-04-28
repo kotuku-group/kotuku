@@ -90,7 +90,7 @@ global function getLine(Doc:table, LineNo:num):str
    if LineNo < 0 or LineNo >= total_lines then return '' end
 
    idx = LineNo * 2
-   return Doc.content:substr(Doc.lineIndex[idx], Doc.lineIndex[idx + 1])
+   return Doc.content:substr(Doc.lineIndex[idx], Doc.lineIndex[idx + 1] + 1)
 end
 
 -- Mark line N and subsequent lines for recomputation.  Currently we are very lazy about this...
