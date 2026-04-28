@@ -105,14 +105,15 @@ int: Returns the number of the character at the given byte position.
 
 [[nodiscard]] static inline int UTF8OffsetToChar(CSTRING String, int Offset)
 {
-   if (!String) return 0;
+   if ((!String) or (Offset <= 0)) return 0;
 
-   int pos = 0;
-   while ((Offset) and (String[pos])) {
+   int pos        = 0;
+   int char_index = 0;
+   while ((String[pos]) and (pos < Offset)) {
       for (++pos; ((String[pos] & 0xc0) IS 0x80); pos++);
-      Offset--;
+      char_index++;
    }
-   return pos;
+   return char_index;
 }
 
 /*********************************************************************************************************************
@@ -134,8 +135,10 @@ int: Returns the byte-length of the previous character.
 
 [[nodiscard]] static inline int UTF8PrevLength(CSTRING String, int ByteIndex)
 {
+   if ((!String) or (ByteIndex <= 0)) return 0;
+
    int len = 0;
-   for (--ByteIndex; ByteIndex > 0; --ByteIndex) {
+   for (--ByteIndex; ByteIndex >= 0; --ByteIndex) {
       len++;
       if ((String[ByteIndex] & 0xc0) != 0x80) return len;
    }

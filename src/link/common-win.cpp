@@ -2,6 +2,7 @@
 
 #include <string>
 #include <cstdio>
+#include <cstdint>
 
 extern "C" {
 DLLCALL APTR WINAPI LoadLibraryA(CSTRING);
@@ -9,8 +10,9 @@ DLLCALL int WINAPI FreeLibrary(APTR);
 DLLCALL int WINAPI FindClose(APTR);
 DLLCALL APTR WINAPI FindFirstFileA(STRING, void *);
 DLLCALL APTR WINAPI GetProcAddress(APTR, CSTRING);
-DLLCALL int WINAPI RegOpenKeyExA(int,CSTRING,int,int,APTR *);
+DLLCALL int WINAPI RegOpenKeyExA(APTR,CSTRING,int,int,APTR *);
 DLLCALL int WINAPI RegQueryValueExA(APTR,CSTRING,int *,int *, char *,int *);
+DLLCALL int WINAPI RegCloseKey(APTR);
 DLLCALL void WINAPI CloseHandle(APTR);
 DLLCALL int  WINAPI MessageBoxA(int,CSTRING,CSTRING,int);
 DLLCALL int WINAPI GetCurrentDirectoryA(int, CSTRING);
@@ -67,7 +69,7 @@ typedef long (WINAPI *PLdrRegisterDllNotification)(
    void **Cookie
 );
 
-#define HKEY_LOCAL_MACHINE 0x80000002
+#define HKEY_LOCAL_MACHINE (APTR)(intptr_t)-2147483646
 #define KEY_READ 0x20019
 #define MAX_PATH 260
 #define INVALID_HANDLE_VALUE (void *)(-1)
@@ -191,10 +193,12 @@ static APTR find_core()
             folder.assign(buffer);
             core_lib = folder + "lib\\core.dll";
          }
-         CloseHandle(keyhandle);
+         RegCloseKey(keyhandle);
          keyhandle = nullptr;
       }
    }
+
+   if (folder.empty()) return nullptr;
 
    // Prior to loading the core we must add the root and 3rdparty lib folder to the DLL search path
    // so that zlib, freetype and so forth are found.

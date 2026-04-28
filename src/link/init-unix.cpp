@@ -7,6 +7,7 @@ This file is in the public domain and may be distributed and modified without re
 #include <stdio.h>
 #include <array>
 #include <dlfcn.h>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -128,10 +129,13 @@ static bool resolve_core_location(std::string &RootPath, std::string &CorePath)
 static struct CoreBase *CoreBase; // Dummy
 #endif
 
+static std::mutex glInitLock;
+
 //********************************************************************************************************************
 
 extern "C" const char * init_kotuku(int argc, CSTRING *argv)
 {
+   std::lock_guard<std::mutex> lock(glInitLock);
    struct OpenInfo info = { .Flags = OPF::NIL };
 
 #ifndef KOTUKU_STATIC
@@ -148,10 +152,18 @@ extern "C" const char * init_kotuku(int argc, CSTRING *argv)
    }
 
    auto OpenCore = (OPENCORE *)dlsym(glCoreHandle, "OpenCore");
-   if (!OpenCore) return "Could not find the OpenCore symbol in the Core library.";
+   if (!OpenCore) {
+      dlclose(glCoreHandle);
+      glCoreHandle = nullptr;
+      return "Could not find the OpenCore symbol in the Core library.";
+   }
 
    CloseCore = (CLOSECORE *)dlsym(glCoreHandle, "CloseCore");
-   if (!CloseCore) return "Could not find the CloseCore symbol.";
+   if (!CloseCore) {
+      dlclose(glCoreHandle);
+      glCoreHandle = nullptr;
+      return "Could not find the CloseCore symbol.";
+   }
 
    info.RootPath  = root_path;
    info.Flags    |= OPF::ROOT_PATH;
@@ -164,16 +176,34 @@ extern "C" const char * init_kotuku(int argc, CSTRING *argv)
    info.Flags    |= OPF::ARGS;
 
    if (auto error = OpenCore(&info, &CoreBase); error IS ERR::Okay) return nullptr;
-   else if (error IS ERR::CoreVersion) return "This program requires the latest version of Kotuku.\nPlease visit www.kotuku.dev to upgrade.";
-   else return "Failed to initialise Kotuku.  Run again with --log-api.";
+   else {
+#ifndef KOTUKU_STATIC
+      dlclose(glCoreHandle);
+      glCoreHandle = nullptr;
+      CloseCore    = nullptr;
+#endif
+      if (error IS ERR::CoreVersion) return "This program requires the latest version of Kotuku.\nPlease visit www.kotuku.dev to upgrade.";
+      else return "Failed to initialise Kotuku.  Run again with --log-api.";
+   }
 }
 
 //********************************************************************************************************************
 
 extern "C" void close_kotuku(void)
 {
-   CloseCore();
+   std::lock_guard<std::mutex> lock(glInitLock);
+
 #ifndef KOTUKU_STATIC
-   if (glCoreHandle) dlclose(glCoreHandle);
+   if (CloseCore) {
+      CloseCore();
+      CloseCore = nullptr;
+   }
+
+   if (glCoreHandle) {
+      dlclose(glCoreHandle);
+      glCoreHandle = nullptr;
+   }
+#else
+   CloseCore();
 #endif
 }

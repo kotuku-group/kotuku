@@ -12,6 +12,7 @@ static const char decoding[] = {62,-1,-1,-1,63,52,53,54,55,56,57,58,59,60,61,-1,
 static int base64_decode_block(CSTRING, int, char *, BASE64DECODE *);
 static int base64_encode_block(CSTRING, int, char *, BASE64ENCODE *);
 static int base64_encoded_size(const BASE64ENCODE *, int);
+static bool base64_valid_input(CSTRING, int);
 
 inline int base64_decode_value(int value_in)
 {
@@ -197,6 +198,7 @@ ERR Base64Decode(BASE64DECODE *State, CSTRING Input, int InputSize, APTR Output,
 {
    if ((!State) or (!Input) or (!Output) or (!Written)) return ERR::NullArgs;
    if (InputSize < 4) return ERR::Args;
+   if (!base64_valid_input(Input, InputSize)) return ERR::Args;
 
    if (!State->Initialised) {
       State->Initialised = true;
@@ -206,6 +208,41 @@ ERR Base64Decode(BASE64DECODE *State, CSTRING Input, int InputSize, APTR Output,
 
    *Written = base64_decode_block(Input, InputSize, (char *)Output, State);
    return ERR::Okay;
+}
+
+static bool base64_valid_input(CSTRING Input, int InputSize)
+{
+   bool pad_found = false;
+   int pad_count  = 0;
+
+   for (int i=0; i < InputSize; i++) {
+      const auto c = Input[i];
+
+      if (((c >= 'A') and (c <= 'Z')) or ((c >= 'a') and (c <= 'z')) or ((c >= '0') and (c <= '9'))) {
+         if (pad_found) return false;
+         continue;
+      }
+
+      switch (c) {
+         case '+':
+         case '/':
+            if (pad_found) return false;
+            continue;
+         case '=':
+            pad_found = true;
+            if (++pad_count > 2) return false;
+            continue;
+         case '\r':
+         case '\n':
+         case '\t':
+         case ' ':
+            continue;
+         default:
+            return false;
+      }
+   }
+
+   return true;
 }
 
 static int base64_decode_block(CSTRING code_in, int length_in, char * plaintext_out, BASE64DECODE *State)
