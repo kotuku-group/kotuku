@@ -1,6 +1,6 @@
 
-local rx_split_header_lines = <{ regex.new([[([^\r\n]+)]]) }>
-local rx_header_value = <{ regex.new([[([^:]+):\s*(.+)]]) }>
+rx_split_header_lines = <{ regex.new([[([^\r\n]+)]]) }>
+rx_header_value = <{ regex.new([[([^:]+):\s*(.+)]]) }>
 
 function makeErrorResponse(Id:num, Code:num, Message:str):table
    return {
@@ -69,7 +69,7 @@ end
 
 function formatResponse(ResponseTable:table, TextOutput:bool):str
    body = json.encode(ResponseTable)
-   separator = TextOutput and '\n\n' or '\r\n\r\n'
+   separator = TextOutput ? '\n\n' :> '\r\n\r\n'
    return 'Content-Length: ' .. #body .. separator .. body
 end
 

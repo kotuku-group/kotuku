@@ -530,16 +530,16 @@ end
 global function lspStart(Options)
    Options ?= {}
 
-   self.port       = Options.port or 5007
-   self.verbose    = Options.verbose or false
-   self.logMessage = Options.logMessage or function(msg) print(msg) end
-   self.requestLog = Options.requestLog  -- Optional request/response logging callback
-   self.stdioInput  = Options.stdioInput
-   self.stdioOutput = Options.stdioOutput
+   self.port            = Options.port or 5007
+   self.verbose         = Options.verbose or false
+   self.logMessage      = Options.logMessage or function(msg) print(msg) end
+   self.requestLog      = Options.requestLog  -- Optional request/response logging callback
+   self.stdioInput      = Options.stdioInput
+   self.stdioOutput     = Options.stdioOutput
    self.stdioTextOutput = false
-   self._socket    = nil
-   self._stdioClient = nil
-   self._handlers  = {}
+   self._socket         = nil
+   self._stdioClient    = nil
+   self._handlers       = {}
 
    registerCoreHandlers(self)
 
