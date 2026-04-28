@@ -118,6 +118,12 @@ end
    assert(result is "This is the End", "Expression at end failed: " .. tostring(result))
 end
 
+@Test function ExpressionBeforeGreaterThanLiteral()
+   tag_name = "Hello"
+   result = f"{tag_name}>"
+   assert(result is "Hello>", "Expression before > literal failed: " .. tostring(result))
+end
+
 @Test function EscapeSequences()
    result = f"Tab:\tNewline:\nDone"
    assert(result is "Tab:\tNewline:\nDone", "Escape sequences failed")

@@ -51,7 +51,7 @@ end
    menubar = gui.menubar({
       target = viewport,
       createItems = function(Bar)
-         Bar.addItem(1, 'File', 'devices/harddisk', menuCallback, {
+         Bar.addItem(1, 'File', 'devices/harddisk', menuCallback, array<table> {
             { item='New File', icon='items/file_new', qualifier='CTRL', key='N', feedback=itemClicked },
             { item='Open File', icon='office/documents', qualifier='CTRL', key='O', feedback=itemClicked },
             { item='Reload Document', icon='items/reload', key='F5', feedback=itemClicked },
@@ -108,7 +108,7 @@ end
       x     = 30,
       y     = 50,
       popup = true,
-      config = {
+      config = array<table> {
          { group='Files' },
          { item='New File', icon='items/file_new', qualifier='CTRL', key='N', feedback=itemClicked },
          { item='Open File', icon='office/documents', qualifier='CTRL', key='O', feedback=itemClicked },
@@ -151,7 +151,7 @@ end
                message       = 'To be or not to be?',
                userInput     = 'That is the question',
                checkboxLabel = '\'Tis nobler to suffer',
-               options = {
+               options = array<table> {
                   { id=1, text='To be', icon='items/checkmark' },
                   { id=2, text='Not to be', icon='items/cancel' }
                },
@@ -236,14 +236,13 @@ end
       events = {
          activate = function(Widget)
             gui.dialog.file({
-               filterList  = { { name='MP3 Audio Files', ext='mp3' }, { name='Text Files', ext='txt' } },
+               filterList  = array<table> { { name='MP3 Audio Files', ext='mp3' }, { name='Text Files', ext='txt' } },
                okText      = 'Select File',
                cancelText  = 'Exit',
                modal       = true,
                popOver     = win.surface,
-               warnExists  = true,
+               warnExists  = false,
                multiSelect = true,
-               strictFilter = true,
                feedback = function(Dialog, Path, Files)
                   if not Files then
                      print('Dialog was cancelled or no files selected.')

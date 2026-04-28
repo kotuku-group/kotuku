@@ -546,6 +546,33 @@ bool fstring_scan_expression(LexState *State, size_t Offset, bool &NeedConcat) {
    int brace_depth = 1;  // We've already consumed the opening {
 
    while (brace_depth > 0) {
+      bool skipped_ws;
+      do {
+         skipped_ws = false;
+         while (State->c IS ' ' or State->c IS '\t' or State->c IS '\v' or State->c IS '\f') {
+            lex_next(State);
+            skipped_ws = true;
+         }
+         if (lex_iseol(State->c)) {
+            lex_newline(State);
+            skipped_ws = true;
+         }
+      } while (skipped_ws);
+
+      if (State->c IS '}') {
+         BCLine close_line = State->linenumber;
+         BCLine close_col = BCLine(State->current_offset - State->line_start_offset + 1);
+         size_t close_offset = State->current_offset;
+
+         lex_next(State);
+         lj_buf_reset(&State->sb);
+         brace_depth--;
+         if (brace_depth IS 0) break;  // End of expression, leave the next character for f-string literal scanning.
+
+         State->buffered_tokens.push_back(make_buffered_token(State, '}', close_line, close_col, close_offset));
+         continue;
+      }
+
       TValue expr_tv;
       LexToken tok = lex_scan(State, &expr_tv);
 
