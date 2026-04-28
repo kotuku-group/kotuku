@@ -1329,9 +1329,9 @@ gui.fileview = function(Options)
    function activateFile(self:table, Item:table)
       if lOptions.autoMode and Item then
          choose lOptions.autoMode from
-            'open' -> openFiles({ Item }, 'Open')
-            'edit' -> openFiles({ Item }, 'Edit')
-            'view' -> openFiles({ Item }, 'View')
+            'open' -> openFiles(array<table> { Item }, 'Open')
+            'edit' -> openFiles(array<table> { Item }, 'Edit')
+            'view' -> openFiles(array<table> { Item }, 'View')
          end
       end
 
