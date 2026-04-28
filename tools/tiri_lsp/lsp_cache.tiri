@@ -10,7 +10,9 @@
 --   Actions: 'L:start,end\0P:prototype\0C:comment'
 --   Functions: 'L:start,end\0P:prototype\0C:comment'
 
-local rx_pos_pair = <{ regex.new([[(\d+),(\d+)]]) }>
+   import 'io/filesearch'
+
+rx_pos_pair = <{ regex.new([[(\d+),(\d+)]]) }>
 
 -- Encode a field entry to compact string format
 function encodeField(Access, Type, ByteStart, ByteEnd, Comment)
@@ -256,7 +258,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function buildDocCache(DocPath)
+global function buildDocCache(DocPath)
    -- Build the documentation cache from XML files
 
    cache = {
@@ -274,7 +276,7 @@ function buildDocCache(DocPath)
 
    print('Scanning modules for documentation cache; ', modulesPath)
 
-   err = file.search(modulesPath, {
+   err = io.search(modulesPath, {
       nameFilter = [[\.xml$]],
       nameWild = true,
       maxDepth = 0,
@@ -297,7 +299,7 @@ function buildDocCache(DocPath)
 
    print('Scanning classes for documentation cache; ', classesPath)
 
-   err = file.search(classesPath, {
+   err = io.search(classesPath, {
       nameFilter = [[\.xml$]],
       nameWild = true,
       maxDepth = 1,
@@ -349,7 +351,7 @@ function serializeTable(Tbl:any, Indent):str
       return '{}'
    end
 
-   return '{\n' .. parts.join(',\n') .. Indent .. '}'
+   return '{\n' .. parts:join(',\n') .. Indent .. '}'
 end
 
 ----------------------------------------------------------------------------------------------------------------------

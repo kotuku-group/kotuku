@@ -3,7 +3,13 @@
    "displayName": "Tiri Language Support",
    "description": "Language support for Tiri programs",
    "version": "0.1.0",
-   "publisher": "kotuku",
+   "publisher": "Paul Manias",
+   "repository": {
+      "type": "git",
+      "url": "https://github.com/parasol-framework/kotuku.git",
+      "directory": "tools/tiri_lsp/vscode_plugin"
+   },
+   "icon": "images/tiri.png",
    "engines": {
       "vscode": "^1.75.0"
    },
@@ -11,10 +17,20 @@
       "Programming Languages"
    ],
    "activationEvents": [
-      "workspaceContains:**/*.tiri"
+      "onLanguage:tiri"
    ],
-   "main": "./extension.js",
+   "main": "./dist/extension.js",
+   "scripts": {
+      "bundle": "esbuild extension.js --bundle --platform=node --format=cjs --external:vscode --outfile=dist/extension.js",
+      "vscode:prepublish": "npm run bundle"
+   },
    "contributes": {
+      "commands": [
+         {
+            "command": "tiri.restartLsp",
+            "title": "Tiri: Restart Language Server"
+         }
+      ],
       "languages": [
          {
             "id": "tiri",
@@ -48,6 +64,21 @@
                "type": "number",
                "default": 5007,
                "description": "LSP server TCP port"
+            },
+            "tiri.lsp.autoStart": {
+               "type": "boolean",
+               "default": false,
+               "description": "Automatically start the Tiri LSP server when connecting to a local host"
+            },
+            "tiri.lsp.origoPath": {
+               "type": "string",
+               "default": "origo",
+               "description": "Path to the origo executable used when auto-starting the Tiri LSP server"
+            },
+            "tiri.lsp.serverScript": {
+               "type": "string",
+               "default": "tools/tiri_lsp/server.tiri",
+               "description": "Path to the Tiri LSP server script used when auto-starting the server. Relative paths are resolved from the first workspace folder."
             }
          }
       },
@@ -81,6 +112,7 @@
       "vscode-languageclient": "^9.0.1"
    },
    "devDependencies": {
-      "@types/vscode": "^1.75.0"
+      "@types/vscode": "^1.75.0",
+      "esbuild": "^0.25.0"
    }
 }

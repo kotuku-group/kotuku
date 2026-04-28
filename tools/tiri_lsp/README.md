@@ -30,7 +30,8 @@ A Language Server Protocol (LSP) implementation for Tiri scripting, providing ID
 
 ## Overview
 
-The Tiri LSP server provides language intelligence for Tiri files in any LSP-compatible editor. It communicates over TCP and offers real-time feedback as you write Tiri code.
+The Tiri LSP server provides language intelligence for Tiri files in any LSP-compatible editor. It communicates over
+TCP or stdio and offers real-time feedback as you write Tiri code.
 
 ## Features
 
@@ -95,11 +96,17 @@ Parser-generated tips for code improvement (LSP severity 4), including:
 origo tools/tiri_lsp/server.tiri port=5007
 ```
 
+Use `port=0` for stdio clients:
+
+```bash
+origo tools/tiri_lsp/server.tiri port=0
+```
+
 ### Configuration Options
 
 | Parameter     | Default                            | Description                          |
 |---------------|------------------------------------|------------------------------------- |
-| `port`        | 5007                               | TCP port to listen on                |
+| `port`        | 5007                               | TCP port to listen on, or `0` for stdio |
 | `verbose`     | false                              | Enable debug logging                 |
 | `config`      | `user:config/lsp_server_cfg.tiri` | Path to configuration file           |
 | `request-log` | (none)                             | Path for request/response logging    |
@@ -154,7 +161,7 @@ tools/tiri_lsp/
 
 ### LSP Message Flow
 
-1. Client connects via TCP
+1. Client connects via TCP, or launches the server with `port=0` for stdio
 2. `initialize` handshake establishes capabilities
 3. `textDocument/didOpen` begins document tracking
 4. `textDocument/didChange` triggers re-parsing and diagnostics

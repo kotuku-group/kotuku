@@ -483,6 +483,50 @@ global function lspInitDocs(DocPath)
    return glDocCache != nil
 end
 
+function runStdioServer(Self:table)
+   input = Self.stdioInput or io.input()
+   output = Self.stdioOutput or io.output()
+   stdio_state = {}
+   disconnected = false
+
+   client = {
+      _state = function()
+         return stdio_state
+      end,
+      acWrite = function(Data)
+         output:write(Data)
+         output:flush()
+         return ERR_Okay
+      end,
+      acDeactivate = function()
+         disconnected = true
+         stdio_state.should_disconnect = true
+         return ERR_Okay
+      end
+   }
+
+   Self._stdioClient = client
+
+   logMessage(Self, 'Tiri LSP Server using stdio')
+   if Self.verbose then
+      logMessage(Self, 'Verbose logging enabled')
+   end
+
+   while not disconnected do
+      data = input:read(8192)
+      if not data then
+         logVerbose(Self, 'Stdio input closed')
+         break
+      end
+
+      processIncomingData(Self, client, data)
+
+      if stdio_state.should_disconnect then
+         break
+      end
+   end
+end
+
 global function lspStart(Options)
    Options ?= {}
 
@@ -490,10 +534,37 @@ global function lspStart(Options)
    self.verbose    = Options.verbose or false
    self.logMessage = Options.logMessage or function(msg) print(msg) end
    self.requestLog = Options.requestLog  -- Optional request/response logging callback
+   self.stdioInput  = Options.stdioInput
+   self.stdioOutput = Options.stdioOutput
    self._socket    = nil
+   self._stdioClient = nil
    self._handlers  = {}
 
    registerCoreHandlers(self)
+
+   self.registerHandler = function(Method, Handler)
+      assert(type(Handler) is 'function', 'Handler must be a function')
+      self._handlers[Method] = Handler
+      logVerbose(self, 'Registered handler for: ' .. Method)
+   end
+
+   self.stop = function()
+      if self._socket then
+         logMessage(self, 'Stopping LSP server')
+         self._socket = nil
+         processing.collect()
+      end
+      if self._stdioClient then
+         logMessage(self, 'Stopping stdio LSP server')
+         self._stdioClient.acDeactivate()
+         self._stdioClient = nil
+      end
+   end
+
+   if self.port is 0 then
+      runStdioServer(self)
+      return self
+   end
 
    logMessage(self, 'Starting Tiri LSP Server on port ' .. self.port)
 
@@ -516,22 +587,6 @@ global function lspStart(Options)
    logMessage(self, 'Tiri LSP Server listening on port ' .. self.port)
    if self.verbose then
       logMessage(self, 'Verbose logging enabled')
-   end
-
-   -- Public methods
-
-   self.stop = function()
-      if self._socket then
-         logMessage(self, 'Stopping LSP server')
-         self._socket = nil
-         processing.collect()
-      end
-   end
-
-   self.registerHandler = function(Method, Handler)
-      assert(type(Handler) is 'function', 'Handler must be a function')
-      self._handlers[Method] = Handler
-      logVerbose(self, 'Registered handler for: ' .. Method)
    end
 
    return self

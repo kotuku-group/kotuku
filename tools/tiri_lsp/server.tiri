@@ -1,6 +1,6 @@
 -- Tiri Language Server Protocol (LSP) Server
 --
--- A TCP-based LSP server for IDE integration with Tiri scripts.
+-- An LSP server for IDE integration with Tiri scripts.
 --
 -- Usage: origo lsp_server.tiri port=5007 [options...]
 --
@@ -9,7 +9,7 @@
 glHelp = [[
 Tiri Language Server Protocol (LSP) server for IDE integration.
 
-This server implements the Language Server Protocol over TCP, allowing IDEs
+This server implements the Language Server Protocol over TCP or stdio, allowing IDEs
 and editors to provide features like autocompletion, hover information, and
 diagnostics for Tiri scripts.
 
@@ -17,7 +17,7 @@ Usage: origo lsp_server.tiri [options...]
 
 Parameters:
 
-  port        - TCP port to listen on (default: 5007)
+  port        - TCP port to listen on, or 0 for stdio mode (default: 5007)
   verbose     - Enable verbose/debug logging (true/false, default: false)
   config      - Path to config file (default: user:config/lsp_server_cfg.tiri)
   request-log - Path to log file for request/response debugging
@@ -26,6 +26,7 @@ Parameters:
 Examples:
 
   origo lsp_server.tiri port=5007
+  origo lsp_server.tiri port=0
   origo lsp_server.tiri port=5007 verbose=true
   origo lsp_server.tiri port=5007 request-log=lsp_debug.log
   origo lsp_server.tiri config=my_lsp_config.tiri
@@ -51,6 +52,7 @@ Testing with netcat/telnet:
 IDE Integration:
 
   Configure your IDE's LSP client to connect to localhost on the specified port.
+  For stdio clients, launch the server with port=0.
   The server supports the standard LSP lifecycle: initialize, initialized, shutdown, exit.
 ]]
 
@@ -95,19 +97,20 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-   -- Load config file if available
    glConfigFile = arg('config', 'user:config/lsp_server_cfg.tiri')
    glDocPath = 'sdk:docs/xml/'
    glOptions = { }
 
-   if mSys.AnalysePath(glConfigFile) is ERR_Okay then
-      loadFile(glConfigFile, glOptions)
-      print('Loaded config from: ' .. glConfigFile)
-   end
-
    if arg('help') then
       print(glHelp)
       return
+   end
+
+   -- Load config file if available
+   loaded_config = false
+   if mSys.AnalysePath(glConfigFile) is ERR_Okay then
+      loadFile(glConfigFile, glOptions)
+      loaded_config = true
    end
 
    if arg('port') then
@@ -123,12 +126,28 @@ end
       glDocPath = arg('docs')
    end
 
+   -- In stdio mode, stdout is reserved for LSP frames.
+
+   if glOptions.port is 0 then
+      glOptions.stdioInput = io.input()
+      glOptions.stdioOutput = io.output()
+      io.output('stderr')
+   end
+
+   glOptions.logMessage = function(Message)
+      print(Message)
+   end
+
+   if loaded_config then
+      glOptions.logMessage('Loaded config from: ' .. glConfigFile)
+   end
+
    -- Set up request/response logging if requested
 
    log_path = arg('request-log')
    if log_path?? then
       glReqLog = obj.new('file', { src=log_path, flags='NEW|WRITE' })
-      print('Request logging enabled: ' .. log_path)
+      glOptions.logMessage('Request logging enabled: ' .. log_path)
 
       tm = obj.new('time')
       tm.acQuery()
@@ -141,11 +160,6 @@ end
       end
    end
 
-   -- Set up logging to stdout
-   glOptions.logMessage = function(Message)
-      print(Message)
-   end
-
    sdkPath = arg('sdk')
    resolveSDKPath(sdkPath)
 
@@ -153,4 +167,6 @@ end
 
    glServer = lspStart(glOptions)
 
-   processing.sleep()
+   if glOptions.port != 0 then
+      processing.sleep()
+   end
