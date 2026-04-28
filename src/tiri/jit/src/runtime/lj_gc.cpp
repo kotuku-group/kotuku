@@ -51,6 +51,10 @@
 #include <array>
 #include <span>
 
+#if defined(_MSC_VER)
+#include <xmmintrin.h>
+#endif
+
 // -- GC Configuration Constants -----------------------------------------------
 // These control the incremental GC stepping behaviour.
 
@@ -66,6 +70,20 @@ static GCRef* gc_sweep(global_State *, GCRef *, uint32_t);
 // The current trace is a GC root while not anchored in the prototype (yet).
 
 #define gc_traverse_curtrace(g)   gc_traverse_trace(g, &G2J(g)->cur)
+
+//********************************************************************************************************************
+// Prefetch helper for pointer-chasing through GC list links.
+
+static inline void gc_prefetch(const void *Address) noexcept
+{
+#if defined(__GNUC__)
+   __builtin_prefetch(Address, 0, 1);
+#elif defined(_MSC_VER)
+   _mm_prefetch((const char *)Address, _MM_HINT_T0);
+#else
+   (void)Address;
+#endif
+}
 
 //********************************************************************************************************************
 // RAII guard for GC finaliser state preservation.
@@ -547,6 +565,10 @@ static size_t propagatemark(global_State *g)
 {
    GCobj* o = gcref(g->gc.gray);
    int gct = o->gch.gct;
+   GCobj* next_gray = gcref(o->gch.gclist);
+
+   if (next_gray) gc_prefetch(next_gray);
+
    lj_assertG(isgray(o), "propagation of non-gray object");
    gray2black(o);
    setgcrefr(g->gc.gray, o->gch.gclist);  //  Remove from gray list.

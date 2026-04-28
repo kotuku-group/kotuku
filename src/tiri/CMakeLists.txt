@@ -671,6 +671,7 @@ if (ENABLE_UNIT_TESTS)
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_test_indexing.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_test_vm_asm.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_tests_arrays.cpp")
+   list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_tests_allocator.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/jit/jit_unit_tests.cpp")
 
    # Add MASM assembly file for register capture on MSVC x64
