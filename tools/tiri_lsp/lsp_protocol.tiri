@@ -69,8 +69,7 @@ end
 
 function formatResponse(ResponseTable:table, TextOutput:bool):str
    body = json.encode(ResponseTable)
-   separator = TextOutput ? '\n\n' :> '\r\n\r\n'
-   return 'Content-Length: ' .. #body .. separator .. body
+   return 'Content-Length: ' .. #body .. '\r\n\r\n' .. body
 end
 
 global function sendResponse(Self, ClientSocket, ResponseTable, RequestLog)

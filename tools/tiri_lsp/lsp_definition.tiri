@@ -1,16 +1,16 @@
 ----------------------------------------------------------------------------------------------------------------------
 -- Go to Definition Support
 
-rx_def_func = <{ regex.new([[\bfunction\s+([A-Za-z_][A-Za-z0-9_:.]*)\s*\(([^\)]*)\)]]) }>
-rx_def_decl = <{ regex.new([[\b(local|global)\s+([A-Za-z_][A-Za-z0-9_]*)]]) }>
-rx_def_assign_func = <{ regex.new([[\b([A-Za-z_][A-Za-z0-9_]*)\s*=\s*function\s*\(([^\)]*)\)]]) }>
-rx_def_assign = <{ regex.new([[^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=]]) }>
-rx_def_param = <{ regex.new([[([A-Za-z_][A-Za-z0-9_]*)]]) }>
-rx_def_loader_before = <{ regex.new([[\b(import|require|include)\s*(?:\(\s*)?$]]) }>
+rx_def_func           = <{ regex.new([[\bfunction\s+([A-Za-z_][A-Za-z0-9_:.]*)\s*\(([^\)]*)\)]]) }>
+rx_def_decl           = <{ regex.new([[\b(local|global)\s+([A-Za-z_][A-Za-z0-9_]*)]]) }>
+rx_def_assign_func    = <{ regex.new([[\b([A-Za-z_][A-Za-z0-9_]*)\s*=\s*function\s*\(([^\)]*)\)]]) }>
+rx_def_assign         = <{ regex.new([[^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=]]) }>
+rx_def_param          = <{ regex.new([[([A-Za-z_][A-Za-z0-9_]*)]]) }>
+rx_def_loader_before  = <{ regex.new([[\b(import|require|include)\s*(?:\(\s*)?$]]) }>
 rx_def_obj_new_before = <{ regex.new([[obj\.new\s*\(\s*$]]) }>
-rx_def_obj_new = <{ regex.new([=[([A-Za-z_][A-Za-z0-9_]*)\s*=\s*obj\.new\s*\(\s*['"]([^'"]+)['"]]=], regex.DOT_ALL) }>
-rx_def_action_prefix = <{ regex.new([=[^ac[A-Z]]=]) }>
-rx_def_method_prefix = <{ regex.new([=[^mt[A-Z]]=]) }>
+rx_def_obj_new        = <{ regex.new([=[([A-Za-z_][A-Za-z0-9_]*)\s*=\s*obj\.new\s*\(\s*['"]([^'"]+)['"]]=], regex.DOT_ALL) }>
+rx_def_action_prefix  = <{ regex.new([=[^ac[A-Z]]=]) }>
+rx_def_method_prefix  = <{ regex.new([=[^mt[A-Z]]=]) }>
 
 ----------------------------------------------------------------------------------------------------------------------
 -- URI and Path Helpers

@@ -79,6 +79,16 @@
                "type": "string",
                "default": "tools/tiri_lsp/server.tiri",
                "description": "Path to the Tiri LSP server script used when auto-starting the server. Relative paths are resolved from the first workspace folder."
+            },
+            "tiri.lsp.logApi": {
+               "type": "boolean",
+               "default": false,
+               "description": "Enable Origo/Core API logging for the Tiri LSP server. In stdio mode, logs are written to tiri.lsp.logFile or tiri-lsp-core.log in the workspace."
+            },
+            "tiri.lsp.logFile": {
+               "type": "string",
+               "default": "",
+               "description": "Optional host file path for Origo/Core log output from the Tiri LSP server."
             }
          }
       },

@@ -19,7 +19,9 @@ function getSettings() {
       port: config.get('port', 0),
       autoStart: config.get('autoStart', false),
       origoPath: config.get('origoPath', 'origo'),
-      serverScript: config.get('serverScript', 'tools/tiri_lsp/server.tiri')
+      serverScript: config.get('serverScript', 'tools/tiri_lsp/server.tiri'),
+      logApi: config.get('logApi', false),
+      logFile: config.get('logFile', '')
    };
 }
 
@@ -50,6 +52,36 @@ function resolveServerScript(serverScript) {
 
 function wait(ms) {
    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getLogFilePath(settings, port) {
+   const configuredPath = settings.logFile && settings.logFile.trim();
+   if (configuredPath) {
+      return configuredPath;
+   }
+
+   if (port === 0 && settings.logApi) {
+      const workspacePath = getWorkspacePath();
+      return path.join(workspacePath || process.cwd(), 'tiri-lsp-core.log');
+   }
+
+   return '';
+}
+
+function getServerArgs(settings, serverScript, port) {
+   const args = [];
+   const logFile = getLogFilePath(settings, port);
+
+   if (settings.logApi) {
+      args.push('--log-api');
+   }
+
+   if (logFile) {
+      args.push('--log-file', logFile);
+   }
+
+   args.push(serverScript, `port=${port}`);
+   return args;
 }
 
 function openSocket(settings) {
@@ -87,9 +119,10 @@ function startServerProcess(settings) {
 
    const cwd = getWorkspacePath();
 
-   outputChannel.appendLine(`Starting Tiri LSP server: ${settings.origoPath} ${serverScript} port=${settings.port}`);
+   const args = getServerArgs(settings, serverScript, settings.port);
+   outputChannel.appendLine(`Starting Tiri LSP server: ${settings.origoPath} ${args.join(' ')}`);
 
-   serverProcess = spawn(settings.origoPath, [serverScript, `port=${settings.port}`], {
+   serverProcess = spawn(settings.origoPath, args, {
       cwd: cwd,
       windowsHide: true
    });
@@ -162,11 +195,12 @@ function createStdioServerOptions(settings) {
       throw new Error('Unable to resolve Tiri LSP server script');
    }
 
-   outputChannel.appendLine(`Starting LSP server in stdio mode: ${settings.origoPath} ${serverScript} port=0`);
+   const args = getServerArgs(settings, serverScript, 0);
+   outputChannel.appendLine(`Starting LSP server in stdio mode: ${settings.origoPath} ${args.join(' ')}`);
 
    return {
       command: settings.origoPath,
-      args: [serverScript, 'port=0'],
+      args: args,
       options: {
          cwd: getWorkspacePath(),
          windowsHide: true
