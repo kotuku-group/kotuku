@@ -100,6 +100,7 @@ end
    glConfigFile = arg('config', 'user:config/lsp_server_cfg.tiri')
    glDocPath = 'sdk:docs/xml/'
    glOptions = { }
+   glSysState = mSys.GetSystemState()
 
    if arg('help') then
       print(glHelp)
