@@ -278,9 +278,22 @@ function symbolDetectModuleValue(LineCode:str, LineText:str, LineNo:num):table
 
    start_pos, stop_pos, cap = rx_symbol_assign.findFirst(LineCode)
    if start_pos then
+      line_start = symbolSkipSpaces(LineCode, 0)
+      if start_pos != line_start then return nil end
+
       name = cap[0]
       is_const = cap[1] and cap[1] != ''
       name_start = LineText:find(name, start_pos, true) or start_pos
+
+      eq_pos = stop_pos - 1
+      if eq_pos > 0 then
+         prev_char = LineCode:sub(eq_pos - 1, eq_pos)
+         if prev_char is '=' or prev_char is '<' or prev_char is '>' or prev_char is '!' or prev_char is '~' then return nil end
+      end
+      if eq_pos + 1 < #LineCode then
+         next_char = LineCode:sub(eq_pos + 1, eq_pos + 2)
+         if next_char is '=' then return nil end
+      end
 
       after_assign = LineCode:sub(stop_pos)
       is_table = rx_symbol_trim.extract(after_assign):startsWith('{')

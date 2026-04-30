@@ -181,3 +181,19 @@ end
    assert(unfinished, 'Incomplete function should still be listed.')
    assert(unfinished.range['end'].line is 1, 'Incomplete function should end at the last known line.')
 end
+
+@Test function ControlFlowDoesNotCreateModuleVariables()
+   doc = makeDoc([[
+if x == 1 then
+   print(x)
+end
+
+for i = 0, 10 do
+   total += i
+end
+]])
+   symbols = extractDocumentSymbols(doc)
+
+   assert(not findSymbol(symbols, 'x'), 'Comparison identifiers must not become module variable symbols.')
+   assert(not findSymbol(symbols, 'i'), 'Loop variables must not become module variable symbols.')
+end
