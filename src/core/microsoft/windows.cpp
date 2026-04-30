@@ -303,12 +303,28 @@ extern "C" void activate_console(int8_t AllowOpenConsole)
    static bool activated = false;
 
    if (!activated) {
+      HANDLE current_out = GetStdHandle(STD_OUTPUT_HANDLE);
+      HANDLE current_err = GetStdHandle(STD_ERROR_HANDLE);
+
+      if (((current_out) and (current_out != INVALID_HANDLE_VALUE)) or
+          ((current_err) and (current_err != INVALID_HANDLE_VALUE))) {
+         activated = true;
+         return;
+      }
+
       char value[8];
       if (GetEnvironmentVariable("TERM", value, sizeof(value)) or
           GetEnvironmentVariable("PROMPT", value, sizeof(value))) { // TERM defined by Cygwin, Mingw, PROMPT defined by cmd.exe
 
-         HANDLE current_out = GetStdHandle(STD_OUTPUT_HANDLE);
-         HANDLE current_err = GetStdHandle(STD_ERROR_HANDLE);
+         auto stdout_fd = _fileno(stdout);
+         auto stderr_fd = _fileno(stderr);
+
+         if (((stdout_fd >= 0) and (not _isatty(stdout_fd))) or ((stderr_fd >= 0) and (not _isatty(stderr_fd))) or
+             ((current_out) and (current_out != INVALID_HANDLE_VALUE) and (not is_console(current_out))) or
+             ((current_err) and (current_err != INVALID_HANDLE_VALUE) and (not is_console(current_err)))) {
+            activated = true;
+            return;
+         }
 
          AttachConsole(ATTACH_PARENT_PROCESS);
 

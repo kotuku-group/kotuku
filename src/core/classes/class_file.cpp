@@ -75,6 +75,51 @@ in a file.
 
  #define open64   open
  #define lseek64  lseek
+
+ #define KOTUKU_STD_INPUT_HANDLE   ((unsigned long)-10)
+ #define KOTUKU_STD_OUTPUT_HANDLE  ((unsigned long)-11)
+ #define KOTUKU_STD_ERROR_HANDLE   ((unsigned long)-12)
+ #define KOTUKU_DUPLICATE_ACCESS   2
+
+ #ifdef _MSC_VER
+  #define KOTUKU_WINAPI __stdcall
+  #define KOTUKU_WINIMPORT __declspec(dllimport)
+ #else
+  #define KOTUKU_WINAPI
+  #define KOTUKU_WINIMPORT
+ #endif
+
+extern "C" {
+   KOTUKU_WINIMPORT WINHANDLE KOTUKU_WINAPI GetStdHandle(unsigned long);
+   KOTUKU_WINIMPORT WINHANDLE KOTUKU_WINAPI GetCurrentProcess(void);
+   KOTUKU_WINIMPORT int KOTUKU_WINAPI DuplicateHandle(WINHANDLE, WINHANDLE, WINHANDLE, WINHANDLE *, unsigned long, int, unsigned long);
+   KOTUKU_WINIMPORT int KOTUKU_WINAPI CloseHandle(WINHANDLE);
+}
+
+static int duplicate_std_handle(FILE *Stream, unsigned long StdHandle, int OpenFlags)
+{
+   auto source = GetStdHandle(StdHandle);
+   if ((source) and (source != (WINHANDLE)(intptr_t)-1)) {
+      WINHANDLE duplicate = nullptr;
+      if (DuplicateHandle(GetCurrentProcess(), source, GetCurrentProcess(), &duplicate, 0, false, KOTUKU_DUPLICATE_ACCESS)) {
+         int file = _open_osfhandle((intptr_t)duplicate, OpenFlags);
+         if (file >= 0) return file;
+
+         CloseHandle(duplicate);
+      }
+   }
+
+   int file = _fileno(Stream);
+   if (file >= 0) {
+      auto os_handle = (WINHANDLE)_get_osfhandle(file);
+      if ((os_handle) and (os_handle != (WINHANDLE)(intptr_t)-1)) {
+         auto duplicate = _dup(file);
+         if (duplicate >= 0) return duplicate;
+      }
+   }
+
+   return -1;
+}
 #endif // _WIN32
 
 #ifdef __APPLE__
@@ -618,7 +663,7 @@ static ERR FILE_Init(extFile *Self)
       if (iequals("std:in", Self->Path)) {
          Self->Flags |= FL::READ;
          #ifdef _WIN32
-            Self->Handle = _fileno(stdin);
+            Self->Handle = duplicate_std_handle(stdin, KOTUKU_STD_INPUT_HANDLE, O_RDONLY|WIN32OPEN);
          #else
             Self->Handle = STDIN_FILENO;
          #endif
@@ -626,7 +671,7 @@ static ERR FILE_Init(extFile *Self)
       else if (iequals("std:out", Self->Path)) {
          Self->Flags |= FL::WRITE;
          #ifdef _WIN32
-            Self->Handle = _fileno(stdout);
+            Self->Handle = duplicate_std_handle(stdout, KOTUKU_STD_OUTPUT_HANDLE, O_WRONLY|WIN32OPEN);
          #else
             Self->Handle = STDOUT_FILENO;
          #endif
@@ -634,7 +679,7 @@ static ERR FILE_Init(extFile *Self)
       else if (iequals("std:err", Self->Path)) {
          Self->Flags |= FL::WRITE;
          #ifdef _WIN32
-            Self->Handle = _fileno(stderr);
+            Self->Handle = duplicate_std_handle(stderr, KOTUKU_STD_ERROR_HANDLE, O_WRONLY|WIN32OPEN);
          #else
             Self->Handle = STDERR_FILENO;
          #endif
