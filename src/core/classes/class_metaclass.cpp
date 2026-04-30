@@ -242,18 +242,15 @@ ERR CLASS_Free(extMetaClass *Self)
    if (Self->ClassID != CLASSID::NIL) glClassMap.erase(Self->ClassID);
    if (Self->Location) { FreeResource(Self->Location); Self->Location = nullptr; }
 
-#ifndef KOTUKU_STATIC
    if (not Self->SubClasses.empty()) {
       // Sanity check - if a base has sub-classes present then there is an issue that requires resolution.
       // Note that for static builds there is no way to control termination order, so these controls are disabled.
-      kt::Log log;
-      log.warning("Out-of-order termination: Base-class %s has %d active sub-classes.", Self->ClassName, int(Self->SubClasses.size()));
+      kt::Log().warning("Out-of-order termination: Base-class %s has %d active sub-classes.", Self->ClassName, int(Self->SubClasses.size()));
    }
 
    if (Self->Base) {
       std::erase_if(Self->Base->SubClasses, [Self](extMetaClass *Cmp) { return Cmp IS Self; });
    }
-#endif
 
    Self->~extMetaClass();
    return ERR::Okay;

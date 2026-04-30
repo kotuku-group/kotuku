@@ -334,8 +334,7 @@ __export void Expunge(int16_t Force)
                auto mem = glPrivateMemory.find(id);
                if (mem IS glPrivateMemory.end()) continue;
 
-               auto mc = (extMetaClass *)mem->second.Address;
-               if ((mc) and (mc->classID() IS CLASSID::METACLASS)) {
+               if (auto mc = (extMetaClass *)mem->second.Address; (mc) and (mc->classID() IS CLASSID::METACLASS)) {
                   if (mc->OpenCount > 0) {
                      log.msg("Module %s manages a class that is in use - Class: %s, Count: %d.", mod_master->Name.c_str(), mc->ClassName, mc->OpenCount);
                      class_in_use = true;
