@@ -1,4 +1,4 @@
--- XPath 2.0 accessor @Test function s
+-- XPath 2.0 accessor functions
 
    include 'xml'
 

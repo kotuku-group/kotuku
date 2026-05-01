@@ -37,6 +37,12 @@
 
 # Folders
 .*/
+!.agents/
+!.agents/skills/
+!.agents/skills/**/
+!.agents/skills/**/SKILL.md
+!.agents/skills/**/agents/
+!.agents/skills/**/agents/openai.yaml
 /projects/*
 
 /install/

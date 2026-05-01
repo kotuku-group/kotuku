@@ -17,7 +17,8 @@ This file provides guidance to Agentic programs when working with code in this r
 - **ALWAYS** install your latest build before running `ctest`.
 - Run all integration tests: `ctest --build-config Debug --test-dir build/agents --output-on-failure`
 - Run single integration test: `ctest --build-config Debug --test-dir build/agents --output-on-failure -L TEST_LABEL`
-- **ALWAYS** write Tiri tests using Flute unless instructed otherwise (see Flute Testing section below)
+- **ALWAYS** write Tiri tests using Flute unless instructed otherwise.
+- Use the `flute-testing` skill before writing, reviewing, planning, or running Flute tests.
 - When running the Origo executable for individual tests, **ALWAYS** append `--log-warning` at a minimum for log messages, or `--log-api` if more detail is required.  Log output is directed to stderr.
 - Statements can be tested on the commandline with `--statement`, e.g. `origo --statement "print('Hello')"`
 - If modifying files in the `scripts` folder, **ALWAYS** append `--set-volume scripts=/absolute/path/to/project/scripts` to ensure your modified files are being loaded over the installed versions.
@@ -93,25 +94,18 @@ Kōtuku uses Interface Definition Language (IDL) files with `.tdl` extension to 
 
 ### Flute Testing
 
-Tests are written in Tiri and executed with the Flute test runner:
+Use the `flute-testing` skill for Flute-specific test design, implementation, CMake registration, and runner
+commands.  Key repository facts:
 
-- Test files are typically named `test_*.tiri` in module directories.
-- Read at least 3 Flute test files to learn the patterns before writing your first test file.
-- Use `flute_test()` CMake function to register tests
-- Tests run post-install against the installed framework
-- Always use `--gfx-driver=headless` for CI/automated testing
-- You can append `--log-api` to the runner to see log messages
-
-**Flute Test Command Format:**
-
-Working example when working from the root folder (recommended):
+- Flute tests are Tiri `.tiri` files, normally named `test_*.tiri`.
+- Register new tests with the local module's existing `flute_test()` CMake pattern.
+- Tests run post-install against the installed framework.
+- Use `--gfx-driver=headless` for CI and automated display tests.
+- A focused test can be run from the repository root with:
 
 ```bash
 build/agents-install/origo tools/flute.tiri file=src/network/tests/test_bind_address.tiri --log-warning
 ```
-
-**Key Requirements for Flute Tests:**
-- Use absolute path for the test file parameter (`file=...`) if not running from the root folder.
 
 ### Code Generation
 
