@@ -493,3 +493,23 @@ end
    assert(symbol.errors[1].code is "Failed", "Expected second compact error code")
    assert(symbol.errors[1].doc is "Random failure", "Expected second compact error doc")
 end
+
+@Test function ValidateSymbolsWithGlobalFunctionExpression()
+   code = [=[
+      global greetGlobal = function(Name: str):str
+         return "Hello " .. Name
+      end
+   ]=]
+
+   result = debug.validate(code, "symbols")
+   assert(result.success is true, "Valid global function expression should succeed")
+   assert(result.symbols != nil, "symbols option should include a symbols table")
+   assert(#result.symbols is 1, "Expected one symbol, got " .. #result.symbols)
+
+   symbol = result.symbols[0]
+   assert(symbol.name is "greetGlobal", "Expected global function expression symbol, got " .. tostring(symbol.name))
+   assert(symbol.signature is "greetGlobal(Name: str):str", "Unexpected signature: " .. tostring(symbol.signature))
+   assert(symbol.params[0].name is "Name", "Expected first param to be Name")
+   assert(symbol.params[0].type is "str", "Expected Name type to be str")
+   assert(symbol.results[0].type is "str", "Expected return type to be str")
+end
