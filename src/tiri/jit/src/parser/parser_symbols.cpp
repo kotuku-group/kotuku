@@ -510,7 +510,8 @@ static void collect_assignment_functions(ParserSymbolCollection &Collection, con
    }
 }
 
-static void collect_local_decl_functions(ParserSymbolCollection &Collection, const LocalDeclStmtPayload &Payload,
+template <typename DeclPayload>
+static void collect_decl_functions(ParserSymbolCollection &Collection, const DeclPayload &Payload,
    SourceSpan Span)
 {
    size_t count = Payload.names.size() < Payload.values.size() ? Payload.names.size() : Payload.values.size();
@@ -550,7 +551,12 @@ static void collect_from_statement(ParserSymbolCollection &Collection, const Stm
       }
       case AstNodeKind::LocalDeclStmt: {
          const auto &payload = std::get<LocalDeclStmtPayload>(Statement.data);
-         collect_local_decl_functions(Collection, payload, Statement.span);
+         collect_decl_functions(Collection, payload, Statement.span);
+         break;
+      }
+      case AstNodeKind::GlobalDeclStmt: {
+         const auto &payload = std::get<GlobalDeclStmtPayload>(Statement.data);
+         collect_decl_functions(Collection, payload, Statement.span);
          break;
       }
       case AstNodeKind::AssignmentStmt: {
