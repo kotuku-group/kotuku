@@ -11,7 +11,7 @@ Use this template in constructing your Git message:
 ```
 [Label] Single line summary
 
-Any additional detail can be written here if necessary.  Do not apply word-wrapping.  If listing a series of changes, use asterisk based bullet points, one on each line.
+Any additional detail can be written here if necessary.  Do not apply word-wrapping.  If listing a series of changes, use asterisk based bullet points, one on each line.  Do not add credit or authorship attributions for yourself or others.
 ```
 
 For example:
@@ -23,7 +23,7 @@ For example:
 * Runtime CPUID detection selects the AVX2 path on capable hardware and falls back to scalar otherwise
 ```
 
-Note: If currently in the `master` branch, create a new branch under `test/[name]` with a relevant name related to the changes and commit to that target.
+Note: If currently in the `master` or `main` branch, create a new branch under `test/[name]` with a relevant name related to the changes and commit to that target.
 
 The `Label` is the most appropriate single-word label that categorises the most valuable changes being submitted.  For instance, if the most valuable changes are in the `Core` module, then `Core` is the appropriate label.  This rule is true of all module-based changes.  The following labels may be appropriate in other circumstances:
 
