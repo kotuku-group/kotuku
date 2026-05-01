@@ -1,0 +1,37 @@
+---
+description: "Commit to the Kōtuku repo using the correct message format"
+---
+
+# Commit to Kōtuku
+
+Write a commit message for the currently staged changes in Git and commit.  If there are no changes staged, inform the user and stop.
+
+Use this template in constructing your Git message:
+
+```
+[Label] Single line summary
+
+Any additional detail can be written here if necessary.  Do not apply word-wrapping.  If listing a series of changes, use asterisk based bullet points, one on each line.
+```
+
+For example:
+
+```
+[Tiri] Add bulk TValue operations with AVX2 acceleration for arrays and tables
+
+* Introduce lj_bulk module providing vectorised nil-fill, copy and memmove for TValue arrays
+* Runtime CPUID detection selects the AVX2 path on capable hardware and falls back to scalar otherwise
+```
+
+Note: If currently in the `master` branch, create a new branch under `test/[name]` with a relevant name related to the changes and commit to that target.
+
+The `Label` is the most appropriate single-word label that categorises the most valuable changes being submitted.  For instance, if the most valuable changes are in the `Core` module, then `Core` is the appropriate label.  This rule is true of all module-based changes.  The following labels may be appropriate in other circumstances:
+
+* Script: For changes to Tiri scripts, such as in the `scripts/` and `examples/` folders.
+* Build: For changes to CMake files
+* AI: For updates to agent configuration files
+* Doc: For document specific updates
+
+If no label seems appropriate, do not include a label.
+
+Push to remote after completing your commit.

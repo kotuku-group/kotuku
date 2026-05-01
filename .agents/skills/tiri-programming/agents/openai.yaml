@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tiri Programming"
+  short_description: "Write and review Kotuku Tiri scripts"
+  default_prompt: "Use $tiri-programming when writing or reviewing Kotuku .tiri scripts."

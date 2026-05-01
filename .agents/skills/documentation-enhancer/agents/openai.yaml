@@ -1,0 +1,4 @@
+interface:
+  display_name: "Documentation Enhancer"
+  short_description: "Improve Kotuku API and markdown docs"
+  default_prompt: "Use $documentation-enhancer to improve embedded API documentation or markdown guides."

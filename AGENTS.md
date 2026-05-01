@@ -80,55 +80,14 @@ Kōtuku uses Interface Definition Language (IDL) files with `.tdl` extension to 
 
 **Tiri** (formerly known as Fluid) is the integrated Lua-based scripting language:
 
-- Unique engine built on LuaJIT 2.1 for performance and extensively modified for C++, utilising C++20 capabilities.
-- Provides high-level access to all Kōtuku APIs
+- Tiri is a LuaJIT-based language that provides high-level access to Kōtuku APIs, but it is not standard Lua.
 - GUI toolkit available through `scripts/gui/` modules (modular widget system)
 - All Tiri scripts use `.tiri` extension
-- Declarative UI creation with automatic scaling and layout management
-- Callback-driven architecture for event handling
-- The Tiri object interface is case sensitive.  Object fields are accessed as lower snake-case names, e.g. `netlookup.hostName`
-- Tiri scripts are executed with the `origo` executable, which has a dependency on the project being built and installed.
+- Tiri scripts are executed with the `origo` executable, which has a dependency on the project being built and installed
 - Tiri scripts execute top-to-bottom with NO entry point function
-- Tiri APIs and reference manuals are available in multiple files at `docs/wiki/Tiri-*.md`.
+- When writing, editing, reviewing, or testing Tiri code, use the `tiri-programming` skill first
+- Tiri APIs and reference manuals are available in multiple files at `docs/wiki/Tiri-*.md`
 - General API framework documentation in `docs/xml/modules` and `docs/xml/modules/classes` can be utilised to understand class and module interfaces in detail.
-
-#### Tiri Features and Breaking Changes to Lua
-
-- `is` instead of `==`
-- `continue` statement in loops
-- Compound operators: `+=`, `-=`, `*=`, `/=`, `%=` on numeric values
-- `..=` for string concatenation
-- Postfix operators: `++`
-- C-style bitwise operators: `&`, `|`, `^`, `~`, `<<`, `>>`
-- C-style ternary operator: `condition ? true_val :> false_val`
-- Falsey value checks with `??`, e.g. `if value?? then ...`
-- `??=` and `??` conditional operators as a convenience for redefining falsey values, e.g. `result = value1 ?? value2`
-- `?=` is an if-nil compound operator
-- `defer() ... end` statement that runs code when de-scoped.
-- `goto`, labels, `==` and `~=` are deprecated
-- Zero-based indexing for tables and string functions.
-- Variables and functions are local by default.  Use `global` for defining global variables and `local` when controlling scope.
-- Anonymous function expressions with `=>`: `(i => print(i))`
-- Ranges: `for i in {0..10} do`
-- Exception handling with `try-except-when` statements
-- `pcall()` and `xpcall()` are deprecated in favour of `try-except` statements.
-- String interpolation supporting expressions, e.g. `f"My {expression} here"`
-- Lua patterns are deprecated, replaced by regex support in the `regex.*` API.
-- `string.gsub()`, `string.match()`, `string.gmatch()` are obsolete.
-
-A complete breakdown of these features is located in `docs/wiki/Tiri-Reference-Manual.md`
-
-#### Tiri Coding Patterns
-
-**Always study existing examples first:**
-```bash
-# Key example files to examine:
-examples/*.tiri          # Application examples
-tools/docgen.tiri        # Process execution example
-tools/*.tiri             # Build and utility scripts
-scripts/gui/*.tiri       # GUI component examples
-scripts/*.tiri           # APIs
-```
 
 ## Key Development Patterns
 
