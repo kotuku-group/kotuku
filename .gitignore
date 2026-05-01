@@ -33,42 +33,27 @@
 *.Plo
 *.dirstamp
 *.mak
+*.log
 
 # Folders
 .*/
-/debug/*
-/release/*
-/kotuku-*/
-/visual-studio/
 /projects/*
-/*.sh
 
 /install/
 /packages/
 /extras/
-/data/scripts/pl/
+/temp/
+/tests/
 
 /3rdparty/zlib-*/
 .idea/
-debug-install/
 local/
-src/android/
-src/tiri/libffi-3.3/
-src/tiri/luajit-2.1/doc/
-release-git/
-src/display/simd/
-data/fonts/truetype/NotoColorEmoji.ttf
 build/
 out/
-3rdparty/blend2d*/
-local-claude/
 CLAUDE.local.md
-msys-debug/
-msys-release/
 src/link/kotuku.manifest
 src/link/resource.rc
 data/ssl/localhost.p12
 data/ssl/localhost.pem
-src/xquery/tests/QT3_1_0/
 docs/kotuku*/
 tools/tiri_lsp/vscode_plugin/node_modules/
