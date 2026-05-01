@@ -46,6 +46,7 @@ static const struct {
 #include "token_types.h"
 #include "parse_types.h"
 #include "parse_internal.h"
+#include "parser_symbols.h"
 #include "parser_profiler.h"
 #include "value_categories.h"
 #include "../../../defs.h"
@@ -56,6 +57,7 @@ static const struct {
 #include "parser_context.cpp"
 #include "ast/nodes.cpp"
 #include "ast/builder.cpp"
+#include "parser_symbols.cpp"
 #include "parse_control_flow.cpp"
 #include "ir_emitter/ir_emitter.cpp"
 #include "parse_constants.cpp"
@@ -170,6 +172,7 @@ static void run_ast_pipeline(ParserContext &Context, ParserProfiler &Profiler)
    std::unique_ptr<BlockStmt> chunk = std::move(chunk_result.value_ref());
    parse_timer.stop();
    trace_ast_boundary(Context, *chunk, "parse");
+   collect_parser_symbols(Context.lua(), *chunk);
 
    if (Context.config().enable_type_analysis) {
       ParserProfiler::StageTimer type_timer = Profiler.stage("type_analysis");

@@ -48,6 +48,7 @@ struct StrInternState;
 // Parser objects
 
 class TipEmitter;
+struct ParserSymbolCollection;
 
 // Debug objects
 
@@ -1169,6 +1170,7 @@ struct lua_State {
    uint8_t resolving_thunk;  // Flag to prevent recursive thunk resolution
    ParserDiagnostics *parser_diagnostics; // Stores ParserDiagnostics* during parsing errors
    TipEmitter *parser_tips;               // Stores TipEmitter* during parsing for code hints
+   ParserSymbolCollection *parser_symbols; // Stores parser symbol metadata for LSP/documentation tooling
    TValue close_err;  // Current error for __close handlers (nil if no error)
    // Try-except exception handling runtime state (lazily allocated)
    TryFrameStack try_stack;      // Exception frame stack (nullptr until first BC_TRYENTER)

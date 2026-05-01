@@ -422,3 +422,74 @@ end
    result = debug.validate(code)
    assert(result.success is true, "Valid function definition should succeed")
 end
+
+@Test function ValidateSymbolsWithDocAnnotation()
+   code = [=[
+      @Doc(text=[[
+         Returns a greeting.
+
+         -INPUT-
+         Name: Person to greet
+
+         -RESULTS-
+         str: Greeting text
+
+         -ERRORS-
+         Args: If the name is invalid
+      ]])
+      function greet(Name: str):str
+         return "Hello " .. Name
+      end
+   ]=]
+
+   result = debug.validate(code, "symbols")
+   assert(result.success is true, "Valid documented function should succeed")
+   assert(result.symbols != nil, "symbols option should include a symbols table")
+   assert(#result.symbols is 1, "Expected one symbol, got " .. #result.symbols)
+
+   symbol = result.symbols[0]
+   assert(symbol.name is "greet", "Expected function name greet, got " .. tostring(symbol.name))
+   assert(symbol.signature is "greet(Name: str):str", "Unexpected signature: " .. tostring(symbol.signature))
+   assert(symbol.doc.summary is "Returns a greeting.", "Doc summary should be parsed")
+   assert(symbol.params[0].name is "Name", "Expected first param to be Name")
+   assert(symbol.params[0].type is "str", "Expected Name type to be str")
+   assert(symbol.params[0].doc is "Person to greet", "Expected Name doc to be merged")
+   assert(symbol.results[0].type is "str", "Expected return type to be str")
+   assert(symbol.results[0].doc is "Greeting text", "Expected return doc to be merged")
+   assert(symbol.errors[0].code is "Args", "Expected Args error documentation")
+end
+
+@Test function ValidateSymbolsWithCompactDocAnnotation()
+   code = [=[
+      @Doc(text=[[
+         @desc Returns a greeting.
+         @input Name: Person to greet
+         @result str: Greeting text
+         @result str: Additional argument
+         @error Args: If the name is invalid
+         @error Failed: Random failure
+      ]])
+      function greetCompact(Name: str):<str, str>
+         return "Hello " .. Name, "extra"
+      end
+   ]=]
+
+   result = debug.validate(code, "symbols")
+   assert(result.success is true, "Valid compact documented function should succeed")
+   assert(result.symbols != nil, "symbols option should include a symbols table")
+   assert(#result.symbols is 1, "Expected one symbol, got " .. #result.symbols)
+
+   symbol = result.symbols[0]
+   assert(symbol.name is "greetCompact", "Expected function name greetCompact, got " .. tostring(symbol.name))
+   assert(symbol.doc.summary is "Returns a greeting.", "Compact @desc should define doc summary")
+   assert(symbol.params[0].name is "Name", "Expected first compact param to be Name")
+   assert(symbol.params[0].doc is "Person to greet", "Expected compact @input doc to be merged")
+   assert(symbol.results[0].type is "str", "Expected first compact return type to be str")
+   assert(symbol.results[0].doc is "Greeting text", "Expected first compact @result doc")
+   assert(symbol.results[1].type is "str", "Expected second compact return type to be str")
+   assert(symbol.results[1].doc is "Additional argument", "Expected second compact @result doc")
+   assert(symbol.errors[0].code is "Args", "Expected first compact error code")
+   assert(symbol.errors[0].doc is "If the name is invalid", "Expected first compact error doc")
+   assert(symbol.errors[1].code is "Failed", "Expected second compact error code")
+   assert(symbol.errors[1].doc is "Random failure", "Expected second compact error doc")
+end

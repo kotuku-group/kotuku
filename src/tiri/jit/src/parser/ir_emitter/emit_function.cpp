@@ -692,12 +692,19 @@ static void append_annotation_value(std::string &Out, const AnnotationArgValue &
    }
 }
 
+static bool annotation_entry_name_is(const AnnotationEntry &Annotation, std::string_view Name)
+{
+   if (Annotation.name IS nullptr) return false;
+   return std::string_view(strdata(Annotation.name), Annotation.name->len) IS Name;
+}
+
 ParserResult<IrEmitUnit> IrEmitter::emit_annotation_registration(BCReg FuncReg, const std::vector<AnnotationEntry>& Annotations, GCstr* Funcname)
 {
    if (Annotations.empty()) return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
 
    FuncState* fs = &this->func_state;
    lua_State* L = fs->L;
+   bool process_doc = L->script and ((L->script->Flags & SCF::PROCESS_DOC) != SCF::NIL);
 
    // Build annotation string from parsed annotation entries
    // Format: @Name(key=value, ...); @Name2; ...
@@ -707,7 +714,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_annotation_registration(BCReg FuncReg, 
       anno_str += "@";
       if (anno.name) anno_str.append(strdata(anno.name), anno.name->len);
 
-      if (not anno.args.empty()) {
+      bool include_args = not anno.args.empty();
+      if (annotation_entry_name_is(anno, "Doc") and not process_doc) include_args = false;
+
+      if (include_args) {
          anno_str += "(";
          bool first_arg = true;
          for (const auto& [key, value] : anno.args) {

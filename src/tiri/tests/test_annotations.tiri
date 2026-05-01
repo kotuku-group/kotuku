@@ -170,7 +170,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function AnnoCompiledStringEscaping()
-   @Doc(text=[[said "hello" and used C:\Temp\docs]])
+   @Note(text=[[said "hello" and used C:\Temp\docs]])
    @Test(labels=["plain", [[quoted "label"]], [[C:\Temp\label]]])
    function documentedFunc()
    end
@@ -179,15 +179,28 @@ end
    assert(entry != nil, "Compiled annotations should register successfully")
    assert(#entry.annotations is 2, "Expected 2 compiled annotations, got " .. #entry.annotations)
 
-   doc = entry.annotations[0]
-   assert(doc.name is "Doc", "Expected first annotation to be Doc, got " .. tostring(doc.name))
-   assert(doc.args.text is [[said "hello" and used C:\Temp\docs]],
-      "Doc text should preserve quotes and backslashes, got " .. tostring(doc.args.text))
+   note = entry.annotations[0]
+   assert(note.name is "Note", "Expected first annotation to be Note, got " .. tostring(note.name))
+   assert(note.args.text is [[said "hello" and used C:\Temp\docs]],
+      "Annotation text should preserve quotes and backslashes, got " .. tostring(note.args.text))
 
    labels = entry.annotations[1].args.labels
    assert(labels[0] is "plain", "Expected first label to be plain")
    assert(labels[1] is [[quoted "label"]], "Expected quoted array label to be preserved, got " .. tostring(labels[1]))
    assert(labels[2] is [[C:\Temp\label]], "Expected backslash array label to be preserved, got " .. tostring(labels[2]))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AnnoDocPayloadSkippedWithoutProcessDoc()
+   @Doc(text=[[large documentation payload]])
+   function docPayloadSkipped()
+   end
+
+   entry = debug.anno.get(docPayloadSkipped)
+   assert(entry != nil, "@Doc identity should still be registered")
+   assert(entry.annotations[0].name is "Doc", "Expected Doc annotation identity")
+   assert(entry.annotations[0].args.text is nil, "@Doc text should not be registered without SCF_PROCESS_DOC")
 end
 
 ----------------------------------------------------------------------------------------------------------------------

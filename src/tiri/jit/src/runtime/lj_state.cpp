@@ -23,6 +23,7 @@
 #include "lj_prng.h"
 #include "../parser/lexer.h"
 #include "../parser/parser_diagnostics.h"
+#include "../parser/parser_symbols.h"
 #include "../parser/parser_tips.h"
 #include "lj_alloc.h"
 #include "luajit.h"
@@ -217,6 +218,7 @@ static void close_state(lua_State *L)
    global_State *g = G(L);
    if (L->parser_diagnostics) { delete (ParserDiagnostics*)L->parser_diagnostics; L->parser_diagnostics = nullptr; }
    if (L->parser_tips) { delete L->parser_tips; L->parser_tips = nullptr; }
+   if (L->parser_symbols) { delete L->parser_symbols; L->parser_symbols = nullptr; }
    funcnames_free(g);
    lj_func_closeuv(L, tvref(L->stack));
 
@@ -377,6 +379,7 @@ void lj_state_free(global_State* g, lua_State *L)
 
    if (L->parser_diagnostics) { delete (ParserDiagnostics*)L->parser_diagnostics; L->parser_diagnostics = nullptr; }
    if (L->parser_tips) { delete L->parser_tips; L->parser_tips = nullptr; }
+   if (L->parser_symbols) { delete L->parser_symbols; L->parser_symbols = nullptr; }
 
    lj_func_closeuv(L, tvref(L->stack));
    lj_assertG(gcref(L->openupval) IS nullptr, "stale open upvalues");

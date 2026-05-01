@@ -57,6 +57,7 @@
 #include "debug/error_guard.h"
 #include "debug/filesource.h"
 #include "parser/parser_diagnostics.h"
+#include "parser/parser_symbols.h"
 #include "parser/parser_tips.h"
 #include "../../defs.h"
 
@@ -1051,11 +1052,144 @@ static CSTRING diagnostic_code_name(ParserErrorCode Code)
    }
 }
 
+static void set_table_string(lua_State *L, CSTRING Key, const std::string &Value)
+{
+   lua_pushlstring(L, Value.data(), Value.size());
+   lua_setfield(L, -2, Key);
+}
+
+static void set_table_bool(lua_State *L, CSTRING Key, bool Value)
+{
+   lua_pushboolean(L, Value);
+   lua_setfield(L, -2, Key);
+}
+
+static void set_table_int(lua_State *L, CSTRING Key, int Value)
+{
+   lua_pushinteger(L, Value);
+   lua_setfield(L, -2, Key);
+}
+
+static void push_annotation_metadata(lua_State *L, const std::vector<ParserAnnotationMetadata> &Annotations)
+{
+   lua_newtable(L);
+   int idx = 0;
+
+   for (const auto &annotation : Annotations) {
+      lua_newtable(L);
+      set_table_string(L, "name", annotation.name);
+
+      lua_newtable(L);
+      for (const auto &[key, value] : annotation.args) {
+         lua_pushlstring(L, value.data(), value.size());
+         lua_setfield(L, -2, key.c_str());
+      }
+      lua_setfield(L, -2, "args");
+
+      lua_rawseti(L, -2, idx++);
+   }
+}
+
+static void push_doc_metadata(lua_State *L, const ParserDocBlockMetadata &Doc)
+{
+   lua_newtable(L);
+   set_table_string(L, "summary", Doc.summary);
+   set_table_string(L, "body", Doc.body);
+   set_table_string(L, "raw", Doc.raw);
+
+   lua_newtable(L);
+   int idx = 0;
+   for (const std::string &example : Doc.examples) {
+      lua_pushlstring(L, example.data(), example.size());
+      lua_rawseti(L, -2, idx++);
+   }
+   lua_setfield(L, -2, "examples");
+}
+
+static void push_params_metadata(lua_State *L, const std::vector<ParserDocParamMetadata> &Params)
+{
+   lua_newtable(L);
+   int idx = 0;
+
+   for (const auto &param : Params) {
+      lua_newtable(L);
+      set_table_string(L, "name", param.name);
+      set_table_string(L, "type", param.type);
+      set_table_string(L, "doc", param.doc);
+      set_table_bool(L, "inferred", param.inferred);
+      lua_rawseti(L, -2, idx++);
+   }
+}
+
+static void push_results_metadata(lua_State *L, const std::vector<ParserDocReturnMetadata> &Results)
+{
+   lua_newtable(L);
+   int idx = 0;
+
+   for (const auto &ret : Results) {
+      lua_newtable(L);
+      set_table_string(L, "type", ret.type);
+      set_table_string(L, "doc", ret.doc);
+      set_table_bool(L, "inferred", ret.inferred);
+      lua_rawseti(L, -2, idx++);
+   }
+}
+
+static void push_errors_metadata(lua_State *L, const std::vector<ParserDocErrorMetadata> &Errors)
+{
+   lua_newtable(L);
+   int idx = 0;
+
+   for (const auto &err : Errors) {
+      lua_newtable(L);
+      set_table_string(L, "code", err.code);
+      set_table_string(L, "doc", err.doc);
+      set_table_bool(L, "inferred", err.inferred);
+      lua_rawseti(L, -2, idx++);
+   }
+}
+
+static void push_symbol_metadata(lua_State *L, const ParserSymbolCollection *Symbols)
+{
+   lua_newtable(L);
+   if (Symbols IS nullptr) return;
+
+   int idx = 0;
+   for (const auto &symbol : Symbols->symbols) {
+      lua_newtable(L);
+
+      set_table_string(L, "name", symbol.name);
+      set_table_string(L, "kind", symbol.kind);
+      set_table_string(L, "signature", symbol.signature);
+      set_table_int(L, "line", symbol.span.line > 0 ? int(symbol.span.line) - 1 : 0);
+      set_table_int(L, "column", symbol.span.column > 0 ? int(symbol.span.column) - 1 : 0);
+      set_table_int(L, "endLine", symbol.end_span.line > 0 ? int(symbol.end_span.line) - 1 : 0);
+      set_table_int(L, "endColumn", symbol.end_span.column > 0 ? int(symbol.end_span.column) - 1 : 0);
+
+      push_params_metadata(L, symbol.params);
+      lua_setfield(L, -2, "params");
+
+      push_results_metadata(L, symbol.results);
+      lua_setfield(L, -2, "results");
+
+      push_errors_metadata(L, symbol.errors);
+      lua_setfield(L, -2, "errors");
+
+      push_doc_metadata(L, symbol.doc);
+      lua_setfield(L, -2, "doc");
+
+      push_annotation_metadata(L, symbol.annotations);
+      lua_setfield(L, -2, "annotations");
+
+      lua_rawseti(L, -2, idx++);
+   }
+}
+
 LJLIB_CF(debug_validate)
 {
    CSTRING statement = luaL_checkstring(L, 1);
-   // flags parameter reserved for future use (type checking, etc.)
-   // CSTRING flags = luaL_optstring(L, 2, "s");
+   CSTRING flags = luaL_optstring(L, 2, "");
+   bool include_symbols = flags and std::string_view(flags).find("symbols") != std::string_view::npos;
 
    // Create result table
    lua_newtable(L);
@@ -1072,11 +1206,15 @@ LJLIB_CF(debug_validate)
    // This requires temporarily enabling JOF::DIAGNOSE
    auto *prv = (prvTiri *)L->script->ChildPrivate;
    JOF old_options = prv ? prv->JitOptions : JOF::NIL;
+   SCF old_flags = L->script->Flags;
    if (prv) prv->JitOptions |= JOF::DIAGNOSE|JOF::ALL_TIPS;
+   if (include_symbols) L->script->Flags |= SCF::PROCESS_DOC;
+   if (L->parser_symbols) { delete L->parser_symbols; L->parser_symbols = nullptr; }
 
    int parse_result = lua_load(L, std::string_view(statement, strlen(statement)), "=validate");
 
    if (prv) prv->JitOptions = old_options;  // Restore options
+   L->script->Flags = old_flags;
 
    // Pop the compiled chunk or error message
    lua_pop(L, 1);
@@ -1137,6 +1275,16 @@ LJLIB_CF(debug_validate)
    }
 
    lua_setfield(L, -2, "tips");
+
+   if (include_symbols) {
+      push_symbol_metadata(L, L->parser_symbols);
+      lua_setfield(L, -2, "symbols");
+
+      if (L->parser_symbols) {
+         delete L->parser_symbols;
+         L->parser_symbols = nullptr;
+      }
+   }
 
    // Set success field
    settabsb(L, "success", parse_result IS 0);
