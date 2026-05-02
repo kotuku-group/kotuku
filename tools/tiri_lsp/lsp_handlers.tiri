@@ -27,8 +27,8 @@ function positionToOffset(Content, Line, Character)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Apply a text edit to document content
 
+@Doc(text="Apply a text edit to document content")
 function applyTextEdit(Content, Range, NewText)
    start_offset = positionToOffset(Content, Range.start.line, Range.start.character)
    end_offset = positionToOffset(Content, Range['end'].line, Range['end'].character)
@@ -41,8 +41,8 @@ function applyTextEdit(Content, Range, NewText)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Replace strings and comments with spaces while preserving byte offsets for range calculations.
 
+@Doc(text="Replace strings and comments with spaces while preserving byte offsets for range calculations.")
 global function maskNonCode(LineText:str, InBlockComment:bool):<str, bool>
    result = ''
    pos = 0

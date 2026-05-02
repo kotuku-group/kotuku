@@ -5,8 +5,8 @@ rx_action_prefix = <{ regex.new("^ac[A-Z]") }>
 rx_method_prefix = <{ regex.new("^mt[A-Z]") }>
 
 ----------------------------------------------------------------------------------------------------------------------
--- Hover Support - Token Extraction
 
+@Doc(text="Hover Support - Token Extraction")
 global function getTokenAtPosition(Doc:table, Line:num, Character:num):table
    -- Extract the token/symbol at a given position in the document
    -- Returns: { text, object, startCol, endCol, context }
@@ -90,8 +90,8 @@ global function getTokenAtPosition(Doc:table, Line:num, Character:num):table
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Hover Support - Type Inference
 
+@Doc(text="Hover Support - Type Inference")
 function buildTypeMap(Doc)
    -- Build a mapping of variable names to class types based on obj.new() calls
    typeMap = {}
@@ -109,8 +109,8 @@ function buildTypeMap(Doc)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Hover Support - Content Resolution and Formatting
 
+@Doc(text="Hover Support - Content Resolution and Formatting")
 function formatClassHover(ClassName, ClassDoc)
    md = '**class ' .. ClassName .. '**\n\n'
    md ..= ClassDoc.comment
@@ -176,8 +176,8 @@ function formatKeywordHover(Keyword, KeywordDoc)
    return md
 end
 
+@Doc(text="Resolve hover content for a token")
 global function resolveHoverContent(TokenInfo, Doc)
-   -- Resolve hover content for a token
    -- Priority: keywords, builtins, class names, module functions, object methods/fields
 
    if not TokenInfo then return nil end

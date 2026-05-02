@@ -16,12 +16,12 @@ rx_source_file_plain = <{ regex.new([[<file>([^<]+)<\/file>]]) }>
 rx_input_param = <{ regex.new([[<param\s+([^>]*)>(.*?)<\/param>]], regex.DOT_ALL) }>
 rx_xml_attr = <{ regex.new([=[([A-Za-z_][A-Za-z0-9_]*)="([^"]*)"]=]) }>
 
--- Encode a field entry to compact string format
+@Doc(text='Encode a field entry to compact string format')
 function encodeField(Access, Type, ByteStart, ByteEnd, Comment)
    return f'A:{Access or "R"}\tL:{ByteStart},{ByteEnd}\tT:{Type or ""}\tC:{Comment or ""}'
 end
 
--- Encode a method/action/function entry.
+@Doc(text='Encode a method/action/function entry.')
 function encodeMethod(Prototype, TiriPrototype, ByteStart, ByteEnd, Comment, Params)
    return {
       byteStart = ByteStart,
@@ -32,7 +32,7 @@ function encodeMethod(Prototype, TiriPrototype, ByteStart, ByteEnd, Comment, Par
    }
 end
 
--- Decode a field from compact string format
+@Doc(text='Decode a field from compact string format')
 global function decodeField(Str:any):table
    if type(Str) != 'string' then return Str end  -- Already decoded or nil
 
