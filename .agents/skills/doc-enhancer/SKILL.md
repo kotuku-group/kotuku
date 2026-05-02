@@ -65,4 +65,4 @@ directly to the relevant files unless the user explicitly asks for review-only f
   phrasing about intelligent streaming or minimal memory footprints unless those claims are documented and useful.
 - Use two spaces between sentences in edited documentation.
 - Remove trailing whitespace.
-- Wrap paragraphs at or before column 119 when editing wrapped documentation.
+- Wrap paragraphs at or before column 119 when editing wrapped documentation in code files.  In Markdown and AsciiDoc files, word-wrapping is not required except for pre-formatted text sections.

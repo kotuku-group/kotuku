@@ -168,7 +168,7 @@ Before considering ANY C++ code changes complete, verify:
 - C++ functions that use global variables must be written with thread safety in mind.
 - New and refactored code must target modern C++20 conventions and functionality.
 - C++ global variable names are prefixed with `gl` and written in upper camel-case, e.g. `glSomeVariable`
-- The default column width is 120 characters for all languages and markdown files.
+- The default column width is 120 characters for all programming languages.  Markdown and Asciidoc files are exempt.
 - Always default to British English spelling in code and comments.
 - For C++ `if`, `while`, `else`, `for`, `switch` and `struct` keywords, the opening curly brace must be on the same line if no word-wrapping has occurred.
 - Whilst the spelling of Kōtuku applies to all documentation for branding purposes, when writing code the simplified `Kotuku` spelling is used throughout.
