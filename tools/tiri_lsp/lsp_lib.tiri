@@ -436,6 +436,7 @@ end
    import './lsp_cache'
    import './lsp_hover'
    import './lsp_definition'
+   import './lsp_signature'
    import './lsp_parsing'
    import './lsp_symbols'
    import './lsp_handlers'

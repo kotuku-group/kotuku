@@ -22,6 +22,7 @@
     <name>AddressToStr</name>
     <comment>Converts an IPAddress structure to an IPAddress in dotted string form.</comment>
     <prototype>CSTRING net::AddressToStr(struct IPAddress * IPAddress)</prototype>
+    <tiriPrototype>str = AddressToStr(IPAddress:any)</tiriPrototype>
     <input>
       <param type="struct IPAddress *" name="IPAddress">A pointer to the IPAddress structure.</param>
     </input>
@@ -35,6 +36,7 @@
     <name>HostToLong</name>
     <comment>Converts a 32 bit (unsigned) long from host to network byte order.</comment>
     <prototype>UINT net::HostToLong(UINT Value)</prototype>
+    <tiriPrototype>num = HostToLong(Value:num)</tiriPrototype>
     <input>
       <param type="UINT" name="Value">Data in host byte order to be converted to network byte order</param>
     </input>
@@ -48,6 +50,7 @@
     <name>HostToShort</name>
     <comment>Converts a 16 bit (unsigned) word from host to network byte order.</comment>
     <prototype>UINT net::HostToShort(UINT Value)</prototype>
+    <tiriPrototype>num = HostToShort(Value:num)</tiriPrototype>
     <input>
       <param type="UINT" name="Value">Data in host byte order to be converted to network byte order</param>
     </input>
@@ -61,6 +64,7 @@
     <name>LongToHost</name>
     <comment>Converts a 32 bit (unsigned) long from network to host byte order.</comment>
     <prototype>UINT net::LongToHost(UINT Value)</prototype>
+    <tiriPrototype>num = LongToHost(Value:num)</tiriPrototype>
     <input>
       <param type="UINT" name="Value">Data in network byte order to be converted to host byte order</param>
     </input>
@@ -74,6 +78,7 @@
     <name>SetSSL</name>
     <comment>Alters SSL settings on an initialised NetSocket object.</comment>
     <prototype>ERR net::SetSSL(objNetSocket * NetSocket, CSTRING Command, CSTRING Value)</prototype>
+    <tiriPrototype>err = SetSSL(NetSocket:obj, Command:str, Value:str)</tiriPrototype>
     <input>
       <param type="objNetSocket *" name="NetSocket">The target NetSocket object.</param>
       <param type="CSTRING" name="Command">Name of a command or option to set (case-sensitive, camel-case).</param>
@@ -101,6 +106,7 @@
     <name>ShortToHost</name>
     <comment>Converts a 16 bit (unsigned) word from network to host byte order.</comment>
     <prototype>UINT net::ShortToHost(UINT Value)</prototype>
+    <tiriPrototype>num = ShortToHost(Value:num)</tiriPrototype>
     <input>
       <param type="UINT" name="Value">Data in network byte order to be converted to host byte order</param>
     </input>
@@ -114,6 +120,7 @@
     <name>StrToAddress</name>
     <comment>Converts an IP Address in string form to an <st>IPAddress</st> structure.</comment>
     <prototype>ERR net::StrToAddress(CSTRING String, struct IPAddress * Address)</prototype>
+    <tiriPrototype>err = StrToAddress(String:str, Address:any)</tiriPrototype>
     <input>
       <param type="CSTRING" name="String">A null-terminated string containing the IP Address in dotted format.</param>
       <param type="struct IPAddress *" name="Address">Must point to an <st>IPAddress</st> structure that will be filled in.</param>

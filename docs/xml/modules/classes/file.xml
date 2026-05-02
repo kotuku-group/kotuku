@@ -25,12 +25,14 @@
       <name>Activate</name>
       <comment>Opens the file.  Performed automatically if <code>NEW</code>, <code>READ</code> or <code>WRITE</code> flags were specified on initialisation.</comment>
       <prototype>ERR acActivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acActivate()</tiriPrototype>
     </action>
 
     <action>
       <name>DataFeed</name>
       <comment>Data can be streamed to any file as a method of writing content.</comment>
       <prototype>ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, APTR Buffer, INT Size)</prototype>
+      <tiriPrototype>err = Object.acDataFeed(Object:obj, Datatype:DATA, Buffer:str)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Object">Must refer to the unique ID of the object that you represent. If you do not represent an object, set this parameter to the current task ID.</param>
         <param type="DATA" name="Datatype" lookup="DATA">The type of data being sent.</param>
@@ -46,6 +48,7 @@
       <name>Init</name>
       <comment>Initialises a file.</comment>
       <prototype>ERR InitObject(*Object)</prototype>
+      <tiriPrototype>err = Object.init()</tiriPrototype>
       <description>
 <p>This action will prepare a file or folder at the given <fl>Path</fl> for use.</p>
 <p>To create a new file from scratch, specify the <code>NEW</code> flag.  This will overwrite any file that exists at the target path.</p>
@@ -69,12 +72,14 @@
       <name>Query</name>
       <comment>Read a file's meta information from source.</comment>
       <prototype>ERR acQuery(*Object)</prototype>
+      <tiriPrototype>err = Object.acQuery()</tiriPrototype>
     </action>
 
     <action>
       <name>Read</name>
       <comment>Reads data from a file.</comment>
       <prototype>ERR acRead(*Object, APTR Buffer, INT Length, INT *Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acRead(Buffer:str, Length:num)</tiriPrototype>
       <input>
         <param type="APTR" name="Buffer">Points a buffer that will receive the data.</param>
         <param type="INT" name="Length">The total number of bytes to read from the object.  This value cannot exceed the size of the Buffer.</param>
@@ -100,6 +105,7 @@
       <name>Rename</name>
       <comment>Changes the name of a file.</comment>
       <prototype>ERR acRename(*Object, CSTRING Name)</prototype>
+      <tiriPrototype>err = Object.acRename(Name:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Name">The new name for the object.</param>
       </input>
@@ -108,13 +114,15 @@
     <action>
       <name>Reset</name>
       <comment>If the file represents a folder, the file list index is reset by this action.</comment>
-      <prototype>ERR acRefresh(*Object)</prototype>
+      <prototype>ERR acReset(*Object)</prototype>
+      <tiriPrototype>err = Object.acReset()</tiriPrototype>
     </action>
 
     <action>
       <name>Seek</name>
       <comment>Seeks to a new read/write position within a file.</comment>
       <prototype>ERR acSeek(*Object, DOUBLE Offset, INT Position)</prototype>
+      <tiriPrototype>err = Object.acSeek(Offset:num, Position:SEEK)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="Offset">The desired offset to seek to, relative to the Position parameter.</param>
         <param type="POS" name="Position">The position that defines the starting point for Offset.</param>
@@ -125,6 +133,7 @@
       <name>Write</name>
       <comment>Writes data to a file.</comment>
       <prototype>ERR acWrite(*Object, APTR Buffer, INT Length, INT Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acWrite(Buffer:str, Length:num)</tiriPrototype>
       <input>
         <param type="APTR" name="Buffer">A buffer containing the data that will be written to the object.</param>
         <param type="INT" name="Length">The total number of bytes to write to the object.</param>
@@ -152,6 +161,7 @@
       <name>BufferContent</name>
       <comment>Reads all file content into a local memory buffer.</comment>
       <prototype>ERR fl::BufferContent(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = BufferContent()</tiriPrototype>
       <description>
 <p>File content may be buffered at any time by calling the BufferContent method.  This will allocate a buffer that matches the current file size and the file's content will be read into that buffer.  The <code>BUFFER</code> flag is set in the file object and a pointer to the content is referenced in the file's <fl>Buffer</fl> field.  Standard file operations such as read, write and seek have the same effect when a file is in buffer mode.</p>
 <p>Once a file has been buffered, the original file handle and any locks on that file are returned to the system. Physical operations on the file object such as delete, rename and attribute settings no longer have meaning when applied to a buffered file.  It is not possible to drop the buffer and return the file object to its original state once buffering has been enabled.</p>
@@ -167,6 +177,7 @@
       <name>Copy</name>
       <comment>Copies the data of a file to another location.</comment>
       <prototype>ERR fl::Copy(OBJECTPTR Object, CSTRING Dest, FUNCTION * Callback)</prototype>
+      <tiriPrototype>err = Copy(Dest:str, Callback:func)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Dest">The destination file path for the copy operation.</param>
         <param type="FUNCTION *" name="Callback">Optional callback for receiving feedback during the operation.</param>
@@ -194,6 +205,7 @@
       <name>Delete</name>
       <comment>Deletes a file from its source location.</comment>
       <prototype>ERR fl::Delete(OBJECTPTR Object, FUNCTION * Callback)</prototype>
+      <tiriPrototype>err = Delete(Callback:func)</tiriPrototype>
       <input>
         <param type="FUNCTION *" name="Callback">Optional callback for receiving feedback during the operation.</param>
       </input>
@@ -216,6 +228,7 @@
       <name>Move</name>
       <comment>Moves a file to a new location.</comment>
       <prototype>ERR fl::Move(OBJECTPTR Object, CSTRING Dest, FUNCTION * Callback)</prototype>
+      <tiriPrototype>err = Move(Dest:str, Callback:func)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Dest">The desired path for the file.</param>
         <param type="FUNCTION *" name="Callback">Optional callback for receiving feedback during the operation.</param>
@@ -237,6 +250,7 @@
       <name>Next</name>
       <comment>Retrieve meta information describing the next indexed file in the folder list.</comment>
       <prototype>ERR fl::Next(OBJECTPTR Object, objFile ** File)</prototype>
+      <tiriPrototype>err, File:obj = Next()</tiriPrototype>
       <input>
         <param type="objFile **" name="File">A pointer to a new File object will be returned in this parameter if the call is successful.</param>
       </input>
@@ -258,6 +272,7 @@
       <name>ReadLine</name>
       <comment>Reads the next line from the file.</comment>
       <prototype>ERR fl::ReadLine(OBJECTPTR Object, STRING * Result)</prototype>
+      <tiriPrototype>err, Result:str = ReadLine()</tiriPrototype>
       <input>
         <param type="STRING *" name="Result">The resulting string is returned in this parameter.</param>
       </input>
@@ -280,6 +295,7 @@
       <name>SetDate</name>
       <comment>Sets the date on a file.</comment>
       <prototype>ERR fl::SetDate(OBJECTPTR Object, INT Year, INT Month, INT Day, INT Hour, INT Minute, INT Second, FDT Type)</prototype>
+      <tiriPrototype>err = SetDate(Year:num, Month:num, Day:num, Hour:num, Minute:num, Second:num, Type:num)</tiriPrototype>
       <input>
         <param type="INT" name="Year">Year (-ve for BC, +ve for AD).</param>
         <param type="INT" name="Month">Month (1 - 12)</param>
@@ -308,6 +324,7 @@
       <name>StartStream</name>
       <comment>Starts streaming data from a file source.</comment>
       <prototype>ERR fl::StartStream(OBJECTPTR Object, OBJECTID Subscriber, FL Flags, INT Length)</prototype>
+      <tiriPrototype>err = StartStream(Subscriber:obj, Flags:num, Length:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Subscriber">Reference to an object that will receive streamed data notifications.</param>
         <param type="FL" name="Flags" lookup="FL">Use <code>READ</code> for incoming data, <code>WRITE</code> for outgoing data.</param>
@@ -332,6 +349,7 @@
       <name>StopStream</name>
       <comment>Stops streaming data from a file source.</comment>
       <prototype>ERR fl::StopStream(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = StopStream()</tiriPrototype>
       <description>
 <p>This method terminates data streaming from a file (instantiated by the <method>StartStream</method> method).  Any resources related to the streaming process will be deallocated.</p>
       </description>
@@ -346,6 +364,7 @@
       <name>Watch</name>
       <comment>Monitors files and folders for file system events.</comment>
       <prototype>ERR fl::Watch(OBJECTPTR Object, FUNCTION * Callback, MFF Flags)</prototype>
+      <tiriPrototype>err = Watch(Callback:func, Flags:num)</tiriPrototype>
       <input>
         <param type="FUNCTION *" name="Callback">The routine that will be called when a file change is triggered by the system.</param>
         <param type="MFF" name="Flags" lookup="MFF">Filter events to those indicated in these flags.</param>

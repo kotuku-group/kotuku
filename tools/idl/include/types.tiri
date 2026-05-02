@@ -29,43 +29,43 @@ local rx_fptr_type       = <{ regex.new([[^fptr\((.+)\)$]]) }>
 -- Use cType() to perform conversion and don't access glTypes directly.
 
 global glTypes = {
-   arraysize  = { fd='FD_INT|FD_ARRAYSIZE',   c_type='int', doc_type='INT' },
-   bufsize    = { fd='FD_INT|FD_BUFSIZE',     c_type='int', doc_type='INT' },
-   char       = { fd='FD_BYTE',               c_type='int8_t', doc_type='INT8' },
-   cid        = { fd='FD_INT|FD_UNSIGNED',    c_type='CLASSID' },
-   cptr       = { fd='FD_PTR',                c_type='const void *' },
-   cstr       = { fd='FD_STR',                c_type='CSTRING' },
-   double     = { fd='FD_DOUBLE',             c_type='double', doc_type='DOUBLE' },
-   eid        = { fd='FD_INT',                c_type='EVENTID' },
-   error      = { fd='FD_INT|FD_ERROR',       c_type='ERR' },
-   ext        = { fd='FD_OBJECTPTR',          c_type='OBJECTPTR' },
-   fid        = { fd='FD_INT64',              c_type='FIELD' },
-   flags      = { fd='FD_INT',                c_type='int', doc_type='INT' },
-   float      = { fd='FD_FLOAT',              c_type='float', doc_type='FLOAT' },
-   func       = { fd='FD_FUNCTION',           c_type='FUNCTION' },
-   hhandle    = { fd='FD_PTR',                c_type='HOSTHANDLE' },
-   int        = { fd='FD_INT',                c_type='int', doc_type='INT' },
-   int32      = { fd='FD_INT',                c_type='int32_t', doc_type='INT' },
-   large      = { fd='FD_INT64',              c_type='int64_t', doc_type='INT64' },
-   maxint     = { fd='FD_INT64',              c_type='MAXINT' },
-   mem        = { fd='FD_INT',                c_type='MEMORYID' },
-   obj        = { fd='FD_OBJECTPTR',          c_type='OBJECTPTR' },
-   oid        = { fd='FD_OBJECTID',           c_type='OBJECTID' },
-   printf     = { fd='FD_TAGS',               c_type='...' },
-   ptr        = { fd='FD_PTR',                c_type='APTR' },
-   resource   = { fd='FD_STRUCT|FD_RESOURCE', c_type='APTR' },
-   short      = { fd='FD_WORD',               c_type='int16_t', doc_type='INT16' },
-   strview    = { fd='FD_STR',                c_type='std::string_view &', cpp_type='const std::string_view &' }, -- For API calls only
-   str        = { fd='FD_STR',                c_type='STRING', cpp_type='std::string' },
-   struct     = { fd='FD_STRUCT',             c_type='APTR' },
-   structsize = { fd='FD_INT|FD_BUFSIZE',     c_type='int', doc_type='INT' },
-   tags       = { fd='FD_TAGS',               c_type='...' },
-   uchar      = { fd='FD_BYTE',               c_type='uint8_t', doc_type='UINT8' },
-   uint       = { fd='FD_INT|FD_UNSIGNED',    c_type='uint32_t', doc_type='UINT' },
-   ushort     = { fd='FD_WORD',               c_type='uint16_t', doc_type='UINT16' },
-   va_list    = { fd='FD_PTR',                c_type='va_list' },
-   void       = { fd='FD_VOID',               c_type='void' },
-   vtags      = { fd='FD_VARTAGS',            c_type='...' }
+   arraysize  = { fd='FD_INT|FD_ARRAYSIZE',   t_type='num', c_type='int', doc_type='INT' },
+   bufsize    = { fd='FD_INT|FD_BUFSIZE',     t_type='num', c_type='int', doc_type='INT' },
+   char       = { fd='FD_BYTE',               t_type='num', c_type='int8_t', doc_type='INT8' },
+   cid        = { fd='FD_INT|FD_UNSIGNED',    t_type='num', c_type='CLASSID' },
+   cptr       = { fd='FD_PTR',                t_type='any', c_type='const void *' },
+   cstr       = { fd='FD_STR',                t_type='str', c_type='CSTRING' },
+   double     = { fd='FD_DOUBLE',             t_type='num', c_type='double', doc_type='DOUBLE' },
+   eid        = { fd='FD_INT',                t_type='num', c_type='EVENTID' },
+   error      = { fd='FD_INT|FD_ERROR',       t_type='num', c_type='ERR' },
+   ext        = { fd='FD_OBJECTPTR',          t_type='obj', c_type='OBJECTPTR' },
+   fid        = { fd='FD_INT64',              t_type='num', c_type='FIELD' },
+   flags      = { fd='FD_INT',                t_type='num', c_type='int', doc_type='INT' },
+   float      = { fd='FD_FLOAT',              t_type='num', c_type='float', doc_type='FLOAT' },
+   func       = { fd='FD_FUNCTION',           t_type='func', c_type='FUNCTION' },
+   hhandle    = { fd='FD_PTR',                t_type='any', c_type='HOSTHANDLE' },
+   int        = { fd='FD_INT',                t_type='num', c_type='int', doc_type='INT' },
+   int32      = { fd='FD_INT',                t_type='num', c_type='int32_t', doc_type='INT' },
+   large      = { fd='FD_INT64',              t_type='num', c_type='int64_t', doc_type='INT64' },
+   maxint     = { fd='FD_INT64',              t_type='num', c_type='MAXINT' },
+   mem        = { fd='FD_INT',                t_type='num', c_type='MEMORYID' },
+   obj        = { fd='FD_OBJECTPTR',          t_type='obj', c_type='OBJECTPTR' },
+   oid        = { fd='FD_OBJECTID',           t_type='obj', c_type='OBJECTID' },
+   printf     = { fd='FD_TAGS',               t_type=nil, c_type='...' },
+   ptr        = { fd='FD_PTR',                t_type='any', c_type='APTR' },
+   resource   = { fd='FD_STRUCT|FD_RESOURCE', t_type='any', c_type='APTR' },
+   short      = { fd='FD_WORD',               t_type='num', c_type='int16_t', doc_type='INT16' },
+   strview    = { fd='FD_STR',                t_type='str', c_type='std::string_view &', cpp_type='const std::string_view &' }, -- For API calls only
+   str        = { fd='FD_STR',                t_type='str', c_type='STRING', cpp_type='std::string' },
+   struct     = { fd='FD_STRUCT',             t_type='any', c_type='APTR' },
+   structsize = { fd='FD_INT|FD_BUFSIZE',     t_type='num', c_type='int', doc_type='INT' },
+   tags       = { fd='FD_TAGS',               t_type=nil, c_type='...' },
+   uchar      = { fd='FD_BYTE',               t_type='num', c_type='uint8_t', doc_type='UINT8' },
+   uint       = { fd='FD_INT|FD_UNSIGNED',    t_type='num', c_type='uint32_t', doc_type='UINT' },
+   ushort     = { fd='FD_WORD',               t_type='num', c_type='uint16_t', doc_type='UINT16' },
+   va_list    = { fd='FD_PTR',                t_type='any', c_type='va_list' },
+   void       = { fd='FD_VOID',               t_type=nil, c_type='void' },
+   vtags      = { fd='FD_VARTAGS',            t_type=nil, c_type='...' }
 }
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -74,89 +74,89 @@ global glTypes = {
 global function getFieldType(Def:table, Type:num, CustomName:str, Option:any)
    local result
 
-   if (Type & FD_CUSTOM)?? then
+   if Type has FD_CUSTOM then
       if CustomName?? then
          Def.type = CustomName
       else
          Def.type = 'APTR'
       end
-   elseif Type & FD_ARRAY != 0 then
+   elseif Type has FD_ARRAY then
       -- All arrays are pointers, with additional information indicating the type of values in the array.
 
-      if Type & FD_CPP != 0 then
-         if Type & FD_BYTE != 0 then
+      if Type has FD_CPP then
+         if Type has FD_BYTE then
             Def.type = 'kt::vector<int8_t>'
-         elseif Type & FD_WORD != 0 then
+         elseif Type has FD_WORD then
             Def.type = 'kt::vector<int16_t>'
-         elseif Type & FD_INT != 0 then
+         elseif Type has FD_INT then
             Def.type = 'kt::vector<int>'
-         elseif Type & FD_FLOAT != 0 then
+         elseif Type has FD_FLOAT then
             Def.type = 'kt::vector<float>'
-         elseif Type & FD_DOUBLE != 0 then
+         elseif Type has FD_DOUBLE then
             Def.type = 'kt::vector<double>'
-         elseif Type & FD_STRING != 0 then
+         elseif Type has FD_STRING then
             Def.type = 'kt::vector<std::string>'
-         elseif Type & FD_POINTER != 0 then
+         elseif Type has FD_POINTER then
             Def.type = 'kt::vector<APTR>'
-         elseif Type & FD_STRUCT != 0 then
+         elseif Type has FD_STRUCT then
             Def.type = 'kt::vector<STRUCT>'
          else
             Def.type = 'kt::vector<>'
          end
       else
-         if Type & FD_BYTE != 0 then
+         if Type has FD_BYTE then
             Def.type = 'int8_t []'
             Def.doc_type = 'INT8 []'
-         elseif Type & FD_WORD != 0 then
+         elseif Type has FD_WORD then
             Def.type = 'int16_t []'
             Def.doc_type = 'INT16 []'
-         elseif Type & FD_INT != 0 then
+         elseif Type has FD_INT then
             Def.type = 'int []'
             Def.doc_type = 'INT []'
-         elseif Type & FD_FLOAT != 0 then
+         elseif Type has FD_FLOAT then
             Def.type = 'float []'
             Def.doc_type = 'FLOAT []'
-         elseif Type & FD_DOUBLE != 0 then
+         elseif Type has FD_DOUBLE then
             Def.type = 'double []'
             Def.doc_type = 'DOUBLE []'
-         elseif Type & FD_STRING != 0 then
+         elseif Type has FD_STRING then
             Def.type = 'STRING []'
-         elseif Type & FD_POINTER != 0 then
+         elseif Type has FD_POINTER then
             Def.type = 'APTR []'
-         elseif Type & FD_STRUCT != 0 then
+         elseif Type has FD_STRUCT then
             Def.type = 'STRUCT []'
          else
             Def.type = 'ARRAY'
          end
       end
-   elseif Type & FD_STRING != 0 then
+   elseif Type has FD_STRING then
       Def.type = 'STRING'
-   elseif Type & FD_FUNCTION != 0 then
+   elseif Type has FD_FUNCTION then
       Def.type = 'FUNCTION'
-   elseif Type & FD_POINTER != 0 then
+   elseif Type has FD_POINTER then
       ptr = 0
-      if Type & FD_INT != 0 then
+      if Type has FD_INT then
          result = 'INT'
          ptr++
-      elseif Type & FD_INT64 != 0 then
+      elseif Type has FD_INT64 then
          result = 'INT64'
          ptr++
-      elseif Type & FD_DOUBLE != 0 then
+      elseif Type has FD_DOUBLE then
          result = 'DOUBLE'
          ptr++
-      elseif Type & (FD_OBJECT | FD_LOCAL) != 0 then
+      elseif Type has FD_OBJECT or Type has FD_LOCAL then
          Def.type = 'OBJECTPTR'
          return
-      elseif Type & FD_STRING != 0 then
+      elseif Type has FD_STRING then
          Def.type = 'STRING'
          return
-      elseif Type & FD_RGB != 0 then
+      elseif Type has FD_RGB then
          result = 'RGB'
          ptr++
-      elseif Type & FD_FUNCTION != 0 then
+      elseif Type has FD_FUNCTION then
          result = 'FUNCTION'
          ptr++
-      elseif Type & FD_STRUCT != 0 then
+      elseif Type has FD_STRUCT then
          if Option?? then -- TODO: We need a way to convert the Option number to a string address...
             result = 'APTR'
          else
@@ -172,23 +172,23 @@ global function getFieldType(Def:table, Type:num, CustomName:str, Option:any)
       else
          Def.type = result
       end
-   elseif Type & FD_RGB != 0 then
+   elseif Type has FD_RGB then
       Def.type = 'RGB8'
-   elseif Type & FD_INT != 0 then
-      if Type & FD_OBJECT != 0 then
+   elseif Type has FD_INT then
+      if Type has FD_OBJECT then
          Def.type = 'OBJECTID'
       else
-         Def.type = 'int'
+         Def.type     = 'int'
          Def.doc_type = 'INT'
       end
-   elseif Type & FD_INT64 != 0 then
-      Def.type = 'int64_t'
+   elseif Type has FD_INT64 then
+      Def.type     = 'int64_t'
       Def.doc_type = 'INT64'
-   elseif Type & FD_DOUBLE != 0 then
-      Def.type = 'double'
+   elseif Type has FD_DOUBLE then
+      Def.type     = 'double'
       Def.doc_type = 'DOUBLE'
-   elseif Type & FD_FLOAT != 0 then
-      Def.type = 'float'
+   elseif Type has FD_FLOAT then
+      Def.type     = 'float'
       Def.doc_type = 'FLOAT'
    else
       print(string.format('Failed to identify field type $%.8x for field "%s"', Type, CustomName))
@@ -197,7 +197,7 @@ global function getFieldType(Def:table, Type:num, CustomName:str, Option:any)
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Returns { cpp, type, fullType, docType, defType, sizeof, ref, lookup, bits, name, comment, basicType, allocated, result_value }
+-- Returns { cpp, type, fullType, docType, defType, sizeof, ref, lookup, bits, name, comment, basicType, allocated, resultValue }
 
 global function cType(Field:table, Origin:str):table
    assert(Field.type, "Field definition incorrect, missing 'type' value for '" .. tostring(Origin) .. "'")
@@ -263,7 +263,12 @@ global function cType(Field:table, Origin:str):table
          Field.cpp  = true
          Field.type = cpp_inner
          Field = cType(Field, Origin)
-         Field.fullType = { fd='FD_CPP|' .. Field.fullType.fd, c_type=Field.fullType.c_type, doc_type=Field.fullType.doc_type }
+         Field.fullType = {
+            fd       = 'FD_CPP|' .. Field.fullType.fd,
+            c_type   = Field.fullType.c_type,
+            doc_type = Field.fullType.doc_type,
+            t_type   = Field.fullType.t_type
+         }
          return Field
       end
    end
@@ -297,16 +302,16 @@ global function cType(Field:table, Origin:str):table
 
          if ptr_struct then
             Field.type = Field.type .. ' *'
-            Field.fullType = { fd='FD_PTR|FD_STRUCT', c_type='APTR' }
+            Field.fullType = { fd='FD_PTR|FD_STRUCT', c_type='APTR', t_type='any' }
          elseif Field.isFunction then
             if Field.isArray then
-               Field.fullType = { fd='FD_STRUCT', c_type='APTR' }
+               Field.fullType = { fd='FD_STRUCT', c_type='APTR', t_type='any' }
             else
                Field.type = Field.type .. ' *'
-               Field.fullType = { fd='FD_PTR|FD_STRUCT', c_type='APTR' }
+               Field.fullType = { fd='FD_PTR|FD_STRUCT', c_type='APTR', t_type='any' }
             end
          else
-            Field.fullType = { fd='FD_PTR|FD_STRUCT', c_type='APTR' }
+            Field.fullType = { fd='FD_PTR|FD_STRUCT', c_type='APTR', t_type='any' }
          end
 
          if const?? then
@@ -336,16 +341,16 @@ global function cType(Field:table, Origin:str):table
 
          if ptr_struct then
             Field.type ..= ' *'
-            Field.fullType = { fd='FD_PTR|FD_STRUCT|FD_RESOURCE', c_type='APTR' }
+            Field.fullType = { fd='FD_PTR|FD_STRUCT|FD_RESOURCE', c_type='APTR', t_type='any' }
          elseif Field.isFunction then
             if Field.isArray then
-               Field.fullType = { fd='FD_STRUCT|FD_RESOURCE', c_type='APTR' }
+               Field.fullType = { fd='FD_STRUCT|FD_RESOURCE', c_type='APTR', t_type='any' }
             else
                Field.type ..= ' *'
-               Field.fullType = { fd='FD_PTR|FD_STRUCT|FD_RESOURCE', c_type='APTR' }
+               Field.fullType = { fd='FD_PTR|FD_STRUCT|FD_RESOURCE', c_type='APTR', t_type='any' }
             end
          else
-            Field.fullType = { fd='FD_PTR|FD_STRUCT|FD_RESOURCE', c_type='APTR' }
+            Field.fullType = { fd='FD_PTR|FD_STRUCT|FD_RESOURCE', c_type='APTR', t_type='any' }
          end
 
          if const?? then
@@ -456,7 +461,8 @@ global function cType(Field:table, Origin:str):table
             Field.type = 'char'
          end
          Field.arraySize = tonumber(count)
-         Field.fullType  = glTypes.char
+         Field.fullType  = { fd=glTypes.char.fd, c_type=glTypes.char.c_type, doc_type=glTypes.char.doc_type,
+            t_type='array' }
          return Field
       end
    end
@@ -470,7 +476,8 @@ global function cType(Field:table, Origin:str):table
             Field.type = 'int'
          end
          Field.arraySize = tonumber(count)
-         Field.fullType  = glTypes.int
+         Field.fullType  = { fd=glTypes.int.fd, c_type=glTypes.int.c_type, doc_type=glTypes.int.doc_type,
+            t_type='array' }
          return Field
       end
    end
@@ -480,7 +487,8 @@ global function cType(Field:table, Origin:str):table
       if count then
          Field.type      = 'double'
          Field.arraySize = tonumber(count)
-         Field.fullType  = glTypes.double
+         Field.fullType  = { fd=glTypes.double.fd, c_type=glTypes.double.c_type, doc_type=glTypes.double.doc_type,
+            t_type='array' }
          return Field
       end
    end
@@ -490,7 +498,8 @@ global function cType(Field:table, Origin:str):table
       if count then
          Field.type      = 'float'
          Field.arraySize = tonumber(count)
-         Field.fullType  = glTypes.float
+         Field.fullType  = { fd=glTypes.float.fd, c_type=glTypes.float.c_type, doc_type=glTypes.float.doc_type,
+            t_type='array' }
          return Field
       end
    end
@@ -507,9 +516,9 @@ global function cType(Field:table, Origin:str):table
          end
 
          if ptr_type is 'func' then
-            Field.fullType = { fd='FD_FUNCTIONPTR', c_type='FUNCTION *' }
+            Field.fullType = { fd='FD_FUNCTIONPTR', c_type='FUNCTION *', t_type='func' }
          else
-            Field.fullType = { fd='FD_PTR', c_type='APTR' }
+            Field.fullType = { fd='FD_PTR', c_type='APTR', t_type='any' }
             if ptr_ctype.fullType.doc_type then
                Field.fullType.doc_type = ptr_ctype.fullType.doc_type .. ' *'
             end
@@ -524,7 +533,7 @@ global function cType(Field:table, Origin:str):table
       if buf_type then
          Field.type = buf_type
          Field = cType(Field, Origin)
-         Field.fullType = { fd='FD_BUFFER|' .. Field.fullType.fd, c_type='APTR' }
+         Field.fullType = { fd='FD_BUFFER|' .. Field.fullType.fd, c_type='APTR', t_type='any' }
          return Field
       end
    end
@@ -549,7 +558,8 @@ global function cType(Field:table, Origin:str):table
             else
                Field.type ..= ' *'
             end
-            Field.fullType = { fd='FD_ARRAY|' .. Field.fullType.fd, c_type=Field.fullType.c_type, doc_type=Field.fullType.doc_type  }
+            Field.fullType = { fd='FD_ARRAY|' .. Field.fullType.fd, c_type=Field.fullType.c_type,
+               doc_type=Field.fullType.doc_type, t_type='array' }
          else
             Field.type = array_type
             Field = cType(Field, Origin)
@@ -571,7 +581,8 @@ global function cType(Field:table, Origin:str):table
          else
             Field.type ..= ' *'
          end
-         Field.fullType = { fd='FD_ARRAY|' .. Field.fullType.fd, c_type=Field.fullType.c_type, doc_type=Field.fullType.doc_type }
+         Field.fullType = { fd='FD_ARRAY|' .. Field.fullType.fd, c_type=Field.fullType.c_type,
+            doc_type=Field.fullType.doc_type, t_type='array' }
          return Field
       end
    end
@@ -599,7 +610,7 @@ global function cType(Field:table, Origin:str):table
          end
 
          Field.isFunctionPtr = true
-         Field.fullType = glTypes.ptr
+         Field.fullType = { fd=glTypes.ptr.fd, c_type=glTypes.ptr.c_type, t_type='func' }
          return Field
       end
    end

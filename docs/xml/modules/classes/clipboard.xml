@@ -28,12 +28,14 @@
       <name>Clear</name>
       <comment>Destroys all cached data that is stored in the clipboard.</comment>
       <prototype>ERR acClear(*Object)</prototype>
+      <tiriPrototype>err = Object.acClear()</tiriPrototype>
     </action>
 
     <action>
       <name>DataFeed</name>
       <comment>This action can be used to place data in a clipboard.</comment>
       <prototype>ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, APTR Buffer, INT Size)</prototype>
+      <tiriPrototype>err = Object.acDataFeed(Object:obj, Datatype:DATA, Buffer:str)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Object">Must refer to the unique ID of the object that you represent. If you do not represent an object, set this parameter to the current task ID.</param>
         <param type="DATA" name="Datatype" lookup="DATA">The type of data being sent.</param>
@@ -52,6 +54,7 @@
       <name>AddFile</name>
       <comment>Add files to the clipboard.</comment>
       <prototype>ERR clip::AddFile(OBJECTPTR Object, CLIPTYPE Datatype, CSTRING Path, CEF Flags)</prototype>
+      <tiriPrototype>err = AddFile(Datatype:num, Path:str, Flags:num)</tiriPrototype>
       <input>
         <param type="CLIPTYPE" name="Datatype" lookup="CLIPTYPE">Set this argument to indicate the type of data you are copying to the clipboard.</param>
         <param type="CSTRING" name="Path">The path of the file to add.</param>
@@ -75,6 +78,7 @@
       <name>AddObjects</name>
       <comment>Extract data from objects and add it all to the clipboard.</comment>
       <prototype>ERR clip::AddObjects(OBJECTPTR Object, CLIPTYPE Datatype, OBJECTID * Objects, CEF Flags)</prototype>
+      <tiriPrototype>err = AddObjects(Datatype:num, Objects:any, Flags:num)</tiriPrototype>
       <input>
         <param type="CLIPTYPE" name="Datatype" lookup="CLIPTYPE">The type of data representing the objects, or NULL for automatic recognition.</param>
         <param type="OBJECTID *" name="Objects">Array of object ID's to add to the clipboard.</param>
@@ -96,6 +100,7 @@
       <name>AddText</name>
       <comment>Adds a block of text to the clipboard.</comment>
       <prototype>ERR clip::AddText(OBJECTPTR Object, CSTRING String)</prototype>
+      <tiriPrototype>err = AddText(String:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="String">The text to add to the clipboard.</param>
       </input>
@@ -113,6 +118,7 @@
       <name>GetFiles</name>
       <comment>Retrieve the most recently clipped data as a list of files.</comment>
       <prototype>ERR clip::GetFiles(OBJECTPTR Object, CLIPTYPE Filter, INT Index, CLIPTYPE * Datatype, CSTRING ** Files, CEF * Flags)</prototype>
+      <tiriPrototype>err, Datatype:num, Files:array, Flags:num = GetFiles(Filter:num, Index:num)</tiriPrototype>
       <input>
         <param type="CLIPTYPE" name="Filter" lookup="CLIPTYPE">Filter down to the specified data type.  This parameter will be updated to reflect the retrieved data type when the method returns.  Set to zero to disable.</param>
         <param type="INT" name="Index">If the <code>Filter</code> parameter is zero and clipboard history is enabled, this parameter refers to a historical clipboard item, with zero being the most recent.</param>
@@ -138,6 +144,7 @@
       <name>Remove</name>
       <comment>Remove items from the clipboard.</comment>
       <prototype>ERR clip::Remove(OBJECTPTR Object, CLIPTYPE Datatype)</prototype>
+      <tiriPrototype>err = Remove(Datatype:num)</tiriPrototype>
       <input>
         <param type="CLIPTYPE" name="Datatype" lookup="CLIPTYPE">The datatype(s) that will be deleted (datatypes may be logically-or'd together).</param>
       </input>

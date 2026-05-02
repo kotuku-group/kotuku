@@ -26,6 +26,7 @@
       <name>Query</name>
       <comment>Get the current controller state.</comment>
       <prototype>ERR acQuery(*Object)</prototype>
+      <tiriPrototype>err = Object.acQuery()</tiriPrototype>
     </action>
 
   </actions>

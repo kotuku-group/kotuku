@@ -44,6 +44,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <name>Flush</name>
       <comment>Flushes all pending actions.</comment>
       <prototype>ERR acFlush(*Object)</prototype>
+      <tiriPrototype>err = Object.acFlush()</tiriPrototype>
     </action>
 
   </actions>
@@ -53,6 +54,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <name>CompressBuffer</name>
       <comment>Compresses a plain memory area into an empty buffer.</comment>
       <prototype>ERR cmp::CompressBuffer(OBJECTPTR Object, APTR Input, INT InputSize, APTR Output, INT OutputSize, INT * Result)</prototype>
+      <tiriPrototype>err, Result:num = CompressBuffer(Input:any, InputSize:num, Output:any, OutputSize:num)</tiriPrototype>
       <input>
         <param type="APTR" name="Input">Pointer to the source data.</param>
         <param type="INT" name="InputSize">Byte length of the source data.</param>
@@ -78,6 +80,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <name>CompressFile</name>
       <comment>Add files to a compression object.</comment>
       <prototype>ERR cmp::CompressFile(OBJECTPTR Object, CSTRING Location, CSTRING Path)</prototype>
+      <tiriPrototype>err = CompressFile(Location:str, Path:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Location">The location of the file(s) to add.</param>
         <param type="CSTRING" name="Path">The path that is prefixed to the file name when added to the compression object.  May be <code>NULL</code> for no path.</param>
@@ -100,6 +103,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <name>CompressStream</name>
       <comment>Compresses streamed data into a buffer.</comment>
       <prototype>ERR cmp::CompressStream(OBJECTPTR Object, APTR Input, INT Length, FUNCTION * Callback, APTR Output, INT OutputSize)</prototype>
+      <tiriPrototype>err = CompressStream(Input:any, Length:num, Callback:func, Output:any, OutputSize:num)</tiriPrototype>
       <input>
         <param type="APTR" name="Input">Pointer to the source data.</param>
         <param type="INT" name="Length">Amount of data to compress, in bytes.</param>
@@ -152,6 +156,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <name>CompressStreamEnd</name>
       <comment>Ends the compression of an open stream.</comment>
       <prototype>ERR cmp::CompressStreamEnd(OBJECTPTR Object, FUNCTION * Callback, APTR Output, INT OutputSize)</prototype>
+      <tiriPrototype>err = CompressStreamEnd(Callback:func, Output:any, OutputSize:num)</tiriPrototype>
       <input>
         <param type="FUNCTION *" name="Callback">Refers to a function that will be called for each compressed block of data.</param>
         <param type="APTR" name="Output">Optional pointer to a buffer that will receive the compressed data.  If not set, the compression object will use its own buffer.</param>
@@ -172,6 +177,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <name>CompressStreamStart</name>
       <comment>Initialises a new compression stream.</comment>
       <prototype>ERR cmp::CompressStreamStart(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = CompressStreamStart()</tiriPrototype>
       <description>
 <p>The level of compression is determined by the <fl>CompressionLevel</fl> field value.</p>
       </description>
@@ -185,6 +191,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <name>DecompressBuffer</name>
       <comment>Decompresses data originating from the <method>CompressBuffer</method> method.</comment>
       <prototype>ERR cmp::DecompressBuffer(OBJECTPTR Object, APTR Input, APTR Output, INT OutputSize, INT * Result)</prototype>
+      <tiriPrototype>err, Result:num = DecompressBuffer(Input:any, Output:any, OutputSize:num)</tiriPrototype>
       <input>
         <param type="APTR" name="Input">Pointer to the compressed data.</param>
         <param type="APTR" name="Output">Pointer to the decompression buffer.</param>
@@ -205,6 +212,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <name>DecompressFile</name>
       <comment>Extracts one or more files from a compression object.</comment>
       <prototype>ERR cmp::DecompressFile(OBJECTPTR Object, CSTRING Path, CSTRING Dest, INT Flags)</prototype>
+      <tiriPrototype>err = DecompressFile(Path:str, Dest:str, Flags:num)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Path">The full path name of the file to extract from the archive.</param>
         <param type="CSTRING" name="Dest">The destination to extract the file to.</param>
@@ -233,6 +241,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <name>DecompressObject</name>
       <comment>Decompresses one file to a target object.</comment>
       <prototype>ERR cmp::DecompressObject(OBJECTPTR Object, CSTRING Path, OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = DecompressObject(Path:str, Object:obj)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Path">The location of the source file within the archive.  If a wildcard is used, the first matching file is extracted.</param>
         <param type="OBJECTPTR" name="Object">The target object for the decompressed source data.</param>
@@ -256,6 +265,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <name>DecompressStream</name>
       <comment>Decompresses streamed data to an output buffer.</comment>
       <prototype>ERR cmp::DecompressStream(OBJECTPTR Object, APTR Input, INT Length, FUNCTION * Callback, APTR Output, INT OutputSize)</prototype>
+      <tiriPrototype>err = DecompressStream(Input:any, Length:num, Callback:func, Output:any, OutputSize:num)</tiriPrototype>
       <input>
         <param type="APTR" name="Input">Pointer to data to decompress.</param>
         <param type="INT" name="Length">Amount of data to decompress from the Input parameter.</param>
@@ -282,6 +292,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <name>DecompressStreamEnd</name>
       <comment>Must be called at the end of the decompression process.</comment>
       <prototype>ERR cmp::DecompressStreamEnd(OBJECTPTR Object, FUNCTION * Callback)</prototype>
+      <tiriPrototype>err = DecompressStreamEnd(Callback:func)</tiriPrototype>
       <input>
         <param type="FUNCTION *" name="Callback">Refers to a function that will be called for each decompressed block of information.</param>
       </input>
@@ -298,6 +309,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <name>DecompressStreamStart</name>
       <comment>Initialises a new decompression stream.</comment>
       <prototype>ERR cmp::DecompressStreamStart(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = DecompressStreamStart()</tiriPrototype>
       <description>
 <p>Use the DecompressStreamStart method to initialise a new decompression stream.  No parameters are required.</p>
 <p>If a decompression stream is already active at the time that this method is called, all resources associated with that stream will be deallocated so that the new stream can be initiated.</p>
@@ -313,6 +325,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <name>Find</name>
       <comment>Find the first item that matches a given filter.</comment>
       <prototype>ERR cmp::Find(OBJECTPTR Object, CSTRING Path, INT CaseSensitive, INT Wildcard, struct CompressedItem ** Item)</prototype>
+      <tiriPrototype>err, Item:any = Find(Path:str, CaseSensitive:num, Wildcard:num)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Path">Search for a specific item or items, using wildcards.</param>
         <param type="INT" name="CaseSensitive">Set to <code>true</code> if <code>Path</code> comparisons are case-sensitive.</param>
@@ -335,6 +348,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <name>RemoveFile</name>
       <comment>Deletes one or more files from a compression object.</comment>
       <prototype>ERR cmp::RemoveFile(OBJECTPTR Object, CSTRING Path)</prototype>
+      <tiriPrototype>err = RemoveFile(Path:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Path">The full path name of the file to delete from the archive.</param>
       </input>
@@ -353,6 +367,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <name>Scan</name>
       <comment>Scan the archive's index of compressed data.</comment>
       <prototype>ERR cmp::Scan(OBJECTPTR Object, CSTRING Folder, CSTRING Filter, FUNCTION * Callback)</prototype>
+      <tiriPrototype>err = Scan(Folder:str, Filter:str, Callback:func)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Folder">If defined, only items within the specified folder are returned.  Use an empty string for files in the root folder.</param>
         <param type="CSTRING" name="Filter">Search for a specific item or items by name, using wildcards.  If <code>NULL</code> or an empty string, all items will be scanned.</param>

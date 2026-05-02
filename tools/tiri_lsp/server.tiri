@@ -2,7 +2,7 @@
 --
 -- An LSP server for IDE integration with Tiri scripts.
 --
--- Usage: origo lsp_server.tiri port=5007 [options...]
+-- Usage: origo server.tiri port=5007 [options...]
 --
 -- See --help for full usage information.
 
@@ -13,7 +13,7 @@ This server implements the Language Server Protocol over TCP or stdio, allowing 
 and editors to provide features like autocompletion, hover information, and
 diagnostics for Tiri scripts.
 
-Usage: origo lsp_server.tiri [options...]
+Usage: origo server.tiri [options...]
 
 Parameters:
 
@@ -25,11 +25,11 @@ Parameters:
 
 Examples:
 
-  origo lsp_server.tiri port=5007
-  origo lsp_server.tiri port=0
-  origo lsp_server.tiri port=5007 verbose=true
-  origo lsp_server.tiri port=5007 request-log=lsp_debug.log
-  origo lsp_server.tiri config=my_lsp_config.tiri
+  origo server.tiri port=5007
+  origo server.tiri port=0
+  origo server.tiri port=5007 verbose=true
+  origo server.tiri port=5007 request-log=lsp_debug.log
+  origo server.tiri config=my_lsp_config.tiri
 
 Config File Format:
 
@@ -42,7 +42,7 @@ Config File Format:
 
 Testing with netcat/telnet:
 
-  1. Start the server: origo lsp_server.tiri port=5007
+  1. Start the server: origo server.tiri port=5007
   2. Connect: nc localhost 5007
   3. Send initialize request:
      Content-Length: 110
@@ -58,7 +58,7 @@ IDE Integration:
 
    import './lsp_lib'
 
-   local rx_sdk_path = <{ regex.new([[(.+)CMakeLists\.txt]]) }>
+   rx_sdk_path = <{ regex.new([[(.+)CMakeLists\.txt]]) }>
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Resolve the location of the Kotuku SDK and create an 'sdk:' volume.

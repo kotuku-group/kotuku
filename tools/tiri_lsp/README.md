@@ -60,6 +60,13 @@ Context-aware documentation on hover:
 - Module functions (e.g., `mSys.Sleep`, `mNet.AddressToStr`)
 - Links to online documentation
 
+### Signature Help
+
+Parameter hints while typing function calls:
+- Current-document Tiri functions, including signatures and parameter documentation from `@Doc`
+- Built-in function prototypes
+- Kōtuku module functions, object methods, and actions from the XML documentation cache
+
 ### Document Symbols
 
 Outline view showing:
@@ -222,6 +229,7 @@ The cache is automatically rebuilt when source XML files change.
 |`textDocument/didChange`|Document modified|
 |`textDocument/didClose`|Document closed|
 |`textDocument/hover`|Hover information|
+|`textDocument/signatureHelp`|Function and method parameter hints|
 |`textDocument/documentSymbol`|Document outline|
 |`textDocument/foldingRange`|Folding ranges|
 |`textDocument/semanticTokens/full`|Full semantic tokens|

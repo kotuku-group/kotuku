@@ -53,6 +53,7 @@ Lr,Lg,Lb = RGB components of light
       <name>Draw</name>
       <comment>Render the effect to the target bitmap.</comment>
       <prototype>ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)</prototype>
+      <tiriPrototype>err = Object.acDraw(X:num, Y:num, Width:num, Height:num)</tiriPrototype>
       <input>
         <param type="INT" name="X">The X position of the region to be drawn.</param>
         <param type="INT" name="Y">The Y position of the region to be drawn.</param>
@@ -68,6 +69,7 @@ Lr,Lg,Lb = RGB components of light
       <name>SetDistantLight</name>
       <comment>Configure lighting with a distant light source.</comment>
       <prototype>ERR lt::SetDistantLight(OBJECTPTR Object, DOUBLE Azimuth, DOUBLE Elevation)</prototype>
+      <tiriPrototype>err = SetDistantLight(Azimuth:num, Elevation:num)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="Azimuth">Direction angle for the light source on the XY plane (clockwise), in degrees from the X axis.</param>
         <param type="DOUBLE" name="Elevation">Direction angle for the light source from the XY plane towards the Z axis, in degrees.  A positive value points towards the viewer of the content.</param>
@@ -82,6 +84,7 @@ Lr,Lg,Lb = RGB components of light
       <name>SetPointLight</name>
       <comment>Configure lighting with a pointed light source.</comment>
       <prototype>ERR lt::SetPointLight(OBJECTPTR Object, DOUBLE X, DOUBLE Y, DOUBLE Z)</prototype>
+      <tiriPrototype>err = SetPointLight(X:num, Y:num, Z:num)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="X">X location for the light source.</param>
         <param type="DOUBLE" name="Y">Y location for the light source.</param>
@@ -97,6 +100,7 @@ Lr,Lg,Lb = RGB components of light
       <name>SetSpotLight</name>
       <comment>Configure lighting with a spot light source.</comment>
       <prototype>ERR lt::SetSpotLight(OBJECTPTR Object, DOUBLE X, DOUBLE Y, DOUBLE Z, DOUBLE PX, DOUBLE PY, DOUBLE PZ, DOUBLE Exponent, DOUBLE ConeAngle)</prototype>
+      <tiriPrototype>err = SetSpotLight(X:num, Y:num, Z:num, PX:num, PY:num, PZ:num, Exponent:num, ConeAngle:num)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="X">X location for the light source.</param>
         <param type="DOUBLE" name="Y">Y location for the light source.</param>

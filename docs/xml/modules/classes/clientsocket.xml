@@ -24,12 +24,14 @@
       <name>Deactivate</name>
       <comment>Disconnects the socket and changes the <fl>State</fl> to <code>DISCONNECTED</code>.</comment>
       <prototype>ERR acDeactivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acDeactivate()</tiriPrototype>
     </action>
 
     <action>
       <name>Read</name>
       <comment>Read incoming data from a client socket.</comment>
       <prototype>ERR acRead(*Object, APTR Buffer, INT Length, INT *Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acRead(Buffer:str, Length:num)</tiriPrototype>
       <input>
         <param type="APTR" name="Buffer">Points a buffer that will receive the data.</param>
         <param type="INT" name="Length">The total number of bytes to read from the object.  This value cannot exceed the size of the Buffer.</param>
@@ -50,6 +52,7 @@
       <name>Write</name>
       <comment>Writes data to the socket.</comment>
       <prototype>ERR acWrite(*Object, APTR Buffer, INT Length, INT Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acWrite(Buffer:str, Length:num)</tiriPrototype>
       <input>
         <param type="APTR" name="Buffer">A buffer containing the data that will be written to the object.</param>
         <param type="INT" name="Length">The total number of bytes to write to the object.</param>

@@ -24,12 +24,14 @@
       <name>Clear</name>
       <comment>Clears an object's data.</comment>
       <prototype>ERR acClear(*Object)</prototype>
+      <tiriPrototype>err = Object.acClear()</tiriPrototype>
     </action>
 
     <action>
       <name>Flush</name>
       <comment>Flush buffered data from an object.</comment>
       <prototype>ERR acFlush(*Object)</prototype>
+      <tiriPrototype>err = Object.acFlush()</tiriPrototype>
     </action>
 
   </actions>
@@ -39,6 +41,7 @@
       <name>AddCommand</name>
       <comment>Add one or more commands to the end of the path sequence.</comment>
       <prototype>ERR vp::AddCommand(OBJECTPTR Object, struct PathCommand * Commands, INT Size)</prototype>
+      <tiriPrototype>err = AddCommand(Commands:any, Size:num)</tiriPrototype>
       <input>
         <param type="struct PathCommand *" name="Commands">Array of commands to add to the path.</param>
         <param type="INT" name="Size">The size of the <code>Commands</code> buffer, in bytes.</param>
@@ -53,6 +56,7 @@
       <name>GetCommand</name>
       <comment>Retrieve a specific command from the path sequence.</comment>
       <prototype>ERR vp::GetCommand(OBJECTPTR Object, INT Index, struct PathCommand ** Command)</prototype>
+      <tiriPrototype>err, Command:any = GetCommand(Index:num)</tiriPrototype>
       <input>
         <param type="INT" name="Index">The index of the command to retrieve.</param>
         <param type="struct PathCommand **" name="Command">The requested command will be returned in this parameter.</param>
@@ -66,6 +70,7 @@
       <name>RemoveCommand</name>
       <comment>Remove at least one command from the path sequence.</comment>
       <prototype>ERR vp::RemoveCommand(OBJECTPTR Object, INT Index, INT Total)</prototype>
+      <tiriPrototype>err = RemoveCommand(Index:num, Total:num)</tiriPrototype>
       <input>
         <param type="INT" name="Index">The index of the command to remove.</param>
         <param type="INT" name="Total">The total number of commands to remove, starting from the given Index.</param>
@@ -79,6 +84,7 @@
       <name>SetCommand</name>
       <comment>Copies one or more commands into an existing path.</comment>
       <prototype>ERR vp::SetCommand(OBJECTPTR Object, INT Index, struct PathCommand * Command, INT Size)</prototype>
+      <tiriPrototype>err = SetCommand(Index:num, Command:any, Size:num)</tiriPrototype>
       <input>
         <param type="INT" name="Index">The index of the command that is to be set.</param>
         <param type="struct PathCommand *" name="Command">An array of commands to set in the path.</param>
@@ -93,6 +99,7 @@
       <name>SetCommandList</name>
       <comment>The fastest available mechanism for setting a series of path instructions.</comment>
       <prototype>ERR vp::SetCommandList(OBJECTPTR Object, APTR Commands, INT Size)</prototype>
+      <tiriPrototype>err = SetCommandList(Commands:any, Size:num)</tiriPrototype>
       <input>
         <param type="APTR" name="Commands">An array of <st>PathCommand</st> structures.</param>
         <param type="INT" name="Size">The byte size of the <code>Commands</code> buffer.</param>

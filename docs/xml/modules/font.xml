@@ -16,6 +16,7 @@
     <name>CharWidth</name>
     <comment>Returns the width of a character.</comment>
     <prototype>INT fnt::CharWidth(objFont * Font, UINT Char)</prototype>
+    <tiriPrototype>num = CharWidth(Font:obj, Char:num)</tiriPrototype>
     <input>
       <param type="objFont *" name="Font">The font to use for calculating the character width.</param>
       <param type="UINT" name="Char">A unicode character.</param>
@@ -31,6 +32,7 @@
     <name>GetList</name>
     <comment>Returns a list of all available system fonts.</comment>
     <prototype>ERR fnt::GetList(struct FontList ** Result)</prototype>
+    <tiriPrototype>err, Result:any = GetList()</tiriPrototype>
     <input>
       <param type="struct FontList **" name="Result">The font list is returned here.</param>
     </input>
@@ -48,6 +50,7 @@
     <name>RefreshFonts</name>
     <comment>Refreshes the system font list with up-to-date font information.</comment>
     <prototype>ERR fnt::RefreshFonts()</prototype>
+    <tiriPrototype>err = RefreshFonts()</tiriPrototype>
     <description>
 <p>This function scans the <code>fonts:</code> volume and refreshes the font database.</p>
 <p>Refreshing fonts can take an extensive amount of time as each font file needs to be completely analysed for information.  The <code>fonts:fonts.cfg</code> file will be re-written on completion to reflect current font settings.</p>
@@ -62,6 +65,7 @@
     <name>ResolveFamilyName</name>
     <comment>Convert a CSV family string to a single family name.</comment>
     <prototype>ERR fnt::ResolveFamilyName(CSTRING String, CSTRING * Result)</prototype>
+    <tiriPrototype>err, Result:str = ResolveFamilyName(String:str)</tiriPrototype>
     <input>
       <param type="CSTRING" name="String">A CSV family string to resolve.</param>
       <param type="CSTRING *" name="Result">The nominated family name is returned in this parameter.</param>
@@ -83,6 +87,7 @@
     <name>SelectFont</name>
     <comment>Searches for a 'best fitting' font file, based on family name and style.</comment>
     <prototype>ERR fnt::SelectFont(CSTRING Name, CSTRING Style, CSTRING * Path, FMETA * Meta)</prototype>
+    <tiriPrototype>err, Path:str, Meta:num = SelectFont(Name:str, Style:str)</tiriPrototype>
     <input>
       <param type="CSTRING" name="Name">The name of a font face to search for (case insensitive).</param>
       <param type="CSTRING" name="Style">The required style, e.g. Bold or Italic.  Using camel-case for each word is compulsory.</param>
@@ -105,6 +110,7 @@
     <name>StringWidth</name>
     <comment>Returns the pixel width of any given string in relation to a font's settings.</comment>
     <prototype>INT fnt::StringWidth(objFont * Font, CSTRING String, INT Chars)</prototype>
+    <tiriPrototype>num = StringWidth(Font:obj, String:str, Chars:num)</tiriPrototype>
     <input>
       <param type="objFont *" name="Font">An initialised font object.</param>
       <param type="CSTRING" name="String">The string to be calculated.</param>

@@ -31,6 +31,7 @@
     <category>Cursor</category>
     <comment>Returns a lock on the default pointer object.</comment>
     <prototype>objPointer * gfx::AccessPointer()</prototype>
+    <tiriPrototype>obj = AccessPointer()</tiriPrototype>
     <description>
 <p>Use AccessPointer() to grab a lock on the default pointer object that is active in the system.  This is typically the first object created from the Pointer class with a name of <code>SystemPointer</code>.</p>
 <p>Call <function module="Core">ReleaseObject</function> to free the lock once it is no longer required.</p>
@@ -43,6 +44,7 @@
     <category>Surfaces</category>
     <comment>Check if a surface is the child of another surface.</comment>
     <prototype>ERR gfx::CheckIfChild(OBJECTID Parent, OBJECTID Child)</prototype>
+    <tiriPrototype>err = CheckIfChild(Parent:obj, Child:obj)</tiriPrototype>
     <input>
       <param type="OBJECTID" name="Parent">The surface that is assumed to be the parent.</param>
       <param type="OBJECTID" name="Child">The child surface to check.</param>
@@ -62,6 +64,7 @@
     <category>Bitmap</category>
     <comment>Copies a rectangular area from one bitmap to another.</comment>
     <prototype>ERR gfx::CopyArea(objBitmap * Bitmap, objBitmap * Dest, BAF Flags, INT X, INT Y, INT Width, INT Height, INT XDest, INT YDest)</prototype>
+    <tiriPrototype>err = CopyArea(Bitmap:obj, Dest:obj, Flags:num, X:num, Y:num, Width:num, Height:num, XDest:num, YDest:num)</tiriPrototype>
     <input>
       <param type="objBitmap *" name="Bitmap">The source bitmap.</param>
       <param type="objBitmap *" name="Dest">Pointer to the destination bitmap.</param>
@@ -92,6 +95,7 @@
     <category>Bitmap</category>
     <comment>Copies graphics data from an arbitrary surface to a bitmap.</comment>
     <prototype>ERR gfx::CopyRawBitmap(struct BitmapSurfaceV2 * Surface, objBitmap * Dest, CSRF Flags, INT X, INT Y, INT Width, INT Height, INT XDest, INT YDest)</prototype>
+    <tiriPrototype>err = CopyRawBitmap(Surface:any, Dest:obj, Flags:num, X:num, Y:num, Width:num, Height:num, XDest:num, YDest:num)</tiriPrototype>
     <input>
       <param type="struct BitmapSurfaceV2 *" name="Surface">Description of the surface source.</param>
       <param type="objBitmap *" name="Dest">Destination bitmap.</param>
@@ -119,6 +123,7 @@
     <category>Surfaces</category>
     <comment>Copies surface graphics data into any bitmap object</comment>
     <prototype>ERR gfx::CopySurface(OBJECTID Surface, objBitmap * Bitmap, BDF Flags, INT X, INT Y, INT Width, INT Height, INT XDest, INT YDest)</prototype>
+    <tiriPrototype>err = CopySurface(Surface:obj, Bitmap:obj, Flags:num, X:num, Y:num, Width:num, Height:num, XDest:num, YDest:num)</tiriPrototype>
     <input>
       <param type="OBJECTID" name="Surface">The ID of the surface object to copy from.</param>
       <param type="objBitmap *" name="Bitmap">Must reference a target <class name="Bitmap">Bitmap</class> object.</param>
@@ -146,6 +151,7 @@
     <category>Bitmap</category>
     <comment>Draws a single pixel to a bitmap.</comment>
     <prototype>void gfx::DrawPixel(objBitmap * Bitmap, INT X, INT Y, UINT Colour)</prototype>
+    <tiriPrototype>DrawPixel(Bitmap:obj, X:num, Y:num, Colour:num)</tiriPrototype>
     <input>
       <param type="objBitmap *" name="Bitmap">The target bitmap object.</param>
       <param type="INT" name="X">The horizontal coordinate of the pixel.</param>
@@ -162,6 +168,7 @@
     <category>Bitmap</category>
     <comment>Draws a 24 bit pixel to a <class name="Bitmap">Bitmap</class>.</comment>
     <prototype>void gfx::DrawRGBPixel(objBitmap * Bitmap, INT X, INT Y, struct RGB8 * RGB)</prototype>
+    <tiriPrototype>DrawRGBPixel(Bitmap:obj, X:num, Y:num, RGB:any)</tiriPrototype>
     <input>
       <param type="objBitmap *" name="Bitmap">The target bitmap object.</param>
       <param type="INT" name="X">Horizontal coordinate of the pixel.</param>
@@ -178,6 +185,7 @@
     <category>Bitmap</category>
     <comment>Draws rectangles, both filled and unfilled.</comment>
     <prototype>void gfx::DrawRectangle(objBitmap * Bitmap, INT X, INT Y, INT Width, INT Height, UINT Colour, BAF Flags)</prototype>
+    <tiriPrototype>DrawRectangle(Bitmap:obj, X:num, Y:num, Width:num, Height:num, Colour:num, Flags:num)</tiriPrototype>
     <input>
       <param type="objBitmap *" name="Bitmap">Pointer to the target <class name="Bitmap">Bitmap</class>.</param>
       <param type="INT" name="X">The left-most coordinate of the rectangle.</param>
@@ -197,6 +205,7 @@
     <category>Surfaces</category>
     <comment>Exposes the content of a surface to the display.</comment>
     <prototype>ERR gfx::ExposeSurface(OBJECTID Surface, INT X, INT Y, INT Width, INT Height, EXF Flags)</prototype>
+    <tiriPrototype>err = ExposeSurface(Surface:obj, X:num, Y:num, Width:num, Height:num, Flags:num)</tiriPrototype>
     <input>
       <param type="OBJECTID" name="Surface">The ID of the surface object that will be exposed.</param>
       <param type="INT" name="X">The horizontal coordinate of the area to expose.</param>
@@ -220,6 +229,7 @@
     <category>Bitmap</category>
     <comment>Generates the values for a <st>ColourFormat</st> structure for a given bit depth.</comment>
     <prototype>void gfx::GetColourFormat(struct ColourFormat * Format, INT BitsPerPixel, INT RedMask, INT GreenMask, INT BlueMask, INT AlphaMask)</prototype>
+    <tiriPrototype>GetColourFormat(Format:any, BitsPerPixel:num, RedMask:num, GreenMask:num, BlueMask:num, AlphaMask:num)</tiriPrototype>
     <input>
       <param type="struct ColourFormat *" name="Format">Pointer to an empty <st>ColourFormat</st> structure.</param>
       <param type="INT" name="BitsPerPixel">The depth that you would like to generate colour values for.  Ignored if mask values are set.</param>
@@ -247,6 +257,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Cursor</category>
     <comment>Retrieves graphics information from the active mouse cursor.</comment>
     <prototype>ERR gfx::GetCursorInfo(struct CursorInfo * Info, INT Size)</prototype>
+    <tiriPrototype>err = GetCursorInfo(Info:any, Size:num)</tiriPrototype>
     <input>
       <param type="struct CursorInfo *" name="Info">Pointer to a <st>CursorInfo</st> structure.</param>
       <param type="INT" name="Size">The byte-size of the <code>Info</code> structure.</param>
@@ -268,6 +279,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Cursor</category>
     <comment>Returns the coordinates of the UI pointer.</comment>
     <prototype>ERR gfx::GetCursorPos(DOUBLE * X, DOUBLE * Y)</prototype>
+    <tiriPrototype>err, X:num, Y:num = GetCursorPos()</tiriPrototype>
     <input>
       <param type="DOUBLE *" name="X">Variable that will store the pointer's horizontal coordinate.</param>
       <param type="DOUBLE *" name="Y">Variable that will store the pointer's vertical coordinate.</param>
@@ -286,6 +298,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Display</category>
     <comment>Retrieves display information.</comment>
     <prototype>ERR gfx::GetDisplayInfo(OBJECTID Display, struct DisplayInfoV3 ** Info)</prototype>
+    <tiriPrototype>err, Info:any = GetDisplayInfo(Display:obj)</tiriPrototype>
     <input>
       <param type="OBJECTID" name="Display">Object ID of the display to be analysed.</param>
       <param type="struct DisplayInfoV3 **" name="Info">This reference will receive a pointer to a DISPLAYINFO structure.</param>
@@ -306,6 +319,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Display</category>
     <comment>Returns the type of display supported.</comment>
     <prototype>DT gfx::GetDisplayType()</prototype>
+    <tiriPrototype>num = GetDisplayType()</tiriPrototype>
     <description>
 <p>This function returns the type of display supported by the loaded Display module.  Current return values are:</p>
 <types lookup="DT"/>
@@ -318,6 +332,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Input</category>
     <comment>Returns the string name for an input type.</comment>
     <prototype>CSTRING gfx::GetInputTypeName(JET Type)</prototype>
+    <tiriPrototype>str = GetInputTypeName(Type:num)</tiriPrototype>
     <input>
       <param type="JET" name="Type" lookup="JET">JET type integer.</param>
     </input>
@@ -332,6 +347,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Surfaces</category>
     <comment>Returns the current modal surface (if defined).</comment>
     <prototype>OBJECTID gfx::GetModalSurface()</prototype>
+    <tiriPrototype>obj = GetModalSurface()</tiriPrototype>
     <description>
 <p>This function returns the modal surface for the running process.  Returns zero if no modal surface is active.</p>
     </description>
@@ -343,6 +359,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Cursor</category>
     <comment>Returns the coordinates of the pointer cursor, relative to a surface object.</comment>
     <prototype>ERR gfx::GetRelativeCursorPos(OBJECTID Surface, DOUBLE * X, DOUBLE * Y)</prototype>
+    <tiriPrototype>err, X:num, Y:num = GetRelativeCursorPos(Surface:obj)</tiriPrototype>
     <input>
       <param type="OBJECTID" name="Surface">Unique ID of the surface that the coordinates need to be relative to.</param>
       <param type="DOUBLE *" name="X">Variable that will store the pointer's horizontal coordinate.</param>
@@ -363,6 +380,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Surfaces</category>
     <comment>Returns the dimensions of a surface.</comment>
     <prototype>ERR gfx::GetSurfaceCoords(OBJECTID Surface, INT * X, INT * Y, INT * AbsX, INT * AbsY, INT * Width, INT * Height)</prototype>
+    <tiriPrototype>err, X:num, Y:num, AbsX:num, AbsY:num, Width:num, Height:num = GetSurfaceCoords(Surface:obj)</tiriPrototype>
     <input>
       <param type="OBJECTID" name="Surface">The surface to query.  If zero, the top-level display is queried.</param>
       <param type="INT *" name="X">The X coordinate of the surface is returned here.</param>
@@ -386,6 +404,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Surfaces</category>
     <comment>Retrieves the <code>Flags</code> field from a <class name="Surface">Surface</class>.</comment>
     <prototype>ERR gfx::GetSurfaceFlags(OBJECTID Surface, RNF * Flags)</prototype>
+    <tiriPrototype>err, Flags:num = GetSurfaceFlags(Surface:obj)</tiriPrototype>
     <input>
       <param type="OBJECTID" name="Surface">The surface to query.  If zero, the top-level surface is queried.</param>
       <param type="RNF *" name="Flags" lookup="RNF">The flags value is returned here.</param>
@@ -406,6 +425,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Surfaces</category>
     <comment>Retrieves display information for any surface object without having to access it directly.</comment>
     <prototype>ERR gfx::GetSurfaceInfo(OBJECTID Surface, struct SurfaceInfoV2 ** Info)</prototype>
+    <tiriPrototype>err, Info:any = GetSurfaceInfo(Surface:obj)</tiriPrototype>
     <input>
       <param type="OBJECTID" name="Surface">The unique ID of a <class name="Surface">Surface</class> to query.  If zero, the root surface is returned.</param>
       <param type="struct SurfaceInfoV2 **" name="Info">This parameter will receive a <st>SurfaceInfo</st> pointer that describes the surface object.</param>
@@ -425,6 +445,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Surfaces</category>
     <comment>Returns the ID of the surface that currently has the user's focus.</comment>
     <prototype>OBJECTID gfx::GetUserFocus()</prototype>
+    <tiriPrototype>obj = GetUserFocus()</tiriPrototype>
     <description>
 <p>This function returns the unique ID of the surface that has the user's focus.</p>
     </description>
@@ -436,6 +457,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Surfaces</category>
     <comment>Returns the visible region of a <class name="Surface">Surface</class>.</comment>
     <prototype>ERR gfx::GetVisibleArea(OBJECTID Surface, INT * X, INT * Y, INT * AbsX, INT * AbsY, INT * Width, INT * Height)</prototype>
+    <tiriPrototype>err, X:num, Y:num, AbsX:num, AbsY:num, Width:num, Height:num = GetVisibleArea(Surface:obj)</tiriPrototype>
     <input>
       <param type="OBJECTID" name="Surface">The surface to query.  If zero, the top-level display will be queried.</param>
       <param type="INT *" name="X">The X coordinate of the visible area.</param>
@@ -460,6 +482,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Cursor</category>
     <comment>Anchors the cursor so that it cannot move without explicit movement signals.</comment>
     <prototype>ERR gfx::LockCursor(OBJECTID Surface)</prototype>
+    <tiriPrototype>err = LockCursor(Surface:obj)</tiriPrototype>
     <input>
       <param type="OBJECTID" name="Surface">Refers to the surface object that the pointer should send movement signals to.</param>
     </input>
@@ -480,6 +503,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Bitmap</category>
     <comment>Reads a pixel's colour from the target bitmap.</comment>
     <prototype>UINT gfx::ReadPixel(objBitmap * Bitmap, INT X, INT Y)</prototype>
+    <tiriPrototype>num = ReadPixel(Bitmap:obj, X:num, Y:num)</tiriPrototype>
     <input>
       <param type="objBitmap *" name="Bitmap">Pointer to a bitmap object.</param>
       <param type="INT" name="X">The horizontal coordinate of the pixel.</param>
@@ -496,6 +520,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Bitmap</category>
     <comment>Reads a pixel's colour from the target bitmap.</comment>
     <prototype>void gfx::ReadRGBPixel(objBitmap * Bitmap, INT X, INT Y, struct RGB8 ** RGB)</prototype>
+    <tiriPrototype>RGB:any = ReadRGBPixel(Bitmap:obj, X:num, Y:num)</tiriPrototype>
     <input>
       <param type="objBitmap *" name="Bitmap">Pointer to a bitmap object.</param>
       <param type="INT" name="X">The horizontal coordinate of the pixel.</param>
@@ -513,6 +538,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Bitmap</category>
     <comment>Resamples a bitmap by dithering it to a new set of colour masks.</comment>
     <prototype>ERR gfx::Resample(objBitmap * Bitmap, struct ColourFormat * ColourFormat)</prototype>
+    <tiriPrototype>err = Resample(Bitmap:obj, ColourFormat:any)</tiriPrototype>
     <input>
       <param type="objBitmap *" name="Bitmap">The bitmap object to be resampled.</param>
       <param type="struct ColourFormat *" name="ColourFormat">The new colour format to be applied to the bitmap.</param>
@@ -532,6 +558,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Cursor</category>
     <comment>Returns the pointer image to its original state.</comment>
     <prototype>ERR gfx::RestoreCursor(PTC Cursor, OBJECTID Owner)</prototype>
+    <tiriPrototype>err = RestoreCursor(Cursor:num, Owner:obj)</tiriPrototype>
     <input>
       <param type="PTC" name="Cursor" lookup="PTC">The cursor image that the pointer will be restored to (0 for the default).</param>
       <param type="OBJECTID" name="Owner">The ownership ID that was given in the initial call to SetCursor().</param>
@@ -551,6 +578,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Display</category>
     <comment>Scales a value to the active display's DPI.</comment>
     <prototype>DOUBLE gfx::ScaleToDPI(DOUBLE Value)</prototype>
+    <tiriPrototype>num = ScaleToDPI(Value:num)</tiriPrototype>
     <input>
       <param type="DOUBLE" name="Value">The number to be scaled.</param>
     </input>
@@ -566,6 +594,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Bitmap</category>
     <comment>Sets a clipping region for a bitmap object.</comment>
     <prototype>void gfx::SetClipRegion(objBitmap * Bitmap, INT Number, INT Left, INT Top, INT Right, INT Bottom, INT Terminate)</prototype>
+    <tiriPrototype>SetClipRegion(Bitmap:obj, Number:num, Left:num, Top:num, Right:num, Bottom:num, Terminate:num)</tiriPrototype>
     <input>
       <param type="objBitmap *" name="Bitmap">The target bitmap.</param>
       <param type="INT" name="Number">The number of the clip region to set.</param>
@@ -587,6 +616,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Cursor</category>
     <comment>Sets the cursor image and can anchor the pointer to any surface.</comment>
     <prototype>ERR gfx::SetCursor(OBJECTID Surface, CRF Flags, PTC Cursor, CSTRING Name, OBJECTID Owner)</prototype>
+    <tiriPrototype>err = SetCursor(Surface:obj, Flags:num, Cursor:num, Name:str, Owner:obj)</tiriPrototype>
     <input>
       <param type="OBJECTID" name="Surface">Refers to the surface object that the pointer should anchor itself to, if the <code>RESTRICT</code> flag is used.  Otherwise, this parameter can be set to a surface that the new cursor image should be limited to.  The object referred to here must be publicly accessible to all tasks.</param>
       <param type="CRF" name="Flags" lookup="CRF">Optional flags that affect the cursor.</param>
@@ -617,6 +647,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Cursor</category>
     <comment>Changes the position of the pointer cursor.</comment>
     <prototype>ERR gfx::SetCursorPos(DOUBLE X, DOUBLE Y)</prototype>
+    <tiriPrototype>err = SetCursorPos(X:num, Y:num)</tiriPrototype>
     <input>
       <param type="DOUBLE" name="X">The new horizontal coordinate for the pointer.</param>
       <param type="DOUBLE" name="Y">The new vertical coordinate for the pointer.</param>
@@ -635,6 +666,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Cursor</category>
     <comment>Sets the cursor to a customised bitmap image.</comment>
     <prototype>ERR gfx::SetCustomCursor(OBJECTID Surface, CRF Flags, objBitmap * Bitmap, INT HotX, INT HotY, OBJECTID Owner)</prototype>
+    <tiriPrototype>err = SetCustomCursor(Surface:obj, Flags:num, Bitmap:obj, HotX:num, HotY:num, Owner:obj)</tiriPrototype>
     <input>
       <param type="OBJECTID" name="Surface">Refers to the <class name="Surface">Surface</class> object that the pointer should restrict itself to, if the <code>RESTRICT</code> flag is used.  Otherwise, this parameter can be set to a surface that the new cursor image should be limited to.  The object referred to here must be publicly accessible to all tasks.</param>
       <param type="CRF" name="Flags" lookup="CRF">Optional flags affecting the cursor are set here.</param>
@@ -677,6 +709,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Display</category>
     <comment>Alter options associated with the host display system.</comment>
     <prototype>ERR gfx::SetHostOption(HOST Option, INT64 Value)</prototype>
+    <tiriPrototype>err = SetHostOption(Option:num, Value:num)</tiriPrototype>
     <input>
       <param type="HOST" name="Option" lookup="HOST">One of TRAY_ICON, TASKBAR or STICK_TO_FRONT.</param>
       <param type="INT64" name="Value">The value to be applied to the option.</param>
@@ -694,6 +727,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Surfaces</category>
     <comment>Enables a modal surface for the current task.</comment>
     <prototype>OBJECTID gfx::SetModalSurface(OBJECTID Surface)</prototype>
+    <tiriPrototype>obj = SetModalSurface(Surface:obj)</tiriPrototype>
     <input>
       <param type="OBJECTID" name="Surface">The surface to enable as modal.</param>
     </input>
@@ -710,6 +744,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Cursor</category>
     <comment>Attaches an item to the cursor for the purpose of drag and drop.</comment>
     <prototype>ERR gfx::StartCursorDrag(OBJECTID Source, INT Item, CSTRING Datatypes, OBJECTID Surface)</prototype>
+    <tiriPrototype>err = StartCursorDrag(Source:obj, Item:num, Datatypes:str, Surface:obj)</tiriPrototype>
     <input>
       <param type="OBJECTID" name="Source">Refers to an object that is managing the source data.</param>
       <param type="INT" name="Item">A custom number that represents the item being dragged from the source.</param>
@@ -737,6 +772,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Input</category>
     <comment>Subscribe to incoming input messages for any active surface object.</comment>
     <prototype>ERR gfx::SubscribeInput(FUNCTION * Callback, OBJECTID SurfaceFilter, JTYPE Mask, OBJECTID DeviceFilter, INT * Handle)</prototype>
+    <tiriPrototype>err, Handle:num = SubscribeInput(Callback:func, SurfaceFilter:obj, Mask:num, DeviceFilter:obj)</tiriPrototype>
     <input>
       <param type="FUNCTION *" name="Callback">Reference to a callback function that will receive input messages.</param>
       <param type="OBJECTID" name="SurfaceFilter">Optional.  Only the input messages that match the given <class name="Surface">Surface</class> ID will be received.</param>
@@ -778,6 +814,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Bitmap</category>
     <comment>Waits for the completion of all active bitmap operations.</comment>
     <prototype>void gfx::Sync(objBitmap * Bitmap)</prototype>
+    <tiriPrototype>Sync(Bitmap:obj)</tiriPrototype>
     <input>
       <param type="objBitmap *" name="Bitmap">Pointer to the bitmap that you want to synchronise or <code>NULL</code> to sleep on the graphics accelerator.</param>
     </input>
@@ -791,6 +828,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Cursor</category>
     <comment>Undoes an earlier call to LockCursor()</comment>
     <prototype>ERR gfx::UnlockCursor(OBJECTID Surface)</prototype>
+    <tiriPrototype>err = UnlockCursor(Surface:obj)</tiriPrototype>
     <input>
       <param type="OBJECTID" name="Surface">Refers to the surface object used for calling LockCursor().</param>
     </input>
@@ -810,6 +848,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Input</category>
     <comment>Removes an input subscription.</comment>
     <prototype>ERR gfx::UnsubscribeInput(INT Handle)</prototype>
+    <tiriPrototype>err = UnsubscribeInput(Handle:num)</tiriPrototype>
     <input>
       <param type="INT" name="Handle">Reference to a handle returned by <function>SubscribeInput</function>.</param>
     </input>
@@ -828,6 +867,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Surfaces</category>
     <comment>Adds a function hook for receiving window messages from a host desktop.</comment>
     <prototype>ERR gfx::WindowHook(OBJECTID SurfaceID, WH Event, FUNCTION * Callback)</prototype>
+    <tiriPrototype>err = WindowHook(SurfaceID:obj, Event:num, Callback:func)</tiriPrototype>
     <input>
       <param type="OBJECTID" name="SurfaceID">A hosted surface to be monitored.</param>
       <param type="WH" name="Event" lookup="WH">A window hook event.</param>

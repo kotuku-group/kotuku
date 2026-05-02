@@ -1,0 +1,595 @@
+----------------------------------------------------------------------------------------------------------------------
+-- Signature Help Support
+
+rx_sig_obj_new = <{ regex.new([=[([A-Za-z_][A-Za-z0-9_]*)\s*=\s*obj\.new\s*\(\s*['"]([^'"]+)['"]]=],
+   regex.DOT_ALL) }>
+
+global glSignatureSymbolCache = {}
+
+----------------------------------------------------------------------------------------------------------------------
+-- Source Scanning
+
+function signaturePositionToOffset(Doc:table, Position:table):num
+   offset = 0
+   current_line = 0
+   content = Doc.content or ''
+
+   while current_line < Position.line and offset < #content do
+      c = content:sub(offset, offset + 1)
+      if c is '\n' then current_line++ end
+      offset++
+   end
+
+   offset += Position.character
+   if offset > #content then offset = #content end
+   return offset
+end
+
+function signatureIsIdentStart(Char:str):bool
+   return (Char >= 'a' and Char <= 'z') or (Char >= 'A' and Char <= 'Z') or Char is '_'
+end
+
+function signatureIsIdentChar(Char:str):bool
+   return signatureIsIdentStart(Char) or (Char >= '0' and Char <= '9')
+end
+
+function signatureSkipBackSpaces(Content:str, Pos:num):num
+   while Pos >= 0 do
+      c = Content:sub(Pos, Pos + 1)
+      if c != ' ' and c != '\t' and c != '\r' and c != '\n' then break end
+      Pos -= 1
+   end
+   return Pos
+end
+
+function signatureReadIdentifierBefore(Content:str, Pos:num):table
+   end_pos = signatureSkipBackSpaces(Content, Pos)
+   if end_pos < 0 or not signatureIsIdentChar(Content:sub(end_pos, end_pos + 1)) then return nil end
+
+   start_pos = end_pos
+   while start_pos > 0 and signatureIsIdentChar(Content:sub(start_pos - 1, start_pos)) do
+      start_pos -= 1
+   end
+
+   return {
+      text = Content:sub(start_pos, end_pos + 1),
+      startPos = start_pos,
+      endPos = end_pos + 1
+   }
+end
+
+function signatureReadCallName(Content:str, ParenPos:num):table
+   name_info = signatureReadIdentifierBefore(Content, ParenPos - 1)
+   name_info ?? return nil
+
+   object_name = nil
+   separator = nil
+   object_end = signatureSkipBackSpaces(Content, name_info.startPos - 1)
+
+   if object_end >= 0 then
+      sep = Content:sub(object_end, object_end + 1)
+      if sep is '.' or sep is ':' then
+         separator = sep
+         if sep is '.' and object_end > 0 and Content:sub(object_end - 1, object_end) is '?' then
+            object_end -= 2
+         else
+            object_end -= 1
+         end
+         object_info = signatureReadIdentifierBefore(Content, object_end)
+         if object_info then object_name = object_info.text end
+      end
+   end
+
+   full_name = name_info.text
+   if object_name then full_name = object_name .. separator .. name_info.text end
+
+   return {
+      name = name_info.text,
+      object = object_name,
+      fullName = full_name
+   }
+end
+
+function signaturePushFrame(Stack:array, Content:str, Pos:num)
+   call = signatureReadCallName(Content, Pos)
+   Stack:push({
+      name = call?.name,
+      object = call?.object,
+      fullName = call?.fullName,
+      activeParameter = 0,
+      braceDepth = 0,
+      bracketDepth = 0
+   })
+end
+
+global function signatureFindCallContext(Doc:table, Position:table):table
+   content = Doc.content or ''
+   limit = signaturePositionToOffset(Doc, Position)
+   stack = array<table>
+   pos = 0
+
+   while pos < limit do
+      c = content:sub(pos, pos + 1)
+      next_two = content:sub(pos, pos + 2)
+
+      if c is '"' or c is "'" then
+         quote = c
+         pos++
+         while pos < limit do
+            sc = content:sub(pos, pos + 1)
+            if sc is '\\' and pos + 1 < limit then
+               pos += 2
+            elseif sc is quote then
+               pos++
+               break
+            else
+               pos++
+            end
+         end
+      elseif next_two is '--' then
+         if content:sub(pos, pos + 4) is '--[[' then
+            close_pos = content:find(']]', pos + 4)
+            if close_pos and close_pos < limit then
+               pos = close_pos + 2
+            else
+               break
+            end
+         else
+            newline_pos = content:find('\n', pos + 2)
+            if newline_pos and newline_pos < limit then
+               pos = newline_pos + 1
+            else
+               break
+            end
+         end
+      elseif next_two is '[[' then
+         close_pos = content:find(']]', pos + 2)
+         if close_pos and close_pos < limit then
+            pos = close_pos + 2
+         else
+            break
+         end
+      elseif c is '(' then
+         signaturePushFrame(stack, content, pos)
+         pos++
+      elseif c is ')' then
+         if #stack > 0 then stack:pop() end
+         pos++
+      elseif c is '{' then
+         if #stack > 0 then stack[#stack - 1].braceDepth++ end
+         pos++
+      elseif c is '}' then
+         if #stack > 0 and stack[#stack - 1].braceDepth > 0 then stack[#stack - 1].braceDepth -= 1 end
+         pos++
+      elseif c is '[' then
+         if #stack > 0 then stack[#stack - 1].bracketDepth++ end
+         pos++
+      elseif c is ']' then
+         if #stack > 0 and stack[#stack - 1].bracketDepth > 0 then stack[#stack - 1].bracketDepth -= 1 end
+         pos++
+      elseif c is ',' then
+         if #stack > 0 then
+            frame = stack[#stack - 1]
+            if frame.braceDepth is 0 and frame.bracketDepth is 0 then
+               frame.activeParameter++
+            end
+         end
+         pos++
+      else
+         pos++
+      end
+   end
+
+   if #stack is 0 then return nil end
+   context = stack[#stack - 1]
+   if not context.name then return nil end
+   return context
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Signature Formatting
+
+function signatureMarkup(Text:str):table
+   Text ?? return nil
+   if Text is '' then return nil end
+   return {
+      kind = 'markdown',
+      value = Text
+   }
+end
+
+function signatureParamLabel(Param:table):str
+   name = Param.name or ''
+   param_type = Param.type or ''
+   if param_type is 'any' then param_type = '' end
+   if name != '' and param_type != '' then return name .. ': ' .. param_type end
+   if name != '' then return name end
+   if param_type != '' then return param_type end
+   return Param.label or ''
+end
+
+function signatureBuildParameterInfo(Params:array):array
+   result = array<table>
+   for param in values(Params or array<table>) do
+      label = param.label or signatureParamLabel(param)
+      entry = { label = label }
+      if param.doc and param.doc != '' then entry.documentation = signatureMarkup(param.doc) end
+      result:push(entry)
+   end
+   return result
+end
+
+function signatureBuildInfo(Label:str, Documentation:str, Params:array):table
+   info = {
+      label = Label or '',
+      parameters = signatureBuildParameterInfo(Params)
+   }
+   doc = signatureMarkup(Documentation)
+   if doc then info.documentation = doc end
+   return info
+end
+
+function signatureClampActiveParameter(Active:num, Params:array):num
+   if not Params or #Params is 0 then return 0 end
+   if Active < 0 then return 0 end
+   if Active >= #Params then return #Params - 1 end
+   return Active
+end
+
+function signatureSplitParams(ParamText:str):array
+   params = array<table>
+   current = ''
+   paren_depth = 0
+   bracket_depth = 0
+   brace_depth = 0
+   pos = 0
+
+   while pos < #ParamText do
+      c = ParamText:sub(pos, pos + 1)
+      if c is ',' and paren_depth is 0 and bracket_depth is 0 and brace_depth is 0 then
+         label = current:trim()
+         if label != '' then params:push({ label = label }) end
+         current = ''
+      else
+         current ..= c
+         if c is '(' then paren_depth++
+         elseif c is ')' and paren_depth > 0 then paren_depth -= 1
+         elseif c is '[' then bracket_depth++
+         elseif c is ']' and bracket_depth > 0 then bracket_depth -= 1
+         elseif c is '{' then brace_depth++
+         elseif c is '}' and brace_depth > 0 then brace_depth -= 1
+         end
+      end
+      pos++
+   end
+
+   label = current:trim()
+   if label != '' then params:push({ label = label }) end
+   return params
+end
+
+function signatureParamsFromPrototype(Prototype:str):array
+   Prototype ?? return array<table>
+   open_pos = Prototype:find('(', 0, true)
+   close_pos = Prototype:find(')', open_pos or 0, true)
+   if not open_pos or not close_pos or close_pos <= open_pos then return array<table> end
+   return signatureSplitParams(Prototype:sub(open_pos + 1, close_pos))
+end
+
+function signatureDisplayNameFromPrototype(Prototype:str, Fallback:str):str
+   open_pos = Prototype and Prototype:find('(', 0, true) or nil
+   if not open_pos then return Fallback end
+
+   end_pos = open_pos - 1
+   while end_pos >= 0 and (Prototype:sub(end_pos, end_pos + 1) is ' ' or Prototype:sub(end_pos, end_pos + 1) is '\t') do
+      end_pos -= 1
+   end
+
+   start_pos = end_pos
+   while start_pos > 0 do
+      c = Prototype:sub(start_pos - 1, start_pos)
+      if signatureIsIdentChar(c) or c is ':' then
+         start_pos -= 1
+      else
+         break
+      end
+   end
+
+   name = Prototype:sub(start_pos, end_pos + 1)
+   sep = name:find('::', 0, true)
+   if sep then name = name:sub(sep + 2) end
+   return name != '' and name or Fallback
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Current Document Symbols
+
+function signatureGetDocumentSymbols(Doc:table):array
+   if Doc.signatureSymbolsContent is Doc.content and Doc.signatureSymbols then return Doc.signatureSymbols end
+
+   local result
+   try
+      result = debug.validate(Doc.content, 'symbols')
+   except ex
+      result = nil
+   end
+
+   if result and result.symbols and #result.symbols > 0 then
+      Doc.signatureSymbols = result.symbols
+      Doc.signatureSymbolsContent = Doc.content
+      glSignatureSymbolCache[Doc.uri] = result.symbols
+      return result.symbols
+   end
+
+   return Doc.signatureSymbols or glSignatureSymbolCache[Doc.uri]
+end
+
+function signatureSymbolMatches(Symbol:table, Context:table):bool
+   if Symbol.name is Context.name or Symbol.name is Context.fullName then return true end
+   if Context.object then
+      if Symbol.name is Context.object .. '.' .. Context.name then return true end
+      if Symbol.name is Context.object .. ':' .. Context.name then return true end
+   end
+   return false
+end
+
+function signatureFromDocumentSymbol(Symbol:table):table
+   params = array<table>
+   for param in values(Symbol.params or array<table>) do
+      params:push({
+         name = param.name,
+         type = param.type,
+         doc = param.doc
+      })
+   end
+
+   doc_text = Symbol.doc?.body ?? Symbol.doc?.summary
+   return signatureBuildInfo(Symbol.signature or Symbol.name, doc_text, params)
+end
+
+function resolveDocumentSignature(Doc:table, Context:table):table
+   symbols = signatureGetDocumentSymbols(Doc)
+   symbols ?? return nil
+
+   for symbol in values(symbols) do
+      if signatureSymbolMatches(symbol, Context) then
+         return signatureFromDocumentSymbol(symbol)
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Built-ins and Kotuku API
+
+function signatureFromBuiltin(Context:table):table
+   key = Context.object and (Context.object .. '.' .. Context.name) or Context.name
+   builtin = glDefs?.builtins?[key]
+   builtin ?? return nil
+
+   return signatureBuildInfo(builtin.prototype or key, builtin.comment, signatureParamsFromPrototype(builtin.prototype))
+end
+
+function signatureNormaliseClassName(Name:str):str
+   if not Name or not glDocCache or not glDocCache.classes then return nil end
+   if glDocCache.classes[Name] then return Name end
+
+   for class_name, entry in pairs(glDocCache.classes) do
+      if class_name:lower() is Name:lower() then return class_name end
+   end
+
+   capitalised = Name:sub(0, 1):upper() .. Name:sub(1)
+   if glDocCache.classes[capitalised] then return capitalised end
+end
+
+function signatureBuildTypeMap(Doc:table):table
+   type_map = {}
+   for start, stop, cap in rx_sig_obj_new.findAll(Doc.content) do
+      local var_name, class_name = cap[0], cap[1]
+      normalised = signatureNormaliseClassName(class_name)
+      if var_name and normalised then type_map[var_name] = normalised end
+   end
+   return type_map
+end
+
+function signatureParamFromPrototypeLabel(Label:str):table
+   label = Label:trim()
+   if label is '' then return { label = '' } end
+
+   end_pos = #label - 1
+   while end_pos >= 0 and not signatureIsIdentChar(label:sub(end_pos, end_pos + 1)) do
+      end_pos -= 1
+   end
+
+   if end_pos < 0 then return { label = label } end
+
+   start_pos = end_pos
+   while start_pos > 0 and signatureIsIdentChar(label:sub(start_pos - 1, start_pos)) do
+      start_pos -= 1
+   end
+
+   name = label:sub(start_pos, end_pos + 1)
+   param_type = label:sub(0, start_pos):trim()
+   return {
+      name = name,
+      type = param_type,
+      label = name != '' and param_type != '' and (name .. ': ' .. param_type) or label
+   }
+end
+
+function signatureParamFromTiriLabel(Label:str):table
+   label = Label:trim()
+   if label is '' then return { label = '' } end
+   if label is '...' then return { label = '...' } end
+
+   colon_pos = label:find(':', 0, true)
+   if colon_pos then
+      name = label:sub(0, colon_pos):trim()
+      param_type = label:sub(colon_pos + 1):trim()
+      return {
+         name = name,
+         type = param_type,
+         label = label
+      }
+   end
+
+   return { name = label, label = label }
+end
+
+function signatureXmlParamsFromPrototype(Prototype:str):array
+   params = array<table>
+   for param in values(signatureParamsFromPrototype(Prototype)) do
+      params:push(signatureParamFromPrototypeLabel(param.label))
+   end
+   return params
+end
+
+function signatureTiriParamsFromPrototype(Prototype:str):array
+   params = array<table>
+   for param in values(signatureParamsFromPrototype(Prototype)) do
+      params:push(signatureParamFromTiriLabel(param.label))
+   end
+   return params
+end
+
+function signatureCopyParamDocs(Params:array, SourceParams:array):array
+   if not SourceParams then return Params end
+
+   for param in values(Params or array<table>) do
+      if param.name?? then
+         for source in values(SourceParams) do
+            if source.name is param.name then
+               param.doc ?= source.doc
+               break
+            end
+         end
+      end
+   end
+
+   return Params
+end
+
+function signatureIsImplicitObjectParam(Param:table, Index:num):bool
+   if Index != 0 then return false end
+   label = Param.label or ''
+   param_type = Param.type or ''
+   return label:startsWith('*Object') or param_type:startsWith('OBJECTPTR') or param_type:startsWith('*')
+end
+
+function signatureXmlParams(MethodDoc:table, HideReceiver:bool):array
+   source_params = MethodDoc.params
+   if not source_params or #source_params is 0 then
+      source_params = signatureXmlParamsFromPrototype(MethodDoc.prototype)
+   end
+
+   params = array<table>
+   index = 0
+   for param in values(source_params or array<table>) do
+      if not HideReceiver or not signatureIsImplicitObjectParam(param, index) then
+         params:push({
+            name = param.name,
+            type = param.type,
+            doc = param.doc,
+            label = param.label
+         })
+      end
+      index++
+   end
+   return params
+end
+
+function signatureXmlLabel(DisplayName:str, Params:array):str
+   labels = array<string>
+   for param in values(Params or array<table>) do
+      labels:push(signatureParamLabel(param))
+   end
+   return DisplayName .. '(' .. labels:join(', ') .. ')'
+end
+
+function signatureTiriLabel(DisplayName:str, Prototype:str):str
+   open_pos = Prototype and Prototype:find('(', 0, true) or nil
+   if not open_pos then return DisplayName end
+   return DisplayName .. Prototype:sub(open_pos)
+end
+
+function signatureFromXmlEntry(DisplayName:str, Entry:any, HideReceiver:bool):table
+   doc = decodeMethod(Entry)
+   doc ?? return nil
+
+   local params
+   local label
+
+   if doc.tiriPrototype?? then
+      params = signatureTiriParamsFromPrototype(doc.tiriPrototype)
+      params = signatureCopyParamDocs(params, doc.params)
+      label = signatureTiriLabel(DisplayName, doc.tiriPrototype)
+   else
+      params = signatureXmlParams(doc, HideReceiver)
+      label = signatureXmlLabel(DisplayName, params)
+      if #params is 0 and doc.prototype and doc.prototype != '' then
+         label = DisplayName .. '()'
+      end
+   end
+
+   return signatureBuildInfo(label, doc.comment, params)
+end
+
+function resolveApiSignature(Doc:table, Context:table):table
+   if not Context.object or not glDocCache then return nil end
+
+   if glDefs and glDefs.modulePrefixes and glDefs.modulePrefixes[Context.object] then
+      module_name = glDefs.modulePrefixes[Context.object]
+      module_doc = glDocCache.modules and glDocCache.modules[module_name] or nil
+      func_doc = module_doc and module_doc.functions and module_doc.functions[Context.name] or nil
+      if func_doc then return signatureFromXmlEntry(Context.object .. '.' .. Context.name, func_doc, false) end
+   end
+
+   type_map = signatureBuildTypeMap(Doc)
+   class_name = type_map[Context.object] ?? signatureNormaliseClassName(Context.object)
+   class_doc = class_name and glDocCache.classes and glDocCache.classes[class_name] or nil
+   class_doc ?? return nil
+
+   token = Context.name
+   if token:startsWith('ac') then
+      action_name = token:sub(2)
+      if class_doc.actions and class_doc.actions[action_name] then
+         return signatureFromXmlEntry(Context.object .. '.' .. token, class_doc.actions[action_name], true)
+      end
+   end
+
+   if token:startsWith('mt') then
+      method_name = token:sub(2)
+      if class_doc.methods and class_doc.methods[method_name] then
+         return signatureFromXmlEntry(Context.object .. '.' .. token, class_doc.methods[method_name], true)
+      end
+   end
+
+   if class_doc.methods and class_doc.methods[token] then
+      return signatureFromXmlEntry(Context.object .. '.' .. token, class_doc.methods[token], true)
+   end
+
+   if class_doc.actions and class_doc.actions[token] then
+      return signatureFromXmlEntry(Context.object .. '.' .. token, class_doc.actions[token], true)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Public Resolver
+
+global function resolveSignatureHelp(Doc:table, Position:table):table
+   Doc ?? return nil
+   Position ?? return nil
+
+   context = signatureFindCallContext(Doc, Position)
+   context ?? return nil
+
+   signature = resolveDocumentSignature(Doc, context)
+   signature ?= signatureFromBuiltin(context)
+   signature ?= resolveApiSignature(Doc, context)
+   signature ?? return nil
+
+   return {
+      signatures = array<table> { signature },
+      activeSignature = 0,
+      activeParameter = signatureClampActiveParameter(context.activeParameter, signature.parameters)
+   }
+end

@@ -70,6 +70,7 @@ if (query.ok()) {
       <name>Activate</name>
       <comment>Run an XQuery expression.</comment>
       <prototype>ERR acActivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acActivate()</tiriPrototype>
       <description>
 <p>Use Activate to run a compiled XQuery expression without an XML document reference.  The result of the evaluation is returned in the <fl>Result</fl> field as XPathValue, which can represent various types of data including node sets, strings, numbers, or booleans.  On error, the <fl>ErrorMsg</fl> field will contain a descriptive message.</p>
 <p>Use <method>Evaluate</method> or <method>Search</method> for expressions expecting an XML document context.</p>
@@ -84,6 +85,7 @@ if (query.ok()) {
       <name>Clear</name>
       <comment>Clears all XQuery results and returns the object to its pre-compiled state.</comment>
       <prototype>ERR acClear(*Object)</prototype>
+      <tiriPrototype>err = Object.acClear()</tiriPrototype>
       <description>
 <p>Use Clear() to remove the resources consumed by the XQuery and reset its state.  The <fl>Statement</fl> and <fl>Path</fl> field values are retained, allowing the object to be seamlessly re-activated at any time.</p>
       </description>
@@ -93,6 +95,7 @@ if (query.ok()) {
       <name>GetKey</name>
       <comment>Read XQuery variable values.</comment>
       <prototype>ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)</prototype>
+      <tiriPrototype>err = Object.acGetKey(Key:str, Value:str, Size:num)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Key">The name of a key value.</param>
         <param type="STRING" name="Value">Pointer to a buffer space large enough to hold the retrieved value.</param>
@@ -104,6 +107,7 @@ if (query.ok()) {
       <name>Init</name>
       <comment>Compiles the XQuery statement.</comment>
       <prototype>ERR InitObject(*Object)</prototype>
+      <tiriPrototype>err = Object.init()</tiriPrototype>
       <description>
 <p>Initialisation will compile the XQuery <fl>Statement</fl> string into a compiled form that can be executed.</p>
 <p>If parsing fails, the object will not be initialised and an error message will be defined in the <fl>ErrorMsg</fl> field.</p>
@@ -114,13 +118,15 @@ if (query.ok()) {
     <action>
       <name>Reset</name>
       <comment>Synonym for <action>Clear</action>.</comment>
-      <prototype>ERR acRefresh(*Object)</prototype>
+      <prototype>ERR acReset(*Object)</prototype>
+      <tiriPrototype>err = Object.acReset()</tiriPrototype>
     </action>
 
     <action>
       <name>SetKey</name>
       <comment>Set XQuery variable values.</comment>
       <prototype>ERR acSetKey(*Object, CSTRING Key, CSTRING Value)</prototype>
+      <tiriPrototype>err = Object.acSetKey(Key:str, Value:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Key">The name of the target key.</param>
         <param type="CSTRING" name="Value">The string value to associate with Key.</param>
@@ -141,6 +147,7 @@ if (query.ok()) {
       <name>Evaluate</name>
       <comment>Run an XQuery expression against an XML document.</comment>
       <prototype>ERR xq::Evaluate(OBJECTPTR Object, objXML * XML, INT Index, XEF Flags)</prototype>
+      <tiriPrototype>err = Evaluate(XML:obj, Index:num, Flags:num)</tiriPrototype>
       <input>
         <param type="objXML *" name="XML">Targeted XML document to query.  Can be NULL for XQuery expressions that do not require a context.</param>
         <param type="INT" name="Index">Optional tag index that establishes the initial context for the query.</param>
@@ -161,6 +168,7 @@ if (query.ok()) {
       <name>InspectFunctions</name>
       <comment>Returns information about compiled XQuery functions.</comment>
       <prototype>ERR xq::InspectFunctions(OBJECTPTR Object, CSTRING Name, XIF ResultFlags, CSTRING * Result)</prototype>
+      <tiriPrototype>err, Result:str = InspectFunctions(Name:str, ResultFlags:num)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Name">The name of the function or functions to inspect (supports wildcards).</param>
         <param type="XIF" name="ResultFlags" lookup="XIF">Bitmask controlling the returned information.</param>
@@ -197,6 +205,7 @@ if (query.ok()) {
       <name>RegisterFunction</name>
       <comment>Register a custom XQuery function.</comment>
       <prototype>ERR xq::RegisterFunction(OBJECTPTR Object, CSTRING FunctionName, FUNCTION * Callback)</prototype>
+      <tiriPrototype>err = RegisterFunction(FunctionName:str, Callback:func)</tiriPrototype>
       <input>
         <param type="CSTRING" name="FunctionName">The name of the function to register (e.g., "custom-function").</param>
         <param type="FUNCTION *" name="Callback">The callback function to register for FunctionName.</param>
@@ -218,6 +227,7 @@ if (query.ok()) {
       <name>Search</name>
       <comment>For node-based queries, calls a function for each matching node.</comment>
       <prototype>ERR xq::Search(OBJECTPTR Object, objXML * XML, FUNCTION * Callback, INT Index, XEF Flags)</prototype>
+      <tiriPrototype>err = Search(XML:obj, Callback:func, Index:num, Flags:num)</tiriPrototype>
       <input>
         <param type="objXML *" name="XML">Target XML document to search.</param>
         <param type="FUNCTION *" name="Callback">Optional callback function to invoke for each matching node.</param>

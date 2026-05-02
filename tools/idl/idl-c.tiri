@@ -5,6 +5,7 @@
 
    include 'core'
    include 'xml'
+   import 'json'
 
    global glHeader = array<string>
    global glOutput = array<string>
@@ -781,8 +782,79 @@ global function saveOutput()
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Generate private C function prototypes for the module.
 
+function tiriTypeName(Field:table):str
+   local t_type
+
+   if not Field then
+      print(debug.traceback())
+   end
+
+   if Field.fullType then
+      t_type = Field.fullType.t_type
+   end
+
+   return choose t_type from
+      'num'   -> 'num'
+      'str'   -> 'str'
+      'bool'  -> 'bool'
+      'obj'   -> 'obj'
+      'array' -> 'array'
+      'func'  -> 'func'
+      'table' -> 'table'
+      'thread' -> 'thread'
+      'range' -> 'range'
+      nil     -> nil
+      else    -> 'any'
+   end
+end
+
+function buildTiriPrototype(Name:str, Params:table, Result:table):str
+   proto = ''
+   response = ''
+
+   if Result then
+      n = tiriTypeName(Result)
+      if Result.basicType is 'ERR' then
+         n = 'err'
+      else
+         if Result.name then
+            n = Result.name .. ':' .. n
+         end
+      end
+      if response?? then response ..= ', ' end
+      response ..= n
+   end
+
+   if Params?? then
+      for param in values(Params) do
+         if param.resultValue then
+            if response?? then response ..= ', ' end
+            if param.name then
+               response ..= param.name .. ':' .. (tiriTypeName(param) ?? 'any')
+            else
+               response ..= tiriTypeName(param) ?? 'any'
+            end
+         else
+            if proto?? then proto ..= ', ' end
+
+            if param.type is '...' then
+               proto ..= '...'
+            else
+               proto ..= param.name .. ':' .. (tiriTypeName(param) ?? 'any')
+            end
+         end
+      end
+   end
+
+   if response?? then
+      return f'{response} = {Name}({proto})'
+   else
+      return f'{Name}({proto})'
+   end
+end
+
+--@Doc(text=[[@desc Generate function prototypes for the module.]])
 global function buildPrototypes()
    if glClasses then
       for className, cl in pairs(glClasses) do
@@ -791,10 +863,11 @@ global function buildPrototypes()
                proto = 'OBJECTPTR Object'
                if method.params?? then
                   for param in values(method.params) do
-                     proto ..= ', ' .. (param.extType ?? param.docType) .. ' ' .. param.name
+                     proto ..= f', {param.extType ?? param.docType} {param.name}'
                   end
                end
                method.prototype = f'ERR {cl.methodPrefix:lower()}::{method.name}({proto})'
+               method.tiriPrototype = buildTiriPrototype(method.name, method.params, { fullType=glTypes.error, basicType='ERR' })
             end
          end
       end
@@ -804,7 +877,7 @@ global function buildPrototypes()
       proto = ''
       prefix = ''
       if glFunctionPrefix?? then
-         proto = 'namespace ' .. glFunctionPrefix .. ' {\n'
+         proto = f'namespace {glFunctionPrefix} {{\n'
          prefix = glFunctionPrefix .. '::'
       end
 
@@ -818,11 +891,12 @@ global function buildPrototypes()
 
          func.prototype = (func.c_response ?? 'void') .. ' ' .. func.name .. '(' .. (func.c_proto ?? '') .. ')'
          func.docPrototype = (func.doc_response ?? 'void') .. ' ' .. prefix .. func.name .. '(' .. (func.doc_proto ?? '') .. ')'
+         func.tiriPrototype = buildTiriPrototype(func.name, func.input, func.result)
 
          if glFunctionPrefix?? then
-            proto ..= 'extern ' .. func.prototype .. ';\n'
+            proto ..= f'extern {func.prototype};\n'
          else
-            proto ..= 'extern "C" ' .. func.prototype .. ';\n'
+            proto ..= f'extern "C" {func.prototype};\n'
          end
       end
 

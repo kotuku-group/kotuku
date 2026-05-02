@@ -69,17 +69,20 @@ loadActions()
 
 setAction('Activate', {
    comment   = 'Performs the native action of the object.',
-   prototype = 'ERR acActivate(*Object)'
+   prototype = 'ERR acActivate(*Object)',
+   tiriPrototype = 'err = Object.acActivate()'
 })
 
 setAction('Clear', {
    comment   = 'Clears an object\'s data.',
-   prototype = 'ERR acClear(*Object)'
+   prototype = 'ERR acClear(*Object)',
+   tiriPrototype = 'err = Object.acClear()'
 })
 
 setAction('Clipboard', {
    comment   = 'Copy and paste information to and from clipboard objects.',
    prototype = 'ERR acClipboard(*Object, OBJECTID Clipboard, CLIPMODE Mode)',
+   tiriPrototype = 'err = Object.acClipboard(Clipboard:obj, Mode:CLIPMODE)'
    params    = {
       { name='Mode', type='CLIPMODE', lookup='CLIPMODE', comment='The mode that will be used to shift data between the target object and clipboard system.' }
    }
@@ -88,6 +91,7 @@ setAction('Clipboard', {
 setAction('CopyData', {
    comment   = 'Copies one object\'s data to another.',
    prototype = 'ERR acCopyData(*Object, OBJECTID Dest)',
+   tiriPrototype = 'err = Object.acCopyData(Dest:obj)',
    params    = {
       { name='Dest', type='OBJECTID', comment='The unique ID of the destination object.' }
    }
@@ -96,6 +100,7 @@ setAction('CopyData', {
 setAction('DataFeed', {
    comment   = 'Provides a mechanism for feeding data to objects.',
    prototype = 'ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, APTR Buffer, INT Size)',
+   tiriPrototype = 'err = Object.acDataFeed(Object:obj, Datatype:DATA, Buffer:str)',
    params    = {
       { name='Object', type='OBJECTID', comment='Must refer to the unique ID of the object that you represent. If you do not represent an object, set this parameter to the current task ID.' },
       { name='Datatype', type='DATA', lookup='DATA', comment='The type of data being sent.' },
@@ -106,17 +111,20 @@ setAction('DataFeed', {
 
 setAction('Deactivate', {
    comment   = 'Stops an object from performing its native activities.',
-   prototype = 'ERR acDeactivate(*Object)'
+   prototype = 'ERR acDeactivate(*Object)',
+   tiriPrototype = 'err = Object.acDeactivate()'
 })
 
 setAction('Disable', {
    comment   = 'Disables an object.',
-   prototype = 'ERR acDisable(*Object)'
+   prototype = 'ERR acDisable(*Object)',
+   tiriPrototype = 'err = Object.acDisable()'
 })
 
 setAction('DragDrop', {
    comment   = 'Manages drag and drop from one object to another.',
    prototype = 'ERR acDragDrop(*Object, OBJECTID Source, INT Item, DATA Datatype)',
+   tiriPrototype = 'err = Object.acDragDrop(Source:obj, Item:num, Datatype:DATA)',
    params    = {
       { name='Source', type='OBJECTID', comment='Refers to the object containing the source data.' },
       { name='Item', type='INT', comment='An item ID, relevant to the source object.' },
@@ -127,6 +135,7 @@ setAction('DragDrop', {
 setAction('Draw', {
    comment   = 'Draws object graphics to drawable areas.',
    prototype = 'ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)',
+   tiriPrototype = 'err = Object.acDraw(X:num, Y:num, Width:num, Height:num)',
    params    = {
       { name='X', type='INT', comment='The X position of the region to be drawn.' },
       { name='Y', type='INT', comment='The Y position of the region to be drawn.' },
@@ -137,17 +146,20 @@ setAction('Draw', {
 
 setAction('Enable', {
    comment   = 'Restore the state of a disabled object.',
-   prototype = 'ERR acEnable(*Object)'
+   prototype = 'ERR acEnable(*Object)',
+   tiriPrototype = 'err = Object.acEnable()'
 })
 
 setAction('Flush', {
    comment   = 'Flush buffered data from an object.',
-   prototype = 'ERR acFlush(*Object)'
+   prototype = 'ERR acFlush(*Object)',
+   tiriPrototype = 'err = Object.acFlush()'
 })
 
 setAction('Focus', {
    comment   = 'Focus on this object in the user interface.',
-   prototype = 'ERR acFocus(*Object)'
+   prototype = 'ERR acFocus(*Object)',
+   tiriPrototype = 'err = Object.acFocus()'
 })
 
 setAction('FreeWarning', {
@@ -156,12 +168,14 @@ setAction('FreeWarning', {
 
 setAction('Free', {
    comment   = 'Removes the object and its resources.',
-   prototype = 'ERR FreeResource(*Object)'
+   prototype = 'ERR FreeResource(*Object)',
+   tiriPrototype = 'err = Object.acFree()'
 })
 
 setAction('GetKey', {
    comment   = 'Retrieves custom key values that are not defined by an object\'s structure.',
    prototype = 'ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)',
+   tiriPrototype = 'err = Object.acGetKey(Key:str, Value:str, Size:num)',
    params    = {
       { name='Key', type='CSTRING', comment='The name of a key value.' },
       { name='Value', type='STRING', comment='Pointer to a buffer space large enough to hold the retrieved value.' },
@@ -171,27 +185,32 @@ setAction('GetKey', {
 
 setAction('Hide', {
    comment   = 'Hides a visible object from the view of the user.',
-   prototype = 'ERR acHide(*Object)'
+   prototype = 'ERR acHide(*Object)',
+   tiriPrototype = 'err = Object.acHide()'
 })
 
 setAction('Init', {
    comment   = 'Initialises an object so that it is ready for active use.',
-   prototype = 'ERR InitObject(*Object)'
+   prototype = 'ERR InitObject(*Object)',
+   tiriPrototype = 'err = Object.init()'
 })
 
 setAction('Lock', {
    comment   = "Lock the underlying data or representation of the object.",
-   prototype = 'ERR acLock(*Object)'
+   prototype = 'ERR acLock(*Object)',
+   tiriPrototype = 'err = Object.acLock()'
 })
 
 setAction('LostFocus', {
    comment   = 'This internal action is called when an object loses the user focus.',
-   prototype = 'ERR acLostFocus(*Object)'
+   prototype = 'ERR acLostFocus(*Object)',
+   tiriPrototype = 'err = Object.acLostFocus()'
 })
 
 setAction('Move', {
    comment   = 'Moves the physical representation of an object to a new location.',
    prototype = 'ERR acMove(*Object, DOUBLE DeltaX, DOUBLE DeltaY, DOUBLE DeltaZ)',
+   tiriPrototype = 'err = Object.acMove(DeltaX:num, DeltaY:num, DeltaZ:num)',
    params    = {
       { name='DeltaX', type='DOUBLE', comment='The number of units to move along the X axis.' },
       { name='DeltaY', type='DOUBLE', comment='The number of units to move along the Y axis.' },
@@ -201,17 +220,20 @@ setAction('Move', {
 
 setAction('MoveToBack', {
    comment   = 'Move an object to the back of its current location.',
-   prototype = 'ERR acMoveToBack(*Object)'
+   prototype = 'ERR acMoveToBack(*Object)',
+   tiriPrototype = 'err = Object.acMoveToBack()'
 })
 
 setAction('MoveToFront', {
    comment   = 'Move an object to the front of its current location.',
-   prototype = 'ERR acMoveToFront(*Object)'
+   prototype = 'ERR acMoveToFront(*Object)',
+   tiriPrototype = 'err = Object.acMoveToFront()'
 })
 
 setAction('MoveToPoint', {
    comment   = 'Moves the coordinates of an object to a new position.',
    prototype = 'ERR acMoveToPoint(*Object, DOUBLE X, DOUBLE Y, DOUBLE Z, MTF Flags)',
+   tiriPrototype = 'err = Object.acMoveToPoint(X:num, Y:num, Z:num, Flags:MTF)',
    params    = {
       { name='X', type='DOUBLE', comment='The new X position to move the object to.' },
       { name='Y', type='DOUBLE', comment='The new Y position to move the object to.' },
@@ -234,22 +256,26 @@ setAction('NewOwner', {
 
 setAction('Next', {
    comment   = 'Move to the next record.',
-   prototype = 'ERR acNext(*Object)'
+   prototype = 'ERR acNext(*Object)',
+   tiriPrototype = 'err = Object.acNext()'
 })
 
 setAction('Prev', {
    comment   = 'Move to the previous record.',
-   prototype = 'ERR acPrev(*Object)'
+   prototype = 'ERR acPrev(*Object)',
+   tiriPrototype = 'err = Object.acPrev()'
 })
 
 setAction('Query', {
    comment   = 'Retrieves the latest information from an object.',
-   prototype = 'ERR acQuery(*Object)'
+   prototype = 'ERR acQuery(*Object)',
+   tiriPrototype = 'err = Object.acQuery()'
 })
 
 setAction('Read', {
    comment   = 'Reads raw data information from objects.',
    prototype = 'ERR acRead(*Object, APTR Buffer, INT Length, INT *Result)',
+   tiriPrototype = 'err, Result:num = Object.acRead(Buffer:str, Length:num)',
    params    = {
       { name='Buffer', type='APTR', comment='Points a buffer that will receive the data.' },
       { name='Length', type='INT', comment='The total number of bytes to read from the object.  This value cannot exceed the size of the Buffer.' },
@@ -260,6 +286,7 @@ setAction('Read', {
 setAction('Redimension', {
    comment   = 'Repositions and resizes the target object.',
    prototype = 'ERR acRedimension(*Object, DOUBLE X, DOUBLE Y, DOUBLE Z, DOUBLE Width, DOUBLE Height, DOUBLE Depth)',
+   tiriPrototype = 'err = Object.acRedimension(X:num, Y:num, Z:num, Width:num, Height:num, Depth:num)',
    params    = {
       { name='X', type='DOUBLE', comment='The new X position to apply to the target object.' },
       { name='Y', type='DOUBLE', comment='The new Y position to apply to the target object.' },
@@ -272,17 +299,20 @@ setAction('Redimension', {
 
 setAction('Redo', {
    comment   = 'Reverse a previous call to the Undo action.',
-   prototype = 'ERR acRedo(*Object)'
+   prototype = 'ERR acRedo(*Object)',
+   tiriPrototype = 'err = Object.acRedo()'
 })
 
 setAction('Refresh', {
    comment   = 'Refreshes the state of an object.',
-   prototype = 'ERR acRefresh(*Object)'
+   prototype = 'ERR acRefresh(*Object)',
+   tiriPrototype = 'err = Object.acRefresh()'
 })
 
 setAction('Rename', {
    comment   = 'Renames an object.',
    prototype = 'ERR acRename(*Object, CSTRING Name)',
+   tiriPrototype = 'err = Object.acRename(Name:str)',
    params    = {
       { name='Name', type='CSTRING', comment='The new name for the object.' }
    }
@@ -290,12 +320,14 @@ setAction('Rename', {
 
 setAction('Reset', {
    comment   = 'Resets an object to its original state.',
-   prototype = 'ERR acRefresh(*Object)'
+   prototype = 'ERR acReset(*Object)',
+   tiriPrototype = 'err = Object.acReset()'
 })
 
 setAction('Resize', {
    comment   = 'Resizes objects that are represented by two or three dimensional graphics.',
    prototype = 'ERR acResize(*Object, DOUBLE Width, DOUBLE Height, DOUBLE Depth)',
+   tiriPrototype = 'err = Object.acResize(Width:num, Height:num, Depth:num)',
    params    = {
       { name='Width', type='DOUBLE', comment='The new width of the object.' },
       { name='Height', type='DOUBLE', comment='The new height of the object.' },
@@ -306,6 +338,7 @@ setAction('Resize', {
 setAction('SaveImage', {
    comment   = 'Saves an object\'s image to a destination object.',
    prototype = 'ERR acSaveImage(*Object, OBJECTID Dest, CLASSID ClassID)',
+   tiriPrototype = 'err = Object.acSaveImage(Dest:obj, ClassID:num)',
    params    = {
       { name='Dest', type='OBJECTID', comment='Refers to an object that will receive the encoded image data.' },
       { name='ClassID', type='CLASSID', comment='The Picture class to use for encoding the image data.' }
@@ -314,12 +347,14 @@ setAction('SaveImage', {
 
 setAction('SaveSettings', {
    comment   = 'Saves object settings to a physical storage location.',
-   prototype = 'ERR acSaveSettings(*Object)'
+   prototype = 'ERR acSaveSettings(*Object)',
+   tiriPrototype = 'err = Object.acSaveSettings()'
 })
 
 setAction('SaveToObject', {
    comment   = 'Saves an object\'s data to a destination object.',
    prototype = 'ERR acSaveToObject(*Object, OBJECTID Dest, CLASSID ClassID)',
+   tiriPrototype = 'err = Object.acSaveToObject(Dest:obj, ClassID:num)',
    params    = {
       { name='Dest', type='OBJECTID', comment='Refers to an object that will receive the encoded data.' },
       { name='ClassID', type='CLASSID', comment='Can refer to a sub-class that should be used when encoding the data.' }
@@ -329,6 +364,7 @@ setAction('SaveToObject', {
 setAction('Seek', {
    comment   = 'Move the read/write marker to a new position.',
    prototype = 'ERR acSeek(*Object, DOUBLE Offset, INT Position)',
+   tiriPrototype = 'err = Object.acSeek(Offset:num, Position:SEEK)',
    params    = {
       { name='Offset', type='DOUBLE', comment='The desired offset to seek to, relative to the Position parameter.' },
       { name='Position', type='POS', comment='The position that defines the starting point for Offset.' }
@@ -342,6 +378,7 @@ setAction('SetField', {
 setAction('SetKey', {
    comment   = 'Sets custom key values that are not defined by an object\'s structure.',
    prototype = 'ERR acSetKey(*Object, CSTRING Key, CSTRING Value)',
+   tiriPrototype = 'err = Object.acSetKey(Key:str, Value:str)',
    params    = {
       { name='Key', type='CSTRING', comment='The name of the target key.' },
       { name='Value', type='CSTRING', comment='The string value to associate with Key.' }
@@ -350,22 +387,26 @@ setAction('SetKey', {
 
 setAction('Show', {
    comment   = 'Makes an object visible to the user.',
-   prototype = 'ERR acShow(*Object)'
+   prototype = 'ERR acShow(*Object)',
+   tiriPrototype = 'err = Object.acShow()'
 })
 
 setAction('Undo', {
    comment   = 'Reverses the last operation.',
-   prototype = 'ERR acUndo(*Object)'
+   prototype = 'ERR acUndo(*Object)',
+   tiriPrototype = 'err = Object.acUndo()'
 })
 
 setAction('Unlock', {
    comment   = 'Remove a lock from an object.',
-   prototype = 'ERR acUnlock(*Object)'
+   prototype = 'ERR acUnlock(*Object)',
+   tiriPrototype = 'err = Object.acUnlock()'
 })
 
 setAction('Write', {
    comment   = 'Writes data to objects that provide storage or output services.',
    prototype = 'ERR acWrite(*Object, APTR Buffer, INT Length, INT Result)',
+   tiriPrototype = 'err, Result:num = Object.acWrite(Buffer:str, Length:num)',
    params    = {
       { name='Buffer', type='APTR', comment='A buffer containing the data that will be written to the object.' },
       { name='Length', type='INT', comment='The total number of bytes to write to the object.' },
@@ -784,6 +825,10 @@ global function docClass(Class)
                out ..= '      <prototype>' .. glActions[a.name].prototype:escXML() .. '</prototype>\n'
             end
 
+            if glActions[a.name].tiriPrototype?? then
+               out ..= '      <tiriPrototype>' .. glActions[a.name].tiriPrototype:escXML() .. '</tiriPrototype>\n'
+            end
+
             if glActions[a.name].params?? then
                out ..= '      <input>\n'
                for param in values(glActions[a.name].params) do
@@ -835,6 +880,7 @@ global function docClass(Class)
             out ..=f'      <name>{method.name}</name>\n'
             out ..=f'      <comment>{substituteReferences((method.comment ?? ''):escXML(), Class)}</comment>\n'
             if method.prototype?? then out ..= f'      <prototype>{method.prototype:escXML()}</prototype>\n' end
+            if method.tiriPrototype?? then out ..= f'      <tiriPrototype>{method.tiriPrototype:escXML()}</tiriPrototype>\n' end
 
             if not table.empty(method.params) then
                out ..= '      <input>\n'
@@ -1057,6 +1103,7 @@ global function docFunction(Function)
    if Function.synonym??   then out ..= '    <synonym>' .. Function.synonym .. '</synonym>\n' end
    if Function.comment??   then out ..= '    <comment>' .. substituteReferences(Function.comment:escXML()) .. '</comment>\n' end
    if Function.prototype?? then out ..= '    <prototype>' .. docFunctionPrototype(Function):escXML() .. '</prototype>\n' end
+   if Function.tiriPrototype?? then out ..= '    <tiriPrototype>' .. Function.tiriPrototype:escXML() .. '</tiriPrototype>\n' end
    if Function.id??        then out ..= '    <id>' .. Function.id .. '</id>\n' end
 
    -- Function arguments

@@ -27,6 +27,7 @@
       <name>Draw</name>
       <comment>Renders the scene to a bitmap.</comment>
       <prototype>ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)</prototype>
+      <tiriPrototype>err = Object.acDraw(X:num, Y:num, Width:num, Height:num)</tiriPrototype>
       <input>
         <param type="INT" name="X">The X position of the region to be drawn.</param>
         <param type="INT" name="Y">The Y position of the region to be drawn.</param>
@@ -47,12 +48,14 @@
       <name>Flush</name>
       <comment>Flush buffered data from an object.</comment>
       <prototype>ERR acFlush(*Object)</prototype>
+      <tiriPrototype>err = Object.acFlush()</tiriPrototype>
     </action>
 
     <action>
       <name>Redimension</name>
       <comment>Redefines the size of the page.</comment>
       <prototype>ERR acRedimension(*Object, DOUBLE X, DOUBLE Y, DOUBLE Z, DOUBLE Width, DOUBLE Height, DOUBLE Depth)</prototype>
+      <tiriPrototype>err = Object.acRedimension(X:num, Y:num, Z:num, Width:num, Height:num, Depth:num)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="X">The new X position to apply to the target object.</param>
         <param type="DOUBLE" name="Y">The new Y position to apply to the target object.</param>
@@ -66,13 +69,15 @@
     <action>
       <name>Reset</name>
       <comment>Clears all registered definitions and resets field values.  Child vectors are unmodified.</comment>
-      <prototype>ERR acRefresh(*Object)</prototype>
+      <prototype>ERR acReset(*Object)</prototype>
+      <tiriPrototype>err = Object.acReset()</tiriPrototype>
     </action>
 
     <action>
       <name>Resize</name>
       <comment>Redefines the size of the page.</comment>
       <prototype>ERR acResize(*Object, DOUBLE Width, DOUBLE Height, DOUBLE Depth)</prototype>
+      <tiriPrototype>err = Object.acResize(Width:num, Height:num, Depth:num)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="Width">The new width of the object.</param>
         <param type="DOUBLE" name="Height">The new height of the object.</param>
@@ -87,6 +92,7 @@
       <name>AddDef</name>
       <comment>Registers a named definition object within a scene graph.</comment>
       <prototype>ERR sc::AddDef(OBJECTPTR Object, CSTRING Name, OBJECTPTR Def)</prototype>
+      <tiriPrototype>err = AddDef(Name:str, Def:obj)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Name">The unique name to associate with the definition.</param>
         <param type="OBJECTPTR" name="Def">Reference to the definition object.</param>
@@ -109,6 +115,7 @@
       <name>Debug</name>
       <comment>Internal functionality for debugging.</comment>
       <prototype>ERR sc::Debug(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = Debug()</tiriPrototype>
       <description>
 <p>This internal method prints comprehensive information that describes the scene graph to the log.</p>
       </description>
@@ -121,6 +128,7 @@
       <name>FindDef</name>
       <comment>Search for a vector definition by name.</comment>
       <prototype>ERR sc::FindDef(OBJECTPTR Object, CSTRING Name, OBJECTPTR * Def)</prototype>
+      <tiriPrototype>err, Def:obj = FindDef(Name:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Name">The name of the definition.</param>
         <param type="OBJECTPTR *" name="Def">A pointer to the definition object is returned here if discovered.</param>
@@ -140,6 +148,7 @@
       <name>SearchByID</name>
       <comment>Search for a vector by numeric ID.</comment>
       <prototype>ERR sc::SearchByID(OBJECTPTR Object, INT ID, OBJECTPTR * Result)</prototype>
+      <tiriPrototype>err, Result:obj = SearchByID(ID:num)</tiriPrototype>
       <input>
         <param type="INT" name="ID">The ID to search for.</param>
         <param type="OBJECTPTR *" name="Result">This parameter will be updated with the discovered vector, or <code>NULL</code> if not found.</param>

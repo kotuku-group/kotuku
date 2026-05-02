@@ -24,6 +24,7 @@
       <name>Free</name>
       <comment>Terminate the object.</comment>
       <prototype>ERR FreeResource(*Object)</prototype>
+      <tiriPrototype>err = Object.acFree()</tiriPrototype>
       <description>
 <p>This routine may block temporarily if there are unresolved requests awaiting completion in separate threads.</p>
       </description>
@@ -36,6 +37,7 @@
       <name>BlockingResolveAddress</name>
       <comment>Resolves an IP address to a host name.</comment>
       <prototype>ERR nl::BlockingResolveAddress(OBJECTPTR Object, CSTRING Address)</prototype>
+      <tiriPrototype>err = BlockingResolveAddress(Address:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Address">IP address to be resolved, e.g. 123.111.94.82.</param>
       </input>
@@ -55,6 +57,7 @@
       <name>BlockingResolveName</name>
       <comment>Resolves a domain name to an official host name and a list of IP addresses.</comment>
       <prototype>ERR nl::BlockingResolveName(OBJECTPTR Object, CSTRING HostName)</prototype>
+      <tiriPrototype>err = BlockingResolveName(HostName:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="HostName">The host name to be resolved.</param>
       </input>
@@ -74,6 +77,7 @@
       <name>ResolveAddress</name>
       <comment>Resolves an IP address to a host name.</comment>
       <prototype>ERR nl::ResolveAddress(OBJECTPTR Object, CSTRING Address)</prototype>
+      <tiriPrototype>err = ResolveAddress(Address:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Address">IP address to be resolved, e.g. "123.111.94.82".</param>
       </input>
@@ -93,6 +97,7 @@
       <name>ResolveName</name>
       <comment>Resolves a domain name to an official host name and a list of IP addresses.</comment>
       <prototype>ERR nl::ResolveName(OBJECTPTR Object, CSTRING HostName)</prototype>
+      <tiriPrototype>err = ResolveName(HostName:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="HostName">The host name to be resolved.</param>
       </input>

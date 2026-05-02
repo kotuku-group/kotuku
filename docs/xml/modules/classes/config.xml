@@ -46,12 +46,14 @@ print('The Action class is located at ' .. str)
       <name>Clear</name>
       <comment>Clears all configuration data.</comment>
       <prototype>ERR acClear(*Object)</prototype>
+      <tiriPrototype>err = Object.acClear()</tiriPrototype>
     </action>
 
     <action>
       <name>DataFeed</name>
       <comment>Data can be added to a Config object through this action.</comment>
       <prototype>ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, APTR Buffer, INT Size)</prototype>
+      <tiriPrototype>err = Object.acDataFeed(Object:obj, Datatype:DATA, Buffer:str)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Object">Must refer to the unique ID of the object that you represent. If you do not represent an object, set this parameter to the current task ID.</param>
         <param type="DATA" name="Datatype" lookup="DATA">The type of data being sent.</param>
@@ -67,12 +69,14 @@ print('The Action class is located at ' .. str)
       <name>Flush</name>
       <comment>Diverts to <action>SaveSettings</action>.</comment>
       <prototype>ERR acFlush(*Object)</prototype>
+      <tiriPrototype>err = Object.acFlush()</tiriPrototype>
     </action>
 
     <action>
       <name>SaveSettings</name>
       <comment>Saves data to the file that the configuration data was loaded from.</comment>
       <prototype>ERR acSaveSettings(*Object)</prototype>
+      <tiriPrototype>err = Object.acSaveSettings()</tiriPrototype>
       <description>
 <p>This action will save the configuration data back to its original file source (assuming the <fl>Path</fl> remains unchanged).</p>
       </description>
@@ -82,6 +86,7 @@ print('The Action class is located at ' .. str)
       <name>SaveToObject</name>
       <comment>Saves configuration data to an object, using standard config text format.</comment>
       <prototype>ERR acSaveToObject(*Object, OBJECTID Dest, CLASSID ClassID)</prototype>
+      <tiriPrototype>err = Object.acSaveToObject(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded data.</param>
         <param type="CLASSID" name="ClassID">Can refer to a sub-class that should be used when encoding the data.</param>
@@ -95,6 +100,7 @@ print('The Action class is located at ' .. str)
       <name>DeleteGroup</name>
       <comment>Deletes entire groups of configuration data.</comment>
       <prototype>ERR cfg::DeleteGroup(OBJECTPTR Object, CSTRING Group)</prototype>
+      <tiriPrototype>err = DeleteGroup(Group:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Group">The name of the group that will be deleted.</param>
       </input>
@@ -111,6 +117,7 @@ print('The Action class is located at ' .. str)
       <name>DeleteKey</name>
       <comment>Deletes single key entries.</comment>
       <prototype>ERR cfg::DeleteKey(OBJECTPTR Object, CSTRING Group, CSTRING Key)</prototype>
+      <tiriPrototype>err = DeleteKey(Group:str, Key:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Group">The name of the targeted group.</param>
         <param type="CSTRING" name="Key">The name of the targeted key.</param>
@@ -129,6 +136,7 @@ print('The Action class is located at ' .. str)
       <name>GetGroupFromIndex</name>
       <comment>Converts an index number into its matching group string.</comment>
       <prototype>ERR cfg::GetGroupFromIndex(OBJECTPTR Object, INT Index, CSTRING * Group)</prototype>
+      <tiriPrototype>err, Group:str = GetGroupFromIndex(Index:num)</tiriPrototype>
       <input>
         <param type="INT" name="Index">The group index that you want to identify.</param>
         <param type="CSTRING *" name="Group">Points to the group string that matches the index number.</param>
@@ -148,6 +156,7 @@ print('The Action class is located at ' .. str)
       <name>Merge</name>
       <comment>Merges two config objects together.</comment>
       <prototype>ERR cfg::Merge(OBJECTPTR Object, OBJECTPTR Source)</prototype>
+      <tiriPrototype>err = Merge(Source:obj)</tiriPrototype>
       <input>
         <param type="OBJECTPTR" name="Source">The Config object to be merged.</param>
       </input>
@@ -165,6 +174,7 @@ print('The Action class is located at ' .. str)
       <name>MergeFile</name>
       <comment>Merges a configuration file into existing configuration data.</comment>
       <prototype>ERR cfg::MergeFile(OBJECTPTR Object, CSTRING Path)</prototype>
+      <tiriPrototype>err = MergeFile(Path:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Path">The location of the configuration file that you want to merge.</param>
       </input>
@@ -182,6 +192,7 @@ print('The Action class is located at ' .. str)
       <name>ReadValue</name>
       <comment>Reads a key-value string.</comment>
       <prototype>ERR cfg::ReadValue(OBJECTPTR Object, CSTRING Group, CSTRING Key, CSTRING * Data)</prototype>
+      <tiriPrototype>err, Data:str = ReadValue(Group:str, Key:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Group">The name of a group to examine for a key.  If <code>NULL</code>, all groups are scanned.</param>
         <param type="CSTRING" name="Key">The name of a key to retrieve (case sensitive).</param>
@@ -202,6 +213,7 @@ print('The Action class is located at ' .. str)
       <name>Set</name>
       <comment>Sets keys in existing config groups (aborts if the group does not exist).</comment>
       <prototype>ERR cfg::Set(OBJECTPTR Object, CSTRING Group, CSTRING Key, CSTRING Data)</prototype>
+      <tiriPrototype>err = Set(Group:str, Key:str, Data:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Group">The name of the group.  Wildcards are supported.</param>
         <param type="CSTRING" name="Key">The name of the key.</param>
@@ -221,6 +233,7 @@ print('The Action class is located at ' .. str)
       <name>SortByKey</name>
       <comment>Sorts config data using a sequence of sort instructions.</comment>
       <prototype>ERR cfg::SortByKey(OBJECTPTR Object, CSTRING Key, INT Descending)</prototype>
+      <tiriPrototype>err = SortByKey(Key:str, Descending:num)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Key">The name of the key to sort on.</param>
         <param type="INT" name="Descending">Set to true if a descending sort is required.</param>
@@ -238,6 +251,7 @@ print('The Action class is located at ' .. str)
       <name>WriteValue</name>
       <comment>Adds new entries to config objects.</comment>
       <prototype>ERR cfg::WriteValue(OBJECTPTR Object, CSTRING Group, CSTRING Key, CSTRING Data)</prototype>
+      <tiriPrototype>err = WriteValue(Group:str, Key:str, Data:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Group">The name of the group.</param>
         <param type="CSTRING" name="Key">The name of the key.</param>

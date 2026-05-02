@@ -26,6 +26,7 @@
       <name>Disable</name>
       <comment>Marks a proxy as disabled.</comment>
       <prototype>ERR acDisable(*Object)</prototype>
+      <tiriPrototype>err = Object.acDisable()</tiriPrototype>
       <description>
 <p>Calling the Disable() action will mark the proxy as disabled.  Disabled proxies remain in the system but are ignored by programs that scan the database for active proxies.</p>
 <p>The change will not come into effect until the proxy record is saved.</p>
@@ -36,6 +37,7 @@
       <name>Enable</name>
       <comment>Enables a proxy.</comment>
       <prototype>ERR acEnable(*Object)</prototype>
+      <tiriPrototype>err = Object.acEnable()</tiriPrototype>
       <description>
 <p>Calling the Enable() action will mark the proxy as enabled.  The change will not come into effect until the proxy record is saved.</p>
       </description>
@@ -45,6 +47,7 @@
       <name>SaveSettings</name>
       <comment>Permanently saves user configurable settings for a proxy.</comment>
       <prototype>ERR acSaveSettings(*Object)</prototype>
+      <tiriPrototype>err = Object.acSaveSettings()</tiriPrototype>
       <description>
 <p>This action saves a user's settings for a proxy. Saving the proxy settings will make them available to the user on subsequent logins.</p>
 <p>Settings are saved to the user's local account under <code>user:config/network/proxies.cfg</code>.  It is possible for the administrator to define proxy settings as the default for all users by copying the <code>proxies.cfg</code> file to the <code>system:users/default/config/network/</code> folder.</p>
@@ -58,6 +61,7 @@
       <name>DeleteRecord</name>
       <comment>Removes a proxy from the database.</comment>
       <prototype>ERR prx::DeleteRecord(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = DeleteRecord()</tiriPrototype>
       <description>
 <p>Call the DeleteRecord() method to remove a proxy from the system.  The proxy will be permanently removed from the proxy database on the success of this function.</p>
       </description>
@@ -70,6 +74,7 @@
       <name>Find</name>
       <comment>Search for a proxy that matches a set of filters.</comment>
       <prototype>ERR prx::Find(OBJECTPTR Object, INT Port, INT Enabled)</prototype>
+      <tiriPrototype>err = Find(Port:num, Enabled:num)</tiriPrototype>
       <input>
         <param type="INT" name="Port">The port number  to access.  If zero, all proxies will be returned if you perform a looped search.</param>
         <param type="INT" name="Enabled">Set to <code>true</code> to return only enabled proxies, <code>false</code> for disabled proxies or <code>-1</code> for all proxies.</param>
@@ -96,6 +101,7 @@ if (proxy.ok()) {
       <name>FindNext</name>
       <comment>Continues an initiated search.</comment>
       <prototype>ERR prx::FindNext(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = FindNext()</tiriPrototype>
       <description>
 <p>This method continues searches that have been initiated by the <method>Find</method> method. If a proxy is found that matches the filter, <code>ERR::Okay</code> is returned and the details of the proxy object will reflect the data of the discovered record. <code>ERR::NoSearchResult</code> is returned if there are no more matching proxies.</p>
       </description>

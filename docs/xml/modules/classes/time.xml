@@ -25,6 +25,7 @@
       <name>Query</name>
       <comment>Updates the values in a time object with the current system date and time.</comment>
       <prototype>ERR acQuery(*Object)</prototype>
+      <tiriPrototype>err = Object.acQuery()</tiriPrototype>
     </action>
 
   </actions>
@@ -34,6 +35,7 @@
       <name>SetTime</name>
       <comment>Apply the time to the system clock.</comment>
       <prototype>ERR pt::SetTime(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = SetTime()</tiriPrototype>
       <description>
 <p>This method will apply the time object's values to the BIOS.  Depending on the host platform, this method may only work if the user is logged in as the administrator.</p>
       </description>

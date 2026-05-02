@@ -25,6 +25,7 @@
       <name>Draw</name>
       <comment>Draws object graphics to drawable areas.</comment>
       <prototype>ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)</prototype>
+      <tiriPrototype>err = Object.acDraw(X:num, Y:num, Width:num, Height:num)</tiriPrototype>
       <input>
         <param type="INT" name="X">The X position of the region to be drawn.</param>
         <param type="INT" name="Y">The Y position of the region to be drawn.</param>

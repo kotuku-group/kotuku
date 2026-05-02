@@ -1,0 +1,230 @@
+global glSignatureHelpTestUri = nil
+
+@BeforeAll function SetupSignatureHelpTests(State)
+   local err, sdk_path = mSys.ResolvePath(State.folder .. '../../../')
+   assert(err is ERR_Okay, 'Failed to resolve SDK path for LSP signature help tests.')
+   mSys.SetVolume('sdk', sdk_path)
+
+   loadFile('sdk:tools/tiri_lsp/lsp_lib.tiri')
+   assert(lspInitDocs('sdk:docs/xml/'), 'Failed to initialise LSP documentation cache.')
+   glSignatureHelpTestUri = lspPathToUri('sdk:tools/tiri_lsp/tests/test_signature_help.tiri')
+   assert(glSignatureHelpTestUri, 'Failed to create test document URI.')
+
+   glDocCache.modules.Core.functions.WaitTime.tiriPrototype = 'WaitTime(Seconds: num):num'
+   glDocCache.classes.XML.methods.GetAttrib.tiriPrototype = 'GetAttrib(Index: num, Attrib: str, Value: str):num'
+   glDefs.modulePrefixes.mTest = 'Test'
+   glDocCache.modules.Test = {
+      functions = {
+         Mixed = {
+            prototype = 'APTR Mixed(APTR Value)',
+            tiriPrototype = 'Mixed(Value: any):any',
+            comment = 'Mixed pointer fallback.',
+            params = array<table> {
+               { name = 'Value', type = 'APTR', doc = 'Pointer-like value.' }
+            }
+         }
+      }
+   }
+end
+
+function makeDoc(Content:str):table
+   return {
+      uri = glSignatureHelpTestUri,
+      languageId = 'tiri',
+      version = 1,
+      content = Content,
+      lineIndex = nil
+   }
+end
+
+function makeDocAtMarker(Content:str):<table,table>
+   marker_pos = Content:find('|', 0, true)
+   assert(marker_pos, 'Test source must include a cursor marker.')
+
+   line = 0
+   character = 0
+   for i = 0, marker_pos - 1 do
+      c = Content:sub(i, i + 1)
+      if c is '\n' then
+         line++
+         character = 0
+      else
+         character++
+      end
+   end
+
+   doc = makeDoc(Content:sub(0, marker_pos) .. Content:sub(marker_pos + 1))
+   return doc, { line = line, character = character }
+end
+
+function signatureAt(Content:str):table
+   doc, position = makeDocAtMarker(Content)
+   return resolveSignatureHelp(doc, position)
+end
+
+function firstSignature(SignatureHelp:table):table
+   assert(SignatureHelp and #SignatureHelp.signatures is 1, 'Expected one signature help result.')
+   return SignatureHelp.signatures[0]
+end
+
+function assertContains(Text:str, Needle:str, Message:str)
+   assert(Text and Text:find(Needle, 0, true), Message .. f' Expected "{Needle}" in "{Text}".')
+end
+
+@Test function HandlerAdvertisesSignatureHelp()
+   server = {
+      _handlers = {},
+      verbose = false,
+      logMessage = function(Message) end
+   }
+   registerCoreHandlers(server)
+
+   init = server._handlers['initialize']({ jsonrpc = '2.0', id = 1, params = {} }, {})
+   provider = init.result.capabilities.signatureHelpProvider
+   assert(provider, 'Server must advertise signatureHelpProvider.')
+   assert(provider.triggerCharacters[0] is '(', 'Opening parenthesis must trigger signature help.')
+   assert(provider.triggerCharacters[1] is ',', 'Comma must trigger signature help.')
+end
+
+@Test function DocAnnotatedFunctionSignature()
+   help = signatureAt([=[
+@Doc(text=[[
+   Returns a greeting.
+
+   -INPUT-
+   Name: Person to greet
+   Count: Number of greetings
+]])
+function greet(Name: str, Count: num):str
+   return Name
+end
+
+result = greet('Ada', |)
+]=])
+
+   signature = firstSignature(help)
+   assertContains(signature.label, 'greet(Name: str, Count: num):str',
+      'Document function label should use parser signature.')
+   assert(help.activeParameter is 1, 'Cursor after the first comma should select the second parameter.')
+   assert(signature.documentation.value is 'Returns a greeting.', 'Signature docs should use @Doc summary.')
+   assert(signature.parameters[0].label is 'Name: str', 'First parameter should include its type.')
+   assert(signature.parameters[0].documentation.value is 'Person to greet', 'First parameter should include @Doc text.')
+   assert(signature.parameters[1].label is 'Count: num', 'Second parameter should include its type.')
+   assert(signature.parameters[1].documentation.value is 'Number of greetings',
+      'Second parameter should include @Doc text.')
+end
+
+@Test function MixedTypedAndUntypedParameters()
+   help = signatureAt([=[
+function mix(Untyped, Flag: bool)
+end
+
+mix(123, |)
+]=])
+
+   signature = firstSignature(help)
+   assertContains(signature.label, 'mix(Untyped, Flag: bool)', 'Mixed typed/untyped signature should be preserved.')
+   assert(signature.parameters[0].label is 'Untyped', 'Untyped parameter should use the name only.')
+   assert(signature.parameters[1].label is 'Flag: bool', 'Typed parameter should include type.')
+   assert(help.activeParameter is 1, 'Second argument should be active.')
+end
+
+@Test function NestedCallsStringsAndTablesDoNotAdvanceOuterParameter()
+   help = signatureAt([=[
+function target(First, Second, Third)
+end
+
+target(inner("a,b", { x = 1, y = 2 }), |)
+]=])
+
+   signature = firstSignature(help)
+   assert(signature.label is 'target(First, Second, Third)', 'Outer call should be selected after nested call closes.')
+   assert(help.activeParameter is 1, 'Commas in nested calls, strings and tables must not count for the outer call.')
+end
+
+@Test function BuiltinSignature()
+   help = signatureAt('assert(true, |)\n')
+   signature = firstSignature(help)
+
+   assert(signature.label is 'assert(condition, [message])', 'Built-in signature should use static prototype.')
+   assert(signature.parameters[0].label is 'condition', 'Built-in first parameter should be parsed.')
+   assert(signature.parameters[1].label is '[message]', 'Built-in optional parameter should be parsed.')
+   assert(help.activeParameter is 1, 'Built-in active parameter should follow comma count.')
+end
+
+@Test function ModuleApiSignature()
+   help = signatureAt('mSys.WaitTime(|)\n')
+   signature = firstSignature(help)
+
+   assert(signature.label is 'mSys.WaitTime(Seconds: num):num', 'Module API signature should prefer Tiri prototypes.')
+   assert(signature.parameters[0].label is 'Seconds: num', 'Module API parameter should include the Tiri type.')
+   assertContains(signature.parameters[0].documentation.value, 'seconds',
+      'Module API parameter should include XML docs.')
+   assert(help.activeParameter is 0, 'First module parameter should be active.')
+end
+
+@Test function ObjectMethodSignatureHidesReceiver()
+   help = signatureAt([=[
+xml = obj.new('xml')
+xml.mtGetAttrib(1, |)
+]=])
+   signature = firstSignature(help)
+
+   assert(signature.label is 'xml.mtGetAttrib(Index: num, Attrib: str, Value: str):num',
+      'Object method signature should prefer Tiri prototypes.')
+   assert(signature.parameters[0].label is 'Index: num', 'First visible method parameter should be Index.')
+   assert(help.activeParameter is 1, 'Second method argument should be active.')
+end
+
+@Test function TiriPrototypePreservesAnyFallback()
+   help = signatureAt('mTest.Mixed(|)\n')
+   signature = firstSignature(help)
+
+   assert(signature.label is 'mTest.Mixed(Value: any):any', 'Tiri prototype should preserve any fallback types.')
+   assert(signature.parameters[0].label is 'Value: any', 'Parameter label should retain any annotations.')
+   assert(signature.parameters[0].documentation.value is 'Pointer-like value.',
+      'Parameter docs should still come from XML parameter metadata.')
+end
+
+@Test function ObjectActionWithNoVisibleParameters()
+   help = signatureAt([=[
+xml = obj.new('xml')
+xml.acClear(|)
+]=])
+   signature = firstSignature(help)
+
+   assert(signature.label is 'xml.acClear()', 'Object action should hide implicit receiver-only parameters.')
+   assert(#signature.parameters is 0, 'Receiver-only action should expose no parameters.')
+   assert(help.activeParameter is 0, 'Active parameter should clamp to zero for empty signatures.')
+end
+
+@Test function UnknownAndOutsideCallReturnNil()
+   assert(not signatureAt('unknown(|)\n'), 'Unknown calls should not return signature help.')
+   assert(not signatureAt('value = 42\n|'), 'Positions outside calls should not return signature help.')
+end
+
+@Test function HandlerReturnsSignatureHelp()
+   server = {
+      _handlers = {},
+      verbose = false,
+      logMessage = function(Message) end
+   }
+   registerCoreHandlers(server)
+
+   doc, position = makeDocAtMarker('assert(true, |)\n')
+   glDocuments[doc.uri] = doc
+
+   response = server._handlers['textDocument/signatureHelp']({
+      jsonrpc = '2.0',
+      id = 2,
+      params = {
+         textDocument = { uri = doc.uri },
+         position = position
+      }
+   }, {})
+
+   glDocuments[doc.uri] = nil
+
+   assert(response.result and response.result.signatures[0].label is 'assert(condition, [message])',
+      'Handler should return resolver signature help.')
+end

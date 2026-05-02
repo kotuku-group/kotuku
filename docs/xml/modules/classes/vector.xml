@@ -26,12 +26,14 @@
       <name>Disable</name>
       <comment>Disabling a vector can be used to trigger style changes and prevent user input.</comment>
       <prototype>ERR acDisable(*Object)</prototype>
+      <tiriPrototype>err = Object.acDisable()</tiriPrototype>
     </action>
 
     <action>
       <name>Draw</name>
       <comment>Draws the surface associated with the vector.</comment>
       <prototype>ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)</prototype>
+      <tiriPrototype>err = Object.acDraw(X:num, Y:num, Width:num, Height:num)</tiriPrototype>
       <input>
         <param type="INT" name="X">The X position of the region to be drawn.</param>
         <param type="INT" name="Y">The Y position of the region to be drawn.</param>
@@ -47,30 +49,35 @@
       <name>Enable</name>
       <comment>Reverses the effects of disabling the vector.</comment>
       <prototype>ERR acEnable(*Object)</prototype>
+      <tiriPrototype>err = Object.acEnable()</tiriPrototype>
     </action>
 
     <action>
       <name>Hide</name>
       <comment>Changes the vector's visibility setting to hidden.</comment>
       <prototype>ERR acHide(*Object)</prototype>
+      <tiriPrototype>err = Object.acHide()</tiriPrototype>
     </action>
 
     <action>
       <name>MoveToBack</name>
       <comment>Move a vector to the back of its stack.</comment>
       <prototype>ERR acMoveToBack(*Object)</prototype>
+      <tiriPrototype>err = Object.acMoveToBack()</tiriPrototype>
     </action>
 
     <action>
       <name>MoveToFront</name>
       <comment>Move a vector to the front of its stack.</comment>
       <prototype>ERR acMoveToFront(*Object)</prototype>
+      <tiriPrototype>err = Object.acMoveToFront()</tiriPrototype>
     </action>
 
     <action>
       <name>Show</name>
       <comment>Changes the vector's visibility setting to visible.</comment>
       <prototype>ERR acShow(*Object)</prototype>
+      <tiriPrototype>err = Object.acShow()</tiriPrototype>
     </action>
 
   </actions>
@@ -80,6 +87,7 @@
       <name>Debug</name>
       <comment>Internal functionality for debugging.</comment>
       <prototype>ERR vec::Debug(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = Debug()</tiriPrototype>
       <description>
 <p>This internal method prints comprehensive debugging information to the log.</p>
       </description>
@@ -92,6 +100,7 @@
       <name>FreeMatrix</name>
       <comment>Remove an allocated VectorMatrix structure.</comment>
       <prototype>ERR vec::FreeMatrix(OBJECTPTR Object, struct VectorMatrix * Matrix)</prototype>
+      <tiriPrototype>err = FreeMatrix(Matrix:any)</tiriPrototype>
       <input>
         <param type="struct VectorMatrix *" name="Matrix">Reference to the structure that requires removal.</param>
       </input>
@@ -108,6 +117,7 @@
       <name>GetBoundary</name>
       <comment>Returns the graphical boundary of a vector.</comment>
       <prototype>ERR vec::GetBoundary(OBJECTPTR Object, VBF Flags, DOUBLE * X, DOUBLE * Y, DOUBLE * Width, DOUBLE * Height)</prototype>
+      <tiriPrototype>err, X:num, Y:num, Width:num, Height:num = GetBoundary(Flags:num)</tiriPrototype>
       <input>
         <param type="VBF" name="Flags" lookup="VBF">Optional flags.</param>
         <param type="DOUBLE *" name="X">The left-most position of the boundary is returned here.</param>
@@ -133,6 +143,7 @@
       <name>NewMatrix</name>
       <comment>Returns a VectorMatrix structure that allows transformations to be applied to the vector.</comment>
       <prototype>ERR vec::NewMatrix(OBJECTPTR Object, struct VectorMatrix ** Transform, INT End)</prototype>
+      <tiriPrototype>err, Transform:any = NewMatrix(End:num)</tiriPrototype>
       <input>
         <param type="struct VectorMatrix **" name="Transform">A reference to the new transform structure is returned here.</param>
         <param type="INT" name="End">If <code>true</code>, the matrix priority is lowered by inserting it at the end of the transform list.</param>
@@ -152,6 +163,7 @@
       <name>PointInPath</name>
       <comment>Checks if point at (X,Y) is within a vector's path.</comment>
       <prototype>ERR vec::PointInPath(OBJECTPTR Object, DOUBLE X, DOUBLE Y)</prototype>
+      <tiriPrototype>err = PointInPath(X:num, Y:num)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="X">The X coordinate of the point.</param>
         <param type="DOUBLE" name="Y">The Y coordinate of the point.</param>
@@ -172,6 +184,7 @@
       <name>Push</name>
       <comment>Push a vector to a new position within its area of the vector stack.</comment>
       <prototype>ERR vec::Push(OBJECTPTR Object, INT Position)</prototype>
+      <tiriPrototype>err = Push(Position:num)</tiriPrototype>
       <input>
         <param type="INT" name="Position">Specify a relative position index here (-ve to move backwards, +ve to move forwards)</param>
       </input>
@@ -189,6 +202,7 @@
       <name>SubscribeFeedback</name>
       <comment>Subscribe to events that relate to the vector.</comment>
       <prototype>ERR vec::SubscribeFeedback(OBJECTPTR Object, FM Mask, FUNCTION * Callback)</prototype>
+      <tiriPrototype>err = SubscribeFeedback(Mask:num, Callback:func)</tiriPrototype>
       <input>
         <param type="FM" name="Mask" lookup="FM">Defines the feedback events required by the client.  Set to <code>0xffffffff</code> if all messages are required.</param>
         <param type="FUNCTION *" name="Callback">The function that will receive feedback events.</param>
@@ -208,6 +222,7 @@
       <name>SubscribeInput</name>
       <comment>Create a subscription for input events that relate to the vector.</comment>
       <prototype>ERR vec::SubscribeInput(OBJECTPTR Object, JTYPE Mask, FUNCTION * Callback)</prototype>
+      <tiriPrototype>err = SubscribeInput(Mask:num, Callback:func)</tiriPrototype>
       <input>
         <param type="JTYPE" name="Mask" lookup="JTYPE">Combine <code>JTYPE</code> flags to define the input messages required by the client.  Set to zero to remove an existing subscription.</param>
         <param type="FUNCTION *" name="Callback">Reference to a function that will receive input messages.</param>
@@ -232,6 +247,7 @@
       <name>SubscribeKeyboard</name>
       <comment>Create a subscription for input events that relate to the vector.</comment>
       <prototype>ERR vec::SubscribeKeyboard(OBJECTPTR Object, FUNCTION * Callback)</prototype>
+      <tiriPrototype>err = SubscribeKeyboard(Callback:func)</tiriPrototype>
       <input>
         <param type="FUNCTION *" name="Callback">Reference to a callback function that will receive input messages.</param>
       </input>
@@ -255,6 +271,7 @@
       <name>Trace</name>
       <comment>Returns the coordinates for a vector path, using callbacks.</comment>
       <prototype>ERR vec::Trace(OBJECTPTR Object, FUNCTION * Callback, DOUBLE Scale, INT Transform)</prototype>
+      <tiriPrototype>err = Trace(Callback:func, Scale:num, Transform:num)</tiriPrototype>
       <input>
         <param type="FUNCTION *" name="Callback">A function to call with the path coordinates.</param>
         <param type="DOUBLE" name="Scale">Set to <code>1.0</code> (recommended) to trace the path at a scale of 1 to 1.</param>

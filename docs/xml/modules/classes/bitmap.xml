@@ -28,6 +28,7 @@
       <name>Clear</name>
       <comment>Clears a bitmap's image to <fl>BkgdIndex</fl>.</comment>
       <prototype>ERR acClear(*Object)</prototype>
+      <tiriPrototype>err = Object.acClear()</tiriPrototype>
       <description>
 <p>Clearing a bitmap wipes away its graphical contents by drawing a blank area over its existing graphics.  The colour of the blank area is determined by the <fl>BkgdIndex</fl> field.  To clear a bitmap to a different colour, use the <method>DrawRectangle</method> method instead.</p>
 <p>If the bitmap supports alpha blending and a transparent result is desired, setting <fl>BkgdIndex</fl> to zero is an efficient way to achieve this outcome.</p>
@@ -38,6 +39,7 @@
       <name>CopyData</name>
       <comment>Copies bitmap image data to other bitmaps with colour remapping enabled.</comment>
       <prototype>ERR acCopyData(*Object, OBJECTID Dest)</prototype>
+      <tiriPrototype>err = Object.acCopyData(Dest:obj)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">The unique ID of the destination object.</param>
       </input>
@@ -51,6 +53,7 @@
       <name>Draw</name>
       <comment>Clears a bitmap's image to <fl>BkgdIndex</fl>.</comment>
       <prototype>ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)</prototype>
+      <tiriPrototype>err = Object.acDraw(X:num, Y:num, Width:num, Height:num)</tiriPrototype>
       <input>
         <param type="INT" name="X">The X position of the region to be drawn.</param>
         <param type="INT" name="Y">The Y position of the region to be drawn.</param>
@@ -63,6 +66,7 @@
       <name>Flush</name>
       <comment>Flushes pending graphics operations and returns when the accelerator is idle.</comment>
       <prototype>ERR acFlush(*Object)</prototype>
+      <tiriPrototype>err = Object.acFlush()</tiriPrototype>
       <description>
 <p>The Flush() action ensures that client graphics operations are synchronised with the graphics accelerator. Synchronisation is essential prior to drawing to the bitmap with the CPU.  Failure to synchronise may result in corruption in the bitmap's graphics display.</p>
 <p>Clients do not need to call this function if solely using the graphics methods provided in the <class name="Bitmap">Bitmap</class> class.</p>
@@ -73,6 +77,7 @@
       <name>Init</name>
       <comment>Initialises a bitmap.</comment>
       <prototype>ERR InitObject(*Object)</prototype>
+      <tiriPrototype>err = Object.init()</tiriPrototype>
       <description>
 <p>This action will initialise a bitmap object so that it is ready for use, which primarily means that a suitable area of memory is reserved for drawing.  If the <fl>Data</fl> field has not already been defined, a new memory block will be allocated for the bitmap region.  The type of memory that is allocated is dependent on the <fl>DataFlags</fl> field, which defaults to <code>MEM::DATA</code>.  To request video RAM, use <code>MEM::VIDEO</code>.  To store graphics data in fast write-able memory, use <code>MEM::TEXTURE</code>.</p>
 <p>The Init() action requires that the <fl>Width</fl> and <fl>Height</fl> fields are defined at minimum.</p>
@@ -83,12 +88,14 @@
       <name>Lock</name>
       <comment>Locks the bitmap surface for direct read/write access.</comment>
       <prototype>ERR acLock(*Object)</prototype>
+      <tiriPrototype>err = Object.acLock()</tiriPrototype>
     </action>
 
     <action>
       <name>Query</name>
       <comment>Populates a bitmap with pre-initialised/default values prior to initialisation.</comment>
       <prototype>ERR acQuery(*Object)</prototype>
+      <tiriPrototype>err = Object.acQuery()</tiriPrototype>
       <description>
 <p>This action will pre-initialise a bitmap object so that its fields are populated with default values.  It stops short of allocating the bitmap's memory.</p>
 <p>This action requires that the <fl>Width</fl> and <fl>Height</fl> fields of the bitmap are defined at minimum.  Populating the bitmap fields is done on a best efforts basis, e.g. if the <fl>BytesPerPixel</fl> is set to 2 then it will be determined that the bitmap is a 16 bit, 64k colour bitmap.</p>
@@ -99,6 +106,7 @@
       <name>Read</name>
       <comment>Reads raw image data from a bitmap object.</comment>
       <prototype>ERR acRead(*Object, APTR Buffer, INT Length, INT *Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acRead(Buffer:str, Length:num)</tiriPrototype>
       <input>
         <param type="APTR" name="Buffer">Points a buffer that will receive the data.</param>
         <param type="INT" name="Length">The total number of bytes to read from the object.  This value cannot exceed the size of the Buffer.</param>
@@ -110,6 +118,7 @@
       <name>Resize</name>
       <comment>Resizes a bitmap object's dimensions.</comment>
       <prototype>ERR acResize(*Object, DOUBLE Width, DOUBLE Height, DOUBLE Depth)</prototype>
+      <tiriPrototype>err = Object.acResize(Width:num, Height:num, Depth:num)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="Width">The new width of the object.</param>
         <param type="DOUBLE" name="Height">The new height of the object.</param>
@@ -131,6 +140,7 @@
       <name>SaveImage</name>
       <comment>Saves a bitmap's image to a data object of your choosing in PCX format.</comment>
       <prototype>ERR acSaveImage(*Object, OBJECTID Dest, CLASSID ClassID)</prototype>
+      <tiriPrototype>err = Object.acSaveImage(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded image data.</param>
         <param type="CLASSID" name="ClassID">The Picture class to use for encoding the image data.</param>
@@ -141,6 +151,7 @@
       <name>Seek</name>
       <comment>Changes the current byte position for read/write operations.</comment>
       <prototype>ERR acSeek(*Object, DOUBLE Offset, INT Position)</prototype>
+      <tiriPrototype>err = Object.acSeek(Offset:num, Position:SEEK)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="Offset">The desired offset to seek to, relative to the Position parameter.</param>
         <param type="POS" name="Position">The position that defines the starting point for Offset.</param>
@@ -151,12 +162,14 @@
       <name>Unlock</name>
       <comment>Unlocks the bitmap surface once direct access is no longer required.</comment>
       <prototype>ERR acUnlock(*Object)</prototype>
+      <tiriPrototype>err = Object.acUnlock()</tiriPrototype>
     </action>
 
     <action>
       <name>Write</name>
       <comment>Writes raw image data to a bitmap object.</comment>
       <prototype>ERR acWrite(*Object, APTR Buffer, INT Length, INT Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acWrite(Buffer:str, Length:num)</tiriPrototype>
       <input>
         <param type="APTR" name="Buffer">A buffer containing the data that will be written to the object.</param>
         <param type="INT" name="Length">The total number of bytes to write to the object.</param>
@@ -171,6 +184,7 @@
       <name>Compress</name>
       <comment>Compresses bitmap data to save memory.</comment>
       <prototype>ERR bmp::Compress(OBJECTPTR Object, INT Level)</prototype>
+      <tiriPrototype>err = Compress(Level:num)</tiriPrototype>
       <input>
         <param type="INT" name="Level">Level of compression.  Zero uses a default setting (recommended), the maximum is 10.</param>
       </input>
@@ -192,6 +206,7 @@
       <name>ConvertToLinear</name>
       <comment>Convert a bitmap's colour space to linear RGB.</comment>
       <prototype>ERR bmp::ConvertToLinear(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = ConvertToLinear()</tiriPrototype>
       <description>
 <p>Use ConvertToLinear to convert the colour space of a bitmap from sRGB to linear RGB.  If the <code>BMF::ALPHA_CHANNEL</code> flag is enabled on the bitmap, pixels with an alpha value of 0 are ignored.</p>
 <p>The <fl>ColourSpace</fl> will be set to <code>LINEAR_RGB</code> on completion.  This method returns immediately if the <fl>ColourSpace</fl> is already set to <code>LINEAR_RGB</code>.</p>
@@ -209,6 +224,7 @@
       <name>ConvertToRGB</name>
       <comment>Convert a bitmap's colour space to standard RGB.</comment>
       <prototype>ERR bmp::ConvertToRGB(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = ConvertToRGB()</tiriPrototype>
       <description>
 <p>Use ConvertToRGB() to convert the colour space of a bitmap from linear RGB to sRGB.  If the <code>BMF::ALPHA_CHANNEL</code> flag is enabled on the bitmap, pixels with an alpha value of 0 are ignored.</p>
 <p>The <fl>ColourSpace</fl> will be set to <code>SRGB</code> on completion.  This method returns immediately if the <fl>ColourSpace</fl> is already set to <code>SRGB</code>.</p>
@@ -226,6 +242,7 @@
       <name>CopyArea</name>
       <comment>Copies a rectangular area from one bitmap to another.</comment>
       <prototype>ERR bmp::CopyArea(OBJECTPTR Object, objBitmap * DestBitmap, BAF Flags, INT X, INT Y, INT Width, INT Height, INT XDest, INT YDest)</prototype>
+      <tiriPrototype>err = CopyArea(DestBitmap:obj, Flags:num, X:num, Y:num, Width:num, Height:num, XDest:num, YDest:num)</tiriPrototype>
       <input>
         <param type="objBitmap *" name="DestBitmap">The target bitmap.</param>
         <param type="BAF" name="Flags" lookup="BAF">Optional flags.</param>
@@ -250,6 +267,7 @@
       <name>Decompress</name>
       <comment>Decompresses a compressed bitmap.</comment>
       <prototype>ERR bmp::Decompress(OBJECTPTR Object, INT RetainData)</prototype>
+      <tiriPrototype>err = Decompress(RetainData:num)</tiriPrototype>
       <input>
         <param type="INT" name="RetainData">Retains the compression data if <code>true</code>.</param>
       </input>
@@ -267,6 +285,7 @@
       <name>Demultiply</name>
       <comment>Reverses the conversion process performed by Premultiply().</comment>
       <prototype>ERR bmp::Demultiply(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = Demultiply()</tiriPrototype>
       <description>
 <p>Use Demultiply() to normalise RGB values that have previously been converted by <method>Premultiply</method>.  This method will return immediately if the bitmap values are already normalised, as determined by the presence of the <code>PREMUL</code> value in <fl>Flags</fl>.</p>
       </description>
@@ -282,6 +301,7 @@
       <name>DrawRectangle</name>
       <comment>Draws rectangles, both filled and unfilled.</comment>
       <prototype>ERR bmp::DrawRectangle(OBJECTPTR Object, INT X, INT Y, INT Width, INT Height, UINT Colour, BAF Flags)</prototype>
+      <tiriPrototype>err = DrawRectangle(X:num, Y:num, Width:num, Height:num, Colour:num, Flags:num)</tiriPrototype>
       <input>
         <param type="INT" name="X">The left-most coordinate of the rectangle.</param>
         <param type="INT" name="Y">The top-most coordinate of the rectangle.</param>
@@ -303,6 +323,7 @@
       <name>GetColour</name>
       <comment>Converts Red, Green, Blue components into a single colour value.</comment>
       <prototype>ERR bmp::GetColour(OBJECTPTR Object, INT Red, INT Green, INT Blue, INT Alpha, UINT * Colour)</prototype>
+      <tiriPrototype>err, Colour:num = GetColour(Red:num, Green:num, Blue:num, Alpha:num)</tiriPrototype>
       <input>
         <param type="INT" name="Red">Red component from 0 - 255.</param>
         <param type="INT" name="Green">Green component from 0 - 255.</param>
@@ -323,6 +344,7 @@
       <name>Premultiply</name>
       <comment>Premultiplies RGB channel values by the alpha channel.</comment>
       <prototype>ERR bmp::Premultiply(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = Premultiply()</tiriPrototype>
       <description>
 <p>Use Premultiply() to convert all RGB values in the bitmap's clipping region to pre-multiplied values.  The exact formula applied per channel is <code>(Colour * Alpha + 0xff)&gt;&gt;8</code>.  The alpha channel is not affected.</p>
 <p>This method will only operate on 32 bit bitmaps, and an alpha channel must be present.  If the RGB values are already pre-multiplied, the method returns immediately.</p>
@@ -340,6 +362,7 @@
       <name>SetClipRegion</name>
       <comment>Sets a clipping region for a bitmap object.</comment>
       <prototype>ERR bmp::SetClipRegion(OBJECTPTR Object, INT Number, INT Left, INT Top, INT Right, INT Bottom, INT Terminate)</prototype>
+      <tiriPrototype>err = SetClipRegion(Number:num, Left:num, Top:num, Right:num, Bottom:num, Terminate:num)</tiriPrototype>
       <input>
         <param type="INT" name="Number">The number of the clip region to set.</param>
         <param type="INT" name="Left">The horizontal start of the clip region.</param>

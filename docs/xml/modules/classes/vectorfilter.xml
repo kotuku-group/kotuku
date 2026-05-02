@@ -29,6 +29,7 @@
       <name>Clear</name>
       <comment>Removes all filter effects.</comment>
       <prototype>ERR acClear(*Object)</prototype>
+      <tiriPrototype>err = Object.acClear()</tiriPrototype>
     </action>
 
   </actions>

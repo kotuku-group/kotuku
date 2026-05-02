@@ -34,6 +34,7 @@
     <name>XValueNodes</name>
     <comment>For node-set XPathValue objects, returns the node-set as an array.</comment>
     <prototype>ERR xml::XValueNodes(struct XPathValue * Value, kt::vector&lt;struct XTag *&gt; * Result)</prototype>
+    <tiriPrototype>err, Result:array = XValueNodes(Value:any)</tiriPrototype>
     <input>
       <param type="struct XPathValue *" name="Value">The XPathValue to convert.</param>
       <param type="kt::vector&lt;struct XTag *&gt; *" name="Result">The node-set is returned here as an array of <st>XTag</st> structures.</param>
@@ -52,6 +53,7 @@
     <name>XValueToNumber</name>
     <comment>Converts an XPathValue to a 64-bit floating point value.</comment>
     <prototype>ERR xml::XValueToNumber(struct XPathValue * Value, DOUBLE * Result)</prototype>
+    <tiriPrototype>err, Result:num = XValueToNumber(Value:any)</tiriPrototype>
     <input>
       <param type="struct XPathValue *" name="Value">The XPathValue to convert.</param>
       <param type="DOUBLE *" name="Result">The numeric representation of the value is returned here.</param>
@@ -69,6 +71,7 @@
     <name>XValueToString</name>
     <comment>Converts an XPathValue to its string representation.</comment>
     <prototype>ERR xml::XValueToString(const struct XPathValue * Value, std::string * Result)</prototype>
+    <tiriPrototype>err, Result:str = XValueToString(Value:any)</tiriPrototype>
     <input>
       <param type="const struct XPathValue *" name="Value">The XPathValue to convert.</param>
       <param type="std::string *" name="Result">Receives the string representation of the value.</param>

@@ -39,6 +39,7 @@
       <name>Activate</name>
       <comment>Initiates playback of SVG animations.</comment>
       <prototype>ERR acActivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acActivate()</tiriPrototype>
       <description>
 <p>SVG documents containing SMIL animation features will remain static until activated through this action.  Upon activation, the animation system begins processing animation sequences in the background according to the configured <fl>FrameRate</fl>.  The <fl>Scene</fl> will be automatically redrawn as each frame is computed, ensuring smooth visual transitions.</p>
 <p>To integrate custom rendering logic with the animation cycle, configure the <fl>FrameCallback</fl> field with an appropriate function.  This callback will be triggered after each frame preparation, enabling applications to implement custom rendering workflows or capture animation frames.</p>
@@ -51,6 +52,7 @@
       <name>DataFeed</name>
       <comment>Processes SVG data streams for incremental document parsing.</comment>
       <prototype>ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, APTR Buffer, INT Size)</prototype>
+      <tiriPrototype>err = Object.acDataFeed(Object:obj, Datatype:DATA, Buffer:str)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Object">Must refer to the unique ID of the object that you represent. If you do not represent an object, set this parameter to the current task ID.</param>
         <param type="DATA" name="Datatype" lookup="DATA">The type of data being sent.</param>
@@ -70,6 +72,7 @@
       <name>Deactivate</name>
       <comment>Halts all SVG animation playback and suspends frame processing.</comment>
       <prototype>ERR acDeactivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acDeactivate()</tiriPrototype>
       <description>
 <p>This action immediately terminates any active animation playback, stopping all animation timers and suspending frame processing.  The SVG document will remain visible in its current state, but no further animation updates will occur until the object is reactivated.</p>
 <p>The deactivation process is immediate and does not affect the underlying scene graph structure.  Animation sequences can be resumed from their current positions by calling the <action>Activate</action> action again.</p>
@@ -81,6 +84,7 @@
       <name>Init</name>
       <comment>Initialises the SVG object and processes source content.</comment>
       <prototype>ERR InitObject(*Object)</prototype>
+      <tiriPrototype>err = Object.init()</tiriPrototype>
       <description>
 <p>The initialisation process establishes the scene graph structure and processes any specified SVG source content.  If a <fl>Path</fl> has been configured, the referenced SVG file will be loaded and parsed immediately.  Alternatively, if <fl>Statement</fl> contains SVG data, that content will be processed instead.</p>
 <p>The default behaviour creates a local <class name="VectorScene">VectorScene</class> object to contain the generated scene graph.  This can be overridden by setting the <fl>Target</fl> field to redirect content into an existing scene graph structure, enabling integration with existing UI components.</p>
@@ -99,6 +103,7 @@
       <name>SaveImage</name>
       <comment>Saves the SVG document as a PNG image.</comment>
       <prototype>ERR acSaveImage(*Object, OBJECTID Dest, CLASSID ClassID)</prototype>
+      <tiriPrototype>err = Object.acSaveImage(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded image data.</param>
         <param type="CLASSID" name="ClassID">The Picture class to use for encoding the image data.</param>
@@ -113,6 +118,7 @@
       <name>SaveToObject</name>
       <comment>Saves the SVG document to a data object.</comment>
       <prototype>ERR acSaveToObject(*Object, OBJECTID Dest, CLASSID ClassID)</prototype>
+      <tiriPrototype>err = Object.acSaveToObject(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded data.</param>
         <param type="CLASSID" name="ClassID">Can refer to a sub-class that should be used when encoding the data.</param>
@@ -126,6 +132,7 @@
       <name>ParseSymbol</name>
       <comment>Instantiates an SVG symbol definition within a target viewport.</comment>
       <prototype>ERR svg::ParseSymbol(OBJECTPTR Object, CSTRING ID, objVectorViewport * Viewport)</prototype>
+      <tiriPrototype>err = ParseSymbol(ID:str, Viewport:obj)</tiriPrototype>
       <input>
         <param type="CSTRING" name="ID">Name of the symbol to parse.</param>
         <param type="objVectorViewport *" name="Viewport">The target viewport.</param>
@@ -140,6 +147,7 @@
       <name>Render</name>
       <comment>Performs high-quality rasterisation of the SVG document to a target bitmap.</comment>
       <prototype>ERR svg::Render(OBJECTPTR Object, objBitmap * Bitmap, INT X, INT Y, INT Width, INT Height)</prototype>
+      <tiriPrototype>err = Render(Bitmap:obj, X:num, Y:num, Width:num, Height:num)</tiriPrototype>
       <input>
         <param type="objBitmap *" name="Bitmap">The target bitmap object to receive the rendered content.</param>
         <param type="INT" name="X">Horizontal position within the target bitmap.</param>

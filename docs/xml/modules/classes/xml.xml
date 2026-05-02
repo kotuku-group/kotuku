@@ -39,6 +39,7 @@
       <name>Clear</name>
       <comment>Completely clears all XML data and resets the object to its initial state.</comment>
       <prototype>ERR acClear(*Object)</prototype>
+      <tiriPrototype>err = Object.acClear()</tiriPrototype>
       <description>
 <p>The Clear action removes all parsed XML content from the object, including the complete tag hierarchy, cached data structures and internal state information.  This action effectively returns the XML object to its freshly-initialised condition, ready to accept new XML data.</p>
       </description>
@@ -48,6 +49,7 @@
       <name>DataFeed</name>
       <comment>Processes and integrates external XML data into the object's document structure.</comment>
       <prototype>ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, APTR Buffer, INT Size)</prototype>
+      <tiriPrototype>err = Object.acDataFeed(Object:obj, Datatype:DATA, Buffer:str)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Object">Must refer to the unique ID of the object that you represent. If you do not represent an object, set this parameter to the current task ID.</param>
         <param type="DATA" name="Datatype" lookup="DATA">The type of data being sent.</param>
@@ -71,6 +73,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>GetKey</name>
       <comment>Deprecated.  Use the Evaluate() method instead.</comment>
       <prototype>ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)</prototype>
+      <tiriPrototype>err = Object.acGetKey(Key:str, Value:str, Size:num)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Key">The name of a key value.</param>
         <param type="STRING" name="Value">Pointer to a buffer space large enough to hold the retrieved value.</param>
@@ -84,13 +87,15 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
     <action>
       <name>Reset</name>
       <comment>Clears the information held in an XML object.</comment>
-      <prototype>ERR acRefresh(*Object)</prototype>
+      <prototype>ERR acReset(*Object)</prototype>
+      <tiriPrototype>err = Object.acReset()</tiriPrototype>
     </action>
 
     <action>
       <name>SaveToObject</name>
       <comment>Saves XML data to a storage object (e.g. <class name="File">File</class>).</comment>
       <prototype>ERR acSaveToObject(*Object, OBJECTID Dest, CLASSID ClassID)</prototype>
+      <tiriPrototype>err = Object.acSaveToObject(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded data.</param>
         <param type="CLASSID" name="ClassID">Can refer to a sub-class that should be used when encoding the data.</param>
@@ -101,6 +106,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>SetKey</name>
       <comment>Sets attributes and content in the XML tree using XPaths.</comment>
       <prototype>ERR acSetKey(*Object, CSTRING Key, CSTRING Value)</prototype>
+      <tiriPrototype>err = Object.acSetKey(Key:str, Value:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Key">The name of the target key.</param>
         <param type="CSTRING" name="Value">The string value to associate with Key.</param>
@@ -124,6 +130,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>Evaluate</name>
       <comment>Run an XQuery expression against the XML data.</comment>
       <prototype>ERR xml::Evaluate(OBJECTPTR Object, CSTRING Statement, CSTRING * Result)</prototype>
+      <tiriPrototype>err, Result:str = Evaluate(Statement:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Statement">An XQuery expression to evaluate.</param>
         <param type="CSTRING *" name="Result">An allocated string from the evaluation is returned here.</param>
@@ -142,6 +149,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>Filter</name>
       <comment>Filters the XML data structure to retain only a specific tag and its descendants.</comment>
       <prototype>ERR xml::Filter(OBJECTPTR Object, CSTRING XPath)</prototype>
+      <tiriPrototype>err = Filter(XPath:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="XPath">A valid XPath expression string that identifies the target tag to retain.  The expression must resolve to exactly one element for successful filtering.</param>
       </input>
@@ -160,6 +168,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>GetAttrib</name>
       <comment>Retrieves the value of a specific XML attribute from a tagged element.</comment>
       <prototype>ERR xml::GetAttrib(OBJECTPTR Object, INT Index, CSTRING Attrib, CSTRING * Value)</prototype>
+      <tiriPrototype>err, Value:str = GetAttrib(Index:num, Attrib:str)</tiriPrototype>
       <input>
         <param type="INT" name="Index">The unique identifier of the XML tag to search.  This must correspond to a valid tag ID as returned by methods such as <method>Search</method>.</param>
         <param type="CSTRING" name="Attrib">The name of the attribute to retrieve (case insensitive).  If NULL or empty, the element's tag name is returned instead.</param>
@@ -186,6 +195,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>GetContent</name>
       <comment>Extracts the immediate text content of an XML element, excluding nested tags.</comment>
       <prototype>ERR xml::GetContent(OBJECTPTR Object, INT Index, STRING Buffer, INT Length)</prototype>
+      <tiriPrototype>err = GetContent(Index:num, Buffer:any, Length:num)</tiriPrototype>
       <input>
         <param type="INT" name="Index">The unique identifier of the XML element from which to extract content.  This must correspond to a valid tag ID as returned by search methods.</param>
         <param type="STRING" name="Buffer">Pointer to a pre-allocated character buffer that will receive the extracted content string.  Must not be NULL.</param>
@@ -219,6 +229,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>GetEntity</name>
       <comment>Retrieves the value of a parsed entity declaration.</comment>
       <prototype>ERR xml::GetEntity(OBJECTPTR Object, CSTRING Name, CSTRING * Value)</prototype>
+      <tiriPrototype>err, Value:str = GetEntity(Name:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Name">The name of the entity to retrieve.  This must correspond to a parsed entity declaration.</param>
         <param type="CSTRING *" name="Value">Receives the resolved entity value on success.  The returned pointer remains valid while the XML object exists.</param>
@@ -237,6 +248,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>GetNamespaceURI</name>
       <comment>Retrieve the namespace URI for a given namespace UID.</comment>
       <prototype>ERR xml::GetNamespaceURI(OBJECTPTR Object, UINT NamespaceID, CSTRING * Result)</prototype>
+      <tiriPrototype>err, Result:str = GetNamespaceURI(NamespaceID:num)</tiriPrototype>
       <input>
         <param type="UINT" name="NamespaceID">The UID of the namespace.</param>
         <param type="CSTRING *" name="Result">Pointer to a string pointer that will receive the namespace URI.</param>
@@ -255,6 +267,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>GetNotation</name>
       <comment>Retrieves information about a parsed notation declaration.</comment>
       <prototype>ERR xml::GetNotation(OBJECTPTR Object, CSTRING Name, CSTRING * Value)</prototype>
+      <tiriPrototype>err, Value:str = GetNotation(Name:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Name">The notation name to look up.</param>
         <param type="CSTRING *" name="Value">Receives the notation descriptor on success.</param>
@@ -273,6 +286,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>GetTag</name>
       <comment>Returns a pointer to the <st>XTag</st> structure for a given tag index.</comment>
       <prototype>ERR xml::GetTag(OBJECTPTR Object, INT Index, struct XTag ** Result)</prototype>
+      <tiriPrototype>err, Result:any = GetTag(Index:num)</tiriPrototype>
       <input>
         <param type="INT" name="Index">The index of the tag that is being retrieved.</param>
         <param type="struct XTag **" name="Result">The <st>XTag</st> is returned in this parameter.</param>
@@ -291,6 +305,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>InsertContent</name>
       <comment>Inserts text content into the XML document structure at specified positions.</comment>
       <prototype>ERR xml::InsertContent(OBJECTPTR Object, INT Index, XMI Where, CSTRING Content, INT * Result)</prototype>
+      <tiriPrototype>err, Result:num = InsertContent(Index:num, Where:num, Content:str)</tiriPrototype>
       <input>
         <param type="INT" name="Index">The unique identifier of the target XML element that will serve as the reference point for insertion.</param>
         <param type="XMI" name="Where" lookup="XMI">Specifies the insertion position relative to the target element.  Use PREV or NEXT for sibling insertion, or CHILD for child content insertion.</param>
@@ -314,6 +329,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>InsertXML</name>
       <comment>Parse an XML string and insert it in the XML tree.</comment>
       <prototype>ERR xml::InsertXML(OBJECTPTR Object, INT Index, XMI Where, CSTRING XML, INT * Result)</prototype>
+      <tiriPrototype>err, Result:num = InsertXML(Index:num, Where:num, XML:str)</tiriPrototype>
       <input>
         <param type="INT" name="Index">The new data will target the tag specified here.</param>
         <param type="XMI" name="Where" lookup="XMI">Use <code>PREV</code> or <code>NEXT</code> to insert behind or ahead of the target tag.  Use <code>CHILD</code> or <code>CHILD_END</code> for a child insert.</param>
@@ -337,6 +353,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>InsertXPath</name>
       <comment>Inserts an XML statement in an XML tree.</comment>
       <prototype>ERR xml::InsertXPath(OBJECTPTR Object, CSTRING XPath, XMI Where, CSTRING XML, INT * Result)</prototype>
+      <tiriPrototype>err, Result:num = InsertXPath(XPath:str, Where:num, XML:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="XPath">An XPath string that refers to the target insertion point.</param>
         <param type="XMI" name="Where" lookup="XMI">Use <code>PREV</code> or <code>NEXT</code> to insert behind or ahead of the target tag.  Use <code>CHILD</code> for a child insert.</param>
@@ -358,6 +375,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>LoadSchema</name>
       <comment>Load an XML Schema definition to enable schema-aware validation.</comment>
       <prototype>ERR xml::LoadSchema(OBJECTPTR Object, CSTRING Path)</prototype>
+      <tiriPrototype>err = LoadSchema(Path:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Path">File system path to the XML Schema (XSD) document.</param>
       </input>
@@ -376,6 +394,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>MoveTags</name>
       <comment>Move an XML tag group to a new position in the XML tree.</comment>
       <prototype>ERR xml::MoveTags(OBJECTPTR Object, INT Index, INT Total, INT DestIndex, XMI Where)</prototype>
+      <tiriPrototype>err = MoveTags(Index:num, Total:num, DestIndex:num, Where:num)</tiriPrototype>
       <input>
         <param type="INT" name="Index">Index of the source tag to be moved.</param>
         <param type="INT" name="Total">The total number of sibling tags (including the targeted tag) to be moved from the source index.  Minimum value of 1.</param>
@@ -400,6 +419,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>RegisterNamespace</name>
       <comment>Register a namespace URI and return its UID.</comment>
       <prototype>ERR xml::RegisterNamespace(OBJECTPTR Object, CSTRING URI, UINT * Result)</prototype>
+      <tiriPrototype>err, Result:num = RegisterNamespace(URI:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="URI">The namespace URI to register. Must not be NULL or empty.</param>
         <param type="UINT *" name="Result">Pointer to an integer that will receive the UID for the namespace URI.</param>
@@ -418,6 +438,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>RemoveTag</name>
       <comment>Removes tag(s) from the XML structure.</comment>
       <prototype>ERR xml::RemoveTag(OBJECTPTR Object, INT Index, INT Total)</prototype>
+      <tiriPrototype>err = RemoveTag(Index:num, Total:num)</tiriPrototype>
       <input>
         <param type="INT" name="Index">Reference to the tag that will be removed.</param>
         <param type="INT" name="Total">The total number of sibling (neighbouring) tags that should also be deleted.  A value of one or less will remove only the indicated tag and its children.  The total may exceed the number of tags actually available, in which case all tags up to the end of the branch will be affected.</param>
@@ -439,6 +460,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>RemoveXPath</name>
       <comment>Removes tag(s) from the XML structure, using an xpath lookup.</comment>
       <prototype>ERR xml::RemoveXPath(OBJECTPTR Object, CSTRING XPath, INT Limit)</prototype>
+      <tiriPrototype>err = RemoveXPath(XPath:str, Limit:num)</tiriPrototype>
       <input>
         <param type="CSTRING" name="XPath">An XML path string.</param>
         <param type="INT" name="Limit">The maximum number of matching tags to delete.  A value of one or zero will remove only the indicated tag and its children.  A value of -1 removes all matching tags.</param>
@@ -461,6 +483,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>ResolvePrefix</name>
       <comment>Resolve a namespace prefix to the UID of its namespace URI within a tag's scope.</comment>
       <prototype>ERR xml::ResolvePrefix(OBJECTPTR Object, CSTRING Prefix, INT TagID, UINT * Result)</prototype>
+      <tiriPrototype>err, Result:num = ResolvePrefix(Prefix:str, TagID:num)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Prefix">The namespace prefix to resolve. Use empty string for default namespace.</param>
         <param type="INT" name="TagID">The tag ID defining the starting scope for namespace resolution.</param>
@@ -487,6 +510,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>Search</name>
       <comment>Searches for XML elements using XPath and XQuery expressions with optional callback processing.</comment>
       <prototype>ERR xml::Search(OBJECTPTR Object, CSTRING Expression, FUNCTION * Callback, INT * Result)</prototype>
+      <tiriPrototype>err, Result:num = Search(Expression:str, Callback:func)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Expression">A valid XQuery expression.</param>
         <param type="FUNCTION *" name="Callback">Optional pointer to a callback function for processing multiple matches.</param>
@@ -512,6 +536,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>Serialise</name>
       <comment>Serialise part of the XML tree to an XML string.</comment>
       <prototype>ERR xml::Serialise(OBJECTPTR Object, INT Index, XMF Flags, STRING * Result)</prototype>
+      <tiriPrototype>err, Result:str = Serialise(Index:num, Flags:num)</tiriPrototype>
       <input>
         <param type="INT" name="Index">Index to a source tag for which serialisation will start.  Set to zero to serialise the entire tree.</param>
         <param type="XMF" name="Flags" lookup="XMF">Use <code>INCLUDE_SIBLINGS</code> to include siblings of the tag found at Index.</param>
@@ -534,6 +559,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>SetAttrib</name>
       <comment>Adds, updates and removes XML attributes.</comment>
       <prototype>ERR xml::SetAttrib(OBJECTPTR Object, INT Index, XMS Attrib, CSTRING Name, CSTRING Value)</prototype>
+      <tiriPrototype>err = SetAttrib(Index:num, Attrib:num, Name:str, Value:str)</tiriPrototype>
       <input>
         <param type="INT" name="Index">Identifies the tag that is to be updated.</param>
         <param type="XMS" name="Attrib" lookup="XMS">Either the index number of the attribute that is to be updated, or set to <code>NEW</code>, <code>UPDATE</code> or <code>UPDATE_ONLY</code>.</param>
@@ -559,6 +585,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>SetTagNamespace</name>
       <comment>Set the namespace for a specific XML tag.</comment>
       <prototype>ERR xml::SetTagNamespace(OBJECTPTR Object, INT TagID, INT NamespaceID)</prototype>
+      <tiriPrototype>err = SetTagNamespace(TagID:num, NamespaceID:num)</tiriPrototype>
       <input>
         <param type="INT" name="TagID">The unique identifier of the XML tag.</param>
         <param type="INT" name="NamespaceID">The UID of the namespace to assign.</param>
@@ -577,6 +604,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>Sort</name>
       <comment>Sorts XML tags to your specifications.</comment>
       <prototype>ERR xml::Sort(OBJECTPTR Object, CSTRING XPath, CSTRING Sort, XSF Flags)</prototype>
+      <tiriPrototype>err = Sort(XPath:str, Sort:str, Flags:num)</tiriPrototype>
       <input>
         <param type="CSTRING" name="XPath">Sort everything under the specified tag, or <code>NULL</code> to sort the entire top level.</param>
         <param type="CSTRING" name="Sort">Pointer to a sorting instruction string.</param>
@@ -598,6 +626,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>ValidateDocument</name>
       <comment>Validate the XML document against the currently loaded schema.</comment>
       <prototype>ERR xml::ValidateDocument(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = ValidateDocument()</tiriPrototype>
       <description>
 <p>This method performs structural and simple type validation of the document using the loaded XML Schema.  The Result parameter returns <code>1</code> when the document conforms to the schema, otherwise <code>0</code>.</p>
       </description>

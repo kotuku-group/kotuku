@@ -35,6 +35,7 @@
     <category>Memory</category>
     <comment>Grants access to memory blocks by identifier.</comment>
     <prototype>ERR AccessMemory(MEMORYID Memory, MEM Flags, INT MilliSeconds, APTR * Result)</prototype>
+    <tiriPrototype>err, Result:any = AccessMemory(Memory:num, Flags:num, MilliSeconds:num)</tiriPrototype>
     <input>
       <param type="MEMORYID" name="Memory">The ID of the memory block to access.</param>
       <param type="MEM" name="Flags" lookup="MEM">Set to <code>READ</code>, <code>WRITE</code> or <code>READ_WRITE</code>.</param>
@@ -61,6 +62,7 @@
     <category>Objects</category>
     <comment>Grants exclusive access to objects via unique ID.</comment>
     <prototype>ERR AccessObject(OBJECTID Object, INT MilliSeconds, OBJECTPTR * Result)</prototype>
+    <tiriPrototype>err, Result:obj = AccessObject(Object:obj, MilliSeconds:num)</tiriPrototype>
     <input>
       <param type="OBJECTID" name="Object">The unique ID of the target object.</param>
       <param type="INT" name="MilliSeconds">The limit in milliseconds before a timeout occurs.  The maximum limit is <code>60000</code>, and <code>100</code> is recommended.</param>
@@ -93,6 +95,7 @@
     <category>Objects</category>
     <comment>This function is responsible for executing action routines.</comment>
     <prototype>ERR Action(AC Action, OBJECTPTR Object, APTR Parameters)</prototype>
+    <tiriPrototype>err = Action(Action:num, Object:obj, Parameters:any)</tiriPrototype>
     <input>
       <param type="AC" name="Action" lookup="AC">An action or method ID must be specified.</param>
       <param type="OBJECTPTR" name="Object">The target object.</param>
@@ -129,6 +132,7 @@
     <category>Objects</category>
     <comment>Returns a pointer to the global action table.</comment>
     <prototype>void ActionList(struct ActionTable ** Actions, INT * Size)</prototype>
+    <tiriPrototype>Actions:array, Size:num = ActionList()</tiriPrototype>
     <input>
       <param type="struct ActionTable **" name="Actions">A pointer to the Core's action table <code>struct ActionTable *</code> is returned. Please note that the first entry in the <code>ActionTable</code> list has all fields driven to <code>NULL</code>, because valid action ID's start from one, not zero.  The final action in the list is also terminated with <code>NULL</code> fields in order to indicate an end to the list.  Knowing this is helpful when scanning the list or calculating the total number of actions supported by the Core.</param>
       <param type="INT *" name="Size">Total number of elements in the returned list.</param>
@@ -167,6 +171,7 @@ struct FunctionField argsResize[] = {
     <category>Files</category>
     <comment>Adds new tags to <st>FileInfo</st> structures.</comment>
     <prototype>ERR AddInfoTag(struct FileInfo * Info, const std::string_view &amp; Name, const std::string_view &amp; Value)</prototype>
+    <tiriPrototype>err = AddInfoTag(Info:any, Name:str, Value:str)</tiriPrototype>
     <input>
       <param type="struct FileInfo *" name="Info">Pointer to a valid <st>FileInfo</st> structure.</param>
       <param type="const std::string_view &amp;" name="Name">The name of the tag, which must be declared in camel-case.</param>
@@ -186,6 +191,7 @@ struct FunctionField argsResize[] = {
     <category>Messages</category>
     <comment>Adds a new message handler for processing incoming messages.</comment>
     <prototype>ERR AddMsgHandler(MSGID MsgType, FUNCTION * Routine, struct MsgHandler ** Handle)</prototype>
+    <tiriPrototype>err, Handle:any = AddMsgHandler(MsgType:num, Routine:func)</tiriPrototype>
     <input>
       <param type="MSGID" name="MsgType" lookup="MSGID">The message type that the handler will intercept.  If zero, all incoming messages are passed to the handler.</param>
       <param type="FUNCTION *" name="Routine">Refers to the function that will handle incoming messages.</param>
@@ -211,6 +217,7 @@ struct FunctionField argsResize[] = {
     <category>System</category>
     <comment>Adjusts the base-line of all log messages.</comment>
     <prototype>INT AdjustLogLevel(INT Delta)</prototype>
+    <tiriPrototype>num = AdjustLogLevel(Delta:num)</tiriPrototype>
     <input>
       <param type="INT" name="Delta">The level of adjustment to make to new log messages.  Zero is no change.  The maximum level is +/- 6.</param>
     </input>
@@ -227,6 +234,7 @@ struct FunctionField argsResize[] = {
     <category>Memory</category>
     <comment>Allocates a managed memory block on the heap.</comment>
     <prototype>ERR AllocMemory(INT Size, MEM Flags, APTR * Address, MEMORYID * ID)</prototype>
+    <tiriPrototype>err, Address:any, ID:num = AllocMemory(Size:num, Flags:num)</tiriPrototype>
     <input>
       <param type="INT" name="Size">The size of the memory block in bytes. Must be greater than zero.</param>
       <param type="MEM" name="Flags" lookup="MEM">Optional allocation flags controlling behavior and ownership.</param>
@@ -263,6 +271,7 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) == ERR::Okay) {
     <category>System</category>
     <comment>Generates unique ID's for general purposes.</comment>
     <prototype>INT AllocateID(IDTYPE Type)</prototype>
+    <tiriPrototype>num = AllocateID(Type:num)</tiriPrototype>
     <input>
       <param type="IDTYPE" name="Type" lookup="IDTYPE">The type of ID that is required.</param>
     </input>
@@ -278,6 +287,7 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) == ERR::Okay) {
     <category>Files</category>
     <comment>Analyses paths to determine their type (file, folder or volume).</comment>
     <prototype>ERR AnalysePath(CSTRING Path, LOC * Type)</prototype>
+    <tiriPrototype>err, Type:num = AnalysePath(Path:str)</tiriPrototype>
     <input>
       <param type="CSTRING" name="Path">The path to analyse.</param>
       <param type="LOC *" name="Type" lookup="LOC">The result will be stored in the variable referred to by this parameter.  The return types are <code>DIRECTORY</code>, <code>FILE</code> and <code>VOLUME</code>.  Set this parameter to <code>NULL</code> if you are only interested in checking if the file exists.</param>
@@ -301,6 +311,7 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) == ERR::Okay) {
     <category>Objects</category>
     <comment>Submit an action for asynchronous execution against an object.</comment>
     <prototype>ERR AsyncAction(AC Action, OBJECTPTR Object, APTR Args, FUNCTION * Callback)</prototype>
+    <tiriPrototype>err = AsyncAction(Action:num, Object:obj, Args:any, Callback:func)</tiriPrototype>
     <input>
       <param type="AC" name="Action" lookup="AC">An action or method ID must be specified here.</param>
       <param type="OBJECTPTR" name="Object">The target object to execute the action against.</param>
@@ -332,6 +343,7 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) == ERR::Okay) {
     <category>Objects</category>
     <comment>Drain the pending queue for listed objects without executing the remaining actions.</comment>
     <prototype>ERR AsyncCancel(OBJECTID * Objects, INT Size)</prototype>
+    <tiriPrototype>err = AsyncCancel(Objects:array, Size:num)</tiriPrototype>
     <input>
       <param type="OBJECTID *" name="Objects">A list of object IDs to cancel.</param>
       <param type="INT" name="Size">Total number of elements in the <code>Objects</code> list.</param>
@@ -351,6 +363,7 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) == ERR::Okay) {
     <category>Objects</category>
     <comment>Return the number of queued and in-flight async actions for an object.</comment>
     <prototype>INT AsyncPending(OBJECTID Object)</prototype>
+    <tiriPrototype>num = AsyncPending(Object:obj)</tiriPrototype>
     <input>
       <param type="OBJECTID" name="Object">The object to query.</param>
     </input>
@@ -366,6 +379,7 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) == ERR::Okay) {
     <category>Objects</category>
     <comment>Block until all queued async actions for the listed objects have completed.</comment>
     <prototype>ERR AsyncWait(OBJECTID * Objects, INT Size, INT TimeOut)</prototype>
+    <tiriPrototype>err = AsyncWait(Objects:array, Size:num, TimeOut:num)</tiriPrototype>
     <input>
       <param type="OBJECTID *" name="Objects">A list of object IDs to wait on.</param>
       <param type="INT" name="Size">Total number of elements in the <code>Objects</code> list.</param>
@@ -388,6 +402,7 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) == ERR::Okay) {
     <category>Events</category>
     <comment>Broadcast an event to all event listeners in the system.</comment>
     <prototype>ERR BroadcastEvent(APTR Event, INT EventSize)</prototype>
+    <tiriPrototype>err = BroadcastEvent(Event:any, EventSize:num)</tiriPrototype>
     <input>
       <param type="APTR" name="Event">Pointer to an event structure.</param>
       <param type="INT" name="EventSize">The size of the <code>Event</code> structure, in bytes.</param>
@@ -410,6 +425,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <category>Objects</category>
     <comment>Checks objects to see whether or not they support certain actions.</comment>
     <prototype>ERR CheckAction(OBJECTPTR Object, AC Action)</prototype>
+    <tiriPrototype>err = CheckAction(Object:obj, Action:num)</tiriPrototype>
     <input>
       <param type="OBJECTPTR" name="Object">The target object.</param>
       <param type="AC" name="Action" lookup="AC">A registered action or method ID.</param>
@@ -434,6 +450,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <category>Memory</category>
     <comment>Verifies the existence of a memory block.</comment>
     <prototype>ERR CheckMemoryExists(MEMORYID ID)</prototype>
+    <tiriPrototype>err = CheckMemoryExists(ID:num)</tiriPrototype>
     <input>
       <param type="MEMORYID" name="ID">The unique identifier of the memory block to verify.</param>
     </input>
@@ -451,6 +468,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <category>Objects</category>
     <comment>Checks if a particular object is still available in the system.</comment>
     <prototype>ERR CheckObjectExists(OBJECTID Object)</prototype>
+    <tiriPrototype>err = CheckObjectExists(Object:obj)</tiriPrototype>
     <input>
       <param type="OBJECTID" name="Object">The object identity to verify.</param>
     </input>
@@ -469,6 +487,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <category>Objects</category>
     <comment>Returns an array of all classes known to the system.</comment>
     <prototype>ERR ClassDatabase(struct ClassRecord *** Classes)</prototype>
+    <tiriPrototype>err, Classes:array = ClassDatabase()</tiriPrototype>
     <input>
       <param type="struct ClassRecord ***" name="Classes">A pointer to an array of class records is returned here.</param>
     </input>
@@ -485,6 +504,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <category>Files</category>
     <comment>Checks if two file paths refer to the same physical file.</comment>
     <prototype>ERR CompareFilePaths(CSTRING PathA, CSTRING PathB)</prototype>
+    <tiriPrototype>err = CompareFilePaths(PathA:str, PathB:str)</tiriPrototype>
     <input>
       <param type="CSTRING" name="PathA">File location 1.</param>
       <param type="CSTRING" name="PathB">File location 2.</param>
@@ -505,6 +525,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <category>Files</category>
     <comment>Makes copies of folders and files.</comment>
     <prototype>ERR CopyFile(CSTRING Source, CSTRING Dest, FUNCTION * Callback)</prototype>
+    <tiriPrototype>err = CopyFile(Source:str, Dest:str, Callback:func)</tiriPrototype>
     <input>
       <param type="CSTRING" name="Source">The source location.</param>
       <param type="CSTRING" name="Dest">The destination location.</param>
@@ -536,6 +557,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <category>Files</category>
     <comment>Makes new folders.</comment>
     <prototype>ERR CreateFolder(CSTRING Path, PERMIT Permissions)</prototype>
+    <tiriPrototype>err = CreateFolder(Path:str, Permissions:num)</tiriPrototype>
     <input>
       <param type="CSTRING" name="Path">The location of the folder.</param>
       <param type="PERMIT" name="Permissions" lookup="PERMIT">Security permissions to apply to the created Dir(s).  Set to <code>NULL</code> if only the current user should have access.</param>
@@ -558,6 +580,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <category>Files</category>
     <comment>Creates symbolic links on supported file systems.</comment>
     <prototype>ERR CreateLink(CSTRING From, CSTRING To)</prototype>
+    <tiriPrototype>err = CreateLink(From:str, To:str)</tiriPrototype>
     <input>
       <param type="CSTRING" name="From">The symbolic link will be created at the location specified here.</param>
       <param type="CSTRING" name="To">The file that you are linking to is specified here.</param>
@@ -585,6 +608,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <category>Objects</category>
     <comment>Returns a pointer to the object that has the current context.</comment>
     <prototype>OBJECTPTR CurrentContext()</prototype>
+    <tiriPrototype>obj = CurrentContext()</tiriPrototype>
     <description>
 <p>This function returns a pointer to the object that has the current context.  Context is primarily used to manage resource allocations.  Manipulating the context is sometimes necessary to ensure that a resource is tracked to the correct object.</p>
 <p>To get the context of the caller (the client), use <function>ParentContext</function>.</p>
@@ -597,6 +621,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <category>System</category>
     <comment>Returns the active Task object.</comment>
     <prototype>objTask * CurrentTask()</prototype>
+    <tiriPrototype>obj = CurrentTask()</tiriPrototype>
     <description>
 <p>This function returns the <class name="Task">Task</class> object of the active process.</p>
 <p>If there is a legitimate circumstance where there is no current task (e.g. if this function is called during Core initialisation) then the &quot;system task&quot; may be returned, which has ownership of Core resources.</p>
@@ -609,6 +634,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <category>Files</category>
     <comment>Deletes files and folders.</comment>
     <prototype>ERR DeleteFile(CSTRING Path, FUNCTION * Callback)</prototype>
+    <tiriPrototype>err = DeleteFile(Path:str, Callback:func)</tiriPrototype>
     <input>
       <param type="CSTRING" name="Path">String referring to the file or folder to be deleted.  Folders must be denoted with a trailing slash.</param>
       <param type="FUNCTION *" name="Callback">Optional callback for receiving feedback during the operation.</param>
@@ -633,6 +659,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <category>Files</category>
     <comment>Deletes volumes from the system.</comment>
     <prototype>ERR DeleteVolume(CSTRING Name)</prototype>
+    <tiriPrototype>err = DeleteVolume(Name:str)</tiriPrototype>
     <input>
       <param type="CSTRING" name="Name">The name of the volume.</param>
     </input>
@@ -652,6 +679,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <category>Fields</category>
     <comment>Resolves a field ID to its registered name.</comment>
     <prototype>CSTRING FieldName(UINT FieldID)</prototype>
+    <tiriPrototype>str = FieldName(FieldID:num)</tiriPrototype>
     <input>
       <param type="UINT" name="FieldID">The unique field hash to resolve.</param>
     </input>
@@ -667,6 +695,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <category>Objects</category>
     <comment>Returns the internal MetaClass for a given class ID.</comment>
     <prototype>objMetaClass * FindClass(CLASSID ClassID)</prototype>
+    <tiriPrototype>obj = FindClass(ClassID:num)</tiriPrototype>
     <input>
       <param type="CLASSID" name="ClassID">A class ID such as one retrieved from <function>ResolveClassName</function>.</param>
     </input>
@@ -684,6 +713,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <category>Fields</category>
     <comment>Finds field descriptors for any class, by ID.</comment>
     <prototype>struct Field * FindField(OBJECTPTR Object, UINT FieldID, OBJECTPTR * Target)</prototype>
+    <tiriPrototype>any, Target:obj = FindField(Object:obj, FieldID:num)</tiriPrototype>
     <input>
       <param type="OBJECTPTR" name="Object">The target object.</param>
       <param type="UINT" name="FieldID">The 'FID' number to lookup.</param>
@@ -706,6 +736,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <category>Objects</category>
     <comment>Searches for objects by name.</comment>
     <prototype>ERR FindObject(CSTRING Name, CLASSID ClassID, FOF Flags, OBJECTID * ObjectID)</prototype>
+    <tiriPrototype>err, ObjectID:obj = FindObject(Name:str, ClassID:num, Flags:num)</tiriPrototype>
     <input>
       <param type="CSTRING" name="Name">The name of an object to search for.</param>
       <param type="CLASSID" name="ClassID">Optional.  Set to a class ID to filter the results down to a specific class type.</param>
@@ -735,6 +766,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     <category>Memory</category>
     <comment>Safely deallocates memory blocks allocated by AllocMemory().</comment>
     <prototype>ERR FreeResource(MEMORYID ID)</prototype>
+    <tiriPrototype>err = FreeResource(ID:num)</tiriPrototype>
     <input>
       <param type="MEMORYID" name="ID">The unique identifier of the memory block to be freed.</param>
     </input>
@@ -759,6 +791,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     <category>System</category>
     <comment>Generates 32-bit IEEE 802.3 CRC checksum values.</comment>
     <prototype>UINT GenCRC32(UINT CRC, APTR Data, UINT Length)</prototype>
+    <tiriPrototype>num = GenCRC32(CRC:num, Data:any, Length:num)</tiriPrototype>
     <input>
       <param type="UINT" name="CRC">If streaming data to this function, this value must reflect the most recently returned CRC integer.  Otherwise set to zero.</param>
       <param type="APTR" name="Data">The data to generate a CRC value for.</param>
@@ -776,6 +809,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     <category>Objects</category>
     <comment>Returns a message structure if called from an action that was executed by the message system.</comment>
     <prototype>struct Message * GetActionMsg()</prototype>
+    <tiriPrototype>any = GetActionMsg()</tiriPrototype>
     <description>
 <p>This function is for use by action and method support routines only.  It will return a <st>Message</st> structure if the action currently under execution has been called directly from the <function>ProcessMessages</function> function.  In all other cases a <code>NULL</code> pointer is returned.</p>
     </description>
@@ -787,6 +821,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     <category>Objects</category>
     <comment>Returns the class ID of an ID-referenced object.</comment>
     <prototype>CLASSID GetClassID(OBJECTID Object)</prototype>
+    <tiriPrototype>num = GetClassID(Object:obj)</tiriPrototype>
     <input>
       <param type="OBJECTID" name="Object">The object to be examined.</param>
     </input>
@@ -802,6 +837,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     <category>Logging</category>
     <comment>Translates error codes into human readable strings.</comment>
     <prototype>CSTRING GetErrorMsg(ERR Error)</prototype>
+    <tiriPrototype>str = GetErrorMsg(Error:num)</tiriPrototype>
     <input>
       <param type="ERR" name="Error">The error code to lookup.</param>
     </input>
@@ -816,6 +852,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     <category>Events</category>
     <comment>Generates unique event ID's suitable for event broadcasting.</comment>
     <prototype>INT64 GetEventID(EVG Group, CSTRING SubGroup, CSTRING Event)</prototype>
+    <tiriPrototype>num = GetEventID(Group:num, SubGroup:str, Event:str)</tiriPrototype>
     <input>
       <param type="EVG" name="Group" lookup="EVG">The group to which the event belongs.</param>
       <param type="CSTRING" name="SubGroup">The sub-group to which the event belongs (case-sensitive).</param>
@@ -835,6 +872,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     <category>Files</category>
     <comment>Gets information about a file or folder.</comment>
     <prototype>ERR GetFileInfo(const std::string_view &amp; Path, struct FileInfo * Info, INT InfoSize)</prototype>
+    <tiriPrototype>err = GetFileInfo(Path:str, Info:any, InfoSize:num)</tiriPrototype>
     <input>
       <param type="const std::string_view &amp;" name="Path">String referring to the file or folder to be queried.</param>
       <param type="struct FileInfo *" name="Info">Pointer to a <st>FileInfo</st> structure to be populated.</param>
@@ -856,6 +894,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     <category>Objects</category>
     <comment>Returns a direct pointer for any object ID.</comment>
     <prototype>OBJECTPTR GetObjectPtr(OBJECTID Object)</prototype>
+    <tiriPrototype>obj = GetObjectPtr(Object:obj)</tiriPrototype>
     <input>
       <param type="OBJECTID" name="Object">The ID of the object to lookup.</param>
     </input>
@@ -870,6 +909,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     <category>Objects</category>
     <comment>Returns the unique ID of an object's owner.</comment>
     <prototype>OBJECTID GetOwnerID(OBJECTID Object)</prototype>
+    <tiriPrototype>obj = GetOwnerID(Object:obj)</tiriPrototype>
     <input>
       <param type="OBJECTID" name="Object">The ID of an object to query.</param>
     </input>
@@ -885,6 +925,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     <category>System</category>
     <comment>Retrieves miscellaneous resource identifiers.</comment>
     <prototype>INT64 GetResource(RES Resource)</prototype>
+    <tiriPrototype>num = GetResource(Resource:num)</tiriPrototype>
     <input>
       <param type="RES" name="Resource" lookup="RES">The ID of the resource that you want to obtain.</param>
     </input>
@@ -900,6 +941,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     <category>System</category>
     <comment>Returns miscellaneous data values from the Core.</comment>
     <prototype>const struct SystemState * GetSystemState()</prototype>
+    <tiriPrototype>any = GetSystemState()</tiriPrototype>
     <description>
 <p>The GetSystemState() function is used to retrieve miscellaneous resource and environment values, such as resource paths, the Core's version number and the name of the host platform.</p>
     </description>
@@ -911,6 +953,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     <category>Files</category>
     <comment>Analyse a file and identify a class that can process it.</comment>
     <prototype>ERR IdentifyFile(CSTRING Path, CLASSID Filter, CLASSID * Class, CLASSID * SubClass)</prototype>
+    <tiriPrototype>err, Class:num, SubClass:num = IdentifyFile(Path:str, Filter:num)</tiriPrototype>
     <input>
       <param type="CSTRING" name="Path">The location of the object data.</param>
       <param type="CLASSID" name="Filter">Restrict the search to classes in this subset, or use <code>CLASSID::NIL</code> to search all classes.</param>
@@ -936,6 +979,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     <category>Objects</category>
     <comment>Initialises an object so that it is ready for use.</comment>
     <prototype>ERR InitObject(OBJECTPTR Object)</prototype>
+    <tiriPrototype>err = InitObject(Object:obj)</tiriPrototype>
     <input>
       <param type="OBJECTPTR" name="Object">The object to initialise.</param>
     </input>
@@ -957,6 +1001,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     <category>Objects</category>
     <comment>Returns a list of all children belonging to an object.</comment>
     <prototype>ERR ListChildren(OBJECTID Object, kt::vector&lt;ChildEntry&gt; * List)</prototype>
+    <tiriPrototype>err = ListChildren(Object:obj, List:any)</tiriPrototype>
     <input>
       <param type="OBJECTID" name="Object">An object to query.</param>
       <param type="kt::vector&lt;ChildEntry&gt; *" name="List">Must refer to an array of <st>ChildEntry</st> structures.</param>
@@ -978,6 +1023,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     <category>Files</category>
     <comment>Loads files into a local cache for fast file processing.</comment>
     <prototype>ERR LoadFile(CSTRING Path, LDF Flags, struct CacheFile ** Cache)</prototype>
+    <tiriPrototype>err, Cache:any = LoadFile(Path:str, Flags:num)</tiriPrototype>
     <input>
       <param type="CSTRING" name="Path">The location of the file to be cached.</param>
       <param type="LDF" name="Flags" lookup="LDF">Optional flags are specified here.</param>
@@ -1002,6 +1048,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     <category>Objects</category>
     <comment>Lock an object to prevent contention between threads.</comment>
     <prototype>ERR LockObject(OBJECTPTR Object, INT MilliSeconds)</prototype>
+    <tiriPrototype>err = LockObject(Object:obj, MilliSeconds:num)</tiriPrototype>
     <input>
       <param type="OBJECTPTR" name="Object">The address of the object to lock.</param>
       <param type="INT" name="MilliSeconds">The total number of milliseconds to wait before giving up.  If <code>-1</code>, the function will wait indefinitely.</param>
@@ -1028,6 +1075,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     <category>Memory</category>
     <comment>Returns information on memory ID's.</comment>
     <prototype>ERR MemoryIDInfo(MEMORYID ID, struct MemInfo * MemInfo, INT Size)</prototype>
+    <tiriPrototype>err = MemoryIDInfo(ID:num, MemInfo:any, Size:num)</tiriPrototype>
     <input>
       <param type="MEMORYID" name="ID">Pointer to a valid memory ID.</param>
       <param type="struct MemInfo *" name="MemInfo">Pointer to a <st>MemInfo</st> structure.</param>
@@ -1056,6 +1104,7 @@ if (!MemoryIDInfo(memid, &amp;info)) {
     <category>Memory</category>
     <comment>Returns information on memory addresses.</comment>
     <prototype>ERR MemoryPtrInfo(APTR Address, struct MemInfo * MemInfo, INT Size)</prototype>
+    <tiriPrototype>err = MemoryPtrInfo(Address:any, MemInfo:any, Size:num)</tiriPrototype>
     <input>
       <param type="APTR" name="Address">Pointer to a valid memory area.</param>
       <param type="struct MemInfo *" name="MemInfo">Pointer to a <st>MemInfo</st> structure to be populated.</param>
@@ -1083,6 +1132,7 @@ if (!MemoryPtrInfo(ptr, &amp;info)) {
     <category>Files</category>
     <comment>Moves folders and files to new locations.</comment>
     <prototype>ERR MoveFile(CSTRING Source, CSTRING Dest, FUNCTION * Callback)</prototype>
+    <tiriPrototype>err = MoveFile(Source:str, Dest:str, Callback:func)</tiriPrototype>
     <input>
       <param type="CSTRING" name="Source">The source path.</param>
       <param type="CSTRING" name="Dest">The destination path.</param>
@@ -1117,6 +1167,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <category>Objects</category>
     <comment>Creates new objects.</comment>
     <prototype>ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR * Object)</prototype>
+    <tiriPrototype>err, Object:obj = NewObject(ClassID:num, Flags:num)</tiriPrototype>
     <input>
       <param type="CLASSID" name="ClassID">A class ID from <code>system/register.h</code> or generated by <function>ResolveClassName</function>.</param>
       <param type="NF" name="Flags" lookup="NF">Optional flags.</param>
@@ -1141,6 +1192,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <category>Objects</category>
     <comment>Send a notification event to action subscribers.</comment>
     <prototype>void NotifySubscribers(OBJECTPTR Object, AC Action, APTR Args, ERR Error)</prototype>
+    <tiriPrototype>NotifySubscribers(Object:obj, Action:num, Args:any, Error:num)</tiriPrototype>
     <input>
       <param type="OBJECTPTR" name="Object">Pointer to the object that is to receive the notification message.</param>
       <param type="AC" name="Action" lookup="AC">The action ID for notification.</param>
@@ -1171,6 +1223,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <category>Files</category>
     <comment>Opens a folder for content scanning.</comment>
     <prototype>ERR OpenDir(CSTRING Path, RDF Flags, struct DirInfo ** Info)</prototype>
+    <tiriPrototype>err, Info:any = OpenDir(Path:str, Flags:num)</tiriPrototype>
     <input>
       <param type="CSTRING" name="Path">The folder location to be scanned.  Using an empty string will scan for volume names.</param>
       <param type="RDF" name="Flags" lookup="RDF">Optional flags.</param>
@@ -1194,6 +1247,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <category>Objects</category>
     <comment>Returns the context of the client.</comment>
     <prototype>OBJECTPTR ParentContext()</prototype>
+    <tiriPrototype>obj = ParentContext()</tiriPrototype>
     <description>
 <p>This function is used to return the context of the caller (the client), as opposed to <function>CurrentContext</function>, which returns the operating context.  This feature is commonly used by methods that need to acquire a reference to the client for resource management reasons.</p>
 <p>Note that this function can return <code>NULL</code> if called when running at process-level, although this would never be the case when called from an action or method.</p>
@@ -1206,6 +1260,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <category>System</category>
     <comment>Returns the current system time, in microseconds.</comment>
     <prototype>INT64 PreciseTime()</prototype>
+    <tiriPrototype>num = PreciseTime()</tiriPrototype>
     <description>
 <p>This function returns the current 'system time' in microseconds (1 millionth of a second).  The value is monotonic if the host platform allows it (typically expressed as the amount of time that has elapsed since the system was switched on).  The benefit of monotonic time is that it is unaffected by changes to the system clock, such as daylight savings adjustments or manual changes by the user.</p>
     </description>
@@ -1217,6 +1272,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <category>Messages</category>
     <comment>Processes system messages that are queued in the task's message buffer.</comment>
     <prototype>ERR ProcessMessages(PMF Flags, INT TimeOut)</prototype>
+    <tiriPrototype>err = ProcessMessages(Flags:num, TimeOut:num)</tiriPrototype>
     <input>
       <param type="PMF" name="Flags" lookup="PMF">Optional flags are specified here (clients should set a value of zero).</param>
       <param type="INT" name="TimeOut">A TimeOut value, measured in milliseconds.  If zero, the function will return as soon as all messages on the queue are processed.  If less than zero, the function does not return until a request for termination is received or a user message requires processing.</param>
@@ -1239,6 +1295,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <category>Memory</category>
     <comment>Change the access permissions of a memory block.</comment>
     <prototype>ERR ProtectMemory(APTR Address, MEM Flags)</prototype>
+    <tiriPrototype>err = ProtectMemory(Address:any, Flags:num)</tiriPrototype>
     <input>
       <param type="APTR" name="Address">Pointer to a memory block obtained from <function>AllocMemory</function>.</param>
       <param type="MEM" name="Flags" lookup="MEM">New access flags (MEM::READ, MEM::WRITE).</param>
@@ -1260,6 +1317,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <category>Objects</category>
     <comment>Delay the execution of an action by adding the call to the message queue.</comment>
     <prototype>ERR QueueAction(AC Action, OBJECTID Object, APTR Args)</prototype>
+    <tiriPrototype>err = QueueAction(Action:num, Object:obj, Args:any)</tiriPrototype>
     <input>
       <param type="AC" name="Action" lookup="AC">The ID of an action or method to execute.</param>
       <param type="OBJECTID" name="Object">The target object.</param>
@@ -1285,6 +1343,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <category>Files</category>
     <comment>Reads a file into a buffer.</comment>
     <prototype>ERR ReadFileToBuffer(CSTRING Path, APTR Buffer, INT BufferSize, INT * Result)</prototype>
+    <tiriPrototype>err, Result:num = ReadFileToBuffer(Path:str, Buffer:any, BufferSize:num)</tiriPrototype>
     <input>
       <param type="CSTRING" name="Path">The path of the file.</param>
       <param type="APTR" name="Buffer">Pointer to a buffer that will receive the file content.</param>
@@ -1311,6 +1370,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <category>Files</category>
     <comment>Read a named tag from a <st>FileInfo</st> structure.</comment>
     <prototype>ERR ReadInfoTag(struct FileInfo * Info, CSTRING Name, CSTRING * Value)</prototype>
+    <tiriPrototype>err, Value:str = ReadInfoTag(Info:any, Name:str)</tiriPrototype>
     <input>
       <param type="struct FileInfo *" name="Info">Pointer to a valid <st>FileInfo</st> structure.</param>
       <param type="CSTRING" name="Name">The name of the tag, which must be declared in camel-case as tags are case-sensitive.</param>
@@ -1331,6 +1391,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <category>Memory</category>
     <comment>Reallocates memory blocks.</comment>
     <prototype>ERR ReallocMemory(APTR Memory, UINT Size, APTR * Address, MEMORYID * ID)</prototype>
+    <tiriPrototype>err, Address:any, ID:num = ReallocMemory(Memory:any, Size:num)</tiriPrototype>
     <input>
       <param type="APTR" name="Memory">Pointer to a memory block obtained from <function>AllocMemory</function>.</param>
       <param type="UINT" name="Size">The size of the new memory block.</param>
@@ -1355,6 +1416,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <category>System</category>
     <comment>Registers a file descriptor for monitoring when the task is asleep.</comment>
     <prototype>ERR RegisterFD(HOSTHANDLE FD, RFD Flags, void (*Routine)(HOSTHANDLE, APTR) , APTR Data)</prototype>
+    <tiriPrototype>err = RegisterFD(FD:any, Flags:num, Routine:func, Data:any)</tiriPrototype>
     <input>
       <param type="HOSTHANDLE" name="FD">The file descriptor that is to be watched.</param>
       <param type="RFD" name="Flags" lookup="RFD">Set to at least one of <code>READ</code>, <code>WRITE</code>, <code>EXCEPT</code>, <code>REMOVE</code>.</param>
@@ -1380,6 +1442,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <category>Memory</category>
     <comment>Releases a lock from a memory based resource.</comment>
     <prototype>ERR ReleaseMemory(MEMORYID MemoryID)</prototype>
+    <tiriPrototype>err = ReleaseMemory(MemoryID:num)</tiriPrototype>
     <input>
       <param type="MEMORYID" name="MemoryID">A reference to a memory resource for release.</param>
     </input>
@@ -1399,6 +1462,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <category>Objects</category>
     <comment>Release a locked object.</comment>
     <prototype>void ReleaseObject(OBJECTPTR Object)</prototype>
+    <tiriPrototype>ReleaseObject(Object:obj)</tiriPrototype>
     <input>
       <param type="OBJECTPTR" name="Object">Pointer to the object to be released.</param>
     </input>
@@ -1412,6 +1476,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <category>Objects</category>
     <comment>Resolve a valid <code>CLASSID</code> to its name.</comment>
     <prototype>CSTRING ResolveClassID(CLASSID ID)</prototype>
+    <tiriPrototype>str = ResolveClassID(ID:num)</tiriPrototype>
     <input>
       <param type="CLASSID" name="ID">The ID of the class that needs to be resolved.</param>
     </input>
@@ -1427,6 +1492,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <category>Objects</category>
     <comment>Resolves any class name to a <code>CLASSID</code> UID.</comment>
     <prototype>CLASSID ResolveClassName(CSTRING Name)</prototype>
+    <tiriPrototype>num = ResolveClassName(Name:str)</tiriPrototype>
     <input>
       <param type="CSTRING" name="Name">The name of the class that requires resolution.</param>
     </input>
@@ -1441,6 +1507,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <category>Files</category>
     <comment>Converts a group ID to its corresponding name.</comment>
     <prototype>CSTRING ResolveGroupID(INT Group)</prototype>
+    <tiriPrototype>str = ResolveGroupID(Group:num)</tiriPrototype>
     <input>
       <param type="INT" name="Group">The group ID.</param>
     </input>
@@ -1455,6 +1522,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <category>Files</category>
     <comment>Converts volume-based paths into absolute paths applicable to the host platform.</comment>
     <prototype>ERR ResolvePath(const std::string_view &amp; Path, RSF Flags, std::string * Result)</prototype>
+    <tiriPrototype>err, Result:str = ResolvePath(Path:str, Flags:num)</tiriPrototype>
     <input>
       <param type="const std::string_view &amp;" name="Path">The path to be resolved.</param>
       <param type="RSF" name="Flags" lookup="RSF">Optional flags.</param>
@@ -1486,6 +1554,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <category>Files</category>
     <comment>Converts a user ID to its corresponding name.</comment>
     <prototype>CSTRING ResolveUserID(INT User)</prototype>
+    <tiriPrototype>str = ResolveUserID(User:num)</tiriPrototype>
     <input>
       <param type="INT" name="User">The user ID.</param>
     </input>
@@ -1500,6 +1569,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <category>Files</category>
     <comment>Scans the content of a folder, by item.</comment>
     <prototype>ERR ScanDir(struct DirInfo * Info)</prototype>
+    <tiriPrototype>err = ScanDir(Info:any)</tiriPrototype>
     <input>
       <param type="struct DirInfo *" name="Info">Pointer to a <st>DirInfo</st> structure for storing scan results.</param>
     </input>
@@ -1529,6 +1599,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <category>Messages</category>
     <comment>Scans a message queue for multiple occurrences of a message type.</comment>
     <prototype>ERR ScanMessages(INT * Handle, MSGID Type, APTR Buffer, INT Size)</prototype>
+    <tiriPrototype>err, Handle:num = ScanMessages(Type:num, Buffer:any, Size:num)</tiriPrototype>
     <input>
       <param type="INT *" name="Handle">Pointer to a 32-bit value that must initially be set to zero.  The ScanMessages() function will automatically update this variable with each call so that it can remember its analysis position.</param>
       <param type="MSGID" name="Type" lookup="MSGID">The message type to filter for, or zero to scan all messages in the queue.</param>
@@ -1556,6 +1627,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <category>Messages</category>
     <comment>Add a message to the local message queue.</comment>
     <prototype>ERR SendMessage(MSGID Type, MSF Flags, APTR Data, INT Size)</prototype>
+    <tiriPrototype>err = SendMessage(Type:num, Flags:num, Data:any, Size:num)</tiriPrototype>
     <input>
       <param type="MSGID" name="Type" lookup="MSGID">The message Type/ID being sent.  Unique type ID's can be obtained from <function>AllocateID</function>.</param>
       <param type="MSF" name="Flags" lookup="MSF">Optional flags.</param>
@@ -1576,6 +1648,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <category>Files</category>
     <comment>Forces the user and group permissions to be applied to new files and folders.</comment>
     <prototype>void SetDefaultPermissions(INT User, INT Group, PERMIT Permissions)</prototype>
+    <tiriPrototype>SetDefaultPermissions(User:num, Group:num, Permissions:num)</tiriPrototype>
     <input>
       <param type="INT" name="User">User ID to apply to new files.</param>
       <param type="INT" name="Group">Group ID to apply to new files.</param>
@@ -1592,6 +1665,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <category>Objects</category>
     <comment>Sets the name of an object.</comment>
     <prototype>ERR SetName(OBJECTPTR Object, CSTRING Name)</prototype>
+    <tiriPrototype>err = SetName(Object:obj, Name:str)</tiriPrototype>
     <input>
       <param type="OBJECTPTR" name="Object">The target object.</param>
       <param type="CSTRING" name="Name">The new name for the object.</param>
@@ -1613,6 +1687,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <category>Objects</category>
     <comment>Changes object ownership dynamically.</comment>
     <prototype>ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner)</prototype>
+    <tiriPrototype>err = SetOwner(Object:obj, Owner:obj)</tiriPrototype>
     <input>
       <param type="OBJECTPTR" name="Object">The object to modify.</param>
       <param type="OBJECTPTR" name="Owner">The new owner for the <code>Object</code>.</param>
@@ -1640,6 +1715,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <category>System</category>
     <comment>Sets miscellaneous resource identifiers.</comment>
     <prototype>INT64 SetResource(RES Resource, INT64 Value)</prototype>
+    <tiriPrototype>num = SetResource(Resource:num, Value:num)</tiriPrototype>
     <input>
       <param type="RES" name="Resource" lookup="RES">The ID of the resource to be set.</param>
       <param type="INT64" name="Value">The new value to set for the resource.</param>
@@ -1660,6 +1736,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <category>Memory</category>
     <comment>Define a resource manager for a memory block originating from <function>AllocMemory</function>.</comment>
     <prototype>void SetResourceMgr(APTR Address, struct ResourceManager * Manager)</prototype>
+    <tiriPrototype>SetResourceMgr(Address:any, Manager:any)</tiriPrototype>
     <input>
       <param type="APTR" name="Address">The address of a <code>MEM::MANAGED</code> memory block allocated by <function>AllocMemory</function>.</param>
       <param type="struct ResourceManager *" name="Manager">Must refer to an initialised ResourceManager structure.</param>
@@ -1691,6 +1768,7 @@ static ResourceManager glNodeManager = {
     <category>System</category>
     <comment>Redefines the location of a system resource path.</comment>
     <prototype>ERR SetResourcePath(RP PathType, CSTRING Path)</prototype>
+    <tiriPrototype>err = SetResourcePath(PathType:num, Path:str)</tiriPrototype>
     <input>
       <param type="RP" name="PathType" lookup="RP">The ID of the resource path to set.</param>
       <param type="CSTRING" name="Path">The new location to set for the resource path.</param>
@@ -1710,6 +1788,7 @@ static ResourceManager glNodeManager = {
     <category>Files</category>
     <comment>Create or modify a filesystem volume.</comment>
     <prototype>ERR SetVolume(CSTRING Name, CSTRING Path, CSTRING Icon, CSTRING Label, CSTRING Device, VOLUME Flags)</prototype>
+    <tiriPrototype>err = SetVolume(Name:str, Path:str, Icon:str, Label:str, Device:str, Flags:num)</tiriPrototype>
     <input>
       <param type="CSTRING" name="Name">Required.  The name of the volume.</param>
       <param type="CSTRING" name="Path">Required.  The path to be associated with the volume.  If setting multiple paths, separate each path with a semi-colon character.  Each path must terminate with a forward slash to denote a folder.</param>
@@ -1735,6 +1814,7 @@ static ResourceManager glNodeManager = {
     <category>Objects</category>
     <comment>Monitor action calls made against an object.</comment>
     <prototype>ERR SubscribeAction(OBJECTPTR Object, AC Action, FUNCTION * Callback)</prototype>
+    <tiriPrototype>err = SubscribeAction(Object:obj, Action:num, Callback:func)</tiriPrototype>
     <input>
       <param type="OBJECTPTR" name="Object">The target object.</param>
       <param type="AC" name="Action" lookup="AC">The ID of the action that will be monitored.  Methods are not supported.</param>
@@ -1773,6 +1853,7 @@ static ResourceManager glNodeManager = {
     <category>Events</category>
     <comment>Subscribe to a system event.</comment>
     <prototype>ERR SubscribeEvent(INT64 Event, FUNCTION * Callback, APTR * Handle)</prototype>
+    <tiriPrototype>err, Handle:any = SubscribeEvent(Event:num, Callback:func)</tiriPrototype>
     <input>
       <param type="INT64" name="Event">An event identifier.</param>
       <param type="FUNCTION *" name="Callback">The function that will be subscribed to the event.</param>
@@ -1795,6 +1876,7 @@ static ResourceManager glNodeManager = {
     <category>System</category>
     <comment>Subscribes an object or function to the timer service.</comment>
     <prototype>ERR SubscribeTimer(DOUBLE Interval, FUNCTION * Callback, APTR * Subscription)</prototype>
+    <tiriPrototype>err, Subscription:any = SubscribeTimer(Interval:num, Callback:func)</tiriPrototype>
     <input>
       <param type="DOUBLE" name="Interval">The total number of seconds to wait between timer calls.</param>
       <param type="FUNCTION *" name="Callback">A callback function is required that will be called on each time cycle.</param>
@@ -1822,6 +1904,7 @@ static ResourceManager glNodeManager = {
     <category>Files</category>
     <comment>Unloads files from the file cache.</comment>
     <prototype>void UnloadFile(struct CacheFile * Cache)</prototype>
+    <tiriPrototype>UnloadFile(Cache:any)</tiriPrototype>
     <input>
       <param type="struct CacheFile *" name="Cache">A pointer to a CacheFile structure returned from <function>LoadFile</function>.</param>
     </input>
@@ -1835,6 +1918,7 @@ static ResourceManager glNodeManager = {
     <category>Objects</category>
     <comment>Terminates action subscriptions.</comment>
     <prototype>ERR UnsubscribeAction(OBJECTPTR Object, AC Action)</prototype>
+    <tiriPrototype>err = UnsubscribeAction(Object:obj, Action:num)</tiriPrototype>
     <input>
       <param type="OBJECTPTR" name="Object">The object that you are unsubscribing from.</param>
       <param type="AC" name="Action" lookup="AC">The ID of the action that will be unsubscribed, or zero for all actions.</param>
@@ -1855,6 +1939,7 @@ static ResourceManager glNodeManager = {
     <category>Events</category>
     <comment>Removes an event subscription.</comment>
     <prototype>void UnsubscribeEvent(APTR Handle)</prototype>
+    <tiriPrototype>UnsubscribeEvent(Handle:any)</tiriPrototype>
     <input>
       <param type="APTR" name="Handle">An event handle returned from <function>SubscribeEvent</function></param>
     </input>
@@ -1868,6 +1953,7 @@ static ResourceManager glNodeManager = {
     <category>Messages</category>
     <comment>Updates the data of any message that is queued.</comment>
     <prototype>ERR UpdateMessage(INT Message, MSGID Type, APTR Data, INT Size)</prototype>
+    <tiriPrototype>err = UpdateMessage(Message:num, Type:num, Data:any, Size:num)</tiriPrototype>
     <input>
       <param type="INT" name="Message">The ID of the message that will be updated.</param>
       <param type="MSGID" name="Type" lookup="MSGID">The type of the message.</param>
@@ -1891,6 +1977,7 @@ static ResourceManager glNodeManager = {
     <category>System</category>
     <comment>Modify or remove a subscription created by SubscribeTimer().</comment>
     <prototype>ERR UpdateTimer(APTR Subscription, DOUBLE Interval)</prototype>
+    <tiriPrototype>err = UpdateTimer(Subscription:any, Interval:num)</tiriPrototype>
     <input>
       <param type="APTR" name="Subscription">The timer subscription to modify.</param>
       <param type="DOUBLE" name="Interval">The new interval for the timer (measured in seconds), or zero to remove.</param>
@@ -1911,6 +1998,7 @@ static ResourceManager glNodeManager = {
     <category>Messages</category>
     <comment>Process incoming messages while waiting on objects to complete their activities.</comment>
     <prototype>ERR WaitForObjects(PMF Flags, INT TimeOut, struct ObjectSignal * ObjectSignals)</prototype>
+    <tiriPrototype>err = WaitForObjects(Flags:num, TimeOut:num, ObjectSignals:any)</tiriPrototype>
     <input>
       <param type="PMF" name="Flags" lookup="PMF">Optional flags are specified here.</param>
       <param type="INT" name="TimeOut">A time-out value measured in milliseconds.  If this value is negative then no time-out applies and the function will not return until an incoming message or signal breaks it.</param>
@@ -1935,6 +2023,7 @@ static ResourceManager glNodeManager = {
     <category>System</category>
     <comment>Waits for a specified amount of seconds.</comment>
     <prototype>ERR WaitTime(DOUBLE Seconds)</prototype>
+    <tiriPrototype>err = WaitTime(Seconds:num)</tiriPrototype>
     <input>
       <param type="DOUBLE" name="Seconds">The number of seconds to wait for.  Fractional values are supported for sub-second precision.</param>
     </input>
@@ -1955,6 +2044,7 @@ static ResourceManager glNodeManager = {
     <category>System</category>
     <comment>Interrupt a sleeping thread.</comment>
     <prototype>ERR WakeThread(INT Thread, INT Stop)</prototype>
+    <tiriPrototype>err = WakeThread(Thread:num, Stop:num)</tiriPrototype>
     <input>
       <param type="INT" name="Thread">The target thread's unique ID, as returned by <code>GetResource(RES::THREAD_ID)</code>.</param>
       <param type="INT" name="Stop">If <code>true</code>, the target thread will be put into a stopping state.</param>

@@ -27,6 +27,7 @@
       <name>Activate</name>
       <comment>Enables access to the audio hardware and initialises the mixer.</comment>
       <prototype>ERR acActivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acActivate()</tiriPrototype>
       <description>
 <p>An audio object must be activated before it can play audio samples. The activation process involves several critical steps: hardware resource acquisition, mixer buffer allocation, and platform-specific driver initialisation.</p>
 <p>Activation attempts to gain exclusive or shared access to the audio hardware device. On some platforms, this may fail if another process has obtained an exclusive lock on the audio device. The specific behaviour depends on the underlying audio system (ALSA on Linux, DirectSound on Windows).</p>
@@ -44,6 +45,7 @@
       <name>Deactivate</name>
       <comment>Disables the audio mixer and returns device resources to the system.</comment>
       <prototype>ERR acDeactivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acDeactivate()</tiriPrototype>
       <description>
 <p>Deactivating an audio object will switch off the mixer, clear the output buffer and return any allocated device resources back to the host system.  The audio object will remain in a suspended state until it is reactivated.</p>
       </description>
@@ -53,12 +55,14 @@
       <name>SaveSettings</name>
       <comment>Saves the current audio settings.</comment>
       <prototype>ERR acSaveSettings(*Object)</prototype>
+      <tiriPrototype>err = Object.acSaveSettings()</tiriPrototype>
     </action>
 
     <action>
       <name>SaveToObject</name>
       <comment>Saves the current audio settings to another object.</comment>
       <prototype>ERR acSaveToObject(*Object, OBJECTID Dest, CLASSID ClassID)</prototype>
+      <tiriPrototype>err = Object.acSaveToObject(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded data.</param>
         <param type="CLASSID" name="ClassID">Can refer to a sub-class that should be used when encoding the data.</param>
@@ -72,6 +76,7 @@
       <name>AddSample</name>
       <comment>Adds a new sample to an audio object for channel-based playback.</comment>
       <prototype>ERR snd::AddSample(OBJECTPTR Object, FUNCTION OnStop, SFM SampleFormat, APTR Data, INT DataSize, struct AudioLoop * Loop, INT LoopSize, INT * Result)</prototype>
+      <tiriPrototype>err, Result:num = AddSample(OnStop:func, SampleFormat:num, Data:any, DataSize:num, Loop:any, LoopSize:num)</tiriPrototype>
       <input>
         <param type="FUNCTION" name="OnStop">This optional callback function will be called when the stream stops playing.</param>
         <param type="SFM" name="SampleFormat" lookup="SFM">Indicates the format of the sample data that you are adding.</param>
@@ -105,6 +110,7 @@
       <name>AddStream</name>
       <comment>Adds a new sample-stream to an Audio object for channel-based playback.</comment>
       <prototype>ERR snd::AddStream(OBJECTPTR Object, FUNCTION Callback, FUNCTION OnStop, SFM SampleFormat, INT SampleLength, INT PlayOffset, struct AudioLoop * Loop, INT LoopSize, INT * Result)</prototype>
+      <tiriPrototype>err, Result:num = AddStream(Callback:func, OnStop:func, SampleFormat:num, SampleLength:num, PlayOffset:num, Loop:any, LoopSize:num)</tiriPrototype>
       <input>
         <param type="FUNCTION" name="Callback">This callback function must be able to return raw audio data for streaming.</param>
         <param type="FUNCTION" name="OnStop">This optional callback function will be called when the stream stops playing.</param>
@@ -140,6 +146,7 @@
       <name>Beep</name>
       <comment>Generates system alert tones through the platform's audio notification system.</comment>
       <prototype>ERR snd::Beep(OBJECTPTR Object, INT Pitch, INT Duration, INT Volume)</prototype>
+      <tiriPrototype>err = Beep(Pitch:num, Duration:num, Volume:num)</tiriPrototype>
       <input>
         <param type="INT" name="Pitch">The pitch of the beep in HZ.</param>
         <param type="INT" name="Duration">The duration of the beep in milliseconds.</param>
@@ -159,6 +166,7 @@
       <name>CloseChannels</name>
       <comment>Frees audio channels that have been allocated for sample playback.</comment>
       <prototype>ERR snd::CloseChannels(OBJECTPTR Object, INT Handle)</prototype>
+      <tiriPrototype>err = CloseChannels(Handle:num)</tiriPrototype>
       <input>
         <param type="INT" name="Handle">Must refer to a channel handle returned from the <method>OpenChannels</method> method.</param>
       </input>
@@ -176,6 +184,7 @@
       <name>OpenChannels</name>
       <comment>Allocates audio channels that can be used for sample playback.</comment>
       <prototype>ERR snd::OpenChannels(OBJECTPTR Object, INT Total, INT * Result)</prototype>
+      <tiriPrototype>err, Result:num = OpenChannels(Total:num)</tiriPrototype>
       <input>
         <param type="INT" name="Total">Total of channels to allocate.</param>
         <param type="INT *" name="Result">The resulting channel handle is returned in this parameter.</param>
@@ -197,6 +206,7 @@
       <name>RemoveSample</name>
       <comment>Removes a sample from the global sample list and deallocates its resources.</comment>
       <prototype>ERR snd::RemoveSample(OBJECTPTR Object, INT Handle)</prototype>
+      <tiriPrototype>err = RemoveSample(Handle:num)</tiriPrototype>
       <input>
         <param type="INT" name="Handle">The handle of the sample that requires removal.</param>
       </input>
@@ -215,6 +225,7 @@
       <name>SetSampleLength</name>
       <comment>Sets the byte length of a streaming sample.</comment>
       <prototype>ERR snd::SetSampleLength(OBJECTPTR Object, INT Sample, INT64 Length)</prototype>
+      <tiriPrototype>err = SetSampleLength(Sample:num, Length:num)</tiriPrototype>
       <input>
         <param type="INT" name="Sample">A sample handle from AddStream().</param>
         <param type="INT64" name="Length">Byte length of the sample stream.</param>
@@ -235,6 +246,7 @@
       <name>SetVolume</name>
       <comment>Sets the volume for input and output mixers.</comment>
       <prototype>ERR snd::SetVolume(OBJECTPTR Object, INT Index, CSTRING Name, SVF Flags, INT Channel, DOUBLE Volume)</prototype>
+      <tiriPrototype>err = SetVolume(Index:num, Name:str, Flags:num, Channel:num, Volume:num)</tiriPrototype>
       <input>
         <param type="INT" name="Index">The index of the mixer that you want to set.</param>
         <param type="CSTRING" name="Name">If the correct index number is unknown, the name of the mixer may be set here.</param>

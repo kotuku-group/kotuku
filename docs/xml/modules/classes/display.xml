@@ -24,18 +24,21 @@
       <name>Activate</name>
       <comment>Activating a display has the same effect as calling the Show action.</comment>
       <prototype>ERR acActivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acActivate()</tiriPrototype>
     </action>
 
     <action>
       <name>Clear</name>
       <comment>Clears a display's image data and hardware buffers (e.g. OpenGL)</comment>
       <prototype>ERR acClear(*Object)</prototype>
+      <tiriPrototype>err = Object.acClear()</tiriPrototype>
     </action>
 
     <action>
       <name>Disable</name>
       <comment>Disables the display (goes into power saving mode).</comment>
       <prototype>ERR acDisable(*Object)</prototype>
+      <tiriPrototype>err = Object.acDisable()</tiriPrototype>
       <description>
 <p>Disabling a display will put the display into power saving mode.  The DPMS mode is determined by the user's system settings and cannot be changed by the developer.  The display will remain off until the Enable action is called.</p>
 <p>This action does nothing if the display is in hosted mode.</p>
@@ -50,6 +53,7 @@
       <name>Draw</name>
       <comment>Draws object graphics to drawable areas.</comment>
       <prototype>ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)</prototype>
+      <tiriPrototype>err = Object.acDraw(X:num, Y:num, Width:num, Height:num)</tiriPrototype>
       <input>
         <param type="INT" name="X">The X position of the region to be drawn.</param>
         <param type="INT" name="Y">The Y position of the region to be drawn.</param>
@@ -62,24 +66,28 @@
       <name>Enable</name>
       <comment>Restores the screen display from power saving mode.</comment>
       <prototype>ERR acEnable(*Object)</prototype>
+      <tiriPrototype>err = Object.acEnable()</tiriPrototype>
     </action>
 
     <action>
       <name>Flush</name>
       <comment>Flush pending graphics operations to the display.</comment>
       <prototype>ERR acFlush(*Object)</prototype>
+      <tiriPrototype>err = Object.acFlush()</tiriPrototype>
     </action>
 
     <action>
       <name>Focus</name>
       <comment>Focus on this object in the user interface.</comment>
       <prototype>ERR acFocus(*Object)</prototype>
+      <tiriPrototype>err = Object.acFocus()</tiriPrototype>
     </action>
 
     <action>
       <name>GetKey</name>
       <comment>Retrieve formatted information from the display.</comment>
       <prototype>ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)</prototype>
+      <tiriPrototype>err = Object.acGetKey(Key:str, Value:str, Size:num)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Key">The name of a key value.</param>
         <param type="STRING" name="Value">Pointer to a buffer space large enough to hold the retrieved value.</param>
@@ -91,6 +99,7 @@
       <name>Hide</name>
       <comment>Hides a display from the user's view.</comment>
       <prototype>ERR acHide(*Object)</prototype>
+      <tiriPrototype>err = Object.acHide()</tiriPrototype>
       <description>
 <p>Calling this action will hide a display from the user's view.  If the hidden display was at the front of the display and there is a display object behind it, then the next underlying display will be displayed.  If there are no other displays available then the user's viewport will be blank after calling this action.</p>
       </description>
@@ -100,6 +109,7 @@
       <name>Move</name>
       <comment>Move the display to a new display position (relative coordinates).</comment>
       <prototype>ERR acMove(*Object, DOUBLE DeltaX, DOUBLE DeltaY, DOUBLE DeltaZ)</prototype>
+      <tiriPrototype>err = Object.acMove(DeltaX:num, DeltaY:num, DeltaZ:num)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="DeltaX">The number of units to move along the X axis.</param>
         <param type="DOUBLE" name="DeltaY">The number of units to move along the Y axis.</param>
@@ -111,18 +121,21 @@
       <name>MoveToBack</name>
       <comment>Move the display to the back of the display list.</comment>
       <prototype>ERR acMoveToBack(*Object)</prototype>
+      <tiriPrototype>err = Object.acMoveToBack()</tiriPrototype>
     </action>
 
     <action>
       <name>MoveToFront</name>
       <comment>Move the display to the front of the display list.</comment>
       <prototype>ERR acMoveToFront(*Object)</prototype>
+      <tiriPrototype>err = Object.acMoveToFront()</tiriPrototype>
     </action>
 
     <action>
       <name>MoveToPoint</name>
       <comment>Move the display to a new position.</comment>
       <prototype>ERR acMoveToPoint(*Object, DOUBLE X, DOUBLE Y, DOUBLE Z, MTF Flags)</prototype>
+      <tiriPrototype>err = Object.acMoveToPoint(X:num, Y:num, Z:num, Flags:MTF)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="X">The new X position to move the object to.</param>
         <param type="DOUBLE" name="Y">The new Y position to move the object to.</param>
@@ -140,6 +153,7 @@
       <name>Redimension</name>
       <comment>Moves and resizes a display object in a single action call.</comment>
       <prototype>ERR acRedimension(*Object, DOUBLE X, DOUBLE Y, DOUBLE Z, DOUBLE Width, DOUBLE Height, DOUBLE Depth)</prototype>
+      <tiriPrototype>err = Object.acRedimension(X:num, Y:num, Z:num, Width:num, Height:num, Depth:num)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="X">The new X position to apply to the target object.</param>
         <param type="DOUBLE" name="Y">The new Y position to apply to the target object.</param>
@@ -154,6 +168,7 @@
       <name>Resize</name>
       <comment>Resizes the dimensions of a display object.</comment>
       <prototype>ERR acResize(*Object, DOUBLE Width, DOUBLE Height, DOUBLE Depth)</prototype>
+      <tiriPrototype>err = Object.acResize(Width:num, Height:num, Depth:num)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="Width">The new width of the object.</param>
         <param type="DOUBLE" name="Height">The new height of the object.</param>
@@ -168,6 +183,7 @@
       <name>SaveImage</name>
       <comment>Saves the image of a display to a data object.</comment>
       <prototype>ERR acSaveImage(*Object, OBJECTID Dest, CLASSID ClassID)</prototype>
+      <tiriPrototype>err = Object.acSaveImage(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded image data.</param>
         <param type="CLASSID" name="ClassID">The Picture class to use for encoding the image data.</param>
@@ -178,12 +194,14 @@
       <name>SaveSettings</name>
       <comment>Saves the current display settings as the default.</comment>
       <prototype>ERR acSaveSettings(*Object)</prototype>
+      <tiriPrototype>err = Object.acSaveSettings()</tiriPrototype>
     </action>
 
     <action>
       <name>Show</name>
       <comment>Presents a display object to the user.</comment>
       <prototype>ERR acShow(*Object)</prototype>
+      <tiriPrototype>err = Object.acShow()</tiriPrototype>
       <description>
 <p>This method presents a display object to the user.  On a hosted platform, this will result in a window appearing on screen.  By default the window will be hosted within a window border which may contain regular window gadgets such as a titlebar and buttons for close, maximise and minimise operations.  The position of the window is determined by the <fl>X</fl> and <fl>Y</fl> fields.  In Kōtuku's native environment, the user's screen display will be altered to match the required resolution and the graphics of the display's <fl>Bitmap</fl> object will take up the entirety of the screen.</p>
 <p>If the <code>BORDERLESS</code> flag has been set in the <fl>Flags</fl> field, the window will appear without the surrounding border and gadgets normally associated with new windows.</p>
@@ -200,6 +218,7 @@
       <name>Minimise</name>
       <comment>Minimise the desktop window hosting the display.</comment>
       <prototype>ERR gfx::Minimise(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = Minimise()</tiriPrototype>
       <description>
 <p>If a display is hosted in a desktop window, calling the Minimise method will perform the default minimise action on that window.  On a platform such as Microsoft Windows, this would normally result in the window being minimised to the task bar.</p>
 <p>Calling Minimise on a display that is already in the minimised state may result in the host window being restored to the desktop.  This behaviour is platform dependent and should be manually tested to confirm its reliability on the host platform.</p>
@@ -213,6 +232,7 @@
       <name>SetDisplay</name>
       <comment>Changes the current display mode.</comment>
       <prototype>ERR gfx::SetDisplay(OBJECTPTR Object, INT X, INT Y, INT Width, INT Height, INT InsideWidth, INT InsideHeight, INT BitsPerPixel, DOUBLE RefreshRate, INT Flags)</prototype>
+      <tiriPrototype>err = SetDisplay(X:num, Y:num, Width:num, Height:num, InsideWidth:num, InsideHeight:num, BitsPerPixel:num, RefreshRate:num, Flags:num)</tiriPrototype>
       <input>
         <param type="INT" name="X">Horizontal offset of the display, relative to its default position.</param>
         <param type="INT" name="Y">Vertical offset of the display, relative to its default position.</param>
@@ -241,6 +261,7 @@
       <name>SetGamma</name>
       <comment>Sets the display gamma levels.</comment>
       <prototype>ERR gfx::SetGamma(OBJECTPTR Object, DOUBLE Red, DOUBLE Green, DOUBLE Blue, GMF Flags)</prototype>
+      <tiriPrototype>err = SetGamma(Red:num, Green:num, Blue:num, Flags:num)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="Red">Gamma correction for the red gun.</param>
         <param type="DOUBLE" name="Green">Gamma correction for the green gun.</param>
@@ -263,6 +284,7 @@
       <name>SetGammaLinear</name>
       <comment>Sets the display gamma level using a linear algorithm.</comment>
       <prototype>ERR gfx::SetGammaLinear(OBJECTPTR Object, DOUBLE Red, DOUBLE Green, DOUBLE Blue, GMF Flags)</prototype>
+      <tiriPrototype>err = SetGammaLinear(Red:num, Green:num, Blue:num, Flags:num)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="Red">New red gamma value.</param>
         <param type="DOUBLE" name="Green">New green gamma value.</param>
@@ -282,6 +304,7 @@
       <name>SetMonitor</name>
       <comment>Changes the default monitor settings.</comment>
       <prototype>ERR gfx::SetMonitor(OBJECTPTR Object, CSTRING Name, INT MinH, INT MaxH, INT MinV, INT MaxV, MON Flags)</prototype>
+      <tiriPrototype>err = SetMonitor(Name:str, MinH:num, MaxH:num, MinV:num, MaxV:num, Flags:num)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Name">The name of the display.</param>
         <param type="INT" name="MinH">The minimum horizontal scan rate.  Usually set to 31.</param>
@@ -305,6 +328,7 @@
       <name>SizeHints</name>
       <comment>Sets the width and height restrictions for the host window (hosted environments only).</comment>
       <prototype>ERR gfx::SizeHints(OBJECTPTR Object, INT MinWidth, INT MinHeight, INT MaxWidth, INT MaxHeight, INT EnforceAspect)</prototype>
+      <tiriPrototype>err = SizeHints(MinWidth:num, MinHeight:num, MaxWidth:num, MaxHeight:num, EnforceAspect:num)</tiriPrototype>
       <input>
         <param type="INT" name="MinWidth">The minimum width of the window.</param>
         <param type="INT" name="MinHeight">The minimum height of the window.</param>
@@ -325,6 +349,7 @@
       <name>UpdatePalette</name>
       <comment>Updates the video display palette to new colour values if in 256 colour mode.</comment>
       <prototype>ERR gfx::UpdatePalette(OBJECTPTR Object, struct RGBPalette * NewPalette)</prototype>
+      <tiriPrototype>err = UpdatePalette(NewPalette:any)</tiriPrototype>
       <input>
         <param type="struct RGBPalette *" name="NewPalette">The new palette to apply to the display bitmap.</param>
       </input>
@@ -342,6 +367,7 @@
       <name>WaitVBL</name>
       <comment>Waits for a vertical blank.</comment>
       <prototype>ERR gfx::WaitVBL(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = WaitVBL()</tiriPrototype>
       <description>
 <p>This method waits for the strobe to reach the vertical blank area at the bottom of the display.  Not all graphics hardware will support this method.  If this is the case, WaitVBL() will return immediately with <code>ERR::NoSupport</code>.</p>
       </description>

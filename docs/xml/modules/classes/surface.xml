@@ -30,18 +30,21 @@
       <name>Activate</name>
       <comment>Shows a surface object on the display.</comment>
       <prototype>ERR acActivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acActivate()</tiriPrototype>
     </action>
 
     <action>
       <name>Disable</name>
       <comment>Disables a surface object.</comment>
       <prototype>ERR acDisable(*Object)</prototype>
+      <tiriPrototype>err = Object.acDisable()</tiriPrototype>
     </action>
 
     <action>
       <name>Draw</name>
       <comment>Redraws the contents of a surface object.</comment>
       <prototype>ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)</prototype>
+      <tiriPrototype>err = Object.acDraw(X:num, Y:num, Width:num, Height:num)</tiriPrototype>
       <input>
         <param type="INT" name="X">The X position of the region to be drawn.</param>
         <param type="INT" name="Y">The Y position of the region to be drawn.</param>
@@ -71,30 +74,35 @@ the surface area first).</li>
       <name>Enable</name>
       <comment>Enables a disabled surface object.</comment>
       <prototype>ERR acEnable(*Object)</prototype>
+      <tiriPrototype>err = Object.acEnable()</tiriPrototype>
     </action>
 
     <action>
       <name>Focus</name>
       <comment>Changes the primary user focus to the surface object.</comment>
       <prototype>ERR acFocus(*Object)</prototype>
+      <tiriPrototype>err = Object.acFocus()</tiriPrototype>
     </action>
 
     <action>
       <name>Hide</name>
       <comment>Hides a surface object from the display.</comment>
       <prototype>ERR acHide(*Object)</prototype>
+      <tiriPrototype>err = Object.acHide()</tiriPrototype>
     </action>
 
     <action>
       <name>LostFocus</name>
       <comment>Informs a surface object that it has lost the user focus.</comment>
       <prototype>ERR acLostFocus(*Object)</prototype>
+      <tiriPrototype>err = Object.acLostFocus()</tiriPrototype>
     </action>
 
     <action>
       <name>Move</name>
       <comment>Moves a surface object to a new display position.</comment>
       <prototype>ERR acMove(*Object, DOUBLE DeltaX, DOUBLE DeltaY, DOUBLE DeltaZ)</prototype>
+      <tiriPrototype>err = Object.acMove(DeltaX:num, DeltaY:num, DeltaZ:num)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="DeltaX">The number of units to move along the X axis.</param>
         <param type="DOUBLE" name="DeltaY">The number of units to move along the Y axis.</param>
@@ -106,18 +114,21 @@ the surface area first).</li>
       <name>MoveToBack</name>
       <comment>Moves a surface object to the back of its container.</comment>
       <prototype>ERR acMoveToBack(*Object)</prototype>
+      <tiriPrototype>err = Object.acMoveToBack()</tiriPrototype>
     </action>
 
     <action>
       <name>MoveToFront</name>
       <comment>Moves a surface object to the front of its container.</comment>
       <prototype>ERR acMoveToFront(*Object)</prototype>
+      <tiriPrototype>err = Object.acMoveToFront()</tiriPrototype>
     </action>
 
     <action>
       <name>MoveToPoint</name>
       <comment>Moves a surface object to an absolute coordinate.</comment>
       <prototype>ERR acMoveToPoint(*Object, DOUBLE X, DOUBLE Y, DOUBLE Z, MTF Flags)</prototype>
+      <tiriPrototype>err = Object.acMoveToPoint(X:num, Y:num, Z:num, Flags:MTF)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="X">The new X position to move the object to.</param>
         <param type="DOUBLE" name="Y">The new Y position to move the object to.</param>
@@ -130,6 +141,7 @@ the surface area first).</li>
       <name>Redimension</name>
       <comment>Moves and resizes a surface object in a single action call.</comment>
       <prototype>ERR acRedimension(*Object, DOUBLE X, DOUBLE Y, DOUBLE Z, DOUBLE Width, DOUBLE Height, DOUBLE Depth)</prototype>
+      <tiriPrototype>err = Object.acRedimension(X:num, Y:num, Z:num, Width:num, Height:num, Depth:num)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="X">The new X position to apply to the target object.</param>
         <param type="DOUBLE" name="Y">The new Y position to apply to the target object.</param>
@@ -144,6 +156,7 @@ the surface area first).</li>
       <name>Resize</name>
       <comment>Alters the dimensions of a surface object.</comment>
       <prototype>ERR acResize(*Object, DOUBLE Width, DOUBLE Height, DOUBLE Depth)</prototype>
+      <tiriPrototype>err = Object.acResize(Width:num, Height:num, Depth:num)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="Width">The new width of the object.</param>
         <param type="DOUBLE" name="Height">The new height of the object.</param>
@@ -155,6 +168,7 @@ the surface area first).</li>
       <name>SaveImage</name>
       <comment>Saves the graphics of a surface object.</comment>
       <prototype>ERR acSaveImage(*Object, OBJECTID Dest, CLASSID ClassID)</prototype>
+      <tiriPrototype>err = Object.acSaveImage(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded image data.</param>
         <param type="CLASSID" name="ClassID">The Picture class to use for encoding the image data.</param>
@@ -169,6 +183,7 @@ the surface area first).</li>
       <name>Show</name>
       <comment>Shows a surface object on the display.</comment>
       <prototype>ERR acShow(*Object)</prototype>
+      <tiriPrototype>err = Object.acShow()</tiriPrototype>
     </action>
 
   </actions>
@@ -178,6 +193,7 @@ the surface area first).</li>
       <name>AddCallback</name>
       <comment>Inserts a function hook into the drawing process of a surface object.</comment>
       <prototype>ERR drw::AddCallback(OBJECTPTR Object, FUNCTION * Callback)</prototype>
+      <tiriPrototype>err = AddCallback(Callback:func)</tiriPrototype>
       <input>
         <param type="FUNCTION *" name="Callback">Pointer to the callback routine or NULL to remove callbacks for the given Object.</param>
       </input>
@@ -198,6 +214,7 @@ the surface area first).</li>
       <name>ExposeToDisplay</name>
       <comment>Redraws a surface region to the display, preferably from its graphics buffer.</comment>
       <prototype>ERR drw::ExposeToDisplay(OBJECTPTR Object, INT X, INT Y, INT Width, INT Height, EXF Flags)</prototype>
+      <tiriPrototype>err = ExposeToDisplay(X:num, Y:num, Width:num, Height:num, Flags:num)</tiriPrototype>
       <input>
         <param type="INT" name="X">X coordinate of the expose area.</param>
         <param type="INT" name="Y">Y coordinate of the expose area.</param>
@@ -217,6 +234,7 @@ the surface area first).</li>
       <name>InvalidateRegion</name>
       <comment>Redraws all of the content in a surface object.</comment>
       <prototype>ERR drw::InvalidateRegion(OBJECTPTR Object, INT X, INT Y, INT Width, INT Height)</prototype>
+      <tiriPrototype>err = InvalidateRegion(X:num, Y:num, Width:num, Height:num)</tiriPrototype>
       <input>
         <param type="INT" name="X">X coordinate of the region to invalidate.</param>
         <param type="INT" name="Y">Y coordinate of the region to invalidate.</param>
@@ -238,6 +256,7 @@ the surface area first).</li>
       <name>Minimise</name>
       <comment>For hosted surfaces only, this method will minimise the surface to an icon.</comment>
       <prototype>ERR drw::Minimise(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = Minimise()</tiriPrototype>
       <description>
 <p>If a surface is hosted in a desktop window, calling the Minimise() method will perform the default minimise action on that window.  On a platform such as Microsoft Windows, this would normally result in the window being minimised to the task bar.</p>
 <p>Calling Minimise() on a surface that is already in the minimised state may result in the host window being restored to the desktop.  This behaviour is platform dependent and should be manually tested to confirm its reliability on the host platform.</p>
@@ -248,6 +267,7 @@ the surface area first).</li>
       <name>RemoveCallback</name>
       <comment>Removes a callback previously inserted by AddCallback().</comment>
       <prototype>ERR drw::RemoveCallback(OBJECTPTR Object, FUNCTION * Callback)</prototype>
+      <tiriPrototype>err = RemoveCallback(Callback:func)</tiriPrototype>
       <input>
         <param type="FUNCTION *" name="Callback">Pointer to the callback routine to remove, or NULL to remove all assoicated callback routines.</param>
       </input>
@@ -265,6 +285,7 @@ the surface area first).</li>
       <name>ResetDimensions</name>
       <comment>Changes the dimensions of a surface.</comment>
       <prototype>ERR drw::ResetDimensions(OBJECTPTR Object, DOUBLE X, DOUBLE Y, DOUBLE XOffset, DOUBLE YOffset, DOUBLE Width, DOUBLE Height, DMF Dimensions)</prototype>
+      <tiriPrototype>err = ResetDimensions(X:num, Y:num, XOffset:num, YOffset:num, Width:num, Height:num, Dimensions:num)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="X">New X coordinate.</param>
         <param type="DOUBLE" name="Y">New Y coordinate.</param>
@@ -289,6 +310,7 @@ the surface area first).</li>
       <name>ScheduleRedraw</name>
       <comment>Schedules a redraw operation for the next frame.</comment>
       <prototype>ERR drw::ScheduleRedraw(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = ScheduleRedraw()</tiriPrototype>
       <description>
 <p>Use ScheduleRedraw to indicate that a surface needs to be drawn to the display.  The surface and all child surfaces will be drawn on the next frame cycle (typically 1/60th of a second).  All manual draw operations for the target surface are ignored until the scheduled operation is completed.</p>
 <p>Scheduling is ideal in situations where a cluster of redraw events may occur within a tight time period, and it would be inefficient to draw those changes to the display individually.</p>
@@ -303,6 +325,7 @@ the surface area first).</li>
       <name>SetDisplay</name>
       <comment>Changes the screen resolution (applies to top-level surface objects only).</comment>
       <prototype>ERR drw::SetDisplay(OBJECTPTR Object, INT X, INT Y, INT Width, INT Height, INT InsideWidth, INT InsideHeight, INT BitsPerPixel, DOUBLE RefreshRate, INT Flags)</prototype>
+      <tiriPrototype>err = SetDisplay(X:num, Y:num, Width:num, Height:num, InsideWidth:num, InsideHeight:num, BitsPerPixel:num, RefreshRate:num, Flags:num)</tiriPrototype>
       <input>
         <param type="INT" name="X">The horizontal coordinate/offset for the display.</param>
         <param type="INT" name="Y">The vertical coordinate/offset for the display.</param>
@@ -330,6 +353,7 @@ the surface area first).</li>
       <name>SetOpacity</name>
       <comment>Alters the opacity of a surface object.</comment>
       <prototype>ERR drw::SetOpacity(OBJECTPTR Object, DOUBLE Value, DOUBLE Adjustment)</prototype>
+      <tiriPrototype>err = SetOpacity(Value:num, Adjustment:num)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="Value">The new opacity value between 0 and 100% (ignored if you have set the Adjustment parameter).</param>
         <param type="DOUBLE" name="Adjustment">Adjustment value to add or subtract from the existing opacity (set to zero if you want to set a fixed Value instead).</param>

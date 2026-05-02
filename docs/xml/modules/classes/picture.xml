@@ -31,6 +31,7 @@
       <name>Activate</name>
       <comment>Loads image data into a picture object.</comment>
       <prototype>ERR acActivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acActivate()</tiriPrototype>
       <description>
 <p>Loading an image file requires a call to Activate() after initialisation.  The <fl>Path</fl> field will be used to source the image file.</p>
 <p>Pre-setting picture field values will place restrictions on the image file that is to be loaded.  For example, if the source image is wider than a preset <class name="Bitmap" field="Width">Bitmap.Width</class>, the image will have its right edge clipped.  The same is true for the <class name="Bitmap" field="Height">Bitmap.Height</class> and other restrictions apply to fields such as the <class name="Bitmap" field="Palette">Bitmap.Palette</class>.</p>
@@ -42,6 +43,7 @@
       <name>Init</name>
       <comment>Prepares the object for use.</comment>
       <prototype>ERR InitObject(*Object)</prototype>
+      <tiriPrototype>err = Object.init()</tiriPrototype>
       <description>
 <p>Objects that belong to the Picture class can be initialised in two possible ways.  If you have not set the <fl>Path</fl> field or have chosen to use the <code>NEW</code> flag, the initialisation routine will create a <fl>Bitmap</fl> area that contains no image data.  This allows you to fill the picture with your own image data and save it using the <action>SaveImage</action> or <action>SaveToObject</action> actions.  You must set the <class name="Bitmap" field="Width">Bitmap.Width</class>, <class name="Bitmap" field="Height">Bitmap.Height</class> and colour specifications at a minimum, or the initialisation process will fail.</p>
 <p>If you have set the <fl>Path</fl> field and avoided the <code>NEW</code> flag, the initialisation process will analyse the file location to determine whether or not the data is in fact a valid image file.  If the file does not match up with a registered data format, an error code of <code>ERR::NoSupport</code> is returned.  You will need to use the <action>Activate</action> or <action>Query</action> actions to load or find out more information about the image format.</p>
@@ -52,12 +54,14 @@
       <name>Query</name>
       <comment>Retrieves the latest information from an object.</comment>
       <prototype>ERR acQuery(*Object)</prototype>
+      <tiriPrototype>err = Object.acQuery()</tiriPrototype>
     </action>
 
     <action>
       <name>Read</name>
       <comment>Reads raw image data from a Picture object.</comment>
       <prototype>ERR acRead(*Object, APTR Buffer, INT Length, INT *Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acRead(Buffer:str, Length:num)</tiriPrototype>
       <input>
         <param type="APTR" name="Buffer">Points a buffer that will receive the data.</param>
         <param type="INT" name="Length">The total number of bytes to read from the object.  This value cannot exceed the size of the Buffer.</param>
@@ -69,12 +73,14 @@
       <name>Refresh</name>
       <comment>Refreshes a loaded picture - draws the next frame.</comment>
       <prototype>ERR acRefresh(*Object)</prototype>
+      <tiriPrototype>err = Object.acRefresh()</tiriPrototype>
     </action>
 
     <action>
       <name>SaveImage</name>
       <comment>Saves the picture image to a data object.</comment>
       <prototype>ERR acSaveImage(*Object, OBJECTID Dest, CLASSID ClassID)</prototype>
+      <tiriPrototype>err = Object.acSaveImage(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded image data.</param>
         <param type="CLASSID" name="ClassID">The Picture class to use for encoding the image data.</param>
@@ -88,6 +94,7 @@
       <name>SaveToObject</name>
       <comment>Saves the picture image to a data object.</comment>
       <prototype>ERR acSaveToObject(*Object, OBJECTID Dest, CLASSID ClassID)</prototype>
+      <tiriPrototype>err = Object.acSaveToObject(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded data.</param>
         <param type="CLASSID" name="ClassID">Can refer to a sub-class that should be used when encoding the data.</param>
@@ -98,6 +105,7 @@
       <name>Seek</name>
       <comment>Seeks to a new read/write position within a Picture object.</comment>
       <prototype>ERR acSeek(*Object, DOUBLE Offset, INT Position)</prototype>
+      <tiriPrototype>err = Object.acSeek(Offset:num, Position:SEEK)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="Offset">The desired offset to seek to, relative to the Position parameter.</param>
         <param type="POS" name="Position">The position that defines the starting point for Offset.</param>
@@ -108,6 +116,7 @@
       <name>Write</name>
       <comment>Writes raw image data to a picture object.</comment>
       <prototype>ERR acWrite(*Object, APTR Buffer, INT Length, INT Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acWrite(Buffer:str, Length:num)</tiriPrototype>
       <input>
         <param type="APTR" name="Buffer">A buffer containing the data that will be written to the object.</param>
         <param type="INT" name="Length">The total number of bytes to write to the object.</param>

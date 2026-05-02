@@ -51,30 +51,35 @@ proc.sleep()  -- Wait for completion
       <name>Activate</name>
       <comment>Plays the audio sample.</comment>
       <prototype>ERR acActivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acActivate()</tiriPrototype>
     </action>
 
     <action>
       <name>Deactivate</name>
       <comment>Stops the audio sample and resets the playback position.</comment>
       <prototype>ERR acDeactivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acDeactivate()</tiriPrototype>
     </action>
 
     <action>
       <name>Disable</name>
       <comment>Disable playback of an active audio sample, equivalent to pausing.</comment>
       <prototype>ERR acDisable(*Object)</prototype>
+      <tiriPrototype>err = Object.acDisable()</tiriPrototype>
     </action>
 
     <action>
       <name>Enable</name>
       <comment>Continues playing a sound if it has been disabled.</comment>
       <prototype>ERR acEnable(*Object)</prototype>
+      <tiriPrototype>err = Object.acEnable()</tiriPrototype>
     </action>
 
     <action>
       <name>GetKey</name>
       <comment>Retrieve custom key values.</comment>
       <prototype>ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)</prototype>
+      <tiriPrototype>err = Object.acGetKey(Key:str, Value:str, Size:num)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Key">The name of a key value.</param>
         <param type="STRING" name="Value">Pointer to a buffer space large enough to hold the retrieved value.</param>
@@ -98,6 +103,7 @@ proc.sleep()  -- Wait for completion
       <name>Read</name>
       <comment>Read decoded audio from the sound sample.</comment>
       <prototype>ERR acRead(*Object, APTR Buffer, INT Length, INT *Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acRead(Buffer:str, Length:num)</tiriPrototype>
       <input>
         <param type="APTR" name="Buffer">Points a buffer that will receive the data.</param>
         <param type="INT" name="Length">The total number of bytes to read from the object.  This value cannot exceed the size of the Buffer.</param>
@@ -112,6 +118,7 @@ proc.sleep()  -- Wait for completion
       <name>SaveToObject</name>
       <comment>Saves audio sample data to an object.</comment>
       <prototype>ERR acSaveToObject(*Object, OBJECTID Dest, CLASSID ClassID)</prototype>
+      <tiriPrototype>err = Object.acSaveToObject(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded data.</param>
         <param type="CLASSID" name="ClassID">Can refer to a sub-class that should be used when encoding the data.</param>
@@ -122,6 +129,7 @@ proc.sleep()  -- Wait for completion
       <name>Seek</name>
       <comment>Moves the cursor position for reading data.</comment>
       <prototype>ERR acSeek(*Object, DOUBLE Offset, INT Position)</prototype>
+      <tiriPrototype>err = Object.acSeek(Offset:num, Position:SEEK)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="Offset">The desired offset to seek to, relative to the Position parameter.</param>
         <param type="POS" name="Position">The position that defines the starting point for Offset.</param>
@@ -135,6 +143,7 @@ proc.sleep()  -- Wait for completion
       <name>SetKey</name>
       <comment>Define custom tags that will be saved with the sample data.</comment>
       <prototype>ERR acSetKey(*Object, CSTRING Key, CSTRING Value)</prototype>
+      <tiriPrototype>err = Object.acSetKey(Key:str, Value:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Key">The name of the target key.</param>
         <param type="CSTRING" name="Value">The string value to associate with Key.</param>

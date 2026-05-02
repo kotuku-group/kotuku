@@ -150,7 +150,12 @@ global function registerCoreHandlers(Self)
                -- Hover information
                hoverProvider = true,
                -- Go to Definition
-               definitionProvider = true
+               definitionProvider = true,
+               -- Signature Help
+               signatureHelpProvider = {
+                  triggerCharacters = array<string> { '(', ',' },
+                  retriggerCharacters = array<string> { ',' }
+               }
             },
             serverInfo = {
                name = 'Tiri LSP Server',
@@ -262,6 +267,7 @@ global function registerCoreHandlers(Self)
       uri = Msg.params.textDocument.uri
       glDocuments[uri] = nil
       glTokenCache[uri] = nil  -- Clear token cache to free memory
+      glSignatureSymbolCache[uri] = nil
       logMessage(Self, 'Document closed: ' .. uri)
 
       -- Clear diagnostics for closed document
@@ -453,6 +459,43 @@ global function registerCoreHandlers(Self)
          jsonrpc = '2.0',
          id = Msg.id,
          result = ranges
+      }
+   end
+
+   -------------------------------------------------------------------------------------------------------------------
+   -- Signature Help
+
+   -- textDocument/signatureHelp: Return the active call signature at the cursor
+
+   Self._handlers['textDocument/signatureHelp'] = function(Msg, State)
+      uri = Msg.params.textDocument.uri
+      position = Msg.params.position
+      doc = glDocuments[uri]
+
+      if not doc then
+         logMessage(Self, 'Signature help requested for unknown document: ' .. uri)
+         return {
+            jsonrpc = '2.0',
+            id = Msg.id,
+            result = json.null
+         }
+      end
+
+      signature_help = resolveSignatureHelp(doc, position)
+      if not signature_help then
+         return {
+            jsonrpc = '2.0',
+            id = Msg.id,
+            result = json.null
+         }
+      end
+
+      logVerbose(Self, 'Returning signature help with ' .. #signature_help.signatures .. ' signature(s)')
+
+      return {
+         jsonrpc = '2.0',
+         id = Msg.id,
+         result = signature_help
       }
    end
 

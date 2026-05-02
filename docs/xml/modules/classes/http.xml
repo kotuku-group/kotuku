@@ -67,6 +67,7 @@ http.acActivate()
       <name>Activate</name>
       <comment>Sends an HTTP request to the host.</comment>
       <prototype>ERR acActivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acActivate()</tiriPrototype>
       <description>
 <p>This action sends an HTTP request to the targeted <fl>Host</fl>.  Based on the desired <fl>Method</fl>, an HTTP request will be sent to the host and the action will return whilst the HTTP object waits for a response from the server.  If the host fails to respond within the time period indicated by the <fl>ConnectTimeout</fl>, the HTTP object will be deactivated and the <fl>CurrentState</fl> set to <code>TERMINATED</code>.</p>
 <p>Successful parsing of the HTTP request at the host will result in a response being received, followed by content data (if applicable). The HTTP response code will be stored in the <fl>Status</fl> field.  The response will be parsed automatically with the header strings stored as key-values.  To receive notice of the parsed response, hook into the <fl>StateChanged</fl> callback.</p>
@@ -92,6 +93,7 @@ http.acActivate()
       <name>Deactivate</name>
       <comment>Ends the current HTTP request.</comment>
       <prototype>ERR acDeactivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acDeactivate()</tiriPrototype>
       <description>
 <p>Following the completion of an HTTP request, the Deactivate() action will be called internally to signal an end to the process.  Subscribing to Deactivate() is an effective means of responding to the end of a single HTTP request.</p>
 <p>Active HTTP requests can be manually cancelled by calling Deactivate() at any time.  Deactivation does not necessarily result in closure of the socket.</p>
@@ -102,6 +104,7 @@ http.acActivate()
       <name>GetKey</name>
       <comment>Entries in the HTTP response header can be read as key-values.</comment>
       <prototype>ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)</prototype>
+      <tiriPrototype>err = Object.acGetKey(Key:str, Value:str, Size:num)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Key">The name of a key value.</param>
         <param type="STRING" name="Value">Pointer to a buffer space large enough to hold the retrieved value.</param>
@@ -113,6 +116,7 @@ http.acActivate()
       <name>SetKey</name>
       <comment>Options for the HTTP header can be set as key-values.</comment>
       <prototype>ERR acSetKey(*Object, CSTRING Key, CSTRING Value)</prototype>
+      <tiriPrototype>err = Object.acSetKey(Key:str, Value:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Key">The name of the target key.</param>
         <param type="CSTRING" name="Value">The string value to associate with Key.</param>
@@ -123,6 +127,7 @@ http.acActivate()
       <name>Write</name>
       <comment>Writes data to objects that provide storage or output services.</comment>
       <prototype>ERR acWrite(*Object, APTR Buffer, INT Length, INT Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acWrite(Buffer:str, Length:num)</tiriPrototype>
       <input>
         <param type="APTR" name="Buffer">A buffer containing the data that will be written to the object.</param>
         <param type="INT" name="Length">The total number of bytes to write to the object.</param>

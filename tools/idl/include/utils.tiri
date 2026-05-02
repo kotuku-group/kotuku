@@ -138,23 +138,23 @@ global function getMetaFieldDefinition(Field)
    getFieldType(fl, Field.flags, Field.name, Field.arg)
    fl.docType = fl.doc_type
 
-   if (Field.flags & FD_SYNONYM)?? then
+   if Field.flags has FD_SYNONYM then
       fl.synonym = true
    end
 
    if Field.getField?? then
       fl.read = 'Get'
       fl.get = Field.getField
-   elseif (Field.flags & FD_READ)?? then
+   elseif Field.flags has FD_READ then
       fl.read = 'Read'
    end
 
    if Field.setField?? then
       fl.write = 'Set'
       fl.set = Field.setField
-   elseif (Field.flags & FD_WRITE)?? then
+   elseif Field.flags has FD_WRITE then
       fl.write = 'Write'
-   elseif (Field.flags & FD_INIT)?? then
+   elseif Field.flags has FD_INIT then
       fl.write = 'Init'
    end
 
@@ -168,7 +168,7 @@ global function getMetaFieldDefinition(Field)
       fl.access = 'Private'
    end
 
-   if (Field.flags & FD_SYSTEM)?? then
+   if Field.flags has FD_SYSTEM then
       fl.access = 'Private'
       fl.private = true
    end

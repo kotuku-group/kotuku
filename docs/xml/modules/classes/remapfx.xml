@@ -25,6 +25,7 @@
       <name>Draw</name>
       <comment>Render the effect to the target bitmap.</comment>
       <prototype>ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)</prototype>
+      <tiriPrototype>err = Object.acDraw(X:num, Y:num, Width:num, Height:num)</tiriPrototype>
       <input>
         <param type="INT" name="X">The X position of the region to be drawn.</param>
         <param type="INT" name="Y">The Y position of the region to be drawn.</param>
@@ -40,6 +41,7 @@
       <name>SelectDiscrete</name>
       <comment>Apply the discrete function to a pixel component.</comment>
       <prototype>ERR rf::SelectDiscrete(OBJECTPTR Object, CMP Component, DOUBLE * Values, INT Size)</prototype>
+      <tiriPrototype>err = SelectDiscrete(Component:num, Values:array, Size:num)</tiriPrototype>
       <input>
         <param type="CMP" name="Component" lookup="CMP">The pixel component to which the discrete function must be applied.</param>
         <param type="DOUBLE *" name="Values">A list of values for the discrete function.</param>
@@ -54,6 +56,7 @@
       <name>SelectGamma</name>
       <comment>Apply the gamma function to a pixel component.</comment>
       <prototype>ERR rf::SelectGamma(OBJECTPTR Object, CMP Component, DOUBLE Amplitude, DOUBLE Offset, DOUBLE Exponent)</prototype>
+      <tiriPrototype>err = SelectGamma(Component:num, Amplitude:num, Offset:num, Exponent:num)</tiriPrototype>
       <input>
         <param type="CMP" name="Component" lookup="CMP">The pixel component to which the gamma function must be applied.</param>
         <param type="DOUBLE" name="Amplitude">The amplitude of the gamma function.</param>
@@ -69,6 +72,7 @@
       <name>SelectIdentity</name>
       <comment>Apply the identity function to a pixel component.</comment>
       <prototype>ERR rf::SelectIdentity(OBJECTPTR Object, CMP Component)</prototype>
+      <tiriPrototype>err = SelectIdentity(Component:num)</tiriPrototype>
       <input>
         <param type="CMP" name="Component" lookup="CMP">The pixel component to which the identity function must be applied.</param>
       </input>
@@ -81,6 +85,7 @@
       <name>SelectInvert</name>
       <comment>Apply the invert function to a pixel component.</comment>
       <prototype>ERR rf::SelectInvert(OBJECTPTR Object, CMP Component)</prototype>
+      <tiriPrototype>err = SelectInvert(Component:num)</tiriPrototype>
       <input>
         <param type="CMP" name="Component" lookup="CMP">The pixel component to which the function must be applied.</param>
       </input>
@@ -94,6 +99,7 @@
       <name>SelectLinear</name>
       <comment>Apply the linear function to a pixel component.</comment>
       <prototype>ERR rf::SelectLinear(OBJECTPTR Object, CMP Component, DOUBLE Slope, DOUBLE Intercept)</prototype>
+      <tiriPrototype>err = SelectLinear(Component:num, Slope:num, Intercept:num)</tiriPrototype>
       <input>
         <param type="CMP" name="Component" lookup="CMP">The pixel component to which the function must be applied.</param>
         <param type="DOUBLE" name="Slope">The slope of the linear function.</param>
@@ -108,6 +114,7 @@
       <name>SelectMask</name>
       <comment>Apply the mask function to a pixel component.</comment>
       <prototype>ERR rf::SelectMask(OBJECTPTR Object, CMP Component, INT Mask)</prototype>
+      <tiriPrototype>err = SelectMask(Component:num, Mask:num)</tiriPrototype>
       <input>
         <param type="CMP" name="Component" lookup="CMP">The pixel component to which the function must be applied.</param>
         <param type="INT" name="Mask">The bit mask to be AND'd with each value.</param>
@@ -122,6 +129,7 @@
       <name>SelectTable</name>
       <comment>Apply the table function to a pixel component.</comment>
       <prototype>ERR rf::SelectTable(OBJECTPTR Object, CMP Component, DOUBLE * Values, INT Size)</prototype>
+      <tiriPrototype>err = SelectTable(Component:num, Values:array, Size:num)</tiriPrototype>
       <input>
         <param type="CMP" name="Component" lookup="CMP">The pixel component to which the table function must be applied.</param>
         <param type="DOUBLE *" name="Values">A list of values for the table function.</param>

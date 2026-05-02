@@ -26,12 +26,14 @@
       <name>Activate</name>
       <comment>Executes the script.</comment>
       <prototype>ERR acActivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acActivate()</tiriPrototype>
     </action>
 
     <action>
       <name>GetKey</name>
       <comment>Script parameters can be retrieved through this action.</comment>
       <prototype>ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)</prototype>
+      <tiriPrototype>err = Object.acGetKey(Key:str, Value:str, Size:num)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Key">The name of a key value.</param>
         <param type="STRING" name="Value">Pointer to a buffer space large enough to hold the retrieved value.</param>
@@ -42,13 +44,15 @@
     <action>
       <name>Reset</name>
       <comment>Resets an object to its original state.</comment>
-      <prototype>ERR acRefresh(*Object)</prototype>
+      <prototype>ERR acReset(*Object)</prototype>
+      <tiriPrototype>err = Object.acReset()</tiriPrototype>
     </action>
 
     <action>
       <name>SetKey</name>
       <comment>Script parameters can be set through this action.</comment>
       <prototype>ERR acSetKey(*Object, CSTRING Key, CSTRING Value)</prototype>
+      <tiriPrototype>err = Object.acSetKey(Key:str, Value:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Key">The name of the target key.</param>
         <param type="CSTRING" name="Value">The string value to associate with Key.</param>
@@ -62,6 +66,7 @@
       <name>Callback</name>
       <comment>An internal method for managing callbacks.</comment>
       <prototype>ERR sc::Callback(OBJECTPTR Object, INT64 ProcedureID, const struct ScriptArg * Args, INT TotalArgs, ERR * Error)</prototype>
+      <tiriPrototype>err, Error:num = Callback(ProcedureID:num, Args:any, TotalArgs:num)</tiriPrototype>
       <input>
         <param type="INT64" name="ProcedureID">An identifier for the target procedure.</param>
         <param type="const struct ScriptArg *" name="Args">Optional CSV string containing parameters to pass to the procedure.</param>
@@ -81,6 +86,7 @@
       <name>DebugLog</name>
       <comment>Acquire a debug log from a compiled Script.</comment>
       <prototype>ERR sc::DebugLog(OBJECTPTR Object, CSTRING Options, CSTRING * Result)</prototype>
+      <tiriPrototype>err, Result:str = DebugLog(Options:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Options">Options to pass to the underlying language.</param>
         <param type="CSTRING *" name="Result">Resulting log information.</param>
@@ -99,6 +105,7 @@
       <name>DerefProcedure</name>
       <comment>Dereferences an acquired procedure.</comment>
       <prototype>ERR sc::DerefProcedure(OBJECTPTR Object, FUNCTION * Procedure)</prototype>
+      <tiriPrototype>err = DerefProcedure(Procedure:func)</tiriPrototype>
       <input>
         <param type="FUNCTION *" name="Procedure">The procedure to be dereferenced.</param>
       </input>
@@ -116,6 +123,7 @@
       <name>Exec</name>
       <comment>Executes a procedure in the script.</comment>
       <prototype>ERR sc::Exec(OBJECTPTR Object, CSTRING Procedure, const struct ScriptArg * Args, INT TotalArgs)</prototype>
+      <tiriPrototype>err = Exec(Procedure:str, Args:any, TotalArgs:num)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Procedure">The name of the procedure to execute, or NULL for the default entry point.</param>
         <param type="const struct ScriptArg *" name="Args">Optional parameters to pass to the procedure.</param>
@@ -158,6 +166,7 @@ struct ScriptArg {
       <name>GetProcedureID</name>
       <comment>Converts a procedure name to an ID.</comment>
       <prototype>ERR sc::GetProcedureID(OBJECTPTR Object, CSTRING Procedure, INT64 * ProcedureID)</prototype>
+      <tiriPrototype>err, ProcedureID:num = GetProcedureID(Procedure:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Procedure">The name of the procedure.</param>
         <param type="INT64 *" name="ProcedureID">The computed ID will be returned in this parameter.</param>

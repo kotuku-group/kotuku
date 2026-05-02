@@ -28,6 +28,7 @@
       <name>Activate</name>
       <comment>Activating a task object will execute it.</comment>
       <prototype>ERR acActivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acActivate()</tiriPrototype>
       <description>
 <p>Activating a task results in the execution of the file referenced in the <fl>Location</fl> field.</p>
 <p>On successful execution, the ProcessID will refer to the ID of the executed process.  This ID is compatible with the hosting platform's unique process numbers.</p>
@@ -48,6 +49,7 @@
       <name>GetKey</name>
       <comment>Retrieves custom key values.</comment>
       <prototype>ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)</prototype>
+      <tiriPrototype>err = Object.acGetKey(Key:str, Value:str, Size:num)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Key">The name of a key value.</param>
         <param type="STRING" name="Value">Pointer to a buffer space large enough to hold the retrieved value.</param>
@@ -59,6 +61,7 @@
       <name>SetKey</name>
       <comment>Variable fields are supported for the general storage of program variables.</comment>
       <prototype>ERR acSetKey(*Object, CSTRING Key, CSTRING Value)</prototype>
+      <tiriPrototype>err = Object.acSetKey(Key:str, Value:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Key">The name of the target key.</param>
         <param type="CSTRING" name="Value">The string value to associate with Key.</param>
@@ -69,6 +72,7 @@
       <name>Write</name>
       <comment>Send raw data to a launched process' stdin descriptor.</comment>
       <prototype>ERR acWrite(*Object, APTR Buffer, INT Length, INT Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acWrite(Buffer:str, Length:num)</tiriPrototype>
       <input>
         <param type="APTR" name="Buffer">A buffer containing the data that will be written to the object.</param>
         <param type="INT" name="Length">The total number of bytes to write to the object.</param>
@@ -86,6 +90,7 @@
       <name>AddArgument</name>
       <comment>Adds a new argument to the Parameters field.</comment>
       <prototype>ERR task::AddArgument(OBJECTPTR Object, CSTRING Argument)</prototype>
+      <tiriPrototype>err = AddArgument(Argument:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Argument">The new argument string.</param>
       </input>
@@ -102,6 +107,7 @@
       <name>Expunge</name>
       <comment>Forces a Task to expunge unused code.</comment>
       <prototype>ERR task::Expunge(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = Expunge()</tiriPrototype>
       <description>
 <p>The Expunge() method releases all loaded libraries that are no longer in use by the active process.</p>
       </description>
@@ -114,6 +120,7 @@
       <name>GetEnv</name>
       <comment>Retrieves environment variables for the active process.</comment>
       <prototype>ERR task::GetEnv(OBJECTPTR Object, CSTRING Name, CSTRING * Value)</prototype>
+      <tiriPrototype>err, Value:str = GetEnv(Name:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Name">The name of the environment variable to retrieve.</param>
         <param type="CSTRING *" name="Value">The value of the environment variable is returned in this parameter.</param>
@@ -141,6 +148,7 @@
       <name>Quit</name>
       <comment>Sends a quit message to a task.</comment>
       <prototype>ERR task::Quit(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = Quit()</tiriPrototype>
       <description>
 <p>The Quit() method can be used as a convenient way of sending a task a quit message.  This will normally result in the destruction of the task, so long as it is still functioning correctly and has been coded to respond to the <code>MSGID::QUIT</code> message type.  It is legal for a task to ignore a quit request if it is programmed to stay alive.</p>
 <p>Signal Handling on Unix: When terminating a foreign process on Unix systems, the quit behavior follows a two-stage approach for safe process termination: The first call sends <code>SIGTERM</code> to allow the process to shutdown gracefully; A second call sends <code>SIGKILL</code> to force immediate termination if the process is unresponsive.</p>
@@ -155,6 +163,7 @@
       <name>SetEnv</name>
       <comment>Sets environment variables for the active process.</comment>
       <prototype>ERR task::SetEnv(OBJECTPTR Object, CSTRING Name, CSTRING Value)</prototype>
+      <tiriPrototype>err = SetEnv(Name:str, Value:str)</tiriPrototype>
       <input>
         <param type="CSTRING" name="Name">The name of the environment variable to set.</param>
         <param type="CSTRING" name="Value">The value to assign to the environment variable.</param>

@@ -74,7 +74,7 @@ function formatResponse(ResponseTable:table, TextOutput:bool):str
    return 'Content-Length: ' .. #body .. '\r\n\r\n' .. body
 end
 
-global function sendResponse(Self, ClientSocket, ResponseTable, RequestLog)
+global function sendResponse(Self:table, ClientSocket, ResponseTable, RequestLog)
    ResponseTable ?? return -- Notifications don't get responses
 
    formatted = formatResponse(ResponseTable, Self.stdioTextOutput)
@@ -94,7 +94,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Send an LSP notification (no response expected)
 
-global function sendNotification(Self, ClientSocket, Method, Params)
+global function sendNotification(Self:table, ClientSocket:obj, Method, Params)
    notification = {
       jsonrpc = '2.0',
       method = Method,
@@ -151,7 +151,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Incoming Data Handling
 
-function initClientState(Self:table, ClientSocket)
+function initClientState(Self:table, ClientSocket:obj)
    state = ClientSocket._state()
 
    if not state.initialised then
@@ -169,7 +169,7 @@ function initClientState(Self:table, ClientSocket)
    return state
 end
 
-global function processIncomingData(Self:table, ClientSocket, Data:str)
+global function processIncomingData(Self:table, ClientSocket:obj, Data:str)
    state = initClientState(Self, ClientSocket)
 
    if not Data or #Data is 0 then return end
@@ -235,7 +235,7 @@ global function processIncomingData(Self:table, ClientSocket, Data:str)
    end
 end
 
-global function processIncoming(Self:table, ClientSocket)
+global function processIncoming(Self:table, ClientSocket:obj)
    state = initClientState(Self, ClientSocket)
 
    -- Read available data
