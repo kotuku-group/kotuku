@@ -999,7 +999,8 @@ int AsyncPending(OBJECTID ObjectID)
 {
    std::lock_guard<std::mutex> lock(glmActionQueue);
    int count = 0;
-   if (glActiveAsyncObjects.contains(ObjectID) or glAsyncObjectThreads.contains(ObjectID)) count++;
+   // Match AsyncWait() state: worker-thread bookkeeping can outlive completion dispatch briefly.
+   if (glActiveAsyncObjects.contains(ObjectID)) count++;
    if (auto it = glActionQueues.find(ObjectID); it != glActionQueues.end()) {
       count += int(it->second.size());
    }
