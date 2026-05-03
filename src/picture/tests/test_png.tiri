@@ -1,0 +1,336 @@
+-- $TIRI
+--[[
+Flute tests for Picture PNG decoding.
+
+This technique uses pre-computed checksums from PNG images, captured from a 'good' state.  If a checksum doesn't
+match, the test will fail and the decoded image will be saved to "temp:picture_test_results/".  Check the
+corresponding image file, if it is acceptable then update the old checksum from the test output in order to pass
+future tests.
+
+Where possible, the test-files are 32x32 bits icons. This results in a still reasonable size of the suite even
+with a large number of tests. The name of each test-file reflects the type in the following way:
+
+    filename:                               g04i2c08.png
+                                            || ||||
+    test feature (in this case gamma) ------+| ||||
+    parameter of test (here gamma-value) ----+ ||||
+    interlaced or non-interlaced --------------+|||
+    colour-type (numerical) --------------------+||
+    colour-type (descriptive) -------------------+|
+    bit-depth ------------------------------------+
+
+Colour-type
+
+* 0g - grayscale
+* 2c - rgb colour
+* 3p - paletted
+* 4a - grayscale + alpha channel
+* 6a - rgb colour + alpha channel
+
+Bit-depth:
+
+01 - with colour-type 0, 3
+02 - with colour-type 0, 3
+04 - with colour-type 0, 3
+08 - with colour-type 0, 2, 3, 4, 6
+16 - with colour-type 0, 2, 4, 6
+
+Interlacing:
+
+n - non-interlaced
+i - interlaced
+--]]
+
+   include 'picture'
+
+glResultFolder <const> = 'temp:picture_test_results/'
+
+glValidPNG = array<table> {
+   { src='data/basi0g01.png', crc=0xaeb73579 },
+   { src='data/basi0g02.png', crc=0x39594073 },
+   { src='data/basi0g04.png', crc=0x7ba87d71 },
+   { src='data/basi0g08.png', crc=0xf7d96fd5 },
+   { src='data/basi0g16.png', crc=0x630db2ea },
+   { src='data/basi2c08.png', crc=0x10739b96 },
+   { src='data/basi2c16.png', crc=0xc4c4f721 },
+   { src='data/basi3p01.png', crc=0xfba3dc7f },
+   { src='data/basi3p02.png', crc=0x8d186fe6 },
+   { src='data/basi3p04.png', crc=0x280e99f1 },
+   { src='data/basi3p08.png', crc=0xf6ed8aa6 },
+   { src='data/basi4a08.png', crc=0x796f67bc },
+   { src='data/basi4a16.png', crc=0x3e68237d },
+   { src='data/basi6a08.png', crc=0xc1f18b3a },
+   { src='data/basi6a16.png', crc=0xf73542d6 },
+   { src='data/basn0g01.png', crc=0xaeb73579 },
+   { src='data/basn0g02.png', crc=0x39594073 },
+   { src='data/basn0g04.png', crc=0x7ba87d71 },
+   { src='data/basn0g08.png', crc=0xf7d96fd5 },
+   { src='data/basn0g16.png', crc=0x630db2ea },
+   { src='data/basn2c08.png', crc=0x10739b96 },
+   { src='data/basn2c16.png', crc=0xc4c4f721 },
+   { src='data/basn3p01.png', crc=0xfba3dc7f },
+   { src='data/basn3p02.png', crc=0x8d186fe6 },
+   { src='data/basn3p04.png', crc=0x280e99f1 },
+   { src='data/basn3p08.png', crc=0xf6ed8aa6 },
+   { src='data/basn4a08.png', crc=0x796f67bc },
+   { src='data/basn4a16.png', crc=0x3e68237d },
+   { src='data/basn6a08.png', crc=0xc1f18b3a },
+   { src='data/basn6a16.png', crc=0xf73542d6 },
+   { src='data/bgai4a08.png', crc=0x796f67bc },
+   { src='data/bgai4a16.png', crc=0x3e68237d },
+   { src='data/bgan6a08.png', crc=0xc1f18b3a },
+   { src='data/bgan6a16.png', crc=0xf73542d6 },
+   { src='data/bgbn4a08.png', crc=0x796f67bc },
+   { src='data/bggn4a16.png', crc=0x3e68237d },
+   { src='data/bgwn6a08.png', crc=0xc1f18b3a },
+   { src='data/bgyn6a16.png', crc=0xf73542d6 },
+   -- Ancillary chunks
+   { src='data/ccwn2c08.png', crc=0x270e7753 },
+   { src='data/ccwn3p08.png', crc=0x1eef6e54 },
+   { src='data/cdfn2c08.png', crc=0x8a23d216 },
+   { src='data/cdhn2c08.png', crc=0x464ec35d },
+   { src='data/cdsn2c08.png', crc=0x7caafdc8 },
+   { src='data/cdun2c08.png', crc=0x7100db28 },
+   { src='data/ch1n3p04.png', crc=0x280e99f1 },
+   { src='data/ch2n3p08.png', crc=0xf6ed8aa6 },
+   { src='data/cm0n0g04.png', crc=0xa5476d2e },
+   { src='data/cm7n0g04.png', crc=0xa5476d2e },
+   { src='data/cm9n0g04.png', crc=0xa5476d2e },
+   { src='data/cs3n2c16.png', crc=0xd720dd3e },
+   { src='data/cs3n3p08.png', crc=0x512abb0c },
+   { src='data/cs5n2c08.png', crc=0x4293be3c },
+   { src='data/cs5n3p08.png', crc=0xaca0fc47 },
+   { src='data/cs8n2c08.png', crc=0x88e4c215 },
+   { src='data/cs8n3p08.png', crc=0x011f5755 },
+   { src='data/ct0n0g04.png', crc=0xa5476d2e },
+   { src='data/ct1n0g04.png', crc=0xa5476d2e },
+   { src='data/cten0g04.png', crc=0xc8d112f8 },
+   { src='data/ctfn0g04.png', crc=0x25fbd062 },
+   { src='data/ctgn0g04.png', crc=0x3e830640 },
+   { src='data/cthn0g04.png', crc=0xf3d21071 },
+   { src='data/ctjn0g04.png', crc=0x85f290c1 },
+   { src='data/ctzn0g04.png', crc=0xa5476d2e },
+   { src='data/exif2c08.png', crc=0x7ca2fd01 },
+   -- Image filtering
+   { src='data/f00n0g08.png', crc=0x31010cc2 },
+   { src='data/f00n2c08.png', crc=0xeebf757d },
+   { src='data/f01n0g08.png', crc=0x369c8151 },
+   { src='data/f01n2c08.png', crc=0x754e2b4e },
+   { src='data/f02n0g08.png', crc=0x542f84f4 },
+   { src='data/f02n2c08.png', crc=0x6e722a0e },
+   { src='data/f03n0g08.png', crc=0xde318018 },
+   { src='data/f03n2c08.png', crc=0xc8ec20ec },
+   { src='data/f04n0g08.png', crc=0x3efa4e81 },
+   { src='data/f04n2c08.png', crc=0x6c50cefc },
+   { src='data/f99n0g04.png', crc=0x10be6885 },
+   -- Gamma values
+   -- g03 - file-gamma = 0.35, for display with gamma = 2.8
+   -- g04 - file-gamma = 0.45, for display with gamma = 2.2 (PC)
+   -- g05 - file-gamma = 0.55, for display with gamma = 1.8 (Mac)
+   -- g07 - file-gamma = 0.70, for display with gamma = 1.4
+   -- g10 - file-gamma = 1.00, for display with gamma = 1.0 (NeXT)
+   -- g25 - file-gamma = 2.50, for display with gamma = 0.4
+   { src='data/g03n0g16.png', crc=0x8433a124 },
+   { src='data/g03n2c08.png', crc=0x67200da9 },
+   { src='data/g03n3p04.png', crc=0x70679714 },
+   { src='data/g04n0g16.png', crc=0x86604327 },
+   { src='data/g04n2c08.png', crc=0x12dc5efa },
+   { src='data/g04n3p04.png', crc=0xb8007d1b },
+   { src='data/g05n0g16.png', crc=0x196e0c45 },
+   { src='data/g05n2c08.png', crc=0xf6f471af },
+   { src='data/g05n3p04.png', crc=0x39e4d2fb },
+   { src='data/g07n0g16.png', crc=0x12211112 },
+   { src='data/g07n2c08.png', crc=0x42775828 },
+   { src='data/g07n3p04.png', crc=0x1faabc20 },
+   { src='data/g10n0g16.png', crc=0x55d6cbd8 },
+   { src='data/g10n2c08.png', crc=0x746626da },
+   { src='data/g10n3p04.png', crc=0x9b00cc62 },
+   { src='data/g25n0g16.png', crc=0x463243b6 },
+   { src='data/g25n2c08.png', crc=0x620eba52 },
+   { src='data/g25n3p04.png', crc=0x405f4875 },
+   -- Chunk ordering
+   { src='data/oi1n0g16.png', crc=0x630db2ea },
+   { src='data/oi1n2c16.png', crc=0xc4c4f721 },
+   { src='data/oi2n0g16.png', crc=0x630db2ea },
+   { src='data/oi2n2c16.png', crc=0xc4c4f721 },
+   { src='data/oi4n0g16.png', crc=0x630db2ea },
+   { src='data/oi4n2c16.png', crc=0xc4c4f721 },
+   { src='data/oi9n0g16.png', crc=0x630db2ea },
+   { src='data/oi9n2c16.png', crc=0xc4c4f721 },
+   { src='data/pp0n2c16.png', crc=0xc4c4f721 },
+   { src='data/pp0n6a08.png', crc=0x10739b96 },
+   { src='data/ps1n0g08.png', crc=0xf7d96fd5 },
+   { src='data/ps1n2c16.png', crc=0xc4c4f721 },
+   { src='data/ps2n0g08.png', crc=0xf7d96fd5 },
+   { src='data/ps2n2c16.png', crc=0xc4c4f721 },
+   -- Odd sizes
+   { src='data/s01i3p01.png', crc=0x2144df1c },
+   { src='data/s01n3p01.png', crc=0x2144df1c },
+   { src='data/s02i3p01.png', crc=0x6522df69 },
+   { src='data/s02n3p01.png', crc=0x6522df69 },
+   { src='data/s03i3p01.png', crc=0xdda2cddb },
+   { src='data/s03n3p01.png', crc=0xdda2cddb },
+   { src='data/s04i3p01.png', crc=0x11c74458 },
+   { src='data/s04n3p01.png', crc=0x11c74458 },
+   { src='data/s05i3p02.png', crc=0xbd57f0f5 },
+   { src='data/s05n3p02.png', crc=0xbd57f0f5 },
+   { src='data/s06i3p02.png', crc=0xbab440ce },
+   { src='data/s06n3p02.png', crc=0xbab440ce },
+   { src='data/s07i3p02.png', crc=0x0be81bc5 },
+   { src='data/s07n3p02.png', crc=0x0be81bc5 },
+   { src='data/s08i3p02.png', crc=0x66b917a1 },
+   { src='data/s08n3p02.png', crc=0x66b917a1 },
+   { src='data/s09i3p02.png', crc=0xcd99ce57 },
+   { src='data/s09n3p02.png', crc=0xcd99ce57 },
+   { src='data/s32i3p04.png', crc=0x4ce77c9f },
+   { src='data/s32n3p04.png', crc=0x4ce77c9f },
+   { src='data/s33i3p04.png', crc=0xa058be24 },
+   { src='data/s33n3p04.png', crc=0xa058be24 },
+   { src='data/s34i3p04.png', crc=0x66478d73 },
+   { src='data/s34n3p04.png', crc=0x66478d73 },
+   { src='data/s35i3p04.png', crc=0xc88f0d46 },
+   { src='data/s35n3p04.png', crc=0xc88f0d46 },
+   { src='data/s36i3p04.png', crc=0xcf95f482 },
+   { src='data/s36n3p04.png', crc=0xcf95f482 },
+   { src='data/s37i3p04.png', crc=0x4b10c5bf },
+   { src='data/s37n3p04.png', crc=0x4b10c5bf },
+   { src='data/s38i3p04.png', crc=0x8452e2ad },
+   { src='data/s38n3p04.png', crc=0x8452e2ad },
+   { src='data/s39i3p04.png', crc=0xfb9bd974 },
+   { src='data/s39n3p04.png', crc=0xfb9bd974 },
+   { src='data/s40i3p04.png', crc=0x6d56e2cd },
+   { src='data/s40n3p04.png', crc=0x6d56e2cd },
+   -- Transparency
+   { src='data/tbbn0g04.png', crc=0x4d425596 },
+   { src='data/tbbn2c16.png', crc=0xf689275e },
+   { src='data/tbbn3p08.png', crc=0x2111c7b4 },
+   { src='data/tbgn2c16.png', crc=0xf689275e },
+   { src='data/tbgn3p08.png', crc=0x2111c7b4 },
+   { src='data/tbrn2c08.png', crc=0x35854c01 },
+   { src='data/tbwn0g16.png', crc=0xbce5e32d },
+   { src='data/tbwn3p08.png', crc=0x2111c7b4 },
+   { src='data/tbyn3p08.png', crc=0x2111c7b4 },
+   { src='data/tm3n3p02.png', crc=0xe5543690, mask_crc=0xb53eaecb },
+   { src='data/tp0n0g08.png', crc=0xccf6d02c },
+   { src='data/tp0n2c08.png', crc=0x69ed36dd },
+   { src='data/tp0n3p08.png', crc=0xe242eb8a },
+   { src='data/tp1n3p08.png', crc=0x2111c7b4 },
+   -- Compression levels
+   { src='data/z00n2c08.png', crc=0x33610a6e },
+   { src='data/z03n2c08.png', crc=0x33610a6e },
+   { src='data/z06n2c08.png', crc=0x33610a6e },
+   { src='data/z09n2c08.png', crc=0x33610a6e }
+}
+
+glInvalidPNG = array<string> {
+   'data/xc1n0g08.png',
+   'data/xc9n2c08.png',
+   'data/xcrn0g04.png',
+   'data/xcsn0g01.png',
+   'data/xd0n2c08.png',
+   'data/xd3n2c08.png',
+   'data/xd9n2c08.png',
+   'data/xdtn0g01.png',
+   'data/xhdn0g08.png',
+   'data/xlfn0g04.png',
+   'data/xs1n0g01.png',
+   'data/xs2n0g01.png',
+   'data/xs4n0g01.png',
+   'data/xs7n0g01.png'
+}
+
+local glDataFolder
+
+@BeforeAll function setup(State)
+   glDataFolder = State.folder
+   err = mSys.CreateFolder(glResultFolder, 0)
+   if (err != ERR_Okay) and (err != ERR_FileExists) then
+      error('CreateFolder() failed for ' .. glResultFolder .. ': ' .. mSys.GetErrorMsg(err))
+   end
+end
+
+function formatHash(Hash:num)
+   return string.format('0x%.8x', Hash)
+end
+
+function saveBitmap(Bitmap:obj, Name:str)
+   try
+      pic = obj.new('picture', { width=Bitmap.width, height=Bitmap.height, bitsPerPixel=Bitmap.bitsPerPixel, flags='NEW' })
+      Bitmap.acCopyData(pic.bitmap)
+      file = obj.new('file', { flags=FL_NEW|FL_WRITE, path=glResultFolder .. Name })
+      pic.acSaveImage(file)
+   except ex
+      logOutput('Unable to save decoded PNG result for "' .. Name .. '": ' .. ex.message)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test global function ValidPNGHashes()
+   missing = array<string> { }
+   mismatches = array<string> { }
+
+   for record in values(glValidPNG) do
+      local hash, bmp, pic
+
+      try
+         pic = obj.new('picture', { path=glDataFolder .. record.src })
+         bmp = pic.bitmap
+         hash = mSys.GenCRC32(0, bmp.data, bmp.size)
+      except ex
+         mismatches:push(record.src .. ': load failed: ' .. ex.message)
+         continue
+      success
+         if not record.crc?? then
+            saveBitmap(bmp, record.src)
+            missing:push("   { src='" .. record.src .. "', crc=" .. formatHash(hash) .. ' },')
+         elseif record.crc != hash then
+            saveBitmap(bmp, record.src)
+            mismatches:push(record.src .. ': computed ' .. formatHash(hash) .. ', expected ' .. formatHash(record.crc))
+         end
+
+         if record.mask_crc then
+            if not pic.mask then
+               mismatches:push(record.src .. ': expected alpha mask but none was loaded')
+            else
+               local mask_hash = mSys.GenCRC32(0, pic.mask.data, pic.mask.size)
+
+               if record.mask_crc != mask_hash then
+                  mismatches:push(record.src .. ': mask computed ' .. formatHash(mask_hash) ..
+                     ', expected ' .. formatHash(record.mask_crc))
+               end
+            end
+         end
+      end
+   end
+
+   if (#missing > 0) or (#mismatches > 0) then
+      message = ''
+      if #missing > 0 then
+         message ..= 'Missing Picture PNG CRC values:\n' .. missing:join('\n')
+      end
+      if #mismatches > 0 then
+         if #message > 0 then message ..= '\n\n' end
+         message ..= 'Picture PNG CRC mismatches or load failures:\n' .. mismatches:join('\n')
+      end
+      error(message)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test global function InvalidPNGsFailToLoad()
+   failures = array<string> { }
+
+   for record in values(glInvalidPNG) do
+      try
+         obj.new('picture', { path=glDataFolder .. record })
+      success
+         failures:push(record .. ': loaded successfully but should be rejected')
+      end
+   end
+
+   if #failures > 0 then
+      error('Invalid PNG files loaded successfully:\n' .. failures:join('\n'))
+   end
+end

@@ -66,7 +66,7 @@ end
 @Test global function Basics06() hashTestSVG('basics/w3-render-elems-08-t.svg', 0xe173855b) end
 -- Requires support for group opacity
 @Test global function Basics07() hashTestSVG('basics/w3-render-groups-01-b.svg', -1) end
-@Test global function Basics08() hashTestSVG('basics/w3-render-groups-03-t.svg', 0x898ecd7b) end
+@Test global function Basics08() hashTestSVG('basics/w3-render-groups-03-t.svg', 0x09cdfd80) end
 @Test global function Basics09() hashTestSVG('basics/w3-shapes-circle-01-t.svg', 0x4dc473c3) end
 @Test global function Basics10() hashTestSVG('basics/w3-shapes-circle-02-t.svg', 0xb73539f6) end
 @Test global function Basics11() hashTestSVG('basics/w3-shapes-ellipse-01-t.svg', 0xfa5c8bee) end
@@ -234,7 +234,7 @@ end
 @Test global function W3Gauss1()           hashTestSVG('filters/w3-filters-gauss-01-b.svg', 0x3c531bc1) end
 @Test global function W3Gauss2()           hashTestSVG('filters/w3-filters-gauss-02-f.svg', 0xb6b88740) end
 @Test global function W3Gauss3()           hashTestSVG('filters/w3-filters-gauss-03-f.svg', 0xd4cc8f68) end
-@Test global function W3Image()            hashTestSVG('filters/w3-image.svg', 0x2f1cdd18) end
+@Test global function W3Image()            hashTestSVG('filters/w3-image.svg', 0xec8cd283) end
 @Test global function W3Morphology()       hashTestSVG('filters/w3-morphology.svg', 0xf4350a95) end
 @Test global function W3Offset()           hashTestSVG('filters/w3-offset.svg', 0xa61dcfe3) end
 @Test global function W3Lighting1()        hashTestSVG('filters/w3-filters-light-01-f.svg', 0x36f34b64) end
