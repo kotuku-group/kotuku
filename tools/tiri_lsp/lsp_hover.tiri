@@ -121,20 +121,20 @@ function formatClassHover(ClassName, ClassDoc)
 end
 
 function formatMethodHover(ClassName, MethodName, MethodDoc)
-   doc = decodeMethod(MethodDoc)  -- Decode compact string if needed
+   doc = MethodDoc
    md = f'**{ClassName}.{MethodName}**\n\n'
    if doc.prototype?? then
-      md ..= '```c\n' .. doc.prototype .. '\n```\n\n'
+      md ..= '```lua\n' .. doc.prototype .. '\n```\n\n'
    end
    md ..= doc.comment or ''
    return md
 end
 
 function formatActionHover(ClassName, ActionName, ActionDoc)
-   doc = decodeMethod(ActionDoc)  -- Decode compact string if needed
+   doc = ActionDoc
    md = f'**{ClassName}.ac{ActionName}** _(Action)_\n\n'
    if doc.prototype?? then
-      md ..= '```c\n' .. doc.prototype .. '\n```\n\n'
+      md ..= '```lua\n' .. doc.prototype .. '\n```\n\n'
    end
    md ..= doc.comment or ''
    return md
@@ -152,10 +152,10 @@ function formatFieldHover(ClassName, FieldName, FieldDoc)
 end
 
 function formatModuleFunctionHover(ModuleName, FuncName, FuncDoc)
-   doc = decodeMethod(FuncDoc)  -- Decode compact string if needed
+   doc = FuncDoc
    md = f'**{ModuleName}.{FuncName}**\n\n'
    if doc.prototype?? then
-      md ..= '```c\n' .. doc.prototype .. '\n```\n\n'
+      md ..= '```lua\n' .. doc.prototype .. '\n```\n\n'
    end
    md ..= doc.comment or ''
    md ..= f'\n\n[Documentation]({HTML_URI}{ModuleName:lower()}.html?page={FuncName})'

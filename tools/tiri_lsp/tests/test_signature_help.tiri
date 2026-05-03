@@ -10,14 +10,11 @@ global glSignatureHelpTestUri = nil
    glSignatureHelpTestUri = lspPathToUri('sdk:tools/tiri_lsp/tests/test_signature_help.tiri')
    assert(glSignatureHelpTestUri, 'Failed to create test document URI.')
 
-   glDocCache.modules.Core.functions.WaitTime.tiriPrototype = 'WaitTime(Seconds: num):num'
-   glDocCache.classes.XML.methods.GetAttrib.tiriPrototype = 'GetAttrib(Index: num, Attrib: str, Value: str):num'
    glDefs.modulePrefixes.mTest = 'Test'
    glDocCache.modules.Test = {
       functions = {
          Mixed = {
-            prototype = 'APTR Mixed(APTR Value)',
-            tiriPrototype = 'Mixed(Value: any):any',
+            prototype = 'Mixed(Value: any):any',
             comment = 'Mixed pointer fallback.',
             params = array<table> {
                { name = 'Value', type = 'APTR', doc = 'Pointer-like value.' }
@@ -153,14 +150,16 @@ end
 end
 
 @Test function ModuleApiSignature()
-   help = signatureAt('mSys.WaitTime(|)\n')
+   help = signatureAt("mSys.ResolvePath('test:', |)\n")
    signature = firstSignature(help)
 
-   assert(signature.label is 'mSys.WaitTime(Seconds: num):num', 'Module API signature should prefer Tiri prototypes.')
-   assert(signature.parameters[0].label is 'Seconds: num', 'Module API parameter should include the Tiri type.')
-   assertContains(signature.parameters[0].documentation.value, 'seconds',
+   assert(signature.label is 'err, Result:str = mSys.ResolvePath(Path:str, Flags:num)',
+      'Module API signature should use the cached Tiri prototype.')
+   assert(signature.parameters[0].label is 'Path:str', 'Module API parameter should include the Tiri type.')
+   assert(signature.parameters[1].label is 'Flags:num', 'Module API parameter should include the Tiri type.')
+   assertContains(signature.parameters[0].documentation.value, 'path',
       'Module API parameter should include XML docs.')
-   assert(help.activeParameter is 0, 'First module parameter should be active.')
+   assert(help.activeParameter is 1, 'Second module parameter should be active.')
 end
 
 @Test function ObjectMethodSignatureHidesReceiver()
@@ -170,9 +169,10 @@ xml.mtGetAttrib(1, |)
 ]=])
    signature = firstSignature(help)
 
-   assert(signature.label is 'xml.mtGetAttrib(Index: num, Attrib: str, Value: str):num',
-      'Object method signature should prefer Tiri prototypes.')
-   assert(signature.parameters[0].label is 'Index: num', 'First visible method parameter should be Index.')
+   assert(signature.label is 'err, Value:str = xml.mtGetAttrib(Index:num, Attrib:str)',
+      'Object method signature should use the cached Tiri prototype.')
+   assert(signature.parameters[0].label is 'Index:num', 'First visible method parameter should be Index.')
+   assert(signature.parameters[1].label is 'Attrib:str', 'Second visible method parameter should be Attrib.')
    assert(help.activeParameter is 1, 'Second method argument should be active.')
 end
 
@@ -193,7 +193,7 @@ xml.acClear(|)
 ]=])
    signature = firstSignature(help)
 
-   assert(signature.label is 'xml.acClear()', 'Object action should hide implicit receiver-only parameters.')
+   assert(signature.label is 'err = xml.acClear()', 'Object action should use the cached Tiri prototype.')
    assert(#signature.parameters is 0, 'Receiver-only action should expose no parameters.')
    assert(help.activeParameter is 0, 'Active parameter should clamp to zero for empty signatures.')
 end

@@ -21,17 +21,6 @@ function encodeField(Access, Type, ByteStart, ByteEnd, Comment)
    return f'A:{Access or "R"}\tL:{ByteStart},{ByteEnd}\tT:{Type or ""}\tC:{Comment or ""}'
 end
 
-@Doc(text='Encode a method/action/function entry.')
-function encodeMethod(Prototype, TiriPrototype, ByteStart, ByteEnd, Comment, Params)
-   return {
-      byteStart = ByteStart,
-      byteEnd = ByteEnd,
-      prototype = (TiriPrototype or Prototype) or '',
-      comment = Comment or '',
-      params = Params or array<table>
-   }
-end
-
 @Doc(text='Decode a field from compact string format')
 global function decodeField(Str:any):table
    if type(Str) != 'string' then return Str end  -- Already decoded or nil
@@ -57,31 +46,15 @@ global function decodeField(Str:any):table
    return result
 end
 
--- Decode a method/action/function from compact string format
-
-global function decodeMethod(Str:any):table
-   if type(Str) is 'table' then return Str end  -- Already decoded or nil
-
-   result = {}
-   for field in values(Str:split('\t')) do
-      key = field:sub(0, 1)
-      value = field:sub(2)
-      if key is 'L' then
-         start_pos, end_pos = rx_pos_pair.extract(value)
-         result.byteStart = tonumber(start_pos)
-         result.byteEnd = tonumber(end_pos)
-      elseif key is 'P' then
-         result.prototype = value
-      elseif key is 'T' then
-         result.tiriPrototype = value
-      elseif key is 'C' then
-         result.comment = value
-      else
-         print(f'Unrecognised key: {key}')
-      end
-   end
-
-   return result
+@Doc(text='Encode a method/action/function entry into a table record.')
+function createMethodRecord(Prototype, TiriPrototype, ByteStart, ByteEnd, Comment, Params)
+   return {
+      byteStart = ByteStart,
+      byteEnd = ByteEnd,
+      prototype = (TiriPrototype or Prototype) or '',
+      comment = Comment or '',
+      params = Params or array<table>
+   }
 end
 
 function extractAttrFromText(Text:str, AttrName:str):str
@@ -217,7 +190,7 @@ function processModuleXML(FilePath:str, DocPath:str):<str,table>
 
       funcName = extractChildText(funcMatch.content, 'name')
       if funcName then
-         modEntry.functions[funcName] = encodeMethod(
+         modEntry.functions[funcName] = createMethodRecord(
             extractChildText(funcMatch.content, 'prototype') or '',
             extractChildText(funcMatch.content, 'tiriPrototype') or '',
             funcMatch.byteStart,
@@ -269,7 +242,7 @@ function processClassXML(FilePath, DocPath)
 
       methodName = extractChildText(methodMatch.content, 'name')
       if methodName then
-         classEntry.methods[methodName] = encodeMethod(
+         classEntry.methods[methodName] = createMethodRecord(
             extractChildText(methodMatch.content, 'prototype') or '',
             extractChildText(methodMatch.content, 'tiriPrototype') or '',
             methodMatch.byteStart,
@@ -290,7 +263,7 @@ function processClassXML(FilePath, DocPath)
 
       actionName = extractChildText(actionMatch.content, 'name')
       if actionName then
-         classEntry.actions[actionName] = encodeMethod(
+         classEntry.actions[actionName] = createMethodRecord(
             extractChildText(actionMatch.content, 'prototype') or '',
             extractChildText(actionMatch.content, 'tiriPrototype') or '',
             actionMatch.byteStart,

@@ -513,7 +513,7 @@ function resolveApiMemberDefinition(Doc:table, TokenInfo:table):array
          if rx_def_action_prefix.test(token) then
             action_name = token:sub(2)
             if class_doc.actions and class_doc.actions[action_name] then
-               action_doc = decodeMethod(class_doc.actions[action_name])
+               action_doc = class_doc.actions[action_name]
                pushLocation(locations, makeXmlLocation(class_doc, action_doc.byteStart, action_doc.byteEnd))
             end
          end
@@ -521,18 +521,18 @@ function resolveApiMemberDefinition(Doc:table, TokenInfo:table):array
          if #locations is 0 and rx_def_method_prefix.test(token) then
             method_name = token:sub(2)
             if class_doc.methods and class_doc.methods[method_name] then
-               method_doc = decodeMethod(class_doc.methods[method_name])
+               method_doc = class_doc.methods[method_name]
                pushLocation(locations, makeXmlLocation(class_doc, method_doc.byteStart, method_doc.byteEnd))
             end
          end
 
          if #locations is 0 and class_doc.methods and class_doc.methods[token] then
-            method_doc = decodeMethod(class_doc.methods[token])
+            method_doc = class_doc.methods[token]
             pushLocation(locations, makeXmlLocation(class_doc, method_doc.byteStart, method_doc.byteEnd))
          end
 
          if #locations is 0 and class_doc.actions and class_doc.actions[token] then
-            action_doc = decodeMethod(class_doc.actions[token])
+            action_doc = class_doc.actions[token]
             pushLocation(locations, makeXmlLocation(class_doc, action_doc.byteStart, action_doc.byteEnd))
          end
 
@@ -561,7 +561,7 @@ function resolveApiMemberDefinition(Doc:table, TokenInfo:table):array
       module_doc = glDocCache?.modules?[module_name]
       func_doc = module_doc?.functions?[token]
       if module_doc and func_doc then
-         decoded_func = decodeMethod(func_doc)
+         decoded_func = func_doc
          locations = array<table>
          pushLocation(locations, makeXmlLocation(module_doc, decoded_func.byteStart, decoded_func.byteEnd))
          return #locations > 0 and locations or nil

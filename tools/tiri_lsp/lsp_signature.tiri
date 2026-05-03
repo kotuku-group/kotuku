@@ -9,6 +9,8 @@ global glSignatureSymbolCache = {}
 ----------------------------------------------------------------------------------------------------------------------
 -- Source Scanning
 
+-- Convert an LSP line/character position to the matching byte offset in the document content.
+
 function signaturePositionToOffset(Doc:table, Position:table):num
    offset = 0
    current_line = 0
@@ -25,13 +27,19 @@ function signaturePositionToOffset(Doc:table, Position:table):num
    return offset
 end
 
+-- Return true when a character can start a Tiri identifier.
+
 function signatureIsIdentStart(Char:str):bool
    return (Char >= 'a' and Char <= 'z') or (Char >= 'A' and Char <= 'Z') or Char is '_'
 end
 
+-- Return true when a character can appear after the first character of a Tiri identifier.
+
 function signatureIsIdentChar(Char:str):bool
    return signatureIsIdentStart(Char) or (Char >= '0' and Char <= '9')
 end
+
+-- Move backwards over whitespace and return the first non-space byte offset.
 
 function signatureSkipBackSpaces(Content:str, Pos:num):num
    while Pos >= 0 do
@@ -41,6 +49,8 @@ function signatureSkipBackSpaces(Content:str, Pos:num):num
    end
    return Pos
 end
+
+-- Read the identifier that ends before or at the supplied byte offset.
 
 function signatureReadIdentifierBefore(Content:str, Pos:num):table
    end_pos = signatureSkipBackSpaces(Content, Pos)
@@ -57,6 +67,8 @@ function signatureReadIdentifierBefore(Content:str, Pos:num):table
       endPos = end_pos + 1
    }
 end
+
+-- Resolve the function or method name attached to an opening parenthesis.
 
 function signatureReadCallName(Content:str, ParenPos:num):table
    name_info = signatureReadIdentifierBefore(Content, ParenPos - 1)
@@ -90,6 +102,8 @@ function signatureReadCallName(Content:str, ParenPos:num):table
    }
 end
 
+-- Add a call frame to the parser stack for an opening parenthesis.
+
 function signaturePushFrame(Stack:array, Content:str, Pos:num)
    call = signatureReadCallName(Content, Pos)
    Stack:push({
@@ -101,6 +115,8 @@ function signaturePushFrame(Stack:array, Content:str, Pos:num)
       bracketDepth = 0
    })
 end
+
+-- Find the innermost call expression and active argument index at the requested document position.
 
 global function signatureFindCallContext(Doc:table, Position:table):table
    content = Doc.content or ''
@@ -189,6 +205,8 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Signature Formatting
 
+-- Wrap text as LSP markdown documentation when meaningful content is available.
+
 function signatureMarkup(Text:str):table
    Text ?? return nil
    if Text is '' then return nil end
@@ -197,6 +215,8 @@ function signatureMarkup(Text:str):table
       value = Text
    }
 end
+
+-- Build the visible label for a single parameter.
 
 function signatureParamLabel(Param:table):str
    name = Param.name or ''
@@ -207,6 +227,8 @@ function signatureParamLabel(Param:table):str
    if param_type != '' then return param_type end
    return Param.label or ''
 end
+
+-- Convert internal parameter records to LSP ParameterInformation records.
 
 function signatureBuildParameterInfo(Params:array):array
    result = array<table>
@@ -219,6 +241,8 @@ function signatureBuildParameterInfo(Params:array):array
    return result
 end
 
+-- Build an LSP SignatureInformation record from a label, documentation and parameter list.
+
 function signatureBuildInfo(Label:str, Documentation:str, Params:array):table
    info = {
       label = Label or '',
@@ -229,12 +253,16 @@ function signatureBuildInfo(Label:str, Documentation:str, Params:array):table
    return info
 end
 
+-- Keep the active parameter index inside the bounds of the signature parameter list.
+
 function signatureClampActiveParameter(Active:num, Params:array):num
    if not Params or #Params is 0 then return 0 end
    if Active < 0 then return 0 end
    if Active >= #Params then return #Params - 1 end
    return Active
 end
+
+-- Split a prototype parameter string while ignoring commas inside nested expressions.
 
 function signatureSplitParams(ParamText:str):array
    params = array<table>
@@ -268,6 +296,8 @@ function signatureSplitParams(ParamText:str):array
    return params
 end
 
+-- Extract raw parameter labels from the first parenthesised parameter list in a prototype.
+
 function signatureParamsFromPrototype(Prototype:str):array
    Prototype ?? return array<table>
    open_pos = Prototype:find('(', 0, true)
@@ -275,6 +305,8 @@ function signatureParamsFromPrototype(Prototype:str):array
    if not open_pos or not close_pos or close_pos <= open_pos then return array<table> end
    return signatureSplitParams(Prototype:sub(open_pos + 1, close_pos))
 end
+
+-- Extract the display name from a prototype, falling back when no callable name is present.
 
 function signatureDisplayNameFromPrototype(Prototype:str, Fallback:str):str
    open_pos = Prototype and Prototype:find('(', 0, true) or nil
@@ -304,6 +336,8 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Current Document Symbols
 
+-- Get cached parser symbols for the document, refreshing them when the document content has changed.
+
 function signatureGetDocumentSymbols(Doc:table):array
    if Doc.signatureSymbolsContent is Doc.content and Doc.signatureSymbols then return Doc.signatureSymbols end
 
@@ -324,6 +358,8 @@ function signatureGetDocumentSymbols(Doc:table):array
    return Doc.signatureSymbols or glSignatureSymbolCache[Doc.uri]
 end
 
+-- Return true when a parsed document symbol can satisfy the current call context.
+
 function signatureSymbolMatches(Symbol:table, Context:table):bool
    if Symbol.name is Context.name or Symbol.name is Context.fullName then return true end
    if Context.object then
@@ -332,6 +368,8 @@ function signatureSymbolMatches(Symbol:table, Context:table):bool
    end
    return false
 end
+
+-- Convert a parser symbol into LSP signature information.
 
 function signatureFromDocumentSymbol(Symbol:table):table
    params = array<table>
@@ -347,6 +385,8 @@ function signatureFromDocumentSymbol(Symbol:table):table
    return signatureBuildInfo(Symbol.signature or Symbol.name, doc_text, params)
 end
 
+-- Resolve signature help from functions declared in the current document.
+
 function resolveDocumentSignature(Doc:table, Context:table):table
    symbols = signatureGetDocumentSymbols(Doc)
    symbols ?? return nil
@@ -361,6 +401,8 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Built-ins and Kotuku API
 
+-- Resolve signature help from the built-in Tiri definition table.
+
 function signatureFromBuiltin(Context:table):table
    key = Context.object and (Context.object .. '.' .. Context.name) or Context.name
    builtin = glDefs?.builtins?[key]
@@ -368,6 +410,8 @@ function signatureFromBuiltin(Context:table):table
 
    return signatureBuildInfo(builtin.prototype or key, builtin.comment, signatureParamsFromPrototype(builtin.prototype))
 end
+
+-- Match a class name from source text to the canonical class name in the documentation cache.
 
 function signatureNormaliseClassName(Name:str):str
    if not Name or not glDocCache or not glDocCache.classes then return nil end
@@ -381,6 +425,8 @@ function signatureNormaliseClassName(Name:str):str
    if glDocCache.classes[capitalised] then return capitalised end
 end
 
+-- Scan the document for obj.new() assignments and map variable names to class names.
+
 function signatureBuildTypeMap(Doc:table):table
    type_map = {}
    for start, stop, cap in rx_sig_obj_new.findAll(Doc.content) do
@@ -390,6 +436,8 @@ function signatureBuildTypeMap(Doc:table):table
    end
    return type_map
 end
+
+-- Convert a C-style prototype parameter label to the signature-help parameter shape.
 
 function signatureParamFromPrototypeLabel(Label:str):table
    label = Label:trim()
@@ -416,6 +464,8 @@ function signatureParamFromPrototypeLabel(Label:str):table
    }
 end
 
+-- Convert a Tiri-style prototype parameter label to the signature-help parameter shape.
+
 function signatureParamFromTiriLabel(Label:str):table
    label = Label:trim()
    if label is '' then return { label = '' } end
@@ -435,6 +485,8 @@ function signatureParamFromTiriLabel(Label:str):table
    return { name = label, label = label }
 end
 
+-- Extract API parameters from a generated XML prototype.
+
 function signatureXmlParamsFromPrototype(Prototype:str):array
    params = array<table>
    for param in values(signatureParamsFromPrototype(Prototype)) do
@@ -443,6 +495,8 @@ function signatureXmlParamsFromPrototype(Prototype:str):array
    return params
 end
 
+-- Extract Tiri parameters from a generated Tiri prototype.
+
 function signatureTiriParamsFromPrototype(Prototype:str):array
    params = array<table>
    for param in values(signatureParamsFromPrototype(Prototype)) do
@@ -450,6 +504,26 @@ function signatureTiriParamsFromPrototype(Prototype:str):array
    end
    return params
 end
+
+-- Return true when the cached prototype has the Tiri-facing signature shape.
+
+function signaturePrototypeIsTiri(Prototype:str):bool
+   if not Prototype or Prototype is '' then return false end
+   if Prototype:find('=', 0, true) then return true end
+
+   open_pos = Prototype:find('(', 0, true)
+   open_pos ?? return false
+   close_pos = Prototype:find(')', open_pos, true)
+   close_pos ?? return false
+
+   param_text = Prototype:sub(open_pos + 1, close_pos)
+   if param_text:find(':', 0, true) then return true end
+
+   suffix = Prototype:sub(close_pos + 1):trim()
+   return suffix:startsWith(':')
+end
+
+-- Copy parameter documentation from generated API metadata onto parsed prototype parameters.
 
 function signatureCopyParamDocs(Params:array, SourceParams:array):array
    if not SourceParams then return Params end
@@ -468,12 +542,16 @@ function signatureCopyParamDocs(Params:array, SourceParams:array):array
    return Params
 end
 
+-- Identify the implicit receiver parameter used by generated object method and action prototypes.
+
 function signatureIsImplicitObjectParam(Param:table, Index:num):bool
    if Index != 0 then return false end
    label = Param.label or ''
    param_type = Param.type or ''
    return label:startsWith('*Object') or param_type:startsWith('OBJECTPTR') or param_type:startsWith('*')
 end
+
+-- Build visible API parameters, optionally hiding the generated receiver argument.
 
 function signatureXmlParams(MethodDoc:table, HideReceiver:bool):array
    source_params = MethodDoc.params
@@ -497,6 +575,8 @@ function signatureXmlParams(MethodDoc:table, HideReceiver:bool):array
    return params
 end
 
+-- Build the display label for a signature sourced from XML API metadata.
+
 function signatureXmlLabel(DisplayName:str, Params:array):str
    labels = array<string>
    for param in values(Params or array<table>) do
@@ -505,33 +585,43 @@ function signatureXmlLabel(DisplayName:str, Params:array):str
    return DisplayName .. '(' .. labels:join(', ') .. ')'
 end
 
+-- Build the display label for a signature that has an explicit Tiri prototype.
+
 function signatureTiriLabel(DisplayName:str, Prototype:str):str
    open_pos = Prototype and Prototype:find('(', 0, true) or nil
    if not open_pos then return DisplayName end
-   return DisplayName .. Prototype:sub(open_pos)
+
+   prefix = ''
+   equals_pos = Prototype:find('=', 0, true)
+   if equals_pos and equals_pos < open_pos then prefix = Prototype:sub(0, equals_pos + 1):rtrim() .. ' ' end
+
+   return prefix .. DisplayName .. Prototype:sub(open_pos)
 end
 
-function signatureFromXmlEntry(DisplayName:str, Entry:any, HideReceiver:bool):table
-   doc = decodeMethod(Entry)
-   doc ?? return nil
+-- Convert a generated API entry into LSP signature information.
+
+function signatureFromXmlEntry(DisplayName:str, Doc:table, HideReceiver:bool):table
+   Doc ?? return nil
 
    local params
    local label
 
-   if doc.tiriPrototype?? then
-      params = signatureTiriParamsFromPrototype(doc.tiriPrototype)
-      params = signatureCopyParamDocs(params, doc.params)
-      label = signatureTiriLabel(DisplayName, doc.tiriPrototype)
+   if signaturePrototypeIsTiri(Doc.prototype) then
+      params = signatureTiriParamsFromPrototype(Doc.prototype)
+      params = signatureCopyParamDocs(params, Doc.params)
+      label = signatureTiriLabel(DisplayName, Doc.prototype)
    else
-      params = signatureXmlParams(doc, HideReceiver)
+      params = signatureXmlParams(Doc, HideReceiver)
       label = signatureXmlLabel(DisplayName, params)
-      if #params is 0 and doc.prototype and doc.prototype != '' then
+      if #params is 0 and Doc.prototype and Doc.prototype != '' then
          label = DisplayName .. '()'
       end
    end
 
-   return signatureBuildInfo(label, doc.comment, params)
+   return signatureBuildInfo(label, Doc.comment, params)
 end
+
+-- Resolve signature help from generated module, class, method and action documentation.
 
 function resolveApiSignature(Doc:table, Context:table):table
    if not Context.object or not glDocCache then return nil end
@@ -575,6 +665,13 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Public Resolver
 
+@Doc(text=[[
+Public resolver for signatureHelp calls
+
+-INPUT-
+Doc: Document record from glDocuments[URI]
+Position: Document position being queried
+]])
 global function resolveSignatureHelp(Doc:table, Position:table):table
    Doc ?? return nil
    Position ?? return nil
