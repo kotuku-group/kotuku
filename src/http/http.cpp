@@ -98,6 +98,8 @@ For information about the HTTP protocol, please refer to the official protocol w
 #include <limits>
 #include <algorithm>
 #include <format>
+#include <mutex>
+#include <cstring>
 
 #include <kotuku/main.h>
 #include <kotuku/modules/http.h>
@@ -136,44 +138,44 @@ static void secure_clear_memory(void* Ptr, size_t Len) {
 
 static uint32_t glUnreservedTable[4];
 static uint32_t glReservedTable[4];
-static bool glURLTablesInitialised = false;
+static std::once_flag glURLTablesInit;
 
 static void init_url_tables() {
-   if (glURLTablesInitialised) return;
+   std::call_once(glURLTablesInit, [] {
+      // Initialize unreserved characters table
+      // A-Z (0x41-0x5A), a-z (0x61-0x7A), 0-9 (0x30-0x39), -, ., _, ~
 
-   // Initialize unreserved characters table
-   // A-Z (0x41-0x5A), a-z (0x61-0x7A), 0-9 (0x30-0x39), -, ., _, ~
+      for (char c = 'A'; c <= 'Z'; c++) {
+         auto bit = c & 31;
+         glUnreservedTable[c >> 5] |= (1U << bit);
+      }
+      for (char c = 'a'; c <= 'z'; c++) {
+         auto bit = c & 31;
+         glUnreservedTable[c >> 5] |= (1U << bit);
+      }
+      for (char c = '0'; c <= '9'; c++) {
+         auto bit = c & 31;
+         glUnreservedTable[c >> 5] |= (1U << bit);
+      }
 
-   for (char c = 'A'; c <= 'Z'; c++) {
-      auto bit = c & 31;
-      glUnreservedTable[c >> 5] |= (1U << bit);
-   }
-   for (char c = 'a'; c <= 'z'; c++) {
-      auto bit = c & 31;
-      glUnreservedTable[c >> 5] |= (1U << bit);
-   }
-   for (char c = '0'; c <= '9'; c++) {
-      auto bit = c & 31;
-      glUnreservedTable[c >> 5] |= (1U << bit);
-   }
+      // Special unreserved characters
 
-   // Special unreserved characters
+      const char unreserved_special[] = {'-', '.', '_', '~'};
+      for (char c : unreserved_special) {
+         auto bit = c & 31;
+         glUnreservedTable[c >> 5] |= (1U << bit);
+      }
 
-   const char unreserved_special[] = {'-', '.', '_', '~'};
-   for (char c : unreserved_special) {
-      auto bit = c & 31;
-      glUnreservedTable[c >> 5] |= (1U << bit);
-   }
+      // Initialize reserved characters table
 
-   // Initialize reserved characters table
-
-   const char reserved_chars[] = {':', '/', '?', '#', '[', ']', '@', '!', '$', '&', '\'', '(', ')', '*', '+', ',', ';', '='};
-   for (char c : reserved_chars) {
-      auto bit = c & 31;
-      glReservedTable[c >> 5] |= (1U << bit);
-   }
-
-   glURLTablesInitialised = true;
+      const char reserved_chars[] = {
+         ':', '/', '?', '#', '[', ']', '@', '!', '$', '&', '\'', '(', ')', '*', '+', ',', ';', '='
+      };
+      for (char c : reserved_chars) {
+         auto bit = c & 31;
+         glReservedTable[c >> 5] |= (1U << bit);
+      }
+   });
 }
 
 static bool is_valid_url_char(char Char, bool AllowReserved = false) {
@@ -232,9 +234,66 @@ JUMPTABLE_NETWORK
 static OBJECTPTR modNetwork = nullptr;
 static OBJECTPTR clHTTP = nullptr;
 static objProxy *glProxy = nullptr;
+static std::mutex glProxyMutex;
 #ifdef DEBUG_SOCKET
 static objFile *glDebugFile = nullptr; // For debugging of traffic
+static std::mutex glDebugFileMutex;
 #endif
+
+static void clear_callback_function(FUNCTION &Callback)
+{
+   if (Callback.isScript()) UnsubscribeAction(Callback.Context, AC::Free);
+   Callback.clear();
+}
+
+#ifdef DEBUG_SOCKET
+static void write_debug_socket_data(CPTR Buffer, int Length)
+{
+   if ((!Buffer) or (Length <= 0)) return;
+
+   std::lock_guard<std::mutex> debug_lock(glDebugFileMutex);
+   if (!glDebugFile) {
+      glDebugFile = objFile::create::untracked({
+         fl::Path("temp:http-incoming-log.raw"),
+         fl::Flags(FL::NEW|FL::WRITE)
+      });
+   }
+   if (glDebugFile) glDebugFile->write(Buffer, Length, nullptr);
+}
+
+static void close_debug_socket_file()
+{
+   std::lock_guard<std::mutex> debug_lock(glDebugFileMutex);
+   if (glDebugFile) {
+      FreeResource(glDebugFile);
+      glDebugFile = nullptr;
+   }
+}
+#endif
+
+static bool valid_http_header_name(CSTRING Key)
+{
+   if ((!Key) or (!*Key)) return false;
+
+   constexpr CSTRING separators = "()<>@,;:\\\"/[]?={}";
+   for (auto key = (const uint8_t *)Key; *key; key++) {
+      if ((*key <= 0x20) or (*key >= 0x7f)) return false;
+      if (std::strchr(separators, *key)) return false;
+   }
+
+   return true;
+}
+
+static bool valid_http_header_value(CSTRING Value)
+{
+   if (!Value) return false;
+
+   for (auto value = (const uint8_t *)Value; *value; value++) {
+      if ((*value IS '\r') or (*value IS '\n')) return false;
+   }
+
+   return true;
+}
 
 extern "C" uint8_t glAuthScript[];
 static int glAuthScriptLength;
@@ -392,8 +451,15 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
 static ERR MODExpunge(void)
 {
+#ifdef DEBUG_SOCKET
+   close_debug_socket_file();
+#endif
+
    if (clHTTP)     { FreeResource(clHTTP);     clHTTP     = nullptr; }
-   if (glProxy)    { FreeResource(glProxy);    glProxy    = nullptr; }
+   {
+      std::lock_guard<std::mutex> proxy_lock(glProxyMutex);
+      if (glProxy) { FreeResource(glProxy); glProxy = nullptr; }
+   }
    if (modNetwork) { FreeResource(modNetwork); modNetwork = nullptr; }
    return ERR::Okay;
 }
@@ -908,6 +974,7 @@ static ERR HTTP_Init(extHTTP *Self)
    kt::Log log;
 
    if (!Self->ProxyDefined) {
+      std::lock_guard<std::mutex> proxy_lock(glProxyMutex);
       if ((glProxy) and (glProxy->find(Self->Port, true) IS ERR::Okay)) {
          if (Self->ProxyServer) FreeResource(Self->ProxyServer);
          Self->ProxyServer = kt::strclone(glProxy->Server);
@@ -947,6 +1014,9 @@ SetKey: Options for the HTTP header can be set as key-values.
 static ERR HTTP_SetKey(extHTTP *Self, struct acSetKey *Args)
 {
    if (!Args) return ERR::NullArgs;
+   if ((not valid_http_header_name(Args->Key)) or (not valid_http_header_value(Args->Value))) {
+      return ERR::InvalidValue;
+   }
 
    Self->Headers[Args->Key] = Args->Value;
    return ERR::Okay;

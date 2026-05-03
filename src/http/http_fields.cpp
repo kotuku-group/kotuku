@@ -23,7 +23,7 @@ static ERR SET_AuthCallback(extHTTP *Self, FUNCTION *Value)
          SubscribeAction(Self->AuthCallback.Context, AC::Free, C_FUNCTION(notify_free_auth_callback));
       }
    }
-   else Self->AuthCallback.clear();
+   else clear_callback_function(Self->AuthCallback);
    return ERR::Okay;
 }
 
@@ -230,7 +230,7 @@ static ERR SET_Incoming(extHTTP *Self, FUNCTION *Value)
          SubscribeAction(Self->Incoming.Context, AC::Free, C_FUNCTION(notify_free_incoming));
       }
    }
-   else Self->Incoming.clear();
+   else clear_callback_function(Self->Incoming);
    return ERR::Okay;
 }
 
@@ -334,6 +334,8 @@ static ERR GET_Location(extHTTP *Self, STRING *Value)
 static ERR SET_Location(extHTTP *Self, CSTRING Value)
 {
    kt::Log log;
+
+   if ((!Value) or (!*Value)) return ERR::InvalidValue;
 
    if (Self->initialised()) {
       if (Self->TimeoutManager) { UpdateTimer(Self->TimeoutManager, 0); Self->TimeoutManager = 0; }
@@ -462,7 +464,7 @@ static ERR SET_Outgoing(extHTTP *Self, FUNCTION *Value)
          SubscribeAction(Self->Outgoing.Context, AC::Free, C_FUNCTION(notify_free_outgoing));
       }
    }
-   else Self->Outgoing.clear();
+   else clear_callback_function(Self->Outgoing);
    return ERR::Okay;
 }
 
@@ -673,7 +675,7 @@ static ERR SET_StateChanged(extHTTP *Self, FUNCTION *Value)
          SubscribeAction(Self->StateChanged.Context, AC::Free, C_FUNCTION(notify_free_state_changed));
       }
    }
-   else Self->StateChanged.clear();
+   else clear_callback_function(Self->StateChanged);
    return ERR::Okay;
 }
 

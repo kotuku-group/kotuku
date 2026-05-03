@@ -91,7 +91,10 @@ static void socket_feedback(objNetSocket *Socket, NTC State, APTR Meta)
                   break;
                }
 
-               output_incoming_data(Self, buffer.data(), bytes_read);
+               if (auto output_error = output_incoming_data(Self, buffer.data(), bytes_read);
+                     output_error != ERR::Okay) {
+                  return;
+               }
                if (check_incoming_end(Self) IS ERR::True) break;
             }
          }
@@ -192,9 +195,16 @@ static ERR socket_outgoing(objNetSocket *Socket)
       int offset = (Self->Chunked ? CHUNK_LENGTH_OFFSET : 0);
       Self->WriteBuffer.resize(Self->BufferSize + offset);
       error = acRead(Self->flInput, Self->WriteBuffer.data() + offset, std::ssize(Self->WriteBuffer) - offset, &client_bytes_written);
-      Self->WriteBuffer.resize(client_bytes_written + offset);
 
-      if (error != ERR::Okay) log.warning("Input file read error: %s", GetErrorMsg(error));
+      if (((error IS ERR::Okay) or (error IS ERR::Terminate)) and (client_bytes_written >= 0)) {
+         Self->WriteBuffer.resize(client_bytes_written + offset);
+      }
+      else {
+         if (client_bytes_written < 0) error = ERR::Read;
+         client_bytes_written = 0;
+         Self->WriteBuffer.resize(offset);
+         log.warning("Input file read error: %s", GetErrorMsg(error));
+      }
 
       int64_t size = Self->flInput->get<int64_t>(FID_Size);
 
@@ -213,8 +223,16 @@ static ERR socket_outgoing(objNetSocket *Socket)
          int offset = (Self->Chunked ? CHUNK_LENGTH_OFFSET : 0);
          Self->WriteBuffer.resize(Self->BufferSize + offset);
          error = acRead(*object, Self->WriteBuffer.data() + offset, std::ssize(Self->WriteBuffer) - offset, &client_bytes_written);
-         Self->WriteBuffer.resize(client_bytes_written + offset);
+         if (((error IS ERR::Okay) or (error IS ERR::Terminate)) and (client_bytes_written >= 0)) {
+            Self->WriteBuffer.resize(client_bytes_written + offset);
+         }
+         else {
+            if (client_bytes_written < 0) error = ERR::Read;
+            client_bytes_written = 0;
+            Self->WriteBuffer.resize(offset);
+         }
       }
+      else error = ERR::Lock;
 
       if (error != ERR::Okay) log.warning("Input object read error: %s", GetErrorMsg(error));
    }
@@ -269,8 +287,8 @@ static ERR socket_outgoing(objNetSocket *Socket)
    }
    else log.trace("Finishing (an error occurred (%d), or there is no more content to write to socket).", error);
 
-   if ((error > ERR::ExceptionThreshold) and (error != ERR::TimeOut)) {
-      // In the event of an exception, the connection is immediately dropped and the transmission
+   if ((error != ERR::Okay) and (error != ERR::Terminate) and (error != ERR::TimeOut)) {
+      // In the event of a send error, the connection is immediately dropped and the transmission
       // is considered irrecoverable.
       Self->setCurrentState(HGS::TERMINATED);
       Self->Error = error;
@@ -300,7 +318,14 @@ static ERR socket_outgoing(objNetSocket *Socket)
       if (((Self->ContentLength > 0) and (Self->Index >= Self->ContentLength)) or (error IS ERR::Terminate)) {
          int result;
 
-         if (Self->Chunked) acWrite(Self->Socket, (uint8_t *)"0\r\n\r\n", 5, &result);
+         if (Self->Chunked) {
+            auto write_error = acWrite(Self->Socket, (uint8_t *)"0\r\n\r\n", 5, &result);
+            if ((write_error != ERR::Okay) or (result != 5)) {
+               Self->Error = (write_error != ERR::Okay) ? write_error : ERR::Write;
+               Self->setCurrentState(HGS::TERMINATED);
+               return ERR::Terminate;
+            }
+         }
 
          log.detail("Transfer complete - sent %" PRId64 " bytes.", Self->TotalSent);
          Self->setCurrentState(HGS::SEND_COMPLETE);

@@ -630,7 +630,13 @@ function sendHttpResponse(self, client, statusCode, statusText, headers, body)
    end
 
    for name, value in pairs(headers) do
-      response ..= name .. ": " .. value .. "\r\n"
+      if type(value) is 'table' then
+         for header_value in values(value) do
+            response ..= name .. ": " .. tostring(header_value) .. "\r\n"
+         end
+      else
+         response ..= name .. ": " .. tostring(value) .. "\r\n"
+      end
    end
 
    response ..= "\r\n"
