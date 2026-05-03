@@ -470,6 +470,18 @@ static ERR BITMAP_Clear(extBitmap *Self)
    }
 #endif
 
+   // Clear any alignment padding first - some clients may expect the Data to be completely clear.
+
+   if ((Self->DataFlags & (MEM::VIDEO|MEM::TEXTURE)) IS MEM::NIL) {
+      if (Self->LineWidth > Self->Width * Self->BytesPerPixel) {
+         int offset = 0;
+         for (int y=0; y < Self->Height; y++) {
+            for (int x = Self->Width * Self->BytesPerPixel; x < Self->LineWidth; x++) Self->Data[offset + x] = 0;
+            offset += Self->LineWidth;
+         }
+      }
+   }
+
    auto opacity = Self->Opacity;
    Self->Opacity = 255;
    gfx::DrawRectangle(Self, 0, 0, Self->Width, Self->Height, Self->BkgdIndex, BAF::FILL);

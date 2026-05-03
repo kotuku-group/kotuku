@@ -232,17 +232,32 @@ static ERR PICTURE_Activate(extPicture *Self)
       if (png_get_tRNS(read_ptr, info_ptr, &trans_alpha, &num_trans, &trans_colour)) {
          if (info_ptr->color_type IS PNG_COLOR_TYPE_PALETTE) {
             int trans_index = -1;
+            int trans_count = 0;
+            bool partial_alpha = false;
 
             if (trans_alpha) {
                for (int i=0; i < num_trans; i++) {
                   if (trans_alpha[i] < 255) {
-                     trans_index = i;
-                     break;
+                     if (trans_index < 0) trans_index = i;
+                     trans_count++;
+                     if (trans_alpha[i] > 0) partial_alpha = true;
                   }
                }
             }
 
-            if ((trans_index >= 0) and (trans_index < bmp->Palette->AmtColours)) {
+            if ((partial_alpha or (trans_count > 1)) and ((Self->Flags & PCF::FORCE_ALPHA_32) IS PCF::NIL)) {
+               if (!Self->Mask) {
+                  if ((Self->Mask = objBitmap::create::local(
+                        fl::Width(Self->Bitmap->Width), fl::Height(Self->Bitmap->Height),
+                        fl::AmtColours(256), fl::Flags(BMF::MASK)))) {
+                     mask_created = true;
+                  }
+                  else goto exit;
+               }
+
+               Self->Flags |= PCF::MASK|PCF::ALPHA;
+            }
+            else if ((trans_index >= 0) and (trans_index < bmp->Palette->AmtColours)) {
                bmp->TransIndex = trans_index;
                rgb = bmp->Palette->Col[bmp->TransIndex];
                rgb.Alpha = 255;
@@ -1302,6 +1317,8 @@ static ERR decompress_png(extPicture *Self, objBitmap *Bitmap, int BitDepth, int
 {
    ERR error = ERR::Failed;
    uint8_t *row = nullptr;
+   uint8_t *image_data = nullptr;
+   uint8_t *scratch_row = nullptr;
    png_bytep row_pointers;
    RGB8 rgb;
    int i;
@@ -1313,7 +1330,10 @@ static ERR decompress_png(extPicture *Self, objBitmap *Bitmap, int BitDepth, int
 
    if (ColourType & PNG_COLOR_MASK_ALPHA) png_set_expand(ReadPtr); // Alpha channel
    if (BitDepth IS 16) png_set_strip_16(ReadPtr); // Reduce bit depth to 24bpp if the image is 48bpp
-   if (BitDepth < 8) png_set_packing(ReadPtr);
+   if (BitDepth < 8) {
+      if (ColourType IS PNG_COLOR_TYPE_GRAY) png_set_expand_gray_1_2_4_to_8(ReadPtr);
+      else png_set_packing(ReadPtr);
+   }
 
    auto interlace_type = png_get_interlace_type(ReadPtr, InfoPtr);
 
@@ -1322,19 +1342,64 @@ static ERR decompress_png(extPicture *Self, objBitmap *Bitmap, int BitDepth, int
    int passes = 1;
    if (interlace_type IS PNG_INTERLACE_ADAM7) passes = png_set_interlace_handling(ReadPtr);
 
+   double file_gamma;
+   if (png_get_gAMA(ReadPtr, InfoPtr, &file_gamma)) png_set_gamma(ReadPtr, 2.2, file_gamma);
+
    png_read_update_info(ReadPtr, InfoPtr);
 
    auto row_size = png_get_rowbytes(ReadPtr, InfoPtr);
+   if (row_size > size_t(0x7fffffff)) return ERR::DataSize;
+
    if ((error = acQuery(Bitmap)) != ERR::Okay) return error;
    if (!Bitmap->initialised()) {
       if ((error = InitObject(Bitmap)) != ERR::Okay) return error;
    }
-   if ((error = AllocMemory(row_size, MEM::DATA|MEM::NO_CLEAR, &row)) != ERR::Okay) return error;
+
+   Bitmap->clear();
+
+   if (ColourType IS PNG_COLOR_TYPE_PALETTE) {
+      png_colorp palette = nullptr;
+      int palette_count = 0;
+      png_bytep trans_alpha = nullptr;
+      png_color_16p trans_colour = nullptr;
+      int num_trans = 0;
+
+      if (png_get_PLTE(ReadPtr, InfoPtr, &palette, &palette_count)) {
+         for (int i=0; (i < palette_count) and (i < 256); i++) {
+            Bitmap->Palette->Col[i].Red   = palette[i].red;
+            Bitmap->Palette->Col[i].Green = palette[i].green;
+            Bitmap->Palette->Col[i].Blue  = palette[i].blue;
+            Bitmap->Palette->Col[i].Alpha = 255;
+         }
+      }
+
+      if (png_get_tRNS(ReadPtr, InfoPtr, &trans_alpha, &num_trans, &trans_colour) and trans_alpha) {
+         for (int i=0; (i < num_trans) and (i < 256); i++) {
+            Bitmap->Palette->Col[i].Alpha = trans_alpha[i];
+         }
+      }
+   }
 
    // Chop the image to the bitmap dimensions
 
+   auto source_height = PngHeight;
    if (PngWidth > (png_uint_32)Bitmap->Width) PngWidth = Bitmap->Width;
    if (PngHeight > (png_uint_32)Bitmap->Height) PngHeight = Bitmap->Height;
+
+   bool interlaced = interlace_type IS PNG_INTERLACE_ADAM7;
+
+   if (interlaced) {
+      if (PngHeight > 0) {
+         if (row_size > (size_t(0x7fffffff) / size_t(PngHeight))) return ERR::DataSize;
+         auto image_size = row_size * size_t(PngHeight);
+         if ((error = AllocMemory((int)image_size, MEM::DATA, &image_data)) != ERR::Okay) return error;
+      }
+
+      if (source_height > PngHeight) {
+         if ((error = AllocMemory((int)row_size, MEM::DATA, &scratch_row)) != ERR::Okay) goto exit;
+      }
+   }
+   else if ((error = AllocMemory((int)row_size, MEM::DATA|MEM::NO_CLEAR, &row)) != ERR::Okay) return error;
 
    if (setjmp(png_jmpbuf(ReadPtr))) {
       error = ERR::Read;
@@ -1342,17 +1407,30 @@ static ERR decompress_png(extPicture *Self, objBitmap *Bitmap, int BitDepth, int
    }
 
    row_pointers = row;
+
+   if (interlaced) {
+      for (int pass=0; pass < passes; pass++) {
+         for (png_uint_32 y=0; y < source_height; y++) {
+            png_bytep output_row = (y < PngHeight) ? image_data + (size_t(y) * row_size) : scratch_row;
+            png_read_row(ReadPtr, output_row, nullptr); if (tlError) goto exit;
+         }
+      }
+
+      passes = 1;
+   }
+
    if (ColourType IS PNG_COLOR_TYPE_GRAY) {
       log.trace("Greyscale image source.");
       rgb.Alpha = 255;
 
       while (passes > 0) {
          for (png_uint_32 y=0; y < PngHeight; y++) {
-            png_read_row(ReadPtr, row_pointers, nullptr); if (tlError) goto exit;
+            auto source_row = interlaced ? image_data + (size_t(y) * row_size) : row;
+            if (!interlaced) { png_read_row(ReadPtr, row_pointers, nullptr); if (tlError) goto exit; }
             for (png_uint_32 x=0; x < PngWidth; x++) {
-               rgb.Red   = row[x];
-               rgb.Green = row[x];
-               rgb.Blue  = row[x];
+               rgb.Red   = source_row[x];
+               rgb.Green = source_row[x];
+               rgb.Blue  = source_row[x];
                Bitmap->DrawUCRPixel(Bitmap, x, y, &rgb);
             }
          }
@@ -1365,17 +1443,45 @@ static ERR decompress_png(extPicture *Self, objBitmap *Bitmap, int BitDepth, int
       while (passes > 0) {
          if (Bitmap->BitsPerPixel IS 8) {
             for (png_uint_32 y=0; y < PngHeight; y++) {
-               png_read_row(ReadPtr, row_pointers, nullptr); if (tlError) goto exit;
-               for (png_uint_32 x=0; x < PngWidth; x++) Bitmap->DrawUCPixel(Bitmap, x, y, row[x]);
+               auto source_row = interlaced ? image_data + (size_t(y) * row_size) : row;
+               if (!interlaced) { png_read_row(ReadPtr, row_pointers, nullptr); if (tlError) goto exit; }
+               for (png_uint_32 x=0; x < PngWidth; x++) {
+                  Bitmap->DrawUCPixel(Bitmap, x, y, source_row[x]);
+                  if (Self->Mask) Self->Mask->Data[(y * Self->Mask->LineWidth) + x] =
+                     Bitmap->Palette->Col[source_row[x]].Alpha;
+               }
             }
          }
          else {
             rgb.Alpha = 255;
             for (png_uint_32 y=0; y < PngHeight; y++) {
-               png_read_row(ReadPtr, row_pointers, nullptr); if (tlError) goto exit;
+               auto source_row = interlaced ? image_data + (size_t(y) * row_size) : row;
+               if (!interlaced) { png_read_row(ReadPtr, row_pointers, nullptr); if (tlError) goto exit; }
                for (png_uint_32 x=0; x < PngWidth; x++) {
-                  Bitmap->DrawUCRPixel(Bitmap, x, y, &Bitmap->Palette->Col[row[x]]);
+                  Bitmap->DrawUCRPixel(Bitmap, x, y, &Bitmap->Palette->Col[source_row[x]]);
                }
+            }
+         }
+         passes--;
+      }
+   }
+   else if (ColourType IS PNG_COLOR_TYPE_GRAY_ALPHA) {
+      log.trace("Greyscale + alpha image source.");
+
+      while (passes > 0) {
+         for (png_uint_32 y=0; y < PngHeight; y++) {
+            auto source_row = interlaced ? image_data + (size_t(y) * row_size) : row;
+            if (!interlaced) { png_read_row(ReadPtr, row_pointers, nullptr); if (tlError) goto exit; }
+            i = 0;
+            for (png_uint_32 x=0; x < PngWidth; x++) {
+               rgb.Red   = source_row[i];
+               rgb.Green = source_row[i];
+               rgb.Blue  = source_row[i++];
+               rgb.Alpha = source_row[i++];
+
+               Bitmap->DrawUCRPixel(Bitmap, x, y, &rgb);
+
+               if (Self->Mask) Self->Mask->Data[(y * Self->Mask->LineWidth) + x] = rgb.Alpha;
             }
          }
          passes--;
@@ -1388,14 +1494,15 @@ static ERR decompress_png(extPicture *Self, objBitmap *Bitmap, int BitDepth, int
 
       while (passes > 0) {
          for (png_uint_32 y=0; y < PngHeight; y++) {
-            png_read_row(ReadPtr, row_pointers, nullptr); if (tlError) goto exit;
+            auto source_row = interlaced ? image_data + (size_t(y) * row_size) : row;
+            if (!interlaced) { png_read_row(ReadPtr, row_pointers, nullptr); if (tlError) goto exit; }
             i = 0;
             for (png_uint_32 x=0; x < PngWidth; x++) {
-               Bitmap->DrawUCRPixel(Bitmap, x, y, (RGB8 *)(row+i));
+               Bitmap->DrawUCRPixel(Bitmap, x, y, (RGB8 *)(source_row+i));
 
                // Set the alpha byte in the alpha mask (nb: refer to png_set_invert_alpha() if you want to reverse the alpha bytes)
 
-               if (Self->Mask) Self->Mask->Data[(y * Self->Mask->LineWidth) + x] = row[i+3];
+               if (Self->Mask) Self->Mask->Data[(y * Self->Mask->LineWidth) + x] = source_row[i+3];
 
                i += 4;
             }
@@ -1409,12 +1516,13 @@ static ERR decompress_png(extPicture *Self, objBitmap *Bitmap, int BitDepth, int
       while (passes > 0) {
          rgb.Alpha = 255;
          for (png_uint_32 y=0; y < PngHeight; y++) {
-            png_read_row(ReadPtr, row_pointers, nullptr); if (tlError) goto exit;
+            auto source_row = interlaced ? image_data + (size_t(y) * row_size) : row;
+            if (!interlaced) { png_read_row(ReadPtr, row_pointers, nullptr); if (tlError) goto exit; }
             i = 0;
             for (png_uint_32 x=0; x < PngWidth; x++) {
-               rgb.Red   = row[i++];
-               rgb.Green = row[i++];
-               rgb.Blue  = row[i++];
+               rgb.Red   = source_row[i++];
+               rgb.Green = source_row[i++];
+               rgb.Blue  = source_row[i++];
                Bitmap->DrawUCRPixel(Bitmap, x, y, &rgb);
             }
          }
@@ -1422,8 +1530,12 @@ static ERR decompress_png(extPicture *Self, objBitmap *Bitmap, int BitDepth, int
       }
    }
 
+   error = ERR::Okay;
+
 exit:
    FreeResource(row);
+   FreeResource(image_data);
+   FreeResource(scratch_row);
    return error;
 }
 

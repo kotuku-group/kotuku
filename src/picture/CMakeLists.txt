@@ -20,3 +20,5 @@ target_include_directories (${MOD} PRIVATE
 
 target_link_libraries (${MOD} PUBLIC linear_rgb)
 target_link_libraries (${MOD} PRIVATE ${MATH_LINK} zlib)
+
+flute_test (picture_png "tests/test_png.tiri")
