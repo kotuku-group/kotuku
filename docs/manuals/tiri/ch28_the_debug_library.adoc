@@ -25,7 +25,7 @@ print(f'{info.source}:{info.currentLine}')
 
 Each character in `What` selects a group of fields:
 
-[cols="1,5"]
+[cols="1,5a",options="header",stripes=even]
 |===
 |Character |Fields populated
 
@@ -50,7 +50,7 @@ Each character in `What` selects a group of fields:
 
 The returned table contains the following fields:
 
-[cols="1,1,3"]
+[cols="1,1,3a",options="header",stripes=even]
 |===
 |Field |Type |Description
 
@@ -299,7 +299,7 @@ Sets `Hook` as the debug hook function.  `Mask` is a string of characters specif
 
 Available mask characters:
 
-[cols="1,5"]
+[cols="1,5a",options="header",stripes=even]
 |===
 |Mask |Event
 
@@ -315,7 +315,7 @@ Available mask characters:
 
 The hook function receives two arguments:
 
-[cols="1,1,3"]
+[cols="1,1,3a",options="header",stripes=even]
 |===
 |Argument |Type |Description
 
@@ -399,7 +399,7 @@ Associates `Table` with `Userdata`.  Returns `Userdata`.  Throws an error if the
 
 Returns an array of all registered file sources for the current script execution.  Each entry is a table describing one source file in the programme.
 
-[cols="1,1,3"]
+[cols="1,1,3a",options="header",stripes=even]
 |===
 |Field |Type |Description
 
@@ -464,7 +464,7 @@ The `fileIndex` field returned by `debug.getInfo()` (with the `S` option) corres
 
 Parses `Code` as a Tiri statement without executing it.  Returns a table describing the parse result.
 
-[cols="1,1,3"]
+[cols="1,1,3a",options="header",stripes=even]
 |===
 |Field |Type |Description
 
@@ -483,7 +483,7 @@ Parses `Code` as a Tiri statement without executing it.  Returns a table describ
 
 Each entry in the `diagnostics` array contains:
 
-[cols="1,1,3"]
+[cols="1,1,3a",options="header",stripes=even]
 |===
 |Field |Type |Description
 
@@ -514,7 +514,7 @@ Each entry in the `diagnostics` array contains:
 
 Each entry in the `tips` array contains:
 
-[cols="1,1,3"]
+[cols="1,1,3a",options="header",stripes=even]
 |===
 |Field |Type |Description
 
@@ -570,7 +570,7 @@ Returns a string indicating how the variable `Name` is resolved at `Level` in th
 
 Possible return values:
 
-[cols="1,3"]
+[cols="1,3a",options="header",stripes=even]
 |===
 |Value |Meaning
 

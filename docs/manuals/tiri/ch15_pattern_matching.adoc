@@ -455,7 +455,7 @@ All pattern matching uses `is` semantics for equality.  Key implications:
 
 The following conditions produce compile-time errors:
 
-[cols="1,3"]
+[cols="1,3a",options="header",stripes=even]
 |===
 |Condition |Error
 

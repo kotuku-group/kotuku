@@ -75,7 +75,7 @@ The single underscore `_` is the blank identifier.  It is a valid target for ass
 
 The following words are reserved and cannot be used as identifiers:
 
-[cols="5*"]
+[cols="5*^",stripes=even]
 |===
 |`and`     |`as`       |`break`    |`check`    |`choose`
 |`continue`|`defer`    |`do`       |`else`     |`elseif`
@@ -195,7 +195,7 @@ Short strings are delimited by single quotes or double quotes.  They must not sp
 
 The following escape sequences are recognised within short strings:
 
-[cols="2,5"]
+[cols="2,5a",options="header",stripes=even]
 |===
 |Escape   |Meaning
 

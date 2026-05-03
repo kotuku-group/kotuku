@@ -150,7 +150,7 @@ a?.x, b = 10, 20                -- if a is nil, b still becomes 20
 
 Compound assignment operators evaluate the right-hand side exactly once and apply the operation to the target.  If the RHS is a function call or vararg, only the first return value is used.  Using a non-assignable LHS (a constant or a function call result) is an error.
 
-[cols="2,5"]
+[cols="2,5a",options="header",stripes=even]
 |===
 |Operator |Effect
 

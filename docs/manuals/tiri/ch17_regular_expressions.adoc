@@ -52,7 +52,7 @@ rx = regex.new([[\d+]])      -- long string: \d passes through unchanged
 
 The long-string form eliminates a common class of errors where a missing backslash silently produces the wrong pattern.  Use quoted strings only when the pattern itself must contain the sequence `]]`.
 
-[cols="1,1"]
+[cols="1,1a",options="header",stripes=even]
 |===
 |Quoted String |Long String Equivalent
 
@@ -194,7 +194,7 @@ Replaces all matches in `Text` with the `Replacement` string.  By default, all m
 
 The `Replacement` string supports the following placeholders:
 
-[cols="1,3"]
+[cols="1,3a",options="header",stripes=even]
 |===
 |Placeholder |Description
 
@@ -273,7 +273,7 @@ parts = rx.split("line1\nline2\tline3")
 
 Compilation flags modify how the pattern is interpreted and are specified as the second argument to `regex.new()`.  Multiple flags are combined with the bitwise OR operator.
 
-[cols="1,3"]
+[cols="1,3a",options="header",stripes=even]
 |===
 |Flag |Effect
 
@@ -305,7 +305,7 @@ rx.match("line1\nline2")
 
 Match flags modify the behaviour of individual method calls and are passed as the final argument to `test()`, `findFirst()`, `findAll()`, `extract()`, `match()`, `search()`, `replace()`, and `split()`.  Compilation flags and match flags are distinct sets; do not combine them in the same bitmask.
 
-[cols="1,3"]
+[cols="1,3a",options="header",stripes=even]
 |===
 |Flag |Effect
 
@@ -359,7 +359,7 @@ rx.replace('abc123def456', '#', regex.REPLACE_NO_COPY)   -- '##'
 
 Compiled regex objects expose the following read-only properties:
 
-[cols="1,1,3"]
+[cols="1,1,3a",options="header",stripes=even]
 |===
 |Property |Type |Description
 
@@ -432,7 +432,7 @@ end
 
 Each method is optimised for a specific use case.  Selecting the correct method avoids unnecessary work:
 
-[cols="1,3"]
+[cols="1,3a",options="header",stripes=even]
 |===
 |Method |Best For
 

@@ -25,7 +25,7 @@ All indexing is zero-based.  The `#` operator returns the element count.  Elemen
 
 Each array declares a fixed element type at creation.  Storing a value of an incompatible type raises an error.
 
-[cols="1,1,3"]
+[cols="1,1,3a",options="header",stripes=even]
 |===
 |Type |Size |Description
 

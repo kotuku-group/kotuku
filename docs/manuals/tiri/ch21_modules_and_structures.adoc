@@ -41,7 +41,7 @@ mGfx ?= mod.load('display')
 
 Module interfaces should always be stored in consistently named variables at the top-level scope.  The following table lists the standard naming conventions for the default set of modules:
 
-[cols="1,1"]
+[cols="1,1a",options="header",stripes=even]
 |===
 |Module |Global Name
 |audio
@@ -152,7 +152,7 @@ If the conversion is not possible (e.g. an abstract pointer cannot be converted 
 
 While automatic conversion is convenient, prefer passing correctly typed values for efficiency.  Automatic conversion imposes a small overhead on every mismatched call, and may not be supported by the JIT optimiser.
 
-[cols="1,1,2"]
+[cols="1,1,2a",options="header",stripes=even]
 |===
 |From |To |Behaviour
 
@@ -259,7 +259,7 @@ tag.index = 42
 
 ===== Field Type Characters
 
-[cols="1,2,1"]
+[cols="1,2a,1",options="header",stripes=even]
 |===
 |Character |Type |Size (bytes)
 
@@ -318,7 +318,7 @@ tag.index = 42
 
 ===== Variant Prefixes
 
-[cols="1,3"]
+[cols="1,3a",options="header",stripes=even]
 |===
 |Prefix |Description
 

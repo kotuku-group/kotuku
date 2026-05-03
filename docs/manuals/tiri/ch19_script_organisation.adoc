@@ -230,7 +230,7 @@ result = exec([[ return 40 + 2 ]])   -- result is 42
 
 The following table summarises the available mechanisms for loading and executing Tiri code:
 
-[cols="1,1,1,1,1"]
+[cols="1,1,1,1,1a",options="header",stripes=even]
 |===
 |Mechanism |Timing |Caching |Returns Values |Scope Restriction
 

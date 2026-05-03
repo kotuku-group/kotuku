@@ -49,7 +49,7 @@ image::processing_loop.svg[]
 [discrete]
 ==== Return Codes
 
-[cols="1,3"]
+[cols="1,3a",options="header",stripes=even]
 |===
 |Code |Meaning
 
@@ -147,7 +147,7 @@ For thread synchronisation or multi-object coordination, create a processing obj
 
 Creates a processing object.  `Options` is an optional table with the following fields:
 
-[cols="1,1,3"]
+[cols="1,1,3a",options="header",stripes=even]
 |===
 |Field |Type |Description
 
@@ -176,7 +176,7 @@ err = proc.sleep()
 
 The processing object exposes the following methods:
 
-[cols="1,3"]
+[cols="1,3a",options="header",stripes=even]
 |===
 |Method |Description
 
@@ -264,7 +264,7 @@ end)
 [discrete]
 ===== Event Groups
 
-[cols="1,3"]
+[cols="1,3a",options="header",stripes=even]
 |===
 |Group |Description
 
@@ -346,7 +346,7 @@ Creates a timer subscription that calls `Callback` at the specified `Interval` (
 
 The `Callback` function receives three arguments:
 
-[cols="1,1,3"]
+[cols="1,1,3a",options="header",stripes=even]
 |===
 |Parameter |Type |Description
 
@@ -490,7 +490,7 @@ Triggers a garbage collection cycle.  Returns an integer whose meaning depends o
 
 `Mode` is an optional string selecting the collection strategy:
 
-[cols="1,3"]
+[cols="1,3a",options="header",stripes=even]
 |===
 |Mode |Description
 
@@ -503,7 +503,7 @@ Triggers a garbage collection cycle.  Returns an integer whose meaning depends o
 
 `Options` is an optional table with the following field:
 
-[cols="1,1,3"]
+[cols="1,1,3a",options="header",stripes=even]
 |===
 |Field |Type |Description
 
@@ -543,7 +543,7 @@ Restarts the automatic garbage collector if it was previously stopped.
 
 Returns a table containing garbage collector statistics.
 
-[cols="1,1,3"]
+[cols="1,1,3a",options="header",stripes=even]
 |===
 |Field |Type |Description
 

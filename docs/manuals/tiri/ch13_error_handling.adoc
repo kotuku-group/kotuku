@@ -14,7 +14,7 @@ There is no `finally` block.  Cleanup is handled by `defer` statements and `<clo
 
 Exceptions originate from one of the following:
 
-[cols="1,3"]
+[cols="1,3a",options="header",stripes=even]
 |===
 |Source |Description
 
@@ -41,7 +41,7 @@ Exceptions originate from one of the following:
 
 When an `except` clause declares a variable, the runtime constructs a table describing the caught exception.
 
-[cols="1,1,3"]
+[cols="1,1,3a",options="header",stripes=even]
 |===
 |Field |Type |Description
 
@@ -267,7 +267,7 @@ end
 
 The `trace` field contains an array of frame tables:
 
-[cols="1,1,3"]
+[cols="1,1,3a",options="header",stripes=even]
 |===
 |Field |Type |Description
 
@@ -495,7 +495,7 @@ The following `ERR` codes do not raise an exception when passed to `check`: `Oka
 
 `check` is a conditional assertion on error codes.  `raise` is an unconditional exception.
 
-[cols="1,1,1"]
+[cols="1,1a,1a",options="header",stripes=even]
 |===
 |Feature |`check` |`raise`
 

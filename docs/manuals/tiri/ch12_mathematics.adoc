@@ -363,7 +363,7 @@ The pseudo-random number generator uses a Tausworthe algorithm with a period of 
 
 Generates a pseudo-random number.  Behaviour depends on the number of arguments:
 
-[cols="1,3"]
+[cols="1,3a",options="header",stripes=even]
 |===
 |Arguments |Result
 
@@ -403,7 +403,7 @@ b = math.random()
 [[sec-math-constants]]
 === Constants
 
-[cols="1,3"]
+[cols="1,3a",options="header",stripes=even]
 |===
 |Constant |Description
 
@@ -427,7 +427,7 @@ math.huge > 1e308   -- true
 
 Mathematical operations can produce the following special floating-point values:
 
-[cols="1,3"]
+[cols="1,3a",options="header",stripes=even]
 |===
 |Value |Produced By
 

@@ -25,7 +25,7 @@ If no script path is provided, Origo attempts automatic detection (see <<sec-aut
 [discrete]
 ==== General
 
-[cols="2,4"]
+[cols="2,4a",options="header",stripes=even]
 |===
 |Option |Description
 
@@ -59,7 +59,7 @@ When debugging thread-related issues, append `--log-threads` to include thread i
 [discrete]
 ==== Framework
 
-[cols="2,4"]
+[cols="2,4a",options="header",stripes=even]
 |===
 |Option |Description
 
@@ -108,7 +108,7 @@ This feature makes it simple to distribute packaged Tiri applications by copying
 
 Arguments after the script path are passed to the script and accessed through the `arg()` function (see <<sec-script-parameters>>).  Three forms are supported:
 
-[cols="2,3,2"]
+[cols="2,3a,2a",options="header",stripes=even]
 |===
 |Form |Meaning |Access
 

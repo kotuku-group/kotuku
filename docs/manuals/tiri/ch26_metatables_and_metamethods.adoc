@@ -50,7 +50,7 @@ To bypass metatable protection for debugging purposes, use `debug.getMetatable` 
 
 The following functions bypass all metamethods and operate directly on the underlying table data.  See <<sec-raw-access>> for full documentation.
 
-[cols="2,4"]
+[cols="2,4a",options="header",stripes=even]
 |===
 |Function |Effect
 
@@ -65,7 +65,7 @@ The following functions bypass all metamethods and operate directly on the under
 
 When an arithmetic operator encounters a non-numeric operand that cannot be coerced from a string, the runtime searches for the corresponding metamethod.  It checks the left operand's metatable first; if no metamethod is found there, it checks the right operand's metatable.  If neither operand provides the metamethod, the runtime raises an error.
 
-[cols="2,2,3"]
+[cols="2,2,3a",options="header",stripes=even]
 |===
 |Operator |Syntax |Metamethod
 
@@ -117,7 +117,7 @@ The `is not` and `!=` operators negate the result of the `is` comparison, includ
 
 ==== Ordering
 
-[cols="2,2,3"]
+[cols="2,2,3a",options="header",stripes=even]
 |===
 |Operator |Syntax |Metamethod
 
@@ -301,7 +301,7 @@ Plain tables do not support `pass:[__]gc`.  For deterministic cleanup of table-b
 
 The `pass:[__]mode` field (not a callable metamethod) controls weak-reference behaviour for a table.  The value is a string containing one or both of the characters `k` and `v`:
 
-[cols="1,4"]
+[cols="1,4a",options="header",stripes=even]
 |===
 |Mode |Effect
 
@@ -324,7 +324,7 @@ cache = setmetatable({}, cache_mt)
 
 Creates a lightweight full userdata.  Unlike tables, full userdata supports `pass:[__]gc` finalisers.
 
-[cols="2,4"]
+[cols="2,4a",options="header",stripes=even]
 |===
 |Call |Effect
 
@@ -351,7 +351,7 @@ The `pass:[__]pairs` and `pass:[__]ipairs` metamethods customise the behaviour o
 
 The following table lists every metamethod recognised by the runtime, ordered by dispatch priority.
 
-[cols="3,4,4"]
+[cols="3,4a,4a",options="header",stripes=even]
 |===
 |Metamethod |Trigger |Signature
 

@@ -29,7 +29,7 @@ file:close()
 
 Available options for `Mode` are as follows:
 
-[cols="1,3"]
+[cols="1,3a",options="header",stripes=even]
 |===
 |Option |Description
 
@@ -216,7 +216,7 @@ File handles returned by `io.open()` and related functions support the following
 
 Reads from the file according to the given format strings.  Multiple formats can be provided and each returns a separate value.  If no format is provided, a single line is read.
 
-[cols="1,3"]
+[cols="1,3a",options="header",stripes=even]
 |===
 |Format |Description
 
@@ -268,7 +268,7 @@ Flushes any buffered output data to disk, ensuring all writes are committed.  Re
 
 Sets the file position for reading and writing.  Returns the resulting absolute file position in bytes.
 
-[cols="1,3"]
+[cols="1,3a",options="header",stripes=even]
 |===
 |Whence |Description
 
@@ -337,7 +337,7 @@ When the `path` field is set with `FL_READ`, `FL_WRITE`, or `FL_NEW` flags, the 
 
 The File object exposes the following fields:
 
-[cols="1,1,3"]
+[cols="1,1,3a",options="header",stripes=even]
 |===
 |Field |Access |Description
 
@@ -391,7 +391,7 @@ The File object exposes the following fields:
 
 The following flags control file behaviour when passed in the `flags` field at creation:
 
-[cols="1,3"]
+[cols="1,3a",options="header",stripes=even]
 |===
 |Flag |Description
 
@@ -442,7 +442,7 @@ err, bytes = fl.acRead(buf)
 fl.acSeek(0, SEEK_START)
 ----
 
-[cols="1,3"]
+[cols="1,3a",options="header",stripes=even]
 |===
 |Action |Description
 
@@ -471,7 +471,7 @@ fl.acSeek(0, SEEK_START)
 [discrete]
 ==== Methods
 
-[cols="1,3"]
+[cols="1,3a",options="header",stripes=even]
 |===
 |Method |Description
 
@@ -568,7 +568,7 @@ io.search('documents:', {
 })
 ----
 
-[cols="1,1,3"]
+[cols="1,1,3a",options="header",stripes=even]
 |===
 |Option |Type |Description
 
@@ -673,7 +673,7 @@ Volume names are case-insensitive.  A colon (`:`) terminates the volume name and
 
 The following volumes are available on all platforms:
 
-[cols="1,3"]
+[cols="1,3a",options="header",stripes=even]
 |===
 |Volume |Description
 
@@ -731,7 +731,7 @@ The following volumes are available on all platforms:
 
 **Linux:**
 
-[cols="1,3"]
+[cols="1,3a",options="header",stripes=even]
 |===
 |Volume |Description
 
@@ -751,7 +751,7 @@ Additional device volumes are enumerated at startup: `usbN:` for USB drives, `po
 
 The `std:` volume provides access to the standard process I/O streams:
 
-[cols="1,3"]
+[cols="1,3a",options="header",stripes=even]
 |===
 |Path |Description
 
@@ -855,7 +855,7 @@ end
 
 The `type` result is one of the following constants:
 
-[cols="1,3"]
+[cols="1,3a",options="header",stripes=even]
 |===
 |Constant |Description
 

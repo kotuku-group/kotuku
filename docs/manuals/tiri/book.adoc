@@ -11,8 +11,8 @@ Paul Manias
 :source-highlighter: rouge
 :source-language: lua
 :icons: font
-:revnumber: 0.1
-:revdate: February 2026
+:revnumber: 0.2
+:revdate: May 2026
 :revremark: Draft
 :toc: macro
 :toclevels: 3
@@ -29,7 +29,7 @@ toc::[]
 [preface]
 == Acknowledgements
 
-The following projects and the people that work on them have my deepest gratitude for their contributions to the open source eco-sphere that has helped make Tiri possible:
+The following projects and their contributors have my deepest gratitude for their contributions to the open source eco-sphere.  Tiri would not be possible without them:
 
 LuaJIT::
 Mike Pall +
