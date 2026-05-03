@@ -29,7 +29,7 @@ project-specific syntax, runtime behaviour, API bindings, typing, and testing co
 - Tiri scripts use `.tiri` and execute top-to-bottom with no entry point function.
 - `.lua` files may also be parsed as Tiri; use `-- $TIRI` near the start when a file needs explicit recognition.
 - Script named arguments are read with `arg(Name, Default)`. Argument values arrive as strings.
-- Variables and functions are local by default. Use `global` before first use only when a symbol must be exported.
+- Variables and functions are local by default and scoped to their statement block. Use `global` before first use only when a symbol must be exported.  Use `local` to manage the scope of local variables.
 - Use upper camel-case for function arguments and lower snake-case for local variables.
 - Use three spaces for indentation.
 - Use zero-based indexing for tables and string functions.
