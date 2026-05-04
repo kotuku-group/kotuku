@@ -385,7 +385,7 @@ end
    check http.acActivate()
    proc.sleep()
 
-   if http.error is ERR_HostNotFound or http.error is ERR_HostUnreachable then return end -- Unable to test, IPv6 name resolution failed.
+   if http.error is ERR_HostNotFound or http.error is ERR_NetworkUnreachable then return end -- Unable to test, IPv6 name resolution failed.
    assert(http.error is ERR_Okay, 'HTTP object returned error: ' .. mSys.GetErrorMsg(http.error))
    assert(http.currentState is HGS_COMPLETED, 'Expected HTTP state of COMPLETED not reached, got ' .. http.currentState)
 end
