@@ -1267,7 +1267,9 @@ static ERR NETSOCKET_Read(extNetSocket *Self, struct acRead *Args)
             if (auto result = SSL_read(Self->SSLHandle, Buffer, BufferSize); result <= 0) {
                auto ssl_error = SSL_get_error(Self->SSLHandle, result);
                switch (ssl_error) {
-                  case SSL_ERROR_ZERO_RETURN: return log.traceWarning(ERR::Disconnected);
+                  case SSL_ERROR_ZERO_RETURN:
+                     free_socket(Self);
+                     return log.traceWarning(ERR::Disconnected);
 
                   case SSL_ERROR_WANT_READ: read_blocked = true; break;
 
@@ -1321,6 +1323,7 @@ static ERR NETSOCKET_Read(extNetSocket *Self, struct acRead *Args)
    }
 
    if (bytes_received IS 0) { // man recv() says: The return value is 0 when the peer has performed an orderly shutdown.
+      free_socket(Self);
       return ERR::Disconnected;
    }
    else if ((errno IS EAGAIN) or (errno IS EINTR)) return ERR::Okay;
