@@ -54,23 +54,8 @@ glDisplayAvailable = thunk():bool
 end
 
 global glSSLAvailable = thunk():bool
-   glNetworkAvailable ?? return false
-
-   -- Test if SSL support is available by attempting to create SSL socket
-
-   local test_socket
-   try
-      test_socket = obj.new('netsocket', { name = 'SSLSupportTest', port = 0, flags = 'SERVER|SSL' })
-   end
-
-   if test_socket then
-      supported = test_socket.error is ERR_Okay
-      test_socket = nil
-      processing.collect()
-      return supported
-   end
-
-   return false
+   glNetworkAvailable ?? return false -- Opens network module
+   return mNet.setSSL(nil, nil, nil) != ERR_NoSecureSockets
 end
 
 ----------------------------------------------------------------------------------------------------------------------

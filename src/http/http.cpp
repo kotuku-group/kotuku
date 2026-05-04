@@ -1091,7 +1091,7 @@ static const FieldArray clFields[] = {
    { "ObjectMode",     FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clHTTPObjectMode },
    { "Flags",          FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clHTTPFlags },
    { "Status",         FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clStatus },
-   { "Error",          FDF_INT|FDF_RW },
+   { "Error",          FDF_ERROR|FDF_RW },
    { "Datatype",       FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clHTTPDatatype },
    { "CurrentState",   FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, SET_CurrentState, &clHTTPCurrentState },
    { "ProxyServer",    FDF_STRING|FDF_RW, nullptr, SET_ProxyServer },

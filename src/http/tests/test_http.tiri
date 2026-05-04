@@ -217,7 +217,7 @@ end
 
 -----------------------------------------------------------------------------------------------------------------------
 
-@Test(priority=5); @Disabled(reason='Requires further development')
+@Test(priority=5); @Requires(ssl=true); @Disabled(reason='Requires further development')
 function SSLOverProxyRemote()
    http = obj.new('http', {
       src         = 'https://www.google.co.uk/',
@@ -260,19 +260,8 @@ function HTTPSRemote()
    })
 
    proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
-   activate_error = http.acActivate()
-   if activate_error is ERR_NoSecureSockets then
-      assert(http.error is ERR_NoSecureSockets, 'Expected HTTP error field to report missing SSL support.')
-      print('SSL support unavailable; cannot perform test.')
-      return
-   end
-   check activate_error
+   check http.acActivate()
    check proc.sleep(5.0)
-
-   if http.error is ERR_NoSecureSockets then
-      print('SSL support unavailable; cannot perform test.')
-      return
-   end
 
    content = io.readAll(glOutFile)
    assert(content, 'No content received.')
@@ -302,19 +291,8 @@ function RedirectedHTTPSRemote()
    })
 
    proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
-   activate_error = http.acActivate()
-   if activate_error is ERR_NoSecureSockets then
-      assert(http.error is ERR_NoSecureSockets, 'Expected HTTP error field to report missing SSL support.')
-      print('SSL support unavailable; cannot perform test.')
-      return
-   end
-   check activate_error
+   check http.acActivate()
    check proc.sleep(5.0)
-
-   if http.error is ERR_NoSecureSockets then
-      print('SSL support unavailable; cannot perform test.')
-      return
-   end
 
    assert(content, 'No content received.')
 end
