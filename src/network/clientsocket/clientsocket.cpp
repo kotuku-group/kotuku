@@ -586,6 +586,8 @@ Write raw data to a client socket with this action.  Write connections are buffe
 in a call to this action will be buffered into a software queue.  Resource limits placed on the software queue are
 governed by the @NetSocket.MsgLimit value.
 
+Assuming no errors occur, the reported result will always reflect the length of the incoming buffer.
+
 *********************************************************************************************************************/
 
 static ERR CLIENTSOCKET_Write(extClientSocket *Self, struct acWrite *Args)

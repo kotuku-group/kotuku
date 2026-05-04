@@ -105,6 +105,19 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+function timestamp()
+   glTime.acQuery()
+   return string.format('%04d-%02d-%02d %02d:%02d:%02d', glTime.year, glTime.month, glTime.day, glTime.hour, glTime.minute, glTime.second)
+end
+
+function logMessage(self:table, message:str)
+   if self.logMessage then
+      self.logMessage(f'[{timestamp()}] {message}')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 function validatePort(port:num):bool
    port_num = port
    if not port_num or port_num < 1 or port_num > 65535 then
@@ -151,7 +164,7 @@ function canonicalizePath(self, Path:str):str
       local component = cap[0]
       if component is '..' then
          -- Attempt to go up - block this
-         if self.logMessage then self.logMessage(self, 'Security: Blocked directory traversal attempt with ..') end
+         logMessage(self, 'Security: Blocked directory traversal attempt with ..')
          return
       elseif component != '.' and component != '' then
          table.insert(components, component)
@@ -177,93 +190,84 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function timestamp()
-   glTime.acQuery()
-   return string.format('%04d-%02d-%02d %02d:%02d:%02d', glTime.year, glTime.month, glTime.day, glTime.hour, glTime.minute, glTime.second)
-end
+@Doc(text=[[
+Process chunked request body incrementally
 
-function logMessage(self:table, message:str)
-   if self.logMessage then
-      self.logMessage(f'[{timestamp()}] {message}')
-   end
-end
-
-----------------------------------------------------------------------------------------------------------------------
--- Process chunked request body incrementally
--- Returns true when chunking is complete, false if still reading
-
-function processChunkedBody(state, server)
-   while #state.buffer > 0 do
-      if state.chunk_state is 'SIZE' then
+-RESULT-
+bool: Returns true when chunking is complete, false if still reading
+]])
+function processChunkedBody(State:table, Server:table):bool
+   while #State.buffer > 0 do
+      if State.chunk_state is 'SIZE' then
          -- Look for chunk size line ending with \r\n
-         line_end = state.buffer:find('\r\n')
+         line_end = State.buffer:find('\r\n')
          if not line_end then
             return false -- Need more data for chunk size line
          end
 
-         size_line = state.buffer:substr(0, line_end)
-         state.buffer = state.buffer:substr(line_end + 2) -- Remove \r\n
+         size_line = State.buffer:substr(0, line_end)
+         State.buffer = State.buffer:substr(line_end + 2) -- Remove \r\n
 
          -- Parse chunk size (ignore extensions after semicolon)
          hex_size = rxHexChunkSize.extract(size_line)
          if not hex_size then
-            logMessage(server, 'Invalid chunk size format: ' .. size_line)
-            return false -- Invalid format
+            logMessage(Server, 'Invalid chunk size format: ' .. size_line)
+            return false
          end
 
-         state.chunk_size = tonumber(hex_size, 16)
-         if not state.chunk_size then
-            logMessage(server, f'Could not parse chunk size: {hex_size}')
-            return false -- Invalid hex
+         State.chunk_size = tonumber(hex_size, 16)
+         if not State.chunk_size then
+            logMessage(Server, f'Could not parse chunk size: {hex_size}')
+            return false
          end
 
-         logMessage(server, f'Chunk size: {state.chunk_size} bytes')
+         logMessage(Server, f'Chunk size: {State.chunk_size} bytes')
 
-         if state.chunk_size is 0 then -- End of chunks
-            state.chunk_state = 'TRAILER'
+         if State.chunk_size is 0 then -- End of chunks
+            State.chunk_state = 'TRAILER'
          else
-            state.chunk_state = 'DATA'
-            state.chunk_received = 0
+            State.chunk_state = 'DATA'
+            State.chunk_received = 0
          end
 
-      elseif state.chunk_state is 'DATA' then
+      elseif State.chunk_state is 'DATA' then
          -- Read chunk data
-         needed = state.chunk_size - state.chunk_received
-         available = #state.buffer
+         needed = State.chunk_size - State.chunk_received
+         available = #State.buffer
 
          if available is 0 then
             return false -- Need more data
          end
 
          to_take = math.min(available, needed)
-         state.request.body   = state.request.body .. state.buffer:substr(0, to_take)
-         state.buffer         = state.buffer:substr(to_take)
-         state.chunk_received = state.chunk_received + to_take
-         state.body_received  = state.body_received + to_take
+         State.request.body   = State.request.body .. State.buffer:substr(0, to_take)
+         State.buffer         = State.buffer:substr(to_take)
+         State.chunk_received = State.chunk_received + to_take
+         State.body_received  = State.body_received + to_take
 
-         if state.chunk_received >= state.chunk_size then
+         if State.chunk_received >= State.chunk_size then
             -- Chunk data complete, expect trailing \r\n
-            state.chunk_state = 'CRLF'
+            State.chunk_state = 'CRLF'
          end
 
-      elseif state.chunk_state is 'CRLF' then
+      elseif State.chunk_state is 'CRLF' then
          -- Expect \r\n after chunk data
-         if #state.buffer < 2 then return false end -- Need more data
+         if #State.buffer < 2 then return false end -- Need more data
 
-         if state.buffer:startsWith('\r\n') then
-            state.buffer = state.buffer:substr(2)
-            state.chunk_state = 'SIZE' -- Ready for next chunk
+         if State.buffer:startsWith('\r\n') then
+            State.buffer = State.buffer:substr(2)
+            State.chunk_state = 'SIZE' -- Ready for next chunk
          else
             -- Be lenient - some clients might not send proper CRLF
-            logMessage(server, 'Warning: Missing CRLF after chunk, continuing')
-            state.chunk_state = 'SIZE'
+            logMessage(Server, 'Warning: Missing CRLF after chunk, continuing')
+            State.chunk_state = 'SIZE'
          end
 
-      elseif state.chunk_state is 'TRAILER' then
+      elseif State.chunk_state is 'TRAILER' then
          -- Look for final \r\n (trailer headers are ignored for now)
-         trailer_end = state.buffer:find('\r\n')
+         trailer_end = State.buffer:find('\r\n')
          if trailer_end then
-            state.buffer = state.buffer:substr(trailer_end + 1)
+            State.buffer = State.buffer:substr(trailer_end + 1)
             return true -- Chunked reading complete
          else
             return false -- Need more data for trailer
@@ -276,14 +280,14 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function readRequestWithTimeout(client:table, maxSize:num, timeoutSeconds:num):<str, str>
+function readRequestWithTimeout(Client:table, MaxSize:num, TimeoutSeconds:num):<str, str>
    buffer = string.alloc(1024) -- Start with 1KB buffer
    requestData = ''
    totalRead = 0
    startTime = mSys.PreciseTime()
 
-   while totalRead < maxSize do
-      err, bytes_read = client.acRead(buffer, 1024)
+   while totalRead < MaxSize do
+      err, bytes_read = Client.acRead(buffer, 1024)
 
       if err != ERR_Okay then
          if err is ERR_TimeOut then
@@ -308,13 +312,13 @@ function readRequestWithTimeout(client:table, maxSize:num, timeoutSeconds:num):<
       end
 
       -- Check timeout
-      if (mSys.PreciseTime() - startTime) / 1000000 > timeoutSeconds then
+      if (mSys.PreciseTime() - startTime) / 1000000 > TimeoutSeconds then
          logMessage(self, 'Request timeout exceeded')
          return nil, 'timeout'
       end
    end
 
-   if totalRead >= maxSize then
+   if totalRead >= MaxSize then
       logMessage(self, 'Request too large: ' .. totalRead .. ' bytes')
       return nil, 'too_large'
    end
@@ -323,10 +327,16 @@ function readRequestWithTimeout(client:table, maxSize:num, timeoutSeconds:num):<
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Read chunked request body (Transfer-Encoding: chunked)
--- Returns body, error_msg, connection_status
 
-function readChunkedRequestBody(client, maxSize, timeoutSeconds)
+@Doc(text=[[
+Read chunked request body (Transfer-Encoding: chunked)
+
+-RESULT-
+str: Body
+str: Error message
+bool: Connection status
+]])
+function readChunkedRequestBody(Client:obj, MaxSize:num, TimeoutSeconds:num):<str, str, bool>
    body = ''
    totalSize = 0
    startTime = mSys.PreciseTime()
@@ -335,7 +345,7 @@ function readChunkedRequestBody(client, maxSize, timeoutSeconds)
 
    while true do
       -- Check timeout
-      if (mSys.PreciseTime() - startTime)/1000000 > timeoutSeconds then
+      if (mSys.PreciseTime() - startTime)/1000000 > TimeoutSeconds then
          return nil, 'timeout', false
       end
 
@@ -343,7 +353,7 @@ function readChunkedRequestBody(client, maxSize, timeoutSeconds)
       chunkSizeLine = ''
       char = ''
       while not chunkSizeLine:endsWith('\r\n') do
-         err, bytes_read = client.acRead(buffer, 1)
+         err, bytes_read = Client.acRead(buffer, 1)
          if err != ERR_Okay then
             if err is ERR_TimeOut then
                return nil, 'timeout', false
@@ -390,14 +400,14 @@ function readChunkedRequestBody(client, maxSize, timeoutSeconds)
       -- If chunk size is 0, we've reached the end
       if chunkSize is 0 then
          -- Read trailing CRLF after last chunk (if present)
-         err, bytes_read = client.acRead(buffer, 2)
+         err, bytes_read = Client.acRead(buffer, 2)
          -- Ignore any errors here - the 0 chunk is sufficient termination
          break  -- Normal termination
       end
 
       -- Check if total size would exceed limit
       totalSize += chunkSize
-      if totalSize > maxSize then
+      if totalSize > MaxSize then
          return nil, 'body_too_large', false
       end
 
@@ -406,7 +416,7 @@ function readChunkedRequestBody(client, maxSize, timeoutSeconds)
       chunkRead = 0
       while chunkRead < chunkSize do
          toRead = math.min(8192, chunkSize - chunkRead)
-         err, bytes_read = client.acRead(buffer, toRead)
+         err, bytes_read = Client.acRead(buffer, toRead)
          if err != ERR_Okay then
             if err is ERR_TimeOut then
                return nil, 'timeout', false
@@ -447,7 +457,7 @@ function readChunkedRequestBody(client, maxSize, timeoutSeconds)
       crlf = ''
       crlf_attempts = 0
       while #crlf < 2 and crlf_attempts < 2 do
-         err, bytes_read = client.acRead(buffer, 1)
+         err, bytes_read = Client.acRead(buffer, 1)
          crlf_attempts++
          if err != ERR_Okay then
             if err is ERR_TimeOut then
@@ -482,8 +492,8 @@ function readChunkedRequestBody(client, maxSize, timeoutSeconds)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Parse query string into key-value pairs
 
+@Doc(text="Parse query string into key-value pairs")
 function parseQueryString(QueryString:str):table
    query = {}
    QueryString ?? return query
@@ -617,9 +627,9 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function sendHttpResponse(self, client, statusCode, statusText, headers, body)
+function sendHttpResponse(self, Client, statusCode, statusText, headers, body)
    response = "HTTP/1.1 " .. statusCode .. " " .. statusText .. "\r\n"
-   head_only = isHeadRequest(client)
+   head_only = isHeadRequest(Client)
 
    if (not headers['content-length']) and (body) then headers['content-length'] = tostring(#body)end
 
@@ -655,24 +665,26 @@ function sendHttpResponse(self, client, statusCode, statusText, headers, body)
 
    if body and not head_only then response ..= body end
 
-   err, written = client.acWrite(response)
+   err, written = Client.acWrite(response)
    if err != ERR_Okay then
       logMessage(self, 'Failed to send response: ' .. mSys.GetErrorMsg(err))
    end
 
+   assert(written is #response, 'Unable to write response in one call (breach of contract).')
+
    if headers['connection'] is 'close' then -- The HTTP server is responsible for socket closure, so do it now.
       msg('Closing client socket per connection: close')
-      client.acDeactivate()
+      Client.acDeactivate()
    end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Create enhanced response object with helper methods
 
-function createResponseObject(self, client)
+function createResponseObject(self, Client)
    res = {
       _self = self,
-      _client = client,
+      _client = Client,
       _statusCode = 200,
       _statusText = 'OK',
       _headers = {},
@@ -704,20 +716,20 @@ function createResponseObject(self, client)
    res.cookie = function(name, value, options)
       assert(not res._sent, 'Cannot set cookies after response sent')
 
-      options = options or {}
-      cookieStr = name .. '=' .. tostring(value)
+      options ?= {}
+      cookieStr = name .. f'={value}'
 
       if options.maxAge then
-         cookieStr ..= '; Max-Age=' .. tostring(options.maxAge)
+         cookieStr ..= f'; Max-Age={options.maxAge}'
       end
       if options.expires then
-         cookieStr ..= '; Expires=' .. tostring(options.expires)
+         cookieStr ..= f'; Expires={options.expires}'
       end
       if options.path then
-         cookieStr ..= '; Path=' .. tostring(options.path)
+         cookieStr ..= f'; Path={options.path}'
       end
       if options.domain then
-         cookieStr ..= '; Domain=' .. tostring(options.domain)
+         cookieStr ..= f'; Domain={options.domain}'
       end
       if options.secure then
          cookieStr ..= '; Secure'
@@ -726,7 +738,7 @@ function createResponseObject(self, client)
          cookieStr ..= '; HttpOnly'
       end
       if options.sameSite then
-         cookieStr ..= '; SameSite=' .. tostring(options.sameSite)
+         cookieStr ..= f'; SameSite={options.sameSite}'
       end
 
       -- Handle multiple cookies by making set-cookie an array
@@ -759,7 +771,7 @@ function createResponseObject(self, client)
    res.redirect = function(url, code)
       assert(not res._sent, 'Response already sent')
 
-      code = code or ((res._statusCode >= 300 and res._statusCode < 400) ? res._statusCode :> 302)
+      code ?= (res._statusCode >= 300 and res._statusCode < 400) ? res._statusCode :> 302
       res._headers['location'] = url
       res.status(code)
       sendHttpResponse(res._self, res._client, res._statusCode, res._statusText, res._headers)
@@ -771,7 +783,7 @@ function createResponseObject(self, client)
    res.send = function(body, contentType)
       assert(not res._sent, 'Response already sent')
 
-      contentType = contentType or 'text/html'
+      contentType ?= 'text/html'
       res._headers['content-type'] = contentType
       sendHttpResponse(res._self, res._client, res._statusCode, res._statusText, res._headers, tostring(body))
       res._sent = true
@@ -863,11 +875,13 @@ function serveFile(self, ClientSocket, FilePath:str, Request)
          end
 
          if bytes_read > 0 then
-            err = ClientSocket.acWrite(buffer:substr(0, bytes_read))
+            err, written = ClientSocket.acWrite(buffer:substr(0, bytes_read))
             if err != ERR_Okay then
                logMessage(self, 'Error writing to ClientSocket: ' .. mSys.GetErrorMsg(err))
                return
             end
+            assert(written is bytes_read, 'Unable to write response in one call (breach of contract).')
+
             totalSent += bytes_read
          else
             break
@@ -1170,8 +1184,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- ROUTING SYSTEM
 
--- Add a route with method, pattern, callback, and optional middleware to a server instance
-
+@Doc(text="Add a route with method, pattern, callback, and optional middleware to a server instance")
 function addRoute(self:table, route:table)
    if not self._routes then self._routes = {} end
 
@@ -1208,8 +1221,7 @@ function addRoute(self:table, route:table)
    end
 end
 
--- Extract parameters from a matched path using route pattern and regex match results
-
+@Doc(text="Extract parameters from a matched path using route pattern and regex match results")
 function extractParams(pattern:str, matchResults):table
    params = {}
 
@@ -1229,8 +1241,7 @@ function extractParams(pattern:str, matchResults):table
    return params
 end
 
--- Find matching route for a request from a server instance
-
+@Doc(text="Find matching route for a request from a server instance")
 function matchRoute(serverInstance, method, path)
    serverInstance._routes ?? return
 
@@ -1370,8 +1381,8 @@ function checkRateLimit(self:table, IP:str):bool
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- This is the incoming data handler for client sockets.  acRead() is used to read data from the ClientSocket.
 
+@Doc(text="Incoming data handler for client sockets.  acRead() is used to read data from the ClientSocket.")
 function serverIncoming(self, ClientSocket)
    state = ClientSocket._state()
 
@@ -1462,14 +1473,14 @@ function serverIncoming(self, ClientSocket)
       if self.verbose then
          logMessage(self, 'Headers:')
          for k, v in pairs(state.request.headers) do
-            logMessage(self, '  ' .. k .. ': ' .. v)
+            logMessage(self, f'  {k}: {v}')
          end
       end
 
       -- Check if method is supported
-      supportedMethods = { 'GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS' }
+      supportedMethods = array<string> { 'GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS' }
       methodSupported = false
-      for _, method in ipairs(supportedMethods) do
+      for method in values(supportedMethods) do
          if state.request.method is method then
             methodSupported = true
             break
