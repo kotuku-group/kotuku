@@ -134,7 +134,7 @@ end
 -- curl -v -X POST http://httpbin.org/post -d "fname=smith&lname=jones"
 -- POST to an external server using chunking (contentLength is -1)
 
-@Test(priority=3) function PostStringExt()
+@Test(priority=3) function PostStringRemote()
    local testPostStringCompleted
    content = ''
 
@@ -218,7 +218,7 @@ end
 -----------------------------------------------------------------------------------------------------------------------
 
 @Test(priority=5); @Disabled(reason='Requires further development')
-function SSLOverProxy()
+function SSLOverProxyRemote()
    http = obj.new('http', {
       src         = 'https://www.google.co.uk/',
       method      = 'get',
@@ -240,7 +240,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- curl -v -X GET https://www.google.com
 
-@Test(priority=6) function HTTPS()
+@Test(priority=6) function HTTPSRemote()
    content = nil
 
    http = obj.new('http', {
@@ -270,7 +270,7 @@ end
 -- Making an HTTPS request to google.co.uk should cause a redirect to google.com, which should
 -- all be handled in the background.
 
-@Test(priority=7) function RedirectedHTTPS()
+@Test(priority=7) function RedirectedHTTPSRemote()
    local content
 
    http = obj.new('http', {
@@ -298,7 +298,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test(priority=8); @Disabled(reason='Requires further development')
-function MultiPart()
+function MultiPartLocal()
    content = ''
    boundary = '----------d6sXWGimDGTgb2GDuLZqbR'
 
@@ -364,7 +364,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- ipv6.google.com test-ipv6.com ipv6.he.net ipv6.cloudflare.com
 
-@Test(priority=9) function IPV6()
+@Test(priority=9) function IPV6Remote()
    content = ''
 
    http = obj.new('http', {
@@ -385,7 +385,7 @@ end
    check http.acActivate()
    proc.sleep()
 
-   if http.error is ERR_HostNotFound then return end -- Unable to test, IPv6 name resolution failed.
+   if http.error is ERR_HostNotFound or http.error is ERR_HostUnreachable then return end -- Unable to test, IPv6 name resolution failed.
    assert(http.error is ERR_Okay, 'HTTP object returned error: ' .. mSys.GetErrorMsg(http.error))
    assert(http.currentState is HGS_COMPLETED, 'Expected HTTP state of COMPLETED not reached, got ' .. http.currentState)
 end
