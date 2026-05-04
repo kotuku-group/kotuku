@@ -38,6 +38,92 @@ template <class T> void ssl_handshake_read(SocketHandle Socket, T *Self) {
    ssl_handshake_read_impl(Socket.hosthandle(), Self);
 }
 
+static void ssl_suspend_write_queue(HOSTHANDLE SocketFD)
+{
+   RegisterFD(SocketFD, RFD::WRITE|RFD::REMOVE|RFD::SOCKET, nullptr, nullptr);
+}
+
+template <class T> void ssl_resume_write_handshake(HOSTHANDLE SocketFD, T *Self)
+{
+   auto write_callback = std::is_same<T, extNetSocket>::value ?
+      ssl_handshake_write_netsocket : ssl_handshake_write_clientsocket;
+   RegisterFD(SocketFD, RFD::WRITE|RFD::SOCKET, write_callback, Self);
+}
+
+template <class T> void ssl_resume_write_queue(HOSTHANDLE SocketFD, T *Self)
+{
+   if (Self->WriteQueue.Buffer.empty()) {
+      if constexpr (std::is_same<T, extNetSocket>::value) {
+         if (!Self->Outgoing.defined()) return;
+      }
+      else {
+         auto server = (extNetSocket *)(Self->Client->Owner);
+         if (!server->Outgoing.defined()) return;
+      }
+   }
+
+   auto outgoing_callback = std::is_same<T, extNetSocket>::value ? netsocket_outgoing : clientsocket_outgoing;
+   RegisterFD(SocketFD, RFD::WRITE|RFD::SOCKET, outgoing_callback, Self);
+}
+
+static bool ssl_has_buffered_read_data(SSL *SSLHandle)
+{
+   if (!SSLHandle) return false;
+   if (SSL_pending(SSLHandle) > 0) return true;
+
+   #if OPENSSL_VERSION_NUMBER >= 0x10100000L
+      return SSL_has_pending(SSLHandle) != 0;
+   #else
+      return false;
+   #endif
+}
+
+static CSTRING ssl_error_name(int Error)
+{
+   switch(Error) {
+      case SSL_ERROR_NONE:             return "SSL_ERROR_NONE";
+      case SSL_ERROR_ZERO_RETURN:      return "SSL_ERROR_ZERO_RETURN";
+      case SSL_ERROR_WANT_READ:        return "SSL_ERROR_WANT_READ";
+      case SSL_ERROR_WANT_WRITE:       return "SSL_ERROR_WANT_WRITE";
+      case SSL_ERROR_WANT_CONNECT:     return "SSL_ERROR_WANT_CONNECT";
+      case SSL_ERROR_WANT_ACCEPT:      return "SSL_ERROR_WANT_ACCEPT";
+      case SSL_ERROR_WANT_X509_LOOKUP: return "SSL_ERROR_WANT_X509_LOOKUP";
+      case SSL_ERROR_SYSCALL:          return "SSL_ERROR_SYSCALL";
+      case SSL_ERROR_SSL:              return "SSL_ERROR_SSL";
+      default:                         return "SSL_ERROR_UNKNOWN";
+   }
+}
+
+static void ssl_log_error_queue(kt::Log &Log, CSTRING Context)
+{
+   unsigned long ssl_error;
+   bool logged = false;
+
+   while ((ssl_error = ERR_get_error()) != 0) {
+      char buffer[256];
+      ERR_error_string_n(ssl_error, buffer, sizeof(buffer));
+      Log.warning("%s: %s", Context, buffer);
+      logged = true;
+   }
+
+   if (!logged) Log.warning("%s: SSL_ERROR_SSL reported with an empty OpenSSL error queue.", Context);
+}
+
+static void ssl_clear_error_queue()
+{
+   ERR_clear_error();
+}
+
+static bool ssl_unexpected_eof()
+{
+   #ifdef SSL_R_UNEXPECTED_EOF_WHILE_READING
+      auto ssl_error = ERR_peek_error();
+      return ssl_error and (ERR_GET_REASON(ssl_error) IS SSL_R_UNEXPECTED_EOF_WHILE_READING);
+   #else
+      return false;
+   #endif
+}
+
 template <class T> void sslDisconnect(T *Self)
 {
    if (Self->SSLHandle) {
@@ -49,13 +135,16 @@ template <class T> void sslDisconnect(T *Self)
 
       // Perform proper bidirectional SSL shutdown
 
-      if (auto shutdown_result = SSL_shutdown(Self->SSLHandle); shutdown_result == 0) {
+      ssl_clear_error_queue();
+      if (auto shutdown_result = SSL_shutdown(Self->SSLHandle); shutdown_result IS 0) {
          // First shutdown call completed, perform second shutdown for bidirectional close
+         ssl_clear_error_queue();
          shutdown_result = SSL_shutdown(Self->SSLHandle);
          if (shutdown_result < 0) {
             int ssl_error = SSL_get_error(Self->SSLHandle, shutdown_result);
             if ((ssl_error != SSL_ERROR_WANT_READ) and (ssl_error != SSL_ERROR_WANT_WRITE)) {
-               log.warning("SSL_shutdown failed: %s", ERR_error_string(ssl_error, nullptr));
+               log.warning("SSL_shutdown failed: %s", ssl_error_name(ssl_error));
+               if (ssl_error IS SSL_ERROR_SSL) ssl_log_error_queue(log, "SSL_shutdown");
             }
          }
       }
@@ -502,6 +591,7 @@ static ERR sslConnect(extNetSocket *Self)
       }
    }
 
+   ssl_clear_error_queue();
    if (auto result = SSL_connect(Self->SSLHandle); result <= 0) {
       result = SSL_get_error(Self->SSLHandle, result);
 
@@ -526,13 +616,13 @@ static ERR sslConnect(extNetSocket *Self)
          case SSL_ERROR_SYSCALL:          Self->Error = ERR::InputOutput; break;
 
          case SSL_ERROR_SSL:              Self->Error = ERR::SystemCall;
-                                          ERR_print_errors(Self->BIOHandle);
+                                          ssl_log_error_queue(log, "SSL_connect");
                                           break;
 
          default:                         Self->Error = ERR::Failed;
       }
 
-      log.warning("SSL_connect: %s (%s)", ERR_error_string(result, nullptr), GetErrorMsg(Self->Error));
+      log.warning("SSL_connect: %s (%s)", ssl_error_name(result), GetErrorMsg(Self->Error));
       Self->setState(NTC::DISCONNECTED);
       return Self->Error;
    }
@@ -559,11 +649,13 @@ template <class T> void ssl_handshake_write_impl(HOSTHANDLE SocketFD, T *Self)
    auto read_callback = std::is_same<T, extNetSocket>::value ?
       ssl_handshake_read_netsocket : ssl_handshake_read_clientsocket;
 
-   if (auto result = SSL_do_handshake(Self->SSLHandle); result == 1) { // Handshake successful, connection established
+   ssl_clear_error_queue();
+   if (auto result = SSL_do_handshake(Self->SSLHandle); result IS 1) { // Handshake successful, connection established
       RegisterFD(Socket.hosthandle(), RFD::WRITE|RFD::REMOVE|RFD::SOCKET, write_callback, Self);
       Self->HandshakeStatus = SHS::NIL;
+      ssl_resume_write_queue(Socket.hosthandle(), Self);
    }
-   else switch (SSL_get_error(Self->SSLHandle, result)) {
+   else switch (auto ssl_error = SSL_get_error(Self->SSLHandle, result)) {
       case SSL_ERROR_WANT_READ:
          RegisterFD(Socket.hosthandle(), RFD::WRITE|RFD::REMOVE|RFD::SOCKET, write_callback, Self);
          Self->HandshakeStatus = SHS::READ;
@@ -575,6 +667,8 @@ template <class T> void ssl_handshake_write_impl(HOSTHANDLE SocketFD, T *Self)
          break;
 
       default:
+         log.warning("SSL_do_handshake failed: %s", ssl_error_name(ssl_error));
+         if (ssl_error IS SSL_ERROR_SSL) ssl_log_error_queue(log, "SSL_do_handshake");
          Self->HandshakeStatus = SHS::NIL;
    }
 }
@@ -591,11 +685,13 @@ template <class T> void ssl_handshake_read_impl(HOSTHANDLE SocketFD, T *Self)
    auto read_callback = std::is_same<T, extNetSocket>::value ?
       ssl_handshake_read_netsocket : ssl_handshake_read_clientsocket;
 
-   if (auto result = SSL_do_handshake(Self->SSLHandle); result == 1) { // Handshake successful, connection established
+   ssl_clear_error_queue();
+   if (auto result = SSL_do_handshake(Self->SSLHandle); result IS 1) { // Handshake successful, connection established
       RegisterFD(Socket.hosthandle(), RFD::READ|RFD::REMOVE|RFD::SOCKET, read_callback, Self);
       Self->HandshakeStatus = SHS::NIL;
+      ssl_resume_write_queue(Socket.hosthandle(), Self);
    }
-   else switch (SSL_get_error(Self->SSLHandle, result)) {
+   else switch (auto ssl_error = SSL_get_error(Self->SSLHandle, result)) {
       case SSL_ERROR_WANT_READ:
          // Continue monitoring for read readiness - no action needed
          break;
@@ -607,6 +703,8 @@ template <class T> void ssl_handshake_read_impl(HOSTHANDLE SocketFD, T *Self)
          break;
 
       default:
+         log.warning("SSL_do_handshake failed: %s", ssl_error_name(ssl_error));
+         if (ssl_error IS SSL_ERROR_SSL) ssl_log_error_queue(log, "SSL_do_handshake");
          Self->HandshakeStatus = SHS::NIL;
    }
 }

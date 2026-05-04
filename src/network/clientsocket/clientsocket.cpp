@@ -91,6 +91,7 @@ static ERR receive_from_client(extClientSocket *Self, APTR Buffer, size_t Buffer
       do {
          read_blocked = false;
 
+         ssl_clear_error_queue();
          auto result = SSL_read(Self->SSLHandle, Buffer, BufferSize);
 
          if (result <= 0) {
@@ -113,8 +114,20 @@ static ERR receive_from_client(extClientSocket *Self, APTR Buffer, size_t Buffer
                   return ERR::Okay;
 
                case SSL_ERROR_SYSCALL:
+                  log.warning("SSL read failed with %s: %s", ssl_error_name(ssl_error), strerror(errno));
+                  return ERR::Read;
+
+               case SSL_ERROR_SSL:
+                  if (ssl_unexpected_eof()) {
+                     ssl_clear_error_queue();
+                     return log.traceWarning(ERR::Disconnected);
+                  }
+                  log.warning("SSL read failed with %s.", ssl_error_name(ssl_error));
+                  ssl_log_error_queue(log, "SSL_read");
+                  return ERR::Read;
+
                default:
-                  log.warning("SSL read failed with error %d: %s", ssl_error, ERR_error_string(ssl_error, nullptr));
+                  log.warning("SSL read failed with %s.", ssl_error_name(ssl_error));
                   return ERR::Read;
             }
          }
@@ -191,6 +204,7 @@ static void server_incoming_from_client_impl(HOSTHANDLE SocketFD, extClientSocke
    #ifdef _WIN32
       if (client->State IS NTC::HANDSHAKING) {
          log.trace("Windows SSL server handshake in progress, reading raw data.");
+         bool ssl_connected = false;
          std::array<char, 4096> buffer;
          size_t bytes_received;
          ERR error = WIN_RECEIVE(client->Handle, buffer.data(), buffer.size(), &bytes_received);
@@ -201,7 +215,9 @@ static void server_incoming_from_client_impl(HOSTHANDLE SocketFD, extClientSocke
                case SSL_OK:
                   log.trace("SSL handshake completed for client %d", client->UID);
                   client->setState(NTC::CONNECTED);
-                  return;
+                  if (client->terminating()) return;
+                  ssl_connected = true;
+                  break;
                case SSL_ERROR_WOULD_BLOCK:
                case SSL_NEED_DATA: // Server needs to send response data back to client
                   return;
@@ -214,28 +230,36 @@ static void server_incoming_from_client_impl(HOSTHANDLE SocketFD, extClientSocke
                   return;
             }
          }
-         return;
+         if (!ssl_connected) return;
+         if (!ssl_has_decrypted_data(client->SSLHandle) and !ssl_has_encrypted_data(client->SSLHandle)) return;
       }
    #else
       if (client->State IS NTC::HANDSHAKING) {
+         bool ssl_connected = false;
+
          // Continue SSL handshake for this ClientSocket
+         ssl_clear_error_queue();
          auto result = SSL_accept(client->SSLHandle);
-         if (result == 1) {
+         if (result IS 1) {
             log.msg("SSL handshake completed for client %d", client->UID);
             client->setState(NTC::CONNECTED);
+            if (client->terminating()) return;
+            ssl_connected = true;
          }
          else {
             auto ssl_error = SSL_get_error(client->SSLHandle, result);
-            if ((ssl_error == SSL_ERROR_WANT_READ) or (ssl_error == SSL_ERROR_WANT_WRITE)) {
+            if ((ssl_error IS SSL_ERROR_WANT_READ) or (ssl_error IS SSL_ERROR_WANT_WRITE)) {
                log.trace("SSL handshake continuing for client %d...", client->UID);
                // Handshake will continue on next data arrival
             }
             else {
-               log.warning("SSL handshake failed for client %d: %s", client->UID, ERR_error_string(ssl_error, nullptr));
+               log.warning("SSL handshake failed for client %d: %s", client->UID, ssl_error_name(ssl_error));
+               if (ssl_error IS SSL_ERROR_SSL) ssl_log_error_queue(log, "SSL_accept");
                client->setState(NTC::DISCONNECTED);
             }
          }
-         return;
+         if (!ssl_connected) return;
+         if (!ssl_has_buffered_read_data(client->SSLHandle)) return;
       }
    #endif
 #endif
@@ -306,7 +330,13 @@ static void clientsocket_outgoing_impl(HOSTHANDLE SocketFD, extClientSocket *Cli
 
 #ifndef DISABLE_SSL
   #ifndef _WIN32
-    if (ClientSocket->HandshakeStatus != SHS::NIL) return;
+    if (ClientSocket->HandshakeStatus != SHS::NIL) {
+       if (ClientSocket->HandshakeStatus IS SHS::READ) ssl_suspend_write_queue(ClientSocket->Handle.hosthandle());
+       else if (ClientSocket->HandshakeStatus IS SHS::WRITE) {
+          ssl_resume_write_handshake(ClientSocket->Handle.hosthandle(), ClientSocket);
+       }
+       return;
+    }
   #endif
 #endif
 
@@ -486,7 +516,8 @@ static ERR CLIENTSOCKET_Init(extClientSocket *Self)
                Self->SSLHandle = client_ssl;
                Self->BIOHandle = client_bio;
 
-               if (auto result = SSL_accept(client_ssl); result == 1) {
+               ssl_clear_error_queue();
+               if (auto result = SSL_accept(client_ssl); result IS 1) {
                   log.trace("SSL handshake successful.");
                   Self->setState(NTC::CONNECTED);
                }
@@ -494,12 +525,13 @@ static ERR CLIENTSOCKET_Init(extClientSocket *Self)
                   Self->setState(NTC::HANDSHAKING);
 
                   auto ssl_error = SSL_get_error(client_ssl, result);
-                  if ((ssl_error == SSL_ERROR_WANT_READ) or (ssl_error == SSL_ERROR_WANT_WRITE)) {
+                  if ((ssl_error IS SSL_ERROR_WANT_READ) or (ssl_error IS SSL_ERROR_WANT_WRITE)) {
                      log.msg("SSL handshake in progress...");
                      // Handshake will continue asynchronously
                   }
                   else {
-                     log.warning("SSL handshake failed: %s", ERR_error_string(ssl_error, nullptr));
+                     log.warning("SSL handshake failed: %s", ssl_error_name(ssl_error));
+                     if (ssl_error IS SSL_ERROR_SSL) ssl_log_error_queue(log, "SSL_accept");
                      Self->SSLHandle = nullptr;
                      Self->BIOHandle = nullptr;
                      SSL_free(client_ssl);
@@ -620,15 +652,34 @@ static ERR CLIENTSOCKET_Write(extClientSocket *Self, struct acWrite *Args)
    }
 
    if ((error != ERR::Okay) or (len < size_t(Args->Length))) {
-      if ((error IS ERR::DataSize) or (error IS ERR::BufferOverflow) or (len > 0))  {
+      bool ssl_read_blocked = false;
+      bool ssl_write_blocked = false;
+      #ifndef DISABLE_SSL
+       #ifndef _WIN32
+         ssl_read_blocked = (error IS ERR::Busy) and (Self->SSLHandle) and (Self->HandshakeStatus IS SHS::READ);
+         ssl_write_blocked = (error IS ERR::BufferOverflow) and (Self->SSLHandle) and
+            (Self->HandshakeStatus IS SHS::WRITE);
+       #endif
+      #endif
+
+      if ((error IS ERR::DataSize) or (error IS ERR::BufferOverflow) or (ssl_read_blocked) or (len > 0))  {
          // Put data into the write queue and register the socket for write events
          log.trace("Error: '%s', queuing %d/%d bytes for transfer...", GetErrorMsg(error), Args->Length - len, Args->Length);
          Self->WriteQueue.write((int8_t *)Args->Buffer + len, std::min<size_t>(Args->Length - len, server->MsgLimit));
-         #ifdef __linux__
-            RegisterFD(Self->Handle.hosthandle(), RFD::WRITE|RFD::SOCKET, &clientsocket_outgoing, Self);
-         #elif _WIN32
-            win_socketstate(Self->Handle, std::nullopt, true);
-         #endif
+         if (ssl_write_blocked) {
+            #ifndef DISABLE_SSL
+             #ifndef _WIN32
+               ssl_resume_write_handshake(Self->Handle.hosthandle(), Self);
+             #endif
+            #endif
+         }
+         else if (!ssl_read_blocked) {
+            #ifdef __linux__
+               RegisterFD(Self->Handle.hosthandle(), RFD::WRITE|RFD::SOCKET, &clientsocket_outgoing, Self);
+            #elif _WIN32
+               win_socketstate(Self->Handle, std::nullopt, true);
+            #endif
+         }
       }
       else return error;
    }
