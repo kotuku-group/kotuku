@@ -23,6 +23,7 @@ struct ParsedDocText {
    std::vector<std::pair<std::string, std::string>> inputs;
    std::vector<ParserDocReturnMetadata> results;
    std::vector<ParserDocErrorMetadata> errors;
+   bool compact = false;
 };
 
 inline std::string gcstr_to_string(GCstr *Value)
@@ -128,6 +129,7 @@ static ParsedDocText parse_compact_doc_text(std::string_view Text, const std::ve
 {
    ParsedDocText parsed;
    parsed.block.raw = std::string(Text);
+   parsed.compact = true;
 
    for (const std::string &line : Lines) {
       std::string trimmed = trim(line);
@@ -143,17 +145,14 @@ static ParsedDocText parse_compact_doc_text(std::string_view Text, const std::ve
 
       payload = compact_doc_payload(trimmed, "@input");
       if (not payload.empty()) {
-         std::string name;
-         std::string doc;
-         parse_name_doc_line(payload, name, doc);
-         if (not name.empty()) parsed.inputs.emplace_back(std::move(name), std::move(doc));
+         parsed.inputs.emplace_back(std::string(), std::move(payload));
          continue;
       }
 
       payload = compact_doc_payload(trimmed, "@result");
       if (not payload.empty()) {
          ParserDocReturnMetadata ret;
-         parse_name_doc_line(payload, ret.type, ret.doc);
+         ret.doc = std::move(payload);
          parsed.results.push_back(std::move(ret));
          continue;
       }
@@ -401,8 +400,18 @@ static std::string build_signature(const std::string &Name, const FunctionExprPa
    return signature;
 }
 
-static std::string find_param_doc(const ParsedDocText &Doc, const std::string &Name, bool &Found)
+static std::string find_param_doc(const ParsedDocText &Doc, const std::string &Name, size_t Index, bool &Found)
 {
+   if (Doc.compact) {
+      if (Index < Doc.inputs.size()) {
+         Found = true;
+         return Doc.inputs[Index].second;
+      }
+
+      Found = false;
+      return {};
+   }
+
    for (const auto &[doc_name, doc_text] : Doc.inputs) {
       if (doc_name IS Name) {
          Found = true;
@@ -416,6 +425,8 @@ static std::string find_param_doc(const ParsedDocText &Doc, const std::string &N
 
 static void add_params(ParserSymbolMetadata &Symbol, const FunctionExprPayload &Function, const ParsedDocText *Doc)
 {
+   size_t param_index = 0;
+
    for (const FunctionParameter &param : Function.parameters) {
       if (param.is_self) continue;
 
@@ -424,11 +435,139 @@ static void add_params(ParserSymbolMetadata &Symbol, const FunctionExprPayload &
       meta.type = type_to_string(param.type);
 
       bool found = false;
-      if (Doc) meta.doc = find_param_doc(*Doc, meta.name, found);
+      if (Doc) meta.doc = find_param_doc(*Doc, meta.name, param_index, found);
       meta.inferred = not found;
 
       Symbol.params.push_back(std::move(meta));
+      param_index++;
    }
+}
+
+static TiriType infer_result_expression_type(const ExprNode &Expression, const FunctionExprPayload &Function)
+{
+   if (Expression.kind IS AstNodeKind::IdentifierExpr) {
+      if (const auto *name = std::get_if<NameRef>(&Expression.data)) {
+         std::string expr_name = identifier_to_string(name->identifier);
+
+         for (const FunctionParameter &param : Function.parameters) {
+            if (param.is_self) continue;
+            if (identifier_to_string(param.name) IS expr_name and param.type != TiriType::Unknown) return param.type;
+         }
+      }
+   }
+
+   return infer_expression_type(Expression);
+}
+
+static FunctionReturnTypes infer_results_from_return(const ReturnStmtPayload &Return,
+   const FunctionExprPayload &Function)
+{
+   FunctionReturnTypes result;
+   size_t count = Return.values.size() < MAX_RETURN_TYPES ? Return.values.size() : MAX_RETURN_TYPES;
+   result.count = uint8_t(count);
+
+   for (size_t i = 0; i < count; ++i) {
+      result.types[i] = infer_result_expression_type(*Return.values[i], Function);
+   }
+
+   return result;
+}
+
+static bool infer_results_from_block(FunctionReturnTypes &Result, const BlockStmt &Block,
+   const FunctionExprPayload &Function);
+
+static bool infer_results_from_statement(FunctionReturnTypes &Result, const StmtNode &Statement,
+   const FunctionExprPayload &Function)
+{
+   switch (Statement.kind) {
+      case AstNodeKind::ReturnStmt: {
+         const auto &payload = std::get<ReturnStmtPayload>(Statement.data);
+         Result = infer_results_from_return(payload, Function);
+         return Result.count > 0;
+      }
+      case AstNodeKind::IfStmt: {
+         const auto &payload = std::get<IfStmtPayload>(Statement.data);
+         for (const IfClause &clause : payload.clauses) {
+            if (clause.block and infer_results_from_block(Result, *clause.block, Function)) return true;
+         }
+         break;
+      }
+      case AstNodeKind::WhileStmt:
+      case AstNodeKind::RepeatStmt: {
+         const auto &payload = std::get<LoopStmtPayload>(Statement.data);
+         if (payload.body and infer_results_from_block(Result, *payload.body, Function)) return true;
+         break;
+      }
+      case AstNodeKind::NumericForStmt: {
+         const auto &payload = std::get<NumericForStmtPayload>(Statement.data);
+         if (payload.body and infer_results_from_block(Result, *payload.body, Function)) return true;
+         break;
+      }
+      case AstNodeKind::GenericForStmt: {
+         const auto &payload = std::get<GenericForStmtPayload>(Statement.data);
+         if (payload.body and infer_results_from_block(Result, *payload.body, Function)) return true;
+         break;
+      }
+      case AstNodeKind::DoStmt: {
+         const auto &payload = std::get<DoStmtPayload>(Statement.data);
+         if (payload.block and infer_results_from_block(Result, *payload.block, Function)) return true;
+         break;
+      }
+      case AstNodeKind::ConditionalShorthandStmt: {
+         const auto &payload = std::get<ConditionalShorthandStmtPayload>(Statement.data);
+         if (payload.body and infer_results_from_statement(Result, *payload.body, Function)) return true;
+         break;
+      }
+      case AstNodeKind::TryExceptStmt: {
+         const auto &payload = std::get<TryExceptPayload>(Statement.data);
+         if (payload.try_block and infer_results_from_block(Result, *payload.try_block, Function)) return true;
+         for (const ExceptClause &clause : payload.except_clauses) {
+            if (clause.block and infer_results_from_block(Result, *clause.block, Function)) return true;
+         }
+         if (payload.success_block and infer_results_from_block(Result, *payload.success_block, Function)) return true;
+         break;
+      }
+      case AstNodeKind::WithStmt: {
+         const auto &payload = std::get<WithStmtPayload>(Statement.data);
+         if (payload.block and infer_results_from_block(Result, *payload.block, Function)) return true;
+         break;
+      }
+      default:
+         break;
+   }
+
+   return false;
+}
+
+static bool infer_results_from_block(FunctionReturnTypes &Result, const BlockStmt &Block,
+   const FunctionExprPayload &Function)
+{
+   for (const StmtNode &statement : Block.view()) {
+      if (infer_results_from_statement(Result, statement, Function)) return true;
+   }
+
+   return false;
+}
+
+static FunctionReturnTypes infer_function_results(const FunctionExprPayload &Function)
+{
+   FunctionReturnTypes result;
+   if (Function.body) infer_results_from_block(result, *Function.body, Function);
+   return result;
+}
+
+static TiriType compact_result_type_at(const FunctionExprPayload &Function, const FunctionReturnTypes &Inferred,
+   size_t Index, bool &InferredType)
+{
+   if (Function.return_types.is_explicit and (Index < Function.return_types.count or
+       (Function.return_types.is_variadic and Function.return_types.count > 0))) {
+      InferredType = false;
+      return Function.return_types.type_at(Index);
+   }
+
+   InferredType = true;
+   if (Index < Inferred.count and Inferred.types[Index] != TiriType::Unknown) return Inferred.types[Index];
+   return TiriType::Any;
 }
 
 static void add_results(ParserSymbolMetadata &Symbol, const FunctionExprPayload &Function, const ParsedDocText *Doc)
@@ -436,17 +575,31 @@ static void add_results(ParserSymbolMetadata &Symbol, const FunctionExprPayload 
    size_t declared_count = Function.return_types.count;
    size_t doc_count = Doc ? Doc->results.size() : 0;
    size_t count = declared_count > doc_count ? declared_count : doc_count;
+   FunctionReturnTypes inferred_results;
+
+   if (Doc and Doc->compact and doc_count > declared_count) {
+      inferred_results = infer_function_results(Function);
+   }
 
    for (size_t i = 0; i < count; ++i) {
       ParserDocReturnMetadata meta;
 
-      if (i < declared_count) meta.type = type_to_string(Function.return_types.types[i]);
-      if (Doc and i < Doc->results.size()) {
-         meta.doc = Doc->results[i].doc;
-         if (meta.type.empty()) meta.type = Doc->results[i].type;
+      if (Doc and Doc->compact) {
+         bool inferred_type = true;
+         meta.type = type_to_string(compact_result_type_at(Function, inferred_results, i, inferred_type));
+         meta.inferred = inferred_type;
+      }
+      else if (i < declared_count) {
+         meta.type = type_to_string(Function.return_types.types[i]);
+         meta.inferred = false;
       }
 
-      meta.inferred = i >= declared_count;
+      if (Doc and i < Doc->results.size()) {
+         meta.doc = Doc->results[i].doc;
+         if ((not Doc->compact) and meta.type.empty()) meta.type = Doc->results[i].type;
+      }
+
+      if (not (Doc and Doc->compact)) meta.inferred = i >= declared_count;
       Symbol.results.push_back(std::move(meta));
    }
 }

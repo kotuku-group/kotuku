@@ -463,14 +463,15 @@ end
    code = [=[
       @Doc(text=[[
          @desc Returns a greeting.
-         @input Name: Person to greet
-         @result str: Greeting text
-         @result str: Additional argument
+         @input First name to greet
+         @input Last name to greet
+         @result Greeting text
+         @result Additional argument
          @error Args: If the name is invalid
          @error Failed: Random failure
       ]])
-      function greetCompact(Name: str):<str, str>
-         return "Hello " .. Name, "extra"
+      function greetCompact(First: str, Last: str):<str, str>
+         return "Hello " .. First .. " " .. Last, "extra"
       end
    ]=]
 
@@ -482,16 +483,104 @@ end
    symbol = result.symbols[0]
    assert(symbol.name is "greetCompact", "Expected function name greetCompact, got " .. tostring(symbol.name))
    assert(symbol.doc.summary is "Returns a greeting.", "Compact @desc should define doc summary")
-   assert(symbol.params[0].name is "Name", "Expected first compact param to be Name")
-   assert(symbol.params[0].doc is "Person to greet", "Expected compact @input doc to be merged")
+   assert(symbol.params[0].name is "First", "Expected first compact param to be First")
+   assert(symbol.params[0].doc is "First name to greet", "Expected first compact @input doc to be merged")
+   assert(symbol.params[1].name is "Last", "Expected second compact param to be Last")
+   assert(symbol.params[1].doc is "Last name to greet", "Expected second compact @input doc to be merged")
    assert(symbol.results[0].type is "str", "Expected first compact return type to be str")
    assert(symbol.results[0].doc is "Greeting text", "Expected first compact @result doc")
+   assert(symbol.results[0].inferred is false, "Explicit compact result type should not be inferred")
    assert(symbol.results[1].type is "str", "Expected second compact return type to be str")
    assert(symbol.results[1].doc is "Additional argument", "Expected second compact @result doc")
+   assert(symbol.results[1].inferred is false, "Explicit compact result type should not be inferred")
    assert(symbol.errors[0].code is "Args", "Expected first compact error code")
    assert(symbol.errors[0].doc is "If the name is invalid", "Expected first compact error doc")
    assert(symbol.errors[1].code is "Failed", "Expected second compact error code")
    assert(symbol.errors[1].doc is "Random failure", "Expected second compact error doc")
+end
+
+@Test function ValidateSymbolsWithCompactDocInferredResults()
+   code = [=[
+      @Doc(text=[[
+         @desc Infers result types from return expressions.
+         @input Value to format
+         @result Incremented value
+         @result Status text
+         @result Success flag
+      ]])
+      function inferCompact(Value: num)
+         return Value + 1, "ready", true
+      end
+   ]=]
+
+   result = debug.validate(code, "symbols")
+   assert(result.success is true, "Valid compact inferred result docs should succeed")
+   assert(result.symbols != nil, "symbols option should include a symbols table")
+   assert(#result.symbols is 1, "Expected one symbol, got " .. #result.symbols)
+
+   symbol = result.symbols[0]
+   assert(symbol.params[0].doc is "Value to format", "Expected compact @input doc to be positional")
+   assert(symbol.results[0].type is "num", "Expected first compact result type to be inferred as num")
+   assert(symbol.results[0].doc is "Incremented value", "Expected first inferred compact @result doc")
+   assert(symbol.results[0].inferred is true, "Inferred compact result type should be marked inferred")
+   assert(symbol.results[1].type is "str", "Expected second compact result type to be inferred as str")
+   assert(symbol.results[1].doc is "Status text", "Expected second inferred compact @result doc")
+   assert(symbol.results[1].inferred is true, "Inferred compact result type should be marked inferred")
+   assert(symbol.results[2].type is "bool", "Expected third compact result type to be inferred as bool")
+   assert(symbol.results[2].doc is "Success flag", "Expected third inferred compact @result doc")
+   assert(symbol.results[2].inferred is true, "Inferred compact result type should be marked inferred")
+end
+
+@Test function ValidateSymbolsWithCompactDocUnknownResultFallback()
+   code = [=[
+      @Doc(text=[[
+         @desc Falls back when a result type is unknown.
+         @input Callback that produces a value
+         @result Callback result
+      ]])
+      function compactFallback(Callback)
+         return Callback()
+      end
+   ]=]
+
+   result = debug.validate(code, "symbols")
+   assert(result.success is true, "Valid compact unknown result docs should succeed")
+   assert(result.symbols != nil, "symbols option should include a symbols table")
+   assert(#result.symbols is 1, "Expected one symbol, got " .. #result.symbols)
+
+   symbol = result.symbols[0]
+   assert(symbol.params[0].doc is "Callback that produces a value", "Expected fallback compact @input doc")
+   assert(symbol.results[0].type is "any", "Unknown compact result type should fall back to any")
+   assert(symbol.results[0].doc is "Callback result", "Expected fallback compact @result doc")
+   assert(symbol.results[0].inferred is true, "Fallback compact result type should be marked inferred")
+end
+
+@Test function ValidateSymbolsWithAnnotatedFunctionAssignment()
+   code = [=[
+      docs = {}
+
+      @Doc(text=[[
+         @desc Documents an assigned function expression.
+         @input Text to return
+         @result Returned text
+      ]])
+      docs.echo = function(Text: str):str
+         return Text
+      end
+   ]=]
+
+   result = debug.validate(code, "symbols")
+   assert(result.success is true, "Annotated function assignment should parse")
+   assert(result.symbols != nil, "symbols option should include a symbols table")
+   assert(#result.symbols is 1, "Expected one symbol, got " .. #result.symbols)
+
+   symbol = result.symbols[0]
+   assert(symbol.name is "docs.echo", "Expected assigned function symbol, got " .. tostring(symbol.name))
+   assert(symbol.doc.summary is "Documents an assigned function expression.", "Expected assignment doc summary")
+   assert(symbol.params[0].name is "Text", "Expected assignment parameter name")
+   assert(symbol.params[0].doc is "Text to return", "Expected assignment parameter doc")
+   assert(symbol.results[0].type is "str", "Expected assignment result type")
+   assert(symbol.results[0].doc is "Returned text", "Expected assignment result doc")
 end
 
 @Test function ValidateSymbolsWithGlobalFunctionExpression()

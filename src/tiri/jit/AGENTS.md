@@ -251,8 +251,8 @@ Compact form is intended for terse one-line documentation.  Tags are exact and l
 |Tag|Target metadata|Line parser|
 |-|-|-|
 |`@desc`|`doc.summary`, `doc.body`|First `@desc` sets `summary`; each non-empty payload is appended to `body`.|
-|`@input`|`params[].doc`|Payload is parsed as `Name: Description`.|
-|`@result`|`results[].doc`|Payload is parsed as `type: Description`.|
+|`@input`|`params[].doc`|Payload is used as documentation for the next non-`self` parameter.|
+|`@result`|`results[].doc`|Payload is used as documentation for the next result value.|
 |`@error`|`errors[]`|Payload is parsed as `Code: Description`.|
 
 Compact entries do not support continuation lines.  Unknown lines are ignored by the compact parser.
@@ -262,9 +262,9 @@ Example:
 ```lua
 @Doc(text=[[
    @desc Returns a greeting.
-   @input Name: Person to greet
-   @result str: Greeting text
-   @result str: Additional argument
+   @input Person to greet
+   @result Greeting text
+   @result Additional argument
    @error Args: If the name is invalid
    @error Failed: Random failure
 ]])
@@ -278,12 +278,12 @@ end
 Documentation text augments parser-derived signature metadata; it does not replace it.
 
 - Parameters always come from the function signature, excluding implicit `self`.
-- Parameter documentation is matched by parameter name.  `params[].inferred` is `true` when no matching doc line was
-  found.
+- Compact parameter documentation is matched by declaration order.  Marker-form parameter documentation is matched by
+  parameter name.  `params[].inferred` is `true` when no matching doc line was found.
 - Result entries use the larger of the declared result count and documented result count.
-- Declared result types take precedence over documented result types.  A documented result type is used only when no
-  declared type exists at that position.
-- `results[].inferred` is `true` only for documented result entries beyond the declared result count.
+- Declared result types take precedence.  Compact result docs do not carry types; if no declared type exists, the
+  collector infers obvious return expression types and otherwise exposes `any`.
+- `results[].inferred` is `false` for declared result types and `true` for inferred or `any` fallback compact types.
 - Error entries currently come only from explicit documentation.  Error-code inference is not implemented in the
   collector yet, so `errors[].inferred` is currently `false`.
 

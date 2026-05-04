@@ -146,8 +146,64 @@ ParserResult<std::vector<AnnotationEntry>> AstBuilder::parse_annotations()
 }
 
 //********************************************************************************************************************
+// Attaches parsed annotations to a function expression value.
+
+static bool attach_annotations_to_function_value(ExprNodePtr &Value, std::vector<AnnotationEntry> &Annotations)
+{
+   if (not Value or Value->kind != AstNodeKind::FunctionExpr) return false;
+
+   if (auto *function = std::get_if<FunctionExprPayload>(&Value->data)) {
+      function->annotations = std::move(Annotations);
+      return true;
+   }
+
+   return false;
+}
+
+//********************************************************************************************************************
+// Attaches parsed annotations to a statement containing a single function expression.
+
+static bool attach_annotations_to_statement(StmtNode &Statement, std::vector<AnnotationEntry> &Annotations)
+{
+   if (Statement.kind IS AstNodeKind::FunctionStmt) {
+      auto *payload = std::get_if<FunctionStmtPayload>(&Statement.data);
+      if (payload and payload->function) {
+         payload->function->annotations = std::move(Annotations);
+         return true;
+      }
+   }
+   else if (Statement.kind IS AstNodeKind::LocalFunctionStmt) {
+      auto *payload = std::get_if<LocalFunctionStmtPayload>(&Statement.data);
+      if (payload and payload->function) {
+         payload->function->annotations = std::move(Annotations);
+         return true;
+      }
+   }
+   else if (Statement.kind IS AstNodeKind::AssignmentStmt) {
+      auto *payload = std::get_if<AssignmentStmtPayload>(&Statement.data);
+      if (payload and payload->values.size() IS 1) {
+         return attach_annotations_to_function_value(payload->values[0], Annotations);
+      }
+   }
+   else if (Statement.kind IS AstNodeKind::LocalDeclStmt) {
+      auto *payload = std::get_if<LocalDeclStmtPayload>(&Statement.data);
+      if (payload and payload->values.size() IS 1) {
+         return attach_annotations_to_function_value(payload->values[0], Annotations);
+      }
+   }
+   else if (Statement.kind IS AstNodeKind::GlobalDeclStmt) {
+      auto *payload = std::get_if<GlobalDeclStmtPayload>(&Statement.data);
+      if (payload and payload->values.size() IS 1) {
+         return attach_annotations_to_function_value(payload->values[0], Annotations);
+      }
+   }
+
+   return false;
+}
+
+//********************************************************************************************************************
 // Parses a statement preceded by one or more annotations.
-// Annotations can only precede function declarations (function, local function, global function, thunk).
+// Annotations can precede function declarations or single function-valued assignments.
 
 ParserResult<StmtNodePtr> AstBuilder::parse_annotated_statement()
 {
@@ -163,7 +219,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_annotated_statement()
 
    Token current = this->ctx.tokens().current();
 
-   // Parse the following statement - must be a function declaration
+   // Parse the following statement - must contain a single function value.
    StmtNodePtr stmt;
 
    if (current.kind() IS TokenKind::Function or current.kind() IS TokenKind::ThunkToken) {
@@ -175,39 +231,25 @@ ParserResult<StmtNodePtr> AstBuilder::parse_annotated_statement()
       auto result = this->parse_local();
       if (not result.ok()) return result;
       stmt = std::move(result.value_ref());
-      // Verify it's a local function, not a variable declaration
-      if (stmt->kind != AstNodeKind::LocalFunctionStmt) {
-         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, current,
-            "annotations can only precede function declarations");
-      }
    }
    else if (current.kind() IS TokenKind::Global) {
       auto result = this->parse_global();
       if (not result.ok()) return result;
       stmt = std::move(result.value_ref());
-      // Verify it's a global function, not a variable declaration
-      if (stmt->kind != AstNodeKind::FunctionStmt) {
-         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, current,
-            "annotations can only precede function declarations");
-      }
+   }
+   else if (current.kind() IS TokenKind::Identifier) {
+      auto result = this->parse_expression_stmt();
+      if (not result.ok()) return result;
+      stmt = std::move(result.value_ref());
    }
    else {
       return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, current,
-         "annotations must precede a function declaration");
+         "annotations must precede a function declaration or function assignment");
    }
 
-   // Attach annotations to the function payload
-   if (stmt->kind IS AstNodeKind::FunctionStmt) {
-      auto* payload = std::get_if<FunctionStmtPayload>(&stmt->data);
-      if (payload and payload->function) {
-         payload->function->annotations = std::move(annotations);
-      }
-   }
-   else if (stmt->kind IS AstNodeKind::LocalFunctionStmt) {
-      auto* payload = std::get_if<LocalFunctionStmtPayload>(&stmt->data);
-      if (payload and payload->function) {
-         payload->function->annotations = std::move(annotations);
-      }
+   if (not stmt or not attach_annotations_to_statement(*stmt, annotations)) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, current,
+         "annotations must precede a function declaration or function assignment");
    }
 
    return ParserResult<StmtNodePtr>::success(std::move(stmt));

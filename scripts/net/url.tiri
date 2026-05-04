@@ -1,8 +1,8 @@
 -- URL parsing and handling module for Kōtuku
 --
 -- Usage:
---   urllib = import 'net/url' -- Choose a name that avoids namespace conflicts
---   parts = urllib.parse('https://example.com/path?query=value')
+--   import 'net/url'
+--   parts = url.parse('https://example.com/path?query=value')
 
    namespace 'url'
 
