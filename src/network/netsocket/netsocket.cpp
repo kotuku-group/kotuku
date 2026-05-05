@@ -183,6 +183,35 @@ static void connect_name_resolved_nl(objNetLookup *, ERR, const std::string &, c
 static void connect_name_resolved(extNetSocket *, ERR, const std::string &, const std::vector<IPAddress> &);
 static ERR connect_timeout_handler(OBJECTPTR, int64_t, int64_t);
 
+static void clear_connect_timer(extNetSocket *Socket)
+{
+   if (Socket->TimerHandle) { UpdateTimer(Socket->TimerHandle, 0); Socket->TimerHandle = 0; }
+}
+
+#ifdef _WIN32
+static void complete_win_connect(extNetSocket *Socket)
+{
+   kt::Log log(__FUNCTION__);
+
+   if ((Socket->State != NTC::RESOLVING) and (Socket->State != NTC::CONNECTING)) {
+      log.trace("Ignoring duplicate connect completion while socket is in state %s.", netsocket_state(Socket->State));
+      return;
+   }
+
+   if (auto error = win_socket_connect_complete(Socket->Handle); error != ERR::Okay) log.warning(error);
+
+   Socket->Error = ERR::Okay;
+   clear_connect_timer(Socket);
+
+   #ifndef DISABLE_SSL
+      if (Socket->SSLHandle) sslConnect(Socket);
+      else Socket->setState(NTC::CONNECTED);
+   #else
+      Socket->setState(NTC::CONNECTED);
+   #endif
+}
+#endif
+
 static ERR NETSOCKET_Connect(extNetSocket *Self, struct ns::Connect *Args)
 {
    kt::Log log;
@@ -315,20 +344,24 @@ static void connect_name_resolved(extNetSocket *Socket, ERR Error, const std::st
          server_address6.sin6_port = htons(Socket->Port);
          kt::copymem((void *)addr->Data, &server_address6.sin6_addr.s6_addr, 16);
 
-         if ((Socket->Error = win_connect(Socket->Handle, (struct sockaddr *)&server_address6, sizeof(server_address6))) != ERR::Okay) {
-            if (Socket->Error IS ERR::BufferOverflow) {
+         auto connect_error = win_connect(Socket->Handle, (struct sockaddr *)&server_address6, sizeof(server_address6));
+         if (connect_error != ERR::Okay) {
+            if (connect_error IS ERR::Busy) {
                log.trace("IPv6 connection in progress...");
+               Socket->Error = ERR::Okay;
                Socket->setState(NTC::CONNECTING);
             }
             else {
+               Socket->Error = connect_error;
                log.warning("IPv6 connect() failed: %s", GetErrorMsg(Socket->Error));
+               clear_connect_timer(Socket);
                Socket->setState(NTC::DISCONNECTED);
                return;
             }
          }
          else {
             log.trace("IPv6 connect() successful.");
-            Socket->setState(NTC::CONNECTED);
+            complete_win_connect(Socket);
          }
          return;
       #else
@@ -421,13 +454,20 @@ static void connect_name_resolved(extNetSocket *Socket, ERR Error, const std::st
          server_address6.sin6_addr.s6_addr[11] = 0xff;
          *((uint32_t*)&server_address6.sin6_addr.s6_addr[12]) = htonl(addr->Data[0]);
 
-         Socket->Error = win_connect(Socket->Handle, (struct sockaddr *)&server_address6, sizeof(server_address6));
-         if (Socket->Error IS ERR::Okay) {
-            log.trace("IPv4-mapped IPv6 connection initiated successfully");
+         auto connect_error = win_connect(Socket->Handle, (struct sockaddr *)&server_address6, sizeof(server_address6));
+         if (connect_error IS ERR::Okay) {
+            log.trace("IPv4-mapped IPv6 connect() successful.");
+            complete_win_connect(Socket);
+         }
+         else if (connect_error IS ERR::Busy) {
+            log.trace("IPv4-mapped IPv6 connection in progress...");
+            Socket->Error = ERR::Okay;
             Socket->setState(NTC::CONNECTING);
          }
          else {
-            log.trace("IPv4-mapped IPv6 connect() failed: %s", GetErrorMsg(Socket->Error));
+            Socket->Error = connect_error;
+            log.warning("IPv4-mapped IPv6 connect() failed: %s", GetErrorMsg(Socket->Error));
+            clear_connect_timer(Socket);
             Socket->setState(NTC::DISCONNECTED);
          }
          return;
@@ -473,12 +513,23 @@ static void connect_name_resolved(extNetSocket *Socket, ERR Error, const std::st
    }
 
 #elif _WIN32
-   if ((Socket->Error = win_connect(Socket->Handle, (struct sockaddr *)&server_address, sizeof(server_address))) != ERR::Okay) {
+   auto connect_error = win_connect(Socket->Handle, (struct sockaddr *)&server_address, sizeof(server_address));
+   if (connect_error IS ERR::Okay) {
+      log.trace("connect() successful.");
+      complete_win_connect(Socket);
+   }
+   else if (connect_error IS ERR::Busy) {
+      log.trace("Connection in progress...");
+      Socket->Error = ERR::Okay;
+      Socket->setState(NTC::CONNECTING); // Connection isn't complete yet - see win32_netresponse() code for NTE_CONNECT
+   }
+   else {
+      Socket->Error = connect_error;
       log.warning("connect() failed: %s", GetErrorMsg(Socket->Error));
+      clear_connect_timer(Socket);
+      Socket->setState(NTC::DISCONNECTED);
       return;
    }
-
-   Socket->setState(NTC::CONNECTING); // Connection isn't complete yet - see win32_netresponse() code for NTE_CONNECT
 #endif
 }
 
@@ -1421,12 +1472,10 @@ static ERR NETSOCKET_Write(extNetSocket *Self, struct acWrite *Args)
    if ((error != ERR::Okay) or (len < size_t(Args->Length))) {
       bool ssl_read_blocked = false;
       bool ssl_write_blocked = false;
-      #ifndef DISABLE_SSL
-       #ifndef _WIN32
+      #if !defined(DISABLE_SSL) and !defined(_WIN32)
          ssl_read_blocked = (error IS ERR::Busy) and (Self->SSLHandle) and (Self->HandshakeStatus IS SHS::READ);
          ssl_write_blocked = (error IS ERR::BufferOverflow) and (Self->SSLHandle) and
             (Self->HandshakeStatus IS SHS::WRITE);
-       #endif
       #endif
 
       if ((error IS ERR::DataSize) or (error IS ERR::BufferOverflow) or (ssl_read_blocked) or (len > 0))  {
@@ -1434,10 +1483,8 @@ static ERR NETSOCKET_Write(extNetSocket *Self, struct acWrite *Args)
          log.trace("Error: '%s', queuing %d/%d bytes for transfer...", GetErrorMsg(error), Args->Length - len, Args->Length);
          Self->WriteQueue.write((int8_t *)Args->Buffer + len, std::min<size_t>(Args->Length - len, Self->MsgLimit));
          if (ssl_write_blocked) {
-            #ifndef DISABLE_SSL
-             #ifndef _WIN32
+            #if !defined(DISABLE_SSL) and !defined(_WIN32)
                ssl_resume_write_handshake(Self->Handle.hosthandle(), Self);
-             #endif
             #endif
          }
          else if (!ssl_read_blocked) {
@@ -1679,23 +1726,23 @@ static ERR NETSOCKET_SendTo(extNetSocket *Self, struct ns::SendTo *Args)
 //********************************************************************************************************************
 
 static const FieldArray clSocketFields[] = {
-   { "Clients",          FDF_OBJECT|FDF_R, nullptr, nullptr, CLASSID::NETCLIENT },
-   { "ClientData",       FDF_POINTER|FDF_RW },
-   { "Address",          FDF_STRING|FDF_RI, nullptr, SET_Address },
-   { "SSLCertificate",   FDF_STRING|FDF_RI, nullptr, SET_SSLCertificate },
-   { "SSLPrivateKey",    FDF_STRING|FDF_RI, nullptr, SET_SSLPrivateKey },
-   { "SSLKeyPassword",   FDF_STRING|FDF_RI, nullptr, SET_SSLKeyPassword },
-   { "State",            FDF_INT|FDF_LOOKUP|FDF_RW, GET_State, SET_State, &clNetSocketState },
-   { "Error",            FDF_ERROR|FDF_R },
-   { "Port",             FDF_INT|FDF_RI },
-   { "Flags",            FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clNetSocketFlags },
-   { "TotalClients",     FDF_INT|FDF_R },
-   { "Backlog",          FDF_INT|FDF_RI },
-   { "ClientLimit",      FDF_INT|FDF_RW },
-   { "SocketLimit",      FDF_INT|FDF_RW },
-   { "MsgLimit",         FDF_INT|FDF_RI },
-   { "MaxPacketSize",    FDF_INT|FDF_RI },
-   { "MulticastTTL",     FDF_INT|FDF_RI },
+   { "Clients",        FDF_OBJECT|FDF_R, nullptr, nullptr, CLASSID::NETCLIENT },
+   { "ClientData",     FDF_POINTER|FDF_RW },
+   { "Address",        FDF_STRING|FDF_RI, nullptr, SET_Address },
+   { "SSLCertificate", FDF_STRING|FDF_RI, nullptr, SET_SSLCertificate },
+   { "SSLPrivateKey",  FDF_STRING|FDF_RI, nullptr, SET_SSLPrivateKey },
+   { "SSLKeyPassword", FDF_STRING|FDF_RI, nullptr, SET_SSLKeyPassword },
+   { "State",          FDF_INT|FDF_LOOKUP|FDF_RW, GET_State, SET_State, &clNetSocketState },
+   { "Error",          FDF_ERROR|FDF_R },
+   { "Port",           FDF_INT|FDF_RI },
+   { "Flags",          FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clNetSocketFlags },
+   { "TotalClients",   FDF_INT|FDF_R },
+   { "Backlog",        FDF_INT|FDF_RI },
+   { "ClientLimit",    FDF_INT|FDF_RW },
+   { "SocketLimit",    FDF_INT|FDF_RW },
+   { "MsgLimit",       FDF_INT|FDF_RI },
+   { "MaxPacketSize",  FDF_INT|FDF_RI },
+   { "MulticastTTL",   FDF_INT|FDF_RI },
    // Virtual fields
    { "Handle",         FDF_POINTER|FDF_RI,     GET_Handle, SET_Handle },
    { "Feedback",       FDF_FUNCTIONPTR|FDF_RW, GET_Feedback, SET_Feedback },

@@ -207,7 +207,8 @@ end
 -----------------------------------------------------------------------------------------------------------------------
 
 @Test function NetworkTimeouts()
-   proc = processing.new({ timeout = 8.0 })
+   timeout_duration = 0.5
+   wait_limit = timeout_duration + 2.0
    timeout_handled = false
    glPort++
 
@@ -221,33 +222,38 @@ end
          if State is NTC_DISCONNECTED then
             print('[Client] Disconnection detected')
             timeout_handled = true
-            proc.signal()
          end
       end
    })
 
-   -- Try to connect to a routable but non-responsive address
-   -- Using a reserved test address that should timeout
+   -- Try to connect to an RFC 5737 documentation address that should not respond.
    print('[Client] Attempting connection to timeout address...')
    start = mSys.PreciseTime()
-   err = client.mtConnect('10.255.255.1', 80) -- Reserved test IP
+   err = client.mtConnect('192.0.2.1', 12345, timeout_duration)
 
    if err != ERR_Okay then
       print('[Client] Connection immediately failed: ' .. mSys.GetErrorMsg(err))
       timeout_handled = true
    else
       print('[Client] Connection attempt started, waiting for timeout...')
-      -- Wait for timeout or disconnect
-      err = proc.sleep(1.0) -- Allow time for timeout
-      if err is ERR_TimeOut then
-         print('[Client] Test timeout reached - checking connection state')
-         timeout_handled = true
+
+      while not timeout_handled do
+         elapsed = (mSys.PreciseTime() - start) / 1000000
+         if elapsed > wait_limit then break end
+
+         processing.sleep(0.05, false)
+         if client.state is NTC_DISCONNECTED then
+            timeout_handled = true
+         end
       end
    end
 
    elapsed = (mSys.PreciseTime() - start) / 1000000
 
    assert(timeout_handled, f'Timeout handling test did not complete as expected, elapsed time: {elapsed}s')
+   if client.error is ERR_TimeOut then
+      assert(elapsed >= timeout_duration, f'Timeout occurred too early: {elapsed}s < {timeout_duration}s')
+   end
    print('Network timeout test completed successfully!')
 end
 

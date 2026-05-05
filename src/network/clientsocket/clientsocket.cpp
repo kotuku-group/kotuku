@@ -368,6 +368,14 @@ static void clientsocket_outgoing_impl(HOSTHANDLE SocketFD, extClientSocket *Cli
       }
    }
 
+   if ((error IS ERR::Okay) and (ClientSocket->CloseAfterWrite) and (ClientSocket->WriteQueue.Buffer.empty())) {
+      ClientSocket->CloseAfterWrite = false;
+      disconnect(ClientSocket);
+      ClientSocket->InUse--;
+      ClientSocket->OutgoingRecursion--;
+      return;
+   }
+
    // Before feeding new data into the queue, the current buffer must be empty.
 
    if ((error IS ERR::Okay) and ((ClientSocket->WriteQueue.Buffer.empty()) or
@@ -423,6 +431,18 @@ static ERR CLIENTSOCKET_Deactivate(extClientSocket *Self)
 {
    kt::Log log;
    log.branch();
+
+   if ((Self->State IS NTC::CONNECTED) and (!Self->WriteQueue.Buffer.empty())) {
+      log.msg("Delaying disconnect until queued data is flushed.");
+      Self->CloseAfterWrite = true;
+      #ifdef __linux__
+         RegisterFD(Self->Handle.hosthandle(), RFD::WRITE|RFD::SOCKET, &clientsocket_outgoing, Self);
+      #elif _WIN32
+         win_socketstate(Self->Handle, std::nullopt, true);
+      #endif
+      return ERR::Okay;
+   }
+
    disconnect(Self);
    return ERR::Okay;
 }
@@ -654,12 +674,10 @@ static ERR CLIENTSOCKET_Write(extClientSocket *Self, struct acWrite *Args)
    if ((error != ERR::Okay) or (len < size_t(Args->Length))) {
       bool ssl_read_blocked = false;
       bool ssl_write_blocked = false;
-      #ifndef DISABLE_SSL
-       #ifndef _WIN32
+      #if !defined(DISABLE_SSL) and !defined(_WIN32)
          ssl_read_blocked = (error IS ERR::Busy) and (Self->SSLHandle) and (Self->HandshakeStatus IS SHS::READ);
          ssl_write_blocked = (error IS ERR::BufferOverflow) and (Self->SSLHandle) and
             (Self->HandshakeStatus IS SHS::WRITE);
-       #endif
       #endif
 
       if ((error IS ERR::DataSize) or (error IS ERR::BufferOverflow) or (ssl_read_blocked) or (len > 0))  {
@@ -667,10 +685,8 @@ static ERR CLIENTSOCKET_Write(extClientSocket *Self, struct acWrite *Args)
          log.trace("Error: '%s', queuing %d/%d bytes for transfer...", GetErrorMsg(error), Args->Length - len, Args->Length);
          Self->WriteQueue.write((int8_t *)Args->Buffer + len, std::min<size_t>(Args->Length - len, server->MsgLimit));
          if (ssl_write_blocked) {
-            #ifndef DISABLE_SSL
-             #ifndef _WIN32
+            #if !defined(DISABLE_SSL) and !defined(_WIN32)
                ssl_resume_write_handshake(Self->Handle.hosthandle(), Self);
-             #endif
             #endif
          }
          else if (!ssl_read_blocked) {

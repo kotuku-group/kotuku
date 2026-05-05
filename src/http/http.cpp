@@ -40,7 +40,7 @@ http = obj.new('http', {
    src        = 'http://www.kotuku.dev/index.html',
    method     = 'get',
    outputFile = 'temp:index.html',
-   stateChanged = function(HTTP, State)
+   stateChanged = function(HTTP:obj, State:num)
       if (State is HGS::COMPLETED) then print(content) end
    end
 })

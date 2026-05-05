@@ -173,6 +173,8 @@ void win32_netresponse(OBJECTPTR SocketObject, SOCKET_HANDLE Handle, int Message
       server_accept_client(Socket->Handle, Socket);
    }
    else if (Message IS NTE_CONNECT) {
+      if (auto error = win_socket_connect_complete(Handle); error != ERR::Okay) log.warning(error);
+
       if (Error IS ERR::Okay) {
          if (ClientSocket) { // Server mode - connect message shouldn't be received for ClientSocket
             log.warning("Unexpected connect message for ClientSocket, ignoring.");
@@ -181,15 +183,7 @@ void win32_netresponse(OBJECTPTR SocketObject, SOCKET_HANDLE Handle, int Message
          }
          else {
             log.traceBranch("Connection to host granted.");
-
-            if (Socket->TimerHandle) { UpdateTimer(Socket->TimerHandle, 0); Socket->TimerHandle = 0; }
-
-            #ifndef DISABLE_SSL
-               if (Socket->SSLHandle) sslConnect(Socket);
-               else Socket->setState(NTC::CONNECTED);
-            #else
-               Socket->setState(NTC::CONNECTED);
-            #endif
+            complete_win_connect(Socket);
          }
       }
       else {

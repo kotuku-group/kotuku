@@ -277,6 +277,7 @@ class extClientSocket : public objClientSocket {
    uint8_t OutgoingRecursion;  // Recursion manager
    uint8_t InUse;       // Recursion manager
    bool ReadCalled;     // True if the Read action has been called
+   bool CloseAfterWrite = false; // True if Deactivate() is waiting for queued data to flush
    uint8_t ErrorCountdown = 8;  // Counts down on each error, disconnect occurs at zero.
 
    #ifndef DISABLE_SSL

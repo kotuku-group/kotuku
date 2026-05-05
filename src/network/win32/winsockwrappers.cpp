@@ -165,7 +165,7 @@ void win_net_processing(int Status, void *Args)
       if (glSocketsDisabled == 1) {
          const lock_guard<recursive_mutex> lock(csNetLookup);
          for (auto it=glNetLookup.begin(); it != glNetLookup.end(); it++) {
-            WSAAsyncSelect(it->first, glNetWindow, 0, 0); // Turn off network messages
+            WSAAsyncSelect(it->first, glNetWindow, WM_NETWORK, it->second.Flags & ~(FD_READ|FD_WRITE));
          }
       }
    }
@@ -208,6 +208,26 @@ ERR win_socketstate(WSW_SOCKET Socket, std::optional<bool> Read, std::optional<b
 }
 
 //********************************************************************************************************************
+// FD_CONNECT is only needed while an outbound non-blocking connect is pending.  Leaving it in the persistent event mask
+// causes WSAAsyncSelect() to repost connect messages for sockets that have already connected.
+
+ERR win_socket_connect_complete(WSW_SOCKET Socket)
+{
+   const lock_guard<recursive_mutex> lock(csNetLookup);
+   auto socket = glNetLookup.find(Socket);
+   if (socket IS glNetLookup.end()) return ERR::Search;
+
+   socket->second.Flags &= ~FD_CONNECT;
+
+   if (!glSocketsDisabled) {
+      auto winerror = WSAAsyncSelect(Socket, glNetWindow, WM_NETWORK, socket->second.Flags);
+      if (winerror) return convert_error(winerror);
+   }
+
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
 // Initially when accepting a connection from a client, the ClientSocket object won't exist yet.  This is rectified later
 // with a call to win_socket_reference()
 
@@ -223,7 +243,7 @@ WSW_SOCKET win_accept(void *NetSocket, WSW_SOCKET SocketHandle, struct sockaddr 
    u_long non_blocking = 1;
    ioctlsocket(client_handle, FIONBIO, &non_blocking);
 
-   int flags = FD_CLOSE|FD_ACCEPT|FD_CONNECT|FD_READ;
+   int flags = FD_CLOSE|FD_READ;
    if (!glSocketsDisabled) WSAAsyncSelect(client_handle, glNetWindow, WM_NETWORK, flags);
 
    const lock_guard<recursive_mutex> lock(csNetLookup);
@@ -315,7 +335,7 @@ void win_closesocket(WSW_SOCKET SocketHandle)
 ERR win_connect(WSW_SOCKET SocketHandle, const struct sockaddr *Name, int NameLen)
 {
    if (connect(SocketHandle, Name, NameLen) IS SOCKET_ERROR) {
-      if (WSAGetLastError() IS WSAEWOULDBLOCK) return ERR::Okay; // connect() will always 'fail' for non-blocking sockets (however it will continue to connect/succeed...!)
+      if (WSAGetLastError() IS WSAEWOULDBLOCK) return ERR::Busy; // Non-blocking connect is still pending.
       return convert_error();
    }
    else return ERR::Okay;

@@ -49,6 +49,11 @@ static void socket_feedback(objNetSocket *Socket, NTC State, APTR Meta)
          return;
       }
       else if (Self->CurrentState IS HGS::READING_HEADER) {
+         auto incoming_error = socket_incoming(Socket);
+         if ((incoming_error IS ERR::Okay) or (incoming_error IS ERR::Terminate)) {
+            if (Self->CurrentState >= HGS::COMPLETED) return;
+         }
+
          Self->Error = Socket->Error > ERR::ExceptionThreshold ? Socket->Error : ERR::Disconnected;
          log.trace("Received broken header as follows:\n%s", Self->Response.c_str());
          Self->setCurrentState(HGS::TERMINATED);
