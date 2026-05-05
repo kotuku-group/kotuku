@@ -198,6 +198,8 @@ static void complete_win_connect(extNetSocket *Socket)
       return;
    }
 
+   if (auto error = win_socket_connect_complete(Socket->Handle); error != ERR::Okay) log.warning(error);
+
    Socket->Error = ERR::Okay;
    clear_connect_timer(Socket);
 

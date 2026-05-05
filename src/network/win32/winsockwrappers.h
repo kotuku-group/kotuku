@@ -73,6 +73,7 @@ uint32_t win_inet_addr(const char *);
 char * win_inet_ntoa(uint32_t);
 ERR win_listen(WSW_SOCKET, int);
 ERR win_socketstate(WSW_SOCKET, std::optional<bool>, std::optional<bool>);
+ERR win_socket_connect_complete(WSW_SOCKET);
 ERR WIN_SEND(WSW_SOCKET, const void *, size_t *, int);
 ERR WIN_SENDTO(WSW_SOCKET, const void *, size_t *, const sockaddr *, int);
 ERR WIN_RECVFROM(WSW_SOCKET, void *, size_t, size_t *, sockaddr *, int *);
