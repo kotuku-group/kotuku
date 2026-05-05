@@ -717,10 +717,10 @@ Compact form is selected when the first non-empty documentation line starts with
 |Defines summary and body text.
 
 |`@input`
-|Parses `Name: Description` and matches the entry to a parameter by name.
+|Each input declaration is parsed sequentially, with the provided description being matched to the corresponding parameter index.
 
 |`@result`
-|Parses `Type: Description` and matches the entry to results by position.
+|Each result declaration is parsed sequentially, with the provided description being matched to the corresponding result index.
 
 |`@error`
 |Parses `Code: Description` and emits an error entry.
@@ -729,14 +729,14 @@ Compact form is selected when the first non-empty documentation line starts with
 [source,tiri]
 ----
 @Doc(text=[[
-   @desc Returns a greeting.
-   @input Name: Person to greet
-   @result str: Greeting text
-   @error Args: If the name is invalid
+@desc Returns a greeting.
+@input Person to greet
+@result Greeting text
+@error Args: If the name is invalid
 ]])
 function greetCompact(Name: str):str
    return 'Hello ' .. Name
 end
 ----
 
-Input lines whose names do not match a signature parameter are not emitted.  Result entries use the larger of the declared result count and the documented result count.  Declared result types take precedence over documented result types.  Documented result entries beyond the declared result count have `inferred=true`.
+Type annotations in the function signature are essential when using compact `@input` and `@result` annotations.  If the parser is unable to determine the type of an input parameter or result value, a default of `any` will be applied.

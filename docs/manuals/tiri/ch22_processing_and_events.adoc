@@ -17,15 +17,11 @@ A Tiri script that creates a GUI or performs asynchronous I/O must enter the pro
 
 ==== processing.sleep()
 
-[.api]`err = processing.sleep([Seconds], [WakeOnSignal], [ResetState])`
+[.api]`err = processing.sleep([Seconds])`
 
 Enters the processing loop.  While sleeping, the runtime dispatches queued messages, fires timer callbacks, and processes platform events (window repaints, input, network I/O).  Returns an `ERR` code indicating the reason for waking.
 
 `Seconds` specifies the maximum time to sleep in seconds.  If omitted or negative, the call blocks indefinitely until a quit message is received or all monitored signals fire.  A value of `0` processes all outstanding messages and returns immediately.
-
-`WakeOnSignal` controls whether a signal (see <<sec-signals>>) can break the sleep early.  Defaults to `true` but is ignored if `Seconds` is `0`.
-
-`ResetState` controls whether the script's internal signal flag is cleared on entry.  Defaults to `true`.  Set to `false` to preserve a signal that was raised before the call.
 
 [source,tiri]
 ----
@@ -37,9 +33,6 @@ processing.sleep(0)
 
 -- Sleep for up to 5 seconds, wake early on signal
 processing.sleep(5.0)
-
--- Sleep for 2 seconds, ignore signals
-processing.sleep(2.0, false)
 ----
 
 The garbage collector runs a full collection cycle on entry to `processing.sleep()` before the runtime begins waiting for events.  Exceptions apply if `Seconds` is `0` or the garbage collector is disabled by the script.
@@ -86,6 +79,27 @@ win = gui.window({
 
 win:show()
 processing.sleep()
+----
+
+==== processing.halt()
+
+[.api]`processing.halt(Seconds)`
+
+Blocks the calling process for `Seconds` seconds while dispatching messages in the background.  Unlike `processing.sleep()`, the call cannot be woken early by a signal — it always runs for the full duration.
+
+`Seconds` must be a non-negative number.  A value of `0` processes all outstanding messages and returns immediately.
+
+The garbage collector runs a full collection cycle before sleeping, unless `Seconds` is `0` or the garbage collector has been disabled.
+
+Raises an exception if `Seconds` is not a number, or if it is negative.
+
+[source,tiri]
+----
+-- Block for exactly 3 seconds
+processing.halt(3.0)
+
+-- Process outstanding messages without blocking
+processing.halt(0)
 ----
 
 [[sec-processing-callbacks]]
@@ -186,8 +200,8 @@ The processing object exposes the following methods:
 |===
 |Method |Description
 
-|`proc.sleep([Seconds], [WakeOnSignal], [ResetState])`
-|Enters the processing loop with the configured signal list.  Parameters override the defaults set in `processing.new()`.
+|`proc.sleep([Seconds])`
+|Enters the processing loop with the configured signal list.  `Seconds` overrides the timeout set in `processing.new()`.
 
 |`proc.signal()`
 |Raises the signal on the script object.  This has no effect if the processing object was created with a custom `signals` list, because the script object is not in the monitored set.
@@ -461,18 +475,18 @@ Use `processing.delayedCall()` (<<sec-processing-callbacks>>) to schedule a func
 [discrete]
 ==== Timeout-Based Coordination
 
-For simple periodic work that does not require a dedicated callback, use a loop around `processing.sleep()` with a timeout:
+For simple periodic work that does not require a dedicated callback, use a loop around `processing.halt()`:
 
 [source,tiri]
 ----
 while true do
-   processing.sleep(1.0, false)
+   processing.halt(1.0)
    -- Perform periodic work every second
    print('Tick.')
 end
 ----
 
-Setting `WakeOnSignal` to `false` ensures the loop is driven purely by the timeout and ignores all signals.
+Using `processing.halt()` ensures the loop runs for the full timeout on every iteration and cannot be interrupted by signals.
 
 Combine `processing.new()` with a timeout to implement deadline-based waiting:
 
