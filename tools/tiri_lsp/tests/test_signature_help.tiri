@@ -5,7 +5,7 @@ global glSignatureHelpTestUri = nil
    assert(err is ERR_Okay, 'Failed to resolve SDK path for LSP signature help tests.')
    mSys.SetVolume('sdk', sdk_path)
 
-   loadFile('sdk:tools/tiri_lsp/lsp_lib.tiri')
+   loadFile('sdk:tools/tiri_lsp/include/lsp_lib.tiri')
    assert(lspInitDocs('sdk:docs/xml/'), 'Failed to initialise LSP documentation cache.')
    glSignatureHelpTestUri = lspPathToUri('sdk:tools/tiri_lsp/tests/test_signature_help.tiri')
    assert(glSignatureHelpTestUri, 'Failed to create test document URI.')

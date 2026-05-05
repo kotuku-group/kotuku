@@ -57,6 +57,7 @@ end
 -----------------------------------------------------------------------------------------------------------------------
 
 @Test function ClientServer()
+   glPort++
    server_buffer = string.alloc(1024)
 
    sockServer = obj.new('netsocket', {

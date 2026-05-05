@@ -5,7 +5,7 @@ global glHoverTestUri = nil
    assert(err is ERR_Okay, 'Failed to resolve SDK path for LSP hover tests.')
    mSys.SetVolume('sdk', sdk_path)
 
-   loadFile('sdk:tools/tiri_lsp/lsp_lib.tiri')
+   loadFile('sdk:tools/tiri_lsp/include/lsp_lib.tiri')
    assert(lspInitDocs('sdk:docs/xml/'), 'Failed to initialise LSP documentation cache.')
    glHoverTestUri = lspPathToUri('sdk:tools/tiri_lsp/tests/test_hover.tiri')
    assert(glHoverTestUri, 'Failed to create test document URI.')

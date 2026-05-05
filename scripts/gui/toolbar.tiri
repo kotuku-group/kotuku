@@ -4,7 +4,6 @@ Documentation is available in the Kotuku Wiki.
 
    import 'gui'
    import 'gui/tooltip'
-   import 'translate'
    include 'vector'
 
    namespace 'gui'
@@ -60,7 +59,7 @@ gui.toolbar = function(Options)
 
       item = { type=Type, id=ID, name=Name, x=0, y=0, width=0, height=0 }
       if Name?? then
-         item.displayName = string.translate(Name)
+         item.displayName = Name
       end
 
       if self._last then self._last.next = item end
@@ -343,7 +342,7 @@ gui.toolbar = function(Options)
       item.callback = Function
 
       if Tip then
-         item.tip = string.translate(Tip)
+         item.tip = Tip
       end
 
       if Icon then

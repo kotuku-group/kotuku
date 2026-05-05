@@ -51,6 +51,12 @@ else ()
    message(STATUS "npm was not found; Tiri VS Code plugin build targets will be unavailable.")
 endif ()
 
+if (KOTUKU_INSTALL)
+   install (FILES "${TIRI_LSP_VSCODE_VSIX}"
+      DESTINATION "${SHARE_TARGET}/tools/tiri_lsp"
+      OPTIONAL)
+endif ()
+
 flute_test(tiri_lsp_definition "${TIRI_LSP_DIR}/tests/test_definition.tiri")
 flute_test(tiri_lsp_document_symbols "${TIRI_LSP_DIR}/tests/test_document_symbols.tiri")
 flute_test(tiri_lsp_hover "${TIRI_LSP_DIR}/tests/test_hover.tiri")
