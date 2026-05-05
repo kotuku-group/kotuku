@@ -121,11 +121,13 @@ endif ()
 if (RUN_ANYWHERE)
    set (KOTUKU_ROOT "${CMAKE_INSTALL_PREFIX}")
    set (SHARE_TARGET .)
+   set (CONFIG_TARGET "config")
    set (LIB_TARGET "lib")
    set (ORIGO_CMD_PATH "${CMAKE_INSTALL_PREFIX}")
 else ()
    set (KOTUKU_ROOT "${CMAKE_INSTALL_PREFIX}/share/kotuku")
    set (SHARE_TARGET "share/kotuku")
+   set (CONFIG_TARGET "${SHARE_TARGET}/config")
    set (LIB_TARGET "lib/kotuku")
    set (ORIGO_CMD_PATH "${CMAKE_INSTALL_PREFIX}/bin")
 endif ()
@@ -820,32 +822,35 @@ if (KOTUKU_INSTALL)
       install (FILES "${CMAKE_BINARY_DIR}/kotuku/config.h" DESTINATION "include/kotuku/")
    endif ()
 
-   if (WIN32)
-      if (NOT DISABLE_SSL)
-         install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/ssl/" DESTINATION "config/ssl")
-      endif ()
-      if (NOT DISABLE_FONT)
-         install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/fonts/" DESTINATION "config/fonts")
-      endif ()
-      install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/styles/" DESTINATION "config/styles")
-      install (FILES "${CMAKE_BINARY_DIR}/icons/Default.zip" DESTINATION "config/styles/icons")
-      install (DIRECTORY "${PROJECT_SOURCE_DIR}/scripts/" DESTINATION "scripts")
-      if (INSTALL_EXAMPLES)
-         install (DIRECTORY "${PROJECT_SOURCE_DIR}/examples/" DESTINATION "examples")
-      endif ()
-   else ()
-      if (NOT DISABLE_SSL)
-         install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/ssl" DESTINATION "${SHARE_TARGET}/config")
-      endif ()
-      if (NOT DISABLE_FONT)
-         install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/fonts" DESTINATION "${SHARE_TARGET}/config")
-      endif ()
-      install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/styles" DESTINATION "${SHARE_TARGET}/config")
-      install (FILES "${CMAKE_BINARY_DIR}/icons/Default.zip" DESTINATION "${SHARE_TARGET}/config/styles/icons")
-      install (DIRECTORY "${PROJECT_SOURCE_DIR}/scripts" DESTINATION "${SHARE_TARGET}")
-      if (INSTALL_EXAMPLES)
-         install (DIRECTORY "${PROJECT_SOURCE_DIR}/examples" DESTINATION "${SHARE_TARGET}")
-      endif ()
+   if (NOT DISABLE_SSL)
+      install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/ssl/" DESTINATION "${CONFIG_TARGET}/ssl")
+   endif ()
+   if (NOT DISABLE_FONT)
+      install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/fonts/" DESTINATION "${CONFIG_TARGET}/fonts")
+   endif ()
+
+   install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/styles/" DESTINATION "${CONFIG_TARGET}/styles")
+   install (FILES "${CMAKE_BINARY_DIR}/icons/Default.zip" DESTINATION "${CONFIG_TARGET}/styles/icons")
+
+   install (DIRECTORY "${PROJECT_SOURCE_DIR}/apps/data" DESTINATION "${SHARE_TARGET}/apps")
+   install (FILES
+      "${PROJECT_SOURCE_DIR}/apps/find.tiri"
+      "${PROJECT_SOURCE_DIR}/apps/httpserver.tiri"
+      "${PROJECT_SOURCE_DIR}/apps/httpserver_cfg.tiri"
+      "${PROJECT_SOURCE_DIR}/apps/paintbox.tiri"
+      "${PROJECT_SOURCE_DIR}/apps/vuepoint.tiri"
+      DESTINATION "${SHARE_TARGET}/apps")
+
+   install (DIRECTORY "${PROJECT_SOURCE_DIR}/tools/tiri_lsp/include" DESTINATION "${SHARE_TARGET}/tools/tiri_lsp")
+   install (FILES
+      "${PROJECT_SOURCE_DIR}/tools/tiri_lsp/server.tiri"
+      "${PROJECT_SOURCE_DIR}/tools/tiri_lsp/README.md"
+      DESTINATION "${SHARE_TARGET}/tools/tiri_lsp")
+
+   install (DIRECTORY "${PROJECT_SOURCE_DIR}/scripts/" DESTINATION "${SHARE_TARGET}/scripts")
+
+   if (INSTALL_EXAMPLES)
+      install (DIRECTORY "${PROJECT_SOURCE_DIR}/examples/" DESTINATION "${SHARE_TARGET}/examples")
    endif ()
 
    if (NOT KOTUKU_STATIC)

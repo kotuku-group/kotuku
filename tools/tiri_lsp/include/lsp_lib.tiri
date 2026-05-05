@@ -465,9 +465,11 @@ global function lspInitDocs(DocPath)
 
    -- Load static definitions (builtins, keywords)
    defsPath = nil
+
    try
-      defsPath = glSelf.workingPath .. 'lsp_defs.tiri'
+      defsPath = glSelf.workingPath .. 'include/lsp_defs.tiri'
    end
+
    if not defsPath or mSys.AnalysePath(defsPath) != ERR_Okay then
       try
          defsPath = glSelf.workingPath .. '../lsp_defs.tiri'
@@ -475,9 +477,11 @@ global function lspInitDocs(DocPath)
          defsPath = nil
       end
    end
+
    if not defsPath or mSys.AnalysePath(defsPath) != ERR_Okay then
-      defsPath = 'sdk:tools/tiri_lsp/lsp_defs.tiri'
+      defsPath = 'sdk:tools/tiri_lsp/include/lsp_defs.tiri'
    end
+
    local result
    try
       result = loadFile(defsPath)

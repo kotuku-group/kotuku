@@ -4,7 +4,6 @@ Documentation is available in the Kotuku Wiki.
 
    import 'gui'
    import 'gui/menu'
-   import 'translate'
    include 'vector'
 
    namespace 'gui'
@@ -67,7 +66,7 @@ function newItem(self, Name, ID) -- Append an item to the menu bar
 
    item = { id=ID, name=Name }
    if Name?? then
-      item.displayName = string.translate(Name)
+      item.displayName = Name
    end
 
    if self._last then self._last.next = item end

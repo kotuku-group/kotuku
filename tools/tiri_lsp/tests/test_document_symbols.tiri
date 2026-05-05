@@ -5,7 +5,7 @@ global glDocumentSymbolsTestUri = nil
    assert(err is ERR_Okay, 'Failed to resolve SDK path for LSP document symbol tests.')
    mSys.SetVolume('sdk', sdk_path)
 
-   loadFile('sdk:tools/tiri_lsp/lsp_lib.tiri')
+   loadFile('sdk:tools/tiri_lsp/include/lsp_lib.tiri')
    glDocumentSymbolsTestUri = lspPathToUri('sdk:tools/tiri_lsp/tests/test_document_symbols.tiri')
    assert(glDocumentSymbolsTestUri, 'Failed to create test document URI.')
 end

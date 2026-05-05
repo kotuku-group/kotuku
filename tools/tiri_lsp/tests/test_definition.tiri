@@ -5,7 +5,7 @@ global glDefinitionTestUri = nil
    assert(err is ERR_Okay, 'Failed to resolve SDK path for LSP definition tests.')
    mSys.SetVolume('sdk', sdk_path)
 
-   loadFile('sdk:tools/tiri_lsp/lsp_lib.tiri')
+   loadFile('sdk:tools/tiri_lsp/include/lsp_lib.tiri')
    assert(lspInitDocs('sdk:docs/xml/'), 'Failed to initialise LSP documentation cache.')
    glDefinitionTestUri = lspPathToUri('sdk:tools/tiri_lsp/tests/test_definition.tiri')
    assert(glDefinitionTestUri, 'Failed to create test document URI.')

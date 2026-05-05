@@ -56,14 +56,14 @@ IDE Integration:
   The server supports the standard LSP lifecycle: initialize, initialized, shutdown, exit.
 ]]
 
-   import './lsp_lib'
+   import './include/lsp_lib'
 
-   rx_sdk_path = <{ regex.new([[(.+)CMakeLists\.txt]]) }>
+rx_sdk_path <const> = <{ regex.new([[(.+)CMakeLists\.txt]]) }>
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Resolve the location of the Kotuku SDK and create an 'sdk:' volume.
 
-function resolveSDKPath(Path)
+function resolveSDKPath(Path:str)
    local sdk_path
    err = ERR_Failed
    search_list = array<string>
