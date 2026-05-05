@@ -106,7 +106,7 @@ SERVER_PORT <const> = 18940
       }
    })
 
-   processing.sleep(0.1)
+   processing.halt(0.1)
 end
 
 @AfterAll function cleanup()

@@ -3,7 +3,7 @@ UDP Performance and Stress Test
 --]]
 
    include 'network'
-   if not mNet then mNet = mod.load('network') end
+   mNet ?= mod.load('network')
 
    glBasePort = 19830  -- Base port for performance tests
    glTestTimeout = 5.0
@@ -14,7 +14,6 @@ UDP Performance and Stress Test
 @Test(requires='network') function UDPHighFrequency()
    glBasePort++
    serverPort = glBasePort
-   proc = processing.new({ timeout = glTestTimeout })
    messagesReceived = 0
    targetMessages = 100
    sv_source = struct.new('IPAddress')
@@ -31,7 +30,7 @@ UDP Performance and Stress Test
          if (err is ERR_Okay) and (bytesRead > 0) then
             messagesReceived = messagesReceived + 1
             if messagesReceived >= targetMessages then
-               proc.signal()
+               Socket.acSignal()
             elseif messagesReceived % 20 is 0 then
                print('[High-Freq Server] Received ' .. messagesReceived .. ' messages so far')
             end
@@ -39,6 +38,7 @@ UDP Performance and Stress Test
       end
    })
 
+   proc = processing.new({ timeout = glTestTimeout, signals = array<object> { server } })
    client = obj.new('netsocket', { flags = 'UDP' })
 
    dest = struct.new('IPAddress')
@@ -54,14 +54,14 @@ UDP Performance and Stress Test
 
       -- Small delay to prevent overwhelming the system
       if (i % 10 is 0) then
-         proc.sleep(0.001)  -- 1ms pause every 10 messages
+         processing.halt(0.001)  -- 1ms pause every 10 messages
       end
    end
 
    sendTime = mSys.PreciseTime() - startTime
    print('Sent ' .. targetMessages .. ' messages in ' .. sendTime .. ' seconds')
 
-   proc.sleep()
+   check proc.sleep()
 
    print('Received ' .. messagesReceived .. ' out of ' .. targetMessages .. ' messages')
    -- Allow some packet loss in high-frequency testing
@@ -77,7 +77,6 @@ end
 @Test(requires='network') function UDPLargePackets()
    glBasePort++
    serverPort = glBasePort
-   proc = processing.new({ timeout = glTestTimeout })
    largePacketReceived = false
    receivedSize = 0
    sv_source = struct.new('IPAddress')
@@ -94,11 +93,12 @@ end
             print('[Large Packet Server] Received packet of size: ' .. bytesRead)
             receivedSize = bytesRead
             largePacketReceived = true
-            proc.signal()
+            Socket.acSignal()
          end
       end
    })
 
+   proc = processing.new({ timeout = glTestTimeout, signals = array<object> { server } })
    client = obj.new('netsocket', { flags = 'UDP' })
 
    -- Test different large packet sizes
@@ -124,10 +124,10 @@ end
          end
       end
 
-      processing.sleep(0.1)  -- Brief pause between packets
+      processing.halt(0.1)  -- Brief pause between packets
    end
 
-   proc.sleep()
+   check proc.sleep()
 
    assert(largePacketReceived, 'No large packets were received')
    print('Large packet test completed (largest received: ' .. receivedSize .. ' bytes)')
@@ -139,7 +139,6 @@ end
 @Test(requires='network') function UDPConcurrency()
    glBasePort++
    serverPort = glBasePort
-   proc = processing.new({ timeout = glTestTimeout })
    clientsConnected = 0
    targetClients = 5
    messagesPerClient = 10
@@ -164,11 +163,13 @@ end
             end
 
             if totalReceived >= targetClients * messagesPerClient then
-               proc.signal()
+               Socket.acSignal()
             end
          end
       end
    })
+
+   proc = processing.new({ timeout = glTestTimeout, signals = array<object> { server } })
 
    -- Create multiple client sockets
    clients = {}
@@ -192,7 +193,7 @@ end
       print('Client ' .. clientId .. ' sent all ' .. messagesPerClient .. ' messages')
    end
 
-   proc.sleep()
+   check proc.sleep()
 
    print('Received ' .. totalReceived .. ' out of ' .. (targetClients * messagesPerClient) .. ' messages')
    successRate = (totalReceived / (targetClients * messagesPerClient)) * 100
@@ -286,12 +287,12 @@ end
 
       -- Brief processing break every 100 messages
       if messagesSent % 100 is 0 then
-         proc.sleep(0.1)
+         processing.halt(0.1)
       end
    end
 
    benchmarkActive = false
-   proc.sleep(0.5)  -- Allow final messages to be received
+   processing.halt(0.5)  -- Allow final messages to be received
 
    actualDuration = mSys.PreciseTime() - startTime
    sendRate       = messagesSent / actualDuration

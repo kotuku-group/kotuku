@@ -60,7 +60,7 @@ end
    assert(time_taken > duration-0.05, 'End-of-sample occurred earlier than duration of ' .. duration .. ': ' .. time_taken)
    assert(time_taken < duration+glLag+0.1, 'End-of-sample exceeded duration of ' .. duration .. ': ' .. time_taken)
 
-   proc.sleep(0.25)
+   processing.halt(0.25)
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -79,5 +79,5 @@ end
 
    snd.acActivate()
    proc.sleep()
-   proc.sleep(0.25)
+   processing.halt(0.25)
 end

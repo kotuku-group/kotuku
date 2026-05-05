@@ -53,7 +53,7 @@ gui.dialog.message = function(Options)
 
    self.wait = function()
       self.waiting = true
-      processing.sleep(-1, true)
+      processing.sleep(-1)
       self.waiting = nil
    end
 

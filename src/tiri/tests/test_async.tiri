@@ -511,7 +511,7 @@ end
    end
 
    -- Give the first action a moment to start executing.
-   processing.sleep(0.1)
+   processing.halt(0.1)
 
    -- Cancel remaining queued actions.
    check async.cancel(script)
@@ -540,7 +540,7 @@ end
    print('Started script_b at ', elapsed(), ' seconds')
 
    -- Allow threads to register before cancelling.
-   processing.sleep(0.25)
+   processing.halt(0.25)
 
    print('Cancelling both scripts at ', elapsed(), ' seconds')
    check async.cancel(array<object> { script_a, script_b })

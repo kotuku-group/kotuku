@@ -638,7 +638,7 @@ ERR WaitForObjects(PMF Flags, int TimeOut, ObjectSignal *ObjectSignals)
    log.branch("Flags: $%.8x, Timeout: %d, Signals: %p", int(Flags), TimeOut, ObjectSignals);
 
    // Set the current task as the context to ensure predictable behaviour.  Note: Don't use SwitchContext here as
-   // it retains a lock on the task when we definitely don't actually want to.
+   // it retains a lock on the task and we don't want that.
 
    SetObjectContext(glCurrentTask, nullptr, AC::NIL);
 

@@ -18,7 +18,6 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test(requires='network') function RawHTTP()
-   proc = processing.new({ timeout = 5.0 })
    netsocket = obj.new('netsocket', {
       feedback = function(Socket, State)
          state = printableState(State)
@@ -29,7 +28,7 @@ end
             Socket.acWrite('GET /index.html HTTP/1.1\r\nHost: kotuku.dev\r\nConnection: close\r\nUser-Agent: Kotuku Client\r\n\r\n')
          elseif state is 'DISCONNECTED' then
             print('Disconnected from server.')
-            proc.signal()
+            Socket.acSignal()
          else
             print('Unknown netsocket state: ' .. state)
          end
@@ -41,15 +40,14 @@ end
          if err is ERR_Okay then
             print(buffer:sub(0,80))
          elseif err is ERR_Disconnected then
-            proc.signal()
+            Socket.acSignal()
          else
             error('Read() failed on NetSocket.')
          end
       end
    } )
 
-   netsocket.mtConnect('kotuku.dev', 80)
-
-   err = proc.sleep()
-   assert(err is ERR_Okay, 'Failed to complete the test: ' .. mSys.GetErrorMsg(err))
+   proc = processing.new({ timeout = 5.0, signals = array<object> { netsocket } })
+   check netsocket.mtConnect('kotuku.dev', 80)
+   check proc.sleep()
 end

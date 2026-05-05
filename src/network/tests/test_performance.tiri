@@ -33,58 +33,60 @@ end
 
 -----------------------------------------------------------------------------------------------------------------------
 
-function MessageThroughput()
-   local proc = processing.new({ timeout = 5.0 })
-   local start_time = mSys.PreciseTime()
-   local messages_sent = 0
-   local messages_received = 0
-   local target_messages = 1000
-   local throughput_complete = false
+@Test(priority=10) function MessageThroughput()
+   start_time = mSys.PreciseTime()
+   messages_sent = 0
+   messages_received = 0
+   bytes_sent = 0
+   bytes_received = 0
+   target_messages = 1000
+   throughput_complete = false
 
-   print('Testing message throughput with ' .. target_messages .. ' messages...')
-
-   local server = obj.new('netsocket', {
+   server = obj.new('netsocket', {
       name = 'ThroughputServer',
       feedback = function(Socket, Client, State)
          if (State is NTC_CONNECTED) then
-            print('[Server] Client connected, starting throughput test...')
+            logOutput('[Server] Client connected, starting throughput test...')
             -- Start sending messages rapidly
             for i = 1, target_messages do
                local msg = 'THROUGHPUT_MSG_' .. i
                local err, len = Client.acWrite(msg)
                if (err is ERR_Okay) then
                   messages_sent = messages_sent + 1
+                  bytes_sent += string.len(msg)
                else
-                  print('[Server] Send failed at message ' .. i .. ': ' .. mSys.GetErrorMsg(err))
+                  logOutput('[Server] Send failed at message ' .. i .. ': ' .. mSys.GetErrorMsg(err))
                   break
                end
             end
-            print('[Server] Finished sending ' .. messages_sent .. ' messages')
+            logOutput('[Server] Finished sending ' .. messages_sent .. ' messages')
          end
       end,
       incoming = function(Socket, Client)
          local buffer = string.alloc(1024)
          local err, read_len = Client.acRead(buffer)
-         if (err is ERR_Okay) then
+         if (err is ERR_Okay and read_len > 0) then
             messages_received = messages_received + 1
-            print('Processed: ' .. messages_received)
+            bytes_received += read_len
+            logOutput('Processed: ' .. messages_received)
 
-            if (messages_received >= target_messages) then
+            if (bytes_received >= bytes_sent and messages_sent >= target_messages) then
                local end_time = mSys.PreciseTime()
-               local duration = end_time - start_time
-               local throughput = messages_received / duration
+               local duration = (end_time - start_time) / 1000000
+               local throughput = messages_sent / duration
 
-               print('[Server] Throughput test completed:')
-               print('  Messages: ' .. messages_received)
-               print('  Duration: ' .. string.format('%.3f', duration) .. ' seconds')
-               print('  Throughput: ' .. string.format('%.1f', throughput) .. ' messages/second')
+               logOutput('[Server] Throughput test completed:')
+               logOutput('  Messages: ' .. messages_sent)
+               logOutput('  Echo reads: ' .. messages_received)
+               logOutput('  Duration: ' .. string.format('%.3f', duration) .. ' seconds')
+               logOutput('  Throughput: ' .. string.format('%.1f', throughput) .. ' messages/second')
 
-               glThroughputStats.messages = messages_received
+               glThroughputStats.messages = messages_sent
                glThroughputStats.duration = duration
                glThroughputStats.throughput = throughput
 
                throughput_complete = true
-               proc.signal()
+               Socket.acSignal()
             end
          end
       end,
@@ -92,7 +94,9 @@ function MessageThroughput()
       flags = 'SERVER'
    })
 
-   local client = obj.new('netsocket', {
+   proc = processing.new({ timeout = 5.0, signals = array<object> { server } })
+
+   client = obj.new('netsocket', {
       name = 'ThroughputClient',
       incoming = function(Socket, Script)
          -- Echo back all received messages as quickly as possible
@@ -105,45 +109,40 @@ function MessageThroughput()
       end
    })
 
-   client.mtConnect('127.0.0.1', glPort)
+   check client.mtConnect('127.0.0.1', glPort)
+   check proc.sleep()
 
-   local err = proc.sleep()
-   print('Received ' .. messages_received .. ' messages of ' .. target_messages)
-   assert(err is ERR_Okay, 'Throughput test failed: ' .. mSys.GetErrorMsg(err))
+   logOutput('Received ' .. messages_received .. ' messages of ' .. target_messages)
    assert(throughput_complete, 'Throughput test did not complete')
 
    -- Verify minimum acceptable performance
    assert(glThroughputStats.throughput > 100,
       'Throughput too low: ' .. glThroughputStats.throughput .. ' msg/sec (expected > 100)')
 
-   print('Message throughput test completed successfully!')
    return glThroughputStats.throughput
 end
 
 -----------------------------------------------------------------------------------------------------------------------
 
-function LargeMessagePerformance()
-   local proc = processing.new({ timeout = 15.0 })
-   local message_sizes = { 1024, 8192, 65536, 262144 } -- 1KB, 8KB, 64KB, 256KB
-   local transfer_results = {}
-   local current_size_index = 1
+@Test(priority=20) function LargeMessagePerformance()
+   message_sizes = array<int> { 1024, 8192, 65536, 262144 } -- 1KB, 8KB, 64KB, 256KB
+   transfer_results = array<table>
+   current_size_index = 0
 
-   print('Testing large message transfer performance...')
-
-   local server = obj.new('netsocket', {
+   server = obj.new('netsocket', {
       name = 'LargeMessageServer',
       feedback = function(Socket, Client, State)
          if (State is NTC_CONNECTED) then
-            print('[Server] Starting large message test...')
+            logOutput('[Server] Starting large message test...')
             -- Send first large message
             local size = message_sizes[current_size_index]
             local large_msg = string.rep('X', size)
             local start_time = mSys.PreciseTime()
 
-            print('[Server] Sending ' .. size .. ' byte message...')
+            logOutput('[Server] Sending ' .. size .. ' byte message...')
             local err, len = Client.acWrite(large_msg)
             if (err is ERR_Okay) then
-               transfer_results[current_size_index] = { size = size, start_time = start_time }
+               transfer_results:push({ size = size, start_time = start_time })
             else
                error('[Server] Failed to send large message: ' .. mSys.GetErrorMsg(err))
             end
@@ -162,44 +161,46 @@ function LargeMessagePerformance()
             if (err is ERR_Okay and read_len > 0) then
                total_read = total_read + read_len
             elseif (err is ERR_NoData) then
-               processing.sleep(0.001, false) -- Brief wait for more data
+               processing.halt(0.001) -- Brief wait for more data
             else
                break
             end
          end
 
          local end_time = mSys.PreciseTime()
-         local duration = end_time - transfer_results[current_size_index].start_time
+         local duration = (end_time - transfer_results[current_size_index].start_time) / 1000000
          local throughput_mbps = (expected_size * 2 / 1024 / 1024) / duration -- *2 for round trip
 
-         print('[Server] Large message ' .. expected_size .. ' bytes:')
-         print('  Duration: ' .. string.format('%.3f', duration) .. ' seconds')
-         print('  Throughput: ' .. string.format('%.2f', throughput_mbps) .. ' MB/s')
+         logOutput('[Server] Large message ' .. expected_size .. ' bytes:')
+         logOutput('  Duration: ' .. string.format('%.3f', duration) .. ' seconds')
+         logOutput('  Throughput: ' .. string.format('%.2f', throughput_mbps) .. ' MB/s')
 
          transfer_results[current_size_index].duration = duration
          transfer_results[current_size_index].throughput = throughput_mbps
 
          current_size_index = current_size_index + 1
-         if (current_size_index <= #message_sizes) then
+         if (current_size_index < #message_sizes) then
             -- Send next size
             local size = message_sizes[current_size_index]
             local large_msg = string.rep('Y', size)
             local start_time = mSys.PreciseTime()
 
-            print('[Server] Sending ' .. size .. ' byte message...')
+            logOutput('[Server] Sending ' .. size .. ' byte message...')
             local err, len = Client.acWrite(large_msg)
             if (err is ERR_Okay) then
-               transfer_results[current_size_index] = { size = size, start_time = start_time }
+               transfer_results:push({ size = size, start_time = start_time })
             end
          else
-            print('[Server] All large message tests completed')
-            proc.signal()
+            logOutput('[Server] All large message tests completed')
+            Socket.acSignal()
          end
       end,
       port = glPort + 1,
       flags = 'SERVER',
       msgLimit = 512 * 1024 -- Allow large messages
    })
+
+   proc = processing.new({ timeout = 15.0, signals = array<object> { server } })
 
    local client = obj.new('netsocket', {
       name = 'LargeMessageClient',
@@ -214,43 +215,36 @@ function LargeMessagePerformance()
       end
    })
 
-   client.mtConnect('127.0.0.1', glPort + 1)
+   check client.mtConnect('127.0.0.1', glPort + 1)
+   check proc.sleep()
 
-   local err = proc.sleep()
-   assert(err is ERR_Okay, 'Large message performance test failed: ' .. mSys.GetErrorMsg(err))
-
-   -- Verify all sizes were tested
    assert(#transfer_results is #message_sizes,
       'Not all message sizes tested. Expected: ' .. #message_sizes .. ', Got: ' .. #transfer_results)
 
-   -- Store results for analysis
    glPerformanceResults.large_messages = transfer_results
-
-   print('Large message performance test completed successfully!')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
 
-function ConnectionScaling()
-   local proc = processing.new({ timeout = 20.0 })
-   local max_clients = 20
-   local connected_clients = 0
-   local scaling_complete = false
-   local connection_times = {}
+@Test(priority=30) function ConnectionScaling()
+   max_clients = 20
+   connected_clients = 0
+   scaling_complete = false
+   connection_times = {}
 
-   print('Testing connection scaling with ' .. max_clients .. ' concurrent clients...')
+   logOutput('Testing connection scaling with ' .. max_clients .. ' concurrent clients...')
 
-   local server = obj.new('netsocket', {
+   server = obj.new('netsocket', {
       name = 'ScalingTestServer',
       feedback = function(Socket, Client, State)
          if (State is NTC_CONNECTED) then
             connected_clients = connected_clients + 1
-            print('[Server] Client ' .. connected_clients .. ' connected')
+            logOutput('[Server] Client ' .. connected_clients .. ' connected')
 
             if (connected_clients >= max_clients) then
-               print('[Server] All ' .. max_clients .. ' clients connected successfully')
+               logOutput('[Server] All ' .. max_clients .. ' clients connected successfully')
                scaling_complete = true
-               proc.signal()
+               Socket.acSignal()
             end
          elseif (State is NTC_DISCONNECTED) then
             connected_clients = connected_clients - 1
@@ -262,9 +256,11 @@ function ConnectionScaling()
       backlog = max_clients
    })
 
+   proc = processing.new({ timeout = 20.0, signals = array<object> { server } })
+
    -- Create and connect clients rapidly
-   local clients = {}
-   local start_time = mSys.PreciseTime()
+   clients = {}
+   start_time = mSys.PreciseTime()
 
    for i = 1, max_clients do
       clients[i] = obj.new('netsocket', {
@@ -278,18 +274,18 @@ function ConnectionScaling()
       })
 
       local err = clients[i].mtConnect('127.0.0.1', glPort + 2)
-      if (err != ERR_Okay) then
-         print('[Client ' .. i .. '] Connection failed: ' .. mSys.GetErrorMsg(err))
+      if err != ERR_Okay then
+         logOutput('[Client ' .. i .. '] Connection failed: ' .. mSys.GetErrorMsg(err))
       end
 
       -- Small delay to prevent overwhelming
       if (i % 5 is 0) then
-         processing.sleep(0.01, false)
+         processing.halt(0.01)
       end
    end
 
-   local err = proc.sleep()
-   assert(err is ERR_Okay, 'Connection scaling test failed: ' .. mSys.GetErrorMsg(err))
+   check proc.sleep()
+
    assert(scaling_complete, 'Not all clients connected within timeout')
 
    -- Analyze connection timing
@@ -302,10 +298,10 @@ function ConnectionScaling()
       end
       local avg_time = total_time / #connection_times
 
-      print('Connection Scaling Results:')
-      print('  Successful connections: ' .. #connection_times .. '/' .. max_clients)
-      print('  Average connect time: ' .. string.format('%.3f', avg_time) .. ' seconds')
-      print('  Maximum connect time: ' .. string.format('%.3f', max_time) .. ' seconds')
+      logOutput('Connection Scaling Results:')
+      logOutput('  Successful connections: ' .. #connection_times .. '/' .. max_clients)
+      logOutput('  Average connect time: ' .. string.format('%.3f', avg_time) .. ' seconds')
+      logOutput('  Maximum connect time: ' .. string.format('%.3f', max_time) .. ' seconds')
 
       glPerformanceResults.scaling = {
          clients = #connection_times,
@@ -313,26 +309,25 @@ function ConnectionScaling()
          max_connect_time = max_time
       }
    end
-
-   print('Connection scaling test completed successfully!')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
 
-function WriteQueuePerformance()
-   local proc = processing.new({ timeout = 15.0 })
+@Test(priority=40) function WriteQueuePerformance()
    local queue_messages = 500
    local messages_queued = 0
    local messages_processed = 0
+   local bytes_queued = 0
+   local bytes_processed = 0
    local queue_test_complete = false
 
-   print('Testing write queue performance with ' .. queue_messages .. ' queued messages...')
+   logOutput('Testing write queue performance with ' .. queue_messages .. ' queued messages...')
 
    local server = obj.new('netsocket', {
       name = 'QueueTestServer',
       feedback = function(Socket, Client, State)
          if (State is NTC_CONNECTED) then
-            print('[Server] Client connected, flooding write queue...')
+            logOutput('[Server] Client connected, flooding write queue...')
             local start_time = mSys.PreciseTime()
 
             -- Rapidly queue many messages without waiting
@@ -341,32 +336,34 @@ function WriteQueuePerformance()
                local err, len = Client.acWrite(msg)
                if (err is ERR_Okay) then
                   messages_queued = messages_queued + 1
+                  bytes_queued += string.len(msg)
                else
-                  print('[Server] Queue write failed at message ' .. i .. ': ' .. mSys.GetErrorMsg(err))
+                  logOutput('[Server] Queue write failed at message ' .. i .. ': ' .. mSys.GetErrorMsg(err))
                   break
                end
             end
 
             local queue_time = mSys.PreciseTime() - start_time
-            print('[Server] Queued ' .. messages_queued .. ' messages in ' ..
-                  string.format('%.3f', queue_time) .. ' seconds')
+            logOutput('[Server] Queued ' .. messages_queued .. ' messages in ' ..
+                  string.format('%.3f', queue_time / 1000000) .. ' seconds')
 
-            glPerformanceResults.queue_time = queue_time
-            glPerformanceResults.queue_rate = messages_queued / queue_time
+            glPerformanceResults.queue_time = queue_time / 1000000
+            glPerformanceResults.queue_rate = messages_queued / glPerformanceResults.queue_time
          end
       end,
       incoming = function(Socket, Client)
          local buffer = string.alloc(1024)
          local err, read_len = Client.acRead(buffer)
-         if (err is ERR_Okay) then
+         if (err is ERR_Okay and read_len > 0) then
             messages_processed = messages_processed + 1
+            bytes_processed += read_len
 
-            if (messages_processed >= messages_queued) then
-               print('[Server] All queued messages processed: ' .. messages_processed)
+            if (bytes_processed >= bytes_queued and messages_queued >= queue_messages) then
+               logOutput('[Server] All queued messages processed: ' .. messages_processed)
                queue_test_complete = true
-               proc.signal()
+               Socket.acSignal()
             elseif (messages_processed % 100 is 0) then
-               print('[Server] Processed ' .. messages_processed .. '/' .. messages_queued .. ' messages')
+               logOutput('[Server] Processed ' .. messages_processed .. '/' .. messages_queued .. ' messages')
             end
          end
       end,
@@ -374,7 +371,9 @@ function WriteQueuePerformance()
       flags = 'SERVER'
    })
 
-   local client = obj.new('netsocket', {
+   proc = processing.new({ timeout = 15.0, signals = array<object> { server } })
+
+   client = obj.new('netsocket', {
       name = 'QueueTestClient',
       incoming = function(Socket, Script)
          -- Read and echo back messages to test queue drainage
@@ -382,29 +381,25 @@ function WriteQueuePerformance()
          local err, read_len = Socket.acRead(buffer)
          if (err is ERR_Okay) then
             local msg = buffer:sub(0, read_len)
-            Socket.acWrite('ACK') -- Simple acknowledgment
+            Socket.acWrite(msg) -- Echo data to test queue drainage
          end
       end
    })
 
-   client.mtConnect('127.0.0.1', glPort + 3)
+   check client.mtConnect('127.0.0.1', glPort + 3)
+   check proc.sleep()
 
-   local err = proc.sleep()
-   assert(err is ERR_Okay, 'Write queue performance test failed: ' .. mSys.GetErrorMsg(err))
    assert(queue_test_complete, 'Queue test did not complete')
 
-   assert(messages_processed >= messages_queued * 0.95, -- Allow 5% tolerance
-      'Too many messages lost. Queued: ' .. messages_queued .. ', Processed: ' .. messages_processed)
+   assert(bytes_processed >= bytes_queued,
+      'Too much queued data was lost. Queued: ' .. bytes_queued .. ', Processed: ' .. bytes_processed)
 
-   print('Write queue performance test completed successfully!')
-   print('Queue rate: ' .. string.format('%.1f', glPerformanceResults.queue_rate) .. ' messages/second')
+   logOutput('Queue rate: ' .. string.format('%.1f', glPerformanceResults.queue_rate) .. ' messages/second')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
 
-function MemoryUsageUnderLoad()
-   print('Testing memory usage patterns under network load...')
-
+@Test(priority=50) function MemoryUsageUnderLoad()
    -- This test creates and destroys many network objects to check for leaks
    local iterations = 50
    local objects_per_iteration = 5
@@ -414,16 +409,15 @@ function MemoryUsageUnderLoad()
 
       -- Create multiple network objects
       for i = 1, objects_per_iteration do
-         local port = glPort + 100 + i
          temp_objects[i] = obj.new('netsocket', {
             name = 'MemTestSocket' .. iter .. '_' .. i,
-            port = port,
+            port = glPort + 100 + (iter * objects_per_iteration) + i,
             flags = 'SERVER'
          })
       end
 
       -- Brief usage
-      processing.sleep(0.01, false)
+      processing.halt(0.01)
 
       -- Destroy objects
       for i = 1, objects_per_iteration do
@@ -431,61 +425,40 @@ function MemoryUsageUnderLoad()
       end
 
       -- Periodic status
-      if (iter % 10 is 0) then
-         print('[Memory Test] Completed ' .. iter .. '/' .. iterations .. ' iterations')
+      if iter % 10 is 0 then
+         logOutput('[Memory Test] Completed ' .. iter .. '/' .. iterations .. ' iterations')
       end
    end
 
-   print('Memory usage test completed - no crashes detected')
-   print('Created and destroyed ' .. (iterations * objects_per_iteration) .. ' network objects')
+   logOutput('Memory usage test completed - no crashes detected')
+   logOutput('Created and destroyed ' .. (iterations * objects_per_iteration) .. ' network objects')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
 
-function generatePerformanceReport()
-   print('')
-   print('=== NETWORK PERFORMANCE TEST RESULTS ===')
+@Test(priority=100) function generatePerformanceReport()
+   logOutput('=== NETWORK PERFORMANCE TEST RESULTS ===')
 
    if (glThroughputStats.throughput) then
-      print('Message Throughput: ' .. string.format('%.1f', glThroughputStats.throughput) .. ' msg/sec')
+      logOutput('Message Throughput: ' .. string.format('%.1f', glThroughputStats.throughput) .. ' msg/sec')
    end
 
    if (glPerformanceResults.large_messages) then
-      print('Large Message Performance:')
+      logOutput('Large Message Performance:')
       for i, result in ipairs(glPerformanceResults.large_messages) do
          if (result.throughput) then
-            print('  ' .. result.size .. ' bytes: ' .. string.format('%.2f', result.throughput) .. ' MB/s')
+            logOutput('  ' .. result.size .. ' bytes: ' .. string.format('%.2f', result.throughput) .. ' MB/s')
          end
       end
    end
 
    if (glPerformanceResults.scaling) then
-      print('Connection Scaling:')
-      print('  ' .. glPerformanceResults.scaling.clients .. ' concurrent connections')
-      print('  Avg connect time: ' .. string.format('%.3f', glPerformanceResults.scaling.avg_connect_time) .. 's')
+      logOutput('Connection Scaling:')
+      logOutput('  ' .. glPerformanceResults.scaling.clients .. ' concurrent connections')
+      logOutput('  Avg connect time: ' .. string.format('%.3f', glPerformanceResults.scaling.avg_connect_time) .. 's')
    end
 
    if (glPerformanceResults.queue_rate) then
-      print('Write Queue Rate: ' .. string.format('%.1f', glPerformanceResults.queue_rate) .. ' msg/sec')
+      logOutput('Write Queue Rate: ' .. string.format('%.1f', glPerformanceResults.queue_rate) .. ' msg/sec')
    end
-
-   print('==========================================')
 end
-
------------------------------------------------------------------------------------------------------------------------
-
-   return {
-      tests = {
-         testMessageThroughput,
-         testLargeMessagePerformance,
-         testConnectionScaling,
-         testWriteQueuePerformance,
-         testMemoryUsageUnderLoad,
-         generatePerformanceReport
-      },
-      cleanup = function()
-         glThroughputStats = {}
-         glPerformanceResults = {}
-         glLoadTestActive = false
-      end
-   }

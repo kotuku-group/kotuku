@@ -171,6 +171,8 @@ end
 
       selectedFile = nil
 
+      processing.flush()
+
       gui.dialog.file({
          title      = 'Select SVG File for Benchmark',
          okText     = 'Select',
@@ -188,7 +190,7 @@ end
          end
       })
 
-      processing.sleep(nil, true)
+      processing.sleep(-1)
 
       selectedFile ?? return
       svgFile = selectedFile

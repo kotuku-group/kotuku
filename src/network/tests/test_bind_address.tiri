@@ -15,7 +15,8 @@
 
 @Test function BindLocalhost()
    port = glBasePort + 1
-   proc = processing.new({ timeout = 3.0 })
+   signal = obj.new('time', { })
+   proc = processing.new({ timeout = 3.0, signals = array<object> { signal } })
 
    server = obj.new('netsocket', {
       port = port,
@@ -29,12 +30,12 @@
       feedback = function(Socket, State)
          assert(Socket, 'Socket parameter not defined.')
          if (State is NTC_CONNECTED) then
-            proc.signal()
+            signal.acSignal()
          end
       end,
    })
 
-   proc.sleep()
+   check proc.sleep()
 
    assert(client.state is NTC_CONNECTED, 'Client failed to connect from localhost')
 end

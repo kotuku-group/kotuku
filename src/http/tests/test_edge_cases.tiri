@@ -26,7 +26,7 @@ SERVER_PORT <const> = 18945
             method = 'GET',
             handler = function(req, res)
                -- Simulate slow response (but not too slow to break tests)
-               processing.sleep(0.5) -- 0.5 second delay
+               processing.halt(0.5) -- 0.5 second delay
                res.json({ message = 'Delayed response' })
             end
          },

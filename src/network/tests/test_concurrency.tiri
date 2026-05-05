@@ -33,8 +33,6 @@ end
 -----------------------------------------------------------------------------------------------------------------------
 
 @Test function MultipleConnections()
-   proc = processing.new({ timeout = 3.0 })
-
    glPort++
    glClientsCreated = 0
 
@@ -56,7 +54,7 @@ end
 
             if (glClientsCreated is glMaxSockets) and (glActiveClients is 0) then
                print('[Server] All clients disconnected, test complete')
-               proc.signal()
+               Socket.acSignal()
             end
          end
       end,
@@ -81,6 +79,8 @@ end
       flags = 'SERVER|MULTI_CONNECT',
       socketLimit = glMaxSockets
    })
+
+   proc = processing.new({ timeout = 3.0, signals = array<object> { server } })
 
    assert(server, 'Failed to create server socket')
 
@@ -202,10 +202,10 @@ end
          rejectedConnections++
          print('[Client ' .. i .. '] Connection rejected: ' .. mSys.GetErrorMsg(err))
       end
-      processing.sleep(0.05, false) -- Small delay
+      processing.halt(0.05) -- Small delay
    end
 
-   processing.sleep(0.5)
+   processing.halt(0.5)
 
    assert(successfulConnections <= limit,
       'Too many connections accepted. Limit: ' .. limit .. ', Accepted: ' .. successfulConnections)
@@ -216,7 +216,6 @@ end
 -----------------------------------------------------------------------------------------------------------------------
 
 @Test function ConnectionIsolation()
-   proc = processing.new({ timeout = 3.0 })
    clientCount = 3
    clientMessages = array<array<string>>
    messagesPerClient = 2
@@ -261,6 +260,8 @@ end
 
    clients = {}
    completedClients = 0
+   signal = obj.new('time', { })
+   proc = processing.new({ timeout = 3.0, signals = array<object> { signal } })
 
    for i = 0, clientCount-1 do
       clients[i] = { }
@@ -293,7 +294,7 @@ end
                   print(f'[Client {clientId}] All messages completed')
                   completedClients++
                   if (completedClients is clientCount) then
-                     proc.signal()
+                     signal.acSignal()
                   end
                end
             end
