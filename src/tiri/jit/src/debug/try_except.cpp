@@ -23,21 +23,130 @@
 #include "lauxlib.h"
 #include "lj_tab.h"
 #include "lj_trace.h"
+#include "lj_strfmt.h"
+
+//********************************************************************************************************************
+// Exception table metatable.
+
+static bool is_exception_table(lua_State *L, cTValue *Value)
+{
+   if (not tvistab(Value)) return false;
+
+   GCtab *mt = tabref(tabV(Value)->metatable);
+   if (not mt) return false;
+
+   cTValue *name = lj_tab_getstr(mt, lj_str_newlit(L, "__metatable"));
+   return name and tvisstr(name) and strV(name) IS lj_str_newlit(L, "exception");
+}
+
+static void push_exception_string(lua_State *L, GCtab *exception)
+{
+   cTValue *msg_tv    = lj_tab_getstr(exception, lj_str_newlit(L, "message"));
+   cTValue *source_tv = lj_tab_getstr(exception, lj_str_newlit(L, "source"));
+   cTValue *line_tv   = lj_tab_getstr(exception, lj_str_newlit(L, "line"));
+
+   GCstr *message = (msg_tv and tvisstr(msg_tv)) ? strV(msg_tv) : lj_str_newlit(L, "<No message>");
+   GCstr *source  = (source_tv and tvisstr(source_tv)) ? strV(source_tv) : nullptr;
+   int line       = (line_tv and tvisnum(line_tv)) ? int(numberVint(line_tv)) : 0;
+
+   if (source and line > 0) lj_strfmt_pushf(L, "%s:%d: %s", strdata(source), line, strdata(message));
+   else if (source) lj_strfmt_pushf(L, "%s: %s", strdata(source), strdata(message));
+   else setstrV(L, L->top++, message);
+}
+
+static void push_concat_value_string(lua_State *L, cTValue *Value)
+{
+   if (is_exception_table(L, Value)) {
+      cTValue *msg_tv = lj_tab_getstr(tabV(Value), lj_str_newlit(L, "message"));
+      GCstr *message = (msg_tv and tvisstr(msg_tv)) ? strV(msg_tv) : lj_str_newlit(L, "<No message>");
+      setstrV(L, L->top++, message);
+   }
+   else setstrV(L, L->top++, lj_strfmt_obj(L, Value));
+}
+
+static int exception_tostring(lua_State *L)
+{
+   TValue *value = L->base;
+   if (is_exception_table(L, value)) push_exception_string(L, tabV(value));
+   else setstrV(L, L->top++, lj_str_newlit(L, "exception"));
+
+   return 1;
+}
+
+static int exception_concat(lua_State *L)
+{
+   push_concat_value_string(L, L->base);
+   push_concat_value_string(L, L->base + 1);
+   lua_concat(L, 2);
+   return 1;
+}
+
+static void attach_exception_metatable(lua_State *L, GCtab *Table)
+{
+   GCtab *mt = lj_tab_new(L, 0, 4);
+   lj_assertL(mt != nullptr, "attach_exception_metatable: metatable allocation failed");
+   setgcref(Table->metatable, obj2gco(mt));
+   lj_gc_objbarriert(L, Table, mt);
+
+   TValue *slot = lj_tab_setstr(L, mt, lj_str_newlit(L, "__metatable"));
+   setstrV(L, slot, lj_str_newlit(L, "exception"));
+
+   slot = lj_tab_setstr(L, mt, lj_str_newlit(L, "__name"));
+   setstrV(L, slot, lj_str_newlit(L, "exception"));
+
+   GCfunc *tostring_func = lj_func_newC(L, 0, tabref(L->env));
+   tostring_func->c.f = exception_tostring;
+   slot = lj_tab_setstr(L, mt, lj_str_newlit(L, "__tostring"));
+   setfuncV(L, slot, tostring_func);
+
+   GCfunc *concat_func = lj_func_newC(L, 0, tabref(L->env));
+   concat_func->c.f = exception_concat;
+   slot = lj_tab_setstr(L, mt, lj_str_newlit(L, "__concat"));
+   setfuncV(L, slot, concat_func);
+
+   lj_gc_anybarriert(L, mt);
+}
 
 //********************************************************************************************************************
 // Native bytecode helpers for BC_CHECK and BC_RAISE opcodes.
 // These are called from VM assembly after type checking and L->CaughtError is already set.
 // Both functions are noreturn - they always throw an exception.
 
+LJ_NORET static void lj_raise_recorded(lua_State *L, ERR ErrorCode, GCstr *Message)
+{
+   L->CaughtError = ErrorCode;
+
+   L->pending_exception_message = Message;
+   L->pending_exception_source  = nullptr;
+   L->pending_exception_line    = 0;
+   L->pending_exception_valid   = true;
+
+   DebugLocation location;
+   if (lj_debug_getloc(L, L->base - 1, nullptr, &location)) {
+      L->pending_exception_source = location.source;
+      L->pending_exception_line   = location.line;
+   }
+
+   lj_debug_addloc(L, strdata(Message), L->base - 1, nullptr);
+   lj_err_run(L);
+}
+
 extern "C" LJ_NORET void lj_raise(lua_State *L, int32_t ErrorCode)
 {
-   luaL_error(L, ERR(ErrorCode));
+   ERR error = ERR(ErrorCode);
+   GCstr *message = lj_str_newz(L, GetErrorMsg(error));
+   lj_raise_recorded(L, error, message);
 }
 
 extern "C" LJ_NORET void lj_raise_with_msg(lua_State *L, int32_t ErrorCode, TValue *Msg)
 {
-   if (tvisstr(Msg)) luaL_error(L, ERR(ErrorCode), "%s", strdata(strV(Msg)));
-   else luaL_error(L, ERR(ErrorCode));
+   ERR error = ERR(ErrorCode);
+   GCstr *message;
+
+   if (tvisstr(Msg)) message = strV(Msg);
+   else message = lj_str_newz(L, GetErrorMsg(error));
+
+   lj_raise_recorded(L, error, message);
 }
 
 //********************************************************************************************************************
@@ -186,9 +295,9 @@ extern "C" bool lj_try_find_handler(lua_State *L, const TryFrame *Frame, ERR Err
 
 //********************************************************************************************************************
 // Build an exception table and place it in the specified register.
-// The exception table has fields: code, message, line, trace, stackTrace
+// The exception table has fields: code, message, source, line, trace, stackTrace
 
-extern "C" void lj_try_build_exception_table(lua_State *L, ERR ErrorCode, CSTRING Message, int Line, BCREG ExceptionReg, CapturedStackTrace *Trace)
+extern "C" void lj_try_build_exception_table(lua_State *L, ERR ErrorCode, GCstr *Message, GCstr *Source, int Line, BCREG ExceptionReg, CapturedStackTrace *Trace)
 {
    if (ExceptionReg IS 0xff) { // No exception variable - just free the trace and return
       if (Trace) lj_debug_free_trace(L, Trace);
@@ -205,9 +314,10 @@ extern "C" void lj_try_build_exception_table(lua_State *L, ERR ErrorCode, CSTRIN
    // Create exception table and store immediately at target_slot to root it.
    // This protects it from GC during subsequent allocations without modifying L->top.
 
-   GCtab *t = lj_tab_new(L, 0, 5);
+   GCtab *t = lj_tab_new(L, 0, 6);
    lj_assertL(t != nullptr, "lj_try_build_exception_table: table allocation failed");
    settabV(L, target_slot, t);  // Root immediately - don't modify L->top
+   attach_exception_metatable(L, t);
 
    TValue *slot;
 
@@ -220,9 +330,15 @@ extern "C" void lj_try_build_exception_table(lua_State *L, ERR ErrorCode, CSTRIN
    // Set e.message
 
    slot = lj_tab_setstr(L, t, lj_str_newlit(L, "message"));
-   if (Message) setstrV(L, slot, lj_str_newz(L, Message));
+   if (Message) setstrV(L, slot, Message);
    else if (ErrorCode != ERR::Okay) setstrV(L, slot, lj_str_newz(L, GetErrorMsg(ErrorCode)));
    else setstrV(L, slot, lj_str_newlit(L, "<No message>"));
+
+   // Set e.source
+
+   slot = lj_tab_setstr(L, t, lj_str_newlit(L, "source"));
+   if (Source) setstrV(L, slot, Source);
+   else setnilV(slot);
 
    // Set e.line
 

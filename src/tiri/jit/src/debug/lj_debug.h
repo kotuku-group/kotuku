@@ -25,6 +25,12 @@ struct lj_Debug {
    int isvararg;
 };
 
+struct DebugLocation {
+   GCstr *source;
+   int line;
+   bool valid;
+};
+
 extern cTValue* lj_debug_frame(lua_State* L, int level, int* size);
 extern BCLine lj_debug_line(GCproto* pt, BCPOS pc);
 extern const char* lj_debug_uvname(GCproto* pt, uint32_t idx);
@@ -32,6 +38,7 @@ extern const char* lj_debug_uvnamev(cTValue* o, uint32_t idx, TValue** tvp, GCob
 extern const char* lj_debug_slotname(GCproto* pt, const BCIns* pc, BCREG slot, const char** name);
 extern const char* lj_debug_funcname(lua_State* L, cTValue* frame, const char** name);
 extern void lj_debug_shortname(char* out, GCstr* str, BCLine line);
+extern bool lj_debug_getloc(lua_State *L, cTValue *Frame, cTValue *NextFrame, DebugLocation *Location);
 extern void lj_debug_addloc(lua_State* L, const char* msg, cTValue* frame, cTValue* nextframe);
 extern void lj_debug_pushloc(lua_State* L, GCproto* pt, BCPOS pc);
 extern int lj_debug_getinfo(lua_State* L, const char* what, lj_Debug* ar, int ext);

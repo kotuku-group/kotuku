@@ -131,6 +131,8 @@ end
 
 @Test(priority=5,hotpath=3) function Rethrow()
    outer_handled = false
+   inner_source = nil
+   inner_line = 0
 
    try
       msg("Entered outer try")
@@ -139,15 +141,40 @@ end
          error("Raising error")
       except e
          msg("Captured inner error: " .. e.message)
+         inner_source = e.source
+         inner_line = e.line
          error(e)
       end
    except e
       outer_handled = true
       msg("Captured rethrown error in outer try: " .. e.message)
-      assert(e.message:find("Raising error"), "Outer should catch rethrown error, got: " .. e.message)
+      assert(e.message is "Raising error", "Outer should catch raw rethrown error, got: " .. e.message)
+      assert(e.source is inner_source, "Rethrow should preserve source")
+      assert(e.line is inner_line, "Rethrow should preserve line")
    end
 
    assert(outer_handled, "Rethrown exception should be caught by outer handler")
+end
+
+@Test(priority=5) function RethrowPreservesErrorCodeForFilters()
+   local matched_args = false
+
+   try
+      try
+         raise ERR_Args, "Rethrown args"
+      except e
+         assert(e.code is ERR_Args, "Inner handler should receive ERR_Args")
+         error(e)
+      end
+   except e when ERR_Args
+      matched_args = true
+      assert(e.code is ERR_Args, "Outer filtered handler should receive ERR_Args")
+      assert(e.message is "Rethrown args", "Rethrow should preserve raw message")
+   except e
+      assert(false, "Rethrown ERR_Args should not fall through to catch-all with code " .. tostring(e.code))
+   end
+
+   assert(matched_args, "Rethrown ERR_Args should match outer ERR_Args filter")
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -158,10 +185,34 @@ end
       error("Test message")
    except e
       assert(e.code is ERR_Exception, "Lua errors should have ERR_Exception code")
-      assert(e.message:find("Test message"), "Message should match, got " .. e.message)
+      assert(e.message is "Test message", "Message should be raw, got " .. e.message)
+      assert(e.source:find("test_try_except.tiri"), "Should have source filename, got " .. tostring(e.source))
       assert(e.line > 0, "Should have line number, got " .. tostring(e.line))
+      assert(getmetatable(e) is "exception", "Exception metatable should be protected with name 'exception'")
+      local exception_text = tostring(e)
+      assert(exception_text:find("test_try_except.tiri"), "Printable exception should include source")
+      assert(exception_text:find("Test message"), "Printable exception should include message")
+      assert(exception_text:find(tostring(e.line)), "Printable exception should include line")
+      local prefixed_text = "caught: " .. e
+      assert(prefixed_text:find("caught: "), "Prefixed concat should include prefix")
+      assert(prefixed_text:find("Test message"), "Prefixed concat should include message")
+      local suffixed_text = e .. " [handled]"
+      assert(suffixed_text:find(" [handled]"), "Suffixed concat should include suffix")
+      assert(suffixed_text:find("Test message"), "Suffixed concat should include message")
       -- TODO: trace capture not yet implemented (requires saving before stack restoration)
       -- assert(e.trace != nil, "Should have stack trace")
+   end
+end
+
+@Test(priority=7) function ExceptionMessageLocationTextIsNotParsed()
+   local message = "fake.tiri:99999: payload"
+
+   try
+      error(message)
+   except e
+      assert(e.message is message, "Message should remain raw, got " .. e.message)
+      assert(e.line != 99999, "Line should come from debug metadata, got " .. tostring(e.line))
+      assert(e.source:find("test_try_except.tiri"), "Should have real source filename, got " .. tostring(e.source))
    end
 end
 
@@ -1337,7 +1388,9 @@ end
       raise ERR_Args, "Custom error message"
    except e
       assert(e.code is ERR_Args, "raise should set error code")
-      assert(e.message:find("Custom error message"), "raise should use custom message")
+      assert(e.message is "Custom error message", "raise should use raw custom message")
+      assert(e.source:find("test_try_except.tiri"), "raise should set source, got " .. tostring(e.source))
+      assert(e.line > 0, "raise should set line, got " .. tostring(e.line))
       return
    end
    error("raise with message did not throw an exception")

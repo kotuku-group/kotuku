@@ -377,6 +377,48 @@ void lj_debug_shortname(char *out, GCstr *str, BCLine line)
 }
 
 //********************************************************************************************************************
+// Resolve current location of a frame without formatting it into the error message.
+// Uses FileSource tracking to display accurate file:line for imported code.
+
+bool lj_debug_getloc(lua_State *L, cTValue *Frame, cTValue *NextFrame, DebugLocation *Location)
+{
+   Location->source = nullptr;
+   Location->line   = 0;
+   Location->valid  = false;
+
+   if (Frame) {
+      GCfunc *fn = frame_func(Frame);
+      if (isluafunc(fn)) {
+         BCLine line = debug_frameline(L, fn, NextFrame);
+         if (line.isValid()) {
+            GCproto *pt = funcproto(fn);
+            GCstr *source = nullptr;
+
+            if (not L->file_sources.empty()) {
+               const FileSource *src = get_file_source(L, line.fileIndex());
+               if (src and not src->filename.empty()) {
+                  source = lj_str_new(L, src->filename.c_str(), src->filename.size());
+               }
+            }
+
+            if (not source) {
+               char buf[LUA_IDSIZE];
+               lj_debug_shortname(buf, proto_chunk_name(pt), pt->firstline);
+               source = lj_str_newz(L, buf);
+            }
+
+            Location->source = source;
+            Location->line   = line.lineNumber();
+            Location->valid  = true;
+            return true;
+         }
+      }
+   }
+
+   return false;
+}
+
+//********************************************************************************************************************
 // Add current location of a frame to error message.
 // Uses FileSource tracking to display accurate file:line for imported code.
 // The BCLine returned by debug_frameline encodes the file index in its upper 8 bits (no separate fileinfo array).

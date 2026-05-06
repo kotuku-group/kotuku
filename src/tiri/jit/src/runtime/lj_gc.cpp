@@ -555,6 +555,8 @@ static void gc_traverse_thread(global_State *g, lua_State* th)
          if (cf->funcname) gc_markobj(g, cf->funcname);
       }
    }
+   if (th->pending_exception_message) gc_markobj(g, th->pending_exception_message);
+   if (th->pending_exception_source) gc_markobj(g, th->pending_exception_source);
    lj_state_shrinkstack(th, gc_traverse_frames(g, th));
 }
 

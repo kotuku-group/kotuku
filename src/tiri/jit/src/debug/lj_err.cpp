@@ -81,13 +81,50 @@
 // These are defined in tiri_functions.cpp.
 
 extern "C" bool lj_try_find_handler(lua_State *, const TryFrame *, ERR, const BCIns **, BCREG *);
-extern "C" void lj_try_build_exception_table(lua_State *, ERR, CSTRING, int, BCREG, CapturedStackTrace *);
+extern "C" void lj_try_build_exception_table(lua_State *, ERR, GCstr *, GCstr *, int, BCREG, CapturedStackTrace *);
 
 // Error message strings.
 LJ_DATADEF CSTRING lj_err_allmsg =
 #define ERRDEF(name, msg)  msg "\0"
 #include "lj_errmsg.h"
 ;
+
+//********************************************************************************************************************
+// Pending structured exception metadata.
+
+static void err_clear_pending_exception(lua_State *L)
+{
+   L->pending_exception_message = nullptr;
+   L->pending_exception_source  = nullptr;
+   L->pending_exception_line    = 0;
+   L->pending_exception_valid   = false;
+}
+
+static GCstr * err_string_for_pending(lua_State *L, CSTRING Message)
+{
+   if (not Message) return nullptr;
+
+   if (L->top > tvref(L->stack) and tvisstr(L->top - 1) and strVdata(L->top - 1) IS Message) {
+      return strV(L->top - 1);
+   }
+
+   return lj_str_newz(L, Message);
+}
+
+static void err_record_pending_exception(lua_State *L, CSTRING Message, cTValue *Frame, cTValue *NextFrame)
+{
+   err_clear_pending_exception(L);
+
+   L->pending_exception_message = err_string_for_pending(L, Message);
+
+   DebugLocation location;
+   if (lj_debug_getloc(L, Frame, NextFrame, &location)) {
+      L->pending_exception_source = location.source;
+      L->pending_exception_line   = location.line;
+   }
+
+   L->pending_exception_valid = true;
+}
 
 //********************************************************************************************************************
 // Call __close handlers for to-be-closed locals during error unwinding.
@@ -473,23 +510,6 @@ extern "C" void setup_try_handler(lua_State *L)
    // Validate handler PC
    lj_assertL(handler_pc != nullptr, "setup_try_handler: handler found but handler_pc is null");
 
-   // Get error message before restoring stack
-   CSTRING error_msg = nullptr;
-   if (L->top > L->base and tvisstr(L->top - 1)) error_msg = strVdata(L->top - 1);
-
-   // Extract line number from error message (format: "filename:line: message")
-   // On Windows, filenames may contain colons (e.g., "E:\path\file.tiri:10: msg")
-   // so we search for the first colon followed by a digit.
-   int line = 0;
-   if (error_msg) {
-      for (auto p = error_msg; *p; p++) {
-         if (*p IS ':' and p[1] >= '0' and p[1] <= '9') {
-            line = int(strtol(p + 1, nullptr, 10));
-            break;
-         }
-      }
-   }
-
    // Convert offsets back to pointers using restorestack()
    TValue *saved_base = restorestack(L, try_frame->frame_base);
    TValue *saved_top = restorestack(L, try_frame->saved_top);
@@ -530,13 +550,30 @@ extern "C" void setup_try_handler(lua_State *L)
    // or in the try block's frame (unwind_close_try_block).
 
    TValue *current_err = final_err ? final_err : errobj;
-   if (current_err and tvisstr(current_err)) {
-      error_msg = strVdata(current_err);
-      // Re-extract line number from new error message (same Windows-aware logic)
-      line = 0;
-      for (auto p = error_msg; *p; p++) {
+   GCstr *error_msg = nullptr;
+   GCstr *error_source = nullptr;
+   int line = 0;
+
+   if (L->pending_exception_valid) {
+      error_msg    = L->pending_exception_message;
+      error_source = L->pending_exception_source;
+      line         = L->pending_exception_line;
+   }
+   else if (current_err and tvisstr(current_err)) {
+      error_msg = strV(current_err);
+      CSTRING formatted_msg = strVdata(current_err);
+
+      // Fallback for older or unusual paths: extract location metadata from "filename:line: message".
+      // On Windows, filenames may contain colons (e.g., "E:\path\file.tiri:10: msg"), so search for
+      // the first colon followed by a digit.
+
+      for (auto p = formatted_msg; *p; p++) {
          if (*p IS ':' and p[1] >= '0' and p[1] <= '9') {
             line = int(strtol(p + 1, nullptr, 10));
+            if (p > formatted_msg) {
+               error_source = lj_str_new(L, formatted_msg, size_t(p - formatted_msg));
+               L->pending_exception_source = error_source;  // Root until err_clear_pending_exception().
+            }
             break;
          }
       }
@@ -550,8 +587,9 @@ extern "C" void setup_try_handler(lua_State *L)
 
    // Build exception table and place in handler's register (pass pending_trace, which may be null)
 
-   lj_try_build_exception_table(L, err_code, error_msg, line, exception_reg, L->pending_trace);
+   lj_try_build_exception_table(L, err_code, error_msg, error_source, line, exception_reg, L->pending_trace);
    L->pending_trace = nullptr;  // Ownership transferred to exception table builder
+   err_clear_pending_exception(L);
    L->CaughtError = ERR::Okay; // Reset CaughtError so it doesn't leak to subsequent exceptions
    L->try_handler_pc = handler_pc; // Stash handler PC for VM re-entry (already set, but confirm)
 }
@@ -1201,6 +1239,7 @@ LJ_NORET LJ_NOINLINE static void err_msgv(lua_State *L, ErrMsg em, ...)
    if (curr_funcisL(L)) L->top = curr_topL(L);
    msg = lj_strfmt_pushvf(L, err2msg(em), argp);
    va_end(argp);
+   err_record_pending_exception(L, msg, L->base - 1, nullptr);
    lj_debug_addloc(L, msg, L->base - 1, nullptr);
    lj_err_run(L);
 }
@@ -1223,6 +1262,7 @@ LJ_NOINLINE void lj_err_msgv(lua_State *L, ErrMsg em, ...)
    if (curr_funcisL(L)) L->top = curr_topL(L);
    auto msg = lj_strfmt_pushvf(L, err2msg(em), argp);
    va_end(argp);
+   err_record_pending_exception(L, msg, L->base - 1, nullptr);
    lj_debug_addloc(L, msg, L->base - 1, nullptr);
    lj_err_run(L);
 }
@@ -1306,6 +1346,7 @@ LJ_NOINLINE void lj_err_callermsg(lua_State *L, CSTRING msg)
          else pframe = frame_prevd(frame);
       }
    }
+   err_record_pending_exception(L, msg, pframe, frame);
    lj_debug_addloc(L, msg, pframe, frame);
    lj_err_run(L);
 }
@@ -1427,6 +1468,12 @@ extern lua_CFunction lua_atpanic(lua_State *L, lua_CFunction panicf)
 // Forwarders for the public API (C calling convention and no LJ_NORET).
 extern int lua_error(lua_State *L)
 {
+   err_clear_pending_exception(L);
+   if (L->top > L->base and tvisstr(L->top - 1)) {
+      L->pending_exception_message = strV(L->top - 1);
+      // No structured source metadata is available here.  Leave the pending record invalid so setup_try_handler()
+      // can fall back to parsing luaL_where() prefixes from preformatted C API error strings.
+   }
    lj_err_run(L);
    return 0;  //  unreachable
 }

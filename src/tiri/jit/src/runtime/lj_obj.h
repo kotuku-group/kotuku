@@ -1176,6 +1176,10 @@ struct lua_State {
    TryFrameStack try_stack;      // Exception frame stack (nullptr until first BC_TRYENTER)
    const BCIns   *try_handler_pc; // Handler PC for error re-entry (set during unwind)
    CapturedStackTrace *pending_trace; // Trace captured during exception handling (for try<trace>)
+   GCstr  *pending_exception_message = nullptr; // Raw exception message for try/except tables
+   GCstr  *pending_exception_source = nullptr;  // Display source filename for try/except tables
+   int    pending_exception_line = 0;           // Source line for try/except tables
+   bool   pending_exception_valid = false;      // True if pending exception metadata is current
    ERR    CaughtError = ERR::Okay; // Catches ERR results from module functions.
 
    // FileSource tracking for accurate error reporting in imported files
