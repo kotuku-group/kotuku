@@ -1,0 +1,452 @@
+-- Flute tests for the first-party command-line options library.
+
+   import 'options'
+
+function expect_error(Parser:table, Input:any, Code:num, MessagePart:str):table
+   local args, err = Parser.tryProcess(Input)
+   assert(args is nil, 'Expected parsing to fail')
+   assert(err != nil, 'Expected a structured error')
+   assert(err.code is Code, f"Expected error code '{Code}', got '{err.code}'")
+   if MessagePart != nil then
+      assert(err.message:find(MessagePart), f"Expected error message to include '{MessagePart}', got '{err.message}'")
+   end
+   assert(type(err.message) is 'string', 'Error should include a message')
+   return err
+end
+
+function expect_error_with_options(Parser:table, Input:any, Options:table, Code:num, MessagePart:str):table
+   local args, err = Parser.tryProcess(Input, Options)
+   assert(args is nil, 'Expected parsing to fail')
+   assert(err != nil, 'Expected a structured error')
+   assert(err.code is Code, f"Expected error code '{Code}', got '{err.code} {err.message}'")
+   if MessagePart != nil then
+      assert(err.message:find(MessagePart), f"Expected error message to include '{MessagePart}', got '{err.message}'")
+   end
+   return err
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ConstructEmptyParser()
+   parser = options({})
+   local args = parser.process(array<string> { })
+   assert(type(args) is 'table', 'Empty parser should process to a table')
+end
+
+@Test function NamedOptionsAndAliases()
+   parser = options({
+      name        = 'vuepoint',
+      description = 'Viewer',
+      epilog      = 'Done',
+      copyright   = 'Copyright',
+      license     = 'MIT',
+      args = array<table> {
+         { name = 'file', kind = 'option', type = 'file' },
+         { names = array<string> { 'verbose', 'v' }, kind = 'flag', type = 'bool' }
+      }
+   })
+
+   local args = parser.process(array<string> { 'file=scene.svg', 'v' })
+   assert(args.file is 'scene.svg', 'Named option should parse')
+   assert(args.verbose is true, 'Flag alias should parse')
+   assert(parser.getParam('verbose').name is 'verbose', 'Canonical parameter lookup should work')
+   assert(parser.getParam('v').name is 'verbose', 'Alias parameter lookup should work')
+end
+
+@Test function DuplicateAliasesFail()
+   try
+      options({
+         args = array<table> {
+            { names = array<string> { 'file', 'f' } },
+            { names = array<string> { 'folder', 'f' } }
+         }
+      })
+   except e
+      assert(tostring(e.message):find("Duplicate parameter name or alias 'f'"),
+         'Duplicate alias diagnostic should be reported')
+      return
+   end
+
+   error('Duplicate aliases should throw')
+end
+
+@Test function DuplicateAliasesWithinDefinitionFail()
+   try
+      options({ args = array<table> { { names = array<string> { 'file', 'file' } } } })
+   except e
+      assert(tostring(e.message):find("Duplicate parameter name or alias 'file'"),
+         'Duplicate aliases inside one definition should be reported')
+      return
+   end
+
+   error('Duplicate aliases inside one definition should throw')
+end
+
+@Test function AddParamRejectsDuplicates()
+   parser = options({ args = array<table> { { name = 'file' } } })
+
+   try
+      parser.addParam({ names = array<string> { 'folder', 'file' } })
+   except e
+      assert(tostring(e.message):find("Duplicate parameter name or alias 'file'"),
+         'Duplicate addParam() diagnostic should be reported')
+      return
+   end
+
+   error('addParam() should reject duplicate names')
+end
+
+@Test function DefaultsAndRequired()
+   parser = options({
+      args = array<table> {
+         { name = 'count', type = 'int', default = '7', required = true },
+         { name = 'output', type = 'path', required = true }
+      }
+   })
+
+   expect_error(parser, array<string> { }, ERR_ParameterRequired, "Required parameter 'output' is missing.")
+
+   local args = parser.process(array<string> { 'output=build/result.txt' })
+   assert(args.count is 7, 'String defaults should be converted')
+   assert(args.output is 'build/result.txt', 'Required option should parse')
+end
+
+@Test function FalseyDefaults()
+   parser = options({
+      args = array<table> {
+         { name = 'enabled', type = 'bool', default = false },
+         { name = 'count', type = 'int', default = 0 },
+         { name = 'label', type = 'str', default = '' }
+      }
+   })
+
+   local args = parser.process(array<string> { })
+   assert(args.enabled is false, 'False default should be applied')
+   assert(args.count is 0, 'Zero default should be applied')
+   assert(args.label is '', 'Empty string default should be applied')
+
+   args = parser.process(array<string> { 'enabled' })
+   assert(args.enabled is false, 'Bare option should use a false default when one exists')
+end
+
+@Test function OptionSyntax()
+   parser = options({
+      args = array<table> {
+         { name = 'enabled', type = 'bool' },
+         { name = 'mode', default = 'auto' }
+      }
+   })
+
+   expect_error(parser, array<string> { 'enabled' }, ERR_Syntax, "Parameter 'enabled' requires name=value syntax.")
+
+   local args = parser.process(array<string> { 'enabled=true', 'mode' })
+   assert(args.enabled is true, 'Boolean option should accept explicit values')
+   assert(args.mode is 'auto', 'Bare option should use its default when one exists')
+end
+
+@Test function FlagSyntax()
+   parser = options({
+      args = array<table> {
+         { names = array<string> { 'verbose', 'v' }, kind = 'flag', type = 'bool', default = false },
+         { name = 'dry-run', kind = 'flag', type = 'bool' }
+      }
+   })
+
+   local args = parser.process(array<string> { 'verbose', 'no-dry-run' })
+   assert(args.verbose is true, 'Bare flag should parse as true')
+   assert(args['dry-run'] is false, 'no- flag should parse as false')
+
+   args = parser.process(array<string> { 'v=0' })
+   assert(args.verbose is false, 'Explicit flag values should use boolean conversion')
+end
+
+@Test function NegationOnlyAppliesToFlags()
+   parser = options({ args = array<table> { { name = 'feature' } } })
+   expect_error(parser, array<string> { 'no-feature' }, ERR_Args,
+      "Parameter 'feature' is not a flag and cannot use no- negation.")
+end
+
+@Test function UnknownParametersRespectStrictMode()
+   strict_parser = options({ args = array<table> { { name = 'file' } } })
+   expect_error(strict_parser, array<string> { 'extra=value' }, ERR_Exception, "Unknown parameter 'extra'.")
+
+   loose_parser = options({ strict = false, args = array<table> { { name = 'file', default = 'fallback.txt' } } })
+   args = loose_parser.process(array<string> { 'extra=value' })
+   assert(args.file is 'fallback.txt', 'strict=false should ignore unknown named input')
+end
+
+@Test function BuiltInConverters()
+   parser = options({
+      args = array<table> {
+         { name = 'title', type = 'string' },
+         { name = 'ratio', type = 'number' },
+         { name = 'count', type = 'int' },
+         { name = 'enabled', type = 'bool' },
+         { name = 'path', type = 'path' },
+         { name = 'file', type = 'file' },
+         { name = 'folder', type = 'folder' }
+      }
+   })
+
+   args = parser.process(array<string> {
+      'title=hello',
+      'ratio=2.5',
+      'count=4',
+      'enabled=yes',
+      'path=some/path',
+      'file=scene.svg',
+      'folder=examples'
+   })
+
+   assert(args.title is 'hello', 'String converter failed')
+   assert(args.ratio is 2.5, 'Number converter failed')
+   assert(args.count is 4, 'Integer converter failed')
+   assert(args.enabled is true, 'Boolean converter failed')
+   assert(args.path is 'some/path', 'Path converter failed')
+   assert(args.file is 'scene.svg', 'File converter failed')
+   assert(args.folder is 'examples', 'Folder converter failed')
+
+   expect_error(parser, array<string> { 'count=4.5' }, ERR_WrongType, "Parameter 'count' requires an integer.")
+   expect_error(parser, array<string> { 'enabled=maybe' }, ERR_WrongType, "Parameter 'enabled' requires a boolean value.")
+end
+
+@Test function CustomConverter()
+   parser = options({
+      args = array<table> {
+         {
+            name = 'label',
+            type = function(RawValue:any, Definition:table, Parser:table):any
+               assert(Definition.name is 'label', 'Definition should be passed to custom converter')
+               assert(Parser.getParam('label') is Definition, 'Parser should be passed to custom converter')
+               return 'custom:' .. tostring(RawValue)
+            end
+         },
+         {
+            name = 'fail',
+            type = function(RawValue:any, Definition:table, Parser:table):any
+               error('custom failure')
+            end
+         }
+      }
+   })
+
+   args = parser.process(array<string> { 'label=value' })
+   assert(args.label is 'custom:value', 'Custom converter should transform values')
+
+   err = expect_error(parser, array<string> { 'fail=value' }, ERR_Exception, 'custom failure')
+   assert(err.message:find('custom failure'), 'Thrown converter errors should be returned by tryProcess()')
+end
+
+@Test function TryProcessDoesNotUseFailurePath()
+   parser = options({ args = array<table> { { name = 'file' } } })
+   called = false
+   parser.error = function(Error:any, ParamName:str)
+      called = true
+      error(Error)
+   end
+
+   args, err = parser.tryProcess(array<string> { 'unknown=value' })
+   assert(args is nil, 'tryProcess() should return nil on parse failure')
+   assert(err.code is ERR_Exception, 'tryProcess() should return the parse error')
+   assert(called is false, 'tryProcess() must not invoke parser.error()')
+end
+
+@Test function ProcessReturnsParsedArgs()
+   parser = options({ args = array<table> { { name = 'file', required = true } } })
+   called = false
+   parser.error = function(Error:any, ParamName:str)
+      called = true
+      error(Error)
+   end
+
+   args = parser.process(array<string> { 'file=scene.svg' })
+   assert(args.file is 'scene.svg', 'process() should return parsed arguments')
+   assert(called is false, 'process() should not call parser.error() on success')
+end
+
+@Test function TableInput()
+   parser = options({
+      args = array<table> {
+         { name = 'count', type = 'int' },
+         { name = 'enabled', kind = 'flag', type = 'bool' }
+      }
+   })
+
+   args = parser.process({ count = 3, enabled = false })
+   assert(args.count is 3, 'Table input should accept typed values')
+   assert(args.enabled is false, 'Table input should accept typed flag values')
+end
+
+@Test function PositionalOrdering()
+   parser = options({
+      args = array<table> {
+         { name = 'input', kind = 'positional', type = 'file', required = true },
+         { name = 'output', kind = 'option', type = 'file' }
+      }
+   })
+
+   args = parser.process(array<string> { 'scene.svg', 'output=preview.png' })
+   assert(args.input is 'scene.svg', 'First positional should parse in declaration order')
+   assert(args.output is 'preview.png', 'Named option should parse alongside positional input')
+end
+
+@Test function ExplicitInputBypassesTaskParameters()
+   parser = options({
+      args = array<table> {
+         { name = 'input', kind = 'positional', type = 'file' }
+      }
+   })
+
+   args = parser.process(array<string> { 'explicit.svg' }, {
+      taskParameters = array<string> { 'tools/flute.tiri', 'task.svg' }
+   })
+
+   assert(args.input is 'explicit.svg', 'Explicit input should take precedence over task parameters')
+end
+
+@Test function DefaultTaskParametersAreScannedAfterScriptPath()
+   parser = options({
+      args = array<table> {
+         { name = 'input', kind = 'positional', type = 'file' },
+         { name = 'output', kind = 'option', type = 'file' },
+         { name = 'verbose', kind = 'flag', type = 'bool' }
+      }
+   })
+
+   args = parser.process(nil, {
+      taskParameters = array<string> {
+         '--log-warning',
+         '--set-volume',
+         'scripts=E:/kotuku/scripts',
+         'examples/vue.tiri',
+         'scene.svg',
+         'output=preview.png',
+         'verbose'
+      }
+   })
+
+   assert(args.input is 'scene.svg', 'Default task input should begin after the script path')
+   assert(args.output is 'preview.png', 'Named option after the script path should parse')
+   assert(args.verbose is true, 'Flag after the script path should parse')
+end
+
+@Test function DefaultInputReadsCurrentTaskParameters()
+   parser = options({ strict = false, args = array<table> { { name = 'file' } } })
+   args = parser.process(nil)
+
+   assert(args.file != nil, 'Default input should read the current Flute file parameter from the active task')
+   assert(args.file:find('test_options.tiri'), 'Default input should expose the running test file argument')
+end
+
+@Test function ArgFallbackUsedWhenTaskParametersUnavailable()
+   parser = options({ strict = false, args = array<table> { { name = 'file' } } })
+   args = parser.process(nil, { taskParameters = false })
+
+   assert(args.file != nil, 'arg() fallback should be used when ordered task input is unavailable')
+   assert(args.file:find('test_options.tiri'), 'arg() fallback should expose the running test file argument')
+end
+
+@Test function PositionalUnavailableWithoutOrderedInput()
+   parser = options({
+      args = array<table> {
+         { name = 'input', kind = 'positional', required = true }
+      }
+   })
+
+   expect_error_with_options(parser, nil, { taskParameters = false }, ERR_ParameterRequired, "Required parameter 'input' is missing.")
+end
+
+@Test function RepeatedNamedValues()
+   parser = options({
+      args = array<table> {
+         { name = 'tag', type = 'int', multiple = true }
+      }
+   })
+
+   local args = parser.process(array<string> { 'tag=1', 'tag=2' })
+   assert(type(args.tag) is 'array', 'Repeated values should produce an array')
+   assert(#args.tag is 2, 'Repeated values should preserve every occurrence')
+   assert(args.tag[0] is 1, 'First repeated value should be converted')
+   assert(args.tag[1] is 2, 'Second repeated value should be converted')
+end
+
+@Test function MultipleDefaultsAreArrayShaped()
+   parser = options({
+      args = array<table> {
+         { name = 'single', type = 'int', multiple = true, default = '5' },
+         { name = 'many', type = 'int', multiple = true, default = array<string> { '1', '2' } }
+      }
+   })
+
+   local args = parser.process(array<string> { })
+   assert(type(args.single) is 'array', 'Scalar multiple default should be wrapped in an array')
+   assert(#args.single is 1, 'Scalar multiple default should produce one value')
+   assert(args.single[0] is 5, 'Scalar multiple default should be converted')
+   assert(#args.many is 2, 'Array multiple default should preserve every default value')
+   assert(args.many[0] is 1 and args.many[1] is 2, 'Array multiple default should convert each value')
+end
+
+@Test function TableInputMultipleValues()
+   parser = options({
+      args = array<table> {
+         { name = 'tag', type = 'int', multiple = true }
+      }
+   })
+
+   local args = parser.process({ tag = array<string> { '3', '4' } })
+   assert(#args.tag is 2, 'Programmatic array input should be treated as repeated values')
+   assert(args.tag[0] is 3 and args.tag[1] is 4, 'Programmatic repeated values should be converted')
+end
+
+@Test function TrailingVariadicPositional()
+   parser = options({
+      args = array<table> {
+         { name = 'input', kind = 'positional', type = 'file' },
+         { name = 'rest', kind = 'positional', type = 'str', multiple = true }
+      }
+   })
+
+   args = parser.process(array<string> { 'scene.svg', 'one', 'two' })
+   assert(args.input is 'scene.svg', 'Leading positional should receive the first value')
+   assert(type(args.rest) is 'array', 'Variadic positional should produce an array')
+   assert(#args.rest is 2, 'Variadic positional should consume remaining values')
+   assert(args.rest[0] is 'one' and args.rest[1] is 'two', 'Variadic positional should preserve order')
+end
+
+@Test function InvalidVariadicPositionalDeclaration()
+   try
+      options({
+         args = array<table> {
+            { name = 'rest', kind = 'positional', multiple = true },
+            { name = 'next', kind = 'positional' }
+         }
+      })
+   except e
+      assert(e.code is ERR_ParameterDef, 'Invalid variadic declaration should report a parameter definition error')
+      assert(tostring(e.message):find("Variadic positional parameter 'rest' must be the final positional."),
+         'Invalid variadic declaration should explain the ordering rule')
+      return
+   end
+
+   error('Variadic positional definitions should be final')
+end
+
+@Test function StrictOrderedUnknownTokens()
+   strict_parser = options({
+      args = array<table> {
+         { name = 'input', kind = 'positional' }
+      }
+   })
+
+   expect_error(strict_parser, array<string> { 'scene.svg', 'extra.svg' }, ERR_Exception, "Unknown parameter 'extra.svg'.")
+
+   loose_parser = options({
+      strict = false,
+      args = array<table> {
+         { name = 'input', kind = 'positional' }
+      }
+   })
+
+   args = loose_parser.process(array<string> { 'scene.svg', 'extra.svg' })
+   assert(args.input is 'scene.svg', 'strict=false should ignore extra ordered tokens')
+end

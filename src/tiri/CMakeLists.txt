@@ -743,7 +743,7 @@ set (TIRI_TESTS
    array_functional array_typed_syntax bitshift bitwise has_operator if_empty presence blank ternary table stress unit_tests
    jitoptions fstring const import_scope unicode ellipsis safe_nav close type_annotations type_fixing
    type_inference jit pipe pipe_iteration arrow_functions result_filter thunks deferred_expr shadow_assert ranges
-   annotations locality anonymous_for key_values debug_filesources compound choose_from flow table_slice
+   annotations locality anonymous_for key_values debug_filesources compound choose_from flow table_slice options
    try_except import processing metatables with thunk_table_index debug numeric_limits return_types url tips
 )
 

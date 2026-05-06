@@ -1,0 +1,667 @@
+--[[
+Options library.  See Wiki for details.
+--]]
+
+   namespace 'options'
+
+local create_parser
+
+   _LIB[_NS] = function(Config:table):table
+      return create_parser(Config)
+   end
+   options = _LIB[_NS]
+
+----------------------------------------------------------------------------------------------------------------------
+
+function enum(Start:num, Prefix:str, List:array)
+   val = Start
+   for name in values(List) do
+      _G[Prefix .. '_' .. name] = val
+      val++
+   end
+end
+
+enum(8000, 'ERR', array<string> {
+   'ParameterDef'
+})
+
+----------------------------------------------------------------------------------------------------------------------
+-- Build the canonical name and alias list for a parameter definition.
+
+function normalise_names(Definition:table):array
+   names = array<string>
+   seen = {}
+
+   if Definition.name then
+      names:push(Definition.name)
+      seen[Definition.name] = true
+   end
+
+   if Definition.names then
+      for i, name in ipairs(Definition.names) do
+         if seen[name] then
+            if Definition.name and i is 0 and name is Definition.name then
+               continue
+            end
+
+            raise ERR_DuplicateValue, f"Duplicate parameter name or alias '{name}'."
+         end
+
+         names:push(name)
+         seen[name] = true
+      end
+   end
+
+   if #names is 0 then
+      raise ERR_ParameterDef, 'Parameter definition requires a name or names list.'
+   end
+
+   return names
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Verify that a parameter name is usable as a command-line token name.
+
+function validate_name(Name:any, Field:str)
+   if type(Name) != 'string' or Name is '' then
+      raise ERR_EmptyString, 'Parameter names must be non-empty strings.'
+   end
+
+   if Name:find('=') then
+      raise ERR_Syntax, f"Parameter name '{Name}' cannot contain '='."
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Copy and normalise a caller-supplied parameter definition.
+
+function clone_definition(Definition:table):table
+   names = normalise_names(Definition)
+   canonical = names[0]
+
+   validate_name(canonical, 'name')
+
+   param = {}
+   for key, value in pairs(Definition) do
+      param[key] = value
+   end
+
+   param.name      = canonical
+   param.kind     ?= 'option'
+   param.type     ?= 'str'
+   param.required ?= false
+   param.multiple ?= false
+   param.names     = names
+
+   if param.kind != 'option' and param.kind != 'flag' and param.kind != 'positional' then
+      raise ERR_WrongType, f"Unsupported parameter kind '{param.kind}'."
+   end
+
+   for name in values(names) do
+      validate_name(name, 'names')
+   end
+
+   return param
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Split a command-line token into its name, value, and explicit-value marker.
+
+function split_token(Token:str):<str, any, bool>
+   parts = Token:split('=')
+   if #parts is 1 then
+      return Token, nil, false
+   end
+
+   return parts[0], Token:substr(#parts[0] + 1), true
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Convert a raw parameter value with one of the Stage 1 built-in converters.
+
+function convert_builtin(TypeName:str, Value:any, Param:table):any
+   if TypeName is 'str' or TypeName is 'string' then
+      if type(Value) is 'string' then return Value end
+      return tostring(Value)
+   elseif TypeName is 'num' or TypeName is 'number' then
+      if type(Value) is 'number' then return Value end
+
+      number = tonumber(Value)
+      assert(number, f"Parameter '{Param.name}' requires a number.")
+      return number
+   elseif TypeName is 'int' then
+      local number:any
+      if type(Value) is 'number' then
+         number = Value
+      else
+         number = tonumber(Value)
+      end
+
+      if number is nil or math.floor(number) != number then
+         raise ERR_WrongType, f"Parameter '{Param.name}' requires an integer."
+      end
+      return number
+   elseif TypeName is 'bool' then
+      if type(Value) is 'boolean' then return Value end
+
+      local text = tostring(Value):lower()
+      if text is 'true' or text is '1' or text is 'yes' or text is 'on' then return true end
+      if text is 'false' or text is '0' or text is 'no' or text is 'off' then return false end
+
+      raise ERR_WrongType, f"Parameter '{Param.name}' requires a boolean value."
+   elseif TypeName is 'path' or TypeName is 'file' or TypeName is 'folder' then
+      if type(Value) is 'string' then return Value, nil end
+      return tostring(Value)
+   end
+
+   raise ERR_InvalidType, f"Parameter '{Param.name}' has unknown type '{TypeName}'"
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Convert a raw value using either a custom converter or a built-in type name.
+
+function convert_value(Parser:table, Param:table, Value:any):any
+   converter = Param.type
+
+   if type(converter) is 'function' then
+      try
+         return converter(Value, Param, Parser)
+      except e
+         raise e.code, e.message
+      end
+   end
+
+   assert(type(converter) is 'string', f"Parameter '{Param.name}' type must be a string or function.")
+
+   return convert_builtin(converter, Value, Param)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Convert a single value and append it to an array-shaped multiple parameter result.
+
+function add_result_value(Parser:table, Result:table, Param:table, RawValue:any):table
+   if Param.multiple then
+      values = Result[Param.name]
+      if values is nil then
+         values = array<any>
+         Result[Param.name] = values
+      end
+
+      values:push(convert_value(Parser, Param, RawValue))
+      return
+   end
+
+   Result[Param.name] = convert_value(Parser, Param, RawValue)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Store a default value under the parameter's canonical name.
+
+function set_default_result(Parser:table, Result:table, Param:table, RawValue:any):table
+   if Param.multiple then
+      result_values = array<any>
+
+      if type(RawValue) is 'array' then
+         for value in values(RawValue) do
+            result_values:push(convert_value(Parser, Param, value))
+         end
+      else
+         result_values:push(convert_value(Parser, Param, RawValue))
+      end
+
+      Result[Param.name] = result_values
+      return
+   end
+
+   Result[Param.name] = convert_value(Parser, Param, RawValue)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Store observed input.  Programmatic array input for a multiple parameter is treated as repeated values.
+
+function add_observed_result(Parser:table, Result:table, Param:table, RawValue:any):table
+   if Param.multiple and type(RawValue) is 'array' then
+      for value in values(RawValue) do
+         add_result_value(Parser, Result, Param, value)
+      end
+      return
+   end
+
+   add_result_value(Parser, Result, Param, RawValue)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Apply option and flag syntax rules to a value observed in an input source.
+
+function parse_observed_value(Parser:table, Result:table, Param:table, ArgName:str, RawValue:any,
+   HasExplicitValue:bool):table
+
+   if Param.kind is 'flag' then
+      if HasExplicitValue then
+         return add_observed_result(Parser, Result, Param, RawValue)
+      end
+      return add_result_value(Parser, Result, Param, true)
+   end
+
+   if Param.kind is 'positional' then
+      return add_observed_result(Parser, Result, Param, RawValue)
+   end
+
+   if Param.multiple and not HasExplicitValue then
+      if Param.default != nil then
+         return set_default_result(Parser, Result, Param, Param.default)
+      end
+
+      raise ERR_Syntax, f"Parameter '{ArgName}' requires name=value syntax."
+   end
+
+   if HasExplicitValue then
+      return add_observed_result(Parser, Result, Param, RawValue)
+   end
+
+   if Param.default != nil then
+      return set_default_result(Parser, Result, Param, Param.default)
+   end
+
+   raise ERR_Syntax, f"Parameter '{ArgName}' requires name=value syntax."
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Apply a false value to a recognised no- flag token.
+
+function parse_flag_negation(Parser:table, Result:table, Name:str):bool
+   if not Name:startsWith('no-') then return false end
+
+   suffix = Name:substr(3)
+   param = Parser._named_lookup[suffix]
+
+   if param then
+      if param.kind is 'flag' then
+         add_result_value(Parser, Result, param, false)
+         return true
+      end
+
+      raise ERR_Args, f"Parameter '{suffix}' is not a flag and cannot use no- negation."
+   end
+
+   return false
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Assign an unnamed token to the next positional parameter.
+
+function parse_positional_value(Parser:table, Result:table, Token:str, PosIndex:num):num
+   if PosIndex >= #Parser._positionals then
+      assert(not Parser.strict, f"Unknown parameter '{Token}'.")
+      return PosIndex
+   end
+
+   param = Parser._positionals[PosIndex]
+
+   add_result_value(Parser, Result, param, Token)
+
+   if not param.multiple then
+      PosIndex++
+   end
+
+   return PosIndex
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Parse one ordered command-line token and apply it to the result table.
+
+function parse_ordered_token(Parser:table, Result:table, Token:str, PosIndex:num):num
+   name, value, has_explicit_value = split_token(Token)
+   param = Parser._named_lookup[name]
+
+   if param then
+      parse_observed_value(Parser, Result, param, name, value, has_explicit_value)
+      return PosIndex
+   end
+
+   if parse_flag_negation(Parser, Result, name) then
+      return PosIndex
+   end
+
+   if has_explicit_value then
+      assert(not Parser.strict, f"Unknown parameter '{name}'.")
+      return PosIndex
+   end
+
+   return parse_positional_value(Parser, Result, Token, PosIndex)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Check if a launcher option consumes the following argument.
+
+function launcher_option_needs_value(Token:str):bool
+   name = Token:substr(2)
+   eq = name:find('=')
+   if eq then return false end
+
+   name = name:lower()
+   return name is 'procedure' or name is 'statement' or name is 'jit-options' or name is 'set-volume' or
+      name is 'log-file' or name is 'gfx-driver'
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Remove launcher options and the script path from ordered task parameters.
+
+function get_script_arguments(Parameters:array):array
+   result = array<string>
+   index = 0
+   script_seen = false
+
+   while index < #Parameters do
+      token = Parameters[index]
+      assert(type(token) is 'string', 'Task parameters must contain strings')
+
+      if not script_seen then
+         if token:startsWith('--') then
+            if launcher_option_needs_value(token) and index + 1 < #Parameters then
+               index += 2
+            else
+               index++
+            end
+            continue
+         end
+
+         script_seen = true
+         index++
+         continue
+      end
+
+      result:push(token)
+      index++
+   end
+
+   return result
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Read ordered arguments from the active task, or return nil if they are unavailable.
+
+function get_task_parameters(Options:table):array
+   if Options and Options.taskParameters != nil then
+      if Options.taskParameters is false then return nil end
+      assert(type(Options.taskParameters) is 'array', 'Options.taskParameters must be an array or false.')
+      return Options.taskParameters
+   end
+
+   try
+      task = processing.task()
+      if task and task.parameters and #task.parameters > 0 then
+         return task.parameters
+      end
+   end
+
+   return nil
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Parse ordered command-line tokens, preserving the order of named and positional input.
+
+function parse_ordered_input(Parser:table, Result:table, Input:array)
+   pos_index = 0
+
+   for token in values(Input) do
+      assert(type(token) is 'string', 'Command-line input must contain strings')
+      pos_index = parse_ordered_token(Parser, Result, token, pos_index)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Fill in default values for parameters that were not supplied by input.
+
+function apply_defaults(Parser:table, Result:table):table
+   for param in values(Parser._params) do
+      if Result[param.name] is nil and param.default != nil then
+         err = set_default_result(Parser, Result, param, param.default)
+         if err then return err end
+      end
+   end
+
+   return nil
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Raise an error for any required parameter that remains unset after defaults.
+
+function check_required(Parser:table, Result:table)
+   for param in values(Parser._params) do
+      if param.required and Result[param.name] is nil then
+         raise ERR_ParameterRequired, f"Required parameter '{param.name}' is missing."
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Parse a table of keyed values as explicit parameter input.
+
+function parse_table_input(Parser:table, Result:table, Input:table)
+   for name, value in pairs(Input) do
+      local param = Parser._lookup[name]
+      if param is nil then
+         if Parser.strict then
+            raise ERR_ParameterUnknown, f"Unknown parameter '{name}'."
+         end
+      else
+         parse_observed_value(Parser, Result, param, name, value, true)
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Read named script arguments through arg() when no explicit input is supplied.
+
+function parse_arg_fallback(Parser:table, Result:table):table
+   for param in values(Parser._params) do
+      for name in values(param.names) do
+         value = arg(name, nil)
+         if value then
+            err = parse_observed_value(Parser, Result, param, name, value, true)
+            if err then return err end
+            break
+         end
+      end
+   end
+
+   return nil
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Parse the selected input source into a typed argument table.
+
+function parse_input(Parser:table, Input:any, Options:table):table
+   result = {}
+
+   if Input is nil then
+      task_parameters = get_task_parameters(Options)
+      if task_parameters then
+         parse_ordered_input(Parser, result, get_script_arguments(task_parameters))
+      else
+         parse_arg_fallback(Parser, result)
+      end
+   elseif type(Input) is 'array' then
+      parse_ordered_input(Parser, result, Input)
+   elseif type(Input) is 'table' then
+      parse_table_input(Parser, result, Input)
+   else
+      raise ERR_WrongType, 'Input must be an array, table, or nil.'
+   end
+
+   apply_defaults(Parser, result)
+   check_required(Parser, result)
+   return result
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Validate, normalise, and register a parameter definition with a parser.
+
+function add_param(Parser:table, Definition:table):table
+   assert(type(Definition) is 'table', 'Parameter definition must be a table.')
+
+   param = clone_definition(Definition)
+
+   for name in values(param.names) do
+      if Parser._lookup[name] then
+         raise ERR_DuplicateValue, f"Duplicate parameter name or alias '{name}'."
+      end
+   end
+
+   if param.kind is 'positional' then
+      for existing in values(Parser._positionals) do
+         if existing.multiple then
+            raise ERR_ParameterDef, f"Variadic positional parameter '{existing.name}' must be the final positional."
+         end
+      end
+   end
+
+   Parser._params:push(param)
+   for name in values(param.names) do
+      Parser._lookup[name] = param
+      if param.kind != 'positional' then
+         Parser._named_lookup[name] = param
+      end
+   end
+
+   if param.kind is 'positional' then
+      Parser._positionals:push(param)
+   end
+
+   return param
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Construct a parser instance from caller-supplied configuration.
+
+create_parser = function(Config:table):table
+   Config ?= {}
+   assert(type(Config) is 'table', 'options() expects a configuration table.')
+
+   local parser = {
+      name        = Config.name,
+      description = Config.description,
+      epilog      = Config.epilog,
+      copyright   = Config.copyright,
+      license     = Config.license,
+      strict      = Config.strict
+   }
+
+   if parser.strict is nil then parser.strict = true end
+
+   parser._params       = array<table>
+   parser._positionals  = array<table>
+   parser._lookup       = {}
+   parser._named_lookup = {}
+
+   @Doc(text=[[
+   Add a parameter definition to the parser
+
+   Validates and registers a parameter definition using the same rules as entries supplied through the parser
+   configuration `args` array.  The definition may use `name` or `names`; when `names` is supplied, the first name is
+   the canonical parameter name and later names are aliases.  Omitted `kind`, `type`, and `required` fields default to
+   `option`, `str`, and `false` respectively.
+
+   Duplicate canonical names or aliases are rejected.  The returned table is the normalised parameter definition stored
+   by the parser, and can be retrieved later with parser.getParam().
+
+   -INPUT-
+   Definition: Parameter definition table to validate and register.
+
+   -RESULT-
+   table: Normalised parameter definition registered with the parser.
+   ]])
+   parser.addParam = function(Definition:table):table
+      return add_param(parser, Definition)
+   end
+
+   @Doc(text=[[
+   Return a registered parameter definition
+
+   Looks up a parameter definition by canonical name or alias.  The returned table is the normalised definition stored
+   by this parser, or `nil` when no registered parameter matches `Name`.
+
+   -INPUT-
+   Name: Canonical parameter name or alias to look up.
+
+   -RESULT-
+   table: Registered parameter definition, or `nil` when the name is unknown.
+   ]])
+   parser.getParam = function(Name:str):table
+      return parser._lookup[Name]
+   end
+
+   @Doc(text=[[
+   Parse command-line option input without raising parser errors
+
+   Attempts to parse the supplied input with this parser's parameter definitions.  This is the non-terminating parsing
+   API intended for tests and advanced callers: parse failures are returned as standard exception tables instead of being
+   raised through the default failure path.
+
+   Input may be an array of command-line tokens such as `array<string> { 'scene.svg', 'verbose' }`, a table of keyed
+   values, or `nil`.  When `Input` is `nil`, parsing reads ordered arguments from the active task parameters after the
+   script path.  If ordered task input is unavailable, named script arguments are read from `arg()`.  Explicit arrays
+   and tables bypass task input.  Named options use `name=value` syntax unless a default allows a bare option token.
+   Flags accept `name`, `no-name`, or `name=value` syntax.
+
+   `Options` is reserved for later parser controls.
+
+   -INPUT-
+   Input: Explicit input to parse, or `nil` to use the default ordered task argument source.
+   Options: Reserved for later parser controls.
+
+   -RESULTS-
+   table: Parsed argument table, or `nil` when parsing fails.
+   table: Standard exception table when parsing fails.
+   ]])
+   parser.tryProcess = function(Input:any, Options:table):<table, table>
+      try
+         return parse_input(parser, Input, Options)
+      except ex
+         return nil, ex
+      end
+   end
+
+   @Doc(text=[[
+   Parse command-line option input and raise parser errors
+
+   Parses the supplied input with this parser's parameter definitions.  This is the convenient parsing API intended for
+   normal scripts: successful parses return the typed argument table, while parse failures are raised as normal Tiri
+   errors.
+
+   Input may be an array of command-line tokens such as `array<string> { 'scene.svg', 'verbose' }`, a table of keyed
+   values, or `nil`.  When `Input` is `nil`, parsing reads ordered arguments from the active task parameters after the
+   script path.  If ordered task input is unavailable, named script arguments are read from `arg()`.  Explicit arrays
+   and tables bypass task input.  Named options use `name=value` syntax unless a default allows a bare option token.
+   Flags accept `name`, `no-name`, or `name=value` syntax.
+
+   Use parser.tryProcess() when parser failures should be returned instead of raised.
+
+   `Options` is reserved for later parser controls.
+
+   -INPUT-
+   Input: Explicit input to parse, or `nil` to use the default ordered task argument source.
+   Options: Reserved for later parser controls.
+
+   -RESULT-
+   table: Parsed argument table.
+   ]])
+   parser.process = function(Input:any, Options:table):table
+      local result, err = parser.tryProcess(Input, Options)
+      if err then
+         raise err.code, err.message
+      end
+      return result
+   end
+
+   if Config.args then
+      assert(type(Config.args) is 'array' or type(Config.args) is 'table', 'Parser args must be an array of parameter definitions.')
+
+      for definition in values(Config.args) do
+         parser.addParam(definition)
+      end
+   end
+
+   return parser
+end
