@@ -586,6 +586,8 @@ LJLIB_CF(error)
       GCstr *message = nullptr;
       GCstr *source = nullptr;
       int line = 0;
+      ERR error_code = ERR::Okay;
+      bool has_error_code = false;
 
       lua_getfield(L, 1, "message");
       if (tvisstr(L->top - 1)) message = strV(L->top - 1);
@@ -598,11 +600,19 @@ LJLIB_CF(error)
       if (tvisnum(L->top - 1)) line = int(numV(L->top - 1));
       lua_pop(L, 1);
 
+      lua_getfield(L, 1, "code");
+      if (tvisnum(L->top - 1)) {
+         error_code = ERR(numberVint(L->top - 1));
+         has_error_code = true;
+      }
+      lua_pop(L, 1);
+
       if (message) {
          L->pending_exception_message = message;
          L->pending_exception_source  = source;
          L->pending_exception_line    = line;
          L->pending_exception_valid   = true;
+         if (has_error_code) L->CaughtError = error_code;
          rethrow_metadata = true;
          lua_replace(L, 1);  // Replace the table with the message string
       }

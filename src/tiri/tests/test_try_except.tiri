@@ -156,6 +156,27 @@ end
    assert(outer_handled, "Rethrown exception should be caught by outer handler")
 end
 
+@Test(priority=5) function RethrowPreservesErrorCodeForFilters()
+   local matched_args = false
+
+   try
+      try
+         raise ERR_Args, "Rethrown args"
+      except e
+         assert(e.code is ERR_Args, "Inner handler should receive ERR_Args")
+         error(e)
+      end
+   except e when ERR_Args
+      matched_args = true
+      assert(e.code is ERR_Args, "Outer filtered handler should receive ERR_Args")
+      assert(e.message is "Rethrown args", "Rethrow should preserve raw message")
+   except e
+      assert(false, "Rethrown ERR_Args should not fall through to catch-all with code " .. tostring(e.code))
+   end
+
+   assert(matched_args, "Rethrown ERR_Args should match outer ERR_Args filter")
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- Exception table fields
 
