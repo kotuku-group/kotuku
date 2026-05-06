@@ -1,5 +1,6 @@
 -- Flute tests for the first-party command-line options library.
 
+   include 'core'
    import 'options'
 
 function expect_error(Parser:table, Input:any, Code:num, MessagePart:str):table
@@ -23,6 +24,27 @@ function expect_error_with_options(Parser:table, Input:any, Options:table, Code:
       assert(err.message:find(MessagePart), f"Expected error message to include '{MessagePart}', got '{err.message}'")
    end
    return err
+end
+
+function expect_validate_error(Parser:table, Args:table, Code:num, MessagePart:str):table
+   try
+      Parser.validate(Args)
+   except err
+      assert(err.code is Code, f"Expected error code '{Code}', got '{err.code} {err.message}'")
+      if MessagePart != nil then
+         assert(err.message:find(MessagePart),
+            f"Expected error message to include '{MessagePart}', got '{err.message}'")
+      end
+      return err
+   end
+
+   error('Expected validation to fail')
+end
+
+function set_test_env(Name:str, Value:any)
+   task = processing.task()
+   err = task.mtSetEnv(Name, Value)
+   assert(err is ERR_Okay, f"Failed to set environment variable '{Name}': {mSys.GetErrorMsg(err)}")
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -207,7 +229,8 @@ end
    assert(args.folder is 'examples', 'Folder converter failed')
 
    expect_error(parser, array<string> { 'count=4.5' }, ERR_WrongType, "Parameter 'count' requires an integer.")
-   expect_error(parser, array<string> { 'enabled=maybe' }, ERR_WrongType, "Parameter 'enabled' requires a boolean value.")
+   expect_error(parser, array<string> { 'enabled=maybe' }, ERR_WrongType,
+      "Parameter 'enabled' requires a boolean value.")
 end
 
 @Test function CustomConverter()
@@ -353,7 +376,8 @@ end
       }
    })
 
-   expect_error_with_options(parser, nil, { taskParameters = false }, ERR_ParameterRequired, "Required parameter 'input' is missing.")
+   expect_error_with_options(parser, nil, { taskParameters = false }, ERR_ParameterRequired,
+      "Required parameter 'input' is missing.")
 end
 
 @Test function RepeatedNamedValues()
@@ -438,7 +462,8 @@ end
       }
    })
 
-   expect_error(strict_parser, array<string> { 'scene.svg', 'extra.svg' }, ERR_Exception, "Unknown parameter 'extra.svg'.")
+   expect_error(strict_parser, array<string> { 'scene.svg', 'extra.svg' }, ERR_Exception,
+      "Unknown parameter 'extra.svg'.")
 
    loose_parser = options({
       strict = false,
@@ -449,4 +474,270 @@ end
 
    args = loose_parser.process(array<string> { 'scene.svg', 'extra.svg' })
    assert(args.input is 'scene.svg', 'strict=false should ignore extra ordered tokens')
+end
+
+@Test function ParserDefaultsAndSetDefaults()
+   parser = options({
+      defaults = { count = '2', mode = 'parser' },
+      args = array<table> {
+         { name = 'count', type = 'int', default = '1' },
+         { name = 'mode', type = 'str', default = 'param' }
+      }
+   })
+
+   args = parser.process(array<string> { })
+   assert(args.count is 2, 'Parser defaults should override parameter defaults')
+   assert(args.mode is 'parser', 'Parser string defaults should apply')
+
+   returned = parser.setDefaults({ count = '3' })
+   assert(returned is parser, 'setDefaults() should return the parser')
+
+   args = parser.process(array<string> { })
+   assert(args.count is 3, 'setDefaults() should override parser defaults')
+   assert(args.mode is 'parser', 'Parser defaults should remain below the setDefaults layer')
+
+   args = parser.process(array<string> { 'count=4' })
+   assert(args.count is 4, 'Explicit input should override every default layer')
+end
+
+@Test function EnvironmentLookupAndRequired()
+   set_test_env('KOTUKU_OPTIONS_STAGE3_FILE', 'scene.svg')
+   set_test_env('KOTUKU_OPTIONS_STAGE3_VERBOSE', 'yes')
+   set_test_env('KOTUKU_OPTIONS_STAGE3_V', 'no')
+   set_test_env('KOTUKU_OPTIONS_STAGE3_DRY_RUN', 'true')
+
+   parser = options({
+      envPrefix = 'KOTUKU_OPTIONS_STAGE3',
+      args = array<table> {
+         { name = 'file', type = 'file', required = true },
+         { names = array<string> { 'verbose', 'v' }, kind = 'flag', type = 'bool' },
+         { name = 'dryRun', kind = 'flag', type = 'bool' }
+      }
+   })
+
+   args = parser.process(array<string> { })
+   assert(args.file is 'scene.svg', 'Environment values should satisfy required parameters')
+   assert(args.verbose is true, 'Environment values should be converted')
+   assert(args.dryRun is true, 'Camel-case names should be converted to upper snake-case environment names')
+
+   set_test_env('KOTUKU_OPTIONS_STAGE3_FILE', nil)
+   set_test_env('KOTUKU_OPTIONS_STAGE3_VERBOSE', nil)
+   set_test_env('KOTUKU_OPTIONS_STAGE3_V', nil)
+   set_test_env('KOTUKU_OPTIONS_STAGE3_DRY_RUN', nil)
+end
+
+@Test function SourcePrecedenceOrder()
+   set_test_env('KOTUKU_OPTIONS_PRECEDENCE_COUNT', '4')
+
+   parser = options({
+      envPrefix = 'KOTUKU_OPTIONS_PRECEDENCE',
+      defaults = { count = '2' },
+      args = array<table> {
+         { name = 'count', type = 'int', default = '1' }
+      }
+   })
+   parser.setDefaults({ count = '3' })
+
+   args = parser.process(array<string> { })
+   assert(args.count is 4, 'Environment values should override all default layers')
+
+   args = parser.process(array<string> { 'count=5' })
+   assert(args.count is 5, 'Input values should override environment values')
+
+   set_test_env('KOTUKU_OPTIONS_PRECEDENCE_COUNT', nil)
+end
+
+@Test function SourcePrecedenceDefersConversion()
+   set_test_env('KOTUKU_OPTIONS_BAD_COUNT', 'bad')
+
+   env_parser = options({
+      envPrefix = 'KOTUKU_OPTIONS_BAD',
+      args = array<table> {
+         { name = 'count', type = 'int' }
+      }
+   })
+
+   args = env_parser.process(array<string> { 'count=3' })
+   assert(args.count is 3, 'Explicit input should override an invalid environment value before conversion')
+   expect_error(env_parser, array<string> { }, ERR_WrongType, "Parameter 'count' requires an integer.")
+
+   default_parser = options({
+      defaults = { count = 'bad' },
+      args = array<table> {
+         { name = 'count', type = 'int' }
+      }
+   })
+
+   args = default_parser.process(array<string> { 'count=4' })
+   assert(args.count is 4, 'Explicit input should override an invalid default before conversion')
+   expect_error(default_parser, array<string> { }, ERR_WrongType, "Parameter 'count' requires an integer.")
+
+   set_test_env('KOTUKU_OPTIONS_BAD_COUNT', nil)
+end
+
+@Test function ChoicesEnumAndPatternValidation()
+   parser = options({
+      args = array<table> {
+         { name = 'mode', type = 'enum', choices = array<string> { 'fast', 'slow' } },
+         { name = 'tag', type = 'str', pattern = regex.new('^[a-z][a-z0-9_]+$') }
+      }
+   })
+
+   args = parser.process(array<string> { 'mode=fast', 'tag=build_1' })
+   assert(args.mode is 'fast', 'Enum values should parse as strings')
+   assert(args.tag is 'build_1', 'Pattern-matching values should parse')
+
+   expect_error(parser, array<string> { 'mode=medium' }, ERR_Args, "Parameter 'mode' must be one of: fast, slow.")
+   expect_error(parser, array<string> { 'tag=1_bad' }, ERR_Args, "Parameter 'tag' does not match the required pattern.")
+
+   try
+      options({ args = array<table> { { name = 'bad', type = 'enum' } } })
+   except e
+      assert(e.code is ERR_ParameterDef, 'Enum without choices should fail as a parameter definition error')
+      return
+   end
+
+   error('Enum parameters should require choices')
+end
+
+@Test function ExistingPathValidation()
+   parser = options({
+      args = array<table> {
+         { name = 'path', type = 'path', exists = true },
+         { name = 'file', type = 'file', exists = true },
+         { name = 'folder', type = 'folder', exists = true }
+      }
+   })
+
+   args = parser.process(array<string> {
+      'path=scripts/options.tiri',
+      'file=scripts/options.tiri',
+      'folder=scripts'
+   })
+   assert(args.path is 'scripts/options.tiri', 'Existing path should parse')
+   assert(args.file is 'scripts/options.tiri', 'Existing file should parse')
+   assert(args.folder is 'scripts', 'Existing folder should parse')
+
+   expect_error(parser, array<string> { 'path=does-not-exist' }, ERR_FileNotFound, "does not exist")
+   expect_error(parser, array<string> { 'file=scripts' }, ERR_ExpectedFile, "is not a file")
+   expect_error(parser, array<string> { 'folder=scripts/options.tiri' }, ERR_ExpectedFolder, "is not a folder")
+end
+
+@Test function MultipleValuesUseValidationRules()
+   parser = options({
+      args = array<table> {
+         { name = 'level', type = 'int', multiple = true, choices = array<any> { 1, 2, 3 } }
+      }
+   })
+
+   args = parser.process(array<string> { 'level=1', 'level=3' })
+   assert(#args.level is 2, 'Repeated validated values should be preserved')
+   assert(args.level[0] is 1 and args.level[1] is 3, 'Repeated values should be converted before validation')
+
+   expect_error(parser, array<string> { 'level=4' }, ERR_Args, "Parameter 'level' must be one of: 1, 2, 3.")
+end
+
+@Test function RelationshipValidation()
+   parser = options({
+      args = array<table> {
+         { name = 'output', requires = 'input' },
+         { name = 'input' },
+         { name = 'credentials', requiresAny = array<string> { 'user', 'token' } },
+         { name = 'user' },
+         { name = 'token' },
+         { name = 'dry-run', kind = 'flag', excludes = 'write' },
+         { name = 'write', kind = 'flag' }
+      }
+   })
+
+   args = parser.process(array<string> { 'input=scene.svg', 'output=preview.png', 'credentials=x', 'token=abc' })
+   assert(args.output is 'preview.png', 'requires should pass when the dependency is present')
+
+   expect_error(parser, array<string> { 'output=preview.png' }, ERR_ParameterRequired,
+      "Parameter 'output' requires 'input'.")
+   expect_error(parser, array<string> { 'credentials=x' }, ERR_ParameterRequired,
+      "Parameter 'credentials' requires one of: user, token.")
+   expect_error(parser, array<string> { 'dry-run', 'write' }, ERR_Args, "Parameter 'dry-run' excludes 'write'.")
+end
+
+@Test function RelationshipValidationUsesExplicitPresence()
+   parser = options({
+      args = array<table> {
+         { name = 'output', default = 'preview.png', requires = 'input' },
+         { name = 'input' },
+         { name = 'dry-run', kind = 'flag', type = 'bool', default = false, excludes = 'write' },
+         { name = 'write', kind = 'flag', type = 'bool' }
+      }
+   })
+
+   args = parser.process(array<string> { 'write' })
+   assert(args.output is 'preview.png', 'Defaulted options should still be applied')
+   assert(args['dry-run'] is false, 'Defaulted flags should still be applied')
+   assert(args.write is true, 'Explicit flags should parse when excluded only by an unsupplied defaulted flag')
+
+   expect_error(parser, array<string> { 'output=final.png' }, ERR_ParameterRequired,
+      "Parameter 'output' requires 'input'.")
+   expect_error(parser, array<string> { 'dry-run', 'write' }, ERR_Args, "Parameter 'dry-run' excludes 'write'.")
+end
+
+@Test function ExecReceivesParserArgValueAndDefinition()
+   called = false
+   seen_arg = nil
+   seen_value = nil
+   seen_definition = nil
+
+   parser = options({
+      args = array<table> {
+         {
+            names = array<string> { 'level', 'l' },
+            type = 'int',
+            exec = function(Parser:table, Arg:str, Value:any, Definition:table):any
+               assert(Parser.getParam('level') is Definition, 'exec should receive the parser and definition')
+               called = true
+               seen_arg = Arg
+               seen_value = Value
+               seen_definition = Definition
+            end
+         }
+      }
+   })
+
+   args = parser.process(array<string> { 'l=3' })
+   assert(args.level is 3, 'exec should run after conversion')
+   assert(called is true, 'exec should be called during validation')
+   assert(seen_arg is 'l', 'exec should receive the original input argument name')
+   assert(seen_value is 3, 'exec should receive the converted value')
+   assert(seen_definition.name is 'level', 'exec should receive the canonical definition')
+end
+
+@Test function ValidateConvertsAndChecksCallerTables()
+   parser = options({
+      args = array<table> {
+         { name = 'count', type = 'int', required = true },
+         { name = 'mode', type = 'enum', choices = array<string> { 'fast', 'slow' } },
+         { name = 'output', requires = 'mode' }
+      }
+   })
+
+   args = parser.validate({ count = '7', mode = 'slow' })
+   assert(args.count is 7, 'validate() should convert caller-supplied values')
+   assert(args.mode is 'slow', 'validate() should return validated values')
+
+   expect_validate_error(parser, { mode = 'fast' }, ERR_ParameterRequired, "Required parameter 'count' is missing.")
+   expect_validate_error(parser, { count = '1', output = 'preview.png' }, ERR_ParameterRequired,
+      "Parameter 'output' requires 'mode'.")
+end
+
+@Test function ValidationRunsAfterSourcePrecedence()
+   parser = options({
+      defaults = { mode = 'invalid' },
+      args = array<table> {
+         { name = 'mode', type = 'enum', choices = array<string> { 'fast', 'slow' } }
+      }
+   })
+
+   args = parser.process(array<string> { 'mode=fast' })
+   assert(args.mode is 'fast', 'Higher-precedence input should be the value that validation sees')
+
+   expect_error(parser, array<string> { }, ERR_Args, "Parameter 'mode' must be one of: fast, slow.")
 end
