@@ -560,6 +560,11 @@ LJLIB_ASM(tostring)      LJLIB_REC(.)
 
 //********************************************************************************************************************
 // Base library: throw and catch errors
+//
+// error(Message:str, [Level:int])
+// error(Exception:table, [Level:int]) For rethrowing exceptions
+//
+// Level can be set to zero to suppress the inclusion of source and line number injection.
 
 LJLIB_CF(error)
 {
@@ -579,11 +584,12 @@ LJLIB_CF(error)
 
    // Handle regular string errors.
    if (lua_isstring(L, 1) and level > 0) {
-      luaL_where(L, level);
+      luaL_where(L, level);  // Inject source and line number
       lua_pushvalue(L, 1);
       lua_concat(L, 2);
    }
-   return lua_error(L);
+   lj_err_run(L); // Does not return
+   return 0;
 }
 
 //********************************************************************************************************************

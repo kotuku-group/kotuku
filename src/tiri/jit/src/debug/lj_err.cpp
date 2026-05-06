@@ -1167,8 +1167,8 @@ LJ_NOINLINE void lj_err_run(lua_State *L)
 {
    ptrdiff_t ef = tvref(G(L)->jit_base) ? 0 : finderrfunc(L);
    if (ef) {
-      TValue* errfunc = restorestack(L, ef);
-      TValue* top = L->top;
+      TValue *errfunc = restorestack(L, ef);
+      TValue *top = L->top;
       lj_trace_abort(G(L));
       if (!tvisfunc(errfunc) or L->status IS LUA_ERRERR) {
          setstrV(L, top - 1, lj_err_str(L, ErrMsg::ERRERR));
@@ -1177,7 +1177,7 @@ LJ_NOINLINE void lj_err_run(lua_State *L)
       L->status = LUA_ERRERR;
       copyTV(L, top + LJ_FR2, top - 1);
       copyTV(L, top - 1, errfunc);
-      if (LJ_FR2) setnilV(top++);
+      setnilV(top++);
       L->top = top + 1;
       lj_vm_call(L, top, 1 + 1);  //  Stack: |errfunc|msg| -> |msg|
    }
@@ -1281,7 +1281,7 @@ LJ_NOINLINE void lj_err_optype_call(lua_State *L, TValue* o)
    if (((ptrdiff_t)pc & FRAME_TYPE) != FRAME_LUA) {
       CSTRING tname = lj_typename(o);
       setframe_gc(o, obj2gco(L), LJ_TTHREAD);
-      if (LJ_FR2) o++;
+      o++;
       setframe_pc(o, pc);
       L->top = L->base = o + 1;
       err_msgv(L, ErrMsg::BADCALL, tname);

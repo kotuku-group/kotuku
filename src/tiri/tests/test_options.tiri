@@ -1,0 +1,1539 @@
+-- Flute tests for the first-party command-line options library.
+
+   include 'core'
+   import 'options'
+
+function expect_error(Parser:table, Input:any, Code:num, MessagePart:str):table
+   local args, err = Parser.tryProcess(Input)
+   assert(args is nil, 'Expected parsing to fail')
+   assert(err != nil, 'Expected a structured error')
+   assert(err.code is Code, f"Expected error code '{Code}', got '{err.code}'")
+   if MessagePart != nil then
+      assert(err.message:find(MessagePart), f"Expected error message to include '{MessagePart}', got '{err.message}'")
+   end
+   assert(type(err.message) is 'string', 'Error should include a message')
+   return err
+end
+
+function expect_error_with_options(Parser:table, Input:any, Options:table, Code:num, MessagePart:str):table
+   local args, err = Parser.tryProcess(Input, Options)
+   assert(args is nil, 'Expected parsing to fail')
+   assert(err != nil, 'Expected a structured error')
+   assert(err.code is Code, f"Expected error code '{Code}', got '{err.code} {err.message}'")
+   if MessagePart != nil then
+      assert(err.message:find(MessagePart), f"Expected error message to include '{MessagePart}', got '{err.message}'")
+   end
+   return err
+end
+
+function expect_validate_error(Parser:table, Args:table, Code:num, MessagePart:str):table
+   try
+      Parser.validate(Args)
+   except err
+      assert(err.code is Code, f"Expected error code '{Code}', got '{err.code} {err.message}'")
+      if MessagePart != nil then
+         assert(err.message:find(MessagePart),
+            f"Expected error message to include '{MessagePart}', got '{err.message}'")
+      end
+      return err
+   end
+
+   error('Expected validation to fail')
+end
+
+function expect_options_error(Config:table, Code:num, MessagePart:str):table
+   try
+      options(Config)
+   except err
+      assert(err.code is Code, f"Expected error code '{Code}', got '{err.code} {err.message}'")
+      if MessagePart != nil then
+         assert(err.message:find(MessagePart),
+            f"Expected error message to include '{MessagePart}', got '{err.message}'")
+      end
+      return err
+   end
+
+   error('Expected parser construction to fail')
+end
+
+function set_test_env(Name:str, Value:any)
+   task = processing.task()
+   err = task.mtSetEnv(Name, Value)
+   assert(err is ERR_Okay, f"Failed to set environment variable '{Name}': {mSys.GetErrorMsg(err)}")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ConstructEmptyParser()
+   parser = options({})
+   local args = parser.process(array<string> { })
+   assert(type(args) is 'table', 'Empty parser should process to a table')
+end
+
+@Test function NamedOptionsAndAliases()
+   parser = options({
+      name        = 'vuepoint',
+      description = 'Viewer',
+      epilog      = 'Done',
+      copyright   = 'Copyright',
+      license     = 'MIT',
+      args = array<table> {
+         { name = 'file', kind = 'option', type = 'file' },
+         { names = array<string> { 'verbose', 'v' }, kind = 'flag', type = 'bool' }
+      }
+   })
+
+   local args = parser.process(array<string> { 'file=scene.svg', 'v' })
+   assert(args.file is 'scene.svg', 'Named option should parse')
+   assert(args.verbose is true, 'Flag alias should parse')
+   assert(parser.getParam('verbose').name is 'verbose', 'Canonical parameter lookup should work')
+   assert(parser.getParam('v').name is 'verbose', 'Alias parameter lookup should work')
+end
+
+@Test function DuplicateAliasesFail()
+   try
+      options({
+         args = array<table> {
+            { names = array<string> { 'file', 'f' } },
+            { names = array<string> { 'folder', 'f' } }
+         }
+      })
+   except e
+      assert(tostring(e.message):find("Duplicate parameter name or alias 'f'"),
+         'Duplicate alias diagnostic should be reported')
+      return
+   end
+
+   error('Duplicate aliases should throw')
+end
+
+@Test function DuplicateAliasesWithinDefinitionFail()
+   try
+      options({ args = array<table> { { names = array<string> { 'file', 'file' } } } })
+   except e
+      assert(tostring(e.message):find("Duplicate parameter name or alias 'file'"),
+         'Duplicate aliases inside one definition should be reported')
+      return
+   end
+
+   error('Duplicate aliases inside one definition should throw')
+end
+
+@Test function AddParamRejectsDuplicates()
+   parser = options({ args = array<table> { { name = 'file' } } })
+
+   try
+      parser.addParam({ names = array<string> { 'folder', 'file' } })
+   except e
+      assert(tostring(e.message):find("Duplicate parameter name or alias 'file'"),
+         'Duplicate addParam() diagnostic should be reported')
+      return
+   end
+
+   error('addParam() should reject duplicate names')
+end
+
+@Test function DefaultsAndRequired()
+   parser = options({
+      args = array<table> {
+         { name = 'count', type = 'int', default = '7', required = true },
+         { name = 'output', type = 'path', required = true }
+      }
+   })
+
+   expect_error(parser, array<string> { }, ERR_ParameterRequired, "Required parameter 'output' is missing.")
+
+   local args = parser.process(array<string> { 'output=build/result.txt' })
+   assert(args.count is 7, 'String defaults should be converted')
+   assert(args.output is 'build/result.txt', 'Required option should parse')
+end
+
+@Test function FalseyDefaults()
+   parser = options({
+      args = array<table> {
+         { name = 'enabled', type = 'bool', default = false },
+         { name = 'count', type = 'int', default = 0 },
+         { name = 'label', type = 'str', default = '' }
+      }
+   })
+
+   local args = parser.process(array<string> { })
+   assert(args.enabled is false, 'False default should be applied')
+   assert(args.count is 0, 'Zero default should be applied')
+   assert(args.label is '', 'Empty string default should be applied')
+
+   args = parser.process(array<string> { 'enabled' })
+   assert(args.enabled is false, 'Bare option should use a false default when one exists')
+end
+
+@Test function OptionSyntax()
+   parser = options({
+      args = array<table> {
+         { name = 'enabled', type = 'bool' },
+         { name = 'mode', default = 'auto' }
+      }
+   })
+
+   expect_error(parser, array<string> { 'enabled' }, ERR_Syntax, "Parameter 'enabled' requires name=value syntax.")
+
+   local args = parser.process(array<string> { 'enabled=true', 'mode' })
+   assert(args.enabled is true, 'Boolean option should accept explicit values')
+   assert(args.mode is 'auto', 'Bare option should use its default when one exists')
+end
+
+@Test function FlagSyntax()
+   parser = options({
+      args = array<table> {
+         { names = array<string> { 'verbose', 'v' }, kind = 'flag', type = 'bool', default = false },
+         { name = 'dry-run', kind = 'flag', type = 'bool' }
+      }
+   })
+
+   local args = parser.process(array<string> { 'verbose', 'no-dry-run' })
+   assert(args.verbose is true, 'Bare flag should parse as true')
+   assert(args['dry-run'] is false, 'no- flag should parse as false')
+
+   args = parser.process(array<string> { 'v=0' })
+   assert(args.verbose is false, 'Explicit flag values should use boolean conversion')
+end
+
+@Test function NegationOnlyAppliesToFlags()
+   parser = options({ args = array<table> { { name = 'feature' } } })
+   expect_error(parser, array<string> { 'no-feature' }, ERR_Args,
+      "Parameter 'feature' is not a flag and cannot use no- negation.")
+end
+
+@Test function UnknownParametersRespectStrictMode()
+   strict_parser = options({ args = array<table> { { name = 'file' } } })
+   expect_error(strict_parser, array<string> { 'extra=value' }, ERR_Exception, "Unknown parameter 'extra'.")
+
+   loose_parser = options({ strict = false, args = array<table> { { name = 'file', default = 'fallback.txt' } } })
+   args = loose_parser.process(array<string> { 'extra=value' })
+   assert(args.file is 'fallback.txt', 'strict=false should ignore unknown named input')
+end
+
+@Test function BuiltInConverters()
+   parser = options({
+      args = array<table> {
+         { name = 'title', type = 'string' },
+         { name = 'ratio', type = 'number' },
+         { name = 'count', type = 'int' },
+         { name = 'enabled', type = 'bool' },
+         { name = 'path', type = 'path' },
+         { name = 'file', type = 'file' },
+         { name = 'folder', type = 'folder' }
+      }
+   })
+
+   args = parser.process(array<string> {
+      'title=hello',
+      'ratio=2.5',
+      'count=4',
+      'enabled=yes',
+      'path=some/path',
+      'file=scene.svg',
+      'folder=examples'
+   })
+
+   assert(args.title is 'hello', 'String converter failed')
+   assert(args.ratio is 2.5, 'Number converter failed')
+   assert(args.count is 4, 'Integer converter failed')
+   assert(args.enabled is true, 'Boolean converter failed')
+   assert(args.path is 'some/path', 'Path converter failed')
+   assert(args.file is 'scene.svg', 'File converter failed')
+   assert(args.folder is 'examples', 'Folder converter failed')
+
+   expect_error(parser, array<string> { 'count=4.5' }, ERR_WrongType, "Parameter 'count' requires an integer.")
+   expect_error(parser, array<string> { 'enabled=maybe' }, ERR_WrongType,
+      "Parameter 'enabled' requires a boolean value.")
+end
+
+@Test function CustomConverter()
+   parser = options({
+      args = array<table> {
+         {
+            name = 'label',
+            type = function(RawValue:any, Definition:table, Parser:table):any
+               assert(Definition.name is 'label', 'Definition should be passed to custom converter')
+               assert(Parser.getParam('label') is Definition, 'Parser should be passed to custom converter')
+               return 'custom:' .. tostring(RawValue)
+            end
+         },
+         {
+            name = 'fail',
+            type = function(RawValue:any, Definition:table, Parser:table):any
+               error('custom failure')
+            end
+         }
+      }
+   })
+
+   args = parser.process(array<string> { 'label=value' })
+   assert(args.label is 'custom:value', 'Custom converter should transform values')
+
+   err = expect_error(parser, array<string> { 'fail=value' }, ERR_Exception, 'custom failure')
+   assert(err.message:find('custom failure'), 'Thrown converter errors should be returned by tryProcess()')
+end
+
+@Test function TryProcessDoesNotUseFailurePath()
+   parser = options({ args = array<table> { { name = 'file' } } })
+   called = false
+   parser.error = function(Error:any, ParamName:str)
+      called = true
+      error(Error)
+   end
+
+   args, err = parser.tryProcess(array<string> { 'unknown=value' })
+   assert(args is nil, 'tryProcess() should return nil on parse failure')
+   assert(err.code is ERR_Exception, 'tryProcess() should return the parse error')
+   assert(called is false, 'tryProcess() must not invoke parser.error()')
+end
+
+@Test function ProcessReturnsParsedArgs()
+   parser = options({ args = array<table> { { name = 'file', required = true } } })
+   called = false
+   parser.error = function(Error:any, ParamName:str)
+      called = true
+      error(Error)
+   end
+
+   args = parser.process(array<string> { 'file=scene.svg' })
+   assert(args.file is 'scene.svg', 'process() should return parsed arguments')
+   assert(called is false, 'process() should not call parser.error() on success')
+end
+
+@Test function TableInput()
+   parser = options({
+      args = array<table> {
+         { name = 'count', type = 'int' },
+         { name = 'enabled', kind = 'flag', type = 'bool' }
+      }
+   })
+
+   args = parser.process({ count = 3, enabled = false })
+   assert(args.count is 3, 'Table input should accept typed values')
+   assert(args.enabled is false, 'Table input should accept typed flag values')
+end
+
+@Test function PositionalOrdering()
+   parser = options({
+      args = array<table> {
+         { name = 'input', kind = 'positional', type = 'file', required = true },
+         { name = 'output', kind = 'option', type = 'file' }
+      }
+   })
+
+   args = parser.process(array<string> { 'scene.svg', 'output=preview.png' })
+   assert(args.input is 'scene.svg', 'First positional should parse in declaration order')
+   assert(args.output is 'preview.png', 'Named option should parse alongside positional input')
+end
+
+@Test function ExplicitInputBypassesTaskParameters()
+   parser = options({
+      args = array<table> {
+         { name = 'input', kind = 'positional', type = 'file' }
+      }
+   })
+
+   args = parser.process(array<string> { 'explicit.svg' }, {
+      taskParameters = array<string> { 'tools/flute.tiri', 'task.svg' }
+   })
+
+   assert(args.input is 'explicit.svg', 'Explicit input should take precedence over task parameters')
+end
+
+@Test function DefaultTaskParametersAreScannedAfterScriptPath()
+   parser = options({
+      args = array<table> {
+         { name = 'input', kind = 'positional', type = 'file' },
+         { name = 'output', kind = 'option', type = 'file' },
+         { name = 'verbose', kind = 'flag', type = 'bool' }
+      }
+   })
+
+   args = parser.process(nil, {
+      taskParameters = array<string> {
+         '--log-warning',
+         '--set-volume',
+         'scripts=E:/kotuku/scripts',
+         'examples/vue.tiri',
+         'scene.svg',
+         'output=preview.png',
+         'verbose'
+      }
+   })
+
+   assert(args.input is 'scene.svg', 'Default task input should begin after the script path')
+   assert(args.output is 'preview.png', 'Named option after the script path should parse')
+   assert(args.verbose is true, 'Flag after the script path should parse')
+end
+
+@Test function DefaultInputReadsCurrentTaskParameters()
+   parser = options({ strict = false, args = array<table> { { name = 'file' } } })
+   args = parser.process(nil)
+
+   assert(args.file != nil, 'Default input should read the current Flute file parameter from the active task')
+   assert(args.file:find('test_options.tiri'), 'Default input should expose the running test file argument')
+end
+
+@Test function ArgFallbackUsedWhenTaskParametersUnavailable()
+   parser = options({ strict = false, args = array<table> { { name = 'file' } } })
+   args = parser.process(nil, { taskParameters = false })
+
+   assert(args.file != nil, 'arg() fallback should be used when ordered task input is unavailable')
+   assert(args.file:find('test_options.tiri'), 'arg() fallback should expose the running test file argument')
+end
+
+@Test function PositionalUnavailableWithoutOrderedInput()
+   parser = options({
+      args = array<table> {
+         { name = 'input', kind = 'positional', required = true }
+      }
+   })
+
+   expect_error_with_options(parser, nil, { taskParameters = false }, ERR_ParameterRequired,
+      "Required parameter 'input' is missing.")
+end
+
+@Test function RepeatedNamedValues()
+   parser = options({
+      args = array<table> {
+         { name = 'tag', type = 'int', multiple = true }
+      }
+   })
+
+   local args = parser.process(array<string> { 'tag=1', 'tag=2' })
+   assert(type(args.tag) is 'array', 'Repeated values should produce an array')
+   assert(#args.tag is 2, 'Repeated values should preserve every occurrence')
+   assert(args.tag[0] is 1, 'First repeated value should be converted')
+   assert(args.tag[1] is 2, 'Second repeated value should be converted')
+end
+
+@Test function MultipleDefaultsAreArrayShaped()
+   parser = options({
+      args = array<table> {
+         { name = 'single', type = 'int', multiple = true, default = '5' },
+         { name = 'many', type = 'int', multiple = true, default = array<string> { '1', '2' } }
+      }
+   })
+
+   local args = parser.process(array<string> { })
+   assert(type(args.single) is 'array', 'Scalar multiple default should be wrapped in an array')
+   assert(#args.single is 1, 'Scalar multiple default should produce one value')
+   assert(args.single[0] is 5, 'Scalar multiple default should be converted')
+   assert(#args.many is 2, 'Array multiple default should preserve every default value')
+   assert(args.many[0] is 1 and args.many[1] is 2, 'Array multiple default should convert each value')
+end
+
+@Test function TableInputMultipleValues()
+   parser = options({
+      args = array<table> {
+         { name = 'tag', type = 'int', multiple = true }
+      }
+   })
+
+   local args = parser.process({ tag = array<string> { '3', '4' } })
+   assert(#args.tag is 2, 'Programmatic array input should be treated as repeated values')
+   assert(args.tag[0] is 3 and args.tag[1] is 4, 'Programmatic repeated values should be converted')
+end
+
+@Test function TrailingVariadicPositional()
+   parser = options({
+      args = array<table> {
+         { name = 'input', kind = 'positional', type = 'file' },
+         { name = 'rest', kind = 'positional', type = 'str', multiple = true }
+      }
+   })
+
+   args = parser.process(array<string> { 'scene.svg', 'one', 'two' })
+   assert(args.input is 'scene.svg', 'Leading positional should receive the first value')
+   assert(type(args.rest) is 'array', 'Variadic positional should produce an array')
+   assert(#args.rest is 2, 'Variadic positional should consume remaining values')
+   assert(args.rest[0] is 'one' and args.rest[1] is 'two', 'Variadic positional should preserve order')
+end
+
+@Test function InvalidVariadicPositionalDeclaration()
+   try
+      options({
+         args = array<table> {
+            { name = 'rest', kind = 'positional', multiple = true },
+            { name = 'next', kind = 'positional' }
+         }
+      })
+   except e
+      assert(e.code is ERR_Syntax, 'Invalid variadic declaration should report a syntax error')
+      assert(tostring(e.message):find("Variadic positional parameter 'rest' must be the final positional."),
+         'Invalid variadic declaration should explain the ordering rule')
+      return
+   end
+
+   error('Variadic positional definitions should be final')
+end
+
+@Test function StrictOrderedUnknownTokens()
+   strict_parser = options({
+      args = array<table> {
+         { name = 'input', kind = 'positional' }
+      }
+   })
+
+   expect_error(strict_parser, array<string> { 'scene.svg', 'extra.svg' }, ERR_Exception,
+      "Unknown parameter 'extra.svg'.")
+
+   loose_parser = options({
+      strict = false,
+      args = array<table> {
+         { name = 'input', kind = 'positional' }
+      }
+   })
+
+   args = loose_parser.process(array<string> { 'scene.svg', 'extra.svg' })
+   assert(args.input is 'scene.svg', 'strict=false should ignore extra ordered tokens')
+end
+
+@Test function ParserDefaultsAndSetDefaults()
+   parser = options({
+      defaults = { count = '2', mode = 'parser' },
+      args = array<table> {
+         { name = 'count', type = 'int', default = '1' },
+         { name = 'mode', type = 'str', default = 'param' }
+      }
+   })
+
+   args = parser.process(array<string> { })
+   assert(args.count is 2, 'Parser defaults should override parameter defaults')
+   assert(args.mode is 'parser', 'Parser string defaults should apply')
+
+   returned = parser.setDefaults({ count = '3' })
+   assert(returned is parser, 'setDefaults() should return the parser')
+
+   args = parser.process(array<string> { })
+   assert(args.count is 3, 'setDefaults() should override parser defaults')
+   assert(args.mode is 'parser', 'Parser defaults should remain below the setDefaults layer')
+
+   args = parser.process(array<string> { 'count=4' })
+   assert(args.count is 4, 'Explicit input should override every default layer')
+end
+
+@Test function EnvironmentLookupAndRequired()
+   set_test_env('KOTUKU_OPTIONS_STAGE3_FILE', 'scene.svg')
+   set_test_env('KOTUKU_OPTIONS_STAGE3_VERBOSE', 'yes')
+   set_test_env('KOTUKU_OPTIONS_STAGE3_V', 'no')
+   set_test_env('KOTUKU_OPTIONS_STAGE3_DRY_RUN', 'true')
+
+   parser = options({
+      envPrefix = 'KOTUKU_OPTIONS_STAGE3',
+      args = array<table> {
+         { name = 'file', type = 'file', required = true },
+         { names = array<string> { 'verbose', 'v' }, kind = 'flag', type = 'bool' },
+         { name = 'dryRun', kind = 'flag', type = 'bool' }
+      }
+   })
+
+   args = parser.process(array<string> { })
+   assert(args.file is 'scene.svg', 'Environment values should satisfy required parameters')
+   assert(args.verbose is true, 'Environment values should be converted')
+   assert(args.dryRun is true, 'Camel-case names should be converted to upper snake-case environment names')
+
+   set_test_env('KOTUKU_OPTIONS_STAGE3_FILE', nil)
+   set_test_env('KOTUKU_OPTIONS_STAGE3_VERBOSE', nil)
+   set_test_env('KOTUKU_OPTIONS_STAGE3_V', nil)
+   set_test_env('KOTUKU_OPTIONS_STAGE3_DRY_RUN', nil)
+end
+
+@Test function SourcePrecedenceOrder()
+   set_test_env('KOTUKU_OPTIONS_PRECEDENCE_COUNT', '4')
+
+   parser = options({
+      envPrefix = 'KOTUKU_OPTIONS_PRECEDENCE',
+      defaults = { count = '2' },
+      args = array<table> {
+         { name = 'count', type = 'int', default = '1' }
+      }
+   })
+   parser.setDefaults({ count = '3' })
+
+   args = parser.process(array<string> { })
+   assert(args.count is 4, 'Environment values should override all default layers')
+
+   args = parser.process(array<string> { 'count=5' })
+   assert(args.count is 5, 'Input values should override environment values')
+
+   set_test_env('KOTUKU_OPTIONS_PRECEDENCE_COUNT', nil)
+end
+
+@Test function SourcePrecedenceDefersConversion()
+   set_test_env('KOTUKU_OPTIONS_BAD_COUNT', 'bad')
+
+   env_parser = options({
+      envPrefix = 'KOTUKU_OPTIONS_BAD',
+      args = array<table> {
+         { name = 'count', type = 'int' }
+      }
+   })
+
+   args = env_parser.process(array<string> { 'count=3' })
+   assert(args.count is 3, 'Explicit input should override an invalid environment value before conversion')
+   expect_error(env_parser, array<string> { }, ERR_WrongType, "Parameter 'count' requires an integer.")
+
+   default_parser = options({
+      defaults = { count = 'bad' },
+      args = array<table> {
+         { name = 'count', type = 'int' }
+      }
+   })
+
+   args = default_parser.process(array<string> { 'count=4' })
+   assert(args.count is 4, 'Explicit input should override an invalid default before conversion')
+   expect_error(default_parser, array<string> { }, ERR_WrongType, "Parameter 'count' requires an integer.")
+
+   set_test_env('KOTUKU_OPTIONS_BAD_COUNT', nil)
+end
+
+@Test function ChoicesEnumAndPatternValidation()
+   parser = options({
+      args = array<table> {
+         { name = 'mode', type = 'enum', choices = array<string> { 'fast', 'slow' } },
+         { name = 'tag', type = 'str', pattern = regex.new('^[a-z][a-z0-9_]+$') }
+      }
+   })
+
+   args = parser.process(array<string> { 'mode=fast', 'tag=build_1' })
+   assert(args.mode is 'fast', 'Enum values should parse as strings')
+   assert(args.tag is 'build_1', 'Pattern-matching values should parse')
+
+   expect_error(parser, array<string> { 'mode=medium' }, ERR_Args, "Parameter 'mode' must be one of: fast, slow.")
+   expect_error(parser, array<string> { 'tag=1_bad' }, ERR_Args, "Parameter 'tag' does not match the required pattern.")
+
+   try
+      options({ args = array<table> { { name = 'bad', type = 'enum' } } })
+   except e
+      assert(e.code is ERR_Syntax, 'Enum without choices should fail as a syntax error')
+      return
+   end
+
+   error('Enum parameters should require choices')
+end
+
+@Test function ExistingPathValidation()
+   parser = options({
+      args = array<table> {
+         { name = 'path', type = 'path', exists = true },
+         { name = 'file', type = 'file', exists = true },
+         { name = 'folder', type = 'folder', exists = true }
+      }
+   })
+
+   args = parser.process(array<string> {
+      'path=scripts/options.tiri',
+      'file=scripts/options.tiri',
+      'folder=scripts'
+   })
+   assert(args.path is 'scripts/options.tiri', 'Existing path should parse')
+   assert(args.file is 'scripts/options.tiri', 'Existing file should parse')
+   assert(args.folder is 'scripts', 'Existing folder should parse')
+
+   expect_error(parser, array<string> { 'path=does-not-exist' }, ERR_FileNotFound, "does not exist")
+   expect_error(parser, array<string> { 'file=scripts' }, ERR_ExpectedFile, "is not a file")
+   expect_error(parser, array<string> { 'folder=scripts/options.tiri' }, ERR_ExpectedFolder, "is not a folder")
+end
+
+@Test function MultipleValuesUseValidationRules()
+   parser = options({
+      args = array<table> {
+         { name = 'level', type = 'int', multiple = true, choices = array<any> { 1, 2, 3 } }
+      }
+   })
+
+   args = parser.process(array<string> { 'level=1', 'level=3' })
+   assert(#args.level is 2, 'Repeated validated values should be preserved')
+   assert(args.level[0] is 1 and args.level[1] is 3, 'Repeated values should be converted before validation')
+
+   expect_error(parser, array<string> { 'level=4' }, ERR_Args, "Parameter 'level' must be one of: 1, 2, 3.")
+end
+
+@Test function RelationshipValidation()
+   parser = options({
+      args = array<table> {
+         { name = 'output', requires = 'input' },
+         { name = 'input' },
+         { name = 'credentials', requiresAny = array<string> { 'user', 'token' } },
+         { name = 'user' },
+         { name = 'token' },
+         { name = 'dry-run', kind = 'flag', excludes = 'write' },
+         { name = 'write', kind = 'flag' }
+      }
+   })
+
+   args = parser.process(array<string> { 'input=scene.svg', 'output=preview.png', 'credentials=x', 'token=abc' })
+   assert(args.output is 'preview.png', 'requires should pass when the dependency is present')
+
+   expect_error(parser, array<string> { 'output=preview.png' }, ERR_ParameterRequired,
+      "Parameter 'output' requires 'input'.")
+   expect_error(parser, array<string> { 'credentials=x' }, ERR_ParameterRequired,
+      "Parameter 'credentials' requires one of: user, token.")
+   expect_error(parser, array<string> { 'dry-run', 'write' }, ERR_Args, "Parameter 'dry-run' excludes 'write'.")
+end
+
+@Test function RelationshipValidationUsesExplicitPresence()
+   parser = options({
+      args = array<table> {
+         { name = 'output', default = 'preview.png', requires = 'input' },
+         { name = 'input' },
+         { name = 'dry-run', kind = 'flag', type = 'bool', default = false, excludes = 'write' },
+         { name = 'write', kind = 'flag', type = 'bool' }
+      }
+   })
+
+   args = parser.process(array<string> { 'write' })
+   assert(args.output is 'preview.png', 'Defaulted options should still be applied')
+   assert(args['dry-run'] is false, 'Defaulted flags should still be applied')
+   assert(args.write is true, 'Explicit flags should parse when excluded only by an unsupplied defaulted flag')
+
+   expect_error(parser, array<string> { 'output=final.png' }, ERR_ParameterRequired,
+      "Parameter 'output' requires 'input'.")
+   expect_error(parser, array<string> { 'dry-run', 'write' }, ERR_Args, "Parameter 'dry-run' excludes 'write'.")
+end
+
+@Test function ExecReceivesParserArgValueAndDefinition()
+   called = false
+   seen_arg = nil
+   seen_value = nil
+   seen_definition = nil
+
+   parser = options({
+      args = array<table> {
+         {
+            names = array<string> { 'level', 'l' },
+            type = 'int',
+            exec = function(Parser:table, Arg:str, Value:any, Definition:table):any
+               assert(Parser.getParam('level') is Definition, 'exec should receive the parser and definition')
+               called = true
+               seen_arg = Arg
+               seen_value = Value
+               seen_definition = Definition
+            end
+         }
+      }
+   })
+
+   args = parser.process(array<string> { 'l=3' })
+   assert(args.level is 3, 'exec should run after conversion')
+   assert(called is true, 'exec should be called during validation')
+   assert(seen_arg is 'l', 'exec should receive the original input argument name')
+   assert(seen_value is 3, 'exec should receive the converted value')
+   assert(seen_definition.name is 'level', 'exec should receive the canonical definition')
+end
+
+@Test function ValidateConvertsAndChecksCallerTables()
+   parser = options({
+      args = array<table> {
+         { name = 'count', type = 'int', required = true },
+         { name = 'mode', type = 'enum', choices = array<string> { 'fast', 'slow' } },
+         { name = 'output', requires = 'mode' }
+      }
+   })
+
+   args = parser.validate({ count = '7', mode = 'slow' })
+   assert(args.count is 7, 'validate() should convert caller-supplied values')
+   assert(args.mode is 'slow', 'validate() should return validated values')
+
+   expect_validate_error(parser, { mode = 'fast' }, ERR_ParameterRequired, "Required parameter 'count' is missing.")
+   expect_validate_error(parser, { count = '1', output = 'preview.png' }, ERR_ParameterRequired,
+      "Parameter 'output' requires 'mode'.")
+end
+
+@Test function ValidationRunsAfterSourcePrecedence()
+   parser = options({
+      defaults = { mode = 'invalid' },
+      args = array<table> {
+         { name = 'mode', type = 'enum', choices = array<string> { 'fast', 'slow' } }
+      }
+   })
+
+   args = parser.process(array<string> { 'mode=fast' })
+   assert(args.mode is 'fast', 'Higher-precedence input should be the value that validation sees')
+
+   expect_error(parser, array<string> { }, ERR_Args, "Parameter 'mode' must be one of: fast, slow.")
+end
+
+@Test function UsageAndNormalHelp()
+   parser = options({
+      name        = 'vuepoint',
+      description = 'View vector documents',
+      epilog      = 'End of help.',
+      args = array<table> {
+         { name = 'input', kind = 'positional', type = 'file', required = true, comment = 'Input document' },
+         { names = array<string> { 'output', 'o' }, type = 'file', metavar = 'PATH', default = 'preview.png',
+            comment = 'Output preview' },
+         { names = array<string> { 'verbose', 'v' }, kind = 'flag', type = 'bool', comment = 'Enable logs' }
+      }
+   })
+
+   usage = parser.getUsage()
+   assert(usage:find('Usage: vuepoint'), 'Usage should include the parser name')
+   assert(usage:find('<INPUT>'), 'Usage should include required positionals')
+   assert(usage:find('output=PATH'), 'Usage should include option metavars')
+
+   help = parser.getHelp()
+   assert(help:find('View vector documents'), 'Normal help should include the description')
+   assert(help:find('Arguments:'), 'Normal help should group positional arguments')
+   assert(help:find('Options:'), 'Normal help should group named options')
+   assert(help:find('output=PATH, o=PATH'), 'Normal help should show aliases')
+   assert(help:find('default: preview.png'), 'Normal help should show defaults')
+   assert(help:find('verbose, v, no-verbose'), 'Normal help should show flag aliases and negation')
+   assert(help:find('End of help.'), 'Normal help should include the epilog')
+end
+
+@Test function DetailedHelpAndHiddenParameters()
+   parser = options({
+      name = 'tool',
+      args = array<table> {
+         {
+            names = array<string> { 'mode', 'm' },
+            type = 'enum',
+            choices = array<string> { 'fast', 'slow' },
+            required = true,
+            comment = 'Execution mode',
+            description = 'Controls how much validation the tool performs.'
+         },
+         { name = 'token', hidden = true, comment = 'Secret token' }
+      }
+   })
+
+   help = parser.getHelp()
+   assert(help:find('mode=MODE'), 'Visible parameters should appear in normal help')
+   assert(not help:find('token'), 'Hidden parameters should be excluded from normal help')
+
+   detail = parser.getHelp(nil, 'm')
+   assert(detail:find('mode:'), 'Detailed help should resolve aliases to canonical names')
+   assert(detail:find('Execution mode'), 'Detailed help should include comments')
+   assert(detail:find('Controls how much validation'), 'Detailed help should include descriptions')
+   assert(detail:find('Aliases: m'), 'Detailed help should list aliases')
+   assert(detail:find('Required: yes'), 'Detailed help should show required markers')
+   assert(detail:find('Choices: fast, slow'), 'Detailed help should show choices')
+
+   hidden_detail = parser.getHelp(nil, 'token')
+   assert(hidden_detail:find('Secret token'), 'Hidden parameters should still support detailed help')
+end
+
+@Test function GroupedHelpOutput()
+   parser = options({
+      name = 'pack',
+      args = array<table> {
+         { name = 'input', group = 'Input', comment = 'Input path' },
+         { name = 'output', group = 'Output', comment = 'Output path' }
+      }
+   })
+
+   help = parser.getHelp()
+   assert(help:find('Input:'), 'Custom input group should be rendered')
+   assert(help:find('Output:'), 'Custom output group should be rendered')
+   assert(help:find('Input path'), 'Grouped parameter comments should be rendered')
+   assert(help:find('Output path'), 'Grouped parameter comments should be rendered')
+end
+
+@Test function AutomaticHelpHandling()
+   parser = options({
+      name = 'demo',
+      args = array<table> {
+         { name = 'file', type = 'file', required = true, comment = 'File to read' }
+      }
+   })
+
+   result, err = parser.tryProcess(array<string> { 'help' })
+   assert(err is nil, 'tryProcess() should not treat help as a parse failure')
+   assert(result.help is true, 'tryProcess() should return a structured help result')
+   assert(result.text:find('Usage: demo'), 'Structured help result should include normal help text')
+
+   result, err = parser.tryProcess(array<string> { 'help=file' })
+   assert(err is nil, 'tryProcess() should return detailed help without failing')
+   assert(result.topic is 'file', 'Detailed help result should report the requested topic')
+   assert(result.text:find('File to read'), 'Detailed help should be generated for help=argname')
+
+   seen_text = nil
+   seen_topic = nil
+   help_parser = options({
+      name = 'demo',
+      onHelp = function(Parser:table, Text:str, Topic:any)
+         assert(Parser.getParam('file') != nil, 'onHelp should receive the parser')
+         seen_text = Text
+         seen_topic = Topic
+      end,
+      args = array<table> {
+         { name = 'file', type = 'file', comment = 'File to read' }
+      }
+   })
+
+   returned = help_parser.process(array<string> { 'help=file' })
+   assert(returned is nil, 'process() should not return normal args for help requests')
+   assert(seen_topic is 'file', 'process() should pass the help topic to onHelp')
+   assert(seen_text:find('File to read'), 'process() should pass generated help text to onHelp')
+end
+
+@Test function AutomaticHelpDoesNotClaimDeclaredOrderedArguments()
+   positional = options({
+      args = array<table> {
+         { name = 'file', kind = 'positional', type = 'file', required = true }
+      }
+   })
+
+   args = positional.process(array<string> { 'help' })
+   assert(args.file is 'help', 'Bare help should remain a valid positional value')
+
+   named = options({
+      args = array<table> {
+         { name = 'help', type = 'str', required = true }
+      }
+   })
+
+   args = named.process(array<string> { 'help=topic' })
+   assert(args.help is 'topic', 'Declared help option should parse as normal input')
+
+   flag = options({
+      args = array<table> {
+         { name = 'help', kind = 'flag', type = 'bool' }
+      }
+   })
+
+   args = flag.process(array<string> { 'help' })
+   assert(args.help is true, 'Declared help flag should parse as normal input')
+end
+
+@Test function UnsupportedHelpFormatsFail()
+   parser = options({
+      args = array<table> {
+         { name = 'file' }
+      }
+   })
+
+   failed = false
+   try
+      parser.getHelp('html')
+   except e
+      assert(e.code is ERR_InvalidType, 'Unsupported help formats should report an invalid type error')
+      assert(e.message:find("Unsupported help format 'html'."), 'Unsupported format message should be stable')
+      failed = true
+   end
+   assert(failed is true, 'Unsupported help formats should fail')
+
+   args, err = parser.tryProcess(array<string> { 'help=missing' })
+   assert(args is nil, 'Unknown help topics should fail as structured errors')
+   assert(err.code is ERR_ParameterUnknown, 'Unknown help topics should report parameter-unknown')
+end
+
+@Test function AutoHelpCanBeDisabledOrRenamed()
+   disabled = options({
+      autoHelp = false,
+      args = array<table> {
+         { name = 'file' }
+      }
+   })
+
+   expect_error(disabled, array<string> { 'help' }, ERR_Exception, "Unknown parameter 'help'.")
+
+   renamed = options({
+      helpArg = 'usage',
+      args = array<table> {
+         { name = 'file' }
+      }
+   })
+
+   result, err = renamed.tryProcess(array<string> { 'usage' })
+   assert(err is nil, 'Renamed help argument should be recognised')
+   assert(result.help is true, 'Renamed help argument should return a help result')
+end
+
+@Test function OnErrorInstructions()
+   seen_arg = nil
+   seen_raw = nil
+
+   ignore_parser = options({
+      onError = function(Parser:table, Error:table, Param:table, ArgName:str, RawValue:any):str
+         assert(Param.name is 'count', 'onError should receive the rejected parameter')
+         assert(Error.code is ERR_WrongType, 'onError should receive the conversion error')
+         seen_arg = ArgName
+         seen_raw = RawValue
+         return 'ignore'
+      end,
+      args = array<table> {
+         { name = 'count', type = 'int', default = '7' }
+      }
+   })
+
+   args = ignore_parser.process(array<string> { 'count=bad' })
+   assert(args.count is 7, 'onError ignore should fall back to the parameter default')
+   assert(seen_arg is 'count', 'onError should receive the original argument name')
+   assert(seen_raw is 'bad', 'onError should receive the rejected raw value')
+
+   skip_parser = options({
+      onError = function(Parser:table, Error:table, Param:table, ArgName:str, RawValue:any):str
+         return 'skip'
+      end,
+      args = array<table> {
+         { name = 'count', type = 'int', default = '7' }
+      }
+   })
+
+   args = skip_parser.process(array<string> { 'count=bad' })
+   assert(args.count is nil, 'onError skip should leave the parameter unset even when a default exists')
+
+   fail_parser = options({
+      onError = function(Parser:table, Error:table, Param:table, ArgName:str, RawValue:any):any
+         return true
+      end,
+      args = array<table> {
+         { name = 'count', type = 'int' }
+      }
+   })
+
+   expect_error(fail_parser, array<string> { 'count=bad' }, ERR_WrongType,
+      "Parameter 'count' requires an integer.")
+end
+
+@Test function OnErrorIgnoreRestoresRepeatedArrayDefaultsFlat()
+   parser = options({
+      onError = function(Parser:table, Error:table, Param:table, ArgName:str, RawValue:any):str
+         return 'ignore'
+      end,
+      args = array<table> {
+         {
+            name     = 'tag',
+            type     = 'array',
+            multiple = true,
+            default  = array<string> { 'fallback' },
+            choices  = array<string> { 'fallback' }
+         }
+      }
+   })
+
+   args = parser.process(array<string> { 'tag=bad' })
+   assert(type(args.tag) is 'array', 'Recovered array default should remain an array')
+   assert(#args.tag is 1, 'Recovered array default should not be nested')
+   assert(args.tag[0] is 'fallback', 'Recovered array default should keep the declared item')
+end
+
+@Test function CommandConstructionAliasesAndAddCommand()
+   parser = options({
+      commands = array<table> {
+         {
+            names = array<string> { 'build', 'b' },
+            comment = 'Build the project',
+            args = array<table> {
+               { name = 'input', type = 'folder' }
+            }
+         }
+      }
+   })
+
+   assert(parser.getCommand('build').name is 'build', 'Command lookup should accept canonical names')
+   assert(parser.getCommand('b').name is 'build', 'Command lookup should accept aliases')
+   assert(parser.getCommand('build').getParam('input').name is 'input',
+      'Command parameters should be normalised and searchable')
+
+   added = parser.addCommand({
+      names = array<string> { 'test', 't' },
+      args = array<table> {
+         { name = 'filter' }
+      }
+   })
+
+   assert(added.name is 'test', 'addCommand() should return the normalised command')
+   assert(parser.getCommand('t') is added, 'addCommand() should register aliases')
+   assert(added.getParam('filter').name is 'filter', 'addCommand() should register command parameters')
+end
+
+@Test function DuplicateCommandNamesFail()
+   try
+      options({
+         commands = array<table> {
+            { names = array<string> { 'build', 'b' } },
+            { names = array<string> { 'bundle', 'b' } }
+         }
+      })
+   except e
+      assert(e.code is ERR_DuplicateValue, 'Duplicate command aliases should report a duplicate value')
+      assert(e.message:find("Duplicate command name or alias 'b'"),
+         'Duplicate command aliases should explain the conflict')
+      return
+   end
+
+   error('Duplicate command aliases should fail')
+end
+
+@Test function CommandGlobalDispatchTokenCollisionsFail()
+   expect_options_error({
+      args = array<table> {
+         { name = 'build', kind = 'flag', type = 'bool' }
+      },
+      commands = array<table> {
+         { name = 'build' }
+      }
+   }, ERR_DuplicateValue, "Command name or alias 'build' conflicts with global parameter 'build'.")
+
+   expect_options_error({
+      args = array<table> {
+         { names = array<string> { 'verbose', 'v' }, kind = 'flag', type = 'bool' }
+      },
+      commands = array<table> {
+         { names = array<string> { 'build', 'v' } }
+      }
+   }, ERR_DuplicateValue, "Command name or alias 'v' conflicts with global parameter 'v'.")
+
+   expect_options_error({
+      args = array<table> {
+         { name = 'skip', kind = 'flag', type = 'bool' }
+      },
+      commands = array<table> {
+         { name = 'no-skip' }
+      }
+   }, ERR_DuplicateValue, "Command name or alias 'no-skip' conflicts with global no- token 'no-skip'.")
+
+   expect_options_error({
+      commands = array<table> {
+         { name = 'help' }
+      }
+   }, ERR_DuplicateValue, "Command name or alias 'help' conflicts with automatic help token 'help'.")
+
+   help_command = options({
+      autoHelp = false,
+      commands = array<table> {
+         { name = 'help' }
+      }
+   })
+
+   result = help_command.process(array<string> { 'help' })
+   assert(result.command is 'help', 'Disabling automatic help should allow a help command')
+end
+
+@Test function LaterGlobalParamCannotHideCommand()
+   parser = options({
+      commands = array<table> {
+         { name = 'build' }
+      }
+   })
+
+   try
+      parser.addParam({ name = 'build', kind = 'flag', type = 'bool' })
+   except e
+      assert(e.code is ERR_DuplicateValue, 'Global parameter collisions should report a duplicate value')
+      assert(e.message:find("Parameter name or alias 'build' conflicts with command 'build'."),
+         'Global parameter collisions should explain the command conflict')
+      return
+   end
+
+   error('Global parameters should not be allowed to hide existing commands')
+end
+
+@Test function CommandDispatchAndResultShape()
+   parser = options({
+      args = array<table> {
+         { names = array<string> { 'verbose', 'v' }, kind = 'flag', type = 'bool' }
+      },
+      commands = array<table> {
+         {
+            names = array<string> { 'build', 'b' },
+            args = array<table> {
+               { name = 'input', type = 'folder' },
+               { name = 'release', kind = 'flag', type = 'bool' }
+            }
+         },
+         {
+            name = 'test',
+            args = array<table> {
+               { name = 'filter' }
+            }
+         }
+      }
+   })
+
+   result = parser.process(array<string> { 'v', 'b', 'input=src', 'release' })
+   assert(result.command is 'build', 'Command aliases should dispatch to the canonical name')
+   assert(type(result.globals) is 'table', 'Command results should include global arguments')
+   assert(type(result.args) is 'table', 'Command results should include command arguments')
+   assert(result.globals.verbose is true, 'Global options before the command should parse')
+   assert(result.args.input is 'src', 'Command-specific options should parse after command dispatch')
+   assert(result.args.release is true, 'Command-specific flags should parse after command dispatch')
+end
+
+@Test function CommandSpecificOptionsAreScoped()
+   parser = options({
+      commands = array<table> {
+         {
+            name = 'build',
+            args = array<table> {
+               { name = 'input' }
+            }
+         },
+         {
+            name = 'test',
+            args = array<table> {
+               { name = 'filter' }
+            }
+         }
+      }
+   })
+
+   result = parser.process(array<string> { 'test', 'filter=svg' })
+   assert(result.command is 'test', 'Selected command should be returned')
+   assert(result.args.filter is 'svg', 'Selected command arguments should parse')
+   assert(result.args.input is nil, 'Arguments from other commands should not leak into the selected command')
+
+   expect_error(parser, array<string> { 'build', 'filter=svg' }, ERR_Exception, "Unknown parameter 'filter'.")
+   expect_error(parser, array<string> { 'input=src', 'build' }, ERR_Exception, "Unknown parameter 'input'.")
+end
+
+@Test function MissingAndUnknownCommandsFail()
+   parser = options({
+      commands = array<table> {
+         { name = 'build' }
+      }
+   })
+
+   expect_error(parser, array<string> { }, ERR_ParameterRequired, 'Command is required.')
+   expect_error(parser, array<string> { 'unknown' }, ERR_Exception, "Unknown parameter 'unknown'.")
+   expect_error(parser, { command = 'unknown' }, ERR_ParameterUnknown, "Unknown command 'unknown'.")
+end
+
+@Test function CommandTableInput()
+   parser = options({
+      args = array<table> {
+         { name = 'verbose', kind = 'flag', type = 'bool' }
+      },
+      commands = array<table> {
+         {
+            name = 'build',
+            args = array<table> {
+               { name = 'count', type = 'int' }
+            }
+         }
+      }
+   })
+
+   result = parser.process({
+      command = 'build',
+      globals = { verbose = true },
+      args = { count = '4' }
+   })
+
+   assert(result.command is 'build', 'Table input should select a command')
+   assert(result.globals.verbose is true, 'Table input should parse global command values')
+   assert(result.args.count is 4, 'Table input should parse command arguments')
+end
+
+@Test function CommandEnvironmentValues()
+   set_test_env('KOTUKU_OPTIONS_COMMAND_VERBOSE', 'yes')
+   set_test_env('KOTUKU_OPTIONS_COMMAND_INPUT', 'src')
+
+   parser = options({
+      envPrefix = 'KOTUKU_OPTIONS_COMMAND',
+      args = array<table> {
+         { name = 'verbose', kind = 'flag', type = 'bool' }
+      },
+      commands = array<table> {
+         {
+            name = 'build',
+            args = array<table> {
+               { name = 'input', required = true }
+            }
+         },
+         {
+            name = 'test',
+            args = array<table> {
+               { name = 'filter' }
+            }
+         }
+      }
+   })
+
+   result = parser.process(array<string> { 'build' })
+   assert(result.globals.verbose is true, 'Global environment values should apply during command parsing')
+   assert(result.args.input is 'src', 'Selected command environment values should apply')
+
+   set_test_env('KOTUKU_OPTIONS_COMMAND_VERBOSE', nil)
+   set_test_env('KOTUKU_OPTIONS_COMMAND_INPUT', nil)
+end
+
+@Test function CommandHelpAndHiddenCommands()
+   parser = options({
+      name = 'tool',
+      commands = array<table> {
+         {
+            names = array<string> { 'build', 'b' },
+            comment = 'Build the project',
+            description = 'Compiles project assets.',
+            args = array<table> {
+               { name = 'input', comment = 'Input folder' }
+            }
+         },
+         {
+            name = 'secret',
+            hidden = true,
+            comment = 'Hidden command',
+            args = array<table> {
+               { name = 'token' }
+            }
+         }
+      }
+   })
+
+   help = parser.getHelp()
+   assert(help:find('Commands:'), 'Normal help should include visible commands')
+   assert(help:find('build, b'), 'Normal help should show command aliases')
+   assert(help:find('Build the project'), 'Normal help should include command comments')
+   assert(not help:find('secret'), 'Hidden commands should be excluded from normal help')
+
+   detail = parser.getHelp(nil, 'b')
+   assert(detail:find('build:'), 'Command help should resolve aliases to canonical names')
+   assert(detail:find('Compiles project assets.'), 'Command help should include command descriptions')
+   assert(detail:find('Aliases: b'), 'Command help should include command aliases')
+   assert(detail:find('input=INPUT'), 'Command help should include command parameters')
+
+   result, err = parser.tryProcess(array<string> { 'help=build' })
+   assert(err is nil, 'help=command should produce command help')
+   assert(result.text:find('Build the project'), 'Structured command help should include command detail')
+
+   result = parser.process(array<string> { 'secret', 'token=abc' })
+   assert(result.command is 'secret', 'Hidden commands should remain callable')
+   assert(result.args.token is 'abc', 'Hidden command arguments should parse')
+end
+
+@Test function EssentialExtendedConverters()
+   parser = options({
+      args = array<table> {
+         { name = 'columns', type = 'csv' },
+         { name = 'items', type = 'array' },
+         { name = 'delay', type = 'duration' },
+         { name = 'timeout', type = 'duration' },
+         { name = 'limit', type = 'size' },
+         { name = 'scale', type = 'percent' },
+         { name = 'pattern', type = 'regex' },
+         { name = 'config', type = 'json' }
+      }
+   })
+
+   args = parser.process(array<string> {
+      'columns=alpha, beta ,gamma',
+      'items={one, two, 3}',
+      'delay=250ms',
+      'timeout=2h',
+      'limit=1.5kb',
+      'scale=50%',
+      'pattern=^a+$',
+      'config={"name":"demo","count":2,"enabled":true,"flags":[true,false]}'
+   })
+
+   assert(#args.columns is 3, 'CSV values should split into an array')
+   assert(args.columns[0] is 'alpha' and args.columns[1] is 'beta' and args.columns[2] is 'gamma',
+      'CSV values should be trimmed')
+   assert(#args.items is 3, 'Array values should parse brace-wrapped input')
+   assert(args.items[0] is 'one' and args.items[1] is 'two' and args.items[2] is '3',
+      'Array values should be normalised to strings')
+   assert(math.abs(args.delay - 0.25) < 0.0001, 'Millisecond durations should convert to seconds')
+   assert(args.timeout is 7200, 'Hour durations should convert to seconds')
+   assert(args.limit is 1536, 'Size units should convert to bytes')
+   assert(args.scale is 0.5, 'Percent values should normalise to a fraction')
+   assert(args.pattern.test('aaa'), 'Regex values should compile')
+   assert(not args.pattern.test('bbb'), 'Regex values should preserve the supplied pattern')
+   assert(args.config.name is 'demo', 'JSON object fields should decode')
+   assert(args.config.count is 2, 'JSON numbers should decode')
+   assert(args.config.enabled is true, 'JSON booleans should decode')
+   assert(type(args.config.flags) is 'array' and #args.config.flags is 2, 'JSON arrays should decode')
+   assert(args.config.flags[0] is true and args.config.flags[1] is false,
+      'JSON arrays should preserve false values')
+end
+
+@Test function ExtendedConvertersApplyToDefaultsEnvironmentChoicesAndCommands()
+   set_test_env('KOTUKU_OPTIONS_STAGE6_TIMEOUT', '5m')
+
+   parser = options({
+      envPrefix = 'KOTUKU_OPTIONS_STAGE6',
+      defaults = { scale = '25%' },
+      args = array<table> {
+         { name = 'timeout', type = 'duration', default = '30s' },
+         { name = 'limit', type = 'size', default = '2mb' },
+         { name = 'scale', type = 'percent' },
+         { name = 'columns', type = 'csv', default = 'left, right' },
+         { name = 'pattern', type = 'regex', default = '^x+$' },
+         { name = 'mode', type = 'duration', choices = array<any> { 60, 120 } },
+         { name = 'tag', type = 'array', multiple = true }
+      },
+      commands = array<table> {
+         {
+            name = 'build',
+            args = array<table> {
+               { name = 'delay', type = 'duration', default = '1h' },
+               { name = 'payload', type = 'json' }
+            }
+         }
+      }
+   })
+
+   result = parser.process(array<string> { 'mode=120s', 'tag=alpha', 'tag=beta', 'build',
+      'delay=2d', 'payload=[1,2,3]' })
+   assert(result.globals.timeout is 300, 'Environment duration values should override parameter defaults')
+   assert(result.globals.limit is 2097152, 'String size defaults should convert')
+   assert(result.globals.scale is 0.25, 'Parser defaults should use the percent converter')
+   assert(#result.globals.columns is 2 and result.globals.columns[0] is 'left',
+      'CSV defaults should convert to arrays')
+   assert(result.globals.pattern.test('xxx'), 'Regex defaults should compile')
+   assert(result.globals.mode is 120, 'Converted duration values should be checked against choices')
+   assert(#result.globals.tag is 2 and result.globals.tag[0] is 'alpha' and result.globals.tag[1] is 'beta',
+      'Repeated array values should flatten into one array')
+   assert(result.args.delay is 172800, 'Command-specific duration values should convert')
+   assert(type(result.args.payload) is 'array' and #result.args.payload is 3,
+      'Command-specific JSON values should decode')
+
+   set_test_env('KOTUKU_OPTIONS_STAGE6_TIMEOUT', nil)
+end
+
+@Test function ExtendedConverterFailuresUseStableErrors()
+   parser = options({
+      args = array<table> {
+         { name = 'delay', type = 'duration' },
+         { name = 'limit', type = 'size' },
+         { name = 'scale', type = 'percent' },
+         { name = 'pattern', type = 'regex' },
+         { name = 'config', type = 'json' }
+      }
+   })
+
+   expect_error(parser, array<string> { 'delay=10' }, ERR_WrongType,
+      "Parameter 'delay' requires a duration with an ms, s, m, h, or d suffix.")
+   expect_error(parser, array<string> { 'delay=1w' }, ERR_WrongType,
+      "Parameter 'delay' requires a duration with an ms, s, m, h, or d suffix.")
+   expect_error(parser, array<string> { 'limit=4pb' }, ERR_WrongType,
+      "Parameter 'limit' requires a size with a b, kb, mb, gb, or tb suffix.")
+   expect_error(parser, array<string> { 'scale=half' }, ERR_WrongType,
+      "Parameter 'scale' requires a percent value.")
+   expect_error(parser, array<string> { 'pattern=(' }, ERR_WrongType,
+      "Parameter 'pattern' requires a valid regex pattern.")
+   expect_error(parser, array<string> { 'config={bad}' }, ERR_WrongType,
+      "Parameter 'config' requires valid JSON.")
+   expect_error(parser, array<string> { 'config=1 2' }, ERR_WrongType,
+      "Parameter 'config' requires valid JSON.")
+end
+
+@Test function DateTimeDomainValidators()
+   set_test_env('KOTUKU_OPTIONS_STAGE7_RELEASE', '2026-05-06T10:30:45.25+01:00')
+
+   parser = options({
+      envPrefix = 'KOTUKU_OPTIONS_STAGE7',
+      args = array<table> {
+         { name = 'day', type = 'date' },
+         { name = 'leap', type = 'date', default = '2024-02-29' },
+         { name = 'century', type = 'date', default = '2000-02-29' },
+         { name = 'start', type = 'time' },
+         { name = 'short', type = 'time', default = '09:15' },
+         { name = 'release', type = 'datetime' }
+      },
+      commands = array<table> {
+         {
+            name = 'build',
+            args = array<table> {
+               { name = 'at', type = 'datetime' }
+            }
+         }
+      }
+   })
+
+   result = parser.process(array<string> { 'day=2025-12-31', 'start=23:59:59.123', 'build',
+      'at=2024-02-29T00:00Z' })
+   assert(result.globals.day is '2025-12-31', 'Date values should be returned unchanged when already normalised')
+   assert(result.globals.leap is '2024-02-29', 'Leap-year default dates should validate')
+   assert(result.globals.century is '2000-02-29', 'Century dates divisible by 400 should validate')
+   assert(result.globals.start is '23:59:59.123', 'Fractional seconds should validate')
+   assert(result.globals.short is '09:15', 'HH:MM defaults should validate')
+   assert(result.globals.release is '2026-05-06T10:30:45.25+01:00',
+      'Environment date-time values should validate')
+   assert(result.args.at is '2024-02-29T00:00Z', 'Command-specific date-time values should validate')
+
+   set_test_env('KOTUKU_OPTIONS_STAGE7_RELEASE', nil)
+end
+
+@Test function DateTimeDomainValidatorFailures()
+   parser = options({
+      args = array<table> {
+         { name = 'day', type = 'date' },
+         { name = 'start', type = 'time' },
+         { name = 'release', type = 'datetime' }
+      }
+   })
+
+   expect_error(parser, array<string> { 'day=2023-02-29' }, ERR_WrongType,
+      "Parameter 'day' requires an ISO date in YYYY-MM-DD form.")
+   expect_error(parser, array<string> { 'day=1900-02-29' }, ERR_WrongType,
+      "Parameter 'day' requires an ISO date in YYYY-MM-DD form.")
+   expect_error(parser, array<string> { 'day=2100-02-29' }, ERR_WrongType,
+      "Parameter 'day' requires an ISO date in YYYY-MM-DD form.")
+   expect_error(parser, array<string> { 'day=2025-13-01' }, ERR_WrongType,
+      "Parameter 'day' requires an ISO date in YYYY-MM-DD form.")
+   expect_error(parser, array<string> { 'start=24:00' }, ERR_WrongType,
+      "Parameter 'start' requires an ISO time value.")
+   expect_error(parser, array<string> { 'start=12:60' }, ERR_WrongType,
+      "Parameter 'start' requires an ISO time value.")
+   expect_error(parser, array<string> { 'release=2023-02-29T12:00Z' }, ERR_WrongType,
+      "Parameter 'release' requires an ISO date-time value.")
+   expect_error(parser, array<string> { 'release=1900-02-29T12:00Z' }, ERR_WrongType,
+      "Parameter 'release' requires an ISO date-time value.")
+   expect_error(parser, array<string> { 'release=2100-02-29T12:00Z' }, ERR_WrongType,
+      "Parameter 'release' requires an ISO date-time value.")
+   expect_error(parser, array<string> { 'release=2025-01-01 12:00Z' }, ERR_WrongType,
+      "Parameter 'release' requires an ISO date-time value.")
+   expect_error(parser, array<string> { 'release=2025-01-01T12:00+24:00' }, ERR_WrongType,
+      "Parameter 'release' requires an ISO date-time value.")
+end
+
+@Test function CssColourDomainValidators()
+   set_test_env('KOTUKU_OPTIONS_STAGE7_ACCENT', 'hsl(270deg 80% 50% / 0.75)')
+
+   parser = options({
+      envPrefix = 'KOTUKU_OPTIONS_STAGE7',
+      args = array<table> {
+         { name = 'fill', type = 'colour' },
+         { name = 'accent', type = 'colour' },
+         { name = 'stroke', type = 'colour', default = 'rgb(12, 34, 56, 0.5)' },
+         { name = 'surface', type = 'colour', default = 'oklch(60% 0.15 270deg / 75%)' }
+      },
+      commands = array<table> {
+         {
+            name = 'paint',
+            args = array<table> {
+               { name = 'mark', type = 'colour' }
+            }
+         }
+      }
+   })
+
+   result = parser.process(array<string> { 'fill=rgb(255 0 128 / 50%)', 'paint', 'mark=hsv(120 40% 90%)' })
+   assert(result.globals.fill is 'rgb(255 0 128 / 50%)', 'Modern rgb() colour values should validate')
+   assert(result.globals.accent is 'hsl(270deg 80% 50% / 0.75)', 'Environment hsl() values should validate')
+   assert(result.globals.stroke is 'rgb(12, 34, 56, 0.5)', 'Legacy rgb() defaults should validate')
+   assert(result.globals.surface is 'oklch(60% 0.15 270deg / 75%)', 'oklch() defaults should validate')
+   assert(result.args.mark is 'hsv(120 40% 90%)', 'Command-specific hsv() values should validate')
+
+   set_test_env('KOTUKU_OPTIONS_STAGE7_ACCENT', nil)
+end
+
+@Test function CssColourDomainValidatorFailures()
+   parser = options({
+      args = array<table> {
+         { name = 'fill', type = 'colour' }
+      }
+   })
+
+   expect_error(parser, array<string> { 'fill=lab(50% 0 0)' }, ERR_WrongType,
+      "Parameter 'fill' requires a supported CSS colour value.")
+   expect_error(parser, array<string> { 'fill=rgb(256 0 0)' }, ERR_WrongType,
+      "Parameter 'fill' requires a supported CSS colour value.")
+   expect_error(parser, array<string> { 'fill=rgb(10 20)' }, ERR_WrongType,
+      "Parameter 'fill' requires a supported CSS colour value.")
+   expect_error(parser, array<string> { 'fill=rgb(10, 20, 30 / 0.5)' }, ERR_WrongType,
+      "Parameter 'fill' requires a supported CSS colour value.")
+   expect_error(parser, array<string> { 'fill=hsl(10 50 50%)' }, ERR_WrongType,
+      "Parameter 'fill' requires a supported CSS colour value.")
+   expect_error(parser, array<string> { 'fill=hsv(10 50% 120%)' }, ERR_WrongType,
+      "Parameter 'fill' requires a supported CSS colour value.")
+   expect_error(parser, array<string> { 'fill=oklch(50% -0.2 20)' }, ERR_WrongType,
+      "Parameter 'fill' requires a supported CSS colour value.")
+end

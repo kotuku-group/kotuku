@@ -166,7 +166,7 @@ json.decode = function(String:str, Pos:num, EndToken:str):<any, num>
       Pos++
       while true do
          val, Pos = json.decode(String, Pos, ']')
-         if not val then return arr, Pos end -- NB: Distinction between false and nil is essential
+         if val is nil then return arr, Pos end
          if not delim_found then error('Comma missing between array items.') end
          arr:push(val)
          Pos, delim_found = skip_delim(String, Pos, ',')

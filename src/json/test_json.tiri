@@ -65,6 +65,15 @@ end
    assert(#sj > 200, "Serialised JSON length too short.")
 end
 
+@Test function DecodeArrayWithFalseValue()
+   data = json.decode('[true,false,null]')
+   assert(type(data) is 'array', "Decoded JSON array did not return an array.")
+   assert(#data is 3, "Decoded JSON array should preserve all values.")
+   assert(data[0] is true, "First JSON array value should be true.")
+   assert(data[1] is false, "False JSON array value should not end array parsing.")
+   assert(data[2] is json.null, "Null JSON array value should be preserved.")
+end
+
 @Test function EscapeSequences()
    data = json.decode(glEscape)
    assert(type(data) is 'table', "Decoded JSON did not return a table.")
