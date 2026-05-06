@@ -71,6 +71,7 @@
             <li class="api-ref"><a class="rounded" href="Tiri-HTTPServer-API.html">HTTPServer API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-IO-API.html">I/O API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-JSON-API.html">JSON API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-Options-API.html">Options API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-URL-API.html">URL API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-VFX-API.html">VFX API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-Widgets.html">Widgets</a></li>
@@ -128,7 +129,7 @@
       <li class="api-ref"><a href="../modules/tiri.html" class="rounded">Tiri</a></li>
       <li class="api-ref"><a href="../modules/vector.html" class="rounded">Vector</a></li>
       <li class="api-ref"><a href="../modules/xml.html" class="rounded">XML</a></li>
-      <li class="api-ref"><a href="../modules/xpath.html" class="rounded">XPath</a></li>
+      <li class="api-ref"><a href="../modules/xquery.html" class="rounded">XQuery</a></li>
       </ul>
     </div>
   </li>
@@ -609,10 +610,12 @@ ERR acDraw(Object)</code></pre>
 <p><code>ERR FreeResource(Object)</code></p>
 <p>Objects are permanently removed with the <code>Free</code> action, which is achieved via a call to <code>FreeResource()</code>. If the object has one or more child objects attached to it, they will also be removed as a result of calling this action. After calling <code>Free</code>, remove any UID and pointer references to the object as a measure of bug prevention.</p>
 <p>If an exclusive lock is active at the time of calling <code>Free</code>, the object will be <em>marked for deletion</em> only. The object will not be permanently removed until the last lock is released.</p>
-<blockquote>
-<p>[!NOTE]
-The means of terminating an object can vary between languages. C++ uses <code>FreeResource()</code>, while in Tiri, objects are manually terminated with the <code>obj:free()</code> interface, or automatically via garbage collection. The specifics of this should be documented in your language of choice.</p>
-</blockquote>
+<div class="note">
+<div class="title">
+<p>Note</p>
+</div>
+<p>The means of terminating an object can vary between languages. C++ uses <code>FreeResource()</code>, while in Tiri, objects are manually terminated with the <code>obj:free()</code> interface, or automatically via garbage collection. The specifics of this should be documented in your language of choice.</p>
+</div>
 <h3 id="implementation-details-10">Implementation Details</h3>
 <p><code>Free</code> support is essential for all classes that allocate resources. It is correctly implemented by removing all resources that were created during an object&#39;s life-cycle.</p>
 <p>Sub-classes need to support this action if their code tracks resources seperately to the base class. To prevent allocations between a base-class and sub-class from being confused, the fields that reference resources should be driven to <code>NULL</code> after their termination. If your sub-class requires its own private data area for resource management, the <code>ChildPrivate</code> field is available for this purpose.</p>

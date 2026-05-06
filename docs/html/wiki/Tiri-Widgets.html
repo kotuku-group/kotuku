@@ -71,6 +71,7 @@
             <li class="api-ref"><a class="rounded" href="Tiri-HTTPServer-API.html">HTTPServer API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-IO-API.html">I/O API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-JSON-API.html">JSON API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-Options-API.html">Options API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-URL-API.html">URL API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-VFX-API.html">VFX API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-Widgets.html">Widgets</a></li>
@@ -128,7 +129,7 @@
       <li class="api-ref"><a href="../modules/tiri.html" class="rounded">Tiri</a></li>
       <li class="api-ref"><a href="../modules/vector.html" class="rounded">Vector</a></li>
       <li class="api-ref"><a href="../modules/xml.html" class="rounded">XML</a></li>
-      <li class="api-ref"><a href="../modules/xpath.html" class="rounded">XPath</a></li>
+      <li class="api-ref"><a href="../modules/xquery.html" class="rounded">XQuery</a></li>
       </ul>
     </div>
   </li>
@@ -267,11 +268,11 @@
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">xOffset</span>     <span class="op">=</span> <span class="dv">0</span><span class="op">,</span></span>
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">y</span>           <span class="op">=</span> <span class="va">y</span><span class="op">,</span></span>
 <span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>   <span class="va">iconSize</span>    <span class="op">=</span> <span class="dv">22</span><span class="op">,</span></span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>   <span class="va">createItems</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="cn">B</span><span class="va">ar</span><span class="op">)</span></span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>      <span class="cn">B</span><span class="va">ar</span><span class="op">.</span>addGroup<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="st">&#39;Clipboard&#39;</span><span class="op">,</span> <span class="dv">3</span><span class="op">)</span></span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>      <span class="cn">B</span><span class="va">ar</span><span class="op">.</span>addItem<span class="op">(</span><span class="dv">2</span><span class="op">,</span> <span class="st">&#39;Cut&#39;</span><span class="op">,</span> <span class="st">&#39;Cut&#39;</span><span class="op">,</span> <span class="st">&#39;tools/not_an_icon&#39;</span><span class="op">,</span> <span class="va">itemCallback</span><span class="op">)</span></span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>      <span class="cn">B</span><span class="va">ar</span><span class="op">.</span>addItem<span class="op">(</span><span class="dv">3</span><span class="op">,</span> <span class="st">&#39;Copy&#39;</span><span class="op">,</span> <span class="st">&#39;Copy&#39;</span><span class="op">,</span> <span class="st">&#39;tools/copy&#39;</span><span class="op">,</span> <span class="va">itemCallback</span><span class="op">)</span></span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>      <span class="cn">B</span><span class="va">ar</span><span class="op">.</span>addItem<span class="op">(</span><span class="dv">4</span><span class="op">,</span> <span class="st">&#39;Paste&#39;</span><span class="op">,</span> <span class="st">&#39;Paste&#39;</span><span class="op">,</span> <span class="st">&#39;tools/paste&#39;</span><span class="op">,</span> <span class="va">itemCallback</span><span class="op">)</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>   <span class="va">createItems</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">Bar</span><span class="op">)</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>      <span class="va">Bar</span><span class="op">.</span>addGroup<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="st">&#39;Clipboard&#39;</span><span class="op">,</span> <span class="dv">3</span><span class="op">)</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>      <span class="va">Bar</span><span class="op">.</span>addItem<span class="op">(</span><span class="dv">2</span><span class="op">,</span> <span class="st">&#39;Cut&#39;</span><span class="op">,</span> <span class="st">&#39;Cut&#39;</span><span class="op">,</span> <span class="st">&#39;tools/not_an_icon&#39;</span><span class="op">,</span> <span class="va">itemCallback</span><span class="op">)</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>      <span class="va">Bar</span><span class="op">.</span>addItem<span class="op">(</span><span class="dv">3</span><span class="op">,</span> <span class="st">&#39;Copy&#39;</span><span class="op">,</span> <span class="st">&#39;Copy&#39;</span><span class="op">,</span> <span class="st">&#39;tools/copy&#39;</span><span class="op">,</span> <span class="va">itemCallback</span><span class="op">)</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>      <span class="va">Bar</span><span class="op">.</span>addItem<span class="op">(</span><span class="dv">4</span><span class="op">,</span> <span class="st">&#39;Paste&#39;</span><span class="op">,</span> <span class="st">&#39;Paste&#39;</span><span class="op">,</span> <span class="st">&#39;tools/paste&#39;</span><span class="op">,</span> <span class="va">itemCallback</span><span class="op">)</span></span>
 <span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>   <span class="kw">end</span></span>
 <span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span></code></pre></div>
 <p>If you require deeper insight on how a certain aspect of a widget works, don&#39;t hesitate to view the source code for the API. The state information for widgets isn&#39;t typically documented, but can be learned from the code. All code is available in its original form and includes comments where needed.</p>
@@ -788,29 +789,33 @@
 </tr>
 <tr class="even">
 <td style="text-align: left;">filterList</td>
-<td style="text-align: left;">A list of allowed items for the <code>fileview</code> filter, e.g. <code>{ { name=&#39;JPEG Images&#39;, ext={ &#39;.jpg&#39;, &#39;.jpeg&#39; }, selected=true } }</code>. The <code>ext</code> can be a string or list of strings. The selection of more than one item is permitted.</td>
+<td style="text-align: left;">A list of allowed items for the <code>fileview</code> filter, e.g. <code>{ { name=&#39;JPEG Images&#39;, ext={ &#39;jpg&#39;, &#39;jpeg&#39; }, selected=true } }</code>. The <code>ext</code> can be a string or list of strings. The selection of more than one item is permitted.</td>
 </tr>
 <tr class="odd">
+<td style="text-align: left;">strictFilter</td>
+<td style="text-align: left;">Set to <code>true</code> to enforce strict filtering. The user will be prevented from deselecting all filters (which would otherwise revert to &#39;show all files&#39;).</td>
+</tr>
+<tr class="even">
 <td style="text-align: left;">icon</td>
 <td style="text-align: left;">The icon to use for the dialog window.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td style="text-align: left;">path</td>
 <td style="text-align: left;">The initial selection path.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td style="text-align: left;">multiSelect</td>
 <td style="text-align: left;">Set to <code>true</code> if more than one item can be selected.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td style="text-align: left;">allowNew</td>
 <td style="text-align: left;">If <code>true</code>, show a filename input box so the dialog can be used for save-style workflows.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td style="text-align: left;">warnExists</td>
 <td style="text-align: left;">If <code>true</code>, confirm with the user if the selected file should be overwritten.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td style="text-align: left;">feedback</td>
 <td style="text-align: left;">Refers to a function that will receive the user&#39;s response to the dialog. Use the format <code>function(Dialog, Path, Files)</code>. <code>Path</code> is the selected folder path. <code>Files</code> is an array of selected file entries, or <code>nil</code> if the dialog is cancelled. When <code>allowNew</code> is enabled, the filename entered by the user is returned through <code>Files</code>.</td>
 </tr>
@@ -849,61 +854,65 @@
 </tr>
 <tr class="odd">
 <td>filterList</td>
-<td>A list of allowed items for the file filter, e.g. <code>{ { name=&#39;JPEG Images&#39;, ext={ &#39;.jpg&#39;, &#39;.jpeg&#39; }, selected=true } }</code>. The <code>ext</code> can be a string or list of strings. The selection of more than one item is permitted.</td>
+<td>A list of allowed items for the file filter, e.g. <code>{ { name=&#39;JPEG Images&#39;, ext={ &#39;jpg&#39;, &#39;jpeg&#39; }, selected=true } }</code>. The <code>ext</code> can be a string or list of strings. The selection of more than one item is permitted.</td>
 </tr>
 <tr class="even">
+<td>strictFilter</td>
+<td>Set to <code>true</code> to enforce strict filtering. The user will be prevented from deselecting all filters (which would otherwise revert to &#39;show all files&#39;).</td>
+</tr>
+<tr class="odd">
 <td>limitPath</td>
 <td>Limit browsing to this folder and its sub-folders.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>multiSelect</td>
 <td>If <code>true</code> the user will be allowed to select more than one file in the file list.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>noExtensions</td>
 <td>If <code>true</code>, file extensions are not displayed when this option is active.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>noFiles</td>
 <td>If <code>true</code>, do not display files in the file list.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>pathChanged</td>
 <td>Callback for changes to the path, in the format <code>function(FileView, Path)</code>.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>showParent</td>
 <td>If <code>true</code>, the file view will display an item in the file list that reverts to the parent folder when activated.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>showHidden</td>
 <td>If <code>true</code>, show hidden files.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>showSystem</td>
 <td>If <code>true</code>, show system files.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>showDocs</td>
 <td>If <code>true</code>, show document views.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>style</td>
 <td>Defines the style of the view, which can be either <code>column</code> or <code>list</code>. The default is <code>column</code>.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>sysKeys</td>
 <td>If <code>true</code>, system key monitoring and relevant default behaviours are active when this option is enabled. Cut, Copy, Paste and Select-All key combinations are provided to the user in this mode.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>target</td>
 <td>Required. The viewport that will host the fileview is defined here.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>toolBar</td>
 <td>Enables a toolbar that enhances the user&#39;s interaction with the view. The client must provide a table list of permitted tools, which are <code>all</code>, <code>clipboard</code>, <code>settings</code>, <code>navigation</code>, <code>views</code>, and <code>actions</code>.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>viewOptions</td>
 <td>Passes additional options to the view (e.g. <code>columnview</code>) that will be listing the files.</td>
 </tr>

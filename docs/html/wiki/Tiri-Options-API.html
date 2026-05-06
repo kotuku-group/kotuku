@@ -1,0 +1,1190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-8254DG7MT6"> </script><script>
+	   window.dataLayer = window.dataLayer || [];
+	   function gtag(){dataLayer.push(arguments);}
+	   gtag('js', new Date());
+      gtag('config', 'G-8254DG7MT6');</script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Kōtuku documentation, machine generated from source">
+<meta name="author" content="Paul Manias">
+<link rel="icon" href="/favicon.ico">
+<title>Kōtuku Wiki - Tiri Options API</title>
+<link href="../css/bootstrap.min.css" rel="stylesheet">
+<link href="../css/module-template.css" rel="stylesheet">
+<link href="../css/github-markdown.css" rel="stylesheet">
+</head>
+
+<body>
+<nav class="navbar navbar-expand-sm navbar-dark bg-dark">
+  <div class="container-fluid">
+    <div class="navbar-header"><a class="navbar-brand" href="../index.html">Kōtuku</a></div>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div id="navbar" class="collapse navbar-collapse">
+      <ul class="nav navbar-nav"><li class="nav-item">
+        <li class="nav-item"><a class="nav-link" href="../gallery.html">Gallery</a></li>
+        <li class="nav-item"><a class="nav-link" href="../modules/api.html">API</a></li>
+        <li class="nav-item"><a class="nav-link" href="Home.html">Wiki</a></li>
+        <li class="nav-item"><a class="nav-link" href="https://github.com/parasol-framework/kotuku">GitHub</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<div class="container-fluid">
+  <div class="row">
+    <div class="d-sm-block d-none col-3 sidebar" style="max-width: 230px;">
+      <div class="flex-shrink-1 pt-2 pe-2 sticky-top overflow-auto vh-100 b-shadow">
+
+<ul class="list-unstyled">
+  <li>
+    <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#wiki-collapse" aria-expanded="true">Wiki</button>
+    <div class="collapse show" id="wiki-collapse">
+      <ul class="btn-toggle-nav list-unstyled fw-normal pb-1 ps-3">
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#bp-collapse" aria-expanded="false">Build Process</button>
+         <div class="collapse" id="bp-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="Linux-Builds.html">Linux Builds</a></li>
+              <li class="api-ref"><a class="rounded" href="Windows-Builds.html">Windows Builds</a></li>
+              <li class="api-ref"><a class="rounded" href="Customising-Your-Build.html">Customising Your Build</a></li>
+            </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#tm-collapse" aria-expanded="false">Technical Manuals</button>
+         <div class="collapse" id="tm-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+             <li class="api-ref"><a class="rounded" href="Kotuku-Objects.html">Kōtuku Objects</a></li>
+             <li class="api-ref"><a class="rounded" href="Kotuku-In-Depth.html">Kōtuku In Depth</a></li>
+             <li class="api-ref"><a class="rounded" href="Coding-With-AI.html">Coding With AI</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#fg-collapse" aria-expanded="false">Tiri</button>
+         <div class="collapse" id="fg-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+            <li class="api-ref"><a class="rounded" href="Tiri-Reference-Manual.html">Tiri Reference Manual</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-GUI-API.html">GUI API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-HTTPServer-API.html">HTTPServer API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-IO-API.html">I/O API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-JSON-API.html">JSON API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-Options-API.html">Options API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-URL-API.html">URL API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-VFX-API.html">VFX API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-Widgets.html">Widgets</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#rrm-collapse" aria-expanded="false">RIPL</button>
+         <div class="collapse" id="rrm-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="RIPL-Reference-Manual.html">RIPL Reference Manual</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#tools-collapse" aria-expanded="false">Tools</button>
+         <div class="collapse" id="tools-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="Origo.html">Origo</a></li>
+              <li class="api-ref"><a class="rounded" href="Unit-Testing.html">Flute / Unit Testing</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#doc-collapse" aria-expanded="false">Doc Generation</button>
+         <div class="collapse" id="doc-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+              <li class="api-ref"><a class="rounded" href="Embedded-Document-Formatting.html">Embedded Document Format</a></li>
+              <li class="api-ref"><a class="rounded" href="TDL-Reference-Manual.html">TDL Reference Manual</a></li>
+              <li class="api-ref"><a class="rounded" href="TDL-Tools.html">TDL Tools</a></li>
+           </ul>
+         </div></li>
+
+         <li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#app-collapse" aria-expanded="false">Appendix</button>
+         <div class="collapse" id="app-collapse">
+            <ul class="btn-toggle-nav list-unstyled pb-1">
+             <li class="api-ref"><a class="rounded" href="Action-Reference-Manual.html">Action Reference Manual</a></li>
+             <li class="api-ref"><a class="rounded" href="System-Error-Codes.html">System Error Codes</a></li>
+           </ul>
+         </div></li>
+      </ul>
+    </div>
+  </li>
+</ul>
+
+<ul class="list-unstyled">
+  <li class="border-top my-3"></li>
+  <li>
+    <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#mod-collapse" aria-expanded="false">Modules</button>
+    <div class="collapse" id="mod-collapse">
+      <ul class="btn-toggle-nav list-unstyled fw-normal">
+      <li class="api-ref"><a href="../modules/audio.html" class="rounded">Audio</a></li>
+      <li class="api-ref"><a href="../modules/core.html" class="rounded">Core</a></li>
+      <li class="api-ref"><a href="../modules/display.html" class="rounded">Display</a></li>
+      <li class="api-ref"><a href="../modules/font.html" class="rounded">Font</a></li>
+      <li class="api-ref"><a href="../modules/network.html" class="rounded">Network</a></li>
+      <li class="api-ref"><a href="../modules/regex.html" class="rounded">Regex</a></li>
+      <li class="api-ref"><a href="../modules/tiri.html" class="rounded">Tiri</a></li>
+      <li class="api-ref"><a href="../modules/vector.html" class="rounded">Vector</a></li>
+      <li class="api-ref"><a href="../modules/xml.html" class="rounded">XML</a></li>
+      <li class="api-ref"><a href="../modules/xquery.html" class="rounded">XQuery</a></li>
+      </ul>
+    </div>
+  </li>
+</ul>
+
+<ul class="list-unstyled">
+  <li class="border-top my-3"></li>
+  <li>
+    <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#class-collapse" aria-expanded="false">Classes</button>
+    <div class="collapse" id="class-collapse">
+      <ul class="btn-toggle-nav list-unstyled fw-normal pb-1 ps-3">
+        <li>
+          <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#audio-collapse" aria-expanded="false">Audio</button>
+          <div class="collapse" id="audio-collapse">
+            <ul class="btn-toggle-nav list-unstyled fw-normal pb-1">
+            <li><a href="../modules/classes/audio.html" class="rounded">Audio</a></li>
+            <li><a href="../modules/classes/sound.html" class="rounded">Sound</a></li>
+            </ul>
+          </div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#core-collapse" aria-expanded="false">Core</button><div class="collapse" id="core-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a href="../modules/classes/file.html" class="rounded">File</a></li>
+        <li><a href="../modules/classes/metaclass.html" class="rounded">MetaClass</a></li>
+        <li><a href="../modules/classes/module.html" class="rounded">Module</a></li>
+        <li><a href="../modules/classes/storagedevice.html" class="rounded">StorageDevice</a></li>
+        <li><a href="../modules/classes/task.html" class="rounded">Task</a></li>
+        <li><a href="../modules/classes/thread.html" class="rounded">Thread</a></li>
+        <li><a href="../modules/classes/time.html" class="rounded">Time</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#data-collapse" aria-expanded="false">Data</button><div class="collapse" id="data-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a href="../modules/classes/compression.html" class="rounded">Compression</a></li>
+        <li><a href="../modules/classes/compressedstream.html" class="rounded">CompressedStream</a></li>
+        <li><a href="../modules/classes/config.html" class="rounded">Config</a></li>
+        <li><a href="../modules/classes/script.html" class="rounded">Script</a></li>
+        <li><a href="../modules/classes/xml.html" class="rounded">XML</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#devices-collapse" aria-expanded="false">Devices</button><div class="collapse" id="devices-collapse"><ul class="btn-toggle-nav list-unstyled pb-1"><li><a href="../modules/classes/controller.html" class="rounded">Controller</a></li></ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#effects-collapse" aria-expanded="false">Effects</button><div class="collapse" id="effects-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/blurfx.html">BlurFX</a></li>
+        <li><a class="rounded" href="../modules/classes/colourfx.html">ColourFX</a></li>
+        <li><a class="rounded" href="../modules/classes/compositefx.html">CompositeFX</a></li>
+        <li><a class="rounded" href="../modules/classes/convolvefx.html">ConvolveFX</a></li>
+        <li><a class="rounded" href="../modules/classes/displacementfx.html">DisplacementFX</a></li>
+        <li><a class="rounded" href="../modules/classes/filtereffect.html">FilterEffect</a></li>
+        <li><a class="rounded" href="../modules/classes/floodfx.html">FloodFX</a></li>
+        <li><a class="rounded" href="../modules/classes/imagefx.html">ImageFX</a></li>
+        <li><a class="rounded" href="../modules/classes/lightingfx.html">LightingFX</a></li>
+        <li><a class="rounded" href="../modules/classes/mergefx.html">MergeFX</a></li>
+        <li><a class="rounded" href="../modules/classes/morphologyfx.html">MorphologyFX</a></li>
+        <li><a class="rounded" href="../modules/classes/offsetfx.html">OffsetFX</a></li>
+        <li><a class="rounded" href="../modules/classes/remapfx.html">RemapFX</a></li>
+        <li><a class="rounded" href="../modules/classes/sourcefx.html">SourceFX</a></li>
+        <li><a class="rounded" href="../modules/classes/turbulencefx.html">TurbulenceFX</a></li>
+        <li><a class="rounded" href="../modules/classes/wavefunctionfx.html">WaveFunctionFX</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#ext-collapse" aria-expanded="false">Extensions</button><div class="collapse" id="ext-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/scintilla.html">Scintilla</a></li>
+        <li><a class="rounded" href="../modules/classes/scintillasearch.html">ScintillaSearch</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#gfx-collapse" aria-expanded="false">Graphics</button><div class="collapse" id="gfx-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/bitmap.html">Bitmap</a></li>
+        <li><a class="rounded" href="../modules/classes/clipboard.html">Clipboard</a></li>
+        <li><a class="rounded" href="../modules/classes/display.html">Display</a></li>
+        <li><a class="rounded" href="../modules/classes/document.html">Document</a></li>
+        <li><a class="rounded" href="../modules/classes/font.html">Font</a></li>
+        <li><a class="rounded" href="../modules/classes/picture.html">Picture</a></li>
+        <li><a class="rounded" href="../modules/classes/pointer.html">Pointer</a></li>
+        <li><a class="rounded" href="../modules/classes/surface.html">Surface</a></li>
+        <li><a class="rounded" href="../modules/classes/svg.html">SVG</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#net-collapse" aria-expanded="false">Network</button><div class="collapse" id="net-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/clientsocket.html">ClientSocket</a></li>
+        <li><a class="rounded" href="../modules/classes/http.html">HTTP</a></li>
+        <li><a class="rounded" href="../modules/classes/netclient.html">NetClient</a></li>
+        <li><a class="rounded" href="../modules/classes/netlookup.html">NetLookup</a></li>
+        <li><a class="rounded" href="../modules/classes/netsocket.html">NetSocket</a></li>
+        <li><a class="rounded" href="../modules/classes/proxy.html">Proxy</a></li>
+        </ul></div>
+        </li>
+        <li>
+        <button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" data-bs-target="#vectors-collapse" aria-expanded="false">Vectors</button><div class="collapse" id="vectors-collapse"><ul class="btn-toggle-nav list-unstyled pb-1">
+        <li><a class="rounded" href="../modules/classes/vector.html">Vector</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorclip.html">VectorClip</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorcolour.html">VectorColour</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorellipse.html">VectorEllipse</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorfilter.html">VectorFilter</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorgradient.html">VectorGradient</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorgroup.html">VectorGroup</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorimage.html">VectorImage</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorpath.html">VectorPath</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorpattern.html">VectorPattern</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorpolygon.html">VectorPolygon</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorrectangle.html">VectorRectangle</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorscene.html">VectorScene</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorshape.html">VectorShape</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorspiral.html">VectorSpiral</a></li>
+        <li><a class="rounded" href="../modules/classes/vectortext.html">VectorText</a></li>
+        <li><a class="rounded" href="../modules/classes/vectortransition.html">VectorTransition</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorviewport.html">VectorViewport</a></li>
+        <li><a class="rounded" href="../modules/classes/vectorwave.html">VectorWave</a></li>
+        </ul></div>
+        </li>
+      </ul>
+    </div>
+  </li>
+</ul>
+
+</div>
+</div>
+
+<div class="col-sm-9" style="max-width: 1200px;">
+<div class="docs-content" id="default-page">
+
+<h1>Tiri Options API</h1>
+<p>The Options library provides first-party command-line option parsing for Tiri scripts. It replaces ad hoc <code>arg()</code> lookups with a declarative parser that handles named options, flags, positional arguments, subcommands, typed value conversion, validation, environment variable lookup, and help generation.</p>
+<p>It can be loaded with the line:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>import <span class="st">&#39;options&#39;</span></span></code></pre></div>
+<h1 id="quick-start">Quick Start</h1>
+<div class="sourceCode" id="cb2"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>import <span class="st">&#39;options&#39;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="va">parser</span> <span class="op">=</span> options<span class="op">({</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;vuepoint&#39;</span><span class="op">,</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>   <span class="va">description</span> <span class="op">=</span> <span class="st">&#39;A file viewer for SVG, RIPL, and image formats.&#39;</span><span class="op">,</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>   <span class="va">args</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">table</span><span class="op">&gt;</span> <span class="op">{</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;input&#39;</span><span class="op">,</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;positional&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;file&#39;</span><span class="op">,</span> <span class="va">required</span> <span class="op">=</span> <span class="kw">true</span><span class="op">,</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>        <span class="va">comment</span> <span class="op">=</span> <span class="st">&#39;File to open.&#39;</span> <span class="op">},</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;output&#39;</span><span class="op">,</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;option&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;file&#39;</span><span class="op">,</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>        <span class="va">comment</span> <span class="op">=</span> <span class="st">&#39;Render output path.&#39;</span> <span class="op">},</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">names</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">string</span><span class="op">&gt;</span> <span class="op">{</span> <span class="st">&#39;verbose&#39;</span><span class="op">,</span> <span class="st">&#39;v&#39;</span> <span class="op">},</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;flag&#39;</span><span class="op">,</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>        <span class="va">comment</span> <span class="op">=</span> <span class="st">&#39;Enable verbose logging.&#39;</span> <span class="op">}</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>   <span class="op">}</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a><span class="va">args</span> <span class="op">=</span> <span class="va">parser</span><span class="op">.</span>process<span class="op">()</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span><span class="op">(</span><span class="va">args</span><span class="op">.</span><span class="va">input</span><span class="op">,</span> <span class="va">args</span><span class="op">.</span><span class="va">output</span><span class="op">,</span> <span class="va">args</span><span class="op">.</span><span class="va">verbose</span><span class="op">)</span></span></code></pre></div>
+<p>Running this script from the command line:</p>
+<pre class="text"><code>origo viewer.tiri scene.svg output=preview.png verbose</code></pre>
+<p>produces:</p>
+<pre class="text"><code>scene.svg   preview.png   true</code></pre>
+<h1 id="creating-a-parser">Creating a Parser</h1>
+<h2 id="options">options()</h2>
+<p><code>parser = options(Config)</code></p>
+<p>Constructs a parser from a configuration table. The returned parser object exposes methods for adding parameters, parsing input, generating help, and validating arguments.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="va">parser</span> <span class="op">=</span> options<span class="op">({</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">name</span>        <span class="op">=</span> <span class="st">&#39;mytool&#39;</span><span class="op">,</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">description</span> <span class="op">=</span> <span class="st">&#39;A short description of the tool.&#39;</span><span class="op">,</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">epilog</span>      <span class="op">=</span> <span class="st">&#39;See the wiki for more information.&#39;</span><span class="op">,</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>   <span class="va">copyright</span>   <span class="op">=</span> <span class="st">&#39;Copyright 2026 Example Corp&#39;</span><span class="op">,</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>   <span class="va">license</span>     <span class="op">=</span> <span class="st">&#39;MIT&#39;</span><span class="op">,</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>   <span class="va">strict</span>      <span class="op">=</span> <span class="kw">true</span><span class="op">,</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>   <span class="va">envPrefix</span>   <span class="op">=</span> <span class="st">&#39;MYTOOL&#39;</span><span class="op">,</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>   <span class="va">args</span>        <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">table</span><span class="op">&gt;</span> <span class="op">{</span> <span class="op">...</span> <span class="op">},</span></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>   <span class="va">commands</span>    <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">table</span><span class="op">&gt;</span> <span class="op">{</span> <span class="op">...</span> <span class="op">},</span></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>   <span class="va">defaults</span>    <span class="op">=</span> <span class="op">{</span> <span class="va">output</span> <span class="op">=</span> <span class="st">&#39;result.txt&#39;</span> <span class="op">}</span></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span></code></pre></div>
+<h3 id="parser-configuration">Parser Configuration</h3>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Option</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Default</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><code>name</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;"><code>&#39;script&#39;</code></td>
+<td style="text-align: left;">Program name shown in usage and help.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>description</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;"><code>nil</code></td>
+<td style="text-align: left;">Long description shown before options in help.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>epilog</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;"><code>nil</code></td>
+<td style="text-align: left;">Text shown after options in help.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>copyright</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;"><code>nil</code></td>
+<td style="text-align: left;">Copyright text appended to help.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>license</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;"><code>nil</code></td>
+<td style="text-align: left;">Licence text appended to help.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>args</code></td>
+<td style="text-align: left;"><code>array&lt;table&gt;</code></td>
+<td style="text-align: left;"><code>{}</code></td>
+<td style="text-align: left;">Parameter definitions.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>commands</code></td>
+<td style="text-align: left;"><code>array&lt;table&gt;</code></td>
+<td style="text-align: left;"><code>{}</code></td>
+<td style="text-align: left;">Subcommand definitions.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>strict</code></td>
+<td style="text-align: left;"><code>bool</code></td>
+<td style="text-align: left;"><code>true</code></td>
+<td style="text-align: left;">Reject unknown parameters.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>defaults</code></td>
+<td style="text-align: left;"><code>table</code></td>
+<td style="text-align: left;"><code>nil</code></td>
+<td style="text-align: left;">Programmatic defaults keyed by parameter name.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>envPrefix</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;"><code>nil</code></td>
+<td style="text-align: left;">Prefix for environment variable lookup.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>autoHelp</code></td>
+<td style="text-align: left;"><code>bool</code></td>
+<td style="text-align: left;"><code>true</code></td>
+<td style="text-align: left;">Automatically handle <code>help</code> and <code>help=topic</code> input.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>helpArg</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;"><code>&#39;help&#39;</code></td>
+<td style="text-align: left;">Token name used for help requests.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>onError</code></td>
+<td style="text-align: left;"><code>function</code></td>
+<td style="text-align: left;"><code>nil</code></td>
+<td style="text-align: left;">Error callback for rejected values.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>onHelp</code></td>
+<td style="text-align: left;"><code>function</code></td>
+<td style="text-align: left;"><code>nil</code></td>
+<td style="text-align: left;">Help callback, receives generated help text.</td>
+</tr>
+</tbody>
+</table>
+<h1 id="parameter-definitions">Parameter Definitions</h1>
+<p>Parameters are defined as tables within the <code>args</code> array. Each definition describes one named option, flag, or positional argument.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="va">args</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">table</span><span class="op">&gt;</span> <span class="op">{</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;file&#39;</span><span class="op">,</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;option&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;file&#39;</span><span class="op">,</span> <span class="va">required</span> <span class="op">=</span> <span class="kw">true</span> <span class="op">},</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="va">names</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">string</span><span class="op">&gt;</span> <span class="op">{</span> <span class="st">&#39;verbose&#39;</span><span class="op">,</span> <span class="st">&#39;v&#39;</span> <span class="op">},</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;flag&#39;</span><span class="op">,</span> <span class="va">comment</span> <span class="op">=</span> <span class="st">&#39;Enable verbose output.&#39;</span> <span class="op">},</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;count&#39;</span><span class="op">,</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;option&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;int&#39;</span><span class="op">,</span> <span class="va">default</span> <span class="op">=</span> <span class="dv">10</span> <span class="op">},</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;input&#39;</span><span class="op">,</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;positional&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;file&#39;</span> <span class="op">}</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="parameter-definition-fields">Parameter Definition Fields</h3>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Field</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Default</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><code>name</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;">required*</td>
+<td style="text-align: left;">Canonical parameter name.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>names</code></td>
+<td style="text-align: left;"><code>array&lt;string&gt;</code></td>
+<td style="text-align: left;"><code>nil</code></td>
+<td style="text-align: left;">Accepted names; the first is canonical, the rest are aliases.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>comment</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;"><code>nil</code></td>
+<td style="text-align: left;">One-line help description.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>description</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;"><code>nil</code></td>
+<td style="text-align: left;">Detailed help shown via <code>help=paramname</code>.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>kind</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;"><code>&#39;option&#39;</code></td>
+<td style="text-align: left;">Parameter role: <code>option</code>, <code>flag</code>, or <code>positional</code>.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>type</code></td>
+<td style="text-align: left;"><code>str</code> or <code>function</code></td>
+<td style="text-align: left;"><code>&#39;str&#39;</code></td>
+<td style="text-align: left;">Built-in type name or custom converter function.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>default</code></td>
+<td style="text-align: left;">any</td>
+<td style="text-align: left;"><code>nil</code></td>
+<td style="text-align: left;">Value used when the parameter is absent.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>required</code></td>
+<td style="text-align: left;"><code>bool</code></td>
+<td style="text-align: left;"><code>false</code></td>
+<td style="text-align: left;">Parameter must be supplied.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>multiple</code></td>
+<td style="text-align: left;"><code>bool</code></td>
+<td style="text-align: left;"><code>false</code></td>
+<td style="text-align: left;">Accept repeated values and return an array.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>hidden</code></td>
+<td style="text-align: left;"><code>bool</code></td>
+<td style="text-align: left;"><code>false</code></td>
+<td style="text-align: left;">Exclude from generated help output.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>group</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;">automatic</td>
+<td style="text-align: left;">Help grouping label.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>metavar</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;">upper-case name</td>
+<td style="text-align: left;">Value label used in usage and help text.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>choices</code></td>
+<td style="text-align: left;"><code>array</code></td>
+<td style="text-align: left;"><code>nil</code></td>
+<td style="text-align: left;">Allowed values after type conversion.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>pattern</code></td>
+<td style="text-align: left;"><code>regex</code> or <code>str</code></td>
+<td style="text-align: left;"><code>nil</code></td>
+<td style="text-align: left;">Regex validation applied to the converted value.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>exists</code></td>
+<td style="text-align: left;"><code>bool</code></td>
+<td style="text-align: left;"><code>false</code></td>
+<td style="text-align: left;">For <code>path</code>, <code>file</code>, and <code>folder</code> types, require the path to exist.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>requires</code></td>
+<td style="text-align: left;"><code>str</code> or <code>array</code></td>
+<td style="text-align: left;"><code>nil</code></td>
+<td style="text-align: left;">Other parameters required when this one is present.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>requiresAny</code></td>
+<td style="text-align: left;"><code>array</code></td>
+<td style="text-align: left;"><code>nil</code></td>
+<td style="text-align: left;">At least one listed parameter must also be present.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>excludes</code></td>
+<td style="text-align: left;"><code>str</code> or <code>array</code></td>
+<td style="text-align: left;"><code>nil</code></td>
+<td style="text-align: left;">Parameters that cannot be used with this one.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>exec</code></td>
+<td style="text-align: left;"><code>function</code></td>
+<td style="text-align: left;"><code>nil</code></td>
+<td style="text-align: left;">Callback executed after conversion and validation.</td>
+</tr>
+</tbody>
+</table>
+<p>*Either <code>name</code> or <code>names</code> must be supplied. When <code>names</code> is supplied, the first entry is the canonical name.</p>
+<h2 id="parameter-kinds">Parameter Kinds</h2>
+<h3 id="option">option</h3>
+<p>Named parameters that require <code>name=value</code> syntax. If a <code>default</code> is declared, a bare <code>name</code> token uses the default value.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;output&#39;</span><span class="op">,</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;option&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;file&#39;</span> <span class="op">}</span></span></code></pre></div>
+<pre class="text"><code>output=preview.png</code></pre>
+<h3 id="flag">flag</h3>
+<p>Boolean switches. A bare <code>name</code> token resolves to <code>true</code>, a <code>no-name</code> token resolves to <code>false</code>, and <code>name=value</code> uses boolean conversion.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;verbose&#39;</span><span class="op">,</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;flag&#39;</span> <span class="op">}</span></span></code></pre></div>
+<pre class="text"><code>verbose          -- true
+no-verbose       -- false
+verbose=off      -- false</code></pre>
+<p>The <code>no-</code> prefix is only recognised when the suffix matches a declared flag name or alias. Using <code>no-</code> on a non-flag parameter raises an error.</p>
+<h3 id="positional">positional</h3>
+<p>Unnamed values assigned in declaration order. The final positional parameter may use <code>multiple=true</code> to consume all remaining values.</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;input&#39;</span><span class="op">,</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;positional&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;file&#39;</span><span class="op">,</span> <span class="va">required</span> <span class="op">=</span> <span class="kw">true</span> <span class="op">},</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;extras&#39;</span><span class="op">,</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;positional&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;str&#39;</span><span class="op">,</span> <span class="va">multiple</span> <span class="op">=</span> <span class="kw">true</span> <span class="op">}</span></span></code></pre></div>
+<pre class="text"><code>scene.svg one two three</code></pre>
+<p>Here <code>input</code> receives <code>scene.svg</code> and <code>extras</code> receives <code>{ &#39;one&#39;, &#39;two&#39;, &#39;three&#39; }</code>.</p>
+<h2 id="aliases">Aliases</h2>
+<p>Provide multiple accepted names for a parameter using the <code>names</code> field. The first name is canonical and is used as the key in the result table.</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">names</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">string</span><span class="op">&gt;</span> <span class="op">{</span> <span class="st">&#39;verbose&#39;</span><span class="op">,</span> <span class="st">&#39;v&#39;</span> <span class="op">},</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;flag&#39;</span> <span class="op">}</span></span></code></pre></div>
+<p>Both <code>verbose</code> and <code>v</code> are accepted on the command line, but the result is always stored under <code>args.verbose</code>.</p>
+<h1 id="built-in-types">Built-In Types</h1>
+<p>The <code>type</code> field selects a built-in converter or accepts a custom converter function.</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Output</th>
+<th style="text-align: left;">Accepted Input</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><code>str</code> / <code>string</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;">any string</td>
+<td style="text-align: left;">Default string value.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>num</code> / <code>number</code></td>
+<td style="text-align: left;"><code>num</code></td>
+<td style="text-align: left;">numeric string</td>
+<td style="text-align: left;">Converts with <code>tonumber()</code>.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>int</code></td>
+<td style="text-align: left;"><code>num</code></td>
+<td style="text-align: left;">integer string</td>
+<td style="text-align: left;">Converts and rejects fractional values.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>bool</code></td>
+<td style="text-align: left;"><code>bool</code></td>
+<td style="text-align: left;"><code>true/false</code>, <code>1/0</code>, <code>yes/no</code>, <code>on/off</code></td>
+<td style="text-align: left;">Converts explicit boolean values.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>enum</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;">value listed in <code>choices</code></td>
+<td style="text-align: left;">String value restricted to a <code>choices</code> list.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>path</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;">path string</td>
+<td style="text-align: left;">Optionally validates existence with <code>exists=true</code>.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>file</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;">path string</td>
+<td style="text-align: left;">Requires a file when <code>exists=true</code>.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>folder</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;">path string</td>
+<td style="text-align: left;">Requires a folder when <code>exists=true</code>.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>csv</code></td>
+<td style="text-align: left;"><code>array&lt;string&gt;</code></td>
+<td style="text-align: left;">comma-separated string</td>
+<td style="text-align: left;">Splits and trims values.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>array</code></td>
+<td style="text-align: left;"><code>array&lt;string&gt;</code></td>
+<td style="text-align: left;"><code>{ ... }</code> parameter or repeated values</td>
+<td style="text-align: left;">Normalises multi-value input.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>duration</code></td>
+<td style="text-align: left;"><code>num</code></td>
+<td style="text-align: left;">number with <code>ms</code>, <code>s</code>, <code>m</code>, <code>h</code>, or <code>d</code> suffix</td>
+<td style="text-align: left;">Converts to seconds.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>size</code></td>
+<td style="text-align: left;"><code>num</code></td>
+<td style="text-align: left;">number with <code>b</code>, <code>kb</code>, <code>mb</code>, <code>gb</code>, or <code>tb</code> suffix</td>
+<td style="text-align: left;">Converts to bytes.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>percent</code></td>
+<td style="text-align: left;"><code>num</code></td>
+<td style="text-align: left;">number or number with <code>%</code> suffix</td>
+<td style="text-align: left;">Normalises to a fraction (<code>50%</code> becomes <code>0.5</code>).</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>regex</code></td>
+<td style="text-align: left;">regex object</td>
+<td style="text-align: left;">PCRE-compatible pattern</td>
+<td style="text-align: left;">Compiles via the Tiri <code>regex</code> API.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>json</code></td>
+<td style="text-align: left;">any</td>
+<td style="text-align: left;">JSON value</td>
+<td style="text-align: left;">Parses JSON into the corresponding Tiri value.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>date</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;"><code>YYYY-MM-DD</code></td>
+<td style="text-align: left;">Validates ISO calendar dates including leap years.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>time</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;"><code>HH:MM</code>, <code>HH:MM:SS</code>, optional fractional seconds</td>
+<td style="text-align: left;">Validates ISO time values.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>datetime</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;">ISO 8601 date-time</td>
+<td style="text-align: left;">Validates date-time with optional timezone offset.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>colour</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;">CSS functional colour syntax</td>
+<td style="text-align: left;">Validates <code>rgb()</code>, <code>hsl()</code>, <code>hsv()</code>, and <code>oklch()</code> values.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="type-examples">Type Examples</h3>
+<div class="sourceCode" id="cb14"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;timeout&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;duration&#39;</span><span class="op">,</span> <span class="va">default</span> <span class="op">=</span> <span class="st">&#39;30s&#39;</span> <span class="op">}</span>        <span class="co">-- 30.0</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;maxSize&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;size&#39;</span><span class="op">,</span> <span class="va">default</span> <span class="op">=</span> <span class="st">&#39;10mb&#39;</span> <span class="op">}</span>           <span class="co">-- 10485760</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;opacity&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;percent&#39;</span><span class="op">,</span> <span class="va">default</span> <span class="op">=</span> <span class="st">&#39;80%&#39;</span> <span class="op">}</span>         <span class="co">-- 0.8</span></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;tags&#39;</span><span class="op">,</span>    <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;csv&#39;</span> <span class="op">}</span>                               <span class="co">-- { &#39;a&#39;, &#39;b&#39;, &#39;c&#39; }</span></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;config&#39;</span><span class="op">,</span>  <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;json&#39;</span> <span class="op">}</span>                              <span class="co">-- parsed table/array</span></span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;filter&#39;</span><span class="op">,</span>  <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;regex&#39;</span> <span class="op">}</span>                             <span class="co">-- compiled regex</span></span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;start&#39;</span><span class="op">,</span>   <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;date&#39;</span> <span class="op">}</span>                              <span class="co">-- &#39;2026-01-15&#39;</span></span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;format&#39;</span><span class="op">,</span>  <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;enum&#39;</span><span class="op">,</span> <span class="va">choices</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">string</span><span class="op">&gt;</span> <span class="op">{</span> <span class="st">&#39;svg&#39;</span><span class="op">,</span> <span class="st">&#39;png&#39;</span><span class="op">,</span> <span class="st">&#39;pdf&#39;</span> <span class="op">}</span> <span class="op">}</span></span></code></pre></div>
+<h2 id="custom-converters">Custom Converters</h2>
+<p>When <code>type</code> is a function, the parser calls it for each raw value:</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="kw">function</span> converter<span class="op">(</span><span class="va">RawValue</span><span class="op">:</span><span class="va">any</span><span class="op">,</span> <span class="va">Definition</span><span class="op">:</span><span class="va">table</span><span class="op">,</span> <span class="va">Parser</span><span class="op">:</span><span class="va">table</span><span class="op">):</span><span class="va">any</span></span></code></pre></div>
+<p>For command-line and environment values, <code>RawValue</code> is normally a string. For defaults and programmatic input, it may already be a typed value. The converter returns the converted value or throws an error.</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;label&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">RawValue</span><span class="op">:</span><span class="va">any</span><span class="op">,</span> <span class="va">Definition</span><span class="op">:</span><span class="va">table</span><span class="op">,</span> <span class="va">Parser</span><span class="op">:</span><span class="va">table</span><span class="op">):</span><span class="va">any</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>   <span class="cf">return</span> <span class="st">&#39;prefix:&#39;</span> <span class="op">..</span> <span class="fu">tostring</span><span class="op">(</span><span class="va">RawValue</span><span class="op">)</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span> <span class="op">}</span></span></code></pre></div>
+<h1 id="input-sources">Input Sources</h1>
+<h2 id="default-input">Default Input</h2>
+<p>When <code>process()</code> or <code>tryProcess()</code> is called with <code>nil</code>, the parser reads ordered arguments from <code>processing.task().parameters</code>. Launcher options (such as <code>--log-warning</code> and <code>--set-volume</code>) and the script path are automatically skipped, so only script-relevant arguments are parsed.</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="va">args</span> <span class="op">=</span> <span class="va">parser</span><span class="op">.</span>process<span class="op">()</span></span></code></pre></div>
+<p>If ordered task parameters are unavailable, the parser falls back to reading named parameters through <code>arg()</code>. Positional parameters are not available through the <code>arg()</code> fallback.</p>
+<h2 id="explicit-input">Explicit Input</h2>
+<p>Explicit input bypasses task parameters entirely.</p>
+<p><strong>Array input</strong> parses ordered tokens using the same rules as command-line input:</p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="va">args</span> <span class="op">=</span> <span class="va">parser</span><span class="op">.</span>process<span class="op">(</span><span class="va">array</span><span class="op">&lt;</span><span class="va">string</span><span class="op">&gt;</span> <span class="op">{</span> <span class="st">&#39;scene.svg&#39;</span><span class="op">,</span> <span class="st">&#39;output=preview.png&#39;</span><span class="op">,</span> <span class="st">&#39;verbose&#39;</span> <span class="op">})</span></span></code></pre></div>
+<p><strong>Table input</strong> parses keyed values, accepting pre-typed values without string conversion:</p>
+<div class="sourceCode" id="cb19"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="va">args</span> <span class="op">=</span> <span class="va">parser</span><span class="op">.</span>process<span class="op">({</span> <span class="va">input</span> <span class="op">=</span> <span class="st">&#39;scene.svg&#39;</span><span class="op">,</span> <span class="va">count</span> <span class="op">=</span> <span class="dv">3</span><span class="op">,</span> <span class="va">enabled</span> <span class="op">=</span> <span class="kw">true</span> <span class="op">})</span></span></code></pre></div>
+<h2 id="task-parameters-option">Task Parameters Option</h2>
+<p>The <code>Options</code> table can override the task parameter source:</p>
+<div class="sourceCode" id="cb20"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="co">-- Use a specific argument array as the task parameter source</span></span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a><span class="va">args</span> <span class="op">=</span> <span class="va">parser</span><span class="op">.</span>process<span class="op">(</span><span class="kw">nil</span><span class="op">,</span> <span class="op">{</span> <span class="va">taskParameters</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">string</span><span class="op">&gt;</span> <span class="op">{</span> <span class="st">&#39;script.tiri&#39;</span><span class="op">,</span> <span class="st">&#39;file.svg&#39;</span> <span class="op">}</span> <span class="op">})</span></span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a><span class="co">-- Force the arg() fallback by disabling task parameters</span></span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a><span class="va">args</span> <span class="op">=</span> <span class="va">parser</span><span class="op">.</span>process<span class="op">(</span><span class="kw">nil</span><span class="op">,</span> <span class="op">{</span> <span class="va">taskParameters</span> <span class="op">=</span> <span class="kw">false</span> <span class="op">})</span></span></code></pre></div>
+<h1 id="source-precedence">Source Precedence</h1>
+<p>When multiple sources provide a value for the same parameter, the highest-priority source wins. From lowest to highest:</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Priority</th>
+<th style="text-align: left;">Source</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">1</td>
+<td style="text-align: left;">Parameter <code>default</code></td>
+<td style="text-align: left;">Fallback value declared on the parameter definition.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">2</td>
+<td style="text-align: left;">Parser <code>defaults</code></td>
+<td style="text-align: left;">Programmatic defaults from the parser configuration.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">3</td>
+<td style="text-align: left;"><code>setDefaults()</code></td>
+<td style="text-align: left;">Runtime defaults set after construction.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">4</td>
+<td style="text-align: left;">Environment variable</td>
+<td style="text-align: left;">Values from <code>envPrefix</code> environment variables.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">5</td>
+<td style="text-align: left;">Input value</td>
+<td style="text-align: left;">Values from explicit input or ordered task parameters.</td>
+</tr>
+</tbody>
+</table>
+<div class="sourceCode" id="cb21"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="va">parser</span> <span class="op">=</span> options<span class="op">({</span></span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">envPrefix</span> <span class="op">=</span> <span class="st">&#39;MYTOOL&#39;</span><span class="op">,</span></span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">defaults</span>  <span class="op">=</span> <span class="op">{</span> <span class="va">output</span> <span class="op">=</span> <span class="st">&#39;parser-default.txt&#39;</span> <span class="op">},</span></span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">args</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">table</span><span class="op">&gt;</span> <span class="op">{</span></span>
+<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;output&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;file&#39;</span><span class="op">,</span> <span class="va">default</span> <span class="op">=</span> <span class="st">&#39;param-default.txt&#39;</span> <span class="op">}</span></span>
+<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a>   <span class="op">}</span></span>
+<span id="cb21-7"><a href="#cb21-7" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span>
+<span id="cb21-8"><a href="#cb21-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-9"><a href="#cb21-9" aria-hidden="true" tabindex="-1"></a><span class="va">parser</span><span class="op">.</span>setDefaults<span class="op">({</span> <span class="va">output</span> <span class="op">=</span> <span class="st">&#39;runtime-default.txt&#39;</span> <span class="op">})</span></span></code></pre></div>
+<p>With <code>MYTOOL_OUTPUT=env.txt</code> set in the environment, the value <code>env.txt</code> is used unless the command line supplies <code>output=cli.txt</code>, which takes the highest priority.</p>
+<h2 id="environment-variables">Environment Variables</h2>
+<p>Setting <code>envPrefix</code> enables environment variable lookup for every named option and flag. The variable name is formed from the prefix, an underscore, and the canonical parameter name converted to upper snake-case. Aliases do not create additional environment variable names.</p>
+<div class="sourceCode" id="cb22"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="va">parser</span> <span class="op">=</span> options<span class="op">({</span></span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">envPrefix</span> <span class="op">=</span> <span class="st">&#39;APP&#39;</span><span class="op">,</span></span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">args</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">table</span><span class="op">&gt;</span> <span class="op">{</span></span>
+<span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;logLevel&#39;</span><span class="op">,</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;option&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;str&#39;</span> <span class="op">},</span></span>
+<span id="cb22-5"><a href="#cb22-5" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">names</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">string</span><span class="op">&gt;</span> <span class="op">{</span> <span class="st">&#39;verbose&#39;</span><span class="op">,</span> <span class="st">&#39;v&#39;</span> <span class="op">},</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;flag&#39;</span> <span class="op">}</span></span>
+<span id="cb22-6"><a href="#cb22-6" aria-hidden="true" tabindex="-1"></a>   <span class="op">}</span></span>
+<span id="cb22-7"><a href="#cb22-7" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span></code></pre></div>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Parameter</th>
+<th style="text-align: left;">Environment Variable</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><code>logLevel</code></td>
+<td style="text-align: left;"><code>APP_LOG_LEVEL</code></td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>verbose</code></td>
+<td style="text-align: left;"><code>APP_VERBOSE</code></td>
+</tr>
+</tbody>
+</table>
+<h1 id="validation">Validation</h1>
+<h2 id="required-parameters">Required Parameters</h2>
+<p>Parameters with <code>required = true</code> must be supplied through input, environment, or defaults. Missing required parameters raise an error.</p>
+<h2 id="choices">Choices</h2>
+<p>Restrict a parameter to a set of allowed values after type conversion:</p>
+<div class="sourceCode" id="cb23"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;format&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;enum&#39;</span><span class="op">,</span> <span class="va">choices</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">string</span><span class="op">&gt;</span> <span class="op">{</span> <span class="st">&#39;svg&#39;</span><span class="op">,</span> <span class="st">&#39;png&#39;</span><span class="op">,</span> <span class="st">&#39;pdf&#39;</span> <span class="op">}</span> <span class="op">}</span></span></code></pre></div>
+<p>The <code>enum</code> type is a convenience that combines <code>str</code> conversion with a mandatory <code>choices</code> list. Other types can also use <code>choices</code> to restrict their output values.</p>
+<h2 id="pattern">Pattern</h2>
+<p>Validate the converted value against a regex pattern:</p>
+<div class="sourceCode" id="cb24"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;id&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;str&#39;</span><span class="op">,</span> <span class="va">pattern</span> <span class="op">=</span> <span class="st">&#39;^[A-Z]{3}-[0-9]+$&#39;</span> <span class="op">}</span></span></code></pre></div>
+<p>The <code>pattern</code> field accepts a regex string or a compiled regex object.</p>
+<h2 id="path-existence">Path Existence</h2>
+<p>For <code>path</code>, <code>file</code>, and <code>folder</code> types, setting <code>exists = true</code> requires the path to exist. The <code>file</code> type additionally requires the path to be a file, and <code>folder</code> requires it to be a directory.</p>
+<div class="sourceCode" id="cb25"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;input&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;file&#39;</span><span class="op">,</span> <span class="va">exists</span> <span class="op">=</span> <span class="kw">true</span> <span class="op">}</span></span></code></pre></div>
+<h2 id="relationships">Relationships</h2>
+<p>Parameters can declare dependencies and conflicts with other parameters:</p>
+<div class="sourceCode" id="cb26"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;output&#39;</span><span class="op">,</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;option&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;file&#39;</span><span class="op">,</span></span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>  <span class="va">requires</span> <span class="op">=</span> <span class="st">&#39;input&#39;</span> <span class="op">}</span>                              <span class="co">-- &#39;input&#39; must also be present</span></span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb26-4"><a href="#cb26-4" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;format&#39;</span><span class="op">,</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;option&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;enum&#39;</span><span class="op">,</span></span>
+<span id="cb26-5"><a href="#cb26-5" aria-hidden="true" tabindex="-1"></a>  <span class="va">choices</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">string</span><span class="op">&gt;</span> <span class="op">{</span> <span class="st">&#39;svg&#39;</span><span class="op">,</span> <span class="st">&#39;png&#39;</span> <span class="op">},</span></span>
+<span id="cb26-6"><a href="#cb26-6" aria-hidden="true" tabindex="-1"></a>  <span class="va">requiresAny</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">string</span><span class="op">&gt;</span> <span class="op">{</span> <span class="st">&#39;output&#39;</span><span class="op">,</span> <span class="st">&#39;preview&#39;</span> <span class="op">}</span> <span class="op">}</span>  <span class="co">-- at least one must be present</span></span>
+<span id="cb26-7"><a href="#cb26-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb26-8"><a href="#cb26-8" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;quiet&#39;</span><span class="op">,</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;flag&#39;</span><span class="op">,</span></span>
+<span id="cb26-9"><a href="#cb26-9" aria-hidden="true" tabindex="-1"></a>  <span class="va">excludes</span> <span class="op">=</span> <span class="st">&#39;verbose&#39;</span> <span class="op">}</span>                             <span class="co">-- cannot be used with &#39;verbose&#39;</span></span></code></pre></div>
+<p>Relationships are checked after all sources have been merged and values have been converted.</p>
+<h2 id="exec-callback">exec Callback</h2>
+<p>The <code>exec</code> field runs a callback after conversion and validation for additional custom checks:</p>
+<div class="sourceCode" id="cb27"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;port&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;int&#39;</span><span class="op">,</span> <span class="va">exec</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">Parser</span><span class="op">:</span><span class="va">table</span><span class="op">,</span> <span class="va">ArgName</span><span class="op">:</span><span class="va">str</span><span class="op">,</span> <span class="va">Value</span><span class="op">:</span><span class="va">any</span><span class="op">,</span> <span class="va">Param</span><span class="op">:</span><span class="va">table</span><span class="op">)</span></span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a>   <span class="cf">if</span> <span class="va">Value</span> <span class="op">&lt;</span> <span class="dv">1</span> <span class="kw">or</span> <span class="va">Value</span> <span class="op">&gt;</span> <span class="dv">65535</span> <span class="cf">then</span></span>
+<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a>      <span class="fu">error</span><span class="op">(</span><span class="st">&#39;Port must be between 1 and 65535.&#39;</span><span class="op">)</span></span>
+<span id="cb27-4"><a href="#cb27-4" aria-hidden="true" tabindex="-1"></a>   <span class="cf">end</span></span>
+<span id="cb27-5"><a href="#cb27-5" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span> <span class="op">}</span></span></code></pre></div>
+<p>The callback receives the parser, the argument name as supplied, the converted value, and the parameter definition. Throwing an error from <code>exec</code> triggers the same error handling path as a failed type conversion.</p>
+<h1 id="repeated-values">Repeated Values</h1>
+<p>Parameters with <code>multiple = true</code> collect repeated occurrences into an array. This applies to named options, flags, and positional parameters.</p>
+<div class="sourceCode" id="cb28"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="va">parser</span> <span class="op">=</span> options<span class="op">({</span></span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">args</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">table</span><span class="op">&gt;</span> <span class="op">{</span></span>
+<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;tag&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;str&#39;</span><span class="op">,</span> <span class="va">multiple</span> <span class="op">=</span> <span class="kw">true</span> <span class="op">},</span></span>
+<span id="cb28-4"><a href="#cb28-4" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;files&#39;</span><span class="op">,</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;positional&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;file&#39;</span><span class="op">,</span> <span class="va">multiple</span> <span class="op">=</span> <span class="kw">true</span> <span class="op">}</span></span>
+<span id="cb28-5"><a href="#cb28-5" aria-hidden="true" tabindex="-1"></a>   <span class="op">}</span></span>
+<span id="cb28-6"><a href="#cb28-6" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span>
+<span id="cb28-7"><a href="#cb28-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb28-8"><a href="#cb28-8" aria-hidden="true" tabindex="-1"></a><span class="va">args</span> <span class="op">=</span> <span class="va">parser</span><span class="op">.</span>process<span class="op">(</span><span class="va">array</span><span class="op">&lt;</span><span class="va">string</span><span class="op">&gt;</span> <span class="op">{</span> <span class="st">&#39;tag=red&#39;</span><span class="op">,</span> <span class="st">&#39;tag=blue&#39;</span><span class="op">,</span> <span class="st">&#39;one.svg&#39;</span><span class="op">,</span> <span class="st">&#39;two.svg&#39;</span> <span class="op">})</span></span>
+<span id="cb28-9"><a href="#cb28-9" aria-hidden="true" tabindex="-1"></a><span class="co">-- args.tag   = { &#39;red&#39;, &#39;blue&#39; }</span></span>
+<span id="cb28-10"><a href="#cb28-10" aria-hidden="true" tabindex="-1"></a><span class="co">-- args.files = { &#39;one.svg&#39;, &#39;two.svg&#39; }</span></span></code></pre></div>
+<p>A scalar default for a <code>multiple</code> parameter is converted and wrapped as a single-element array. An array default is converted item by item.</p>
+<p>When using table input, an array value is treated as repeated values:</p>
+<div class="sourceCode" id="cb29"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="va">args</span> <span class="op">=</span> <span class="va">parser</span><span class="op">.</span>process<span class="op">({</span> <span class="va">tag</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">string</span><span class="op">&gt;</span> <span class="op">{</span> <span class="st">&#39;red&#39;</span><span class="op">,</span> <span class="st">&#39;blue&#39;</span> <span class="op">}</span> <span class="op">})</span></span></code></pre></div>
+<p>A variadic positional parameter (using <code>multiple = true</code>) must be the final positional definition.</p>
+<h1 id="subcommands">Subcommands</h1>
+<p>Larger tools can expose command verbs with global options and command-specific arguments.</p>
+<div class="sourceCode" id="cb30"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="va">parser</span> <span class="op">=</span> options<span class="op">({</span></span>
+<span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;tool&#39;</span><span class="op">,</span></span>
+<span id="cb30-3"><a href="#cb30-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">args</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">table</span><span class="op">&gt;</span> <span class="op">{</span></span>
+<span id="cb30-4"><a href="#cb30-4" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">names</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">string</span><span class="op">&gt;</span> <span class="op">{</span> <span class="st">&#39;verbose&#39;</span><span class="op">,</span> <span class="st">&#39;v&#39;</span> <span class="op">},</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;flag&#39;</span> <span class="op">}</span></span>
+<span id="cb30-5"><a href="#cb30-5" aria-hidden="true" tabindex="-1"></a>   <span class="op">},</span></span>
+<span id="cb30-6"><a href="#cb30-6" aria-hidden="true" tabindex="-1"></a>   <span class="va">commands</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">table</span><span class="op">&gt;</span> <span class="op">{</span></span>
+<span id="cb30-7"><a href="#cb30-7" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span></span>
+<span id="cb30-8"><a href="#cb30-8" aria-hidden="true" tabindex="-1"></a>         <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;build&#39;</span><span class="op">,</span></span>
+<span id="cb30-9"><a href="#cb30-9" aria-hidden="true" tabindex="-1"></a>         <span class="va">comment</span> <span class="op">=</span> <span class="st">&#39;Build the project.&#39;</span><span class="op">,</span></span>
+<span id="cb30-10"><a href="#cb30-10" aria-hidden="true" tabindex="-1"></a>         <span class="va">args</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">table</span><span class="op">&gt;</span> <span class="op">{</span></span>
+<span id="cb30-11"><a href="#cb30-11" aria-hidden="true" tabindex="-1"></a>            <span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;target&#39;</span><span class="op">,</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;option&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;str&#39;</span><span class="op">,</span> <span class="va">default</span> <span class="op">=</span> <span class="st">&#39;all&#39;</span> <span class="op">}</span></span>
+<span id="cb30-12"><a href="#cb30-12" aria-hidden="true" tabindex="-1"></a>         <span class="op">}</span></span>
+<span id="cb30-13"><a href="#cb30-13" aria-hidden="true" tabindex="-1"></a>      <span class="op">},</span></span>
+<span id="cb30-14"><a href="#cb30-14" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span></span>
+<span id="cb30-15"><a href="#cb30-15" aria-hidden="true" tabindex="-1"></a>         <span class="va">names</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">string</span><span class="op">&gt;</span> <span class="op">{</span> <span class="st">&#39;test&#39;</span><span class="op">,</span> <span class="st">&#39;t&#39;</span> <span class="op">},</span></span>
+<span id="cb30-16"><a href="#cb30-16" aria-hidden="true" tabindex="-1"></a>         <span class="va">comment</span> <span class="op">=</span> <span class="st">&#39;Run tests.&#39;</span><span class="op">,</span></span>
+<span id="cb30-17"><a href="#cb30-17" aria-hidden="true" tabindex="-1"></a>         <span class="va">args</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">table</span><span class="op">&gt;</span> <span class="op">{</span></span>
+<span id="cb30-18"><a href="#cb30-18" aria-hidden="true" tabindex="-1"></a>            <span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;filter&#39;</span><span class="op">,</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;option&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;str&#39;</span> <span class="op">}</span></span>
+<span id="cb30-19"><a href="#cb30-19" aria-hidden="true" tabindex="-1"></a>         <span class="op">}</span></span>
+<span id="cb30-20"><a href="#cb30-20" aria-hidden="true" tabindex="-1"></a>      <span class="op">}</span></span>
+<span id="cb30-21"><a href="#cb30-21" aria-hidden="true" tabindex="-1"></a>   <span class="op">}</span></span>
+<span id="cb30-22"><a href="#cb30-22" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span></code></pre></div>
+<h2 id="command-definition-fields">Command Definition Fields</h2>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Field</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Default</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><code>name</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;">required*</td>
+<td style="text-align: left;">Canonical command name.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>names</code></td>
+<td style="text-align: left;"><code>array&lt;string&gt;</code></td>
+<td style="text-align: left;"><code>nil</code></td>
+<td style="text-align: left;">Accepted names; the first is canonical, the rest are aliases.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>comment</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;"><code>nil</code></td>
+<td style="text-align: left;">One-line help description.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>description</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;"><code>nil</code></td>
+<td style="text-align: left;">Detailed help shown via <code>help=commandname</code>.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>group</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;"><code>&#39;Commands&#39;</code></td>
+<td style="text-align: left;">Help grouping label.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>args</code></td>
+<td style="text-align: left;"><code>array&lt;table&gt;</code></td>
+<td style="text-align: left;"><code>{}</code></td>
+<td style="text-align: left;">Command-specific parameter definitions.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>hidden</code></td>
+<td style="text-align: left;"><code>bool</code></td>
+<td style="text-align: left;"><code>false</code></td>
+<td style="text-align: left;">Exclude from generated help output.</td>
+</tr>
+</tbody>
+</table>
+<p>*Either <code>name</code> or <code>names</code> must be supplied.</p>
+<h2 id="command-parsing">Command Parsing</h2>
+<p>Global options parse before the command token. The selected command&#39;s arguments parse from the remaining input. The result contains three fields:</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Field</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><code>command</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;">Canonical command name.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>globals</code></td>
+<td style="text-align: left;"><code>table</code></td>
+<td style="text-align: left;">Parsed global parameters.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>args</code></td>
+<td style="text-align: left;"><code>table</code></td>
+<td style="text-align: left;">Parsed parameters for the selected command.</td>
+</tr>
+</tbody>
+</table>
+<div class="sourceCode" id="cb31"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="va">result</span> <span class="op">=</span> <span class="va">parser</span><span class="op">.</span>process<span class="op">(</span><span class="va">array</span><span class="op">&lt;</span><span class="va">string</span><span class="op">&gt;</span> <span class="op">{</span> <span class="st">&#39;verbose&#39;</span><span class="op">,</span> <span class="st">&#39;build&#39;</span><span class="op">,</span> <span class="st">&#39;target=release&#39;</span> <span class="op">})</span></span>
+<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- result.command = &#39;build&#39;</span></span>
+<span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a><span class="co">-- result.globals.verbose = true</span></span>
+<span id="cb31-4"><a href="#cb31-4" aria-hidden="true" tabindex="-1"></a><span class="co">-- result.args.target = &#39;release&#39;</span></span></code></pre></div>
+<p>When using table input, the command is specified with a <code>command</code> key:</p>
+<div class="sourceCode" id="cb32"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="va">result</span> <span class="op">=</span> <span class="va">parser</span><span class="op">.</span>process<span class="op">({</span></span>
+<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">command</span> <span class="op">=</span> <span class="st">&#39;build&#39;</span><span class="op">,</span></span>
+<span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">globals</span> <span class="op">=</span> <span class="op">{</span> <span class="va">verbose</span> <span class="op">=</span> <span class="kw">true</span> <span class="op">},</span></span>
+<span id="cb32-4"><a href="#cb32-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">args</span>    <span class="op">=</span> <span class="op">{</span> <span class="va">target</span> <span class="op">=</span> <span class="st">&#39;release&#39;</span> <span class="op">}</span></span>
+<span id="cb32-5"><a href="#cb32-5" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span></code></pre></div>
+<p>Command aliases dispatch to the canonical command name. Missing commands raise an error when commands are defined.</p>
+<h1 id="help-generation">Help Generation</h1>
+<h2 id="automatic-help">Automatic Help</h2>
+<p>When <code>autoHelp</code> is <code>true</code> (the default), the parser intercepts <code>help</code> and <code>help=topic</code> tokens. Normal help shows the program name, description, usage line, grouped parameters, commands, and metadata. Detailed help accepts a parameter name, alias, or command name as the topic.</p>
+<pre class="text"><code>mytool help               -- prints normal help
+mytool help=output        -- prints detailed help for &#39;output&#39;
+mytool help=build         -- prints detailed help for &#39;build&#39; command</code></pre>
+<p>When automatic help is handled through <code>process()</code>, the help text is printed (or dispatched through <code>onHelp</code>) and <code>nil</code> is returned. Through <code>tryProcess()</code>, help requests return a structured result table without printing.</p>
+<h2 id="parser-methods">Parser Methods</h2>
+<h3 id="parserprocess">parser.process()</h3>
+<p><code>result = parser.process(Input, Options)</code></p>
+<p>Parses input and returns a typed argument table, command result table, or <code>nil</code> when automatic help is handled. Parse failures are raised as errors.</p>
+<p><code>Input</code> may be an array of command-line tokens, a table of keyed values, or <code>nil</code> to use the default input source. <code>Options</code> is an optional table; currently <code>Options.taskParameters</code> overrides the task parameter source.</p>
+<h3 id="parsertryprocess">parser.tryProcess()</h3>
+<p><code>result, err = parser.tryProcess(Input, Options)</code></p>
+<p>The non-terminating parsing API. Returns <code>result, nil</code> on success, or <code>nil, err</code> on failure. Automatic help requests return a structured table with <code>help</code>, <code>topic</code>, and <code>text</code> fields instead of printing.</p>
+<div class="sourceCode" id="cb34"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="va">result</span><span class="op">,</span> <span class="va">err</span> <span class="op">=</span> <span class="va">parser</span><span class="op">.</span>tryProcess<span class="op">(</span><span class="va">array</span><span class="op">&lt;</span><span class="va">string</span><span class="op">&gt;</span> <span class="op">{</span> <span class="st">&#39;file=scene.svg&#39;</span> <span class="op">})</span></span>
+<span id="cb34-2"><a href="#cb34-2" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="va">err</span> <span class="cf">then</span></span>
+<span id="cb34-3"><a href="#cb34-3" aria-hidden="true" tabindex="-1"></a>   <span class="fu">print</span><span class="op">(</span><span class="st">&#39;Parse error: &#39;</span> <span class="op">..</span> <span class="va">err</span><span class="op">.</span><span class="va">message</span><span class="op">)</span></span>
+<span id="cb34-4"><a href="#cb34-4" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span>
+<span id="cb34-5"><a href="#cb34-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-6"><a href="#cb34-6" aria-hidden="true" tabindex="-1"></a><span class="co">-- Check for help result</span></span>
+<span id="cb34-7"><a href="#cb34-7" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="va">result</span> <span class="kw">and</span> <span class="va">result</span><span class="op">.</span><span class="va">help</span> <span class="cf">then</span></span>
+<span id="cb34-8"><a href="#cb34-8" aria-hidden="true" tabindex="-1"></a>   <span class="fu">print</span><span class="op">(</span><span class="va">result</span><span class="op">.</span><span class="va">text</span><span class="op">)</span></span>
+<span id="cb34-9"><a href="#cb34-9" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span></code></pre></div>
+<h3 id="parsergetusage">parser.getUsage()</h3>
+<p><code>text = parser.getUsage()</code></p>
+<p>Returns a compact plain-text usage line. Hidden parameters are excluded. Required parameters are shown without brackets; optional parameters are bracketed.</p>
+<div class="sourceCode" id="cb35"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span><span class="op">(</span><span class="va">parser</span><span class="op">.</span>getUsage<span class="op">())</span></span>
+<span id="cb35-2"><a href="#cb35-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- Usage: mytool [output=OUTPUT] [verbose] &lt;INPUT&gt;</span></span></code></pre></div>
+<h3 id="parsergethelp">parser.getHelp()</h3>
+<p><code>text = parser.getHelp(Format, Topic)</code></p>
+<p>Returns generated help text. <code>Format</code> may be <code>nil</code> or <code>&#39;text&#39;</code> for plain text; other formats are reserved for future use. <code>Topic</code> may be a parameter name, alias, or command name for detailed help, or <code>nil</code> for normal help.</p>
+<h3 id="parserprinthelp">parser.printHelp()</h3>
+<p><code>parser.printHelp(Format, Topic)</code></p>
+<p>Prints the text generated by <code>parser.getHelp()</code>.</p>
+<h3 id="parseraddparam">parser.addParam()</h3>
+<p><code>param = parser.addParam(Definition)</code></p>
+<p>Adds a parameter definition after construction. Returns the normalised parameter definition.</p>
+<div class="sourceCode" id="cb36"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a><span class="va">parser</span><span class="op">.</span>addParam<span class="op">({</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;extra&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;str&#39;</span><span class="op">,</span> <span class="va">comment</span> <span class="op">=</span> <span class="st">&#39;An extra option.&#39;</span> <span class="op">})</span></span></code></pre></div>
+<h3 id="parsergetparam">parser.getParam()</h3>
+<p><code>param = parser.getParam(Name)</code></p>
+<p>Returns a registered parameter definition by canonical name or alias, or <code>nil</code> when no parameter matches.</p>
+<h3 id="parseraddcommand">parser.addCommand()</h3>
+<p><code>command = parser.addCommand(Definition)</code></p>
+<p>Adds a command definition after construction. Returns the normalised command definition. Commands added this way support <code>command.addParam()</code> for adding command-specific parameters.</p>
+<h3 id="parsergetcommand">parser.getCommand()</h3>
+<p><code>command = parser.getCommand(Name)</code></p>
+<p>Returns a registered command definition by canonical name or alias, or <code>nil</code> when no command matches.</p>
+<h3 id="parsersetdefaults">parser.setDefaults()</h3>
+<p><code>parser = parser.setDefaults(Defaults)</code></p>
+<p>Replaces the runtime defaults layer. Runtime defaults take precedence over parser configuration defaults and parameter defaults, but are overridden by environment variables and explicit input. Returns the parser for chaining.</p>
+<div class="sourceCode" id="cb37"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a><span class="va">parser</span><span class="op">.</span>setDefaults<span class="op">({</span> <span class="va">output</span> <span class="op">=</span> <span class="st">&#39;default.txt&#39;</span><span class="op">,</span> <span class="va">count</span> <span class="op">=</span> <span class="dv">5</span> <span class="op">})</span></span></code></pre></div>
+<h3 id="parservalidate">parser.validate()</h3>
+<p><code>result = parser.validate(Args)</code></p>
+<p>Validates an argument table against the parser&#39;s rules. Converts values, applies required checks, validation fields, relationship checks, and <code>exec</code> callbacks. Returns the validated argument table or raises an error.</p>
+<div class="sourceCode" id="cb38"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a><span class="va">validated</span> <span class="op">=</span> <span class="va">parser</span><span class="op">.</span>validate<span class="op">({</span> <span class="va">output</span> <span class="op">=</span> <span class="st">&#39;result.txt&#39;</span><span class="op">,</span> <span class="va">count</span> <span class="op">=</span> <span class="st">&#39;10&#39;</span> <span class="op">})</span></span></code></pre></div>
+<h1 id="error-handling">Error Handling</h1>
+<h2 id="onerror-callback">onError Callback</h2>
+<p>The <code>onError</code> callback is called when a value is rejected during conversion or validation. It receives the parser, the error, the parameter definition, the argument name as supplied, and the raw value.</p>
+<div class="sourceCode" id="cb39"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a><span class="va">parser</span> <span class="op">=</span> options<span class="op">({</span></span>
+<span id="cb39-2"><a href="#cb39-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">onError</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">Parser</span><span class="op">:</span><span class="va">table</span><span class="op">,</span> <span class="va">Error</span><span class="op">:</span><span class="va">table</span><span class="op">,</span> <span class="va">Param</span><span class="op">:</span><span class="va">table</span><span class="op">,</span> <span class="va">ArgName</span><span class="op">:</span><span class="va">str</span><span class="op">,</span> <span class="va">RawValue</span><span class="op">:</span><span class="va">any</span><span class="op">):</span><span class="va">str</span></span>
+<span id="cb39-3"><a href="#cb39-3" aria-hidden="true" tabindex="-1"></a>      <span class="fu">print</span><span class="op">(</span><span class="st">&#39;Warning: &#39;</span> <span class="op">..</span> <span class="va">Error</span><span class="op">.</span><span class="va">message</span><span class="op">)</span></span>
+<span id="cb39-4"><a href="#cb39-4" aria-hidden="true" tabindex="-1"></a>      <span class="cf">return</span> <span class="st">&#39;ignore&#39;</span></span>
+<span id="cb39-5"><a href="#cb39-5" aria-hidden="true" tabindex="-1"></a>   <span class="kw">end</span><span class="op">,</span></span>
+<span id="cb39-6"><a href="#cb39-6" aria-hidden="true" tabindex="-1"></a>   <span class="va">args</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">table</span><span class="op">&gt;</span> <span class="op">{</span> <span class="op">...</span> <span class="op">}</span></span>
+<span id="cb39-7"><a href="#cb39-7" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span></code></pre></div>
+<p>The callback returns an instruction string:</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Instruction</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><code>&#39;fail&#39;</code></td>
+<td style="text-align: left;">Use the default failure path. <code>process()</code> raises the error; <code>tryProcess()</code> returns <code>nil, err</code>.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>&#39;ignore&#39;</code></td>
+<td style="text-align: left;">Treat the value as absent. If the parameter has a default, use the converted default.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>&#39;skip&#39;</code></td>
+<td style="text-align: left;">Discard the value and leave the parameter unset, even when a default exists.</td>
+</tr>
+</tbody>
+</table>
+<p>Returning <code>nil</code>, <code>false</code>, or any unrecognised value is equivalent to <code>&#39;fail&#39;</code>.</p>
+<h2 id="onhelp-callback">onHelp Callback</h2>
+<p>The <code>onHelp</code> callback is called when <code>process()</code> handles a help request. It receives the parser, the generated help text, and the topic (or <code>nil</code> for normal help).</p>
+<div class="sourceCode" id="cb40"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a><span class="va">parser</span> <span class="op">=</span> options<span class="op">({</span></span>
+<span id="cb40-2"><a href="#cb40-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">onHelp</span> <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">Parser</span><span class="op">:</span><span class="va">table</span><span class="op">,</span> <span class="va">Text</span><span class="op">:</span><span class="va">str</span><span class="op">,</span> <span class="va">Topic</span><span class="op">:</span><span class="va">any</span><span class="op">)</span></span>
+<span id="cb40-3"><a href="#cb40-3" aria-hidden="true" tabindex="-1"></a>      <span class="va">io</span><span class="op">.</span>writeAll<span class="op">(</span><span class="st">&#39;temp:help.txt&#39;</span><span class="op">,</span> <span class="va">Text</span><span class="op">)</span></span>
+<span id="cb40-4"><a href="#cb40-4" aria-hidden="true" tabindex="-1"></a>   <span class="kw">end</span><span class="op">,</span></span>
+<span id="cb40-5"><a href="#cb40-5" aria-hidden="true" tabindex="-1"></a>   <span class="va">args</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">table</span><span class="op">&gt;</span> <span class="op">{</span> <span class="op">...</span> <span class="op">}</span></span>
+<span id="cb40-6"><a href="#cb40-6" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span></code></pre></div>
+<h2 id="strict-mode">Strict Mode</h2>
+<p>When <code>strict</code> is <code>true</code> (the default), unknown parameters in the input raise an error. Setting <code>strict = false</code> silently ignores unknown tokens, which is useful during incremental migration from <code>arg()</code>.</p>
+<h1 id="usage-examples">Usage Examples</h1>
+<h3 id="simple-file-processor">Simple File Processor</h3>
+<div class="sourceCode" id="cb41"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a>import <span class="st">&#39;options&#39;</span></span>
+<span id="cb41-2"><a href="#cb41-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-3"><a href="#cb41-3" aria-hidden="true" tabindex="-1"></a><span class="va">parser</span> <span class="op">=</span> options<span class="op">({</span></span>
+<span id="cb41-4"><a href="#cb41-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;convert&#39;</span><span class="op">,</span></span>
+<span id="cb41-5"><a href="#cb41-5" aria-hidden="true" tabindex="-1"></a>   <span class="va">description</span> <span class="op">=</span> <span class="st">&#39;Convert files between formats.&#39;</span><span class="op">,</span></span>
+<span id="cb41-6"><a href="#cb41-6" aria-hidden="true" tabindex="-1"></a>   <span class="va">args</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">table</span><span class="op">&gt;</span> <span class="op">{</span></span>
+<span id="cb41-7"><a href="#cb41-7" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;input&#39;</span><span class="op">,</span>  <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;positional&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;file&#39;</span><span class="op">,</span> <span class="va">required</span> <span class="op">=</span> <span class="kw">true</span><span class="op">,</span> <span class="va">exists</span> <span class="op">=</span> <span class="kw">true</span><span class="op">,</span></span>
+<span id="cb41-8"><a href="#cb41-8" aria-hidden="true" tabindex="-1"></a>        <span class="va">comment</span> <span class="op">=</span> <span class="st">&#39;Input file to convert.&#39;</span> <span class="op">},</span></span>
+<span id="cb41-9"><a href="#cb41-9" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;output&#39;</span><span class="op">,</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;option&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;file&#39;</span><span class="op">,</span> <span class="va">required</span> <span class="op">=</span> <span class="kw">true</span><span class="op">,</span></span>
+<span id="cb41-10"><a href="#cb41-10" aria-hidden="true" tabindex="-1"></a>        <span class="va">comment</span> <span class="op">=</span> <span class="st">&#39;Output file path.&#39;</span> <span class="op">},</span></span>
+<span id="cb41-11"><a href="#cb41-11" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;format&#39;</span><span class="op">,</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;option&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;enum&#39;</span><span class="op">,</span></span>
+<span id="cb41-12"><a href="#cb41-12" aria-hidden="true" tabindex="-1"></a>        <span class="va">choices</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">string</span><span class="op">&gt;</span> <span class="op">{</span> <span class="st">&#39;svg&#39;</span><span class="op">,</span> <span class="st">&#39;png&#39;</span><span class="op">,</span> <span class="st">&#39;pdf&#39;</span> <span class="op">},</span> <span class="va">default</span> <span class="op">=</span> <span class="st">&#39;svg&#39;</span><span class="op">,</span></span>
+<span id="cb41-13"><a href="#cb41-13" aria-hidden="true" tabindex="-1"></a>        <span class="va">comment</span> <span class="op">=</span> <span class="st">&#39;Output format.&#39;</span> <span class="op">},</span></span>
+<span id="cb41-14"><a href="#cb41-14" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">names</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">string</span><span class="op">&gt;</span> <span class="op">{</span> <span class="st">&#39;verbose&#39;</span><span class="op">,</span> <span class="st">&#39;v&#39;</span> <span class="op">},</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;flag&#39;</span><span class="op">,</span></span>
+<span id="cb41-15"><a href="#cb41-15" aria-hidden="true" tabindex="-1"></a>        <span class="va">comment</span> <span class="op">=</span> <span class="st">&#39;Enable verbose logging.&#39;</span> <span class="op">}</span></span>
+<span id="cb41-16"><a href="#cb41-16" aria-hidden="true" tabindex="-1"></a>   <span class="op">}</span></span>
+<span id="cb41-17"><a href="#cb41-17" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span>
+<span id="cb41-18"><a href="#cb41-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-19"><a href="#cb41-19" aria-hidden="true" tabindex="-1"></a><span class="va">args</span> <span class="op">=</span> <span class="va">parser</span><span class="op">.</span>process<span class="op">()</span></span>
+<span id="cb41-20"><a href="#cb41-20" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="va">args</span> <span class="va">is</span> <span class="kw">nil</span> <span class="cf">then</span> <span class="cf">return</span> <span class="cf">end</span></span>
+<span id="cb41-21"><a href="#cb41-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-22"><a href="#cb41-22" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span><span class="op">(</span><span class="st">&#39;Converting&#39;</span><span class="op">,</span> <span class="va">args</span><span class="op">.</span><span class="va">input</span><span class="op">,</span> <span class="st">&#39;to&#39;</span><span class="op">,</span> <span class="va">args</span><span class="op">.</span><span class="va">format</span><span class="op">,</span> <span class="st">&#39;at&#39;</span><span class="op">,</span> <span class="va">args</span><span class="op">.</span><span class="va">output</span><span class="op">)</span></span></code></pre></div>
+<h3 id="subcommand-tool">Subcommand Tool</h3>
+<div class="sourceCode" id="cb42"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a>import <span class="st">&#39;options&#39;</span></span>
+<span id="cb42-2"><a href="#cb42-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb42-3"><a href="#cb42-3" aria-hidden="true" tabindex="-1"></a><span class="va">parser</span> <span class="op">=</span> options<span class="op">({</span></span>
+<span id="cb42-4"><a href="#cb42-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;project&#39;</span><span class="op">,</span></span>
+<span id="cb42-5"><a href="#cb42-5" aria-hidden="true" tabindex="-1"></a>   <span class="va">description</span> <span class="op">=</span> <span class="st">&#39;Project management tool.&#39;</span><span class="op">,</span></span>
+<span id="cb42-6"><a href="#cb42-6" aria-hidden="true" tabindex="-1"></a>   <span class="va">args</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">table</span><span class="op">&gt;</span> <span class="op">{</span></span>
+<span id="cb42-7"><a href="#cb42-7" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">names</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">string</span><span class="op">&gt;</span> <span class="op">{</span> <span class="st">&#39;verbose&#39;</span><span class="op">,</span> <span class="st">&#39;v&#39;</span> <span class="op">},</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;flag&#39;</span> <span class="op">}</span></span>
+<span id="cb42-8"><a href="#cb42-8" aria-hidden="true" tabindex="-1"></a>   <span class="op">},</span></span>
+<span id="cb42-9"><a href="#cb42-9" aria-hidden="true" tabindex="-1"></a>   <span class="va">commands</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">table</span><span class="op">&gt;</span> <span class="op">{</span></span>
+<span id="cb42-10"><a href="#cb42-10" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span></span>
+<span id="cb42-11"><a href="#cb42-11" aria-hidden="true" tabindex="-1"></a>         <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;build&#39;</span><span class="op">,</span></span>
+<span id="cb42-12"><a href="#cb42-12" aria-hidden="true" tabindex="-1"></a>         <span class="va">comment</span> <span class="op">=</span> <span class="st">&#39;Build the project.&#39;</span><span class="op">,</span></span>
+<span id="cb42-13"><a href="#cb42-13" aria-hidden="true" tabindex="-1"></a>         <span class="va">args</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">table</span><span class="op">&gt;</span> <span class="op">{</span></span>
+<span id="cb42-14"><a href="#cb42-14" aria-hidden="true" tabindex="-1"></a>            <span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;target&#39;</span><span class="op">,</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;option&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;str&#39;</span><span class="op">,</span> <span class="va">default</span> <span class="op">=</span> <span class="st">&#39;all&#39;</span><span class="op">,</span></span>
+<span id="cb42-15"><a href="#cb42-15" aria-hidden="true" tabindex="-1"></a>              <span class="va">comment</span> <span class="op">=</span> <span class="st">&#39;Build target.&#39;</span> <span class="op">},</span></span>
+<span id="cb42-16"><a href="#cb42-16" aria-hidden="true" tabindex="-1"></a>            <span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;jobs&#39;</span><span class="op">,</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;option&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;int&#39;</span><span class="op">,</span> <span class="va">default</span> <span class="op">=</span> <span class="st">&#39;4&#39;</span><span class="op">,</span></span>
+<span id="cb42-17"><a href="#cb42-17" aria-hidden="true" tabindex="-1"></a>              <span class="va">comment</span> <span class="op">=</span> <span class="st">&#39;Parallel jobs.&#39;</span> <span class="op">}</span></span>
+<span id="cb42-18"><a href="#cb42-18" aria-hidden="true" tabindex="-1"></a>         <span class="op">}</span></span>
+<span id="cb42-19"><a href="#cb42-19" aria-hidden="true" tabindex="-1"></a>      <span class="op">},</span></span>
+<span id="cb42-20"><a href="#cb42-20" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span></span>
+<span id="cb42-21"><a href="#cb42-21" aria-hidden="true" tabindex="-1"></a>         <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;test&#39;</span><span class="op">,</span></span>
+<span id="cb42-22"><a href="#cb42-22" aria-hidden="true" tabindex="-1"></a>         <span class="va">comment</span> <span class="op">=</span> <span class="st">&#39;Run tests.&#39;</span><span class="op">,</span></span>
+<span id="cb42-23"><a href="#cb42-23" aria-hidden="true" tabindex="-1"></a>         <span class="va">args</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">table</span><span class="op">&gt;</span> <span class="op">{</span></span>
+<span id="cb42-24"><a href="#cb42-24" aria-hidden="true" tabindex="-1"></a>            <span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;filter&#39;</span><span class="op">,</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;option&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;str&#39;</span><span class="op">,</span></span>
+<span id="cb42-25"><a href="#cb42-25" aria-hidden="true" tabindex="-1"></a>              <span class="va">comment</span> <span class="op">=</span> <span class="st">&#39;Test name filter.&#39;</span> <span class="op">},</span></span>
+<span id="cb42-26"><a href="#cb42-26" aria-hidden="true" tabindex="-1"></a>            <span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;timeout&#39;</span><span class="op">,</span> <span class="va">kind</span> <span class="op">=</span> <span class="st">&#39;option&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;duration&#39;</span><span class="op">,</span> <span class="va">default</span> <span class="op">=</span> <span class="st">&#39;60s&#39;</span><span class="op">,</span></span>
+<span id="cb42-27"><a href="#cb42-27" aria-hidden="true" tabindex="-1"></a>              <span class="va">comment</span> <span class="op">=</span> <span class="st">&#39;Test timeout.&#39;</span> <span class="op">}</span></span>
+<span id="cb42-28"><a href="#cb42-28" aria-hidden="true" tabindex="-1"></a>         <span class="op">}</span></span>
+<span id="cb42-29"><a href="#cb42-29" aria-hidden="true" tabindex="-1"></a>      <span class="op">}</span></span>
+<span id="cb42-30"><a href="#cb42-30" aria-hidden="true" tabindex="-1"></a>   <span class="op">}</span></span>
+<span id="cb42-31"><a href="#cb42-31" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span>
+<span id="cb42-32"><a href="#cb42-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb42-33"><a href="#cb42-33" aria-hidden="true" tabindex="-1"></a><span class="va">result</span> <span class="op">=</span> <span class="va">parser</span><span class="op">.</span>process<span class="op">()</span></span>
+<span id="cb42-34"><a href="#cb42-34" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="va">result</span> <span class="va">is</span> <span class="kw">nil</span> <span class="cf">then</span> <span class="cf">return</span> <span class="cf">end</span></span>
+<span id="cb42-35"><a href="#cb42-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb42-36"><a href="#cb42-36" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="va">result</span><span class="op">.</span><span class="va">command</span> is <span class="st">&#39;build&#39;</span> <span class="cf">then</span></span>
+<span id="cb42-37"><a href="#cb42-37" aria-hidden="true" tabindex="-1"></a>   <span class="fu">print</span><span class="op">(</span><span class="st">&#39;Building&#39;</span><span class="op">,</span> <span class="va">result</span><span class="op">.</span><span class="va">args</span><span class="op">.</span><span class="va">target</span><span class="op">,</span> <span class="st">&#39;with&#39;</span><span class="op">,</span> <span class="va">result</span><span class="op">.</span><span class="va">args</span><span class="op">.</span><span class="va">jobs</span><span class="op">,</span> <span class="st">&#39;jobs&#39;</span><span class="op">)</span></span>
+<span id="cb42-38"><a href="#cb42-38" aria-hidden="true" tabindex="-1"></a><span class="cf">elseif</span> <span class="va">result</span><span class="op">.</span><span class="va">command</span> is <span class="st">&#39;test&#39;</span> <span class="cf">then</span></span>
+<span id="cb42-39"><a href="#cb42-39" aria-hidden="true" tabindex="-1"></a>   <span class="fu">print</span><span class="op">(</span><span class="st">&#39;Testing with&#39;</span><span class="op">,</span> <span class="va">result</span><span class="op">.</span><span class="va">args</span><span class="op">.</span><span class="va">timeout</span><span class="op">,</span> <span class="st">&#39;second timeout&#39;</span><span class="op">)</span></span>
+<span id="cb42-40"><a href="#cb42-40" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span></code></pre></div>
+<h3 id="environment-configuration">Environment Configuration</h3>
+<div class="sourceCode" id="cb43"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a>import <span class="st">&#39;options&#39;</span></span>
+<span id="cb43-2"><a href="#cb43-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb43-3"><a href="#cb43-3" aria-hidden="true" tabindex="-1"></a><span class="va">parser</span> <span class="op">=</span> options<span class="op">({</span></span>
+<span id="cb43-4"><a href="#cb43-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;server&#39;</span><span class="op">,</span></span>
+<span id="cb43-5"><a href="#cb43-5" aria-hidden="true" tabindex="-1"></a>   <span class="va">envPrefix</span> <span class="op">=</span> <span class="st">&#39;MYSERVER&#39;</span><span class="op">,</span></span>
+<span id="cb43-6"><a href="#cb43-6" aria-hidden="true" tabindex="-1"></a>   <span class="va">args</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">table</span><span class="op">&gt;</span> <span class="op">{</span></span>
+<span id="cb43-7"><a href="#cb43-7" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;host&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;str&#39;</span><span class="op">,</span> <span class="va">default</span> <span class="op">=</span> <span class="st">&#39;0.0.0.0&#39;</span><span class="op">,</span> <span class="va">comment</span> <span class="op">=</span> <span class="st">&#39;Bind address.&#39;</span> <span class="op">},</span></span>
+<span id="cb43-8"><a href="#cb43-8" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;port&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;int&#39;</span><span class="op">,</span> <span class="va">default</span> <span class="op">=</span> <span class="st">&#39;8080&#39;</span><span class="op">,</span> <span class="va">comment</span> <span class="op">=</span> <span class="st">&#39;Listen port.&#39;</span> <span class="op">},</span></span>
+<span id="cb43-9"><a href="#cb43-9" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;logLevel&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;enum&#39;</span><span class="op">,</span></span>
+<span id="cb43-10"><a href="#cb43-10" aria-hidden="true" tabindex="-1"></a>        <span class="va">choices</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">string</span><span class="op">&gt;</span> <span class="op">{</span> <span class="st">&#39;debug&#39;</span><span class="op">,</span> <span class="st">&#39;info&#39;</span><span class="op">,</span> <span class="st">&#39;warning&#39;</span><span class="op">,</span> <span class="st">&#39;error&#39;</span> <span class="op">},</span></span>
+<span id="cb43-11"><a href="#cb43-11" aria-hidden="true" tabindex="-1"></a>        <span class="va">default</span> <span class="op">=</span> <span class="st">&#39;info&#39;</span><span class="op">,</span> <span class="va">comment</span> <span class="op">=</span> <span class="st">&#39;Log verbosity.&#39;</span> <span class="op">}</span></span>
+<span id="cb43-12"><a href="#cb43-12" aria-hidden="true" tabindex="-1"></a>   <span class="op">}</span></span>
+<span id="cb43-13"><a href="#cb43-13" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span>
+<span id="cb43-14"><a href="#cb43-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb43-15"><a href="#cb43-15" aria-hidden="true" tabindex="-1"></a><span class="va">args</span> <span class="op">=</span> <span class="va">parser</span><span class="op">.</span>process<span class="op">()</span></span>
+<span id="cb43-16"><a href="#cb43-16" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="va">args</span> <span class="va">is</span> <span class="kw">nil</span> <span class="cf">then</span> <span class="cf">return</span> <span class="cf">end</span></span>
+<span id="cb43-17"><a href="#cb43-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb43-18"><a href="#cb43-18" aria-hidden="true" tabindex="-1"></a><span class="co">-- Values can come from:</span></span>
+<span id="cb43-19"><a href="#cb43-19" aria-hidden="true" tabindex="-1"></a><span class="co">--   MYSERVER_HOST, MYSERVER_PORT, MYSERVER_LOG_LEVEL</span></span>
+<span id="cb43-20"><a href="#cb43-20" aria-hidden="true" tabindex="-1"></a><span class="co">-- or from the command line:</span></span>
+<span id="cb43-21"><a href="#cb43-21" aria-hidden="true" tabindex="-1"></a><span class="co">--   host=127.0.0.1 port=9090 logLevel=debug</span></span>
+<span id="cb43-22"><a href="#cb43-22" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span><span class="op">(</span><span class="st">&#39;Listening on&#39;</span><span class="op">,</span> <span class="va">args</span><span class="op">.</span><span class="va">host</span> <span class="op">..</span> <span class="st">&#39;:&#39;</span> <span class="op">..</span> <span class="va">args</span><span class="op">.</span><span class="va">port</span><span class="op">,</span> <span class="st">&#39;at&#39;</span><span class="op">,</span> <span class="va">args</span><span class="op">.</span><span class="va">logLevel</span><span class="op">,</span> <span class="st">&#39;level&#39;</span><span class="op">)</span></span></code></pre></div>
+<h3 id="testing-with-tryprocess">Testing with tryProcess()</h3>
+<div class="sourceCode" id="cb44"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a>import <span class="st">&#39;options&#39;</span></span>
+<span id="cb44-2"><a href="#cb44-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-3"><a href="#cb44-3" aria-hidden="true" tabindex="-1"></a><span class="va">parser</span> <span class="op">=</span> options<span class="op">({</span></span>
+<span id="cb44-4"><a href="#cb44-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">args</span> <span class="op">=</span> <span class="va">array</span><span class="op">&lt;</span><span class="va">table</span><span class="op">&gt;</span> <span class="op">{</span></span>
+<span id="cb44-5"><a href="#cb44-5" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span> <span class="va">name</span> <span class="op">=</span> <span class="st">&#39;count&#39;</span><span class="op">,</span> <span class="fu">type</span> <span class="op">=</span> <span class="st">&#39;int&#39;</span><span class="op">,</span> <span class="va">required</span> <span class="op">=</span> <span class="kw">true</span> <span class="op">}</span></span>
+<span id="cb44-6"><a href="#cb44-6" aria-hidden="true" tabindex="-1"></a>   <span class="op">}</span></span>
+<span id="cb44-7"><a href="#cb44-7" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span>
+<span id="cb44-8"><a href="#cb44-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-9"><a href="#cb44-9" aria-hidden="true" tabindex="-1"></a><span class="co">-- Successful parse</span></span>
+<span id="cb44-10"><a href="#cb44-10" aria-hidden="true" tabindex="-1"></a><span class="va">result</span><span class="op">,</span> <span class="va">err</span> <span class="op">=</span> <span class="va">parser</span><span class="op">.</span>tryProcess<span class="op">(</span><span class="va">array</span><span class="op">&lt;</span><span class="va">string</span><span class="op">&gt;</span> <span class="op">{</span> <span class="st">&#39;count=5&#39;</span> <span class="op">})</span></span>
+<span id="cb44-11"><a href="#cb44-11" aria-hidden="true" tabindex="-1"></a><span class="fu">assert</span><span class="op">(</span><span class="va">result</span><span class="op">.</span><span class="va">count</span> <span class="va">is</span> <span class="dv">5</span><span class="op">)</span></span>
+<span id="cb44-12"><a href="#cb44-12" aria-hidden="true" tabindex="-1"></a><span class="fu">assert</span><span class="op">(</span><span class="va">err</span> <span class="va">is</span> <span class="kw">nil</span><span class="op">)</span></span>
+<span id="cb44-13"><a href="#cb44-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-14"><a href="#cb44-14" aria-hidden="true" tabindex="-1"></a><span class="co">-- Failed parse returns nil and an error table</span></span>
+<span id="cb44-15"><a href="#cb44-15" aria-hidden="true" tabindex="-1"></a><span class="va">result</span><span class="op">,</span> <span class="va">err</span> <span class="op">=</span> <span class="va">parser</span><span class="op">.</span>tryProcess<span class="op">(</span><span class="va">array</span><span class="op">&lt;</span><span class="va">string</span><span class="op">&gt;</span> <span class="op">{</span> <span class="op">})</span></span>
+<span id="cb44-16"><a href="#cb44-16" aria-hidden="true" tabindex="-1"></a><span class="fu">assert</span><span class="op">(</span><span class="va">result</span> <span class="va">is</span> <span class="kw">nil</span><span class="op">)</span></span>
+<span id="cb44-17"><a href="#cb44-17" aria-hidden="true" tabindex="-1"></a><span class="fu">assert</span><span class="op">(</span><span class="va">err</span><span class="op">.</span><span class="va">code</span> <span class="va">is</span> <span class="va">ERR_ParameterRequired</span><span class="op">)</span></span>
+<span id="cb44-18"><a href="#cb44-18" aria-hidden="true" tabindex="-1"></a><span class="fu">assert</span><span class="op">(</span><span class="va">err</span><span class="op">.</span><span class="va">message</span><span class="op">:</span><span class="fu">find</span><span class="op">(</span><span class="st">&#39;count&#39;</span><span class="op">))</span></span></code></pre></div>
+</div></div></div></div>
+
+<script src="../js/bootstrap.bundle.min.js"></script>
+<script src="../js/base.js"></script>
+<script>
+
+   // Auto-open the relevant sidebar branch
+
+   var url = window.location.pathname;
+   var filename = url.substring(url.lastIndexOf('/')+1);
+   var el = document.querySelector('li[class="api-ref"] > a[href="' + filename + '"]');
+   if (el) {
+      var parent = getParentNode(el, '[class="collapse"]');
+      if (parent) new bootstrap.Collapse(parent, { show: true }); // Causes animation
+
+      el.style.backgroundColor = '#d2f4ea';
+   }
+
+   cancelAnimations();
+    </script>
+  </body>
+</html>

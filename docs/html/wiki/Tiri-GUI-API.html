@@ -71,6 +71,7 @@
             <li class="api-ref"><a class="rounded" href="Tiri-HTTPServer-API.html">HTTPServer API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-IO-API.html">I/O API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-JSON-API.html">JSON API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-Options-API.html">Options API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-URL-API.html">URL API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-VFX-API.html">VFX API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-Widgets.html">Widgets</a></li>
@@ -128,7 +129,7 @@
       <li class="api-ref"><a href="../modules/tiri.html" class="rounded">Tiri</a></li>
       <li class="api-ref"><a href="../modules/vector.html" class="rounded">Vector</a></li>
       <li class="api-ref"><a href="../modules/xml.html" class="rounded">XML</a></li>
-      <li class="api-ref"><a href="../modules/xpath.html" class="rounded">XPath</a></li>
+      <li class="api-ref"><a href="../modules/xquery.html" class="rounded">XQuery</a></li>
       </ul>
     </div>
   </li>
@@ -489,8 +490,8 @@
 <h3 id="guiforvector">gui.forVector()</h3>
 <p><code>gui.forVector(Vector, Function)</code></p>
 <p>Walks a vector tree depth-first, visiting the supplied vector, then its children and siblings. <code>Function</code> is called as:</p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="va">gui</span><span class="op">.</span>forVector<span class="op">(</span><span class="va">viewport</span><span class="op">,</span> <span class="kw">function</span><span class="op">(</span><span class="cn">V</span><span class="va">ector</span><span class="op">)</span></span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>   <span class="fu">print</span><span class="op">(</span><span class="cn">V</span><span class="va">ector</span><span class="op">)</span></span>
+<div class="sourceCode" id="cb8"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="va">gui</span><span class="op">.</span>forVector<span class="op">(</span><span class="va">viewport</span><span class="op">,</span> <span class="kw">function</span><span class="op">(</span><span class="va">Vector</span><span class="op">)</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>   <span class="fu">print</span><span class="op">(</span><span class="va">Vector</span><span class="op">)</span></span>
 <span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span><span class="op">)</span></span></code></pre></div>
 <h3 id="guiapplyfill">gui.applyFill()</h3>
 <p><code>gui.applyFill(Vector, Fill)</code></p>

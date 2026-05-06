@@ -71,6 +71,7 @@
             <li class="api-ref"><a class="rounded" href="Tiri-HTTPServer-API.html">HTTPServer API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-IO-API.html">I/O API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-JSON-API.html">JSON API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-Options-API.html">Options API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-URL-API.html">URL API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-VFX-API.html">VFX API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-Widgets.html">Widgets</a></li>
@@ -128,7 +129,7 @@
       <li class="api-ref"><a href="../modules/tiri.html" class="rounded">Tiri</a></li>
       <li class="api-ref"><a href="../modules/vector.html" class="rounded">Vector</a></li>
       <li class="api-ref"><a href="../modules/xml.html" class="rounded">XML</a></li>
-      <li class="api-ref"><a href="../modules/xpath.html" class="rounded">XPath</a></li>
+      <li class="api-ref"><a href="../modules/xquery.html" class="rounded">XQuery</a></li>
       </ul>
     </div>
   </li>
@@ -320,10 +321,12 @@ The following parameters can be used when executing script files:
 <h3 id="examples">Examples</h3>
 <p>Example scripts are provided in the <code>examples</code> folder of this distribution. We recommend starting with the widget example as follows, where <code>install-path</code> and <code>source-path</code> are replaced appropriately:</p>
 <pre><code>[install-path]/origo --log-error [source-path]/examples/widgets.tiri</code></pre>
-<blockquote>
-<p>[!TIP]
-Try running a second time with <code>--log-api</code> to observe run-time log output while toying with the example. Try a few of the other examples to get a feel for what you can achieve, and load them into a text editor to see how they were created.</p>
-</blockquote>
+<div class="tip">
+<div class="title">
+<p>Tip</p>
+</div>
+<p>Try running a second time with <code>--log-api</code> to observe run-time log output while toying with the example. Try a few of the other examples to get a feel for what you can achieve, and load them into a text editor to see how they were created.</p>
+</div>
 <h2 id="auto-execution">Auto Execution</h2>
 <p>If <code>origo</code> is run without command-line arguments, it will check for the presence of a <code>package.zip</code> file in its folder, mount it as a filesystem named <code>package:</code> and then attempt to execute <code>package:main.tiri</code>. This behaviour makes it possible for you to distribute your scripts as portable projects with minimal effort. The <code>origo</code> executable should be renamed to the name of your project so that your end users will associate the executable with your application.</p>
 </div></div></div></div>

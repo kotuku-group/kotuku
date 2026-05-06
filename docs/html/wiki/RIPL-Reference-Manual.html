@@ -71,6 +71,7 @@
             <li class="api-ref"><a class="rounded" href="Tiri-HTTPServer-API.html">HTTPServer API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-IO-API.html">I/O API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-JSON-API.html">JSON API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-Options-API.html">Options API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-URL-API.html">URL API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-VFX-API.html">VFX API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-Widgets.html">Widgets</a></li>
@@ -128,7 +129,7 @@
       <li class="api-ref"><a href="../modules/tiri.html" class="rounded">Tiri</a></li>
       <li class="api-ref"><a href="../modules/vector.html" class="rounded">Vector</a></li>
       <li class="api-ref"><a href="../modules/xml.html" class="rounded">XML</a></li>
-      <li class="api-ref"><a href="../modules/xpath.html" class="rounded">XPath</a></li>
+      <li class="api-ref"><a href="../modules/xquery.html" class="rounded">XQuery</a></li>
       </ul>
     </div>
   </li>
@@ -259,6 +260,7 @@
 <h1 id="table-of-contents">Table of Contents</h1>
 <h3 id="pretext">Pretext</h3>
 <p><a href="#xquery-support">XQuery Support</a></p>
+<p><a href="#regex-support">Regex Support</a></p>
 <h3 id="conditional-elements">Conditional Elements</h3>
 <p><a href="#break">break</a> | <a href="#continue">continue</a> | <a href="#else">else</a> | <a href="#elseif">elseif</a> | <a href="#for-each">for-each</a> | <a href="#if">if</a> | <a href="#repeat">repeat</a> | <a href="#while">while</a></p>
 <h3 id="data-elements">Data Elements</h3>
@@ -326,7 +328,7 @@
 <tr class="odd">
 <td style="text-align: left;"><code>$params</code></td>
 <td style="text-align: left;">map</td>
-<td style="text-align: left;">Document parameters.</td>
+<td style="text-align: left;">Document parameters, as set by the user through the URL.</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;"><code>$state</code></td>
@@ -341,7 +343,7 @@
 <tr class="even">
 <td style="text-align: left;"><code>$vars</code></td>
 <td style="text-align: left;">map</td>
-<td style="text-align: left;">Document variables and keys.</td>
+<td style="text-align: left;">Access to document key-values, as set by the client through SetKey().</td>
 </tr>
 </tbody>
 </table>
@@ -382,8 +384,49 @@
 <td style="text-align: left;"><code>kt:key(Object, Key)</code></td>
 <td style="text-align: left;">Returns an object key-value as a string (via GetKey()).</td>
 </tr>
+<tr class="even">
+<td style="text-align: left;"><code>kt:template-content()</code></td>
+<td style="text-align: left;">Returns the current template caller content as a node sequence. In AVTs this stringifies the caller text; in <code>parse@select</code> it re-injects the caller markup.</td>
+</tr>
 </tbody>
 </table>
+<h2 id="regex-support">Regex Support</h2>
+<p>RIPL exposes regex support through its XQuery integration. When you are working in an XQuery-aware surface such as <code>test=&quot;...&quot;</code>, <code>select=&quot;...&quot;</code>, or an AVT fragment like <code>{...}</code>, the following XQuery regex functions are available:</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Function</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><code>matches(Input, Pattern[, Flags])</code></td>
+<td style="text-align: left;">Returns <code>true</code> when the input matches the supplied regex. Use this for conditional logic.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>replace(Input, Pattern, Replacement[, Flags])</code></td>
+<td style="text-align: left;">Applies a regex replacement and returns the resulting string.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>tokenize(Input, Pattern[, Flags])</code></td>
+<td style="text-align: left;">Splits a string by regex and returns the resulting sequence of tokens.</td>
+</tr>
+</tbody>
+</table>
+<p>This means regex is currently a document-side text-processing tool inside XQuery:</p>
+<ul>
+<li>use <code>if test=&quot;matches(...)&quot;</code> and <code>elseif test=&quot;matches(...)&quot;</code> for regex-based conditions</li>
+<li>use <code>print select=&quot;replace(...)&quot;</code> for regex-based text rewriting</li>
+<li>use <code>tokenize()</code> with <code>string-join()</code> or sequence processing when a document needs regex-driven splitting</li>
+</ul>
+<p>Examples:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode xml"><code class="sourceCode xml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">if</span><span class="ot"> test=</span><span class="st">&quot;matches($state?email, &#39;^[^@]+@[^@]+\.[^@]+$&#39;)&quot;</span>&gt;</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">print</span><span class="ot"> value=</span><span class="st">&quot;Email address accepted.&quot;</span>/&gt;</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">if</span>&gt;</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">print</span><span class="ot"> select=</span><span class="st">&quot;replace(&#39;Alpha   Beta&#39;, &#39;\s+&#39;, &#39; &#39;)&quot;</span>/&gt;</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">print</span><span class="ot"> select=</span><span class="st">&quot;string-join(tokenize(&#39;A,B,C&#39;, &#39;,&#39;), &#39; | &#39;)&quot;</span>/&gt;</span></code></pre></div>
 <h1 id="conditional-elements-1">Conditional Elements</h1>
 <h2 id="break">break</h2>
 <p>Breaks out of the innermost active <a href="#repeat"><code>repeat</code></a>, <a href="#while"><code>while</code></a>, or <a href="#for-each"><code>for-each</code></a> loop.</p>
@@ -884,31 +927,26 @@
 <td style="text-align: left;">Indent the paragraph by this amount of whitespace.</td>
 </tr>
 <tr class="odd">
-<td style="text-align: left;">kerning</td>
-<td style="text-align: left;">unit</td>
-<td style="text-align: left;">TBA</td>
-</tr>
-<tr class="even">
 <td style="text-align: left;">leading</td>
 <td style="text-align: left;">unit</td>
 <td style="text-align: left;">The leading ratio adjusts the amount of vertical white space that is inserted prior to the paragraph content. If no content precedes the paragraph, the <code>leading</code> value is ignored. This makes the leading ratio ideal for headlines, where no space is desirable at the top of the page, but is needed to clearly separate a headline from preceding content.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td style="text-align: left;">line-height</td>
 <td style="text-align: left;">unit</td>
 <td style="text-align: left;">Declares the vertical advance from one line to the next when a wordwrap occurs. Expressed as a multiplier, <code>1.0</code> is the default.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td style="text-align: left;">no-wrap</td>
 <td style="text-align: left;">boolean</td>
 <td style="text-align: left;">Deactivates word-wrapping.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td style="text-align: left;">trim</td>
 <td style="text-align: left;">boolean</td>
 <td style="text-align: left;">Eliminates any leading whitespace found at the start of the content.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td style="text-align: left;">v-align</td>
 <td style="text-align: left;">string</td>
 <td style="text-align: left;"><code>top</code>, <code>center</code>, <code>bottom</code></td>
@@ -966,7 +1004,7 @@
 </tbody>
 </table>
 <p><em>This element can only be used once per document.</em></p>
-<p>Use <code>svg</code> to execute an SVG document, targeting either the document&#39;s page or view according to <code>placement</code>. Inline placement is not possible.</p>
+<p>Use <code>svg</code> to process an SVG document, targeting either the document&#39;s page or view according to <code>placement</code>. Inline placement is not possible.</p>
 <p>The inclusion of SVG support is not intended for direct graphics rendering as such. Use it to create named resources that can then be referred to in the document (e.g. for fill operations), or via the <a href="#use"><code>use</code></a> element for symbols. For inline rendering of embedded SVG graphics, the <a href="#image"><code>image</code></a> element is suitable for this purpose.</p>
 <h2 id="use">use</h2>
 <p>The <code>use</code> element allows SVG <code>&lt;symbol&gt;</code> declarations to be injected directly into the parent viewport (e.g. table cells). SVG graphics that are created in this way are treated as dynamically rendered background graphics. Regular content will be laid directly over the top, with no clipping considerations.</p>
@@ -1132,6 +1170,7 @@
 <p>If <code>name</code> is omitted, the parser will try to derive it from the first immediate text node inside the element.</p>
 <h2 id="inject">inject</h2>
 <p>For use in templates only. Injects content from the caller into a specific area in the template.</p>
+<p>When the caller content needs to be consumed from a template attribute instead of at element position, use <code>kt:template-content()</code> in an XQuery expression or AVT.</p>
 <h2 id="let">let</h2>
 <table>
 <thead>
@@ -1295,7 +1334,8 @@ their markup. For the insertion of RIPL markup or node content, please use the <
 <p>The following code demonstrates how this template would be used:</p>
 <p><code>&lt;h1&gt;Big Headline Here&lt;/&gt;</code></p>
 <p>Notice the use of the <code>inject</code> element in the template source. This tells the parser to inject the content that the user has encapsulated within the <code>h1</code> opening and closing elements.</p>
-<p>Any attributes that the user includes when referencing a template can be accessed as local variables. These follow the same format definition as global variables, i.e. <code>[@attrib]</code>.</p>
+<p>If the same caller content needs to feed an attribute instead of a child position, <code>kt:template-content()</code> provides the injected content as an XQuery node sequence. For example, <code>parse select=&quot;kt:template-content()&quot;</code> mirrors the markup behaviour of <code>&lt;inject/&gt;</code>, while <code>value=&quot;{kt:template-content()}&quot;</code> injects the caller&#39;s text value into an AVT.</p>
+<p>Any attributes that the user includes when referencing a template can be accessed via XQuery <code>$args</code>, e.g. <code>{$args?argname}</code>.</p>
 <h2 id="trigger">trigger</h2>
 <table>
 <thead>
@@ -1455,11 +1495,15 @@ their markup. For the insertion of RIPL markup or node content, please use the <
 </tr>
 </tbody>
 </table>
+<!-- padding -->
+
 <p>The <code>cell</code> defines a table cell that can encapsulate content. The <code>cell</code> must be a child of a <a href="#row"><code>row</code></a> element. Each cell is processed as if it were an independent page within the table.</p>
-<blockquote>
-<p>[!TIP]
-The <code>use</code> element can inject vector graphics into the background of table cells.</p>
-</blockquote>
+<div class="tip">
+<div class="title">
+<p>Tip</p>
+</div>
+<p>The <code>use</code> element can inject vector graphics into the background of table cells.</p>
+</div>
 <h2 id="row">row</h2>
 <table>
 <thead>
@@ -1487,6 +1531,8 @@ The <code>use</code> element can inject vector graphics into the background of t
 </tr>
 </tbody>
 </table>
+<!-- header -->
+
 <p>Declares a table row for containing <code>cell</code> elements. The <code>row</code> must be a child of a <a href="#table"><code>table</code></a> element.</p>
 <h2 id="table">table</h2>
 <table>
@@ -1555,6 +1601,11 @@ The <code>use</code> element can inject vector graphics into the background of t
 </tr>
 </tbody>
 </table>
+<!--
+layout="auto|fixed"
+table / <col width align v-align fill font-fill font-style no-wrap span>
+-->
+
 <p>Declares a table for arranging content into rows and cells.</p>
 <h2 id="td">td</h2>
 <p>Synonym for the <a href="#cell"><code>cell</code></a> element, provided to assist HTML compatibility only.</p>
@@ -1757,7 +1808,7 @@ The <code>use</code> element can inject vector graphics into the background of t
 <pre><code>&lt;combobox ...&gt;
   &lt;style&gt;
     &lt;svg placement=&quot;background&quot;&gt;
-      &lt;rect rx=&quot;1%&quot; ry=&quot;1%&quot; x=&quot;1&quot; y=&quot;1&quot; xOffset=&quot;1&quot; yOffset=&quot;1&quot; fill=&quot;rgb(255,0,0)&quot; stroke=&quot;rgb(255,255,255)&quot; stroke-width=&quot;2&quot;/&gt;
+      &lt;rect rx=&quot;1%&quot; ry=&quot;1%&quot; x=&quot;1&quot; y=&quot;1&quot; xOffset=&quot;1&quot; yOffset=&quot;1&quot; fill=&quot;rgb(255,0,0)&quot; stroke=&quot;white&quot; stroke-width=&quot;2&quot;/&gt;
       &lt;defs&gt;
         &lt;pattern id=&quot;Highlight&quot;&gt;
           &lt;rect width=&quot;100%&quot; height=&quot;100%&quot; fill=&quot;rgb(128,64,64)&quot;/&gt;

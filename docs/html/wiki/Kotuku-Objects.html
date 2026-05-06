@@ -71,6 +71,7 @@
             <li class="api-ref"><a class="rounded" href="Tiri-HTTPServer-API.html">HTTPServer API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-IO-API.html">I/O API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-JSON-API.html">JSON API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-Options-API.html">Options API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-URL-API.html">URL API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-VFX-API.html">VFX API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-Widgets.html">Widgets</a></li>
@@ -128,7 +129,7 @@
       <li class="api-ref"><a href="../modules/tiri.html" class="rounded">Tiri</a></li>
       <li class="api-ref"><a href="../modules/vector.html" class="rounded">Vector</a></li>
       <li class="api-ref"><a href="../modules/xml.html" class="rounded">XML</a></li>
-      <li class="api-ref"><a href="../modules/xpath.html" class="rounded">XPath</a></li>
+      <li class="api-ref"><a href="../modules/xquery.html" class="rounded">XQuery</a></li>
       </ul>
     </div>
   </li>
@@ -288,7 +289,7 @@ auto error = NewObject(ID_AUDIO, NF::NIL, &amp;audio);</code></pre>
 <p>After configuring an object, it is initialised using <code>InitObject()</code>:</p>
 <pre><code>error = InitObject(audio);</code></pre>
 <p>The entire process of creating, configuring and initialising an object can be simplified using decorators, and C++ includes the <code>Create</code> class for this purpose. The basic interface can be used as follows:</p>
-<pre><code>pf::Create&lt;objFile&gt; file = {
+<pre><code>kt::Create&lt;objFile&gt; file = {
    fl::Path(&quot;temp:new_file.txt&quot;),
    fl::Flags(FL::WRITE|FL::NEW),
    fl::Permissions(PERMIT::READ|PERMIT::WRITE)
@@ -510,7 +511,7 @@ public variables and methods is helpful in accelerating development for new user
 </tr>
 <tr class="even">
 <td style="text-align: left;"><code>ERR set(FIELD UID, ARRAY &amp;Value, int Type [Optional])</code></td>
-<td style="text-align: left;">Set an array of any type, where ARRAY can be a std::array<T>, std::vector<T> or pf::vector<T>. An FD descriptor can be defined in Type if the array type cannot be discerned at compile time.</td>
+<td style="text-align: left;">Set an array of any type, where ARRAY can be a std::array<T>, std::vector<T> or kt::vector<T>. An FD descriptor can be defined in Type if the array type cannot be discerned at compile time.</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;"><code>ERR get(FIELD UID, T *Value)</code></td>

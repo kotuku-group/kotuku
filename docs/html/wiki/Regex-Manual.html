@@ -71,6 +71,7 @@
             <li class="api-ref"><a class="rounded" href="Tiri-HTTPServer-API.html">HTTPServer API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-IO-API.html">I/O API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-JSON-API.html">JSON API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-Options-API.html">Options API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-URL-API.html">URL API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-VFX-API.html">VFX API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-Widgets.html">Widgets</a></li>
@@ -128,7 +129,7 @@
       <li class="api-ref"><a href="../modules/tiri.html" class="rounded">Tiri</a></li>
       <li class="api-ref"><a href="../modules/vector.html" class="rounded">Vector</a></li>
       <li class="api-ref"><a href="../modules/xml.html" class="rounded">XML</a></li>
-      <li class="api-ref"><a href="../modules/xpath.html" class="rounded">XPath</a></li>
+      <li class="api-ref"><a href="../modules/xquery.html" class="rounded">XQuery</a></li>
       </ul>
     </div>
   </li>
@@ -600,7 +601,7 @@
 <span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="op">[</span><span class="cn">A</span><span class="op">[</span><span class="cn">B</span><span class="co">--C]D]         -- OK: subtraction inside union</span></span></code></pre></div>
 <p>Multiple uses of the same operator are permitted:</p>
 <div class="sourceCode" id="cb16"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="co">-- Valid: multiple subtractions at same level</span></span>
-<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="op">[</span>\\p<span class="op">{</span><span class="va">sc</span><span class="op">=</span><span class="cn">L</span><span class="va">atin</span><span class="op">}</span><span class="co">--\\p{Lu}--[a-z]]</span></span></code></pre></div>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="op">[</span>\\p<span class="op">{</span><span class="va">sc</span><span class="op">=</span><span class="va">Latin</span><span class="op">}</span><span class="co">--\\p{Lu}--[a-z]]</span></span></code></pre></div>
 <h4 id="character-escaping-in-character-classes">Character Escaping in Character Classes</h4>
 <p>The following characters must be escaped with <code>\</code> when used literally in character classes:</p>
 <ul>
@@ -1094,16 +1095,16 @@
 <h3 id="unicode-property-syntax">Unicode Property Syntax</h3>
 <p>Properties can be specified in several formats:</p>
 <div class="sourceCode" id="cb47"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb47-1"><a href="#cb47-1" aria-hidden="true" tabindex="-1"></a><span class="co">-- Short form</span></span>
-<span id="cb47-2"><a href="#cb47-2" aria-hidden="true" tabindex="-1"></a>\\p<span class="op">{</span><span class="cn">L</span><span class="va">u</span><span class="op">}</span>              <span class="co">-- Uppercase letter</span></span>
-<span id="cb47-3"><a href="#cb47-3" aria-hidden="true" tabindex="-1"></a>\\p<span class="op">{</span><span class="va">sc</span><span class="op">=</span><span class="cn">L</span><span class="va">atin</span><span class="op">}</span>        <span class="co">-- Latin script</span></span>
+<span id="cb47-2"><a href="#cb47-2" aria-hidden="true" tabindex="-1"></a>\\p<span class="op">{</span><span class="va">Lu</span><span class="op">}</span>              <span class="co">-- Uppercase letter</span></span>
+<span id="cb47-3"><a href="#cb47-3" aria-hidden="true" tabindex="-1"></a>\\p<span class="op">{</span><span class="va">sc</span><span class="op">=</span><span class="va">Latin</span><span class="op">}</span>        <span class="co">-- Latin script</span></span>
 <span id="cb47-4"><a href="#cb47-4" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb47-5"><a href="#cb47-5" aria-hidden="true" tabindex="-1"></a><span class="co">-- Long form</span></span>
-<span id="cb47-6"><a href="#cb47-6" aria-hidden="true" tabindex="-1"></a>\\p<span class="op">{</span><span class="cn">S</span><span class="va">cript</span><span class="op">=</span><span class="cn">L</span><span class="va">atin</span><span class="op">}</span></span>
-<span id="cb47-7"><a href="#cb47-7" aria-hidden="true" tabindex="-1"></a>\\p<span class="op">{</span><span class="cn">G</span><span class="va">eneral_Category</span><span class="op">=</span><span class="cn">U</span><span class="va">ppercase_Letter</span><span class="op">}</span></span>
+<span id="cb47-6"><a href="#cb47-6" aria-hidden="true" tabindex="-1"></a>\\p<span class="op">{</span><span class="va">Script</span><span class="op">=</span><span class="va">Latin</span><span class="op">}</span></span>
+<span id="cb47-7"><a href="#cb47-7" aria-hidden="true" tabindex="-1"></a>\\p<span class="op">{</span><span class="va">General_Category</span><span class="op">=</span><span class="va">Uppercase_Letter</span><span class="op">}</span></span>
 <span id="cb47-8"><a href="#cb47-8" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb47-9"><a href="#cb47-9" aria-hidden="true" tabindex="-1"></a><span class="co">-- Binary properties</span></span>
-<span id="cb47-10"><a href="#cb47-10" aria-hidden="true" tabindex="-1"></a>\\p<span class="op">{</span><span class="cn">E</span><span class="va">moji</span><span class="op">}</span></span>
-<span id="cb47-11"><a href="#cb47-11" aria-hidden="true" tabindex="-1"></a>\\p<span class="op">{</span><span class="cn">W</span><span class="va">hite_Space</span><span class="op">}</span></span></code></pre></div>
+<span id="cb47-10"><a href="#cb47-10" aria-hidden="true" tabindex="-1"></a>\\p<span class="op">{</span><span class="va">Emoji</span><span class="op">}</span></span>
+<span id="cb47-11"><a href="#cb47-11" aria-hidden="true" tabindex="-1"></a>\\p<span class="op">{</span><span class="va">White_Space</span><span class="op">}</span></span></code></pre></div>
 <p>For a complete list of available properties, see the <a href="https://tc39.es/ecma262/multipage/text-processing.html#sec-runtime-semantics-unicodematchproperty-p">ECMAScript Unicode Property Table</a>.</p>
 <h3 id="string-properties">String Properties</h3>
 <p>Some Unicode properties match sequences of multiple characters (string properties). These can be used in character classes except negated classes:</p>
@@ -1169,9 +1170,9 @@
 <span id="cb52-2"><a href="#cb52-2" aria-hidden="true" tabindex="-1"></a><span class="va">pattern</span> <span class="op">=</span> <span class="va">regex</span><span class="op">.</span>new<span class="op">(</span><span class="st">&#39;.*&#39;</span><span class="op">,</span> <span class="va">regex</span><span class="op">.</span><span class="cn">DOT_ALL</span><span class="op">)</span></span>
 <span id="cb52-3"><a href="#cb52-3" aria-hidden="true" tabindex="-1"></a><span class="va">pattern</span> <span class="op">=</span> <span class="va">regex</span><span class="op">.</span>new<span class="op">(</span><span class="st">&#39;^line&#39;</span><span class="op">,</span> <span class="va">regex</span><span class="op">.</span><span class="cn">MULTILINE</span> <span class="op">|</span> <span class="va">regex</span><span class="op">.</span><span class="cn">ICASE</span><span class="op">)</span></span></code></pre></div>
 <p><strong>C++</strong>:</p>
-<div class="sourceCode" id="cb53"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb53-1"><a href="#cb53-1" aria-hidden="true" tabindex="-1"></a><span class="kw">auto</span> pattern <span class="op">=</span> pf<span class="op">::</span>regex<span class="op">(</span><span class="st">&quot;hello&quot;</span><span class="op">,</span> pf<span class="op">::</span>regex<span class="op">::</span>ICASE<span class="op">);</span></span>
-<span id="cb53-2"><a href="#cb53-2" aria-hidden="true" tabindex="-1"></a><span class="kw">auto</span> pattern <span class="op">=</span> pf<span class="op">::</span>regex<span class="op">(</span><span class="st">&quot;.*&quot;</span><span class="op">,</span> pf<span class="op">::</span>regex<span class="op">::</span>DOT_ALL<span class="op">);</span></span>
-<span id="cb53-3"><a href="#cb53-3" aria-hidden="true" tabindex="-1"></a><span class="kw">auto</span> pattern <span class="op">=</span> pf<span class="op">::</span>regex<span class="op">(</span><span class="st">&quot;^line&quot;</span><span class="op">,</span> pf<span class="op">::</span>regex<span class="op">::</span>MULTILINE <span class="op">|</span> pf<span class="op">::</span>regex<span class="op">::</span>ICASE<span class="op">);</span></span></code></pre></div>
+<div class="sourceCode" id="cb53"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb53-1"><a href="#cb53-1" aria-hidden="true" tabindex="-1"></a><span class="kw">auto</span> pattern <span class="op">=</span> kt<span class="op">::</span>regex<span class="op">(</span><span class="st">&quot;hello&quot;</span><span class="op">,</span> kt<span class="op">::</span>regex<span class="op">::</span>ICASE<span class="op">);</span></span>
+<span id="cb53-2"><a href="#cb53-2" aria-hidden="true" tabindex="-1"></a><span class="kw">auto</span> pattern <span class="op">=</span> kt<span class="op">::</span>regex<span class="op">(</span><span class="st">&quot;.*&quot;</span><span class="op">,</span> kt<span class="op">::</span>regex<span class="op">::</span>DOT_ALL<span class="op">);</span></span>
+<span id="cb53-3"><a href="#cb53-3" aria-hidden="true" tabindex="-1"></a><span class="kw">auto</span> pattern <span class="op">=</span> kt<span class="op">::</span>regex<span class="op">(</span><span class="st">&quot;^line&quot;</span><span class="op">,</span> kt<span class="op">::</span>regex<span class="op">::</span>MULTILINE <span class="op">|</span> kt<span class="op">::</span>regex<span class="op">::</span>ICASE<span class="op">);</span></span></code></pre></div>
 <h3 id="flag-effects">Flag Effects</h3>
 <h4 id="icase-case-insensitive">ICASE (Case-Insensitive)</h4>
 <p>Makes pattern matching case-insensitive using Unicode case-folding:</p>
@@ -1365,11 +1366,11 @@
 <p><strong>Intersection (Alternative Method)</strong>:</p>
 <div class="sourceCode" id="cb67"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb67-1"><a href="#cb67-1" aria-hidden="true" tabindex="-1"></a><span class="co">-- Direct: [\p{sc=Latin}&amp;&amp;\p{Ll}]</span></span>
 <span id="cb67-2"><a href="#cb67-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- Alternative: using lookahead</span></span>
-<span id="cb67-3"><a href="#cb67-3" aria-hidden="true" tabindex="-1"></a><span class="op">(</span>?<span class="op">=</span>\\p<span class="op">{</span><span class="va">sc</span><span class="op">=</span><span class="cn">L</span><span class="va">atin</span><span class="op">})</span>\\p<span class="op">{</span><span class="cn">L</span><span class="va">l</span><span class="op">}</span></span></code></pre></div>
+<span id="cb67-3"><a href="#cb67-3" aria-hidden="true" tabindex="-1"></a><span class="op">(</span>?<span class="op">=</span>\\p<span class="op">{</span><span class="va">sc</span><span class="op">=</span><span class="va">Latin</span><span class="op">})</span>\\p<span class="op">{</span><span class="va">Ll</span><span class="op">}</span></span></code></pre></div>
 <p><strong>Subtraction (Alternative Method)</strong>:</p>
 <div class="sourceCode" id="cb68"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb68-1"><a href="#cb68-1" aria-hidden="true" tabindex="-1"></a><span class="co">-- Direct: [\p{sc=Latin}--\p{Ll}]</span></span>
 <span id="cb68-2"><a href="#cb68-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- Alternative: using negative lookahead</span></span>
-<span id="cb68-3"><a href="#cb68-3" aria-hidden="true" tabindex="-1"></a><span class="op">(</span>?!\\p<span class="op">{</span><span class="cn">L</span><span class="va">l</span><span class="op">})</span>\\p<span class="op">{</span><span class="va">sc</span><span class="op">=</span><span class="cn">L</span><span class="va">atin</span><span class="op">}</span></span></code></pre></div>
+<span id="cb68-3"><a href="#cb68-3" aria-hidden="true" tabindex="-1"></a><span class="op">(</span>?!\\p<span class="op">{</span><span class="va">Ll</span><span class="op">})</span>\\p<span class="op">{</span><span class="va">sc</span><span class="op">=</span><span class="va">Latin</span><span class="op">}</span></span></code></pre></div>
 <p><strong>Atomic Groups</strong>:</p>
 <div class="sourceCode" id="cb69"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb69-1"><a href="#cb69-1" aria-hidden="true" tabindex="-1"></a><span class="co">-- Perl/PCRE: (?&gt;pattern)</span></span>
 <span id="cb69-2"><a href="#cb69-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- ECMAScript equivalent: (?=(pattern))\1</span></span></code></pre></div>

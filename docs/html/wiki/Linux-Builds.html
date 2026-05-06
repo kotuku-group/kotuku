@@ -71,6 +71,7 @@
             <li class="api-ref"><a class="rounded" href="Tiri-HTTPServer-API.html">HTTPServer API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-IO-API.html">I/O API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-JSON-API.html">JSON API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-Options-API.html">Options API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-URL-API.html">URL API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-VFX-API.html">VFX API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-Widgets.html">Widgets</a></li>
@@ -128,7 +129,7 @@
       <li class="api-ref"><a href="../modules/tiri.html" class="rounded">Tiri</a></li>
       <li class="api-ref"><a href="../modules/vector.html" class="rounded">Vector</a></li>
       <li class="api-ref"><a href="../modules/xml.html" class="rounded">XML</a></li>
-      <li class="api-ref"><a href="../modules/xpath.html" class="rounded">XPath</a></li>
+      <li class="api-ref"><a href="../modules/xquery.html" class="rounded">XQuery</a></li>
       </ul>
     </div>
   </li>
@@ -258,7 +259,7 @@
 <h1>Linux Builds</h1>
 <h2 id="gcc">GCC</h2>
 <p>Your Linux system may require a few package dependencies to be installed if a complete build of Kōtuku is desired. For an Apt based system such as Debian or Ubuntu, execute the following:</p>
-<pre><code>sudo apt-get install libasound2-dev libxrandr-dev libxxf86dga-dev cmake g++ xsltproc nasm</code></pre>
+<pre><code>sudo apt-get install libasound2-dev libxrandr-dev libxxf86dga-dev libssl-dev cmake g++ xsltproc nasm</code></pre>
 <p>The following will configure the build process for a standard install to <code>/usr</code> that will be available to all users:</p>
 <pre><code>cmake -S . -B release -DCMAKE_BUILD_TYPE=Release</code></pre>
 <p>The full build and install process can then be performed with:</p>

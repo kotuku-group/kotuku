@@ -71,6 +71,7 @@
             <li class="api-ref"><a class="rounded" href="Tiri-HTTPServer-API.html">HTTPServer API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-IO-API.html">I/O API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-JSON-API.html">JSON API</a></li>
+            <li class="api-ref"><a class="rounded" href="Tiri-Options-API.html">Options API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-URL-API.html">URL API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-VFX-API.html">VFX API</a></li>
             <li class="api-ref"><a class="rounded" href="Tiri-Widgets.html">Widgets</a></li>
@@ -128,7 +129,7 @@
       <li class="api-ref"><a href="../modules/tiri.html" class="rounded">Tiri</a></li>
       <li class="api-ref"><a href="../modules/vector.html" class="rounded">Vector</a></li>
       <li class="api-ref"><a href="../modules/xml.html" class="rounded">XML</a></li>
-      <li class="api-ref"><a href="../modules/xpath.html" class="rounded">XPath</a></li>
+      <li class="api-ref"><a href="../modules/xquery.html" class="rounded">XQuery</a></li>
       </ul>
     </div>
   </li>
@@ -274,12 +275,12 @@ can be broken out across a number of files. Use as many calls to <code>flute_tes
 scans for annotated functions and executes them according to their configuration.</p>
 <h3 id="basic-test-structure">Basic Test Structure</h3>
 <p>The simplest test file consists of functions annotated with <code>@Test</code>:</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>@<span class="cn">T</span><span class="va">est</span> <span class="kw">function</span> testBasicFunctionality<span class="op">()</span></span>
+<div class="sourceCode" id="cb3"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>@<span class="va">Test</span> <span class="kw">function</span> testBasicFunctionality<span class="op">()</span></span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">result</span> <span class="op">=</span> myFunction<span class="op">(</span><span class="dv">10</span><span class="op">)</span></span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>   <span class="fu">assert</span><span class="op">(</span><span class="va">result</span> <span class="va">is</span> <span class="dv">20</span><span class="op">,</span> <span class="st">&quot;Expected 20, got &quot;</span> <span class="op">..</span> <span class="va">result</span><span class="op">)</span></span>
 <span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span>
 <span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>@<span class="cn">T</span><span class="va">est</span> <span class="kw">function</span> testEdgeCases<span class="op">()</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>@<span class="va">Test</span> <span class="kw">function</span> testEdgeCases<span class="op">()</span></span>
 <span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>   <span class="fu">assert</span><span class="op">(</span>myFunction<span class="op">(</span><span class="dv">0</span><span class="op">)</span> <span class="va">is</span> <span class="dv">0</span><span class="op">,</span> <span class="st">&quot;Zero case failed&quot;</span><span class="op">)</span></span>
 <span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>   <span class="fu">assert</span><span class="op">(</span>myFunction<span class="op">(-</span><span class="dv">5</span><span class="op">)</span> <span class="va">is</span> <span class="op">-</span><span class="dv">10</span><span class="op">,</span> <span class="st">&quot;Negative case failed&quot;</span><span class="op">)</span></span>
 <span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span></code></pre></div>
@@ -312,7 +313,7 @@ scans for annotated functions and executes them according to their configuration
 </tbody>
 </table>
 <p>Examples:</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>@<span class="cn">T</span><span class="va">est</span> <span class="kw">function</span> testSimple<span class="op">()</span></span>
+<div class="sourceCode" id="cb4"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>@<span class="va">Test</span> <span class="kw">function</span> testSimple<span class="op">()</span></span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>   <span class="co">-- Basic test with no options</span></span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span>
 <span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a></span>
@@ -352,20 +353,20 @@ scans for annotated functions and executes them according to their configuration
 </tbody>
 </table>
 <p>Example with lifecycle hooks:</p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>@<span class="cn">B</span><span class="va">eforeAll</span> <span class="kw">function</span> setup<span class="op">(</span><span class="cn">S</span><span class="va">tate</span><span class="op">)</span></span>
+<div class="sourceCode" id="cb5"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>@<span class="va">BeforeAll</span> <span class="kw">function</span> setup<span class="op">(</span><span class="va">State</span><span class="op">)</span></span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>   <span class="co">-- State.folder contains the directory of the test script</span></span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">global</span> <span class="va">glTestResource</span> <span class="op">=</span> loadResource<span class="op">(</span><span class="cn">S</span><span class="va">tate</span><span class="op">.</span><span class="va">folder</span> <span class="op">..</span> <span class="st">&quot;test_data.xml&quot;</span><span class="op">)</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">global</span> <span class="va">glTestResource</span> <span class="op">=</span> loadResource<span class="op">(</span><span class="va">State</span><span class="op">.</span><span class="va">folder</span> <span class="op">..</span> <span class="st">&quot;test_data.xml&quot;</span><span class="op">)</span></span>
 <span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span>
 <span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>@<span class="cn">A</span><span class="va">fterAll</span> <span class="kw">function</span> cleanup<span class="op">()</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>@<span class="va">AfterAll</span> <span class="kw">function</span> cleanup<span class="op">()</span></span>
 <span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>   <span class="va">glTestResource</span> <span class="op">=</span> <span class="kw">nil</span></span>
 <span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span>
 <span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>@<span class="cn">B</span><span class="va">eforeEach</span> <span class="kw">function</span> resetState<span class="op">()</span></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>@<span class="va">BeforeEach</span> <span class="kw">function</span> resetState<span class="op">()</span></span>
 <span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>   <span class="va">glTestCounter</span> <span class="op">=</span> <span class="dv">0</span></span>
 <span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span>
 <span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>@<span class="cn">T</span><span class="va">est</span> <span class="kw">function</span> testWithSetup<span class="op">()</span></span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>@<span class="va">Test</span> <span class="kw">function</span> testWithSetup<span class="op">()</span></span>
 <span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>   <span class="co">-- glTestResource is available, glTestCounter is reset</span></span>
 <span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>   <span class="va">glTestCounter</span><span class="er">++</span></span>
 <span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>   <span class="fu">assert</span><span class="op">(</span><span class="va">glTestCounter</span> <span class="va">is</span> <span class="dv">1</span><span class="op">)</span></span>
@@ -373,7 +374,7 @@ scans for annotated functions and executes them according to their configuration
 <h3 id="conditional-test-execution">Conditional Test Execution</h3>
 <h4 id="disabled">@Disabled</h4>
 <p>Skip a test entirely with an optional reason:</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>@<span class="cn">T</span><span class="va">est</span><span class="op">;</span> @Disabled<span class="op">(</span><span class="va">reason</span><span class="op">=</span><span class="st">&#39;Requires further development&#39;</span><span class="op">)</span></span>
+<div class="sourceCode" id="cb6"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>@<span class="va">Test</span><span class="op">;</span> @Disabled<span class="op">(</span><span class="va">reason</span><span class="op">=</span><span class="st">&#39;Requires further development&#39;</span><span class="op">)</span></span>
 <span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="kw">function</span> testNotReady<span class="op">()</span></span>
 <span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>   <span class="co">-- This test will be skipped</span></span>
 <span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span></code></pre></div>
@@ -406,24 +407,24 @@ scans for annotated functions and executes them according to their configuration
 </tbody>
 </table>
 <p>Examples:</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>@<span class="cn">T</span><span class="va">est</span><span class="op">;</span> @Requires<span class="op">(</span><span class="va">ssl</span><span class="op">=</span><span class="kw">true</span><span class="op">)</span></span>
+<div class="sourceCode" id="cb7"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>@<span class="va">Test</span><span class="op">;</span> @Requires<span class="op">(</span><span class="va">ssl</span><span class="op">=</span><span class="kw">true</span><span class="op">)</span></span>
 <span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="kw">function</span> testSSLCommunication<span class="op">()</span></span>
 <span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>   <span class="co">-- Only runs if SSL is available</span></span>
 <span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span>
 <span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>@<span class="cn">T</span><span class="va">est</span><span class="op">;</span> @Requires<span class="op">(</span><span class="va">network</span><span class="op">=</span><span class="kw">true</span><span class="op">)</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>@<span class="va">Test</span><span class="op">;</span> @Requires<span class="op">(</span><span class="va">network</span><span class="op">=</span><span class="kw">true</span><span class="op">)</span></span>
 <span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="kw">function</span> testNetworkFeature<span class="op">()</span></span>
 <span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>   <span class="co">-- Only runs if network module is available</span></span>
 <span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span>
 <span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>@<span class="cn">T</span><span class="va">est</span><span class="op">;</span> @Requires<span class="op">(</span><span class="va">display</span><span class="op">=</span><span class="kw">false</span><span class="op">)</span></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>@<span class="va">Test</span><span class="op">;</span> @Requires<span class="op">(</span><span class="va">display</span><span class="op">=</span><span class="kw">false</span><span class="op">)</span></span>
 <span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a><span class="kw">function</span> testHeadlessOnly<span class="op">()</span></span>
 <span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a>   <span class="co">-- Only runs when display is NOT available (headless mode)</span></span>
 <span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span></code></pre></div>
 <h3 id="assertions-and-error-handling">Assertions and Error Handling</h3>
 <p>Tests use assertions to verify expected behaviour. A test passes if it completes without throwing an exception.</p>
 <p>The <code>assert()</code> function raises an exception if the condition is false:</p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>@<span class="cn">T</span><span class="va">est</span> <span class="kw">function</span> testAssertions<span class="op">()</span></span>
+<div class="sourceCode" id="cb8"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>@<span class="va">Test</span> <span class="kw">function</span> testAssertions<span class="op">()</span></span>
 <span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">result</span> <span class="op">=</span> computeValue<span class="op">()</span></span>
 <span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>   <span class="fu">assert</span><span class="op">(</span><span class="va">result</span> <span class="va">is</span> <span class="dv">42</span><span class="op">,</span> <span class="st">&quot;Expected 42, got &quot;</span> <span class="op">..</span> <span class="va">result</span><span class="op">)</span></span>
 <span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a></span>
@@ -432,13 +433,13 @@ scans for annotated functions and executes them according to their configuration
 <span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>   <span class="fu">assert</span><span class="op">(</span><span class="fu">type</span><span class="op">(</span><span class="va">result</span><span class="op">)</span> is <span class="st">&quot;number&quot;</span><span class="op">,</span> <span class="st">&quot;Result should be a number&quot;</span><span class="op">)</span></span>
 <span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span></code></pre></div>
 <p>Use <code>error()</code> to explicitly fail a test with a message:</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>@<span class="cn">T</span><span class="va">est</span> <span class="kw">function</span> testExplicitFailure<span class="op">()</span></span>
+<div class="sourceCode" id="cb9"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>@<span class="va">Test</span> <span class="kw">function</span> testExplicitFailure<span class="op">()</span></span>
 <span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>   <span class="cf">if</span> <span class="va">someCondition</span> <span class="cf">then</span></span>
 <span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>      <span class="fu">error</span><span class="op">(</span><span class="st">&quot;Test failed: unexpected condition encountered&quot;</span><span class="op">)</span></span>
 <span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>   <span class="cf">end</span></span>
 <span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span></code></pre></div>
 <p>Use <code>pcall()</code> to test that code correctly raises exceptions:</p>
-<div class="sourceCode" id="cb10"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>@<span class="cn">T</span><span class="va">est</span> <span class="kw">function</span> testExpectedError<span class="op">()</span></span>
+<div class="sourceCode" id="cb10"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>@<span class="va">Test</span> <span class="kw">function</span> testExpectedError<span class="op">()</span></span>
 <span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">status</span><span class="op">,</span> <span class="va">err</span> <span class="op">=</span> <span class="fu">pcall</span><span class="op">(</span><span class="kw">function</span><span class="op">()</span></span>
 <span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>      functionThatShouldFail<span class="op">()</span></span>
 <span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>   <span class="kw">end</span><span class="op">)</span></span>
@@ -446,7 +447,7 @@ scans for annotated functions and executes them according to their configuration
 <span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span></code></pre></div>
 <h3 id="logging-output">Logging Output</h3>
 <p>Use <code>logOutput()</code> to record diagnostic information during test execution:</p>
-<div class="sourceCode" id="cb11"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>@<span class="cn">T</span><span class="va">est</span> <span class="kw">function</span> testWithLogging<span class="op">()</span></span>
+<div class="sourceCode" id="cb11"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>@<span class="va">Test</span> <span class="kw">function</span> testWithLogging<span class="op">()</span></span>
 <span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>   logOutput<span class="op">(</span><span class="st">&quot;Starting computation...&quot;</span><span class="op">)</span></span>
 <span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">result</span> <span class="op">=</span> complexCalculation<span class="op">()</span></span>
 <span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>   logOutput<span class="op">(</span><span class="st">&quot;Result: &quot;</span> <span class="op">..</span> <span class="va">result</span><span class="op">)</span></span>
