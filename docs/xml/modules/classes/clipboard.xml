@@ -92,7 +92,7 @@
       </description>
       <result>
         <error code="Okay">The objects were added to the clipboard.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
       </result>
     </method>
 
@@ -109,7 +109,7 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="CreateFile">A new file could not be created.</error>
+        <error code="CreateFile">A new file could not be created</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>
@@ -134,7 +134,7 @@
       </description>
       <result>
         <error code="Okay">A matching clip was found and returned.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="NoData">No clip was available that matched the requested data type.</error>
         <error code="OutOfRange">The specified <code>Index</code> is out of the range of the available clip items.</error>
       </result>

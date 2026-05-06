@@ -140,7 +140,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block.</error>
+        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>
@@ -574,7 +574,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="Search">The attribute, identified by <code>Name</code>, could not be found.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="OutOfRange">The <code>Index</code> or <code>Attrib</code> value is out of range.</error>
         <error code="ReadOnly">The XML object is read-only.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>

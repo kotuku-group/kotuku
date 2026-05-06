@@ -74,8 +74,8 @@ if (thread.ok()) thread-&gt;activate();
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block.</error>
+        <error code="Args">Invalid arguments passed to function</error>
+        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>

@@ -77,7 +77,7 @@ if (query.ok()) {
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Syntax">Invalid syntax detected.</error>
+        <error code="Syntax">Invalid syntax detected</error>
       </result>
     </action>
 
@@ -158,8 +158,8 @@ if (query.ok()) {
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="NotFound">A search routine in this function failed.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block.</error>
+        <error code="NotFound">A search routine in this function failed</error>
+        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>

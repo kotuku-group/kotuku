@@ -373,7 +373,7 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="NoSupport">Operation not supported.</error>
+        <error code="NoSupport">Operation not supported</error>
       </result>
     </method>
 

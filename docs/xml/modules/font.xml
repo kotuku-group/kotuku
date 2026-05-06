@@ -78,7 +78,7 @@
       <error code="Okay">Operation successful.</error>
       <error code="Search">It was not possible to resolve the String to a known font family.</error>
       <error code="AccessObject">Access to the font database was denied, or the object does not exist.</error>
-      <error code="GetField">GetField() failed to retrieve a field value.</error>
+      <error code="GetField">GetField() failed to retrieve a field value</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>

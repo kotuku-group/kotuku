@@ -60,11 +60,11 @@
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="Search">The file could not be found.</error>
-        <error code="FileNotFound">File not found.</error>
+        <error code="FileNotFound">File not found</error>
         <error code="NoPermission">Permission was denied when accessing or creating the file.</error>
         <error code="SetField">An error occurred while updating the <fl>Path</fl> field.</error>
-        <error code="MissingPath">The object is missing a path reference.</error>
-        <error code="ResolvePath">A volume could not be resolved.</error>
+        <error code="MissingPath">The object is missing a path reference</error>
+        <error code="ResolvePath">A volume could not be resolved</error>
       </result>
     </action>
 
@@ -92,10 +92,10 @@
       <result>
         <error code="Okay">The file information was read into the buffer.</error>
         <error code="Failed">The file object refers to a folder, or the object is corrupt.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="OutOfRange">Invalid <code>Length</code> parameter.</error>
         <error code="FileReadFlag">The <code>FL::READ</code> flag was not specified on initialisation.</error>
-        <error code="NotInitialised">The resource has not been initialised.</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
         <error code="ExpectedFolder">The file object refers to a folder.</error>
       </result>
@@ -145,11 +145,11 @@
       <result>
         <error code="Okay">All of the data was written to the file.</error>
         <error code="LimitedSuccess">Only some of the data was written to the file.  Check the Result parameter to see how much data was written.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="FileWriteFlag">The <code>FL::WRITE</code> flag was not specified when initialising the file.</error>
-        <error code="ObjectCorrupt">The object structure is corrupt or has not been initialised.</error>
-        <error code="ReallocMemory">The reallocation of a memory block failed.</error>
-        <error code="ExpectedFile">The operation expected a path to a file.</error>
+        <error code="ObjectCorrupt">The object structure is corrupt or has not been initialised</error>
+        <error code="ReallocMemory">The reallocation of a memory block failed</error>
+        <error code="ExpectedFile">The operation expected a path to a file</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </action>
@@ -169,7 +169,7 @@
       <result>
         <error code="Okay">The file content was successfully buffered.</error>
         <error code="Read">Failed to read the file content.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block.</error>
+        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
       </result>
     </method>
 
@@ -189,14 +189,14 @@
       </description>
       <result>
         <error code="Okay">The file data was copied successfully.</error>
-        <error code="Failed">General failure.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Failed">General failure</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="Read">Data could not be read from the source path.</error>
         <error code="Write">Data could not be written to the destination path.</error>
         <error code="FieldNotSet">The <fl>Path</fl> field has not been set in the file object.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block.</error>
+        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="Loop">Performing the copy would cause infinite recursion.</error>
-        <error code="ResolvePath">A volume could not be resolved.</error>
+        <error code="ResolvePath">A volume could not be resolved</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>
@@ -216,9 +216,9 @@
         <error code="Okay">File deleted successfully.</error>
         <error code="Failed">The deletion attempt failed (specific condition not available).</error>
         <error code="NoPermission">The user does not have the necessary permissions to delete the file.</error>
-        <error code="MissingPath">The object is missing a path reference.</error>
+        <error code="MissingPath">The object is missing a path reference</error>
         <error code="BufferOverflow">The file path string is too long.</error>
-        <error code="ResolvePath">A volume could not be resolved.</error>
+        <error code="ResolvePath">A volume could not be resolved</error>
         <error code="ReadOnly">The file is on a read-only filesystem.</error>
         <error code="Locked">The file is in use.</error>
       </result>
@@ -239,7 +239,7 @@
       </description>
       <result>
         <error code="Okay">The File was moved successfully.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="InvalidPath">Attempted to move a volume.</error>
         <error code="FieldNotSet">The <fl>Path</fl> field has not been set in the file object.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
@@ -263,7 +263,7 @@
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="DirEmpty">The index has reached the end of the file list.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>
@@ -283,7 +283,7 @@
       <result>
         <error code="Okay">The file information was read into the buffer.</error>
         <error code="Failed">The file object refers to a folder.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="NoData">There is no more data left to read.</error>
         <error code="FileReadFlag">The <code>FL::READ</code> flag was not specified on initialisation.</error>
         <error code="ObjectCorrupt">The internal file handle is missing.</error>
@@ -314,8 +314,8 @@
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="NoSupport">The platform does not support file date setting.</error>
-        <error code="ResolvePath">A volume could not be resolved.</error>
-        <error code="SystemCall">A call to the host system has failed.</error>
+        <error code="ResolvePath">A volume could not be resolved</error>
+        <error code="SystemCall">A call to the host system has failed</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>
@@ -340,7 +340,7 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="NoSupport">The file is not streamed.</error>
       </result>
     </method>
@@ -355,7 +355,7 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="NoSupport">The file is not streamed.</error>
       </result>
     </method>
@@ -379,7 +379,7 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>

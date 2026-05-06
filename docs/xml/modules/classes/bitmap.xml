@@ -130,8 +130,8 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="FieldNotSet">A required field value is undefined.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block.</error>
+        <error code="FieldNotSet">A required field value is undefined</error>
+        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </action>
@@ -195,8 +195,8 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block.</error>
-        <error code="ReallocMemory">The reallocation of a memory block failed.</error>
+        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+        <error code="ReallocMemory">The reallocation of a memory block failed</error>
         <error code="CreateObject">A Compression object could not be created.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
@@ -315,7 +315,7 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
       </result>
     </method>
 

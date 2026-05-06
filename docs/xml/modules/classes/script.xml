@@ -78,7 +78,7 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
       </result>
     </method>
 

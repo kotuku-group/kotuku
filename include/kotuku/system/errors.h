@@ -77,7 +77,7 @@ enum class ERR : int32_t {
    IllegalMethodID = 54,
    IllegalActionID = 55,
    ModuleOpenFailed = 56,
-   IllegalActionAttempt = 57,
+   DuplicateValue = 57,
    EntryMissingHeader = 58,
    ModuleMissingInit = 59,
    ModuleInitFailed = 60,
@@ -226,7 +226,9 @@ enum class ERR : int32_t {
    NotAuthorised = 194,
    UnknownProperty = 195,
    NoSecureSockets = 196,
-   END = 197,
+   ParameterRequired = 197,
+   ParameterUnknown = 198,
+   END = 199,
    Notified = 1073741824,
 };
 

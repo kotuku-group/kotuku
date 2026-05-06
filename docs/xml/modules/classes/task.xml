@@ -39,7 +39,7 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Failed">General failure.</error>
+        <error code="Failed">General failure</error>
         <error code="TimeOut">Can be returned if the <code>WAIT</code> flag is used.  Indicates that the process was launched, but the timeout expired before the process returned.</error>
         <error code="MissingPath">The Location field has not been set.</error>
       </result>
@@ -138,7 +138,7 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="NoSupport">The platform does not support environment variables.</error>
         <error code="DoesNotExist">The environment variable is undefined.</error>
       </result>
@@ -180,7 +180,7 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="NoSupport">The platform does not support environment variables.</error>
       </result>
     </method>
@@ -336,7 +336,11 @@
    &quot;documents:readme.txt&quot;
 };
 </pre>
-<p>NOTE: Scripts should use the <fl>Args</fl> field instead.</p>
+<p>The list is compatible with Tiri, and can be iterated as follows:</p>
+<pre>for index, value in processing.task().parameters do
+   print(index, ' = ', value)
+end
+</pre>
       </description>
     </field>
 

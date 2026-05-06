@@ -191,7 +191,7 @@ netsocket = obj.new('netsocket', {
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Failed">General failure.</error>
+        <error code="Failed">General failure</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>

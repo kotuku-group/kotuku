@@ -210,7 +210,7 @@
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block.</error>
+      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -244,7 +244,7 @@ Z: Close Path
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block.</error>
+      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -266,7 +266,7 @@ Z: Close Path
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block.</error>
+      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -289,7 +289,7 @@ Z: Close Path
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Args">Invalid arguments passed to function.</error>
+      <error code="Args">Invalid arguments passed to function</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -468,7 +468,7 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Failed">General failure.</error>
+      <error code="Failed">General failure</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>

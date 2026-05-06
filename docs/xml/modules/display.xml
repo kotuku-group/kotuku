@@ -113,7 +113,7 @@
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Args">Invalid arguments passed to function.</error>
+      <error code="Args">Invalid arguments passed to function</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -141,7 +141,7 @@
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="Search">The supplied <code>Surface</code> ID did not refer to a recognised surface object</error>
-      <error code="AccessObject">Attempting to lock an object failed.</error>
+      <error code="AccessObject">Attempting to lock an object failed</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -309,7 +309,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block.</error>
+      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -415,7 +415,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="AccessMemory">Access to a memory block was denied.</error>
+      <error code="AccessMemory">Access to a memory block was denied</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -472,7 +472,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Failed">General failure.</error>
+      <error code="Failed">General failure</error>
       <error code="Search">The supplied <code>Surface</code> ID did not refer to a recognised surface object.</error>
     </result>
   </function>
@@ -569,7 +569,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Args">Invalid arguments passed to function.</error>
+      <error code="Args">Invalid arguments passed to function</error>
     </result>
   </function>
 
@@ -633,9 +633,9 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="NothingDone">There is nothing to process.</error>
-      <error code="Args">Invalid arguments passed to function.</error>
-      <error code="LockFailed">Failed to lock a required resource.</error>
+      <error code="NothingDone">There is nothing to process</error>
+      <error code="Args">Invalid arguments passed to function</error>
+      <error code="LockFailed">Failed to lock a required resource</error>
       <error code="NoSupport">The pointer cannot be set due to system limitations.</error>
       <error code="OutOfRange">The cursor ID is outside of acceptable range.</error>
       <error code="AccessObject">Failed to access the mouse pointer.</error>
@@ -698,8 +698,8 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Args">Invalid arguments passed to function.</error>
-      <error code="NoSupport">Operation not supported.</error>
+      <error code="Args">Invalid arguments passed to function</error>
+      <error code="NoSupport">Operation not supported</error>
       <error code="AccessObject">Failed to access the internally maintained image object.</error>
     </result>
   </function>
@@ -762,7 +762,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <error code="Okay">Operation successful.</error>
       <error code="InUse">A drag and drop operation has already been started.</error>
       <error code="Failed">The left mouse button is not held by the user.</error>
-      <error code="AccessObject">Attempting to lock an object failed.</error>
+      <error code="AccessObject">Attempting to lock an object failed</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -838,7 +838,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="ResourceNotLocked">The pointer is not anchored to the given Surface.</error>
-      <error code="AccessObject">Attempting to lock an object failed.</error>
+      <error code="AccessObject">Attempting to lock an object failed</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -857,7 +857,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="NotFound">A search routine in this function failed.</error>
+      <error code="NotFound">A search routine in this function failed</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>

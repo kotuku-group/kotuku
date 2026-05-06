@@ -127,7 +127,7 @@ print('The Action class is located at ' .. str)
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Search">A search routine in this function failed.</error>
+        <error code="Search">A search routine in this function failed</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>
@@ -146,7 +146,7 @@ print('The Action class is located at ' .. str)
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="NoData">There is no data loaded into the config object.</error>
         <error code="OutOfRange">The index number is out of range of the available groups.</error>
       </result>
@@ -243,7 +243,7 @@ print('The Action class is located at ' .. str)
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="NoData">No data is available for use.</error>
+        <error code="NoData">No data is available for use</error>
       </result>
     </method>
 
@@ -263,7 +263,7 @@ print('The Action class is located at ' .. str)
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="AllocMemory">The additional memory required for the new entry could not be allocated.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>

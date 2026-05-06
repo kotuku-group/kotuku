@@ -8,142 +8,142 @@ function declareErrors()
   enum("ERR", { start=0, comment="Universal error codes", type="int32" },
     "Okay|True",
     "False",            -- Non-fatal
-    "LimitedSuccess",   -- Limited success.
-    "Cancelled",        -- Operation cancelled.
-    "NothingDone",      -- Operation did not perform any activity (non-fatal).
+    "LimitedSuccess",   -- Limited success
+    "Cancelled",        -- Operation cancelled
+    "NothingDone",      -- Operation did not perform any activity (non-fatal)
     "Continue",         -- Please continue processing
     "Skip",             -- Skip this operation (do not raise an error)
     "Retry",            -- Retry the operation (could not succeed at this time)
     "DirEmpty",
-    -- Anything above this point is considered non-fatal for exception reporting purposes.
-    "Terminate|ExceptionThreshold", -- Operation processed, but do not call again with these parameters.
-    "NoMemory",
-    "NoPointer",
-    "InUse",
-    "Failed",
-    "File",
-    "InvalidData",
-    "Search|NotFound",
-    "InitModule",
-    "FileNotFound|FileDoesNotExist",
-    "WrongVersion",
-    "Args",
-    "NoData",
-    "Read",
-    "Write",
-    "LockFailed|Lock",          -- Failed to lock a required resource
-    "ExamineFailed",
-    "LostClass",
-    "NoAction",
-    "NoSupport",                -- Operation not supported
-    "Memory",
-    "Timeout|TimeOut",
-    "NoStats",
-    "LowCapacity",
-    "Init",
-    "NoPermission|Permissions|PermissionDenied",
-    "SystemCorrupt",
-    "NeedOwner",
-    "OwnerNeedsBitmap",
-    "CoreVersion",
-    "NeedWidthHeight",
-    "ModuleValidation",        -- Module validation has failed.
-    "ProcessCreation",         -- Process creation has failed.
-    "MissingClassName",
-    "OutOfRange",
-    "ObtainMethod",
-    "ArrayFull",
-    "Query",
-    "LostOwner",
-    "DoNotExpunge",
-    "MemoryCorrupt",
-    "FieldSearch",
-    "InvalidPath",
-    "SetField",
-    "MarkedForDeletion",
-    "IllegalMethodID",
-    "IllegalActionID",
-    "ModuleOpenFailed",
-    "IllegalActionAttempt",  -- DEPRECATED
-    "EntryMissingHeader",
-    "ModuleMissingInit",
-    "ModuleInitFailed",
-    "MemoryDoesNotExist",
-    "DeadLock",
-    "SystemLocked",
-    "ModuleMissingName",
-    "AddClass",
-    "Activate",
-    "DoubleInit",
-    "UndefinedField|FieldNotSet",
-    "MissingClass",         -- The class could not be found in the system.
-    "FileReadFlag",         -- The File flag FL_READ was not set on initialisation.
-    "FileWriteFlag",        -- The File flag FL_WRITE was not set on initialisation.
-    "Draw",                 -- An error occurred while drawing the object.
-    "NoMethods",            -- The class does not export any methods.
-    "NoMatchingObject",     -- Unable to find object
-    "AccessMemory",
-    "MissingPath",
-    "ResourceNotLocked",    -- A lock was expected but not found.
-    "NoSearchResult",
-    "StatementUnsatisfied",
-    "ObjectCorrupt",
-    "OwnerPassThrough",
-    "UnsupportedOwner",
-    "ExclusiveDenied|AccessObject",
-    "AllocMemory",
-    "NewObject",
-    "GetField",
-    "NoFieldAccess",
-    "VirtualVolume",
-    "InvalidDimension",
-    "FieldTypeMismatch",
-    "UnrecognisedFieldType",
-    "BufferOverflow",
-    "UnsupportedField",        -- Field name does not exist in class blueprint
-    "Mismatch",
-    "OutOfBounds",
-    "Seek",                    -- Seek failure
-    "ReallocMemory",           -- ReallocMemory() failed
-    "Loop",                    -- Recursion error
+    -- Anything above this point is considered non-fatal for exception reporting purposes
+    "Terminate|ExceptionThreshold",  -- Operation processed, but do not call again with these parameters
+    "NoMemory",                      -- Not enough memory available
+    "NoPointer",                     -- Required pointer not present
+    "InUse",                         -- Resource is in use
+    "Failed",                        -- General failure
+    "File",                          -- File error, e.g. file not found
+    "InvalidData",                   -- There is an error in the provided data
+    "Search|NotFound",               -- A search routine in this function failed
+    "InitModule",                    -- Trouble initialising/using a module
+    "FileNotFound|FileDoesNotExist", -- File not found
+    "WrongVersion",                  -- Wrong version, or version not supported
+    "Args",                          -- Invalid arguments passed to function
+    "NoData",                        -- No data is available for use
+    "Read",                          -- Error reading data
+    "Write",                         -- Error writing data
+    "LockFailed|Lock",               -- Failed to lock a required resource
+    "ExamineFailed",                 -- Could not examine folder or file
+    "LostClass",                     -- The object has lost its class reference
+    "NoAction",                      -- The object does not support this operation
+    "NoSupport",                     -- Operation not supported
+    "Memory",                        -- General memory error
+    "Timeout|TimeOut",               -- Function timed-out before successful completion
+    "NoStats",                       -- This object has lost its stats structure
+    "LowCapacity",                   -- Array is at low capacity
+    "Init",                          -- Error in Init()ialising an object
+    "NoPermission|Permissions|PermissionDenied", -- General security violation
+    "SystemCorrupt",                 -- System corruption detected
+    "NeedOwner",                     -- A container is needed to operate correctly
+    "OwnerNeedsBitmap",              -- Container needs a Bitmap field
+    "CoreVersion",                   -- A newer version of the Core is required
+    "NeedWidthHeight",               -- The Width and/or Height field values need to be set
+    "ModuleValidation",              -- Module validation has failed
+    "ProcessCreation",               -- Process creation has failed
+    "MissingClassName",              -- Class name not provided
+    "OutOfRange",                    -- A value is outside of the valid range
+    "ObtainMethod",                  -- A call to ObtainMethod() failed
+    "ArrayFull",                     -- Array has reached capacity and cannot be expanded
+    "Query",                         -- Attempt to Query() failed
+    "LostOwner",                     -- The object has lost its container
+    "DoNotExpunge",                  -- Do not expunge yet
+    "MemoryCorrupt",                 -- The memory block is corrupt
+    "FieldSearch",                   -- Requested field not found
+    "InvalidPath",                   -- Invalid file or folder path detected
+    "SetField",                      -- An unspecific error occurred during a SetField() operation
+    "MarkedForDeletion",             -- A resource cannot be accessed as it is marked for deletion
+    "IllegalMethodID",               -- Illegal method ID (outside of valid range)
+    "IllegalActionID",               -- Illegal action ID (outside of valid range)
+    "ModuleOpenFailed",              -- Module failed in its Open routine
+    "DuplicateValue",                -- Duplicate value not permitted
+    "EntryMissingHeader",            -- The ModEntry->Header is missing
+    "ModuleMissingInit",             -- Module has not defined support for Init()
+    "ModuleInitFailed",              -- Module failed its Initialisation routine
+    "MemoryDoesNotExist",            -- Memory block does not exist
+    "DeadLock",                      -- Dead-lock detected - procedure aborted
+    "SystemLocked",                  -- Part of the system is unreachable due to a persistent lock
+    "ModuleMissingName",             -- Module has not declared an official name
+    "AddClass",                      -- An error occurred while creating a new class
+    "Activate",                      -- Error while Activate()ing an object
+    "DoubleInit",                    -- Warning - Attempt to initialise a resource twice
+    "UndefinedField|FieldNotSet",    -- A required field value is undefined
+    "MissingClass",                  -- The class could not be found in the system
+    "FileReadFlag",                  -- The File flag FL_READ was not set on initialisation
+    "FileWriteFlag",                 -- The File flag FL_WRITE was not set on initialisation
+    "Draw",                          -- An error occurred while drawing the object
+    "NoMethods",                     -- The class does not export any methods
+    "NoMatchingObject",              -- Unable to find object
+    "AccessMemory",                  -- Access to a memory block was denied
+    "MissingPath",                   -- The object is missing a path reference
+    "ResourceNotLocked",             -- A lock was expected but not found
+    "NoSearchResult",                -- The search yielded no results
+    "StatementUnsatisfied",          -- The tested statement was not satisfied
+    "ObjectCorrupt",                 -- The object structure is corrupt or has not been initialised
+    "OwnerPassThrough",              -- Container pass through notification
+    "UnsupportedOwner",              -- The owner is not supported by this object
+    "ExclusiveDenied|AccessObject",  -- Attempting to lock an object failed
+    "AllocMemory",                   -- AllocMemory() failed to create a new memory block
+    "NewObject",                     -- NewObject() failed to produce a new object
+    "GetField",                      -- GetField() failed to retrieve a field value
+    "NoFieldAccess",                 -- Access to a field was denied
+    "VirtualVolume",                 -- ResolvePath() failed to resolve the path because it is a virtual reference
+    "InvalidDimension",              -- A dimension specification is invalid
+    "FieldTypeMismatch",             -- Field type mismatch while getting or setting a field
+    "UnrecognisedFieldType",         -- A field type ID (e.g. INT, FLOAT) is not recognised
+    "BufferOverflow",                -- A buffer overflow has occurred
+    "UnsupportedField",              -- Field name does not exist in class blueprint
+    "Mismatch",                      -- A mis-match has been detected that prevents further processing
+    "OutOfBounds",                   -- Out-of-bounds access denied
+    "Seek",                          -- Seek failure
+    "ReallocMemory",                 -- ReallocMemory() failed
+    "Loop",                          -- Recursion error
     "FileExists",
-    "ResolvePath",             -- ResolvePath() failed
-    "CreateObject",            -- CreateObject() failed
-    "MemoryInfo",              -- MemoryInfo() failed
-    "NotInitialised",          -- Object or resource is not initialised
-    "ResourceExists",          -- A new resource could not be created because a matching resource exists.
-    "Refresh",                 -- An attempt to Refresh() an object failed.
-    "ListChildren",            -- An error occurred in a call to ListChildren().
-    "SystemCall",              -- A system call has failed.
-    "SmallMask",               -- The size of the mask is smaller than the source Bitmap's dimensions.
-    "EmptyString",             -- A required string is empty (null termination at the first character).
-    "ObjectExists",            -- Object exists.
-    "ExpectedFile",            -- The operation expected a path to a file.
-    "Resize",                  -- Resize failure
-    "Redimension",             -- Redimension failure
-    "SemaphoreOperation",      -- A semaphore operation has failed.
-    "FieldValidation",         -- Field validation has failed.
-    "CreateFile",              -- Failed to create a new file
-    "DeleteFile",              -- Deletion of dir/file failed (e.g. permissions, read-only media)
-    "OpenFile",                -- File could not be opened
-    "ReadOnly",                -- Delete/Write/Create operation failed due to read-only status
-    "DoesNotExist",            -- Resource/Object/File does not exist
-    "IdenticalPaths",          -- The destination path is the same as the source path
-    "Exists",                  -- Something exists.
-    "SanityFailure",           -- A sanity check failed
-    "OutOfSpace",              -- Run out of space, no room to complete request
-    "GetSurfaceInfo",          -- GetSurfaceInfo() failed
-    "Finished|EndOfFile|OutOfData", -- Operation or process loop finished
-    "Syntax|StringFormat",     -- Invalid syntax detected
-    "InvalidState",            -- Object was in an invalid state for processing.
-    "HostNotFound",            -- The internet host name could not be resolved
-    "InvalidURI",              -- Invalid Uniform Resource Identifier
-    "ConnectionRefused",       -- The remote host refused the connection
-    "NetworkUnreachable",      -- The network was unreachable
-    "HostUnreachable",         -- No route to host
-    "Disconnected",            -- A hard disconnect occurred
-    "TaskStillExists",         -- Task/Process still exists and is running
-    "IntegrityViolation|ConstraintViolation", -- Referential integrity / constraint violation.
+    "ResolvePath",                   -- ResolvePath() failed
+    "CreateObject",                  -- CreateObject() failed
+    "MemoryInfo",                    -- MemoryInfo() failed
+    "NotInitialised",                -- Object or resource is not initialised
+    "ResourceExists",                -- A new resource could not be created because a matching resource exists
+    "Refresh",                       -- An attempt to Refresh() an object failed
+    "ListChildren",                  -- An error occurred in a call to ListChildren()
+    "SystemCall",                    -- A system call has failed
+    "SmallMask",                     -- The size of the mask is smaller than the source Bitmap's dimensions
+    "EmptyString",                   -- A required string is empty (null termination at the first character)
+    "ObjectExists",                  -- Object exists
+    "ExpectedFile",                  -- The operation expected a path to a file
+    "Resize",                        -- Resize failure
+    "Redimension",                   -- Redimension failure
+    "SemaphoreOperation",            -- A semaphore operation has failed
+    "FieldValidation",               -- Field validation has failed
+    "CreateFile",                    -- Failed to create a new file
+    "DeleteFile",                    -- Deletion of dir/file failed (e.g. permissions, read-only media)
+    "OpenFile",                      -- File could not be opened
+    "ReadOnly",                      -- Delete/Write/Create operation failed due to read-only status
+    "DoesNotExist",                  -- Resource/Object/File does not exist
+    "IdenticalPaths",                -- The destination path is the same as the source path
+    "Exists",                        -- Resource exists
+    "SanityFailure",                 -- A sanity check failed
+    "OutOfSpace",                    -- Run out of space, no room to complete request
+    "GetSurfaceInfo",                -- GetSurfaceInfo() failed
+    "Finished|EndOfFile|OutOfData",  -- Operation or process loop finished
+    "Syntax|StringFormat",           -- Invalid syntax detected
+    "InvalidState",                  -- Object was in an invalid state for processing
+    "HostNotFound",                  -- The internet host name could not be resolved
+    "InvalidURI",                    -- Invalid Uniform Resource Identifier
+    "ConnectionRefused",             -- The remote host refused the connection
+    "NetworkUnreachable",            -- The network was unreachable
+    "HostUnreachable",               -- No route to host
+    "Disconnected",                  -- A hard disconnect occurred
+    "TaskStillExists",               -- Task/Process still exists and is running
+    "IntegrityViolation|ConstraintViolation", -- Referential integrity / constraint violation
     "SchemaViolation",         -- Record changes would violate the DB schema
     "DataSize",                -- The size of a data chunk or buffer is incorrect
     "Busy",                    -- Operation cannot complete because system is busy with an earlier operation
@@ -170,43 +170,45 @@ function declareErrors()
     "InvalidHTTPResponse",     -- A valid HTTP response was not received from the server
     "InvalidReference",        -- The reference is invalid
     "Exception",               -- An exception was caught
-    "ThreadAlreadyActive",     -- Cannot execute a thread that is already running.
+    "ThreadAlreadyActive",     -- Cannot execute a thread that is already running
     "OpenGL",                  -- Failure has been reported from OpenGL
-    "OutsideMainThread",       -- An operation has been attempted that is only possible from within the main thread.
-    "UseSubClass",             -- Requested to use a registered sub-class (not an error).
-    "WrongType",               -- The expected type was not provided.
-    "ThreadNotLocked",         -- Thread objects must be locked prior to activation.
-    "MessageOperation",        -- A message queue operation has failed.
-    "SetVolume",               -- A call to SetVolume() failed.
-    "Decompression",           -- Unspecified failure during decompression of a data stream.
-    "Compression",             -- Unspecified failure during compression of a data stream.
-    "ExpectedFolder",          -- The operation expected a folder path.
-    "Immutable",               -- This operation would break the object's immutable status.
-    "ReadFileToBuffer",        -- A call to ReadFileToBuffer() failed.
-    "Obsolete",                -- This feature is no longer available (obsolete).
-    "CreateResource",          -- Failed to create a new resource.
-    "NotPossible",             -- It is not possible to perform the requested operation.
+    "OutsideMainThread",       -- An operation has been attempted that is only possible from within the main thread
+    "UseSubClass",             -- Requested to use a registered sub-class (not an error)
+    "WrongType",               -- The expected type was not provided
+    "ThreadNotLocked",         -- Thread objects must be locked prior to activation
+    "MessageOperation",        -- A message queue operation has failed
+    "SetVolume",               -- A call to SetVolume() failed
+    "Decompression",           -- Unspecified failure during decompression of a data stream
+    "Compression",             -- Unspecified failure during compression of a data stream
+    "ExpectedFolder",          -- The operation expected a folder path
+    "Immutable",               -- This operation would break the object's immutable status
+    "ReadFileToBuffer",        -- A call to ReadFileToBuffer() failed
+    "Obsolete",                -- This feature is no longer available (obsolete)
+    "CreateResource",          -- Failed to create a new resource
+    "NotPossible",             -- It is not possible to perform the requested operation
     "ResolveSymbol",           -- Failed to resolve a linked library symbol
     "Function",                -- A function call failed
-    "AlreadyDefined",          -- Attempted to change a value that cannot be redefined.
-    "SetValueNotNumeric",      -- Attempted to set a numeric field with an incompatible value.
-    "SetValueNotString",       -- Attempted to set a string field with an incompatible value.
-    "SetValueNotObject",       -- Attempted to set an object field with an incompatible value.
-    "SetValueNotFunction",     -- Attempted to set a function field with an incompatible value.
-    "SetValueNotPointer",      -- Attempted to set a pointer field with an incompatible value.
-    "SetValueNotArray",        -- Attempted to set an array field with an incompatible value.
-    "SetValueNotLookup",       -- Attempted to set a lookup field with an incompatible value.
-    "InvalidType",             -- The type of a value is invalid.
-    "CompressionStreamError",  -- A compression stream operation has failed.
-    "TaskExecutionFailed",     -- Task or process execution has failed.
-    "InvalidCompression",      -- The compression data is invalid or corrupted.
-    "SanityCheckFailed",       -- A sanity check has failed.
-    "NotAuthorised",           -- Client is not authorised to perform this operation.
-    "UnknownProperty",         -- The specified property is not recognised.
-    "NoSecureSockets",         -- A secure sockets layer is not available in this environment.
+    "AlreadyDefined",          -- Attempted to change a value that cannot be redefined
+    "SetValueNotNumeric",      -- Attempted to set a numeric field with an incompatible value
+    "SetValueNotString",       -- Attempted to set a string field with an incompatible value
+    "SetValueNotObject",       -- Attempted to set an object field with an incompatible value
+    "SetValueNotFunction",     -- Attempted to set a function field with an incompatible value
+    "SetValueNotPointer",      -- Attempted to set a pointer field with an incompatible value
+    "SetValueNotArray",        -- Attempted to set an array field with an incompatible value
+    "SetValueNotLookup",       -- Attempted to set a lookup field with an incompatible value
+    "InvalidType",             -- The type of a value is invalid
+    "CompressionStreamError",  -- A compression stream operation has failed
+    "TaskExecutionFailed",     -- Task or process execution has failed
+    "InvalidCompression",      -- The compression data is invalid or corrupted
+    "SanityCheckFailed",       -- A sanity check has failed
+    "NotAuthorised",           -- Client is not authorised to perform this operation
+    "UnknownProperty",         -- The specified property is not recognised
+    "NoSecureSockets",         -- A secure sockets layer is not available in this environment
+    "ParameterRequired",       -- Missing required parameter
+    "ParameterUnknown",        -- Unknown parameter name
     "END",
     { Notified = 0x40000000 }
-  ) -- NB: Any new error messages need to be added to data_errors.c manually.
+  ) -- NB: Any new error messages need to be added to data_errors.c manually
 
   constants("ERF", { comment="Special error flags" }, {
     Notified=0x40000000

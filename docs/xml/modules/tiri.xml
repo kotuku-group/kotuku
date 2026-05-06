@@ -28,7 +28,7 @@
     </description>
     <result type="ERR">
       <error code="Okay">The variable was defined successfully.</error>
-      <error code="Args">Invalid arguments passed to function.</error>
+      <error code="Args">Invalid arguments passed to function</error>
       <error code="ObjectCorrupt">Privately maintained memory has become inaccessible.</error>
       <error code="FieldTypeMismatch">A valid field type was not specified in the <code>Type</code> parameter.</error>
     </result>

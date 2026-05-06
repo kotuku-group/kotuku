@@ -2092,7 +2092,13 @@ kt::vector&lt;std::string&gt; Args = {
 };
 </pre>
 
-NOTE: Scripts should use the #Args field instead.
+The list is compatible with Tiri, and can be iterated as follows:
+
+<pre>
+for index, value in processing.task().parameters do
+   print(index, ' = ', value)
+end
+</pre>
 
 *********************************************************************************************************************/
 

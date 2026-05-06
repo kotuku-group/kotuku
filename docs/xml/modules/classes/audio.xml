@@ -175,7 +175,7 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>
@@ -237,7 +237,7 @@
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="Failed">Sample is not a stream.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>
@@ -264,7 +264,7 @@
       </description>
       <result>
         <error code="Okay">The new volume was applied successfully.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="OutOfRange">The <code>Volume</code> or <code>Index</code> is out of the acceptable range.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>

@@ -69,8 +69,8 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       </description>
       <result>
         <error code="Okay">The data was compressed successfully.  The Result parameter indicates the size of the compressed data.</error>
-        <error code="Failed">General failure.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Failed">General failure</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="BufferOverflow">The output buffer is not large enough.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
@@ -93,7 +93,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <result>
         <error code="Okay">The file was added to the compression object.</error>
         <error code="File">An error was encountered when trying to open the source file.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="NoSupport">The sub-class does not support this method.</error>
         <error code="NoPermission">The <code>READ_ONLY</code> flag has been set on the compression object.</error>
       </result>
@@ -146,7 +146,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="Retry">Please recall the method using a larger output buffer.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="BufferOverflow">The output buffer is not large enough to contain the compressed data.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
@@ -203,7 +203,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="BufferOverflow">The output buffer is not large enough to hold the decompressed information.</error>
       </result>
     </method>
@@ -226,13 +226,13 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <result>
         <error code="Okay">The file was successfully extracted.</error>
         <error code="Cancelled">The decompression process was cancelled by the feedback mechanism.</error>
-        <error code="Failed">General failure.</error>
+        <error code="Failed">General failure</error>
         <error code="File">A destination file could not be created.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
-        <error code="NoData">No data is available for use.</error>
+        <error code="Args">Invalid arguments passed to function</error>
+        <error code="NoData">No data is available for use</error>
         <error code="Write">Failed to write uncompressed information to a destination file.</error>
-        <error code="MissingPath">The object is missing a path reference.</error>
-        <error code="Seek">An error occurred during a seek operation.</error>
+        <error code="MissingPath">The object is missing a path reference</error>
+        <error code="Seek">An error occurred during a seek operation</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>
@@ -253,10 +253,10 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Failed">General failure.</error>
-        <error code="Write">Error writing data.</error>
-        <error code="MissingPath">The object is missing a path reference.</error>
-        <error code="Seek">An error occurred during a seek operation.</error>
+        <error code="Failed">General failure</error>
+        <error code="Write">Error writing data</error>
+        <error code="MissingPath">The object is missing a path reference</error>
+        <error code="Seek">An error occurred during a seek operation</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>
@@ -282,7 +282,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block.</error>
+        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="BufferOverflow">The output buffer is not large enough.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
@@ -338,8 +338,8 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Search">A search routine in this function failed.</error>
-        <error code="NoSupport">Operation not supported.</error>
+        <error code="Search">A search routine in this function failed</error>
+        <error code="NoSupport">Operation not supported</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>
@@ -358,7 +358,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       </description>
       <result>
         <error code="Okay">The file was successfully deleted.</error>
-        <error code="NoSupport">Operation not supported.</error>
+        <error code="NoSupport">Operation not supported</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>
@@ -381,7 +381,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="NoSupport">Operation not supported.</error>
+        <error code="NoSupport">Operation not supported</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>

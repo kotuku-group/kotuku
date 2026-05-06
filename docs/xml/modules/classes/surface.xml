@@ -204,7 +204,7 @@ the surface area first).</li>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block.</error>
+        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
         <error code="ExecViolation">The call was not made from the process that owns the object.</error>
       </result>
@@ -277,7 +277,7 @@ the surface area first).</li>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Search">A search routine in this function failed.</error>
+        <error code="Search">A search routine in this function failed</error>
       </result>
     </method>
 
@@ -344,7 +344,7 @@ the surface area first).</li>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="InvalidState">The surface is not a top-level surface object.</error>
       </result>
     </method>

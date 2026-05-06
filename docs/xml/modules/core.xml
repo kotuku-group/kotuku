@@ -50,9 +50,9 @@
       <error code="Okay">Operation successful.</error>
       <error code="Cancelled">The thread has been requested to stop whilst sleeping.</error>
       <error code="Args">The <code>MilliSeconds</code> value is less or equal to zero.</error>
-      <error code="TimeOut">Function timed-out before successful completion.</error>
+      <error code="TimeOut">Function timed-out before successful completion</error>
       <error code="MemoryDoesNotExist">The supplied <code>Memory</code> ID does not refer to an existing memory block.</error>
-      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock.</error>
+      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -83,9 +83,9 @@
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="TimeOut">Function timed-out before successful completion.</error>
-      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock.</error>
-      <error code="NoMatchingObject">No matching object was found for the given object ID.</error>
+      <error code="TimeOut">Function timed-out before successful completion</error>
+      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
+      <error code="NoMatchingObject">No matching object was found for the given object ID</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -207,7 +207,7 @@ struct FunctionField argsResize[] = {
     </description>
     <result type="ERR">
       <error code="Okay">Message handler successfully processed.</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block.</error>
+      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -301,7 +301,7 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) == ERR::Okay) {
     </description>
     <result type="ERR">
       <error code="Okay">The path was analysed and the result is stored in the <code>Type</code> variable.</error>
-      <error code="DoesNotExist">Resource does not exist.</error>
+      <error code="DoesNotExist">Resource does not exist</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -330,10 +330,10 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) == ERR::Okay) {
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Init">Error in Init()ialising an object.</error>
-      <error code="IllegalMethodID">Illegal method ID (outside of valid range).</error>
-      <error code="MissingClass">The class could not be found in the system.</error>
-      <error code="NewObject">NewObject() failed to produce a new object.</error>
+      <error code="Init">Error in Init()ialising an object</error>
+      <error code="IllegalMethodID">Illegal method ID (outside of valid range)</error>
+      <error code="MissingClass">The class could not be found in the system</error>
+      <error code="NewObject">NewObject() failed to produce a new object</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -440,7 +440,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <result type="ERR">
       <error code="True">The object supports the specified action.</error>
       <error code="False">The action is not supported.</error>
-      <error code="LostClass">The object has lost its class reference.</error>
+      <error code="LostClass">The object has lost its class reference</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -478,7 +478,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <result type="ERR">
       <error code="True">The object exists.</error>
       <error code="False">The object ID does not exist.</error>
-      <error code="LockFailed">Failed to lock a required resource.</error>
+      <error code="LockFailed">Failed to lock a required resource</error>
     </result>
   </function>
 
@@ -548,7 +548,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <result type="ERR">
       <error code="Okay">The source was copied to its destination successfully.</error>
       <error code="Failed">A failure occurred during the copy process.</error>
-      <error code="Args">Invalid arguments passed to function.</error>
+      <error code="Args">Invalid arguments passed to function</error>
     </result>
   </function>
 
@@ -568,7 +568,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Failed">General failure.</error>
+      <error code="Failed">General failure</error>
       <error code="NoSupport">Virtual file system does not support folder creation.</error>
       <error code="FileExists">An identically named file or folder already exists at the <code>Path</code>.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
@@ -593,12 +593,12 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <result type="ERR">
       <error code="Okay">The link was created successfully.</error>
       <error code="NoSupport">The file system or the host operating system does not support symbolic links.</error>
-      <error code="Memory">General memory error.</error>
+      <error code="Memory">General memory error</error>
       <error code="LowCapacity">There is no room on the device to create the new link.</error>
       <error code="NoPermission">The user does not have permission to create the link, or the file system is mounted read-only.</error>
       <error code="BufferOverflow">One or both of the provided arguments is too long.</error>
       <error code="FileExists">The location referenced at From already exists.</error>
-      <error code="ResolvePath">A volume could not be resolved.</error>
+      <error code="ResolvePath">A volume could not be resolved</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -648,7 +648,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <result type="ERR">
       <error code="Okay">The file or folder was deleted successfully.</error>
       <error code="File">The location could not be opened for deletion.</error>
-      <error code="FileNotFound">File not found.</error>
+      <error code="FileNotFound">File not found</error>
       <error code="NoSupport">The filesystem driver does not support deletion.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
@@ -668,7 +668,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     </description>
     <result type="ERR">
       <error code="Okay">The volume was removed.</error>
-      <error code="LockFailed">Failed to lock a required resource.</error>
+      <error code="LockFailed">Failed to lock a required resource</error>
       <error code="NoPermission">An attempt to delete a system volume was denied.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
@@ -754,10 +754,10 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     <result type="ERR">
       <error code="Okay">At least one matching object was found and stored in the <code>ObjectID</code>.</error>
       <error code="Search">No objects matching the given name could be found.</error>
-      <error code="Args">Invalid arguments passed to function.</error>
-      <error code="LockFailed">Failed to lock a required resource.</error>
-      <error code="EmptyString">A required string value contains no characters.</error>
-      <error code="DoesNotExist">Resource does not exist.</error>
+      <error code="Args">Invalid arguments passed to function</error>
+      <error code="LockFailed">Failed to lock a required resource</error>
+      <error code="EmptyString">A required string value contains no characters</error>
+      <error code="DoesNotExist">Resource does not exist</error>
     </result>
   </function>
 
@@ -883,8 +883,8 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Args">Invalid arguments passed to function.</error>
-      <error code="LockFailed">Failed to lock a required resource.</error>
+      <error code="Args">Invalid arguments passed to function</error>
+      <error code="LockFailed">Failed to lock a required resource</error>
       <error code="NoSupport">The target filesystem does not support the operation.</error>
     </result>
   </function>
@@ -968,9 +968,9 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="Search">A suitable class could not be found for the data source.</error>
-      <error code="FileNotFound">File not found.</error>
-      <error code="Args">Invalid arguments passed to function.</error>
-      <error code="Read">Error reading data.</error>
+      <error code="FileNotFound">File not found</error>
+      <error code="Args">Invalid arguments passed to function</error>
+      <error code="Read">Error reading data</error>
     </result>
   </function>
 
@@ -990,9 +990,9 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     </description>
     <result type="ERR">
       <error code="Okay">The object was initialised.</error>
-      <error code="LostClass">The object has lost its class reference.</error>
-      <error code="DoubleInit">Warning - Attempt to initialise a resource twice.</error>
-      <error code="ObjectCorrupt">The object structure is corrupt or has not been initialised.</error>
+      <error code="LostClass">The object has lost its class reference</error>
+      <error code="DoubleInit">Warning - Attempt to initialise a resource twice</error>
+      <error code="ObjectCorrupt">The object structure is corrupt or has not been initialised</error>
     </result>
   </function>
 
@@ -1012,8 +1012,8 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     </description>
     <result type="ERR">
       <error code="Okay">Zero or more children were found and listed.</error>
-      <error code="Args">Invalid arguments passed to function.</error>
-      <error code="LockFailed">Failed to lock a required resource.</error>
+      <error code="Args">Invalid arguments passed to function</error>
+      <error code="LockFailed">Failed to lock a required resource</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1038,7 +1038,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     <result type="ERR">
       <error code="Okay">The file was cached successfully.</error>
       <error code="Search">If <code>CHECK_EXISTS</code> is specified, this failure indicates that the file is not cached.</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block.</error>
+      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1062,9 +1062,9 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
       <error code="Okay">Operation successful.</error>
       <error code="Cancelled">The thread has been requested to stop and cannot pause.</error>
       <error code="LockFailed">Failed to initialise the sleep record for the waiting thread.</error>
-      <error code="TimeOut">Function timed-out before successful completion.</error>
-      <error code="MarkedForDeletion">A resource cannot be accessed as it is marked for deletion.</error>
-      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock.</error>
+      <error code="TimeOut">Function timed-out before successful completion</error>
+      <error code="MarkedForDeletion">A resource cannot be accessed as it is marked for deletion</error>
+      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
       <error code="DoesNotExist">The object was removed while waiting for the lock.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
@@ -1092,9 +1092,9 @@ if (!MemoryIDInfo(memid, &amp;info)) {
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Args">Invalid arguments passed to function.</error>
-      <error code="MemoryDoesNotExist">Memory block does not exist.</error>
-      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock.</error>
+      <error code="Args">Invalid arguments passed to function</error>
+      <error code="MemoryDoesNotExist">Memory block does not exist</error>
+      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1122,7 +1122,7 @@ if (!MemoryPtrInfo(ptr, &amp;info)) {
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="MemoryDoesNotExist">Memory block does not exist.</error>
+      <error code="MemoryDoesNotExist">Memory block does not exist</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1157,7 +1157,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Failed">General failure.</error>
+      <error code="Failed">General failure</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1182,7 +1182,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="MissingClass">The <code>ClassID</code> is invalid or refers to a class that is not installed.</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block.</error>
+      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1235,9 +1235,9 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="DirEmpty">The folder is empty.</error>
-      <error code="Args">Invalid arguments passed to function.</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block.</error>
+      <error code="DirEmpty">The folder is empty</error>
+      <error code="Args">Invalid arguments passed to function</error>
+      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1286,7 +1286,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="Terminate">A <code>MSGID::QUIT</code> message type was found on the message queue.</error>
-      <error code="TimeOut">Function timed-out before successful completion.</error>
+      <error code="TimeOut">Function timed-out before successful completion</error>
     </result>
   </function>
 
@@ -1329,11 +1329,11 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Failed">General failure.</error>
+      <error code="Failed">General failure</error>
       <error code="OutOfRange">The <code>Action</code> ID is invalid.</error>
-      <error code="IllegalMethodID">Illegal method ID (outside of valid range).</error>
-      <error code="MissingClass">The class could not be found in the system.</error>
-      <error code="NoMatchingObject">No matching object was found for the given object ID.</error>
+      <error code="IllegalMethodID">Illegal method ID (outside of valid range)</error>
+      <error code="MissingClass">The class could not be found in the system</error>
+      <error code="NoMatchingObject">No matching object was found for the given object ID</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1356,11 +1356,11 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="File">File error, e.g. file not found.</error>
-      <error code="Args">Invalid arguments passed to function.</error>
-      <error code="Read">Error reading data.</error>
-      <error code="InvalidPath">Invalid file or folder path detected.</error>
-      <error code="OpenFile">The file could not be opened.</error>
+      <error code="File">File error, e.g. file not found</error>
+      <error code="Args">Invalid arguments passed to function</error>
+      <error code="Read">Error reading data</error>
+      <error code="InvalidPath">Invalid file or folder path detected</error>
+      <error code="OpenFile">The file could not be opened</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1381,7 +1381,7 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="NotFound">A search routine in this function failed.</error>
+      <error code="NotFound">A search routine in this function failed</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1404,9 +1404,9 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Args">Invalid arguments passed to function.</error>
+      <error code="Args">Invalid arguments passed to function</error>
       <error code="Memory">The memory block to be re-allocated is invalid.</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block.</error>
+      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1451,8 +1451,8 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Search">A search routine in this function failed.</error>
-      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock.</error>
+      <error code="Search">A search routine in this function failed</error>
+      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1590,7 +1590,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <result type="ERR">
       <error code="Okay">An item was successfully scanned from the folder.</error>
       <error code="DirEmpty">There are no more items to scan.</error>
-      <error code="Args">Invalid arguments passed to function.</error>
+      <error code="Args">Invalid arguments passed to function</error>
     </result>
   </function>
 
@@ -1639,7 +1639,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     </description>
     <result type="ERR">
       <error code="Okay">The message was successfully written to the message queue.</error>
-      <error code="Args">Invalid arguments passed to function.</error>
+      <error code="Args">Invalid arguments passed to function</error>
     </result>
   </function>
 
@@ -1677,7 +1677,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="Search">The <code>Object</code> is not recognised by the system - the address may be invalid.</error>
-      <error code="LockFailed">Failed to lock a required resource.</error>
+      <error code="LockFailed">Failed to lock a required resource</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1703,10 +1703,10 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Args">Invalid arguments passed to function.</error>
-      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock.</error>
+      <error code="Args">Invalid arguments passed to function</error>
+      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
-      <error code="Recursion">Detected a recursive function call.</error>
+      <error code="Recursion">Detected a recursive function call</error>
     </result>
   </function>
 
@@ -1804,7 +1804,7 @@ static ResourceManager glNodeManager = {
     </description>
     <result type="ERR">
       <error code="Okay">The volume was successfully added.</error>
-      <error code="LockFailed">Failed to lock a required resource.</error>
+      <error code="LockFailed">Failed to lock a required resource</error>
       <error code="NullArgs">A valid name and path string was not provided.</error>
     </result>
   </function>
@@ -1842,7 +1842,7 @@ static ResourceManager glNodeManager = {
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Args">Invalid arguments passed to function.</error>
+      <error code="Args">Invalid arguments passed to function</error>
       <error code="OutOfRange">The Action parameter is invalid.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
@@ -1866,7 +1866,7 @@ static ResourceManager glNodeManager = {
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block.</error>
+      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1891,9 +1891,9 @@ static ResourceManager glNodeManager = {
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Args">Invalid arguments passed to function.</error>
+      <error code="Args">Invalid arguments passed to function</error>
       <error code="ArrayFull">The task's timer array is at capacity - no more subscriptions can be granted.</error>
-      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock.</error>
+      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
       <error code="InvalidState">The subscriber is marked for termination.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
@@ -1929,7 +1929,7 @@ static ResourceManager glNodeManager = {
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Args">Invalid arguments passed to function.</error>
+      <error code="Args">Invalid arguments passed to function</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1967,7 +1967,7 @@ static ResourceManager glNodeManager = {
     <result type="ERR">
       <error code="Okay">The message was successfully updated.</error>
       <error code="Search">The supplied <code>Message</code> ID does not refer to a message in the queue.</error>
-      <error code="AccessMemory">Access to a memory block was denied.</error>
+      <error code="AccessMemory">Access to a memory block was denied</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1987,8 +1987,8 @@ static ResourceManager glNodeManager = {
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Search">A search routine in this function failed.</error>
-      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock.</error>
+      <error code="Search">A search routine in this function failed</error>
+      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -2011,10 +2011,10 @@ static ResourceManager glNodeManager = {
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Failed">General failure.</error>
-      <error code="TimeOut">Function timed-out before successful completion.</error>
+      <error code="Failed">General failure</error>
+      <error code="TimeOut">Function timed-out before successful completion</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
-      <error code="OutsideMainThread">Operation permitted from the main thread only.</error>
+      <error code="OutsideMainThread">Operation permitted from the main thread only</error>
     </result>
   </function>
 
