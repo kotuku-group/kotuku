@@ -182,7 +182,7 @@ local count: num = 'text'  -- error: cannot assign 'string' to 'number'
 [discrete]
 ==== Supported Type Names
 
-[cols="1,1a",options="header",stripes=even]
+[cols="1,1a",options="header"]
 |===
 |Annotation |Type
 

@@ -488,7 +488,7 @@ t[{5..10}]    -- {}             (beyond table length)
 === Tables vs. Arrays
 indexterm:[tables, arrays comparison] indexterm:[arrays, tables comparison] Tables and arrays serve different purposes.  The following comparison summarises the key distinctions.
 
-[cols="2,3a,3a",options="header",stripes=even]
+[cols="2,3a,3a",options="header"]
 |===
 |Property |Table |Array
 

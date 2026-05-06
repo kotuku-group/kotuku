@@ -266,7 +266,7 @@ The `<close>` attribute appears between the variable name and the optional type 
 
 When a `<close>` variable's scope exits, the runtime invokes the `pass:[__]close` metamethod from the value's metatable.  The metamethod receives two arguments:
 
-[cols="1,1,3a",options="header",stripes=even]
+[cols="1,1,3a",options="header"]
 |===
 |Argument |Type |Description
 
@@ -486,7 +486,7 @@ print(resolve(x))  -- 1 (returns cached value)
 
 For literal values and simple expressions, the type is inferred automatically:
 
-[cols="1,1a",options="header",stripes=even]
+[cols="1,1a",options="header"]
 |===
 |Expression |Inferred Type
 

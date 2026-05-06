@@ -48,7 +48,7 @@ Throws an error if `tostring()` does not return a string for any argument.
 === Log Levels
 indexterm:[log levels] Kōtuku's logging system organises output by severity.  Log messages are written to stderr.  The following log levels are defined, from most to least verbose:
 
-[cols="1,2a,2a",options="header",stripes=even]
+[cols="1,2a,2a",options="header"]
 |===
 |Level |Description |Command-line flag
 
@@ -100,7 +100,7 @@ Calling the `DebugLog()` method on Script objects provides structured inspection
 
 Captures a snapshot of the script's runtime state and returns it as a formatted string.  `Options` is a comma-separated string specifying which categories of information to include.  If `Options` is omitted, only the call stack is returned.
 
-[cols="1,3a",options="header",stripes=even]
+[cols="1,3a",options="header"]
 |===
 |Option |Description
 

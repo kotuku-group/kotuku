@@ -70,7 +70,7 @@ viewport.mtSubscribeInput(JTYPE_CROSSING,
 
 The following flags control which event categories the subscription receives.  Combine flags with the bitwise OR operator.
 
-[cols="1,3a",options="header",stripes=even]
+[cols="1,3a",options="header"]
 |===
 |Flag |Description
 
@@ -104,7 +104,7 @@ The following flags control which event categories the subscription receives.  C
 
 Each `InputEvent` carries a `type` field set to one of the following `JET` constants.
 
-[cols="1,3a",options="header",stripes=even]
+[cols="1,3a",options="header"]
 |===
 |Constant |Description
 
@@ -150,7 +150,7 @@ Each `InputEvent` carries a `type` field set to one of the following `JET` const
 
 Each node in the event chain exposes the following fields.
 
-[cols="1,1,3a",options="header",stripes=even]
+[cols="1,1,3a",options="header"]
 |===
 |Field |Type |Description
 
@@ -226,7 +226,7 @@ viewport.mtSubscribeFeedback(FM_HAS_FOCUS|FM_CHILD_HAS_FOCUS|FM_LOST_FOCUS,
    end)
 ----
 
-[cols="1,3a",options="header",stripes=even]
+[cols="1,3a",options="header"]
 |===
 |Flag |Description
 
@@ -288,7 +288,7 @@ The `mtSubscribeKeyboard()` method on a `Vector` or `VectorViewport` receives ke
 
 The `Callback` prototype is `function(Viewport, Qualifiers, Code, Unicode)`.
 
-[cols="1,1,3a",options="header",stripes=even]
+[cols="1,1,3a",options="header"]
 |===
 |Parameter |Type |Description
 
@@ -351,7 +351,7 @@ handle = input.keyboard(nil,
 
 The `Qualifiers` parameter is a bitfield.  Test individual flags with the bitwise AND operator.
 
-[cols="1,3a",options="header",stripes=even]
+[cols="1,3a",options="header"]
 |===
 |Flag |Description
 
@@ -421,7 +421,7 @@ Convenience groups:
 
 The `Code` parameter identifies the physical key independent of the user's keymap.  Common constants:
 
-[cols="1,1a",options="header",stripes=even]
+[cols="1,1a",options="header"]
 |===
 |Constant |Key
 
@@ -545,7 +545,7 @@ A `VectorViewport` can be made draggable by setting its `dragCallback` field.  W
 
 [.api]`viewport.dragCallback = function(Viewport, X, Y, [OriginX], [OriginY])`
 
-[cols="1,1,3a",options="header",stripes=even]
+[cols="1,1,3a",options="header"]
 |===
 |Parameter |Type |Description
 
@@ -626,7 +626,7 @@ When a drop event is received, use `input.requestItem()` to retrieve data from t
 
 [.api]`input.requestItem(Source, Item, DataType, Callback)`
 
-[cols="1,1,3a",options="header",stripes=even]
+[cols="1,1,3a",options="header"]
 |===
 |Parameter |Type |Description
 

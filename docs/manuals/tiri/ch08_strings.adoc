@@ -416,7 +416,7 @@ Returns `true` if `String` begins with `Prefix`.  An empty `Prefix` always retur
 
 indexterm:[strings, encoding] indexterm:[XML escaping] Escapes `String` for safe inclusion in XML content or attribute values.  The following characters are replaced:
 
-[cols="2,3",options="header",stripes=even]
+[cols="2,3",options="header"]
 |===
 |Character |Replacement
 |`&`       |`+&amp;+`
@@ -473,7 +473,7 @@ Reloads the language translation tables from `config:translations/`.  Call this 
 
 Decodes XML entities in `String`, returning the unescaped result.  The following entities are recognised:
 
-[cols="2,3",options="header",stripes=even]
+[cols="2,3",options="header"]
 |===
 |Entity     |Character
 |`+&lt;+`     |`<`

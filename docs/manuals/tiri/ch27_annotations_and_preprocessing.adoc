@@ -46,7 +46,7 @@ end
 
 Annotation arguments accept the following value types:
 
-[cols="1,2a,2a",options="header",stripes=even]
+[cols="1,2a,2a",options="header"]
 |===
 |Type |Syntax |Example
 
@@ -101,7 +101,7 @@ parser_annotation_expr = "@FunctionName" | "@SourceFile" | "@SourceLine" ;
 
 Parser annotation expressions do not accept arguments.  Using an unknown parser annotation expression raises a parse error.  Declaration annotations with unknown names remain valid when they precede a function declaration.
 
-[cols="1,1,3a",options="header",stripes=even]
+[cols="1,1,3a",options="header"]
 |===
 |Expression |Result Type |Value
 
@@ -124,7 +124,7 @@ Parser annotation expressions are source metadata expressions, not function decl
 === Standard Annotations
 indexterm:[annotations, standard] The following annotations are recognised by standard Tiri tooling:
 
-[cols="1,3a",options="header",stripes=even]
+[cols="1,3a",options="header"]
 |===
 |Annotation |Purpose
 
@@ -163,7 +163,7 @@ end
 
 `@Doc` has two registration behaviours:
 
-[cols="1,3a",options="header",stripes=even]
+[cols="1,3a",options="header"]
 |===
 |Context |Behaviour
 
@@ -205,7 +205,7 @@ end
 
 Accepted arguments:
 
-[cols="1,1,3a",options="header",stripes=even]
+[cols="1,1,3a",options="header"]
 |===
 |Argument |Type |Description
 
@@ -268,7 +268,7 @@ end
 
 Accepted arguments:
 
-[cols="1,1,3a",options="header",stripes=even]
+[cols="1,1,3a",options="header"]
 |===
 |Argument |Type |Description
 
@@ -303,7 +303,7 @@ end
 
 Accepted arguments:
 
-[cols="1,1,3a",options="header",stripes=even]
+[cols="1,1,3a",options="header"]
 |===
 |Argument |Type |Description
 
@@ -367,7 +367,7 @@ The condition is a single `key=value` pair.  The parser evaluates the condition 
 
 ==== Supported Conditions
 
-[cols="1,1,1,3a",options="header",stripes=even]
+[cols="1,1,1,3a",options="header"]
 |===
 |Condition |Value Type |Values |Description
 
@@ -566,7 +566,7 @@ Nested functions are emitted in the same zero-indexed `symbols` array.
 
 Each symbol entry has the following fields:
 
-[cols="1,1,3a",options="header",stripes=even]
+[cols="1,1,3a",options="header"]
 |===
 |Field |Type |Description
 
@@ -647,7 +647,7 @@ The documentation parser reads the first `@Doc` annotation whose `text` argument
 
 The `doc` field contains:
 
-[cols="1,1,3a",options="header",stripes=even]
+[cols="1,1,3a",options="header"]
 |===
 |Field |Type |Description
 
@@ -670,7 +670,7 @@ The `doc` field contains:
 
 Marker form uses section markers:
 
-[cols="1,3a",options="header",stripes=even]
+[cols="1,3a",options="header"]
 |===
 |Marker |Effect
 
@@ -692,7 +692,7 @@ Marker form uses section markers:
 
 Compact form is selected when the first non-empty documentation line starts with `@`.  Compact tags are exact and lower-case:
 
-[cols="1,3a",options="header",stripes=even]
+[cols="1,3a",options="header"]
 |===
 |Tag |Effect
 

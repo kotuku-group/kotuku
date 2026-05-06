@@ -68,7 +68,7 @@ surface = obj.find(window.surface)
 
 Two special names are recognised:
 
-[cols="1,3a",options="header",stripes=even]
+[cols="1,3a",options="header"]
 |===
 |Name |Description
 
@@ -319,7 +319,7 @@ http.subscribe('deactivate', on_deactivate, customref)
 
 The callback receives three arguments:
 
-[cols="1,1,3a",options="header",stripes=even]
+[cols="1,1,3a",options="header"]
 |===
 |Argument |Type |Description
 

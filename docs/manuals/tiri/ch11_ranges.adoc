@@ -75,7 +75,7 @@ Invalid literal operands (non-numeric or `nil`) raise an error at runtime.
 
 The following immutable properties are available for reading on all range objects:
 
-[cols="1,3a",options="header",stripes=even]
+[cols="1,3a",options="header"]
 |===
 |Property |Description
 
@@ -529,7 +529,7 @@ Returns the first value for which `Predicate(Value)` returns a truthy value, or 
 
 ==== Method Return Types
 
-[cols="1,2a",options="header",stripes=even]
+[cols="1,2a",options="header"]
 |===
 |Method |Returns
 

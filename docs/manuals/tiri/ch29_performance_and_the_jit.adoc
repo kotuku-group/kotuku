@@ -29,7 +29,7 @@ If the same side exit is taken `hotexit` times (default: 10), the JIT compiler r
 
 Compiled traces are linked together to form an execution graph.  Link types include:
 
-[cols="1,4a",options="header",stripes=even]
+[cols="1,4a",options="header"]
 |===
 |Link Type |Description
 
@@ -62,7 +62,7 @@ Compiled traces are linked together to form an execution graph.  Link types incl
 
 Trace recording aborts if any of the following limits are exceeded:
 
-[cols="2,1,4a",options="header",stripes=even]
+[cols="2,1,4a",options="header"]
 |===
 |Parameter |Default |Description
 
@@ -224,7 +224,7 @@ This function is intended for profilers and diagnostic tools.  Attached callback
 
 ==== Event Types
 
-[cols="1,4a",options="header",stripes=even]
+[cols="1,4a",options="header"]
 |===
 |Event |Description
 
@@ -267,7 +267,7 @@ Returns a table of reflective information about `Func`.  If `Func` is a Tiri fun
 
 For Tiri functions, the returned table contains:
 
-[cols="2,1,4a",options="header",stripes=even]
+[cols="2,1,4a",options="header"]
 |===
 |Field |Type |Description
 
@@ -330,7 +330,7 @@ For Tiri functions, the returned table contains:
 
 For C functions:
 
-[cols="2,1,4a",options="header",stripes=even]
+[cols="2,1,4a",options="header"]
 |===
 |Field |Type |Description
 
@@ -375,7 +375,7 @@ Returns the name of the upvalue at index `Idx` in the prototype of `Func`.  Retu
 
 Returns a table of high-level information about the compiled trace numbered `TraceNo`.  Returns nothing if the trace does not exist.
 
-[cols="2,1,4a",options="header",stripes=even]
+[cols="2,1,4a",options="header"]
 |===
 |Field |Type |Description
 
@@ -455,7 +455,7 @@ indexterm:[JIT, options] Configures JIT optimisation levels, flags, and paramete
 
 A single digit `'0'` through `'3'` sets a predefined combination of optimisation flags:
 
-[cols="1,6a",options="header",stripes=even]
+[cols="1,6a",options="header"]
 |===
 |Level |Flags Enabled
 
@@ -476,7 +476,7 @@ A single digit `'0'` through `'3'` sets a predefined combination of optimisation
 
 Individual flags are enabled with `+flag` or the bare flag name, and disabled with `-flag` or `noflag`.
 
-[cols="2,5a",options="header",stripes=even]
+[cols="2,5a",options="header"]
 |===
 |Flag |Description
 
@@ -522,7 +522,7 @@ jit.opt.start('+fold', '+cse') -- enable specific flags only
 
 Parameters are set with `'name=value'` strings.  All values are non-negative integers.
 
-[cols="2,1,5a",options="header",stripes=even]
+[cols="2,1,5a",options="header"]
 |===
 |Parameter |Default |Description
 

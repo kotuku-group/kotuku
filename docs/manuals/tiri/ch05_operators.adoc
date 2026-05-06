@@ -10,7 +10,7 @@ indexterm:[operators] This chapter defines all operators in Tiri: their syntax, 
 === Arithmetic Operators
 indexterm:[operators, arithmetic] Arithmetic operators accept numeric operands.  The runtime coerces strings that represent valid numbers to numbers automatically.  If an operand is neither numeric nor string-coercible and no metamethod is defined, the runtime raises an error.
 
-[cols="2,3,3a,3",options="header",stripes=even]
+[cols="2,3,3a,3",options="header"]
 |===
 |Operator |Syntax |Effect |Metamethod
 |Addition      |`a + b`  |Sum of `a` and `b`           |`__add`
@@ -41,7 +41,7 @@ n = -42        -- unary negation
 === Comparison Operators
 indexterm:[operators, comparison] Comparison operators return a boolean value.  The equality operators (`is`, `is not`, `!=`) accept operands of any type.  The ordering operators (`<`, `>`, `\<=`, `>=`) accept two numbers or two strings; comparing other types without a metamethod raises an error.
 
-[cols="2,3,3a,3",options="header",stripes=even]
+[cols="2,3,3a,3",options="header"]
 |===
 |Operator |Syntax |Effect |Metamethod
 |Equal             |`a is b`  |`true` if `a` equals `b`              |`__eq`
@@ -79,7 +79,7 @@ print('abc' < 'abd')   -- true
 === Logical Operators
 indexterm:[operators, logical] Logical operators use standard falsiness: only `nil` and `false` are false.  All other values -- including `0`, `""`, and empty tables -- are true.
 
-[cols="2,3,5a",options="header",stripes=even]
+[cols="2,3,5a",options="header"]
 |===
 |Operator |Syntax |Effect
 |`and` |`a and b` |Returns `a` if `a` is false; otherwise returns `b`
@@ -102,7 +102,7 @@ z = not false          -- true
 === Bitwise Operators
 indexterm:[operators, bitwise] Bitwise operators operate on 32-bit integers using two's-complement representation.  Non-integer operands are truncated to 32-bit integers before the operation.  Shift operators mask the shift count to the range 0-31.
 
-[cols="2,3,5a",options="header",stripes=even]
+[cols="2,3,5a",options="header"]
 |===
 |Operator |Syntax |Effect
 |AND        |`a & b`  |Bitwise AND
@@ -181,7 +181,7 @@ label = 'Item #' .. 42              -- 'Item #42'
 === Length Operator
 indexterm:[operators, length] The unary `#` operator returns the length of a value.
 
-[cols="2,5a",options="header",stripes=even]
+[cols="2,5a",options="header"]
 |===
 |Operand type |Result
 |String |Byte count
@@ -201,7 +201,7 @@ print(#{ 'a', 'b', 'c' })   -- 3
 === Compound Assignment
 indexterm:[operators, compound assignment] Compound assignment operators evaluate the right-hand side exactly once and apply the operation to the target.  If the RHS is a function call or vararg, only the first return value is used.  The target must be an assignable location: a local, upvalue, global, field, or index.  Applying compound assignment to a constant or a function call result is a compile-time error.
 
-[cols="2,3,5a",options="header",stripes=even]
+[cols="2,3,5a",options="header"]
 |===
 |Operator |Syntax |Effect
 |`+=`  |`x += expr`  |Addition assignment
@@ -351,7 +351,7 @@ label = count is 0 ? 'none' :> f'{count} items'
 === Safe Navigation
 indexterm:[operators, safe navigation] The safe navigation operators provide nil-safe access to fields, methods, and indices.  If the receiver is `nil`, the expression evaluates to `nil` without raising an error.
 
-[cols="2,3,5a",options="header",stripes=even]
+[cols="2,3,5a",options="header"]
 |===
 |Operator |Syntax |Effect
 |Safe field access |`obj?.field`    |Returns `nil` if `obj` is `nil`; otherwise returns `obj.field`
@@ -497,7 +497,7 @@ Pipe iteration applies only to range literals.  For ranges stored in variables, 
 === Operator Precedence
 indexterm:[operators, precedence] The following table lists all operators from highest to lowest precedence.  Operators on the same row share the same precedence level.
 
-[cols="1,4a,2",options="header",stripes=even]
+[cols="1,4a,2",options="header"]
 |===
 |Level |Operators |Associativity
 |10 |`pass:[**]`                                                |Right

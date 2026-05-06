@@ -50,7 +50,7 @@ rx = regex.new([[\d+]])      -- long string: \d passes through unchanged
 
 The long-string form eliminates a common class of errors where a missing backslash silently produces the wrong pattern.  Use quoted strings only when the pattern itself must contain the sequence `]]`.
 
-[cols="1,1a",options="header",stripes=even]
+[cols="1,1a",options="header"]
 |===
 |Quoted String |Long String Equivalent
 
@@ -190,7 +190,7 @@ indexterm:[regex, replacement] indexterm:[regex, splitting] Replaces all matches
 
 The `Replacement` string supports the following placeholders:
 
-[cols="1,3a",options="header",stripes=even]
+[cols="1,3a",options="header"]
 |===
 |Placeholder |Description
 
@@ -268,7 +268,7 @@ parts = rx.split("line1\nline2\tline3")
 
 indexterm:[regex, flags] Compilation flags modify how the pattern is interpreted and are specified as the second argument to `regex.new()`.  Multiple flags are combined with the bitwise OR operator.
 
-[cols="1,3a",options="header",stripes=even]
+[cols="1,3a",options="header"]
 |===
 |Flag |Effect
 
@@ -300,7 +300,7 @@ rx.match("line1\nline2")
 
 Match flags modify the behaviour of individual method calls and are passed as the final argument to `test()`, `findFirst()`, `findAll()`, `extract()`, `match()`, `search()`, `replace()`, and `split()`.  Compilation flags and match flags are distinct sets; do not combine them in the same bitmask.
 
-[cols="1,3a",options="header",stripes=even]
+[cols="1,3a",options="header"]
 |===
 |Flag |Effect
 
@@ -353,7 +353,7 @@ rx.replace('abc123def456', '#', regex.REPLACE_NO_COPY)   -- '##'
 === Regex Properties
 indexterm:[regex, properties] Compiled regex objects expose the following read-only properties:
 
-[cols="1,1,3a",options="header",stripes=even]
+[cols="1,1,3a",options="header"]
 |===
 |Property |Type |Description
 
@@ -425,7 +425,7 @@ end
 
 Each method is optimised for a specific use case.  Selecting the correct method avoids unnecessary work:
 
-[cols="1,3a",options="header",stripes=even]
+[cols="1,3a",options="header"]
 |===
 |Method |Best For
 

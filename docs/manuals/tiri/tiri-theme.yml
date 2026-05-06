@@ -86,6 +86,11 @@ title-page:
     font-size: 12
     margin-top: 6
 
+table:
+#  stripes: even
+  head:
+    background-color: '#f5f5f5'
+
 heading:
   min-height-after: 1in
   part:

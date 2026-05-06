@@ -356,7 +356,7 @@ indexterm:[random numbers] The pseudo-random number generator uses a Tausworthe 
 
 Generates a pseudo-random number.  Behaviour depends on the number of arguments:
 
-[cols="1,3a",options="header",stripes=even]
+[cols="1,3a",options="header"]
 |===
 |Arguments |Result
 
@@ -395,7 +395,7 @@ b = math.random()
 
 [[sec-math-constants]]
 === Constants
-[cols="1,3a",options="header",stripes=even]
+[cols="1,3a",options="header"]
 |===
 |indexterm:[mathematics, constants] Constant |Description
 
@@ -418,7 +418,7 @@ math.huge > 1e308   -- true
 === Special Values
 indexterm:[NaN] indexterm:[infinity] Mathematical operations can produce the following special floating-point values:
 
-[cols="1,3a",options="header",stripes=even]
+[cols="1,3a",options="header"]
 |===
 |Value |Produced By
 

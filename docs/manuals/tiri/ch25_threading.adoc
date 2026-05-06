@@ -124,7 +124,7 @@ Multiple calls targeting the same object are queued automatically and executed i
 
 The callback receives four arguments:
 
-[cols="1,1,3a",options="header",stripes=even]
+[cols="1,1,3a",options="header"]
 |===
 |Parameter |Type |Description
 
@@ -386,7 +386,7 @@ print(async.pool.result) -- 'processed: ready'
 
 The pool accepts values of the following types:
 
-[cols="1,3a",options="header",stripes=even]
+[cols="1,3a",options="header"]
 |===
 |Type |Behaviour
 
