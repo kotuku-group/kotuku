@@ -1,5 +1,5 @@
 --[[
-Options library.  See Wiki for details.
+Declarative command-line option parsing for Tiri scripts.
 --]]
 
    include 'core'
@@ -2038,12 +2038,13 @@ create_parser = function(Config:table):table
 
    Validates and registers a parameter definition using the same rules as entries supplied through the parser
    configuration `args` array.  The definition may use `name` or `names`; when `names` is supplied, the first name is
-   the canonical parameter name and later names are aliases.  Omitted `kind`, `type`, and `required` fields default to
-   `option`, `str`, and `false` respectively.
+   the canonical parameter name and later names are aliases.  Omitted `kind`, `type`, `required`, `multiple`, and
+   `hidden` fields default to `option`, `str`, `false`, `false`, and `false` respectively.
 
    Duplicate canonical names or aliases are rejected.  Positional parameters are stored in declaration order, and a
-   multiple positional parameter must be the final positional definition.  The returned table is the normalised
-   parameter definition stored by the parser, and can be retrieved later with parser.getParam().
+   multiple positional parameter must be the final positional definition.  Global named parameters must not collide
+   with registered command names.  The returned table is the normalised parameter definition stored by the parser, and
+   can be retrieved later with parser.getParam().
 
    -INPUT-
    Definition: Parameter definition table to validate and register.
@@ -2078,7 +2079,7 @@ create_parser = function(Config:table):table
    definition may use `name` or `names`; when `names` is supplied, the first name is the canonical command name and
    later names are aliases.  Command aliases must be unique within the parser's command scope and must not collide
    with global named parameters or the automatic help token.  Command `args` are parsed only after that command is
-   selected.
+   selected, and command results are returned separately from global parser results.
 
    -INPUT-
    Definition: Command definition table to validate and register.
@@ -2128,10 +2129,13 @@ create_parser = function(Config:table):table
    @Doc(text=[[
    Validate an argument table against this parser's rules
 
-   Converts supplied values using the registered parameter definitions, then applies required checks, validation fields,
-   relationship checks, and exec callbacks.  This is useful when callers have already assembled an argument table and
-   need to re-run the parser's validation rules.  Rejected values are passed through the parser's `onError` callback
-   when one is configured.
+   Treats `Args` as explicit keyed input, converts supplied values using the registered parameter definitions, then
+   applies required checks, validation fields, relationship checks, and exec callbacks.  This is useful when callers
+   have already assembled an argument table and need to re-run the parser's validation rules.
+
+   Defaults, runtime defaults, and environment variables are not applied by parser.validate(); use parser.process() or
+   parser.tryProcess() when those precedence layers should participate.  Conversion and per-value validation failures
+   are passed through the parser's `onError` callback when one is configured.
 
    -INPUT-
    Args: Argument table keyed by canonical parameter name or alias.
@@ -2157,7 +2161,7 @@ create_parser = function(Config:table):table
    Generates a compact plain-text usage line from the parser name and visible parameter definitions.  Hidden parameters
    remain parseable but are excluded from generated usage and help.  Required parameters are shown without brackets;
    optional parameters are bracketed.  Option metavars use the parameter's `metavar` field or the upper-case canonical
-   name.
+   name.  Parsers with commands append a generic command placeholder after the global parameters.
 
    -RESULT-
    str: Plain-text usage line.
@@ -2169,15 +2173,16 @@ create_parser = function(Config:table):table
    @Doc(text=[[
    Return parser help text
 
-   Generates normal parser help or detailed help for a parameter topic.  Normal help includes parser metadata,
-   grouped visible parameters, aliases, metavars, defaults, required markers, and comments.  Detailed help accepts a
-   canonical parameter name or alias and may include the parameter description, aliases, type, default, and choices.
-   `Format` may be `nil` or `text` in this stage.  Unsupported formats fail with a structured parser error so callers
-   do not mistake placeholder output for a real renderer.
+   Generates normal parser help or detailed help for a parameter or command topic.  Normal help includes parser
+   metadata, grouped visible parameters, visible commands, aliases, metavars, defaults, required markers, and comments.
+   Detailed help accepts a canonical parameter name, command name, or alias and may include the description, aliases,
+   type, default, choices, and command-specific parameters.  `Format` may be `nil` or `text` in this stage.
+   Unsupported formats fail with a structured parser error so callers do not mistake placeholder output for a real
+   renderer.
 
    -INPUT-
    Format: Help format name, or `nil` for plain text.
-   Topic: Canonical parameter name or alias for detailed help, or `nil` for normal help.
+   Topic: Canonical parameter name, command name, or alias for detailed help, or `nil` for normal help.
 
    -RESULT-
    str: Generated help text.
@@ -2194,7 +2199,7 @@ create_parser = function(Config:table):table
 
    -INPUT-
    Format: Help format name, or `nil` for plain text.
-   Topic: Canonical parameter name or alias for detailed help, or `nil` for normal help.
+   Topic: Canonical parameter name, command name, or alias for detailed help, or `nil` for normal help.
    ]])
    parser.printHelp = function(Format:any, Topic:any)
       print(parser.getHelp(Format, Topic))
@@ -2211,12 +2216,13 @@ create_parser = function(Config:table):table
    values, or `nil`.  When `Input` is `nil`, parsing reads ordered arguments from the active task parameters after the
    script path.  If ordered task input is unavailable, named script arguments are read from `arg()`.  Explicit arrays
    and tables bypass task input.  Named options use `name=value` syntax unless a default allows a bare option token.
-   Flags accept `name`, `no-name`, or `name=value` syntax.  Automatic help requests return a structured help table
-   with `help`, `topic`, and `text` fields instead of printing.  When the parser defines commands, global options are
-   parsed before the command token and the result contains `command`, `globals`, and `args` fields.
+   Flags accept `name`, `no-name`, or `name=value` syntax.  Automatic help intercepts the configured help token only
+   when it is not declared as a parameter; help requests return a structured help table with `help`, `topic`, and
+   `text` fields instead of printing.  When the parser defines commands, global options are parsed before the command
+   token and the result contains `command`, `globals`, and `args` fields.
 
-   `Options.taskParameters` may be an ordered argument array used instead of the active task parameters.  Set it to
-   `false` to force the `arg()` fallback.
+   `Options.taskParameters` may be an ordered task parameter array used instead of the active task parameters.  Set it
+   to `false` to force the `arg()` fallback.
 
    -INPUT-
    Input: Explicit input to parse, or `nil` to use the default ordered task argument source.
@@ -2245,14 +2251,15 @@ create_parser = function(Config:table):table
    values, or `nil`.  When `Input` is `nil`, parsing reads ordered arguments from the active task parameters after the
    script path.  If ordered task input is unavailable, named script arguments are read from `arg()`.  Explicit arrays
    and tables bypass task input.  Named options use `name=value` syntax unless a default allows a bare option token.
-   Flags accept `name`, `no-name`, or `name=value` syntax.  Automatic help requests print generated help or dispatch
-   it through `onHelp`, then return `nil`.  When the parser defines commands, global options are parsed before the
-   command token and the result contains `command`, `globals`, and `args` fields.
+   Flags accept `name`, `no-name`, or `name=value` syntax.  Automatic help intercepts the configured help token only
+   when it is not declared as a parameter; help requests print generated help or dispatch it through `onHelp`, then
+   return `nil`.  When the parser defines commands, global options are parsed before the command token and the result
+   contains `command`, `globals`, and `args` fields.
 
    Use parser.tryProcess() when parser failures should be returned instead of raised.
 
-   `Options.taskParameters` may be an ordered argument array used instead of the active task parameters.  Set it to
-   `false` to force the `arg()` fallback.
+   `Options.taskParameters` may be an ordered task parameter array used instead of the active task parameters.  Set it
+   to `false` to force the `arg()` fallback.
 
    -INPUT-
    Input: Explicit input to parse, or `nil` to use the default ordered task argument source.
@@ -2264,7 +2271,7 @@ create_parser = function(Config:table):table
    parser.process = function(Input:any, Options:table):table
       local result, err = parser.tryProcess(Input, Options)
       if err then
-         raise err.code, err.message
+         print(err.message)
       end
       if result and result._helpMarker is help_result_marker then
          if parser.onHelp then
