@@ -894,7 +894,7 @@ end
 -- Raise an error for any required parameter that remains unset after defaults.
 
 function check_required(Parser:table, Result:table)
-   if Result[Parser.helpArg] then return end -- If help is present, required parameters are irrelevant
+   if Parser.autoHelp and Result[Parser.helpArg] then return end -- If help is present, required parameters are irrelevant
 
    for param in values(Parser._params) do
       if param.required and Result[param.name] is nil then
@@ -2379,7 +2379,11 @@ create_parser = function(Config:table):table
          'Parser args must be an array of parameter definitions.')
    end
 
-   if parser.autoHelp and not definitions_have_name(Config.args, parser.helpArg) then
+   if parser.autoHelp then
+      if definitions_have_name(Config.args, parser.helpArg) then
+         raise ERR_DuplicateValue, f"Parameter name or alias '{parser.helpArg}' conflicts with the reserved help token."
+      end
+
       add_param(parser, {
          name = parser.helpArg, type = 'str', hidden = true, implicit = true,
          exec = function(Parser:table, ArgName:str, Value:any, Param:table)

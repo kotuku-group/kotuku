@@ -865,6 +865,25 @@ end
    assert(result.topic is nil, 'Bare automatic help with trailing tokens should request normal help')
    assert(result.text:find('Usage: demo'), 'Automatic help with trailing tokens should include normal help text')
 
+   expect_options_error({
+      args = array<table> {
+         { name = 'file', required = true },
+         { name = 'help', kind = 'flag' }
+      }
+   }, ERR_DuplicateValue, "Parameter name or alias 'help' conflicts with the reserved help token.")
+
+   caller_help_parser = options({
+      autoHelp = false,
+      args = array<table> {
+         { name = 'file', required = true },
+         { name = 'help', kind = 'flag' }
+      }
+   })
+
+   result, err = caller_help_parser.tryProcess(array<string> { 'help' })
+   assert(result is nil, 'Caller-owned help should not bypass required parameters')
+   assert(err.code is ERR_ParameterRequired, 'Caller-owned help should still validate required parameters')
+
    cli_parser = options({
       name = 'convert',
       args = array<table> {
