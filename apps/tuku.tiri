@@ -1,0 +1,232 @@
+#!/usr/bin/env origo
+--[[
+Tuku: A small HTTP/HTTPS client for Tiri command-line workflows.
+--]]
+
+   include 'http'
+   import 'options'
+
+TUKU_VERSION <const> = '1.0'
+TUKU_USER_AGENT <const> = 'Tuku/1.0 Kotuku'
+
+glOptionDefs = array<table> {
+   { name = 'url', type = 'str', group = 'Core',
+     comment = 'Target HTTP or HTTPS URL.' },
+   { name = 'method', type = 'enum', choices = array<string> { 'get', 'head', 'delete', 'options', 'post', 'put' },
+     default = 'get', group = 'Core', comment = 'HTTP method to use.' },
+   { name = 'version', kind = 'flag', group = 'Core',
+     comment = 'Print the Tuku version.' },
+
+   { name = 'output', type = 'file', group = 'Output',
+     comment = 'Save the response body to a file.' },
+   { name = 'status', kind = 'flag', group = 'Output',
+     comment = 'Print the numeric HTTP status.' },
+   { name = 'silent', kind = 'flag', group = 'Output',
+     comment = 'Suppress non-body output.' },
+   { name = 'verbose', kind = 'flag', group = 'Output',
+     comment = 'Print transfer summary information.' },
+   { name = 'fail', kind = 'flag', group = 'Output',
+     comment = 'Treat HTTP 4xx and 5xx statuses as failures.' },
+
+   { name = 'data', type = 'str', group = 'Request Body',
+     excludes = array<string> { 'datafile', 'json', 'form' },
+     comment = 'Send a string request body.' },
+   { name = 'datafile', type = 'file', exists = true, group = 'Request Body',
+     excludes = array<string> { 'data', 'json', 'form' },
+     comment = 'Read the request body from a file.' },
+   { name = 'json', type = 'str', group = 'Request Body',
+     excludes = array<string> { 'data', 'datafile', 'form' },
+     comment = 'Send a JSON request body.' },
+   { name = 'form', type = 'array', group = 'Request Body',
+     excludes = array<string> { 'data', 'datafile', 'json' },
+     comment = 'Send form fields as name=value entries.' },
+   { name = 'contenttype', type = 'str', group = 'Request Body',
+     comment = 'Request Content-Type header.' },
+
+   { name = 'header', type = 'array', group = 'Request Headers',
+     comment = 'Custom request header entries in Name: Value form.' },
+   { name = 'useragent', type = 'str', default = TUKU_USER_AGENT, group = 'Request Headers',
+     comment = 'User-Agent request header.' },
+   { name = 'user', type = 'str', group = 'Request Headers',
+     comment = 'Authentication credentials as username:password.' },
+
+   { name = 'timeout', type = 'num', default = 30, group = 'Connection',
+     comment = 'Overall transfer timeout in seconds.' },
+   { name = 'connect-timeout', type = 'num', default = 10, group = 'Connection',
+     comment = 'Initial connection timeout in seconds.' },
+   { name = 'data-timeout', type = 'num', default = 30, group = 'Connection',
+     comment = 'Send/receive data timeout in seconds.' },
+   { name = 'proxy', type = 'str', group = 'Connection',
+     comment = 'Proxy server as host:port.' },
+   { name = 'insecure', kind = 'flag', group = 'Connection',
+     comment = 'Disable SSL server certificate verification.' },
+
+   { name = 'resume', kind = 'flag', group = 'Transfer Controls',
+     comment = 'Resume a partial download.' },
+   { name = 'raw', kind = 'flag', group = 'Transfer Controls',
+     comment = 'Disable HTTP chunk handling.' },
+   { name = 'no-head', kind = 'flag', group = 'Transfer Controls',
+     comment = 'Do not send a HEAD probe before upload methods.' },
+   { name = 'debug-socket', kind = 'flag', group = 'Transfer Controls',
+     comment = 'Log request socket headers and data.' }
+}
+
+glParser = options({
+   name        = 'Tuku',
+   description = 'Transfer data from an HTTP or HTTPS URL.',
+   epilog      = 'Examples: origo apps/tuku.tiri url=https://example.com output=page.html',
+   args        = glOptionDefs
+})
+
+----------------------------------------------------------------------------------------------------------------------
+-- Returns true when the command-line options include any supported request body source.
+
+function hasBodyOption(Args:table):bool
+   return Args.data != nil or Args.datafile != nil or Args.json != nil or Args.form != nil
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Ensures that numeric timeout values are valid before the request is started.
+
+function requirePositive(Name:str, Value:num)
+   if Value <= 0 then
+      error(f"Parameter '{Name}' must be greater than zero.")
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Rejects command-line options that are declared now but intentionally deferred to a later implementation phase.
+
+function rejectPhaseFuture(Name:str)
+   error(f"Parameter '{Name}' is reserved for a later Tuku phase.")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Validates the Phase 1 option set and reports unsupported methods or deferred parameters as argument errors.
+
+function validatePhaseOneArgs(Args:table)
+   if Args.version then return end
+
+   if Args.url is nil then
+      error("Required parameter 'url' is missing.")
+   end
+
+   requirePositive('timeout', Args.timeout)
+   requirePositive('connect-timeout', Args['connect-timeout'])
+   requirePositive('data-timeout', Args['data-timeout'])
+
+   if Args.url:startsWith('http://') is false and Args.url:startsWith('https://') is false then
+      error("Parameter 'url' must start with http:// or https://.")
+   end
+
+   if Args.method != 'get' and Args.method != 'head' and Args.method != 'delete' and Args.method != 'options' then
+      error("Phase 1 supports method=get, method=head, method=delete, and method=options.")
+   end
+
+   if Args.fail then rejectPhaseFuture('fail') end
+   if Args.verbose then rejectPhaseFuture('verbose') end
+   if Args.data != nil then rejectPhaseFuture('data') end
+   if Args.datafile != nil then rejectPhaseFuture('datafile') end
+   if Args.json != nil then rejectPhaseFuture('json') end
+   if Args.form != nil then rejectPhaseFuture('form') end
+   if Args.contenttype != nil then rejectPhaseFuture('contenttype') end
+   if Args.header != nil then rejectPhaseFuture('header') end
+   if Args.user != nil then rejectPhaseFuture('user') end
+   if Args.proxy != nil then rejectPhaseFuture('proxy') end
+   if Args.insecure then rejectPhaseFuture('insecure') end
+   if Args.resume then rejectPhaseFuture('resume') end
+   if Args.raw then rejectPhaseFuture('raw') end
+   if Args['no-head'] then rejectPhaseFuture('no-head') end
+   if Args['debug-socket'] then rejectPhaseFuture('debug-socket') end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Normalises derived argument values, including method casing and implicit content types, before validation.
+
+function normaliseArgs(Args:table):table
+   Args.method = Args.method:lower()
+
+   if hasBodyOption(Args) and Args.method is 'get' then
+      Args.method = 'post'
+   end
+
+   if Args.json != nil and Args.contenttype is nil then
+      Args.contenttype = 'application/json'
+   elseif Args.form != nil and Args.contenttype is nil then
+      Args.contenttype = 'application/x-www-form-urlencoded'
+   end
+
+   validatePhaseOneArgs(Args)
+   return Args
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Builds the HTTP object configuration table from validated command-line arguments.
+
+function makeRequestConfig(Args:table):table
+   request = {
+      src            = Args.url,
+      method         = Args.method,
+      connectTimeout = Args['connect-timeout'],
+      dataTimeout    = Args['data-timeout'],
+      userAgent      = Args.useragent,
+      -- Wakes the waiting processing context when the HTTP transfer reaches a terminal state.
+      stateChanged   = function(HTTP:obj, State:num)
+         if State is HGS_COMPLETED or State is HGS_TERMINATED then
+            HTTP.acSignal()
+         end
+      end
+   }
+
+   if Args.output != nil then
+      request.outputFile = Args.output
+   elseif not Args.status then
+      -- Streams response body chunks to standard output when the body is not redirected or suppressed.
+      request.incoming = function(HTTP:obj, Buffer:array)
+         io.write(Buffer:getString())
+      end
+   end
+
+   return request
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Starts the HTTP transfer, waits for completion, and returns the response summary used by output handling.
+
+function fetch(Args:table):table
+   local http = obj.new('http', makeRequestConfig(Args))
+   proc = processing.new({ timeout = Args.timeout, signals = array<object> { http } })
+
+   err = http.acActivate() -- Send asynchronous request
+   assert(err is ERR_Okay, 'Failed to start HTTP request: ' .. mSys.GetErrorMsg(err))
+
+   err = proc.sleep()
+   assert(err is ERR_Okay, 'HTTP request did not complete: ' .. mSys.GetErrorMsg(err))
+
+   if (http.currentState is HGS_TERMINATED or http.error != ERR_Okay) and http.status <= 0 then
+      error('HTTP request failed: ' .. mSys.GetErrorMsg(http.error))
+   end
+
+   return {
+      status = http.status,
+      bytes  = http.index,
+      output = Args.output
+   }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+   args = glParser.process()
+   if args is nil then return end
+
+   args = normaliseArgs(args)
+
+   if args.version then
+      print('Tuku ' .. TUKU_VERSION)
+      return
+   end
+
+   result = fetch(args)
+   if args.status then
+      print(result.status)
+   end

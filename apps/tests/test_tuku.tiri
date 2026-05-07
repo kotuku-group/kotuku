@@ -1,0 +1,169 @@
+-- Flute tests for the Tuku command-line HTTP client.
+
+   import 'net/httpserver'
+
+SERVER_PORT <const> = 18952
+glOutputFile <const> = 'temp:tuku-test-output.txt'
+
+function resolveFirstPath(Candidates:array):str
+   for candidate in values(Candidates) do
+      err, resolved = mSys.ResolvePath(candidate)
+      if err is ERR_Okay then return resolved end
+   end
+
+   error('Unable to resolve any candidate path')
+end
+
+@BeforeAll function init(State)
+   global glOrigoPath = resolveFirstPath(array<string> {
+      'build/agents-install/origo',
+      'build/agents-install/origo.exe',
+      'origo',
+      'origo.exe',
+      '../agents-install/origo',
+      '../agents-install/origo.exe',
+      '../../build/agents-install/origo',
+      '../../build/agents-install/origo.exe'
+   })
+   global glTukuPath = resolveFirstPath(array<string> {
+      'apps/tuku.tiri',
+      '../agents-install/apps/tuku.tiri',
+      '../../apps/tuku.tiri'
+   })
+
+   global glServer = hslib.start({
+      port    = SERVER_PORT,
+      folder  = State.folder,
+      verbose = true,
+      routes = {
+         { pattern = '/hello',
+            method = 'GET',
+            handler = function(req, res)
+               res.send('hello from tuku')
+            end
+         },
+         { pattern = '/head',
+            method = 'GET',
+            handler = function(req, res)
+               res.send('')
+            end
+         },
+         { pattern = '/options',
+            method = 'OPTIONS',
+            handler = function(req, res)
+               res.status(204).send('')
+            end
+         }
+      }
+   })
+end
+
+@AfterAll function cleanup()
+   glServer.stop()
+   mSys.DeleteFile(glOutputFile)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function runTuku(Parameters:array):table
+   local output = ''
+   local errors = ''
+   local task_params = array<string> { glTukuPath }
+
+   for param in values(Parameters) do
+      task_params:push(param)
+   end
+   task_params:push('--log-warning')
+
+   local task = obj.new('task', {
+      src = glOrigoPath,
+      args = task_params:join(' '),
+      flags = TSF_WAIT,
+      timeOut = 10,
+      outputCallback = function(Task:obj, Buffer:array)
+         output ..= Buffer:getString()
+      end,
+      errorCallback = function(Task:obj, Buffer:array)
+         errors ..= Buffer:getString()
+      end
+   })
+
+   check task.acActivate()
+
+   return {
+      returnCode = task.returnCode,
+      output     = output,
+      errors     = errors,
+      text       = output .. errors
+   }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineHelpListsFutureOptions()
+   result = runTuku(array<string> { 'help' })
+
+   assert(result.returnCode is 0, 'Help should return 0, got ' .. result.returnCode)
+   assert(result.text:find('header=HEADER'), 'Help should include future header option')
+   assert(result.text:find('json=JSON'), 'Help should include future JSON option')
+   assert(result.text:find('debug-socket'), 'Help should include future socket debug option')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineRejectsFutureBodyOptionsForPhaseOne()
+   result = runTuku(array<string> { f'url=http://127.0.0.1:{SERVER_PORT}/hello', 'json={}' })
+
+   assert(result.returnCode != 0, 'Future body option should fail in phase 1')
+   assert(result.errors:find('Phase 1 supports'), 'Unexpected error output: ' .. result.errors)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineParserErrorsFail()
+   result = runTuku(array<string> { 'timeout=abc' })
+
+   assert(result.returnCode != 0, 'Parser-level argument errors should fail')
+   assert(result.text:find("Parameter 'timeout' requires a number."),
+      'Unexpected parser error output: ' .. result.text)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineFetchWritesOutputFile()
+   result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/hello',
+      'output=' .. glOutputFile,
+      'timeout=5',
+      'connect-timeout=2',
+      'data-timeout=3'
+   })
+
+   assert(result.returnCode is 0, 'GET should return 0, got ' .. result.returnCode .. ': ' .. result.errors)
+   assert(io.readAll(glOutputFile) is 'hello from tuku', 'Output file content mismatch')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineHeadAndOptionsStatus()
+   head_result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/head',
+      'method=head',
+      'status',
+      'timeout=5'
+   })
+
+   assert(head_result.returnCode is 0, 'HEAD should return 0: ' .. head_result.errors)
+   assert(head_result.text:trim() is '200', 'HEAD status should be 200, got ' .. head_result.text)
+
+   options_result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/options',
+      'method=options',
+      'status',
+      'timeout=5'
+   })
+
+   assert(options_result.returnCode is 0, 'OPTIONS should return 0: ' .. options_result.errors)
+   assert(options_result.text:trim() is '200' or options_result.text:trim() is '204',
+      'OPTIONS status should be successful, got ' .. options_result.text)
+end
