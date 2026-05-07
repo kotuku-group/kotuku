@@ -185,16 +185,21 @@ end
    parser = options({
       args = array<table> {
          { names = array<string> { 'verbose', 'v' }, kind = 'flag', type = 'bool', default = false },
-         { name = 'dry-run', kind = 'flag', type = 'bool' }
+         { name = 'dry-run', kind = 'flag', type = 'bool' },
+         { name = 'browser', kind = 'flag', default = true }
       }
    })
 
    local args = parser.process(array<string> { 'verbose', 'no-dry-run' })
    assert(args.verbose is true, 'Bare flag should parse as true')
    assert(args['dry-run'] is false, 'no- flag should parse as false')
+   assert(args.browser is true, 'Flag default should convert to a boolean when type is omitted')
 
    args = parser.process(array<string> { 'v=0' })
    assert(args.verbose is false, 'Explicit flag values should use boolean conversion')
+
+   args = parser.process(array<string> { 'no-browser' })
+   assert(args.browser is false, 'no- flag should parse as false when type is omitted')
 end
 
 @Test function NegationOnlyAppliesToFlags()
@@ -766,9 +771,9 @@ end
       description = 'View vector documents',
       epilog      = 'End of help.',
       args = array<table> {
-         { name = 'input', kind = 'positional', type = 'file', required = true, comment = 'Input document' },
          { names = array<string> { 'output', 'o' }, type = 'file', metavar = 'PATH', default = 'preview.png',
             comment = 'Output preview' },
+         { name = 'input', kind = 'positional', type = 'file', required = true, comment = 'Input document' },
          { names = array<string> { 'verbose', 'v' }, kind = 'flag', type = 'bool', comment = 'Enable logs' }
       }
    })
@@ -777,6 +782,7 @@ end
    assert(usage:find('Usage: vuepoint'), 'Usage should include the parser name')
    assert(usage:find('<INPUT>'), 'Usage should include required positionals')
    assert(usage:find('output=PATH'), 'Usage should include option metavars')
+   assert(usage:find('<INPUT>') < usage:find('output=PATH'), 'Usage should list positionals before options')
 
    help = parser.getHelp()
    assert(help:find('View vector documents'), 'Normal help should include the description')

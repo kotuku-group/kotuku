@@ -10,6 +10,7 @@ A file viewer for recognised documents like SVG and RIPL
    import 'gui/listview'
    import 'gui/scrollbar'
    import 'gui/filedialog'
+   import 'options'
    include 'svg'
    include 'picture'
 
@@ -30,9 +31,9 @@ glIntroduction = [[
 
 <page name="Index">
 
-<p><font face="Noto Serif" size="3em"><image src="url(#logo)" width="50" height="50"/> <i>VuePoint</i></font></p>
+<p><font face="Noto Serif" size="3em"><image src="url(#logo)" width="50" height="50"/> <i>Vuepoint</i></font></p>
 
-<p>VuePoint is a simple file browser that supports the following file types:</p>
+<p>Vuepoint is a simple file browser that supports the following file types:</p>
 
 <p indent="1em">SVG, RIPL, JPEG, PNG</p>
 
@@ -42,15 +43,32 @@ glIntroduction = [[
 
 <p indent="1em"><table collapsed="true" cell-padding="0.2em" columns="12%,88%" width="90%">
 <row><th>Parameter</th><th>Description</th></row>
+<row><cell><p>&lt;file&gt;</p></cell><cell>A source file to load and display in the application.</cell></row>
 <row><cell><p>width</p></cell><cell>Width of the application window</cell></row>
 <row><cell><p>height</p></cell><cell>Height of the application window.</cell></row>
 <row><cell><p>path</p></cell><cell>Path to use in the file selector.</cell></row>
-<row><cell><p>file</p></cell><cell>A source file to load and display in the application.</cell></row>
 <row><cell><p>no-browser</p></cell><cell>Hide the file browser.</cell></row>
 </table></p>
 
 </page>
 ]]
+
+   glParser = options({
+      name        = 'Vuepoint',
+      description = 'A file viewer for recognised documents like SVG, RIPL, JPEG, and PNG.',
+      autoHelp    = false,
+      args        = array<table> {
+         { name = 'width', type = 'int', default = 1024, comment = 'Width of the application window.' },
+         { name = 'height', type = 'int', default = 800, comment = 'Height of the application window.' },
+         { name = 'path', type = 'path', default = ':', comment = 'Path to use in the file selector.' },
+         { name = 'file', kind = 'positional', type = 'file', comment = 'A source file to load and display in the application.' },
+         { name = 'browser', kind = 'flag', default = true, comment = 'Show or hide the file browser panel.' },
+         { name = 'animate', kind = 'flag', default = true, comment = 'Enables automated animation.' }
+      }
+   })
+
+   glArgs = glParser.process()
+   if glArgs is nil then return end
 
    local glWindow, glFileView, glTerminateView, glScrollbar, glViewArea, glStats, glAppBar, glSaveRoutine
 
@@ -121,6 +139,8 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 function displayInlineDoc(Content:str, Parameters:table)
+   msg('displayInlineDoc()')
+
    doc = glViewArea.new('document', { })
    if Parameters then
       for k, v in pairs(Parameters) do
@@ -149,7 +169,10 @@ function displaySVG(Path:str)
    svg = vp.new('svg', { target=vp, path=Path, flags=SVF_ENFORCE_TRACKING })
 
    if svg.frameRate < 60 then svg.frameRate = 60 end
-   svg.acActivate() -- Animation support
+
+   if glArgs.animate then
+      svg.acActivate()
+   end
 
    glTerminateView = function()
       vp.free()
@@ -157,6 +180,8 @@ function displaySVG(Path:str)
 end
 
 function displayDoc(Path:str)
+   msg(f'displayDoc() {Path}')
+
    doc = glViewArea.new('document', { path = Path .. '#Index' })
 
    configureScrollbar(doc.view, doc.page)
@@ -167,6 +192,8 @@ function displayDoc(Path:str)
 end
 
 function displayImage(Path:str)
+   msg(f'displayImage() {Path}')
+
    try
       pic = glWindow.scene.new('picture', { src=Path, flags='ForceAlpha32' })
       img = glWindow.scene.new('VectorImage', { picture = pic })
@@ -234,9 +261,9 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
    glWindow = gui.window({
-      width      = arg('width', 1024),
-      height     = arg('height', 800),
-      title      = 'VuePoint',
+      width      = glArgs.width,
+      height     = glArgs.height,
+      title      = 'Vuepoint',
       icon       = 'icons:programs/pictureviewer',
       minHeight  = 400,
       minWidth   = 600,
@@ -245,7 +272,7 @@ end
 
    glViewport = glWindow:clientViewport({ aspectRatio = ARF_MEET })
 
-   if arg('no-browser') then
+   if glArgs.browser != true then
       glViewArea = glViewport.new('VectorViewport', {
         x=glWindow.margins.left, y=glWindow.margins.top,
         xOffset=glWindow.margins.right, yOffset=glWindow.margins.top
@@ -266,7 +293,7 @@ end
          style       = 'list',
          toolBar     = { navigation=true, views=true },
          displayPath = true,
-         path        = arg('path', ':'),
+         path        = glArgs.path,
          filterList = glOpenFilter,
          fileSelected = function(FileView:table)
             displayFile(FileView.selectionPath())
@@ -350,8 +377,8 @@ end
 
    -- Display a file from the commandline, or show the application documentation.
 
-   if arg('file')?? then
-      displayFile(arg('file'))
+   if glArgs.file?? then
+      displayFile(glArgs.file)
    else
       doc = glViewArea.new('document', { })
       doc.acDataFeed(nil, DATA_XML, glBody .. glIntroduction)

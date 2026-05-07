@@ -138,7 +138,7 @@ function clone_definition(Definition:table):table
 
    param.name      = canonical
    param.kind     ?= 'option'
-   param.type     ?= 'str'
+   param.type     ?= param.kind is 'flag' ? 'bool' :> 'str'
    param.required ?= false
    param.multiple ?= false
    param.hidden   ?= false
@@ -1122,7 +1122,13 @@ end
 function build_usage(Parser:table):str
    text = f"Usage: {Parser.name}"
 
+   for param in values(Parser._positionals) do
+      if param.hidden then continue end
+      text ..= ' ' .. usage_token(param)
+   end
+
    for param in values(Parser._params) do
+      if param.kind is 'positional' then continue end
       if param.hidden then continue end
       text ..= ' ' .. usage_token(param)
    end
