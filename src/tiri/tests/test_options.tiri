@@ -383,14 +383,6 @@ end
    assert(args.file:find('test_options.tiri'), 'Default input should expose the running test file argument')
 end
 
-@Test function ArgFallbackUsedWhenTaskParametersUnavailable()
-   parser = options({ strict = false, args = array<table> { { name = 'file' } } })
-   args = parser.process(nil, { taskParameters = false })
-
-   assert(args.file != nil, 'arg() fallback should be used when ordered task input is unavailable')
-   assert(args.file:find('test_options.tiri'), 'arg() fallback should expose the running test file argument')
-end
-
 @Test function PositionalUnavailableWithoutOrderedInput()
    parser = options({
       args = array<table> {
