@@ -934,7 +934,55 @@ end
    error('addParam() should reject help parameters when automatic help is enabled')
 end
 
-@Test function ManualHelpParameterBypassesRequiredValidation()
+@Test function ExplicitHelpBypassesRequiredValidationWhenAutoHelpDisabled()
+   seen_text = nil
+   seen_topic = nil
+   parser = options({
+      name = 'convert',
+      autoHelp = false,
+      onHelp = function(Parser:table, Text:str, Topic:any)
+         seen_text = Text
+         seen_topic = Topic
+      end,
+      args = array<table> {
+         { name = 'input', kind = 'positional', type = 'file', required = true },
+         { name = 'output', kind = 'option', type = 'file', required = true }
+      }
+   })
+
+   returned = parser.process(array<string> { 'help' })
+   assert(returned is nil, 'Explicit help should be handled before required validation')
+   assert(seen_topic is nil, 'Bare help should request normal help')
+   assert(seen_text:find('Usage: convert'), 'Explicit help should generate normal help text')
+
+   result, err = parser.tryProcess(nil, {
+      taskParameters = array<string> { '--log-warning', 'test.tiri', 'help' }
+   })
+   assert(err is nil, 'Task-parameter help should not validate required arguments')
+   assert(result.help is true, 'Task-parameter help should return a structured help result')
+   assert(result.text:find('Usage: convert'), 'Task-parameter help should include normal help text')
+
+   result, err = parser.tryProcess(array<string> { 'help=output' })
+   assert(err is nil, 'Help topics should not validate required arguments')
+   assert(result.topic is 'output', 'Help should preserve explicit topics')
+   assert(result.text:find('output:'), 'Help topics should generate detailed help text')
+
+   positioned = options({
+      autoHelp = false,
+      args = array<table> {
+         { name = 'input', kind = 'positional', required = true },
+         { name = 'output', kind = 'positional', required = true }
+      }
+   })
+
+   args = positioned.process(array<string> { 'abc', 'help' })
+   assert(args.input is 'abc' and args.output is 'help', 'Manual help after another argument should parse normally')
+
+   args = positioned.process(array<string> { 'help', 'abc' })
+   assert(args.input is 'help' and args.output is 'abc', 'Manual help before another argument should parse normally')
+end
+
+@Test function DeclaredHelpParameterOverridesBuiltInHelpWhenAutoHelpDisabled()
    seen_text = nil
    seen_topic = nil
    parser = options({
@@ -952,38 +1000,27 @@ end
    })
 
    returned = parser.process(array<string> { 'help' })
-   assert(returned is nil, 'Manual help should be handled before required validation')
-   assert(seen_topic is nil, 'Manual bare help should request normal help')
-   assert(seen_text:find('Usage: convert'), 'Manual help should generate normal help text')
-
-   result, err = parser.tryProcess(nil, {
-      taskParameters = array<string> { '--log-warning', 'test.tiri', 'help' }
-   })
-   assert(err is nil, 'Manual task-parameter help should not validate required arguments')
-   assert(result.help is true, 'Manual task-parameter help should return a structured help result')
-   assert(result.text:find('Usage: convert'), 'Manual task-parameter help should include normal help text')
+   assert(returned is nil, 'Declared help should be handled before required validation')
+   assert(seen_topic is nil, 'Declared bare help should request normal help')
+   assert(seen_text:find('Usage: convert'), 'Declared help should generate normal help text')
 
    result, err = parser.tryProcess(array<string> { 'help=output' })
-   assert(err is nil, 'Manual help topics should not validate required arguments')
-   assert(result.topic is 'output', 'Manual help should preserve explicit topics')
-   assert(result.text:find('output:'), 'Manual help topics should generate detailed help text')
+   assert(err is nil, 'Declared help topics should not validate required arguments')
+   assert(result.topic is 'output', 'Declared help should preserve explicit topics')
+   assert(result.text:find('output:'), 'Declared help topics should generate detailed help text')
 
-   positioned = options({
+   args = parser.process(array<string> { 'input.svg', 'output=preview.png', 'help' })
+   assert(args.input is 'input.svg', 'Declared help after another argument should parse normally')
+   assert(args.output is 'preview.png', 'Declared help should not consume neighbouring arguments')
+   assert(args.help is true, 'Declared help after another argument should parse as the declared help flag')
+
+   args = options({
       autoHelp = false,
       args = array<table> {
-         { name = 'input', kind = 'positional', required = true },
-         { name = 'output', kind = 'positional', required = true },
          { name = 'help', kind = 'flag', type = 'bool' }
       }
-   })
-
-   args = positioned.process(array<string> { 'abc', 'help' })
-   assert(args.input is 'abc' and args.output is 'help', 'Manual help after another argument should parse normally')
-   assert(args.help is nil, 'Manual help after another argument should not parse as the declared help flag')
-
-   args = positioned.process(array<string> { 'help', 'abc' })
-   assert(args.input is 'help' and args.output is 'abc', 'Manual help before another argument should parse normally')
-   assert(args.help is nil, 'Manual help before another argument should not parse as the declared help flag')
+   }).process(array<string> { 'help=false' })
+   assert(args.help is false, 'Declared help=false should parse instead of falling through to built-in help')
 end
 
 @Test function UnsupportedHelpFormatsFail()
@@ -1010,13 +1047,19 @@ end
 
 @Test function AutoHelpCanBeDisabled()
    disabled = options({
+      name = 'viewer',
       autoHelp = false,
       args = array<table> {
-         { name = 'file' }
+         { name = 'file', required = true }
       }
    })
 
-   expect_error(disabled, array<string> { 'help' }, ERR_ParameterUnknown, "Unknown parameter 'help'.")
+   result, err = disabled.tryProcess(array<string> { 'help' })
+   assert(err is nil, 'Explicit help should still work when autoHelp is disabled')
+   assert(result.help is true, 'Explicit help should return a structured help result')
+   assert(result.text:find('Usage: viewer'), 'Explicit help should include normal help text')
+
+   expect_error(disabled, array<string> { }, ERR_ParameterRequired, "Required parameter 'file' is missing.")
 end
 
 @Test function OnErrorInstructions()
@@ -1168,17 +1211,14 @@ end
       commands = array<table> {
          { name = 'help' }
       }
-   }, ERR_DuplicateValue, "Command name or alias 'help' conflicts with automatic help token 'help'.")
+   }, ERR_DuplicateValue, "Command name or alias 'help' conflicts with the reserved help token.")
 
-   help_command = options({
+   expect_options_error({
       autoHelp = false,
       commands = array<table> {
          { name = 'help' }
       }
-   })
-
-   result = help_command.process(array<string> { 'help' })
-   assert(result.command is 'help', 'Disabling automatic help should allow a help command')
+   }, ERR_DuplicateValue, "Command name or alias 'help' conflicts with the reserved help token.")
 end
 
 @Test function LaterGlobalParamCannotHideCommand()

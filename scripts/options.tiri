@@ -794,7 +794,7 @@ end
 
 function parse_ordered_input(Parser:table, Result:table, ArgNames:table, Presence:table, Input:array)
    pos_index = 0
-   use_help_param = #Input is 1
+   use_help_param = #Input is 1 or (not Parser.autoHelp and Parser._named_lookup[Parser.helpArg] != nil)
 
    for token in values(Input) do
       assert(type(token) is 'string', 'Command-line input must contain strings')
@@ -1666,7 +1666,14 @@ function declared_help_result(Param:table, Value:any, HasExplicitValue:bool):<bo
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Detect manual help requests through a named help parameter when automatic help is disabled.
+-- Return true when the parser has a caller-declared help parameter that owns the help token.
+
+function has_declared_help_override(Parser:table):bool
+   return not Parser.autoHelp and Parser._named_lookup[Parser.helpArg] != nil
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Detect help requests through a caller-declared help parameter from older parser configurations.
 
 function find_declared_ordered_help(Parser:table, Input:array):<bool, str>
    if Parser.autoHelp then return false, nil end
@@ -1684,7 +1691,7 @@ function find_declared_ordered_help(Parser:table, Input:array):<bool, str>
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Detect manual help requests in keyed input when automatic help is disabled.
+-- Detect keyed help requests through a caller-declared help parameter from older parser configurations.
 
 function find_declared_table_help(Parser:table, Input:table):<bool, str>
    if Parser.autoHelp then return false, nil end
@@ -1698,10 +1705,10 @@ function find_declared_table_help(Parser:table, Input:table):<bool, str>
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Detect automatic help requests in ordered input.
+-- Detect explicit help requests in ordered input.
 
 function find_ordered_help(Parser:table, Input:array):<bool, str>
-   if not Parser.autoHelp then return false, nil end
+   if has_declared_help_override(Parser) then return false, nil end
    if #Input != 1 then return false, nil end
 
    name, value, has_explicit_value = split_token(Input[0])
@@ -1713,10 +1720,10 @@ function find_ordered_help(Parser:table, Input:array):<bool, str>
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Detect automatic help requests in keyed table input.
+-- Detect explicit help requests in keyed table input.
 
 function find_table_help(Parser:table, Input:table):<bool, str>
-   if not Parser.autoHelp then return false, nil end
+   if has_declared_help_override(Parser) then return false, nil end
 
    for name, value in pairs(Input) do
       if name is Parser.helpArg then
@@ -1729,10 +1736,10 @@ function find_table_help(Parser:table, Input:table):<bool, str>
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Detect automatic help requests through the arg() fallback.
+-- Detect explicit help requests through the arg() fallback.
 
 function find_arg_help(Parser:table):<bool, str>
-   if not Parser.autoHelp then return false, nil end
+   if has_declared_help_override(Parser) then return false, nil end
 
    value = arg(Parser.helpArg, nil)
    if value then
@@ -1994,8 +2001,8 @@ function reject_command_dispatch_collision(Parser:table, Name:str)
       raise ERR_DuplicateValue, f"Command name or alias '{Name}' conflicts with global no- token '{Name}'."
    end
 
-   if Parser.autoHelp and Name is Parser.helpArg then
-      raise ERR_DuplicateValue, f"Command name or alias '{Name}' conflicts with automatic help token '{Name}'."
+   if Name is Parser.helpArg then
+      raise ERR_DuplicateValue, f"Command name or alias '{Name}' conflicts with the reserved help token."
    end
 end
 
@@ -2162,7 +2169,7 @@ create_parser = function(Config:table):table
    Validates and registers a command definition supplied through `commands` or added after construction.  The
    definition may use `name` or `names`; when `names` is supplied, the first name is the canonical command name and
    later names are aliases.  Command aliases must be unique within the parser's command scope and must not collide
-   with global named parameters or the automatic help token.  Command `args` are parsed only after that command is
+   with global named parameters or the reserved help token.  Command `args` are parsed only after that command is
    selected, and command results are returned separately from global parser results.
 
    -INPUT-
@@ -2348,7 +2355,7 @@ create_parser = function(Config:table):table
    Options: Optional parser controls, currently `taskParameters`.
 
    -RESULT-
-   table: Parsed argument table, command result table, or `nil` when automatic help is handled.
+   table: Parsed argument table, command result table, or `nil` when help is handled.
    ]])
    parser.process = function(Input:any, Options:table):table
       local result, err = parser.tryProcess(Input, Options)
