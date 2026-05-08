@@ -47,7 +47,8 @@ module({ name="HTTP", copyright="Paul Manias © 2005-2026", version=1.0, timesta
     "SEARCH: WebDAV instruction.",
     "SUBSCRIBE: WebDAV instruction.",
     "UNLOCK: WebDAV instruction.",
-    "UNSUBSCRIBE: WebDAV instruction.")
+    "UNSUBSCRIBE: WebDAV instruction.",
+    "PATCH: Applies partial modifications to a resource.")
 
   constants("HTS", { type="int", comment="HTTP status codes" }, {
     CONTINUE             = 100,
@@ -131,4 +132,3 @@ module({ name="HTTP", copyright="Paul Manias © 2005-2026", version=1.0, timesta
    int BufferSize         # Preferred buffer size for things like outgoing operations (sending data)
   ]])
 end)
-

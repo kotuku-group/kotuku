@@ -648,8 +648,9 @@ static ERR HTTP_Activate(extHTTP *Self)
          }
          else set_http_method(Self, "OPTIONS", cmd);
       }
-      else if ((Self->Method IS HTM::POST) or (Self->Method IS HTM::PUT)) {
-         log.trace("POST/PUT request being processed.");
+      else if ((Self->Method IS HTM::POST) or (Self->Method IS HTM::PUT) or
+         (Self->Method IS HTM::PATCH)) {
+         log.trace("POST/PUT/PATCH request being processed.");
 
          Self->Chunked = false;
 
@@ -712,20 +713,24 @@ static ERR HTTP_Activate(extHTTP *Self)
                else Self->ContentLength = Self->Size;
             }
             else {
-               log.warning("No data source specified for POST/PUT method.");
+               log.warning("No data source specified for POST/PUT/PATCH method.");
                Self->Error = ERR::FieldNotSet;
                return Self->Error;
             }
 
-            set_http_method(Self, (Self->Method IS HTM::POST) ? "POST" : "PUT", cmd);
+            CSTRING method_name;
+            if (Self->Method IS HTM::POST) method_name = "POST";
+            else if (Self->Method IS HTM::PATCH) method_name = "PATCH";
+            else method_name = "PUT";
+            set_http_method(Self, method_name, cmd);
 
             if (Self->ContentLength >= 0) {
                cmd << "Content-length: " << Self->ContentLength << CRLF;
             }
             else {
-               log.msg("Content-length not defined for POST/PUT (transfer will be streamed).");
+               log.msg("Content-length not defined for POST/PUT/PATCH (transfer will be streamed).");
 
-               // Using chunked encoding for post/put will help the server manage streaming
+               // Using chunked encoding for post/put/patch will help the server manage streaming
                // uploads, and may even be of help when the content length is known.
 
                if ((Self->Flags & HTF::RAW) IS HTF::NIL) {
@@ -738,7 +743,7 @@ static ERR HTTP_Activate(extHTTP *Self)
                log.trace("User content type: %s", Self->ContentType.c_str());
                cmd << "Content-type: " << Self->ContentType << CRLF;
             }
-            else if (Self->Method IS HTM::POST) {
+            else if ((Self->Method IS HTM::POST) or (Self->Method IS HTM::PATCH)) {
                cmd << "Content-type: application/x-www-form-urlencoded" << CRLF;
             }
             else cmd << "Content-type: application/binary" << CRLF;
@@ -849,7 +854,8 @@ static ERR HTTP_Activate(extHTTP *Self)
 
    if (!Self->Tunneling) {
       if (Self->CurrentState != HGS::AUTHENTICATING) {
-         if ((Self->Method IS HTM::PUT) or (Self->Method IS HTM::POST)) {
+         if ((Self->Method IS HTM::PUT) or (Self->Method IS HTM::POST) or
+            (Self->Method IS HTM::PATCH)) {
             Self->Socket->setOutgoing(C_FUNCTION(socket_outgoing));
          }
          else Self->Socket->set(FID_Outgoing, (APTR)nullptr);

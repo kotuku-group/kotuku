@@ -58,6 +58,7 @@
       <const name="MOVE">WebDAV instruction.</const>
       <const name="NOTIFY">WebDAV instruction.</const>
       <const name="OPTIONS">Request permitted communication options for a given URL or server.</const>
+      <const name="PATCH">Applies partial modifications to a resource.</const>
       <const name="POLL">WebDAV instruction.</const>
       <const name="POST">Sends information to the HTTP server.</const>
       <const name="PROPFIND">WebDAV instruction.</const>

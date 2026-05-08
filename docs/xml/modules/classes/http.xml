@@ -432,6 +432,16 @@ http.acActivate()
     </field>
 
     <field>
+      <name>ResponseKeys</name>
+      <comment>Returns a string list of received response keys.</comment>
+      <access read="G">Get</access>
+      <type>STRING []</type>
+      <description>
+<p>This field returns a string list of all the keys found in the HTTP response header.  An empty list will be returned if no keys are found.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Size</name>
       <comment>Set this field to define the length of a data transfer when issuing a <code>POST</code> command.</comment>
       <access read="R" write="W">Read/Write</access>
@@ -532,6 +542,7 @@ http.acActivate()
       <const name="MOVE">WebDAV instruction.</const>
       <const name="NOTIFY">WebDAV instruction.</const>
       <const name="OPTIONS">Request permitted communication options for a given URL or server.</const>
+      <const name="PATCH">Applies partial modifications to a resource.</const>
       <const name="POLL">WebDAV instruction.</const>
       <const name="POST">Sends information to the HTTP server.</const>
       <const name="PROPFIND">WebDAV instruction.</const>
