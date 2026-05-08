@@ -134,7 +134,7 @@ end
 -- Converts an array of name=value or name=@file arguments into multipart/form-data request content.
 
 function buildMultipartBody(Fields:array):<str, str>
-   boundary = '----TukuBoundary' .. tostring(math.floor(mSys.PreciseTime()))
+   boundary = '----TukuBoundary' .. tostring(math.floor(mSys.PreciseTime())) .. string.format('%08x', math.random(0, 0x7FFFFFFF))
    crlf <const> = '\r\n'
    body = ''
 
@@ -626,6 +626,24 @@ function clearBodyOptions(Args:table)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Removes sensitive headers (Authorization, Cookie) from a custom header array.
+
+function filterSensitiveHeaders(Headers:array):array
+   result = array<string>
+   for header in values(Headers) do
+      name = tostring(header)
+      colon = name:find(':')
+      if colon != nil then
+         name = name:substr(0, colon):trim():lower()
+      end
+      if name != 'authorization' and name != 'cookie' then
+         result:push(header)
+      end
+   end
+   return result
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Mutates request arguments for the next hop in a redirect chain.
 
 function applyRedirect(Args:table, Result:table)
@@ -638,7 +656,20 @@ function applyRedirect(Args:table, Result:table)
       raise ERR_Failed, message
    end
 
-   if Result.status is 303 or ((Result.status is 301 or Result.status is 302) and Args.method is 'post') then
+   if not url.sameOrigin(Args.url, next_url) then
+      Args.username = nil
+      Args.password = nil
+      if Args.header != nil then
+         Args.header = filterSensitiveHeaders(Args.header)
+      end
+   end
+
+   if Result.status is 303 then
+      if Args.method != 'head' then
+         Args.method = 'get'
+      end
+      clearBodyOptions(Args)
+   elseif (Result.status is 301 or Result.status is 302) and Args.method is 'post' then
       Args.method = 'get'
       clearBodyOptions(Args)
    end

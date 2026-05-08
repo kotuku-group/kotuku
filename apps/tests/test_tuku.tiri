@@ -36,6 +36,23 @@ end
    global glFollowNoRedirectHits = 0
    global glFollowRedirectTargetHits = 0
 
+   global glServer2 = hslib.start({
+      port    = SERVER_PORT + 1,
+      folder  = State.folder,
+      verbose = true,
+      routes = {
+         { pattern = '/echo-auth',
+            method = 'GET',
+            handler = function(req, res)
+               res.json({
+                  authorization = req.headers['authorization'] ?? '',
+                  cookie        = req.headers['cookie'] ?? ''
+               })
+            end
+         }
+      }
+   })
+
    global glServer = hslib.start({
       port    = SERVER_PORT,
       folder  = State.folder,
@@ -203,6 +220,42 @@ end
                   parsedBody  = req.parsedBody
                })
             end
+         },
+         { pattern = '/redirect-head-303',
+            method = 'GET',
+            handler = function(req, res)
+               res.redirect('/echo-method', 303)
+            end
+         },
+         { pattern = '/echo-method',
+            method = 'GET',
+            handler = function(req, res)
+               res.header('X-Request-Method', req.method)
+               res.send(req.method, 'text/plain')
+            end
+         },
+         { pattern = '/echo-auth',
+            method = 'GET',
+            handler = function(req, res)
+               res.json({
+                  authorization = req.headers['authorization'] ?? '',
+                  cookie        = req.headers['cookie'] ?? ''
+               })
+            end
+         },
+         { pattern = '/redirect-cross-origin',
+            method = 'GET',
+            handler = function(req, res)
+               res.status(302)
+                  .header('Location', 'http://127.0.0.1:' .. tostring(SERVER_PORT + 1) .. '/echo-auth')
+                  .send('redirect', 'text/plain')
+            end
+         },
+         { pattern = '/redirect-same-origin',
+            method = 'GET',
+            handler = function(req, res)
+               res.redirect('/echo-auth', 302)
+            end
          }
       }
    })
@@ -210,6 +263,7 @@ end
 
 @AfterAll function cleanup()
    glServer.stop()
+   glServer2.stop()
    mSys.DeleteFile(glOutputFile)
    mSys.DeleteFile(glOutputFile .. '.tuku-resume')
    mSys.DeleteFile(glOutputFile .. '.tuku-follow')
@@ -929,4 +983,56 @@ end
    assert(bad_port.returnCode != 0, 'Proxy with out-of-range port should fail')
    assert(bad_port.text:find("Parameter 'proxy' requires a port between 1 and 65535."),
       'Proxy bad port diagnostic mismatch: ' .. bad_port.text)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineRedirect303PreservesHeadMethod()
+   result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/redirect-head-303',
+      'method=head',
+      'follow',
+      'headers',
+      'status',
+      'timeout=5'
+   })
+
+   assert(result.returnCode is 0, '303 HEAD redirect should return 0: ' .. result.errors)
+   assert(result.output:trim() is '200', '303 HEAD redirect should report final 200 status, got: ' .. result.output)
+   assert(result.text:find('x-request-method=HEAD'),
+      '303 redirect should preserve HEAD method: ' .. result.text)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineRedirectStripsCredentialsOnCrossOrigin()
+   result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/redirect-cross-origin',
+      'user=secret:pass',
+      'header={Authorization:Bearer token123}',
+      'follow',
+      'timeout=5'
+   })
+
+   assert(result.returnCode is 0, 'Cross-origin redirect should return 0: ' .. result.errors)
+
+   response = json.decode(result.output)
+   assert(response.authorization is '', 'Cross-origin redirect should strip Authorization header: ' .. result.output)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineRedirectPreservesCredentialsOnSameOrigin()
+   result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/redirect-same-origin',
+      'header={Authorization:Bearer keep-me}',
+      'follow',
+      'timeout=5'
+   })
+
+   assert(result.returnCode is 0, 'Same-origin redirect should return 0: ' .. result.errors)
+
+   response = json.decode(result.output)
+   assert(response.authorization is 'Bearer keep-me',
+      'Same-origin redirect should preserve Authorization header: ' .. result.output)
 end
