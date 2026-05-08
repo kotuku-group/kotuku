@@ -44,6 +44,20 @@ end
                res.send('hello from tuku')
             end
          },
+         { pattern = '/headers',
+            method = 'GET',
+            handler = function(req, res)
+               res.header('Content-Type', 'text/plain')
+               res.header('Location', '/next')
+               res.send('header-body')
+            end
+         },
+         { pattern = '/missing',
+            method = 'GET',
+            handler = function(req, res)
+               res.status(404).send('missing')
+            end
+         },
          { pattern = '/head',
             method = 'GET',
             handler = function(req, res)
@@ -283,4 +297,70 @@ end
    assert(options_result.returnCode is 0, 'OPTIONS should return 0: ' .. options_result.errors)
    assert(options_result.text:trim() is '200' or options_result.text:trim() is '204',
       'OPTIONS status should be successful, got ' .. options_result.text)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineStatusOnlyUsesStdout()
+   result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/hello',
+      'status',
+      'timeout=5'
+   })
+
+   assert(result.returnCode is 0, 'Status-only GET should return 0: ' .. result.errors)
+   assert(result.output is '200\n', 'Status should be written predictably to stdout, got: ' .. result.output)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineFailTreatsHttpErrorStatusAsFailure()
+   normal_result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/missing',
+      'status',
+      'timeout=5'
+   })
+
+   assert(normal_result.returnCode is 0, 'HTTP 404 should not fail without fail=true: ' .. normal_result.errors)
+   assert(normal_result.output is '404\n', 'Non-failing 404 should still report status, got: ' .. normal_result.text)
+
+   fail_result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/missing',
+      'fail',
+      'status',
+      'timeout=5'
+   })
+
+   assert(fail_result.returnCode != 0, 'HTTP 404 should fail when fail=true')
+   assert(fail_result.output is '404\n', 'Failing HTTP status should still be printed predictably')
+   assert(fail_result.text:find('tuku: error: type=http status=404'),
+      'Structured HTTP error line missing: ' .. fail_result.text)
+   assert(fail_result.text:find('HTTP status 404'), 'HTTP failure message missing: ' .. fail_result.text)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineVerbosePrintsSummaryAndSelectedHeaders()
+   result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/headers',
+      'output=' .. glOutputFile,
+      'verbose',
+      'timeout=5'
+   })
+
+   assert(result.returnCode is 0, 'Verbose GET should return 0: ' .. result.errors)
+   assert(io.readAll(glOutputFile) is 'header-body', 'Verbose output file content mismatch')
+   assert(result.text:find('tuku: method=GET'), 'Verbose summary should include method: ' .. result.text)
+   assert(result.text:find(f'tuku: url=http://127.0.0.1:{SERVER_PORT}/headers'),
+      'Verbose summary should include URL: ' .. result.text)
+   assert(result.text:find('tuku: status=200'), 'Verbose summary should include status: ' .. result.text)
+   assert(result.text:find('tuku: bytes=11'), 'Verbose summary should include byte count: ' .. result.text)
+   assert(result.text:find('tuku: output=' .. glOutputFile), 'Verbose summary should include output target')
+   assert(result.text:find('tuku: transport=Okay'), 'Verbose summary should include transport status')
+   assert(result.text:find('tuku: header content-type='),
+      'Verbose summary should include content-type header: ' .. result.text)
+   assert(result.text:find('tuku: header content-length=11'),
+      'Verbose summary should include content-length header: ' .. result.text)
+   assert(result.text:find('tuku: header location=/next'),
+      'Verbose summary should include location header: ' .. result.text)
 end

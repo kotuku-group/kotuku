@@ -9,6 +9,8 @@ Tuku: A small HTTP/HTTPS client for Tiri command-line workflows.
 
 TUKU_VERSION <const> = '2026.5.7'
 TUKU_USER_AGENT <const> = 'Tuku/1.0 Kotuku'
+glResponseHeaderNames = array<string> { 'content-type', 'content-length', 'location' }
+glReportedError = false
 
 glOptionDefs = array<table> {
    { name = 'url', type = 'str', group = 'Core',
@@ -173,8 +175,6 @@ function validateArgs(Args:table)
       error("Parameter 'url' must start with http:// or https://.")
    end
 
-   if Args.fail then rejectPhaseFuture('fail') end
-   if Args.verbose then rejectPhaseFuture('verbose') end
    if Args.proxy != nil then rejectPhaseFuture('proxy') end
    if Args.insecure then rejectPhaseFuture('insecure') end
    if Args.resume then rejectPhaseFuture('resume') end
@@ -285,6 +285,82 @@ function applyRequestHeaders(HTTP:obj, Args:table)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Prints a stable, machine-friendly error line before raising a command failure.
+
+function reportError(Type:str, Message:str, Status:num, Code:num)
+   text = f"tuku: error: type={Type}"
+   if Status != nil then text ..= f" status={Status}" end
+   if Code != nil then text ..= f" code={Code}" end
+   text ..= " message=" .. Message
+
+   glReportedError = true
+   print(text)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Looks up a response header through HTTP.GetKey(), returning nil when the class does not expose it.
+
+function getResponseHeader(HTTP:obj, Name:str):str
+   value = HTTP.getKey(Name)
+   if value is nil or value is '' then return nil end
+   return value
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Returns the selected response headers that are useful for command-line automation.
+
+function readResponseHeaders(HTTP:obj):table
+   headers = {}
+
+   for name in values(glResponseHeaderNames) do
+      value = getResponseHeader(HTTP, name)
+      if value != nil then
+         headers[name] = value
+      end
+   end
+
+   return headers
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Prints the verbose transfer summary in a stable line-oriented format.
+
+function printVerboseSummary(Args:table, Result:table)
+   print('tuku: method=' .. Args.method:upper())
+   print('tuku: url=' .. Args.url)
+   print('tuku: status=' .. tostring(Result.status))
+   print('tuku: bytes=' .. tostring(Result.bytes))
+   print('tuku: output=' .. (Result.output ?? 'stdout'))
+   print('tuku: transport=' .. Result.transportErrorText)
+
+   for name in values(glResponseHeaderNames) do
+      value = Result.headers[name]
+      if value != nil then
+         print(f"tuku: header {name}={value}")
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Parses command-line options while keeping help and parser errors under Tuku's output policy.
+
+function parseCommandLine():table
+   args, err = glParser.tryProcess()
+
+   if err != nil then
+      reportError('argument', err.message, nil, err.code)
+      raise err.code, err.message
+   end
+
+   if args != nil and args.text != nil and args._helpMarker != nil then
+      print(args.text)
+      return nil
+   end
+
+   return args
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Starts the HTTP transfer, waits for completion, and returns the response summary used by output handling.
 
 function fetch(Args:table):table
@@ -293,35 +369,61 @@ function fetch(Args:table):table
    proc = processing.new({ timeout = Args.timeout, signals = array<object> { http } })
 
    err = http.acActivate() -- Send asynchronous request
-   assert(err is ERR_Okay, 'Failed to start HTTP request: ' .. mSys.GetErrorMsg(err))
+   if err is ERR_Okay then
+      err = proc.sleep()
+   end
 
-   err = proc.sleep()
-   assert(err is ERR_Okay, 'HTTP request did not complete: ' .. mSys.GetErrorMsg(err))
-
-   if (http.currentState is HGS_TERMINATED or http.error != ERR_Okay) and http.status <= 0 then
-      error('HTTP request failed: ' .. mSys.GetErrorMsg(http.error))
+   transport_error = http.error
+   if err != ERR_Okay and transport_error is ERR_Okay then
+      transport_error = err
    end
 
    return {
-      status = http.status,
-      bytes  = http.index,
-      output = Args.output
+      status             = http.status,
+      bytes              = http.index,
+      output             = Args.output,
+      headers            = readResponseHeaders(http),
+      transportError     = transport_error,
+      transportErrorText = (transport_error is ERR_Okay) ? 'Okay' :> mSys.GetErrorMsg(transport_error)
    }
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-   args = glParser.process()
-   if args is nil then return end
+   try
+      args = parseCommandLine()
+      if args is nil then return end
 
-   args = normaliseArgs(args)
+      args = normaliseArgs(args)
 
-   if args.version then
-      print('Tuku ' .. TUKU_VERSION)
-      return
-   end
+      if args.version then
+         print('Tuku ' .. TUKU_VERSION)
+         return
+      end
 
-   result = fetch(args)
-   if args.status then
-      print(result.status)
+      result = fetch(args)
+
+      if args.verbose then
+         printVerboseSummary(args, result)
+      end
+
+      if args.status then
+         io.write(tostring(result.status) .. '\n')
+      end
+
+      if result.transportError != ERR_Okay and result.status <= 0 then
+         reportError('transport', result.transportErrorText, result.status, result.transportError)
+         raise ERR_Failed, result.transportErrorText
+      end
+
+      if args.fail and result.status >= 400 then
+         message = f"HTTP status {result.status}"
+         reportError('http', message, result.status, ERR_Failed)
+         raise ERR_Failed, message
+      end
+   except ex
+      if not glReportedError then
+         reportError('runtime', ex.message, nil, ex.code)
+      end
+      raise ex.code, ex.message
    end
