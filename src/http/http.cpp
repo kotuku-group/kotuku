@@ -1109,6 +1109,7 @@ static const FieldArray clFields[] = {
    { "Outgoing",       FDF_FUNCTIONPTR|FDF_RW,   GET_Outgoing, SET_Outgoing },
    { "Realm",          FDF_STRING|FDF_RW,        GET_Realm, SET_Realm },
    { "RecvBuffer",     FDF_ARRAY|FDF_BYTE|FDF_R, GET_RecvBuffer },
+   { "ResponseKeys",   FDF_ARRAY|FDF_STRING|FDF_ALLOC|FDF_R, GET_ResponseKeys },
    { "Src",            FDF_STRING|FDF_SYNONYM|FD_PRIVATE|FDF_RW, GET_Location, SET_Location }, // Deprecated by URL
    { "URL",            FDF_STRING|FDF_SYNONYM|FDF_RW, GET_Location, SET_Location },
    { "StateChanged",   FDF_FUNCTIONPTR|FDF_RW,   GET_StateChanged, SET_StateChanged },

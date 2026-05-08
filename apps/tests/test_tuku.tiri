@@ -1,0 +1,545 @@
+-- Flute tests for the Tuku command-line HTTP client.
+
+   import 'net/httpserver'
+   import 'json'
+
+SERVER_PORT <const> = 18952
+glOutputFile <const> = 'temp:tuku-test-output.txt'
+glBodyFile <const> = 'temp:tuku-test-body.txt'
+
+function resolveFirstPath(Candidates:array):str
+   for candidate in values(Candidates) do
+      err, resolved = mSys.ResolvePath(candidate)
+      if err is ERR_Okay then return resolved end
+   end
+
+   error('Unable to resolve any candidate path')
+end
+
+@BeforeAll function init(State)
+   global glOrigoPath = resolveFirstPath(array<string> {
+      'build/agents-install/origo',
+      'build/agents-install/origo.exe',
+      'origo',
+      'origo.exe',
+      '../agents-install/origo',
+      '../agents-install/origo.exe',
+      '../../build/agents-install/origo',
+      '../../build/agents-install/origo.exe'
+   })
+   global glTukuPath = resolveFirstPath(array<string> {
+      'apps/tuku.tiri',
+      '../agents-install/apps/tuku.tiri',
+      '../../apps/tuku.tiri'
+   })
+
+   global glServer = hslib.start({
+      port    = SERVER_PORT,
+      folder  = State.folder,
+      verbose = true,
+      routes = {
+         { pattern = '/hello',
+            method = 'GET',
+            handler = function(req, res)
+               res.send('hello from tuku')
+            end
+         },
+         { pattern = '/headers',
+            method = 'GET',
+            handler = function(req, res)
+               res.header('Content-Type', 'text/plain')
+               res.header('Location', '/next')
+               res.header('X-Tuku-List', 'yes')
+               res.send('header-body')
+            end
+         },
+         { pattern = '/range',
+            method = 'GET',
+            handler = function(req, res)
+               if req.headers['range'] is 'bytes=6-' then
+                  res.status(206).header('Content-Range', 'bytes 6-14/15').send('from tuku', 'text/plain')
+               else
+                  res.send('hello from tuku', 'text/plain')
+               end
+            end
+         },
+         { pattern = '/range-ignore',
+            method = 'GET',
+            handler = function(req, res)
+               res.send('hello from tuku', 'text/plain')
+            end
+         },
+         { pattern = f'/http:/127.0.0.1:{SERVER_PORT}/proxy-target',
+            method = 'GET',
+            handler = function(req, res)
+               res.send('proxied tuku', 'text/plain')
+            end
+         },
+         { pattern = '/missing',
+            method = 'GET',
+            handler = function(req, res)
+               res.status(404).send('missing')
+            end
+         },
+         { pattern = '/head',
+            method = 'GET',
+            handler = function(req, res)
+               res.send('')
+            end
+         },
+         { pattern = '/options',
+            method = 'OPTIONS',
+            handler = function(req, res)
+               res.status(204).send('')
+            end
+         },
+         { pattern = '/echo',
+            method = 'POST',
+            handler = function(req, res)
+               res.json({
+                  method      = req.method,
+                  body        = req.body,
+                  contentType = req.headers['content-type'],
+                  userAgent   = req.headers['user-agent'],
+                  accept      = req.headers['accept'],
+                  custom      = req.headers['x-tuku-test'],
+                  parsedBody  = req.parsedBody
+               })
+            end
+         }
+      }
+   })
+end
+
+@AfterAll function cleanup()
+   glServer.stop()
+   mSys.DeleteFile(glOutputFile)
+   mSys.DeleteFile(glOutputFile .. '.tuku-resume')
+   mSys.DeleteFile(glBodyFile)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function quoteTaskParam(Param:str):str
+   if Param:find(' ') is nil and Param:find('"') is nil then
+      return Param
+   end
+
+   return '"' .. Param:replace('"', '\\"') .. '"'
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function runTuku(Parameters:array):table
+   local output = ''
+   local errors = ''
+   local task_params = array<string> { glTukuPath }
+
+   for param in values(Parameters) do
+      task_params:push(quoteTaskParam(param))
+   end
+   task_params:push('--log-warning')
+
+   local task = obj.new('task', {
+      src = glOrigoPath,
+      args = task_params:join(' '),
+      flags = TSF_WAIT,
+      timeOut = 10,
+      outputCallback = function(Task:obj, Buffer:array)
+         output ..= Buffer:getString()
+      end,
+      errorCallback = function(Task:obj, Buffer:array)
+         errors ..= Buffer:getString()
+      end
+   })
+
+   check task.acActivate()
+
+   return {
+      returnCode = task.returnCode,
+      output     = output,
+      errors     = errors,
+      text       = output .. errors
+   }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineHelpListsFutureOptions()
+   result = runTuku(array<string> { 'help' })
+
+   assert(result.returnCode is 0, 'Help should return 0, got ' .. result.returnCode)
+   assert(result.text:find('headers'), 'Help should include response headers option')
+   assert(result.text:find('header=HEADER'), 'Help should include future header option')
+   assert(result.text:find('json=JSON'), 'Help should include future JSON option')
+   assert(result.text:find('debug-socket'), 'Help should include future socket debug option')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineRejectsIncompatibleBodyOptions()
+   result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/echo',
+      'data=plain',
+      'json={}'
+   })
+
+   assert(result.returnCode != 0, 'Incompatible body options should fail')
+   assert(result.text:find("Parameter 'data' excludes 'json'."),
+      'Unexpected body option error output: ' .. result.text)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineParserErrorsFail()
+   result = runTuku(array<string> { 'timeout=abc' })
+
+   assert(result.returnCode != 0, 'Parser-level argument errors should fail')
+   assert(result.text:find("Parameter 'timeout' requires a number."),
+      'Unexpected parser error output: ' .. result.text)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineFetchWritesOutputFile()
+   result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/hello',
+      'output=' .. glOutputFile,
+      'timeout=5',
+      'connect-timeout=2',
+      'data-timeout=3'
+   })
+
+   assert(result.returnCode is 0, 'GET should return 0, got ' .. result.returnCode .. ': ' .. result.errors)
+   assert(io.readAll(glOutputFile) is 'hello from tuku', 'Output file content mismatch')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLinePostsDataAndCustomHeaders()
+   result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/echo',
+      'data=plain-body',
+      'contenttype=text/plain',
+      'header={X-Tuku-Test:phase2,Accept:application/json}',
+      'useragent=Tuku-Test/2.0',
+      'timeout=5'
+   })
+
+   assert(result.returnCode is 0, 'POST data should return 0: ' .. result.errors)
+
+   response = json.decode(result.output)
+   assert(response.method is 'POST', 'Body option should imply POST')
+   assert(response.body is 'plain-body', 'POST body mismatch: ' .. tostring(response.body))
+   assert(response.contentType is 'text/plain', 'Content-Type header mismatch')
+   assert(response.custom is 'phase2', 'Custom header mismatch')
+   assert(response.accept is 'application/json', 'Accept header mismatch')
+   assert(response.userAgent is 'Tuku-Test/2.0', 'User-Agent header mismatch')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLinePostsJsonAndFormBodies()
+   json_result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/echo',
+      'json=[1,2,3]',
+      'timeout=5'
+   })
+
+   assert(json_result.returnCode is 0, 'JSON POST should return 0: ' .. json_result.errors)
+   json_response = json.decode(json_result.output)
+   assert(json_response.contentType is 'application/json', 'JSON should set application/json content type')
+   assert(json_response.parsedBody[0] is 1, 'JSON array body should be parsed by the server')
+   assert(json_response.parsedBody[2] is 3, 'JSON array body value mismatch')
+
+   form_result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/echo',
+      'form={name=Ada,email=ada@example.com}',
+      'timeout=5'
+   })
+
+   assert(form_result.returnCode is 0, 'Form POST should return 0: ' .. form_result.errors)
+   form_response = json.decode(form_result.output)
+   assert(form_response.contentType is 'application/x-www-form-urlencoded',
+      'Form should set application/x-www-form-urlencoded content type')
+   assert(form_response.body is 'name=Ada&email=ada%40example.com',
+      'Form body was not URL encoded as expected: ' .. tostring(form_response.body))
+   assert(form_response.parsedBody.name is 'Ada', 'Form name should round-trip')
+   assert(form_response.parsedBody.email is 'ada@example.com', 'Form email should round-trip')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLinePostsDataFile()
+   io.writeAll(glBodyFile, 'file-body')
+
+   result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/echo',
+      'datafile=' .. glBodyFile,
+      'contenttype=text/plain',
+      'timeout=5'
+   })
+
+   assert(result.returnCode is 0, 'Data file POST should return 0: ' .. result.errors)
+   response = json.decode(result.output)
+   assert(response.body is 'file-body', 'Data file body mismatch')
+   assert(response.contentType is 'text/plain', 'Data file content type mismatch')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineAcceptsUserCredentials()
+   result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/hello',
+      'user=tuku:pass',
+      'timeout=5'
+   })
+
+   assert(result.returnCode is 0, 'GET with user credentials should return 0: ' .. result.errors)
+   assert(result.output is 'hello from tuku', 'User credentials should not disrupt normal GET output')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineHeadAndOptionsStatus()
+   head_result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/head',
+      'method=head',
+      'status',
+      'timeout=5'
+   })
+
+   assert(head_result.returnCode is 0, 'HEAD should return 0: ' .. head_result.errors)
+   assert(head_result.text:trim() is '200', 'HEAD status should be 200, got ' .. head_result.text)
+
+   options_result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/options',
+      'method=options',
+      'status',
+      'timeout=5'
+   })
+
+   assert(options_result.returnCode is 0, 'OPTIONS should return 0: ' .. options_result.errors)
+   assert(options_result.text:trim() is '200' or options_result.text:trim() is '204',
+      'OPTIONS status should be successful, got ' .. options_result.text)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineStatusOnlyUsesStdout()
+   result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/hello',
+      'status',
+      'timeout=5'
+   })
+
+   assert(result.returnCode is 0, 'Status-only GET should return 0: ' .. result.errors)
+   assert(result.output is '200\n', 'Status should be written predictably to stdout, got: ' .. result.output)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineFailTreatsHttpErrorStatusAsFailure()
+   normal_result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/missing',
+      'status',
+      'timeout=5'
+   })
+
+   assert(normal_result.returnCode is 0, 'HTTP 404 should not fail without fail=true: ' .. normal_result.errors)
+   assert(normal_result.output is '404\n', 'Non-failing 404 should still report status, got: ' .. normal_result.text)
+
+   fail_result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/missing',
+      'fail',
+      'status',
+      'timeout=5'
+   })
+
+   assert(fail_result.returnCode != 0, 'HTTP 404 should fail when fail=true')
+   assert(fail_result.output is '404\n', 'Failing HTTP status should still be printed predictably')
+   assert(fail_result.text:find('tuku: error: type=http status=404'),
+      'Structured HTTP error line missing: ' .. fail_result.text)
+   assert(fail_result.text:find('HTTP status 404'), 'HTTP failure message missing: ' .. fail_result.text)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineVerbosePrintsSummaryAndSelectedHeaders()
+   result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/headers',
+      'output=' .. glOutputFile,
+      'verbose',
+      'timeout=5'
+   })
+
+   assert(result.returnCode is 0, 'Verbose GET should return 0: ' .. result.errors)
+   assert(io.readAll(glOutputFile) is 'header-body', 'Verbose output file content mismatch')
+   assert(result.text:find('tuku: method=GET'), 'Verbose summary should include method: ' .. result.text)
+   assert(result.text:find(f'tuku: url=http://127.0.0.1:{SERVER_PORT}/headers'),
+      'Verbose summary should include URL: ' .. result.text)
+   assert(result.text:find('tuku: status=200'), 'Verbose summary should include status: ' .. result.text)
+   assert(result.text:find('tuku: bytes=11'), 'Verbose summary should include byte count: ' .. result.text)
+   assert(result.text:find('tuku: output=' .. glOutputFile), 'Verbose summary should include output target')
+   assert(result.text:find('tuku: transport=Okay'), 'Verbose summary should include transport status')
+   assert(result.text:find('tuku: header content-type='),
+      'Verbose summary should include content-type header: ' .. result.text)
+   assert(result.text:find('tuku: header content-length=11'),
+      'Verbose summary should include content-length header: ' .. result.text)
+   assert(result.text:find('tuku: header location=/next'),
+      'Verbose summary should include location header: ' .. result.text)
+   assert(result.text:find('tuku: header x-tuku-list=yes'),
+      'Verbose summary should include enumerated custom response header: ' .. result.text)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineHeadersPrintsFullResponseHeaderList()
+   result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/headers',
+      'headers',
+      'status',
+      'timeout=5'
+   })
+
+   assert(result.returnCode is 0, 'Headers mode should return 0: ' .. result.errors)
+   assert(result.text:find('tuku: header content-length=11'),
+      'Headers mode should include content-length: ' .. result.text)
+   assert(result.text:find('tuku: header location=/next'),
+      'Headers mode should include location: ' .. result.text)
+   assert(result.text:find('tuku: header x-tuku-list=yes'),
+      'Headers mode should include custom enumerated response header: ' .. result.text)
+   assert(result.output is '200\n', 'Headers and status output should keep status on stdout: ' .. result.output)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineSilentSuppressesNonBodyOutput()
+   result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/headers',
+      'output=' .. glOutputFile,
+      'silent',
+      'verbose',
+      'headers',
+      'status',
+      'timeout=5'
+   })
+
+   assert(result.returnCode is 0, 'Silent diagnostic suppression should return 0: ' .. result.errors)
+   assert(io.readAll(glOutputFile) is 'header-body', 'Silent request should still write the response body')
+   assert(result.text is '', 'Silent should suppress verbose, header and status output: ' .. result.text)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineResumesOutputDownload()
+   io.writeAll(glOutputFile, 'hello ')
+
+   result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/range',
+      'output=' .. glOutputFile,
+      'resume',
+      'timeout=5'
+   })
+
+   assert(result.returnCode is 0, 'Resume download should return 0: ' .. result.errors)
+   assert(io.readAll(glOutputFile) is 'hello from tuku', 'Resume download should append ranged content')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineResumeRejectsFullResponse()
+   io.writeAll(glOutputFile, 'hello ')
+
+   result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/range-ignore',
+      'output=' .. glOutputFile,
+      'resume',
+      'timeout=5'
+   })
+
+   assert(result.returnCode != 0, 'Resume should fail when the server ignores Range')
+   assert(io.readAll(glOutputFile) is 'hello ', 'Resume should leave the partial output file unchanged')
+   assert(result.text:find('Resume request returned HTTP 200 instead of 206 Partial Content.'),
+      'Resume non-206 diagnostic mismatch: ' .. result.text)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineValidatesResumeRequirements()
+   no_output = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/range',
+      'resume',
+      'timeout=5'
+   })
+
+   assert(no_output.returnCode != 0, 'Resume without output should fail')
+   assert(no_output.text:find("Parameter 'resume' requires 'output'."),
+      'Resume without output diagnostic mismatch: ' .. no_output.text)
+
+   post_resume = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/echo',
+      'output=' .. glOutputFile,
+      'resume',
+      'data=body',
+      'timeout=5'
+   })
+
+   assert(post_resume.returnCode != 0, 'Resume with POST should fail')
+   assert(post_resume.text:find("Parameter 'resume' can only be used with method=get."),
+      'Resume method diagnostic mismatch: ' .. post_resume.text)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineAcceptsTransferControlFlags()
+   result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/hello',
+      'raw',
+      'no-head',
+      'debug-socket',
+      'insecure',
+      'status',
+      'timeout=5'
+   })
+
+   assert(result.returnCode is 0, 'Transfer control flags should be accepted: ' .. result.errors)
+   assert(result.output is '200\n', 'Transfer control flags should not disrupt status output: ' .. result.text)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineProxyParsesHostPort()
+   result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/proxy-target',
+      f'proxy=127.0.0.1:{SERVER_PORT}',
+      'timeout=5'
+   })
+
+   assert(result.returnCode is 0, 'Proxy request should return 0: ' .. result.errors)
+   assert(result.output is 'proxied tuku', 'Proxy request body mismatch: ' .. result.text)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineRejectsInvalidProxy()
+   missing_port = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/hello',
+      'proxy=127.0.0.1',
+      'timeout=5'
+   })
+
+   assert(missing_port.returnCode != 0, 'Proxy without port should fail')
+   assert(missing_port.text:find("Parameter 'proxy' must use host:port syntax."),
+      'Proxy missing port diagnostic mismatch: ' .. missing_port.text)
+
+   bad_port = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/hello',
+      'proxy=127.0.0.1:70000',
+      'timeout=5'
+   })
+
+   assert(bad_port.returnCode != 0, 'Proxy with out-of-range port should fail')
+   assert(bad_port.text:find("Parameter 'proxy' requires a port between 1 and 65535."),
+      'Proxy bad port diagnostic mismatch: ' .. bad_port.text)
+end

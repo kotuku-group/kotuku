@@ -1,0 +1,618 @@
+#!/usr/bin/env origo
+--[[
+Tuku: A small HTTP/HTTPS client for Tiri command-line workflows.
+--]]
+
+   include 'http'
+   import 'options'
+   import 'net/url'
+
+TUKU_VERSION <const> = '2026.5.7'
+TUKU_USER_AGENT <const> = 'Tuku/1.0 Kotuku'
+glResponseHeaderNames = array<string> { 'content-type', 'content-length', 'location' }
+glReportedError = false
+glSilent = false
+
+glOptionDefs = array<table> {
+   { name = 'url', type = 'str', group = 'Core',
+     comment = 'Target HTTP or HTTPS URL.' },
+   { name = 'method', type = 'enum', choices = array<string> { 'get', 'head', 'delete', 'options', 'post', 'put' },
+     group = 'Core', comment = 'HTTP method to use.' },
+   { name = 'version', kind = 'flag', group = 'Core',
+     comment = 'Print the Tuku version.' },
+
+   { name = 'output', type = 'file', group = 'Output',
+     comment = 'Save the response body to a file.' },
+   { name = 'status', kind = 'flag', group = 'Output',
+     comment = 'Print the numeric HTTP status.' },
+   { name = 'headers', kind = 'flag', group = 'Output',
+     comment = 'Print all response headers as key=value lines.' },
+   { name = 'silent', kind = 'flag', group = 'Output',
+     comment = 'Suppress non-body output.' },
+   { name = 'verbose', kind = 'flag', group = 'Output',
+     comment = 'Print transfer summary information.' },
+   { name = 'fail', kind = 'flag', group = 'Output',
+     comment = 'Treat HTTP 4xx and 5xx statuses as failures.' },
+
+   { name = 'data', type = 'str', group = 'Request Body',
+     excludes = array<string> { 'datafile', 'json', 'form' },
+     comment = 'Send a string request body.' },
+   { name = 'datafile', type = 'file', exists = true, group = 'Request Body',
+     excludes = array<string> { 'data', 'json', 'form' },
+     comment = 'Read the request body from a file.' },
+   { name = 'json', type = 'str', group = 'Request Body',
+     excludes = array<string> { 'data', 'datafile', 'form' },
+     comment = 'Send a JSON request body.' },
+   { name = 'form', type = 'array', group = 'Request Body',
+     excludes = array<string> { 'data', 'datafile', 'json' },
+     comment = 'Send form fields as name=value entries.' },
+   { name = 'contenttype', type = 'str', group = 'Request Body',
+     comment = 'Request Content-Type header.' },
+
+   { name = 'header', type = 'array', group = 'Request Headers',
+     comment = 'Custom request header entries in Name: Value form.' },
+   { name = 'useragent', type = 'str', default = TUKU_USER_AGENT, group = 'Request Headers',
+     comment = 'User-Agent request header.' },
+   { name = 'user', type = 'str', group = 'Request Headers',
+     comment = 'Authentication credentials as username:password.' },
+
+   { name = 'timeout', type = 'num', default = 30, group = 'Connection',
+     comment = 'Overall transfer timeout in seconds.' },
+   { name = 'connect-timeout', type = 'num', default = 10, group = 'Connection',
+     comment = 'Initial connection timeout in seconds.' },
+   { name = 'data-timeout', type = 'num', default = 30, group = 'Connection',
+     comment = 'Send/receive data timeout in seconds.' },
+   { name = 'proxy', type = 'str', group = 'Connection',
+     comment = 'Proxy server as host:port.' },
+   { name = 'insecure', kind = 'flag', group = 'Connection',
+     comment = 'Disable SSL server certificate verification.' },
+
+   { name = 'resume', kind = 'flag', group = 'Transfer Controls',
+     comment = 'Resume a partial download.' },
+   { name = 'raw', kind = 'flag', group = 'Transfer Controls',
+     comment = 'Disable HTTP chunk handling.' },
+   { name = 'no-head', kind = 'flag', group = 'Transfer Controls',
+     comment = 'Do not send a HEAD probe before upload methods.' },
+   { name = 'debug-socket', kind = 'flag', group = 'Transfer Controls',
+     comment = 'Log request socket headers and data.' }
+}
+
+glParser = options({
+   name        = 'Tuku',
+   description = 'Transfer data from an HTTP or HTTPS URL.',
+   epilog      = 'Examples: origo apps/tuku.tiri url=https://example.com output=page.html',
+   args        = glOptionDefs
+})
+
+----------------------------------------------------------------------------------------------------------------------
+-- Returns true when the command-line options include any supported request body source.
+
+function hasBodyOption(Args:table):bool
+   return Args.data != nil or Args.datafile != nil or Args.json != nil or Args.form != nil
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Converts an array of name=value form arguments into application/x-www-form-urlencoded request content.
+
+function encodeFormBody(Form:array):str
+   params = array<table>
+
+   for field in values(Form) do
+      text = tostring(field)
+      eq = text:find('=')
+      if eq is nil then
+         error("Parameter 'form' entries must use name=value syntax.")
+      end
+
+      params:push({
+         key   = text:substr(0, eq),
+         value = text:substr(eq + 1)
+      })
+   end
+
+   return url.buildQuery(params)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Splits a Name: Value header argument into its key and value components.
+
+function splitHeader(Header:str):<str, str>
+   colon = Header:find(':')
+   if colon is nil then
+      error("Parameter 'header' entries must use Name: Value syntax.")
+   end
+
+   name = Header:substr(0, colon):trim()
+   value = Header:substr(colon + 1):trim()
+
+   if name is '' then
+      error("Parameter 'header' entries require a header name.")
+   end
+
+   return name, value
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Splits username:password into the HTTP fields used by the client object.
+
+function splitUser(User:str):<str, str>
+   colon = User:find(':')
+   if colon is nil then
+      error("Parameter 'user' must use username:password syntax.")
+   end
+
+   return User:substr(0, colon), User:substr(colon + 1)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Splits host:port proxy arguments into the HTTP fields used by the client object.
+
+function splitProxy(Proxy:str):<str, num>
+   colon = Proxy:find(':')
+   if colon is nil then
+      error("Parameter 'proxy' must use host:port syntax.")
+   end
+
+   host = Proxy:substr(0, colon):trim()
+   port_text = Proxy:substr(colon + 1):trim()
+   port = tonumber(port_text)
+
+   if host is '' then
+      error("Parameter 'proxy' requires a proxy host.")
+   end
+
+   if port is nil or math.floor(port) != port or port < 1 or port > 65535 then
+      error("Parameter 'proxy' requires a port between 1 and 65535.")
+   end
+
+   return host, port
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Ensures that numeric timeout values are valid before the request is started.
+
+function requirePositive(Name:str, Value:num)
+   if Value <= 0 then
+      error(f"Parameter '{Name}' must be greater than zero.")
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Rejects command-line options that are declared now but intentionally deferred to a later implementation phase.
+
+function rejectPhaseFuture(Name:str)
+   error(f"Parameter '{Name}' is reserved for a later Tuku phase.")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Validates currently supported options and reports deferred parameters as argument errors.
+
+function validateArgs(Args:table)
+   if Args.version then return end
+
+   if Args.url is nil then
+      error("Required parameter 'url' is missing.")
+   end
+
+   requirePositive('timeout', Args.timeout)
+   requirePositive('connect-timeout', Args['connect-timeout'])
+   requirePositive('data-timeout', Args['data-timeout'])
+
+   if Args.url:startsWith('http://') is false and Args.url:startsWith('https://') is false then
+      error("Parameter 'url' must start with http:// or https://.")
+   end
+
+   if Args.resume then
+      if Args.output is nil then
+         error("Parameter 'resume' requires 'output'.")
+      end
+
+      if Args.method != 'get' then
+         error("Parameter 'resume' can only be used with method=get.")
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Returns the size of an existing file, or zero if the file is absent or inaccessible.
+
+function getFileSize(Path:str):num
+   try
+      file = obj.new('file', { path = Path, flags = 'READ' })
+      size = file.size
+      file.free()
+      return size
+   except
+      return 0
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Builds the temporary side-file path used while validating resumed responses.
+
+function makeResumeTempPath(Path:str):str
+   return Path .. '.tuku-resume'
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Normalises derived argument values, including method casing and implicit content types, before validation.
+
+function normaliseArgs(Args:table):table
+   if Args.method != nil then
+      Args.method = Args.method:lower()
+   elseif hasBodyOption(Args) then
+      Args.method = 'post'
+   else
+      Args.method = 'get'
+   end
+
+   if Args.json != nil and Args.contenttype is nil then
+      Args.contenttype = 'application/json'
+   elseif Args.form != nil and Args.contenttype is nil then
+      Args.contenttype = 'application/x-www-form-urlencoded'
+   end
+
+   if Args.user != nil then
+      Args.username, Args.password = splitUser(Args.user)
+   end
+
+   if Args.proxy != nil then
+      Args.proxyHost, Args.proxyPort = splitProxy(Args.proxy)
+   end
+
+   validateArgs(Args)
+
+   if Args.resume and Args.output != nil then
+      Args.resumeOffset = getFileSize(Args.output)
+      if Args.resumeOffset > 0 then
+         Args.resumeTempPath = makeResumeTempPath(Args.output)
+         mSys.DeleteFile(Args.resumeTempPath)
+      end
+   end
+
+   return Args
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Returns the string request body to send for body options that are not file-backed.
+
+function makeRequestBody(Args:table):str
+   if Args.data != nil then return Args.data end
+   if Args.json != nil then return Args.json end
+   if Args.form != nil then return encodeFormBody(Args.form) end
+   return nil
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Builds the HTTP flag mask from transfer-control arguments.
+
+function makeRequestFlags(Args:table):num
+   flags = HTF_NO_DIALOG
+
+   if hasBodyOption(Args) or Args['no-head'] then flags = flags | HTF_NO_HEAD end
+   if Args.raw then flags = flags | HTF_RAW end
+   if Args['debug-socket'] then flags = flags | HTF_DEBUG_SOCKET end
+   if Args.insecure then flags = flags | HTF_DISABLE_SERVER_VERIFY end
+
+   return flags
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Builds the HTTP object configuration table from validated command-line arguments.
+
+function makeRequestConfig(Args:table):table
+   output_file = Args.output
+   if Args.resumeTempPath != nil then
+      output_file = Args.resumeTempPath
+   end
+
+   request = {
+      src            = Args.url,
+      method         = Args.method,
+      connectTimeout = Args['connect-timeout'],
+      dataTimeout    = Args['data-timeout'],
+      userAgent      = Args.useragent,
+      flags          = makeRequestFlags(Args),
+      -- Wakes the waiting processing context when the HTTP transfer reaches a terminal state.
+      stateChanged   = function(HTTP:obj, State:num)
+         if State is HGS_COMPLETED or State is HGS_TERMINATED then
+            HTTP.acSignal()
+         end
+      end
+   }
+
+   if Args.proxyHost != nil then
+      request.proxyServer = Args.proxyHost
+      request.proxyPort = Args.proxyPort
+   end
+
+   if output_file != nil then
+      request.outputFile = output_file
+   elseif not Args.status then
+      -- Streams response body chunks to standard output when the body is not redirected or suppressed.
+      request.incoming = function(HTTP:obj, Buffer:array)
+         io.write(Buffer:getString())
+      end
+   end
+
+   if Args.contenttype != nil then
+      request.contentType = Args.contenttype
+   end
+
+   if Args.username != nil then
+      request.username = Args.username
+      request.password = Args.password
+   end
+
+   if Args.datafile != nil then
+      request.inputFile = Args.datafile
+   else
+      body = makeRequestBody(Args)
+      if body != nil then
+         request.inputFile = 'string:' .. body
+         request.size = #body
+      end
+   end
+
+   return request
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Appends a completed temporary response body to the requested output file.
+
+function appendFile(Source:str, Destination:str)
+   data = io.readAll(Source)
+   file = io.open(Destination, 'a')
+   file:write(data)
+   file:close()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Completes a resumed download only after confirming that the server honoured the Range request.
+
+function finaliseResumeDownload(Args:table, Result:table)
+   if Args.resumeTempPath is nil then return end
+
+   if Result.transportError != ERR_Okay then
+      mSys.DeleteFile(Args.resumeTempPath)
+      return
+   end
+
+   if Result.status is 206 then
+      appendFile(Args.resumeTempPath, Args.output)
+      mSys.DeleteFile(Args.resumeTempPath)
+   else
+      mSys.DeleteFile(Args.resumeTempPath)
+      Result.resumeError = f"Resume request returned HTTP {Result.status} instead of 206 Partial Content."
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Applies transfer-control headers that are derived from validated command-line options.
+
+function applyTransferHeaders(HTTP:obj, Args:table)
+   if Args.resume and Args.resumeOffset != nil and Args.resumeOffset > 0 then
+      err = HTTP.acSetKey('Range', f"bytes={Args.resumeOffset}-")
+      if err != ERR_Okay then
+         error('Failed to set resume range header: ' .. mSys.GetErrorMsg(err))
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Applies request headers after object construction because custom headers are stored through acSetKey().
+
+function applyRequestHeaders(HTTP:obj, Args:table)
+   if Args.header is nil then return end
+
+   for header in values(Args.header) do
+      name, value = splitHeader(header)
+      err = HTTP.acSetKey(name, value)
+      if err != ERR_Okay then
+         error("Invalid request header '" .. name .. "': " .. mSys.GetErrorMsg(err))
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Prints a stable, machine-friendly error line before raising a command failure.
+
+function reportError(Type:str, Message:str, Status:num, Code:num)
+   glReportedError = true
+   if glSilent then return end
+
+   text = f"tuku: error: type={Type}"
+   if Status != nil then text ..= f" status={Status}" end
+   if Code != nil then text ..= f" code={Code}" end
+   text ..= " message=" .. Message
+
+   print(text)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Looks up a response header through HTTP.GetKey(), returning nil when the class does not expose it.
+
+function getResponseHeader(HTTP:obj, Name:str):str
+   value = HTTP.getKey(Name)
+   if value is nil or value is '' then return nil end
+   return value
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Returns available response header names, falling back to the phase 3 common keys on older HTTP builds.
+
+function readResponseHeaderNames(HTTP:obj):array
+   names = array<string>
+   seen = {}
+
+   if HTTP.responseKeys != nil then
+      for key in values(HTTP.responseKeys) do
+         if not seen[key] then
+            names:push(key)
+            seen[key] = true
+         end
+      end
+   end
+
+   if #names is 0 then
+      for name in values(glResponseHeaderNames) do
+         names:push(name)
+      end
+   end
+
+   names:sort()
+   return names
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Returns response headers that are useful for command-line automation.
+
+function readResponseHeaders(HTTP:obj):table
+   headers = {}
+   names = readResponseHeaderNames(HTTP)
+
+   for name in values(names) do
+      value = getResponseHeader(HTTP, name)
+      if value != nil then
+         headers[name] = value
+      end
+   end
+
+   return {
+      names  = names,
+      values = headers
+   }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Prints response header lines in a stable line-oriented format.
+
+function printResponseHeaders(Result:table)
+   for name in values(Result.headers.names) do
+      value = Result.headers.values[name]
+      if value != nil then
+         print(f"tuku: header {name}={value}")
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Prints the verbose transfer summary in a stable line-oriented format.
+
+function printVerboseSummary(Args:table, Result:table)
+   print('tuku: method=' .. Args.method:upper())
+   print('tuku: url=' .. Args.url)
+   print('tuku: status=' .. tostring(Result.status))
+   print('tuku: bytes=' .. tostring(Result.bytes))
+   print('tuku: output=' .. (Result.output ?? 'stdout'))
+   print('tuku: transport=' .. Result.transportErrorText)
+
+   printResponseHeaders(Result)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Parses command-line options while keeping help and parser errors under Tuku's output policy.
+
+function parseCommandLine():table
+   args, err = glParser.tryProcess()
+
+   if err != nil then
+      raw_silent = arg('silent')
+      if raw_silent != nil then
+         raw_silent = tostring(raw_silent):lower()
+         glSilent = raw_silent != 'false' and raw_silent != '0' and raw_silent != 'no' and raw_silent != 'off'
+      end
+
+      reportError('argument', err.message, nil, err.code)
+      raise err.code, err.message
+   end
+
+   if args != nil and args.text != nil and args._helpMarker != nil then
+      print(args.text)
+      return nil
+   end
+
+   return args
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Starts the HTTP transfer, waits for completion, and returns the response summary used by output handling.
+
+function fetch(Args:table):table
+   local http = obj.new('http', makeRequestConfig(Args))
+   applyTransferHeaders(http, Args)
+   applyRequestHeaders(http, Args)
+   proc = processing.new({ timeout = Args.timeout, signals = array<object> { http } })
+
+   err = http.acActivate() -- Send asynchronous request
+   if err is ERR_Okay then
+      err = proc.sleep()
+   end
+
+   transport_error = http.error
+   if err != ERR_Okay and transport_error is ERR_Okay then
+      transport_error = err
+   end
+
+   return {
+      status             = http.status,
+      bytes              = http.index,
+      output             = Args.output,
+      headers            = readResponseHeaders(http),
+      transportError     = transport_error,
+      transportErrorText = (transport_error is ERR_Okay) ? 'Okay' :> mSys.GetErrorMsg(transport_error)
+   }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+   try
+      args = parseCommandLine()
+      if args is nil then return end
+
+      glSilent = args.silent
+      args = normaliseArgs(args)
+
+      if args.version then
+         if not args.silent then
+            print('Tuku ' .. TUKU_VERSION)
+         end
+         return
+      end
+
+      result = fetch(args)
+      finaliseResumeDownload(args, result)
+
+      if args.verbose and not args.silent then
+         printVerboseSummary(args, result)
+      end
+
+      if args.headers and not args.verbose and not args.silent then
+         printResponseHeaders(result)
+      end
+
+      if args.status and not args.silent then
+         io.write(tostring(result.status) .. '\n')
+      end
+
+      if result.resumeError != nil then
+         reportError('http', result.resumeError, result.status, ERR_Failed)
+         raise ERR_Failed, result.resumeError
+      end
+
+      if result.transportError != ERR_Okay and result.status <= 0 then
+         reportError('transport', result.transportErrorText, result.status, result.transportError)
+         raise ERR_Failed, result.transportErrorText
+      end
+
+      if args.fail and result.status >= 400 then
+         message = f"HTTP status {result.status}"
+         reportError('http', message, result.status, ERR_Failed)
+         raise ERR_Failed, message
+      end
+   except ex
+      if not glReportedError then
+         reportError('runtime', ex.message, nil, ex.code)
+      end
+      raise ex.code, ex.message
+   end

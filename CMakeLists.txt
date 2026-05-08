@@ -758,6 +758,7 @@ add_subdirectory (src/regex)
 
 add_subdirectory (src/launcher)
 
+add_subdirectory (apps)
 add_subdirectory (tools/tiri_lsp)
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -838,6 +839,7 @@ if (KOTUKU_INSTALL)
       "${PROJECT_SOURCE_DIR}/apps/httpserver.tiri"
       "${PROJECT_SOURCE_DIR}/apps/httpserver_cfg.tiri"
       "${PROJECT_SOURCE_DIR}/apps/paintbox.tiri"
+      "${PROJECT_SOURCE_DIR}/apps/tuku.tiri"
       "${PROJECT_SOURCE_DIR}/apps/vuepoint.tiri"
       DESTINATION "${SHARE_TARGET}/apps")
 
