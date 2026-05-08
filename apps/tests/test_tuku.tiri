@@ -93,6 +93,20 @@ end
                res.redirect('/hello', 303)
             end
          },
+         { pattern = '/redirect-patch-302',
+            method = 'PATCH',
+            handler = function(req, res)
+               res.redirect('/echo', 302)
+            end
+         },
+         { pattern = '/redirect-put-301',
+            method = 'PUT',
+            handler = function(req, res)
+               res.status(301)
+                  .header('Location', f'http://127.0.0.1:{SERVER_PORT}/echo')
+                  .send('redirect', 'text/plain')
+            end
+         },
          { pattern = '/redirect-loop',
             method = 'GET',
             handler = function(req, res)
@@ -164,6 +178,20 @@ end
          },
          { pattern = '/echo',
             method = 'PATCH',
+            handler = function(req, res)
+               res.json({
+                  method      = req.method,
+                  body        = req.body,
+                  contentType = req.headers['content-type'],
+                  userAgent   = req.headers['user-agent'],
+                  accept      = req.headers['accept'],
+                  custom      = req.headers['x-tuku-test'],
+                  parsedBody  = req.parsedBody
+               })
+            end
+         },
+         { pattern = '/echo',
+            method = 'PUT',
             handler = function(req, res)
                res.json({
                   method      = req.method,
@@ -369,6 +397,46 @@ end
 
    assert(result.returnCode is 0, '303 redirect should return 0: ' .. result.errors)
    assert(result.output is 'hello from tuku', '303 redirect should re-fetch using GET: ' .. result.text)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineRedirect302PreservesPatchMethodAndBody()
+   result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/redirect-patch-302',
+      'method=patch',
+      'json=[7,8,9]',
+      'follow',
+      'timeout=5'
+   })
+
+   assert(result.returnCode is 0, '302 PATCH redirect should return 0: ' .. result.errors)
+
+   response = json.decode(result.output)
+   assert(response.method is 'PATCH', '302 redirect should preserve PATCH method')
+   assert(response.contentType is 'application/json', '302 redirect should preserve PATCH content type')
+   assert(response.parsedBody[0] is 7, '302 redirect should preserve PATCH JSON body')
+   assert(response.parsedBody[2] is 9, '302 redirect should preserve PATCH JSON body tail')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CommandLineRedirect301PreservesPutMethodAndBody()
+   result = runTuku(array<string> {
+      f'url=http://127.0.0.1:{SERVER_PORT}/redirect-put-301',
+      'method=put',
+      'data=put-body',
+      'contenttype=text/plain',
+      'follow',
+      'timeout=5'
+   })
+
+   assert(result.returnCode is 0, '301 PUT redirect should return 0: ' .. result.errors)
+
+   response = json.decode(result.output)
+   assert(response.method is 'PUT', '301 redirect should preserve PUT method')
+   assert(response.body is 'put-body', '301 redirect should preserve PUT body')
+   assert(response.contentType is 'text/plain', '301 redirect should preserve PUT content type')
 end
 
 ----------------------------------------------------------------------------------------------------------------------

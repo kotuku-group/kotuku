@@ -638,7 +638,7 @@ function applyRedirect(Args:table, Result:table)
       raise ERR_Failed, message
    end
 
-   if Result.status is 301 or Result.status is 302 or Result.status is 303 then
+   if Result.status is 303 or ((Result.status is 301 or Result.status is 302) and Args.method is 'post') then
       Args.method = 'get'
       clearBodyOptions(Args)
    end
