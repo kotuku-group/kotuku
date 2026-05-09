@@ -98,6 +98,11 @@ set (JIT_GENERATED_HEADERS
 set (JIT_VMDEF_LUA "${JIT_BUILD_DIR}/jit/vmdef.lua")
 set (JIT_COMMON_DEFS PRV_METACLASS)
 set (JIT_NON_MSVC_DEFS -DLUAJIT_DISABLE_BUFFER -DPRV_METACLASS)
+set (JIT_LAYOUT_HEADERS
+   "${JIT_SRC}/runtime/lj_obj.h"
+   "${JIT_SRC}/debug/lj_jit.h"
+   "${JIT_SRC}/lj_dispatch.h"
+)
 
 option(KOTUKU_PARSER_TRACE "Emit parser token and expectation traces" OFF)
 option(INCLUDE_TIPS "Include the parser tips system for code analysis" ON)
@@ -261,14 +266,14 @@ if (MSVC)
          ${JIT_BUILD_DIR}/buildvm_peobj.obj
          ${JIT_BUILD_DIR}/buildvm_lib.obj
          ${JIT_BUILD_DIR}/buildvm_fold.obj
-      DEPENDS ${BUILDVM_SOURCES} ${BUILDVM_ARCH_H} "${JIT_SRC}/runtime/lj_obj.h"
+      DEPENDS ${BUILDVM_SOURCES} ${BUILDVM_ARCH_H} ${JIT_LAYOUT_HEADERS}
       WORKING_DIRECTORY "${JIT_BUILD_DIR}"
       COMMENT "Building buildvm host tool for ${JIT_ARCH}"
       VERBATIM
    )
 
-   # Generate headers and VM object file using buildvm
-   # lj_obj.h dependency ensures VM is regenerated when metamethod table changes
+   # Generate headers and VM object file using buildvm.  The layout header dependency ensures VM offsets are
+   # regenerated when GG_State or jit_State changes.
    add_custom_command(
       OUTPUT ${JIT_GENERATED_HEADERS} ${JIT_VM_OBJ} ${JIT_VMDEF_LUA}
       COMMAND ${BUILDVM_TARGET} -m peobj -o ${JIT_VM_OBJ}
@@ -278,7 +283,7 @@ if (MSVC)
       COMMAND ${BUILDVM_TARGET} -m recdef -o ${JIT_BUILD_DIR}/lj_recdef.h ${LJLIB_C}
       COMMAND ${BUILDVM_TARGET} -m folddef -o ${JIT_BUILD_DIR}/lj_folddef.h ${JIT_SRC}/lj_opt_fold.cpp
       COMMAND ${BUILDVM_TARGET} -m vmdef -o ${JIT_VMDEF_LUA} ${LJLIB_C}
-      DEPENDS ${BUILDVM_TARGET} ${LJLIB_C} "${JIT_SRC}/lj_opt_fold.cpp" "${JIT_SRC}/runtime/lj_obj.h"
+      DEPENDS ${BUILDVM_TARGET} ${LJLIB_C} "${JIT_SRC}/lj_opt_fold.cpp" ${JIT_LAYOUT_HEADERS}
       WORKING_DIRECTORY "${JIT_SRC}"
       COMMENT "Generating JIT headers and VM object for ${JIT_ARCH}"
       VERBATIM
@@ -485,7 +490,7 @@ else ()
          ${JIT_NON_MSVC_DEFS}
          ${JIT_INCLUDE_DIRS}
          -o ${BUILDVM_TARGET} ${BUILDVM_SOURCES} ${JIT_MATH_LIB}
-      DEPENDS ${BUILDVM_SOURCES} ${BUILDVM_ARCH_H} "${JIT_SRC}/runtime/lj_obj.h"
+      DEPENDS ${BUILDVM_SOURCES} ${BUILDVM_ARCH_H} ${JIT_LAYOUT_HEADERS}
       COMMENT "Building buildvm host tool"
       VERBATIM
    )
@@ -493,7 +498,7 @@ else ()
    # Generate headers and VM file using buildvm
    # Windows (MinGW) uses peobj to generate .obj directly like MSVC
    # Unix uses elfasm to generate .S assembly source that gets compiled later
-   # lj_obj.h dependency ensures VM is regenerated when metamethod table changes
+   # The layout header dependency ensures VM offsets are regenerated when GG_State or jit_State changes.
 
    # Set platform-specific VM generation parameters
 
@@ -518,7 +523,7 @@ else ()
       COMMAND ${BUILDVM_TARGET} -m folddef -o ${JIT_BUILD_DIR}/lj_folddef.h "${JIT_SRC}/lj_opt_fold.cpp"
       COMMAND ${BUILDVM_TARGET} -m vmdef -o ${JIT_VMDEF_LUA} ${LJLIB_C}
       COMMAND ${BUILDVM_TARGET} -m ${JIT_VM_MODE} -o ${JIT_VM_OUTPUT}
-      DEPENDS ${BUILDVM_TARGET} ${LJLIB_C} "${JIT_SRC}/lj_opt_fold.cpp" "${JIT_SRC}/runtime/lj_obj.h"
+      DEPENDS ${BUILDVM_TARGET} ${LJLIB_C} "${JIT_SRC}/lj_opt_fold.cpp" ${JIT_LAYOUT_HEADERS}
       WORKING_DIRECTORY ${JIT_SRC}
       COMMENT ${JIT_VM_COMMENT}
       VERBATIM

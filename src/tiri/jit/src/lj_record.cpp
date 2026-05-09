@@ -55,6 +55,55 @@ static TRef sload(jit_State *J, int32_t Slot);
 //********************************************************************************************************************
 // Materialise live trace slots back to the Lua stack before a throwable helper runs inside a recorded try block.
 
+static TRef rec_try_stack_slot_addr(jit_State *J, IRBuilder& Ir, int32_t AbsoluteSlot)
+{
+   lj_assertJ(AbsoluteSlot >= 0 and AbsoluteSlot < LJ_MAX_JSLOTS + LJ_STACK_EXTRA,
+      "try materialisation slot out of range");
+   int32_t byte_offset = 8 * (AbsoluteSlot - 1 - LJ_FR2);
+   return Ir.emit(IRT(IR_ADD, IRT_PGC), REF_BASE, Ir.kint(byte_offset));
+}
+
+static void rec_try_emit_tvalue_store(jit_State *J, TRef SlotAddr, TRef ValueRef)
+{
+   if (tref_isnum(ValueRef)) {
+      emitir(IRT(IR_XSTORE, IRT_NUM), SlotAddr, ValueRef);
+   }
+   else if (tref_isint(ValueRef)) {
+#if LJ_DUALNUM
+      // With LJ_DUALNUM, IRT_INT is stored as a tagged integer TValue.
+      TRef store_ref = emitir(IRT(IR_CONV, IRT_I64), ValueRef,
+         (IRT_I64 << IRCONV_DSH) | IRT_INT);
+      store_ref = emitir_raw(IRT(IR_BOR, IRT_I64), store_ref,
+         lj_ir_kint64(J, uint64_t(LJ_TISNUM) << 47));
+      emitir(IRT(IR_XSTORE, IRT_I64), SlotAddr, store_ref);
+#else
+      // Without LJ_DUALNUM, IRT_INT must be converted and stored as an IRT_NUM TValue.
+      TRef store_ref = emitir(IRT(IR_CONV, IRT_NUM), ValueRef, IRCONV_NUM_INT);
+      emitir(IRT(IR_XSTORE, IRT_NUM), SlotAddr, store_ref);
+#endif
+   }
+   else if (tref_isgcv(ValueRef)) {
+      uint32_t itype = irt_toitype_(tref_type(ValueRef));
+      TRef store_ref = emitir_raw(IRT(IR_BOR, IRT_I64), ValueRef,
+         lj_ir_kint64(J, uint64_t(itype) << 47));
+      emitir(IRT(IR_XSTORE, IRT_I64), SlotAddr, store_ref);
+   }
+   else if (tref_ispri(ValueRef)) {
+      TValue tv;
+      setpriV(&tv, irt_toitype_(tref_type(ValueRef)));
+      emitir(IRT(IR_XSTORE, IRT_I64), SlotAddr, lj_ir_kint64(J, tv.u64));
+   }
+   else if (tref_islightud(ValueRef)) {
+      TRef store_ref = emitir_raw(IRT(IR_BOR, IRT_I64), ValueRef,
+         lj_ir_kint64(J, uint64_t(LJ_TLIGHTUD) << 47));
+      emitir(IRT(IR_XSTORE, IRT_I64), SlotAddr, store_ref);
+   }
+   else {
+      setintV(&J->errinfo, int32_t(tref_type(ValueRef)));
+      lj_trace_err_info(J, LJ_TRERR_NYIIR);
+   }
+}
+
 static void rec_try_materialise_slots(jit_State *J, bool ForceLoad)
 {
    if (J->maxslot IS 0) return;
@@ -68,45 +117,13 @@ static void rec_try_materialise_slots(jit_State *J, bool ForceLoad)
       if (not value_ref or (value_ref & (TREF_FRAME | TREF_CONT))) continue;
 
       int32_t absolute_slot = int32_t(J->baseslot) + int32_t(slot);
-      int32_t byte_offset = 8 * (absolute_slot - 1 - LJ_FR2);
-      TRef slot_addr = ir.emit(IRT(IR_ADD, IRT_PGC), REF_BASE, ir.kint(byte_offset));
+      lj_assertJ(absolute_slot >= 0 and absolute_slot < LJ_MAX_JSLOTS + LJ_STACK_EXTRA,
+         "try materialisation slot out of range");
+      if (not ForceLoad and J->trymat[absolute_slot] IS value_ref) continue;
 
-      if (tref_isnum(value_ref)) {
-         emitir(IRT(IR_XSTORE, IRT_NUM), slot_addr, value_ref);
-      }
-      else if (tref_isint(value_ref)) {
-#if LJ_DUALNUM
-         TRef store_ref = emitir(IRT(IR_CONV, IRT_I64), value_ref,
-            (IRT_I64 << IRCONV_DSH) | IRT_INT);
-         store_ref = emitir_raw(IRT(IR_BOR, IRT_I64), store_ref,
-            lj_ir_kint64(J, uint64_t(LJ_TISNUM) << 47));
-         emitir(IRT(IR_XSTORE, IRT_I64), slot_addr, store_ref);
-#else
-         TRef store_ref = emitir(IRT(IR_CONV, IRT_NUM), value_ref, IRCONV_NUM_INT);
-         emitir(IRT(IR_XSTORE, IRT_NUM), slot_addr, store_ref);
-#endif
-      }
-      else if (tref_isgcv(value_ref)) {
-         uint32_t itype = irt_toitype_(tref_type(value_ref));
-         TRef store_ref = emitir_raw(IRT(IR_BOR, IRT_I64), value_ref,
-            lj_ir_kint64(J, uint64_t(itype) << 47));
-         emitir(IRT(IR_XSTORE, IRT_I64), slot_addr, store_ref);
-      }
-      else if (tref_ispri(value_ref)) {
-         TValue tv;
-         setpriV(&tv, irt_toitype_(tref_type(value_ref)));
-         emitir(IRT(IR_XSTORE, IRT_I64), slot_addr, lj_ir_kint64(J, tv.u64));
-      }
-      else if (tref_islightud(value_ref)) {
-         TRef store_ref = emitir_raw(IRT(IR_BOR, IRT_I64), value_ref,
-            lj_ir_kint64(J, uint64_t(LJ_TLIGHTUD) << 47));
-         emitir(IRT(IR_XSTORE, IRT_I64), slot_addr, store_ref);
-      }
-      else {
-         setintV(&J->errinfo, int32_t(tref_type(value_ref)));
-         lj_trace_err_info(J, LJ_TRERR_NYIIR);
-      }
-
+      TRef slot_addr = rec_try_stack_slot_addr(J, ir, absolute_slot);
+      rec_try_emit_tvalue_store(J, slot_addr, value_ref);
+      J->trymat[absolute_slot] = value_ref;
       stored = true;
    }
 
@@ -3535,6 +3552,7 @@ void lj_record_setup(jit_State *J)
 
    // Initialise state related to current trace.
    memset(J->slot, 0, sizeof(J->slot));
+   memset(J->trymat, 0, sizeof(J->trymat));
    memset(J->chain, 0, sizeof(J->chain));
 #ifdef LUAJIT_ENABLE_TABLE_BUMP
    memset(J->rbchash, 0, sizeof(J->rbchash));
