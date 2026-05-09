@@ -24,7 +24,7 @@ Examples:
   origo apps/httpserver folder=docs/html port=8080
   origo apps/httpserver config=apps/httpserver_cfg.json verbose
 ]],
-      userConfig  = 'user:config/httpserver_cfg.json'
+      userConfig  = 'user:config/httpserver_cfg.json',
       autoHelp    = false,
       args        = array<table> {
          { name = 'folder', type = 'folder', exists = true, required = true, group = 'Server',
