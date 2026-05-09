@@ -63,7 +63,7 @@ Examples:
    })
 
    glOptions = glParser.process()
-   glOptions ?? return
+   if not glOptions or not glOptions.folder?? then return end
 
    err, resolved_path = mSys.ResolvePath(glOptions.folder)
    if err is ERR_Okay and resolved_path then
@@ -75,5 +75,12 @@ Examples:
    end
 
    glServer = hslib.start(glOptions)
+
+   print('HTTP server configuration:')
+   print('  Folder: ' .. glServer.folder)
+   print('  Port: ' .. tostring(glServer.port))
+   print('  Bind address: ' .. (glServer.bind or 'all interfaces'))
+   print('  Local URL: http://' .. (glServer.bind or '127.0.0.1') .. ':' .. tostring(glServer.port) .. '/')
+   print()
 
    processing.sleep()

@@ -1733,6 +1733,7 @@ end
 
 function load_user_config_defaults(Parser:table, RawResult:table):table
    Parser._user_config_defaults = nil
+   Parser._user_config_loaded = nil
 
    Parser.userConfig ?? return
 
@@ -1752,6 +1753,8 @@ function load_user_config_defaults(Parser:table, RawResult:table):table
    if location != LOC_FILE then
       raise ERR_ExpectedFile, f"User config path '{config_path}' is not a file."
    end
+
+   Parser._user_config_loaded = config_path
 
    file = io.open(config_path, 'r')
    content = file:read('*a')
@@ -1898,6 +1901,27 @@ function parse_context_table_input(Parser:table, Input:table):table
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Allow a launched script with no command-line arguments to run from a valid user config instead of showing help.
+
+function parse_empty_task_input_from_user_config(Parser:table):table
+   local result:table
+
+   if #Parser._commands > 0 then return nil end
+
+   try
+      result = resolve_input_result(Parser, {}, {}, {})
+   except ex when ERR_ParameterRequired
+      return nil
+   except ex
+      if Parser._user_config_loaded != nil then error(ex) end
+      return nil
+   end
+
+   if Parser._user_config_defaults != nil then return result end
+   return nil
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Determine whether an ordered token belongs to the global parser before a command token.
 
 function is_global_ordered_token(Parser:table, Name:str, HasExplicitValue:bool):bool
@@ -2001,6 +2025,8 @@ function parse_input(Parser:table, Input:any, Options:table):table
       if task_parameters then
          script_arguments = get_script_arguments(task_parameters)
          if #script_arguments is 0 and Parser.autoHelp then
+            config_result = parse_empty_task_input_from_user_config(Parser)
+            if config_result then return config_result end
             return make_help_result(Parser, nil)
          end
 

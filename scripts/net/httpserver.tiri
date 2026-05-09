@@ -1901,7 +1901,7 @@ hslib.start = function(Options)
       assert(file_type is LOC_FOLDER, f'Folder "{self.folder}" does not exist')
    end
 
-   assert(self.folder, 'The folder option is required')
+   self.folder ?? error('The folder option is required')
 
    if Options.verbose then
       if type(Options.verbose) is 'boolean' then

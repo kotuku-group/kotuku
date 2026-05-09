@@ -581,6 +581,13 @@ end
    assert(args.mode is 'json', 'JSON config should supply string defaults')
    assert(args.verbose is true, 'JSON config defaults should be converted')
 
+   args, err = parser.tryProcess(nil, {
+      taskParameters = array<string> { '--log-warning', 'demo.tiri' }
+   })
+   assert(err is nil, 'Empty task parameters should use a loaded user config instead of failing')
+   assert(args.help is nil, 'Loaded user config should suppress automatic help')
+   assert(args.count is 12, 'Loaded user config should satisfy required parameters for empty task parameters')
+
    delete_test_file(config_path)
 end
 
@@ -655,11 +662,14 @@ end
 @Test function UserConfigValidationFailuresAndHelp()
    local bad_json_path = 'temp:options-user-config-bad.json'
    local array_json_path = 'temp:options-user-config-array.json'
+   local missing_required_path = 'temp:options-user-config-missing-required.json'
 
    delete_test_file(bad_json_path)
    delete_test_file(array_json_path)
+   delete_test_file(missing_required_path)
    write_test_file(bad_json_path, '{"count":')
    write_test_file(array_json_path, '["count"]')
+   write_test_file(missing_required_path, '{"mode":"json"}')
 
    expect_options_error({
       userConfig = 'temp:options-user-config.json',
@@ -675,6 +685,11 @@ end
       }
    })
    expect_error(bad_json_parser, array<string> { }, ERR_WrongType, 'requires valid JSON')
+   result, err = bad_json_parser.tryProcess(nil, {
+      taskParameters = array<string> { '--log-warning', 'demo.tiri' }
+   })
+   assert(result is nil, 'Invalid selected user config should not return automatic help')
+   assert(err.code is ERR_WrongType, 'Invalid selected user config should report the config parse error')
 
    array_json_parser = options({
       userConfig = array_json_path,
@@ -705,8 +720,25 @@ end
    assert(result.help is true, 'Help should still be returned for parsers with userConfig')
    assert(result.text:find('Usage: user-config-help'), 'Help should include the parser usage text')
 
+   missing_required_parser = options({
+      name       = 'missing-required',
+      userConfig = missing_required_path,
+      args = array<table> {
+         { name = 'count', type = 'int', required = true },
+         { name = 'mode', type = 'str' }
+      }
+   })
+
+   result, err = missing_required_parser.tryProcess(nil, {
+      taskParameters = array<string> { '--log-warning', 'demo.tiri' }
+   })
+   assert(err is nil, 'Empty task parameters with incomplete user config should still return help')
+   assert(result.help is true, 'Incomplete user config should not suppress automatic help')
+   assert(result.text:find('Usage: missing-required'), 'Incomplete user config help should include usage')
+
    delete_test_file(bad_json_path)
    delete_test_file(array_json_path)
+   delete_test_file(missing_required_path)
 end
 
 @Test function SourcePrecedenceDefersConversion()
@@ -1086,6 +1118,19 @@ end
    assert(err is nil, 'Empty default task parameters should print help instead of validating required arguments')
    assert(result.help is true, 'Empty default task parameters should return a structured help result')
    assert(result.text:find('Usage: convert'), 'Empty default task parameter help should include normal help text')
+
+   invalid_default_parser = options({
+      name = 'invalid-default',
+      args = array<table> {
+         { name = 'count', type = 'int', default = 'bad' }
+      }
+   })
+
+   result, err = invalid_default_parser.tryProcess(nil, {
+      taskParameters = array<string> { '--log-warning', 'test.tiri' }
+   })
+   assert(err is nil, 'Empty task parameters should still prefer help over unrelated invalid defaults')
+   assert(result.help is true, 'Unrelated invalid defaults should not suppress automatic help')
 
    seen_text = nil
    seen_topic = nil
