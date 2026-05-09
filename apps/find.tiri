@@ -1,48 +1,12 @@
 #!/usr/bin/env origo
-
 -- Find: A file search tool for Kōtuku, leveraging the io.search() interface.
 
-glHelp = [[
-Search for files and folders matching specified criteria.
-
-Usage: origo apps/find.tiri path=folder/ [options...]
-
-Options:
-
-  path      - The folder to search (default: ../src/core/)
-  filter    - A regex pattern to filter filenames (mutually exclusive with 'name')
-  name      - An exact filename to match (mutually exclusive with 'filter')
-  type      - Match type: 'file', 'dir', or 'all' (default: file)
-  maxdepth  - Maximum directory depth to recurse into (default: 100)
-  mindepth  - Minimum depth before results are reported (default: 0)
-  size      - Size filter, e.g. +10K (min), -1M (max), 500 (exact). Suffixes: K, M, G
-  modified  - Modification time filter, e.g. -7d (newer than 7 days), +24h (older than 24 hours).
-              Prefix: - (newer than), + (older than). Units: m (minutes), h (hours), d (days)
-  exclude   - A regex pattern to exclude matching filenames
-  count     - If true, print only the total match count (default: false)
-  exec      - Execute a command for each match, with {} replaced by the file path
-  output    - Output format: 'path' (default), 'name' (filename only), or 'detail' (path + size + date)
-  verbose   - Print search parameters before searching (default: false)
-  help      - Show this help text
-
-Examples:
-
-  origo apps/find.tiri path=src/core/                          Search all files in src/core/
-  origo apps/find.tiri path=src/ filter="\.cpp$"               Find all C++ source files
-  origo apps/find.tiri path=src/core/ name=defs.h              Find a specific file by name
-  origo apps/find.tiri path=src/ type=dir maxdepth=0           List top-level directories
-  origo apps/find.tiri path=src/ size=+10K                     Files larger than 10 KB
-  origo apps/find.tiri path=src/ modified=-7d                  Files modified in the last 7 days
-  origo apps/find.tiri path=src/ filter="\.h$" output=detail   Header files with size and date
-  origo apps/find.tiri path=src/ count=true                    Count all files
-  origo apps/find.tiri path=src/ name=main.cpp exec="wc -l {}" Run wc -l on each match
-]]
-
    import 'io/filesearch'
+   import 'options'
 
 -- Helper: Parse a size string like +10K, -1M, 500 into min_size, max_size
 
-function parseSize(SizeStr:str)
+function parseSize(SizeStr:str):<any, any>
    min_size = nil
    max_size = nil
 
@@ -83,10 +47,19 @@ function parseSize(SizeStr:str)
    return min_size, max_size
 end
 
+function parseSizeOption(Value:any, Param:table):table
+   min_size, max_size = parseSize(tostring(Value))
+   return {
+      source = tostring(Value),
+      minSize = min_size,
+      maxSize = max_size
+   }
+end
+
 -- Helper: Parse a modification time string like +7d, -24h into DateTime structs for minDate/maxDate.
 -- Uses the time object to get the current time, then subtracts the offset to produce a target DateTime.
 
-function parseModified(ModStr:str)
+function parseModified(ModStr:str):<any, any>
    min_date = nil
    max_date = nil
 
@@ -139,9 +112,18 @@ function parseModified(ModStr:str)
    return min_date, max_date
 end
 
+function parseModifiedOption(Value:any, Param:table):table
+   min_date, max_date = parseModified(tostring(Value))
+   return {
+      source = tostring(Value),
+      minDate = min_date,
+      maxDate = max_date
+   }
+end
+
 -- Helper: Count depth of Path relative to BasePath
 
-function countDepth(Path:str, BasePath:str)
+function countDepth(Path:str, BasePath:str):num
    relative = Path
    if Path:sub(0, BasePath:len()) is BasePath then
       relative = Path:sub(BasePath:len())
@@ -153,38 +135,86 @@ function countDepth(Path:str, BasePath:str)
    return depth
 end
 
--- Argument parsing
+function normaliseSearchPath(Path:str):str
+   if Path:endsWith('/') or Path:endsWith('\\') then return Path end
+   return Path .. '/'
+end
+
+----------------------------------------------------------------------------------------------------------------------
 
    glPath       = obj.find('self').workingPath
-   glSearchPath = arg('path', f'{glPath}../src/core/')
-   glFilter     = arg('filter')
-   glName       = arg('name')
-   glType       = arg('type', 'file')
-   glMaxDepth   = tonumber(arg('maxdepth', '100'))
-   glMinDepth   = tonumber(arg('mindepth', '0'))
-   glSize       = arg('size')
-   glModified   = arg('modified')
-   glExclude    = arg('exclude')
-   glCount      = arg('count', 'false') is 'true'
-   glExec       = arg('exec')
-   glOutput     = arg('output', 'path')
-   glVerbose    = arg('verbose', 'false') is 'true'
+   glParser = options({
+      name        = 'Find',
+      description = 'Search for files and folders matching specified criteria.',
+      epilog      = [[
+Examples:
+  origo apps/find path=src/core/                            Search all files in src/core/
+  origo apps/find path=src/ filter="\.cpp$"                 Find all C++ source files
+  origo apps/find path=src/core/ name=defs.h                Find a specific file by name
+  origo apps/find path=src/ type=dir maxdepth=0             List top-level directories
+  origo apps/find path=src/ size=+10K                       Files larger than 10 KB
+  origo apps/find path=src/ modified=-7d                    Files modified in the last 7 days
+  origo apps/find path=src/ filter="\.h$" output=detail     Header files with size and date
+  origo apps/find path=src/ count                           Count all files
+  origo apps/find name=CMakeLists.txt exec="wc -l {}"       Run wc -l on each match
+]],
+      args = array<table> {
+         { name = 'path', type = 'folder', exists = true, default = f'{glPath}../', group = 'Search',
+           comment = 'The folder to search.' },
+         { name = 'filter', type = 'regex', excludes = 'name', group = 'Search',
+           comment = "A regex pattern to filter filenames; mutually exclusive with 'name'." },
+         { name = 'name', type = 'str', excludes = 'filter', group = 'Search',
+           comment = "An exact filename to match; mutually exclusive with 'filter'." },
+         { name = 'type', type = 'enum', default = 'file', choices = array<string> { 'file', 'dir', 'all' },
+           group = 'Search', comment = "Match type: 'file', 'dir', or 'all'." },
+         { names = array<string> { 'maxdepth', 'max-depth' }, type = 'int', default = 100, group = 'Search',
+           comment = 'Maximum directory depth to recurse into.' },
+         { names = array<string> { 'mindepth', 'min-depth' }, type = 'int', default = 0, group = 'Search',
+           comment = 'Minimum depth before results are reported.' },
 
-   if arg('help') or not arg('path') then
-      print(glHelp)
-      return
-   end
+         { name = 'size', type = parseSizeOption, group = 'Filters',
+           comment = 'Size filter, e.g. +10K (min), -1M (max), 500 (exact). Suffixes: K, M, G.' },
+         { name = 'modified', type = parseModifiedOption, group = 'Filters',
+           comment = 'Modification time filter, e.g. -7d (newer), +24h (older). Units: m, h, d.' },
+         { name = 'exclude', type = 'regex', group = 'Filters',
+           comment = 'A regex pattern to exclude matching filenames.' },
 
-   assert(not (glFilter and glName), 'Options "filter" and "name" are mutually exclusive. Use one or the other.')
+         { name = 'count', kind = 'flag', default = false, group = 'Output',
+           comment = 'Print only the total match count.' },
+         { name = 'output', type = 'enum', default = 'path', choices = array<string> { 'path', 'name', 'detail' },
+           group = 'Output', comment = "Output format: 'path', 'name', or 'detail'." },
+         { name = 'verbose', kind = 'flag', default = false, group = 'Output',
+           comment = 'Print search parameters before searching.' },
+         { name = 'exec', type = 'str', group = 'Execution',
+           comment = 'Execute a command for each match, with {} replaced by the file path.' }
+      }
+   })
 
--- Build search options
+   glArgs = glParser.process()
+   if not glArgs then return end
+
+   glSearchPath = normaliseSearchPath(glArgs.path)
+   glFilter     = glArgs.filter
+   glName       = glArgs.name
+   glType       = glArgs.type
+   glMaxDepth   = glArgs.maxdepth
+   glMinDepth   = glArgs.mindepth
+   glSize       = glArgs.size
+   glModified   = glArgs.modified
+   glExclude    = glArgs.exclude
+   glCount      = glArgs.count
+   glExec       = glArgs.exec
+   glOutput     = glArgs.output
+   glVerbose    = glArgs.verbose
+
+   -- Build search options
 
    options = {
       maxDepth = glMaxDepth,
    }
 
    if glFilter then
-      options.nameFilter = regex.new(glFilter)
+      options.nameFilter = glFilter
    elseif glName then
       options.nameFilter = glName
    end
@@ -197,40 +227,30 @@ end
    end
 
    if glSize then
-      min_size, max_size = parseSize(glSize)
-      if min_size then options.minSize = min_size end
-      if max_size then options.maxSize = max_size end
+      if glSize.minSize then options.minSize = glSize.minSize end
+      if glSize.maxSize then options.maxSize = glSize.maxSize end
    end
 
    if glModified then
-      min_date, max_date = parseModified(glModified)
-      if min_date then options.minDate = min_date end
-      if max_date then options.maxDate = max_date end
+      if glModified.minDate then options.minDate = glModified.minDate end
+      if glModified.maxDate then options.maxDate = glModified.maxDate end
    end
-
-   if glExclude then
-      glExcludeRegex = regex.new(glExclude)
-   end
-
--- Verbose output
 
    if glVerbose then
       print(f'Search path: {glSearchPath}')
-      if glFilter then print(f'Filter: {glFilter}') end
+      if glFilter then print(f'Filter: {glFilter.pattern}') end
       if glName then print(f'Name: {glName}') end
       print(f'Type: {glType}')
       print(f'Max depth: {glMaxDepth}')
       if glMinDepth > 0 then print(f'Min depth: {glMinDepth}') end
-      if glSize then print(f'Size: {glSize}') end
-      if glModified then print(f'Modified: {glModified}') end
-      if glExclude then print(f'Exclude: {glExclude}') end
+      if glSize then print(f'Size: {glSize.source}') end
+      if glModified then print(f'Modified: {glModified.source}') end
+      if glExclude then print(f'Exclude: {glExclude.pattern}') end
       if glCount then print('Mode: count only') end
       if glExec then print(f'Exec: {glExec}') end
       print(f'Output: {glOutput}')
       print('')
    end
-
--- Callback and execution
 
    glMatchCount = 0
 
@@ -245,21 +265,17 @@ end
          _, display_name = io.splitPath(trimmed)
       end
 
-      -- mindepth filter
       if glMinDepth > 0 then
          depth = countDepth(Path, glSearchPath)
          if depth < glMinDepth then return end
       end
 
-      -- exclude filter
-      if glExcludeRegex and glExcludeRegex.test(display_name) then return end
+      if glExclude and glExclude.test(display_name) then return end
 
       glMatchCount++
 
-      -- count mode: skip output
       if glCount then return end
 
-      -- Format output
       if glOutput is 'name' then
          print(display_name)
       elseif glOutput is 'detail' then
@@ -271,7 +287,6 @@ end
          print(full_path)
       end
 
-      -- exec command
       if glExec then
          cmd = glExec:replace('{}', full_path)
          space = cmd:find(' ')

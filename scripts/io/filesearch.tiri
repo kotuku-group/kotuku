@@ -9,6 +9,11 @@ io.search = function(Path:str, Options:table)
    lStop         = false
    isRegexFilter = false
 
+   function normaliseFolderPath(Path:str):str
+      if Path:endsWith('/') or Path:endsWith('\\') then return Path end
+      return Path .. '/'
+   end
+
    function contentMatch(Path:str):bool
       lOptions.contentFilter ?? return true
 
@@ -93,15 +98,17 @@ io.search = function(Path:str, Options:table)
          match = true
          if lOptions.nameFilter then
             cmp_name = file_name
+            cmp_filter = lOptions.nameFilter
             if not lOptions.caseSensitive then
                cmp_name = cmp_name:lower()
+               if not isRegexFilter then cmp_filter = cmp_filter:lower() end
             end
 
             if isRegexFilter then
                if not lOptions.nameFilter.test(cmp_name) then
                   match = false
                end
-            elseif cmp_name != lOptions.nameFilter then -- Exact string match
+            elseif cmp_name != cmp_filter then -- Exact string match
                match = false
             end
          end
@@ -139,9 +146,14 @@ io.search = function(Path:str, Options:table)
       -- Recursively scan directory content (if we haven't reached max depth)
 
       if not lOptions.maxDepth or currentDepth < lOptions.maxDepth then
+         can_recurse = true
          try
             folder = obj.new('file', { src=Path, flags=FL_EXCLUDE_FILES | FL_FOLDER } )
+         except ex
+            can_recurse = false
+         end
 
+         if can_recurse then
             err, fl = folder.mtNext()
             while (err is ERR_Okay) and (not lStop) do
                count++
@@ -149,7 +161,7 @@ io.search = function(Path:str, Options:table)
                   -- Do not scan symbolicly linked directories (possible recursion)
                else
                   processing.sleep(0)
-                  scanPath(fl.path, currentDepth + 1)
+                  scanPath(normaliseFolderPath(fl.path), currentDepth + 1)
                end
                err, fl = folder.mtNext()
             end
@@ -176,14 +188,16 @@ io.search = function(Path:str, Options:table)
 
          if Options.nameFilter then
             cmp_name = file_name
+            cmp_filter = lOptions.nameFilter
             if not lOptions.caseSensitive then
                cmp_name = cmp_name:lower()
+               if not isRegexFilter then cmp_filter = cmp_filter:lower() end
             end
 
             if isRegexFilter then
                name_matches = lOptions.nameFilter.test(cmp_name)
             else
-               name_matches = cmp_name is lOptions.nameFilter
+               name_matches = cmp_name is cmp_filter
             end
          end
 
