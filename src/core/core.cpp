@@ -333,6 +333,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
 
    std::forward_list<std::string> volumes;
 
+   bool auto_console = true;
    kt::vector<std::string> newargs;
    if ((Info->Flags & OPF::ARGS) != OPF::NIL) {
       for (i=1; i < Info->ArgCount; i++) {
@@ -364,6 +365,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
             if (glLogLevel < 5) glLogLevel = 5;
          }
          else if (iequals(arg, "no-crash-handler")) glEnableCrashHandler = false;
+         else if (iequals(arg, "no-console"))  auto_console = false; // Disables the automatic console window on Win32
          else if (iequals(arg, "sync"))        glSync = true;
          else if (iequals(arg, "log-threads")) glLogThreads = true;
          else if (iequals(arg, "log-none"))    glLogLevel = 0;
@@ -470,7 +472,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
    AdjustLogLevel(1); // Temporarily limit log output when opening the Core because it's not that interesting
 
 #ifdef _WIN32
-   activate_console(glLogLevel > 0); // This works for the MinGW runtime libraries but not MSYS2
+   glConsoleEnabled = activate_console((glLogLevel > 0) and (auto_console));
 
    // An exception handler deals with crashes unless the program is being debugged.
 
@@ -478,6 +480,8 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
       winSetUnhandledExceptionFilter(&CrashHandler);
    }
    else log.msg("A debugger is active.");
+#else
+   glConsoleEnabled = isatty(STDOUT_FILENO);
 #endif
 
    // Sockets are used on Unix systems to tell our processes when new messages are available for them to read.

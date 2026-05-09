@@ -298,29 +298,32 @@ static int8_t is_console(HANDLE h)
 // If the program is launched from a console, attach to it.  Otherwise create a new console window and redirect output
 // to it (e.g. if launched from a desktop icon).
 
-extern "C" void activate_console(int8_t AllowOpenConsole)
+extern "C" bool activate_console(int8_t AllowOpenConsole)
 {
    static bool activated = false;
+   static bool console_available = false;
 
-   if (!activated) {
+   if (not activated) {
       HANDLE current_out = GetStdHandle(STD_OUTPUT_HANDLE);
       HANDLE current_err = GetStdHandle(STD_ERROR_HANDLE);
       const bool out_valid = (current_out) and (current_out != INVALID_HANDLE_VALUE);
       const bool err_valid = (current_err) and (current_err != INVALID_HANDLE_VALUE);
       const bool out_console = out_valid and is_console(current_out);
       const bool err_console = err_valid and is_console(current_err);
+      const bool has_console = out_console or err_console;
 
       if ((out_valid and not out_console) or (err_valid and not err_console)) {
-         if (out_console or err_console) {
+         if (has_console) {
             SetConsoleOutputCP(CP_UTF8);
             SetConsoleCP(CP_UTF8);
          }
 
          activated = true;
-         return;
+         console_available = has_console;
+         return console_available;
       }
 
-      if (out_console or err_console) {
+      if (has_console) {
          // Already attached to a console; keep the inherited handles and update the code page below.
       }
       else {
@@ -334,7 +337,8 @@ extern "C" void activate_console(int8_t AllowOpenConsole)
             if (((stdout_fd >= 0) and (not _isatty(stdout_fd))) or ((stderr_fd >= 0) and (not _isatty(stderr_fd))) or
                 (out_valid and not out_console) or (err_valid and not err_console)) {
                activated = true;
-               return;
+               console_available = false;
+               return console_available;
             }
 
             AttachConsole(ATTACH_PARENT_PROCESS);
@@ -351,7 +355,7 @@ extern "C" void activate_console(int8_t AllowOpenConsole)
             freopen("CON", "w", stdout);  // Redirect stdout and stderr descriptors to the attached console.
             freopen("CON", "w", stderr);
          }
-         else return;
+         else return false;
       }
 
       // Set console mode to handle UTF-8 properly
@@ -376,7 +380,10 @@ extern "C" void activate_console(int8_t AllowOpenConsole)
       }
 
       activated = true;
+      console_available = true;
+      return console_available;
    }
+   else return console_available;
 }
 
 //********************************************************************************************************************

@@ -59,6 +59,7 @@ int8_t fs_initialised  = FALSE;
 APTR glPageFault     = nullptr;
 bool glScanClasses   = false;
 bool glJanitorActive = false;
+bool glConsoleEnabled = false;
 bool glDebugMemory   = false;
 bool glEnableCrashHandler = true;
 struct CoreBase *LocalCoreBase = nullptr;

@@ -286,6 +286,7 @@ function runTuku(Parameters:array):table
       task_params:push(quoteTaskParam(param))
    end
    task_params:push('--log-warning')
+   task_params:push('--no-console')
 
    local task = obj.new('task', {
       src = glOrigoPath,
