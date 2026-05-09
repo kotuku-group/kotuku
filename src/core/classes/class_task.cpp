@@ -453,6 +453,40 @@ static ERR msg_quit(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgSi
 }
 
 //********************************************************************************************************************
+
+#ifdef __unix__
+static void task_process_end(extTask *Task, int ReturnCode, bool Returned)
+{
+   check_incoming(Task);
+
+   if (Returned) {
+      Task->ReturnCode = ReturnCode;
+      Task->ReturnCodeSet = true;
+   }
+
+   if (Task->InFD != -1) {
+      RegisterFD(Task->InFD, RFD::READ|RFD::REMOVE, &task_stdout, Task);
+      close(Task->InFD);
+      Task->InFD = -1;
+   }
+
+   if (Task->ErrFD != -1) {
+      RegisterFD(Task->ErrFD, RFD::READ|RFD::REMOVE, &task_stderr, Task);
+      close(Task->ErrFD);
+      Task->ErrFD = -1;
+   }
+
+   if (Task->ExitCallback.isC()) {
+      auto routine = (void (*)(extTask *, APTR))Task->ExitCallback.Routine;
+      routine(Task, Task->ExitCallback.Meta);
+   }
+   else if (Task->ExitCallback.isScript()) {
+      sc::Call(Task->ExitCallback, std::to_array<ScriptArg>({ { "Task", Task, FD_OBJECTPTR } }));
+   }
+}
+#endif
+
+//********************************************************************************************************************
 // Determine whether or not a process is alive
 
 extern "C" ERR validate_process(int ProcessID)
@@ -476,15 +510,24 @@ extern "C" ERR validate_process(int ProcessID)
    #endif
 
    OBJECTID task_id = 0;
+   int return_code = 0;
+   bool returned = false;
+
    for (auto it = glTasks.begin(); it != glTasks.end(); it++) {
       if (it->ProcessID IS ProcessID) {
          task_id = it->TaskID;
+         return_code = it->ReturnCode;
+         returned = it->Returned;
          glTasks.erase(it);
          break;
       }
    }
 
    if (not task_id) return ERR::False;
+
+   #ifdef __unix__
+      if (auto task = (extTask *)GetObjectPtr(task_id)) task_process_end(task, return_code, returned);
+   #endif
 
    evTaskRemoved task_removed = { GetEventID(EVG::SYSTEM, "task", "removed"), task_id, ProcessID };
    BroadcastEvent(&task_removed, sizeof(task_removed));
@@ -633,7 +676,7 @@ static ERR TASK_Activate(extTask *Self)
    if (not glJanitorActive) {
       kt::SwitchContext ctx(glCurrentTask);
       auto call = C_FUNCTION(process_janitor);
-      SubscribeTimer(60, &call, &glProcessJanitor);
+      SubscribeTimer(0.06, &call, &glProcessJanitor);
       glJanitorActive = true;
    }
 

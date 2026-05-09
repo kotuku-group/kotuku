@@ -97,6 +97,7 @@ ERR process_janitor(OBJECTID SubscriberID, int Elapsed, int TotalElapsed)
 
 #ifdef __unix__
    kt::Log log(__FUNCTION__);
+   std::vector<int> finished_processes;
 
    // Call waitpid() to check for zombie processes first.  This covers all processes within our own context, so our child processes, children of those children etc.
 
@@ -108,9 +109,10 @@ ERR process_janitor(OBJECTID SubscriberID, int Elapsed, int TotalElapsed)
 
       for (auto &task : glTasks) {
          if (childprocess IS task.ProcessID) {
-            task.ReturnCode = WEXITSTATUS(status);
+            if (WIFEXITED(status)) task.ReturnCode = WEXITSTATUS(status);
+            else if (WIFSIGNALED(status)) task.ReturnCode = 128 + WTERMSIG(status);
             task.Returned   = true;
-            validate_process(childprocess);
+            finished_processes.push_back(childprocess);
             break;
          }
       }
@@ -120,10 +122,13 @@ ERR process_janitor(OBJECTID SubscriberID, int Elapsed, int TotalElapsed)
    // some problems with zombies, hence the earlier waitpid() routine to clean up such processes.
 
    for (auto &task : glTasks) {
+      if (task.Returned) continue;
       if ((kill(task.ProcessID, 0) IS -1) and (errno IS ESRCH)) {
-         validate_process(task.ProcessID);
+         finished_processes.push_back(task.ProcessID);
       }
    }
+
+   for (auto process_id : finished_processes) validate_process(process_id);
 
 #elif _WIN32
    for (auto &task : glTasks) {
