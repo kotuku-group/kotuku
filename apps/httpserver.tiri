@@ -25,7 +25,6 @@ Examples:
   origo apps/httpserver config=apps/httpserver_cfg.json verbose
 ]],
       userConfig  = 'user:config/httpserver_cfg.json',
-      autoHelp    = false,
       args        = array<table> {
          { name = 'folder', type = 'folder', exists = true, required = true, group = 'Server',
            comment = 'Required. Folder containing HTML pages and static files to serve.',
@@ -59,18 +58,12 @@ Examples:
            end
          },
          { names = array<string> { 'rateLimitWindow', 'ratelimitwindow' }, type = 'int', group = 'Behaviour',
-           comment = 'Rate-limit window in seconds.' },
-         { name = 'help', type = 'str', hidden = true, implicit = true,
-           exec = function(Parser:table, ArgName:str, Value:any, Param:table)
-              topic = (Value is true or Value is 'true') ? nil :> Value
-              print(Parser.getHelp(nil, topic))
-              raise ERR_Terminate
-           end }
+           comment = 'Rate-limit window in seconds.' }
       }
    })
 
    glOptions = glParser.process()
-   if glOptions is nil then return end
+   glOptions ?? return
 
    err, resolved_path = mSys.ResolvePath(glOptions.folder)
    if err is ERR_Okay and resolved_path then

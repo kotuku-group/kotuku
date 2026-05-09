@@ -959,6 +959,7 @@ function serveFile(self, ClientSocket, FilePath:str, Request)
 
          if err != ERR_Okay then
             logMessage(self, 'Error streaming file: ' .. mSys.GetErrorMsg(err))
+            closeHttpResponse(ClientSocket)
             return
          end
 
