@@ -522,6 +522,10 @@ struct jit_State {
   TValue errinfo;     //  Additional info element for trace errors.
   uint8_t retryrec;   //  Retry recording.
   bool abort_in_progress; //  True while aborting trace recording (skip try handlers)
+
+  // Optimisation cache for try-block stack materialisation.  Correctness comes from forced
+  // BC_TRYENTER materialisation and CCI_T materialisation before throwable helper calls.
+  TRef trymat[LJ_MAX_JSLOTS+LJ_STACK_EXTRA];
 };
 
 #ifdef LUA_USE_ASSERT
