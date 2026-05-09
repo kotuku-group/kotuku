@@ -86,6 +86,9 @@ std::list<FDRecord> glFDTable;
 std::mutex glmInotifyLookup;
 std::unordered_map<int, OBJECTID> glInotifyLookup;
 #endif
+#ifdef __unix__
+int glChildSignalFD[2] = { -1, -1 };
+#endif
 
 std::map<std::string, ConfigKeys, CaseInsensitiveMap> glVolumes;
 std::unordered_map<std::string, std::vector<Object *>, CaseInsensitiveHash, CaseInsensitiveEqual> glObjectLookup; // Name lookups

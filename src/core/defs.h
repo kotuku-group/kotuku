@@ -840,6 +840,7 @@ extern WINHANDLE glTaskLock;
 
 #ifdef __unix__
 extern thread_local int glSocket;
+extern int glChildSignalFD[2];
 extern struct FileMonitor *glFileMonitor;
 #endif
 
@@ -1128,6 +1129,7 @@ ERR    msg_threadaction(APTR, int, int, APTR, int);
 ERR    msg_free(APTR, int, int, APTR, int);
 void   optimise_write_field(Field &);
 void   PrepareSleep(void);
+void   process_child_signals(HOSTHANDLE, APTR);
 ERR    process_janitor(OBJECTID, int, int);
 void   register_sleep(int);
 void   deregister_sleep(void);

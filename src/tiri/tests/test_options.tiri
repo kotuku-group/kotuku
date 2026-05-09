@@ -804,17 +804,17 @@ end
    })
 
    args = parser.process(array<string> {
-      'path=scripts/options.tiri',
-      'file=scripts/options.tiri',
-      'folder=scripts'
+      'path=sdk:scripts/options.tiri',
+      'file=sdk:scripts/options.tiri',
+      'folder=sdk:scripts'
    })
-   assert(args.path is 'scripts/options.tiri', 'Existing path should parse')
-   assert(args.file is 'scripts/options.tiri', 'Existing file should parse')
-   assert(args.folder is 'scripts', 'Existing folder should parse')
+   assert(args.path is 'sdk:scripts/options.tiri', 'Existing path should parse')
+   assert(args.file is 'sdk:scripts/options.tiri', 'Existing file should parse')
+   assert(args.folder is 'sdk:scripts', 'Existing folder should parse')
 
    expect_error(parser, array<string> { 'path=does-not-exist' }, ERR_FileNotFound, "does not exist")
-   expect_error(parser, array<string> { 'file=scripts' }, ERR_ExpectedFile, "is not a file")
-   expect_error(parser, array<string> { 'folder=scripts/options.tiri' }, ERR_ExpectedFolder, "is not a folder")
+   expect_error(parser, array<string> { 'file=sdk:scripts' }, ERR_ExpectedFile, "is not a file")
+   expect_error(parser, array<string> { 'folder=sdk:scripts/options.tiri' }, ERR_ExpectedFolder, "is not a folder")
 end
 
 @Test function MultipleValuesUseValidationRules()

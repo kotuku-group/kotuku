@@ -415,6 +415,18 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
 
 #ifdef __unix__
    struct sigaction sig;
+   clearmem(&sig, sizeof(sig));
+   sigemptyset(&sig.sa_mask);
+
+   if (pipe(glChildSignalFD) IS -1) {
+      KERR("Failed to create child process signal pipe: %s\n", strerror(errno));
+      return ERR::SystemCall;
+   }
+
+   fcntl(glChildSignalFD[0], F_SETFL, fcntl(glChildSignalFD[0], F_GETFL) | O_NONBLOCK);
+   fcntl(glChildSignalFD[1], F_SETFL, fcntl(glChildSignalFD[1], F_GETFL) | O_NONBLOCK);
+   fcntl(glChildSignalFD[0], F_SETFD, FD_CLOEXEC);
+   fcntl(glChildSignalFD[1], F_SETFD, FD_CLOEXEC);
 
    sig.sa_flags = SA_SIGINFO;
    if (glEnableCrashHandler) {
@@ -490,20 +502,33 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
 
                KMSG("Attempting to re-use an earlier bind().\n");
                if (setsockopt(glSocket, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) IS -1) {
+                  close(glChildSignalFD[0]);
+                  close(glChildSignalFD[1]);
+                  glChildSignalFD[0] = -1;
+                  glChildSignalFD[1] = -1;
                   return ERR::SystemCall;
                }
             }
             else {
+               close(glChildSignalFD[0]);
+               close(glChildSignalFD[1]);
+               glChildSignalFD[0] = -1;
+               glChildSignalFD[1] = -1;
                return ERR::SystemCall;
             }
          }
       }
       else {
          KERR("Failed to create a new socket communication point.\n");
+         close(glChildSignalFD[0]);
+         close(glChildSignalFD[1]);
+         glChildSignalFD[0] = -1;
+         glChildSignalFD[1] = -1;
          return ERR::SystemCall;
       }
 
       RegisterFD(glSocket, RFD::READ, nullptr, nullptr);
+      RegisterFD(glChildSignalFD[0], RFD::READ, &process_child_signals, nullptr);
    #endif
 
    log.msg("Process: %d, Sync: %s, Root: %s", glProcessID, (glSync) ? "Y" : "N", glRootPath.c_str());
@@ -912,38 +937,10 @@ static void NullHandler(int SignalNumber, siginfo_t *Info, APTR Context)
 #ifdef __unix__
 static void child_handler(int SignalNumber, siginfo_t *Info, APTR Context)
 {
-#if 0
-   kotuku:Log log(__FUNCTION__);
-
-   int childprocess = Info->si_pid;
-
-   // Get the return code
-
-   int status = 0;
-   waitpid(Info->si_pid, &status, WNOHANG);
-   int result = WEXITSTATUS(status);
-
-   log.warning("Process #%d exited, return-code %d.", childprocess, result);
-
-   // Store the return code for this process in any Task object that is associated with it.
-   //
-   // !!! TODO: The slow methodology of this loop needs attention !!!
-
-   for (const auto & mem : glPrivateMemory) {
-      if (!(mem.Flags & MEM::OBJECT)) continue;
-
-      objTask *task;
-      if ((task = mem.Address)) {
-         if ((task->ClassID IS ID_TASK) and (task->ProcessID IS childprocess)) {
-            task->ReturnCode    = result;
-            task->ReturnCodeSet = true;
-            break;
-         }
-      }
+   if (glChildSignalFD[1] != -1) {
+      uint8_t signal_byte = 1;
+      (void)write(glChildSignalFD[1], &signal_byte, sizeof(signal_byte));
    }
-
-   validate_process(childprocess);
-#endif
 }
 #endif
 

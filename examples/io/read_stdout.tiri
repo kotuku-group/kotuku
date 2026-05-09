@@ -2,27 +2,25 @@
 Demonstrates how to launch a sub-process and intercept the data that it prints to stderr and stdout.
 --]]
 
-   file_out = obj.new("file", { path="temp:output-data.txt", flags="NEW|WRITE" } )
-   file_err = obj.new("file", { path="temp:error-data.txt", flags="NEW|WRITE" } )
-
    try
+      current_task = mSys.CurrentTask()
       task = obj.new("task", {
-         location = "kotuku:origo",
+         location = current_task.processPath .. 'origo',
          args   = "--help",
          outputCallback = function(Task, Data)
-            file_out.acWrite(Data)
+            io.write(Data:getString())
          end,
          errorCallback = function(Task, Data)
-            file_err.acWrite(Data)
+            io.write(Data:getString())
          end,
          exitCallback = function(Task)
             print("Detected child process exit.")
-            mSys.SendMessage(MSGID_QUIT)
+            processing.signal()
          end
       })
 
       print(f'Running {task.location}')
-      print("Press CTRL-C to exit or wait for program to finish.  Received output is saved to '" .. file_out.path .. "' and '" .. file_err.path .. "'")
+      print("Press CTRL-C to exit or wait for program to finish.  Received output is printed to stdout.")
       task.acActivate()
       processing.sleep()
    except ex

@@ -5,7 +5,9 @@ Functions that are internal to the Core.
 *********************************************************************************************************************/
 
 #ifdef __unix__
+ #include <errno.h>
  #include <signal.h>
+ #include <unistd.h>
  #include <sys/wait.h>
 #endif
 
@@ -88,15 +90,11 @@ CLASSID lookup_class_by_ext(CLASSID Filter, std::string_view Ext)
 
 //********************************************************************************************************************
 
-ERR process_janitor(OBJECTID SubscriberID, int Elapsed, int TotalElapsed)
+static void reap_child_processes(bool CheckAllProcesses)
 {
-   if (glTasks.empty()) {
-      glJanitorActive = false;
-      return ERR::Terminate;
-   }
-
 #ifdef __unix__
-   kt::Log log(__FUNCTION__);
+   kt::Log log("child_process");
+   std::vector<int> finished_processes;
 
    // Call waitpid() to check for zombie processes first.  This covers all processes within our own context, so our child processes, children of those children etc.
 
@@ -104,13 +102,14 @@ ERR process_janitor(OBJECTID SubscriberID, int Elapsed, int TotalElapsed)
 
    int childprocess, status;
    while ((childprocess = waitpid(-1, &status, WNOHANG)) > 0) {
-      log.warning("Zombie process #%d discovered.", childprocess);
+      log.trace("Process #%d exited.", childprocess);
 
       for (auto &task : glTasks) {
          if (childprocess IS task.ProcessID) {
-            task.ReturnCode = WEXITSTATUS(status);
+            if (WIFEXITED(status)) task.ReturnCode = WEXITSTATUS(status);
+            else if (WIFSIGNALED(status)) task.ReturnCode = 128 + WTERMSIG(status);
             task.Returned   = true;
-            validate_process(childprocess);
+            finished_processes.push_back(childprocess);
             break;
          }
       }
@@ -119,11 +118,42 @@ ERR process_janitor(OBJECTID SubscriberID, int Elapsed, int TotalElapsed)
    // Check all registered processes to see which ones are alive.  This routine can manage all processes, although exhibits
    // some problems with zombies, hence the earlier waitpid() routine to clean up such processes.
 
-   for (auto &task : glTasks) {
-      if ((kill(task.ProcessID, 0) IS -1) and (errno IS ESRCH)) {
-         validate_process(task.ProcessID);
+   if (CheckAllProcesses) {
+      for (auto &task : glTasks) {
+         if (task.Returned) continue;
+         if ((kill(task.ProcessID, 0) IS -1) and (errno IS ESRCH)) {
+            finished_processes.push_back(task.ProcessID);
+         }
       }
    }
+
+   for (auto process_id : finished_processes) validate_process(process_id);
+#endif
+}
+
+//********************************************************************************************************************
+
+void process_child_signals(HOSTHANDLE FD, APTR Data)
+{
+#ifdef __unix__
+   uint8_t buffer[64];
+   while (read(FD, &buffer, sizeof(buffer)) > 0);
+
+   reap_child_processes(false);
+#endif
+}
+
+//********************************************************************************************************************
+
+ERR process_janitor(OBJECTID SubscriberID, int Elapsed, int TotalElapsed)
+{
+   if (glTasks.empty()) {
+      glJanitorActive = false;
+      return ERR::Terminate;
+   }
+
+#ifdef __unix__
+   reap_child_processes(true);
 
 #elif _WIN32
    for (auto &task : glTasks) {

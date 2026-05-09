@@ -19,19 +19,13 @@ end
 
 @BeforeAll function init(State)
    global glOrigoPath = resolveFirstPath(array<string> {
-      'build/agents-install/origo',
-      'build/agents-install/origo.exe',
+      'sdk:build/agents-install/origo',
+      'sdk:build/agents-install/origo.exe',
       'origo',
-      'origo.exe',
-      '../agents-install/origo',
-      '../agents-install/origo.exe',
-      '../../build/agents-install/origo',
-      '../../build/agents-install/origo.exe'
+      'origo.exe'
    })
    global glTukuPath = resolveFirstPath(array<string> {
-      'apps/tuku.tiri',
-      '../agents-install/apps/tuku.tiri',
-      '../../apps/tuku.tiri'
+      'sdk:apps/tuku.tiri',
    })
    global glFollowNoRedirectHits = 0
    global glFollowRedirectTargetHits = 0
