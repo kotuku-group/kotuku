@@ -1,0 +1,1546 @@
+-- Kotuku Proxy Server Library
+--
+-- Usage:
+-- import 'net/proxyserver'
+-- proxy = proxylib.start({ Options... })
+-- proxy.stop()
+
+   include 'network'
+   import 'json'
+
+   namespace 'proxylib'
+
+   _LIB[_NS] = { }
+   proxylib = _LIB[_NS]
+
+-- Deferred regex patterns
+rxPercentEncoded   = <{ regex.new([[%([0-9A-Fa-f]{2})]]) }>
+rxLineIterator     = <{ regex.new([[([^\r\n]+)]]) }>
+rxHttpRequest      = <{ regex.new([[(\S+)\s+(\S+)\s+(\S+)]]) }>
+rxHeaderPair       = <{ regex.new([[([^:]+):\s*(.+)]]) }>
+rxStatusLine       = <{ regex.new([[(\S+)\s+(\d+)\s*(.*)]]) }>
+rxHostPort         = <{ regex.new([[([^:]+):(\d+)]]) }>
+rxHostOptPort      = <{ regex.new([[([^:]+):?(\d*)]]) }>
+rxUrlParts         = <{ regex.new([[(https?):\/\/([^:\/]+):?(\d*)]]) }>
+
+-- HTTP Status texts for responses
+glStatusTexts = {
+   [200] = 'OK', [201] = 'Created', [204] = 'No Content',
+   [301] = 'Moved Permanently', [302] = 'Found', [304] = 'Not Modified',
+   [400] = 'Bad Request', [401] = 'Unauthorized', [403] = 'Forbidden',
+   [404] = 'Not Found', [405] = 'Method Not Allowed', [407] = 'Proxy Authentication Required',
+   [408] = 'Request Timeout', [429] = 'Too Many Requests',
+   [500] = 'Internal Server Error', [501] = 'Not Implemented', [502] = 'Bad Gateway',
+   [503] = 'Service Unavailable', [504] = 'Gateway Timeout'
+}
+
+-- Common MIME types for request/response handling
+glMimeTypes = {
+   html = 'text/html', htm = 'text/html', css = 'text/css',
+   js = 'application/javascript', json = 'application/json',
+   xml = 'application/xml', txt = 'text/plain',
+   png = 'image/png', jpg = 'image/jpeg', jpeg = 'image/jpeg',
+   gif = 'image/gif', svg = 'image/svg+xml', ico = 'image/x-icon'
+}
+
+----------------------------------------------------------------------------------------------------------------------
+-- Utility Functions
+
+function timestamp()
+   tm = obj.new('time')
+   tm.acQuery()
+   return string.format('%04d-%02d-%02d %02d:%02d:%02d.%03d',
+      tm.year, tm.month, tm.day, tm.hour, tm.minute, tm.second, tm.milliSecond)
+end
+
+function logMessage(self, level, message)
+   if not self or self.verbose then
+      prefix = '[' .. timestamp() .. '] [' .. (level or 'INFO') .. '] '
+      print(prefix .. message)
+   end
+end
+
+function validatePort(port)
+   portNum = tonumber(port)
+   if not portNum or portNum < 1 or portNum > 65535 then
+      return false
+   end
+   return true
+end
+
+function parseProxyAddress(Value:any):<table, str>
+   if not Value then return nil, nil end
+
+   local address = tostring(Value):trim()
+   if address is '' then return nil, 'Upstream proxy must be in host:port form.' end
+
+   local host, port_text = rxHostPort.extract(address)
+   if not host or host is '' or host .. ':' .. port_text != address then
+      return nil, 'Upstream proxy must be in host:port form.'
+   end
+
+   local port = tonumber(port_text)
+   if not validatePort(port) then
+      return nil, 'Upstream proxy port must be between 1 and 65535.'
+   end
+
+   return {
+      host = host,
+      port = port,
+      address = address
+   }, nil
+end
+
+function exceptionMessage(Error:any):str
+   if type(Error) is 'table' and Error.message then return tostring(Error.message) end
+   return tostring(Error)
+end
+
+function reportProxyError(self, Code:str, Message:str, State:table, Cause:any):table
+   local error_info = {
+      code = Code ?? 'proxy_error',
+      message = Message ?? 'Proxy error',
+      timestamp = timestamp()
+   }
+
+   if State then
+      error_info.clientIP = State.clientIP
+      error_info.phase = State.phase
+      error_info.targetHost = State.targetHost
+      error_info.targetPort = State.targetPort
+      if State.request then
+         error_info.method = State.request.method
+         error_info.url = State.request.url
+      end
+   end
+
+   if Cause then error_info.error = exceptionMessage(Cause) end
+
+   local log_text = error_info.message
+   if error_info.error then log_text ..= ': ' .. error_info.error end
+   logMessage(self, 'ERROR', log_text)
+
+   if not self or not self.onError or self._reportingError then return error_info end
+
+   self._reportingError = true
+   try
+      self.onError(error_info)
+   except ex
+      logMessage(self, 'ERROR', 'onError callback failed: ' .. exceptionMessage(ex))
+   end
+   self._reportingError = false
+
+   return error_info
+end
+
+function invokeProxyHook(self, HookName:str, State:table, Callback:func, ...):any
+   if not Callback then return nil end
+
+   local result:any = nil
+   try
+      result = Callback(...)
+   except ex
+      reportProxyError(self, HookName .. '_failed', 'Proxy callback failed: ' .. HookName, State, ex)
+   end
+
+   return result
+end
+
+-- URL-decode percent-encoded characters
+function urlDecode(str)
+   if not str then return str end
+   str = str:replace('+', ' ')
+   result = ''
+   last_stop = 0
+   for start, stop, cap in rxPercentEncoded.findAll(str) do
+      if start > last_stop then result ..= str:substr(last_stop, start) end
+      result ..= string.char(tonumber(cap[0], 16))
+      last_stop = stop
+   end
+   return result .. str:substr(last_stop)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- HTTP Request/Response Parsing
+
+function parseHttpRequest(Data:str):table
+   lines = {}
+   for _, _, cap in rxLineIterator.findAll(Data) do
+      line = cap[0]
+      if line and line != '' then table.insert(lines, line) end
+   end
+
+   if #lines is 0 then return nil end
+
+   request_line = lines[0]
+   method, url, version = rxHttpRequest.extract(request_line)
+
+   if not method or not url then return nil end
+
+   headers = {}
+
+   for i = 1, #lines-1 do
+      local line = lines[i]
+      local name, value = rxHeaderPair.extract(line)
+      if name and value then
+         headers[name:lower()] = value
+      end
+   end
+
+   return {
+      method = method,
+      url = url,
+      version = version or 'HTTP/1.1',
+      headers = headers,
+      body = nil,
+      streamed = true,
+      raw = Data
+   }
+end
+
+function parseHttpResponse(Data:str):table
+   lines = {}
+   for _, _, cap in rxLineIterator.findAll(Data) do
+      line = cap[0]
+      if line and line != '' then table.insert(lines, line) end
+   end
+
+   if #lines is 0 then return nil end
+
+   status_line = lines[0]
+   version, status, status_text = rxStatusLine.extract(status_line)
+
+   if not version or not status then return nil end
+
+   headers = {}
+
+   for i = 1, #lines-1 do
+      line = lines[i]
+      name, value = rxHeaderPair.extract(line)
+      if name and value then
+         headers[name:lower()] = value
+      end
+   end
+
+   status_num = tonumber(status)
+
+   return {
+      version = version or 'HTTP/1.1',
+      status = status_num,
+      statusText = status_text or glStatusTexts[status_num] or 'Unknown',
+      headers = headers,
+      body = nil,
+      streamed = true,
+      raw = Data
+   }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Flow Management System
+
+function createFlowManager(self)
+   manager = {
+      _flows = {},
+      _flowId = 0
+   }
+
+   manager.maxFlows = function():num
+      local max_flows = tonumber(self.maxFlows)
+      if not max_flows or max_flows < 1 then return 1000 end
+      return max_flows
+   end
+
+   manager.nextId = function():num
+      manager._flowId++
+      return manager._flowId
+   end
+
+   manager.count = function():num
+      local count = 0
+      for _ in pairs(manager._flows) do count++ end
+      return count
+   end
+
+   manager.prune = function()
+      local max_flows = manager.maxFlows()
+
+      while manager.count() > max_flows do
+         local oldest_id = nil
+         for id in pairs(manager._flows) do
+            if oldest_id is nil or id < oldest_id then oldest_id = id end
+         end
+
+         if oldest_id is nil then return end
+         manager._flows[oldest_id] = nil
+      end
+   end
+
+   manager.copyHeaders = function(Headers:table):table
+      local headers = {}
+      if type(Headers) != 'table' then return headers end
+
+      for name, value in pairs(Headers) do
+         local value_type = type(value)
+         if value_type is 'string' or value_type is 'number' or value_type is 'boolean' then
+            headers[tostring(name)] = value
+         end
+      end
+
+      return headers
+   end
+
+   manager.copyMessage = function(Message:table):any
+      if type(Message) != 'table' then return nil end
+
+      local copy = {
+         method = Message.method,
+         url = Message.url,
+         version = Message.version,
+         status = Message.status,
+         statusText = Message.statusText,
+         headers = manager.copyHeaders(Message.headers),
+         streamed = Message.streamed is true,
+         raw = Message.raw
+      }
+
+      if not copy.streamed and type(Message.body) is 'string' then
+         copy.body = Message.body
+      end
+
+      return copy
+   end
+
+   manager.copyFlow = function(Flow:table):table
+      return {
+         id = Flow.id,
+         timestamp = Flow.timestamp,
+         clientIP = Flow.clientIP,
+         request = manager.copyMessage(Flow.request),
+         response = manager.copyMessage(Flow.response),
+         duration = tonumber(Flow.duration) or 0,
+         intercepted = Flow.intercepted is true,
+         modified = Flow.modified is true
+      }
+   end
+
+   manager.normaliseFlow = function(Flow:table, Key:any):any
+      if type(Flow) != 'table' then return nil end
+
+      local id = tonumber(Flow.id) or tonumber(Key)
+      if not id then return nil end
+
+      return {
+         id = id,
+         timestamp = type(Flow.timestamp) is 'string' and Flow.timestamp or timestamp(),
+         clientIP = type(Flow.clientIP) is 'string' and Flow.clientIP or 'unknown',
+         request = manager.copyMessage(Flow.request),
+         response = manager.copyMessage(Flow.response),
+         duration = tonumber(Flow.duration) or 0,
+         intercepted = Flow.intercepted is true,
+         modified = Flow.modified is true
+      }
+   end
+
+   manager.exportCopy = function():table
+      local export_flows = {}
+      for id, flow in pairs(manager._flows) do
+         export_flows[id] = manager.copyFlow(flow)
+      end
+
+      return export_flows
+   end
+
+   -- Record a new flow
+   manager.record = function(clientIP, request, response)
+      local flow = {
+         id = manager.nextId(),
+         timestamp = timestamp(),
+         clientIP = clientIP,
+         request = request,
+         response = response,
+         duration = 0,
+         intercepted = false,
+         modified = false
+      }
+
+      manager._flows[flow.id] = flow
+      manager.prune()
+
+      invokeProxyHook(self, 'onFlowRecord', nil, self.onFlowRecord, flow)
+
+      return flow
+   end
+
+   -- Get all recorded flows
+   manager.getFlows = function()
+      return manager._flows
+   end
+
+   -- Get specific flow by ID
+   manager.getFlow = function(id)
+      return manager._flows[id]
+   end
+
+   -- Clear all flows
+   manager.clear = function()
+      manager._flows = {}
+      manager._flowId = 0
+   end
+
+   -- Export flows to JSON
+   manager.export = function(filename:str):bool
+      if not filename then return false end
+
+      local encoded:any = nil
+      try
+         encoded = json.encode(manager.exportCopy())
+      except e
+         return false
+      end
+
+      if type(encoded) != 'string' then return false end
+
+      local fl:any = nil
+      try
+         fl = obj.new('file', { path = filename, flags = FL_NEW|FL_WRITE })
+      except e
+         return false
+      end
+
+      if not fl then return false end
+
+      local err, written = fl.acWrite(encoded, #encoded)
+      fl.free()
+
+      if err != ERR_Okay or written != #encoded then
+         return false
+      end
+
+      return true
+   end
+
+   -- Load flows from JSON
+   manager.load = function(filename:str)
+      if not filename then return false end
+
+      local file:any = nil
+      try
+         file = obj.new('file', { path = filename, flags = FL_READ })
+      except e
+         return false
+      end
+
+      if not file then return false end
+
+      local buffer = string.alloc(file.size)
+      local err, bytes_read = file.acRead(buffer, file.size)
+      file.free()
+
+      if err != ERR_Okay then return false end
+
+      local content = buffer:substr(0, bytes_read)
+
+      local decoded:any = nil
+      try
+         decoded = json.decode(content)
+      except e
+         return false
+      end
+
+      if type(decoded) != 'table' and type(decoded) != 'array' then return false end
+
+      local imported_flows = {}
+      local max_id = 0
+
+      for key, imported_flow in pairs(decoded) do
+         local flow = manager.normaliseFlow(imported_flow, key)
+         if flow then
+            imported_flows[flow.id] = flow
+            if flow.id > max_id then max_id = flow.id end
+         end
+      end
+
+      manager._flows = imported_flows
+      manager._flowId = max_id
+      manager.prune()
+
+      if manager._flowId < max_id then manager._flowId = max_id end
+      return true
+   end
+
+   manager.importTable = function(Flows:table):bool
+      if type(Flows) != 'table' and type(Flows) != 'array' then return false end
+
+      local imported_flows = {}
+      local max_id = 0
+
+      for key, imported_flow in pairs(Flows) do
+         local flow = manager.normaliseFlow(imported_flow, key)
+         if flow then
+            imported_flows[flow.id] = flow
+            if flow.id > max_id then max_id = flow.id end
+         end
+      end
+
+      manager._flows = imported_flows
+      manager._flowId = max_id
+      manager.prune()
+      return true
+   end
+
+   return manager
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Certificate Manager for MITM
+
+function createCertificateManager(self)
+   manager = {
+      _certificates = {},
+      _rootCA = nil
+   }
+
+   -- Load root CA certificate for MITM
+   manager.loadRootCA = function(certPath, keyPath, password)
+      logMessage(self, 'INFO', 'Loading root CA certificate: ' .. (certPath or 'none'))
+
+      ssl = obj.new('netsocket', { flags = 'SSL' })
+      if ssl then
+         if certPath and keyPath then
+            ssl.sslCertificate = certPath
+            ssl.sslPrivateKey = keyPath
+            if password then
+               ssl.sslKeyPassword = password
+            end
+         end
+         manager._rootCA = ssl
+         logMessage(self, 'INFO', 'Root CA loaded successfully')
+         return true
+      end
+
+      logMessage(self, 'ERROR', 'Failed to load root CA certificate')
+      return false
+   end
+
+   -- Get or generate certificate for domain
+   manager.getCertificate = function(domain)
+      if manager._certificates[domain] then
+         return manager._certificates[domain]
+      end
+
+      -- For now, use the root CA certificate for all domains
+      -- In a full implementation, this would generate domain-specific certificates
+      if manager._rootCA then
+         manager._certificates[domain] = manager._rootCA
+         return manager._rootCA
+      end
+
+      return nil
+   end
+
+   -- Check if MITM is enabled
+   manager.isMITMEnabled = function()
+      return manager._rootCA != nil
+   end
+
+   return manager
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Request/Response Interceptor Engine
+
+function createInterceptorEngine(self)
+   engine = {
+      _requestInterceptors = {},
+      _responseInterceptors = {}
+   }
+
+   -- Add request interceptor
+   engine.addRequestInterceptor = function(interceptor)
+      if type(interceptor) is 'function' then
+         table.insert(engine._requestInterceptors, interceptor)
+         logMessage(self, 'INFO', 'Request interceptor added')
+      end
+   end
+
+   -- Add response interceptor
+   engine.addResponseInterceptor = function(interceptor)
+      if type(interceptor) is 'function' then
+         table.insert(engine._responseInterceptors, interceptor)
+         logMessage(self, 'INFO', 'Response interceptor added')
+      end
+   end
+
+   -- Process request through interceptors
+   engine.interceptRequest = function(request, flow)
+      modified = false
+      for interceptor in values(engine._requestInterceptors) do
+         try
+            result = interceptor(request, flow)
+            if result then
+               request = result
+               modified = true
+               logMessage(self, 'DEBUG', 'Request intercepted and modified')
+            end
+         except ex
+            reportProxyError(self, 'request_interceptor_failed', 'Request interceptor failed', nil, ex)
+         end
+      end
+
+      if flow then
+         flow.intercepted = true
+         flow.modified = modified
+      end
+
+      return request, modified
+   end
+
+   -- Process response through interceptors
+   engine.interceptResponse = function(response, flow)
+      modified = false
+      for interceptor in values(engine._responseInterceptors) do
+         try
+            result = interceptor(response, flow)
+            if result then
+               response = result
+               modified = true
+               logMessage(self, 'DEBUG', 'Response intercepted and modified')
+            end
+         except ex
+            reportProxyError(self, 'response_interceptor_failed', 'Response interceptor failed', nil, ex)
+         end
+      end
+
+      if flow then
+         flow.intercepted = true
+         flow.modified = flow.modified or modified
+      end
+
+      return response, modified
+   end
+
+   -- Clear all interceptors
+   engine.clear = function()
+      engine._requestInterceptors = {}
+      engine._responseInterceptors = {}
+   end
+
+   return engine
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- MITM is intentionally deferred. CONNECT is handled as an opaque TCP tunnel.
+
+----------------------------------------------------------------------------------------------------------------------
+-- Core Proxy Server Implementation
+
+function getClientIP(ClientSocket:obj):str
+   if ClientSocket.client and ClientSocket.client.ip then
+      ip = ClientSocket.client.ip
+      return ip[1] .. '.' .. ip[2] .. '.' .. ip[3] .. '.' .. ip[4]
+   end
+
+   return 'unknown'
+end
+
+function clientConnectionKey(ClientSocket:obj):str
+   return getClientIP(ClientSocket) .. ':' .. tostring(ClientSocket)
+end
+
+function touchProxyConnection(State:table)
+   if State then State.lastActivity = mSys.PreciseTime() end
+end
+
+function createProxyConnectionState(self, ClientSocket:obj):table
+   local connection_key = clientConnectionKey(ClientSocket)
+   local state = self._connections[connection_key]
+   if state then return state end
+
+   state = {
+      connectionKey = connection_key,
+      clientSocket = ClientSocket,
+      upstreamSocket = nil,
+      clientBuffer = '',
+      responseBuffer = '',
+      pendingRequest = '',
+      pendingClientData = '',
+      requestSent = false,
+      upstreamProxyConnectSent = false,
+      responseStarted = false,
+      responseHeadersParsed = false,
+      phase = 'reading_headers',
+      clientIP = getClientIP(ClientSocket),
+      targetHost = nil,
+      targetPort = 80,
+      usingUpstreamProxy = false,
+      request = nil,
+      flow = nil,
+      closed = false,
+      lastActivity = mSys.PreciseTime()
+   }
+
+   self._connections[connection_key] = state
+   logMessage(self, 'DEBUG', 'Incoming connection from: ' .. state.clientIP)
+   return state
+end
+
+function cleanupProxyConnection(self, State:table, CloseClient:bool)
+   State.closed ??= false
+   if State.closed then return end
+
+   State.closed = true
+   self._connections[State.connectionKey] = nil
+
+   if State.upstreamSocket then
+      self._upstreamConnections[State.upstreamSocket] = nil
+      State.upstreamSocket.free()
+      State.upstreamSocket = nil
+   end
+
+   if CloseClient and State.clientSocket then
+      client_socket = State.clientSocket
+      processing.delayedCall(function()
+         client_socket.acDeactivate()
+      end)
+   end
+end
+
+function sendClientError(self, State:table, Status:num, Body:str)
+   status_text = glStatusTexts[Status] or 'Error'
+   body = Body ?? status_text
+   response = f'HTTP/1.1 {Status} {status_text}\r\n' ..
+      'Connection: close\r\n' ..
+      'Content-Type: text/plain\r\n' ..
+      f'Content-Length: {#body}\r\n\r\n' ..
+      body
+
+   State.clientSocket.acWrite(response, #response)
+   cleanupProxyConnection(self, State, true)
+end
+
+function proxyTimeoutInterval(Timeout:any):num
+   local timeout = tonumber(Timeout) or 30
+   if timeout <= 0 then return 0 end
+   if timeout < 1 then return math.max(timeout / 2, 0.1) end
+   return math.min(timeout / 2, 1.0)
+end
+
+function expireProxyConnection(self, State:table)
+   if not State or State.closed then return end
+
+   local phase = State.phase ?? 'unknown'
+   local elapsed = (mSys.PreciseTime() - (State.lastActivity ?? mSys.PreciseTime())) / 1000000
+   local message = f'Proxy connection timed out after {elapsed} seconds'
+
+   reportProxyError(self, 'connection_timeout', message, State, nil)
+
+   if phase is 'reading_headers' then
+      sendClientError(self, State, 408, 'Request Timeout')
+   elseif State.responseStarted or phase is 'tunnelling' then
+      cleanupProxyConnection(self, State, true)
+   else
+      sendClientError(self, State, 504, 'Gateway Timeout')
+   end
+end
+
+function checkProxyTimeouts(self)
+   if not self or not self._socket then return end
+
+   local timeout = tonumber(self.timeout) or 30
+   if timeout <= 0 then return end
+
+   local now = mSys.PreciseTime()
+   local expired = {}
+
+   for _, state in pairs(self._connections) do
+      if not state.closed and state.lastActivity and ((now - state.lastActivity) / 1000000 > timeout) then
+         table.insert(expired, state)
+      end
+   end
+
+   for state in values(expired) do
+      expireProxyConnection(self, state)
+   end
+end
+
+function startProxyTimeoutTimer(self)
+   local interval = proxyTimeoutInterval(self.timeout)
+   if interval <= 0 then return true end
+
+   local err, timer_id = mSys.SubscribeTimer(interval, function(Elapsed, CurrentTime)
+      checkProxyTimeouts(self)
+   end)
+
+   if err != ERR_Okay then
+      reportProxyError(self, 'timeout_timer_failed', 'Failed to start proxy timeout timer', nil, mSys.GetErrorMsg(err))
+      return false
+   end
+
+   self._timeoutTimer = timer_id
+   return true
+end
+
+function splitHttpHeaders(Data:str):<str, str>
+   header_end = Data:find('\r\n\r\n')
+   header_end ?? return nil, Data
+
+   return Data:substr(0, header_end + 4), Data:substr(header_end + 4)
+end
+
+function resolveTarget(Request:table):<str, num, bool>
+   protocol, host, port_text = rxUrlParts.extract(Request.url)
+   port = 80
+
+   if host then
+      if port_text and port_text != '' then
+         port = tonumber(port_text) or 80
+      elseif protocol is 'https' then
+         port = 443
+      end
+
+      return host, port, protocol is 'https'
+   end
+
+   host_header = Request.headers['host']
+   if not host_header then return nil, 0, false end
+
+   host, port_text = rxHostOptPort.extract(host_header)
+   if not host then return nil, 0, false end
+
+   if port_text and port_text != '' then
+      port = tonumber(port_text) or 80
+   end
+
+   return host, port, false
+end
+
+function originFormUrl(Url:str):str
+   scheme_pos = Url:find('://')
+   if scheme_pos is nil then return Url end
+
+   after_scheme = Url:substr(scheme_pos + 3)
+   path_start = after_scheme:find('/')
+   if path_start is nil then return '/' end
+
+   return after_scheme:substr(path_start)
+end
+
+function absoluteFormUrl(State:table, Url:str):str
+   if Url:startsWith('http://') or Url:startsWith('https://') then return Url end
+   return 'http://' .. hostHeaderValue(State.targetHost, State.targetPort) .. originFormUrl(Url)
+end
+
+function hostHeaderValue(Host:str, Port:num):str
+   if Port is 80 then return Host end
+   return Host .. ':' .. Port
+end
+
+function resolveConnectTarget(Request:table):<str, num>
+   host, port_text = rxHostPort.extract(Request.url)
+   if not host or not port_text then return nil, 0 end
+   if host .. ':' .. port_text != Request.url then return nil, 0 end
+
+   port = tonumber(port_text)
+   if not port or port < 1 or port > 65535 then return nil, 0 end
+
+   return host, port
+end
+
+function buildHttpRequest(self, State:table, BodyPrefix:str):str
+   request, was_modified = self._interceptor.interceptRequest(State.request, State.flow)
+   if was_modified then logMessage(self, 'DEBUG', 'Request headers were modified by an interceptor') end
+
+   request.headers['proxy-connection'] = nil
+   request.headers['connection'] = 'close'
+   request.headers['host'] ??= hostHeaderValue(State.targetHost, State.targetPort)
+
+   local request_url = State.usingUpstreamProxy and absoluteFormUrl(State, request.url) or originFormUrl(request.url)
+   request_data = request.method .. ' ' .. request_url .. ' ' .. request.version .. '\r\n'
+
+   for name, value in pairs(request.headers) do
+      request_data ..= name .. ': ' .. value .. '\r\n'
+   end
+
+   request_data ..= '\r\n'
+   request_data ..= BodyPrefix ?? ''
+
+   return request_data
+end
+
+function buildHttpResponseHeaders(Response:table):str
+   response_data = Response.version .. ' ' .. Response.status .. ' ' .. Response.statusText .. '\r\n'
+
+   for name, value in pairs(Response.headers) do
+      response_data ..= name .. ': ' .. value .. '\r\n'
+   end
+
+   return response_data .. '\r\n'
+end
+
+function writeUpstream(State:table, Data:str):bool
+   Data ?? return true
+
+   if not State.upstreamSocket then
+      State.pendingClientData ..= Data
+      return true
+   end
+
+   if State.requestSent then
+      err = State.upstreamSocket.acWrite(Data, #Data)
+      if err is ERR_Okay then touchProxyConnection(State) end
+      return err is ERR_Okay
+   end
+
+   State.pendingClientData ..= Data
+   return true
+end
+
+function writeTunnelClientData(self, State:table, Data:str):bool
+   Data ?? return true
+
+   if not State.upstreamSocket or State.phase != 'tunnelling' then
+      State.pendingClientData ..= Data
+      return true
+   end
+
+   offset = 0
+   chunk_size = 4096
+
+   while offset < #Data do
+      chunk = Data:substr(offset, math.min(offset + chunk_size, #Data))
+      err = State.upstreamSocket.acWrite(chunk, #chunk)
+      if err != ERR_Okay then
+         reportProxyError(self, 'tunnel_write_failed', 'Failed to write tunnel data to upstream', State,
+            mSys.GetErrorMsg(err))
+         cleanupProxyConnection(self, State, true)
+         return false
+      end
+      touchProxyConnection(State)
+      offset += #chunk
+   end
+
+   return true
+end
+
+function markConnectEstablished(self, State:table)
+   response = {
+      version = 'HTTP/1.1',
+      status = 200,
+      statusText = 'Connection Established',
+      headers = {
+         connection = 'close'
+      },
+      body = nil,
+      streamed = true,
+      raw = 'HTTP/1.1 200 Connection Established\r\nConnection: close\r\n\r\n'
+   }
+
+   if State.flow then State.flow.response = response end
+   invokeProxyHook(self, 'onResponse', State, self.onResponse, response, State.flow)
+end
+
+function establishTunnel(self, State:table):bool
+   if State.phase is 'tunnelling' then return true end
+
+   response = 'HTTP/1.1 200 Connection Established\r\nConnection: close\r\n\r\n'
+   err = State.clientSocket.acWrite(response, #response)
+   if err != ERR_Okay then
+      reportProxyError(self, 'connect_response_failed', 'Failed to send CONNECT response', State,
+         mSys.GetErrorMsg(err))
+      cleanupProxyConnection(self, State, true)
+      return false
+   end
+
+   touchProxyConnection(State)
+   State.phase = 'tunnelling'
+   State.responseStarted = true
+   State.responseHeadersParsed = true
+   markConnectEstablished(self, State)
+
+   buffered = State.pendingClientData
+   State.pendingClientData = ''
+   return writeTunnelClientData(self, State, buffered)
+end
+
+function upstreamTunnelIncoming(self, State:table, UpstreamSocket:obj)
+   while true do
+      buffer = string.alloc(16384)
+      err, bytes_read = UpstreamSocket.acRead(buffer, 16384)
+
+      if err != ERR_Okay then
+         if err != ERR_TimeOut and err != ERR_Disconnected then
+            reportProxyError(self, 'tunnel_read_failed', 'Failed to read tunnel upstream data', State,
+               mSys.GetErrorMsg(err))
+         end
+         return
+      end
+
+      if bytes_read is 0 then return end
+
+      touchProxyConnection(State)
+      data = buffer:substr(0, bytes_read)
+      offset = 0
+      chunk_size = 4096
+
+      while offset < #data do
+         chunk = data:substr(offset, math.min(offset + chunk_size, #data))
+         write_err = State.clientSocket.acWrite(chunk, #chunk)
+         if write_err != ERR_Okay then
+            reportProxyError(self, 'tunnel_client_write_failed', 'Failed to write tunnel data to client', State,
+               mSys.GetErrorMsg(write_err))
+            cleanupProxyConnection(self, State, true)
+            return
+         end
+         offset += #chunk
+      end
+   end
+end
+
+function flushPendingRequest(self, State:table):bool
+   if State.requestSent then return true end
+
+   request_data = State.pendingRequest .. State.pendingClientData
+   State.pendingRequest = ''
+   State.pendingClientData = ''
+   State.requestSent = true
+
+   err = State.upstreamSocket.acWrite(request_data, #request_data)
+   if err != ERR_Okay then
+      reportProxyError(self, 'request_forward_failed', 'Failed to forward request', State, mSys.GetErrorMsg(err))
+      sendClientError(self, State, 502, 'Failed to forward request')
+      return false
+   end
+
+   touchProxyConnection(State)
+   logMessage(self, 'DEBUG', 'Request forwarded to target server (' .. #request_data .. ' bytes)')
+   return true
+end
+
+function forwardResponseData(self, State:table, Data:str):bool
+   if Data is '' then return true end
+
+   offset = 0
+   chunk_size = 4096
+
+   while offset < #Data do
+      chunk = Data:substr(offset, math.min(offset + chunk_size, #Data))
+      err = State.clientSocket.acWrite(chunk, #chunk)
+      if err != ERR_Okay then
+         reportProxyError(self, 'response_client_write_failed', 'Failed to write response to client', State,
+            mSys.GetErrorMsg(err))
+         cleanupProxyConnection(self, State, true)
+         return false
+      end
+      touchProxyConnection(State)
+      offset += #chunk
+   end
+
+   State.responseStarted = true
+   return true
+end
+
+function handleResponseHeaderBlock(self, State:table, Data:str):bool
+   State.responseBuffer ..= Data
+
+   header_block, body_prefix = splitHttpHeaders(State.responseBuffer)
+   if not header_block then
+      if #State.responseBuffer > self.maxHeaderSize then
+         reportProxyError(self, 'response_headers_too_large',
+            'Upstream response headers exceeded limit; switching to raw forwarding', State, nil)
+         State.responseHeadersParsed = true
+         return forwardResponseData(self, State, State.responseBuffer)
+      end
+      return true
+   end
+
+   response = parseHttpResponse(header_block)
+   if response then
+      State.responseHeadersParsed = true
+      response.streamed = true
+
+      if State.flow then State.flow.response = response end
+      invokeProxyHook(self, 'onResponse', State, self.onResponse, response, State.flow)
+
+      modified_response, was_modified = self._interceptor.interceptResponse(response, State.flow)
+      if was_modified then
+         logMessage(self, 'DEBUG', 'Response headers were modified by an interceptor')
+         header_block = buildHttpResponseHeaders(modified_response)
+      end
+   else
+      State.responseHeadersParsed = true
+   end
+
+   State.responseBuffer = ''
+   return forwardResponseData(self, State, header_block .. body_prefix)
+end
+
+function upstreamIncoming(self, State:table, UpstreamSocket:obj)
+   while true do
+      buffer = string.alloc(16384)
+      err, bytes_read = UpstreamSocket.acRead(buffer, 16384)
+
+      if err != ERR_Okay then
+         if err != ERR_TimeOut and err != ERR_Disconnected then
+            reportProxyError(self, 'upstream_read_failed', 'Failed to read upstream response', State,
+               mSys.GetErrorMsg(err))
+         end
+         return
+      end
+
+      if bytes_read is 0 then return end
+
+      touchProxyConnection(State)
+      data = buffer:substr(0, bytes_read)
+
+      if State.responseHeadersParsed then
+         forwardResponseData(self, State, data)
+      else
+         handleResponseHeaderBlock(self, State, data)
+      end
+   end
+end
+
+function buildUpstreamProxyConnectRequest(State:table):str
+   local target = State.targetHost .. ':' .. State.targetPort
+   return 'CONNECT ' .. target .. ' HTTP/1.1\r\n' ..
+      'Host: ' .. target .. '\r\n' ..
+      'Connection: close\r\n\r\n'
+end
+
+function sendUpstreamProxyConnect(self, State:table):bool
+   if State.upstreamProxyConnectSent then return true end
+
+   local request_data = buildUpstreamProxyConnectRequest(State)
+   State.upstreamProxyConnectSent = true
+   State.requestSent = true
+
+   local err = State.upstreamSocket.acWrite(request_data, #request_data)
+   if err != ERR_Okay then
+      reportProxyError(self, 'upstream_proxy_connect_write_failed',
+         'Failed to write CONNECT request to upstream proxy', State, mSys.GetErrorMsg(err))
+      sendClientError(self, State, 502, 'Failed to connect through upstream proxy')
+      return false
+   end
+
+   touchProxyConnection(State)
+   logMessage(self, 'DEBUG', 'CONNECT request forwarded to upstream proxy')
+   return true
+end
+
+function handleUpstreamProxyConnectHeaderBlock(self, State:table, Data:str):bool
+   State.responseBuffer ..= Data
+
+   local header_block, tunnel_prefix = splitHttpHeaders(State.responseBuffer)
+   if not header_block then
+      if #State.responseBuffer > self.maxHeaderSize then
+         reportProxyError(self, 'upstream_proxy_connect_headers_too_large',
+            'Upstream proxy CONNECT response headers exceeded limit', State, nil)
+         sendClientError(self, State, 502, 'Invalid upstream proxy response')
+         return false
+      end
+      return true
+   end
+
+   local response = parseHttpResponse(header_block)
+   if not response or response.status < 200 or response.status >= 300 then
+      local status_text = response and tostring(response.status) or 'malformed response'
+      reportProxyError(self, 'upstream_proxy_connect_failed',
+         'Upstream proxy rejected CONNECT request: ' .. status_text, State, nil)
+      sendClientError(self, State, 502, 'Upstream proxy CONNECT failed')
+      return false
+   end
+
+   State.responseBuffer = ''
+   if not establishTunnel(self, State) then return false end
+
+   if tunnel_prefix and tunnel_prefix != '' then
+      return forwardResponseData(self, State, tunnel_prefix)
+   end
+
+   return true
+end
+
+function upstreamProxyConnectIncoming(self, State:table, UpstreamSocket:obj)
+   while true do
+      local buffer = string.alloc(16384)
+      local err, bytes_read = UpstreamSocket.acRead(buffer, 16384)
+
+      if err != ERR_Okay then
+         if err != ERR_TimeOut and err != ERR_Disconnected then
+            reportProxyError(self, 'upstream_proxy_connect_read_failed',
+               'Failed to read upstream proxy CONNECT response', State, mSys.GetErrorMsg(err))
+         end
+         return
+      end
+
+      if bytes_read is 0 then return end
+
+      touchProxyConnection(State)
+      local data = buffer:substr(0, bytes_read)
+      handleUpstreamProxyConnectHeaderBlock(self, State, data)
+
+      if State.closed or State.phase is 'tunnelling' then return end
+   end
+end
+
+function connectUpstream(self, State:table):bool
+   local connect_host = State.targetHost
+   local connect_port = State.targetPort
+
+   if State.usingUpstreamProxy and self._upstreamProxy then
+      connect_host = self._upstreamProxy.host
+      connect_port = self._upstreamProxy.port
+   end
+
+   logMessage(self, 'DEBUG', 'Connecting upstream to ' .. connect_host .. ':' .. connect_port)
+
+   upstream_socket = obj.new('netsocket', {
+      incoming = function(Socket)
+         if State.phase is 'tunnelling' then
+            upstreamTunnelIncoming(self, State, Socket)
+         elseif State.phase is 'connect_pending' and State.usingUpstreamProxy then
+            upstreamProxyConnectIncoming(self, State, Socket)
+         else
+            upstreamIncoming(self, State, Socket)
+         end
+      end,
+      feedback = function(Socket, SocketState)
+         logMessage(self, 'DEBUG', 'Upstream socket state: ' .. SocketState)
+         if State.phase is 'connect_pending' then
+            if SocketState is NTC_CONNECTED then
+               touchProxyConnection(State)
+               if State.usingUpstreamProxy then
+                  sendUpstreamProxyConnect(self, State)
+               else
+                  establishTunnel(self, State)
+               end
+            elseif SocketState is NTC_DISCONNECTED then
+               reportProxyError(self, 'upstream_connect_failed', 'Upstream connection failed', State, nil)
+               if not State.closed then sendClientError(self, State, 502, 'Upstream connection failed') end
+            end
+         elseif SocketState is NTC_CONNECTING or SocketState is NTC_CONNECTED then
+            flushPendingRequest(self, State)
+         elseif SocketState is NTC_DISCONNECTED then
+            if State.responseStarted or State.responseHeadersParsed then
+               cleanupProxyConnection(self, State, true)
+            elseif not State.closed then
+               sendClientError(self, State, 502, 'Upstream connection failed')
+            end
+         end
+      end
+   })
+
+   if not upstream_socket then return false end
+
+   State.upstreamSocket = upstream_socket
+   self._upstreamConnections[upstream_socket] = State
+
+   err = upstream_socket.mtConnect(connect_host, connect_port, self.timeout)
+   if err != ERR_Okay then
+      reportProxyError(self, 'upstream_connect_failed', 'Failed to connect to upstream', State, mSys.GetErrorMsg(err))
+      self._upstreamConnections[upstream_socket] = nil
+      State.upstreamSocket = nil
+      upstream_socket.free()
+      return false
+   end
+
+   return true
+end
+
+function startConnectTunnel(self, State:table, BodyPrefix:str):bool
+   target_host, target_port = resolveConnectTarget(State.request)
+   if not target_host then
+      reportProxyError(self, 'malformed_connect_target', 'Malformed CONNECT target', State, nil)
+      sendClientError(self, State, 400, 'Malformed CONNECT target')
+      return false
+   end
+
+   State.targetHost = target_host
+   State.targetPort = target_port
+   State.pendingClientData = BodyPrefix ?? ''
+   State.phase = 'connect_pending'
+   State.usingUpstreamProxy = self._upstreamProxy != nil
+
+   processing.delayedCall(function()
+      if State.closed then return end
+      if not connectUpstream(self, State) then
+         sendClientError(self, State, 502, 'Unable to connect to upstream server')
+      end
+   end)
+
+   return true
+end
+
+function processRequestHeaders(self, State:table):bool
+   header_block, body_prefix = splitHttpHeaders(State.clientBuffer)
+   if not header_block then
+      if #State.clientBuffer > self.maxHeaderSize then
+         sendClientError(self, State, 400, 'HTTP request headers exceeded the proxy limit')
+         return false
+      end
+      return true
+   end
+
+   request = parseHttpRequest(header_block)
+   if not request then
+      reportProxyError(self, 'malformed_request', 'Invalid HTTP request from ' .. State.clientIP, State, nil)
+      sendClientError(self, State, 400, 'Malformed HTTP request')
+      return false
+   end
+
+   State.request = request
+   State.clientBuffer = ''
+
+   logMessage(self, 'INFO', 'Request: ' .. request.method .. ' ' .. request.url .. ' from ' .. State.clientIP)
+
+   invokeProxyHook(self, 'onRequest', State, self.onRequest, request)
+
+   if self.recordFlows then
+      State.flow = self._flowManager.record(State.clientIP, request, nil)
+   end
+
+   if request.method is 'CONNECT' then
+      return startConnectTunnel(self, State, body_prefix)
+   end
+
+   target_host, target_port, use_ssl = resolveTarget(request)
+   if not target_host then
+      reportProxyError(self, 'target_resolution_failed', 'Unable to determine target host', State, nil)
+      sendClientError(self, State, 400, 'Unable to determine target host')
+      return false
+   end
+
+   if use_ssl then
+      reportProxyError(self, 'https_without_connect',
+         'HTTPS absolute-form relay requires CONNECT tunnelling', State, nil)
+      sendClientError(self, State, 501, 'HTTPS relay requires CONNECT tunnelling, which is not implemented')
+      return false
+   end
+
+   State.targetHost = target_host
+   State.targetPort = target_port
+   State.usingUpstreamProxy = self._upstreamProxy != nil
+   State.pendingRequest = buildHttpRequest(self, State, body_prefix)
+   State.phase = 'streaming_body'
+
+   processing.delayedCall(function()
+      if State.closed then return end
+      if not connectUpstream(self, State) then
+         sendClientError(self, State, 502, 'Unable to connect to upstream server')
+      end
+   end)
+
+   return true
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Main Proxy Server Incoming Connection Handler
+
+function proxyIncoming(self, ClientSocket:obj)
+   state = createProxyConnectionState(self, ClientSocket)
+
+   buffer = string.alloc(8192)
+   err, bytes_read = ClientSocket.acRead(buffer, 8192)
+
+   if err != ERR_Okay then
+      if err != ERR_TimeOut and err != ERR_Disconnected then
+         reportProxyError(self, 'client_read_failed', 'Failed to read from client', state, mSys.GetErrorMsg(err))
+      end
+      return
+   end
+
+   if bytes_read is 0 then return end
+
+   touchProxyConnection(state)
+   data = buffer:substr(0, bytes_read)
+
+   if state.phase is 'reading_headers' then
+      state.clientBuffer ..= data
+      processRequestHeaders(self, state)
+   elseif state.phase is 'connect_pending' or state.phase is 'tunnelling' then
+      if not writeTunnelClientData(self, state, data) then
+         if not state.closed then sendClientError(self, state, 502, 'Failed to forward tunnel data') end
+      end
+   else
+      if not writeUpstream(state, data) then
+         sendClientError(self, state, 502, 'Failed to forward request body')
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Main Proxy Server Start Function
+
+proxylib.start = function(Options:table)
+   self = {
+      port = 8080,
+      bind = nil,
+      verbose = false,
+      timeout = 30,
+      enableMITM = false,
+      caCert = nil,
+      caKey = nil,
+      caPassword = nil,
+      upstreamProxy = nil,
+      recordFlows = true,
+      maxFlows = 1000,
+      maxHeaderSize = 65536,
+      _socket = nil,
+      _connections = {},
+      _upstreamConnections = {},
+      _upstreamProxy = nil,
+      _flowManager = nil,
+      _certManager = nil,
+      _interceptor = nil,
+      _timeoutTimer = nil,
+      _reportingError = false,
+
+      -- Event callbacks
+      onConnect = nil,
+      onRequest = nil,
+      onResponse = nil,
+      onFlowRecord = nil,
+      onError = nil
+   }
+
+   -- Process options
+   if Options then
+      if Options.port and validatePort(Options.port) then
+         self.port = tonumber(Options.port)
+      end
+
+      if Options.bind then self.bind = Options.bind end
+      if Options.verbose != nil then self.verbose = Options.verbose end
+      if Options.timeout then self.timeout = tonumber(Options.timeout) or 30 end
+      if Options.enableMITM != nil then self.enableMITM = Options.enableMITM end
+      if Options.caCert then self.caCert = Options.caCert end
+      if Options.caKey then self.caKey = Options.caKey end
+      if Options.caPassword then self.caPassword = Options.caPassword end
+      if Options.upstreamProxy then self.upstreamProxy = Options.upstreamProxy end
+      if Options.recordFlows != nil then self.recordFlows = Options.recordFlows end
+      if Options.maxFlows then self.maxFlows = tonumber(Options.maxFlows) or 1000 end
+
+      -- Set event callbacks
+      if Options.onConnect then self.onConnect = Options.onConnect end
+      if Options.onRequest then self.onRequest = Options.onRequest end
+      if Options.onResponse then self.onResponse = Options.onResponse end
+      if Options.onFlowRecord then self.onFlowRecord = Options.onFlowRecord end
+      if Options.onError then self.onError = Options.onError end
+   end
+
+   if self.upstreamProxy then
+      local upstream_proxy, upstream_error = parseProxyAddress(self.upstreamProxy)
+      if not upstream_proxy then
+         reportProxyError(self, 'invalid_upstream_proxy', upstream_error, nil, nil)
+         error(upstream_error)
+      end
+      self._upstreamProxy = upstream_proxy
+   end
+
+   -- Initialize subsystems
+   self._flowManager = createFlowManager(self)
+   self._certManager = createCertificateManager(self)
+   self._interceptor = createInterceptorEngine(self)
+
+   -- Load MITM certificates if enabled
+   if self.enableMITM and self.caCert then
+      if not self._certManager.loadRootCA(self.caCert, self.caKey, self.caPassword) then
+         error('Failed to load MITM certificates')
+      end
+   end
+
+   bindMsg = self.bind and (' bound to ' .. self.bind) or ''
+   logMessage(self, 'INFO', 'Starting proxy server on port ' .. self.port .. bindMsg)
+   logMessage(self, 'INFO', 'MITM mode: ' .. (self.enableMITM and 'enabled' or 'disabled'))
+   logMessage(self, 'INFO', 'Flow recording: ' .. (self.recordFlows and 'enabled' or 'disabled'))
+   if self._upstreamProxy then logMessage(self, 'INFO', 'Upstream proxy: ' .. self._upstreamProxy.address) end
+
+   -- Create server socket
+   cfg = {
+      port = self.port,
+      flags = NSF_SERVER|NSF_MULTI_CONNECT,
+      feedback = function(Server, ClientSocket, State)
+         if State is NTC_CONNECTED then
+            logMessage(self, 'DEBUG', 'Client connected')
+            createProxyConnectionState(self, ClientSocket)
+            invokeProxyHook(self, 'onConnect', nil, self.onConnect, ClientSocket)
+         elseif State is NTC_DISCONNECTED then
+            logMessage(self, 'DEBUG', 'Client disconnected')
+            connection_state = self._connections[clientConnectionKey(ClientSocket)]
+            if connection_state then cleanupProxyConnection(self, connection_state, false) end
+         end
+      end,
+      incoming = function(Server, ClientSocket)
+         proxyIncoming(self, ClientSocket)
+      end
+   }
+
+   if self.bind then
+      cfg.address = self.bind
+   end
+
+   self._socket = obj.new('netsocket', cfg)
+
+   if not self._socket then
+      reportProxyError(self, 'server_socket_create_failed', 'Failed to create proxy server socket', nil, nil)
+      error('Failed to create proxy server socket')
+   end
+
+   if not startProxyTimeoutTimer(self) then
+      self._socket.free()
+      self._socket = nil
+      error('Failed to start proxy timeout timer')
+   end
+
+   -- Public API methods
+   self.stop = function()
+      if self._socket then
+         logMessage(self, 'INFO', 'Stopping proxy server')
+         if self._timeoutTimer then
+            mSys.UpdateTimer(self._timeoutTimer, 0)
+            self._timeoutTimer = nil
+         end
+         self._socket.free()
+         self._socket = nil
+         for state in values(self._connections) do
+            cleanupProxyConnection(self, state, true)
+         end
+         self._connections = {}
+         self._upstreamConnections = {}
+         processing.collect()
+      end
+   end
+
+   -- Flow management API
+   self.getFlows = function()
+      return self._flowManager.getFlows()
+   end
+
+   self.clearFlows = function()
+      return self._flowManager.clear()
+   end
+
+   self.exportFlows = function(filename)
+      return self._flowManager.export(filename)
+   end
+
+   self.loadFlows = function(filename)
+      return self._flowManager.load(filename)
+   end
+
+   -- Interceptor API
+   self.addRequestInterceptor = function(interceptor)
+      return self._interceptor.addRequestInterceptor(interceptor)
+   end
+
+   self.addResponseInterceptor = function(interceptor)
+      return self._interceptor.addResponseInterceptor(interceptor)
+   end
+
+   self.clearInterceptors = function()
+      return self._interceptor.clear()
+   end
+
+   logMessage(self, 'INFO', 'Proxy server started successfully')
+   return self
+end
