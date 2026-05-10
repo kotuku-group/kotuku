@@ -55,7 +55,6 @@ end
 
 @Test function PlainText()
    xml_str = feedAndRead('<body/><page><p>Hello world</p></page>')
-   print(xml_str)
    xml = parseXML(xml_str)
 
    text_count = xpathNum(xml, 'count(/extract/stream//text)')
@@ -87,7 +86,6 @@ end
 
 @Test function BoldItalicRoundTrip()
    xml_str = feedAndRead('<body/><page><p>Normal <b>bold</b> <i>italic</i> <b><i>both</i></b></p></page>')
-   print(xml_str)
    xml = parseXML(xml_str)
 
    -- At least one font byte-code with style="Bold" must appear
@@ -113,7 +111,6 @@ end
 @Test function FontFaceAndSize()
    xml_str = feedAndRead(
       '<body/><page><p>Before <font face="Courier Prime" size="20">Courier text</font> after</p></page>')
-   print(xml_str)
    xml = parseXML(xml_str)
 
    face = xpath(xml, 'string((/extract/stream//font[@face="Courier Prime"]/@face)[1])')
@@ -153,7 +150,6 @@ end
 @Test function HyperlinkRef()
    xml_str = feedAndRead(
       '<body/><page><p><a href="tables.rpl">Click here</a></p></page>')
-   print(xml_str)
    xml = parseXML(xml_str)
 
    link_count = xpathNum(xml, 'count(/extract/stream//link)')
@@ -196,7 +192,6 @@ end
       .. '<p align="center">Centre</p>'
       .. '<p align="right">Right</p>'
       .. '</page>')
-   print(xml_str)
    xml = parseXML(xml_str)
 
    left = xpathNum(xml, 'count(/extract/stream//p[@align="left"])')
@@ -264,7 +259,6 @@ end
    xml_str = feedAndRead(
       '<body/><page><table><row><cell>A</cell><cell>B</cell></row>'
       .. '<row><cell>C</cell><cell>D</cell></row></table></page>')
-   print(xml_str)
    xml = parseXML(xml_str)
 
    tbl = xpathNum(xml, 'count(/extract/stream//table)')
@@ -295,7 +289,6 @@ end
       '<body/><page><table fill="rgb(255,255,255)" stroke="rgb(128,0,0)" stroke-width="2" '
       .. 'width="400" align="center" cell-padding="8" spacing="4">'
       .. '<row fill="rgb(240,240,240)"><cell border="all" fill="rgb(200,200,255)">Styled</cell></row></table></page>')
-   print(xml_str)
    xml = parseXML(xml_str)
 
    -- Table-level attributes
@@ -327,7 +320,6 @@ end
    xml_str = feedAndRead(
       '<body/><page><list type="ordered" fill="rgb(0,0,190)" v-spacing="1.5">'
       .. '<li>First item</li><li>Second item</li><li>Third item</li></list></page>')
-   print(xml_str)
    xml = parseXML(xml_str)
 
    list_count = xpathNum(xml, 'count(/extract/stream//list)')
@@ -373,7 +365,6 @@ end
 @Test function InputWidget()
    xml_str = feedAndRead(
       '<body/><page><p><input name="field1" width="200" value="Hello" label="My Label"/></p></page>')
-   print(xml_str)
    xml = parseXML(xml_str)
 
    input_count = xpathNum(xml, 'count(/extract/stream//input)')
@@ -406,7 +397,6 @@ end
 
 @Test function ButtonWidget()
    xml_str = feedAndRead('<body/><page><p><button>Click me</button></p></page>')
-   print(xml_str)
    xml = parseXML(xml_str)
 
    btn_count = xpathNum(xml, 'count(/extract/stream//button)')
@@ -440,7 +430,6 @@ end
 @Test function ImageWidget()
    xml_str = feedAndRead(
       '<body/><page><p><image src="url(#icon)" width="32" height="32" align="center" v-align="top"/></p></page>')
-   print(xml_str)
    xml = parseXML(xml_str)
 
    img_count = xpathNum(xml, 'count(/extract/stream//image)')
@@ -459,7 +448,6 @@ end
 @Test function BodyFontInheritance()
    xml_str = feedAndRead(
       '<body face="Courier Prime" font-size="16pt" font-style="Italic"/><page><p>Inherited styling</p></page>')
-   print(xml_str)
    xml = parseXML(xml_str)
 
    -- The paragraph should carry the inherited style from the body
@@ -483,7 +471,6 @@ end
 @Test function TableInParagraph()
    xml_str = feedAndRead(
       '<body/><page><p>Before <table><row><cell>Inside</cell></row></table> After</p></page>')
-   print(xml_str)
    xml = parseXML(xml_str)
 
    -- Both text runs and the table must appear
@@ -566,7 +553,6 @@ end
 
 @Test function AdvanceElement()
    xml_str = feedAndRead('<body/><page><p><advance x="50px" y="20px"/>Advanced content</p></page>')
-   print(xml_str)
    xml = parseXML(xml_str)
 
    adv_count = xpathNum(xml, 'count(/extract/stream//advance)')
@@ -588,7 +574,6 @@ end
 @Test function IndexElement()
    xml_str = feedAndRead(
       '<body/><page><index name="section1">Hidden content</index><p>Visible content</p></page>')
-   print(xml_str)
    xml = parseXML(xml_str)
 
    idx_count = xpathNum(xml, 'count(/extract/stream//index)')

@@ -41,7 +41,8 @@ glStatusTexts <const> = {
       [200] = 'OK', [201] = 'Created', [204] = 'No Content',
       [301] = 'Moved Permanently', [302] = 'Found', [304] = 'Not Modified',
       [400] = 'Bad Request', [401] = 'Unauthorized', [403] = 'Forbidden',
-      [404] = 'Not Found', [405] = 'Method Not Allowed', [429] = 'Too Many Requests',
+      [404] = 'Not Found', [405] = 'Method Not Allowed', [416] = 'Range Not Satisfiable',
+      [429] = 'Too Many Requests',
       [500] = 'Internal Server Error', [501] = 'Not Implemented', [502] = 'Bad Gateway'
 }
 
@@ -937,6 +938,7 @@ function parseByteRange(Header:str, FileSize:num):table
       suffix_size = tonumber(end_text)
       if not suffix_size or suffix_size <= 0 then return nil end
 
+      if FileSize <= 0 then return { unsatisfiable = true } end
       if suffix_size > FileSize then suffix_size = FileSize end
       start_byte = FileSize - suffix_size
       end_byte = FileSize - 1
@@ -952,7 +954,8 @@ function parseByteRange(Header:str, FileSize:num):table
       end
    end
 
-   if FileSize <= 0 or start_byte < 0 or end_byte < start_byte or start_byte >= FileSize then return nil end
+   if start_byte < 0 or end_byte < start_byte then return nil end
+   if FileSize <= 0 or start_byte >= FileSize then return { unsatisfiable = true } end
    if end_byte >= FileSize then end_byte = FileSize - 1 end
 
    return {
@@ -1027,6 +1030,18 @@ function serveFile(self:table, ClientSocket:obj, FilePath:str, Request:table)
    end
 
    if range then
+      if range.unsatisfiable then
+         errorBody = createErrorPage(416, 'Range Not Satisfiable',
+            'The requested byte range cannot be satisfied.',
+            'File size: ' .. fileSize .. ' bytes')
+         sendHttpResponse(self, ClientSocket, 416, "Range Not Satisfiable", {
+            ['content-type'] = 'text/html',
+            ['content-range'] = f"bytes */{fileSize}",
+            ['accept-ranges'] = 'bytes'
+         }, errorBody)
+         return
+      end
+
       check file.acSeek(range.startByte, SEEK_START)
 
       sendHttpResponse(self, ClientSocket, 206, "Partial Content", {
