@@ -1105,8 +1105,8 @@ static void win32_enum_folders(CSTRING Volume, CSTRING Label, CSTRING Path, CSTR
 
 //********************************************************************************************************************
 
-#if defined(__linux__) && !defined(__ANDROID__)
-static std::string linux_host_temp_path(void)
+#ifndef _WIN32
+static std::string host_temp_path(void)
 {
    static constexpr CSTRING env_vars[] = { "TMPDIR", "TEMP", "TMP" };
 
@@ -1177,8 +1177,8 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
       SetVolume("etc", "/etc", "tools/cog", nullptr, nullptr, VOLUME::REPLACE|VOLUME::SYSTEM);
       SetVolume("usr", "/usr", nullptr, nullptr, nullptr, VOLUME::REPLACE|VOLUME::SYSTEM);
 
-      auto host_temp_path = linux_host_temp_path();
-      SetVolume("HostTemp:", host_temp_path.c_str(), "items/trash", "Temp", nullptr, VOLUME::REPLACE|VOLUME::HIDDEN);
+      auto temp_path = host_temp_path();
+      SetVolume("HostTemp:", temp_path.c_str(), "items/trash", "Temp", nullptr, VOLUME::REPLACE|VOLUME::HIDDEN);
    #endif
 
    // Configure some standard volumes.
