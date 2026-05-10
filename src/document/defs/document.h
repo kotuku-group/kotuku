@@ -144,7 +144,6 @@ DEFINE_ENUM_FLAG_OPERATORS(SCODE)
 
 enum class ULD : uint8_t {
    NIL             = 0,
-   TERMINATE       = 0x01,
    KEEP_PARAMETERS = 0x02,
    REFRESH         = 0x04,
    REDRAW          = 0x08

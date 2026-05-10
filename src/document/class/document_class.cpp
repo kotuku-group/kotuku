@@ -654,7 +654,7 @@ static ERR DOCUMENT_Free(extDocument *Self)
       Self->EventCallback.clear();
    }
 
-   unload_doc(Self, ULD::TERMINATE);
+   unload_doc(Self, ULD::NIL);
 
    if (Self->Query) { FreeResource(Self->Query); Self->Query = nullptr; }
    if (Self->Page) { FreeResource(Self->Page); Self->Page = nullptr; }

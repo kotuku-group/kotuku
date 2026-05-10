@@ -439,7 +439,7 @@ static ERR unload_doc(extDocument *Self, ULD Flags)
 
    for (auto &triggers : Self->Triggers) {
       for (auto &trigger : triggers) {
-         if (not has_script_event_callback(Self, trigger.Context)) {
+         if (trigger.isScript() and (not has_script_event_callback(Self, trigger.Context))) {
             UnsubscribeAction(trigger.Context, AC::Free);
          }
       }
@@ -447,7 +447,7 @@ static ERR unload_doc(extDocument *Self, ULD Flags)
 
    for (auto &t : Self->Triggers) t.clear();
 
-   if ((Flags & ULD::TERMINATE) != ULD::NIL) Self->Vars.clear();
+   if (Self->terminating()) Self->Vars.clear();
 
    if (Self->SVG)         { FreeResource(Self->SVG);         Self->SVG = nullptr; }
    if (Self->Keywords)    { FreeResource(Self->Keywords);    Self->Keywords = nullptr; }
@@ -473,7 +473,7 @@ static ERR unload_doc(extDocument *Self, ULD Flags)
       log.branch("Freeing page-allocated resources.");
 
       for (auto it = Self->Resources.begin(); it != Self->Resources.end(); ) {
-         if ((ULD::TERMINATE) != ULD::NIL) it->terminate = true;
+         if (Self->terminating()) it->terminate = true;
 
          if ((it->type IS RTD::PERSISTENT_SCRIPT) or (it->type IS RTD::PERSISTENT_OBJECT)) {
             // Persistent objects and scripts will survive refreshes
@@ -486,12 +486,15 @@ static ERR unload_doc(extDocument *Self, ULD Flags)
       }
    }
 
-   if (not Self->Templates) {
-      if (not (Self->Templates = objXML::create::local(fl::Name("xmlTemplates"), fl::Statement(glDefaultStyles),
-         fl::Flags(XMF::PARSE_HTML|XMF::STRIP_HEADERS)))) error = ERR::CreateObject;
+   if ((not Self->Templates) and (not Self->terminating())) {
+      if ((Self->Templates = objXML::create::local(fl::Name("xmlTemplates"),
+            fl::Statement(glDefaultStyles),
+            fl::Flags(XMF::PARSE_HTML|XMF::STRIP_HEADERS)))) {
 
-      Self->TemplatesModified = Self->Templates->Modified;
-      Self->RefreshTemplates = true;
+         Self->TemplatesModified = Self->Templates->Modified;
+         Self->RefreshTemplates = true;
+      }
+      else error = ERR::CreateObject;
    }
 
    if (Self->Page) {
