@@ -35,13 +35,14 @@ that is distributed with this package.  Please refer to it for further informati
 #include <kotuku/modules/xquery.h>
 #include <atomic>
 #include <cassert>
+#include <limits>
 
 using BYTECODE = uint32_t;
 using CELL_ID = uint32_t;
 
 static std::atomic<BYTECODE> glByteCodeID = 1;
 static thread_local BYTECODE glReservedByteCodeID = 0;
-static uint32_t glUID = 1000; // Use for generating unique/incrementing ID's, e.g. cell ID
+static std::atomic<uint32_t> glUID = 1000; // Use for generating unique/incrementing ID's, e.g. cell ID
 
 static BYTECODE alloc_bytecode_id()
 {
@@ -51,6 +52,11 @@ static BYTECODE alloc_bytecode_id()
       return id;
    }
    else return glByteCodeID.fetch_add(1, std::memory_order_relaxed);
+}
+
+inline uint32_t alloc_uid()
+{
+   return glUID.fetch_add(1, std::memory_order_relaxed);
 }
 
 using namespace kt;

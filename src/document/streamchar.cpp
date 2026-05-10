@@ -180,7 +180,7 @@ uint8_t stream_char::get_prev_char(RSTREAM &Stream)
       return Stream.lookup<bc_text>(index).text[offset-1];
    }
 
-   for (auto i=index-1; i > 0; i--) {
+   for (auto i=index-1; i >= 0; i--) {
       if (Stream[i].code IS SCODE::TEXT) {
          return Stream.lookup<bc_text>(i).text.back();
       }
@@ -199,7 +199,7 @@ uint8_t stream_char::get_prev_char_or_inline(RSTREAM &Stream)
       return Stream.lookup<bc_text>(index).text[offset-1];
    }
 
-   for (auto i=index-1; i > 0; i--) {
+   for (auto i=index-1; i >= 0; i--) {
       if (Stream[i].code IS SCODE::TEXT) {
          return Stream.lookup<bc_text>(i).text.back();
       }

@@ -1295,7 +1295,6 @@ class extDocument : public objDocument {
       const XTag *Tag = nullptr;
       const kt::vector<XMLAttrib> *Attribs = nullptr;
    };
-
    std::vector<template_arg_view> TemplateArgs; // If a template is called, the tag is referred here so that args can be pulled from it
    std::string FontFace;       // Default font face
    std::string WidthCacheFontFace;
@@ -1345,6 +1344,7 @@ class extDocument : public objDocument {
    int16_t  FocusIndex;         // Tab focus index
    int16_t  Invisible;          // Incremented for sections within a hidden index
    uint8_t  Processing;         // If > 0, the page layout is being altered
+   int8_t PathRecursion = 0;
    bool   RefreshTemplates; // True if the template index requires refreshing.
    bool   UpdatingLayout;   // True if the page layout is in the process of being updated
    bool   PageProcessed;    // True if the parsing of page content has been completed

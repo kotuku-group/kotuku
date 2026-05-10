@@ -643,29 +643,18 @@ static bc_font * find_style(RSTREAM &Stream, stream_char &Char)
 {
    bc_font *style = nullptr;
 
-   for (INDEX fi = Char.index; fi < Char.index; fi++) {
-      if (Stream[fi].code IS SCODE::FONT) style = &Stream.lookup<bc_font>(fi);
-      else if (Stream[fi].code IS SCODE::PARAGRAPH_START) style = &Stream.lookup<bc_paragraph>(fi).font;
-      else if (Stream[fi].code IS SCODE::LINK) style = &Stream.lookup<bc_link>(fi).font;
-      else if (Stream[fi].code IS SCODE::TEXT) break;
-   }
-
-   // Didn't work?  Try going backwards
-
-   if (!style) {
-      for (INDEX fi = Char.index; fi >= 0; fi--) {
-         if (Stream[fi].code IS SCODE::FONT) {
-            style = &Stream.lookup<bc_font>(fi);
-            break;
-         }
-         else if (Stream[fi].code IS SCODE::PARAGRAPH_START) {
-            style = &Stream.lookup<bc_paragraph>(fi).font;
-            break;
-         }
-         else if (Stream[fi].code IS SCODE::LINK) {
-            style = &Stream.lookup<bc_link>(fi).font;
-            break;
-         }
+   for (INDEX fi = Char.index; fi >= 0; fi--) {
+      if (Stream[fi].code IS SCODE::FONT) {
+         style = &Stream.lookup<bc_font>(fi);
+         break;
+      }
+      else if (Stream[fi].code IS SCODE::PARAGRAPH_START) {
+         style = &Stream.lookup<bc_paragraph>(fi).font;
+         break;
+      }
+      else if (Stream[fi].code IS SCODE::LINK) {
+         style = &Stream.lookup<bc_link>(fi).font;
+         break;
       }
    }
 
@@ -750,16 +739,14 @@ static void process_parameters(extDocument *Self, const std::string_view String)
          pagename_processed = true;
 
          if (auto ind = String.find(":", pos+1); ind != std::string::npos) {
-            ind -= pos;
+            ind -= pos + 1;
             Self->PageName.assign(String, pos + 1);
             if (Self->PageName[ind] IS ':') { // Check for bookmark separator
-               Self->PageName.resize(ind);
-               ind++;
-
-               Self->Bookmark.assign(Self->PageName, ind);
-               if (ind = Self->Bookmark.find('?'); ind != std::string::npos) {
-                  Self->Bookmark.resize(ind);
+               Self->Bookmark.assign(Self->PageName, ind + 1);
+               if (auto query = Self->Bookmark.find('?'); query != std::string::npos) {
+                  Self->Bookmark.resize(query);
                }
+               Self->PageName.resize(ind);
             }
          }
          else Self->PageName.assign(String, pos + 1);

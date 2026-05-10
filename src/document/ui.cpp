@@ -402,11 +402,17 @@ static void error_dialog(const std::string Title, const std::string Message)
 #if !(defined(DBG_LAYOUT) || defined(DBG_STREAM) || defined(DBG_SEGMENTS))
    static bool detect_recursive_dialog = false;
    static OBJECTID dialog_id = 0;
-   if ((dialog_id) and (CheckObjectExists(dialog_id) IS ERR::True)) return;
-   if (detect_recursive_dialog) return;
-   detect_recursive_dialog = true;
+   static std::mutex dialog_mutex;
+
+   {
+      std::lock_guard lk(dialog_mutex);
+      if ((dialog_id) and (CheckObjectExists(dialog_id) IS ERR::True)) return;
+      if (detect_recursive_dialog) return;
+      detect_recursive_dialog = true;
+   }
 
    OBJECTPTR dialog;
+   OBJECTID new_dialog_id = 0;
    if (NewObject(CLASSID::SCRIPT, &dialog) IS ERR::Okay) {
       dialog->setFields(fl::Name("scDialog"), fl::Owner(CurrentTaskID()), fl::Path("scripts:gui/dialog.tiri"));
 
@@ -420,12 +426,16 @@ static void error_dialog(const std::string Title, const std::string Message)
          CSTRING *results;
          int size;
          if ((dialog->get(FID_Results, results, size) IS ERR::Okay) and (size > 0)) {
-            dialog_id = strtol(results[0], nullptr, 0);
+            new_dialog_id = strtol(results[0], nullptr, 0);
          }
       }
    }
 
-   detect_recursive_dialog = false;
+   {
+      std::lock_guard lk(dialog_mutex);
+      if (new_dialog_id) dialog_id = new_dialog_id;
+      detect_recursive_dialog = false;
+   }
 #endif
 }
 

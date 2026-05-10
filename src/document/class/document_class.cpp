@@ -326,14 +326,18 @@ static ERR DOCUMENT_Clipboard(extDocument *Self, struct acClipboard *Args)
 
          objClipboard::create clipboard = { };
          if (clipboard.ok()) {
-            if (clipboard->addText(buffer.c_str()) IS ERR::Okay) {
+            if (auto error = clipboard->addText(buffer.c_str()); error IS ERR::Okay) {
                // Delete the highlighted document if the CUT mode was used
                if (Args->Mode IS CLIPMODE::CUT) {
                   //delete_selection(Self);
                }
             }
-            else error_dialog("Clipboard Error", "Failed to add document to the system clipboard.");
+            else {
+               error_dialog("Clipboard Error", "Failed to add document to the system clipboard.");
+               return error;
+            }
          }
+         else return log.warning(ERR::CreateObject);
       }
 
       return ERR::Okay;
@@ -349,26 +353,40 @@ static ERR DOCUMENT_Clipboard(extDocument *Self, struct acClipboard *Args)
       objClipboard::create clipboard = { };
       if (clipboard.ok()) {
          CSTRING *files;
-         if (clipboard->getFiles(CLIPTYPE::TEXT, 0, nullptr, &files, nullptr) IS ERR::Okay) {
+         if (auto error = clipboard->getFiles(CLIPTYPE::TEXT, 0, nullptr, &files, nullptr); error IS ERR::Okay) {
+            if (not files) return ERR::NoData;
+
             objFile::create file = { fl::Path(files[0]), fl::Flags(FL::READ) };
             if (file.ok()) {
                int size;
-               if ((file->get(FID_Size, size) IS ERR::Okay) and (size > 0)) {
+               if ((error = file->get(FID_Size, size)) IS ERR::Okay) {
+                  if (size <= 0) return ERR::NoData;
+
                   if (auto buffer = new (std::nothrow) char[size+1]) {
                      int result;
-                     if (file->read(buffer, size, &result) IS ERR::Okay) {
+                     if ((error = file->read(buffer, size, &result)) IS ERR::Okay) {
                         buffer[result] = 0;
-                        acDataText(Self, buffer);
+                        error = acDataText(Self, buffer);
                      }
                      else error_dialog("Clipboard Paste Error", ERR::Read);
                      delete[] buffer;
+                     if (not (error IS ERR::Okay)) return error;
                   }
-                  else error_dialog("Clipboard Paste Error", ERR::AllocMemory);
+                  else {
+                     error_dialog("Clipboard Paste Error", ERR::AllocMemory);
+                     return ERR::AllocMemory;
+                  }
                }
+               else return error;
             }
-            else error_dialog("Paste Error", "Failed to load clipboard file \"" + std::string(files[0]) + "\"");
+            else {
+               error_dialog("Paste Error", "Failed to load clipboard file \"" + std::string(files[0]) + "\"");
+               return ERR::OpenFile;
+            }
          }
+         else return error;
       }
+      else return log.warning(ERR::CreateObject);
 
       return ERR::Okay;
    }
@@ -767,7 +785,7 @@ static ERR DOCUMENT_HideIndex(extDocument *Self, doc::HideIndex *Args)
       }
    }
 
-   return ERR::Okay;
+   return ERR::Search;
 }
 
 //********************************************************************************************************************
@@ -1684,9 +1702,10 @@ static ERR DOCUMENT_ReadContent(extDocument *Self, doc::ReadContent *Args)
    }
    else if (Args->Format IS DATA::RAW) {
       STRING output;
-      if (AllocMemory(end - Args->Start + 1, MEM::NO_CLEAR, &output) IS ERR::Okay) {
-         copymem(Self->Stream.data.data() + Args->Start, output, end - Args->Start);
-         output[end - Args->Start] = 0;
+      auto size = (end - Args->Start) * INDEX(sizeof(stream_code));
+      if (AllocMemory(size + 1, MEM::NO_CLEAR, &output) IS ERR::Okay) {
+         copymem(Self->Stream.data.data() + Args->Start, output, size);
+         output[size] = 0;
          Args->Result = output;
          return ERR::Okay;
       }
@@ -1740,6 +1759,7 @@ static ERR DOCUMENT_Refresh(extDocument *Self)
          if (sc::Call(trigger, error) IS ERR::Okay) {
             if (error IS ERR::Skip) {
                log.msg("The refresh request has been handled by an event trigger.");
+               Self->Processing--;
                return ERR::Okay;
             }
          }
@@ -1869,10 +1889,18 @@ static ERR DOCUMENT_SaveToObject(extDocument *Self, struct acSaveToObject *Args)
    kt::Log log;
 
    if (not Args) return log.warning(ERR::NullArgs);
+   if (not Args->Dest) return log.warning(ERR::NullArgs);
 
    log.branch("Destination: %d", Args->Dest->UID);
-   acWrite(Args->Dest, "Save not supported.", 0, nullptr);
-   return ERR::Okay;
+
+   doc::ReadContent read = { DATA::XML, 0, int(Self->Stream.size()), nullptr };
+   if (auto error = DOCUMENT_ReadContent(Self, &read); error IS ERR::Okay) {
+      error = acWrite(Args->Dest, read.Result, strlen(read.Result), nullptr);
+      FreeResource(read.Result);
+      if (error IS ERR::Okay) return ERR::Okay;
+      else return log.warning(ERR::Write);
+   }
+   else return error;
 }
 
 /*********************************************************************************************************************

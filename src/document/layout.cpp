@@ -524,7 +524,10 @@ CELL layout::lay_cell(bc_table *Table)
 
       layout sl(Self, cell.stream, *cell.viewport, Table->cell_padding);
       sl.m_depth = m_depth + 1;
-      sl.do_layout(&m_font, cell.width, cell.height, vertical_repass);
+      if (auto error = sl.do_layout(&m_font, cell.width, cell.height, vertical_repass); not (error IS ERR::Okay)) {
+         Self->Error = error;
+         return CELL::ABORT;
+      }
 
       // The main product of do_layout() are the produced segments
 
@@ -773,7 +776,11 @@ WRAP layout::lay_button(bc_button &Button)
       sl.m_depth = m_depth + 1;
 
       bool vertical_repass = false;
-      sl.do_layout(&m_font, Button.final_width, Button.final_height, vertical_repass);
+      if (auto error = sl.do_layout(&m_font, Button.final_width, Button.final_height, vertical_repass);
+          not (error IS ERR::Okay)) {
+         Self->Error = error;
+         return WRAP::DO_NOTHING;
+      }
       Button.segments = sl.m_segments;  // The main product of do_layout() are the produced segments.
    }
 
@@ -1012,14 +1019,12 @@ void layout::lay_index()
       while (end < INDEX(m_stream[0].size())) {
          if (m_stream[0][end].code IS SCODE::INDEX_END) {
             bc_index_end &iend = m_stream->lookup<bc_index_end>(end);
-            if (iend.id IS escindex->id) break;
-            end++;
+            if (iend.id IS escindex->id) {
+               m_line.index.set(end);
+               idx = end;
+               return;
+            }
 
-            // Do some cleanup to complete the content skip.
-
-            m_line.index.set(end);
-            idx = end;
-            return;
          }
 
          end++;

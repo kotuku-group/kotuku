@@ -76,7 +76,10 @@ static ERR SET_EventCallback(extDocument *Self, FUNCTION *Value)
          SubscribeAction(Self->EventCallback.Context, AC::Free, C_FUNCTION(notify_free_event));
       }
    }
-   else Self->EventCallback.clear();
+   else {
+      if (Self->EventCallback.isScript()) UnsubscribeAction(Self->EventCallback.Context, AC::Free);
+      Self->EventCallback.clear();
+   }
    return ERR::Okay;
 }
 
@@ -155,11 +158,13 @@ static ERR GET_Path(extDocument *Self, CSTRING *Value)
 static ERR SET_Path(extDocument *Self, CSTRING Value)
 {
    kt::Log log;
-   static int8_t recursion = 0;
 
-   if (recursion) return log.warning(ERR::Recursion);
+   if (Self->PathRecursion.exchange(1, std::memory_order_acq_rel)) return log.warning(ERR::Recursion);
 
-   if ((!Value) or (!*Value)) return ERR::NoData;
+   if ((!Value) or (!*Value)) {
+      Self->PathRecursion.store(0, std::memory_order_release);
+      return ERR::NoData;
+   }
 
    Self->Error = ERR::Okay;
    auto value = std::string_view(Value);
@@ -182,7 +187,6 @@ static ERR SET_Path(extDocument *Self, CSTRING Value)
 
    // Signal that we are leaving the current page
 
-   recursion++;
    for (auto &trigger : copy_triggers(Self, DRT::LEAVING_PAGE)) {
       if (trigger.isScript()) {
          sc::Call(trigger, std::to_array<ScriptArg>({ { "OldURI", Self->Path }, { "NewURI", newpath } }));
@@ -193,8 +197,6 @@ static ERR SET_Path(extDocument *Self, CSTRING Value)
          routine(trigger.Context, Self, Self->Path.c_str(), newpath.c_str(), trigger.Meta);
       }
    }
-   recursion--;
-
    Self->Path.clear();
    Self->PageName.clear();
    Self->Bookmark.clear();
@@ -202,14 +204,11 @@ static ERR SET_Path(extDocument *Self, CSTRING Value)
    if (!newpath.empty()) {
       Self->Path = newpath;
 
-      recursion++;
-
       if (Self->initialised()) {
          auto error = load_doc(Self, Self->Path, true);
          if (not (error IS ERR::Okay)) Self->Error = error;
          Self->Viewport->draw();
       }
-      recursion--;
 
       // If an error occurred, remove the location & page strings to show that no document is loaded.
 
@@ -224,7 +223,9 @@ static ERR SET_Path(extDocument *Self, CSTRING Value)
 
    report_event(Self, DEF::PATH, 0, nullptr);
 
-   return Self->Error;
+   auto error = Self->Error;
+   Self->PathRecursion.store(0, std::memory_order_release);
+   return error;
 }
 
 /*********************************************************************************************************************
