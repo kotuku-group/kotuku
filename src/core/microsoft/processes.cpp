@@ -1,10 +1,58 @@
 
-static void assign_group(HANDLE Process);
+static bool assign_group(HANDLE Process);
 
 static uint64_t unique_pipe_id(void)
 {
    static std::atomic_uint64_t glPipeID = 0;
    return ++glPipeID;
+}
+
+static void close_handle(HANDLE *Handle)
+{
+   if ((!Handle) or (!*Handle) or (*Handle IS INVALID_HANDLE_VALUE)) return;
+   CloseHandle(*Handle);
+   *Handle = nullptr;
+}
+
+static void cancel_overlapped_read(HANDLE Handle, OVERLAPPED *Overlap)
+{
+   if ((!Handle) or (Handle IS INVALID_HANDLE_VALUE) or (!Overlap) or (!Overlap->hEvent)) return;
+
+   if (CancelIoEx(Handle, Overlap)) {
+      DWORD transferred = 0;
+      GetOverlappedResult(Handle, Overlap, &transferred, TRUE);
+   }
+}
+
+static HANDLE open_nul_handle(DWORD Access)
+{
+   SECURITY_ATTRIBUTES sa;
+
+   sa.nLength              = sizeof(sa);
+   sa.lpSecurityDescriptor = nullptr;
+   sa.bInheritHandle       = TRUE;
+
+   return CreateFile("NUL", Access, FILE_SHARE_READ|FILE_SHARE_WRITE, &sa, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL,
+      nullptr);
+}
+
+static int duplicate_or_nul_std_handle(DWORD StdID, DWORD Access, HANDLE *Handle)
+{
+   *Handle = nullptr;
+
+   auto source = GetStdHandle(StdID);
+   if ((source) and (source != INVALID_HANDLE_VALUE)) {
+      if (DuplicateHandle(GetCurrentProcess(), source, GetCurrentProcess(), Handle, 0, TRUE,
+            DUPLICATE_SAME_ACCESS)) {
+         return 0;
+      }
+   }
+
+   if ((*Handle = open_nul_handle(Access)) != INVALID_HANDLE_VALUE) return 0;
+
+   auto winerror = GetLastError();
+   *Handle = nullptr;
+   return winerror;
 }
 
 extern "C" void deregister_process_pipes(APTR Self, HANDLE ProcessHandle);
@@ -22,19 +70,22 @@ extern "C" void winFreeProcess(struct winprocess *Process)
    task_deregister_incoming(Process->StdOutEvent);
    task_deregister_incoming(Process->StdErrEvent);
 
-   if (Process->StdOutEvent) CloseHandle(Process->StdOutEvent);
-   if (Process->StdErrEvent) CloseHandle(Process->StdErrEvent);
-
    deregister_process_pipes(Process->Task, Process->Handle);
 
-   if (Process->PipeOut.Write) CloseHandle(Process->PipeOut.Write);
-   if (Process->PipeErr.Write) CloseHandle(Process->PipeErr.Write);
-   if (Process->PipeIn.Read)   CloseHandle(Process->PipeIn.Read);
+   cancel_overlapped_read(Process->PipeOut.Read, &Process->OutOverlap);
+   cancel_overlapped_read(Process->PipeErr.Read, &Process->ErrOverlap);
 
-   if (Process->PipeOut.Read) CloseHandle(Process->PipeOut.Read);
-   if (Process->PipeErr.Read) CloseHandle(Process->PipeErr.Read);
-   if (Process->PipeIn.Write) CloseHandle(Process->PipeIn.Write);
-   if (Process->Handle) CloseHandle(Process->Handle);
+   close_handle(&Process->PipeOut.Write);
+   close_handle(&Process->PipeErr.Write);
+   close_handle(&Process->PipeIn.Read);
+
+   close_handle(&Process->PipeOut.Read);
+   close_handle(&Process->PipeErr.Read);
+   close_handle(&Process->PipeIn.Write);
+
+   close_handle(&Process->StdOutEvent);
+   close_handle(&Process->StdErrEvent);
+   close_handle(&Process->Handle);
 
    free(Process);
 }
@@ -47,24 +98,31 @@ extern "C" void winFreeProcess(struct winprocess *Process)
 
 //LONG WINAPI SetInformationJobObject(HANDLE, JOBOBJECTINFOCLASS, PVOID, ULONG);
 
-static void assign_group(HANDLE Process)
+static bool assign_group(HANDLE Process)
 {
-   static HANDLE job = 0;
+   static HANDLE glJob = 0;
+   bool result = false;
 
-   if (!job) {
+   EnterCriticalSection(&csJob);
+
+   if (!glJob) {
 
       // Create the job object
 
-      if (!(job = CreateJobObject(nullptr, nullptr))) {
-         // Failure
-         return;
+      if (!(glJob = CreateJobObject(nullptr, nullptr))) {
+         LeaveCriticalSection(&csJob);
+         return false;
       }
 
       {
          JOBOBJECT_EXTENDED_LIMIT_INFORMATION jeli;
          ZeroMemory(&jeli, sizeof(jeli));
          jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-         SetInformationJobObject(job, JobObjectExtendedLimitInformation, &jeli, sizeof(jeli));
+         if (!SetInformationJobObject(glJob, JobObjectExtendedLimitInformation, &jeli, sizeof(jeli))) {
+            close_handle(&glJob);
+            LeaveCriticalSection(&csJob);
+            return false;
+         }
       }
 /*
       {
@@ -78,9 +136,9 @@ static void assign_group(HANDLE Process)
 */
    }
 
-   if (AssignProcessToJobObject(job, Process)) {
-      // Success
-   }
+   result = AssignProcessToJobObject(glJob, Process);
+   LeaveCriticalSection(&csJob);
+   return result;
 }
 
 //********************************************************************************************************************
@@ -105,7 +163,7 @@ extern "C" void winResetStdOut(struct winprocess *Process, char *Buffer, DWORD *
       if (*Size < avail) avail = *Size;
 
       if (ReadFile(Process->PipeOut.Read, Buffer+1, avail, Size, 0)) {
-        *Size = *Size + 1;
+         *Size = *Size + 1;
          // Prepare for the next input report
          ReadFile(Process->PipeOut.Read, Process->OutBuffer, 1, &Process->OutTotalRead, &Process->OutOverlap);
       }
@@ -180,7 +238,11 @@ extern "C" int winLaunchProcess(APTR Task, LPSTR commandline, LPSTR InitialDir, 
    }
 
    auto process = (struct winprocess *)calloc(1, sizeof(struct winprocess));
+   if (!process) return ERROR_NOT_ENOUGH_MEMORY;
+
    if (InternalRedirect) {
+      HANDLE inherited_stdout = nullptr;
+      HANDLE inherited_stderr = nullptr;
       auto pipe_id = unique_pipe_id();
       char stdout_pipe[128];
       char stderr_pipe[128];
@@ -199,9 +261,14 @@ extern "C" int winLaunchProcess(APTR Task, LPSTR commandline, LPSTR InitialDir, 
       // STDOUT
       if (InternalRedirect & TSTD_OUT) {
          HANDLE newhd;
-         if ((process->PipeOut.Read = CreateNamedPipe(stdout_pipe, PIPE_ACCESS_INBOUND|FILE_FLAG_OVERLAPPED, PIPE_READMODE_BYTE, 1, 4096, 4096, 1000, &sa)) != INVALID_HANDLE_VALUE) {
-            if ((process->PipeOut.Write = CreateFile(stdout_pipe, FILE_WRITE_DATA|SYNCHRONIZE, 0, &sa, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0)) != INVALID_HANDLE_VALUE) {
-               if (DuplicateHandle(GetCurrentProcess(), process->PipeOut.Read, GetCurrentProcess(), &newhd, 0, FALSE, DUPLICATE_SAME_ACCESS)) {
+         process->PipeOut.Read = CreateNamedPipe(stdout_pipe, PIPE_ACCESS_INBOUND|FILE_FLAG_OVERLAPPED,
+            PIPE_READMODE_BYTE, 1, 4096, 4096, 1000, &sa);
+         if (process->PipeOut.Read != INVALID_HANDLE_VALUE) {
+            process->PipeOut.Write = CreateFile(stdout_pipe, FILE_WRITE_DATA|SYNCHRONIZE, 0, &sa, OPEN_EXISTING,
+               FILE_ATTRIBUTE_NORMAL, 0);
+            if (process->PipeOut.Write != INVALID_HANDLE_VALUE) {
+               if (DuplicateHandle(GetCurrentProcess(), process->PipeOut.Read, GetCurrentProcess(), &newhd, 0, FALSE,
+                     DUPLICATE_SAME_ACCESS)) {
                   CloseHandle(process->PipeOut.Read);
                   process->PipeOut.Read = newhd;
                   start.hStdOutput = process->PipeOut.Write; // The child process will be writing to stdout
@@ -212,11 +279,13 @@ extern "C" int winLaunchProcess(APTR Task, LPSTR commandline, LPSTR InitialDir, 
                      process->OutOverlap.OffsetHigh = 0;
 
                      task_register_stdout(Task, process->StdOutEvent);
-                     if (ReadFile(process->PipeOut.Read, process->OutBuffer, 1, &process->OutTotalRead, &process->OutOverlap)) {
+                     if (ReadFile(process->PipeOut.Read, process->OutBuffer, 1, &process->OutTotalRead,
+                           &process->OutOverlap)) {
                         MSG("Warning: ReadFile() succeeded on asynchronous file.\n");
                      }
+                     else if (auto error = GetLastError(); error != ERROR_IO_PENDING) winerror = error;
                   }
-                  else MSG("CreateEvent() failed.");
+                  else { MSG("CreateEvent() failed."); winerror = GetLastError(); }
                }
                else { MSG("DuplicateHandle() failed.\n"); winerror = GetLastError(); }
             }
@@ -224,13 +293,22 @@ extern "C" int winLaunchProcess(APTR Task, LPSTR commandline, LPSTR InitialDir, 
          }
          else { MSG("CreateNamedPipe(%s) failed.\n", stdout_pipe); winerror = GetLastError(); }
       }
+      else if (!winerror) {
+         winerror = duplicate_or_nul_std_handle(STD_OUTPUT_HANDLE, GENERIC_WRITE, &inherited_stdout);
+         start.hStdOutput = inherited_stdout;
+      }
 
       if ((InternalRedirect & TSTD_ERR) and (!winerror)) {
          // STDERR
          HANDLE newhd;
-         if ((process->PipeErr.Read = CreateNamedPipe(stderr_pipe, PIPE_ACCESS_INBOUND|FILE_FLAG_OVERLAPPED, PIPE_READMODE_BYTE, 1, 4096, 4096, 1000, &sa)) != INVALID_HANDLE_VALUE) {
-            if ((process->PipeErr.Write = CreateFile(stderr_pipe, FILE_WRITE_DATA|SYNCHRONIZE, 0, &sa, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0)) != INVALID_HANDLE_VALUE) {
-               if (DuplicateHandle(GetCurrentProcess(), process->PipeErr.Read, GetCurrentProcess(), &newhd, 0, FALSE, DUPLICATE_SAME_ACCESS)) {
+         process->PipeErr.Read = CreateNamedPipe(stderr_pipe, PIPE_ACCESS_INBOUND|FILE_FLAG_OVERLAPPED,
+            PIPE_READMODE_BYTE, 1, 4096, 4096, 1000, &sa);
+         if (process->PipeErr.Read != INVALID_HANDLE_VALUE) {
+            process->PipeErr.Write = CreateFile(stderr_pipe, FILE_WRITE_DATA|SYNCHRONIZE, 0, &sa, OPEN_EXISTING,
+               FILE_ATTRIBUTE_NORMAL, 0);
+            if (process->PipeErr.Write != INVALID_HANDLE_VALUE) {
+               if (DuplicateHandle(GetCurrentProcess(), process->PipeErr.Read, GetCurrentProcess(), &newhd, 0, FALSE,
+                     DUPLICATE_SAME_ACCESS)) {
                   CloseHandle(process->PipeErr.Read);
                   process->PipeErr.Read = newhd;
                   start.hStdError  = process->PipeErr.Write; // The child process will be writing to stderr
@@ -241,17 +319,23 @@ extern "C" int winLaunchProcess(APTR Task, LPSTR commandline, LPSTR InitialDir, 
                      process->ErrOverlap.OffsetHigh = 0;
 
                      task_register_stderr(Task, process->StdErrEvent);
-                     if (ReadFile(process->PipeErr.Read, process->ErrBuffer, 1, &process->ErrTotalRead, &process->ErrOverlap)) {
+                     if (ReadFile(process->PipeErr.Read, process->ErrBuffer, 1, &process->ErrTotalRead,
+                           &process->ErrOverlap)) {
                         MSG("Warning: ReadFile() succeeded on asynchronous file.\n");
                      }
+                     else if (auto error = GetLastError(); error != ERROR_IO_PENDING) winerror = error;
                   }
-                  else MSG("CreateEvent() failed.");
+                  else { MSG("CreateEvent() failed."); winerror = GetLastError(); }
                }
                else { MSG("DuplicateHandle() failed.\n"); winerror = GetLastError(); }
             }
             else { MSG("CreateFile() failed.\n"); winerror = GetLastError(); }
          }
          else { MSG("CreateNamedPipe(%s) failed.\n", stderr_pipe); winerror = GetLastError(); }
+      }
+      else if (!winerror) {
+         winerror = duplicate_or_nul_std_handle(STD_ERROR_HANDLE, GENERIC_WRITE, &inherited_stderr);
+         start.hStdError = inherited_stderr;
       }
 
       // STDIN.  Some programs get upset if an FD for stdin isn't present, so provide
@@ -273,14 +357,15 @@ extern "C" int winLaunchProcess(APTR Task, LPSTR commandline, LPSTR InitialDir, 
          // Event handling for incoming data
 
          PROCESS_INFORMATION info;
-         if (CreateProcess(0, commandline, 0, 0, TRUE, CREATE_NEW_CONSOLE|CREATE_SUSPENDED, 0, InitialDir, &start, &info)) {
+         if (CreateProcess(0, commandline, 0, 0, TRUE, CREATE_NEW_CONSOLE|CREATE_SUSPENDED, 0, InitialDir, &start,
+               &info)) {
             pid = info.dwProcessId;
             process->Handle = info.hProcess;
             process->Task = Task;
 
             register_process_pipes(Task, process->Handle);
 
-            if (Group) assign_group(info.hProcess);
+            if ((Group) and (!assign_group(info.hProcess))) MSG("AssignProcessToJobObject() failed.\n");
 
             ResumeThread(info.hThread); // Required as process was created with CREATE_SUSPENDED
 
@@ -288,6 +373,9 @@ extern "C" int winLaunchProcess(APTR Task, LPSTR commandline, LPSTR InitialDir, 
          }
          else { MSG("CreateProcess() failed.\n"); winerror = GetLastError(); }
       }
+
+      close_handle(&inherited_stdout);
+      close_handle(&inherited_stderr);
 
       if (!pid) {
          winFreeProcess(process);
@@ -300,9 +388,14 @@ extern "C" int winLaunchProcess(APTR Task, LPSTR commandline, LPSTR InitialDir, 
 
       SECURITY_ATTRIBUTES sa;
       int inherit = FALSE;
+      bool stderr_shared = false;
+      HANDLE inherited_stdin = nullptr;
+      HANDLE inherited_stdout = nullptr;
+      HANDLE inherited_stderr = nullptr;
 
       if ((!RedirectStdOut) and (!RedirectStdErr) and (HideWindow)) {
-         //start.dwFlags |= STARTF_USESTDHANDLES; // To nullify all output, you can set this flag while ensuring hStdInput, hStdOutput, and hStdError in &start are all zero.
+         //start.dwFlags |= STARTF_USESTDHANDLES;
+         // To nullify all output, ensure hStdInput, hStdOutput, and hStdError in &start are all zero.
       }
 
       if (RedirectStdOut) {
@@ -312,13 +405,19 @@ extern "C" int winLaunchProcess(APTR Task, LPSTR commandline, LPSTR InitialDir, 
          sa.lpSecurityDescriptor = nullptr;
          sa.bInheritHandle       = TRUE;
 
-         start.hStdOutput = CreateFile(RedirectStdOut, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-         inherit = TRUE;
+         start.hStdOutput = CreateFile(RedirectStdOut, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa,
+            CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+         if (start.hStdOutput != INVALID_HANDLE_VALUE) inherit = TRUE;
+         else {
+            winerror = GetLastError();
+            start.hStdOutput = nullptr;
+         }
       }
 
-      if (RedirectStdErr) {
-         if (RedirectStdErr == RedirectStdOut) {
+      if ((RedirectStdErr) and (!winerror)) {
+         if ((RedirectStdOut) and (lstrcmpiA(RedirectStdErr, RedirectStdOut) IS 0)) {
             start.hStdError = start.hStdOutput;
+            stderr_shared = true;
          }
          else {
             start.dwFlags |= STARTF_USESTDHANDLES;
@@ -326,31 +425,62 @@ extern "C" int winLaunchProcess(APTR Task, LPSTR commandline, LPSTR InitialDir, 
             sa.nLength              = sizeof(SECURITY_ATTRIBUTES);
             sa.lpSecurityDescriptor = nullptr;
             sa.bInheritHandle       = TRUE;
-            start.hStdError = CreateFile(RedirectStdErr, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-            inherit = TRUE;
+            start.hStdError = CreateFile(RedirectStdErr, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa,
+               CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+            if (start.hStdError != INVALID_HANDLE_VALUE) inherit = TRUE;
+            else {
+               winerror = GetLastError();
+               start.hStdError = nullptr;
+            }
          }
       }
 
+      if (((start.dwFlags & STARTF_USESTDHANDLES) != 0) and (!winerror)) {
+         if (!start.hStdInput) {
+            winerror = duplicate_or_nul_std_handle(STD_INPUT_HANDLE, GENERIC_READ, &inherited_stdin);
+            start.hStdInput = inherited_stdin;
+         }
+
+         if ((!start.hStdOutput) and (!winerror)) {
+            winerror = duplicate_or_nul_std_handle(STD_OUTPUT_HANDLE, GENERIC_WRITE, &inherited_stdout);
+            start.hStdOutput = inherited_stdout;
+         }
+
+         if ((!start.hStdError) and (!winerror)) {
+            winerror = duplicate_or_nul_std_handle(STD_ERROR_HANDLE, GENERIC_WRITE, &inherited_stderr);
+            start.hStdError = inherited_stderr;
+         }
+
+         if (!winerror) inherit = TRUE;
+      }
+
       PROCESS_INFORMATION info;
-      if (CreateProcess(0 /* appname */, commandline, 0, 0,
+      if ((!winerror) and (CreateProcess(0 /* appname */, commandline, 0, 0,
             inherit, // inherit handles
             CREATE_NEW_CONSOLE|CREATE_SUSPENDED, // creation flags
-            0, InitialDir, &start, &info)) {
+            0, InitialDir, &start, &info))) {
          pid = info.dwProcessId;
          process->Handle = info.hProcess;
          process->Task = Task;
 
          register_process_pipes(Task, process->Handle);
 
-         if (Group) assign_group(info.hProcess);
+         if ((Group) and (!assign_group(info.hProcess))) MSG("AssignProcessToJobObject() failed.\n");
 
          ResumeThread(info.hThread); // Required as process was created with CREATE_SUSPENDED
          CloseHandle(info.hThread);
       }
-      else winerror = GetLastError();
+      else if (!winerror) winerror = GetLastError();
 
-      if (start.hStdError) CloseHandle(start.hStdError);
-      if (start.hStdOutput) CloseHandle(start.hStdOutput);
+      if ((!stderr_shared) and (start.hStdError != inherited_stderr)) close_handle(&start.hStdError);
+      else start.hStdError = nullptr;
+
+      if (start.hStdOutput != inherited_stdout) close_handle(&start.hStdOutput);
+      else start.hStdOutput = nullptr;
+
+      close_handle(&inherited_stdin);
+      close_handle(&inherited_stdout);
+      close_handle(&inherited_stderr);
 
       if (!pid) {
          winFreeProcess(process);
@@ -436,7 +566,7 @@ extern "C" int winReadStd(struct winprocess *Platform, int Type, APTR Buffer, DW
    DWORD avail = 0;
    if (!PeekNamedPipe(FD, nullptr, 0, nullptr, &avail, nullptr)) {
       MSG("winReadStd() PeekNamedPipe() failed.\n");
-      if (GetLastError() == ERROR_BROKEN_PIPE) return -2;
+      if (GetLastError() IS ERROR_BROKEN_PIPE) return -2;
       else return -1;
    }
 
@@ -454,7 +584,7 @@ extern "C" int winReadStd(struct winprocess *Platform, int Type, APTR Buffer, DW
       return 0;
    }
    else {
-      if (GetLastError() == ERROR_BROKEN_PIPE) {
+      if (GetLastError() IS ERROR_BROKEN_PIPE) {
          if (*Size <= 0) return -2;
          else return 0;
       }
