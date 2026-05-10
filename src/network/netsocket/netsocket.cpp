@@ -389,7 +389,6 @@ static void connect_name_resolved(extNetSocket *Socket, ERR Error, const std::st
             }
 
             Socket->setState(NTC::CONNECTING);
-            RegisterFD(Socket->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &netsocket_incoming, Socket);
             RegisterFD(Socket->Handle.hosthandle(), RFD::WRITE|RFD::SOCKET, &netsocket_connect, Socket);
          }
          else {
@@ -433,7 +432,6 @@ static void connect_name_resolved(extNetSocket *Socket, ERR Error, const std::st
             }
 
             Socket->setState(NTC::CONNECTING);
-            RegisterFD(Socket->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &netsocket_incoming, Socket);
             RegisterFD(Socket->Handle.hosthandle(), RFD::WRITE|RFD::SOCKET, &netsocket_connect, Socket);
          }
          else {
@@ -499,8 +497,6 @@ static void connect_name_resolved(extNetSocket *Socket, ERR Error, const std::st
       }
 
       Socket->setState(NTC::CONNECTING);
-      RegisterFD(Socket->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &netsocket_incoming, Socket);
-
       // The write queue will be signalled once the connection process is completed.
 
       RegisterFD(Socket->Handle.hosthandle(), RFD::WRITE|RFD::SOCKET, &netsocket_connect, Socket);
