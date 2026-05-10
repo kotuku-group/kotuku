@@ -1,0 +1,207 @@
+   import 'net/proxyserver'
+   import 'options'
+
+----------------------------------------------------------------------------------------------------------------------
+
+function validatePort(Parser:table, ArgName:str, Value:any, Param:table)
+   if Value < 1 or Value > 65535 then
+      error(f"Parameter '{ArgName}' must be between 1 and 65535.")
+   end
+end
+
+function resolveFileOption(Path:str):str
+   err, resolved_path = mSys.ResolvePath(Path)
+   if err is ERR_Okay and resolved_path then return resolved_path end
+   return Path
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+   glParser = options({
+      name        = 'ProxyServer',
+      description = [[
+Kōtuku Proxy Server provides an HTTP/HTTPS proxy with flow recording and optional interception hooks.
+]],
+      epilog      = [[
+If a config file is stored at user:config/proxy_server_cfg.json then it will be loaded automatically.  Options can be
+overridden via the command-line, or you can refer to a different JSON config file via the config parameter.
+
+MITM mode requires a custom CA certificate that clients must trust.  You can generate one using:
+  openssl genrsa -out ca-key.pem 2048
+  openssl req -new -x509 -key ca-key.pem -out ca-cert.pem -days 3650
+
+Examples:
+  origo apps/proxy_server port=8080 bind=127.0.0.1 verbose
+  origo apps/proxy_server port=8080 no-record
+  origo apps/proxy_server mitm cacert=ca-cert.pem cakey=ca-key.pem
+]],
+      userConfig  = 'user:config/proxy_server_cfg.json',
+      args        = array<table> {
+         { name = 'port', type = 'int', default = 8080, group = 'Server', comment = 'Port number to listen on.',
+           exec = validatePort },
+         { name = 'bind', type = 'str', group = 'Server',
+           comment = "Bind to a specific IP address, for example '127.0.0.1' for localhost only." },
+         { name = 'verbose', kind = 'flag', default = false, group = 'Behaviour',
+           comment = 'Enable verbose logging.' },
+         { name = 'timeout', type = 'int', default = 30, group = 'Behaviour',
+           comment = 'Request timeout in seconds.',
+           exec = function(Parser:table, ArgName:str, Value:any, Param:table)
+              if Value < 1 or Value > 300 then
+                 error(f"Parameter '{ArgName}' must be between 1 and 300 seconds.")
+              end
+           end
+         },
+         -- MITM Disabled until available in the proxyserver library
+         --{ names = array<string> { 'mitm', 'enableMITM', 'enable-mitm' }, kind = 'flag', default = false,
+         --  group = 'HTTPS', comment = 'Enable MITM mode for HTTPS interception.' },
+         --{ names = array<string> { 'cacert', 'caCert', 'ca-cert' }, type = 'file', exists = true, group = 'HTTPS',
+         --  comment = 'CA certificate file for MITM mode.' },
+         --{ names = array<string> { 'cakey', 'caKey', 'ca-key' }, type = 'file', exists = true, group = 'HTTPS',
+         --  comment = 'CA private key file for MITM mode.' },
+         { names = array<string> { 'capass', 'caPassword', 'ca-password' }, type = 'str', group = 'HTTPS',
+           comment = 'Password for the CA private key.' },
+         { names = array<string> { 'upstream', 'upstreamProxy', 'upstream-proxy' }, type = 'str', group = 'Server',
+           comment = 'Upstream proxy server in host:port form.' },
+         { names = array<string> { 'record', 'recordFlows', 'record-flows' }, kind = 'flag', default = true,
+           group = 'Recording', comment = 'Enable flow recording.' },
+         { names = array<string> { 'maxflows', 'maxFlows', 'max-flows' }, type = 'int', default = 1000,
+           group = 'Recording', comment = 'Maximum number of flows to keep in memory.',
+           exec = function(Parser:table, ArgName:str, Value:any, Param:table)
+              if Value < 1 then
+                 error(f"Parameter '{ArgName}' must be greater than zero.")
+              end
+           end
+         },
+         { names = array<string> { 'exportFile', 'export', 'export-file' }, type = 'path', group = 'Recording',
+           comment = 'Export recorded flows to a JSON file on shutdown.' },
+         { names = array<string> { 'importFile', 'import', 'import-file' }, type = 'file', exists = true,
+           group = 'Recording', comment = 'Import flows from a JSON file on startup.' }
+      }
+   })
+
+   glArgs = glParser.process()
+   if not glArgs then return end
+
+   if glArgs.mitm and (not glArgs.cacert or not glArgs.cakey) then
+      print('Error: MITM mode requires both cacert and cakey parameters')
+      print('Generate certificates with:')
+      print('  openssl genrsa -out ca-key.pem 2048')
+      print('  openssl req -new -x509 -key ca-key.pem -out ca-cert.pem -days 3650')
+      return
+   end
+
+   glOptions = {
+      port           = glArgs.port,
+      bind           = glArgs.bind,
+      verbose        = glArgs.verbose,
+      timeout        = glArgs.timeout,
+      enableMITM     = glArgs.mitm,
+      caCert         = glArgs.cacert and resolveFileOption(glArgs.cacert) or nil,
+      caKey          = glArgs.cakey and resolveFileOption(glArgs.cakey) or nil,
+      caPassword     = glArgs.capass,
+      upstreamProxy  = glArgs.upstream,
+      recordFlows    = glArgs.record,
+      maxFlows       = glArgs.maxflows,
+      exportFile     = glArgs.exportFile,
+      importFile     = glArgs.importFile
+   }
+
+   glOptions.onConnect = function(ClientSocket:obj)
+      if glOptions.verbose then
+         client_ip = 'unknown'
+         if ClientSocket.client and ClientSocket.client.ip then
+            ip = ClientSocket.client.ip
+            client_ip = ip[1] .. '.' .. ip[2] .. '.' .. ip[3] .. '.' .. ip[4]
+         end
+         print('[CONNECT] Client connected: ' .. client_ip)
+      end
+   end
+
+   glOptions.onFlowRecord = function(Flow:table)
+      if glOptions.verbose then
+         print('[FLOW] ' .. Flow.id .. ': ' .. Flow.request.method .. ' ' .. Flow.request.url ..
+               ' from ' .. Flow.clientIP .. (Flow.modified and ' (MODIFIED)' or ''))
+      end
+   end
+
+   glOptions.onError = function(Error:any)
+      if type(Error) is 'table' then
+         print('[ERROR] ' .. (Error.message ?? Error.code ?? 'Proxy error'))
+      else
+         print('[ERROR] ' .. tostring(Error))
+      end
+   end
+
+   print('Kōtuku Proxy Server')
+   print('===================')
+
+   if glOptions.enableMITM then
+      print('MITM Mode Enabled - This proxy will intercept HTTPS traffic')
+      print('   CA Certificate: ' .. glOptions.caCert)
+      print('   Clients must trust the CA certificate to avoid security warnings')
+   else
+      print('Standard proxy mode - HTTPS traffic will be tunneled (not intercepted)')
+   end
+
+   print('Configuration:')
+   print('  Port: ' .. glOptions.port)
+   print('  Bind: ' .. (glOptions.bind or 'all interfaces'))
+   print('  Verbose: ' .. (glOptions.verbose and 'enabled' or 'disabled'))
+   print('  Timeout: ' .. glOptions.timeout .. ' seconds')
+   print('  Flow Recording: ' .. (glOptions.recordFlows and 'enabled' or 'disabled'))
+   print('  Max Flows: ' .. glOptions.maxFlows)
+
+   if glOptions.upstreamProxy then
+      print('  Upstream Proxy: ' .. glOptions.upstreamProxy)
+   end
+
+   if glOptions.importFile then
+      print('  Import Flows: ' .. glOptions.importFile)
+   end
+
+   if glOptions.exportFile then
+      print('  Export Flows: ' .. glOptions.exportFile)
+   end
+
+   print()
+
+   glProxy = proxylib.start(glOptions)
+
+   if glOptions.importFile then
+      if glProxy.loadFlows(glOptions.importFile) then
+         print('Flows imported from: ' .. glOptions.importFile)
+      else
+         print('Warning: Failed to import flows from: ' .. glOptions.importFile)
+      end
+   end
+
+   print('Proxy server running...')
+   print('Configure your browser or application to use proxy: ' ..
+      (glOptions.bind or '127.0.0.1') .. ':' .. glOptions.port)
+
+   if glOptions.enableMITM then
+      print('For HTTPS interception, install the CA certificate in your browser/system trust store')
+   end
+
+   print('Press Ctrl+C to stop')
+   print()
+
+   processing.sleep()
+
+   if glProxy then
+      print('Shutting down proxy server...')
+
+      if glOptions.exportFile then
+         if glProxy.exportFlows(glOptions.exportFile) then
+            flows = glProxy.getFlows()
+            flow_count = 0
+            for _ in pairs(flows) do flow_count++ end
+            print('Exported ' .. flow_count .. ' flows to: ' .. glOptions.exportFile)
+         else
+            print('Warning: Failed to export flows to: ' .. glOptions.exportFile)
+         end
+      end
+
+      glProxy.stop()
+      glProxy = nil
+   end

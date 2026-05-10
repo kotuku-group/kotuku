@@ -1,0 +1,885 @@
+-- Flute tests for the streaming HTTP proxy library.
+
+   import 'net/httpserver'
+   import 'net/proxyserver'
+   import 'json'
+   include 'network'
+   mNet ?= mod.load('network')
+
+PROXY_PORT <const> = 18962
+SERVER_PORT <const> = 18963
+ECHO_PORT <const> = 18964
+SSL_TUNNEL_PORT <const> = 18965
+UNUSED_PORT <const> = 18966
+PERSIST_PROXY_PORT <const> = 18967
+UPSTREAM_PROXY_PORT <const> = 18968
+CHAIN_PROXY_PORT <const> = 18969
+HOOK_PROXY_PORT <const> = 18970
+INVALID_PROXY_PORT <const> = 18971
+STALL_SERVER_PORT <const> = 18972
+TIMEOUT_PROXY_PORT <const> = 18973
+FLOW_EXPORT_FILE <const> = 'temp:proxy-flows.json'
+FLOW_IMPORT_FILE <const> = 'temp:proxy-import-flows.json'
+FLOW_INVALID_FILE <const> = 'temp:proxy-invalid-flows.json'
+
+rxStatusLine = <{ regex.new([[HTTP\/1\.[01]\s+(\d+)]]) }>
+
+global glLastUpstreamProxyRequest = ''
+global glUpstreamProxyRejectConnect = false
+global glUpstreamProxyBuffers = {}
+global glProxyErrors = {}
+
+function rawProxyRequestOnPort(ProxyPort:num, Request:str, Timeout:num):str
+   local response = ''
+
+   local socket = obj.new('netsocket', {
+      feedback = function(Socket, State)
+         if State is NTC_CONNECTED then
+            check Socket.acWrite(Request, #Request)
+         elseif State is NTC_DISCONNECTED then
+            Socket.acSignal()
+         end
+      end,
+      incoming = function(Socket)
+         local buffer = string.alloc(32768)
+         local err, read_len = Socket.acRead(buffer, 32768)
+         if err is ERR_Okay then
+            if read_len > 0 then response ..= buffer:substr(0, read_len) end
+         elseif err is ERR_Disconnected then
+            Socket.acSignal()
+         else
+            error('Proxy client read failed: ' .. mSys.GetErrorMsg(err))
+         end
+      end
+   })
+
+   local proc = processing.new({ timeout = Timeout, signals = array<object> { socket } })
+   check socket.mtConnect('127.0.0.1', ProxyPort, 3.0)
+   local err = proc.sleep()
+   assert(err is ERR_Okay, 'Proxy request timed out or failed: ' .. mSys.GetErrorMsg(err))
+
+   return response
+end
+
+function rawProxyRequest(Request:str, Timeout:num):str
+   return rawProxyRequestOnPort(PROXY_PORT, Request, Timeout)
+end
+
+function proxyRequestOnPort(ProxyPort:num, Method:str, Path:str, Headers:str, Body:str):str
+   local body = Body ?? ''
+   local headers = Headers ?? ''
+   local request = Method .. ' http://127.0.0.1:' .. SERVER_PORT .. Path .. ' HTTP/1.1\r\n' ..
+      'Host: 127.0.0.1:' .. SERVER_PORT .. '\r\n' ..
+      headers ..
+      'Connection: close\r\n\r\n' ..
+      body
+
+   return rawProxyRequestOnPort(ProxyPort, request, 8.0)
+end
+
+function proxyRequest(Method:str, Path:str, Headers:str, Body:str):str
+   return proxyRequestOnPort(PROXY_PORT, Method, Path, Headers, Body)
+end
+
+function rawChainedProxyRequest(Request:str, Timeout:num):str
+   return rawProxyRequestOnPort(CHAIN_PROXY_PORT, Request, Timeout)
+end
+
+function responseStatus(Response:str):num
+   local status = rxStatusLine.extract(Response)
+   return tonumber(status ?? 0)
+end
+
+function responseBody(Response:str):str
+   local header_end = Response:find('\r\n\r\n')
+   header_end ?? return ''
+   return Response:substr(header_end + 4)
+end
+
+function findFlow(Method:str, UrlSuffix:str):table
+   local flows = glProxy.getFlows()
+   for _, flow in pairs(flows) do
+      if flow.request.method is Method and flow.request.url:endsWith(UrlSuffix) then return flow end
+   end
+
+   return nil
+end
+
+function flowCount(Flows:table):num
+   local count = 0
+   for _ in pairs(Flows) do count++ end
+   return count
+end
+
+function maxFlowId(Flows:table):num
+   local max_id = 0
+   for id in pairs(Flows) do
+      if id > max_id then max_id = id end
+   end
+
+   return max_id
+end
+
+function writeTextFile(Path:str, Content:str)
+   local file = obj.new('file', { path = Path, flags = FL_NEW|FL_WRITE })
+   local err, written = file.acWrite(Content, #Content)
+   file.free()
+   assert(err is ERR_Okay and written is #Content, 'Failed to write test file: ' .. Path)
+end
+
+function persistedFlow(Id:num, Path:str):table
+   return {
+      id = Id,
+      timestamp = '2026-05-10 10:00:00.000',
+      clientIP = '127.0.0.1',
+      request = {
+         method = 'GET',
+         url = 'http://127.0.0.1:' .. SERVER_PORT .. Path,
+         version = 'HTTP/1.1',
+         headers = { host = '127.0.0.1:' .. SERVER_PORT },
+         streamed = true,
+         raw = 'GET ' .. Path .. ' HTTP/1.1\r\n\r\n'
+      },
+      response = {
+         version = 'HTTP/1.1',
+         status = 200,
+         statusText = 'OK',
+         headers = { ['content-type'] = 'text/plain' },
+         streamed = true,
+         raw = 'HTTP/1.1 200 OK\r\n\r\n'
+      },
+      duration = 0,
+      intercepted = false,
+      modified = false
+   }
+end
+
+function echoIncoming(Server:obj, Client:obj)
+   while true do
+      local buffer = string.alloc(4096)
+      local err, read_len = Client.acRead(buffer, 4096)
+      if err is ERR_Okay then
+         if read_len is 0 then return end
+         local chunk = buffer:substr(0, read_len)
+         check Client.acWrite(chunk, #chunk)
+      elseif err is ERR_Disconnected then
+         return
+      else
+         error('Echo server read failed: ' .. mSys.GetErrorMsg(err))
+      end
+   end
+end
+
+function resetUpstreamProxyState()
+   glLastUpstreamProxyRequest = ''
+   glUpstreamProxyRejectConnect = false
+   glUpstreamProxyBuffers = {}
+   glProxyErrors = {}
+end
+
+function upstreamProxyError(Error:table)
+   table.insert(glProxyErrors, Error)
+end
+
+function stalledOriginIncoming(Server:obj, Client:obj)
+   local buffer = string.alloc(4096)
+   local err, read_len = Client.acRead(buffer, 4096)
+   if err != ERR_Okay and err != ERR_TimeOut and err != ERR_Disconnected then
+      error('Stalled origin read failed: ' .. mSys.GetErrorMsg(err))
+   end
+end
+
+function upstreamProxyIncoming(Server:obj, Client:obj)
+   local key = tostring(Client)
+   local state = glUpstreamProxyBuffers[key]
+   if not state then
+      state = {
+         buffer = '',
+         tunnelling = false
+      }
+      glUpstreamProxyBuffers[key] = state
+   end
+
+   while true do
+      local buffer = string.alloc(32768)
+      local err, read_len = Client.acRead(buffer, 32768)
+      if err is ERR_Okay then
+         if read_len is 0 then return end
+
+         local data = buffer:substr(0, read_len)
+         if state.tunnelling then
+            check Client.acWrite(data, #data)
+            continue
+         end
+
+         state.buffer ..= data
+         local header_end = state.buffer:find('\r\n\r\n')
+         if not header_end then return end
+
+         local header_block = state.buffer:substr(0, header_end + 4)
+         local body_prefix = state.buffer:substr(header_end + 4)
+         glLastUpstreamProxyRequest = header_block
+
+         if header_block:startsWith('CONNECT ') then
+            if glUpstreamProxyRejectConnect then
+               local response = 'HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'
+               check Client.acWrite(response, #response)
+               Server.mtDisconnectSocket(Client)
+               glUpstreamProxyBuffers[key] = nil
+               return
+            end
+
+            local response = 'HTTP/1.1 200 Connection Established\r\nConnection: close\r\n\r\n'
+            check Client.acWrite(response, #response)
+            state.tunnelling = true
+
+            if body_prefix != '' then check Client.acWrite(body_prefix, #body_prefix) end
+            return
+         end
+
+         local response_body = 'response-from-upstream-proxy'
+         local response = 'HTTP/1.1 200 OK\r\n' ..
+            'Connection: close\r\n' ..
+            'Content-Type: text/plain\r\n' ..
+            'Content-Length: ' .. #response_body .. '\r\n\r\n' ..
+            response_body
+         check Client.acWrite(response, #response)
+         Server.mtDisconnectSocket(Client)
+         glUpstreamProxyBuffers[key] = nil
+         return
+      elseif err is ERR_Disconnected then
+         glUpstreamProxyBuffers[key] = nil
+         return
+      else
+         error('Upstream proxy test server read failed: ' .. mSys.GetErrorMsg(err))
+      end
+   end
+end
+
+function connectTunnelRoundTripOnProxy(ProxyPort:num, Port:num, Payload:str, Coalesced:bool):<num, str, str>
+   local proxy_headers = ''
+   local tunnel_data = ''
+   local connected = false
+   local sent_payload = Coalesced
+   local connect_request = 'CONNECT 127.0.0.1:' .. Port .. ' HTTP/1.1\r\n' ..
+      'Host: 127.0.0.1:' .. Port .. '\r\n' ..
+      'Proxy-Connection: keep-alive\r\n\r\n'
+
+   if Coalesced then connect_request ..= Payload end
+
+   local socket = obj.new('netsocket', {
+      feedback = function(Socket, State)
+         if State is NTC_CONNECTED then
+            check Socket.acWrite(connect_request, #connect_request)
+         elseif State is NTC_DISCONNECTED then
+            Socket.acSignal()
+         end
+      end,
+      incoming = function(Socket)
+         local buffer = string.alloc(32768)
+         local err, read_len = Socket.acRead(buffer, 32768)
+         if err is ERR_Okay then
+            if read_len is 0 then return end
+
+            local data = buffer:substr(0, read_len)
+            if connected then
+               tunnel_data ..= data
+            else
+               proxy_headers ..= data
+               local header_end = proxy_headers:find('\r\n\r\n')
+               if header_end then
+                  connected = true
+                  tunnel_data ..= proxy_headers:substr(header_end + 4)
+                  proxy_headers = proxy_headers:substr(0, header_end + 4)
+
+                  if not sent_payload then
+                     check Socket.acWrite(Payload, #Payload)
+                     sent_payload = true
+                  end
+               end
+            end
+
+            if connected and #tunnel_data >= #Payload then
+               Socket.acSignal()
+               Socket.acDeactivate()
+            end
+         elseif err is ERR_Disconnected then
+            Socket.acSignal()
+         else
+            error('Tunnel client read failed: ' .. mSys.GetErrorMsg(err))
+         end
+      end
+   })
+
+   local proc = processing.new({ timeout = 8.0, signals = array<object> { socket } })
+   check socket.mtConnect('127.0.0.1', ProxyPort, 3.0)
+   local err = proc.sleep()
+   assert(err is ERR_Okay, 'CONNECT tunnel request timed out or failed: ' .. mSys.GetErrorMsg(err))
+
+   return responseStatus(proxy_headers), proxy_headers, tunnel_data
+end
+
+function connectTunnelRoundTrip(Port:num, Payload:str, Coalesced:bool):<num, str, str>
+   return connectTunnelRoundTripOnProxy(PROXY_PORT, Port, Payload, Coalesced)
+end
+
+function chainedConnectRoundTrip(Payload:str, Coalesced:bool):<num, str, str>
+   return connectTunnelRoundTripOnProxy(CHAIN_PROXY_PORT, ECHO_PORT, Payload, Coalesced)
+end
+
+@BeforeAll function init(State)
+   global glPostBody = ''
+   global glChunkedBody = ''
+   resetUpstreamProxyState()
+
+   global glServer = hslib.start({
+      port    = SERVER_PORT,
+      folder  = State.folder,
+      verbose = true,
+      routes = {
+         { pattern = '/hello',
+            method = 'GET',
+            handler = function(Req, Res)
+               Res.send('hello through proxy', 'text/plain')
+            end
+         },
+         { pattern = '/large',
+            method = 'GET',
+            handler = function(Req, Res)
+               local data = string.rep('large-response-line\n', 700) .. 'END_OF_LARGE_RESPONSE'
+               Res.header('Content-Type', 'text/plain').send(data)
+            end
+         },
+         { pattern = '/post',
+            method = 'POST',
+            handler = function(Req, Res)
+               glPostBody = Req.body ?? ''
+               Res.json({
+                  receivedSize = glPostBody:len(),
+                  body = glPostBody
+               })
+            end
+         },
+         { pattern = '/chunked',
+            method = 'POST',
+            handler = function(Req, Res)
+               glChunkedBody = Req.body ?? ''
+               Res.header('Transfer-Encoding', 'chunked')
+                  .send(glChunkedBody .. '-chunked-response', 'text/plain')
+            end
+         }
+      }
+   })
+
+   global glEchoServer = obj.new('netsocket', {
+      address  = '127.0.0.1',
+      port     = ECHO_PORT,
+      flags    = NSF_SERVER|NSF_MULTI_CONNECT,
+      incoming = echoIncoming
+   })
+
+   global glUpstreamProxyServer = obj.new('netsocket', {
+      address  = '127.0.0.1',
+      port     = UPSTREAM_PROXY_PORT,
+      flags    = NSF_SERVER|NSF_MULTI_CONNECT,
+      incoming = upstreamProxyIncoming
+   })
+
+   global glStallServer = obj.new('netsocket', {
+      address  = '127.0.0.1',
+      port     = STALL_SERVER_PORT,
+      flags    = NSF_SERVER|NSF_MULTI_CONNECT,
+      incoming = stalledOriginIncoming
+   })
+
+   global glProxy = proxylib.start({
+      port        = PROXY_PORT,
+      bind        = '127.0.0.1',
+      recordFlows = true,
+      verbose     = false
+   })
+
+   global glChainedProxy = proxylib.start({
+      port          = CHAIN_PROXY_PORT,
+      bind          = '127.0.0.1',
+      upstreamProxy = '127.0.0.1:' .. UPSTREAM_PROXY_PORT,
+      recordFlows   = true,
+      verbose       = false,
+      onError       = upstreamProxyError
+   })
+end
+
+@AfterAll function cleanup()
+   if glChainedProxy then glChainedProxy.stop() end
+   if glProxy then glProxy.stop() end
+   if glStallServer then glStallServer.free() end
+   if glUpstreamProxyServer then glUpstreamProxyServer.free() end
+   if glEchoServer then glEchoServer.free() end
+   if glServer then glServer.stop() end
+   mSys.DeleteFile(FLOW_EXPORT_FILE)
+   mSys.DeleteFile(FLOW_IMPORT_FILE)
+   mSys.DeleteFile(FLOW_INVALID_FILE)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function GetThroughProxyReceivesFullBody()
+   local response = proxyRequest('GET', '/hello', '', '')
+
+   assert(responseStatus(response) is 200, 'GET through proxy should return 200')
+   assert(responseBody(response) is 'hello through proxy', 'GET through proxy returned wrong body')
+
+   local flow = findFlow('GET', '/hello')
+   assert(flow != nil, 'Proxy should record the GET flow')
+   assert(flow.response.status is 200, 'Proxy should record the response status')
+   assert(flow.response.streamed is true, 'Proxy should mark the response body as streamed')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function LargeResponseStreamsAcrossReads()
+   local response = proxyRequest('GET', '/large', '', '')
+   local body = responseBody(response)
+
+   assert(responseStatus(response) is 200, 'Large response should return 200')
+   assert(#body > 8192, 'Large response body should exceed one proxy read buffer, got ' .. #body)
+   assert(body:find('END_OF_LARGE_RESPONSE') != nil, 'Large response should include the final marker')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test(priority=20) function PostWithContentLengthStreamsRequestBody()
+   local body = string.rep('post-body-', 900)
+   local response = proxyRequest('POST', '/post',
+      'Content-Type: text/plain\r\n' ..
+      'Content-Length: ' .. #body .. '\r\n',
+      body)
+
+   assert(responseStatus(response) is 200, 'POST through proxy should return 200')
+   assert(glPostBody is body, 'Origin should receive the exact POST body')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ChunkedRequestStreamsThroughProxy()
+   local request = 'POST http://127.0.0.1:' .. SERVER_PORT .. '/chunked HTTP/1.1\r\n' ..
+      'Host: 127.0.0.1:' .. SERVER_PORT .. '\r\n' ..
+      'Transfer-Encoding: chunked\r\n' ..
+      'Connection: close\r\n\r\n' ..
+      '5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n'
+
+   local response = rawProxyRequest(request, 8.0)
+   local body = responseBody(response)
+
+   assert(responseStatus(response) is 200, 'Chunked request should return 200')
+   assert(glChunkedBody is 'hello world', 'Origin should receive decoded chunked body')
+   assert(body:find('hello world-chunked-response') != nil, 'Proxy should relay the response body')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function MalformedRequestReturnsBadRequest()
+   local response = rawProxyRequest('NOTHTTP\r\n\r\n', 5.0)
+
+   assert(responseStatus(response) is 400, 'Malformed request should return 400')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ConnectTunnelEchoesRawBytes()
+   local payload = 'CONNECT tunnel payload'
+   local status, headers, echoed = connectTunnelRoundTrip(ECHO_PORT, payload, false)
+
+   assert(status is 200, 'CONNECT should return 200, got headers: ' .. headers)
+   assert(echoed is payload, 'CONNECT tunnel should echo raw payload')
+
+   local flow = findFlow('CONNECT', ':' .. ECHO_PORT)
+   assert(flow != nil, 'CONNECT should be recorded as a flow')
+   assert(flow.response.status is 200, 'CONNECT flow should record 200 status')
+   assert(flow.response.streamed is true, 'CONNECT flow should be marked streamed')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ConnectTunnelStreamsLargePayload()
+   local payload = string.rep('large-connect-payload-', 520)
+   local status, headers, echoed = connectTunnelRoundTrip(ECHO_PORT, payload, false)
+
+   assert(status is 200, 'Large CONNECT should return 200, got headers: ' .. headers)
+   assert(#payload > 8192, 'Large CONNECT test payload should exceed one buffer')
+   assert(echoed is payload, 'CONNECT tunnel should echo the complete large payload')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ConnectTunnelRelaysCoalescedClientBytes()
+   local payload = 'coalesced-connect-bytes'
+   local status, headers, echoed = connectTunnelRoundTrip(ECHO_PORT, payload, true)
+
+   assert(status is 200, 'Coalesced CONNECT should return 200, got headers: ' .. headers)
+   assert(echoed is payload, 'CONNECT tunnel should relay bytes sent with the CONNECT request')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function MalformedConnectTargetReturnsBadRequest()
+   local request = 'CONNECT 127.0.0.1 HTTP/1.1\r\n' ..
+      'Host: 127.0.0.1\r\n\r\n'
+   local response = rawProxyRequest(request, 5.0)
+
+   assert(responseStatus(response) is 400, 'Malformed CONNECT target should return 400')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ConnectToUnusedPortReturnsBadGateway()
+   local request = 'CONNECT 127.0.0.1:' .. UNUSED_PORT .. ' HTTP/1.1\r\n' ..
+      'Host: 127.0.0.1:' .. UNUSED_PORT .. '\r\n\r\n'
+   local response = rawProxyRequest(request, 5.0)
+
+   assert(responseStatus(response) is 502, 'CONNECT to unused port should return 502')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test(priority=30) function UpstreamProxyReceivesAbsoluteFormHttpRequest()
+   resetUpstreamProxyState()
+
+   local request = 'GET http://example.test/proxy-path?x=1 HTTP/1.1\r\n' ..
+      'Host: example.test\r\n' ..
+      'Proxy-Connection: keep-alive\r\n' ..
+      'Connection: keep-alive\r\n\r\n'
+   local response = rawChainedProxyRequest(request, 8.0)
+
+   assert(responseStatus(response) is 200, 'Chained HTTP proxy request should return 200')
+   assert(responseBody(response) is 'response-from-upstream-proxy',
+      'Client should receive upstream proxy response body')
+   assert(glLastUpstreamProxyRequest:startsWith('GET http://example.test/proxy-path?x=1 HTTP/1.1\r\n'),
+      'Upstream proxy should receive an absolute-form request line, got: ' .. glLastUpstreamProxyRequest)
+   assert(glLastUpstreamProxyRequest:find('connection: close') != nil,
+      'Downstream proxy should force Connection: close when chaining')
+   assert(glLastUpstreamProxyRequest:find('proxy-connection') is nil,
+      'Downstream proxy should remove Proxy-Connection before chaining')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function UpstreamProxyConnectRelaysTunnelBytes()
+   resetUpstreamProxyState()
+
+   local payload = 'upstream-connect-payload'
+   local status, headers, echoed = chainedConnectRoundTrip(payload, false)
+
+   assert(status is 200, 'Chained CONNECT should return 200, got headers: ' .. headers)
+   assert(glLastUpstreamProxyRequest:startsWith('CONNECT 127.0.0.1:' .. ECHO_PORT .. ' HTTP/1.1\r\n'),
+      'Upstream proxy should receive a CONNECT request for the target authority, got: ' .. glLastUpstreamProxyRequest)
+   assert(echoed is payload, 'Chained CONNECT should relay raw tunnel bytes')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function UpstreamProxyConnectRelaysCoalescedClientBytes()
+   resetUpstreamProxyState()
+
+   local payload = 'coalesced-upstream-connect-payload'
+   local status, headers, echoed = chainedConnectRoundTrip(payload, true)
+
+   assert(status is 200, 'Coalesced chained CONNECT should return 200, got headers: ' .. headers)
+   assert(echoed is payload, 'Chained CONNECT should relay client bytes buffered before upstream 200')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function UpstreamProxyConnectFailureReturnsBadGatewayAndReportsError()
+   resetUpstreamProxyState()
+   glUpstreamProxyRejectConnect = true
+
+   local request = 'CONNECT 127.0.0.1:' .. ECHO_PORT .. ' HTTP/1.1\r\n' ..
+      'Host: 127.0.0.1:' .. ECHO_PORT .. '\r\n\r\n'
+   local response = rawChainedProxyRequest(request, 8.0)
+
+   assert(responseStatus(response) is 502, 'Rejected upstream CONNECT should return 502')
+   assert(#glProxyErrors > 0, 'Rejected upstream CONNECT should call onError')
+   assert(glProxyErrors[0].code is 'upstream_proxy_connect_failed',
+      'onError should identify the upstream CONNECT failure')
+
+   glUpstreamProxyRejectConnect = false
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function HookExceptionReportsErrorAndRequestStillSucceeds()
+   local errors = {}
+   local hook_proxy = proxylib.start({
+      port        = HOOK_PROXY_PORT,
+      bind        = '127.0.0.1',
+      recordFlows = false,
+      verbose     = false,
+      onRequest   = function(Request:table)
+         error('onRequest test failure')
+      end,
+      onError     = function(Error:table)
+         table.insert(errors, Error)
+      end
+   })
+
+   local response = proxyRequestOnPort(HOOK_PROXY_PORT, 'GET', '/hello', '', '')
+   hook_proxy.stop()
+
+   assert(responseStatus(response) is 200, 'Request should still succeed when onRequest raises')
+   assert(#errors > 0, 'Callback failure should call onError')
+   assert(errors[0].code is 'onRequest_failed', 'Callback failure should report the hook name')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function InvalidUpstreamProxyOptionReportsError()
+   local errors = {}
+   local failed = false
+
+   try
+      local bad_proxy = proxylib.start({
+         port          = INVALID_PROXY_PORT,
+         bind          = '127.0.0.1',
+         upstreamProxy = '127.0.0.1',
+         verbose       = false,
+         onError       = function(Error:table)
+            table.insert(errors, Error)
+         end
+      })
+      bad_proxy.stop()
+   except ex
+      failed = true
+   end
+
+   assert(failed, 'Invalid upstreamProxy should fail during startup')
+   assert(#errors > 0, 'Invalid upstreamProxy should call onError')
+   assert(errors[0].code is 'invalid_upstream_proxy', 'Invalid upstreamProxy should report a specific error code')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function SilentOriginTimesOutAndReturnsGatewayTimeout()
+   local errors = {}
+   local timeout_proxy = proxylib.start({
+      port        = TIMEOUT_PROXY_PORT,
+      bind        = '127.0.0.1',
+      timeout     = 1,
+      recordFlows = false,
+      verbose     = false,
+      onError     = function(Error:table)
+         table.insert(errors, Error)
+      end
+   })
+
+   local request = 'GET http://127.0.0.1:' .. STALL_SERVER_PORT .. '/stall HTTP/1.1\r\n' ..
+      'Host: 127.0.0.1:' .. STALL_SERVER_PORT .. '\r\n' ..
+      'Connection: close\r\n\r\n'
+   local response = rawProxyRequestOnPort(TIMEOUT_PROXY_PORT, request, 5.0)
+   timeout_proxy.stop()
+
+   assert(responseStatus(response) is 504, 'Silent origin should return 504 after proxy timeout')
+   assert(#errors > 0, 'Silent origin timeout should call onError')
+   assert(errors[0].code is 'connection_timeout', 'Silent origin timeout should report connection_timeout')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test; @Requires(ssl=true)
+function ConnectTunnelPassesSSLHandshake()
+   local ssl_payload = 'SSL tunnel payload'
+   local ssl_echo = ''
+   local proxy_headers = ''
+   local wrote_connect = false
+   local connect_established = false
+   local ssl_payload_sent = false
+   local ssl_server_done = false
+
+   local ssl_server = obj.new('netsocket', {
+      address = '127.0.0.1',
+      port    = SSL_TUNNEL_PORT,
+      flags   = NSF_SERVER|NSF_SSL,
+      incoming = function(Server, Client)
+         local buffer = string.alloc(2048)
+         local err, read_len = Client.acRead(buffer, 2048)
+         if err is ERR_Okay then
+            if read_len is 0 then return end
+
+            local received = buffer:substr(0, read_len)
+            if received is ssl_payload then
+               ssl_server_done = true
+               local response = 'SSL_TUNNEL_ECHO:' .. received
+               check Client.acWrite(response, #response)
+               Server.mtDisconnectSocket(Client)
+            end
+         elseif err != ERR_Disconnected then
+            error('SSL tunnel server read failed: ' .. mSys.GetErrorMsg(err))
+         end
+      end
+   })
+
+   assert(ssl_server and ssl_server.error is ERR_Okay, 'Failed to create SSL tunnel server')
+
+   local socket = obj.new('netsocket', {
+      flags = 'DISABLE_SERVER_VERIFY',
+      feedback = function(Socket, State)
+         if State is NTC_CONNECTED then
+            if not wrote_connect then
+               local connect_request = 'CONNECT 127.0.0.1:' .. SSL_TUNNEL_PORT .. ' HTTP/1.1\r\n' ..
+                  'Host: 127.0.0.1:' .. SSL_TUNNEL_PORT .. '\r\n\r\n'
+               wrote_connect = true
+               check Socket.acWrite(connect_request, #connect_request)
+            elseif connect_established and not ssl_payload_sent then
+               ssl_payload_sent = true
+               check Socket.acWrite(ssl_payload, #ssl_payload)
+            end
+         elseif State is NTC_DISCONNECTED then
+            Socket.acSignal()
+         end
+      end,
+      incoming = function(Socket)
+         local buffer = string.alloc(4096)
+         local err, read_len = Socket.acRead(buffer, 4096)
+         if err is ERR_Okay then
+            if read_len is 0 then return end
+
+            local data = buffer:substr(0, read_len)
+            if not connect_established then
+               proxy_headers ..= data
+               local header_end = proxy_headers:find('\r\n\r\n')
+               if header_end then
+                  assert(responseStatus(proxy_headers) is 200, 'SSL CONNECT should return 200')
+                  connect_established = true
+                  local set_ssl_err = mNet.SetSSL(Socket, 'EnableSSL')
+                  assert(set_ssl_err is ERR_Okay,
+                     'Failed to enable SSL over CONNECT tunnel: ' .. mSys.GetErrorMsg(set_ssl_err))
+               end
+            else
+               ssl_echo ..= data
+               if ssl_echo:find('SSL_TUNNEL_ECHO:' .. ssl_payload) != nil then
+                  Socket.acSignal()
+                  Socket.acDeactivate()
+               end
+            end
+         elseif err is ERR_Disconnected then
+            Socket.acSignal()
+         else
+            error('SSL tunnel client read failed: ' .. mSys.GetErrorMsg(err))
+         end
+      end
+   })
+
+   local proc = processing.new({ timeout = 8.0, signals = array<object> { socket } })
+   check socket.mtConnect('127.0.0.1', PROXY_PORT, 3.0)
+   local err = proc.sleep()
+
+   ssl_server.free()
+
+   assert(err is ERR_Okay, 'SSL CONNECT tunnel timed out or failed: ' .. mSys.GetErrorMsg(err))
+   assert(ssl_server_done, 'SSL server should receive payload through CONNECT tunnel')
+   assert(ssl_echo:find('SSL_TUNNEL_ECHO:' .. ssl_payload) != nil, 'SSL tunnel should return echoed payload')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test(priority=9999) function FlowExportLoadRoundTripRestoresMetadata()
+   glProxy.clearFlows()
+
+   proxyRequest('GET', '/hello', 'User-Agent: FlowPersistenceTest\r\n', '')
+   connectTunnelRoundTrip(ECHO_PORT, 'flow-persistence-connect', false)
+
+   local flows = glProxy.getFlows()
+   assert(flowCount(flows) >= 2, 'Expected GET and CONNECT flows before export')
+   assert(glProxy.exportFlows(FLOW_EXPORT_FILE) is true, 'Flow export should succeed')
+
+   glProxy.clearFlows()
+   assert(flowCount(glProxy.getFlows()) is 0, 'clearFlows should empty recorded flows')
+   assert(glProxy.loadFlows(FLOW_EXPORT_FILE) is true, 'Flow import should succeed')
+
+   local get_flow = findFlow('GET', '/hello')
+   local connect_flow = findFlow('CONNECT', ':' .. ECHO_PORT)
+
+   assert(get_flow != nil, 'Imported flows should include the GET request')
+   assert(connect_flow != nil, 'Imported flows should include the CONNECT request')
+   assert(get_flow.clientIP != nil and get_flow.clientIP != '', 'Imported GET flow should preserve client IP')
+   assert(get_flow.request.headers['user-agent'] is 'FlowPersistenceTest',
+      'Imported GET flow should preserve request headers')
+   assert(get_flow.response.status is 200, 'Imported GET flow should preserve response status')
+   assert(get_flow.response.headers['content-type'] != nil, 'Imported GET flow should preserve response headers')
+   assert(get_flow.response.streamed is true, 'Imported GET flow should preserve streamed response metadata')
+   assert(connect_flow.response.status is 200, 'Imported CONNECT flow should preserve response status')
+   assert(connect_flow.response.streamed is true, 'Imported CONNECT flow should preserve streamed metadata')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function FlowImportContinuesIdsWithoutOverwrite()
+   glProxy.clearFlows()
+
+   proxyRequest('GET', '/hello', '', '')
+   assert(glProxy.exportFlows(FLOW_EXPORT_FILE) is true, 'Flow export should succeed before ID continuation test')
+
+   local imported_max_id = maxFlowId(glProxy.getFlows())
+   assert(glProxy.loadFlows(FLOW_EXPORT_FILE) is true, 'Flow import should succeed before recording another flow')
+
+   proxyRequest('GET', '/large', '', '')
+
+   local flows = glProxy.getFlows()
+   local new_max_id = maxFlowId(flows)
+   assert(new_max_id > imported_max_id, 'Recording after import should allocate a new larger flow ID')
+   assert(flowCount(flows) >= 2, 'Recording after import should not overwrite imported flows')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function FlowMaxFlowsPrunesOnRecordAndImport()
+   local import_flows = {}
+   import_flows[1] = persistedFlow(1, '/old-1')
+   import_flows[2] = persistedFlow(2, '/old-2')
+   import_flows[3] = persistedFlow(3, '/old-3')
+   writeTextFile(FLOW_IMPORT_FILE, json.encode(import_flows))
+
+   local limited_proxy = proxylib.start({
+      port        = PERSIST_PROXY_PORT,
+      bind        = '127.0.0.1',
+      recordFlows = true,
+      maxFlows    = 2,
+      verbose     = false
+   })
+
+   assert(limited_proxy.loadFlows(FLOW_IMPORT_FILE) is true, 'Limited proxy should import persisted flows')
+   local flows = limited_proxy.getFlows()
+   assert(flowCount(flows) is 2, 'Import should prune to maxFlows')
+   assert(flows[1] is nil and flows[2] != nil and flows[3] != nil, 'Import should keep newest flow IDs')
+
+   proxyRequestOnPort(PERSIST_PROXY_PORT, 'GET', '/hello', '', '')
+   flows = limited_proxy.getFlows()
+
+   assert(flowCount(flows) is 2, 'Recording should keep maxFlows bounded')
+   assert(flows[2] is nil and flows[3] != nil and flows[4] != nil, 'Recording should prune the oldest imported flow')
+
+   limited_proxy.stop()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function InvalidFlowImportLeavesExistingFlowsUnchanged()
+   glProxy.clearFlows()
+   proxyRequest('GET', '/hello', '', '')
+
+   local before_count = flowCount(glProxy.getFlows())
+   local before_max_id = maxFlowId(glProxy.getFlows())
+
+   writeTextFile(FLOW_INVALID_FILE, '{ not valid json')
+
+   assert(glProxy.loadFlows(FLOW_INVALID_FILE) is false, 'Invalid JSON import should fail')
+   assert(flowCount(glProxy.getFlows()) is before_count, 'Failed import should leave flow count unchanged')
+   assert(maxFlowId(glProxy.getFlows()) is before_max_id, 'Failed import should leave flow IDs unchanged')
+   assert(findFlow('GET', '/hello') != nil, 'Failed import should leave existing flow data intact')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test(priority=10) function InvalidFlowExportPathReturnsFalse()
+   assert(glProxy.exportFlows(nil) is false, 'Invalid export filename should fail')
+end
