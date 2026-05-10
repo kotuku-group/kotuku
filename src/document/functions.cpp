@@ -235,7 +235,8 @@ static ERR insert_xml(extDocument *Self, RSTREAM *Stream, objXML *XML, const obj
 
    if (Self->FocusIndex >= std::ssize(Self->Tabs)) Self->FocusIndex = -1;
 
-   return ERR::Okay;
+   if (Self->Error IS ERR::Okay) return ERR::Okay;
+   else return Self->Error;
 }
 
 //********************************************************************************************************************
@@ -431,6 +432,8 @@ static ERR unload_doc(extDocument *Self, ULD Flags)
    Self->Params.clear();
    Self->MouseOverChain.clear();
    Self->Tabs.clear();
+
+   unsubscribe_script_listeners(Self);
 
    for (auto &t : Self->Triggers) t.clear();
 
@@ -770,10 +773,10 @@ static void process_parameters(extDocument *Self, const std::string_view String)
          pos++;
 
          auto uri_char = [&](std::string &Output) {
-            if ((String[pos] IS '%') and
-                (((String[pos+1] >= '0') and (String[pos+1] <= '9')) or
-                 ((String[pos+1] >= 'A') and (String[pos+1] <= 'F')) or
-                 ((String[pos+1] >= 'a') and (String[pos+1] <= 'f'))) and
+            if ((String[pos] IS '%') and (pos + 2 < String.size()) and
+                 (((String[pos+1] >= '0') and (String[pos+1] <= '9')) or
+                  ((String[pos+1] >= 'A') and (String[pos+1] <= 'F')) or
+                  ((String[pos+1] >= 'a') and (String[pos+1] <= 'f'))) and
                 (((String[pos+2] >= '0') and (String[pos+2] <= '9')) or
                  ((String[pos+2] >= 'A') and (String[pos+2] <= 'F')) or
                  ((String[pos+2] >= 'a') and (String[pos+2] <= 'f')))) {
@@ -795,7 +798,7 @@ static void process_parameters(extDocument *Self, const std::string_view String)
                uri_char(arg);
             }
 
-            if (String[pos] IS '=') { // Extract the parameter value
+            if ((pos < String.size()) and (String[pos] IS '=')) { // Extract the parameter value
                value.clear();
                pos++;
                while ((pos < String.size()) and (String[pos] != '#') and (String[pos] != '&') and (String[pos] != ';')) {
@@ -1032,7 +1035,8 @@ static ERR report_event(extDocument *Self, DEF Event, entity *Entity, KEYVALUE *
    ERR result = ERR::Okay;
 
    if ((Event & Self->EventMask) != DEF::NIL) {
-      log.traceBranch("Event $%x -> Entity %d", int(Event), Entity->uid);
+      auto entity_id = Entity ? Entity->uid : 0;
+      log.traceBranch("Event $%x -> Entity %d", int(Event), entity_id);
 
       if (Self->EventCallback.isC()) {
          auto routine = (ERR (*)(extDocument *, DEF, KEYVALUE *, entity *, APTR))Self->EventCallback.Routine;
@@ -1045,7 +1049,7 @@ static ERR report_event(extDocument *Self, DEF Event, entity *Entity, KEYVALUE *
                { "Document", Self, FD_OBJECTPTR },
                { "EventMask", int(Event) },
                { "KeyValue:Parameters", EventData, FD_STRUCT },
-               { "Entity", Entity->uid }
+               { "Entity", entity_id }
             }), result);
          }
          else {
@@ -1053,7 +1057,7 @@ static ERR report_event(extDocument *Self, DEF Event, entity *Entity, KEYVALUE *
                { "Document",  Self, FD_OBJECTPTR },
                { "EventMask", int(Event) },
                { "KeyValue",  int(0) },
-               { "Entity",    Entity->uid }
+               { "Entity",    entity_id }
             }), result);
          }
       }

@@ -183,7 +183,7 @@ static ERR SET_Path(extDocument *Self, CSTRING Value)
    // Signal that we are leaving the current page
 
    recursion++;
-   for (auto &trigger : Self->Triggers[int(DRT::LEAVING_PAGE)]) {
+   for (auto &trigger : copy_triggers(Self, DRT::LEAVING_PAGE)) {
       if (trigger.isScript()) {
          sc::Call(trigger, std::to_array<ScriptArg>({ { "OldURI", Self->Path }, { "NewURI", newpath } }));
       }
@@ -205,7 +205,8 @@ static ERR SET_Path(extDocument *Self, CSTRING Value)
       recursion++;
 
       if (Self->initialised()) {
-         load_doc(Self, Self->Path, true);
+         auto error = load_doc(Self, Self->Path, true);
+         if (not (error IS ERR::Okay)) Self->Error = error;
          Self->Viewport->draw();
       }
       recursion--;
@@ -362,6 +363,7 @@ the nearest viewport container will be determined based on object ownership.
 
 static ERR SET_Viewport(extDocument *Self, objVectorViewport *Value)
 {
+   if (not Value) return ERR::NullArgs;
    if (Value->CLASS_ID != CLASSID::VECTORVIEWPORT) return ERR::InvalidObject;
 
    if (Self->initialised()) {

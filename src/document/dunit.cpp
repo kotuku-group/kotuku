@@ -22,7 +22,7 @@ DUNIT::DUNIT(const std::string_view pValue, DU pDefaultType, double pMin)
          else if ((ptr[0] IS 'p') and (ptr[1] IS 'c')) { value = fv * (4.0 / 3.0) * 12.0; type = DU::PIXEL; } // Pica -> Pixels.  1 Pica is equal to 12 Points
          else if ((ptr[0] IS 'v') and (ptr[1] IS 'w')) { value = fv * 0.01; type = DU::VP_WIDTH; }
          else if ((ptr[0] IS 'v') and (ptr[1] IS 'h')) { value = fv * 0.01; type = DU::VP_HEIGHT; }
-         else if ((ptr[0] IS 'v') and (ptr[1] IS 'm')) {
+         else if ((ptr[0] IS 'v') and (ptr[1] IS 'm') and (ptr + 4 <= pValue.data() + pValue.size())) {
             if ((ptr[2] IS 'i') and (ptr[3] IS 'n')) { value = fv * 0.01; type = DU::VP_MIN; }
             else if ((ptr[2] IS 'a') and (ptr[3] IS 'x')) { value = fv * 0.01; type = DU::VP_MAX; }
          }

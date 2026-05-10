@@ -134,7 +134,7 @@ static ERR feedback_view(objVectorViewport *View, FM Event)
    // The resize event is triggered just prior to the layout of the document.  The recipient
    // function can resize elements on the page in advance of the new layout.
 
-   for (auto &trigger : Self->Triggers[int(DRT::BEFORE_LAYOUT)]) {
+   for (auto &trigger : copy_triggers(Self, DRT::BEFORE_LAYOUT)) {
       if (trigger.isScript()) {
          sc::Call(trigger, std::to_array<ScriptArg>({ { "ViewWidth",  Self->VPWidth }, { "ViewHeight", Self->VPHeight } }));
       }
@@ -225,6 +225,7 @@ NullArgs
 static ERR DOCUMENT_AddListener(extDocument *Self, doc::AddListener *Args)
 {
    if ((not Args) or (Args->Trigger IS DRT::NIL) or (not Args->Function)) return ERR::NullArgs;
+   if (not valid_trigger(Args->Trigger)) return ERR::OutOfRange;
 
    Self->Triggers[int(Args->Trigger)].push_back(*Args->Function);
 
@@ -636,6 +637,8 @@ static ERR DOCUMENT_Free(extDocument *Self)
       UnsubscribeAction(Self->EventCallback.Context, AC::Free);
       Self->EventCallback.clear();
    }
+
+   unsubscribe_script_listeners(Self);
 
    unload_doc(Self, ULD::TERMINATE);
 
@@ -1729,7 +1732,7 @@ static ERR DOCUMENT_Refresh(extDocument *Self)
 
    Self->Processing++;
 
-   for (auto &trigger : Self->Triggers[int(DRT::REFRESH)]) {
+   for (auto &trigger : copy_triggers(Self, DRT::REFRESH)) {
       if (trigger.isScript()) {
          // The refresh trigger can return ERR::Skip to prevent a complete reload of the document.
 
@@ -1796,7 +1799,7 @@ static ERR DOCUMENT_RemoveContent(extDocument *Self, doc::RemoveContent *Args)
    if (end > INDEX(std::ssize(Self->Stream))) end = INDEX(std::ssize(Self->Stream));
 
    copymem(Self->Stream.data.data() + end, Self->Stream.data.data() + Args->Start, Self->Stream.data.size() - end);
-   Self->Stream.data.resize(Self->Stream.data.size() - end - Args->Start);
+   Self->Stream.data.resize(Self->Stream.data.size() - (end - Args->Start));
 
    Self->invalidate_text_width_cache();
    Self->UpdatingLayout = true;
@@ -1824,6 +1827,7 @@ NullArgs
 static ERR DOCUMENT_RemoveListener(extDocument *Self, doc::RemoveListener *Args)
 {
    if ((not Args) or (not Args->Trigger) or (not Args->Function)) return ERR::NullArgs;
+   if (not valid_trigger(Args->Trigger)) return ERR::OutOfRange;
 
    if (Args->Function->isC()) {
       for (auto it = Self->Triggers[Args->Trigger].begin(); it != Self->Triggers[Args->Trigger].end(); it++) {
@@ -1834,14 +1838,21 @@ static ERR DOCUMENT_RemoveListener(extDocument *Self, doc::RemoveListener *Args)
       }
    }
    else if (Args->Function->isScript()) {
-      for (auto it = Self->Triggers[Args->Trigger].begin(); it != Self->Triggers[Args->Trigger].end(); it++) {
-         if ((it->isScript()) and
-             (it->Context IS Args->Function->Context) and
-             (it->ProcedureID IS Args->Function->ProcedureID)) {
-            Self->Triggers[Args->Trigger].erase(it);
-            return ERR::Okay;
+      OBJECTPTR context = Args->Function->Context;
+
+      {
+         for (auto it = Self->Triggers[Args->Trigger].begin(); it != Self->Triggers[Args->Trigger].end(); it++) {
+            if ((it->isScript()) and
+                (it->Context IS Args->Function->Context) and
+                (it->ProcedureID IS Args->Function->ProcedureID)) {
+               Self->Triggers[Args->Trigger].erase(it);
+               break;
+            }
          }
       }
+
+      if (not has_script_listener(Self, context)) UnsubscribeAction(context, AC::Free);
+      return ERR::Okay;
    }
 
    return ERR::Okay;

@@ -308,8 +308,8 @@ public:
    BYTECODE uid;   // Unique identifier for lookup
    SCODE code = SCODE::NIL; // Byte code
 
-   entity() { uid = glByteCodeID++; }
-   entity(SCODE pCode) : code(pCode) { uid = glByteCodeID++; }
+   entity() { uid = alloc_bytecode_id(); }
+   entity(SCODE pCode) : code(pCode) { uid = alloc_bytecode_id(); }
 };
 
 //********************************************************************************************************************
@@ -324,7 +324,7 @@ public:
    docresource(OBJECTID pID, RTD pType, CLASSID pClassID = CLASSID::NIL) :
       object_id(pID), class_id(pClassID), type(pType) { }
 
-   ~docresource() {
+   void release() {
       if ((type IS RTD::PERSISTENT_SCRIPT) or (type IS RTD::PERSISTENT_OBJECT)) {
          if (terminate) FreeResource(object_id);
          else SendMessage(MSGID::FREE, MSF::NIL, &object_id, sizeof(OBJECTID));
@@ -334,6 +334,11 @@ public:
          else SendMessage(MSGID::FREE, MSF::NIL, &object_id, sizeof(OBJECTID));
       }
       else if (type != RTD::NIL) FreeResource(object_id);
+      type = RTD::NIL;
+   }
+
+   ~docresource() {
+      release();
    }
 
    docresource(docresource &&other) noexcept { // Move constructor
@@ -353,6 +358,7 @@ public:
 
    docresource& operator=(docresource &&other) noexcept { // Move assignment
       if (this IS &other) return *this;
+      release();
       object_id = other.object_id;
       class_id  = other.class_id;
       type      = other.type;
@@ -886,7 +892,7 @@ struct bc_cell : public entity {
    GuardedObject<objVectorPath> border_path; // Only used when the border stroke is customised
    KEYVALUE args;                 // Cell attributes, intended for event hooks
    std::vector<doc_segment> segments;
-   RSTREAM *stream;               // Internally managed byte code content for the cell
+   RSTREAM *stream = nullptr;     // Internally managed byte code content for the cell
    CELL_ID cell_id = 0;           // UID for the cell
    int  column = 0;               // Column number that the cell starts in
    int  col_span = 1;             // Number of columns spanned by this cell (normally set to 1)
@@ -1073,11 +1079,13 @@ struct doc_menu {
 
 struct bc_button : public entity, widget_mgr {
    padding inner_padding;  // Defines padding around the button's content.  Not to be confused with the widget_mgr outer padding
-   RSTREAM *stream;
+   RSTREAM *stream = nullptr;
    std::vector<doc_segment> segments;
 
    bc_button();
    ~bc_button();
+   bc_button(const bc_button &Other);
+   bc_button& operator=(const bc_button &Other);
 };
 
 struct bc_checkbox : public entity, widget_mgr {
@@ -1165,7 +1173,7 @@ public:
 
    RSTREAM() { data.reserve(8 * 1024); }
 
-   RSTREAM(RSTREAM &Other) {
+   RSTREAM(const RSTREAM &Other) {
       data = Other.data;
       codes = Other.codes;
    }
@@ -1360,6 +1368,28 @@ bc_button::bc_button() {
 
 bc_button::~bc_button() {
    delete stream;
+}
+
+bc_button::bc_button(const bc_button &Other) : entity(Other), widget_mgr(Other)
+{
+   inner_padding = Other.inner_padding;
+   if (Other.stream) stream = new RSTREAM(*Other.stream);
+   segments = Other.segments;
+}
+
+bc_button& bc_button::operator=(const bc_button &Other)
+{
+   if (this IS &Other) return *this;
+
+   entity::operator=(Other);
+   widget_mgr::operator=(Other);
+   inner_padding = Other.inner_padding;
+   segments = Other.segments;
+
+   delete stream;
+   stream = Other.stream ? new RSTREAM(*Other.stream) : nullptr;
+
+   return *this;
 }
 
 bc_cell::~bc_cell() {

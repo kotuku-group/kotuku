@@ -66,9 +66,11 @@ template <class T> T & RSTREAM::emplace(stream_char &Cursor, T &Code)
 
 template <class T> T & RSTREAM::emplace(stream_char &Cursor)
 {
-   auto key = glByteCodeID; // Get the key prior to it being incremented by T()
+   auto key = glByteCodeID.fetch_add(1, std::memory_order_relaxed);
+   glReservedByteCodeID = key;
 
    auto it = codes.emplace(key, std::in_place_type<T>); // Construct the desired code in place
+   if (glReservedByteCodeID IS key) glReservedByteCodeID = 0;
    auto &result = std::get<T>(it.first->second);
 
    if (Cursor.index IS INDEX(data.size())) {

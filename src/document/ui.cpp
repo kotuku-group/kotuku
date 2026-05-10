@@ -113,7 +113,7 @@ static bool delete_selected(extDocument *Self)
       }
 
       if (start.index < end.index) {
-         Self->Stream.data.erase(Self->Stream.data.begin() + start.index, Self->Stream.data.begin() + (end.index - start.index));
+         Self->Stream.data.erase(Self->Stream.data.begin() + start.index, Self->Stream.data.begin() + end.index);
          end.index -= (end.index - start.index);
 
          if ((end.offset > 0) and (Self->Stream[end.index].code IS SCODE::TEXT)) {
@@ -453,18 +453,20 @@ static ERR activate_cell_edit(extDocument *Self, INDEX CellIndex, stream_char Cu
    }
 
    auto &cell = Self->Stream.lookup<bc_cell>(CellIndex);
-   if (CursorIndex.index <= CellIndex) { // Go to the start of the cell content
+   auto &stream = Self->Stream;
+
+   if ((not CursorIndex.valid()) or (CursorIndex.index <= CellIndex)) { // Go to the start of the cell content
       CursorIndex.set(CellIndex + 1);
    }
 
-   auto &stream = *cell.stream;
+   if (CursorIndex.index >= INDEX(stream.size())) return log.warning(ERR::OutOfRange);
 
    if (stream.data[CursorIndex.index].code != SCODE::TEXT) {
       // Skip ahead to the first relevant control code - it's always best to place the cursor ahead of things like
       // font styles, paragraph formatting etc.
 
       CursorIndex.offset = 0;
-      while (CursorIndex.index < INDEX(Self->Stream.size())) {
+      while (CursorIndex.index < INDEX(stream.size())) {
          std::array<SCODE, 5> content = {
             SCODE::TABLE_START, SCODE::LINK_END, SCODE::IMAGE, SCODE::PARAGRAPH_END, SCODE::TEXT
          };

@@ -656,7 +656,7 @@ void parser::process_page(objXML *pXML)
    }
 */
    if (not Self->PageProcessed) {
-      for (auto &trigger : Self->Triggers[int(DRT::PAGE_PROCESSED)]) {
+      for (auto &trigger : copy_triggers(Self, DRT::PAGE_PROCESSED)) {
          if (trigger.isScript()) {
             sc::Call(trigger);
          }
@@ -1073,7 +1073,7 @@ TRF parser::parse_tags_with_style(const objXML::TAGS &Tags, bc_font &Style, IPF 
 
    auto result = TRF::NIL;
    if (font_change) {
-      Style.uid = glByteCodeID++;
+      Style.uid = alloc_bytecode_id();
 
       auto save_status = m_style;
       m_style = Style;
@@ -1104,7 +1104,7 @@ TRF parser::parse_tags_with_embedded_style(const objXML::TAGS &Tags, bc_font &St
 {
    if (Tags.empty()) return TRF::NIL;
 
-   Style.uid = glByteCodeID++;
+   Style.uid = alloc_bytecode_id();
 
    auto save_style = m_style;
    m_style = Style;

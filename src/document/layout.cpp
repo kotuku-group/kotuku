@@ -1635,7 +1635,7 @@ static void layout_doc(extDocument *Self)
          l.gen_scene_graph(Self->Page, l.m_segments);
       }
 
-      for (auto &trigger : Self->Triggers[int(DRT::AFTER_LAYOUT)]) {
+      for (auto &trigger : copy_triggers(Self, DRT::AFTER_LAYOUT)) {
          if (trigger.isScript()) {
             sc::Call(trigger, std::to_array<ScriptArg>({
                { "ViewWidth", Self->VPWidth }, { "ViewHeight", Self->VPHeight },

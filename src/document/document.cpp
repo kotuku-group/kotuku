@@ -33,13 +33,25 @@ that is distributed with this package.  Please refer to it for further informati
 #include "defs/hashes.h"
 #include "../link/unicode.h"
 #include <kotuku/modules/xquery.h>
+#include <atomic>
 #include <cassert>
 
 using BYTECODE = uint32_t;
 using CELL_ID = uint32_t;
 
-static BYTECODE glByteCodeID = 1;
+static std::atomic<BYTECODE> glByteCodeID = 1;
+static thread_local BYTECODE glReservedByteCodeID = 0;
 static uint32_t glUID = 1000; // Use for generating unique/incrementing ID's, e.g. cell ID
+
+static BYTECODE alloc_bytecode_id()
+{
+   if (glReservedByteCodeID) {
+      auto id = glReservedByteCodeID;
+      glReservedByteCodeID = 0;
+      return id;
+   }
+   else return glByteCodeID.fetch_add(1, std::memory_order_relaxed);
+}
 
 using namespace kt;
 
@@ -168,6 +180,48 @@ static const std::array<std::string_view, int(SCODE::END)> strCodes = {
 
 template <class T> inline const std::string_view & BC_NAME(RSTREAM &Stream, T Index) {
    return strCodes[int(Stream[Index].code)];
+}
+
+//********************************************************************************************************************
+
+inline bool valid_trigger(int Trigger)
+{
+   return (Trigger >= 0) and (Trigger < int(DRT::END));
+}
+
+inline bool valid_trigger(DRT Trigger)
+{
+   return valid_trigger(int(Trigger));
+}
+
+inline std::vector<FUNCTION> copy_triggers(extDocument *Self, DRT Trigger)
+{
+   return Self->Triggers[int(Trigger)];
+}
+
+static bool has_script_listener(extDocument *Self, OBJECTPTR Context)
+{
+   for (auto &triggers : Self->Triggers) {
+      for (auto &trigger : triggers) {
+         if ((trigger.isScript()) and (trigger.Context IS Context)) return true;
+      }
+   }
+   return false;
+}
+
+static void unsubscribe_script_listeners(extDocument *Self)
+{
+   std::vector<OBJECTPTR> contexts;
+
+   {
+      for (auto &triggers : Self->Triggers) {
+         for (auto &trigger : triggers) {
+            if (trigger.isScript()) contexts.push_back(trigger.Context);
+         }
+      }
+   }
+
+   for (auto context : contexts) UnsubscribeAction(context, AC::Free);
 }
 
 //********************************************************************************************************************
