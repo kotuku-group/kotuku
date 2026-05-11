@@ -9,7 +9,7 @@ static void free_socket(extNetSocket *Self)
 
    if (Self->Handle.is_valid()) {
       log.trace("Deregistering socket.");
-      DeregisterFD(Self->Handle.hosthandle());
+      network_platform().deregister_fd(Self->Handle);
 
       if (!Self->ExternalSocket) CLOSESOCKET_THREADED(Self->Handle);
       Self->Handle = SocketHandle();
@@ -170,10 +170,10 @@ void win32_netresponse(OBJECTPTR SocketObject, SOCKET_HANDLE Handle, int Message
    }
    else if (Message IS NTE_ACCEPT) {
       log.traceBranch("Accept message received for new client %d.", Handle);
-      server_accept_client(Socket->Handle, Socket);
+      server_accept_client(Socket->Handle.hosthandle(), Socket);
    }
    else if (Message IS NTE_CONNECT) {
-      if (auto error = win_socket_connect_complete(Handle); error != ERR::Okay) log.warning(error);
+      if (auto error = network_platform().complete_connect(SocketHandle(Handle)); error != ERR::Okay) log.warning(error);
 
       if (Error IS ERR::Okay) {
          if (ClientSocket) { // Server mode - connect message shouldn't be received for ClientSocket
@@ -259,103 +259,28 @@ static void server_accept_client_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
       }
    }
 
-   if (Self->IPV6) {
-      #ifdef __linux__
-         // For dual-stack sockets, use sockaddr_storage to handle both IPv4 and IPv6
-         struct sockaddr_storage addr_storage;
-         socklen_t len = sizeof(addr_storage);
-         clientfd = accept(SocketFD, (struct sockaddr *)&addr_storage, &len);
-         if (clientfd.is_invalid()) return;
-
-         int nodelay = 1;
-         setsockopt(clientfd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
-
-         if (addr_storage.ss_family IS AF_INET6) { // IPv6 connection
-            auto error = sockaddr_to_client_ip((struct sockaddr *)&addr_storage, addr_storage.ss_family, ip);
-            if (error != ERR::Okay) {
-               log.warning(error);
-               close(clientfd);
-               return;
-            }
-            log.trace("Accepted IPv6 client connection");
-         }
-         else if (addr_storage.ss_family IS AF_INET) { // IPv4 connection on dual-stack socket
-            auto error = sockaddr_to_client_ip((struct sockaddr *)&addr_storage, addr_storage.ss_family, ip);
-            if (error != ERR::Okay) {
-               log.warning(error);
-               close(clientfd);
-               return;
-            }
-            log.trace("Accepted IPv4 client connection on dual-stack socket");
-         }
-         else {
-            log.warning("Unsupported address family: %d", addr_storage.ss_family);
-            close(clientfd);
-            return;
-         }
-      #elif _WIN32
-         // Windows IPv6 dual-stack accept using wrapper function
-         int family;
-         struct sockaddr_storage addr_storage;
-         int len = sizeof(addr_storage);
-         clientfd = win_accept_ipv6(Self, WSW_SOCKET((uintptr_t)SocketFD), (struct sockaddr *)&addr_storage, &len, &family);
-         if (clientfd IS NOHANDLE) return;
-
-         if (family IS AF_INET6) { // IPv6 connection
-            auto error = sockaddr_to_client_ip((struct sockaddr *)&addr_storage, family, ip);
-            if (error != ERR::Okay) {
-               log.warning(error);
-               CLOSESOCKET(clientfd);
-               return;
-            }
-            log.trace("Accepted IPv6 client connection on Windows");
-         }
-         else if (family IS AF_INET) { // IPv4 connection on dual-stack socket
-            auto error = sockaddr_to_client_ip((struct sockaddr *)&addr_storage, family, ip);
-            if (error != ERR::Okay) {
-               log.warning(error);
-               CLOSESOCKET(clientfd);
-               return;
-            }
-            log.trace("Accepted IPv4 client connection on dual-stack socket (Windows)");
-         }
-         else {
-            log.warning("Unsupported address family on Windows: %d", family);
-            CLOSESOCKET(clientfd);
-            return;
-         }
-      #else
-         #warning Platform requires IPV6 support.
-         return;
-      #endif
+   struct sockaddr_storage addr_storage;
+   int family = AF_INET;
+   clientfd = network_platform().accept(Self, Self->Handle, Self->IPV6, addr_storage, family);
+   if (clientfd.is_invalid()) {
+      log.warning("accept() failed to return an FD.");
+      return;
    }
-   else {
-      struct sockaddr_in addr;
 
-      #ifdef __linux__
-         socklen_t len = sizeof(addr);
-         clientfd = accept(SocketFD, (struct sockaddr *)&addr, &len);
-
-         if (clientfd.is_valid()) {
-            int nodelay = 1;
-            setsockopt(clientfd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
-         }
-      #elif _WIN32
-         int len = sizeof(addr);
-         clientfd = win_accept(Self, WSW_SOCKET((uintptr_t)SocketFD), (struct sockaddr *)&addr, &len);
-      #endif
-
-      if (clientfd.is_invalid()) {
-         log.warning("accept() failed to return an FD.");
-         return;
-      }
-
-      if (auto error = sockaddr_to_client_ip((struct sockaddr *)&addr, AF_INET, ip); error != ERR::Okay) {
-         log.warning(error);
-         CLOSESOCKET(clientfd);
-         return;
-      }
+   if ((family != AF_INET) and (family != AF_INET6)) {
+      log.warning("Unsupported address family: %d", family);
+      network_platform().close_socket(clientfd);
+      return;
    }
+
+   if (auto error = sockaddr_to_client_ip((struct sockaddr *)&addr_storage, family, ip); error != ERR::Okay) {
+      log.warning(error);
+      network_platform().close_socket(clientfd);
+      return;
+   }
+
+   if (family IS AF_INET6) log.trace("Accepted IPv6 client connection");
+   else if (Self->IPV6) log.trace("Accepted IPv4 client connection on dual-stack socket");
 
    // Check if this IP address already has a client structure from an earlier socket connection.
    // (One NetClient represents a single IP address; Multiple ClientSockets can connect from that IP address)
@@ -369,12 +294,12 @@ static void server_accept_client_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
       if (NewObject(CLASSID::NETCLIENT, &client_ip) IS ERR::Okay) {
          if (InitObject(client_ip) != ERR::Okay) {
             FreeResource(client_ip);
-            CLOSESOCKET(clientfd);
+            network_platform().close_socket(clientfd);
             return;
          }
       }
       else {
-         CLOSESOCKET(clientfd);
+         network_platform().close_socket(clientfd);
          return;
       }
 
@@ -391,14 +316,14 @@ static void server_accept_client_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
    }
    else if (client_ip->TotalConnections >= Self->SocketLimit) {
       log.warning("Socket limit of %d reached for IP %d.%d.%d.%d", Self->SocketLimit, client_ip->IP[0], client_ip->IP[1], client_ip->IP[2], client_ip->IP[3]);
-      CLOSESOCKET(clientfd);
+      network_platform().close_socket(clientfd);
       return;
    }
 
    if ((Self->Flags & NSF::MULTI_CONNECT) IS NSF::NIL) { // Check if the IP is already registered and alive
       if (client_ip->Connections) {
          log.msg("Preventing second connection attempt from IP %d.%d.%d.%d", client_ip->IP[0], client_ip->IP[1], client_ip->IP[2], client_ip->IP[3]);
-         CLOSESOCKET(clientfd);
+         network_platform().close_socket(clientfd);
          return;
       }
    }
@@ -435,7 +360,7 @@ static void server_accept_client_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
       }
    }
    else {
-      CLOSESOCKET(clientfd);
+      network_platform().close_socket(clientfd);
       if (!client_ip->Connections) free_client(Self, client_ip);
       return;
    }
@@ -498,16 +423,14 @@ static void netsocket_connect_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
 
    log.trace("Connection from server received.");
 
-   int result = EHOSTUNREACH; // Default error in case getsockopt() fails
-   socklen_t optlen = sizeof(result);
-   getsockopt(SocketFD, SOL_SOCKET, SO_ERROR, &result, &optlen);
+   auto result = network_platform().complete_connect(Self->Handle);
 
    // Remove the write callback
 
-   RegisterFD(Self->Handle.hosthandle(), RFD::WRITE|RFD::REMOVE, &netsocket_connect, Self);
+   network_platform().remove_write(Self->Handle);
 
    #ifndef DISABLE_SSL
-   if ((Self->SSLHandle) and (!result)) {
+   if ((Self->SSLHandle) and (result IS ERR::Okay)) {
       // Perform the SSL handshake
 
       log.traceBranch("Attempting SSL handshake.");
@@ -516,27 +439,27 @@ static void netsocket_connect_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
       if (Self->Error != ERR::Okay) return;
 
       if (Self->State IS NTC::HANDSHAKING) {
-         RegisterFD(Self->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &netsocket_incoming, Self);
+         network_platform().register_read(Self->Handle, &netsocket_incoming, Self);
       }
       return;
    }
    #endif
 
-   if (!result) {
+   if (result IS ERR::Okay) {
       log.traceBranch("Connection succesful.");
 
       if (Self->TimerHandle) { UpdateTimer(Self->TimerHandle, 0); Self->TimerHandle = 0; }
 
       Self->setState(NTC::CONNECTED);
-      RegisterFD(Self->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &netsocket_incoming, Self);
+      network_platform().register_read(Self->Handle, &netsocket_incoming, Self);
       return;
    }
    else {
-      log.trace("getsockopt() result %d", result);
+      log.trace("Connect completion result %d", int(result));
 
       if (Self->TimerHandle) { UpdateTimer(Self->TimerHandle, 0); Self->TimerHandle = 0; }
 
-      Self->Error = convert_socket_error(result);
+      Self->Error = result;
 
       log.error(Self->Error);
 
@@ -579,7 +502,7 @@ static void netsocket_incoming_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
       log.traceBranch("Windows SSL handshake in progress, reading raw data.");
       size_t result;
       std::vector<uint8_t> buffer;
-      if (ERR error = WIN_APPEND(Self->Handle, buffer, 4096, result); error IS ERR::Okay) {
+      if (ERR error = network_platform().append_receive(Self->Handle, buffer, 4096, result); error IS ERR::Okay) {
          sslHandshakeReceived(Self, buffer.data(), int(buffer.size()));
 
          if ((Self->State != NTC::CONNECTED) or (!ssl_has_decrypted_data(Self->SSLHandle) and !ssl_has_encrypted_data(Self->SSLHandle))) {
@@ -659,11 +582,7 @@ restart:
       if (Self->Handle.is_valid()) {
          Self->CloseAfterWrite = true;
          Self->Incoming.clear();
-         #ifdef __linux__
-            RegisterFD(Self->Handle.hosthandle(), RFD::WRITE|RFD::SOCKET, &netsocket_outgoing, Self);
-         #elif _WIN32
-            win_socketstate(Self->Handle, std::nullopt, true);
-         #endif
+         network_platform().register_write(Self->Handle, &netsocket_outgoing, Self);
       }
    }
    else if (Self->IncomingRecursion > 1) {
@@ -791,11 +710,7 @@ static void netsocket_outgoing_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
 
       if ((!Self->Outgoing.defined()) and (Self->WriteQueue.Buffer.empty())) {
          log.trace("Write-queue listening on socket %d will now stop.", Self->UID, Self->Handle.int_value());
-         #ifdef __linux__
-            RegisterFD(Self->Handle.hosthandle(), RFD::REMOVE|RFD::WRITE|RFD::SOCKET, nullptr, nullptr);
-         #elif _WIN32
-            if (auto error = win_socketstate(Self->Handle, std::nullopt, false); error != ERR::Okay) log.warning(error);
-         #endif
+         if (auto error = network_platform().remove_write(Self->Handle); error != ERR::Okay) log.warning(error);
       }
 
       if (error != ERR::Okay) {

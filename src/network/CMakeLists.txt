@@ -16,6 +16,12 @@ set_module_defaults (${MOD} "Net")
 
 target_sources (${MOD} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/network.cpp")
 
+if (WIN32)
+   target_sources (${MOD} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/net_windows.cpp")
+else ()
+   target_sources (${MOD} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/net_linux.cpp")
+endif ()
+
 if (DISABLE_SSL)
    message (STATUS "Network module will not be compiled with SSL support (disabled by DISABLE_SSL).")
    target_compile_definitions (${MOD} PRIVATE "DISABLE_SSL")

@@ -31,10 +31,7 @@ static void disconnect(extClientSocket *Self)
    log.branch("Disconnecting socket handle %d", Self->Handle.int_value());
 
    if (Self->Handle.is_valid()) {
-
-#ifdef __linux__
-      DeregisterFD(Self->Handle);
-#endif
+      network_platform().deregister_fd(Self->Handle);
       CLOSESOCKET_THREADED(Self->Handle);
       Self->Handle = NOHANDLE;
    }
@@ -57,7 +54,7 @@ static ERR receive_from_client(extClientSocket *Self, APTR Buffer, size_t Buffer
        // If we're in the middle of SSL handshake, read raw data for handshake processing
        if (Self->State IS NTC::HANDSHAKING) {
           log.trace("Windows SSL handshake in progress, reading raw data.");
-          ERR error = WIN_RECEIVE(Self->Handle, Buffer, BufferSize, Result);
+          ERR error = network_platform().receive(Self->Handle, Buffer, BufferSize, *Result);
           if ((error IS ERR::Okay) and (*Result > 0)) {
              sslHandshakeReceived(Self, Buffer, *Result);
           }
@@ -110,7 +107,7 @@ static ERR receive_from_client(extClientSocket *Self, APTR Buffer, size_t Buffer
 
                   log.msg("SSL socket handshake requested by server.");
                   Self->HandshakeStatus = SHS::WRITE;
-                  RegisterFD(Self->Handle.hosthandle(), RFD::WRITE|RFD::SOCKET, ssl_handshake_write_clientsocket, Self);
+                  network_platform().register_write(Self->Handle, ssl_handshake_write_clientsocket, Self);
                   return ERR::Okay;
 
                case SSL_ERROR_SYSCALL:
@@ -149,7 +146,7 @@ static ERR receive_from_client(extClientSocket *Self, APTR Buffer, size_t Buffer
          // For this reason we set the RECALL flag so that we can be called again manually when we know that there is
          // data pending.
 
-         RegisterFD(Self->Handle.hosthandle(), RFD::RECALL|RFD::READ|RFD::SOCKET, &server_incoming_from_client, Self);
+         network_platform().register_recall_read(Self->Handle, &server_incoming_from_client, Self);
       }
 
       return ERR::Okay;
@@ -157,31 +154,7 @@ static ERR receive_from_client(extClientSocket *Self, APTR Buffer, size_t Buffer
    }
 #endif // DISABLE_SSL
 
-#ifdef __linux__
-   {
-      int result = recv(Self->Handle, Buffer, BufferSize, 0);
-
-      if (result > 0) {
-         *Result = result;
-         return ERR::Okay;
-      }
-      else if (result IS 0) { // man recv() says: The return value is 0 when the peer has performed an orderly shutdown.
-         return ERR::Disconnected;
-      }
-      else if ((errno IS EAGAIN) or (errno IS EINTR)) {
-         return ERR::Okay;
-      }
-      else {
-         const int system_error = errno;
-         log.warning("recv() failed: %s", strerror(system_error));
-         return convert_socket_error(system_error);
-      }
-   }
-#elif _WIN32
-   return WIN_RECEIVE(Self->Handle, Buffer, BufferSize, Result);
-#else
-   #error No support for RECEIVE()
-#endif
+   return network_platform().receive(Self->Handle, Buffer, BufferSize, *Result);
 }
 
 //********************************************************************************************************************
@@ -207,7 +180,7 @@ static void server_incoming_from_client_impl(HOSTHANDLE SocketFD, extClientSocke
          bool ssl_connected = false;
          std::array<char, 4096> buffer;
          size_t bytes_received;
-         ERR error = WIN_RECEIVE(client->Handle, buffer.data(), buffer.size(), &bytes_received);
+         ERR error = network_platform().receive(client->Handle, buffer.data(), buffer.size(), bytes_received);
          if ((error IS ERR::Okay) and (bytes_received > 0)) {
             SSL_ERROR_CODE accept_result = ssl_accept(client->SSLHandle, buffer.data(), bytes_received);
 
@@ -403,11 +376,7 @@ static void clientsocket_outgoing_impl(HOSTHANDLE SocketFD, extClientSocket *Cli
 
       if (ClientSocket->WriteQueue.Buffer.empty()) {
          log.trace("[NetSocket:%d] Write-queue listening on FD %d will now stop.", Server->UID, ClientSocket->Handle.int_value());
-         #ifdef __linux__
-            RegisterFD(ClientSocket->Handle.hosthandle(), RFD::REMOVE|RFD::WRITE|RFD::SOCKET, nullptr, nullptr);
-         #elif _WIN32
-            win_socketstate(ClientSocket->Handle, std::nullopt, false);
-         #endif
+         network_platform().remove_write(ClientSocket->Handle);
       }
    }
 
@@ -435,11 +404,7 @@ static ERR CLIENTSOCKET_Deactivate(extClientSocket *Self)
    if ((Self->State IS NTC::CONNECTED) and (not Self->WriteQueue.Buffer.empty())) {
       log.msg("Delaying disconnect until queued data is flushed.");
       Self->CloseAfterWrite = true;
-      #ifdef __linux__
-         RegisterFD(Self->Handle.hosthandle(), RFD::WRITE|RFD::SOCKET, &clientsocket_outgoing, Self);
-      #elif _WIN32
-         win_socketstate(Self->Handle, std::nullopt, true);
-      #endif
+      network_platform().register_write(Self->Handle, &clientsocket_outgoing, Self);
       return ERR::Okay;
    }
 
@@ -505,10 +470,7 @@ static ERR CLIENTSOCKET_Init(extClientSocket *Self)
    kt::ScopedObjectLock lock(Self->Client);
    if (not lock.granted()) return ERR::Lock;
 
-#ifdef __linux__
-   int non_blocking = 1;
-   ioctl(Self->Handle, FIONBIO, &non_blocking);
-#endif
+   network_platform().set_non_blocking(Self->Handle);
 
    Self->ConnectTime = PreciseTime() / 1000LL;
 
@@ -588,11 +550,8 @@ static ERR CLIENTSOCKET_Init(extClientSocket *Self)
    Self->State = NTC::CONNECTED;
 #endif
 
-#ifdef __linux__
-   RegisterFD(Self->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &server_incoming_from_client, Self);
-#elif _WIN32
-   win_socket_reference(Self->Handle, Self);
-#endif
+   network_platform().register_read(Self->Handle, &server_incoming_from_client, Self);
+   network_platform().set_socket_reference(Self->Handle, Self);
 
    return ERR::Okay;
 }
@@ -747,11 +706,7 @@ static ERR CS_SET_State(extClientSocket *Self, NTC Value)
 
       if ((Self->State IS NTC::CONNECTED) and ((not Self->WriteQueue.Buffer.empty()))) {
          log.msg("Sending queued data to server on connection.");
-         #ifdef __linux__
-            RegisterFD(Self->Handle.hosthandle(), RFD::WRITE|RFD::SOCKET, &clientsocket_outgoing, Self);
-         #elif _WIN32
-            win_socketstate(Self->Handle, std::nullopt, true);
-         #endif
+         network_platform().register_write(Self->Handle, &clientsocket_outgoing, Self);
       }
    }
 

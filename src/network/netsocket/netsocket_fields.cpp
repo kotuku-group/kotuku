@@ -210,11 +210,7 @@ static ERR SET_Outgoing(extNetSocket *Self, FUNCTION *Value)
       if ((Self->Handle.is_valid()) and (Self->State IS NTC::CONNECTED)) {
          // Setting the Outgoing field after connectivity is established will put the socket into streamed write mode.
 
-         #ifdef __linux__
-            RegisterFD(Self->Handle.hosthandle(), RFD::WRITE|RFD::SOCKET, &netsocket_outgoing, Self);
-         #elif _WIN32
-            win_socketstate(Self->Handle, std::nullopt, true);
-         #endif
+         network_platform().register_write(Self->Handle, &netsocket_outgoing, Self);
       }
       else log.trace("Will not listen for socket-writes (no socket handle, or state %d != NTC::CONNECTED).", Self->State);
    }
@@ -443,11 +439,7 @@ static ERR SET_State(extNetSocket *Self, NTC Value)
 
       if ((Self->State IS NTC::CONNECTED) and ((!Self->WriteQueue.Buffer.empty()) or (Self->Outgoing.defined()))) {
          log.msg("Sending queued data to server on connection.");
-         #ifdef __linux__
-            RegisterFD(Self->Handle.hosthandle(), RFD::WRITE|RFD::SOCKET, &netsocket_outgoing, Self);
-         #elif _WIN32
-            win_socketstate(Self->Handle, std::nullopt, true);
-         #endif
+         network_platform().register_write(Self->Handle, &netsocket_outgoing, Self);
       }
    }
 

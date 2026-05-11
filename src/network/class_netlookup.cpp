@@ -492,7 +492,7 @@ static ERR cache_host(HOSTMAP &Store, CSTRING Key, struct hostent *Host, DNSEntr
       if (Host->h_addrtype IS AF_INET) {
          for (unsigned i=0; Host->h_addr_list[i]; i++) {
             auto addr = *((uint32_t *)Host->h_addr_list[i]);
-            cache.Addresses.push_back({ ntohl(addr), 0, 0, 0, IPADDR::V4 });
+            cache.Addresses.push_back({ network_platform().long_to_host(addr), 0, 0, 0, IPADDR::V4 });
          }
       }
       else if (Host->h_addrtype IS AF_INET6) {
@@ -537,7 +537,7 @@ static ERR convert_addrinfo(CSTRING Key, struct addrinfo *Host, DNSEntry &Cache)
 
       if (scan->ai_family IS AF_INET) {
          auto addr = ((struct sockaddr_in *)scan->ai_addr)->sin_addr.s_addr;
-         cache.Addresses.push_back({ ntohl(addr), 0, 0, 0, IPADDR::V4 });
+         cache.Addresses.push_back({ network_platform().long_to_host(addr), 0, 0, 0, IPADDR::V4 });
       }
       else if (scan->ai_family IS AF_INET6) {
          auto addr = (struct sockaddr_in6 *)scan->ai_addr;

@@ -27,9 +27,6 @@ sockets and HTTP, please refer to the @NetSocket and @HTTP classes.
 #include <unordered_set>
 #include <ctime>
 #include <type_traits>
-#ifdef __linux__
- #include <sys/resource.h>
-#endif
 
 #include <string.h>
 
@@ -37,6 +34,7 @@ sockets and HTTP, please refer to the @NetSocket and @HTTP classes.
 #include <kotuku/modules/network.h>
 #include <kotuku/strings.hpp>
 
+#include "net_platform.h"
 #include "ssl_certificate_policy.h"
 
 #ifndef DISABLE_SSL
@@ -98,174 +96,7 @@ DEFINE_ENUM_FLAG_OPERATORS(SHS)
 //********************************************************************************************************************
 
 #ifdef _WIN32
-   #define INADDR_NONE 0xffffffff
-
-   #define SOCK_STREAM 1
-   #define SOCK_DGRAM 2
-
-   struct  hostent {
-      char	*h_name;
-      char	**h_aliases;
-      short h_addrtype;
-      short h_length;
-      char  **h_addr_list;
-   #define h_addr h_addr_list[0]
-   };
-
-   struct in_addr {
-      union {
-         struct { uint8_t s_b1,s_b2,s_b3,s_b4; } S_un_b;
-         struct { uint16_t s_w1,s_w2; } S_un_w;
-         uint32_t S_addr;
-      } S_un;
-   #define s_addr  S_un.S_addr
-   #define s_host  S_un.S_un_b.s_b2
-   #define s_net   S_un.S_un_b.s_b1
-   #define s_imp   S_un.S_un_w.s_w2
-   #define s_impno S_un.S_un_b.s_b4
-   #define s_lh    S_un.S_un_b.s_b3
-   };
-
-   struct sockaddr_in {
-      short    sin_family;
-      uint16_t sin_port;
-      struct in_addr sin_addr;
-      char   sin_zero[8];
-   };
-
-   struct addrinfo {
-     int    ai_flags;
-     int    ai_family;
-     int    ai_socktype;
-     int    ai_protocol;
-     size_t ai_addrlen;
-     char   *ai_canonname;
-     struct sockaddr *ai_addr;
-     struct addrinfo *ai_next;
-   };
-
-   struct in6_addr {
-      uint8_t s6_addr[16];   // IPv6 address
-   };
-
-   struct sockaddr_in6 {
-      short sin6_family;
-      uint16_t sin6_port;
-      uint32_t sin6_flowinfo;
-      struct in6_addr sin6_addr;
-      uint32_t sin6_scope_id;
-   };
-
-   struct sockaddr_storage {
-      short ss_family;
-      char __ss_pad1[6];
-      int64_t __ss_align;
-      char __ss_pad2[112];
-   };
-
-   constexpr uint32_t NOHANDLE = (uint32_t)(~0);
-   constexpr int SOCKET_ERROR = -1;
-   constexpr int AF_INET      = 2;
-   constexpr int AF_INET6     = 23;
-   constexpr int INADDR_ANY   = 0;
-   constexpr int MSG_PEEK     = 2;
-   constexpr int IPPROTO_IPV6 = 41;
-   constexpr int IPV6_V6ONLY  = 27;
-
-   // getaddrinfo constants
-   constexpr int AF_UNSPEC    = 0;
-   constexpr int AI_CANONNAME = 2;
-   constexpr int EAI_AGAIN    = 2;
-   constexpr int EAI_FAIL     = 3;
-   constexpr int EAI_MEMORY   = 4;
-   constexpr int EAI_SYSTEM   = 5;
-
-   // IPv6 constants
-   static const struct in6_addr in6addr_any = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
-
-   #define CLOSESOCKET(a) win_closesocket(a);
-#endif
-
-#ifdef __linux__
-   #include <arpa/inet.h>
-   #include <netdb.h>
-   #include <unistd.h>
-   #include <fcntl.h>
-   #include <sys/ioctl.h>
-   #include <errno.h>
-   #include <string.h>
-   #include <netinet/tcp.h>
-   #include <sys/socket.h>
-
-   #define NOHANDLE -1
-
-   static void CLOSESOCKET(SOCKET_HANDLE Handle) {
-      if (Handle IS NOHANDLE) return;
-
-      kt::Log log(__FUNCTION__);
-      log.traceBranch("Handle: %d", Handle);
-
-      // Perform graceful disconnect before closing
-
-      shutdown(Handle, SHUT_RDWR);
-
-      // Set a short timeout to allow pending data to be transmitted
-      struct timeval timeout;
-      timeout.tv_sec = 0;
-      timeout.tv_usec = 100000; // 100ms timeout
-      setsockopt(Handle, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout));
-      setsockopt(Handle, SOL_SOCKET, SO_SNDTIMEO, (char*)&timeout, sizeof(timeout));
-
-      // Drain any remaining data in the receive buffer
-      char buffer[1024];
-      int bytes_received;
-      do {
-         bytes_received = recv(Handle, buffer, sizeof(buffer), 0);
-      } while (bytes_received > 0);
-
-      close(Handle);
-   }
-
-// For Linux, create a simple wrapper that behaves like an int but with methods
-class SocketHandle {
-private:
-   int socket_val;
-public:
-   SocketHandle() : socket_val(-1) {}
-   SocketHandle(int sock) : socket_val(sock) {}
-
-   operator int() const { return socket_val; }
-   operator bool() const { return socket_val != -1; }
-
-   int int_value() const { return socket_val; }
-   int hosthandle() const { return socket_val; }
-   int socket() const { return socket_val; }
-
-   bool is_valid() const { return socket_val != -1; }
-   bool is_invalid() const { return socket_val == -1; }
-
-   bool operator==(const SocketHandle& other) const { return socket_val == other.socket_val; }
-   bool operator!=(const SocketHandle& other) const { return socket_val != other.socket_val; }
-   bool operator==(int sock) const { return socket_val == sock; }
-   bool operator!=(int sock) const { return socket_val != sock; }
-
-   SocketHandle& operator=(int sock) { socket_val = sock; return *this; }
-};
-#elif _WIN32
    #include "win32/winsockwrappers.h"
-
-   #include <string.h>
-
-   #define htons win_htons
-   #define htonl win_htonl
-   #define ntohs win_ntohs
-   #define ntohl win_ntohl
-
-   // Forward declarations for getaddrinfo functions (available in ws2_32.lib)
-   extern "C" {
-      int getaddrinfo(const char *node, const char *service, const struct addrinfo *hints, struct addrinfo **res);
-      void freeaddrinfo(struct addrinfo *res);
-   }
 #endif
 
 #ifdef __linux__
@@ -389,7 +220,7 @@ struct CaseInsensitiveHash {
 
 struct CaseInsensitiveEqual {
    bool operator()(const std::string& lhs, const std::string& rhs) const noexcept {
-      return ::strcasecmp(lhs.c_str(), rhs.c_str()) == 0;
+      return ::strcasecmp(lhs.c_str(), rhs.c_str()) IS 0;
    }
 };
 
@@ -397,11 +228,18 @@ typedef ankerl::unordered_dense::map<std::string, DNSEntry, CaseInsensitiveHash,
 
 //********************************************************************************************************************
 
+static std::unique_ptr<NetworkPlatform> glPlatform;
+
+NetworkPlatform & network_platform()
+{
+   return *glPlatform;
+}
+
+//********************************************************************************************************************
+
 static void CLOSESOCKET_THREADED(SocketHandle Handle)
 {
-#ifdef _WIN32
-   win_deregister_socket(Handle);
-#endif
+   network_platform().deregister_socket(Handle);
 
    {
       std::lock_guard<std::mutex> lock(glmThreads);
@@ -413,7 +251,7 @@ static void CLOSESOCKET_THREADED(SocketHandle Handle)
 
    std::lock_guard<std::mutex> lock(glmThreads);
    auto thread_ptr = std::make_shared<std::jthread>();
-   *thread_ptr = std::jthread([] (SocketHandle Handle) { CLOSESOCKET(Handle); }, Handle);
+   *thread_ptr = std::jthread([] (SocketHandle Handle) { network_platform().close_socket(Handle); }, Handle);
    glThreads.insert(thread_ptr);
 }
 
@@ -436,27 +274,15 @@ inline void setIPV6(IPAddress &IP, uint8_t *Address, uint16_t Port) {
 // Unified IP address conversion functions to eliminate platform-specific duplication
 
 static uint32_t unified_inet_addr(CSTRING Str) {
-#ifdef __linux__
-   return inet_addr(Str);
-#elif _WIN32
-   return win_inet_addr(Str);
-#endif
+   return network_platform().inet_addr(Str);
 }
 
 static int unified_inet_pton(int af, CSTRING src, void *dst) {
-#ifdef __linux__
-   return inet_pton(af, src, dst);
-#elif _WIN32
-   return win_inet_pton(af, src, dst);
-#endif
+   return network_platform().inet_pton(af, src, dst);
 }
 
 static CSTRING unified_inet_ntop(int af, const void *src, char *dst, size_t size) {
-#ifdef __linux__
-   return inet_ntop(af, src, dst, size);
-#elif _WIN32
-   return win_inet_ntop(af, src, dst, size);
-#endif
+   return network_platform().inet_ntop(af, src, dst, size);
 }
 
 //********************************************************************************************************************
@@ -549,6 +375,11 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
    argModule->get(FID_Root, glNetworkModule);
 
+   glPlatform = create_platform();
+   if (!glPlatform) return ERR::NoSupport;
+   if (auto error = glPlatform->initialise(argModule); error != ERR::Okay) return error;
+   glSocketLimit = glPlatform->socket_limit();
+
    if (init_netclient() != ERR::Okay) return ERR::AddClass;
    if (init_netsocket() != ERR::Okay) return ERR::AddClass;
    if (init_clientsocket() != ERR::Okay) return ERR::AddClass;
@@ -557,18 +388,6 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
    glResolveNameMsgID = (MSGID)AllocateID(IDTYPE::MESSAGE);
    glResolveAddrMsgID = (MSGID)AllocateID(IDTYPE::MESSAGE);
-
-#ifdef _WIN32
-   // Configure Winsock
-   {
-      CSTRING msg;
-      if ((msg = StartupWinsock()) != 0) {
-         log.warning("Winsock initialisation failed: %s", msg);
-         return ERR::SystemCall;
-      }
-      SetResourcePtr(RES::NET_PROCESSING, reinterpret_cast<APTR>(win_net_processing)); // Hooks into ProcessMessages()
-   }
-#endif
 
    auto recv_function = C_FUNCTION(resolve_name_receiver);
    recv_function.Context = CurrentTask();
@@ -580,13 +399,6 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    if (AddMsgHandler(glResolveAddrMsgID, &recv_function, &glResolveAddrHandler) != ERR::Okay) {
       return ERR::Failed;
    }
-
-#ifdef __linux__
-   struct rlimit fd_limit;
-   if (getrlimit(RLIMIT_NOFILE, &fd_limit) == 0) {
-      glSocketLimit = fd_limit.rlim_cur * 0.8; // Set a threshold at 80% of the system limit
-   }
-#endif
 
    ResolvePath("system:config/ssl/", RSF::NO_FILE_CHECK, &glCertPath);
 
@@ -611,18 +423,10 @@ static ERR MODExpunge(void)
 
    cleanup_proxy_config();
 
-#ifdef _WIN32
-   SetResourcePtr(RES::NET_PROCESSING, nullptr);
-#endif
-
    if (glResolveNameHandler) { FreeResource(glResolveNameHandler); glResolveNameHandler = nullptr; }
    if (glResolveAddrHandler) { FreeResource(glResolveAddrHandler); glResolveAddrHandler = nullptr; }
 
-#ifdef _WIN32
-   log.msg("Closing winsock.");
-
-   if (ShutdownWinsock() != 0) log.warning("Warning: Winsock DLL Cleanup failed.");
-#endif
+   if (glPlatform) glPlatform->expunge();
 
    if (clNetClient)    { FreeResource(clNetClient); clNetClient = nullptr; }
    if (clNetSocket)    { FreeResource(clNetSocket); clNetSocket = nullptr; }
@@ -662,6 +466,8 @@ static ERR MODExpunge(void)
       glThreads.clear();
    }
 
+   glPlatform.reset();
+
    return ERR::Okay;
 }
 
@@ -697,17 +503,11 @@ CSTRING AddressToStr(IPAddress *Address)
    }
    else if (Address->Type IS IPADDR::V4) {
       struct in_addr addr;
-      addr.s_addr = htonl(Address->Data[0]);
+      addr.s_addr = network_platform().host_to_long(Address->Data[0]);
 
-      STRING result;
-      #ifdef __linux__
-         result = inet_ntoa(addr);
-      #elif _WIN32
-         result = win_inet_ntoa(addr.s_addr);
-      #endif
-
-      if (!result) return nullptr;
-      return kt::strclone(result);
+      char buffer[16];
+      auto result = network_platform().inet_ntop(AF_INET, &addr, buffer, sizeof(buffer));
+      return result ? kt::strclone(result) : nullptr;
    }
    else {
       log.warning("Unsupported address type: %d", int(Address->Type));
@@ -795,7 +595,7 @@ ERR StrToAddress(CSTRING Str, IPAddress *Address)
    if (result IS INADDR_NONE) return ERR::Failed;
 
    Address->Type = IPADDR::V4;
-   Address->Data[0] = ntohl(result);
+   Address->Data[0] = network_platform().long_to_host(result);
    Address->Data[1] = 0;
    Address->Data[2] = 0;
    Address->Data[3] = 0;
@@ -819,7 +619,7 @@ uint: The word in network byte order
 
 uint32_t HostToShort(uint32_t Value)
 {
-   return (uint32_t)htons((uint16_t)Value);
+   return uint32_t(network_platform().host_to_short(uint16_t(Value)));
 }
 
 /*********************************************************************************************************************
@@ -839,7 +639,7 @@ uint: The long in network byte order
 
 uint32_t HostToLong(uint32_t Value)
 {
-   return htonl(Value);
+   return network_platform().host_to_long(Value);
 }
 
 /*********************************************************************************************************************
@@ -859,7 +659,7 @@ uint: The Value in host byte order
 
 uint32_t ShortToHost(uint32_t Value)
 {
-   return (uint32_t)ntohs((uint16_t)Value);
+   return uint32_t(network_platform().short_to_host(uint16_t(Value)));
 }
 
 /*********************************************************************************************************************
@@ -879,7 +679,7 @@ uint: The Value in host byte order.
 
 uint32_t LongToHost(uint32_t Value)
 {
-   return ntohl(Value);
+   return network_platform().long_to_host(Value);
 }
 
 /*********************************************************************************************************************
@@ -1019,7 +819,7 @@ static ERR send_data(T *Self, CPTR Buffer, size_t *Length)
                   auto read_callback = std::is_same<T, extNetSocket>::value ?
                      ssl_handshake_read_netsocket : ssl_handshake_read_clientsocket;
                   ssl_suspend_write_queue(Self->Handle.hosthandle());
-                  RegisterFD(Self->Handle.hosthandle(), RFD::READ|RFD::SOCKET, read_callback, Self);
+                  network_platform().register_read(Self->Handle, read_callback, Self);
                   return ERR::Busy;
                }
 
@@ -1049,28 +849,10 @@ static ERR send_data(T *Self, CPTR Buffer, size_t *Length)
 #endif
 
    // Fallback to regular socket send
-#ifdef __linux__
-   auto result = send(Self->Handle, Buffer, *Length, 0);
-
-   if (result >= 0) {
-      *Length = result;
-      return ERR::Okay;
-   }
-   else {
-      *Length = 0;
-      if (errno IS EAGAIN) return ERR::BufferOverflow;
-      else if (errno IS EMSGSIZE) return ERR::DataSize;
-      else {
-         const int system_error = errno;
-         log.warning("send() failed: %s", strerror(system_error));
-         return convert_socket_error(system_error, ERR::Failed);
-      }
-   }
-#elif _WIN32
-   return WIN_SEND(Self->Handle, Buffer, Length, 0);
-#else
-   #error No support for send_data()
-#endif
+   size_t sent = *Length;
+   auto error = network_platform().send(Self->Handle, Buffer, sent);
+   *Length = sent;
+   return error;
 }
 
 //********************************************************************************************************************

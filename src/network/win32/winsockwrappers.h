@@ -18,46 +18,6 @@ typedef unsigned int WSW_SOCKET; // Identical to the windows SOCKET type
 struct sockaddr;
 struct hostent;
 
-// Unified handle wrapper that eliminates the need for manual casting between
-// WSW_SOCKET and HOSTHANDLE when interfacing with the core system
-
-class SocketHandle {
-private:
-   WSW_SOCKET socket_val;
-
-public:
-   static constexpr WSW_SOCKET INVALID_SOCKET_VAL = static_cast<WSW_SOCKET>(~0);
-
-   // Constructors
-   SocketHandle() : socket_val(INVALID_SOCKET_VAL) {}
-   SocketHandle(WSW_SOCKET sock) : socket_val(sock) {}
-   SocketHandle(int sock) : socket_val(static_cast<WSW_SOCKET>(sock)) {}
-   SocketHandle(HOSTHANDLE handle) : socket_val(static_cast<WSW_SOCKET>(reinterpret_cast<uintptr_t>(handle))) {}
-
-   // Conversion operators for seamless integration
-   operator WSW_SOCKET() const { return socket_val; }
-   operator HOSTHANDLE() const { return reinterpret_cast<HOSTHANDLE>(static_cast<uintptr_t>(socket_val)); }
-   operator bool() const { return socket_val != INVALID_SOCKET_VAL; } // For boolean tests
-
-   // Explicit accessors for clarity when needed
-   WSW_SOCKET socket() const { return socket_val; }
-   HOSTHANDLE hosthandle() const { return reinterpret_cast<HOSTHANDLE>(static_cast<uintptr_t>(socket_val)); }
-   int int_value() const { return static_cast<int>(socket_val); } // For printf-style formatting with %d
-
-   // Comparison operators
-   bool operator==(const SocketHandle& other) const { return socket_val == other.socket_val; }
-   bool operator!=(const SocketHandle& other) const { return socket_val != other.socket_val; }
-   bool operator==(WSW_SOCKET sock) const { return socket_val == sock; }
-   bool operator!=(WSW_SOCKET sock) const { return socket_val != sock; }
-
-   // Validity check
-   bool is_valid() const { return socket_val != INVALID_SOCKET_VAL; }
-   bool is_invalid() const { return socket_val == INVALID_SOCKET_VAL; }
-
-   // Assignment operators
-   SocketHandle& operator=(WSW_SOCKET sock) { socket_val = sock; return *this; }
-   SocketHandle& operator=(int sock) { socket_val = static_cast<WSW_SOCKET>(sock); return *this; }
-};
 void win32_netresponse(struct Object *, WSW_SOCKET, int, ERR);
 void win_net_processing(int, void *);
 WSW_SOCKET win_accept(void *, WSW_SOCKET, sockaddr *, int *);
