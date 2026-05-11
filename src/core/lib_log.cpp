@@ -354,7 +354,8 @@ error: Returns the same code that was specified in the `Error` parameter.
 ERR FuncError(CSTRING Header, ERR Code)
 {
    if (tlLogStatus <= 0) return Code;
-   if (glLogLevel < 2) return Code;
+   int level = glLogLevel - tlBaseLine;
+   if (level < 2) return Code;
    if ((tlDepth >= glMaxDepth) or (tlLogStatus <= 0)) return Code;
 
    auto &ctx = tlContext.back();
@@ -385,7 +386,7 @@ ERR FuncError(CSTRING Header, ERR Code)
       CSTRING histart = "", hiend = "";
 
       #ifdef ESC_OUTPUT
-         if ((not file_output) and (glLogLevel > 2)) {
+         if ((not file_output) and (level > 2)) {
             #ifdef _WIN32
                histart = "!";
             #else
@@ -448,8 +449,9 @@ static void fmsg(CSTRING Header, STRING Buffer, int8_t Colon, int8_t Sub) // Buf
    int16_t pos = 0;
    int16_t depth;
    int16_t col = COLUMN1;
+   int level = glLogLevel - tlBaseLine;
 
-   if (glLogLevel < 3) depth = 0;
+   if (level < 3) depth = 0;
    else if (tlDepth > col) depth = col;
    else {
       depth = tlDepth;
@@ -466,7 +468,7 @@ static void fmsg(CSTRING Header, STRING Buffer, int8_t Colon, int8_t Sub) // Buf
       pos += snprintf(Buffer+pos, col, "%09.5f ", time/1000000.0);
    }
 
-   if (glLogLevel >= 3) {
+   if (level >= 3) {
       while ((depth > 0) and (pos < col)) {
          #ifdef __ANDROID__
             Buffer[pos++] = '_';
@@ -495,7 +497,7 @@ static void fmsg(CSTRING Header, STRING Buffer, int8_t Colon, int8_t Sub) // Buf
             Buffer[pos++] = ')';
          }
       }
-      if (glLogLevel >= 3) while (pos < col) Buffer[pos++] = ' '; // Add any extra spaces
+      if (level >= 3) while (pos < col) Buffer[pos++] = ' '; // Add any extra spaces
    }
 
    Buffer[pos] = 0; // NB: Buffer is col + 1, so there is always room for the null byte.
