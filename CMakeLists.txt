@@ -831,10 +831,39 @@ add_custom_target (icon_package ALL DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/icons/D
 
 if (NOT DISABLE_SSL AND ENABLE_SSL_BUNDLE_UPDATE)
    set(SSL_BUNDLE_PATH "${PROJECT_SOURCE_DIR}/data/ssl/ca-bundle.crt")
+   set(SSL_BUNDLE_UPDATE_SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/UpdateSslBundle.cmake")
+
+   file(WRITE "${SSL_BUNDLE_UPDATE_SCRIPT}" [=[
+if (NOT DEFINED SSL_BUNDLE_PATH)
+   message(FATAL_ERROR "SSL_BUNDLE_PATH is not defined")
+endif ()
+
+get_filename_component(SSL_BUNDLE_DIR "${SSL_BUNDLE_PATH}" DIRECTORY)
+file(MAKE_DIRECTORY "${SSL_BUNDLE_DIR}")
+
+set(SSL_BUNDLE_URL "https://curl.se/ca/cacert.pem")
+
+file(DOWNLOAD
+   "${SSL_BUNDLE_URL}"
+   "${SSL_BUNDLE_PATH}"
+   TIMEOUT 30
+   TLS_VERIFY ON
+   STATUS SSL_BUNDLE_DOWNLOAD_STATUS)
+
+list(GET SSL_BUNDLE_DOWNLOAD_STATUS 0 SSL_BUNDLE_DOWNLOAD_CODE)
+list(GET SSL_BUNDLE_DOWNLOAD_STATUS 1 SSL_BUNDLE_DOWNLOAD_MESSAGE)
+
+if (NOT SSL_BUNDLE_DOWNLOAD_CODE EQUAL 0)
+   message(FATAL_ERROR "Failed to download ${SSL_BUNDLE_URL}: ${SSL_BUNDLE_DOWNLOAD_MESSAGE}")
+endif ()
+
+message(STATUS "Updated SSL certificate bundle: ${SSL_BUNDLE_PATH}")
+]=])
+
    add_custom_target(update_ssl_bundle
       COMMAND ${CMAKE_COMMAND}
          "-DSSL_BUNDLE_PATH=${SSL_BUNDLE_PATH}"
-         -P "${PROJECT_SOURCE_DIR}/cmake/UpdateSslBundle.cmake"
+         -P "${SSL_BUNDLE_UPDATE_SCRIPT}"
       COMMENT "Updating SSL certificate bundle"
       VERBATIM)
 endif()
