@@ -10,12 +10,23 @@ typedef ERR (*iocp_post_message)(int MsgID, const void *Message, int Size);
 
 static constexpr size_t IOCP_ENDPOINT_STORAGE_SIZE = 128;
 
+enum class IocpOperationType : uint8_t {
+   CONNECT,
+   READ,
+   WRITE,
+   ACCEPT,
+   UDP_RECEIVE,
+   UDP_SEND
+};
+
 struct iocp_completion_message {
+   IocpOperationType Type = IocpOperationType::CONNECT;
    WSW_SOCKET Socket = 0;
    uint64_t Generation = 0;
    int ObjectID = 0;
    uintptr_t Callback = 0;
    uintptr_t Data = 0;
+   size_t BytesTransferred = 0;
    ERR Error = ERR::NIL;
 };
 
@@ -30,6 +41,7 @@ int iocp_shutdown_socket(WSW_SOCKET Socket, int How);
 ERR iocp_prepare_connect(WSW_SOCKET Socket, const void *Address, int AddressSize);
 ERR iocp_begin_connect_wait(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback, uintptr_t Data);
 ERR iocp_complete_connect(WSW_SOCKET Socket);
+bool iocp_validate_completion(WSW_SOCKET Socket, uint64_t Generation);
 
 ERR iocp_get_local_ip(WSW_SOCKET Socket, void *Address, int *AddressSize);
 

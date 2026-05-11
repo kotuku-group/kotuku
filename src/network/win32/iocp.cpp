@@ -14,6 +14,7 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <memory>
 #include <vector>
 
 #define IS ==
@@ -21,22 +22,32 @@
 #include "../socket_errors.h"
 #include "iocp.h"
 
-enum class IocpOperationType : uint8_t {
-   CONNECT
-};
-
 struct IocpOperation {
    OVERLAPPED Overlapped = {};
    IocpOperationType Type = IocpOperationType::CONNECT;
    WSW_SOCKET Socket = 0;
    uint64_t Generation = 0;
+   int ObjectID = 0;
+   uintptr_t Callback = 0;
+   uintptr_t Data = 0;
+   std::unique_ptr<uint8_t[]> Buffer;
+   size_t BufferSize = 0;
+   size_t BytesTransferred = 0;
+   ERR Result = ERR::Busy;
+};
+
+struct IocpCompletionTarget {
+   int ObjectID = 0;
+   uintptr_t Callback = 0;
+   uintptr_t Data = 0;
 };
 
 struct IocpSocketRecord {
    void *Reference = nullptr;
-   int ObjectID = 0;
-   uintptr_t ConnectCallback = 0;
-   uintptr_t ConnectData = 0;
+   IocpCompletionTarget Connect;
+   IocpCompletionTarget Read;
+   IocpCompletionTarget Write;
+   IocpCompletionTarget Accept;
    std::array<uint8_t, IOCP_ENDPOINT_STORAGE_SIZE> ConnectAddress = {};
    int ConnectAddressSize = 0;
    ERR ConnectResult = ERR::NotInitialised;
@@ -118,23 +129,32 @@ static ERR bind_ephemeral(SOCKET Socket, const sockaddr *RemoteAddress)
 
 //********************************************************************************************************************
 
-static void queue_connect_completion(WSW_SOCKET Socket, uint64_t Generation, ERR Error)
+static void store_operation_result(IocpSocketRecord &Record, const IocpOperation &Operation, ERR Error)
+{
+   if (Operation.Type IS IocpOperationType::CONNECT) Record.ConnectResult = Error;
+}
+
+//********************************************************************************************************************
+
+static void queue_operation_completion(const IocpOperation &Operation, size_t BytesTransferred, ERR Error)
 {
    iocp_completion_message message;
 
    {
       std::lock_guard<std::mutex> lock(glIocpMutex);
-      auto record = glSockets.find(Socket);
+      auto record = glSockets.find(Operation.Socket);
       if (record IS glSockets.end()) return;
-      if ((record->second.Cancelled) or (record->second.Generation != Generation)) return;
+      if ((record->second.Cancelled) or (record->second.Generation != Operation.Generation)) return;
 
-      record->second.ConnectResult = Error;
+      store_operation_result(record->second, Operation, Error);
 
-      message.Socket = Socket;
-      message.Generation = Generation;
-      message.ObjectID = record->second.ObjectID;
-      message.Callback = record->second.ConnectCallback;
-      message.Data = record->second.ConnectData;
+      message.Type = Operation.Type;
+      message.Socket = Operation.Socket;
+      message.Generation = Operation.Generation;
+      message.ObjectID = Operation.ObjectID;
+      message.Callback = Operation.Callback;
+      message.Data = Operation.Data;
+      message.BytesTransferred = BytesTransferred;
       message.Error = Error;
    }
 
@@ -161,9 +181,9 @@ static void worker_thread()
 
       if (!result) error = convert_error(GetLastError());
 
-      if (operation->Type IS IocpOperationType::CONNECT) {
-         queue_connect_completion(operation->Socket, operation->Generation, error);
-      }
+      operation->BytesTransferred = size_t(bytes);
+      operation->Result = error;
+      queue_operation_completion(*operation, operation->BytesTransferred, operation->Result);
 
       delete operation;
    }
@@ -324,6 +344,7 @@ ERR iocp_begin_connect_wait(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback,
    std::array<uint8_t, IOCP_ENDPOINT_STORAGE_SIZE> address;
    int address_size = 0;
    uint64_t generation = 0;
+   IocpCompletionTarget target;
 
    {
       std::lock_guard<std::mutex> lock(glIocpMutex);
@@ -332,28 +353,37 @@ ERR iocp_begin_connect_wait(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback,
       if (record->second.Cancelled) return ERR::Cancelled;
       if (record->second.ConnectAddressSize <= 0) return ERR::NotInitialised;
 
-      record->second.ObjectID = ObjectID;
-      record->second.ConnectCallback = Callback;
-      record->second.ConnectData = Data;
+      record->second.Connect = { ObjectID, Callback, Data };
       record->second.ConnectResult = ERR::Busy;
 
       address = record->second.ConnectAddress;
       address_size = record->second.ConnectAddressSize;
       generation = record->second.Generation;
+      target = record->second.Connect;
    }
+
+   IocpOperation failed_operation;
+   failed_operation.Type = IocpOperationType::CONNECT;
+   failed_operation.Socket = Socket;
+   failed_operation.Generation = generation;
+   failed_operation.ObjectID = target.ObjectID;
+   failed_operation.Callback = target.Callback;
+   failed_operation.Data = target.Data;
 
    auto socket = socket_from_handle(Socket);
    auto remote_address = (const sockaddr *)address.data();
 
    auto error = bind_ephemeral(socket, remote_address);
    if (error != ERR::Okay) {
-      queue_connect_completion(Socket, generation, error);
+      failed_operation.Result = error;
+      queue_operation_completion(failed_operation, 0, failed_operation.Result);
       return ERR::Okay;
    }
 
    auto connect_ex = get_connect_ex(socket);
    if (!connect_ex) {
-      queue_connect_completion(Socket, generation, convert_error());
+      failed_operation.Result = convert_error();
+      queue_operation_completion(failed_operation, 0, failed_operation.Result);
       return ERR::Okay;
    }
 
@@ -361,13 +391,17 @@ ERR iocp_begin_connect_wait(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback,
    operation->Type = IocpOperationType::CONNECT;
    operation->Socket = Socket;
    operation->Generation = generation;
+   operation->ObjectID = target.ObjectID;
+   operation->Callback = target.Callback;
+   operation->Data = target.Data;
 
    DWORD bytes = 0;
    auto result = connect_ex(socket, remote_address, address_size, nullptr, 0, &bytes, &operation->Overlapped);
    if ((!result) and (WSAGetLastError() != WSA_IO_PENDING)) {
       auto connect_error = convert_error();
       delete operation;
-      queue_connect_completion(Socket, generation, connect_error);
+      failed_operation.Result = connect_error;
+      queue_operation_completion(failed_operation, 0, failed_operation.Result);
    }
 
    return ERR::Okay;
@@ -394,6 +428,17 @@ ERR iocp_complete_connect(WSW_SOCKET Socket)
    }
 
    return result;
+}
+
+//********************************************************************************************************************
+
+bool iocp_validate_completion(WSW_SOCKET Socket, uint64_t Generation)
+{
+   std::lock_guard<std::mutex> lock(glIocpMutex);
+   auto record = glSockets.find(Socket);
+   if (record IS glSockets.end()) return false;
+   if (record->second.Cancelled) return false;
+   return record->second.Generation IS Generation;
 }
 
 //********************************************************************************************************************

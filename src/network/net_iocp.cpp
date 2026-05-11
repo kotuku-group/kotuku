@@ -55,9 +55,12 @@ static ERR iocp_completion_receiver(APTR Custom, MSGID MsgID, int MsgType, APTR 
 
    auto completion = (iocp_completion_message *)Message;
    if ((!completion->Callback) or (completion->ObjectID <= 0)) return ERR::Okay;
+   if (!iocp_validate_completion(completion->Socket, completion->Generation)) return ERR::Okay;
 
    kt::ScopedObjectLock lock(completion->ObjectID);
    if (!lock.granted()) return ERR::Okay;
+
+   if (completion->Type != IocpOperationType::CONNECT) return ERR::Okay;
 
    auto callback = (void (*)(HOSTHANDLE, APTR))completion->Callback;
    callback(SocketHandle(completion->Socket).hosthandle(), lock.obj);
