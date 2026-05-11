@@ -280,15 +280,144 @@ static ERR NETSOCKET_Connect(extNetSocket *Self, struct ns::Connect *Args)
 //********************************************************************************************************************
 // This function is called on completion of nlResolveName().
 
-static void connect_name_resolved_nl(objNetLookup *NetLookup, ERR Error, const std::string &HostName, const std::vector<IPAddress> &IPs)
+static void connect_name_resolved_nl(objNetLookup *NetLookup, ERR Error, const std::string &HostName,
+   const std::vector<IPAddress> &IPs)
 {
    connect_name_resolved((extNetSocket *)CurrentContext(), Error, HostName, IPs);
 }
 
-static void connect_name_resolved(extNetSocket *Socket, ERR Error, const std::string &HostName, const std::vector<IPAddress> &IPs)
+struct socket_endpoint {
+   struct sockaddr_storage storage;
+   int size = 0;
+   CSTRING label = nullptr;
+};
+
+static const IPAddress *select_connect_address(extNetSocket *Socket, const std::vector<IPAddress> &IPs)
+{
+   if (!Socket->IPV6) {
+      for (const auto &ip : IPs) {
+         if (ip.Type IS IPADDR::V4) return &ip;
+      }
+      return nullptr;
+   }
+   else return &IPs[0];
+}
+
+static ERR build_socket_address(const IPAddress &IP, int Port, bool IPv6, socket_endpoint &Endpoint)
+{
+   kt::clearmem(&Endpoint.storage, sizeof(Endpoint.storage));
+
+   if ((Port < 0) or (Port > 65535)) return ERR::OutOfRange;
+
+   if (IP.Type IS IPADDR::V6) {
+      if (!IPv6) return ERR::InvalidValue;
+
+      auto addr6 = (struct sockaddr_in6 *)&Endpoint.storage;
+      addr6->sin6_family = AF_INET6;
+      addr6->sin6_port = htons(Port);
+      kt::copymem(IP.Data, &addr6->sin6_addr.s6_addr, 16);
+
+      Endpoint.size = sizeof(struct sockaddr_in6);
+      Endpoint.label = "IPv6";
+      return ERR::Okay;
+   }
+   else if (IP.Type IS IPADDR::V4) {
+      if (IPv6) {
+         auto addr6 = (struct sockaddr_in6 *)&Endpoint.storage;
+         uint32_t ipv4_net = htonl(IP.Data[0]);
+
+         addr6->sin6_family = AF_INET6;
+         addr6->sin6_port = htons(Port);
+         addr6->sin6_addr.s6_addr[10] = 0xff;
+         addr6->sin6_addr.s6_addr[11] = 0xff;
+         kt::copymem(&ipv4_net, &addr6->sin6_addr.s6_addr[12], sizeof(ipv4_net));
+
+         Endpoint.size = sizeof(struct sockaddr_in6);
+         Endpoint.label = "IPv4-mapped IPv6";
+         return ERR::Okay;
+      }
+      else {
+         auto addr4 = (struct sockaddr_in *)&Endpoint.storage;
+         addr4->sin_family = AF_INET;
+         addr4->sin_port = htons(Port);
+         addr4->sin_addr.s_addr = htonl(IP.Data[0]);
+
+         Endpoint.size = sizeof(struct sockaddr_in);
+         Endpoint.label = "IPv4";
+         return ERR::Okay;
+      }
+   }
+   else return ERR::InvalidData;
+}
+
+#ifdef __linux__
+
+static ERR start_platform_connect(extNetSocket *Socket, const socket_endpoint &Endpoint)
 {
    kt::Log log(__FUNCTION__);
-   struct sockaddr_in server_address;
+
+   int result = connect(Socket->Handle, (struct sockaddr *)&Endpoint.storage, Endpoint.size);
+
+   if (result IS -1) {
+      if (errno IS EINPROGRESS) {
+         log.trace("%s connection in progress...", Endpoint.label);
+      }
+      else if ((errno IS EWOULDBLOCK) or (errno IS EAGAIN)) {
+         log.trace("%s connect() attempt would block or need to try again.", Endpoint.label);
+      }
+      else {
+         const int system_error = errno;
+         log.warning("%s connect() failed: %s", Endpoint.label, strerror(system_error));
+         Socket->Error = convert_socket_error(system_error);
+         Socket->setState(NTC::DISCONNECTED);
+         return Socket->Error;
+      }
+
+      Socket->setState(NTC::CONNECTING);
+      RegisterFD(Socket->Handle.hosthandle(), RFD::WRITE|RFD::SOCKET, &netsocket_connect, Socket);
+   }
+   else {
+      log.trace("%s connect() successful.", Endpoint.label);
+      Socket->setState(NTC::CONNECTED);
+      RegisterFD(Socket->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &netsocket_incoming, Socket);
+   }
+
+   return ERR::Okay;
+}
+
+#elif _WIN32
+
+static ERR start_platform_connect(extNetSocket *Socket, const socket_endpoint &Endpoint)
+{
+   kt::Log log(__FUNCTION__);
+
+   auto connect_error = win_connect(Socket->Handle, (struct sockaddr *)&Endpoint.storage, Endpoint.size);
+   if (connect_error IS ERR::Okay) {
+      log.trace("%s connect() successful.", Endpoint.label);
+      complete_win_connect(Socket);
+   }
+   else if (connect_error IS ERR::Busy) {
+      log.trace("%s connection in progress...", Endpoint.label);
+      Socket->Error = ERR::Okay;
+      Socket->setState(NTC::CONNECTING);
+   }
+   else {
+      Socket->Error = connect_error;
+      log.warning("%s connect() failed: %s", Endpoint.label, GetErrorMsg(Socket->Error));
+      clear_connect_timer(Socket);
+      Socket->setState(NTC::DISCONNECTED);
+      return Socket->Error;
+   }
+
+   return ERR::Okay;
+}
+
+#endif
+
+static void connect_name_resolved(extNetSocket *Socket, ERR Error, const std::string &HostName,
+   const std::vector<IPAddress> &IPs)
+{
+   kt::Log log(__FUNCTION__);
 
    if (Error != ERR::Okay) {
       log.warning("DNS resolution failed: %s", GetErrorMsg(Error));
@@ -299,8 +428,6 @@ static void connect_name_resolved(extNetSocket *Socket, ERR Error, const std::st
 
    log.msg("Received callback on DNS resolution.  Handle: %d", Socket->Handle.int_value());
 
-   // Start connect()
-
    if (IPs.empty()) {
       log.warning("No IP addresses resolved for %s", HostName.c_str());
       Socket->Error = ERR::HostNotFound;
@@ -308,20 +435,8 @@ static void connect_name_resolved(extNetSocket *Socket, ERR Error, const std::st
       return;
    }
 
-   // Find an appropriate address for our socket type
-   const IPAddress *addr = nullptr;
-
-   // If we have an IPv4 socket, prefer IPv4 addresses
-   if (!Socket->IPV6) {
-      for (const auto &ip : IPs) {
-         if (ip.Type IS IPADDR::V4) {
-            addr = &ip;
-            break;
-         }
-      }
-   }
-   else { // For IPv6 sockets, use the first address (could be IPv4 or IPv6)
-      addr = &IPs[0];
+   const IPAddress *addr = select_connect_address(Socket, IPs);
+   if (addr and Socket->IPV6) {
       if ((!addr->Data[0]) and (!addr->Data[1]) and (!addr->Data[2]) and (!addr->Data[3])) {
          log.traceWarning("Failed sanity check, incoming IP address is empty.");
          Socket->Error = log.warning(ERR::InvalidData);
@@ -330,203 +445,22 @@ static void connect_name_resolved(extNetSocket *Socket, ERR Error, const std::st
    }
 
    if (!addr) {
-      log.warning("Of %d addresses, no compatible IP address found for socket type (IPv6: %s)", int(IPs.size()), Socket->IPV6 ? "true" : "false");
+      auto socket_type = Socket->IPV6 ? "true" : "false";
+      log.warning("Of %d addresses, no compatible IP address found for socket type (IPv6: %s)", int(IPs.size()),
+         socket_type);
       Socket->Error = ERR::HostNotFound;
       Socket->setState(NTC::DISCONNECTED);
       return;
    }
 
-   if (addr->Type IS IPADDR::V6) { // Pure IPv6 connection
-      #ifdef _WIN32
-         struct sockaddr_in6 server_address6;
-         kt::clearmem(&server_address6, sizeof(server_address6));
-         server_address6.sin6_family = AF_INET6;
-         server_address6.sin6_port = htons(Socket->Port);
-         kt::copymem((void *)addr->Data, &server_address6.sin6_addr.s6_addr, 16);
-
-         auto connect_error = win_connect(Socket->Handle, (struct sockaddr *)&server_address6, sizeof(server_address6));
-         if (connect_error != ERR::Okay) {
-            if (connect_error IS ERR::Busy) {
-               log.trace("IPv6 connection in progress...");
-               Socket->Error = ERR::Okay;
-               Socket->setState(NTC::CONNECTING);
-            }
-            else {
-               Socket->Error = connect_error;
-               log.warning("IPv6 connect() failed: %s", GetErrorMsg(Socket->Error));
-               clear_connect_timer(Socket);
-               Socket->setState(NTC::DISCONNECTED);
-               return;
-            }
-         }
-         else {
-            log.trace("IPv6 connect() successful.");
-            complete_win_connect(Socket);
-         }
-         return;
-      #else
-         struct sockaddr_in6 server_address6;
-         kt::clearmem(&server_address6, sizeof(server_address6));
-         server_address6.sin6_family = AF_INET6;
-         server_address6.sin6_port = htons(Socket->Port);
-         kt::copymem((void *)addr->Data, &server_address6.sin6_addr.s6_addr, 16);
-
-         int result = connect(Socket->Handle, (struct sockaddr *)&server_address6, sizeof(server_address6));
-
-         if (result IS -1) {
-            if (errno IS EINPROGRESS) {
-               log.trace("IPv6 connection in progress...");
-            }
-            else if ((errno IS EWOULDBLOCK) or (errno IS EAGAIN)) {
-               log.trace("IPv6 connect() attempt would block or need to try again.");
-            }
-            else {
-               const int system_error = errno;
-               log.warning("IPv6 Connect() failed: %s", strerror(system_error));
-               Socket->Error = convert_socket_error(system_error);
-               Socket->setState(NTC::DISCONNECTED);
-               return;
-            }
-
-            Socket->setState(NTC::CONNECTING);
-            RegisterFD(Socket->Handle.hosthandle(), RFD::WRITE|RFD::SOCKET, &netsocket_connect, Socket);
-         }
-         else {
-            log.trace("IPv6 connect() successful.");
-            Socket->setState(NTC::CONNECTED);
-            RegisterFD(Socket->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &netsocket_incoming, Socket);
-         }
-      #endif
-      return;
-   }
-
-   // IPv4 connection to dual-stack socket - use IPv4-mapped IPv6 address
-   if ((Socket->IPV6) and (addr->Type IS IPADDR::V4)) {
-      // Use IPv4-mapped IPv6 address for dual-stack socket
-      #ifdef __linux__
-         struct sockaddr_in6 server_address6;
-         kt::clearmem(&server_address6, sizeof(server_address6));
-         server_address6.sin6_family = AF_INET6;
-         server_address6.sin6_port = htons(Socket->Port);
-
-         // Create IPv4-mapped IPv6 address (::ffff:x.x.x.x)
-         server_address6.sin6_addr.s6_addr[10] = 0xff;
-         server_address6.sin6_addr.s6_addr[11] = 0xff;
-         *((uint32_t*)&server_address6.sin6_addr.s6_addr[12]) = htonl(addr->Data[0]);
-
-         int result = connect(Socket->Handle, (struct sockaddr *)&server_address6, sizeof(server_address6));
-
-         if (result IS -1) {
-            if (errno IS EINPROGRESS) {
-               log.trace("IPv4-mapped IPv6 connection in progress...");
-            }
-            else if ((errno IS EWOULDBLOCK) or (errno IS EAGAIN)) {
-               log.trace("IPv4-mapped IPv6 connect() attempt would block or need to try again.");
-            }
-            else {
-               const int system_error = errno;
-               log.warning("IPv4-mapped IPv6 Connect() failed: %s", strerror(system_error));
-               Socket->Error = convert_socket_error(system_error);
-               Socket->setState(NTC::DISCONNECTED);
-               return;
-            }
-
-            Socket->setState(NTC::CONNECTING);
-            RegisterFD(Socket->Handle.hosthandle(), RFD::WRITE|RFD::SOCKET, &netsocket_connect, Socket);
-         }
-         else {
-            log.trace("IPv4-mapped IPv6 connect() successful.");
-            Socket->setState(NTC::CONNECTED);
-            RegisterFD(Socket->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &netsocket_incoming, Socket);
-         }
-         return;
-      #elif _WIN32
-         // Windows IPv6 dual-stack socket connecting to IPv4 address
-         struct sockaddr_in6 server_address6;
-         kt::clearmem(&server_address6, sizeof(server_address6));
-         server_address6.sin6_family = AF_INET6;
-         server_address6.sin6_port = htons(Socket->Port);
-
-         // Create IPv4-mapped IPv6 address (::ffff:x.x.x.x)
-         server_address6.sin6_addr.s6_addr[10] = 0xff;
-         server_address6.sin6_addr.s6_addr[11] = 0xff;
-         *((uint32_t*)&server_address6.sin6_addr.s6_addr[12]) = htonl(addr->Data[0]);
-
-         auto connect_error = win_connect(Socket->Handle, (struct sockaddr *)&server_address6, sizeof(server_address6));
-         if (connect_error IS ERR::Okay) {
-            log.trace("IPv4-mapped IPv6 connect() successful.");
-            complete_win_connect(Socket);
-         }
-         else if (connect_error IS ERR::Busy) {
-            log.trace("IPv4-mapped IPv6 connection in progress...");
-            Socket->Error = ERR::Okay;
-            Socket->setState(NTC::CONNECTING);
-         }
-         else {
-            Socket->Error = connect_error;
-            log.warning("IPv4-mapped IPv6 connect() failed: %s", GetErrorMsg(Socket->Error));
-            clear_connect_timer(Socket);
-            Socket->setState(NTC::DISCONNECTED);
-         }
-         return;
-      #endif
-   }
-
-   // Pure IPv4 connection
-   kt::clearmem(&server_address, sizeof(struct sockaddr_in));
-   server_address.sin_family = AF_INET;
-   server_address.sin_port = htons(Socket->Port);
-   server_address.sin_addr.s_addr = htonl(addr->Data[0]);
-
-#ifdef __linux__
-   int result = connect(Socket->Handle, (struct sockaddr *)&server_address, sizeof(server_address));
-
-   if (result IS -1) {
-      if (errno IS EINPROGRESS) {
-         log.trace("Connection in progress...");
-      }
-      else if ((errno IS EWOULDBLOCK) or (errno IS EAGAIN)) {
-         log.trace("connect() attempt would block or need to try again.");
-      }
-      else {
-         const int system_error = errno;
-         log.warning("Connect() failed: %s", strerror(system_error));
-         Socket->Error = convert_socket_error(system_error);
-         Socket->setState(NTC::DISCONNECTED);
-         return;
-      }
-
-      Socket->setState(NTC::CONNECTING);
-      // The write queue will be signalled once the connection process is completed.
-
-      RegisterFD(Socket->Handle.hosthandle(), RFD::WRITE|RFD::SOCKET, &netsocket_connect, Socket);
-   }
-   else {
-      log.trace("connect() successful.");
-
-      Socket->setState(NTC::CONNECTED);
-      RegisterFD(Socket->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &netsocket_incoming, Socket);
-   }
-
-#elif _WIN32
-   auto connect_error = win_connect(Socket->Handle, (struct sockaddr *)&server_address, sizeof(server_address));
-   if (connect_error IS ERR::Okay) {
-      log.trace("connect() successful.");
-      complete_win_connect(Socket);
-   }
-   else if (connect_error IS ERR::Busy) {
-      log.trace("Connection in progress...");
-      Socket->Error = ERR::Okay;
-      Socket->setState(NTC::CONNECTING); // Connection isn't complete yet - see win32_netresponse() code for NTE_CONNECT
-   }
-   else {
-      Socket->Error = connect_error;
-      log.warning("connect() failed: %s", GetErrorMsg(Socket->Error));
-      clear_connect_timer(Socket);
+   socket_endpoint endpoint;
+   if (auto error = build_socket_address(*addr, Socket->Port, Socket->IPV6, endpoint); error != ERR::Okay) {
+      Socket->Error = log.warning(error);
       Socket->setState(NTC::DISCONNECTED);
       return;
    }
-#endif
+
+   start_platform_connect(Socket, endpoint);
 }
 
 //********************************************************************************************************************
@@ -781,35 +715,11 @@ static ERR parse_bind_address(CSTRING Address, bool IPv6, void *AddrOut)
 
    IPAddress ip;
    if (net::StrToAddress(Address, &ip) IS ERR::Okay) {
-      if (ip.Type IS IPADDR::V4) {
-         if (IPv6) { // IPv4 -> IPv6-mapped
-            auto out = (sockaddr_in6 *)AddrOut;
-            kt::clearmem(out, sizeof(sockaddr_in6));
-            out->sin6_family = AF_INET6;
-            out->sin6_addr.s6_addr[10] = 0xff;
-            out->sin6_addr.s6_addr[11] = 0xff;
-            *((uint32_t*)&out->sin6_addr.s6_addr[12]) = htonl(ip.Data[0]); // Convert to network byte order
-         }
-         else { // IPv4 -> IPv4
-            auto addr = (sockaddr_in *)AddrOut;
-            kt::clearmem(addr, sizeof(struct sockaddr_in));
-            addr->sin_family = AF_INET;
-            addr->sin_addr.s_addr = htonl(ip.Data[0]); // Convert from host to network byte order
-         }
-      }
-      else if (ip.Type IS IPADDR::V6) {
-         if (IPv6) { // IPv6 -> IPv6
-            auto out = (sockaddr_in6 *)AddrOut;
-            kt::clearmem(out, sizeof(struct sockaddr_in6));
-            out->sin6_family = AF_INET6;
-            kt::copymem(ip.Data, &out->sin6_addr, 16);
-         }
-         else {
-            log.warning("Address is IPv6 but socket is IPv4");
-            return ERR::InvalidValue;
-         }
-      }
-      else return log.warning(ERR::SanityCheckFailed); // Should never happen
+      socket_endpoint endpoint;
+      if (auto error = build_socket_address(ip, 0, IPv6, endpoint); error != ERR::Okay) return log.warning(error);
+
+      if (IPv6) kt::copymem(&endpoint.storage, AddrOut, sizeof(struct sockaddr_in6));
+      else kt::copymem(&endpoint.storage, AddrOut, sizeof(struct sockaddr_in));
 
       return ERR::Okay;
    }
@@ -819,6 +729,116 @@ static ERR parse_bind_address(CSTRING Address, bool IPv6, void *AddrOut)
       log.warning("Bind address '%s' is not an IP address.", Address);
       return ERR::InvalidValue;
    }
+}
+
+static ERR prepare_server_bind_address(extNetSocket *Self, socket_endpoint &Endpoint)
+{
+   kt::clearmem(&Endpoint.storage, sizeof(Endpoint.storage));
+
+   if (Self->IPV6) {
+      auto addr = (struct sockaddr_in6 *)&Endpoint.storage;
+
+      if (Self->Address) {
+         if (auto error = parse_bind_address(Self->Address, true, addr); error != ERR::Okay) return error;
+      }
+      else {
+         addr->sin6_family = AF_INET6;
+         addr->sin6_addr = in6addr_any;
+      }
+
+      addr->sin6_port = net::HostToShort(Self->Port);
+      Endpoint.size = sizeof(struct sockaddr_in6);
+      Endpoint.label = "IPv6";
+      return ERR::Okay;
+   }
+   else {
+      auto addr = (struct sockaddr_in *)&Endpoint.storage;
+
+      if (Self->Address) {
+         if (auto error = parse_bind_address(Self->Address, false, addr); error != ERR::Okay) return error;
+      }
+      else {
+         addr->sin_family = AF_INET;
+         addr->sin_addr.s_addr = INADDR_ANY;
+      }
+
+      addr->sin_port = net::HostToShort(Self->Port);
+      Endpoint.size = sizeof(struct sockaddr_in);
+      Endpoint.label = "IPv4";
+      return ERR::Okay;
+   }
+}
+
+#ifdef __linux__
+
+static ERR activate_server_socket(extNetSocket *Self, const socket_endpoint &Endpoint)
+{
+   kt::Log log(__FUNCTION__);
+
+   int value = 1;
+   setsockopt(Self->Handle, SOL_SOCKET, SO_REUSEADDR, &value, sizeof(value));
+
+   if (bind(Self->Handle, (struct sockaddr *)&Endpoint.storage, Endpoint.size) IS -1) {
+      const int system_error = errno;
+      log.warning("bind() failed with error: %s", strerror(system_error));
+      return convert_socket_error(system_error);
+   }
+
+   if ((Self->Flags & NSF::UDP) IS NSF::NIL) {
+      if (listen(Self->Handle, Self->Backlog) IS -1) {
+         const int system_error = errno;
+         log.warning("listen() failed with error: %s", strerror(system_error));
+         return convert_socket_error(system_error);
+      }
+
+      RegisterFD(Self->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &server_accept_client, Self);
+   }
+   else RegisterFD(Self->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &netsocket_incoming, Self);
+
+   return ERR::Okay;
+}
+
+#elif _WIN32
+
+static ERR activate_server_socket(extNetSocket *Self, const socket_endpoint &Endpoint)
+{
+   kt::Log log(__FUNCTION__);
+
+   if (auto error = win_bind(Self->Handle, (struct sockaddr *)&Endpoint.storage, Endpoint.size); error != ERR::Okay) {
+      log.warning("Bind failed on port %d, error: %s", Self->Port, GetErrorMsg(error));
+      return error;
+   }
+
+   if ((Self->Flags & NSF::UDP) IS NSF::NIL) {
+      if (auto error = win_listen(Self->Handle, Self->Backlog); error != ERR::Okay) {
+         log.warning("Listen failed on port %d, error: %s", Self->Port, GetErrorMsg(error));
+         return error;
+      }
+   }
+
+   return ERR::Okay;
+}
+
+#endif
+
+static ERR setup_server_socket(extNetSocket *Self)
+{
+   kt::Log log(__FUNCTION__);
+
+   if (!Self->Port) return log.warning(ERR::FieldNotSet);
+
+   Self->State = NTC::MULTISTATE; // Permanent value to indicate that the socket serves multiple clients.
+
+   socket_endpoint endpoint;
+   if (auto error = prepare_server_bind_address(Self, endpoint); error != ERR::Okay) return error;
+
+   #ifdef __linux__
+      return activate_server_socket(Self, endpoint);
+   #elif defined(_WIN32)
+      return activate_server_socket(Self, endpoint);
+   #else
+      return ERR::NoSupport;
+   #endif
 }
 
 //********************************************************************************************************************
@@ -943,168 +963,11 @@ static ERR NETSOCKET_Init(extNetSocket *Self)
    }
 
    if ((Self->Flags & NSF::SERVER) != NSF::NIL) {
-      if (!Self->Port) {
-         error = log.warning(ERR::FieldNotSet);
+      if ((error = setup_server_socket(Self)) != ERR::Okay) {
          free_socket(Self);
          return error;
       }
-      Self->State = NTC::MULTISTATE; // Permanent value to indicate that the socket serves multiple clients.
-
-      if (Self->IPV6) {
-         #ifdef __linux__
-            struct sockaddr_in6 addr;
-
-            // Use parse_bind_address if Address is specified, otherwise bind to all interfaces
-            if (Self->Address) {
-               if (auto error = parse_bind_address(Self->Address, true, &addr); error != ERR::Okay) {
-                  free_socket(Self);
-                  return error;
-               }
-               addr.sin6_port = net::HostToShort(Self->Port);
-            }
-            else {
-               kt::clearmem(&addr, sizeof(addr));
-               addr.sin6_family = AF_INET6;
-               addr.sin6_port   = net::HostToShort(Self->Port); // Must be passed in in network byte order
-               addr.sin6_addr   = in6addr_any;   // Must be passed in in network byte order
-            }
-
-            int result;
-            int value = 1;
-            setsockopt(Self->Handle, SOL_SOCKET, SO_REUSEADDR, &value, sizeof(value));
-
-            if ((result = bind(Self->Handle, (struct sockaddr *)&addr, sizeof(addr))) != -1) {
-               if ((Self->Flags & NSF::UDP) IS NSF::NIL) { // TCP server - needs listen()
-                  if (listen(Self->Handle, Self->Backlog) IS -1) {
-                     const int system_error = errno;
-                     log.warning("listen() failed with error: %s", strerror(system_error));
-                     free_socket(Self);
-                     return convert_socket_error(system_error);
-                  }
-                  RegisterFD(Self->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &server_accept_client, Self);
-               }
-               else { // UDP server - just register for data reception
-                  RegisterFD(Self->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &netsocket_incoming, Self);
-               }
-               return ERR::Okay;
-            }
-            else {
-               error = log.warning(convert_socket_error());
-               free_socket(Self);
-               return error;
-            }
-         #elif _WIN32
-            // Windows IPv6 dual-stack server binding
-            struct sockaddr_in6 addr;
-
-            // Use parse_bind_address if Address is specified, otherwise bind to all interfaces
-            if (Self->Address) {
-               if (auto error = parse_bind_address(Self->Address, true, &addr); error != ERR::Okay) {
-                  free_socket(Self);
-                  return error;
-               }
-               addr.sin6_port = net::HostToShort(Self->Port);
-            }
-            else {
-               kt::clearmem(&addr, sizeof(addr));
-               addr.sin6_family = AF_INET6;
-               addr.sin6_port   = net::HostToShort(Self->Port);
-               addr.sin6_addr   = in6addr_any;
-            }
-
-            if ((error = win_bind(Self->Handle, (struct sockaddr *)&addr, sizeof(addr))) IS ERR::Okay) {
-               if ((Self->Flags & NSF::UDP) IS NSF::NIL) { // TCP server - needs listen()
-                  if ((error = win_listen(Self->Handle, Self->Backlog)) IS ERR::Okay) {
-                     return ERR::Okay;
-                  }
-                  else {
-                     log.warning("Listen failed on port %d, error: %s", Self->Port, GetErrorMsg(error));
-                     free_socket(Self);
-                     return error;
-                  }
-               }
-               else { // UDP server - just return success after bind
-                  return ERR::Okay;
-               }
-            }
-            else {
-               log.warning("Bind failed on port %d, error: %s", Self->Port, GetErrorMsg(error));
-               free_socket(Self);
-               return error;
-            }
-         #else
-            free_socket(Self);
-            return ERR::NoSupport;
-         #endif
-      }
-      else {
-         // IPV4
-         struct sockaddr_in addr;
-
-         // Use parse_bind_address if Address is specified, otherwise bind to all interfaces
-         if (Self->Address) {
-            if (auto error = parse_bind_address(Self->Address, false, &addr); error != ERR::Okay) {
-               free_socket(Self);
-               return error;
-            }
-            addr.sin_port = net::HostToShort(Self->Port);
-         }
-         else {
-            kt::clearmem(&addr, sizeof(addr));
-            addr.sin_family = AF_INET;
-            addr.sin_port   = net::HostToShort(Self->Port); // Must be passed in in network byte order
-            addr.sin_addr.s_addr   = INADDR_ANY;   // Must be passed in in network byte order
-         }
-
-         #ifdef __linux__
-            int result;
-            int value = 1;
-            setsockopt(Self->Handle, SOL_SOCKET, SO_REUSEADDR, &value, sizeof(value));
-
-            if ((result = bind(Self->Handle, (struct sockaddr *)&addr, sizeof(addr))) != -1) {
-               if ((Self->Flags & NSF::UDP) IS NSF::NIL) { // TCP server - needs listen()
-                  if (listen(Self->Handle, Self->Backlog) IS -1) {
-                     const int system_error = errno;
-                     log.warning("listen() failed with error: %s", strerror(system_error));
-                     free_socket(Self);
-                     return convert_socket_error(system_error);
-                  }
-                  RegisterFD(Self->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &server_accept_client, Self);
-               }
-               else { // UDP server - just register for data reception
-                  RegisterFD(Self->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &netsocket_incoming, Self);
-               }
-               return ERR::Okay;
-            }
-            else {
-               const int system_error = errno;
-               log.warning("bind() failed with error: %s", strerror(system_error));
-               free_socket(Self);
-               return convert_socket_error(system_error);
-            }
-         #elif _WIN32
-            if ((error = win_bind(Self->Handle, (struct sockaddr *)&addr, sizeof(addr))) IS ERR::Okay) {
-               if ((Self->Flags & NSF::UDP) IS NSF::NIL) { // TCP server - needs listen()
-                  if ((error = win_listen(Self->Handle, Self->Backlog)) IS ERR::Okay) {
-                     return ERR::Okay;
-                  }
-                  else {
-                     log.warning("Listen failed on port %d, error: %s", Self->Port, GetErrorMsg(error));
-                     free_socket(Self);
-                     return error;
-                  }
-               }
-               else { // UDP server - just return success after bind
-                  return ERR::Okay;
-               }
-            }
-            else {
-               log.warning("Bind failed on port %d, error: %s", Self->Port, GetErrorMsg(error));
-               free_socket(Self);
-               return error;
-            }
-         #endif
-      }
+      else return ERR::Okay;
    }
    else if ((Self->Address) and (Self->Port > 0)) {
       if ((error = Self->connect(Self->Address, Self->Port, 0)) != ERR::Okay) {
@@ -1488,6 +1351,89 @@ and automatically send it once the first connection has been made.
 
 *********************************************************************************************************************/
 
+template <class T>
+static ERR queue_socket_write(T *Self, struct acWrite *Args, size_t MsgLimit)
+{
+   kt::Log log(__FUNCTION__);
+
+   log.trace("Saving %d bytes to queue.", Args->Length);
+
+   auto len = std::min<size_t>(Args->Length, MsgLimit);
+   if (auto error = Self->WriteQueue.write(Args->Buffer, len); error != ERR::Okay) return error;
+
+   Args->Result = int(len);
+   return (len < size_t(Args->Length)) ? ERR::BufferOverflow : ERR::Okay;
+}
+
+template <class T>
+static void register_socket_write(T *Self, void (*WriteCallback)(HOSTHANDLE, APTR))
+{
+   #ifdef __linux__
+      RegisterFD(Self->Handle.hosthandle(), RFD::WRITE|RFD::SOCKET, WriteCallback, Self);
+   #elif _WIN32
+      win_socketstate(Self->Handle, std::nullopt, true);
+   #endif
+}
+
+template <class T>
+static ERR write_connected_socket_data(T *Self, struct acWrite *Args, size_t MsgLimit,
+   void (*WriteCallback)(HOSTHANDLE, APTR), bool &FatalError)
+{
+   kt::Log log(__FUNCTION__);
+
+   size_t len;
+   ERR error;
+
+   if (Self->WriteQueue.Buffer.empty()) {
+      len = Args->Length;
+      error = send_data(Self, Args->Buffer, &len);
+   }
+   else {
+      len = 0;
+      error = ERR::BufferOverflow;
+   }
+
+   if ((error IS ERR::Okay) and (len >= size_t(Args->Length))) return ERR::Okay;
+
+   bool ssl_read_blocked = false;
+   bool ssl_write_blocked = false;
+
+   #if !defined(DISABLE_SSL) and !defined(_WIN32)
+      ssl_read_blocked = (error IS ERR::Busy) and (Self->SSLHandle) and (Self->HandshakeStatus IS SHS::READ);
+      ssl_write_blocked = (error IS ERR::BufferOverflow) and (Self->SSLHandle) and
+         (Self->HandshakeStatus IS SHS::WRITE);
+   #endif
+
+   if ((error IS ERR::DataSize) or (error IS ERR::BufferOverflow) or (ssl_read_blocked) or (len > 0)) {
+      auto remaining = size_t(Args->Length) - len;
+
+      log.trace("Error: '%s', queuing %d/%d bytes for transfer...", GetErrorMsg(error), int(remaining),
+         Args->Length);
+
+      auto queue_len = std::min<size_t>(remaining, MsgLimit);
+      if (auto queue_error = Self->WriteQueue.write((int8_t *)Args->Buffer + len, queue_len);
+          queue_error != ERR::Okay) {
+         Args->Result = int(len);
+         return queue_error;
+      }
+
+      auto queue_overflow = queue_len < remaining;
+      if (queue_overflow) Args->Result = int(len + queue_len);
+
+      if (ssl_write_blocked) {
+         #if !defined(DISABLE_SSL) and !defined(_WIN32)
+            ssl_resume_write_handshake(Self->Handle.hosthandle(), Self);
+         #endif
+      }
+      else if (!ssl_read_blocked) register_socket_write(Self, WriteCallback);
+
+      return queue_overflow ? ERR::BufferOverflow : ERR::Okay;
+   }
+
+   FatalError = true;
+   return error;
+}
+
 static ERR NETSOCKET_Write(extNetSocket *Self, struct acWrite *Args)
 {
    kt::Log log;
@@ -1504,70 +1450,20 @@ static ERR NETSOCKET_Write(extNetSocket *Self, struct acWrite *Args)
    }
 
    if ((Self->Handle.is_invalid()) or (Self->State != NTC::CONNECTED)) { // Queue the write prior to server connection
-      log.trace("Saving %d bytes to queue.", Args->Length);
-      auto len = std::min<size_t>(Args->Length, Self->MsgLimit);
-      if (auto error = Self->WriteQueue.write(Args->Buffer, len); error != ERR::Okay) return error;
-      Args->Result = int(len);
-      return (len < size_t(Args->Length)) ? ERR::BufferOverflow : ERR::Okay;
+      return queue_socket_write(Self, Args, Self->MsgLimit);
    }
 
    // Note that if a write queue has been setup, there is no way that we can write to the server until the queue has
    // been exhausted.  Thus we have add more data to the queue if it already exists.
 
-   size_t len;
-   ERR error;
-   if (Self->WriteQueue.Buffer.empty()) { // No prior buffer to send
-      len = Args->Length;
-      error = send_data(Self, Args->Buffer, &len);
-      // len now reflects the total bytes that were sent to the server.
+   bool fatal_error = false;
+   auto error = write_connected_socket_data(Self, Args, Self->MsgLimit, &netsocket_outgoing, fatal_error);
+   if (fatal_error) {
+      Self->ErrorCountdown--;
+      if (!Self->ErrorCountdown) Self->setState(NTC::DISCONNECTED);
+      return error;
    }
-   else { // Content remains in the write queue
-      len = 0;
-      error = ERR::BufferOverflow;
-   }
-
-   if ((error != ERR::Okay) or (len < size_t(Args->Length))) {
-      bool ssl_read_blocked = false;
-      bool ssl_write_blocked = false;
-      #if !defined(DISABLE_SSL) and !defined(_WIN32)
-         ssl_read_blocked = (error IS ERR::Busy) and (Self->SSLHandle) and (Self->HandshakeStatus IS SHS::READ);
-         ssl_write_blocked = (error IS ERR::BufferOverflow) and (Self->SSLHandle) and
-            (Self->HandshakeStatus IS SHS::WRITE);
-      #endif
-
-      if ((error IS ERR::DataSize) or (error IS ERR::BufferOverflow) or (ssl_read_blocked) or (len > 0))  {
-         // Put data into the write queue and register the socket for write events
-         log.trace("Error: '%s', queuing %d/%d bytes for transfer...", GetErrorMsg(error), Args->Length - len, Args->Length);
-         auto remaining = size_t(Args->Length) - len;
-         auto queue_len = std::min<size_t>(remaining, Self->MsgLimit);
-         if (auto queue_error = Self->WriteQueue.write((int8_t *)Args->Buffer + len, queue_len);
-             queue_error != ERR::Okay) {
-            Args->Result = int(len);
-            return queue_error;
-         }
-         auto queue_overflow = queue_len < remaining;
-         if (queue_overflow) Args->Result = int(len + queue_len);
-         if (ssl_write_blocked) {
-            #if !defined(DISABLE_SSL) and !defined(_WIN32)
-               ssl_resume_write_handshake(Self->Handle.hosthandle(), Self);
-            #endif
-         }
-         else if (!ssl_read_blocked) {
-            #ifdef __linux__
-               RegisterFD(Self->Handle.hosthandle(), RFD::WRITE|RFD::SOCKET, &netsocket_outgoing, Self);
-            #elif _WIN32
-               win_socketstate(Self->Handle, std::nullopt, true);
-            #endif
-         }
-
-         if (queue_overflow) return ERR::BufferOverflow;
-      }
-      else {
-         Self->ErrorCountdown--;
-         if (!Self->ErrorCountdown) Self->setState(NTC::DISCONNECTED);
-         return error;
-      }
-   }
+   else if (error != ERR::Okay) return error;
    else log.trace("Successfully wrote all %d bytes to the server.", Args->Length);
 
    Args->Result = Args->Length;
@@ -1721,47 +1617,16 @@ static ERR NETSOCKET_SendTo(extNetSocket *Self, struct ns::SendTo *Args)
 
    Args->BytesSent = 0;
 
-   struct sockaddr_storage dest_addr;
-   memset(&dest_addr, 0, sizeof(dest_addr));
-   int addr_len = 0;
-
-   if (Args->Dest->Type IS IPADDR::V4) {
-      if (Self->IPV6) { // IPv4-mapped IPv6
-         auto addr6 = (sockaddr_in6 *)&dest_addr;
-         addr6->sin6_family = AF_INET6;
-         addr6->sin6_port   = htons(Args->Dest->Port);
-         memset(&addr6->sin6_addr, 0, sizeof(addr6->sin6_addr));
-         addr6->sin6_addr.s6_addr[10] = 0xff;
-         addr6->sin6_addr.s6_addr[11] = 0xff;
-         uint32_t v4_net = htonl(Args->Dest->Data[0]);
-         memcpy(&addr6->sin6_addr.s6_addr[12], &v4_net, 4);
-         addr_len = sizeof(sockaddr_in6);
-
-      }
-      else { // Regular IPv4
-         auto addr4 = (sockaddr_in *)&dest_addr;
-         addr4->sin_family = AF_INET;
-         addr4->sin_port   = htons(Args->Dest->Port);
-         addr4->sin_addr.s_addr = htonl(Args->Dest->Data[0]);
-         memset(addr4->sin_zero, 0, sizeof(addr4->sin_zero));
-         addr_len = sizeof(sockaddr_in);
-      }
+   socket_endpoint dest_addr;
+   if (auto error = build_socket_address(*Args->Dest, Args->Dest->Port, Self->IPV6, dest_addr); error != ERR::Okay) {
+      return log.warning(error);
    }
-   else if (Args->Dest->Type IS IPADDR::V6) { // Standard IPv6
-      auto addr6 = (sockaddr_in6 *)&dest_addr;
-      addr6->sin6_family = AF_INET6;
-      addr6->sin6_port   = htons(Args->Dest->Port);
-      addr6->sin6_flowinfo = 0;
-      addr6->sin6_scope_id = 0;
-      memcpy(&addr6->sin6_addr, Args->Dest->Data, 16);
-      addr_len = sizeof(sockaddr_in6);
-   }
-   else return log.warning(ERR::Args);
 
    size_t bytes_to_send = Args->Length;
 
 #if defined(__linux__)
-   auto result = sendto(Self->Handle, Args->Data, bytes_to_send, MSG_DONTWAIT, (sockaddr *)&dest_addr, addr_len);
+   auto result = sendto(Self->Handle, Args->Data, bytes_to_send, MSG_DONTWAIT, (sockaddr *)&dest_addr.storage,
+      dest_addr.size);
    if (result >= 0) {
       Args->BytesSent = (int)result;
       return ERR::Okay;
@@ -1781,7 +1646,7 @@ static ERR NETSOCKET_SendTo(extNetSocket *Self, struct ns::SendTo *Args)
          return convert_socket_error(system_error);
    }
 #elif defined(_WIN32)
-   auto error = WIN_SENDTO(Self->Handle, Args->Data, &bytes_to_send, (sockaddr *)&dest_addr, addr_len);
+   auto error = WIN_SENDTO(Self->Handle, Args->Data, &bytes_to_send, (sockaddr *)&dest_addr.storage, dest_addr.size);
    if (error IS ERR::Okay) Args->BytesSent = (int)bytes_to_send;
    return error;
 #endif
