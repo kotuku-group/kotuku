@@ -11,10 +11,10 @@
 #include <atomic>
 #include <array>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
-#include <memory>
 #include <vector>
 
 #define IS ==
@@ -48,11 +48,16 @@ struct IocpSocketRecord {
    IocpCompletionTarget Read;
    IocpCompletionTarget Write;
    IocpCompletionTarget Accept;
+   std::vector<uint8_t> ReadBuffer;
+   size_t ReadOffset = 0;
    std::array<uint8_t, IOCP_ENDPOINT_STORAGE_SIZE> ConnectAddress = {};
    int ConnectAddressSize = 0;
    ERR ConnectResult = ERR::NotInitialised;
+   ERR ReadResult = ERR::Okay;
    uint64_t Generation = 0;
    bool Cancelled = false;
+   bool ReadPending = false;
+   bool WritePending = false;
 };
 
 static HANDLE glCompletionPort = INVALID_HANDLE_VALUE;
@@ -66,6 +71,18 @@ static iocp_post_message glPostMessage = nullptr;
 static bool glWinsockInitialised = false;
 
 static constexpr int MAX_IOCP_THREADS = 4;
+static constexpr size_t IOCP_READ_BUFFER_SIZE = 65536;
+
+//********************************************************************************************************************
+
+static IocpCompletionTarget completion_target(const IocpSocketRecord &Record, IocpOperationType Type)
+{
+   if (Type IS IocpOperationType::CONNECT) return Record.Connect;
+   else if (Type IS IocpOperationType::READ) return Record.Read;
+   else if (Type IS IocpOperationType::WRITE) return Record.Write;
+   else if (Type IS IocpOperationType::ACCEPT) return Record.Accept;
+   else return {};
+}
 
 //********************************************************************************************************************
 
@@ -132,6 +149,19 @@ static ERR bind_ephemeral(SOCKET Socket, const sockaddr *RemoteAddress)
 static void store_operation_result(IocpSocketRecord &Record, const IocpOperation &Operation, ERR Error)
 {
    if (Operation.Type IS IocpOperationType::CONNECT) Record.ConnectResult = Error;
+   else if (Operation.Type IS IocpOperationType::READ) {
+      Record.ReadPending = false;
+      Record.ReadResult = ((Error IS ERR::Okay) and (!Operation.BytesTransferred)) ? ERR::Disconnected : Error;
+
+      if ((Record.ReadResult IS ERR::Okay) and (Operation.BytesTransferred > 0) and (Operation.Buffer)) {
+         auto offset = Record.ReadBuffer.size();
+         Record.ReadBuffer.resize(offset + Operation.BytesTransferred);
+         std::memcpy(Record.ReadBuffer.data() + offset, Operation.Buffer.get(), Operation.BytesTransferred);
+      }
+   }
+   else if (Operation.Type IS IocpOperationType::WRITE) {
+      Record.WritePending = false;
+   }
 }
 
 //********************************************************************************************************************
@@ -147,13 +177,14 @@ static void queue_operation_completion(const IocpOperation &Operation, size_t By
       if ((record->second.Cancelled) or (record->second.Generation != Operation.Generation)) return;
 
       store_operation_result(record->second, Operation, Error);
+      auto target = completion_target(record->second, Operation.Type);
 
       message.Type = Operation.Type;
       message.Socket = Operation.Socket;
       message.Generation = Operation.Generation;
-      message.ObjectID = Operation.ObjectID;
-      message.Callback = Operation.Callback;
-      message.Data = Operation.Data;
+      message.ObjectID = target.ObjectID;
+      message.Callback = target.Callback;
+      message.Data = target.Data;
       message.BytesTransferred = BytesTransferred;
       message.Error = Error;
    }
@@ -161,6 +192,86 @@ static void queue_operation_completion(const IocpOperation &Operation, size_t By
    if ((message.ObjectID > 0) and (message.Callback) and (glPostMessage)) {
       glPostMessage(glCompletionMsgID, &message, sizeof(message));
    }
+}
+
+//********************************************************************************************************************
+
+static ERR queue_record_completion(WSW_SOCKET Socket, IocpOperationType Type)
+{
+   iocp_completion_message message;
+
+   {
+      std::lock_guard<std::mutex> lock(glIocpMutex);
+      auto record = glSockets.find(Socket);
+      if (record IS glSockets.end()) return ERR::Search;
+      if (record->second.Cancelled) return ERR::Cancelled;
+
+      auto target = completion_target(record->second, Type);
+      if ((!target.Callback) or (target.ObjectID <= 0)) return ERR::Okay;
+
+      message.Type = Type;
+      message.Socket = Socket;
+      message.Generation = record->second.Generation;
+      message.ObjectID = target.ObjectID;
+      message.Callback = target.Callback;
+      message.Data = target.Data;
+      message.Error = ERR::Okay;
+   }
+
+   if (glPostMessage) return glPostMessage(glCompletionMsgID, &message, sizeof(message));
+   else return ERR::NotInitialised;
+}
+
+//********************************************************************************************************************
+
+static ERR post_read(WSW_SOCKET Socket)
+{
+   IocpCompletionTarget target;
+   uint64_t generation = 0;
+
+   {
+      std::lock_guard<std::mutex> lock(glIocpMutex);
+      auto record = glSockets.find(Socket);
+      if (record IS glSockets.end()) return ERR::Search;
+      if (record->second.Cancelled) return ERR::Cancelled;
+      if (record->second.ReadPending) return ERR::Okay;
+      if (!record->second.ReadBuffer.empty()) return ERR::Okay;
+      if (record->second.ReadResult != ERR::Okay) return ERR::Okay;
+
+      target = record->second.Read;
+      if ((!target.Callback) or (target.ObjectID <= 0)) return ERR::Okay;
+
+      record->second.ReadPending = true;
+      generation = record->second.Generation;
+   }
+
+   auto operation = new IocpOperation();
+   operation->Type = IocpOperationType::READ;
+   operation->Socket = Socket;
+   operation->Generation = generation;
+   operation->ObjectID = target.ObjectID;
+   operation->Callback = target.Callback;
+   operation->Data = target.Data;
+   operation->BufferSize = IOCP_READ_BUFFER_SIZE;
+   operation->Buffer = std::make_unique<uint8_t[]>(operation->BufferSize);
+
+   WSABUF buffer;
+   buffer.buf = (CHAR *)operation->Buffer.get();
+   buffer.len = ULONG(operation->BufferSize);
+
+   DWORD bytes = 0;
+   DWORD flags = 0;
+   auto result = WSARecv(socket_from_handle(Socket), &buffer, 1, &bytes, &flags, &operation->Overlapped, nullptr);
+   if ((result IS SOCKET_ERROR) and (WSAGetLastError() != WSA_IO_PENDING)) {
+      auto error = convert_error();
+      operation->Result = error;
+      operation->BytesTransferred = 0;
+      queue_operation_completion(*operation, 0, operation->Result);
+      delete operation;
+      return ERR::Okay;
+   }
+
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -187,6 +298,26 @@ static void worker_thread()
 
       delete operation;
    }
+}
+
+//********************************************************************************************************************
+
+static ERR set_completion_target(WSW_SOCKET Socket, IocpOperationType Type, int ObjectID, uintptr_t Callback,
+   uintptr_t Data)
+{
+   std::lock_guard<std::mutex> lock(glIocpMutex);
+   auto record = glSockets.find(Socket);
+   if (record IS glSockets.end()) return ERR::Search;
+   if (record->second.Cancelled) return ERR::Cancelled;
+
+   auto target = IocpCompletionTarget { ObjectID, Callback, Data };
+   if (Type IS IocpOperationType::READ) record->second.Read = target;
+   else if (Type IS IocpOperationType::WRITE) record->second.Write = target;
+   else if (Type IS IocpOperationType::ACCEPT) record->second.Accept = target;
+   else if (Type IS IocpOperationType::CONNECT) record->second.Connect = target;
+   else return ERR::NoSupport;
+
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -439,6 +570,188 @@ bool iocp_validate_completion(WSW_SOCKET Socket, uint64_t Generation)
    if (record IS glSockets.end()) return false;
    if (record->second.Cancelled) return false;
    return record->second.Generation IS Generation;
+}
+
+//********************************************************************************************************************
+
+ERR iocp_register_read(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback, uintptr_t Data)
+{
+   if (auto error = set_completion_target(Socket, IocpOperationType::READ, ObjectID, Callback, Data);
+       error != ERR::Okay) return error;
+
+   bool buffered = false;
+   bool terminal = false;
+   {
+      std::lock_guard<std::mutex> lock(glIocpMutex);
+      auto record = glSockets.find(Socket);
+      if (record IS glSockets.end()) return ERR::Search;
+      buffered = !record->second.ReadBuffer.empty();
+      terminal = record->second.ReadResult != ERR::Okay;
+   }
+
+   if ((buffered) or (terminal)) return queue_record_completion(Socket, IocpOperationType::READ);
+   else return post_read(Socket);
+}
+
+//********************************************************************************************************************
+
+ERR iocp_register_write(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback, uintptr_t Data)
+{
+   if (auto error = set_completion_target(Socket, IocpOperationType::WRITE, ObjectID, Callback, Data);
+       error != ERR::Okay) return error;
+
+   bool pending = false;
+   {
+      std::lock_guard<std::mutex> lock(glIocpMutex);
+      auto record = glSockets.find(Socket);
+      if (record IS glSockets.end()) return ERR::Search;
+      pending = record->second.WritePending;
+   }
+
+   return pending ? ERR::Okay : queue_record_completion(Socket, IocpOperationType::WRITE);
+}
+
+//********************************************************************************************************************
+
+ERR iocp_remove_read(WSW_SOCKET Socket)
+{
+   return set_completion_target(Socket, IocpOperationType::READ, 0, 0, 0);
+}
+
+//********************************************************************************************************************
+
+ERR iocp_remove_write(WSW_SOCKET Socket)
+{
+   return set_completion_target(Socket, IocpOperationType::WRITE, 0, 0, 0);
+}
+
+//********************************************************************************************************************
+
+ERR iocp_recall_read(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback, uintptr_t Data)
+{
+   if (auto error = set_completion_target(Socket, IocpOperationType::READ, ObjectID, Callback, Data);
+       error != ERR::Okay) return error;
+
+   return queue_record_completion(Socket, IocpOperationType::READ);
+}
+
+//********************************************************************************************************************
+
+ERR iocp_receive(WSW_SOCKET Socket, void *Buffer, size_t Length, size_t &Received)
+{
+   Received = 0;
+   if ((!Buffer) and (Length > 0)) return ERR::NullArgs;
+   if (!Length) return ERR::Okay;
+
+   ERR result = ERR::Okay;
+   bool rearm_read = false;
+
+   {
+      std::lock_guard<std::mutex> lock(glIocpMutex);
+      auto record = glSockets.find(Socket);
+      if (record IS glSockets.end()) return ERR::Search;
+      if (record->second.Cancelled) return ERR::Cancelled;
+
+      auto available = record->second.ReadBuffer.size() - record->second.ReadOffset;
+      if (available > 0) {
+         Received = std::min(Length, available);
+         std::memcpy(Buffer, record->second.ReadBuffer.data() + record->second.ReadOffset, Received);
+         record->second.ReadOffset += Received;
+
+         if (record->second.ReadOffset >= record->second.ReadBuffer.size()) {
+            record->second.ReadBuffer.clear();
+            record->second.ReadOffset = 0;
+            if (record->second.ReadResult IS ERR::Okay) rearm_read = true;
+            else result = record->second.ReadResult;
+         }
+      }
+      else {
+         result = record->second.ReadResult;
+         if ((result IS ERR::Okay) and (!record->second.ReadPending)) rearm_read = true;
+      }
+   }
+
+   if (rearm_read) {
+      if (auto error = post_read(Socket); error != ERR::Okay) return error;
+   }
+
+   return result;
+}
+
+//********************************************************************************************************************
+
+ERR iocp_append_receive(WSW_SOCKET Socket, std::vector<uint8_t> &Buffer, size_t Length, size_t &Received)
+{
+   Received = 0;
+   if (!Length) return ERR::Okay;
+
+   std::vector<uint8_t> temp(Length);
+   auto error = iocp_receive(Socket, temp.data(), temp.size(), Received);
+   if ((error IS ERR::Okay) and (Received > 0)) {
+      auto offset = Buffer.size();
+      Buffer.resize(offset + Received);
+      std::memcpy(Buffer.data() + offset, temp.data(), Received);
+   }
+   return error;
+}
+
+//********************************************************************************************************************
+
+ERR iocp_send(WSW_SOCKET Socket, const void *Buffer, size_t &Length)
+{
+   if ((!Buffer) and (Length > 0)) return ERR::NullArgs;
+   if (!Length) return ERR::Okay;
+
+   IocpCompletionTarget target;
+   uint64_t generation = 0;
+   size_t requested = std::min<size_t>(Length, 0x7fffffff);
+
+   {
+      std::lock_guard<std::mutex> lock(glIocpMutex);
+      auto record = glSockets.find(Socket);
+      if (record IS glSockets.end()) return ERR::Search;
+      if (record->second.Cancelled) return ERR::Cancelled;
+      if (record->second.WritePending) {
+         Length = 0;
+         return ERR::BufferOverflow;
+      }
+
+      record->second.WritePending = true;
+      target = record->second.Write;
+      generation = record->second.Generation;
+   }
+
+   auto operation = new IocpOperation();
+   operation->Type = IocpOperationType::WRITE;
+   operation->Socket = Socket;
+   operation->Generation = generation;
+   operation->ObjectID = target.ObjectID;
+   operation->Callback = target.Callback;
+   operation->Data = target.Data;
+   operation->BufferSize = requested;
+   operation->Buffer = std::make_unique<uint8_t[]>(operation->BufferSize);
+   std::memcpy(operation->Buffer.get(), Buffer, requested);
+
+   WSABUF wsabuf;
+   wsabuf.buf = (CHAR *)operation->Buffer.get();
+   wsabuf.len = ULONG(operation->BufferSize);
+
+   DWORD bytes = 0;
+   auto result = WSASend(socket_from_handle(Socket), &wsabuf, 1, &bytes, 0, &operation->Overlapped, nullptr);
+   if ((result IS SOCKET_ERROR) and (WSAGetLastError() != WSA_IO_PENDING)) {
+      auto error = convert_error();
+      {
+         std::lock_guard<std::mutex> lock(glIocpMutex);
+         auto record = glSockets.find(Socket);
+         if (record != glSockets.end()) record->second.WritePending = false;
+      }
+      delete operation;
+      Length = 0;
+      return error;
+   }
+
+   Length = requested;
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************

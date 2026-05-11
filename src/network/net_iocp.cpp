@@ -60,7 +60,8 @@ static ERR iocp_completion_receiver(APTR Custom, MSGID MsgID, int MsgType, APTR 
    kt::ScopedObjectLock lock(completion->ObjectID);
    if (!lock.granted()) return ERR::Okay;
 
-   if (completion->Type != IocpOperationType::CONNECT) return ERR::Okay;
+   if ((completion->Type != IocpOperationType::CONNECT) and (completion->Type != IocpOperationType::READ) and
+       (completion->Type != IocpOperationType::WRITE)) return ERR::Okay;
 
    auto callback = (void (*)(HOSTHANDLE, APTR))completion->Callback;
    callback(SocketHandle(completion->Socket).hosthandle(), lock.obj);
@@ -248,10 +249,8 @@ public:
 
    ERR register_read(SocketHandle Handle, void (*Callback)(HOSTHANDLE, APTR), APTR Data) override
    {
-      (void)Handle;
-      (void)Callback;
-      (void)Data;
-      return ERR::Okay;
+      auto object_id = Data ? ((OBJECTPTR)Data)->UID : 0;
+      return iocp_register_read(Handle.socket(), object_id, uintptr_t(Callback), uintptr_t(Data));
    }
 
    ERR register_accept(SocketHandle Handle, void (*Callback)(HOSTHANDLE, APTR), APTR Data) override
@@ -264,30 +263,24 @@ public:
 
    ERR register_write(SocketHandle Handle, void (*Callback)(HOSTHANDLE, APTR), APTR Data) override
    {
-      (void)Handle;
-      (void)Callback;
-      (void)Data;
-      return ERR::NoSupport;
+      auto object_id = Data ? ((OBJECTPTR)Data)->UID : 0;
+      return iocp_register_write(Handle.socket(), object_id, uintptr_t(Callback), uintptr_t(Data));
    }
 
    ERR remove_read(SocketHandle Handle) override
    {
-      (void)Handle;
-      return ERR::Okay;
+      return iocp_remove_read(Handle.socket());
    }
 
    ERR remove_write(SocketHandle Handle) override
    {
-      (void)Handle;
-      return ERR::Okay;
+      return iocp_remove_write(Handle.socket());
    }
 
    ERR register_recall_read(SocketHandle Handle, void (*Callback)(HOSTHANDLE, APTR), APTR Data) override
    {
-      (void)Handle;
-      (void)Callback;
-      (void)Data;
-      return ERR::Okay;
+      auto object_id = Data ? ((OBJECTPTR)Data)->UID : 0;
+      return iocp_recall_read(Handle.socket(), object_id, uintptr_t(Callback), uintptr_t(Data));
    }
 
    ERR deregister_fd(SocketHandle Handle) override
@@ -335,28 +328,17 @@ public:
 
    ERR receive(SocketHandle Handle, APTR Buffer, size_t Length, size_t &Received) override
    {
-      (void)Handle;
-      (void)Buffer;
-      (void)Length;
-      Received = 0;
-      return ERR::NoSupport;
+      return iocp_receive(Handle.socket(), Buffer, Length, Received);
    }
 
    ERR append_receive(SocketHandle Handle, std::vector<uint8_t> &Buffer, size_t Length, size_t &Received) override
    {
-      (void)Handle;
-      (void)Buffer;
-      (void)Length;
-      Received = 0;
-      return ERR::NoSupport;
+      return iocp_append_receive(Handle.socket(), Buffer, Length, Received);
    }
 
    ERR send(SocketHandle Handle, CPTR Buffer, size_t &Length) override
    {
-      (void)Handle;
-      (void)Buffer;
-      Length = 0;
-      return ERR::NoSupport;
+      return iocp_send(Handle.socket(), Buffer, Length);
    }
 
    ERR send_to(SocketHandle Handle, CPTR Buffer, size_t &Length, const NetworkEndpoint &Endpoint) override

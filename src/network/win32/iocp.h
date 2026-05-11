@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 #include <kotuku/system/errors.h>
 
@@ -42,6 +43,16 @@ ERR iocp_prepare_connect(WSW_SOCKET Socket, const void *Address, int AddressSize
 ERR iocp_begin_connect_wait(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback, uintptr_t Data);
 ERR iocp_complete_connect(WSW_SOCKET Socket);
 bool iocp_validate_completion(WSW_SOCKET Socket, uint64_t Generation);
+
+ERR iocp_register_read(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback, uintptr_t Data);
+ERR iocp_register_write(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback, uintptr_t Data);
+ERR iocp_remove_read(WSW_SOCKET Socket);
+ERR iocp_remove_write(WSW_SOCKET Socket);
+ERR iocp_recall_read(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback, uintptr_t Data);
+
+ERR iocp_receive(WSW_SOCKET Socket, void *Buffer, size_t Length, size_t &Received);
+ERR iocp_append_receive(WSW_SOCKET Socket, std::vector<uint8_t> &Buffer, size_t Length, size_t &Received);
+ERR iocp_send(WSW_SOCKET Socket, const void *Buffer, size_t &Length);
 
 ERR iocp_get_local_ip(WSW_SOCKET Socket, void *Address, int *AddressSize);
 
