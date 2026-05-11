@@ -8,6 +8,21 @@ static_assert(sizeof(struct sockaddr_storage) <= NETWORK_ENDPOINT_STORAGE_SIZE);
 static MsgHandler *glIocpCompletionHandler = nullptr;
 static MSGID glIocpCompletionMsgID = MSGID::NIL;
 
+static constexpr int IOCP_NI_NAMEREQD = 0x04;
+
+#ifndef WSAAPI
+   #define WSAAPI __stdcall
+#endif
+
+extern "C" {
+   int WSAAPI getaddrinfo(const char *NodeName, const char *ServiceName, const struct addrinfo *Hints,
+      struct addrinfo **Result);
+   void WSAAPI freeaddrinfo(struct addrinfo *Result);
+   int WSAAPI getnameinfo(const struct sockaddr *SockAddr, int SockAddrLength, char *HostName,
+      unsigned long HostNameLength, char *ServiceName, unsigned long ServiceNameLength, int Flags);
+   const char * WSAAPI inet_ntop(int Family, const void *Address, char *StringBuffer, size_t StringBufferLength);
+}
+
 //********************************************************************************************************************
 
 static struct sockaddr_storage & endpoint_storage(NetworkEndpoint &Endpoint)
@@ -41,6 +56,20 @@ static ERR endpoint_to_ip(const struct sockaddr_storage &Address, IPAddress &IP)
       return ERR::Okay;
    }
    else return ERR::Args;
+}
+
+//********************************************************************************************************************
+
+static ERR convert_lookup_error(int Result)
+{
+   switch (Result) {
+      case 0: return ERR::Okay;
+      case EAI_AGAIN: return ERR::Retry;
+      case EAI_FAIL: return ERR::Failed;
+      case EAI_MEMORY: return ERR::Memory;
+      case EAI_SYSTEM: return ERR::SystemCall;
+      default: return ERR::Failed;
+   }
 }
 
 //********************************************************************************************************************
@@ -376,18 +405,77 @@ public:
    ERR resolve_address(CSTRING Key, const IPAddress &Address, HostLookupResult &Result) override
    {
       (void)Key;
-      (void)Address;
-      Result.HostName.clear();
+
+      char host_name[256];
+      char service[128];
+      int result;
+
+      if (Address.Type IS IPADDR::V4) {
+         struct sockaddr_in sa;
+         kt::clearmem(&sa, sizeof(sa));
+         sa.sin_family = AF_INET;
+         sa.sin_addr.s_addr = host_to_long(Address.Data[0]);
+         result = getnameinfo((struct sockaddr *)&sa, sizeof(sa), host_name, sizeof(host_name), service,
+            sizeof(service), IOCP_NI_NAMEREQD);
+      }
+      else if (Address.Type IS IPADDR::V6) {
+         struct sockaddr_in6 sa;
+         kt::clearmem(&sa, sizeof(sa));
+         sa.sin6_family = AF_INET6;
+         kt::copymem((CPTR)Address.Data, sa.sin6_addr.s6_addr, 16);
+         result = getnameinfo((struct sockaddr *)&sa, sizeof(sa), host_name, sizeof(host_name), service,
+            sizeof(service), IOCP_NI_NAMEREQD);
+      }
+      else return ERR::Args;
+
+      if (result) return convert_lookup_error(result);
+
+      Result.HostName = host_name;
       Result.Addresses.clear();
-      return ERR::NoSupport;
+      Result.Addresses.push_back(Address);
+      return ERR::Okay;
    }
 
    ERR resolve_name(CSTRING HostName, HostLookupResult &Result) override
    {
-      (void)HostName;
-      Result.HostName.clear();
+      struct addrinfo hints;
+      struct addrinfo *servinfo = nullptr;
+
+      kt::clearmem(&hints, sizeof(hints));
+      hints.ai_family = AF_UNSPEC;
+      hints.ai_socktype = SOCK_STREAM;
+      hints.ai_flags = AI_CANONNAME;
+
+      auto lookup_result = getaddrinfo(HostName, nullptr, &hints, &servinfo);
+      if (lookup_result) return convert_lookup_error(lookup_result);
+      if (!servinfo) return ERR::Failed;
+
+      if (servinfo->ai_canonname) Result.HostName = servinfo->ai_canonname;
+      else Result.HostName = HostName;
       Result.Addresses.clear();
-      return ERR::NoSupport;
+
+      for (auto scan = servinfo; scan; scan = scan->ai_next) {
+         if (!scan->ai_addr) continue;
+
+         IPAddress ip_address;
+         kt::clearmem(&ip_address, sizeof(ip_address));
+
+         if (scan->ai_family IS AF_INET) {
+            auto addr = (struct sockaddr_in *)scan->ai_addr;
+            ip_address.Type = IPADDR::V4;
+            ip_address.Data[0] = long_to_host(addr->sin_addr.s_addr);
+            Result.Addresses.push_back(ip_address);
+         }
+         else if (scan->ai_family IS AF_INET6) {
+            auto addr = (struct sockaddr_in6 *)scan->ai_addr;
+            ip_address.Type = IPADDR::V6;
+            kt::copymem(addr->sin6_addr.s6_addr, ip_address.Data, 16);
+            Result.Addresses.push_back(ip_address);
+         }
+      }
+
+      freeaddrinfo(servinfo);
+      return ERR::Okay;
    }
 
    ERR sync_host_proxies(objConfig *Config) override
@@ -407,9 +495,13 @@ public:
 
    CSTRING address_to_string(const IPAddress &Address, STRING Dest, size_t Size) override
    {
-      (void)Address;
-      if ((Dest) and (Size > 0)) Dest[0] = 0;
-      return nullptr;
+      if (Address.Type IS IPADDR::V6) return inet_ntop(AF_INET6, Address.Data, Dest, Size);
+      else if (Address.Type IS IPADDR::V4) {
+         struct in_addr addr;
+         addr.s_addr = host_to_long(Address.Data[0]);
+         return inet_ntop(AF_INET, &addr, Dest, Size);
+      }
+      else return nullptr;
    }
 
    uint32_t host_to_long(uint32_t Value) override
