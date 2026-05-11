@@ -312,26 +312,53 @@ function (idl_gen)
          list (APPEND IDLC_ARGS "files={" ${IDLC_FILES} "}")
       endif ()
 
+      set (IDLC_STAMP "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${OUTPUT_NAME}.stamp")
+      set (IDLC_BYPRODUCTS "${IDLC_OUTPUT}")
+
+      foreach (ARG IN LISTS IDLC_ARGS)
+         if (ARG MATCHES "^output-(defs|proto)=(.+)$")
+            if (IS_ABSOLUTE "${CMAKE_MATCH_2}")
+               list (APPEND IDLC_BYPRODUCTS "${CMAKE_MATCH_2}")
+            else ()
+               get_filename_component (IDLC_ARG_OUTPUT "${CMAKE_MATCH_2}" ABSOLUTE
+                  BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+               list (APPEND IDLC_BYPRODUCTS "${IDLC_ARG_OUTPUT}")
+            endif ()
+         endif ()
+      endforeach ()
+
       list (APPEND COMMAND_LIST COMMAND ${CMAKE_COMMAND} -E echo
          "[idl_gen] ${ORIGO_CMD} ${IDL_C_SCRIPT} --log-warning src=${ARGV0} output=${IDLC_OUTPUT} sdk=${PROJECT_SOURCE_DIR} ${IDLC_ARGS}")
       list (APPEND COMMAND_LIST COMMAND ${ORIGO_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=${ARGV0}"
          "output=${IDLC_OUTPUT}" "sdk=${PROJECT_SOURCE_DIR}" ${IDLC_ARGS})
 
       if (DEFINED IDLC_APPEND_IDL)
+         if (IS_ABSOLUTE "${IDLC_APPEND_IDL}")
+            list (APPEND IDLC_BYPRODUCTS "${IDLC_APPEND_IDL}")
+         else ()
+            get_filename_component (IDLC_APPEND_IDL_OUTPUT "${IDLC_APPEND_IDL}" ABSOLUTE
+               BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+            list (APPEND IDLC_BYPRODUCTS "${IDLC_APPEND_IDL_OUTPUT}")
+         endif ()
+
          list (APPEND COMMAND_LIST COMMAND ${CMAKE_COMMAND} -E echo
             "[idl_gen] ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} --log-warning src=${ARGV0} output=${IDLC_APPEND_IDL} sdk=${PROJECT_SOURCE_DIR} format=c append")
          list (APPEND COMMAND_LIST COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=${ARGV0}"
             "output=${IDLC_APPEND_IDL}" "sdk=${PROJECT_SOURCE_DIR}" "format=c" "append")
       endif ()
 
-      add_custom_command (OUTPUT ${IDLC_OUTPUT}
-         ${COMMAND_LIST} || echo ""
+      list (REMOVE_DUPLICATES IDLC_BYPRODUCTS)
+
+      add_custom_command (OUTPUT "${IDLC_STAMP}"
+         BYPRODUCTS ${IDLC_BYPRODUCTS}
+         ${COMMAND_LIST}
+         COMMAND ${CMAKE_COMMAND} -E touch "${IDLC_STAMP}"
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
          DEPENDS ${ARGV0}
          COMMENT "Generating C header file ${IDLC_OUTPUT} from ${ARGV0}"
          VERBATIM)
 
-      add_custom_target (${OUTPUT_NAME} DEPENDS ${IDLC_OUTPUT})
+      add_custom_target (${OUTPUT_NAME} DEPENDS "${IDLC_STAMP}")
 
       add_dependencies (build_headers ${OUTPUT_NAME})
    else ()
@@ -353,16 +380,20 @@ function (idl_compile)
          string (REGEX REPLACE "[/:\.]" "_" OUTPUT_NAME ${IDLC_OUTPUT})
       endif ()
 
-      add_custom_command (OUTPUT ${IDLC_OUTPUT}
+      set (IDLC_STAMP "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${OUTPUT_NAME}.stamp")
+
+      add_custom_command (OUTPUT "${IDLC_STAMP}"
+         BYPRODUCTS ${IDLC_OUTPUT}
          COMMAND ${CMAKE_COMMAND} -E echo
             "[idl_compile] ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} --log-warning src=${ARGV0} output=${IDLC_OUTPUT} sdk=${PROJECT_SOURCE_DIR} format=c ${IDLC_ARGS}"
          COMMAND "${ORIGO_CMD}" "${IDL_COMPILE_SCRIPT}" "--log-warning" "src=${ARGV0}" "output=${IDLC_OUTPUT}" "sdk=${PROJECT_SOURCE_DIR}" "format=c" ${IDLC_ARGS}
+         COMMAND ${CMAKE_COMMAND} -E touch "${IDLC_STAMP}"
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
          DEPENDS ${ARGV0}
          COMMENT "Producing definition file ${IDLC_OUTPUT} from ${ARGV0}"
          VERBATIM)
 
-      add_custom_target (${OUTPUT_NAME} DEPENDS ${IDLC_OUTPUT})
+      add_custom_target (${OUTPUT_NAME} DEPENDS "${IDLC_STAMP}")
 
       add_dependencies (build_headers ${OUTPUT_NAME})
    else ()

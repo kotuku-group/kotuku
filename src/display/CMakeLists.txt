@@ -27,22 +27,32 @@ set (DISPLAY_DEFS # Full paths are required for add_custom_command() dependencie
    "${CMAKE_CURRENT_SOURCE_DIR}/class_surface/surface_def.c")
 
 if (BUILD_DEFS) # Customised idl_c() equivalent, this is for defining the output from the TDL file
-   list (APPEND COMMAND_LIST COMMAND ${CMAKE_COMMAND} -E echo "[idl_c] ${ORIGO_CMD} ${IDL_C_SCRIPT} --log-warning src=${MOD}.tdl sdk=${PROJECT_SOURCE_DIR} output-proto=prototypes.h output-defs=module_def.c files={ ${FUNCTIONS} lib_surfaces.cpp }")
-   list (APPEND COMMAND_LIST COMMAND ${CMAKE_COMMAND} -E echo "[idl_comp] ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} --log-warning src=${MOD}.tdl output=${CMAKE_CURRENT_SOURCE_DIR}/idl.h sdk=${PROJECT_SOURCE_DIR} format=c")
-
-   add_custom_command (OUTPUT
+   set (DISPLAY_STAMP "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/display_defs.stamp")
+   set (DISPLAY_OUTPUTS
       ${DISPLAY_DEFS}
+      "${DOCS}/modules/display.xml"
       "${DOCS}/modules/classes/bitmap.xml"
       "${DOCS}/modules/classes/clipboard.xml"
       "${DOCS}/modules/classes/controller.xml"
       "${DOCS}/modules/classes/display.xml"
       "${DOCS}/modules/classes/pointer.xml"
       "${DOCS}/modules/classes/surface.xml"
+      "${INCLUDE_OUTPUT}/modules/display.h"
+      "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
+      "${CMAKE_CURRENT_SOURCE_DIR}/module_def.c"
+      "${CMAKE_CURRENT_SOURCE_DIR}/prototypes.h")
+
+   list (APPEND COMMAND_LIST COMMAND ${CMAKE_COMMAND} -E echo "[idl_c] ${ORIGO_CMD} ${IDL_C_SCRIPT} --log-warning src=${MOD}.tdl sdk=${PROJECT_SOURCE_DIR} output-proto=prototypes.h output-defs=module_def.c files={ ${FUNCTIONS} lib_surfaces.cpp }")
+   list (APPEND COMMAND_LIST COMMAND ${CMAKE_COMMAND} -E echo "[idl_comp] ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} --log-warning src=${MOD}.tdl output=${CMAKE_CURRENT_SOURCE_DIR}/idl.h sdk=${PROJECT_SOURCE_DIR} format=c")
+
+   add_custom_command (OUTPUT "${DISPLAY_STAMP}"
+      BYPRODUCTS ${DISPLAY_OUTPUTS}
       ${COMMAND_LIST}
       COMMAND ${ORIGO_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=${MOD}.tdl" "sdk=${PROJECT_SOURCE_DIR}"
               "output-proto=prototypes.h" "output-defs=module_def.c" "files={" ${FUNCTIONS} "lib_surfaces.cpp" "}"
       COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=${MOD}.tdl" "output=${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
               "sdk=${PROJECT_SOURCE_DIR}" "format=c"
+      COMMAND ${CMAKE_COMMAND} -E touch "${DISPLAY_STAMP}"
       DEPENDS
          "${MOD}.tdl"
          ${FUNCTIONS}
@@ -51,10 +61,7 @@ if (BUILD_DEFS) # Customised idl_c() equivalent, this is for defining the output
       COMMENT "Producing C definition files for the ${MOD} module"
       VERBATIM)
 
-   add_custom_target (display_defs DEPENDS ${DISPLAY_DEFS}
-      "${INCLUDE_OUTPUT}/modules/display.h"
-      "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
-      "${CMAKE_CURRENT_SOURCE_DIR}/display.tdl")
+   add_custom_target (display_defs DEPENDS "${DISPLAY_STAMP}")
 
    add_dependencies (build_headers display_defs)
 endif ()
