@@ -99,6 +99,7 @@ option (ENABLE_ANALYSIS   "Enable run-time program analysis (with performance pe
 option (GENERATE_DEBIAN_PKG "Generate Debian packaging files" OFF)
 option (ENABLE_CPACK      "Enable CPack Windows packaging support" OFF)
 option (FULL_OPTIMISATION "Use the highest levels of optimisation available" OFF)
+option (ENABLE_SSL_BUNDLE_UPDATE "Enable the manual update_ssl_bundle target for downloading the SSL certificate bundle." OFF)
 
 set (CMAKE_CXX_STANDARD 20)
 set (CMAKE_CXX_STANDARD_REQUIRED True)
@@ -826,23 +827,16 @@ add_custom_command (
 add_custom_target (icon_package ALL DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/icons/Default.zip")
 
 # --------------------------------------------------------------------------------------------------------------------
-# SSL Certificate Bundle Auto-Update (if older than 30 days)
+# SSL Certificate Bundle Update
 
-if (NOT DISABLE_SSL)
+if (NOT DISABLE_SSL AND ENABLE_SSL_BUNDLE_UPDATE)
    set(SSL_BUNDLE_PATH "${PROJECT_SOURCE_DIR}/data/ssl/ca-bundle.crt")
-
-   if (EXISTS ${SSL_BUNDLE_PATH})
-      string(TIMESTAMP CURRENT_TIME "%s")
-      file(TIMESTAMP ${SSL_BUNDLE_PATH} BUNDLE_TIME "%s")
-      math(EXPR BUNDLE_AGE "${CURRENT_TIME} - ${BUNDLE_TIME}")
-
-      if (BUNDLE_AGE GREATER 2592000) # 30 days in seconds
-         file(DOWNLOAD "https://curl.se/ca/cacert.pem" ${SSL_BUNDLE_PATH} TIMEOUT 30 TLS_VERIFY ON)
-         message(STATUS "Updated SSL certificate bundle")
-      endif()
-   else()
-      file(DOWNLOAD "https://curl.se/ca/cacert.pem" ${SSL_BUNDLE_PATH} TIMEOUT 30 TLS_VERIFY ON)
-   endif()
+   add_custom_target(update_ssl_bundle
+      COMMAND ${CMAKE_COMMAND}
+         "-DSSL_BUNDLE_PATH=${SSL_BUNDLE_PATH}"
+         -P "${PROJECT_SOURCE_DIR}/cmake/UpdateSslBundle.cmake"
+      COMMENT "Updating SSL certificate bundle"
+      VERBATIM)
 endif()
 
 # --------------------------------------------------------------------------------------------------------------------
