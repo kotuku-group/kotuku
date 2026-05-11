@@ -96,7 +96,9 @@ bool load_pem_certificate(SSL_HANDLE SSL, const std::string &Path)
    if (existing_cert) {
       CertFreeCertificateContext(cert_context);
       CertCloseStore(cert_store, 0);
-      return existing_cert;
+      if (SSL->server_certificate) CertFreeCertificateContext(SSL->server_certificate);
+      SSL->server_certificate = existing_cert;
+      return true;
    }
 
    if (!CertAddCertificateContextToStore(cert_store, cert_context, CERT_STORE_ADD_REPLACE_EXISTING, nullptr)) {

@@ -9,6 +9,8 @@ SSL_ERROR_CODE ssl_connect(SSL_HANDLE SSL, void *SocketHandle, const std::string
    SSL->socket_handle = (SOCKET)SocketHandle;
    SSL->hostname = HostName;
 
+   if (auto error = flush_handshake_buffer(SSL); error != SSL_OK) return error;
+
    if (SSL->context_initialised) return SSL_ERROR_CONNECTING; // Already in handshake process
 
    // Acquire credentials
@@ -59,17 +61,7 @@ SSL_ERROR_CODE ssl_connect(SSL_HANDLE SSL, void *SocketHandle, const std::string
 
    // Send initial handshake data
    if ((out_buffer.cbBuffer > 0) and (out_buffer.pvBuffer != nullptr)) {
-      int sent = send(SSL->socket_handle, (char*)out_buffer.pvBuffer, out_buffer.cbBuffer, 0);
-      FreeContextBuffer(out_buffer.pvBuffer);
-
-      if (sent == SOCKET_ERROR) {
-         int error = WSAGetLastError();
-         SSL->last_win32_error = error;
-         if (error == WSAEWOULDBLOCK) {
-            return SSL_ERROR_WOULD_BLOCK;
-         }
-         return SSL_ERROR_FAILED;
-      }
+      if (auto error = queue_handshake_token(SSL, out_buffer.pvBuffer, out_buffer.cbBuffer); error != SSL_OK) return error;
    }
 
    // For simplicity, full handshake would need more rounds

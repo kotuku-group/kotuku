@@ -29,6 +29,7 @@ Pure Windows implementation that avoids all Kotuku headers to prevent conflicts.
 #include <span>
 
 #include "ssl_wrapper.h"
+#include "../ssl_certificate_policy.hpp"
 
 static void ssl_debug_log(int level, const char* format, ...);
 extern "C" void ssl_debug_to_kotuku_log(const char* message, int level);
@@ -143,6 +144,7 @@ struct ssl_context {
    SSLBuffer io_buffer;
    SSLBuffer recv_buffer;                      // Persistent buffer for incomplete SSL messages
    SSLBuffer send_buffer;                      // Buffer for SSL encryption
+   SSLBuffer handshake_buffer;                 // Pending handshake token data for non-blocking sends
    SSLBuffer decrypted_buffer;                 // Buffer for leftover decrypted data
    size_t decrypted_buffer_offset;             // Bytes already returned to user
    SECURITY_STATUS last_security_status;
@@ -172,6 +174,7 @@ struct ssl_context {
       , io_buffer(SSL_INITIAL_BUFFER_SIZE)
       , recv_buffer(SSL_INITIAL_BUFFER_SIZE)
       , send_buffer(SSL_INITIAL_BUFFER_SIZE)
+      , handshake_buffer(SSL_INITIAL_BUFFER_SIZE)
       , decrypted_buffer(SSL_MAX_RECORD_SIZE)
       , decrypted_buffer_offset(0)
       , last_security_status(SEC_E_OK)
@@ -191,6 +194,7 @@ struct ssl_context {
       io_buffer.reserve(SSL_IO_BUFFER_SIZE);
       recv_buffer.reserve(SSL_IO_BUFFER_SIZE);
       send_buffer.reserve(SSL_IO_BUFFER_SIZE);
+      handshake_buffer.reserve(SSL_IO_BUFFER_SIZE);
       decrypted_buffer.reserve(SSL_MAX_RECORD_SIZE);
    }
 
@@ -245,6 +249,44 @@ static void set_error_status(ssl_context* Ctx, SECURITY_STATUS Status)
 {
    Ctx->last_security_status = Status;
    Ctx->last_win32_error = GetLastError();
+}
+
+//********************************************************************************************************************
+
+static SSL_ERROR_CODE flush_handshake_buffer(SSL_HANDLE SSL)
+{
+   while (!SSL->handshake_buffer.empty()) {
+      auto pending = SSL->handshake_buffer.used_data();
+      int sent = send(SSL->socket_handle, (const char*)pending.data(), int(pending.size()), 0);
+
+      if (sent > 0) SSL->handshake_buffer.consume_front(sent);
+      else if (sent == 0) return SSL_ERROR_WOULD_BLOCK;
+      else {
+         int error = WSAGetLastError();
+         SSL->last_win32_error = error;
+         if (error == WSAEWOULDBLOCK) return SSL_ERROR_WOULD_BLOCK;
+         return SSL_ERROR_FAILED;
+      }
+   }
+
+   return SSL_OK;
+}
+
+//********************************************************************************************************************
+
+static SSL_ERROR_CODE queue_handshake_token(SSL_HANDLE SSL, void *Buffer, DWORD Size)
+{
+   if ((Size > 0) and (Buffer)) {
+      std::span<const unsigned char> token_span((const unsigned char*)Buffer, Size);
+      if (!SSL->handshake_buffer.append(token_span)) {
+         FreeContextBuffer(Buffer);
+         return SSL_ERROR_MEMORY;
+      }
+   }
+
+   if (Buffer) FreeContextBuffer(Buffer);
+
+   return flush_handshake_buffer(SSL);
 }
 
 //********************************************************************************************************************
@@ -560,15 +602,18 @@ SSL_ERROR_CODE ssl_load_server_certificate(SSL_HANDLE SSL, const std::string &Ce
 {
    if (!SSL->is_server_mode) return SSL_ERROR_FAILED;
 
-   std::string ext = CertPath.substr(CertPath.find_last_of(".") + 1);
-   std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-
    bool success = false;
-   if ((ext == "p12") or (ext == "pfx")) { // Load PKCS#12 certificate
-      success = load_pkcs12_certificate(SSL, CertPath);
-   }
-   else if ((ext == "pem") or (ext == "crt") or (ext == "cert")) { // Load PEM certificate
-      success = load_pem_certificate(SSL, CertPath);
+   switch (ssl_certificate_format(CertPath)) {
+      case SSLCERTFORMAT::PKCS12:
+         success = load_pkcs12_certificate(SSL, CertPath);
+         break;
+
+      case SSLCERTFORMAT::PEM:
+         success = load_pem_certificate(SSL, CertPath);
+         break;
+
+      default:
+         break;
    }
 
    return success ? SSL_OK : SSL_ERROR_FAILED;
@@ -576,9 +621,16 @@ SSL_ERROR_CODE ssl_load_server_certificate(SSL_HANDLE SSL, const std::string &Ce
 
 //********************************************************************************************************************
 
-void ssl_set_server_certificate(SSL_HANDLE Server, SSL_HANDLE Client)
+SSL_ERROR_CODE ssl_set_server_certificate(SSL_HANDLE Server, SSL_HANDLE Client)
 {
-   Client->server_certificate = Server->server_certificate;
+   if ((!Server) or (!Client) or (!Server->server_certificate)) return SSL_ERROR_ARGS;
+
+   auto server_certificate = CertDuplicateCertificateContext(Server->server_certificate);
+   if (!server_certificate) return SSL_ERROR_MEMORY;
+
+   if (Client->server_certificate) CertFreeCertificateContext(Client->server_certificate);
+   Client->server_certificate = server_certificate;
+   return SSL_OK;
 }
 
 #include "ssl_handshake.cpp"

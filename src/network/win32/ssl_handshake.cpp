@@ -8,6 +8,7 @@ SSL_ERROR_CODE ssl_continue_handshake(SSL_HANDLE SSL, const void *ServerData, in
    ConsumedOut = 0;
 
    if (!SSL->context_initialised) return SSL_ERROR_FAILED;
+   if (auto error = flush_handshake_buffer(SSL); error != SSL_OK) return error;
 
    // Append new handshake data to receive buffer to handle fragmentation
    std::span<const unsigned char> server_data_span(static_cast<const unsigned char*>(ServerData), DataLength);
@@ -77,12 +78,8 @@ SSL_ERROR_CODE ssl_continue_handshake(SSL_HANDLE SSL, const void *ServerData, in
       if (status == SEC_E_OK) {
 
          if (out_buffer.cbBuffer > 0 and out_buffer.pvBuffer != nullptr) {
-            int sent = send(SSL->socket_handle, (char*)out_buffer.pvBuffer, out_buffer.cbBuffer, 0);
-            FreeContextBuffer(out_buffer.pvBuffer);
-
-            if (sent == SOCKET_ERROR) {
-               SSL->last_win32_error = WSAGetLastError();
-               return SSL_ERROR_FAILED;
+            if (auto error = queue_handshake_token(SSL, out_buffer.pvBuffer, out_buffer.cbBuffer); error != SSL_OK) {
+               return error;
             }
          }
 
@@ -113,14 +110,8 @@ SSL_ERROR_CODE ssl_continue_handshake(SSL_HANDLE SSL, const void *ServerData, in
       }
       else if (status == SEC_I_CONTINUE_NEEDED) {
          if ((out_buffer.cbBuffer > 0) and (out_buffer.pvBuffer != nullptr)) {
-            int sent = send(SSL->socket_handle, (char*)out_buffer.pvBuffer, out_buffer.cbBuffer, 0);
-            FreeContextBuffer(out_buffer.pvBuffer);
-
-            if (sent == SOCKET_ERROR) {
-               int error = WSAGetLastError();
-               SSL->last_win32_error = error;
-               if (error == WSAEWOULDBLOCK) return SSL_ERROR_WOULD_BLOCK;
-               return SSL_ERROR_FAILED;
+            if (auto error = queue_handshake_token(SSL, out_buffer.pvBuffer, out_buffer.cbBuffer); error != SSL_OK) {
+               return error;
             }
          }
 

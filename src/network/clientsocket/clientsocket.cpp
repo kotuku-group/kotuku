@@ -462,16 +462,26 @@ static ERR CLIENTSOCKET_Free(extClientSocket *Self)
    if (Self->Client) { // If undefined, ClientSocket was never initialised
       kt::ScopedObjectLock lock(Self->Client);
       if (lock.granted()) {
-         if (Self->Prev) {
-            Self->Prev->Next = Self->Next;
-            if (Self->Next) Self->Next->Prev = Self->Prev;
-         }
-         else {
-            Self->Client->Connections = Self->Next;
-            if (Self->Next) Self->Next->Prev = nullptr;
+         bool linked = false;
+         for (auto scan=Self->Client->Connections; scan; scan=scan->Next) {
+            if (scan IS Self) {
+               linked = true;
+               break;
+            }
          }
 
-         Self->Client->TotalConnections--;
+         if (linked) {
+            if (Self->Prev) {
+               Self->Prev->Next = Self->Next;
+               if (Self->Next) Self->Next->Prev = Self->Prev;
+            }
+            else {
+               Self->Client->Connections = Self->Next;
+               if (Self->Next) Self->Next->Prev = nullptr;
+            }
+
+            if (Self->Client->TotalConnections > 0) Self->Client->TotalConnections--;
+         }
 
          if (not Self->Client->Connections) {
             log.msg("No more connections for this IP, removing client.");
@@ -519,9 +529,15 @@ static ERR CLIENTSOCKET_Init(extClientSocket *Self)
          // Server-side SSL setup - create SSL context and wait for client handshake
          Self->SSLHandle = ssl_create_context(false, true); // No verification, server mode
          if (Self->SSLHandle) {
-            ssl_set_server_certificate(server->SSLHandle, Self->SSLHandle);
-            ssl_set_socket(Self->SSLHandle, (void*)(size_t)Self->Handle.socket()); // Set socket handle for server-side SSL
-            Self->State = NTC::HANDSHAKING;
+            if (ssl_set_server_certificate(server->SSLHandle, Self->SSLHandle) IS SSL_OK) {
+               ssl_set_socket(Self->SSLHandle, (void*)(size_t)Self->Handle.socket()); // Set socket handle for server-side SSL
+               Self->State = NTC::HANDSHAKING;
+            }
+            else {
+               ssl_free_context(Self->SSLHandle);
+               Self->SSLHandle = nullptr;
+               Self->State = NTC::DISCONNECTED;
+            }
          }
          else Self->State = NTC::DISCONNECTED;
       }
@@ -610,6 +626,8 @@ static ERR CLIENTSOCKET_Read(extClientSocket *Self, struct acRead *Args)
 {
    kt::Log log;
    if ((not Args) or (not Args->Buffer)) return log.error(ERR::NullArgs);
+   Args->Result = 0;
+   if (Args->Length < 0) return log.warning(ERR::Args);
    if (Self->Handle.is_invalid()) {
       // Lack of a handle means that disconnection has already been processed, so the client code
       // shouldn't be calling us (client probably needs to be plugged into the feedback mechanisms)
@@ -651,7 +669,8 @@ static ERR CLIENTSOCKET_Write(extClientSocket *Self, struct acWrite *Args)
 
    if (not Args) return ERR::NullArgs;
    Args->Result = 0;
-   if (Args->Length <= 0) return ERR::Okay;
+   if (Args->Length < 0) return log.warning(ERR::Args);
+   if (!Args->Length) return ERR::Okay;
    if (not Args->Buffer) return ERR::NullArgs;
 
    auto server = (extNetSocket *)(Self->Client->Owner);

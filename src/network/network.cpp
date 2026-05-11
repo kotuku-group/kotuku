@@ -37,6 +37,8 @@ sockets and HTTP, please refer to the @NetSocket and @HTTP classes.
 #include <kotuku/modules/network.h>
 #include <kotuku/strings.hpp>
 
+#include "ssl_certificate_policy.h"
+
 #ifndef DISABLE_SSL
   #ifdef _WIN32
     #include "win32/ssl_wrapper.h"
@@ -309,6 +311,7 @@ class extNetSocket : public objNetSocket {
    uint8_t InUse;                 // Recursion counter to signal that the object is doing something.
    uint8_t IncomingRecursion;     // Used by netsocket_client to prevent recursive handling of incoming data.
    uint8_t OutgoingRecursion;
+   bool CloseAfterWrite = false;  // True if termination is waiting for queued data to flush
    uint8_t ErrorCountdown = 8;    // Counts down on each error, disconnect occurs at zero.
    TIMER   TimerHandle = 0;       // Timer subscription handle for timeout
    #ifdef _WIN32
@@ -400,27 +403,18 @@ static void CLOSESOCKET_THREADED(SocketHandle Handle)
    win_deregister_socket(Handle);
 #endif
 
-   // Clean up completed threads periodically to prevent collection growth
-
-   static std::atomic<int> cleanup_counter{0};
-   if (++cleanup_counter % 50 == 0) {
+   {
       std::lock_guard<std::mutex> lock(glmThreads);
-      std::erase_if(glThreads, [](const auto& thread_ptr) {
-         if ((!thread_ptr) or (!thread_ptr->joinable())) return true;
-         // For completed threads, join them and remove from collection
-         if (thread_ptr->get_id() == std::jthread::id{}) {
-            if (thread_ptr->joinable()) thread_ptr->join();
-            return true;
-         }
-         return false;
-      });
+      for (auto it = glThreads.begin(); it != glThreads.end();) {
+         if (*it and (*it)->joinable()) (*it)->join();
+         it = glThreads.erase(it);
+      }
    }
 
    std::lock_guard<std::mutex> lock(glmThreads);
    auto thread_ptr = std::make_shared<std::jthread>();
    *thread_ptr = std::jthread([] (SocketHandle Handle) { CLOSESOCKET(Handle); }, Handle);
    glThreads.insert(thread_ptr);
-   // Don't detach, threads need to be joinable for proper cleanup
 }
 
 //********************************************************************************************************************
@@ -484,6 +478,41 @@ static std::string glCertPath;
 //********************************************************************************************************************
 
 #ifndef DISABLE_SSL
+   struct ssl_certificate_paths {
+      std::string Certificate;
+      std::string PrivateKeyPath;
+      std::optional<const std::string> PrivateKey;
+      std::optional<const std::string> Password;
+      SSLCERTFORMAT Format = SSLCERTFORMAT::NIL;
+   };
+
+   static ERR resolve_ssl_certificate_paths(extNetSocket *Self, ssl_certificate_paths &Paths)
+   {
+      if ((!Self) or (!Self->SSLCertificate) or (!*Self->SSLCertificate)) return ERR::FieldNotSet;
+
+      Paths.Format = ssl_certificate_format(Self->SSLCertificate);
+      if (Paths.Format IS SSLCERTFORMAT::NIL) return ERR::InvalidData;
+
+      if (auto error = ResolvePath(Self->SSLCertificate, RSF::NIL, &Paths.Certificate); error != ERR::Okay) {
+         return error;
+      }
+
+      if (Self->SSLPrivateKey) {
+         if (ssl_private_key_format(Self->SSLPrivateKey) IS SSLCERTFORMAT::NIL) return ERR::InvalidData;
+
+         if (auto error = ResolvePath(Self->SSLPrivateKey, RSF::NIL, &Paths.PrivateKeyPath); error != ERR::Okay) {
+            return error;
+         }
+         Paths.PrivateKey.emplace(Paths.PrivateKeyPath);
+      }
+
+      if (Self->SSLKeyPassword) Paths.Password.emplace(Self->SSLKeyPassword);
+
+      return ERR::Okay;
+   }
+
+//********************************************************************************************************************
+
   #ifdef _WIN32
     #include "win32/win32_ssl.cpp"
   #else
@@ -1021,9 +1050,12 @@ static ERR send_data(T *Self, CPTR Buffer, size_t *Length)
 
    // Fallback to regular socket send
 #ifdef __linux__
-   *Length = send(Self->Handle, Buffer, *Length, 0);
+   auto result = send(Self->Handle, Buffer, *Length, 0);
 
-   if (*Length >= 0) return ERR::Okay;
+   if (result >= 0) {
+      *Length = result;
+      return ERR::Okay;
+   }
    else {
       *Length = 0;
       if (errno IS EAGAIN) return ERR::BufferOverflow;

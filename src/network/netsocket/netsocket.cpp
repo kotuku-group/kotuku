@@ -750,7 +750,7 @@ static ERR NETSOCKET_GetLocalIPAddress(extNetSocket *Self, struct ns::GetLocalIP
    if (!result) {
       if (addr_storage.ss_family IS AF_INET6) {
          auto addr6 = (struct sockaddr_in6 *)&addr_storage;
-         kt::copymem(Args->Address->Data, &addr6->sin6_addr.s6_addr, 16);
+         kt::copymem(addr6->sin6_addr.s6_addr, Args->Address->Data, 16);
          Args->Address->Type = IPADDR::V6;
       }
       else if (addr_storage.ss_family IS AF_INET) {
@@ -883,7 +883,9 @@ static ERR NETSOCKET_Init(extNetSocket *Self)
    // calls from going to sleep.
 
    if (fcntl(Self->Handle, F_SETFL, fcntl(Self->Handle, F_GETFL) | O_NONBLOCK)) {
-      return log.warning(convert_socket_error());
+      error = log.warning(convert_socket_error());
+      free_socket(Self);
+      return error;
    }
 
    // Set the send timeout so that connect() will timeout after a reasonable time
@@ -941,7 +943,11 @@ static ERR NETSOCKET_Init(extNetSocket *Self)
    }
 
    if ((Self->Flags & NSF::SERVER) != NSF::NIL) {
-      if (!Self->Port) return log.warning(ERR::FieldNotSet);
+      if (!Self->Port) {
+         error = log.warning(ERR::FieldNotSet);
+         free_socket(Self);
+         return error;
+      }
       Self->State = NTC::MULTISTATE; // Permanent value to indicate that the socket serves multiple clients.
 
       if (Self->IPV6) {
@@ -951,6 +957,7 @@ static ERR NETSOCKET_Init(extNetSocket *Self)
             // Use parse_bind_address if Address is specified, otherwise bind to all interfaces
             if (Self->Address) {
                if (auto error = parse_bind_address(Self->Address, true, &addr); error != ERR::Okay) {
+                  free_socket(Self);
                   return error;
                }
                addr.sin6_port = net::HostToShort(Self->Port);
@@ -968,7 +975,12 @@ static ERR NETSOCKET_Init(extNetSocket *Self)
 
             if ((result = bind(Self->Handle, (struct sockaddr *)&addr, sizeof(addr))) != -1) {
                if ((Self->Flags & NSF::UDP) IS NSF::NIL) { // TCP server - needs listen()
-                  listen(Self->Handle, Self->Backlog);
+                  if (listen(Self->Handle, Self->Backlog) IS -1) {
+                     const int system_error = errno;
+                     log.warning("listen() failed with error: %s", strerror(system_error));
+                     free_socket(Self);
+                     return convert_socket_error(system_error);
+                  }
                   RegisterFD(Self->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &server_accept_client, Self);
                }
                else { // UDP server - just register for data reception
@@ -976,7 +988,11 @@ static ERR NETSOCKET_Init(extNetSocket *Self)
                }
                return ERR::Okay;
             }
-            else return log.warning(convert_socket_error());
+            else {
+               error = log.warning(convert_socket_error());
+               free_socket(Self);
+               return error;
+            }
          #elif _WIN32
             // Windows IPv6 dual-stack server binding
             struct sockaddr_in6 addr;
@@ -984,6 +1000,7 @@ static ERR NETSOCKET_Init(extNetSocket *Self)
             // Use parse_bind_address if Address is specified, otherwise bind to all interfaces
             if (Self->Address) {
                if (auto error = parse_bind_address(Self->Address, true, &addr); error != ERR::Okay) {
+                  free_socket(Self);
                   return error;
                }
                addr.sin6_port = net::HostToShort(Self->Port);
@@ -1002,6 +1019,7 @@ static ERR NETSOCKET_Init(extNetSocket *Self)
                   }
                   else {
                      log.warning("Listen failed on port %d, error: %s", Self->Port, GetErrorMsg(error));
+                     free_socket(Self);
                      return error;
                   }
                }
@@ -1011,9 +1029,11 @@ static ERR NETSOCKET_Init(extNetSocket *Self)
             }
             else {
                log.warning("Bind failed on port %d, error: %s", Self->Port, GetErrorMsg(error));
+               free_socket(Self);
                return error;
             }
          #else
+            free_socket(Self);
             return ERR::NoSupport;
          #endif
       }
@@ -1024,6 +1044,7 @@ static ERR NETSOCKET_Init(extNetSocket *Self)
          // Use parse_bind_address if Address is specified, otherwise bind to all interfaces
          if (Self->Address) {
             if (auto error = parse_bind_address(Self->Address, false, &addr); error != ERR::Okay) {
+               free_socket(Self);
                return error;
             }
             addr.sin_port = net::HostToShort(Self->Port);
@@ -1042,7 +1063,12 @@ static ERR NETSOCKET_Init(extNetSocket *Self)
 
             if ((result = bind(Self->Handle, (struct sockaddr *)&addr, sizeof(addr))) != -1) {
                if ((Self->Flags & NSF::UDP) IS NSF::NIL) { // TCP server - needs listen()
-                  listen(Self->Handle, Self->Backlog);
+                  if (listen(Self->Handle, Self->Backlog) IS -1) {
+                     const int system_error = errno;
+                     log.warning("listen() failed with error: %s", strerror(system_error));
+                     free_socket(Self);
+                     return convert_socket_error(system_error);
+                  }
                   RegisterFD(Self->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &server_accept_client, Self);
                }
                else { // UDP server - just register for data reception
@@ -1053,6 +1079,7 @@ static ERR NETSOCKET_Init(extNetSocket *Self)
             else {
                const int system_error = errno;
                log.warning("bind() failed with error: %s", strerror(system_error));
+               free_socket(Self);
                return convert_socket_error(system_error);
             }
          #elif _WIN32
@@ -1063,6 +1090,7 @@ static ERR NETSOCKET_Init(extNetSocket *Self)
                   }
                   else {
                      log.warning("Listen failed on port %d, error: %s", Self->Port, GetErrorMsg(error));
+                     free_socket(Self);
                      return error;
                   }
                }
@@ -1072,6 +1100,7 @@ static ERR NETSOCKET_Init(extNetSocket *Self)
             }
             else {
                log.warning("Bind failed on port %d, error: %s", Self->Port, GetErrorMsg(error));
+               free_socket(Self);
                return error;
             }
          #endif
@@ -1079,6 +1108,7 @@ static ERR NETSOCKET_Init(extNetSocket *Self)
    }
    else if ((Self->Address) and (Self->Port > 0)) {
       if ((error = Self->connect(Self->Address, Self->Port, 0)) != ERR::Okay) {
+         free_socket(Self);
          return error;
       }
       else return ERR::Okay;
@@ -1092,6 +1122,69 @@ static ERR NETSOCKET_Init(extNetSocket *Self)
    }
    else return ERR::Okay;
 }
+
+//********************************************************************************************************************
+
+struct multicast_group_address {
+   bool IsIPv6 = false;
+
+   #ifdef __linux__
+      struct ip_mreq Mreq4;
+      struct ipv6_mreq Mreq6;
+   #endif
+};
+
+static ERR parse_multicast_group(CSTRING Group, multicast_group_address &Address)
+{
+   if (!Group) return ERR::Args;
+
+   struct sockaddr_in addr4;
+   struct sockaddr_in6 addr6;
+   kt::clearmem(&addr4, sizeof(addr4));
+   kt::clearmem(&addr6, sizeof(addr6));
+
+   #ifdef __linux__
+      kt::clearmem(&Address.Mreq4, sizeof(Address.Mreq4));
+      kt::clearmem(&Address.Mreq6, sizeof(Address.Mreq6));
+   #endif
+
+   if (unified_inet_pton(AF_INET6, Group, &addr6.sin6_addr) IS 1) {
+      Address.IsIPv6 = true;
+
+      #ifdef __linux__
+         Address.Mreq6.ipv6mr_multiaddr = addr6.sin6_addr;
+         Address.Mreq6.ipv6mr_interface = 0;
+      #endif
+
+      return ERR::Okay;
+   }
+   else if (unified_inet_pton(AF_INET, Group, &addr4.sin_addr) IS 1) {
+      Address.IsIPv6 = false;
+
+      #ifdef __linux__
+         Address.Mreq4.imr_multiaddr = addr4.sin_addr;
+         Address.Mreq4.imr_interface.s_addr = INADDR_ANY;
+      #endif
+
+      return ERR::Okay;
+   }
+   else return ERR::Args;
+}
+
+#ifdef __linux__
+
+static int set_multicast_membership(SocketHandle Handle, const multicast_group_address &Address, int IPv4Option,
+   int IPv6Option)
+{
+   if (Address.IsIPv6) {
+      return setsockopt(Handle, IPPROTO_IPV6, IPv6Option, (char *)&Address.Mreq6, sizeof(Address.Mreq6));
+   }
+   else {
+      return setsockopt(Handle, IPPROTO_IP, IPv4Option, (char *)&Address.Mreq4, sizeof(Address.Mreq4));
+   }
+}
+
+#endif
 
 /*********************************************************************************************************************
 
@@ -1119,47 +1212,30 @@ static ERR NETSOCKET_JoinMulticastGroup(extNetSocket *Self, struct ns::JoinMulti
 {
    kt::Log log;
 
+   if (!Args) return log.warning(ERR::NullArgs);
    if ((Self->Flags & NSF::UDP) IS NSF::NIL) return ERR::NoSupport;
    if (!Args->Group) return ERR::Args;
 
    log.branch("%s", Args->Group);
 
-   // Parse the multicast address
-   struct sockaddr_storage mcast_addr;
-   bool is_ipv6 = false;
-
-   auto addr4 = (struct sockaddr_in *)&mcast_addr;
-   auto addr6 = (struct sockaddr_in6 *)&mcast_addr;
-
-   if (unified_inet_pton(AF_INET6, Args->Group, &addr6->sin6_addr) IS 1) is_ipv6 = true;
-   else if (unified_inet_pton(AF_INET, Args->Group, &addr4->sin_addr) IS 1) is_ipv6 = false;
-   else {
+   multicast_group_address group_address;
+   if (parse_multicast_group(Args->Group, group_address) != ERR::Okay) {
       log.warning("Invalid multicast address: %s", Args->Group);
       return ERR::Args;
    }
 
-   // Join the multicast group
 #ifdef __linux__
-   if (is_ipv6) {
-      struct ipv6_mreq mreq6;
-      mreq6.ipv6mr_multiaddr = addr6->sin6_addr;
-      mreq6.ipv6mr_interface = 0;
-      if (setsockopt(Self->Handle, IPPROTO_IPV6, IPV6_JOIN_GROUP, (char*)&mreq6, sizeof(mreq6)) != 0) {
+   if (set_multicast_membership(Self->Handle, group_address, IP_ADD_MEMBERSHIP, IPV6_JOIN_GROUP) != 0) {
+      if (group_address.IsIPv6) {
          log.warning("Failed to join IPv6 multicast group: %s", strerror(errno));
-         return ERR::Failed;
       }
-   }
-   else {
-      struct ip_mreq mreq;
-      mreq.imr_multiaddr = addr4->sin_addr;
-      mreq.imr_interface.s_addr = INADDR_ANY;
-      if (setsockopt(Self->Handle, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&mreq, sizeof(mreq)) != 0) {
+      else {
          log.warning("Failed to join IPv4 multicast group: %s", strerror(errno));
-         return ERR::Failed;
       }
+      return ERR::Failed;
    }
 #elif _WIN32
-   if (win_join_multicast_group(Self->Handle, Args->Group, is_ipv6) != ERR::Okay) {
+   if (win_join_multicast_group(Self->Handle, Args->Group, group_address.IsIPv6) != ERR::Okay) {
       return log.warning(ERR::Failed);
    }
 #endif
@@ -1191,50 +1267,30 @@ static ERR NETSOCKET_LeaveMulticastGroup(extNetSocket *Self, struct ns::LeaveMul
 {
    kt::Log log;
 
+   if (!Args) return log.warning(ERR::NullArgs);
    if ((Self->Flags & NSF::UDP) IS NSF::NIL) return ERR::NoSupport;
    if (!Args->Group) return ERR::Args;
 
    log.branch("%s", Args->Group);
 
-   // Parse the multicast address
-   struct sockaddr_storage mcast_addr;
-   bool is_ipv6 = false;
-
-   auto addr4 = (struct sockaddr_in *)&mcast_addr;
-   auto addr6 = (struct sockaddr_in6 *)&mcast_addr;
-
-   if (unified_inet_pton(AF_INET6, Args->Group, &addr6->sin6_addr) IS 1) is_ipv6 = true;
-   else if (unified_inet_pton(AF_INET, Args->Group, &addr4->sin_addr) IS 1) is_ipv6 = false;
-   else {
+   multicast_group_address group_address;
+   if (parse_multicast_group(Args->Group, group_address) != ERR::Okay) {
       log.warning("Invalid multicast address: %s", Args->Group);
       return ERR::Args;
    }
 
-   // Leave the multicast group
 #ifdef __linux__
-   if (is_ipv6) {
-      struct ipv6_mreq mreq6;
-      mreq6.ipv6mr_multiaddr = addr6->sin6_addr;
-      mreq6.ipv6mr_interface = 0; // Use default interface
-
-      if (setsockopt(Self->Handle, IPPROTO_IPV6, IPV6_LEAVE_GROUP, (char*)&mreq6, sizeof(mreq6)) != 0) {
+   if (set_multicast_membership(Self->Handle, group_address, IP_DROP_MEMBERSHIP, IPV6_LEAVE_GROUP) != 0) {
+      if (group_address.IsIPv6) {
          log.warning("Failed to leave IPv6 multicast group: %s", strerror(errno));
-         return ERR::Failed;
       }
-   }
-   else {
-      struct ip_mreq mreq;
-      mreq.imr_multiaddr = addr4->sin_addr;
-      mreq.imr_interface.s_addr = INADDR_ANY; // Use default interface
-
-      if (setsockopt(Self->Handle, IPPROTO_IP, IP_DROP_MEMBERSHIP, (char*)&mreq, sizeof(mreq)) != 0) {
+      else {
          log.warning("Failed to leave IPv4 multicast group: %s", strerror(errno));
-         return ERR::Failed;
       }
+      return ERR::Failed;
    }
 #elif _WIN32
-   // Use winsock wrapper - will be added to winsockwrappers.cpp
-   if (win_leave_multicast_group(Self->Handle, Args->Group, is_ipv6) != ERR::Okay) {
+   if (win_leave_multicast_group(Self->Handle, Args->Group, group_address.IsIPv6) != ERR::Okay) {
       log.warning("Failed to leave multicast group: %s", Args->Group);
       return ERR::Failed;
    }
@@ -1277,6 +1333,8 @@ static ERR NETSOCKET_Read(extNetSocket *Self, struct acRead *Args)
    kt::Log log;
 
    if ((!Args) or (!Args->Buffer)) return log.warning(ERR::NullArgs);
+   Args->Result = 0;
+   if (Args->Length < 0) return log.warning(ERR::Args);
 
    if ((Self->Flags & NSF::SERVER) != NSF::NIL) { // Not allowed - client must read from the ClientSocket.
       return ERR::NoSupport;
@@ -1285,7 +1343,6 @@ static ERR NETSOCKET_Read(extNetSocket *Self, struct acRead *Args)
    if (Self->Handle.is_invalid()) return log.warning(ERR::Disconnected);
 
    Self->ReadCalled = true;
-   Args->Result = 0;
 
    if (!Args->Length) return ERR::Okay;
 
@@ -1438,6 +1495,8 @@ static ERR NETSOCKET_Write(extNetSocket *Self, struct acWrite *Args)
    if (!Args) return log.warning(ERR::NullArgs);
 
    Args->Result = 0;
+   if (Args->Length < 0) return log.warning(ERR::Args);
+   if ((!Args->Buffer) and (Args->Length > 0)) return log.warning(ERR::NullArgs);
 
    if ((Self->Flags & NSF::SERVER) != NSF::NIL) {
       log.warning("Write to the ClientSocket objects of this server.");
@@ -1446,8 +1505,10 @@ static ERR NETSOCKET_Write(extNetSocket *Self, struct acWrite *Args)
 
    if ((Self->Handle.is_invalid()) or (Self->State != NTC::CONNECTED)) { // Queue the write prior to server connection
       log.trace("Saving %d bytes to queue.", Args->Length);
-      Self->WriteQueue.write(Args->Buffer, std::min<size_t>(Args->Length, Self->MsgLimit));
-      return ERR::Okay;
+      auto len = std::min<size_t>(Args->Length, Self->MsgLimit);
+      if (auto error = Self->WriteQueue.write(Args->Buffer, len); error != ERR::Okay) return error;
+      Args->Result = int(len);
+      return (len < size_t(Args->Length)) ? ERR::BufferOverflow : ERR::Okay;
    }
 
    // Note that if a write queue has been setup, there is no way that we can write to the server until the queue has
@@ -1477,7 +1538,15 @@ static ERR NETSOCKET_Write(extNetSocket *Self, struct acWrite *Args)
       if ((error IS ERR::DataSize) or (error IS ERR::BufferOverflow) or (ssl_read_blocked) or (len > 0))  {
          // Put data into the write queue and register the socket for write events
          log.trace("Error: '%s', queuing %d/%d bytes for transfer...", GetErrorMsg(error), Args->Length - len, Args->Length);
-         Self->WriteQueue.write((int8_t *)Args->Buffer + len, std::min<size_t>(Args->Length - len, Self->MsgLimit));
+         auto remaining = size_t(Args->Length) - len;
+         auto queue_len = std::min<size_t>(remaining, Self->MsgLimit);
+         if (auto queue_error = Self->WriteQueue.write((int8_t *)Args->Buffer + len, queue_len);
+             queue_error != ERR::Okay) {
+            Args->Result = int(len);
+            return queue_error;
+         }
+         auto queue_overflow = queue_len < remaining;
+         if (queue_overflow) Args->Result = int(len + queue_len);
          if (ssl_write_blocked) {
             #if !defined(DISABLE_SSL) and !defined(_WIN32)
                ssl_resume_write_handshake(Self->Handle.hosthandle(), Self);
@@ -1490,6 +1559,8 @@ static ERR NETSOCKET_Write(extNetSocket *Self, struct acWrite *Args)
                win_socketstate(Self->Handle, std::nullopt, true);
             #endif
          }
+
+         if (queue_overflow) return ERR::BufferOverflow;
       }
       else {
          Self->ErrorCountdown--;
@@ -1538,8 +1609,10 @@ static ERR NETSOCKET_RecvFrom(extNetSocket *Self, struct ns::RecvFrom *Args)
 {
    kt::Log log;
 
+   if (!Args) return log.warning(ERR::NullArgs);
    if ((Self->Flags & NSF::UDP) IS NSF::NIL) return log.warning(ERR::NoSupport);
-   if ((!Args->Buffer) or (!Args->BufferSize) or (!Args->Source)) return log.warning(ERR::NullArgs);
+   if ((!Args->Buffer) or (!Args->Source)) return log.warning(ERR::NullArgs);
+   if (Args->BufferSize <= 0) return log.warning(ERR::Args);
 
    Self->ReadCalled = true;
 
@@ -1632,6 +1705,7 @@ static ERR NETSOCKET_SendTo(extNetSocket *Self, struct ns::SendTo *Args)
 {
    kt::Log log;
 
+   if (!Args) return log.warning(ERR::NullArgs);
    if ((Self->Flags & NSF::UDP) IS NSF::NIL) return log.warning(ERR::InvalidState);
    if ((!Args->Dest) or (!Args->Data) or (!Args->Length)) return log.warning(ERR::NullArgs);
    if (Args->Length <= 0) return log.warning(ERR::Args);

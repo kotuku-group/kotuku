@@ -281,12 +281,7 @@ static ERR SET_SSLCertificate(extNetSocket *Self, CSTRING Value)
 
       LOC type;
       if ((AnalysePath(Value, &type) IS ERR::Okay) and (type IS LOC::FILE)) {
-         // Check file extension for supported formats
-         std::string path(Value);
-         std::string ext = path.substr(path.find_last_of(".") + 1);
-         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-
-         if ((ext IS "pem") or (ext IS "crt") or (ext IS "cert") or (ext IS "p12") or (ext IS "pfx")) {
+         if (ssl_certificate_format(Value) != SSLCERTFORMAT::NIL) {
             Self->SSLCertificate = kt::strclone(Value);
          }
          else return log.warning(ERR::InvalidData);
@@ -317,11 +312,7 @@ static ERR SET_SSLPrivateKey(extNetSocket *Self, CSTRING Value)
 
       LOC type;
       if ((AnalysePath(Value, &type) IS ERR::Okay) and (type IS LOC::FILE)) {
-         // Check file extension for supported formats
-         std::string path(Value);
-         std::string ext = path.substr(path.find_last_of(".") + 1);
-         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-         if ((ext IS "pem") or (ext IS "key")) {
+         if (ssl_private_key_format(Value) != SSLCERTFORMAT::NIL) {
             Self->SSLPrivateKey = kt::strclone(Value);
          }
          else return log.warning(ERR::InvalidData);

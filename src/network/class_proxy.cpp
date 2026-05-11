@@ -81,6 +81,24 @@ public:
 
 static ERR find_proxy(extProxy *);
 
+static bool parse_record_id(const std::string &GroupName, int &Record)
+{
+   if (GroupName.empty()) return false;
+
+   int record = 0;
+   for (auto ch : GroupName) {
+      if ((ch < '0') or (ch > '9')) return false;
+
+      int digit = ch - '0';
+      if (record > ((0x7fffffff - digit) / 10)) return false;
+
+      record = (record * 10) + digit;
+   }
+
+   Record = record;
+   return true;
+}
+
 //********************************************************************************************************************
 
 #ifdef _WIN32
@@ -191,8 +209,8 @@ static ERR PROXY_DeleteRecord(extProxy *Self)
    auto cfg = objConfig::create {fl::Path("user:config/network/proxies.cfg") };
    if (!cfg.ok()) return log.error(ERR::CreateObject);
 
-   cfg->deleteGroup(Self->GroupName.c_str());
-   cfg->saveSettings();
+   if (auto error = cfg->deleteGroup(Self->GroupName.c_str()); error != ERR::Okay) return log.warning(error);
+   if (auto error = cfg->saveSettings(); error != ERR::Okay) return log.warning(error);
    return ERR::Okay;
 }
 
@@ -378,7 +396,10 @@ template<typename KeysType>
 static bool matchesEnabledFilter(const KeysType& keys, int findEnabled) {
    if (findEnabled IS -1) return true;
 
-   if (keys.contains("Enabled")) return std::stoi(keys.at("Enabled")) IS findEnabled;
+   if (keys.contains("Enabled")) {
+      int enabled;
+      return parse_record_id(keys.at("Enabled"), enabled) and (enabled IS findEnabled);
+   }
    return false;
 }
 
@@ -412,6 +433,8 @@ static ERR find_proxy(extProxy *Self)
          log.trace("Checking group: %s", group->first.c_str());
 
          const auto& keys = group->second;
+         int record;
+         if (!parse_record_id(group->first, record)) continue;
 
          // Apply filters
          if (!matchesPortFilter(keys, Self->FindPort)) continue;
@@ -491,17 +514,21 @@ static ERR PROXY_SaveSettings(extProxy *Self)
       #ifdef _WIN32
          objTask *task = CurrentTask();
 
-         if (Self->Enabled) task->setEnv(HKEY_PROXY "ProxyEnable", "1");
-         else task->setEnv(HKEY_PROXY "ProxyEnable", "0");
+         ERR error;
+         if (Self->Enabled) error = task->setEnv(HKEY_PROXY "ProxyEnable", "1");
+         else error = task->setEnv(HKEY_PROXY "ProxyEnable", "0");
+         if (error != ERR::Okay) return log.warning(error);
 
          if ((!Self->Server) or (!Self->Server[0])) {
             log.trace("Clearing proxy server value.");
-            task->setEnv(HKEY_PROXY "ProxyServer", "");
+            if (auto error = task->setEnv(HKEY_PROXY "ProxyServer", ""); error != ERR::Okay) return log.warning(error);
          }
          else if (Self->Port IS 0) { // Proxy is for all ports
             std::string buffer = std::format("{}:{}", Self->Server, Self->ServerPort);
             log.trace("Changing all-port proxy to: %s", buffer.c_str());
-            task->setEnv(HKEY_PROXY "ProxyServer", buffer.c_str());
+            if (auto error = task->setEnv(HKEY_PROXY "ProxyServer", buffer.c_str()); error != ERR::Okay) {
+               return log.warning(error);
+            }
          }
          else {
             std::string portname;
@@ -532,9 +559,11 @@ static ERR PROXY_SaveSettings(extProxy *Self)
                }
                serverList += newEntry;
 
-               task->setEnv(HKEY_PROXY "ProxyServer", serverList.c_str());
+               if (auto error = task->setEnv(HKEY_PROXY "ProxyServer", serverList.c_str()); error != ERR::Okay) {
+                  return log.warning(error);
+               }
             }
-            else log.error("Windows' host proxy settings do not support port %d", Self->Port);
+            else return log.error(ERR::NoSupport);
          }
 
       #endif
@@ -712,7 +741,7 @@ The port used to communicate with the proxy server must be defined here.
 
 static ERR SET_ServerPort(extProxy *Self, int Value)
 {
-   if (Value > 0 and Value <= 65536) {
+   if (Value > 0 and Value <= 0xffff) {
       Self->ServerPort = Value;
       return ERR::Okay;
    }
@@ -768,7 +797,7 @@ static ERR get_record(extProxy *Self)
 
    log.traceBranch("Group: %s", Self->GroupName.c_str());
 
-   Self->Record = std::stoi(Self->GroupName);
+   if (!parse_record_id(Self->GroupName, Self->Record)) return ERR::Search;
 
    const std::lock_guard<std::recursive_mutex> lock(glProxyMutex);
 

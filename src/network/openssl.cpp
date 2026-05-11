@@ -205,35 +205,16 @@ static ERR loadCustomCertificateOpenSSL(extNetSocket *Self, SSL_CTX *ctx)
 {
    kt::Log log(__FUNCTION__);
 
-   if (!Self->SSLCertificate or !*Self->SSLCertificate) return ERR::FieldNotSet;
+   ssl_certificate_paths paths;
+   if (auto error = resolve_ssl_certificate_paths(Self, paths); error != ERR::Okay) return log.warning(error);
 
-   // Determine certificate format from file extension
-   std::string cp(Self->SSLCertificate);
-   std::string ext = cp.substr(cp.find_last_of(".") + 1);
-   std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-
-   std::string cert_path, key_path;
-   if (ResolvePath(Self->SSLCertificate, RSF::NIL, &cert_path) IS ERR::Okay) {
-      auto opt_password = std::make_optional<const std::string>();
-      auto opt_key_path = std::make_optional<const std::string>();
-
-      if (Self->SSLPrivateKey) {
-         ResolvePath(Self->SSLPrivateKey, RSF::NIL, &key_path);
-         opt_key_path.emplace(key_path);
-      }
-
-      if (Self->SSLKeyPassword) opt_password.emplace(Self->SSLKeyPassword);
-
-      if ((ext IS "p12") or (ext IS "pfx")) {
-         return loadPKCS12Certificate(cert_path, opt_password, ctx);
-      }
-      else if ((ext IS "pem") or (ext IS "crt") or (ext IS "cert")) {
-         return loadPEMCertificate(cert_path, opt_key_path, opt_password, ctx);
-      }
-      else return log.warning(ERR::InvalidData);
+   if (paths.Format IS SSLCERTFORMAT::PKCS12) {
+      return loadPKCS12Certificate(paths.Certificate, paths.Password, ctx);
    }
-
-   return ERR::Okay;
+   else if (paths.Format IS SSLCERTFORMAT::PEM) {
+      return loadPEMCertificate(paths.Certificate, paths.PrivateKey, paths.Password, ctx);
+   }
+   else return log.warning(ERR::InvalidData);
 }
 
 //********************************************************************************************************************
