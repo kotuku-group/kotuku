@@ -122,6 +122,49 @@ restart:
 
 //********************************************************************************************************************
 
+static void clear_def_host_scene(OBJECTPTR Def, extVectorScene *Scene)
+{
+   switch(Def->classID()) {
+      case CLASSID::VECTORGRADIENT:
+         if (((extVectorGradient *)Def)->HostScene IS Scene) ((extVectorGradient *)Def)->HostScene = nullptr;
+         break;
+      case CLASSID::VECTORIMAGE:
+         if (((extVectorImage *)Def)->HostScene IS Scene) ((extVectorImage *)Def)->HostScene = nullptr;
+         break;
+      case CLASSID::VECTORPATH:
+         if (((extVectorPath *)Def)->HostScene IS Scene) ((extVectorPath *)Def)->HostScene = nullptr;
+         break;
+      case CLASSID::VECTORPATTERN:
+         if (((extVectorPattern *)Def)->HostScene IS Scene) ((extVectorPattern *)Def)->HostScene = nullptr;
+         break;
+      case CLASSID::VECTORTRANSITION:
+         if (((extVectorTransition *)Def)->HostScene IS Scene) ((extVectorTransition *)Def)->HostScene = nullptr;
+         break;
+      case CLASSID::VECTORCLIP:
+         if (((extVectorClip *)Def)->HostScene IS Scene) ((extVectorClip *)Def)->HostScene = nullptr;
+         break;
+      default:
+         break;
+   }
+}
+
+//********************************************************************************************************************
+
+static void clear_defs(extVectorScene *Self)
+{
+   for (auto &entry : Self->Defs) {
+      auto def = entry.second;
+      if (def) {
+         UnsubscribeAction(def, AC::Free);
+         clear_def_host_scene(def, Self);
+      }
+   }
+
+   Self->Defs.clear();
+}
+
+//********************************************************************************************************************
+
 static void notify_free(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
    auto Self = (extVectorScene *)CurrentContext();
@@ -415,7 +458,7 @@ static ERR VECTORSCENE_Flush(extVectorScene *Self)
 
 static ERR VECTORSCENE_Free(extVectorScene *Self, APTR Args)
 {
-   Self->Defs.clear(); // Required because the standard destructor is lazy and doesn't clear the table size
+   clear_defs(Self);
    Self->~extVectorScene();
 
    if (Self->Viewport) Self->Viewport->Parent = nullptr;
@@ -515,7 +558,7 @@ Reset: Clears all registered definitions and resets field values.  Child vectors
 static ERR VECTORSCENE_Reset(extVectorScene *Self)
 {
    if (Self->Buffer)  { delete Self->Buffer; Self->Buffer = nullptr; }
-   Self->Defs.clear();
+   clear_defs(Self);
    Self->Gamma = 1.0;
    return ERR::Okay;
 }

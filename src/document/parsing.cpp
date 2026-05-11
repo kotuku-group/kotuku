@@ -1554,12 +1554,10 @@ void parser::tag_button(const tag_view &Tag)
             fl::SpreadMethod(VSPREAD::CLIP)
          })) {
 
+         // Object will terminate once out-of-scope
          auto svg = objSVG::create { fl::Target(pattern_active->Scene), fl::Statement(glButtonSVG) };
 
-         if (svg.ok()) {
-            FreeResource(*svg);
-         }
-         else { // Revert to a basic rectangle if the SVG didn't process
+         if (not svg.ok()) { // Revert to a basic rectangle if the SVG didn't process
             objVectorRectangle::create::global({
                fl::Owner(pattern_active->Scene->Viewport->UID),
                fl::Width(SCALE(1.0)), fl::Height(SCALE(1.0)),
@@ -1577,12 +1575,10 @@ void parser::tag_button(const tag_view &Tag)
             fl::SpreadMethod(VSPREAD::CLIP)
          })) {
 
+         // Object will terminate once out-of-scope
          auto svg = objSVG::create { fl::Target(pattern_inactive->Scene), fl::Statement(glButtonSVG) };
 
-         if (svg.ok()) {
-            FreeResource(*svg);
-         }
-         else {
+         if (not svg.ok()) {
             objVectorRectangle::create::global({
                fl::Owner(pattern_inactive->Scene->Viewport->UID),
                fl::Width(SCALE(1.0)), fl::Height(SCALE(1.0)),
