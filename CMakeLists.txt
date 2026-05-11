@@ -19,7 +19,7 @@
 #
 # Windows release packages can be created using CPack integration:
 #
-#   cmake -S . -B release -DCMAKE_BUILD_TYPE=Release -DKOTUKU_STATIC=ON -DINSTALL_EXAMPLES=ON
+#   cmake -S . -B release -DCMAKE_BUILD_TYPE=Release -DKOTUKU_STATIC=ON -DINSTALL_EXAMPLES=ON -DENABLE_CPACK=ON
 #   cmake --build release --config Release
 #   cmake --install release
 #   cd release && cpack -G ZIP
@@ -97,7 +97,7 @@ option (INSTALL_INCLUDES  "Install the header files.  Turn this off for client r
 option (INSTALL_TESTS     "Install the test programs." OFF)
 option (ENABLE_ANALYSIS   "Enable run-time program analysis (with performance penalties) if available.  May negatively affect gdb." OFF)
 option (GENERATE_DEBIAN_PKG "Generate Debian packaging files" OFF)
-option (DISABLE_CPACK     "Disable CPack Windows packaging support" OFF)
+option (ENABLE_CPACK      "Enable CPack Windows packaging support" OFF)
 option (FULL_OPTIMISATION "Use the highest levels of optimisation available" OFF)
 
 set (CMAKE_CXX_STANDARD 20)
@@ -813,7 +813,7 @@ configure_file ("src/config.h.in" "kotuku/config.h" NEWLINE_STYLE UNIX)
 # --------------------------------------------------------------------------------------------------------------------
 # Icons are installed as a zip file
 
-file(GLOB_RECURSE icon_files "data/icons/*.svg")
+file(GLOB_RECURSE icon_files CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/data/icons/Default/*.svg")
 
 add_custom_command (
    OUTPUT  "${CMAKE_CURRENT_BINARY_DIR}/icons/Default.zip"
@@ -1008,7 +1008,7 @@ endif()
 # --------------------------------------------------------------------------------------------------------------------
 # Windows Package Generation using CPack
 
-if(WIN32 AND NOT DISABLE_CPACK)
+if(WIN32 AND ENABLE_CPACK)
    # Detect Windows architecture for package naming
    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
       set(WIN_ARCH "win64")
