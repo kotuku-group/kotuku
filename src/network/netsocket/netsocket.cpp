@@ -280,15 +280,136 @@ static ERR NETSOCKET_Connect(extNetSocket *Self, struct ns::Connect *Args)
 //********************************************************************************************************************
 // This function is called on completion of nlResolveName().
 
-static void connect_name_resolved_nl(objNetLookup *NetLookup, ERR Error, const std::string &HostName, const std::vector<IPAddress> &IPs)
+static void connect_name_resolved_nl(objNetLookup *NetLookup, ERR Error, const std::string &HostName,
+   const std::vector<IPAddress> &IPs)
 {
    connect_name_resolved((extNetSocket *)CurrentContext(), Error, HostName, IPs);
 }
 
-static void connect_name_resolved(extNetSocket *Socket, ERR Error, const std::string &HostName, const std::vector<IPAddress> &IPs)
+struct connect_endpoint {
+   struct sockaddr_storage storage;
+   int size = 0;
+   CSTRING label = nullptr;
+};
+
+static const IPAddress *select_connect_address(extNetSocket *Socket, const std::vector<IPAddress> &IPs)
+{
+   if (!Socket->IPV6) {
+      for (const auto &ip : IPs) {
+         if (ip.Type IS IPADDR::V4) return &ip;
+      }
+      return nullptr;
+   }
+   else return &IPs[0];
+}
+
+static ERR build_connect_address(extNetSocket *Socket, const IPAddress *IP, connect_endpoint &Endpoint)
+{
+   kt::clearmem(&Endpoint.storage, sizeof(Endpoint.storage));
+
+   if (IP->Type IS IPADDR::V6) {
+      auto addr6 = (struct sockaddr_in6 *)&Endpoint.storage;
+      addr6->sin6_family = AF_INET6;
+      addr6->sin6_port = htons(Socket->Port);
+      kt::copymem((void *)IP->Data, &addr6->sin6_addr.s6_addr, 16);
+
+      Endpoint.size = sizeof(struct sockaddr_in6);
+      Endpoint.label = "IPv6";
+      return ERR::Okay;
+   }
+   else if ((Socket->IPV6) and (IP->Type IS IPADDR::V4)) {
+      auto addr6 = (struct sockaddr_in6 *)&Endpoint.storage;
+      addr6->sin6_family = AF_INET6;
+      addr6->sin6_port = htons(Socket->Port);
+      addr6->sin6_addr.s6_addr[10] = 0xff;
+      addr6->sin6_addr.s6_addr[11] = 0xff;
+      *((uint32_t *)&addr6->sin6_addr.s6_addr[12]) = htonl(IP->Data[0]);
+
+      Endpoint.size = sizeof(struct sockaddr_in6);
+      Endpoint.label = "IPv4-mapped IPv6";
+      return ERR::Okay;
+   }
+   else if (IP->Type IS IPADDR::V4) {
+      auto addr4 = (struct sockaddr_in *)&Endpoint.storage;
+      addr4->sin_family = AF_INET;
+      addr4->sin_port = htons(Socket->Port);
+      addr4->sin_addr.s_addr = htonl(IP->Data[0]);
+
+      Endpoint.size = sizeof(struct sockaddr_in);
+      Endpoint.label = "IPv4";
+      return ERR::Okay;
+   }
+   else return ERR::InvalidData;
+}
+
+#ifdef __linux__
+
+static ERR start_platform_connect(extNetSocket *Socket, const connect_endpoint &Endpoint)
 {
    kt::Log log(__FUNCTION__);
-   struct sockaddr_in server_address;
+
+   int result = connect(Socket->Handle, (struct sockaddr *)&Endpoint.storage, Endpoint.size);
+
+   if (result IS -1) {
+      if (errno IS EINPROGRESS) {
+         log.trace("%s connection in progress...", Endpoint.label);
+      }
+      else if ((errno IS EWOULDBLOCK) or (errno IS EAGAIN)) {
+         log.trace("%s connect() attempt would block or need to try again.", Endpoint.label);
+      }
+      else {
+         const int system_error = errno;
+         log.warning("%s connect() failed: %s", Endpoint.label, strerror(system_error));
+         Socket->Error = convert_socket_error(system_error);
+         Socket->setState(NTC::DISCONNECTED);
+         return Socket->Error;
+      }
+
+      Socket->setState(NTC::CONNECTING);
+      RegisterFD(Socket->Handle.hosthandle(), RFD::WRITE|RFD::SOCKET, &netsocket_connect, Socket);
+   }
+   else {
+      log.trace("%s connect() successful.", Endpoint.label);
+      Socket->setState(NTC::CONNECTED);
+      RegisterFD(Socket->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &netsocket_incoming, Socket);
+   }
+
+   return ERR::Okay;
+}
+
+#elif _WIN32
+
+static ERR start_platform_connect(extNetSocket *Socket, const connect_endpoint &Endpoint)
+{
+   kt::Log log(__FUNCTION__);
+
+   auto connect_error = win_connect(Socket->Handle, (struct sockaddr *)&Endpoint.storage, Endpoint.size);
+   if (connect_error IS ERR::Okay) {
+      log.trace("%s connect() successful.", Endpoint.label);
+      complete_win_connect(Socket);
+   }
+   else if (connect_error IS ERR::Busy) {
+      log.trace("%s connection in progress...", Endpoint.label);
+      Socket->Error = ERR::Okay;
+      Socket->setState(NTC::CONNECTING);
+   }
+   else {
+      Socket->Error = connect_error;
+      log.warning("%s connect() failed: %s", Endpoint.label, GetErrorMsg(Socket->Error));
+      clear_connect_timer(Socket);
+      Socket->setState(NTC::DISCONNECTED);
+      return Socket->Error;
+   }
+
+   return ERR::Okay;
+}
+
+#endif
+
+static void connect_name_resolved(extNetSocket *Socket, ERR Error, const std::string &HostName,
+   const std::vector<IPAddress> &IPs)
+{
+   kt::Log log(__FUNCTION__);
 
    if (Error != ERR::Okay) {
       log.warning("DNS resolution failed: %s", GetErrorMsg(Error));
@@ -299,8 +420,6 @@ static void connect_name_resolved(extNetSocket *Socket, ERR Error, const std::st
 
    log.msg("Received callback on DNS resolution.  Handle: %d", Socket->Handle.int_value());
 
-   // Start connect()
-
    if (IPs.empty()) {
       log.warning("No IP addresses resolved for %s", HostName.c_str());
       Socket->Error = ERR::HostNotFound;
@@ -308,20 +427,8 @@ static void connect_name_resolved(extNetSocket *Socket, ERR Error, const std::st
       return;
    }
 
-   // Find an appropriate address for our socket type
-   const IPAddress *addr = nullptr;
-
-   // If we have an IPv4 socket, prefer IPv4 addresses
-   if (!Socket->IPV6) {
-      for (const auto &ip : IPs) {
-         if (ip.Type IS IPADDR::V4) {
-            addr = &ip;
-            break;
-         }
-      }
-   }
-   else { // For IPv6 sockets, use the first address (could be IPv4 or IPv6)
-      addr = &IPs[0];
+   const IPAddress *addr = select_connect_address(Socket, IPs);
+   if (addr and Socket->IPV6) {
       if ((!addr->Data[0]) and (!addr->Data[1]) and (!addr->Data[2]) and (!addr->Data[3])) {
          log.traceWarning("Failed sanity check, incoming IP address is empty.");
          Socket->Error = log.warning(ERR::InvalidData);
@@ -330,203 +437,22 @@ static void connect_name_resolved(extNetSocket *Socket, ERR Error, const std::st
    }
 
    if (!addr) {
-      log.warning("Of %d addresses, no compatible IP address found for socket type (IPv6: %s)", int(IPs.size()), Socket->IPV6 ? "true" : "false");
+      auto socket_type = Socket->IPV6 ? "true" : "false";
+      log.warning("Of %d addresses, no compatible IP address found for socket type (IPv6: %s)", int(IPs.size()),
+         socket_type);
       Socket->Error = ERR::HostNotFound;
       Socket->setState(NTC::DISCONNECTED);
       return;
    }
 
-   if (addr->Type IS IPADDR::V6) { // Pure IPv6 connection
-      #ifdef _WIN32
-         struct sockaddr_in6 server_address6;
-         kt::clearmem(&server_address6, sizeof(server_address6));
-         server_address6.sin6_family = AF_INET6;
-         server_address6.sin6_port = htons(Socket->Port);
-         kt::copymem((void *)addr->Data, &server_address6.sin6_addr.s6_addr, 16);
-
-         auto connect_error = win_connect(Socket->Handle, (struct sockaddr *)&server_address6, sizeof(server_address6));
-         if (connect_error != ERR::Okay) {
-            if (connect_error IS ERR::Busy) {
-               log.trace("IPv6 connection in progress...");
-               Socket->Error = ERR::Okay;
-               Socket->setState(NTC::CONNECTING);
-            }
-            else {
-               Socket->Error = connect_error;
-               log.warning("IPv6 connect() failed: %s", GetErrorMsg(Socket->Error));
-               clear_connect_timer(Socket);
-               Socket->setState(NTC::DISCONNECTED);
-               return;
-            }
-         }
-         else {
-            log.trace("IPv6 connect() successful.");
-            complete_win_connect(Socket);
-         }
-         return;
-      #else
-         struct sockaddr_in6 server_address6;
-         kt::clearmem(&server_address6, sizeof(server_address6));
-         server_address6.sin6_family = AF_INET6;
-         server_address6.sin6_port = htons(Socket->Port);
-         kt::copymem((void *)addr->Data, &server_address6.sin6_addr.s6_addr, 16);
-
-         int result = connect(Socket->Handle, (struct sockaddr *)&server_address6, sizeof(server_address6));
-
-         if (result IS -1) {
-            if (errno IS EINPROGRESS) {
-               log.trace("IPv6 connection in progress...");
-            }
-            else if ((errno IS EWOULDBLOCK) or (errno IS EAGAIN)) {
-               log.trace("IPv6 connect() attempt would block or need to try again.");
-            }
-            else {
-               const int system_error = errno;
-               log.warning("IPv6 Connect() failed: %s", strerror(system_error));
-               Socket->Error = convert_socket_error(system_error);
-               Socket->setState(NTC::DISCONNECTED);
-               return;
-            }
-
-            Socket->setState(NTC::CONNECTING);
-            RegisterFD(Socket->Handle.hosthandle(), RFD::WRITE|RFD::SOCKET, &netsocket_connect, Socket);
-         }
-         else {
-            log.trace("IPv6 connect() successful.");
-            Socket->setState(NTC::CONNECTED);
-            RegisterFD(Socket->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &netsocket_incoming, Socket);
-         }
-      #endif
-      return;
-   }
-
-   // IPv4 connection to dual-stack socket - use IPv4-mapped IPv6 address
-   if ((Socket->IPV6) and (addr->Type IS IPADDR::V4)) {
-      // Use IPv4-mapped IPv6 address for dual-stack socket
-      #ifdef __linux__
-         struct sockaddr_in6 server_address6;
-         kt::clearmem(&server_address6, sizeof(server_address6));
-         server_address6.sin6_family = AF_INET6;
-         server_address6.sin6_port = htons(Socket->Port);
-
-         // Create IPv4-mapped IPv6 address (::ffff:x.x.x.x)
-         server_address6.sin6_addr.s6_addr[10] = 0xff;
-         server_address6.sin6_addr.s6_addr[11] = 0xff;
-         *((uint32_t*)&server_address6.sin6_addr.s6_addr[12]) = htonl(addr->Data[0]);
-
-         int result = connect(Socket->Handle, (struct sockaddr *)&server_address6, sizeof(server_address6));
-
-         if (result IS -1) {
-            if (errno IS EINPROGRESS) {
-               log.trace("IPv4-mapped IPv6 connection in progress...");
-            }
-            else if ((errno IS EWOULDBLOCK) or (errno IS EAGAIN)) {
-               log.trace("IPv4-mapped IPv6 connect() attempt would block or need to try again.");
-            }
-            else {
-               const int system_error = errno;
-               log.warning("IPv4-mapped IPv6 Connect() failed: %s", strerror(system_error));
-               Socket->Error = convert_socket_error(system_error);
-               Socket->setState(NTC::DISCONNECTED);
-               return;
-            }
-
-            Socket->setState(NTC::CONNECTING);
-            RegisterFD(Socket->Handle.hosthandle(), RFD::WRITE|RFD::SOCKET, &netsocket_connect, Socket);
-         }
-         else {
-            log.trace("IPv4-mapped IPv6 connect() successful.");
-            Socket->setState(NTC::CONNECTED);
-            RegisterFD(Socket->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &netsocket_incoming, Socket);
-         }
-         return;
-      #elif _WIN32
-         // Windows IPv6 dual-stack socket connecting to IPv4 address
-         struct sockaddr_in6 server_address6;
-         kt::clearmem(&server_address6, sizeof(server_address6));
-         server_address6.sin6_family = AF_INET6;
-         server_address6.sin6_port = htons(Socket->Port);
-
-         // Create IPv4-mapped IPv6 address (::ffff:x.x.x.x)
-         server_address6.sin6_addr.s6_addr[10] = 0xff;
-         server_address6.sin6_addr.s6_addr[11] = 0xff;
-         *((uint32_t*)&server_address6.sin6_addr.s6_addr[12]) = htonl(addr->Data[0]);
-
-         auto connect_error = win_connect(Socket->Handle, (struct sockaddr *)&server_address6, sizeof(server_address6));
-         if (connect_error IS ERR::Okay) {
-            log.trace("IPv4-mapped IPv6 connect() successful.");
-            complete_win_connect(Socket);
-         }
-         else if (connect_error IS ERR::Busy) {
-            log.trace("IPv4-mapped IPv6 connection in progress...");
-            Socket->Error = ERR::Okay;
-            Socket->setState(NTC::CONNECTING);
-         }
-         else {
-            Socket->Error = connect_error;
-            log.warning("IPv4-mapped IPv6 connect() failed: %s", GetErrorMsg(Socket->Error));
-            clear_connect_timer(Socket);
-            Socket->setState(NTC::DISCONNECTED);
-         }
-         return;
-      #endif
-   }
-
-   // Pure IPv4 connection
-   kt::clearmem(&server_address, sizeof(struct sockaddr_in));
-   server_address.sin_family = AF_INET;
-   server_address.sin_port = htons(Socket->Port);
-   server_address.sin_addr.s_addr = htonl(addr->Data[0]);
-
-#ifdef __linux__
-   int result = connect(Socket->Handle, (struct sockaddr *)&server_address, sizeof(server_address));
-
-   if (result IS -1) {
-      if (errno IS EINPROGRESS) {
-         log.trace("Connection in progress...");
-      }
-      else if ((errno IS EWOULDBLOCK) or (errno IS EAGAIN)) {
-         log.trace("connect() attempt would block or need to try again.");
-      }
-      else {
-         const int system_error = errno;
-         log.warning("Connect() failed: %s", strerror(system_error));
-         Socket->Error = convert_socket_error(system_error);
-         Socket->setState(NTC::DISCONNECTED);
-         return;
-      }
-
-      Socket->setState(NTC::CONNECTING);
-      // The write queue will be signalled once the connection process is completed.
-
-      RegisterFD(Socket->Handle.hosthandle(), RFD::WRITE|RFD::SOCKET, &netsocket_connect, Socket);
-   }
-   else {
-      log.trace("connect() successful.");
-
-      Socket->setState(NTC::CONNECTED);
-      RegisterFD(Socket->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &netsocket_incoming, Socket);
-   }
-
-#elif _WIN32
-   auto connect_error = win_connect(Socket->Handle, (struct sockaddr *)&server_address, sizeof(server_address));
-   if (connect_error IS ERR::Okay) {
-      log.trace("connect() successful.");
-      complete_win_connect(Socket);
-   }
-   else if (connect_error IS ERR::Busy) {
-      log.trace("Connection in progress...");
-      Socket->Error = ERR::Okay;
-      Socket->setState(NTC::CONNECTING); // Connection isn't complete yet - see win32_netresponse() code for NTE_CONNECT
-   }
-   else {
-      Socket->Error = connect_error;
-      log.warning("connect() failed: %s", GetErrorMsg(Socket->Error));
-      clear_connect_timer(Socket);
+   connect_endpoint endpoint;
+   if (auto error = build_connect_address(Socket, addr, endpoint); error != ERR::Okay) {
+      Socket->Error = log.warning(error);
       Socket->setState(NTC::DISCONNECTED);
       return;
    }
-#endif
+
+   start_platform_connect(Socket, endpoint);
 }
 
 //********************************************************************************************************************
