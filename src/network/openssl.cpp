@@ -40,14 +40,14 @@ template <class T> void ssl_handshake_read(SocketHandle Socket, T *Self) {
 
 static void ssl_suspend_write_queue(HOSTHANDLE SocketFD)
 {
-   RegisterFD(SocketFD, RFD::WRITE|RFD::REMOVE|RFD::SOCKET, nullptr, nullptr);
+   network_platform().remove_write(network_platform().socket_from_hosthandle(SocketFD));
 }
 
 template <class T> void ssl_resume_write_handshake(HOSTHANDLE SocketFD, T *Self)
 {
    auto write_callback = std::is_same<T, extNetSocket>::value ?
       ssl_handshake_write_netsocket : ssl_handshake_write_clientsocket;
-   RegisterFD(SocketFD, RFD::WRITE|RFD::SOCKET, write_callback, Self);
+   network_platform().register_write(network_platform().socket_from_hosthandle(SocketFD), write_callback, Self);
 }
 
 template <class T> void ssl_resume_write_queue(HOSTHANDLE SocketFD, T *Self)
@@ -63,7 +63,7 @@ template <class T> void ssl_resume_write_queue(HOSTHANDLE SocketFD, T *Self)
    }
 
    auto outgoing_callback = std::is_same<T, extNetSocket>::value ? netsocket_outgoing : clientsocket_outgoing;
-   RegisterFD(SocketFD, RFD::WRITE|RFD::SOCKET, outgoing_callback, Self);
+   network_platform().register_write(network_platform().socket_from_hosthandle(SocketFD), outgoing_callback, Self);
 }
 
 static bool ssl_has_buffered_read_data(SSL *SSLHandle)
@@ -621,7 +621,7 @@ static ERR sslConnect(extNetSocket *Self)
 template <class T> void ssl_handshake_write_impl(HOSTHANDLE SocketFD, T *Self)
 {
    kt::Log log(__FUNCTION__);
-   SocketHandle Socket(SocketFD);
+   auto Socket = network_platform().socket_from_hosthandle(SocketFD);
 
    log.trace("Socket: %" PF64, (MAXINT)SocketFD);
 
@@ -632,15 +632,15 @@ template <class T> void ssl_handshake_write_impl(HOSTHANDLE SocketFD, T *Self)
 
    ssl_clear_error_queue();
    if (auto result = SSL_do_handshake(Self->SSLHandle); result IS 1) { // Handshake successful, connection established
-      RegisterFD(Socket.hosthandle(), RFD::WRITE|RFD::REMOVE|RFD::SOCKET, write_callback, Self);
+      network_platform().remove_write(Socket);
       Self->HandshakeStatus = SHS::NIL;
       ssl_resume_write_queue(Socket.hosthandle(), Self);
    }
    else switch (auto ssl_error = SSL_get_error(Self->SSLHandle, result)) {
       case SSL_ERROR_WANT_READ:
-         RegisterFD(Socket.hosthandle(), RFD::WRITE|RFD::REMOVE|RFD::SOCKET, write_callback, Self);
+         network_platform().remove_write(Socket);
          Self->HandshakeStatus = SHS::READ;
-         RegisterFD(Socket.hosthandle(), RFD::READ|RFD::SOCKET, read_callback, Self);
+         network_platform().register_read(Socket, read_callback, Self);
          break;
 
       case SSL_ERROR_WANT_WRITE:
@@ -657,7 +657,7 @@ template <class T> void ssl_handshake_write_impl(HOSTHANDLE SocketFD, T *Self)
 template <class T> void ssl_handshake_read_impl(HOSTHANDLE SocketFD, T *Self)
 {
    kt::Log log(__FUNCTION__);
-   SocketHandle Socket(SocketFD);
+   auto Socket = network_platform().socket_from_hosthandle(SocketFD);
 
    log.trace("Socket: %" PF64, (MAXINT)SocketFD);
 
@@ -668,7 +668,7 @@ template <class T> void ssl_handshake_read_impl(HOSTHANDLE SocketFD, T *Self)
 
    ssl_clear_error_queue();
    if (auto result = SSL_do_handshake(Self->SSLHandle); result IS 1) { // Handshake successful, connection established
-      RegisterFD(Socket.hosthandle(), RFD::READ|RFD::REMOVE|RFD::SOCKET, read_callback, Self);
+      network_platform().remove_read(Socket);
       Self->HandshakeStatus = SHS::NIL;
       ssl_resume_write_queue(Socket.hosthandle(), Self);
    }
@@ -678,9 +678,9 @@ template <class T> void ssl_handshake_read_impl(HOSTHANDLE SocketFD, T *Self)
          break;
 
       case SSL_ERROR_WANT_WRITE:
-         RegisterFD(Socket.hosthandle(), RFD::READ|RFD::REMOVE|RFD::SOCKET, read_callback, Self);
+         network_platform().remove_read(Socket);
          Self->HandshakeStatus = SHS::WRITE;
-         RegisterFD(Socket.hosthandle(), RFD::WRITE|RFD::SOCKET, write_callback, Self);
+         network_platform().register_write(Socket, write_callback, Self);
          break;
 
       default:

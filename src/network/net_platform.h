@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include <kotuku/main.h>
@@ -97,10 +98,6 @@
 
    static const struct in6_addr in6addr_any = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
 
-   extern "C" {
-      int getaddrinfo(const char *Node, const char *Service, const struct addrinfo *Hints, struct addrinfo **Result);
-      void freeaddrinfo(struct addrinfo *Result);
-   }
 #else
    #include <arpa/inet.h>
    #include <netdb.h>
@@ -163,10 +160,24 @@ public:
 
 static constexpr SOCKET_HANDLE NOHANDLE = SocketHandle::INVALID_SOCKET_VAL;
 
-struct socket_endpoint {
-   struct sockaddr_storage storage;
-   int size = 0;
-   CSTRING label = nullptr;
+static constexpr size_t NETWORK_ENDPOINT_STORAGE_SIZE = 128;
+
+struct NetworkEndpoint {
+   alignas(uint64_t) uint8_t Storage[NETWORK_ENDPOINT_STORAGE_SIZE] = {};
+   int Size = 0;
+   int Family = 0;
+   CSTRING Label = nullptr;
+};
+
+struct AcceptedSocket {
+   SocketHandle Handle;
+   uint8_t IP[8] = {};
+   int Family = 0;
+};
+
+struct HostLookupResult {
+   std::string HostName;
+   std::vector<IPAddress> Addresses;
 };
 
 class NetworkPlatform {
@@ -178,38 +189,48 @@ public:
    virtual int socket_limit() const = 0;
 
    virtual SocketHandle create_socket(void *Reference, bool Read, bool Write, bool UDP, bool &IPv6) = 0;
+   virtual SocketHandle socket_from_hosthandle(HOSTHANDLE Handle) = 0;
    virtual void close_socket(SocketHandle Handle) = 0;
    virtual void deregister_socket(SocketHandle Handle) = 0;
    virtual int shutdown_socket(SocketHandle Handle, int How) = 0;
 
-   virtual ERR connect(SocketHandle Handle, const socket_endpoint &Endpoint) = 0;
+   virtual ERR build_address(const IPAddress &IP, int Port, bool IPv6, NetworkEndpoint &Endpoint) = 0;
+   virtual ERR prepare_bind_address(CSTRING Address, int Port, bool IPv6, NetworkEndpoint &Endpoint) = 0;
+   virtual ERR connect(SocketHandle Handle, const NetworkEndpoint &Endpoint) = 0;
    virtual ERR begin_connect_wait(SocketHandle Handle, void (*Callback)(HOSTHANDLE, APTR), APTR Data) = 0;
    virtual ERR complete_connect(SocketHandle Handle) = 0;
-   virtual ERR bind(SocketHandle Handle, const socket_endpoint &Endpoint) = 0;
+   virtual ERR bind(SocketHandle Handle, const NetworkEndpoint &Endpoint) = 0;
    virtual ERR listen(SocketHandle Handle, int Backlog) = 0;
-   virtual ERR get_local_address(SocketHandle Handle, sockaddr_storage &Address, int &Length) = 0;
-   virtual SocketHandle accept(void *Reference, SocketHandle Server, bool IPv6, sockaddr_storage &Address, int &Family) = 0;
+   virtual ERR get_local_ip(SocketHandle Handle, IPAddress &Address) = 0;
+   virtual AcceptedSocket accept(void *Reference, SocketHandle Server, bool IPv6) = 0;
    virtual void set_socket_reference(SocketHandle Handle, void *Reference) = 0;
    virtual ERR set_non_blocking(SocketHandle Handle) = 0;
 
    virtual ERR register_read(SocketHandle Handle, void (*Callback)(HOSTHANDLE, APTR), APTR Data) = 0;
    virtual ERR register_accept(SocketHandle Handle, void (*Callback)(HOSTHANDLE, APTR), APTR Data) = 0;
    virtual ERR register_write(SocketHandle Handle, void (*Callback)(HOSTHANDLE, APTR), APTR Data) = 0;
+   virtual ERR remove_read(SocketHandle Handle) = 0;
    virtual ERR remove_write(SocketHandle Handle) = 0;
    virtual ERR register_recall_read(SocketHandle Handle, void (*Callback)(HOSTHANDLE, APTR), APTR Data) = 0;
    virtual ERR deregister_fd(SocketHandle Handle) = 0;
 
    virtual ERR enable_broadcast(SocketHandle Handle) = 0;
    virtual ERR set_multicast_ttl(SocketHandle Handle, int TTL, bool IPv6) = 0;
+   virtual ERR parse_multicast_group(CSTRING Group, bool &IPv6) = 0;
    virtual ERR join_multicast_group(SocketHandle Handle, CSTRING Group, bool IPv6) = 0;
    virtual ERR leave_multicast_group(SocketHandle Handle, CSTRING Group, bool IPv6) = 0;
 
    virtual ERR receive(SocketHandle Handle, APTR Buffer, size_t Length, size_t &Received) = 0;
    virtual ERR append_receive(SocketHandle Handle, std::vector<uint8_t> &Buffer, size_t Length, size_t &Received) = 0;
    virtual ERR send(SocketHandle Handle, CPTR Buffer, size_t &Length) = 0;
-   virtual ERR send_to(SocketHandle Handle, CPTR Buffer, size_t &Length, const socket_endpoint &Endpoint) = 0;
+   virtual ERR send_to(SocketHandle Handle, CPTR Buffer, size_t &Length, const NetworkEndpoint &Endpoint) = 0;
    virtual ERR receive_from(SocketHandle Handle, APTR Buffer, size_t BufferSize, size_t &BytesRead,
-      sockaddr_storage &SourceAddress, int &AddressLength) = 0;
+      IPAddress &SourceAddress) = 0;
+
+   virtual ERR resolve_address(CSTRING Key, const IPAddress &Address, HostLookupResult &Result) = 0;
+   virtual ERR resolve_name(CSTRING HostName, HostLookupResult &Result) = 0;
+   virtual ERR sync_host_proxies(objConfig *Config) = 0;
+   virtual ERR save_host_proxy(CSTRING Server, int ServerPort, int Port, bool Enabled) = 0;
 
    virtual uint32_t inet_addr(CSTRING Value) = 0;
    virtual int inet_pton(int Family, CSTRING Source, APTR Dest) = 0;

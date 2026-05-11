@@ -173,8 +173,6 @@ void win32_netresponse(OBJECTPTR SocketObject, SOCKET_HANDLE Handle, int Message
       server_accept_client(Socket->Handle.hosthandle(), Socket);
    }
    else if (Message IS NTE_CONNECT) {
-      if (auto error = network_platform().complete_connect(SocketHandle(Handle)); error != ERR::Okay) log.warning(error);
-
       if (Error IS ERR::Okay) {
          if (ClientSocket) { // Server mode - connect message shouldn't be received for ClientSocket
             log.warning("Unexpected connect message for ClientSocket, ignoring.");
@@ -183,7 +181,7 @@ void win32_netresponse(OBJECTPTR SocketObject, SOCKET_HANDLE Handle, int Message
          }
          else {
             log.traceBranch("Connection to host granted.");
-            complete_win_connect(Socket);
+            complete_socket_connect(Socket, network_platform().complete_connect(SocketHandle(Handle)));
          }
       }
       else {
@@ -201,35 +199,10 @@ void win32_netresponse(OBJECTPTR SocketObject, SOCKET_HANDLE Handle, int Message
 #endif
 
 //********************************************************************************************************************
-// Called when a server socket handle detects a new client wanting to connect to it.
-// Used by Win32 (Windows message loop) & Linux (FD hook)
-
-static ERR sockaddr_to_client_ip(const struct sockaddr *Address, int Family, uint8_t *IP)
-{
-   if ((!Address) or (!IP)) return ERR::NullArgs;
-
-   kt::clearmem(IP, 8);
-
-   if (Family IS AF_INET) {
-      auto addr = (const struct sockaddr_in *)Address;
-      kt::copymem(&addr->sin_addr.s_addr, IP, 4);
-      return ERR::Okay;
-   }
-   else if (Family IS AF_INET6) {
-      auto addr = (const struct sockaddr_in6 *)Address;
-      kt::copymem(addr->sin6_addr.s6_addr, IP, 8);
-      return ERR::Okay;
-   }
-   else return ERR::Args;
-}
-
-//********************************************************************************************************************
 
 static void server_accept_client_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
 {
    kt::Log log(__FUNCTION__);
-   uint8_t ip[8];
-   SocketHandle clientfd;
 
    log.traceBranch("NetSocket: #%d, FD: %" PRId64, Self->UID, int64_t(SocketFD));
 
@@ -259,27 +232,20 @@ static void server_accept_client_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
       }
    }
 
-   struct sockaddr_storage addr_storage;
-   int family = AF_INET;
-   clientfd = network_platform().accept(Self, Self->Handle, Self->IPV6, addr_storage, family);
+   auto accepted = network_platform().accept(Self, Self->Handle, Self->IPV6);
+   auto clientfd = accepted.Handle;
    if (clientfd.is_invalid()) {
       log.warning("accept() failed to return an FD.");
       return;
    }
 
-   if ((family != AF_INET) and (family != AF_INET6)) {
-      log.warning("Unsupported address family: %d", family);
+   if ((accepted.Family != AF_INET) and (accepted.Family != AF_INET6)) {
+      log.warning("Unsupported address family: %d", accepted.Family);
       network_platform().close_socket(clientfd);
       return;
    }
 
-   if (auto error = sockaddr_to_client_ip((struct sockaddr *)&addr_storage, family, ip); error != ERR::Okay) {
-      log.warning(error);
-      network_platform().close_socket(clientfd);
-      return;
-   }
-
-   if (family IS AF_INET6) log.trace("Accepted IPv6 client connection");
+   if (accepted.Family IS AF_INET6) log.trace("Accepted IPv6 client connection");
    else if (Self->IPV6) log.trace("Accepted IPv4 client connection on dual-stack socket");
 
    // Check if this IP address already has a client structure from an earlier socket connection.
@@ -287,7 +253,7 @@ static void server_accept_client_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
 
    objNetClient *client_ip;
    for (client_ip=Self->Clients; client_ip; client_ip=client_ip->Next) {
-      if (((int64_t *)&ip)[0] IS ((int64_t *)&client_ip->IP)[0]) break;
+      if (((int64_t *)&accepted.IP)[0] IS ((int64_t *)&client_ip->IP)[0]) break;
    }
 
    if (!client_ip) {
@@ -303,7 +269,7 @@ static void server_accept_client_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
          return;
       }
 
-      ((int64_t *)&client_ip->IP)[0] = ((int64_t *)&ip)[0];
+      ((int64_t *)&client_ip->IP)[0] = ((int64_t *)&accepted.IP)[0];
       client_ip->TotalConnections = 0;
       Self->TotalClients++;
 
@@ -414,7 +380,6 @@ static void free_client(extNetSocket *Socket, objNetClient *Client)
 //********************************************************************************************************************
 // See win32_netresponse() for the Windows version.
 
-#ifdef __linux__
 static void netsocket_connect_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
 {
    kt::Log log(__FUNCTION__);
@@ -424,49 +389,8 @@ static void netsocket_connect_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
    log.trace("Connection from server received.");
 
    auto result = network_platform().complete_connect(Self->Handle);
-
-   // Remove the write callback
-
-   network_platform().remove_write(Self->Handle);
-
-   #ifndef DISABLE_SSL
-   if ((Self->SSLHandle) and (result IS ERR::Okay)) {
-      // Perform the SSL handshake
-
-      log.traceBranch("Attempting SSL handshake.");
-
-      sslConnect(Self);
-      if (Self->Error != ERR::Okay) return;
-
-      if (Self->State IS NTC::HANDSHAKING) {
-         network_platform().register_read(Self->Handle, &netsocket_incoming, Self);
-      }
-      return;
-   }
-   #endif
-
-   if (result IS ERR::Okay) {
-      log.traceBranch("Connection succesful.");
-
-      if (Self->TimerHandle) { UpdateTimer(Self->TimerHandle, 0); Self->TimerHandle = 0; }
-
-      Self->setState(NTC::CONNECTED);
-      network_platform().register_read(Self->Handle, &netsocket_incoming, Self);
-      return;
-   }
-   else {
-      log.trace("Connect completion result %d", int(result));
-
-      if (Self->TimerHandle) { UpdateTimer(Self->TimerHandle, 0); Self->TimerHandle = 0; }
-
-      Self->Error = result;
-
-      log.error(Self->Error);
-
-      Self->setState(NTC::DISCONNECTED);
-   }
+   complete_socket_connect(Self, result);
 }
-#endif
 
 //********************************************************************************************************************
 // If the socket is the client of a server, messages from the server will come in through here.

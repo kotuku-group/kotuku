@@ -17,6 +17,7 @@ struct socket_info;
 typedef unsigned int WSW_SOCKET; // Identical to the windows SOCKET type
 struct sockaddr;
 struct hostent;
+struct addrinfo;
 
 void win32_netresponse(struct Object *, WSW_SOCKET, int, ERR);
 void win_net_processing(int, void *);
@@ -27,6 +28,8 @@ void win_deregister_socket(WSW_SOCKET);
 ERR win_connect(WSW_SOCKET, const sockaddr *, int);
 hostent * win_gethostbyaddr(const IPAddress *);
 hostent * win_gethostbyname(const char *);
+int win_getaddrinfo(const char *, const char *, const addrinfo *, addrinfo **);
+void win_freeaddrinfo(addrinfo *);
 int win_getpeername(WSW_SOCKET, sockaddr *, int *);
 int win_getsockname(WSW_SOCKET, sockaddr *, int *);
 uint32_t win_inet_addr(const char *);

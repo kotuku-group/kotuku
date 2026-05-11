@@ -96,6 +96,16 @@ struct hostent * win_gethostbyaddr(const struct IPAddress *Address)
    else return gethostbyaddr((const char *)&Address->Data, 16, AF_INET6);
 }
 
+int win_getaddrinfo(const char *Node, const char *Service, const struct addrinfo *Hints, struct addrinfo **Result)
+{
+   return getaddrinfo(Node, Service, Hints, Result);
+}
+
+void win_freeaddrinfo(struct addrinfo *Result)
+{
+   freeaddrinfo(Result);
+}
+
 //********************************************************************************************************************
 
 static LRESULT CALLBACK win_messages(HWND window, UINT msgcode, WPARAM wParam, LPARAM lParam)
