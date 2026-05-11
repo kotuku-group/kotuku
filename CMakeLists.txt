@@ -101,6 +101,16 @@ option (ENABLE_CPACK      "Enable CPack Windows packaging support" OFF)
 option (FULL_OPTIMISATION "Use the highest levels of optimisation available" OFF)
 option (ENABLE_SSL_BUNDLE_UPDATE "Enable the manual update_ssl_bundle target for downloading the SSL certificate bundle." OFF)
 
+get_property (KOTUKU_MULTI_CONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+
+if (KOTUKU_MULTI_CONFIG AND CMAKE_BUILD_TYPE STREQUAL "FastBuild")
+   list (FIND CMAKE_CONFIGURATION_TYPES FastBuild KOTUKU_FASTBUILD_INDEX)
+   if (KOTUKU_FASTBUILD_INDEX EQUAL -1)
+      list (APPEND CMAKE_CONFIGURATION_TYPES FastBuild)
+      set (CMAKE_CONFIGURATION_TYPES "${CMAKE_CONFIGURATION_TYPES}" CACHE STRING "Available build configurations" FORCE)
+   endif ()
+endif ()
+
 set (CMAKE_CXX_STANDARD 20)
 set (CMAKE_CXX_STANDARD_REQUIRED True)
 set (CMAKE_POSITION_INDEPENDENT_CODE ON) # Enables -fPIC and -fPIE in gcc
@@ -261,7 +271,9 @@ if (WIN32)
       endif ()
       set (INIT_LINK "init-win" kotuku_static)
    else ()
-      set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+      if (MINGW)
+         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+      endif ()
       set (INIT_LINK "init-win")
    endif ()
 else ()
@@ -274,6 +286,29 @@ else ()
 endif ()
 
 add_custom_target(build_headers ALL COMMENT "Generate headers and definition files on the fly")
+
+# --------------------------------------------------------------------------------------------------------------------
+# Register generated header targets with the aggregate target while also making them discoverable for
+# module-local dependency wiring in set_module_defaults().
+
+function (register_generated_header_target ARG_TARGET)
+   add_dependencies (build_headers ${ARG_TARGET})
+   set_property (DIRECTORY APPEND PROPERTY KOTUKU_GENERATED_HEADER_TARGETS ${ARG_TARGET})
+endfunction ()
+
+# --------------------------------------------------------------------------------------------------------------------
+# Add generated header dependencies only when generation is enabled and the referenced targets exist.  This keeps
+# normal builds parallel while avoiding missing generated headers in BUILD_DEFS configurations.
+
+function (add_generated_header_dependencies ARG_TARGET)
+   if (BUILD_DEFS AND TARGET ${ARG_TARGET})
+      foreach (ARG_DEPENDENCY IN LISTS ARGN)
+         if (TARGET ${ARG_DEPENDENCY})
+            add_dependencies (${ARG_TARGET} ${ARG_DEPENDENCY})
+         endif ()
+      endforeach ()
+   endif ()
+endfunction ()
 
 # --------------------------------------------------------------------------------------------------------------------
 # Use Flute to write tests against your code.  All Flute tests are integration tests, i.e. run them post-install
@@ -361,7 +396,7 @@ function (idl_gen)
 
       add_custom_target (${OUTPUT_NAME} DEPENDS "${IDLC_STAMP}")
 
-      add_dependencies (build_headers ${OUTPUT_NAME})
+      register_generated_header_target (${OUTPUT_NAME})
    else ()
       message (STATUS "The generation of ${IDLC_OUTPUT} will be skipped.")
    endif ()
@@ -396,7 +431,7 @@ function (idl_compile)
 
       add_custom_target (${OUTPUT_NAME} DEPENDS "${IDLC_STAMP}")
 
-      add_dependencies (build_headers ${OUTPUT_NAME})
+      register_generated_header_target (${OUTPUT_NAME})
    else ()
       message (STATUS "The generation of ${IDLC_OUTPUT} will be skipped.")
    endif ()
@@ -422,8 +457,8 @@ function (set_module_defaults ARG_TARGET ARG_NAMESPACE)
          PROPERTIES
          CXX_STANDARD 20)
    else ()
-      if (CMAKE_BUILD_TYPE MATCHES "Release")
-         set_target_properties (${ARG_TARGET} PROPERTIES LINK_FLAGS_RELEASE -s)
+      if (NOT MSVC)
+         target_link_options (${ARG_TARGET} PRIVATE $<$<CONFIG:Release>:-s>)
       endif ()
 
       set_target_properties (${ARG_TARGET}
@@ -446,9 +481,10 @@ function (set_module_defaults ARG_TARGET ARG_NAMESPACE)
       endif ()
    endif ()
 
-   # Ensure all modules depend on build_headers to prevent race conditions
-   # where C++ compilation starts before TDL processing completes
-   add_dependencies (${ARG_TARGET} build_headers)
+   get_property (KOTUKU_LOCAL_HEADER_TARGETS DIRECTORY PROPERTY KOTUKU_GENERATED_HEADER_TARGETS)
+   if (KOTUKU_LOCAL_HEADER_TARGETS)
+      add_dependencies (${ARG_TARGET} ${KOTUKU_LOCAL_HEADER_TARGETS})
+   endif ()
 
    # Ensure all modules have a minimum level of dependencies, this ensures a minimally
    # functioning environment is created when building individual targets with --target
@@ -504,14 +540,13 @@ if (MSVC)
       set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /fsanitize=address")
    endif ()
 
-   # We don't use exceptions, so get the compiler to disable this functionality.  This results in noticeably smaller binaries and more optimised code.
-   if (CMAKE_BUILD_TYPE STREQUAL "Release")
-      add_compile_definitions ("_HAS_EXCEPTIONS=0")
-      string(REPLACE "/EHsc" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-      string(REPLACE "/EHsc" "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
-      set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /EHs-c- /GR")
-      set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHs-c- /GR")
-   endif ()
+   # We don't use exceptions in optimised configurations, so disable exception support there.
+   string(REPLACE "/EHsc" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+   add_compile_definitions ("$<$<OR:$<CONFIG:Release>,$<CONFIG:FastBuild>>:_HAS_EXCEPTIONS=0>")
+   add_compile_options (
+      "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<OR:$<CONFIG:Release>,$<CONFIG:FastBuild>>>:/EHs-c->"
+      "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<OR:$<CONFIG:Release>,$<CONFIG:FastBuild>>>:/GR>"
+      "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<NOT:$<OR:$<CONFIG:Release>,$<CONFIG:FastBuild>>>>:/EHsc>")
 
    # Specifying the fast FP option shows no descernible improvement in benchmarked release builds.
    #set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /fp:fast")
@@ -537,9 +572,7 @@ else ()
       # TODO
    endif ()
 
-   if (CMAKE_BUILD_TYPE STREQUAL "Release")
-      set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-exceptions")
-   endif ()
+   set (CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -fno-exceptions")
 
    if (ENABLE_ANALYSIS)
       # NB: The use of dlclose() is not permitted when analysis is enabled because it upsets the log output.
@@ -566,27 +599,34 @@ endif ()
 # --------------------------------------------------------------------------------------------------------------------
 # FastBuild configuration - optimised for compilation speed rather than runtime performance
 
+set (KOTUKU_FASTBUILD_ENABLED FALSE)
 if (CMAKE_BUILD_TYPE STREQUAL "FastBuild")
+   set (KOTUKU_FASTBUILD_ENABLED TRUE)
+elseif (KOTUKU_MULTI_CONFIG)
+   list (FIND CMAKE_CONFIGURATION_TYPES FastBuild KOTUKU_FASTBUILD_INDEX)
+   if (NOT KOTUKU_FASTBUILD_INDEX EQUAL -1)
+      set (KOTUKU_FASTBUILD_ENABLED TRUE)
+   endif ()
+endif ()
+
+if (KOTUKU_FASTBUILD_ENABLED)
    message (STATUS "FastBuild configuration enabled - optimising for compilation speed")
 
    if (MSVC)
       # MSVC: Use /Od for no optimisation, /MP for parallel compilation, /Z7 for minimal debug info
-      set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /Od /MP /Z7")
-      set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Od /MP /Z7")
+      set (CMAKE_C_FLAGS_FASTBUILD "${CMAKE_C_FLAGS_FASTBUILD} /Od /MP /Z7")
+      set (CMAKE_CXX_FLAGS_FASTBUILD "${CMAKE_CXX_FLAGS_FASTBUILD} /Od /MP /Z7")
 
       # Disable exception handling for faster compilation (matches Release build behaviour)
-      add_compile_definitions ("_HAS_EXCEPTIONS=0")
-      string(REPLACE "/EHsc" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-      set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /EHs-c- /GR")
-      set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHs-c- /GR")
+      add_compile_definitions ("$<$<CONFIG:FastBuild>:_HAS_EXCEPTIONS=0>")
    else ()
       # GCC/Clang: Use -O0 for no optimisation, -g1 for minimal debug info
-      set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0 -g1")
-      set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -g1")
+      set (CMAKE_C_FLAGS_FASTBUILD "${CMAKE_C_FLAGS_FASTBUILD} -O0 -g1")
+      set (CMAKE_CXX_FLAGS_FASTBUILD "${CMAKE_CXX_FLAGS_FASTBUILD} -O0 -g1")
 
       # Disable variable tracking for faster compilation
-      set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-var-tracking -fno-var-tracking-assignments")
-      set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-var-tracking -fno-var-tracking-assignments")
+      set (CMAKE_C_FLAGS_FASTBUILD "${CMAKE_C_FLAGS_FASTBUILD} -fno-var-tracking -fno-var-tracking-assignments")
+      set (CMAKE_CXX_FLAGS_FASTBUILD "${CMAKE_CXX_FLAGS_FASTBUILD} -fno-var-tracking -fno-var-tracking-assignments")
 
       # Try to use faster linkers if available
       include(CheckLinkerFlag)
@@ -605,7 +645,7 @@ if (CMAKE_BUILD_TYPE STREQUAL "FastBuild")
       endif ()
 
       # Disable exceptions for faster compilation (matches Release build behaviour)
-      set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-exceptions")
+      set (CMAKE_CXX_FLAGS_FASTBUILD "${CMAKE_CXX_FLAGS_FASTBUILD} -fno-exceptions")
    endif ()
 endif ()
 
@@ -650,10 +690,13 @@ if (NOT DISABLE_JPEG AND NOT DISABLE_PICTURE)
       -DENABLE_SHARED=OFF
       -DENABLE_STATIC=ON
       -DWITH_TURBOJPEG=ON
-      -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
       -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
       -DCMAKE_INSTALL_LIBDIR=<INSTALL_DIR>/lib
       -DCMAKE_POSITION_INDEPENDENT_CODE=ON)
+
+   if (NOT KOTUKU_MULTI_CONFIG)
+      list(APPEND LIBJPEG_TURBO_CMAKE_ARGS -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE})
+   endif ()
 
    if (WIN32)
       unset(LIBJPEG_TURBO_NASM_COMPILER)
@@ -792,6 +835,27 @@ add_subdirectory (src/launcher)
 
 add_subdirectory (apps)
 add_subdirectory (tools/tiri_lsp)
+
+add_generated_header_dependencies (display xml_defs regex_defs picture_defs)
+add_generated_header_dependencies (document display_defs font_defs svg_defs xml_defs xquery_defs)
+add_generated_header_dependencies (font display_defs xml_defs)
+add_generated_header_dependencies (http network_defs)
+add_generated_header_dependencies (init-unix core_defs)
+add_generated_header_dependencies (init-win core_defs)
+add_generated_header_dependencies (jpeg display_defs picture_defs)
+add_generated_header_dependencies (json xml_defs)
+add_generated_header_dependencies (base64 core_defs)
+add_generated_header_dependencies (linear_rgb core_defs)
+add_generated_header_dependencies (mp3 audio_defs)
+add_generated_header_dependencies (origo_cmd core_defs display_defs)
+add_generated_header_dependencies (picture display_defs)
+add_generated_header_dependencies (scintilla display_defs font_defs vector_defs xml_defs)
+add_generated_header_dependencies (svg display_defs picture_defs vector_defs xml_defs)
+add_generated_header_dependencies (tiri display_defs regex_defs xml_defs)
+add_generated_header_dependencies (unicode core_defs)
+add_generated_header_dependencies (vector display_defs font_defs picture_defs xml_defs)
+add_generated_header_dependencies (xml xquery_defs)
+add_generated_header_dependencies (xquery regex_defs xml_defs)
 
 # --------------------------------------------------------------------------------------------------------------------
 # Create a combined static library that links all modules together

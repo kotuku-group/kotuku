@@ -74,7 +74,7 @@ if (BUILD_DEFS)
 
    add_custom_target (core_defs DEPENDS "${CORE_STAMP}")
 
-   add_dependencies (build_headers core_defs)
+   register_generated_header_target (core_defs)
 endif ()
 
 if (NOT MSVC)

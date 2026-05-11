@@ -63,7 +63,7 @@ if (BUILD_DEFS) # Customised idl_c() equivalent, this is for defining the output
 
    add_custom_target (display_defs DEPENDS "${DISPLAY_STAMP}")
 
-   add_dependencies (build_headers display_defs)
+   register_generated_header_target (display_defs)
 endif ()
 
    CHECK_C_SOURCE_COMPILES ("
