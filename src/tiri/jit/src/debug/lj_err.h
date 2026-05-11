@@ -38,6 +38,7 @@ LJ_FUNC_NORET void lj_err_argv(lua_State *L, int narg, ErrMsg em, ...);
 LJ_FUNC_NORET void lj_err_argtype(lua_State *L, int narg, const char *xname);
 LJ_FUNC_NORET void lj_err_argt(lua_State *L, int narg, int tt);
 LJ_FUNC_NORET void lj_err_assigntype(lua_State *L, int slot, const char *expected_type);
+extern "C" void lj_err_prepare_foreign_exception(lua_State *L, const char *Message);
 
 #if LJ_UNWIND_JIT and not LJ_ABI_WIN
 LJ_FUNC uint8_t *lj_err_register_mcode(void *base, size_t sz, uint8_t *info);

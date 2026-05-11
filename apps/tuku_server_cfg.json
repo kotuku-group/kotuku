@@ -1,0 +1,5 @@
+{
+   "_comment": "Tuku Server config file.  Copy to user:config/tuku_server_cfg.json for Tuku Server to automatically use it.",
+   "port": 8080,
+   "folder": "docs/html/"
+}

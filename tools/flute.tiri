@@ -24,6 +24,38 @@ Example usage:
    jit.opt.start("hotloop=3") -- Lower threshold to trigger JIT sooner, simplifies debugging
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Resolve the location of the Kotuku SDK and create an 'sdk:' volume.  Created for the benefit of some tests - but
+-- is not guaranteed to work.
+
+global function resolveSDKPath()
+   script_path = glSelf.workingPath
+   err = ERR_Failed
+   search_list = array<string>
+   search_path = 'CMakeLists.txt'
+   limit = 5
+   local sdk_path
+   while (err != ERR_Okay) and (limit > 0) do
+      search_list:push(search_path)
+      err, sdk_path = mSys.ResolvePath(script_path .. search_path)
+      search_path = f'../{search_path}'
+      limit -= 1
+   end
+
+   if err is ERR_Okay then
+      rx_cmake_path = regex.new('^(.+)CMakeLists\\.txt')
+      sdk_path = rx_cmake_path.extract(sdk_path) ?? sdk_path
+   else
+      msg = ''
+      for path in values(search_list) do
+         msg ..= path .. '\n'
+      end
+      print('Unable to find CMakeLists.txt after searching the following paths:\n' .. msg)
+   end
+
+   mSys.SetVolume('sdk', sdk_path)
+end
+
+----------------------------------------------------------------------------------------------------------------------
 
 glNetworkAvailable = thunk():bool
    try
@@ -353,5 +385,7 @@ end
 
    -- Setting an error string ensures that ctest will register a failure if the tests do not complete as planned.
    glSelf.errorMessage = 'Unexpected execution failure - tests not executed as planned.'
+
+   resolveSDKPath()
 
    runTests()

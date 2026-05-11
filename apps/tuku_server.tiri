@@ -1,0 +1,87 @@
+#!/usr/bin/env origo
+-- Tuku Server is an HTTP server for files from a local folder, with config-file defaults and command-line overrides.
+
+   import 'net/httpserver'
+   import 'options'
+
+----------------------------------------------------------------------------------------------------------------------
+
+   global glSelf = obj.find('self')
+   global glPath = glSelf.workingPath
+
+   glParser = options({
+      name        = 'Tuku Server',
+      cmdName     = 'tuku_server',
+      description = [[
+Tuku Server is an HTTP server, serving static files from a local folder, with config-file defaults and command-line overrides.
+]],
+      epilog      = [[
+If a config file is stored at user:config/tuku_server_cfg.json then it will be loaded automatically.  Options can be
+overridden via the command-line, or you can refer to a different file via the config parameter.
+
+Index files are checked in this order: index.html, index.htm, default.html, default.htm
+
+Examples:
+  origo apps/tuku_server folder=docs/html port=8080
+  origo apps/tuku_server config=apps/tuku_server_cfg.json verbose
+]],
+      userConfig  = 'user:config/tuku_server_cfg.json',
+      args        = array<table> {
+         { name = 'folder', type = 'folder', exists = true, required = true, group = 'Server',
+           comment = 'Required. Folder containing HTML pages and static files to serve.',
+           description = 'Folder containing HTML pages and static files to serve; can also come from config.' },
+         { name = 'port', type = 'int', default = 8080, group = 'Server', comment = 'Port number to listen on.',
+           exec = function(Parser:table, ArgName:str, Value:any, Param:table)
+              if Value < 1 or Value > 65535 then
+                 error("Parameter 'port' must be between 1 and 65535.")
+              end
+           end
+         },
+         { name = 'bind', type = 'str', group = 'Server',
+           comment = "Bind to a specific IP address, for example '127.0.0.1' for localhost only." },
+         { name = 'verbose', kind = 'flag', default = false, group = 'Behaviour',
+           comment = 'Enable verbose logging.' },
+         { name = 'timeout', type = 'int', default = 30, group = 'Behaviour', comment = 'Request timeout in seconds.',
+           exec = function(Parser:table, ArgName:str, Value:any, Param:table)
+              if Value < 1 or Value > 300 then
+                 error("Parameter 'timeout' must be between 1 and 300 seconds.")
+              end
+           end
+         },
+         { names = array<string> { 'autoIndex', 'autoindex' }, kind = 'flag', default = true, group = 'Behaviour',
+           comment = 'Enable automatic directory listing.' },
+         { names = array<string> { 'rateLimit', 'ratelimit' }, type = 'int', group = 'Behaviour',
+           comment = 'Maximum requests per rate-limit window; 0 disables rate limiting.',
+           exec = function(Parser:table, ArgName:str, Value:any, Param:table)
+              if Value < 0 or Value > 1000 then
+                 error("Parameter 'ratelimit' must be between 0 and 1000.")
+              end
+           end
+         },
+         { names = array<string> { 'rateLimitWindow', 'ratelimitwindow' }, type = 'int', group = 'Behaviour',
+           comment = 'Rate-limit window in seconds.' }
+      }
+   })
+
+   glOptions = glParser.process()
+   if not glOptions or not glOptions.folder?? then return end
+
+   err, resolved_path = mSys.ResolvePath(glOptions.folder)
+   if err is ERR_Okay and resolved_path then
+      glOptions.folder = resolved_path
+   end
+
+   glOptions.logMessage = function(Message)
+      print(Message)
+   end
+
+   glServer = hslib.start(glOptions)
+
+   print('Server configuration:')
+   print('  Folder: ' .. glServer.folder)
+   print('  Port: ' .. tostring(glServer.port))
+   print('  Bind address: ' .. (glServer.bind or 'all interfaces'))
+   print('  Local URL: http://' .. (glServer.bind or '127.0.0.1') .. ':' .. tostring(glServer.port) .. '/')
+   print()
+
+   processing.sleep()

@@ -42,7 +42,8 @@ add_library (${MOD}_lib OBJECT
 target_include_directories (${MOD}_lib PRIVATE "${PROJECT_SOURCE_DIR}/include")
 set_target_properties (${MOD}_lib PROPERTIES CXX_STANDARD 20 POSITION_INDEPENDENT_CODE ON)
 target_compile_definitions (${MOD}_lib PRIVATE "PRV_XML" "PRV_XQUERY_MODULE")
-add_dependencies (${MOD} build_headers xml)
+add_dependencies (${MOD} xml)
+add_generated_header_dependencies (${MOD}_lib core_defs xml_defs xquery_defs regex_defs)
 
 # Enable precompiled headers for the xquery functions object library
 # This must be done before the module target to avoid circular dependencies

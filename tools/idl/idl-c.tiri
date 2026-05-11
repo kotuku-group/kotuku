@@ -672,7 +672,6 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 global function saveOutput()
-   tempPath = 'temp:' .. (glModule.name ?? 'idl-c-' .. math.random(1000000)):lower() .. '.h'
    outPath = glOutputPath
    if not outPath then
       if glModule.name?? then
@@ -684,101 +683,97 @@ global function saveOutput()
 
    verbose("Saving C header to \"" .. outPath .. "\"")
 
-   do
-      fl = obj.new('file', { flags='WRITE|NEW', location=tempPath } )
+   content = ''
 
-      priority() -- Blank line at the end
+   priority() -- Blank line at the end
 
-      blank = 0
-      for a=0, #glHeader-1 do
-         str = glHeader[a] .. '\n'
+   blank = 0
+   for a=0, #glHeader-1 do
+      str = glHeader[a] .. '\n'
+      if str is '\n' then
+         blank++
+      else
+         blank = 0
+      end
+
+      if blank < 2 then content ..= str end
+   end
+
+   for a=0, #glConstants-1 do
+      str = glConstants[a] .. '\n'
+      if str is '\n' then
+         blank++
+      else
+         blank = 0
+      end
+
+      if blank < 2 then content ..= str end
+   end
+
+   for a=0, #glOutput-1 do
+      if glOutput[a] is '__FUNCTION_TABLE__' then
+         out = ''
+         out ..= '#ifdef KOTUKU_STATIC\n'
+         out ..= f'#define JUMPTABLE_{glModule.name:upper()} [[maybe_unused]] static struct {glModule.name}Base *{glModule.name}Base = nullptr;\n'
+         out ..= '#else\n'
+         out ..= f'#define JUMPTABLE_{glModule.name:upper()} struct {glModule.name}Base *{glModule.name}Base = nullptr;\n'
+         out ..= '#endif\n\n'
+
+         out ..= f'struct {glModule.name}Base {{\n'
+         out ..= '#ifndef KOTUKU_STATIC\n'
+         for k, func in ipairs(glFunctions) do
+            if func.def?? then
+               out ..= func.def .. '\n'
+            end
+         end
+         out ..= '#endif // KOTUKU_STATIC\n'
+         out ..= '};\n\n'
+
+         out ..= '#if !defined(KOTUKU_STATIC) and !defined(PRV_' .. glModule.name:upper() .. '_MODULE)\n'
+         out ..= f'extern struct {glModule.name}Base *{glModule.name}Base;\n'
+         if glFunctionPrefix?? then
+            out ..= 'namespace ' .. glFunctionPrefix:lower() .. ' {\n'
+         end
+         for k, func in ipairs(glFunctions) do
+            if func.macro?? then
+               out ..= func.macro() .. '\n'
+            end
+         end
+
+         if glFunctionPrefix?? then
+            out ..= '} // namespace\n'
+         end
+
+         out ..= '#else\n'
+         if glFunctionPrefix?? then
+            out ..= 'namespace ' .. glFunctionPrefix:lower() .. ' {\n'
+         end
+
+         for k, func in ipairs(glFunctions) do
+            if func.staticMacro?? and (func.status != 'private') then
+               out ..= func.staticMacro() .. '\n'
+            end
+         end
+
+         if glFunctionPrefix?? then
+            out ..= '} // namespace\n'
+         end
+
+         out ..= '#endif // KOTUKU_STATIC\n\n'
+         content ..= out
+      else
+         str = glOutput[a] .. '\n'
          if str is '\n' then
             blank++
          else
             blank = 0
          end
 
-         if blank < 2 then fl.acWrite(str, str:len()) end
-      end
-
-      for a=0, #glConstants-1 do
-         str = glConstants[a] .. '\n'
-         if str is '\n' then
-            blank++
-         else
-            blank = 0
-         end
-
-         if blank < 2 then fl.acWrite(str, str:len()) end
-      end
-
-      for a=0, #glOutput-1 do
-         if glOutput[a] is '__FUNCTION_TABLE__' then
-            out = ''
-            out ..= '#ifdef KOTUKU_STATIC\n'
-            out ..= f'#define JUMPTABLE_{glModule.name:upper()} [[maybe_unused]] static struct {glModule.name}Base *{glModule.name}Base = nullptr;\n'
-            out ..= '#else\n'
-            out ..= f'#define JUMPTABLE_{glModule.name:upper()} struct {glModule.name}Base *{glModule.name}Base = nullptr;\n'
-            out ..= '#endif\n\n'
-
-            out ..= f'struct {glModule.name}Base {{\n'
-            out ..= '#ifndef KOTUKU_STATIC\n'
-            for k, func in ipairs(glFunctions) do
-               if func.def?? then
-                  out ..= func.def .. '\n'
-               end
-            end
-            out ..= '#endif // KOTUKU_STATIC\n'
-            out ..= '};\n\n'
-
-            out ..= '#if !defined(KOTUKU_STATIC) and !defined(PRV_' .. glModule.name:upper() .. '_MODULE)\n'
-            out ..= f'extern struct {glModule.name}Base *{glModule.name}Base;\n'
-            if glFunctionPrefix?? then
-               out ..= 'namespace ' .. glFunctionPrefix:lower() .. ' {\n'
-            end
-            for k, func in ipairs(glFunctions) do
-               if func.macro?? then
-                  out ..= func.macro() .. '\n'
-               end
-            end
-
-            if glFunctionPrefix?? then
-               out ..= '} // namespace\n'
-            end
-
-            out ..= '#else\n'
-            if glFunctionPrefix?? then
-               out ..= 'namespace ' .. glFunctionPrefix:lower() .. ' {\n'
-            end
-
-            for k, func in ipairs(glFunctions) do
-               if func.staticMacro?? and (func.status != 'private') then
-                  out ..= func.staticMacro() .. '\n'
-               end
-            end
-
-            if glFunctionPrefix?? then
-               out ..= '} // namespace\n'
-            end
-
-            out ..= '#endif // KOTUKU_STATIC\n\n'
-            fl.acWrite(out, out:len())
-         else
-            str = glOutput[a] .. '\n'
-            if str is '\n' then
-               blank++
-            else
-               blank = 0
-            end
-
-            if blank < 2 then fl.acWrite(str, str:len()) end
-         end
+         if blank < 2 then content ..= str end
       end
    end
 
-   processing.collect()
-
-   mSys.MoveFile(tempPath, outPath)
+   saveIfModified(outPath, content, 'C header output')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -1014,28 +1009,20 @@ end
       protoDef = buildPrototypes()
 
       if glOutputDefs?? then
-         try
-            fl = obj.new('file', { flags='WRITE|NEW', location=glOutputDefs } )
-            fl.acWrite('// Auto-generated by idl-c.tiri\n\n')
-            if (glOutputProto is glOutputDefs) and protoDef?? then
-               glOutputProto = nil
-               fl.acWrite(protoDef)
-            end
-            defs = buildDefs()
-            if defs?? then fl.acWrite(defs) end
-         except ex
-            error('Failed to open or write file "' .. glOutputDefs .. '" ' .. ex.message)
+         content = '// Auto-generated by idl-c.tiri\n\n'
+         if (glOutputProto is glOutputDefs) and protoDef?? then
+            glOutputProto = nil
+            content ..= protoDef
          end
+         defs = buildDefs()
+         if defs?? then content ..= defs end
+         saveIfModified(glOutputDefs, content, 'C definition output')
       end
 
       if glOutputProto?? then
-         try
-            fl = obj.new('file', { flags='WRITE|NEW', location=glOutputProto } )
-            fl.acWrite('// Auto-generated by idl-c.tiri\n\n')
-            if protoDef?? then fl.acWrite(protoDef) end
-         except ex
-            error('Failed to open or write file "' .. glOutputProto .. '" ' .. ex.message)
-         end
+         content = '// Auto-generated by idl-c.tiri\n\n'
+         if protoDef?? then content ..= protoDef end
+         saveIfModified(glOutputProto, content, 'C prototype output')
       end
 
       saveDocuments()

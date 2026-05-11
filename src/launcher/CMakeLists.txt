@@ -100,23 +100,24 @@ target_link_libraries (origo_cmd PRIVATE ${INIT_LINK})
 
 target_include_directories (origo_cmd PRIVATE "${PROJECT_SOURCE_DIR}/src/link" "${CMAKE_CURRENT_BINARY_DIR}")
 
-if (CMAKE_BUILD_TYPE MATCHES "Release")
+if (KOTUKU_MULTI_CONFIG)
+   message (STATUS "Symbols will be stripped from Release builds only.")
+elseif (CMAKE_BUILD_TYPE MATCHES "Release")
    message (STATUS "Symbols will be stripped from this build (no debugging).")
-   if (NOT MSVC)
-      set_target_properties (origo_cmd PROPERTIES CXX_STANDARD 20 LINK_FLAGS_RELEASE "-s" RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/release")
-   else ()
-      set_target_properties (origo_cmd PROPERTIES CXX_STANDARD 20 RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/release")
-   endif ()
 else ()
    message (STATUS "Symbols will be left intact in this build (debug enabled).")
-   set_target_properties (origo_cmd PROPERTIES CXX_STANDARD 20 RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/release")
+endif ()
+
+set_target_properties (origo_cmd PROPERTIES CXX_STANDARD 20 RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/release")
+if (NOT MSVC)
+   target_link_options (origo_cmd PRIVATE $<$<CONFIG:Release>:-s>)
 endif ()
 
 set_target_properties (origo_cmd PROPERTIES OUTPUT_NAME "origo")
 
-# Attach headers to the Origo binary so that we can ensure that all headers are built
+# Ensure the icon package is available before the Origo binary is built
 
-add_dependencies (origo_cmd build_headers icon_package)
+add_dependencies (origo_cmd icon_package)
 
 if (KOTUKU_STATIC)
    add_dependencies (origo_cmd kotuku_static)

@@ -235,7 +235,8 @@ static ERR insert_xml(extDocument *Self, RSTREAM *Stream, objXML *XML, const obj
 
    if (Self->FocusIndex >= std::ssize(Self->Tabs)) Self->FocusIndex = -1;
 
-   return ERR::Okay;
+   if (Self->Error IS ERR::Okay) return ERR::Okay;
+   else return Self->Error;
 }
 
 //********************************************************************************************************************
@@ -377,9 +378,13 @@ static ERR load_doc(extDocument *Self, std::string Path, bool Unload, ULD Unload
 
 static ERR unload_doc(extDocument *Self, ULD Flags)
 {
+   auto error = ERR::Okay;
+
    kt::Log log(__FUNCTION__);
 
    log.branch("Flags: $%.2x", int(Flags));
+
+   Self->Unloading = true;
 
    #ifdef DBG_STREAM
       print_stream(Self->Stream);
@@ -432,21 +437,30 @@ static ERR unload_doc(extDocument *Self, ULD Flags)
    Self->MouseOverChain.clear();
    Self->Tabs.clear();
 
+   for (auto &triggers : Self->Triggers) {
+      for (auto &trigger : triggers) {
+         if (trigger.isScript() and (not has_script_event_callback(Self, trigger.Context))) {
+            UnsubscribeAction(trigger.Context, AC::Free);
+         }
+      }
+   }
+
    for (auto &t : Self->Triggers) t.clear();
 
-   if ((Flags & ULD::TERMINATE) != ULD::NIL) Self->Vars.clear();
+   if (Self->terminating()) Self->Vars.clear();
 
-   if (Self->SVG)         { FreeResource(Self->SVG); Self->SVG = nullptr; }
-   if (Self->Keywords)    { FreeResource(Self->Keywords); Self->Keywords = nullptr; }
-   if (Self->Author)      { FreeResource(Self->Author); Self->Author = nullptr; }
-   if (Self->Copyright)   { FreeResource(Self->Copyright); Self->Copyright = nullptr; }
+   if (Self->SVG)         { FreeResource(Self->SVG);         Self->SVG = nullptr; }
+   if (Self->Keywords)    { FreeResource(Self->Keywords);    Self->Keywords = nullptr; }
+   if (Self->Author)      { FreeResource(Self->Author);      Self->Author = nullptr; }
+   if (Self->Copyright)   { FreeResource(Self->Copyright);   Self->Copyright = nullptr; }
    if (Self->Description) { FreeResource(Self->Description); Self->Description = nullptr; }
-   if (Self->Title)       { FreeResource(Self->Title); Self->Title = nullptr; }
+   if (Self->Title)       { FreeResource(Self->Title);       Self->Title = nullptr; }
 
-   // Free templates only if they have been modified (no longer at the default settings).
+   // Free templates only if they have been modified (no longer at the default settings)
+   // or if the document is being destroyed.
 
    if (Self->Templates) {
-      if (Self->TemplatesModified != Self->Templates->Modified) {
+      if ((Self->TemplatesModified != Self->Templates->Modified) or (Self->terminating())) {
          FreeResource(Self->Templates);
          Self->Templates = nullptr;
       }
@@ -459,7 +473,7 @@ static ERR unload_doc(extDocument *Self, ULD Flags)
       log.branch("Freeing page-allocated resources.");
 
       for (auto it = Self->Resources.begin(); it != Self->Resources.end(); ) {
-         if ((ULD::TERMINATE) != ULD::NIL) it->terminate = true;
+         if (Self->terminating()) it->terminate = true;
 
          if ((it->type IS RTD::PERSISTENT_SCRIPT) or (it->type IS RTD::PERSISTENT_OBJECT)) {
             // Persistent objects and scripts will survive refreshes
@@ -472,12 +486,15 @@ static ERR unload_doc(extDocument *Self, ULD Flags)
       }
    }
 
-   if (!Self->Templates) {
-      if (!(Self->Templates = objXML::create::local(fl::Name("xmlTemplates"), fl::Statement(glDefaultStyles),
-         fl::Flags(XMF::PARSE_HTML|XMF::STRIP_HEADERS)))) return ERR::CreateObject;
+   if ((not Self->Templates) and (not Self->terminating())) {
+      if ((Self->Templates = objXML::create::local(fl::Name("xmlTemplates"),
+            fl::Statement(glDefaultStyles),
+            fl::Flags(XMF::PARSE_HTML|XMF::STRIP_HEADERS)))) {
 
-      Self->TemplatesModified = Self->Templates->Modified;
-      Self->RefreshTemplates = true;
+         Self->TemplatesModified = Self->Templates->Modified;
+         Self->RefreshTemplates = true;
+      }
+      else error = ERR::CreateObject;
    }
 
    if (Self->Page) {
@@ -509,11 +526,10 @@ static ERR unload_doc(extDocument *Self, ULD Flags)
    Self->NoWhitespace   = true;
    Self->UpdatingLayout = true;
 
-   if ((Flags & ULD::REDRAW) != ULD::NIL) {
-      Self->Viewport->draw();
-   }
+   if (((Flags & ULD::REDRAW) != ULD::NIL) and (Self->Viewport)) Self->Viewport->draw();
 
-   return ERR::Okay;
+   Self->Unloading = false;
+   return error;
 }
 
 //********************************************************************************************************************
@@ -640,29 +656,18 @@ static bc_font * find_style(RSTREAM &Stream, stream_char &Char)
 {
    bc_font *style = nullptr;
 
-   for (INDEX fi = Char.index; fi < Char.index; fi++) {
-      if (Stream[fi].code IS SCODE::FONT) style = &Stream.lookup<bc_font>(fi);
-      else if (Stream[fi].code IS SCODE::PARAGRAPH_START) style = &Stream.lookup<bc_paragraph>(fi).font;
-      else if (Stream[fi].code IS SCODE::LINK) style = &Stream.lookup<bc_link>(fi).font;
-      else if (Stream[fi].code IS SCODE::TEXT) break;
-   }
-
-   // Didn't work?  Try going backwards
-
-   if (!style) {
-      for (INDEX fi = Char.index; fi >= 0; fi--) {
-         if (Stream[fi].code IS SCODE::FONT) {
-            style = &Stream.lookup<bc_font>(fi);
-            break;
-         }
-         else if (Stream[fi].code IS SCODE::PARAGRAPH_START) {
-            style = &Stream.lookup<bc_paragraph>(fi).font;
-            break;
-         }
-         else if (Stream[fi].code IS SCODE::LINK) {
-            style = &Stream.lookup<bc_link>(fi).font;
-            break;
-         }
+   for (INDEX fi = Char.index; fi >= 0; fi--) {
+      if (Stream[fi].code IS SCODE::FONT) {
+         style = &Stream.lookup<bc_font>(fi);
+         break;
+      }
+      else if (Stream[fi].code IS SCODE::PARAGRAPH_START) {
+         style = &Stream.lookup<bc_paragraph>(fi).font;
+         break;
+      }
+      else if (Stream[fi].code IS SCODE::LINK) {
+         style = &Stream.lookup<bc_link>(fi).font;
+         break;
       }
    }
 
@@ -747,16 +752,14 @@ static void process_parameters(extDocument *Self, const std::string_view String)
          pagename_processed = true;
 
          if (auto ind = String.find(":", pos+1); ind != std::string::npos) {
-            ind -= pos;
+            ind -= pos + 1;
             Self->PageName.assign(String, pos + 1);
             if (Self->PageName[ind] IS ':') { // Check for bookmark separator
-               Self->PageName.resize(ind);
-               ind++;
-
-               Self->Bookmark.assign(Self->PageName, ind);
-               if (ind = Self->Bookmark.find('?'); ind != std::string::npos) {
-                  Self->Bookmark.resize(ind);
+               Self->Bookmark.assign(Self->PageName, ind + 1);
+               if (auto query = Self->Bookmark.find('?'); query != std::string::npos) {
+                  Self->Bookmark.resize(query);
                }
+               Self->PageName.resize(ind);
             }
          }
          else Self->PageName.assign(String, pos + 1);
@@ -770,10 +773,10 @@ static void process_parameters(extDocument *Self, const std::string_view String)
          pos++;
 
          auto uri_char = [&](std::string &Output) {
-            if ((String[pos] IS '%') and
-                (((String[pos+1] >= '0') and (String[pos+1] <= '9')) or
-                 ((String[pos+1] >= 'A') and (String[pos+1] <= 'F')) or
-                 ((String[pos+1] >= 'a') and (String[pos+1] <= 'f'))) and
+            if ((String[pos] IS '%') and (pos + 2 < String.size()) and
+                 (((String[pos+1] >= '0') and (String[pos+1] <= '9')) or
+                  ((String[pos+1] >= 'A') and (String[pos+1] <= 'F')) or
+                  ((String[pos+1] >= 'a') and (String[pos+1] <= 'f'))) and
                 (((String[pos+2] >= '0') and (String[pos+2] <= '9')) or
                  ((String[pos+2] >= 'A') and (String[pos+2] <= 'F')) or
                  ((String[pos+2] >= 'a') and (String[pos+2] <= 'f')))) {
@@ -795,7 +798,7 @@ static void process_parameters(extDocument *Self, const std::string_view String)
                uri_char(arg);
             }
 
-            if (String[pos] IS '=') { // Extract the parameter value
+            if ((pos < String.size()) and (String[pos] IS '=')) { // Extract the parameter value
                value.clear();
                pos++;
                while ((pos < String.size()) and (String[pos] != '#') and (String[pos] != '&') and (String[pos] != ';')) {
@@ -1032,7 +1035,8 @@ static ERR report_event(extDocument *Self, DEF Event, entity *Entity, KEYVALUE *
    ERR result = ERR::Okay;
 
    if ((Event & Self->EventMask) != DEF::NIL) {
-      log.traceBranch("Event $%x -> Entity %d", int(Event), Entity->uid);
+      auto entity_id = Entity ? Entity->uid : 0;
+      log.traceBranch("Event $%x -> Entity %d", int(Event), entity_id);
 
       if (Self->EventCallback.isC()) {
          auto routine = (ERR (*)(extDocument *, DEF, KEYVALUE *, entity *, APTR))Self->EventCallback.Routine;
@@ -1045,7 +1049,7 @@ static ERR report_event(extDocument *Self, DEF Event, entity *Entity, KEYVALUE *
                { "Document", Self, FD_OBJECTPTR },
                { "EventMask", int(Event) },
                { "KeyValue:Parameters", EventData, FD_STRUCT },
-               { "Entity", Entity->uid }
+               { "Entity", entity_id }
             }), result);
          }
          else {
@@ -1053,7 +1057,7 @@ static ERR report_event(extDocument *Self, DEF Event, entity *Entity, KEYVALUE *
                { "Document",  Self, FD_OBJECTPTR },
                { "EventMask", int(Event) },
                { "KeyValue",  int(0) },
-               { "Entity",    Entity->uid }
+               { "Entity",    entity_id }
             }), result);
          }
       }

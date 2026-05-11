@@ -236,7 +236,7 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
             return ERR::Okay;
          }
 
-         if (Self->Status IS HTS::MOVED_PERMANENTLY) {
+         if ((Self->Status IS HTS::MOVED_PERMANENTLY) and ((Self->Flags & HTF::NO_AUTO_REDIRECT) IS HTF::NIL)) {
             if ((Self->Flags & HTF::MOVED) != HTF::NIL) {
                // Chaining of MovedPermanently messages is disallowed (could cause circular referencing).
 

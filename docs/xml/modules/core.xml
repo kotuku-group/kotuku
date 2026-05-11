@@ -219,11 +219,12 @@ struct FunctionField argsResize[] = {
     <prototype>INT AdjustLogLevel(INT Delta)</prototype>
     <tiriPrototype>num = AdjustLogLevel(Delta:num)</tiriPrototype>
     <input>
-      <param type="INT" name="Delta">The level of adjustment to make to new log messages.  Zero is no change.  The maximum level is +/- 6.</param>
+      <param type="INT" name="Delta">The level of adjustment to make to new log messages.  Zero is no change.  The maximum level is +/- 9.</param>
     </input>
     <description>
 <p>This function adjusts the detail level of all outgoing log messages.  To illustrate, setting the <code>Delta</code> value to 1 would result in level 5 (API) log messages being bumped to level 6.  If the user's maximum log level output is 5, no further API messages will be output until the base-line is reduced to normal.</p>
 <p>The main purpose of AdjustLogLevel() is to reduce log noise.  For instance, creating a new desktop window will result in a large number of new log messages.  Raising the base-line by 2 before creating the window would eliminate the noise if the user has the log level set to 5 (API).  Re-running the program with a log level of 7 or more would make the messages visible again.</p>
+<p>A secondary use of this function is to increase the verbosity of log messages when debugging an area of interest. For instance, if a program is run with a warning level of 2 and we want to see the log outupt for a function at API level, call AdjustLogLevel() with a <code>Delta</code> of -3 to raise the base-line to 5.</p>
 <p>Adjustments to the base-line are accumulative, so small increments of 1 or 2 are encouraged.  To revert logging to the previous base-line, call this function again with a negation of the previously passed value.</p>
     </description>
     <result type="INT">Returns the absolute base-line value that was active prior to calling this function.</result>
@@ -944,6 +945,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     <tiriPrototype>any = GetSystemState()</tiriPrototype>
     <description>
 <p>The GetSystemState() function is used to retrieve miscellaneous resource and environment values, such as resource paths, the Core's version number and the name of the host platform.</p>
+<p>The state values in the structure are static and will not change during runtime.</p>
     </description>
     <result type="const struct SystemState *">A read-only <st>SystemState</st> structure is returned.</result>
   </function>
@@ -3302,6 +3304,7 @@ static ResourceManager glNodeManager = {
       <field name="Stage" type="INT">The current operating stage.  <code>-1</code> = Initialising, <code>0</code> indicates normal operating status; <code>1</code> means that the program is shutting down; <code>2</code> indicates a program restart; <code>3</code> is for mode switches.</field>
       <field name="ReleaseBuild" type="INT"><code>1</code> = Release build, <code>0</code> = Debug build</field>
       <field name="StaticBuild" type="INT"><code>1</code> = Static build, <code>0</code> = Dynamic build</field>
+      <field name="HasConsole" type="INT"><code>1</code> = Console available, <code>0</code> = Console not available</field>
     </struct>
 
     <struct name="Unit">

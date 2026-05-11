@@ -195,6 +195,8 @@ static TRef recff_ir_call_fixed(jit_State* J, IRCallID CallId, TRef Arg1, TRef A
    uint32_t nargs = CCI_NARGS(call_info);
    if (call_info->flags & CCI_L) nargs--;
 
+   if ((call_info->flags & CCI_T) and J->trydepth > 0) lj_record_try_materialise(J);
+
    TRef carg = TREF_NIL;
    if (nargs IS 1) {
       carg = Arg1;

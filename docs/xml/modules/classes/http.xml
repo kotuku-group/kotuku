@@ -432,6 +432,16 @@ http.acActivate()
     </field>
 
     <field>
+      <name>ResponseKeys</name>
+      <comment>Returns a string list of received response keys.</comment>
+      <access read="G">Get</access>
+      <type>STRING []</type>
+      <description>
+<p>This field returns a string list of all the keys found in the HTTP response header.  An empty list will be returned if no keys are found.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Size</name>
       <comment>Set this field to define the length of a data transfer when issuing a <code>POST</code> command.</comment>
       <access read="R" write="W">Read/Write</access>
@@ -508,6 +518,7 @@ http.acActivate()
       <const name="DISABLE_SERVER_VERIFY">Disable SSL server certificate verification (use with caution).</const>
       <const name="MESSAGE">When activating child objects, send delayed messages to postpone execution rather than making direct calls.</const>
       <const name="MOVED">Read-only.  Indicates that the HTTP source was moved (<code>HTS::MOVED_PERMANENTLY</code>).</const>
+      <const name="NO_AUTO_REDIRECT">Do not automatically follow <code>301</code> responses.</const>
       <const name="NO_DIALOG">Turn off the username/password dialog.</const>
       <const name="NO_HEAD">Do not send a <code>HEAD</code> prior to executing a <code>PUT</code> or <code>POST</code> (removes the authentication check).</const>
       <const name="RAW">Forcibly turns off chunk detection and chunk handling on incoming data.  Also turns off automatic chunk encoding for outgoing data.</const>
@@ -532,6 +543,7 @@ http.acActivate()
       <const name="MOVE">WebDAV instruction.</const>
       <const name="NOTIFY">WebDAV instruction.</const>
       <const name="OPTIONS">Request permitted communication options for a given URL or server.</const>
+      <const name="PATCH">Applies partial modifications to a resource.</const>
       <const name="POLL">WebDAV instruction.</const>
       <const name="POST">Sends information to the HTTP server.</const>
       <const name="PROPFIND">WebDAV instruction.</const>

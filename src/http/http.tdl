@@ -47,7 +47,8 @@ module({ name="HTTP", copyright="Paul Manias © 2005-2026", version=1.0, timesta
     "SEARCH: WebDAV instruction.",
     "SUBSCRIBE: WebDAV instruction.",
     "UNLOCK: WebDAV instruction.",
-    "UNSUBSCRIBE: WebDAV instruction.")
+    "UNSUBSCRIBE: WebDAV instruction.",
+    "PATCH: Applies partial modifications to a resource.")
 
   constants("HTS", { type="int", comment="HTTP status codes" }, {
     CONTINUE             = 100,
@@ -103,7 +104,8 @@ module({ name="HTTP", copyright="Paul Manias © 2005-2026", version=1.0, timesta
     "DEBUG_SOCKET: Log all HTTP headers and data that goes out through the socket.  This should only be used when sending plain-text data.",
     "RECV_BUFFER: Enables buffering of all received HTTP content into a local buffer.  The buffer information can be read at any time during and after the transaction through the #RecvBuffer field.  Note that this option should only be used for limited data transfers to avoid excessive memory usage.",
     "SSL: Force SSL connectivity, irrespective of the HTTP port.  Note that this flag is automatically set (and remains set for all future transfers) if the #Port field is set to `443`.",
-    "DISABLE_SERVER_VERIFY: Disable SSL server certificate verification (use with caution).")
+    "DISABLE_SERVER_VERIFY: Disable SSL server certificate verification (use with caution).",
+    "NO_AUTO_REDIRECT: Do not automatically follow `301` responses.")
 
   class("HTTP", { src={ "http.cpp", "http_fields.cpp" }, output="http_def.c" }, [[
    double DataTimeout     # Timeout for receiving data, measured in seconds
@@ -131,4 +133,3 @@ module({ name="HTTP", copyright="Paul Manias © 2005-2026", version=1.0, timesta
    int BufferSize         # Preferred buffer size for things like outgoing operations (sending data)
   ]])
 end)
-

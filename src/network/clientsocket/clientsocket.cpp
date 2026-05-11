@@ -49,7 +49,7 @@ static ERR receive_from_client(extClientSocket *Self, APTR Buffer, size_t Buffer
 {
    kt::Log log(__FUNCTION__);
 
-   if (!BufferSize) return ERR::Okay;
+   if (not BufferSize) return ERR::Okay;
 
 #ifndef DISABLE_SSL
    if (Self->SSLHandle) {
@@ -70,7 +70,7 @@ static ERR receive_from_client(extClientSocket *Self, APTR Buffer, size_t Buffer
             *Result = bytes_read;
             return ERR::Okay;
          }
-         else if ((ssl_error IS SSL_OK) and (!bytes_read)) return ERR::Disconnected;
+         else if ((ssl_error IS SSL_OK) and (not bytes_read)) return ERR::Disconnected;
          else if (ssl_error IS SSL_ERROR_WOULD_BLOCK) {
             log.traceWarning("No more data to read from the SSL socket.");
             return ERR::Okay;
@@ -136,7 +136,7 @@ static ERR receive_from_client(extClientSocket *Self, APTR Buffer, size_t Buffer
             Buffer = (APTR)((char *)Buffer + result);
             BufferSize -= result;
          }
-      } while ((pending = SSL_pending(Self->SSLHandle)) and (!read_blocked) and (BufferSize > 0));
+      } while ((pending = SSL_pending(Self->SSLHandle)) and (not read_blocked) and (BufferSize > 0));
 
       log.trace("Pending: %d, BufSize: %d, Blocked: %d", pending, BufferSize, read_blocked);
 
@@ -190,7 +190,7 @@ static ERR receive_from_client(extClientSocket *Self, APTR Buffer, size_t Buffer
 static void server_incoming_from_client_impl(HOSTHANDLE SocketFD, extClientSocket *client)
 {
    kt::Log log(__FUNCTION__);
-   if (!client->Client) return;
+   if (not client->Client) return;
    auto Server = (extNetSocket *)(client->Client->Owner);
 
    if (client->Handle.is_invalid()) {
@@ -230,8 +230,8 @@ static void server_incoming_from_client_impl(HOSTHANDLE SocketFD, extClientSocke
                   return;
             }
          }
-         if (!ssl_connected) return;
-         if (!ssl_has_decrypted_data(client->SSLHandle) and !ssl_has_encrypted_data(client->SSLHandle)) return;
+         if (not ssl_connected) return;
+         if (not ssl_has_decrypted_data(client->SSLHandle) and !ssl_has_encrypted_data(client->SSLHandle)) return;
       }
    #else
       if (client->State IS NTC::HANDSHAKING) {
@@ -258,8 +258,8 @@ static void server_incoming_from_client_impl(HOSTHANDLE SocketFD, extClientSocke
                client->setState(NTC::DISCONNECTED);
             }
          }
-         if (!ssl_connected) return;
-         if (!ssl_has_buffered_read_data(client->SSLHandle)) return;
+         if (not ssl_connected) return;
+         if (not ssl_has_buffered_read_data(client->SSLHandle)) return;
       }
    #endif
 #endif
@@ -292,7 +292,7 @@ static void server_incoming_from_client_impl(HOSTHANDLE SocketFD, extClientSocke
    }
    else log.traceWarning("No Incoming callback configured.");
 
-   if (!client->ReadCalled) error = ERR::Terminate;
+   if (not client->ReadCalled) error = ERR::Terminate;
 
    if (error IS ERR::Terminate) {
       log.trace("Terminating socket, failed to read incoming data.");
@@ -347,17 +347,17 @@ static void clientsocket_outgoing_impl(HOSTHANDLE SocketFD, extClientSocket *Cli
 
    // Send out remaining queued data before getting new data to send
 
-   while (!ClientSocket->WriteQueue.Buffer.empty()) {
+   while (not ClientSocket->WriteQueue.Buffer.empty()) {
       size_t len = ClientSocket->WriteQueue.Buffer.size() - ClientSocket->WriteQueue.Index;
       #ifndef DISABLE_SSL
-         if ((!ClientSocket->SSLHandle) and (len > glMaxWriteLen)) len = glMaxWriteLen;
+         if ((not ClientSocket->SSLHandle) and (len > glMaxWriteLen)) len = glMaxWriteLen;
       #else
          if (len > glMaxWriteLen) len = glMaxWriteLen;
       #endif
 
       if (len > 0) {
          error = send_data(ClientSocket, ClientSocket->WriteQueue.Buffer.data() + ClientSocket->WriteQueue.Index, &len);
-         if ((error != ERR::Okay) or (!len)) break;
+         if ((error != ERR::Okay) or (not len)) break;
          ClientSocket->WriteQueue.Index += len;
       }
 
@@ -413,7 +413,7 @@ static void clientsocket_outgoing_impl(HOSTHANDLE SocketFD, extClientSocket *Cli
 
    if (error != ERR::Okay) {
       ClientSocket->ErrorCountdown--;
-      if (!ClientSocket->ErrorCountdown) disconnect(ClientSocket);
+      if (not ClientSocket->ErrorCountdown) disconnect(ClientSocket);
    }
 
    ClientSocket->InUse--;
@@ -432,7 +432,7 @@ static ERR CLIENTSOCKET_Deactivate(extClientSocket *Self)
    kt::Log log;
    log.branch();
 
-   if ((Self->State IS NTC::CONNECTED) and (!Self->WriteQueue.Buffer.empty())) {
+   if ((Self->State IS NTC::CONNECTED) and (not Self->WriteQueue.Buffer.empty())) {
       log.msg("Delaying disconnect until queued data is flushed.");
       Self->CloseAfterWrite = true;
       #ifdef __linux__
@@ -473,7 +473,7 @@ static ERR CLIENTSOCKET_Free(extClientSocket *Self)
 
          Self->Client->TotalConnections--;
 
-         if (!Self->Client->Connections) {
+         if (not Self->Client->Connections) {
             log.msg("No more connections for this IP, removing client.");
             free_client((extNetSocket *)Self->Client->Owner, Self->Client);
          }
@@ -490,10 +490,10 @@ static ERR CLIENTSOCKET_Init(extClientSocket *Self)
 {
    kt::Log log;
 
-   if (!Self->Client) return log.warning(ERR::FieldNotSet);
+   if (not Self->Client) return log.warning(ERR::FieldNotSet);
 
    kt::ScopedObjectLock lock(Self->Client);
-   if (!lock.granted()) return ERR::Lock;
+   if (not lock.granted()) return ERR::Lock;
 
 #ifdef __linux__
    int non_blocking = 1;
@@ -609,14 +609,14 @@ Failed: A permanent failure has occurred and socket has been closed.
 static ERR CLIENTSOCKET_Read(extClientSocket *Self, struct acRead *Args)
 {
    kt::Log log;
-   if ((!Args) or (!Args->Buffer)) return log.error(ERR::NullArgs);
+   if ((not Args) or (not Args->Buffer)) return log.error(ERR::NullArgs);
    if (Self->Handle.is_invalid()) {
       // Lack of a handle means that disconnection has already been processed, so the client code
       // shouldn't be calling us (client probably needs to be plugged into the feedback mechanisms)
       return log.warning(ERR::Disconnected);
    }
    Self->ReadCalled = true;
-   if (!Args->Length) { Args->Result = 0; return ERR::Okay; }
+   if (not Args->Length) { Args->Result = 0; return ERR::Okay; }
 
    size_t result = 0;
    auto error = receive_from_client(Self, Args->Buffer, Args->Length, &result);
@@ -649,15 +649,21 @@ static ERR CLIENTSOCKET_Write(extClientSocket *Self, struct acWrite *Args)
 
    // Note that this code is essentially a copy of the NetSocket write code.
 
-   if (!Args) return ERR::NullArgs;
+   if (not Args) return ERR::NullArgs;
    Args->Result = 0;
+   if (Args->Length <= 0) return ERR::Okay;
+   if (not Args->Buffer) return ERR::NullArgs;
 
    auto server = (extNetSocket *)(Self->Client->Owner);
 
-   if ((Self->Handle.is_invalid()) or (Self->State != NTC::CONNECTED)) { // Queue the write prior to server connection
+   if ((Self->Handle.is_invalid()) or (Self->State IS NTC::DISCONNECTED)) return log.warning(ERR::Disconnected);
+
+   if (Self->State != NTC::CONNECTED) { // Queue the write prior to the client connection being ready.
       log.trace("Saving %d bytes to queue.", Args->Length);
-      Self->WriteQueue.write(Args->Buffer, std::min<size_t>(Args->Length, server->MsgLimit));
-      return ERR::Okay;
+      auto len = std::min<size_t>(Args->Length, server->MsgLimit);
+      if (auto error = Self->WriteQueue.write(Args->Buffer, len); error != ERR::Okay) return error;
+      Args->Result = int(len);
+      return (len < size_t(Args->Length)) ? ERR::BufferOverflow : ERR::Okay;
    }
 
    size_t len;
@@ -682,20 +688,36 @@ static ERR CLIENTSOCKET_Write(extClientSocket *Self, struct acWrite *Args)
 
       if ((error IS ERR::DataSize) or (error IS ERR::BufferOverflow) or (ssl_read_blocked) or (len > 0))  {
          // Put data into the write queue and register the socket for write events
-         log.trace("Error: '%s', queuing %d/%d bytes for transfer...", GetErrorMsg(error), Args->Length - len, Args->Length);
-         Self->WriteQueue.write((int8_t *)Args->Buffer + len, std::min<size_t>(Args->Length - len, server->MsgLimit));
+
+         auto remaining = size_t(Args->Length) - len;
+
+         log.trace("Error: '%s', queuing %d/%d bytes for transfer...",
+            GetErrorMsg(error), int(remaining), Args->Length);
+
+         auto queue_len = std::min<size_t>(remaining, server->MsgLimit);
+         if (auto queue_error = Self->WriteQueue.write((int8_t *)Args->Buffer + len, queue_len);
+             queue_error != ERR::Okay) {
+            Args->Result = int(len);
+            return queue_error;
+         }
+
+         auto queue_overflow = queue_len < remaining;
+         if (queue_overflow) Args->Result = int(len + queue_len);
+
          if (ssl_write_blocked) {
             #if !defined(DISABLE_SSL) and !defined(_WIN32)
                ssl_resume_write_handshake(Self->Handle.hosthandle(), Self);
             #endif
          }
-         else if (!ssl_read_blocked) {
+         else if (not ssl_read_blocked) {
             #ifdef __linux__
                RegisterFD(Self->Handle.hosthandle(), RFD::WRITE|RFD::SOCKET, &clientsocket_outgoing, Self);
             #elif _WIN32
                win_socketstate(Self->Handle, std::nullopt, true);
             #endif
          }
+
+         if (queue_overflow) return ERR::BufferOverflow;
       }
       else return error;
    }
@@ -760,7 +782,7 @@ static ERR CS_SET_State(extClientSocket *Self, NTC Value)
          }
       }
 
-      if ((Self->State IS NTC::CONNECTED) and ((!Self->WriteQueue.Buffer.empty()))) {
+      if ((Self->State IS NTC::CONNECTED) and ((not Self->WriteQueue.Buffer.empty()))) {
          log.msg("Sending queued data to server on connection.");
          #ifdef __linux__
             RegisterFD(Self->Handle.hosthandle(), RFD::WRITE|RFD::SOCKET, &clientsocket_outgoing, Self);

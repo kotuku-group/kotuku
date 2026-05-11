@@ -6,6 +6,49 @@ local rx_first_char     = <{ regex.new('^(.)(.+)$') }>
 local rx_cmake_path     = <{ regex.new('^(.+)CMakeLists\\.txt') }>
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Save text output via a temporary file, replacing the target only when the content hash has changed.
+
+global function readTextFile(Path:str, Description:str):str
+   local fl
+   try
+      fl = io.open(Path, 'r')
+      content = fl:read('*a') ?? ''
+      fl:close()
+      return content
+   except ex
+      fl?:close()
+      error(f'Failed to read "{Path}" for {Description}: {ex.message}')
+   end
+end
+
+global function saveIfModified(Path:str, Content:str, Description:str):bool
+   assert(Path??, 'Path not provided')
+
+   Content ?= ''
+   Description ?= 'generated output'
+
+   if mSys.AnalysePath(Path) is ERR_Okay then
+      target_content = readTextFile(Path, Description)
+      if target_content:hash(true) is Content:hash(true) then
+         verbose(f'No changes detected for "{Path}"')
+         return false
+      end
+   end
+
+   local fl
+   try
+      fl = io.open(Path, 'w')
+      fl:write(Content)
+      fl:close()
+   except ex
+      fl?:close()
+      error(f'Failed to write "{Path}" for {Description}: {ex.message}')
+   end
+
+   return true
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Print a message to stdout if verbose mode is enabled
 
 global function verbose(String:str)

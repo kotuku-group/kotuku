@@ -1,37 +1,48 @@
+#!/usr/bin/env origo
 -- Paintbox reads a given CSS colour and outputs useful information for it.
 
    import 'gui'
    import 'json'
+   import 'options'
 
-glHelp = [[
-Inspect a CSS colour and print conversions, contrast information, and optional palette swatches.
+function lowercaseOption(Value:any, Param:table):str
+   Value ?? return
+   return tostring(Value):lower()
+end
 
-Usage:
-  origo paintbox colour="#3498db" [options...]
-  origo paintbox input=styles.css output=oklch
-
-Options:
-
-  colour        - CSS colour to inspect, e.g. #ff8800, rgb(...), hsl(...)
-  output        - Comma-separated fields: rgb, hex, hsl, xyz, oklab, oklch, p3, hsv, info
-                  Default: rgb,hex,hsl,xyz,oklab,oklch,p3,hsv,info
-  format        - Output format: text or json (default: text)
-  scheme        - Palette scheme: analogous, complementary, triadic, split, monochrome
-  palette       - Alias for scheme
-  palette-count - Number of colours for analogous/monochrome palettes (default: 5)
-  preview       - Preview mode: true or ansi for text palettes, svg for JSON swatches
-  save-to       - Save the SVG swatch preview when preview=svg
-  input         - Rewrite colour literals in a file. Currently supports output=oklch only
-  help          - Show this help text
-
+glParser = options({
+   name        = 'Paintbox',
+   description = 'Inspect a CSS colour and print conversions, contrast information, and optional palette swatches.',
+   epilog      = [[
 Examples:
-
   origo paintbox colour=black
   origo paintbox colour="rgb(12 120 200 / 0.8)" output=hex,oklch
   origo paintbox colour=#ff8800 scheme=triadic preview=ansi
   origo paintbox colour=#4ade80 format=json scheme=analogous palette-count=6 preview=svg save-to=swatches.svg
   origo paintbox input=styles.css output=oklch
-]]
+]],
+   args = array<table> {
+      { name = 'colour', type = 'str', group = 'Input',
+        comment = 'CSS colour to inspect, e.g. #ff8800, rgb(...), hsl(...).' },
+      { name = 'input', type = 'file', group = 'Input', excludes = 'colour',
+        comment = 'Rewrite colour literals in a file. Currently supports output=oklch only.' },
+
+      { name = 'output', type = 'csv', default = 'rgb,hex,hsl,xyz,oklab,oklch,p3,hsv,info', group = 'Output',
+        comment = 'Comma-separated fields: rgb, hex, hsl, xyz, oklab, oklch, p3, hsv, info.' },
+      { name = 'format', type = lowercaseOption, default = 'text', choices = array<string> { 'text', 'json' },
+        group = 'Output', comment = 'Output format: text or json.' },
+
+      { names = array<string> { 'scheme', 'palette' }, type = lowercaseOption,
+        choices = array<string> { 'analogous', 'complementary', 'triadic', 'split', 'monochrome' },
+        group = 'Palette', comment = 'Palette scheme: analogous, complementary, triadic, split, monochrome.' },
+      { name = 'palette-count', type = 'int', default = 5, group = 'Palette',
+        comment = 'Number of colours for analogous/monochrome palettes.' },
+      { name = 'preview', type = lowercaseOption, choices = array<string> { 'true', 'ansi', 'svg' }, group = 'Palette',
+        comment = 'Preview mode: true or ansi for text palettes, svg for JSON swatches.' },
+      { name = 'save-to', type = 'file', group = 'Palette',
+        comment = 'Save the SVG swatch preview when preview=svg.' }
+   }
+})
 
 function clamp(Value, Min, Max)
    if Value < Min then return Min end
@@ -316,28 +327,20 @@ function outputJSON(Report, Format, Palette, Scheme)
 end
 
    self = obj.find('self')
-   if arg('help') then
-      print(glHelp)
-      return
-   end
+   args = glParser.process()
+   if args is nil then return end
 
-   colour      = arg('colour')
-   all_output  = arg('output', 'rgb,hex,hsl,xyz,oklab,oklch,p3,hsv,info'):split(',')
-   format      = arg('format', 'text')
-   preview     = arg('preview')
-   target_file = arg('save-to')
-   input_file  = arg('input')
-
-   scheme = arg('scheme')
-   scheme ?= arg('palette')
-   scheme = scheme ? scheme:lower() :> nil
-
-   preview = preview ? preview:lower() :> nil
-   palette_count = tonumber(arg('palette-count', '5'))
-   assert(format is 'text' or format is 'json', "format must be 'text' or 'json'")
+   colour        = args.colour
+   all_output    = args.output
+   format        = args.format
+   preview       = args.preview
+   target_file   = args['save-to']
+   input_file    = args.input
+   scheme        = args.scheme
+   palette_count = args['palette-count']
 
    if scheme then
-      assert(palette_count?? and palette_count >= 2, 'palette-count must be a number >= 2')
+      assert(palette_count >= 2, 'palette-count must be a number >= 2')
    end
 
    painter = struct.new('VectorPainter')
@@ -413,5 +416,5 @@ end
          end
       end
    else
-      print(glHelp)
+      glParser.printHelp()
    end

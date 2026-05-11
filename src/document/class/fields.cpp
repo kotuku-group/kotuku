@@ -69,14 +69,23 @@ static ERR GET_EventCallback(extDocument *Self, FUNCTION **Value)
 
 static ERR SET_EventCallback(extDocument *Self, FUNCTION *Value)
 {
+   OBJECTPTR old_context = nullptr;
+   if (Self->EventCallback.isScript()) old_context = Self->EventCallback.Context;
+
+   bool subscribe_context = false;
+   if ((Value) and (Value->isScript())) subscribe_context = not has_script_free_callback(Self, Value->Context);
+
    if (Value) {
-      if (Self->EventCallback.isScript()) UnsubscribeAction(Self->EventCallback.Context, AC::Free);
       Self->EventCallback = *Value;
-      if (Self->EventCallback.isScript()) {
-         SubscribeAction(Self->EventCallback.Context, AC::Free, C_FUNCTION(notify_free_event));
+      if (subscribe_context) {
+         SubscribeAction(Self->EventCallback.Context, AC::Free, C_FUNCTION(notify_free_script_context));
       }
    }
-   else Self->EventCallback.clear();
+   else {
+      Self->EventCallback.clear();
+   }
+
+   unsubscribe_script_context(Self, old_context);
    return ERR::Okay;
 }
 
@@ -155,11 +164,11 @@ static ERR GET_Path(extDocument *Self, CSTRING *Value)
 static ERR SET_Path(extDocument *Self, CSTRING Value)
 {
    kt::Log log;
-   static int8_t recursion = 0;
-
-   if (recursion) return log.warning(ERR::Recursion);
 
    if ((!Value) or (!*Value)) return ERR::NoData;
+   if (Self->PathGuard) return log.warning(ERR::Recursion);
+
+   Self->PathGuard = true;
 
    Self->Error = ERR::Okay;
    auto value = std::string_view(Value);
@@ -182,8 +191,7 @@ static ERR SET_Path(extDocument *Self, CSTRING Value)
 
    // Signal that we are leaving the current page
 
-   recursion++;
-   for (auto &trigger : Self->Triggers[int(DRT::LEAVING_PAGE)]) {
+   for (auto &trigger : copy_triggers(Self, DRT::LEAVING_PAGE)) {
       if (trigger.isScript()) {
          sc::Call(trigger, std::to_array<ScriptArg>({ { "OldURI", Self->Path }, { "NewURI", newpath } }));
       }
@@ -193,8 +201,6 @@ static ERR SET_Path(extDocument *Self, CSTRING Value)
          routine(trigger.Context, Self, Self->Path.c_str(), newpath.c_str(), trigger.Meta);
       }
    }
-   recursion--;
-
    Self->Path.clear();
    Self->PageName.clear();
    Self->Bookmark.clear();
@@ -202,13 +208,11 @@ static ERR SET_Path(extDocument *Self, CSTRING Value)
    if (!newpath.empty()) {
       Self->Path = newpath;
 
-      recursion++;
-
       if (Self->initialised()) {
-         load_doc(Self, Self->Path, true);
+         auto error = load_doc(Self, Self->Path, true);
+         if (not (error IS ERR::Okay)) Self->Error = error;
          Self->Viewport->draw();
       }
-      recursion--;
 
       // If an error occurred, remove the location & page strings to show that no document is loaded.
 
@@ -223,7 +227,9 @@ static ERR SET_Path(extDocument *Self, CSTRING Value)
 
    report_event(Self, DEF::PATH, 0, nullptr);
 
-   return Self->Error;
+   auto error = Self->Error;
+   Self->PathGuard = false;
+   return error;
 }
 
 /*********************************************************************************************************************
@@ -362,6 +368,7 @@ the nearest viewport container will be determined based on object ownership.
 
 static ERR SET_Viewport(extDocument *Self, objVectorViewport *Value)
 {
+   if (not Value) return ERR::NullArgs;
    if (Value->CLASS_ID != CLASSID::VECTORVIEWPORT) return ERR::InvalidObject;
 
    if (Self->initialised()) {

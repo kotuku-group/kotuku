@@ -31,9 +31,8 @@ add_library (xml_schema OBJECT
 target_include_directories (xml_schema PRIVATE "${PROJECT_SOURCE_DIR}/include")
 set_target_properties (xml_schema PROPERTIES CXX_STANDARD 20 POSITION_INDEPENDENT_CODE ON)
 
-add_dependencies (xml build_headers)
-add_dependencies (xml_schema build_headers)
-add_dependencies (xml_unescape build_headers)
+add_generated_header_dependencies (xml_schema core_defs xml_defs xquery_defs)
+add_generated_header_dependencies (xml_unescape core_defs xml_defs xquery_defs)
 
 target_compile_definitions (${MOD} PRIVATE "PRV_XML_MODULE" "PRV_XML")
 target_compile_definitions (xml_schema PRIVATE "PRV_XML_MODULE" "PRV_XML")

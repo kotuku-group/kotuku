@@ -227,6 +227,7 @@ struct parser {
    bool  m_combobox_patterns = false;
    stream_char m_index;
    bc_font m_style; // Reflects the active font during parsing.
+   uint8_t m_edit_recurse = 0;
    std::stack<bc_list *> m_list_stack;
    std::stack<process_table> m_table_stack;
 
@@ -656,7 +657,7 @@ void parser::process_page(objXML *pXML)
    }
 */
    if (not Self->PageProcessed) {
-      for (auto &trigger : Self->Triggers[int(DRT::PAGE_PROCESSED)]) {
+      for (auto &trigger : copy_triggers(Self, DRT::PAGE_PROCESSED)) {
          if (trigger.isScript()) {
             sc::Call(trigger);
          }
@@ -1073,7 +1074,7 @@ TRF parser::parse_tags_with_style(const objXML::TAGS &Tags, bc_font &Style, IPF 
 
    auto result = TRF::NIL;
    if (font_change) {
-      Style.uid = glByteCodeID++;
+      Style.uid = alloc_bytecode_id();
 
       auto save_status = m_style;
       m_style = Style;
@@ -1104,7 +1105,7 @@ TRF parser::parse_tags_with_embedded_style(const objXML::TAGS &Tags, bc_font &St
 {
    if (Tags.empty()) return TRF::NIL;
 
-   Style.uid = glByteCodeID++;
+   Style.uid = alloc_bytecode_id();
 
    auto save_style = m_style;
    m_style = Style;
@@ -1553,12 +1554,10 @@ void parser::tag_button(const tag_view &Tag)
             fl::SpreadMethod(VSPREAD::CLIP)
          })) {
 
+         // Object will terminate once out-of-scope
          auto svg = objSVG::create { fl::Target(pattern_active->Scene), fl::Statement(glButtonSVG) };
 
-         if (svg.ok()) {
-            FreeResource(*svg);
-         }
-         else { // Revert to a basic rectangle if the SVG didn't process
+         if (not svg.ok()) { // Revert to a basic rectangle if the SVG didn't process
             objVectorRectangle::create::global({
                fl::Owner(pattern_active->Scene->Viewport->UID),
                fl::Width(SCALE(1.0)), fl::Height(SCALE(1.0)),
@@ -1576,12 +1575,10 @@ void parser::tag_button(const tag_view &Tag)
             fl::SpreadMethod(VSPREAD::CLIP)
          })) {
 
+         // Object will terminate once out-of-scope
          auto svg = objSVG::create { fl::Target(pattern_inactive->Scene), fl::Statement(glButtonSVG) };
 
-         if (svg.ok()) {
-            FreeResource(*svg);
-         }
-         else {
+         if (not svg.ok()) {
             objVectorRectangle::create::global({
                fl::Owner(pattern_inactive->Scene->Viewport->UID),
                fl::Width(SCALE(1.0)), fl::Height(SCALE(1.0)),
@@ -2263,7 +2260,7 @@ void parser::tag_index(const tag_view &Tag)
    }
 
    if (name) {
-      bc_index index(name, glUID++, 0, visible, Self->Invisible ? false : true);
+      bc_index index(name, alloc_uid(), 0, visible, Self->Invisible ? false : true);
 
       auto &stream_index = m_stream->emplace(m_index, index);
 
@@ -2897,7 +2894,14 @@ void parser::tag_repeat(const tag_view &Tag)
 
    if (have_count) {
       if (count IS 0) return;
-      loop_end = loop_start + (count * step);
+      auto checked_end = int64_t(loop_start) + (int64_t(count) * int64_t(step));
+      if ((checked_end < int64_t((std::numeric_limits<int>::min)())) or
+          (checked_end > int64_t((std::numeric_limits<int>::max)()))) {
+         log_warning(&Tag, "doc.invalid-repeat-count", attrib_name("count"),
+            "Repeat count produces an out-of-range end value.");
+         return;
+      }
+      loop_end = int(checked_end);
       have_end = true;
    }
    else if (not have_end) return;
@@ -3127,7 +3131,6 @@ void parser::tag_cell(const tag_view &Tag)
 {
    kt::Log log(__FUNCTION__);
    auto new_style = m_style;
-   static uint8_t edit_recurse = 0;
 
    if (m_table_stack.empty()) {
       log_error(&Tag, ERR::InvalidData, "doc.cell-outside-table",
@@ -3135,7 +3138,7 @@ void parser::tag_cell(const tag_view &Tag)
       return;
    }
 
-   bc_cell cell(glUID++, m_table_stack.top().row_col);
+   bc_cell cell(alloc_uid(), m_table_stack.top().row_col);
    bool select = false;
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
       switch (strhash(Tag.Attribs[i].Name)) {
@@ -3163,7 +3166,7 @@ void parser::tag_cell(const tag_view &Tag)
             break;
 
          case HASH_edit:
-            if (edit_recurse) {
+            if (m_edit_recurse) {
                log_error(&Tag, ERR::Recursion, "doc.edit-cell-recursion", "Edit cells cannot be embedded recursively.");
                return;
             }
@@ -3218,8 +3221,6 @@ void parser::tag_cell(const tag_view &Tag)
       }
    }
 
-   if (not cell.edit_def.empty()) edit_recurse++;
-
    // Edit sections enforce preformatting, which means that all whitespace entered by the user will be taken
    // into account.  The following check sets FSO::PREFORMAT if it hasn't been set already.
 
@@ -3235,6 +3236,8 @@ void parser::tag_cell(const tag_view &Tag)
       // Cell content is managed in an internal stream
 
       parser parse(Self, cell.stream);
+      if (not cell.edit_def.empty()) parse.m_edit_recurse = m_edit_recurse + 1;
+      else parse.m_edit_recurse = m_edit_recurse;
 
       parse.m_in_template = m_in_template;
       parse.m_inject_tag  = m_inject_tag;
@@ -3255,7 +3258,6 @@ void parser::tag_cell(const tag_view &Tag)
       if (select) Self->FocusIndex = tab;
    }
 
-   if (not stream_cell.edit_def.empty()) edit_recurse--;
 }
 
 //********************************************************************************************************************

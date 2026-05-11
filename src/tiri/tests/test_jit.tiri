@@ -74,6 +74,144 @@ function constant_target(Value)
    return offset, label
 end
 
+function jit_regex_failure_convert(Value:any, Param:table):any
+   global jit_regex_failure_param_name = Param.name
+   global jit_regex_failure_value = Value
+
+   try
+      return regex.new(jit_regex_failure_value)
+   except e
+      raise ERR_WrongType, f"Parameter '{jit_regex_failure_param_name}' requires a valid regex pattern."
+   end
+end
+
+function jit_try_local_before_entry(Pattern)
+   local label = "before-entry"
+
+   try
+      regex.new(Pattern)
+   except e
+      return label
+   end
+
+   return "missing-error"
+end
+
+function jit_try_mutated_local_before_throw(Pattern, Iteration)
+   local status = "initial"
+
+   try
+      status = "mutated-" .. tostring(Iteration % 5)
+      regex.new(Pattern)
+   except e
+      return status
+   end
+
+   return "missing-error"
+end
+
+function jit_try_repeated_throwable_helpers(Pattern)
+   local stable_label = "stable-local"
+   local compiled = nil
+
+   try
+      for i = 0, 5 do
+         compiled = regex.new("a+")
+      end
+      regex.new(Pattern)
+   except e
+      return stable_label, compiled != nil
+   end
+
+   return "missing-error", false
+end
+
+function jit_try_inner_locals_preserve_entry_local(Pattern, Iteration)
+   local entry_label = "entry-" .. tostring(Iteration % 7)
+
+   try
+      local inner_label = "inner-" .. tostring(Iteration)
+      local combined = inner_label .. ":" .. entry_label
+      if #combined < 1 then
+         return "impossible"
+      end
+      regex.new(Pattern)
+   except e
+      return entry_label
+   end
+
+   return "missing-error"
+end
+
+@Test(hotpath=80) function JITTryRegexFailurePreservesParamName()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=3", "hotexit=1", "minstitch=0")
+
+   local param = { name = 'pattern', type = 'regex' }
+   local expected_message = "Parameter 'pattern' requires a valid regex pattern."
+
+   for i = 0, 99 do
+      local err
+      try
+         jit_regex_failure_convert('(', param)
+      except e
+         err = e
+      end
+
+      assert(err != nil, "Invalid regex should raise an error")
+      assert(err.code is ERR_WrongType, f"Expected ERR_WrongType, got {err.code}")
+      assert(err.message is expected_message, f"Expected '{expected_message}', got '{err.message}'")
+   end
+end
+
+@Test(hotpath=80) function JITTryLocalBeforeEntrySurvivesRegexThrow()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=3", "hotexit=1", "minstitch=0")
+
+   for i = 0, 99 do
+      result = jit_try_local_before_entry("(")
+      assert(result is "before-entry", f"Expected local captured before try entry, got '{result}'")
+   end
+end
+
+@Test(hotpath=80) function JITTryLocalMutatedInsideTrySurvivesRegexThrow()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=3", "hotexit=1", "minstitch=0")
+
+   for i = 0, 99 do
+      expected = "mutated-" .. tostring(i % 5)
+      result = jit_try_mutated_local_before_throw("(", i)
+      assert(result is expected, f"Expected handler to see '{expected}', got '{result}'")
+   end
+end
+
+@Test(hotpath=80) function JITTryRepeatedThrowableHelpersDoNotCorruptLocals()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=3", "hotexit=1", "minstitch=0")
+
+   for i = 0, 99 do
+      label, compiled = jit_try_repeated_throwable_helpers("(")
+      assert(label is "stable-local", f"Expected stable local after repeated helpers, got '{label}'")
+      assert(compiled is true, "Successful repeated regex.new() calls should update their local")
+   end
+end
+
+@Test(hotpath=80) function JITTryInnerLocalsPreserveEntryLocal()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=3", "hotexit=1", "minstitch=0")
+
+   for i = 0, 99 do
+      local expected = "entry-" .. tostring(i % 7)
+      local result = jit_try_inner_locals_preserve_entry_local("(", i)
+      assert(result is expected, f"Expected handler to see entry local '{expected}', got '{result}'")
+   end
+end
+
 @Test(hotpath=80) function JITVariableNumericHashLookup()
    jit.on()
    jit.flush()

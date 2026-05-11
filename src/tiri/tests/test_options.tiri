@@ -62,6 +62,16 @@ function set_test_env(Name:str, Value:any)
    assert(err is ERR_Okay, f"Failed to set environment variable '{Name}': {mSys.GetErrorMsg(err)}")
 end
 
+function write_test_file(Path:str, Content:str)
+   local file = io.open(Path, 'w')
+   file:write(Content)
+   file:close()
+end
+
+function delete_test_file(Path:str)
+   mSys.DeleteFile(Path)
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 
 @Test function ConstructEmptyParser()
@@ -88,6 +98,38 @@ end
    assert(args.verbose is true, 'Flag alias should parse')
    assert(parser.getParam('verbose').name is 'verbose', 'Canonical parameter lookup should work')
    assert(parser.getParam('v').name is 'verbose', 'Alias parameter lookup should work')
+end
+
+@Test function ParserCommandNameControlsUsage()
+   parser = options({
+      name    = 'Tuku Server',
+      cmdName = 'tuku_server',
+      args = array<table> {
+         { name = 'folder', type = 'folder' }
+      },
+      commands = array<table> {
+         { name = 'serve', comment = 'Serve static files.' }
+      }
+   })
+
+   usage = parser.getUsage()
+   help = parser.getHelp(nil, 'serve')
+
+   assert(parser.cmdName is 'tuku_server', 'Explicit cmdName should be retained on the parser')
+   assert(usage:startsWith('Usage: tuku_server'), 'Usage should use cmdName instead of the display name')
+   assert(help:find('Usage: tuku_server serve'), 'Command help should use cmdName instead of the display name')
+end
+
+@Test function ParserCommandNameDefaultsToLowerCaseName()
+   parser = options({
+      name = 'PaintBox',
+      args = array<table> {
+         { name = 'width', type = 'int' }
+      }
+   })
+
+   assert(parser.cmdName is 'paintbox', 'Missing cmdName should default to the lower-case parser name')
+   assert(parser.getUsage() is 'Usage: paintbox [width=WIDTH]', 'Fallback cmdName should drive usage output')
 end
 
 @Test function DuplicateAliasesFail()
@@ -551,6 +593,186 @@ end
    set_test_env('KOTUKU_OPTIONS_PRECEDENCE_COUNT', nil)
 end
 
+@Test function UserConfigJsonDefaults()
+   local config_path = 'temp:options-user-config-defaults.json'
+   delete_test_file(config_path)
+   write_test_file(config_path, '{"count":"12","mode":"json","verbose":"true"}')
+
+   parser = options({
+      userConfig = config_path,
+      args = array<table> {
+         { name = 'count', type = 'int', required = true },
+         { name = 'mode', type = 'str' },
+         { name = 'verbose', kind = 'flag', type = 'bool' }
+      }
+   })
+
+   args = parser.process(array<string> { })
+   assert(args.config is config_path, 'Injected config parameter should report the selected path')
+   assert(args.count is 12, 'JSON config should satisfy required parameters')
+   assert(args.mode is 'json', 'JSON config should supply string defaults')
+   assert(args.verbose is true, 'JSON config defaults should be converted')
+
+   args, err = parser.tryProcess(nil, {
+      taskParameters = array<string> { '--log-warning', 'demo.tiri' }
+   })
+   assert(err is nil, 'Empty task parameters should use a loaded user config instead of failing')
+   assert(args.help is nil, 'Loaded user config should suppress automatic help')
+   assert(args.count is 12, 'Loaded user config should satisfy required parameters for empty task parameters')
+
+   delete_test_file(config_path)
+end
+
+@Test function UserConfigPathOverrideAndMissingSkip()
+   local default_path = 'temp:options-user-config-default.json'
+   local override_path = 'temp:options-user-config-override.json'
+   local missing_path = 'temp:options-user-config-missing.json'
+
+   delete_test_file(default_path)
+   delete_test_file(override_path)
+   delete_test_file(missing_path)
+   write_test_file(default_path, '{"count":"1"}')
+   write_test_file(override_path, '{"count":"2"}')
+
+   parser = options({
+      userConfig = default_path,
+      args = array<table> {
+         { name = 'count', type = 'int', default = '9' }
+      }
+   })
+
+   args = parser.process(array<string> { 'config=' .. override_path })
+   assert(args.config is override_path, 'Explicit config path should override userConfig')
+   assert(args.count is 2, 'Explicit config path should load the selected JSON file')
+
+   missing_parser = options({
+      userConfig = missing_path,
+      args = array<table> {
+         { name = 'count', type = 'int', default = '7' }
+      }
+   })
+
+   args = missing_parser.process(array<string> { })
+   assert(args.config is missing_path, 'Missing config path should remain visible as the selected config value')
+   assert(args.count is 7, 'Missing user config files should be skipped without changing defaults')
+
+   delete_test_file(default_path)
+   delete_test_file(override_path)
+end
+
+@Test function UserConfigPrecedenceWithSetDefaultsAndInput()
+   local default_path = 'temp:options-user-config-precedence-default.json'
+   local set_path = 'temp:options-user-config-precedence-set.json'
+
+   delete_test_file(default_path)
+   delete_test_file(set_path)
+   write_test_file(default_path, '{"count":"2","mode":"default"}')
+   write_test_file(set_path, '{"count":"3","mode":"set-config"}')
+
+   parser = options({
+      userConfig = default_path,
+      args = array<table> {
+         { name = 'count', type = 'int' },
+         { name = 'mode', type = 'str' }
+      }
+   })
+   parser.setDefaults({ config = set_path, count = '4' })
+
+   args = parser.process(array<string> { })
+   assert(args.config is set_path, 'setDefaults() should be able to select the user config path')
+   assert(args.count is 4, 'setDefaults() should override JSON config defaults')
+   assert(args.mode is 'set-config', 'JSON selected by setDefaults().config should still provide lower defaults')
+
+   args = parser.process(array<string> { 'count=5' })
+   assert(args.count is 5, 'Explicit input should override JSON and setDefaults() values')
+   assert(args.mode is 'set-config', 'Explicit input should not discard unrelated JSON defaults')
+
+   delete_test_file(default_path)
+   delete_test_file(set_path)
+end
+
+@Test function UserConfigValidationFailuresAndHelp()
+   local bad_json_path = 'temp:options-user-config-bad.json'
+   local array_json_path = 'temp:options-user-config-array.json'
+   local missing_required_path = 'temp:options-user-config-missing-required.json'
+
+   delete_test_file(bad_json_path)
+   delete_test_file(array_json_path)
+   delete_test_file(missing_required_path)
+   write_test_file(bad_json_path, '{"count":')
+   write_test_file(array_json_path, '["count"]')
+   write_test_file(missing_required_path, '{"mode":"json"}')
+
+   expect_options_error({
+      userConfig = 'temp:options-user-config.json',
+      args = array<table> {
+         { name = 'config' }
+      }
+   }, ERR_DuplicateValue, "Parameter name or alias 'config' conflicts with the reserved config token.")
+
+   bad_json_parser = options({
+      userConfig = bad_json_path,
+      args = array<table> {
+         { name = 'count', type = 'int' }
+      }
+   })
+   expect_error(bad_json_parser, array<string> { }, ERR_WrongType, 'requires valid JSON')
+   result, err = bad_json_parser.tryProcess(nil, {
+      taskParameters = array<string> { '--log-warning', 'demo.tiri' }
+   })
+   assert(result is nil, 'Invalid selected user config should not return automatic help')
+   assert(err.code is ERR_WrongType, 'Invalid selected user config should report the config parse error')
+
+   array_json_parser = options({
+      userConfig = array_json_path,
+      args = array<table> {
+         { name = 'count', type = 'int' }
+      }
+   })
+   expect_error(array_json_parser, array<string> { }, ERR_WrongType, 'requires a JSON object')
+
+   folder_parser = options({
+      userConfig = 'temp:',
+      args = array<table> {
+         { name = 'count', type = 'int' }
+      }
+   })
+   expect_error(folder_parser, array<string> { }, ERR_ExpectedFile, "User config path 'temp:' is not a file.")
+
+   help_parser = options({
+      name = 'user-config-help',
+      userConfig = bad_json_path,
+      args = array<table> {
+         { name = 'count', type = 'int', required = true, comment = 'Count value' }
+      }
+   })
+
+   result, err = help_parser.tryProcess(array<string> { 'help' })
+   assert(err is nil, 'Help requests should not load invalid user config files')
+   assert(result.help is true, 'Help should still be returned for parsers with userConfig')
+   assert(result.text:find('Usage: user-config-help'), 'Help should include the parser usage text')
+
+   missing_required_parser = options({
+      name       = 'missing-required',
+      userConfig = missing_required_path,
+      args = array<table> {
+         { name = 'count', type = 'int', required = true },
+         { name = 'mode', type = 'str' }
+      }
+   })
+
+   result, err = missing_required_parser.tryProcess(nil, {
+      taskParameters = array<string> { '--log-warning', 'demo.tiri' }
+   })
+   assert(err is nil, 'Empty task parameters with incomplete user config should still return help')
+   assert(result.help is true, 'Incomplete user config should not suppress automatic help')
+   assert(result.text:find('Usage: missing-required'), 'Incomplete user config help should include usage')
+
+   delete_test_file(bad_json_path)
+   delete_test_file(array_json_path)
+   delete_test_file(missing_required_path)
+end
+
 @Test function SourcePrecedenceDefersConversion()
    set_test_env('KOTUKU_OPTIONS_BAD_COUNT', 'bad')
 
@@ -614,17 +836,17 @@ end
    })
 
    args = parser.process(array<string> {
-      'path=scripts/options.tiri',
-      'file=scripts/options.tiri',
-      'folder=scripts'
+      'path=sdk:scripts/options.tiri',
+      'file=sdk:scripts/options.tiri',
+      'folder=sdk:scripts'
    })
-   assert(args.path is 'scripts/options.tiri', 'Existing path should parse')
-   assert(args.file is 'scripts/options.tiri', 'Existing file should parse')
-   assert(args.folder is 'scripts', 'Existing folder should parse')
+   assert(args.path is 'sdk:scripts/options.tiri', 'Existing path should parse')
+   assert(args.file is 'sdk:scripts/options.tiri', 'Existing file should parse')
+   assert(args.folder is 'sdk:scripts', 'Existing folder should parse')
 
    expect_error(parser, array<string> { 'path=does-not-exist' }, ERR_FileNotFound, "does not exist")
-   expect_error(parser, array<string> { 'file=scripts' }, ERR_ExpectedFile, "is not a file")
-   expect_error(parser, array<string> { 'folder=scripts/options.tiri' }, ERR_ExpectedFolder, "is not a folder")
+   expect_error(parser, array<string> { 'file=sdk:scripts' }, ERR_ExpectedFile, "is not a file")
+   expect_error(parser, array<string> { 'folder=sdk:scripts/options.tiri' }, ERR_ExpectedFolder, "is not a folder")
 end
 
 @Test function MultipleValuesUseValidationRules()
@@ -793,6 +1015,29 @@ end
    assert(help:find('End of help.'), 'Normal help should include the epilog')
 end
 
+@Test function HelpNormalisesMultilineBlockWhitespace()
+   parser = options({
+      name        = 'server',
+      description = [[
+Serve static files from a folder.
+]],
+      epilog      = [[
+Examples:
+  origo apps/httpserver folder=docs/html
+]],
+      args = array<table> {
+         { name = 'folder', type = 'folder', comment = 'Folder to serve.' }
+      }
+   })
+
+   help = parser.getHelp()
+
+   assert(not help:find('\n\n\n'), 'Help should not contain repeated blank lines between generated blocks')
+   assert(help:find('server\n\nServe static files'), 'Description should be separated by one blank line')
+   assert(help:find('Folder to serve.\n\nExamples:'), 'Epilog should be separated by one blank line')
+   assert(not help:endsWith('\n'), 'Help should not end with a trailing newline')
+end
+
 @Test function DetailedHelpAndHiddenParameters()
    parser = options({
       name = 'tool',
@@ -905,6 +1150,19 @@ end
    assert(err is nil, 'Empty default task parameters should print help instead of validating required arguments')
    assert(result.help is true, 'Empty default task parameters should return a structured help result')
    assert(result.text:find('Usage: convert'), 'Empty default task parameter help should include normal help text')
+
+   invalid_default_parser = options({
+      name = 'invalid-default',
+      args = array<table> {
+         { name = 'count', type = 'int', default = 'bad' }
+      }
+   })
+
+   result, err = invalid_default_parser.tryProcess(nil, {
+      taskParameters = array<string> { '--log-warning', 'test.tiri' }
+   })
+   assert(err is nil, 'Empty task parameters should still prefer help over unrelated invalid defaults')
+   assert(result.help is true, 'Unrelated invalid defaults should not suppress automatic help')
 
    seen_text = nil
    seen_topic = nil

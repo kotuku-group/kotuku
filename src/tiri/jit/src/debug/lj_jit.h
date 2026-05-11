@@ -462,6 +462,7 @@ struct jit_State {
   int32_t tailcalled;   //  Number of successive tailcalls.
   int32_t framedepth;   //  Current frame depth.
   int32_t retdepth;     //  Return frame depth (count of RETF).
+  uint8_t trydepth;     //  Current try block depth while recording.
 
   uint32_t k32[unsigned(K32::_MAX)];  //  Common 4 byte constants used by backends.
   TValue ksimd[unsigned(KSimd::_MAX)*2+1];  //  16 byte aligned SIMD constants.
@@ -521,6 +522,10 @@ struct jit_State {
   TValue errinfo;     //  Additional info element for trace errors.
   uint8_t retryrec;   //  Retry recording.
   bool abort_in_progress; //  True while aborting trace recording (skip try handlers)
+
+  // Optimisation cache for try-block stack materialisation.  Correctness comes from forced
+  // BC_TRYENTER materialisation and CCI_T materialisation before throwable helper calls.
+  TRef trymat[LJ_MAX_JSLOTS+LJ_STACK_EXTRA];
 };
 
 #ifdef LUA_USE_ASSERT

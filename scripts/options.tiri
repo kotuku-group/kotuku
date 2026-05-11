@@ -894,7 +894,8 @@ end
 -- Raise an error for any required parameter that remains unset after defaults.
 
 function check_required(Parser:table, Result:table)
-   if Parser.autoHelp and Result[Parser.helpArg] then return end -- If help is present, required parameters are irrelevant
+   -- If help is present, required parameters are irrelevant.
+   if Parser.autoHelp and Result[Parser.helpArg] then return end
 
    for param in values(Parser._params) do
       if param.required and Result[param.name] is nil then
@@ -931,10 +932,40 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Join prepared text lines into one help string.
 
+function append_help_line(Output:array, Line:str)
+   if Line:trim() is '' then
+      if #Output > 0 and Output[#Output - 1] != '' then
+         Output:push('')
+      end
+
+      return
+   end
+
+   Output:push(Line:rtrim())
+end
+
 function line_list(Lines:array):str
-   text = ''
+   output = array<string>
 
    for line in values(Lines) do
+      text = tostring(line)
+
+      if text:find('\n') then
+         text = text:trim()
+         for item in values(text:split('\n')) do
+            append_help_line(output, item)
+         end
+      else
+         append_help_line(output, text)
+      end
+   end
+
+   while #output > 0 and output[#output - 1] is '' do
+      output:pop()
+   end
+
+   text = ''
+   for line in values(output) do
       if text != '' then text ..= '\n' end
       text ..= line
    end
@@ -1103,7 +1134,7 @@ end
 -- Generate a compact usage line for the parser.
 
 function build_full_usage(Parser:table):str
-   text = f"Usage: {Parser.name:lower()}"
+   text = f"Usage: {Parser.cmdName}"
 
    text = append_usage_positionals(text, Parser)
 
@@ -1120,7 +1151,7 @@ end
 -- Generate a shortened usage line when listing every option would exceed the line-length guideline.
 
 function build_short_usage(Parser:table):str
-   text = f"Usage: {Parser.name:lower()}"
+   text = f"Usage: {Parser.cmdName}"
 
    text = append_usage_positionals(text, Parser)
 
@@ -1294,7 +1325,7 @@ function build_command_help(Parser:table, Topic:str):str
    end
 
    lines:push('')
-   lines:push('Usage: ' .. Parser.name:lower() .. ' ' .. command.name)
+   lines:push('Usage: ' .. Parser.cmdName .. ' ' .. command.name)
    if #command.names > 1 then
       aliases = ''
       for index, name in ipairs(command.names) do
@@ -1698,6 +1729,57 @@ function make_help_result(Parser:table, Topic:any):table
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Load JSON defaults from a configured user config file when the selected file exists.
+
+function load_user_config_defaults(Parser:table, RawResult:table):table
+   Parser._user_config_defaults = nil
+   Parser._user_config_loaded = nil
+
+   Parser.userConfig ?? return
+
+   config_param = Parser._lookup.config
+   config_param ?? return
+
+   raw_path = RawResult.config
+   raw_path ?? return
+
+   config_path = convert_value(Parser, config_param, raw_path)
+   config_path = tostring(config_path)
+   config_path ?? return
+
+   err, location = mSys.AnalysePath(config_path)
+   if err != ERR_Okay then return end
+
+   if location != LOC_FILE then
+      raise ERR_ExpectedFile, f"User config path '{config_path}' is not a file."
+   end
+
+   Parser._user_config_loaded = config_path
+
+   file = io.open(config_path, 'r')
+   content = file:read('*a')
+   file:close()
+
+   local defaults:any
+   local pos:num
+   try
+      defaults, pos = json.decode(content)
+      if pos < #content and content:substr(pos):trim() != '' then
+         raise ERR_Syntax, 'Trailing content after JSON value.'
+      end
+   except e
+      raise ERR_WrongType, f"User config '{config_path}' requires valid JSON."
+   end
+
+   if type(defaults) != 'table' then
+      raise ERR_WrongType, f"User config '{config_path}' requires a JSON object."
+   end
+
+   Parser._user_config_defaults = defaults
+   return defaults
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Apply precedence, conversion, and validation to an already parsed input layer.
 
 function resolve_input_result(Parser:table, InputResult:table, InputArgNames:table, InputPresence:table):table
@@ -1715,6 +1797,7 @@ function resolve_input_result(Parser:table, InputResult:table, InputArgNames:tab
       for name, value in pairs(Defaults) do
          param = Parser._lookup[name]
          if param is nil then
+            if name:startsWith('_') then continue end -- Ignore private keys
             raise ERR_ParameterUnknown, f"Unknown default parameter '{name}'."
          end
 
@@ -1769,6 +1852,22 @@ function resolve_input_result(Parser:table, InputResult:table, InputArgNames:tab
 
    apply_param_defaults(Parser, raw_result, arg_names)
    apply_default_table(Parser, raw_result, arg_names, Parser.defaults)
+
+   if not (Parser.autoHelp and InputResult[Parser.helpArg] != nil) then
+      apply_default_table(Parser, raw_result, arg_names, Parser._set_defaults)
+      apply_environment(Parser, raw_result, arg_names, presence)
+      merge_input_result(Parser, raw_result, arg_names, presence, InputResult, InputArgNames, InputPresence)
+      load_user_config_defaults(Parser, raw_result)
+
+      raw_result = {}
+      arg_names = {}
+      presence = {}
+
+      apply_param_defaults(Parser, raw_result, arg_names)
+      apply_default_table(Parser, raw_result, arg_names, Parser.defaults)
+      apply_default_table(Parser, raw_result, arg_names, Parser._user_config_defaults)
+   end
+
    apply_default_table(Parser, raw_result, arg_names, Parser._set_defaults)
    apply_environment(Parser, raw_result, arg_names, presence)
    merge_input_result(Parser, raw_result, arg_names, presence, InputResult, InputArgNames, InputPresence)
@@ -1799,6 +1898,27 @@ function parse_context_table_input(Parser:table, Input:table):table
 
    parse_table_input(Parser, input_result, input_arg_names, input_presence, Input)
    return resolve_input_result(Parser, input_result, input_arg_names, input_presence)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Allow a launched script with no command-line arguments to run from a valid user config instead of showing help.
+
+function parse_empty_task_input_from_user_config(Parser:table):table
+   local result:table
+
+   if #Parser._commands > 0 then return nil end
+
+   try
+      result = resolve_input_result(Parser, {}, {}, {})
+   except ex when ERR_ParameterRequired
+      return nil
+   except ex
+      if Parser._user_config_loaded != nil then error(ex) end
+      return nil
+   end
+
+   if Parser._user_config_defaults != nil then return result end
+   return nil
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -1905,6 +2025,8 @@ function parse_input(Parser:table, Input:any, Options:table):table
       if task_parameters then
          script_arguments = get_script_arguments(task_parameters)
          if #script_arguments is 0 and Parser.autoHelp then
+            config_result = parse_empty_task_input_from_user_config(Parser)
+            if config_result then return config_result end
             return make_help_result(Parser, nil)
          end
 
@@ -2081,12 +2203,14 @@ create_parser = function(Config:table):table
 
    local parser = {
       name        = Config.name,
+      cmdName     = Config.cmdName,
       description = Config.description,
       epilog      = Config.epilog,
       copyright   = Config.copyright,
       license     = Config.license,
       envPrefix   = Config.envPrefix,
       defaults    = Config.defaults,
+      userConfig  = Config.userConfig,
       strict      = Config.strict,
       autoHelp    = Config.autoHelp,
       onError     = Config.onError,
@@ -2094,10 +2218,12 @@ create_parser = function(Config:table):table
    }
 
    parser.name     ?= 'script'
+   parser.cmdName  ?= parser.name:lower()
    parser.strict   ?= true
    parser.autoHelp ?= true
    parser.helpArg  ?= 'help' -- In future, allow translations to user's locale
    validate_name(parser.helpArg)
+   assert(parser.userConfig is nil or (type(parser.userConfig) is 'string') or (type(parser.userConfig) is 'bool'), 'userConfig must be a string or boolean.')
    assert(parser.onError is nil or type(parser.onError) is 'function', 'onError must be a function.')
    assert(parser.onHelp is nil or type(parser.onHelp) is 'function', 'onHelp must be a function.')
 
@@ -2108,6 +2234,7 @@ create_parser = function(Config:table):table
    parser._commands       = array<table>
    parser._command_lookup = {}
    parser._set_defaults   = nil
+   parser._user_config_defaults = nil
 
    @Doc(text=[[
    Add a parameter definition to the parser
@@ -2395,6 +2522,17 @@ create_parser = function(Config:table):table
             end
             raise ERR_Terminate -- Stops the process without throwing an error
          end
+      })
+   end
+
+   if parser.userConfig then -- Can be true, empty string or file path
+      if definitions_have_name(Config.args, 'config') then
+         raise ERR_DuplicateValue, "Parameter name or alias 'config' conflicts with the reserved config token."
+      end
+
+      add_param(parser, {
+         name = 'config', type = 'path', default = type(parser.userConfig) is 'string' ? parser.userConfig :> nil, group = 'Configuration',
+         comment = 'JSON config file with option defaults.'
       })
    end
 

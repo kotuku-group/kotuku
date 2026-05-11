@@ -372,6 +372,8 @@ int64_t GetResource(RES Resource)
    struct sysinfo sys;
 #endif
 
+   // Internal note: Choose GetResource() over GetSystemState() when a value is R/W
+
    switch(Resource) {
       case RES::PRIVILEGED:      return glPrivileged;
       case RES::LOG_LEVEL:       return glLogLevel;
@@ -478,6 +480,8 @@ GetSystemState: Returns miscellaneous data values from the Core.
 The GetSystemState() function is used to retrieve miscellaneous resource and environment values, such as resource
 paths, the Core's version number and the name of the host platform.
 
+The state values in the structure are static and will not change during runtime.
+
 -RESULT-
 cstruct(*SystemState): A read-only !SystemState structure is returned.
 
@@ -493,6 +497,7 @@ const SystemState * GetSystemState(void)
       initialised = true;
 
       state.ConsoleFD = glConsoleFD;
+      state.HasConsole = glConsoleEnabled;
       #ifdef __unix__
          state.Platform = "Linux";
       #elif _WIN32

@@ -126,6 +126,16 @@ static void err_record_pending_exception(lua_State *L, CSTRING Message, cTValue 
    L->pending_exception_valid = true;
 }
 
+extern "C" void lj_err_prepare_foreign_exception(lua_State *L, const char *Message)
+{
+   err_clear_pending_exception(L);
+
+   const char *message = (Message and Message[0]) ? Message : err2msg(ErrMsg::ERRCPP);
+   L->pending_exception_message = lj_str_newz(L, message);
+   L->pending_exception_valid   = true;
+   L->CaughtError               = ERR::Exception;
+}
+
 //********************************************************************************************************************
 // Call __close handlers for to-be-closed locals during error unwinding.
 // Sets _G.__close_err so bytecode-based close handlers can access the error.
@@ -810,6 +820,7 @@ LJ_FUNCA int lj_err_unwind_dwarf(int version, int actions, uint64_t uexclass, _U
          // - Pops the try frame from the try stack
          // - Builds exception table and places it in the handler's register
          // - Sets L->try_handler_pc to point to the handler bytecode
+         if (not LJ_UEXCLASS_CHECK(uexclass)) lj_err_prepare_foreign_exception(L, nullptr);
          setup_try_handler(L);
          _Unwind_SetGR(ctx, LJ_TARGET_EHRETREG, errcode);
          _Unwind_SetIP(ctx, (uintptr_t)lj_vm_resume_try_eh);

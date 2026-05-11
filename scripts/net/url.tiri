@@ -627,3 +627,25 @@ url.getPort = function(URL:str, DefaultPort:num):num
    end
    return nil
 end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Compare two URLs and return true when they share the same origin (scheme, host, and effective port)
+@input First URL
+@input Second URL
+@result True when both URLs have the same origin
+]])
+url.sameOrigin = function(A:str, B:str):bool
+   a = url.parse(A)
+   b = url.parse(B)
+   if not a or not b then return false end
+   if not a.scheme or not a.host or not b.scheme or not b.host then return false end
+
+   if a.scheme:lower() != b.scheme:lower() then return false end
+   if a.host:lower() != b.host:lower() then return false end
+
+   port_a = a.port or DEFAULT_PORTS[a.scheme:lower()]
+   port_b = b.port or DEFAULT_PORTS[b.scheme:lower()]
+   return port_a is port_b
+end

@@ -66,6 +66,12 @@ static void cleanup_task_fds(int input_fd, int out_fd, int out_errfd, int in_fd,
    if (in_fd != -1)     close(in_fd);
    if (in_errfd != -1)  close(in_errfd);
 }
+
+static void set_task_pipe_nonblocking(int FD)
+{
+   auto flags = fcntl(FD, F_GETFL);
+   if (flags != -1) fcntl(FD, F_SETFL, flags | O_NONBLOCK);
+}
 #endif
 
 #ifdef __unix__
@@ -222,14 +228,8 @@ static void check_incoming(extTask *Self)
 // sent to a callback function.
 
 #ifdef __unix__
-static void task_stdout(HOSTHANDLE FD, APTR Task)
+static int read_task_stdout(HOSTHANDLE FD, APTR Task)
 {
-   thread_local uint8_t recursive = 0;
-
-   if (recursive) return;
-
-   recursive++;
-
    int len;
    char buffer[TASK_IO_BUFFER_SIZE];
    if ((len = read(FD, buffer, sizeof(buffer)-1)) > 0) {
@@ -248,18 +248,49 @@ static void task_stdout(HOSTHANDLE FD, APTR Task)
          }));
       }
    }
-   recursive--;
+
+   return len;
 }
 
-static void task_stderr(HOSTHANDLE FD, APTR Task)
+static void close_task_stdout(extTask *Task, HOSTHANDLE FD)
+{
+   if (Task->InFD IS FD) Task->InFD = -1;
+   RegisterFD(FD, RFD::READ|RFD::REMOVE, &task_stdout, Task);
+   close(FD);
+}
+
+static int process_task_stdout(HOSTHANDLE FD, APTR Task, bool Drain)
+{
+   thread_local uint8_t recursive = 0;
+
+   if (recursive) return -1;
+
+   int len = -1;
+   recursive++;
+   do {
+      len = read_task_stdout(FD, Task);
+      if ((not Drain) or (len <= 0)) break;
+   } while (true);
+   recursive--;
+
+   return len;
+}
+
+static void task_stdout(HOSTHANDLE FD, APTR Task)
+{
+   if (process_task_stdout(FD, Task, false) IS 0) close_task_stdout((extTask *)Task, FD);
+}
+
+static bool drain_task_stdout(HOSTHANDLE FD, APTR Task)
+{
+   return process_task_stdout(FD, Task, true) IS 0;
+}
+
+static int read_task_stderr(HOSTHANDLE FD, APTR Task)
 {
    char buffer[TASK_IO_BUFFER_SIZE];
    int len;
-   thread_local uint8_t recursive = 0;
 
-   if (recursive) return;
-
-   recursive++;
    if ((len = read(FD, buffer, sizeof(buffer)-1)) > 0) {
       buffer[len] = 0;
 
@@ -276,7 +307,42 @@ static void task_stderr(HOSTHANDLE FD, APTR Task)
          }));
       }
    }
+
+   return len;
+}
+
+static void close_task_stderr(extTask *Task, HOSTHANDLE FD)
+{
+   if (Task->ErrFD IS FD) Task->ErrFD = -1;
+   RegisterFD(FD, RFD::READ|RFD::REMOVE, &task_stderr, Task);
+   close(FD);
+}
+
+static int process_task_stderr(HOSTHANDLE FD, APTR Task, bool Drain)
+{
+   thread_local uint8_t recursive = 0;
+
+   if (recursive) return -1;
+
+   int len = -1;
+   recursive++;
+   do {
+      len = read_task_stderr(FD, Task);
+      if ((not Drain) or (len <= 0)) break;
+   } while (true);
    recursive--;
+
+   return len;
+}
+
+static void task_stderr(HOSTHANDLE FD, APTR Task)
+{
+   if (process_task_stderr(FD, Task, false) IS 0) close_task_stderr((extTask *)Task, FD);
+}
+
+static bool drain_task_stderr(HOSTHANDLE FD, APTR Task)
+{
+   return process_task_stderr(FD, Task, true) IS 0;
 }
 #endif
 
@@ -453,6 +519,29 @@ static ERR msg_quit(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgSi
 }
 
 //********************************************************************************************************************
+
+#ifdef __unix__
+static void task_process_end(extTask *Task, int ReturnCode, bool Returned)
+{
+   if ((Task->InFD != -1) and (drain_task_stdout(Task->InFD, Task))) close_task_stdout(Task, Task->InFD);
+   if ((Task->ErrFD != -1) and (drain_task_stderr(Task->ErrFD, Task))) close_task_stderr(Task, Task->ErrFD);
+
+   if (Returned) {
+      Task->ReturnCode = ReturnCode;
+      Task->ReturnCodeSet = true;
+   }
+
+   if (Task->ExitCallback.isC()) {
+      auto routine = (void (*)(extTask *, APTR))Task->ExitCallback.Routine;
+      routine(Task, Task->ExitCallback.Meta);
+   }
+   else if (Task->ExitCallback.isScript()) {
+      sc::Call(Task->ExitCallback, std::to_array<ScriptArg>({ { "Task", Task, FD_OBJECTPTR } }));
+   }
+}
+#endif
+
+//********************************************************************************************************************
 // Determine whether or not a process is alive
 
 extern "C" ERR validate_process(int ProcessID)
@@ -476,15 +565,24 @@ extern "C" ERR validate_process(int ProcessID)
    #endif
 
    OBJECTID task_id = 0;
+   int return_code = 0;
+   bool returned = false;
+
    for (auto it = glTasks.begin(); it != glTasks.end(); it++) {
       if (it->ProcessID IS ProcessID) {
          task_id = it->TaskID;
+         return_code = it->ReturnCode;
+         returned = it->Returned;
          glTasks.erase(it);
          break;
       }
    }
 
    if (not task_id) return ERR::False;
+
+   #ifdef __unix__
+      if (auto task = (extTask *)GetObjectPtr(task_id)) task_process_end(task, return_code, returned);
+   #endif
 
    evTaskRemoved task_removed = { GetEventID(EVG::SYSTEM, "task", "removed"), task_id, ProcessID };
    BroadcastEvent(&task_removed, sizeof(task_removed));
@@ -630,12 +728,15 @@ static ERR TASK_Activate(extTask *Self)
 
    if (Self->Location.empty()) return log.warning(ERR::MissingPath);
 
-   if (not glJanitorActive) {
-      kt::SwitchContext ctx(glCurrentTask);
-      auto call = C_FUNCTION(process_janitor);
-      SubscribeTimer(60, &call, &glProcessJanitor);
-      glJanitorActive = true;
-   }
+   #ifndef __unix__
+      // This is a backup in case SIGCHLD signals don't work.  It terminates automatically if no processes remain.
+      if (not glJanitorActive) {
+         kt::SwitchContext ctx(glCurrentTask);
+         auto call = C_FUNCTION(process_janitor);
+         SubscribeTimer(60, &call, &glProcessJanitor);
+         glJanitorActive = true;
+      }
+   #endif
 
 #ifdef _WIN32
    // Determine the launch folder
@@ -960,12 +1061,14 @@ static ERR TASK_Activate(extTask *Self)
       glTasks.emplace_back(Self);
 
       if (in_fd != -1) {
+         set_task_pipe_nonblocking(in_fd);
          RegisterFD(in_fd, RFD::READ, &task_stdout, Self);
          Self->InFD = in_fd;
          close(out_fd);
       }
 
       if (in_errfd != -1) {
+         set_task_pipe_nonblocking(in_errfd);
          RegisterFD(in_errfd, RFD::READ, &task_stderr, Self);
          Self->ErrFD = in_errfd;
          close(out_errfd);
@@ -986,8 +1089,9 @@ static ERR TASK_Activate(extTask *Self)
          // potentially pick this up but that's fine as waitpid() will just fail with -1 in that case.
 
          int status = 0;
+         int wait_result = 0;
          int64_t ticks = PreciseTime() + int64_t(Self->TimeOut * 1000000.0);
-         while (!waitpid(pid, &status, WNOHANG)) {
+         while ((wait_result = waitpid(pid, &status, WNOHANG)) IS 0) {
             ProcessMessages(PMF::NIL, 100);
 
             auto remaining = ticks - PreciseTime();
@@ -999,17 +1103,32 @@ static ERR TASK_Activate(extTask *Self)
 
          // Find out what error code was returned
 
-         if (WIFEXITED(status)) {
-            Self->ReturnCode = (int8_t)WEXITSTATUS(status);
-            Self->ReturnCodeSet = true;
-         }
+         if (wait_result IS pid) {
+            bool returned = false;
+            int return_code = 0;
 
-         if (kill(pid, 0)) {
-            for (auto it = glTasks.begin(); it != glTasks.end(); it++) {
-               if (it->ProcessID IS pid) {
-                  glTasks.erase(it);
-                  break;
+            if (WIFEXITED(status)) {
+               return_code = (int8_t)WEXITSTATUS(status);
+               returned = true;
+            }
+            else if (WIFSIGNALED(status)) {
+               return_code = 128 + WTERMSIG(status);
+               returned = true;
+            }
+
+            if (returned) {
+               Self->ReturnCode = return_code;
+               Self->ReturnCodeSet = true;
+
+               for (auto &task : glTasks) {
+                  if (task.ProcessID IS pid) {
+                     task.ReturnCode = return_code;
+                     task.Returned = true;
+                     break;
+                  }
                }
+
+               validate_process(pid);
             }
          }
       }
@@ -2282,16 +2401,32 @@ static ERR GET_ReturnCode(extTask *Self, int *Value)
    int status = 0;
    int result = waitpid(Self->ProcessID, &status, WNOHANG);
 
-   if ((result IS -1) or (result IS Self->ProcessID)) {
+   if (result IS Self->ProcessID) {
       // The process has exited.  Find out what error code was returned and pass it as the result.
 
       if (WIFEXITED(status)) {
          Self->ReturnCode = (int8_t)WEXITSTATUS(status);
          Self->ReturnCodeSet = true;
       }
+      else if (WIFSIGNALED(status)) {
+         Self->ReturnCode = 128 + WTERMSIG(status);
+         Self->ReturnCodeSet = true;
+      }
 
       *Value = Self->ReturnCode;
+      for (auto &task : glTasks) {
+         if (task.ProcessID IS Self->ProcessID) {
+            task.ReturnCode = Self->ReturnCode;
+            task.Returned = true;
+            break;
+         }
+      }
+
+      validate_process(Self->ProcessID);
       return ERR::Okay;
+   }
+   else if (result IS -1) {
+      return ERR::TaskStillExists;
    }
    else return ERR::TaskStillExists;
 

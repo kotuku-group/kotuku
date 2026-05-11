@@ -643,6 +643,45 @@ static ERR GET_RecvBuffer(extHTTP *Self, uint8_t **Value, int *Elements)
 /*********************************************************************************************************************
 
 -FIELD-
+ResponseKeys: Returns a string list of received response keys.
+
+This field returns a string list of all the keys found in the HTTP response header.  An empty list will be returned
+if no keys are found.
+
+*********************************************************************************************************************/
+
+static ERR GET_ResponseKeys(extHTTP *Self, STRING **Value, int *Elements)
+{
+   if (Self->ResponseKeys.empty()) {
+      *Value = nullptr;
+      *Elements = 0;
+      return ERR::Okay;
+   }
+
+   const int total_keys = int(Self->ResponseKeys.size());
+   int buffer_size = sizeof(CSTRING) * (total_keys + 1);
+   for (const auto &response_key : Self->ResponseKeys) buffer_size += int(response_key.first.length()) + 1;
+
+   STRING *array;
+   if (AllocMemory(buffer_size, MEM::STRING|MEM::NO_CLEAR, (APTR *)&array, nullptr) IS ERR::Okay) {
+      STRING buffer = (STRING)(array + total_keys + 1);
+      int i = 0;
+      for (const auto &response_key : Self->ResponseKeys) {
+         array[i++] = buffer;
+         buffer += kt::strcopy(response_key.first, buffer, int(response_key.first.length()) + 1) + 1;
+      }
+      array[i] = nullptr;
+   }
+   else return ERR::AllocMemory;
+
+   *Value = array;
+   *Elements = total_keys;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 Size: Set this field to define the length of a data transfer when issuing a `POST` command.
 
 Prior to the execution of a `POST` command, it is recommended that the Size field is set to the length of the data

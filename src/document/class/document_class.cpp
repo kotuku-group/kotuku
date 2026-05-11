@@ -50,12 +50,23 @@ static void notify_free_viewport(OBJECTPTR Object, ACTIONID ActionID, ERR Result
    Self->Resources.clear();
 }
 
-// Used by EventCallback for subscribers that disappear without notice.
+// Used by script callbacks for subscribers that disappear without notice.
 
-static void notify_free_event(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
+static void notify_free_script_context(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
    auto Self = (extDocument *)CurrentContext();
-   Self->EventCallback.clear();
+   if ((Self->EventCallback.isScript()) and (Self->EventCallback.Context IS Object)) Self->EventCallback.clear();
+
+   for (int t=0; t < int(DRT::END); t++) {
+restart:
+      auto &triggers = Self->Triggers[t];
+      for (auto cb=triggers.begin(); cb != triggers.end(); cb++) {
+         if (cb->Context IS Object) {
+            Self->Triggers[t].erase(cb);
+            goto restart;
+         }
+      }
+   }
 }
 
 //********************************************************************************************************************
@@ -92,22 +103,6 @@ static void notify_lostfocus_viewport(OBJECTPTR Object, ACTIONID ActionID, ERR R
    }
 }
 
-static void notify_listener_free(OBJECTPTR Listener, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   auto Self = (extDocument *)CurrentContext();
-
-   for (int t=0; t < int(DRT::END); t++) {
-restart:
-      auto &triggers = Self->Triggers[t];
-      for (auto cb=triggers.begin(); cb != triggers.end(); cb++) {
-         if (cb->Context IS Listener) {
-            Self->Triggers[t].erase(cb);
-            goto restart;
-         }
-      }
-   }
-}
-
 //********************************************************************************************************************
 // Receiver for events from Self->View, primarily path changes.
 //
@@ -134,7 +129,7 @@ static ERR feedback_view(objVectorViewport *View, FM Event)
    // The resize event is triggered just prior to the layout of the document.  The recipient
    // function can resize elements on the page in advance of the new layout.
 
-   for (auto &trigger : Self->Triggers[int(DRT::BEFORE_LAYOUT)]) {
+   for (auto &trigger : copy_triggers(Self, DRT::BEFORE_LAYOUT)) {
       if (trigger.isScript()) {
          sc::Call(trigger, std::to_array<ScriptArg>({ { "ViewWidth",  Self->VPWidth }, { "ViewHeight", Self->VPHeight } }));
       }
@@ -225,15 +220,19 @@ NullArgs
 static ERR DOCUMENT_AddListener(extDocument *Self, doc::AddListener *Args)
 {
    if ((not Args) or (Args->Trigger IS DRT::NIL) or (not Args->Function)) return ERR::NullArgs;
+   if (not valid_trigger(Args->Trigger)) return ERR::OutOfRange;
+
+   bool subscribe_context = false;
+   if (Args->Function->isScript()) {
+      subscribe_context = not has_script_free_callback(Self, Args->Function->Context);
+   }
 
    Self->Triggers[int(Args->Trigger)].push_back(*Args->Function);
 
    // Scripts can't auto-remove listeners, so a Free subscription is necessary.  Functional
    // subscribers are expected to self-manage however.
 
-   if (Args->Function->isScript()) {
-      SubscribeAction(Args->Function->Context, AC::Free, C_FUNCTION(notify_listener_free));
-   }
+   if (subscribe_context) SubscribeAction(Args->Function->Context, AC::Free, C_FUNCTION(notify_free_script_context));
    return ERR::Okay;
 }
 
@@ -325,14 +324,18 @@ static ERR DOCUMENT_Clipboard(extDocument *Self, struct acClipboard *Args)
 
          objClipboard::create clipboard = { };
          if (clipboard.ok()) {
-            if (clipboard->addText(buffer.c_str()) IS ERR::Okay) {
+            if (auto error = clipboard->addText(buffer.c_str()); error IS ERR::Okay) {
                // Delete the highlighted document if the CUT mode was used
                if (Args->Mode IS CLIPMODE::CUT) {
                   //delete_selection(Self);
                }
             }
-            else error_dialog("Clipboard Error", "Failed to add document to the system clipboard.");
+            else {
+               error_dialog("Clipboard Error", "Failed to add document to the system clipboard.");
+               return error;
+            }
          }
+         else return log.warning(ERR::CreateObject);
       }
 
       return ERR::Okay;
@@ -348,26 +351,40 @@ static ERR DOCUMENT_Clipboard(extDocument *Self, struct acClipboard *Args)
       objClipboard::create clipboard = { };
       if (clipboard.ok()) {
          CSTRING *files;
-         if (clipboard->getFiles(CLIPTYPE::TEXT, 0, nullptr, &files, nullptr) IS ERR::Okay) {
+         if (auto error = clipboard->getFiles(CLIPTYPE::TEXT, 0, nullptr, &files, nullptr); error IS ERR::Okay) {
+            if (not files) return ERR::NoData;
+
             objFile::create file = { fl::Path(files[0]), fl::Flags(FL::READ) };
             if (file.ok()) {
                int size;
-               if ((file->get(FID_Size, size) IS ERR::Okay) and (size > 0)) {
+               if ((error = file->get(FID_Size, size)) IS ERR::Okay) {
+                  if (size <= 0) return ERR::NoData;
+
                   if (auto buffer = new (std::nothrow) char[size+1]) {
                      int result;
-                     if (file->read(buffer, size, &result) IS ERR::Okay) {
+                     if ((error = file->read(buffer, size, &result)) IS ERR::Okay) {
                         buffer[result] = 0;
-                        acDataText(Self, buffer);
+                        error = acDataText(Self, buffer);
                      }
                      else error_dialog("Clipboard Paste Error", ERR::Read);
                      delete[] buffer;
+                     if (not (error IS ERR::Okay)) return error;
                   }
-                  else error_dialog("Clipboard Paste Error", ERR::AllocMemory);
+                  else {
+                     error_dialog("Clipboard Paste Error", ERR::AllocMemory);
+                     return ERR::AllocMemory;
+                  }
                }
+               else return error;
             }
-            else error_dialog("Paste Error", "Failed to load clipboard file \"" + std::string(files[0]) + "\"");
+            else {
+               error_dialog("Paste Error", "Failed to load clipboard file \"" + std::string(files[0]) + "\"");
+               return ERR::OpenFile;
+            }
          }
+         else return error;
       }
+      else return log.warning(ERR::CreateObject);
 
       return ERR::Okay;
    }
@@ -637,10 +654,9 @@ static ERR DOCUMENT_Free(extDocument *Self)
       Self->EventCallback.clear();
    }
 
-   unload_doc(Self, ULD::TERMINATE);
+   unload_doc(Self, ULD::NIL);
 
    if (Self->Query) { FreeResource(Self->Query); Self->Query = nullptr; }
-   if (Self->Templates) { FreeResource(Self->Templates); Self->Templates = nullptr; }
    if (Self->Page) { FreeResource(Self->Page); Self->Page = nullptr; }
    if (Self->View) { FreeResource(Self->View); Self->View = nullptr; }
 
@@ -764,7 +780,7 @@ static ERR DOCUMENT_HideIndex(extDocument *Self, doc::HideIndex *Args)
       }
    }
 
-   return ERR::Okay;
+   return ERR::Search;
 }
 
 //********************************************************************************************************************
@@ -1681,9 +1697,10 @@ static ERR DOCUMENT_ReadContent(extDocument *Self, doc::ReadContent *Args)
    }
    else if (Args->Format IS DATA::RAW) {
       STRING output;
-      if (AllocMemory(end - Args->Start + 1, MEM::NO_CLEAR, &output) IS ERR::Okay) {
-         copymem(Self->Stream.data.data() + Args->Start, output, end - Args->Start);
-         output[end - Args->Start] = 0;
+      auto size = (end - Args->Start) * INDEX(sizeof(stream_code));
+      if (AllocMemory(size + 1, MEM::NO_CLEAR, &output) IS ERR::Okay) {
+         copymem(Self->Stream.data.data() + Args->Start, output, size);
+         output[size] = 0;
          Args->Result = output;
          return ERR::Okay;
       }
@@ -1729,7 +1746,7 @@ static ERR DOCUMENT_Refresh(extDocument *Self)
 
    Self->Processing++;
 
-   for (auto &trigger : Self->Triggers[int(DRT::REFRESH)]) {
+   for (auto &trigger : copy_triggers(Self, DRT::REFRESH)) {
       if (trigger.isScript()) {
          // The refresh trigger can return ERR::Skip to prevent a complete reload of the document.
 
@@ -1737,6 +1754,7 @@ static ERR DOCUMENT_Refresh(extDocument *Self)
          if (sc::Call(trigger, error) IS ERR::Okay) {
             if (error IS ERR::Skip) {
                log.msg("The refresh request has been handled by an event trigger.");
+               Self->Processing--;
                return ERR::Okay;
             }
          }
@@ -1796,7 +1814,7 @@ static ERR DOCUMENT_RemoveContent(extDocument *Self, doc::RemoveContent *Args)
    if (end > INDEX(std::ssize(Self->Stream))) end = INDEX(std::ssize(Self->Stream));
 
    copymem(Self->Stream.data.data() + end, Self->Stream.data.data() + Args->Start, Self->Stream.data.size() - end);
-   Self->Stream.data.resize(Self->Stream.data.size() - end - Args->Start);
+   Self->Stream.data.resize(Self->Stream.data.size() - (end - Args->Start));
 
    Self->invalidate_text_width_cache();
    Self->UpdatingLayout = true;
@@ -1824,6 +1842,9 @@ NullArgs
 static ERR DOCUMENT_RemoveListener(extDocument *Self, doc::RemoveListener *Args)
 {
    if ((not Args) or (not Args->Trigger) or (not Args->Function)) return ERR::NullArgs;
+   if (not valid_trigger(Args->Trigger)) return ERR::OutOfRange;
+
+   if (Self->Unloading) return ERR::Okay; // Do nothing, termination will take care of cleaning up.
 
    if (Args->Function->isC()) {
       for (auto it = Self->Triggers[Args->Trigger].begin(); it != Self->Triggers[Args->Trigger].end(); it++) {
@@ -1834,14 +1855,21 @@ static ERR DOCUMENT_RemoveListener(extDocument *Self, doc::RemoveListener *Args)
       }
    }
    else if (Args->Function->isScript()) {
+      auto context = Args->Function->Context;
+      bool removed_listener = false;
+
       for (auto it = Self->Triggers[Args->Trigger].begin(); it != Self->Triggers[Args->Trigger].end(); it++) {
          if ((it->isScript()) and
-             (it->Context IS Args->Function->Context) and
-             (it->ProcedureID IS Args->Function->ProcedureID)) {
+               (it->Context IS Args->Function->Context) and
+               (it->ProcedureID IS Args->Function->ProcedureID)) {
             Self->Triggers[Args->Trigger].erase(it);
-            return ERR::Okay;
+            removed_listener = true;
+            break;
          }
       }
+
+      if (removed_listener) unsubscribe_script_context(Self, context);
+      return ERR::Okay;
    }
 
    return ERR::Okay;
@@ -1858,10 +1886,18 @@ static ERR DOCUMENT_SaveToObject(extDocument *Self, struct acSaveToObject *Args)
    kt::Log log;
 
    if (not Args) return log.warning(ERR::NullArgs);
+   if (not Args->Dest) return log.warning(ERR::NullArgs);
 
    log.branch("Destination: %d", Args->Dest->UID);
-   acWrite(Args->Dest, "Save not supported.", 0, nullptr);
-   return ERR::Okay;
+
+   doc::ReadContent read = { DATA::XML, 0, int(Self->Stream.size()), nullptr };
+   if (auto error = DOCUMENT_ReadContent(Self, &read); error IS ERR::Okay) {
+      error = acWrite(Args->Dest, read.Result, strlen(read.Result), nullptr);
+      FreeResource(read.Result);
+      if (error IS ERR::Okay) return ERR::Okay;
+      else return log.warning(ERR::Write);
+   }
+   else return error;
 }
 
 /*********************************************************************************************************************

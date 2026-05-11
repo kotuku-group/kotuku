@@ -30,6 +30,7 @@
 #include "lj_prng.h"
 #include "jit/frame_manager.h"
 #include "runtime/lj_object.h"
+#include "runtime/lj_state.h"
 
 // Some local macros to save typing. Undef'd at the end.
 #define IR(ref)         (&J->cur.ir[(ref)])
@@ -47,6 +48,112 @@ static TRef rec_tmpref(jit_State *J, TRef tr, int mode)
 {
    if (!LJ_DUALNUM and tref_isinteger(tr)) tr = emitir(IRTN(IR_CONV), tr, IRCONV_NUM_INT);
    return emitir(IRT(IR_TMPREF, IRT_PGC), tr, mode);
+}
+
+static TRef sload(jit_State *J, int32_t Slot);
+
+//********************************************************************************************************************
+// Materialise live trace slots back to the Lua stack before a throwable helper runs inside a recorded try block.
+
+static TRef rec_try_stack_slot_addr(jit_State *J, IRBuilder& Ir, int32_t AbsoluteSlot)
+{
+   lj_assertJ(AbsoluteSlot >= 0 and AbsoluteSlot < LJ_MAX_JSLOTS + LJ_STACK_EXTRA,
+      "try materialisation slot out of range");
+   int32_t byte_offset = 8 * (AbsoluteSlot - 1 - LJ_FR2);
+   return Ir.emit(IRT(IR_ADD, IRT_PGC), REF_BASE, Ir.kint(byte_offset));
+}
+
+static void rec_try_emit_tvalue_store(jit_State *J, TRef SlotAddr, TRef ValueRef)
+{
+   if (tref_isnum(ValueRef)) {
+      emitir(IRT(IR_XSTORE, IRT_NUM), SlotAddr, ValueRef);
+   }
+   else if (tref_isint(ValueRef)) {
+#if LJ_DUALNUM
+      // With LJ_DUALNUM, IRT_INT is stored as a tagged integer TValue.
+      TRef store_ref = emitir(IRT(IR_CONV, IRT_I64), ValueRef,
+         (IRT_I64 << IRCONV_DSH) | IRT_INT);
+      store_ref = emitir_raw(IRT(IR_BOR, IRT_I64), store_ref,
+         lj_ir_kint64(J, uint64_t(LJ_TISNUM) << 47));
+      emitir(IRT(IR_XSTORE, IRT_I64), SlotAddr, store_ref);
+#else
+      // Without LJ_DUALNUM, IRT_INT must be converted and stored as an IRT_NUM TValue.
+      TRef store_ref = emitir(IRT(IR_CONV, IRT_NUM), ValueRef, IRCONV_NUM_INT);
+      emitir(IRT(IR_XSTORE, IRT_NUM), SlotAddr, store_ref);
+#endif
+   }
+   else if (tref_isgcv(ValueRef)) {
+      uint32_t itype = irt_toitype_(tref_type(ValueRef));
+      TRef store_ref = emitir_raw(IRT(IR_BOR, IRT_I64), ValueRef,
+         lj_ir_kint64(J, uint64_t(itype) << 47));
+      emitir(IRT(IR_XSTORE, IRT_I64), SlotAddr, store_ref);
+   }
+   else if (tref_ispri(ValueRef)) {
+      TValue tv;
+      setpriV(&tv, irt_toitype_(tref_type(ValueRef)));
+      emitir(IRT(IR_XSTORE, IRT_I64), SlotAddr, lj_ir_kint64(J, tv.u64));
+   }
+   else if (tref_islightud(ValueRef)) {
+      TRef store_ref = emitir_raw(IRT(IR_BOR, IRT_I64), ValueRef,
+         lj_ir_kint64(J, uint64_t(LJ_TLIGHTUD) << 47));
+      emitir(IRT(IR_XSTORE, IRT_I64), SlotAddr, store_ref);
+   }
+   else {
+      setintV(&J->errinfo, int32_t(tref_type(ValueRef)));
+      lj_trace_err_info(J, LJ_TRERR_NYIIR);
+   }
+}
+
+static void rec_try_materialise_slots(jit_State *J, bool ForceLoad, BCREG SlotLimit)
+{
+   BCREG slot_limit = SlotLimit;
+   if (slot_limit > J->maxslot) slot_limit = J->maxslot;
+   if (slot_limit IS 0) return;
+
+   IRBuilder ir(J);
+   bool stored = false;
+
+   for (BCREG slot = 0; slot < slot_limit; slot++) {
+      TRef value_ref = J->base[slot];
+      if (not value_ref and ForceLoad) value_ref = sload(J, slot);
+      if (not value_ref or (value_ref & (TREF_FRAME | TREF_CONT))) continue;
+
+      int32_t absolute_slot = int32_t(J->baseslot) + int32_t(slot);
+      lj_assertJ(absolute_slot >= 0 and absolute_slot < LJ_MAX_JSLOTS + LJ_STACK_EXTRA,
+         "try materialisation slot out of range");
+      if (not ForceLoad and J->trymat[absolute_slot] IS value_ref) continue;
+
+      TRef slot_addr = rec_try_stack_slot_addr(J, ir, absolute_slot);
+      rec_try_emit_tvalue_store(J, slot_addr, value_ref);
+      J->trymat[absolute_slot] = value_ref;
+      stored = true;
+   }
+
+   if (stored) emitir_raw(IRT(IR_XBAR, IRT_NIL), 0, 0);
+}
+
+void lj_record_try_materialise(jit_State *J)
+{
+   rec_try_materialise_slots(J, false, J->maxslot);
+}
+
+//********************************************************************************************************************
+// Return the active try depth for the frame where recording starts.
+
+static uint8_t rec_try_active_depth(jit_State *J)
+{
+   lua_State *L = J->L;
+   if (L->try_stack.depth IS 0) return 0;
+
+   ptrdiff_t frame_base = savestack(L, L->base);
+   uint8_t depth = 0;
+
+   for (int i = 0; i < L->try_stack.depth; i++) {
+      const TryFrame *try_frame = &L->try_stack.frames[i];
+      if (try_frame->func IS J->fn and try_frame->frame_base IS frame_base) depth++;
+   }
+
+   return depth;
 }
 
 //********************************************************************************************************************
@@ -426,8 +533,16 @@ static int rec_for_direction(cTValue *o)
 //********************************************************************************************************************
 // Simulate the runtime behavior of the FOR loop iterator.
 
-static LoopEvent rec_for_iter(IROp* op, cTValue *o, int isforl)
+static LoopEvent rec_for_iter(jit_State *J, IROp* op, cTValue *o, int isforl)
 {
+#if LJ_DUALNUM
+   if (not tvisnumber(&o[FORL_STOP]) or not tvisnumber(&o[FORL_IDX]) or not tvisnumber(&o[FORL_STEP]))
+      lj_trace_err(J, LJ_TRERR_BADTYPE);
+#else
+   if (not tvisnum(&o[FORL_STOP]) or not tvisnum(&o[FORL_IDX]) or not tvisnum(&o[FORL_STEP]))
+      lj_trace_err(J, LJ_TRERR_BADTYPE);
+#endif
+
    lua_Number stopv = numberVnum(&o[FORL_STOP]);
    lua_Number idxv = numberVnum(&o[FORL_IDX]);
    lua_Number stepv = numberVnum(&o[FORL_STEP]);
@@ -570,7 +685,7 @@ static LoopEvent rec_for(jit_State *J, const BCIns *fori, int isforl)
       rec_for_check(J, t, rec_for_direction(&tv[FORL_STEP]), stop, tr[FORL_STEP], 1);
    }
 
-   ev = rec_for_iter(&op, tv, isforl);
+   ev = rec_for_iter(J, &op, tv, isforl);
    if (ev IS LOOPEV_LEAVE) {
       J->maxslot = ra + FORL_EXT + 1;
       J->pc = fori + 1;
@@ -2106,7 +2221,7 @@ static void rec_comp_fixup(jit_State *J, const BCIns *pc, int cond)
    // Skip PC modification inside try blocks to prevent snapshot restoration issues.
    // See function header comment for detailed explanation.
 
-   if (J->L->try_stack.depth > 0) {
+   if (J->trydepth > 0) {
       J->needsnap = 1;
       return;
    }
@@ -3281,34 +3396,22 @@ void lj_record_ins(jit_State *J)
       break;
 
    case BC_TRYENTER: {
-      // Inlined frames use a virtual base pointer. Compute the correct base below so
-      // try-enter can still record properly inside inlined calls.
-
-      // Add snapshot before try block to enable on-trace error catching.
-      // This allows the JIT to exit at this point when an exception occurs,
-      // letting the interpreter handle the try-except recovery.
-
       uint16_t try_index = (uint16_t)bc_d(ins);
+      // Operand A is the first free register at try entry; handlers cannot see stack slots above it.
+      rec_try_materialise_slots(J, true, bc_a(ins));
       lj_snap_add(J);
-
-      // Emit call to lj_try_enter(L, Func, Base, TryBlockIndex)
-      // L is implicit (CCI_L flag)
-      // Func is the current function for this frame (may differ from J->fn)
-      // Base must point at the current frame. For inlined frames, REF_BASE is the root base,
-      // so add the baseslot offset to reach the virtual frame base.
-
       TRef tr_func = getcurrf(J);
       TRef tr_base = REF_BASE;
       if (J->baseslot > FRC::MIN_BASESLOT) {
          IRBuilder ir(J);
-         int32_t slot_delta = (int32_t)J->baseslot - (int32_t)FRC::MIN_BASESLOT;
+         int32_t slot_delta = int32_t(J->baseslot) - int32_t(FRC::MIN_BASESLOT);
          int32_t byte_delta = slot_delta * 8;
          tr_base = ir.emit(IRT(IR_ADD, IRT_PGC), REF_BASE, ir.kint(byte_delta));
       }
-      TRef tr_index = lj_ir_kint(J, (int32_t)try_index);
+      TRef tr_index = lj_ir_kint(J, int32_t(try_index));
       lj_ir_call(J, IRCALL_lj_try_enter, tr_func, tr_base, tr_index);
-
-      J->needsnap = 1; // Snapshot after try_enter to create a restore point for trace exits
+      J->trydepth++;
+      J->needsnap = 1;
       break;
    }
 
@@ -3317,6 +3420,7 @@ void lj_record_ins(jit_State *J)
       // Note: vm_exit_interp in vm_x64.dasc must correctly dispatch BC_TRYLEAVE to its handler,
       // not to the C function path. See the bytecode dispatch logic after trace exit.
       lj_ir_call(J, IRCALL_lj_try_leave); // L is implicit (CCI_L flag), no explicit args needed
+      if (J->trydepth > 0) J->trydepth--;
       J->needsnap = 1; // Snapshot after try_leave to mark the end of the try block scope
       break;
    }
@@ -3451,6 +3555,7 @@ void lj_record_setup(jit_State *J)
 
    // Initialise state related to current trace.
    memset(J->slot, 0, sizeof(J->slot));
+   memset(J->trymat, 0, sizeof(J->trymat));
    memset(J->chain, 0, sizeof(J->chain));
 #ifdef LUAJIT_ENABLE_TABLE_BUMP
    memset(J->rbchash, 0, sizeof(J->rbchash));
@@ -3464,6 +3569,7 @@ void lj_record_setup(jit_State *J)
    J->maxslot    = 0;
    J->framedepth = 0;
    J->retdepth   = 0;
+   J->trydepth   = rec_try_active_depth(J);
    J->instunroll = J->param[JIT_P_instunroll];
    J->loopunroll = J->param[JIT_P_loopunroll];
    J->tailcalled = 0;

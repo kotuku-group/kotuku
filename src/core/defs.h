@@ -716,6 +716,7 @@ extern std::string glRootPath;
 extern std::string glDisplayDriver;
 extern bool glShowIO, glShowPrivate, glEnableCrashHandler;
 extern bool glJanitorActive;
+extern bool glConsoleEnabled;
 extern bool glLogThreads;
 extern int16_t glLogLevel, glMaxDepth;
 extern TSTATE glTaskState;
@@ -840,6 +841,7 @@ extern WINHANDLE glTaskLock;
 
 #ifdef __unix__
 extern thread_local int glSocket;
+extern int glChildSignalFD[2];
 extern struct FileMonitor *glFileMonitor;
 #endif
 
@@ -1128,6 +1130,7 @@ ERR    msg_threadaction(APTR, int, int, APTR, int);
 ERR    msg_free(APTR, int, int, APTR, int);
 void   optimise_write_field(Field &);
 void   PrepareSleep(void);
+void   process_child_signals(HOSTHANDLE, APTR);
 ERR    process_janitor(OBJECTID, int, int);
 void   register_sleep(int);
 void   deregister_sleep(void);
@@ -1161,7 +1164,7 @@ extern "C" ERR validate_process(int);
 #endif
 
 #ifdef _WIN32
-extern "C" void activate_console(int8_t);
+extern "C" bool activate_console(int8_t);
 extern "C" void free_threadlock(void);
 extern "C" int winCheckProcessExists(int);
 extern "C" int winCloseHandle(WINHANDLE);

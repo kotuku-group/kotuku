@@ -23,6 +23,7 @@ project-specific syntax, runtime behaviour, API bindings, typing, and testing co
 3. Consult `docs/wiki/Tiri-Reference-Manual.md`, `docs/wiki/Tiri-*.md`, or the Tiri LSP for details that are not
    summarised here.
 4. Consult `docs/xml/modules` and `docs/xml/modules/classes` for generated class and module API documentation.
+5. Deal with uncertainty over language and API behaviour by running `origo` with the `--statement` option to run micro tests.
 
 ## Core Rules
 

@@ -229,6 +229,7 @@ void CloseCore(void)
 
       #ifdef __unix__
          if (glSocket != -1) RegisterFD(glSocket, RFD::REMOVE, nullptr, nullptr);
+         if (glChildSignalFD[0] != -1) RegisterFD(glChildSignalFD[0], RFD::REMOVE, nullptr, nullptr);
       #endif
 
       // Report FD's that have not been removed by the client
@@ -239,6 +240,18 @@ void CloseCore(void)
          }
       }
    }
+
+   #ifdef __unix__
+      if (glChildSignalFD[0] != -1) {
+         close(glChildSignalFD[0]);
+         glChildSignalFD[0] = -1;
+      }
+
+      if (glChildSignalFD[1] != -1) {
+         close(glChildSignalFD[1]);
+         glChildSignalFD[1] = -1;
+      }
+   #endif
 
    if (glCodeIndex < CP_REMOVE_PRIVATE_LOCKS) {
       glCodeIndex = CP_REMOVE_PRIVATE_LOCKS;

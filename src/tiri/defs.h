@@ -15,6 +15,7 @@ constexpr int SIZE_READ = 1024;
 #include <string_view>
 #include <span>
 #include <concepts>
+#include <format>
 
 #include "lj_obj.h"
 #include "lj_frame.h"
@@ -66,7 +67,7 @@ struct CaseInsensitiveHash {
 
 struct CaseInsensitiveEqual {
    bool operator()(const std::string& lhs, const std::string& rhs) const noexcept {
-      return ::strcasecmp(lhs.c_str(), rhs.c_str()) == 0;
+      return ::strcasecmp(lhs.c_str(), rhs.c_str()) IS 0;
    }
 };
 
@@ -74,7 +75,7 @@ struct CaseInsensitiveHashView {
    std::size_t operator()(std::string_view s) const noexcept {
       std::size_t hash = 5381;
       for (char c : s) {
-         hash = ((hash << 5) + hash) + std::tolower(static_cast<unsigned char>(c));
+         hash = ((hash << 5) + hash) + std::tolower((unsigned char)c);
       }
       return hash;
    }
@@ -519,9 +520,20 @@ inline GCobject * push_object(lua_State *Lua, OBJECTPTR Object, bool Detached = 
    return caller_base_offset IS try_frame->frame_base;
 }
 
+[[maybe_unused]] inline void raise_checked_call_error(lua_State *Lua, ERR Error, CSTRING CallName)
+{
+   if ((Error >= ERR::ExceptionThreshold) and in_try_immediate_scope(Lua)) {
+      luaL_error(Lua, Error, "%s() failed: %s", CallName ? CallName : "Function", GetErrorMsg(Error));
+   }
+}
+
 [[maybe_unused]] inline void report_action_error(lua_State *Lua, GCobject *Object, CSTRING Action, ERR Error)
 {
    if ((Error >= ERR::ExceptionThreshold) and in_try_immediate_scope(Lua)) {
-      luaL_error(Lua, Error, "%s.%s() failed: %s", Object->classptr->ClassName, Action, GetErrorMsg(Error));
+      if ((Object) and (Object->classptr)) {
+         std::string call_name = std::format("{}.{}", Object->classptr->ClassName, Action ? Action : "Action");
+         raise_checked_call_error(Lua, Error, call_name.c_str());
+      }
+      else raise_checked_call_error(Lua, Error, Action ? Action : "Action");
    }
 }

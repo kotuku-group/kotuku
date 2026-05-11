@@ -19,6 +19,7 @@
 #include "lj_ircall.h"
 #include "lj_iropt.h"
 #include "lj_trace.h"
+#include "lj_record.h"
 #include "lj_vm.h"
 #include "lj_strscan.h"
 #include "lj_serialize.h"
@@ -131,6 +132,9 @@ TRef lj_ir_call(jit_State* J, IRCallID id, ...)
    uint32_t n = CCI_NARGS(ci);
    TRef tr = TREF_NIL;
    va_list argp;
+
+   if ((ci->flags & CCI_T) and J->trydepth > 0) lj_record_try_materialise(J);
+
    va_start(argp, id);
    if ((ci->flags & CCI_L)) n--;
    if (n > 0)

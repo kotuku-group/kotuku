@@ -65,6 +65,7 @@ enum class HTM : int {
    SUBSCRIBE = 21,
    UNLOCK = 22,
    UNSUBSCRIBE = 23,
+   PATCH = 24,
 };
 
 // HTTP status codes
@@ -128,6 +129,7 @@ enum class HTF : uint32_t {
    RECV_BUFFER = 0x00000100,
    SSL = 0x00000200,
    DISABLE_SERVER_VERIFY = 0x00000400,
+   NO_AUTO_REDIRECT = 0x00000800,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(HTF)
@@ -338,7 +340,7 @@ class objHTTP : public Object {
 
    inline ERR setAuthCallback(FUNCTION Value) noexcept {
       auto target = this;
-      auto field = &this->Class->Dictionary[29];
+      auto field = &this->Class->Dictionary[30];
       return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
    }
 
@@ -356,13 +358,13 @@ class objHTTP : public Object {
 
    template <class T> inline ERR setLocation(T && Value) noexcept {
       auto target = this;
-      auto field = &this->Class->Dictionary[33];
+      auto field = &this->Class->Dictionary[34];
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 
    inline ERR setOutgoing(FUNCTION Value) noexcept {
       auto target = this;
-      auto field = &this->Class->Dictionary[28];
+      auto field = &this->Class->Dictionary[29];
       return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
    }
 
@@ -374,13 +376,13 @@ class objHTTP : public Object {
 
    inline ERR setStateChanged(FUNCTION Value) noexcept {
       auto target = this;
-      auto field = &this->Class->Dictionary[30];
+      auto field = &this->Class->Dictionary[31];
       return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
    }
 
    template <class T> inline ERR setUsername(T && Value) noexcept {
       auto target = this;
-      auto field = &this->Class->Dictionary[36];
+      auto field = &this->Class->Dictionary[37];
       return field->WriteValue(target, field, 0x08800200, to_cstring(Value), 1);
    }
 

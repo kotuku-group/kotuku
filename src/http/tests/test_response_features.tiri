@@ -13,11 +13,19 @@ SERVER_PORT <const> = 18942
 
 rxStatusLine = <{ regex.new([[HTTP\/1\.[01]\s+(\d+)]]) }>
 
-function rawHttpRequest(Method:str, Path:str):<num, str>
+function rawHttpRequestWithHeaders(Method:str, Path:str, Headers:table):<num, str>
    response = ''
    request = Method .. ' ' .. Path .. " HTTP/1.1\r\n" ..
       "Host: 127.0.0.1\r\n" ..
-      "Connection: close\r\n\r\n"
+      "Connection: close\r\n"
+
+   if Headers then
+      for name, value in pairs(Headers) do
+         request ..= name .. ": " .. tostring(value) .. "\r\n"
+      end
+   end
+
+   request ..= "\r\n"
 
    socket = obj.new('netsocket', {
       feedback = function(Socket, State)
@@ -47,6 +55,10 @@ function rawHttpRequest(Method:str, Path:str):<num, str>
 
    status = rxStatusLine.extract(response)
    return tonumber(status ?? 0), response
+end
+
+function rawHttpRequest(Method:str, Path:str):<num, str>
+   return rawHttpRequestWithHeaders(Method, Path, nil)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -254,6 +266,66 @@ end
    assert(response.customHeaders, 'Custom response headers should be set')
    assert(raw_response:find('content-type: application/json'), 'Content-Type header not set correctly')
    assert(raw_response:find('x-custom-response: CustomValue'), 'Custom response header missing')
+
+   content = ''
+   http = obj.new('http', {
+      src      = 'http://127.0.0.1:' .. SERVER_PORT .. '/headers/response',
+      method   = 'GET',
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer:getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.error is ERR_Okay, 'Response keys HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'Response keys unexpected status: ' .. http.status)
+
+   response_keys = http.responseKeys
+   assert(response_keys, 'ResponseKeys field should return received header names')
+   assert(#response_keys >= 3, 'ResponseKeys should include custom response headers')
+
+   found_content_type = false
+   found_custom_response = false
+   found_server_version = false
+   found_request_id = false
+   for key in values(response_keys) do
+      if key is 'content-type' then found_content_type = true
+      elseif key is 'x-custom-response' then found_custom_response = true
+      elseif key is 'x-server-version' then found_server_version = true
+      elseif key is 'x-request-id' then found_request_id = true
+      end
+   end
+
+   assert(found_content_type, 'ResponseKeys should include content-type')
+   assert(found_custom_response, 'ResponseKeys should include x-custom-response')
+   assert(found_server_version, 'ResponseKeys should include x-server-version')
+   assert(found_request_id, 'ResponseKeys should include x-request-id')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function UnsatisfiableStaticFileRange()
+   local file = obj.new('file', { path = glPath .. '/test_response_features.tiri', flags = 'READ' })
+   local file_size = file.size
+   file = nil
+
+   local status, response = rawHttpRequestWithHeaders('GET', '/test_response_features.tiri', {
+      Range = 'bytes=999999-1000000'
+   })
+
+   local lower_response = response:lower()
+   local expected_range = f"content-range: bytes */{file_size}"
+
+   assert(status is 416, 'Unsatisfiable range should return 416, got: ' .. status)
+   assert(lower_response:find(expected_range, 0, true), '416 response missing Content-Range "' .. expected_range .. '"')
 end
 
 ----------------------------------------------------------------------------------------------------------------------

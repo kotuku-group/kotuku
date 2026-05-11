@@ -1479,3 +1479,36 @@ end
    end
    assert(caught, "Falsy value should have triggered check")
 end
+
+@Test(priority=68) function CheckedModuleCallUsesCallErrorMessage()
+   sentinel = 'no_such_volume_for_error_message_test:'
+
+   try
+      check mSys.AnalysePath(sentinel)
+   except e
+      assert(e.code is ERR_DoesNotExist, "Expected ERR_DoesNotExist, got " .. tostring(e.code))
+      assert(e.message != sentinel, "Module call error message must not be replaced by the string argument")
+      assert(e.message:find("AnalysePath() failed:"), "Module call error should identify the function")
+      assert(e.message:find(mSys.GetErrorMsg(e.code)), "Module call error should include the official message")
+      return
+   end
+
+   error("AnalysePath() should have raised an exception")
+end
+
+@Test(priority=69) function CheckedObjectActionUsesCallErrorMessage()
+   sentinel = '<body/><page>not an error message</page>'
+   time = obj.new('time')
+
+   try
+      check time.acDataFeed(nil, DATA_TEXT, sentinel)
+   except e
+      assert(e.code is ERR_NoAction, "Expected ERR_NoAction, got " .. tostring(e.code))
+      assert(e.message != sentinel, "Object action error message must not be replaced by the string argument")
+      assert(e.message:find("Time.DataFeed() failed:"), "Object action error should identify the action")
+      assert(e.message:find(mSys.GetErrorMsg(e.code)), "Object action error should include the official message")
+      return
+   end
+
+   error("Time.DataFeed() should have raised an exception")
+end

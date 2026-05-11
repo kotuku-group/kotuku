@@ -13,35 +13,40 @@
 
 glTime = obj.new('time')
 
-rxControlChars    = <{ regex.new([=[[\x00-\x1f\x7f]]=]) }>
-rxQueryFragment   = <{ regex.new([[^([^?#]*)]]) }>
-rxFileExtension   = <{ regex.new([[\.([^.]+)$]]) }>
-rxCookiePair      = <{ regex.new([[\s*([^=]+)=(.+)]]) }>
-rxTrimWhitespace  = <{ regex.new([[^\s*(.*?)\s*$]]) }>
-rxRequestLine     = <{ regex.new([[(\S+)\s+(\S+)\s+(\S+)]]) }>
-rxPathQuery       = <{ regex.new([[([^?]*)\??(.*)]]) }>
-rxHeaderLine      = <{ regex.new([[([^:]+):\s*(.+)]]) }>
-rxRouteParam      = <{ regex.new([[:(\w+)]]) }>
-rxPercentEncoded  = <{ regex.new([[%([0-9A-Fa-f]{2})]]) }>
-rxRouteParamSub   = <{ regex.new([[:[\w_]+]]) }>
-rxEscapedWildcard = <{ regex.new([[\\\*]]) }>
-rxPathComponent   = <{ regex.new([[([^\/]+)]]) }>
-rxHexChunkSize    = <{ regex.new([[^([0-9a-fA-F]+)]]) }>
-rxQueryPair       = <{ regex.new([[([^&]+)]]) }>
-rxKeyValue        = <{ regex.new([[([^=]+)=(.+)]]) }>
-rxCookieItem      = <{ regex.new([[([^;]+)]]) }>
-rxLineIterator    = <{ regex.new([[([^\r\n]+)]]) }>
-rxParentPath      = <{ regex.new([[(.+)\/.+\/]]) }>
+rxControlChars    <const> = <{ regex.new([=[[\x00-\x1f\x7f]]=]) }>
+rxQueryFragment   <const> = <{ regex.new([[^([^?#]*)]]) }>
+rxFileExtension   <const> = <{ regex.new([[\.([^.]+)$]]) }>
+rxCookiePair      <const> = <{ regex.new([[\s*([^=]+)=(.+)]]) }>
+rxTrimWhitespace  <const> = <{ regex.new([[^\s*(.*?)\s*$]]) }>
+rxRequestLine     <const> = <{ regex.new([[(\S+)\s+(\S+)\s+(\S+)]]) }>
+rxPathQuery       <const> = <{ regex.new([[([^?]*)\??(.*)]]) }>
+rxHeaderLine      <const> = <{ regex.new([[([^:]+):\s*(.+)]]) }>
+rxRouteParam      <const> = <{ regex.new([[:(\w+)]]) }>
+rxPercentEncoded  <const> = <{ regex.new([[%([0-9A-Fa-f]{2})]]) }>
+rxRouteParamSub   <const> = <{ regex.new([[:[\w_]+]]) }>
+rxEscapedWildcard <const> = <{ regex.new([[\\\*]]) }>
+rxPathComponent   <const> = <{ regex.new([[([^\/]+)]]) }>
+rxHexChunkSize    <const> = <{ regex.new([[^([0-9a-fA-F]+)]]) }>
+rxQueryPair       <const> = <{ regex.new([[([^&]+)]]) }>
+rxKeyValue        <const> = <{ regex.new([[([^=]+)=(.+)]]) }>
+rxCookieItem      <const> = <{ regex.new([[([^;]+)]]) }>
+rxLineIterator    <const> = <{ regex.new([[([^\r\n]+)]]) }>
+rxParentPath      <const> = <{ regex.new([[(.+)\/.+\/]]) }>
+rxMultipartBoundary <const> = <{ regex.new([[boundary="?([^";]+)"?]], regex.ICASE) }>
+rxMultipartName     <const> = <{ regex.new([[name="([^"]*)"]], regex.ICASE) }>
+rxMultipartFilename <const> = <{ regex.new([[filename="([^"]*)"]], regex.ICASE) }>
+rxByteRange         <const> = <{ regex.new([[^bytes=([0-9]*)-([0-9]*)$]], regex.ICASE) }>
 
-glStatusTexts = {
+glStatusTexts <const> = {
       [200] = 'OK', [201] = 'Created', [204] = 'No Content',
       [301] = 'Moved Permanently', [302] = 'Found', [304] = 'Not Modified',
       [400] = 'Bad Request', [401] = 'Unauthorized', [403] = 'Forbidden',
-      [404] = 'Not Found', [405] = 'Method Not Allowed', [429] = 'Too Many Requests',
+      [404] = 'Not Found', [405] = 'Method Not Allowed', [416] = 'Range Not Satisfiable',
+      [429] = 'Too Many Requests',
       [500] = 'Internal Server Error', [501] = 'Not Implemented', [502] = 'Bad Gateway'
 }
 
-glMimeTypes = {
+glMimeTypes <const> = {
    -- Text
    html = 'text/html',
    htm  = 'text/html',
@@ -529,9 +534,9 @@ function parseJsonBody(Body:str):table
 
    try
       return json.decode(Body)
-   except e
-      return {}
    end
+
+   return {}
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -539,6 +544,83 @@ end
 
 function parseFormBody(Body:str):table
    return parseQueryString(Body) -- Same parsing logic as query strings
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Remove the CRLF that precedes the next multipart boundary.
+
+function trimMultipartPartValue(Value:str):str
+   if Value:endsWith('\r\n') then
+      return Value:substr(0, #Value - 2)
+   elseif Value:endsWith('\n') then
+      return Value:substr(0, #Value - 1)
+   end
+
+   return Value
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Parse multipart/form-data body fields.  File parts are returned as { filename, value } tables.
+
+function parseMultipartBody(Body:str, ContentType:str):table
+   result = {}
+   Body ?? return result
+
+   boundary = rxMultipartBoundary.extract(ContentType ?? '')
+   if boundary is nil or boundary:trim() is '' then return result end
+
+   marker = '--' .. boundary:trim()
+   for raw_part in values(Body:split(marker)) do
+      if raw_part is '' or raw_part:startsWith('--') then
+         continue
+      end
+
+      part = raw_part
+      if part:startsWith('\r\n') then
+         part = part:substr(2)
+      elseif part:startsWith('\n') then
+         part = part:substr(1)
+      end
+
+      header_end = part:find('\r\n\r\n', 0, true)
+      delimiter_size = 4
+      if header_end is nil then
+         header_end = part:find('\n\n', 0, true)
+         delimiter_size = 2
+      end
+      if header_end is nil then continue end
+
+      header_text = part:substr(0, header_end):replace('\r\n', '\n')
+      value = trimMultipartPartValue(part:substr(header_end + delimiter_size))
+      disposition = nil
+
+      for header_line in values(header_text:split('\n')) do
+         colon = header_line:find(':', 0, true)
+         if colon is nil then continue end
+
+         header_name = header_line:substr(0, colon):trim():lower()
+         header_value = header_line:substr(colon + 1):trim()
+
+         if header_name is 'content-disposition' then
+            disposition = header_value
+         end
+      end
+
+      field_name = rxMultipartName.extract(disposition ?? '')
+      if field_name is nil or field_name is '' then continue end
+
+      filename = rxMultipartFilename.extract(disposition ?? '')
+      if filename != nil then
+         result[field_name] = {
+            filename = filename,
+            value    = value
+         }
+      else
+         result[field_name] = value
+      end
+   end
+
+   return result
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -627,9 +709,20 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function sendHttpResponse(self, Client, statusCode, statusText, headers, body)
+function closeHttpResponse(Client)
+   msg('Closing client socket per connection: close')
+   processing.delayedCall(function()
+      Client.acDeactivate()
+   end)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function sendHttpResponse(self, Client, statusCode, statusText, headers, body, CloseSocket)
    response = "HTTP/1.1 " .. statusCode .. " " .. statusText .. "\r\n"
    head_only = isHeadRequest(Client)
+   close_socket = true
+   if CloseSocket is false then close_socket = false end
 
    if (not headers['content-length']) and (body) then headers['content-length'] = tostring(#body)end
 
@@ -672,9 +765,8 @@ function sendHttpResponse(self, Client, statusCode, statusText, headers, body)
 
    assert(written is #response, 'Unable to write response in one call (breach of contract).')
 
-   if headers['connection'] is 'close' then -- The HTTP server is responsible for socket closure, so do it now.
-      msg('Closing client socket per connection: close')
-      Client.acDeactivate()
+   if (headers['connection'] is 'close') and close_socket then -- The HTTP server is responsible for socket closure.
+      closeHttpResponse(Client)
    end
 end
 
@@ -828,7 +920,89 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function serveFile(self, ClientSocket, FilePath:str, Request)
+function parseByteRange(Header:str, FileSize:num):table
+   Header ?? return nil
+
+   captures = rxByteRange.match(Header:trim())
+   captures ?? return nil
+
+   start_text = captures[1]
+   end_text = captures[2]
+
+   if start_text is '' and end_text is '' then return nil end
+
+   local start_byte:num
+   local end_byte:num
+
+   if start_text is '' then
+      suffix_size = tonumber(end_text)
+      if not suffix_size or suffix_size <= 0 then return nil end
+
+      if FileSize <= 0 then return { unsatisfiable = true } end
+      if suffix_size > FileSize then suffix_size = FileSize end
+      start_byte = FileSize - suffix_size
+      end_byte = FileSize - 1
+   else
+      start_byte = tonumber(start_text)
+      if not start_byte then return nil end
+
+      if end_text is '' then
+         end_byte = FileSize - 1
+      else
+         end_byte = tonumber(end_text)
+         if not end_byte then return nil end
+      end
+   end
+
+   if start_byte < 0 or end_byte < start_byte then return nil end
+   if FileSize <= 0 or start_byte >= FileSize then return { unsatisfiable = true } end
+   if end_byte >= FileSize then end_byte = FileSize - 1 end
+
+   return {
+      startByte = start_byte,
+      endByte   = end_byte,
+      length    = end_byte - start_byte + 1
+   }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function streamFileBody(self:table, ClientSocket:obj, File:obj, Length:num):bool
+   buffer = string.alloc(self.fileChunkSize)
+   total_sent = 0
+
+   while total_sent < Length do
+      to_read = math.min(self.fileChunkSize, Length - total_sent)
+      err, bytes_read = File.acRead(buffer, to_read)
+
+      if err != ERR_Okay then
+         logMessage(self, 'Error streaming file: ' .. mSys.GetErrorMsg(err))
+         closeHttpResponse(ClientSocket)
+         return false
+      end
+
+      if bytes_read > 0 then
+         err, written = ClientSocket.acWrite(buffer:substr(0, bytes_read))
+         if err != ERR_Okay then
+            logMessage(self, 'Error writing to ClientSocket: ' .. mSys.GetErrorMsg(err))
+            closeHttpResponse(ClientSocket)
+            return false
+         end
+         assert(written is bytes_read, 'Unable to write response in one call (breach of contract).')
+
+         total_sent += bytes_read
+      else
+         break
+      end
+   end
+
+   closeHttpResponse(ClientSocket)
+   return total_sent is Length
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function serveFile(self:table, ClientSocket:obj, FilePath:str, Request:table)
    local file
    try
       file = obj.new('file', { path = FilePath, flags = 'READ' })
@@ -843,6 +1017,7 @@ function serveFile(self, ClientSocket, FilePath:str, Request)
 
    fileSize = file.size
    mimeType = getMimeType(FilePath)
+   range = parseByteRange(Request.range, fileSize)
 
    -- For HEAD requests, only send headers without body
    if Request.method is 'HEAD' then
@@ -854,38 +1029,44 @@ function serveFile(self, ClientSocket, FilePath:str, Request)
       return
    end
 
+   if range then
+      if range.unsatisfiable then
+         errorBody = createErrorPage(416, 'Range Not Satisfiable',
+            'The requested byte range cannot be satisfied.',
+            'File size: ' .. fileSize .. ' bytes')
+         sendHttpResponse(self, ClientSocket, 416, "Range Not Satisfiable", {
+            ['content-type'] = 'text/html',
+            ['content-range'] = f"bytes */{fileSize}",
+            ['accept-ranges'] = 'bytes'
+         }, errorBody)
+         return
+      end
+
+      check file.acSeek(range.startByte, SEEK_START)
+
+      sendHttpResponse(self, ClientSocket, 206, "Partial Content", {
+         ['content-type'] = mimeType,
+         ['content-length'] = tostring(range.length),
+         ['content-range'] = f"bytes {range.startByte}-{range.endByte}/{fileSize}",
+         ['accept-ranges'] = 'bytes'
+      }, nil, false)
+
+      if not streamFileBody(self, ClientSocket, file, range.length) then
+         logMessage(self, 'Range response ended before expected length: ' .. range.length)
+      end
+      return
+   end
+
    -- Stream large files in chunks
    if fileSize > self.fileChunkSize then
       sendHttpResponse(self, ClientSocket, 200, "OK", {
          ['content-type'] = mimeType,
          ['content-length'] = tostring(fileSize),
          ['accept-ranges'] = 'bytes'
-      })
+      }, nil, false)
 
-      buffer = string.alloc(self.fileChunkSize)
-      totalSent = 0
-
-      while totalSent < fileSize do
-         toRead = math.min(self.fileChunkSize, fileSize - totalSent)
-         err, bytes_read = file.acRead(buffer, toRead)
-
-         if err != ERR_Okay then
-            logMessage(self, 'Error streaming file: ' .. mSys.GetErrorMsg(err))
-            return
-         end
-
-         if bytes_read > 0 then
-            err, written = ClientSocket.acWrite(buffer:substr(0, bytes_read))
-            if err != ERR_Okay then
-               logMessage(self, 'Error writing to ClientSocket: ' .. mSys.GetErrorMsg(err))
-               return
-            end
-            assert(written is bytes_read, 'Unable to write response in one call (breach of contract).')
-
-            totalSent += bytes_read
-         else
-            break
-         end
+      if not streamFileBody(self, ClientSocket, file, fileSize) then
+         logMessage(self, 'File response ended before expected length: ' .. fileSize)
       end
    else
       -- Small files: read all at once
@@ -979,7 +1160,7 @@ a:hover { text-decoration: underline; }
          name = info.Name
 
          -- Skip hidden files and system files for security
-         if name:startsWith('.') then
+         if not name:startsWith('.') then
             isFolder = info.flags has RDF_FOLDER
             size     = isFolder ? '-' :> formatFileSize(info.size)
             modTime  = printableTime(info.modified)
@@ -1602,6 +1783,9 @@ function serverIncoming(self, ClientSocket)
          elseif contentType:find('application/x-www-form-urlencoded') then
             logMessage(self, 'Parsing URL-encoded form data')
             state.request.parsedBody = parseFormBody(state.request.body)
+         elseif contentType:find('multipart/form-data') then
+            logMessage(self, 'Parsing multipart form data')
+            state.request.parsedBody = parseMultipartBody(state.request.body, contentType)
          else
             -- Keep raw body for other content types
             state.request.parsedBody = { _raw = state.request.body }
@@ -1806,7 +1990,7 @@ hslib.start = function(Options)
       assert(file_type is LOC_FOLDER, f'Folder "{self.folder}" does not exist')
    end
 
-   assert(self.folder, 'The folder option is required')
+   self.folder ?? error('The folder option is required')
 
    if Options.verbose then
       if type(Options.verbose) is 'boolean' then
@@ -1939,7 +2123,7 @@ hslib.start = function(Options)
 
    cfg = {
       port     = self.port,
-      flags    = 'SERVER|MULTI_CONNECT',
+      flags    = NSF_SERVER|NSF_MULTI_CONNECT,
       feedback = function(Server, ClientSocket, State)
          if State is NTC_CONNECTED then
             -- New client connection

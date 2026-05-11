@@ -501,20 +501,7 @@ global function saveOutput()
       end
    end
 
-   print(f'Saving compressed IDL output to "{outPath}"')
-
-   local fl
-   try
-      if glAppend then
-         fl = obj.new('file', { flags=FL_WRITE, path=outPath } )
-         fl.acSeek(0, SEEK_END)
-      else
-         fl = obj.new('file', { flags=FL_WRITE | FL_NEW, path=outPath } )
-      end
-   except
-      print('Failed to write output to ' .. outPath)
-      return
-   end
+   verbose(f'Building IDL output for "{outPath}"')
 
    EOL = '\n'
    if glFormat is 'c' then EOL = '\\n' end
@@ -524,7 +511,7 @@ global function saveOutput()
    s = ''
    for struct in values(glOrderedStructures) do
       if struct.fields then
-         s ..= 's.' .. struct.name .. ':' .. struct.sequence .. EOL
+         s ..= f's.{struct.name}:{struct.sequence}{EOL}'
       end
    end
 
@@ -560,21 +547,29 @@ global function saveOutput()
       c ..= e .. EOL
    end
 
+   out = ''
    if glFormat is 'c' then
       if s:len() + c:len() >= 16 * 1024 then -- MSVC doesn't like defined strings > 16Kb, so we need this alternative
-         fl.acWrite('char glIDL[] = { ')
-         fl.acWrite(str_to_bytes((s ?? '') .. (c ?? '')))
-         fl.acWrite(',0 };\n')
+         out ..= 'char glIDL[] = { '
+         out ..= str_to_bytes((s ?? '') .. (c ?? ''))
+         out ..= ',0 };\n'
       else
-         fl.acWrite('#undef MOD_IDL\n#define MOD_IDL "')
-         if s?? then fl.acWrite(s) end
-         if c?? then fl.acWrite(c) end
-         fl.acWrite('"\n')
+         out ..= '#undef MOD_IDL\n#define MOD_IDL "'
+         if s?? then out ..= s end
+         if c?? then out ..= c end
+         out ..= '"\n'
       end
    else
-      if s?? then fl.acWrite(s) end
-      if c?? then fl.acWrite(c) end
+      if s?? then out ..= s end
+      if c?? then out ..= c end
    end
+
+   if glAppend and (mSys.AnalysePath(outPath) is ERR_Okay) then
+      local existing = readTextFile(outPath, 'compressed IDL append source')
+      out = (existing ?? '') .. out
+   end
+
+   saveIfModified(outPath, out, 'compressed IDL output')
 end
 
 ----------------------------------------------------------------------------------------------------------------------

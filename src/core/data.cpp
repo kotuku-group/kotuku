@@ -59,6 +59,7 @@ int8_t fs_initialised  = FALSE;
 APTR glPageFault     = nullptr;
 bool glScanClasses   = false;
 bool glJanitorActive = false;
+bool glConsoleEnabled = false;
 bool glDebugMemory   = false;
 bool glEnableCrashHandler = true;
 struct CoreBase *LocalCoreBase = nullptr;
@@ -85,6 +86,9 @@ std::list<FDRecord> glFDTable;
 #ifdef __linux__
 std::mutex glmInotifyLookup;
 std::unordered_map<int, OBJECTID> glInotifyLookup;
+#endif
+#ifdef __unix__
+int glChildSignalFD[2] = { -1, -1 };
 #endif
 
 std::map<std::string, ConfigKeys, CaseInsensitiveMap> glVolumes;

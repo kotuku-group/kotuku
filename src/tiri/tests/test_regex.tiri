@@ -1,5 +1,8 @@
 -- Flute tests for the regex functionality
 
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
 @Test function Construction()
    -- Test valid regex construction
 

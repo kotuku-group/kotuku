@@ -955,7 +955,8 @@ static int module_call(lua_State *Lua)
             lua_pushinteger(Lua, (int)rc.Arg);
             if ((restype & FD_ERROR) and (rc.Arg >= int(ERR::ExceptionThreshold)) and in_try_immediate_scope(Lua)) {
                // Scope isolation: Only throw exceptions for direct calls within the try block.
-               luaL_error(Lua, ERR(rc.Arg));
+               cleanup();
+               raise_checked_call_error(Lua, ERR(rc.Arg), mod->Functions[index].Name);
             }
          }
       }

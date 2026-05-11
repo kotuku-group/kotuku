@@ -113,7 +113,7 @@ static bool delete_selected(extDocument *Self)
       }
 
       if (start.index < end.index) {
-         Self->Stream.data.erase(Self->Stream.data.begin() + start.index, Self->Stream.data.begin() + (end.index - start.index));
+         Self->Stream.data.erase(Self->Stream.data.begin() + start.index, Self->Stream.data.begin() + end.index);
          end.index -= (end.index - start.index);
 
          if ((end.offset > 0) and (Self->Stream[end.index].code IS SCODE::TEXT)) {
@@ -402,11 +402,17 @@ static void error_dialog(const std::string Title, const std::string Message)
 #if !(defined(DBG_LAYOUT) || defined(DBG_STREAM) || defined(DBG_SEGMENTS))
    static bool detect_recursive_dialog = false;
    static OBJECTID dialog_id = 0;
-   if ((dialog_id) and (CheckObjectExists(dialog_id) IS ERR::True)) return;
-   if (detect_recursive_dialog) return;
-   detect_recursive_dialog = true;
+   static std::mutex dialog_mutex;
+
+   {
+      std::lock_guard lk(dialog_mutex);
+      if ((dialog_id) and (CheckObjectExists(dialog_id) IS ERR::True)) return;
+      if (detect_recursive_dialog) return;
+      detect_recursive_dialog = true;
+   }
 
    OBJECTPTR dialog;
+   OBJECTID new_dialog_id = 0;
    if (NewObject(CLASSID::SCRIPT, &dialog) IS ERR::Okay) {
       dialog->setFields(fl::Name("scDialog"), fl::Owner(CurrentTaskID()), fl::Path("scripts:gui/dialog.tiri"));
 
@@ -420,12 +426,16 @@ static void error_dialog(const std::string Title, const std::string Message)
          CSTRING *results;
          int size;
          if ((dialog->get(FID_Results, results, size) IS ERR::Okay) and (size > 0)) {
-            dialog_id = strtol(results[0], nullptr, 0);
+            new_dialog_id = strtol(results[0], nullptr, 0);
          }
       }
    }
 
-   detect_recursive_dialog = false;
+   {
+      std::lock_guard lk(dialog_mutex);
+      if (new_dialog_id) dialog_id = new_dialog_id;
+      detect_recursive_dialog = false;
+   }
 #endif
 }
 
@@ -453,18 +463,20 @@ static ERR activate_cell_edit(extDocument *Self, INDEX CellIndex, stream_char Cu
    }
 
    auto &cell = Self->Stream.lookup<bc_cell>(CellIndex);
-   if (CursorIndex.index <= CellIndex) { // Go to the start of the cell content
+   auto &stream = Self->Stream;
+
+   if ((not CursorIndex.valid()) or (CursorIndex.index <= CellIndex)) { // Go to the start of the cell content
       CursorIndex.set(CellIndex + 1);
    }
 
-   auto &stream = *cell.stream;
+   if (CursorIndex.index >= INDEX(stream.size())) return log.warning(ERR::OutOfRange);
 
    if (stream.data[CursorIndex.index].code != SCODE::TEXT) {
       // Skip ahead to the first relevant control code - it's always best to place the cursor ahead of things like
       // font styles, paragraph formatting etc.
 
       CursorIndex.offset = 0;
-      while (CursorIndex.index < INDEX(Self->Stream.size())) {
+      while (CursorIndex.index < INDEX(stream.size())) {
          std::array<SCODE, 5> content = {
             SCODE::TABLE_START, SCODE::LINK_END, SCODE::IMAGE, SCODE::PARAGRAPH_END, SCODE::TEXT
          };

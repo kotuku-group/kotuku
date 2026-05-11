@@ -16,7 +16,7 @@ if (XXD_CMD STREQUAL "XXD_CMD-NOTFOUND")
          VERBATIM)
 
       add_custom_target (http_auth DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/auth.c")
-      add_dependencies (build_headers http_auth)
+      register_generated_header_target (http_auth)
    elseif (NOT (OD_CMD STREQUAL "OD_CMD-NOTFOUND"))
       # Linux/Unix fallback using od
       add_custom_command (OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/auth.c"
@@ -27,7 +27,7 @@ if (XXD_CMD STREQUAL "XXD_CMD-NOTFOUND")
          VERBATIM)
 
       add_custom_target (http_auth DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/auth.c")
-      add_dependencies (build_headers http_auth)
+      register_generated_header_target (http_auth)
    else ()
       message (STATUS "The xxd command is unavailable on this system")
    endif ()
@@ -40,7 +40,7 @@ else ()
       VERBATIM)
 
    add_custom_target (http_auth DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/auth.c")
-   add_dependencies (build_headers http_auth)
+   register_generated_header_target (http_auth)
 endif ()
 
 idl_gen ("${MOD}.tdl" NAME ${MOD}_defs OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.h" APPEND_IDL "${MOD}_def.c")

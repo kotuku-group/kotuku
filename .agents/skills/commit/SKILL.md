@@ -11,21 +11,26 @@ Use this template in constructing your Git message:
 ```
 [Label] Single line summary
 
-Any additional detail can be written here if necessary.
-Do not apply word-wrapping.
-If listing a series of changes, use asterisk based bullet points, one on each line.
-Do not add credit or authorship attributions for yourself or others.
-Comments, decorative changes and minor refactoring in the code should be ignored if there is no difference to programming logic.
+* [Sub-Label] Describe isolated change A
+* [Sub-Label] Describe isolated change B
 ```
 
 For example:
 
 ```
-[Tiri] Add bulk TValue operations with AVX2 acceleration for arrays and tables
+[Tiri] Added bulk TValue operations with AVX2 acceleration for arrays and tables
 
-* Introduce lj_bulk module providing vectorised nil-fill, copy and memmove for TValue arrays
-* Runtime CPUID detection selects the AVX2 path on capable hardware and falls back to scalar otherwise
+* Introduced lj_bulk module providing vectorised nil-fill, copy and memmove for TValue arrays
+* [Doc] Updated AGENTS.md with information on how to optimise for AVX2
 ```
+
+Rules:
+
+* Do not apply word-wrapping.
+* If listing a series of changes, use asterisk based bullet points, one on each line.
+* Do not add credit or authorship attributions for yourself or others.
+* Low-value changes do not need to be mentioned.  For example: comments, decorative changes, file renaming, minor refactoring, and anything that does not make a fundamental difference to programming logic.
+* If the Sub-Label would match the parent Label, the Sub-Label should not be applied.
 
 Note: If currently in the `master` or `main` branch, create a new branch under `test/[name]` with a relevant name related to the changes and commit to that target.
 

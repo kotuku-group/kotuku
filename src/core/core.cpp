@@ -38,6 +38,11 @@ This documentation is intended for technical reference and is not suitable as an
 #include <time.h>
 #endif
 
+#ifdef __APPLE__
+ #include <limits.h>
+ #include <mach-o/dyld.h>
+#endif
+
 #ifdef __unix__
  #ifndef __USE_GNU
   #define __USE_GNU
@@ -281,19 +286,35 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
          if (glRootPath.back() != '\\') glRootPath += '\\';
       #else
          // Get the folder of the running process.
-         char buffer[128];
-         char procfile[50];
-         snprintf(procfile, sizeof(procfile), "/proc/%d/exe", getpid());
+         #ifdef __APPLE__
+            char buffer[PATH_MAX];
+            uint32_t buffer_size = sizeof(buffer);
 
-         if (auto len = readlink(procfile, buffer, sizeof(buffer)-1); len > 0) {
-            glRootPath.assign(buffer, len);
+            if (_NSGetExecutablePath(buffer, &buffer_size) IS 0) {
+               glRootPath.assign(buffer);
+            }
+            else {
+               std::string dyn_buffer(buffer_size, '\0');
+               if (_NSGetExecutablePath(dyn_buffer.data(), &buffer_size) IS 0) {
+                  glRootPath.assign(dyn_buffer.data());
+               }
+            }
+         #else
+            char buffer[128];
+            char procfile[50];
+            snprintf(procfile, sizeof(procfile), "/proc/%d/exe", getpid());
+
+            if (auto len = readlink(procfile, buffer, sizeof(buffer)-1); len > 0) glRootPath.assign(buffer, len);
+         #endif
+
+         if (!glRootPath.empty()) {
             // Strip process name
             auto i = glRootPath.find_last_of("/");
             if (i != std::string::npos) glRootPath.resize(i+1);
 
             // If the binary is in a 'bin' folder then the root is considered to be the parent folder.
             if (glRootPath.ends_with("bin/")) glRootPath.resize(glRootPath.size()-4);
-        }
+         }
       #endif
    }
 
@@ -333,6 +354,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
 
    std::forward_list<std::string> volumes;
 
+   bool auto_console = true;
    kt::vector<std::string> newargs;
    if ((Info->Flags & OPF::ARGS) != OPF::NIL) {
       for (i=1; i < Info->ArgCount; i++) {
@@ -364,6 +386,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
             if (glLogLevel < 5) glLogLevel = 5;
          }
          else if (iequals(arg, "no-crash-handler")) glEnableCrashHandler = false;
+         else if (iequals(arg, "no-console"))  auto_console = false; // Disables the automatic console window on Win32
          else if (iequals(arg, "sync"))        glSync = true;
          else if (iequals(arg, "log-threads")) glLogThreads = true;
          else if (iequals(arg, "log-none"))    glLogLevel = 0;
@@ -415,6 +438,18 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
 
 #ifdef __unix__
    struct sigaction sig;
+   clearmem(&sig, sizeof(sig));
+   sigemptyset(&sig.sa_mask);
+
+   if (pipe(glChildSignalFD) IS -1) {
+      KERR("Failed to create child process signal pipe: %s\n", strerror(errno));
+      return ERR::SystemCall;
+   }
+
+   fcntl(glChildSignalFD[0], F_SETFL, fcntl(glChildSignalFD[0], F_GETFL) | O_NONBLOCK);
+   fcntl(glChildSignalFD[1], F_SETFL, fcntl(glChildSignalFD[1], F_GETFL) | O_NONBLOCK);
+   fcntl(glChildSignalFD[0], F_SETFD, FD_CLOEXEC);
+   fcntl(glChildSignalFD[1], F_SETFD, FD_CLOEXEC);
 
    sig.sa_flags = SA_SIGINFO;
    if (glEnableCrashHandler) {
@@ -458,7 +493,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
    AdjustLogLevel(1); // Temporarily limit log output when opening the Core because it's not that interesting
 
 #ifdef _WIN32
-   activate_console(glLogLevel > 0); // This works for the MinGW runtime libraries but not MSYS2
+   glConsoleEnabled = activate_console((glLogLevel > 0) and (auto_console));
 
    // An exception handler deals with crashes unless the program is being debugged.
 
@@ -466,6 +501,8 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
       winSetUnhandledExceptionFilter(&CrashHandler);
    }
    else log.msg("A debugger is active.");
+#else
+   glConsoleEnabled = isatty(STDOUT_FILENO) or isatty(STDERR_FILENO);
 #endif
 
    // Sockets are used on Unix systems to tell our processes when new messages are available for them to read.
@@ -490,20 +527,33 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
 
                KMSG("Attempting to re-use an earlier bind().\n");
                if (setsockopt(glSocket, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) IS -1) {
+                  close(glChildSignalFD[0]);
+                  close(glChildSignalFD[1]);
+                  glChildSignalFD[0] = -1;
+                  glChildSignalFD[1] = -1;
                   return ERR::SystemCall;
                }
             }
             else {
+               close(glChildSignalFD[0]);
+               close(glChildSignalFD[1]);
+               glChildSignalFD[0] = -1;
+               glChildSignalFD[1] = -1;
                return ERR::SystemCall;
             }
          }
       }
       else {
          KERR("Failed to create a new socket communication point.\n");
+         close(glChildSignalFD[0]);
+         close(glChildSignalFD[1]);
+         glChildSignalFD[0] = -1;
+         glChildSignalFD[1] = -1;
          return ERR::SystemCall;
       }
 
       RegisterFD(glSocket, RFD::READ, nullptr, nullptr);
+      RegisterFD(glChildSignalFD[0], RFD::READ, &process_child_signals, nullptr);
    #endif
 
    log.msg("Process: %d, Sync: %s, Root: %s", glProcessID, (glSync) ? "Y" : "N", glRootPath.c_str());
@@ -815,14 +865,16 @@ void print_diagnosis(int Signal)
 
          // Copy process status to the output file
 
-         snprintf(filename, sizeof(filename), "/proc/%d/status", glCurrentTask->ProcessID);
-         if (auto pf = fopen(filename, "r")) {
-            if ((len = fread(buffer, 1, sizeof(buffer)-1, pf)) > 0) {
-               buffer[len] = 0;
-               fprintf(fd, "\n%s\n", buffer);
+         #ifdef __linux__
+            snprintf(filename, sizeof(filename), "/proc/%d/status", glCurrentTask->ProcessID);
+            if (auto pf = fopen(filename, "r")) {
+               if ((len = fread(buffer, 1, sizeof(buffer)-1, pf)) > 0) {
+                  buffer[len] = 0;
+                  fprintf(fd, "\n%s\n", buffer);
+               }
+               fclose(pf);
             }
-            fclose(pf);
-         }
+         #endif
       }
       fclose(fd);
    }
@@ -912,38 +964,10 @@ static void NullHandler(int SignalNumber, siginfo_t *Info, APTR Context)
 #ifdef __unix__
 static void child_handler(int SignalNumber, siginfo_t *Info, APTR Context)
 {
-#if 0
-   kotuku:Log log(__FUNCTION__);
-
-   int childprocess = Info->si_pid;
-
-   // Get the return code
-
-   int status = 0;
-   waitpid(Info->si_pid, &status, WNOHANG);
-   int result = WEXITSTATUS(status);
-
-   log.warning("Process #%d exited, return-code %d.", childprocess, result);
-
-   // Store the return code for this process in any Task object that is associated with it.
-   //
-   // !!! TODO: The slow methodology of this loop needs attention !!!
-
-   for (const auto & mem : glPrivateMemory) {
-      if (!(mem.Flags & MEM::OBJECT)) continue;
-
-      objTask *task;
-      if ((task = mem.Address)) {
-         if ((task->ClassID IS ID_TASK) and (task->ProcessID IS childprocess)) {
-            task->ReturnCode    = result;
-            task->ReturnCodeSet = true;
-            break;
-         }
-      }
+   if (glChildSignalFD[1] != -1) {
+      uint8_t signal_byte = 1;
+      (void)write(glChildSignalFD[1], &signal_byte, sizeof(signal_byte));
    }
-
-   validate_process(childprocess);
-#endif
 }
 #endif
 
@@ -1081,6 +1105,25 @@ static void win32_enum_folders(CSTRING Volume, CSTRING Label, CSTRING Path, CSTR
 
 //********************************************************************************************************************
 
+#ifndef _WIN32
+static std::string host_temp_path(void)
+{
+   static constexpr CSTRING env_vars[] = { "TMPDIR", "TEMP", "TMP" };
+
+   for (auto env_var : env_vars) {
+      if (auto path = getenv(env_var); path and path[0]) {
+         std::string result(path);
+         if (result.back() != '/') result.push_back('/');
+         return result;
+      }
+   }
+
+   return "/tmp/";
+}
+#endif
+
+//********************************************************************************************************************
+
 static ERR init_volumes(const std::forward_list<std::string> &Volumes)
 {
    kt::Log log("Core");
@@ -1101,7 +1144,7 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
    // OPF::MODULE_PATH : modules : glModulePath = %ROOT%/lib/kotuku
    // OPF::SYSTEM_PATH : system  : glSystemPath = %ROOT%/share/kotuku
 
-   #ifdef _WIN32
+   #if defined(_WIN32)
       SetVolume("kotuku", glRootPath.c_str(), "programs/filemanager", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
       SetVolume("system", glRootPath.c_str(), "misc/brick", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
 
@@ -1111,7 +1154,7 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
       }
       else SetVolume("modules", "system:lib/", "misc/brick", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
       #endif
-   #elif __unix__
+   #elif defined(__unix__) or defined(__APPLE__)
       SetVolume("kotuku", glRootPath.c_str(), "programs/filemanager", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
       SetVolume("system", glSystemPath.c_str(), "misc/brick", nullptr, nullptr, VOLUME::REPLACE|VOLUME::SYSTEM);
 
@@ -1125,9 +1168,17 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
       }
       #endif
 
-      SetVolume("drive1", "/", "devices/storage", "Linux", "fixed", VOLUME::REPLACE|VOLUME::SYSTEM);
+      #ifdef __linux__
+         SetVolume("drive1", "/", "devices/storage", "Linux", "fixed", VOLUME::REPLACE|VOLUME::SYSTEM);
+      #elif defined(__APPLE__)
+         SetVolume("drive1", "/", "devices/storage", "Mac", "fixed", VOLUME::REPLACE|VOLUME::SYSTEM);
+      #endif
+
       SetVolume("etc", "/etc", "tools/cog", nullptr, nullptr, VOLUME::REPLACE|VOLUME::SYSTEM);
       SetVolume("usr", "/usr", nullptr, nullptr, nullptr, VOLUME::REPLACE|VOLUME::SYSTEM);
+
+      auto temp_path = host_temp_path();
+      SetVolume("HostTemp:", temp_path.c_str(), "items/trash", "Temp", nullptr, VOLUME::REPLACE|VOLUME::HIDDEN);
    #endif
 
    // Configure some standard volumes.
@@ -1136,6 +1187,7 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
       SetVolume("assets", "EXT:FileAssets", nullptr, nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
       SetVolume("templates", "assets:templates/", "misc/openbook", nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
       SetVolume("config", "localcache:config/|assets:config/", "tools/cog", nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
+      SetVolume("HostTemp:", "temp:", "items/trash", "Temp", nullptr, VOLUME::REPLACE|VOLUME::HIDDEN);
    #else
       SetVolume("templates", "scripts:templates/", "misc/openbook", nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
       SetVolume("config", "system:config/", "tools/cog", nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);

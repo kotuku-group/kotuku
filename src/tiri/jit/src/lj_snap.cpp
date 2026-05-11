@@ -313,6 +313,15 @@ static BCREG snap_usedef(jit_State *J, uint8_t *udf, const BCIns *pc, BCREG maxs
             else if (op IS BC_TSETM) {
                for (s = bc_a(ins) - 1; s < maxslot; s++) USE_SLOT(s);
             }
+            else if (op IS BC_TRYENTER) {
+               // Operand A is the first free register at try entry, matching TryBlockDesc::entry_slots.
+               // Exception handlers can read any slot below this boundary, but not stale temporaries above it.
+               BCREG entry_slots = bc_a(ins);
+               if (entry_slots > maxslot) entry_slots = maxslot;
+               for (s = 0; s < entry_slots; s++) USE_SLOT(s);
+               for (; s < maxslot; s++) DEF_SLOT(s);
+               return entry_slots;
+            }
             break;
          default: break;
       }

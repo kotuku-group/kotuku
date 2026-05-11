@@ -23,11 +23,91 @@ end
 
 -----------------------------------------------------------------------------------------------------------------------
 
+@Test function TaskExitCallback()
+   state = mSys.GetSystemState()
+   if state.platform is 'Windows' then
+      return
+   end
+
+   processing.flush()
+   current_task = mSys.CurrentTask()
+   exit_called = false
+   output_text = ''
+
+   task = obj.new('task', {
+      location = current_task.processPath .. 'origo',
+      args = '--version',
+      outputCallback = function(Task, Buffer)
+         output_text ..= Buffer:getString()
+      end,
+      errorCallback = function(Task, Buffer)
+         output_text ..= Buffer:getString()
+      end,
+      exitCallback = function(Task)
+         exit_called = true
+         processing.signal()
+      end
+   })
+
+   task.acActivate()
+   check processing.sleep(3.0)
+
+   assert(exit_called is true, 'Task ExitCallback was not invoked after the child process exited.')
+   assert(#output_text > 0, 'Expected child process output to be captured before exit.')
+
+   task.free()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function TaskBackgroundDescendantOutput()
+   state = mSys.GetSystemState()
+   if state.platform is 'Windows' then
+      return
+   end
+
+   processing.flush()
+   exit_called = false
+   output_text = ''
+
+   task = obj.new('task', {
+      location = '(sleep 0.01; echo late) &', -- Run task in background
+      flags = TSF_SHELL,
+      outputCallback = function(Task, Buffer)
+         output_text ..= Buffer:getString()
+         print(f'Received {#output_text} bytes.')
+         if output_text:find('late') then
+            processing.signal()
+         end
+      end,
+      errorCallback = function(Task, Buffer)
+         output_text ..= Buffer:getString()
+      end,
+      exitCallback = function(Task)
+         print(f'Exit trigger called.')
+         exit_called = true
+         processing.signal()
+      end
+   })
+
+   check task.acActivate()
+
+   processing.sleep(1.0) -- Should return almost immediately because the shell detaches
+   processing.halt(0.3) -- Need to wait for echo to complete in the background
+
+   assert(exit_called is true, 'Task ExitCallback was not invoked after the shell process exited.')
+   assert(output_text:find('late'), 'Expected output from a background descendant after shell exit, got: ' .. output_text)
+
+   task.free()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
 @Test function PreciseTime()
    time = mSys.PreciseTime()
    assert(time > 0, 'PreciseTime() did not return a positive value.')
 
-   processing.sleep(1)
+   processing.halt(1)
 
    -- Acquire a new timestamp and check that the difference is between 1 and 1.5 seconds.
 
