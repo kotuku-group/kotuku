@@ -108,7 +108,7 @@ struct TLSSession {
 
 //********************************************************************************************************************
 
-#ifdef _WIN32
+#if defined(_WIN32) and !defined(ENABLE_IOCP)
    #include "win32/winsockwrappers.h"
 #endif
 
@@ -179,7 +179,7 @@ class extNetLookup : public objNetLookup {
 
 //********************************************************************************************************************
 
-#ifdef _WIN32
+#if defined(_WIN32) and !defined(ENABLE_IOCP)
    #include "win32/winsockwrappers.h"
 #endif
 

@@ -69,6 +69,7 @@ option (KOTUKU_STATIC   "Build as a set of static libraries instead of the defau
 option (KOTUKU_INSTALL  "Create installation targets" ON)
 option (KOTUKU_VLOG     "Enable verbose log messages in the generated binaries" OFF)
 option (ORIGO_CONSOLE   "Build Origo as a Windows console application rather than a GUI application (Windows only)" OFF)
+option (ENABLE_IOCP     "Use the experimental Windows IOCP backend for the Network module." OFF)
 if (UNIX)
    option (RUN_ANYWHERE  "Create a build that can run directly from the main folder.  Typically used if redefining CMAKE_INSTALL_PREFIX" OFF)
 else ()
@@ -100,6 +101,10 @@ option (GENERATE_DEBIAN_PKG "Generate Debian packaging files" OFF)
 option (ENABLE_CPACK      "Enable CPack Windows packaging support" OFF)
 option (FULL_OPTIMISATION "Use the highest levels of optimisation available" OFF)
 option (ENABLE_SSL_BUNDLE_UPDATE "Enable the manual update_ssl_bundle target for downloading the SSL certificate bundle." OFF)
+
+if (ENABLE_IOCP AND NOT WIN32)
+   message (FATAL_ERROR "ENABLE_IOCP is only supported on Windows.")
+endif ()
 
 set (KOTUKU_NETWORK_SUPPORTED FALSE)
 if (WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")

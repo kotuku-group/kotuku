@@ -91,6 +91,10 @@ add_library (core)
 
 target_compile_definitions (core PRIVATE "__system__" "DBG_DIAGNOSTICS" "PRV_METACLASS")
 
+if (ENABLE_IOCP)
+   target_compile_definitions (core PRIVATE "ENABLE_IOCP")
+endif ()
+
 if (MSVC)
    target_compile_definitions (core PRIVATE "_CRT_NONSTDC_NO_DEPRECATE")
 endif ()

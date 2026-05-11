@@ -75,7 +75,7 @@ ERR NetQueue::write(CPTR Message, size_t Length)
 // example, a disconnection were to occur during a read/write operation for example.  Using DataFeeds is a more
 // reliable method of managing recursion problems, but burdens the message queue.
 
-#ifdef _WIN32
+#if defined(_WIN32) and !defined(ENABLE_IOCP)
 void win32_netresponse(OBJECTPTR SocketObject, SOCKET_HANDLE Handle, int Message, ERR Error)
 {
    kt::Log log(__FUNCTION__);
