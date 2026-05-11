@@ -90,7 +90,8 @@ static ERR iocp_completion_receiver(APTR Custom, MSGID MsgID, int MsgType, APTR 
    if (!lock.granted()) return ERR::Okay;
 
    if ((completion->Type != IocpOperationType::CONNECT) and (completion->Type != IocpOperationType::READ) and
-       (completion->Type != IocpOperationType::WRITE) and (completion->Type != IocpOperationType::ACCEPT)) {
+       (completion->Type != IocpOperationType::WRITE) and (completion->Type != IocpOperationType::ACCEPT) and
+       (completion->Type != IocpOperationType::UDP_RECEIVE)) {
       return ERR::Okay;
    }
 
@@ -332,39 +333,27 @@ public:
 
    ERR enable_broadcast(SocketHandle Handle) override
    {
-      (void)Handle;
-      return ERR::NoSupport;
+      return iocp_enable_broadcast(Handle.socket());
    }
 
    ERR set_multicast_ttl(SocketHandle Handle, int TTL, bool IPv6) override
    {
-      (void)Handle;
-      (void)TTL;
-      (void)IPv6;
-      return ERR::NoSupport;
+      return iocp_set_multicast_ttl(Handle.socket(), TTL, IPv6);
    }
 
    ERR parse_multicast_group(CSTRING Group, bool &IPv6) override
    {
-      (void)Group;
-      IPv6 = false;
-      return ERR::NoSupport;
+      return iocp_parse_multicast_group(Group, IPv6);
    }
 
    ERR join_multicast_group(SocketHandle Handle, CSTRING Group, bool IPv6) override
    {
-      (void)Handle;
-      (void)Group;
-      (void)IPv6;
-      return ERR::NoSupport;
+      return iocp_join_multicast_group(Handle.socket(), Group, IPv6);
    }
 
    ERR leave_multicast_group(SocketHandle Handle, CSTRING Group, bool IPv6) override
    {
-      (void)Handle;
-      (void)Group;
-      (void)IPv6;
-      return ERR::NoSupport;
+      return iocp_leave_multicast_group(Handle.socket(), Group, IPv6);
    }
 
    ERR receive(SocketHandle Handle, APTR Buffer, size_t Length, size_t &Received) override
@@ -384,22 +373,22 @@ public:
 
    ERR send_to(SocketHandle Handle, CPTR Buffer, size_t &Length, const NetworkEndpoint &Endpoint) override
    {
-      (void)Handle;
-      (void)Buffer;
-      (void)Endpoint;
-      Length = 0;
-      return ERR::NoSupport;
+      return iocp_send_to(Handle.socket(), Buffer, Length, &endpoint_storage(Endpoint), Endpoint.Size);
    }
 
    ERR receive_from(SocketHandle Handle, APTR Buffer, size_t BufferSize, size_t &BytesRead,
       IPAddress &SourceAddress) override
    {
-      (void)Handle;
-      (void)Buffer;
-      (void)BufferSize;
-      (void)SourceAddress;
-      BytesRead = 0;
-      return ERR::NoSupport;
+      NetworkEndpoint endpoint;
+      kt::clearmem(&endpoint, sizeof(endpoint));
+      int length = sizeof(endpoint.Storage);
+
+      auto error = iocp_receive_from(Handle.socket(), Buffer, BufferSize, BytesRead, endpoint.Storage, &length);
+      if ((error IS ERR::Okay) and (BytesRead > 0)) {
+         endpoint.Size = length;
+         return endpoint_to_ip(endpoint_storage(endpoint), SourceAddress);
+      }
+      return error;
    }
 
    ERR resolve_address(CSTRING Key, const IPAddress &Address, HostLookupResult &Result) override

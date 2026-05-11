@@ -59,8 +59,16 @@ ERR iocp_recall_read(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback, uintpt
 ERR iocp_receive(WSW_SOCKET Socket, void *Buffer, size_t Length, size_t &Received);
 ERR iocp_append_receive(WSW_SOCKET Socket, std::vector<uint8_t> &Buffer, size_t Length, size_t &Received);
 ERR iocp_send(WSW_SOCKET Socket, const void *Buffer, size_t &Length);
+ERR iocp_send_to(WSW_SOCKET Socket, const void *Buffer, size_t &Length, const void *Address, int AddressSize);
+ERR iocp_receive_from(WSW_SOCKET Socket, void *Buffer, size_t BufferSize, size_t &BytesRead, void *Address,
+   int *AddressSize);
 
 ERR iocp_get_local_ip(WSW_SOCKET Socket, void *Address, int *AddressSize);
+ERR iocp_enable_broadcast(WSW_SOCKET Socket);
+ERR iocp_set_multicast_ttl(WSW_SOCKET Socket, int TTL, bool IPv6);
+ERR iocp_parse_multicast_group(const char *Group, bool &IPv6);
+ERR iocp_join_multicast_group(WSW_SOCKET Socket, const char *Group, bool IPv6);
+ERR iocp_leave_multicast_group(WSW_SOCKET Socket, const char *Group, bool IPv6);
 
 uint32_t iocp_htonl(uint32_t Value);
 uint32_t iocp_ntohl(uint32_t Value);

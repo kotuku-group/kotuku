@@ -15,6 +15,7 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #define IS ==
@@ -32,6 +33,8 @@ struct IocpOperation {
    uintptr_t Data = 0;
    WSW_SOCKET AcceptedSocket = 0;
    std::unique_ptr<uint8_t[]> Buffer;
+   std::array<uint8_t, IOCP_ENDPOINT_STORAGE_SIZE> Address = {};
+   int AddressSize = 0;
    size_t BufferSize = 0;
    size_t BytesTransferred = 0;
    ERR Result = ERR::Busy;
@@ -49,6 +52,13 @@ struct IocpAcceptedSocket {
    int AddressSize = 0;
 };
 
+struct IocpDatagram {
+   std::vector<uint8_t> Buffer;
+   std::array<uint8_t, IOCP_ENDPOINT_STORAGE_SIZE> Address = {};
+   int AddressSize = 0;
+   ERR Result = ERR::Okay;
+};
+
 struct IocpSocketRecord {
    void *Reference = nullptr;
    IocpCompletionTarget Connect;
@@ -56,6 +66,7 @@ struct IocpSocketRecord {
    IocpCompletionTarget Write;
    IocpCompletionTarget Accept;
    std::vector<IocpAcceptedSocket> AcceptedSockets;
+   std::vector<IocpDatagram> Datagrams;
    std::vector<uint8_t> ReadBuffer;
    size_t ReadOffset = 0;
    std::array<uint8_t, IOCP_ENDPOINT_STORAGE_SIZE> ConnectAddress = {};
@@ -64,6 +75,7 @@ struct IocpSocketRecord {
    ERR ReadResult = ERR::Okay;
    uint64_t Generation = 0;
    bool IPv6 = false;
+   bool UDP = false;
    bool Cancelled = false;
    bool AcceptPending = false;
    bool ReadPending = false;
@@ -82,6 +94,7 @@ static bool glWinsockInitialised = false;
 
 static constexpr int MAX_IOCP_THREADS = 4;
 static constexpr size_t IOCP_READ_BUFFER_SIZE = 65536;
+static constexpr size_t IOCP_UDP_BUFFER_SIZE = 65536;
 static constexpr size_t IOCP_ACCEPT_ADDRESS_SIZE = sizeof(sockaddr_storage) + 16;
 static constexpr size_t IOCP_ACCEPT_BUFFER_SIZE = IOCP_ACCEPT_ADDRESS_SIZE * 2;
 
@@ -93,6 +106,7 @@ static IocpCompletionTarget completion_target(const IocpSocketRecord &Record, Io
    else if (Type IS IocpOperationType::READ) return Record.Read;
    else if (Type IS IocpOperationType::WRITE) return Record.Write;
    else if (Type IS IocpOperationType::ACCEPT) return Record.Accept;
+   else if (Type IS IocpOperationType::UDP_RECEIVE) return Record.Read;
    else return {};
 }
 
@@ -189,6 +203,57 @@ static SOCKET create_tcp_socket(bool IPv6, bool &ActualIPv6)
 
 //********************************************************************************************************************
 
+static SOCKET create_udp_socket(bool IPv6, bool &ActualIPv6)
+{
+   SOCKET socket = INVALID_SOCKET;
+
+   if (IPv6) {
+      socket = WSASocket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP, nullptr, 0, WSA_FLAG_OVERLAPPED);
+      ActualIPv6 = socket != INVALID_SOCKET;
+      if (socket != INVALID_SOCKET) {
+         DWORD v6only = 0;
+         setsockopt(socket, IPPROTO_IPV6, IPV6_V6ONLY, (char *)&v6only, sizeof(v6only));
+      }
+   }
+
+   if (socket IS INVALID_SOCKET) {
+      socket = WSASocket(AF_INET, SOCK_DGRAM, IPPROTO_UDP, nullptr, 0, WSA_FLAG_OVERLAPPED);
+      ActualIPv6 = false;
+   }
+
+   return socket;
+}
+
+//********************************************************************************************************************
+
+static ERR bind_udp_ephemeral(SOCKET Socket, bool IPv6)
+{
+   if (IPv6) {
+      sockaddr_in6 local_address = {};
+      local_address.sin6_family = AF_INET6;
+      local_address.sin6_addr = in6addr_any;
+      local_address.sin6_port = 0;
+      if (bind(Socket, (sockaddr *)&local_address, sizeof(local_address)) IS SOCKET_ERROR) {
+         auto error = WSAGetLastError();
+         if (error != WSAEINVAL) return convert_error(error);
+      }
+   }
+   else {
+      sockaddr_in local_address = {};
+      local_address.sin_family = AF_INET;
+      local_address.sin_addr.s_addr = INADDR_ANY;
+      local_address.sin_port = 0;
+      if (bind(Socket, (sockaddr *)&local_address, sizeof(local_address)) IS SOCKET_ERROR) {
+         auto error = WSAGetLastError();
+         if (error != WSAEINVAL) return convert_error(error);
+      }
+   }
+
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
 static void close_accepted_socket(const IocpOperation &Operation)
 {
    if ((Operation.Type IS IocpOperationType::ACCEPT) and (Operation.AcceptedSocket != WSW_SOCKET(INVALID_SOCKET))) {
@@ -238,6 +303,23 @@ static void store_operation_result(IocpSocketRecord &Record, const IocpOperation
    }
    else if (Operation.Type IS IocpOperationType::WRITE) {
       Record.WritePending = false;
+   }
+   else if (Operation.Type IS IocpOperationType::UDP_RECEIVE) {
+      Record.ReadPending = false;
+      Record.ReadResult = Error;
+
+      if ((Error IS ERR::Okay) and (Operation.Buffer) and
+          (Operation.AddressSize > 0) and (Operation.AddressSize <= int(IOCP_ENDPOINT_STORAGE_SIZE))) {
+         IocpDatagram datagram;
+         datagram.Buffer.resize(Operation.BytesTransferred);
+         if (Operation.BytesTransferred > 0) {
+            std::memcpy(datagram.Buffer.data(), Operation.Buffer.get(), Operation.BytesTransferred);
+         }
+         datagram.AddressSize = Operation.AddressSize;
+         datagram.Result = ERR::Okay;
+         std::memcpy(datagram.Address.data(), Operation.Address.data(), size_t(Operation.AddressSize));
+         Record.Datagrams.push_back(std::move(datagram));
+      }
    }
    else if (Operation.Type IS IocpOperationType::ACCEPT) {
       Record.AcceptPending = false;
@@ -360,10 +442,11 @@ static ERR queue_record_completion(WSW_SOCKET Socket, IocpOperationType Type)
 
 //********************************************************************************************************************
 
-static ERR post_read(WSW_SOCKET Socket)
+static ERR post_udp_receive(WSW_SOCKET Socket)
 {
    IocpCompletionTarget target;
    uint64_t generation = 0;
+   bool ipv6 = false;
 
    {
       std::lock_guard<std::mutex> lock(glIocpMutex);
@@ -371,7 +454,7 @@ static ERR post_read(WSW_SOCKET Socket)
       if (record IS glSockets.end()) return ERR::Search;
       if (record->second.Cancelled) return ERR::Cancelled;
       if (record->second.ReadPending) return ERR::Okay;
-      if (!record->second.ReadBuffer.empty()) return ERR::Okay;
+      if (!record->second.Datagrams.empty()) return ERR::Okay;
       if (record->second.ReadResult != ERR::Okay) return ERR::Okay;
 
       target = record->second.Read;
@@ -379,7 +462,81 @@ static ERR post_read(WSW_SOCKET Socket)
 
       record->second.ReadPending = true;
       generation = record->second.Generation;
+      ipv6 = record->second.IPv6;
    }
+
+   if (auto error = bind_udp_ephemeral(socket_from_handle(Socket), ipv6); error != ERR::Okay) {
+      IocpOperation failed_operation;
+      failed_operation.Type = IocpOperationType::UDP_RECEIVE;
+      failed_operation.Socket = Socket;
+      failed_operation.Generation = generation;
+      failed_operation.ObjectID = target.ObjectID;
+      failed_operation.Callback = target.Callback;
+      failed_operation.Data = target.Data;
+      failed_operation.Result = error;
+      queue_operation_completion(failed_operation, 0, failed_operation.Result);
+      return ERR::Okay;
+   }
+
+   auto operation = new IocpOperation();
+   operation->Type = IocpOperationType::UDP_RECEIVE;
+   operation->Socket = Socket;
+   operation->Generation = generation;
+   operation->ObjectID = target.ObjectID;
+   operation->Callback = target.Callback;
+   operation->Data = target.Data;
+   operation->BufferSize = IOCP_UDP_BUFFER_SIZE;
+   operation->Buffer = std::make_unique<uint8_t[]>(operation->BufferSize);
+   operation->AddressSize = int(operation->Address.size());
+
+   WSABUF buffer;
+   buffer.buf = (CHAR *)operation->Buffer.get();
+   buffer.len = ULONG(operation->BufferSize);
+
+   DWORD bytes = 0;
+   DWORD flags = 0;
+   auto result = WSARecvFrom(socket_from_handle(Socket), &buffer, 1, &bytes, &flags,
+      (sockaddr *)operation->Address.data(), &operation->AddressSize, &operation->Overlapped, nullptr);
+   if ((result IS SOCKET_ERROR) and (WSAGetLastError() != WSA_IO_PENDING)) {
+      auto error = convert_error();
+      operation->Result = error;
+      operation->BytesTransferred = 0;
+      queue_operation_completion(*operation, 0, operation->Result);
+      delete operation;
+      return ERR::Okay;
+   }
+
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR post_read(WSW_SOCKET Socket)
+{
+   IocpCompletionTarget target;
+   uint64_t generation = 0;
+   bool udp = false;
+
+   {
+      std::lock_guard<std::mutex> lock(glIocpMutex);
+      auto record = glSockets.find(Socket);
+      if (record IS glSockets.end()) return ERR::Search;
+      udp = record->second.UDP;
+      if (record->second.Cancelled) return ERR::Cancelled;
+      if (!udp) {
+         if (record->second.ReadPending) return ERR::Okay;
+         if (!record->second.ReadBuffer.empty()) return ERR::Okay;
+         if (record->second.ReadResult != ERR::Okay) return ERR::Okay;
+
+         target = record->second.Read;
+         if ((!target.Callback) or (target.ObjectID <= 0)) return ERR::Okay;
+
+         record->second.ReadPending = true;
+         generation = record->second.Generation;
+      }
+   }
+
+   if (udp) return post_udp_receive(Socket);
 
    auto operation = new IocpOperation();
    operation->Type = IocpOperationType::READ;
@@ -593,12 +750,12 @@ void iocp_expunge()
 
 WSW_SOCKET iocp_create_socket(void *Reference, bool UDP, bool &IPv6)
 {
-   if ((UDP) or (glCompletionPort IS INVALID_HANDLE_VALUE)) {
+   if (glCompletionPort IS INVALID_HANDLE_VALUE) {
       IPv6 = false;
       return WSW_SOCKET(INVALID_SOCKET);
    }
 
-   SOCKET socket = create_tcp_socket(true, IPv6);
+   SOCKET socket = UDP ? create_udp_socket(true, IPv6) : create_tcp_socket(true, IPv6);
 
    if (socket IS INVALID_SOCKET) return WSW_SOCKET(INVALID_SOCKET);
 
@@ -615,6 +772,7 @@ WSW_SOCKET iocp_create_socket(void *Reference, bool UDP, bool &IPv6)
       .Reference = Reference,
       .Generation = glNextGeneration++,
       .IPv6 = IPv6,
+      .UDP = UDP,
       .Cancelled = false
    };
 
@@ -847,15 +1005,19 @@ ERR iocp_register_read(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback, uint
 
    bool buffered = false;
    bool terminal = false;
+   bool udp = false;
    {
       std::lock_guard<std::mutex> lock(glIocpMutex);
       auto record = glSockets.find(Socket);
       if (record IS glSockets.end()) return ERR::Search;
-      buffered = !record->second.ReadBuffer.empty();
+      udp = record->second.UDP;
+      buffered = udp ? !record->second.Datagrams.empty() : !record->second.ReadBuffer.empty();
       terminal = record->second.ReadResult != ERR::Okay;
    }
 
-   if ((buffered) or (terminal)) return queue_record_completion(Socket, IocpOperationType::READ);
+   if ((buffered) or (terminal)) {
+      return queue_record_completion(Socket, udp ? IocpOperationType::UDP_RECEIVE : IocpOperationType::READ);
+   }
    else return post_read(Socket);
 }
 
@@ -898,7 +1060,15 @@ ERR iocp_recall_read(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback, uintpt
    if (auto error = set_completion_target(Socket, IocpOperationType::READ, ObjectID, Callback, Data);
        error != ERR::Okay) return error;
 
-   return queue_record_completion(Socket, IocpOperationType::READ);
+   bool udp = false;
+   {
+      std::lock_guard<std::mutex> lock(glIocpMutex);
+      auto record = glSockets.find(Socket);
+      if (record IS glSockets.end()) return ERR::Search;
+      udp = record->second.UDP;
+   }
+
+   return queue_record_completion(Socket, udp ? IocpOperationType::UDP_RECEIVE : IocpOperationType::READ);
 }
 
 //********************************************************************************************************************
@@ -1027,10 +1197,206 @@ ERR iocp_send(WSW_SOCKET Socket, const void *Buffer, size_t &Length)
 
 //********************************************************************************************************************
 
+ERR iocp_send_to(WSW_SOCKET Socket, const void *Buffer, size_t &Length, const void *Address, int AddressSize)
+{
+   if ((!Buffer) and (Length > 0)) return ERR::NullArgs;
+   if ((!Address) or (AddressSize <= 0)) return ERR::Args;
+   if (!Length) return ERR::Okay;
+
+   auto result = sendto(socket_from_handle(Socket), (const char *)Buffer, int(Length), 0, (const sockaddr *)Address,
+      AddressSize);
+   if (result >= 0) {
+      Length = size_t(result);
+      return ERR::Okay;
+   }
+
+   Length = 0;
+   switch (WSAGetLastError()) {
+      case WSAEWOULDBLOCK:
+      case WSAEALREADY:
+         return ERR::BufferOverflow;
+      case WSAEINPROGRESS:
+         return ERR::Busy;
+      case WSAENETUNREACH:
+         return ERR::NetworkUnreachable;
+      case WSAEINVAL:
+         return ERR::Args;
+      default:
+         return convert_error();
+   }
+}
+
+//********************************************************************************************************************
+
+ERR iocp_receive_from(WSW_SOCKET Socket, void *Buffer, size_t BufferSize, size_t &BytesRead, void *Address,
+   int *AddressSize)
+{
+   BytesRead = 0;
+   if ((!Buffer) or (!Address) or (!AddressSize)) return ERR::NullArgs;
+   if (!BufferSize) return ERR::Okay;
+
+   ERR result = ERR::Okay;
+   bool rearm_read = false;
+   bool recall_read = false;
+   IocpDatagram datagram;
+   bool has_datagram = false;
+
+   {
+      std::lock_guard<std::mutex> lock(glIocpMutex);
+      auto record = glSockets.find(Socket);
+      if (record IS glSockets.end()) return ERR::Search;
+      if (record->second.Cancelled) return ERR::Cancelled;
+
+      if (!record->second.Datagrams.empty()) {
+         datagram = std::move(record->second.Datagrams.front());
+         record->second.Datagrams.erase(record->second.Datagrams.begin());
+         has_datagram = true;
+         recall_read = !record->second.Datagrams.empty();
+         if ((!recall_read) and (record->second.ReadResult IS ERR::Okay)) rearm_read = true;
+      }
+      else {
+         result = record->second.ReadResult;
+         if ((result IS ERR::Okay) and (!record->second.ReadPending)) rearm_read = true;
+      }
+   }
+
+   if (has_datagram) {
+      auto copy_size = std::min(BufferSize, datagram.Buffer.size());
+      if (copy_size > 0) std::memcpy(Buffer, datagram.Buffer.data(), copy_size);
+      BytesRead = copy_size;
+
+      auto address_size = std::min(*AddressSize, datagram.AddressSize);
+      if (address_size > 0) std::memcpy(Address, datagram.Address.data(), size_t(address_size));
+      *AddressSize = address_size;
+
+      if (BufferSize < datagram.Buffer.size()) result = ERR::BufferOverflow;
+      else result = datagram.Result;
+   }
+
+   if (recall_read) {
+      if (auto error = queue_record_completion(Socket, IocpOperationType::UDP_RECEIVE); error != ERR::Okay) {
+         return error;
+      }
+   }
+   else if (rearm_read) {
+      if (auto error = post_udp_receive(Socket); error != ERR::Okay) return error;
+   }
+
+   return result;
+}
+
+//********************************************************************************************************************
+
 ERR iocp_get_local_ip(WSW_SOCKET Socket, void *Address, int *AddressSize)
 {
    if ((!Address) or (!AddressSize)) return ERR::NullArgs;
    return getsockname(socket_from_handle(Socket), (sockaddr *)Address, AddressSize) ? convert_error() : ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+ERR iocp_enable_broadcast(WSW_SOCKET Socket)
+{
+   BOOL broadcast = TRUE;
+   if (setsockopt(socket_from_handle(Socket), SOL_SOCKET, SO_BROADCAST, (char *)&broadcast,
+       sizeof(broadcast)) IS SOCKET_ERROR) {
+      return convert_error();
+   }
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+ERR iocp_set_multicast_ttl(WSW_SOCKET Socket, int TTL, bool IPv6)
+{
+   DWORD ttl = DWORD(TTL);
+   if (IPv6) {
+      if (setsockopt(socket_from_handle(Socket), IPPROTO_IPV6, IPV6_MULTICAST_HOPS, (char *)&ttl,
+          sizeof(ttl)) IS SOCKET_ERROR) {
+         return convert_error();
+      }
+   }
+   else if (setsockopt(socket_from_handle(Socket), IPPROTO_IP, IP_MULTICAST_TTL, (char *)&ttl,
+       sizeof(ttl)) IS SOCKET_ERROR) {
+      return convert_error();
+   }
+
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+ERR iocp_parse_multicast_group(const char *Group, bool &IPv6)
+{
+   if ((!Group) or (!Group[0])) return ERR::Args;
+
+   in6_addr addr6 = {};
+   in_addr addr4 = {};
+
+   if (inet_pton(AF_INET6, Group, &addr6) IS 1) {
+      if (addr6.s6_addr[0] != 0xff) return ERR::Args;
+      IPv6 = true;
+      return ERR::Okay;
+   }
+   else if (inet_pton(AF_INET, Group, &addr4) IS 1) {
+      auto host_address = ntohl(addr4.s_addr);
+      if ((host_address < 0xe0000000) or (host_address > 0xefffffff)) return ERR::Args;
+      IPv6 = false;
+      return ERR::Okay;
+   }
+   else return ERR::Args;
+}
+
+//********************************************************************************************************************
+
+ERR iocp_join_multicast_group(WSW_SOCKET Socket, const char *Group, bool IPv6)
+{
+   if (IPv6) {
+      ipv6_mreq request = {};
+      if (inet_pton(AF_INET6, Group, &request.ipv6mr_multiaddr) != 1) return ERR::Args;
+      request.ipv6mr_interface = 0;
+      if (setsockopt(socket_from_handle(Socket), IPPROTO_IPV6, IPV6_JOIN_GROUP, (char *)&request,
+          sizeof(request)) IS SOCKET_ERROR) {
+         return convert_error();
+      }
+   }
+   else {
+      ip_mreq request = {};
+      if (inet_pton(AF_INET, Group, &request.imr_multiaddr) != 1) return ERR::Args;
+      request.imr_interface.s_addr = INADDR_ANY;
+      if (setsockopt(socket_from_handle(Socket), IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *)&request,
+          sizeof(request)) IS SOCKET_ERROR) {
+         return convert_error();
+      }
+   }
+
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+ERR iocp_leave_multicast_group(WSW_SOCKET Socket, const char *Group, bool IPv6)
+{
+   if (IPv6) {
+      ipv6_mreq request = {};
+      if (inet_pton(AF_INET6, Group, &request.ipv6mr_multiaddr) != 1) return ERR::Args;
+      request.ipv6mr_interface = 0;
+      if (setsockopt(socket_from_handle(Socket), IPPROTO_IPV6, IPV6_LEAVE_GROUP, (char *)&request,
+          sizeof(request)) IS SOCKET_ERROR) {
+         return convert_error();
+      }
+   }
+   else {
+      ip_mreq request = {};
+      if (inet_pton(AF_INET, Group, &request.imr_multiaddr) != 1) return ERR::Args;
+      request.imr_interface.s_addr = INADDR_ANY;
+      if (setsockopt(socket_from_handle(Socket), IPPROTO_IP, IP_DROP_MEMBERSHIP, (char *)&request,
+          sizeof(request)) IS SOCKET_ERROR) {
+         return convert_error();
+      }
+   }
+
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
