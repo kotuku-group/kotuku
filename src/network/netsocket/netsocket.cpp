@@ -731,6 +731,116 @@ static ERR parse_bind_address(CSTRING Address, bool IPv6, void *AddrOut)
    }
 }
 
+static ERR prepare_server_bind_address(extNetSocket *Self, socket_endpoint &Endpoint)
+{
+   kt::clearmem(&Endpoint.storage, sizeof(Endpoint.storage));
+
+   if (Self->IPV6) {
+      auto addr = (struct sockaddr_in6 *)&Endpoint.storage;
+
+      if (Self->Address) {
+         if (auto error = parse_bind_address(Self->Address, true, addr); error != ERR::Okay) return error;
+      }
+      else {
+         addr->sin6_family = AF_INET6;
+         addr->sin6_addr = in6addr_any;
+      }
+
+      addr->sin6_port = net::HostToShort(Self->Port);
+      Endpoint.size = sizeof(struct sockaddr_in6);
+      Endpoint.label = "IPv6";
+      return ERR::Okay;
+   }
+   else {
+      auto addr = (struct sockaddr_in *)&Endpoint.storage;
+
+      if (Self->Address) {
+         if (auto error = parse_bind_address(Self->Address, false, addr); error != ERR::Okay) return error;
+      }
+      else {
+         addr->sin_family = AF_INET;
+         addr->sin_addr.s_addr = INADDR_ANY;
+      }
+
+      addr->sin_port = net::HostToShort(Self->Port);
+      Endpoint.size = sizeof(struct sockaddr_in);
+      Endpoint.label = "IPv4";
+      return ERR::Okay;
+   }
+}
+
+#ifdef __linux__
+
+static ERR activate_server_socket(extNetSocket *Self, const socket_endpoint &Endpoint)
+{
+   kt::Log log(__FUNCTION__);
+
+   int value = 1;
+   setsockopt(Self->Handle, SOL_SOCKET, SO_REUSEADDR, &value, sizeof(value));
+
+   if (bind(Self->Handle, (struct sockaddr *)&Endpoint.storage, Endpoint.size) IS -1) {
+      const int system_error = errno;
+      log.warning("bind() failed with error: %s", strerror(system_error));
+      return convert_socket_error(system_error);
+   }
+
+   if ((Self->Flags & NSF::UDP) IS NSF::NIL) {
+      if (listen(Self->Handle, Self->Backlog) IS -1) {
+         const int system_error = errno;
+         log.warning("listen() failed with error: %s", strerror(system_error));
+         return convert_socket_error(system_error);
+      }
+
+      RegisterFD(Self->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &server_accept_client, Self);
+   }
+   else RegisterFD(Self->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &netsocket_incoming, Self);
+
+   return ERR::Okay;
+}
+
+#elif _WIN32
+
+static ERR activate_server_socket(extNetSocket *Self, const socket_endpoint &Endpoint)
+{
+   kt::Log log(__FUNCTION__);
+
+   if (auto error = win_bind(Self->Handle, (struct sockaddr *)&Endpoint.storage, Endpoint.size); error != ERR::Okay) {
+      log.warning("Bind failed on port %d, error: %s", Self->Port, GetErrorMsg(error));
+      return error;
+   }
+
+   if ((Self->Flags & NSF::UDP) IS NSF::NIL) {
+      if (auto error = win_listen(Self->Handle, Self->Backlog); error != ERR::Okay) {
+         log.warning("Listen failed on port %d, error: %s", Self->Port, GetErrorMsg(error));
+         return error;
+      }
+   }
+
+   return ERR::Okay;
+}
+
+#endif
+
+static ERR setup_server_socket(extNetSocket *Self)
+{
+   kt::Log log(__FUNCTION__);
+
+   if (!Self->Port) return log.warning(ERR::FieldNotSet);
+
+   Self->State = NTC::MULTISTATE; // Permanent value to indicate that the socket serves multiple clients.
+
+   socket_endpoint endpoint;
+   if (auto error = prepare_server_bind_address(Self, endpoint); error != ERR::Okay) return error;
+
+   #ifdef __linux__
+      return activate_server_socket(Self, endpoint);
+   #elif defined(_WIN32)
+      return activate_server_socket(Self, endpoint);
+   #else
+      return ERR::NoSupport;
+   #endif
+}
+
 //********************************************************************************************************************
 
 static ERR NETSOCKET_Init(extNetSocket *Self)
@@ -853,168 +963,11 @@ static ERR NETSOCKET_Init(extNetSocket *Self)
    }
 
    if ((Self->Flags & NSF::SERVER) != NSF::NIL) {
-      if (!Self->Port) {
-         error = log.warning(ERR::FieldNotSet);
+      if ((error = setup_server_socket(Self)) != ERR::Okay) {
          free_socket(Self);
          return error;
       }
-      Self->State = NTC::MULTISTATE; // Permanent value to indicate that the socket serves multiple clients.
-
-      if (Self->IPV6) {
-         #ifdef __linux__
-            struct sockaddr_in6 addr;
-
-            // Use parse_bind_address if Address is specified, otherwise bind to all interfaces
-            if (Self->Address) {
-               if (auto error = parse_bind_address(Self->Address, true, &addr); error != ERR::Okay) {
-                  free_socket(Self);
-                  return error;
-               }
-               addr.sin6_port = net::HostToShort(Self->Port);
-            }
-            else {
-               kt::clearmem(&addr, sizeof(addr));
-               addr.sin6_family = AF_INET6;
-               addr.sin6_port   = net::HostToShort(Self->Port); // Must be passed in in network byte order
-               addr.sin6_addr   = in6addr_any;   // Must be passed in in network byte order
-            }
-
-            int result;
-            int value = 1;
-            setsockopt(Self->Handle, SOL_SOCKET, SO_REUSEADDR, &value, sizeof(value));
-
-            if ((result = bind(Self->Handle, (struct sockaddr *)&addr, sizeof(addr))) != -1) {
-               if ((Self->Flags & NSF::UDP) IS NSF::NIL) { // TCP server - needs listen()
-                  if (listen(Self->Handle, Self->Backlog) IS -1) {
-                     const int system_error = errno;
-                     log.warning("listen() failed with error: %s", strerror(system_error));
-                     free_socket(Self);
-                     return convert_socket_error(system_error);
-                  }
-                  RegisterFD(Self->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &server_accept_client, Self);
-               }
-               else { // UDP server - just register for data reception
-                  RegisterFD(Self->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &netsocket_incoming, Self);
-               }
-               return ERR::Okay;
-            }
-            else {
-               error = log.warning(convert_socket_error());
-               free_socket(Self);
-               return error;
-            }
-         #elif _WIN32
-            // Windows IPv6 dual-stack server binding
-            struct sockaddr_in6 addr;
-
-            // Use parse_bind_address if Address is specified, otherwise bind to all interfaces
-            if (Self->Address) {
-               if (auto error = parse_bind_address(Self->Address, true, &addr); error != ERR::Okay) {
-                  free_socket(Self);
-                  return error;
-               }
-               addr.sin6_port = net::HostToShort(Self->Port);
-            }
-            else {
-               kt::clearmem(&addr, sizeof(addr));
-               addr.sin6_family = AF_INET6;
-               addr.sin6_port   = net::HostToShort(Self->Port);
-               addr.sin6_addr   = in6addr_any;
-            }
-
-            if ((error = win_bind(Self->Handle, (struct sockaddr *)&addr, sizeof(addr))) IS ERR::Okay) {
-               if ((Self->Flags & NSF::UDP) IS NSF::NIL) { // TCP server - needs listen()
-                  if ((error = win_listen(Self->Handle, Self->Backlog)) IS ERR::Okay) {
-                     return ERR::Okay;
-                  }
-                  else {
-                     log.warning("Listen failed on port %d, error: %s", Self->Port, GetErrorMsg(error));
-                     free_socket(Self);
-                     return error;
-                  }
-               }
-               else { // UDP server - just return success after bind
-                  return ERR::Okay;
-               }
-            }
-            else {
-               log.warning("Bind failed on port %d, error: %s", Self->Port, GetErrorMsg(error));
-               free_socket(Self);
-               return error;
-            }
-         #else
-            free_socket(Self);
-            return ERR::NoSupport;
-         #endif
-      }
-      else {
-         // IPV4
-         struct sockaddr_in addr;
-
-         // Use parse_bind_address if Address is specified, otherwise bind to all interfaces
-         if (Self->Address) {
-            if (auto error = parse_bind_address(Self->Address, false, &addr); error != ERR::Okay) {
-               free_socket(Self);
-               return error;
-            }
-            addr.sin_port = net::HostToShort(Self->Port);
-         }
-         else {
-            kt::clearmem(&addr, sizeof(addr));
-            addr.sin_family = AF_INET;
-            addr.sin_port   = net::HostToShort(Self->Port); // Must be passed in in network byte order
-            addr.sin_addr.s_addr   = INADDR_ANY;   // Must be passed in in network byte order
-         }
-
-         #ifdef __linux__
-            int result;
-            int value = 1;
-            setsockopt(Self->Handle, SOL_SOCKET, SO_REUSEADDR, &value, sizeof(value));
-
-            if ((result = bind(Self->Handle, (struct sockaddr *)&addr, sizeof(addr))) != -1) {
-               if ((Self->Flags & NSF::UDP) IS NSF::NIL) { // TCP server - needs listen()
-                  if (listen(Self->Handle, Self->Backlog) IS -1) {
-                     const int system_error = errno;
-                     log.warning("listen() failed with error: %s", strerror(system_error));
-                     free_socket(Self);
-                     return convert_socket_error(system_error);
-                  }
-                  RegisterFD(Self->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &server_accept_client, Self);
-               }
-               else { // UDP server - just register for data reception
-                  RegisterFD(Self->Handle.hosthandle(), RFD::READ|RFD::SOCKET, &netsocket_incoming, Self);
-               }
-               return ERR::Okay;
-            }
-            else {
-               const int system_error = errno;
-               log.warning("bind() failed with error: %s", strerror(system_error));
-               free_socket(Self);
-               return convert_socket_error(system_error);
-            }
-         #elif _WIN32
-            if ((error = win_bind(Self->Handle, (struct sockaddr *)&addr, sizeof(addr))) IS ERR::Okay) {
-               if ((Self->Flags & NSF::UDP) IS NSF::NIL) { // TCP server - needs listen()
-                  if ((error = win_listen(Self->Handle, Self->Backlog)) IS ERR::Okay) {
-                     return ERR::Okay;
-                  }
-                  else {
-                     log.warning("Listen failed on port %d, error: %s", Self->Port, GetErrorMsg(error));
-                     free_socket(Self);
-                     return error;
-                  }
-               }
-               else { // UDP server - just return success after bind
-                  return ERR::Okay;
-               }
-            }
-            else {
-               log.warning("Bind failed on port %d, error: %s", Self->Port, GetErrorMsg(error));
-               free_socket(Self);
-               return error;
-            }
-         #endif
-      }
+      else return ERR::Okay;
    }
    else if ((Self->Address) and (Self->Port > 0)) {
       if ((error = Self->connect(Self->Address, Self->Port, 0)) != ERR::Okay) {
