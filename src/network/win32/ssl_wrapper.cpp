@@ -29,7 +29,7 @@ Pure Windows implementation that avoids all Kotuku headers to prevent conflicts.
 #include <span>
 
 #include "ssl_wrapper.h"
-#include "../ssl_certificate_policy.hpp"
+#include "../ssl_certificate_policy.h"
 
 static void ssl_debug_log(int level, const char* format, ...);
 extern "C" void ssl_debug_to_kotuku_log(const char* message, int level);

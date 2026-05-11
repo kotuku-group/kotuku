@@ -286,7 +286,7 @@ static void connect_name_resolved_nl(objNetLookup *NetLookup, ERR Error, const s
    connect_name_resolved((extNetSocket *)CurrentContext(), Error, HostName, IPs);
 }
 
-struct connect_endpoint {
+struct socket_endpoint {
    struct sockaddr_storage storage;
    int size = 0;
    CSTRING label = nullptr;
@@ -303,48 +303,56 @@ static const IPAddress *select_connect_address(extNetSocket *Socket, const std::
    else return &IPs[0];
 }
 
-static ERR build_connect_address(extNetSocket *Socket, const IPAddress *IP, connect_endpoint &Endpoint)
+static ERR build_socket_address(const IPAddress &IP, int Port, bool IPv6, socket_endpoint &Endpoint)
 {
    kt::clearmem(&Endpoint.storage, sizeof(Endpoint.storage));
 
-   if (IP->Type IS IPADDR::V6) {
+   if ((Port < 0) or (Port > 65535)) return ERR::OutOfRange;
+
+   if (IP.Type IS IPADDR::V6) {
+      if (!IPv6) return ERR::InvalidValue;
+
       auto addr6 = (struct sockaddr_in6 *)&Endpoint.storage;
       addr6->sin6_family = AF_INET6;
-      addr6->sin6_port = htons(Socket->Port);
-      kt::copymem((void *)IP->Data, &addr6->sin6_addr.s6_addr, 16);
+      addr6->sin6_port = htons(Port);
+      kt::copymem(IP.Data, &addr6->sin6_addr.s6_addr, 16);
 
       Endpoint.size = sizeof(struct sockaddr_in6);
       Endpoint.label = "IPv6";
       return ERR::Okay;
    }
-   else if ((Socket->IPV6) and (IP->Type IS IPADDR::V4)) {
-      auto addr6 = (struct sockaddr_in6 *)&Endpoint.storage;
-      addr6->sin6_family = AF_INET6;
-      addr6->sin6_port = htons(Socket->Port);
-      addr6->sin6_addr.s6_addr[10] = 0xff;
-      addr6->sin6_addr.s6_addr[11] = 0xff;
-      *((uint32_t *)&addr6->sin6_addr.s6_addr[12]) = htonl(IP->Data[0]);
+   else if (IP.Type IS IPADDR::V4) {
+      if (IPv6) {
+         auto addr6 = (struct sockaddr_in6 *)&Endpoint.storage;
+         uint32_t ipv4_net = htonl(IP.Data[0]);
 
-      Endpoint.size = sizeof(struct sockaddr_in6);
-      Endpoint.label = "IPv4-mapped IPv6";
-      return ERR::Okay;
-   }
-   else if (IP->Type IS IPADDR::V4) {
-      auto addr4 = (struct sockaddr_in *)&Endpoint.storage;
-      addr4->sin_family = AF_INET;
-      addr4->sin_port = htons(Socket->Port);
-      addr4->sin_addr.s_addr = htonl(IP->Data[0]);
+         addr6->sin6_family = AF_INET6;
+         addr6->sin6_port = htons(Port);
+         addr6->sin6_addr.s6_addr[10] = 0xff;
+         addr6->sin6_addr.s6_addr[11] = 0xff;
+         kt::copymem(&ipv4_net, &addr6->sin6_addr.s6_addr[12], sizeof(ipv4_net));
 
-      Endpoint.size = sizeof(struct sockaddr_in);
-      Endpoint.label = "IPv4";
-      return ERR::Okay;
+         Endpoint.size = sizeof(struct sockaddr_in6);
+         Endpoint.label = "IPv4-mapped IPv6";
+         return ERR::Okay;
+      }
+      else {
+         auto addr4 = (struct sockaddr_in *)&Endpoint.storage;
+         addr4->sin_family = AF_INET;
+         addr4->sin_port = htons(Port);
+         addr4->sin_addr.s_addr = htonl(IP.Data[0]);
+
+         Endpoint.size = sizeof(struct sockaddr_in);
+         Endpoint.label = "IPv4";
+         return ERR::Okay;
+      }
    }
    else return ERR::InvalidData;
 }
 
 #ifdef __linux__
 
-static ERR start_platform_connect(extNetSocket *Socket, const connect_endpoint &Endpoint)
+static ERR start_platform_connect(extNetSocket *Socket, const socket_endpoint &Endpoint)
 {
    kt::Log log(__FUNCTION__);
 
@@ -379,7 +387,7 @@ static ERR start_platform_connect(extNetSocket *Socket, const connect_endpoint &
 
 #elif _WIN32
 
-static ERR start_platform_connect(extNetSocket *Socket, const connect_endpoint &Endpoint)
+static ERR start_platform_connect(extNetSocket *Socket, const socket_endpoint &Endpoint)
 {
    kt::Log log(__FUNCTION__);
 
@@ -445,8 +453,8 @@ static void connect_name_resolved(extNetSocket *Socket, ERR Error, const std::st
       return;
    }
 
-   connect_endpoint endpoint;
-   if (auto error = build_connect_address(Socket, addr, endpoint); error != ERR::Okay) {
+   socket_endpoint endpoint;
+   if (auto error = build_socket_address(*addr, Socket->Port, Socket->IPV6, endpoint); error != ERR::Okay) {
       Socket->Error = log.warning(error);
       Socket->setState(NTC::DISCONNECTED);
       return;
@@ -707,35 +715,11 @@ static ERR parse_bind_address(CSTRING Address, bool IPv6, void *AddrOut)
 
    IPAddress ip;
    if (net::StrToAddress(Address, &ip) IS ERR::Okay) {
-      if (ip.Type IS IPADDR::V4) {
-         if (IPv6) { // IPv4 -> IPv6-mapped
-            auto out = (sockaddr_in6 *)AddrOut;
-            kt::clearmem(out, sizeof(sockaddr_in6));
-            out->sin6_family = AF_INET6;
-            out->sin6_addr.s6_addr[10] = 0xff;
-            out->sin6_addr.s6_addr[11] = 0xff;
-            *((uint32_t*)&out->sin6_addr.s6_addr[12]) = htonl(ip.Data[0]); // Convert to network byte order
-         }
-         else { // IPv4 -> IPv4
-            auto addr = (sockaddr_in *)AddrOut;
-            kt::clearmem(addr, sizeof(struct sockaddr_in));
-            addr->sin_family = AF_INET;
-            addr->sin_addr.s_addr = htonl(ip.Data[0]); // Convert from host to network byte order
-         }
-      }
-      else if (ip.Type IS IPADDR::V6) {
-         if (IPv6) { // IPv6 -> IPv6
-            auto out = (sockaddr_in6 *)AddrOut;
-            kt::clearmem(out, sizeof(struct sockaddr_in6));
-            out->sin6_family = AF_INET6;
-            kt::copymem(ip.Data, &out->sin6_addr, 16);
-         }
-         else {
-            log.warning("Address is IPv6 but socket is IPv4");
-            return ERR::InvalidValue;
-         }
-      }
-      else return log.warning(ERR::SanityCheckFailed); // Should never happen
+      socket_endpoint endpoint;
+      if (auto error = build_socket_address(ip, 0, IPv6, endpoint); error != ERR::Okay) return log.warning(error);
+
+      if (IPv6) kt::copymem(&endpoint.storage, AddrOut, sizeof(struct sockaddr_in6));
+      else kt::copymem(&endpoint.storage, AddrOut, sizeof(struct sockaddr_in));
 
       return ERR::Okay;
    }
@@ -1647,47 +1631,16 @@ static ERR NETSOCKET_SendTo(extNetSocket *Self, struct ns::SendTo *Args)
 
    Args->BytesSent = 0;
 
-   struct sockaddr_storage dest_addr;
-   memset(&dest_addr, 0, sizeof(dest_addr));
-   int addr_len = 0;
-
-   if (Args->Dest->Type IS IPADDR::V4) {
-      if (Self->IPV6) { // IPv4-mapped IPv6
-         auto addr6 = (sockaddr_in6 *)&dest_addr;
-         addr6->sin6_family = AF_INET6;
-         addr6->sin6_port   = htons(Args->Dest->Port);
-         memset(&addr6->sin6_addr, 0, sizeof(addr6->sin6_addr));
-         addr6->sin6_addr.s6_addr[10] = 0xff;
-         addr6->sin6_addr.s6_addr[11] = 0xff;
-         uint32_t v4_net = htonl(Args->Dest->Data[0]);
-         memcpy(&addr6->sin6_addr.s6_addr[12], &v4_net, 4);
-         addr_len = sizeof(sockaddr_in6);
-
-      }
-      else { // Regular IPv4
-         auto addr4 = (sockaddr_in *)&dest_addr;
-         addr4->sin_family = AF_INET;
-         addr4->sin_port   = htons(Args->Dest->Port);
-         addr4->sin_addr.s_addr = htonl(Args->Dest->Data[0]);
-         memset(addr4->sin_zero, 0, sizeof(addr4->sin_zero));
-         addr_len = sizeof(sockaddr_in);
-      }
+   socket_endpoint dest_addr;
+   if (auto error = build_socket_address(*Args->Dest, Args->Dest->Port, Self->IPV6, dest_addr); error != ERR::Okay) {
+      return log.warning(error);
    }
-   else if (Args->Dest->Type IS IPADDR::V6) { // Standard IPv6
-      auto addr6 = (sockaddr_in6 *)&dest_addr;
-      addr6->sin6_family = AF_INET6;
-      addr6->sin6_port   = htons(Args->Dest->Port);
-      addr6->sin6_flowinfo = 0;
-      addr6->sin6_scope_id = 0;
-      memcpy(&addr6->sin6_addr, Args->Dest->Data, 16);
-      addr_len = sizeof(sockaddr_in6);
-   }
-   else return log.warning(ERR::Args);
 
    size_t bytes_to_send = Args->Length;
 
 #if defined(__linux__)
-   auto result = sendto(Self->Handle, Args->Data, bytes_to_send, MSG_DONTWAIT, (sockaddr *)&dest_addr, addr_len);
+   auto result = sendto(Self->Handle, Args->Data, bytes_to_send, MSG_DONTWAIT, (sockaddr *)&dest_addr.storage,
+      dest_addr.size);
    if (result >= 0) {
       Args->BytesSent = (int)result;
       return ERR::Okay;
@@ -1707,7 +1660,7 @@ static ERR NETSOCKET_SendTo(extNetSocket *Self, struct ns::SendTo *Args)
          return convert_socket_error(system_error);
    }
 #elif defined(_WIN32)
-   auto error = WIN_SENDTO(Self->Handle, Args->Data, &bytes_to_send, (sockaddr *)&dest_addr, addr_len);
+   auto error = WIN_SENDTO(Self->Handle, Args->Data, &bytes_to_send, (sockaddr *)&dest_addr.storage, dest_addr.size);
    if (error IS ERR::Okay) Args->BytesSent = (int)bytes_to_send;
    return error;
 #endif
