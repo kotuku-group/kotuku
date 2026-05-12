@@ -740,6 +740,13 @@ This field describes the `user-agent` value that will be sent in HTTP requests. 
 
 *********************************************************************************************************************/
 
+static ERR GET_UserAgent(extHTTP *Self, CSTRING *Value)
+{
+   if (Self->UserAgent) *Value = Self->UserAgent;
+   else *Value = "Kotuku Client";
+   return ERR::Okay;
+}
+
 static ERR SET_UserAgent(extHTTP *Self, CSTRING Value)
 {
    if (Self->UserAgent) { FreeResource(Self->UserAgent); Self->UserAgent = nullptr; }

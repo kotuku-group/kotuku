@@ -538,7 +538,7 @@ static void set_http_method(extHTTP *Self, CSTRING Method, std::ostringstream &C
    else Cmd << Method << " /" << (Self->Path ? Self->Path : (STRING)"") << " HTTP/1.1" << CRLF;
 
    Cmd << "Host: " << Self->Host << CRLF;
-   Cmd << "User-Agent: " << Self->UserAgent << CRLF;
+   Cmd << "User-Agent: " << (Self->UserAgent ? Self->UserAgent : "Kotuku Client") << CRLF;
 }
 
 //********************************************************************************************************************

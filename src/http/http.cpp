@@ -583,7 +583,7 @@ static ERR HTTP_Activate(extHTTP *Self)
 
       cmd << "CONNECT " << Self->Host << ":" << Self->Port << " HTTP/1.1" << CRLF;
       cmd << "Host: " << Self->Host << CRLF;
-      cmd << "User-Agent: " << Self->UserAgent << CRLF;
+      cmd << "User-Agent: " << (Self->UserAgent ? Self->UserAgent : "Kotuku Client") << CRLF;
       cmd << "Proxy-Connection: keep-alive" << CRLF;
       cmd << "Connection: keep-alive" << CRLF;
 
@@ -644,7 +644,7 @@ static ERR HTTP_Activate(extHTTP *Self)
          if ((!Self->Path) or ((Self->Path[0] IS '*') and (!Self->Path[1]))) {
             cmd << "OPTIONS * HTTP/1.1" << CRLF;
             cmd << "Host: " << Self->Host << CRLF;
-            cmd << "User-Agent: " << Self->UserAgent << CRLF;
+            cmd << "User-Agent: " << (Self->UserAgent ? Self->UserAgent : "Kotuku Client") << CRLF;
          }
          else set_http_method(Self, "OPTIONS", cmd);
       }
@@ -1027,9 +1027,9 @@ static ERR HTTP_Init(extHTTP *Self)
 
 static ERR HTTP_NewPlacement(extHTTP *Self)
 {
+   // Note: No local object allocations are permitted due to lack of context.  Use a NewObject hook if necessary
    new (Self) extHTTP;
    Self->Error          = ERR::Okay;
-   Self->UserAgent      = kt::strclone("Kotuku Client");
    Self->DataTimeout    = 5.0;
    Self->ConnectTimeout = 10.0;
    Self->Datatype       = DATA::RAW;
@@ -1093,7 +1093,7 @@ static const FieldArray clFields[] = {
    { "Path",           FDF_STRING|FDF_RW, nullptr, SET_Path },
    { "OutputFile",     FDF_STRING|FDF_RW, nullptr, SET_OutputFile },
    { "InputFile",      FDF_STRING|FDF_RW, nullptr, SET_InputFile },
-   { "UserAgent",      FDF_STRING|FDF_RW, nullptr, SET_UserAgent },
+   { "UserAgent",      FDF_STRING|FDF_RW, GET_UserAgent, SET_UserAgent },
    { "InputObject",    FDF_OBJECTID|FDF_RW },
    { "OutputObject",   FDF_OBJECTID|FDF_RW },
    { "Method",         FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, SET_Method, &clHTTPMethod },
@@ -1108,19 +1108,19 @@ static const FieldArray clFields[] = {
    { "ProxyPort",      FDF_INT|FDF_RW },
    { "BufferSize",     FDF_INT|FDF_RW, nullptr, SET_BufferSize },
    // Virtual fields
-   { "AuthCallback",   FDF_FUNCTIONPTR|FDF_RW,   GET_AuthCallback, SET_AuthCallback },
-   { "ContentType",    FDF_STRING|FDF_RW,        GET_ContentType, SET_ContentType },
-   { "Incoming",       FDF_FUNCTIONPTR|FDF_RW,   GET_Incoming, SET_Incoming },
-   { "Location",       FDF_STRING|FDF_RW,        GET_Location, SET_Location },
-   { "Outgoing",       FDF_FUNCTIONPTR|FDF_RW,   GET_Outgoing, SET_Outgoing },
-   { "Realm",          FDF_STRING|FDF_RW,        GET_Realm, SET_Realm },
-   { "RecvBuffer",     FDF_ARRAY|FDF_BYTE|FDF_R, GET_RecvBuffer },
-   { "ResponseKeys",   FDF_ARRAY|FDF_STRING|FDF_ALLOC|FDF_R, GET_ResponseKeys },
-   { "Src",            FDF_STRING|FDF_SYNONYM|FD_PRIVATE|FDF_RW, GET_Location, SET_Location }, // Deprecated by URL
-   { "URL",            FDF_STRING|FDF_SYNONYM|FDF_RW, GET_Location, SET_Location },
-   { "StateChanged",   FDF_FUNCTIONPTR|FDF_RW,   GET_StateChanged, SET_StateChanged },
-   { "Username",       FDF_STRING|FDF_W,         nullptr, SET_Username },
-   { "Password",       FDF_STRING|FDF_W,         nullptr, SET_Password },
+   { "AuthCallback",   FDF_VIRTUAL|FDF_FUNCTIONPTR|FDF_RW,   GET_AuthCallback, SET_AuthCallback },
+   { "ContentType",    FDF_VIRTUAL|FDF_STRING|FDF_RW,        GET_ContentType, SET_ContentType },
+   { "Incoming",       FDF_VIRTUAL|FDF_FUNCTIONPTR|FDF_RW,   GET_Incoming, SET_Incoming },
+   { "Location",       FDF_VIRTUAL|FDF_STRING|FDF_RW,        GET_Location, SET_Location },
+   { "Outgoing",       FDF_VIRTUAL|FDF_FUNCTIONPTR|FDF_RW,   GET_Outgoing, SET_Outgoing },
+   { "Realm",          FDF_VIRTUAL|FDF_STRING|FDF_RW,        GET_Realm, SET_Realm },
+   { "RecvBuffer",     FDF_VIRTUAL|FDF_ARRAY|FDF_BYTE|FDF_R, GET_RecvBuffer },
+   { "ResponseKeys",   FDF_VIRTUAL|FDF_ARRAY|FDF_STRING|FDF_ALLOC|FDF_R, GET_ResponseKeys },
+   { "Src",            FDF_VIRTUAL|FDF_STRING|FDF_SYNONYM|FD_PRIVATE|FDF_RW, GET_Location, SET_Location }, // Deprecated by URL
+   { "URL",            FDF_VIRTUAL|FDF_STRING|FDF_SYNONYM|FDF_RW, GET_Location, SET_Location },
+   { "StateChanged",   FDF_VIRTUAL|FDF_FUNCTIONPTR|FDF_RW,   GET_StateChanged, SET_StateChanged },
+   { "Username",       FDF_VIRTUAL|FDF_STRING|FDF_W,         nullptr, SET_Username },
+   { "Password",       FDF_VIRTUAL|FDF_STRING|FDF_W,         nullptr, SET_Password },
    END_FIELD
 };
 

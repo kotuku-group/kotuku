@@ -1826,6 +1826,9 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
       new (head) class Object; // Class constructors aren't expected to initialise the Object header, we do it for them
       kt::clearmem(head + 1, mc->Size - sizeof(class Object));
 
+      // NB: Clients are not permitted to make allocations that pass through AllocMemory() in NewPlacement due to
+      // the object context not yet being established.  Such allocations must be deferred to the NewObject hook.
+
       ERR error = ERR::Okay;
       if ((mc->Base) and (mc->Base->ActionTable[int(AC::NewPlacement)].PerformAction)) {
          error = mc->Base->ActionTable[int(AC::NewPlacement)].PerformAction(head, nullptr);
