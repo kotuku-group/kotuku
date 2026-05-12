@@ -29,6 +29,7 @@ template <class T> T ALIGN32(T a) { return (((a) + 3) & (~3)); }
 
 extern CSTRING const glBytecodeNames[];
 extern bool glPrintMsg;
+extern MSGID glDelayedCallMsgID;
 
 //********************************************************************************************************************
 
@@ -452,6 +453,7 @@ void make_struct_serial_array(lua_State *, std::string_view, int, CPTR);
 void notify_action(OBJECTPTR, ACTIONID, ERR, APTR);
 void process_error(objScript *, CSTRING);
 ERR push_object_id(lua_State *, OBJECTID ObjectID);
+extern ERR delayed_msg_handler(APTR Meta, int MsgID, int MsgType, APTR Message, int MsgSize);
 extern int object_index(lua_State *);
 extern int object_newindex(lua_State *);
 struct fstruct * push_struct(objScript *, APTR, std::string_view, bool, bool);

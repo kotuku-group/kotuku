@@ -386,18 +386,22 @@ static int processing_get(lua_State *Lua)
 //
 // Usage: processing.delayedCall(function() ... end)
 
-static MsgHandler *delayed_call_handle;
+struct delay_msg {
+   lua_State *lua;
+   int ref;
+};
 
-static ERR msg_handler(APTR Meta, int MsgID, int MsgType, APTR Message, int MsgSize)
+ERR delayed_msg_handler(APTR Meta, int MsgID, int MsgType, APTR Message, int MsgSize)
 {
-   if (MsgSize != sizeof(int)) return kt::Log(__FUNCTION__).warning(ERR::Args);
+   if (MsgSize != sizeof(delay_msg)) return kt::Log(__FUNCTION__).warning(ERR::Args);
 
-   auto lua = (lua_State *)Meta;
-   auto prv = (prvTiri *)lua->script->ChildPrivate;
-   int ref = *(int *)Message;
-   lua_rawgeti(lua, LUA_REGISTRYINDEX, ref); // Get the function from the registry
-   luaL_unref(lua, LUA_REGISTRYINDEX, ref); // Remove it
-   if (lua_pcall(prv->Lua, 0, 0, 0)) {
+   auto msg = (delay_msg *)Message;
+   auto lua = msg->lua;
+   lua_rawgeti(lua, LUA_REGISTRYINDEX, msg->ref); // Get the function from the registry
+   luaL_unref(lua, LUA_REGISTRYINDEX, msg->ref); // Remove it
+
+   kt::SwitchContext ctx(lua->script);
+   if (lua_pcall(lua, 0, 0, 0)) {
       process_error(lua->script, "delayedCall()");
    }
    return ERR::Okay;
@@ -405,19 +409,10 @@ static ERR msg_handler(APTR Meta, int MsgID, int MsgType, APTR Message, int MsgS
 
 static int processing_delayed_call(lua_State *Lua)
 {
-   static MSGID msgid = MSGID::NIL;
-   if (msgid IS MSGID::NIL) {
-      msgid = MSGID(AllocateID(IDTYPE::MESSAGE));
-      auto func = C_FUNCTION(msg_handler, Lua);
-      if (auto error = AddMsgHandler(msgid, &func, &delayed_call_handle); error != ERR::Okay) {
-         luaL_error(Lua, error);
-      }
-   }
-
    if (lua_type(Lua, 1) IS LUA_TFUNCTION) {
-      int ref = luaL_ref(Lua, LUA_REGISTRYINDEX);
-      if (SendMessage(msgid, MSF::NIL, &ref, sizeof(ref)) != ERR::Okay) {
-         luaL_unref(Lua, LUA_REGISTRYINDEX, ref);
+      delay_msg msg = { Lua, luaL_ref(Lua, LUA_REGISTRYINDEX) };
+      if (SendMessage(glDelayedCallMsgID, MSF::NIL, &msg, sizeof(msg)) != ERR::Okay) {
+         luaL_unref(Lua, LUA_REGISTRYINDEX, msg.ref);
          luaL_error(Lua, ERR::MessageOperation);
       }
    }

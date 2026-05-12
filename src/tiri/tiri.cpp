@@ -71,6 +71,8 @@ ankerl::unordered_dense::map<struct_name, struct_record, struct_hash> glStructs;
 std::shared_mutex glConstantMutex;
 
 static struct MsgHandler *glMsgThread = nullptr; // Message handler for thread callbacks
+static MsgHandler *glDelayedCallHandle = nullptr;
+MSGID glDelayedCallMsgID = MSGID::NIL;
 
 constexpr auto HASH_TRACE_TOKENS         = kt::strhash("trace-tokens");
 constexpr auto HASH_TRACE_EXPECT         = kt::strhash("trace-expect");
@@ -211,6 +213,12 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
 
    ActionList(&glActions, nullptr); // Get the global action table from the Core
 
+   glDelayedCallMsgID = MSGID(AllocateID(IDTYPE::MESSAGE));
+   auto func = C_FUNCTION(delayed_msg_handler, nullptr);
+   if (auto error = AddMsgHandler(glDelayedCallMsgID, &func, &glDelayedCallHandle); error != ERR::Okay) {
+      return ERR::Function;
+   }
+
    // Create a lookup table for converting named actions to IDs.
 
    for (int action_id=1; glActions[action_id].Name; action_id++) {
@@ -284,6 +292,7 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
 
 static ERR MODExpunge(void)
 {
+   if (glDelayedCallHandle) { FreeResource(glDelayedCallHandle); glDelayedCallHandle = nullptr; }
    if (glMsgThread) { FreeResource(glMsgThread); glMsgThread = nullptr; }
    if (clTiri)      { FreeResource(clTiri); clTiri = nullptr; }
    if (modDisplay)  { FreeResource(modDisplay); modDisplay = nullptr; }
