@@ -911,6 +911,7 @@ static int module_call(lua_State *Lua)
       // Process the result based on the return type
       if (restype & FD_STR) {
          lua_pushstring(Lua, (CSTRING)rc.Arg);
+         if ((restype & FD_ALLOC) and ((CSTRING)rc.Arg)) FreeResource((APTR)rc.Arg);
       }
       else if (restype & FD_OBJECT) {
          if ((OBJECTPTR)rc.Arg) {
