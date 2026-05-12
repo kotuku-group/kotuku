@@ -10,6 +10,8 @@ static MSGID glIocpCompletionMsgID = MSGID::NIL;
 
 static constexpr int IOCP_NI_NAMEREQD = 0x04;
 
+bool validate_iocp_completion_object(OBJECTPTR Object, SocketHandle Handle);
+
 #ifndef WSAAPI
    #define WSAAPI __stdcall
 #endif
@@ -84,6 +86,7 @@ static ERR iocp_completion_receiver(APTR Custom, MSGID MsgID, int MsgType, APTR 
 
    kt::ScopedObjectLock lock(completion->ObjectID);
    if (!lock.granted()) return ERR::Okay;
+   if (lock.obj->terminating()) return ERR::Okay;
 
    if ((completion->Type != IocpOperationType::CONNECT) and (completion->Type != IocpOperationType::READ) and
        (completion->Type != IocpOperationType::WRITE) and (completion->Type != IocpOperationType::ACCEPT) and
@@ -91,8 +94,12 @@ static ERR iocp_completion_receiver(APTR Custom, MSGID MsgID, int MsgType, APTR 
       return ERR::Okay;
    }
 
+   auto handle = SocketHandle(completion->Socket);
+   if (!validate_iocp_completion_object(lock.obj, handle)) return ERR::Okay;
+   if (!iocp_validate_completion(completion->Socket, completion->Generation)) return ERR::Okay;
+
    auto callback = (void (*)(HOSTHANDLE, APTR))completion->Callback;
-   callback(SocketHandle(completion->Socket).hosthandle(), lock.obj);
+   callback(handle.hosthandle(), lock.obj);
    return ERR::Okay;
 }
 

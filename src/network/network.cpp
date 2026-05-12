@@ -179,6 +179,27 @@ class extNetLookup : public objNetLookup {
 };
 
 //********************************************************************************************************************
+// Returns true if the object is a NetSocket or ClientSocket in a valid state.
+
+#if defined(_WIN32) and defined(ENABLE_IOCP)
+bool validate_iocp_completion_object(OBJECTPTR Object, SocketHandle Handle)
+{
+   if ((!Object) or Object->terminating()) return false;
+
+   if (Object->classID() IS CLASSID::NETSOCKET) {
+      auto socket = (extNetSocket *)Object;
+      if (socket->Terminating) return false;
+      return socket->Handle.socket() IS Handle.socket();
+   }
+   else if (Object->classID() IS CLASSID::CLIENTSOCKET) {
+      auto socket = (extClientSocket *)Object;
+      return socket->Handle.socket() IS Handle.socket();
+   }
+   else return false;
+}
+#endif
+
+//********************************************************************************************************************
 
 #if defined(_WIN32) and !defined(ENABLE_IOCP)
    #include "win32/winsockwrappers.h"
