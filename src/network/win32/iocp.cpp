@@ -30,7 +30,6 @@ struct IocpOperation {
    uint64_t Generation = 0;
    int ObjectID = 0;
    uintptr_t Callback = 0;
-   uintptr_t Data = 0;
    WSW_SOCKET AcceptedSocket = 0;
    std::unique_ptr<uint8_t[]> Buffer;
    std::array<uint8_t, IOCP_ENDPOINT_STORAGE_SIZE> Address = {};
@@ -43,7 +42,6 @@ struct IocpOperation {
 struct IocpCompletionTarget {
    int ObjectID = 0;
    uintptr_t Callback = 0;
-   uintptr_t Data = 0;
 };
 
 struct IocpAcceptedSocket {
@@ -60,7 +58,6 @@ struct IocpDatagram {
 };
 
 struct IocpSocketRecord {
-   void *Reference = nullptr;
    IocpCompletionTarget Connect;
    IocpCompletionTarget Read;
    IocpCompletionTarget Write;
@@ -415,7 +412,6 @@ static void queue_operation_completion(const IocpOperation &Operation, size_t By
       message.Generation = Operation.Generation;
       message.ObjectID = target.ObjectID;
       message.Callback = target.Callback;
-      message.Data = target.Data;
       message.BytesTransferred = BytesTransferred;
       message.Error = Error;
    }
@@ -447,7 +443,6 @@ static ERR queue_record_completion(WSW_SOCKET Socket, IocpOperationType Type)
       message.Generation = record->second.Generation;
       message.ObjectID = target.ObjectID;
       message.Callback = target.Callback;
-      message.Data = target.Data;
       message.Error = ERR::Okay;
    }
 
@@ -487,7 +482,6 @@ static ERR post_udp_receive(WSW_SOCKET Socket)
       failed_operation.Generation = generation;
       failed_operation.ObjectID = target.ObjectID;
       failed_operation.Callback = target.Callback;
-      failed_operation.Data = target.Data;
       failed_operation.Result = error;
       queue_operation_completion(failed_operation, 0, failed_operation.Result);
       return ERR::Okay;
@@ -499,7 +493,6 @@ static ERR post_udp_receive(WSW_SOCKET Socket)
    operation->Generation = generation;
    operation->ObjectID = target.ObjectID;
    operation->Callback = target.Callback;
-   operation->Data = target.Data;
    operation->BufferSize = IOCP_UDP_BUFFER_SIZE;
    operation->Buffer = std::make_unique<uint8_t[]>(operation->BufferSize);
    operation->AddressSize = int(operation->Address.size());
@@ -559,7 +552,6 @@ static ERR post_read(WSW_SOCKET Socket)
    operation->Generation = generation;
    operation->ObjectID = target.ObjectID;
    operation->Callback = target.Callback;
-   operation->Data = target.Data;
    operation->BufferSize = IOCP_READ_BUFFER_SIZE;
    operation->Buffer = std::make_unique<uint8_t[]>(operation->BufferSize);
 
@@ -620,7 +612,6 @@ static ERR post_accept(WSW_SOCKET Socket)
    operation->Generation = generation;
    operation->ObjectID = target.ObjectID;
    operation->Callback = target.Callback;
-   operation->Data = target.Data;
    operation->AcceptedSocket = handle_from_socket(accepted_socket);
    operation->BufferSize = IOCP_ACCEPT_BUFFER_SIZE;
    operation->Buffer = std::make_unique<uint8_t[]>(operation->BufferSize);
@@ -684,15 +675,14 @@ static void worker_thread()
 
 //********************************************************************************************************************
 
-static ERR set_completion_target(WSW_SOCKET Socket, IocpOperationType Type, int ObjectID, uintptr_t Callback,
-   uintptr_t Data)
+static ERR set_completion_target(WSW_SOCKET Socket, IocpOperationType Type, int ObjectID, uintptr_t Callback)
 {
    std::lock_guard<std::mutex> lock(glIocpMutex);
    auto record = glSockets.find(Socket);
    if (record IS glSockets.end()) return ERR::Search;
    if (record->second.Cancelled) return ERR::Cancelled;
 
-   auto target = IocpCompletionTarget { ObjectID, Callback, Data };
+   auto target = IocpCompletionTarget { ObjectID, Callback };
    if (Type IS IocpOperationType::READ) record->second.Read = target;
    else if (Type IS IocpOperationType::WRITE) record->second.Write = target;
    else if (Type IS IocpOperationType::ACCEPT) record->second.Accept = target;
@@ -763,7 +753,7 @@ void iocp_expunge()
 
 //********************************************************************************************************************
 
-WSW_SOCKET iocp_create_socket(void *Reference, bool UDP, bool &IPv6)
+WSW_SOCKET iocp_create_socket(bool UDP, bool &IPv6)
 {
    if (glCompletionPort IS INVALID_HANDLE_VALUE) {
       IPv6 = false;
@@ -784,7 +774,6 @@ WSW_SOCKET iocp_create_socket(void *Reference, bool UDP, bool &IPv6)
 
    std::lock_guard<std::mutex> lock(glIocpMutex);
    glSockets[result] = {
-      .Reference = Reference,
       .Generation = glNextGeneration++,
       .IPv6 = IPv6,
       .UDP = UDP,
@@ -824,15 +813,6 @@ int iocp_shutdown_socket(WSW_SOCKET Socket, int How)
 
 //********************************************************************************************************************
 
-void iocp_set_socket_reference(WSW_SOCKET Socket, void *Reference)
-{
-   std::lock_guard<std::mutex> lock(glIocpMutex);
-   auto record = glSockets.find(Socket);
-   if (record != glSockets.end()) record->second.Reference = Reference;
-}
-
-//********************************************************************************************************************
-
 ERR iocp_prepare_connect(WSW_SOCKET Socket, const void *Address, int AddressSize)
 {
    if ((!Address) or (AddressSize <= 0) or (AddressSize > int(IOCP_ENDPOINT_STORAGE_SIZE))) return ERR::Args;
@@ -850,7 +830,7 @@ ERR iocp_prepare_connect(WSW_SOCKET Socket, const void *Address, int AddressSize
 
 //********************************************************************************************************************
 
-ERR iocp_begin_connect_wait(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback, uintptr_t Data)
+ERR iocp_begin_connect_wait(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback)
 {
    std::array<uint8_t, IOCP_ENDPOINT_STORAGE_SIZE> address;
    int address_size = 0;
@@ -864,7 +844,7 @@ ERR iocp_begin_connect_wait(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback,
       if (record->second.Cancelled) return ERR::Cancelled;
       if (record->second.ConnectAddressSize <= 0) return ERR::NotInitialised;
 
-      record->second.Connect = { ObjectID, Callback, Data };
+      record->second.Connect = { ObjectID, Callback };
       record->second.ConnectResult = ERR::Busy;
 
       address = record->second.ConnectAddress;
@@ -879,7 +859,6 @@ ERR iocp_begin_connect_wait(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback,
    failed_operation.Generation = generation;
    failed_operation.ObjectID = target.ObjectID;
    failed_operation.Callback = target.Callback;
-   failed_operation.Data = target.Data;
 
    auto socket = socket_from_handle(Socket);
    auto remote_address = (const sockaddr *)address.data();
@@ -904,7 +883,6 @@ ERR iocp_begin_connect_wait(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback,
    operation->Generation = generation;
    operation->ObjectID = target.ObjectID;
    operation->Callback = target.Callback;
-   operation->Data = target.Data;
 
    DWORD bytes = 0;
    auto result = connect_ex(socket, remote_address, address_size, nullptr, 0, &bytes, &operation->Overlapped);
@@ -971,9 +949,9 @@ ERR iocp_listen(WSW_SOCKET Socket, int Backlog)
 
 //********************************************************************************************************************
 
-ERR iocp_register_accept(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback, uintptr_t Data)
+ERR iocp_register_accept(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback)
 {
-   if (auto error = set_completion_target(Socket, IocpOperationType::ACCEPT, ObjectID, Callback, Data);
+   if (auto error = set_completion_target(Socket, IocpOperationType::ACCEPT, ObjectID, Callback);
        error != ERR::Okay) return error;
 
    return post_accept(Socket);
@@ -1013,9 +991,9 @@ ERR iocp_accept(WSW_SOCKET Server, WSW_SOCKET &Client, void *Address, int *Addre
 
 //********************************************************************************************************************
 
-ERR iocp_register_read(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback, uintptr_t Data)
+ERR iocp_register_read(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback)
 {
-   if (auto error = set_completion_target(Socket, IocpOperationType::READ, ObjectID, Callback, Data);
+   if (auto error = set_completion_target(Socket, IocpOperationType::READ, ObjectID, Callback);
        error != ERR::Okay) return error;
 
    bool buffered = false;
@@ -1038,9 +1016,9 @@ ERR iocp_register_read(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback, uint
 
 //********************************************************************************************************************
 
-ERR iocp_register_write(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback, uintptr_t Data)
+ERR iocp_register_write(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback)
 {
-   if (auto error = set_completion_target(Socket, IocpOperationType::WRITE, ObjectID, Callback, Data);
+   if (auto error = set_completion_target(Socket, IocpOperationType::WRITE, ObjectID, Callback);
        error != ERR::Okay) return error;
 
    bool pending = false;
@@ -1058,21 +1036,21 @@ ERR iocp_register_write(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback, uin
 
 ERR iocp_remove_read(WSW_SOCKET Socket)
 {
-   return set_completion_target(Socket, IocpOperationType::READ, 0, 0, 0);
+   return set_completion_target(Socket, IocpOperationType::READ, 0, 0);
 }
 
 //********************************************************************************************************************
 
 ERR iocp_remove_write(WSW_SOCKET Socket)
 {
-   return set_completion_target(Socket, IocpOperationType::WRITE, 0, 0, 0);
+   return set_completion_target(Socket, IocpOperationType::WRITE, 0, 0);
 }
 
 //********************************************************************************************************************
 
-ERR iocp_recall_read(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback, uintptr_t Data)
+ERR iocp_recall_read(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback)
 {
-   if (auto error = set_completion_target(Socket, IocpOperationType::READ, ObjectID, Callback, Data);
+   if (auto error = set_completion_target(Socket, IocpOperationType::READ, ObjectID, Callback);
        error != ERR::Okay) return error;
 
    bool udp = false;
@@ -1183,7 +1161,6 @@ ERR iocp_send(WSW_SOCKET Socket, const void *Buffer, size_t &Length)
    operation->Generation = generation;
    operation->ObjectID = target.ObjectID;
    operation->Callback = target.Callback;
-   operation->Data = target.Data;
    operation->BufferSize = requested;
    operation->Buffer = std::make_unique<uint8_t[]>(operation->BufferSize);
    std::memcpy(operation->Buffer.get(), Buffer, requested);

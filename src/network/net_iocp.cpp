@@ -137,7 +137,10 @@ public:
 
    SocketHandle create_socket(void *Reference, bool Read, bool Write, bool UDP, bool &IPv6) override
    {
-      return SocketHandle(iocp_create_socket(Reference, UDP, IPv6));
+      (void)Reference;
+      (void)Read;
+      (void)Write;
+      return SocketHandle(iocp_create_socket(UDP, IPv6));
    }
 
    SocketHandle socket_from_hosthandle(HOSTHANDLE Handle) override
@@ -219,7 +222,7 @@ public:
    ERR begin_connect_wait(SocketHandle Handle, void (*Callback)(HOSTHANDLE, APTR), APTR Data) override
    {
       auto object_id = Data ? ((OBJECTPTR)Data)->UID : 0;
-      return iocp_begin_connect_wait(Handle.socket(), object_id, uintptr_t(Callback), uintptr_t(Data));
+      return iocp_begin_connect_wait(Handle.socket(), object_id, uintptr_t(Callback));
    }
 
    ERR complete_connect(SocketHandle Handle) override
@@ -271,7 +274,8 @@ public:
 
    void set_socket_reference(SocketHandle Handle, void *Reference) override
    {
-      iocp_set_socket_reference(Handle.socket(), Reference);
+      (void)Handle;
+      (void)Reference;
    }
 
    ERR set_non_blocking(SocketHandle Handle) override
@@ -282,19 +286,19 @@ public:
    ERR register_read(SocketHandle Handle, void (*Callback)(HOSTHANDLE, APTR), APTR Data) override
    {
       auto object_id = Data ? ((OBJECTPTR)Data)->UID : 0;
-      return iocp_register_read(Handle.socket(), object_id, uintptr_t(Callback), uintptr_t(Data));
+      return iocp_register_read(Handle.socket(), object_id, uintptr_t(Callback));
    }
 
    ERR register_accept(SocketHandle Handle, void (*Callback)(HOSTHANDLE, APTR), APTR Data) override
    {
       auto object_id = Data ? ((OBJECTPTR)Data)->UID : 0;
-      return iocp_register_accept(Handle.socket(), object_id, uintptr_t(Callback), uintptr_t(Data));
+      return iocp_register_accept(Handle.socket(), object_id, uintptr_t(Callback));
    }
 
    ERR register_write(SocketHandle Handle, void (*Callback)(HOSTHANDLE, APTR), APTR Data) override
    {
       auto object_id = Data ? ((OBJECTPTR)Data)->UID : 0;
-      return iocp_register_write(Handle.socket(), object_id, uintptr_t(Callback), uintptr_t(Data));
+      return iocp_register_write(Handle.socket(), object_id, uintptr_t(Callback));
    }
 
    ERR remove_read(SocketHandle Handle) override
@@ -310,7 +314,7 @@ public:
    ERR register_recall_read(SocketHandle Handle, void (*Callback)(HOSTHANDLE, APTR), APTR Data) override
    {
       auto object_id = Data ? ((OBJECTPTR)Data)->UID : 0;
-      return iocp_recall_read(Handle.socket(), object_id, uintptr_t(Callback), uintptr_t(Data));
+      return iocp_recall_read(Handle.socket(), object_id, uintptr_t(Callback));
    }
 
    ERR deregister_fd(SocketHandle Handle) override
