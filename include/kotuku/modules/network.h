@@ -691,3 +691,4 @@ extern uint32_t LongToHost(uint32_t Value);
 extern ERR SetSSL(objNetSocket *NetSocket, CSTRING Command, CSTRING Value);
 } // namespace
 #endif // KOTUKU_STATIC
+

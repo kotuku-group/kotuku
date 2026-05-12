@@ -74,25 +74,25 @@ end
 @Test function ParallelRequests()
    results = {}
    completed = 0
-   total_req = 5
+   TOTAL_REQ <const> = 10
    wait_http = nil
 
-   for i = 0, total_req-1 do
+   for i = 0, TOTAL_REQ-1 do
       results[i] = {}
       results[i].http = obj.new('http', {
-         src    = 'http://127.0.0.1:' .. SERVER_PORT .. '/api/parallel/' .. i,
+         src    = f'http://127.0.0.1:{SERVER_PORT}/api/parallel/{i}',
          method = 'GET',
          flags  = HTF_NO_HEAD,
          incoming = function(HTTP, Buffer)
             if not results[i].data then results[i].data = '' end
             results[i].data ..= Buffer:getString()
-            print('Received: ' .. results[i].data)
+            print(f'Received: {#results[i].data} bytes')
          end,
          stateChanged = function(HTTP, State)
             if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
                completed++
-               print('Completed ' .. completed .. ' of ' .. total_req)
-               if completed >= total_req then
+               print(f'Completed {completed} of {TOTAL_REQ}')
+               if completed >= TOTAL_REQ then
                   wait_http.acSignal()
                end
             end
@@ -103,22 +103,23 @@ end
 
    proc = processing.new({ timeout = 5.0, signals = array<object> { wait_http } })
 
-   for i = 0, total_req-1 do
+   for i = 0, TOTAL_REQ-1 do
       assert(results[i].http.acActivate() is ERR_Okay, "Parallel request " .. i .. " failed to activate")
    end
 
+   print('Sleeping...')
    check proc.sleep()
 
-   assert(completed is total_req, 'Not all parallel requests completed: ' .. completed .. '/' .. total_req)
+   assert(completed is TOTAL_REQ, 'Not all parallel requests completed: ' .. completed .. '/' .. TOTAL_REQ)
 
    -- Verify all responses
-   for i = 0, total_req-1 do
+   for i = 0, TOTAL_REQ-1 do
       assert(results[i].data, 'No response for request ' .. i)
       response = json.decode(results[i].data)
       assert(response.requestId is tostring(i), 'Request ID mismatch for request ' .. i)
    end
 
-   print('Parallel requests test passed: ' .. total_req .. ' concurrent requests')
+   print('Parallel requests test passed: ' .. TOTAL_REQ .. ' concurrent requests')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -130,7 +131,7 @@ end
    wait_http = nil
 
    for i = 0, total_posts-1 do
-      test_data = '{"id":' .. i .. ',"data":"test_data_' .. i .. '"}'
+      test_data = f'{{"id":{i},"data":"test_data_{i}"}}'
       results[i] = {}
       results[i].http = obj.new('http', {
          src         = 'http://127.0.0.1:' .. SERVER_PORT .. '/api/concurrent-post',
@@ -179,12 +180,12 @@ end
 @Test function HighLoadRequests()
    results = {}
    completed = 0
-   total_req = 10
+   TOTAL_REQ <const> = 80
    wait_http = nil
 
-   print('Starting high load test with ' .. total_req .. ' requests...')
+   print('Starting high load test with ' .. TOTAL_REQ .. ' requests...')
 
-   for i = 0, total_req-1 do
+   for i = 0, TOTAL_REQ-1 do
       results[i] = {}
       results[i].http = obj.new('http', {
          src            = 'http://127.0.0.1:' .. SERVER_PORT .. '/api/load-test/' .. i,
@@ -198,7 +199,7 @@ end
          stateChanged = function(HTTP, State)
             if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
                completed++
-               if completed >= total_req then
+               if completed >= TOTAL_REQ then
                   wait_http.acSignal()
                end
             end
@@ -209,7 +210,7 @@ end
 
    proc = processing.new({ timeout = 5.0, signals = array<object> { wait_http } })
 
-   for i = 0, total_req-1 do
+   for i = 0, TOTAL_REQ-1 do
       assert(results[i].http.acActivate() is ERR_Okay, "High load request " .. i .. " failed to activate")
 
       -- Small delay to stagger requests slightly
@@ -219,8 +220,8 @@ end
    check proc.sleep()
 
    -- Allow for some failures under high load
-   success_rate = completed / total_req
+   success_rate = completed / TOTAL_REQ
    assert(success_rate >= 0.8, 'Success rate too low under high load: ' .. (success_rate * 100) .. '%')
 
-   print('High load test passed: ' .. completed .. '/' .. total_req .. ' requests succeeded')
+   print('High load test passed: ' .. completed .. '/' .. TOTAL_REQ .. ' requests succeeded')
 end

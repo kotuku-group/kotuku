@@ -41,8 +41,8 @@
     <field>
       <name>IP</name>
       <comment>The IP address of the client.</comment>
-      <access read="R">Read</access>
-      <type>INT8 []</type>
+      <access read="G">Get</access>
+      <type>APTR</type>
     </field>
 
     <field>
