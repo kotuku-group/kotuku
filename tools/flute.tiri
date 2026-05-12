@@ -113,9 +113,9 @@ function checkAvailable(Requirement:str, Expectation:bool):bool
       return glAudioAvailable is Expectation
    elseif Requirement is 'display' then
       return glDisplayAvailable is Expectation
-   elseif Requirement in 'windows_platform' then
+   elseif Requirement is 'windows_platform' then
       return glWindowsPlatform is Expectation
-   elseif Requirement in 'linux_platform' then
+   elseif Requirement is 'linux_platform' then
       return glLinuxPlatform is Expectation
    else
       error('Invalid requirement: ' .. Requirement)
