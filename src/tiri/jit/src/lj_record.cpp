@@ -121,11 +121,16 @@ static void rec_try_materialise_slots(jit_State *J, bool ForceLoad, BCREG SlotLi
       int32_t absolute_slot = int32_t(J->baseslot) + int32_t(slot);
       lj_assertJ(absolute_slot >= 0 and absolute_slot < LJ_MAX_JSLOTS + LJ_STACK_EXTRA,
          "try materialisation slot out of range");
-      if (not ForceLoad and J->trymat[absolute_slot] IS value_ref) continue;
+      if (not ForceLoad and J->trymat[absolute_slot] IS value_ref) {
+         J->try_skipped_stores++;
+         continue;
+      }
 
       TRef slot_addr = rec_try_stack_slot_addr(J, ir, absolute_slot);
       rec_try_emit_tvalue_store(J, slot_addr, value_ref);
       J->trymat[absolute_slot] = value_ref;
+      J->try_stores++;
+      if (ForceLoad) J->try_enter_stores++;
       stored = true;
    }
 
@@ -3557,6 +3562,10 @@ void lj_record_setup(jit_State *J)
    memset(J->slot, 0, sizeof(J->slot));
    memset(J->trymat, 0, sizeof(J->trymat));
    memset(J->chain, 0, sizeof(J->chain));
+   J->try_stores = 0;
+   J->try_skipped_stores = 0;
+   J->try_enter_stores = 0;
+   J->try_enter_snap_removed = 0;
 #ifdef LUAJIT_ENABLE_TABLE_BUMP
    memset(J->rbchash, 0, sizeof(J->rbchash));
 #endif

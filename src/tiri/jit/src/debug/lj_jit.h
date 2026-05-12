@@ -294,6 +294,10 @@ struct GCtrace {
   uint8_t topslot;   //  Top stack slot already checked to be allocated.
   TraceLink linktype;   //  Type of link.
   uint8_t unused1;
+  uint32_t try_stores;   //  Try materialisation stores emitted while recording this trace.
+  uint32_t try_skipped_stores;   //  Try materialisation stores skipped by tracking.
+  uint32_t try_enter_stores;   //  Forced stores emitted at BC_TRYENTER.
+  uint32_t try_enter_snap_removed;   //  Snapshot entries removed near BC_TRYENTER.
 #ifdef LUAJIT_USE_GDBJIT
   void *gdbjit_entry;   //  GDB JIT entry.
 #endif
@@ -522,6 +526,10 @@ struct jit_State {
   TValue errinfo;     //  Additional info element for trace errors.
   uint8_t retryrec;   //  Retry recording.
   bool abort_in_progress; //  True while aborting trace recording (skip try handlers)
+  uint32_t try_stores;   //  Try materialisation stores emitted while recording the current trace.
+  uint32_t try_skipped_stores;   //  Try materialisation stores skipped by tracking.
+  uint32_t try_enter_stores;   //  Forced stores emitted at BC_TRYENTER.
+  uint32_t try_enter_snap_removed;   //  Snapshot entries removed near BC_TRYENTER.
 
   // Optimisation cache for try-block stack materialisation.  Correctness comes from forced
   // BC_TRYENTER materialisation and CCI_T materialisation before throwable helper calls.

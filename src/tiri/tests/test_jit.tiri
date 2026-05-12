@@ -351,6 +351,11 @@ end
    assert(type(info.nins) is "number" and info.nins > 0, "traceInfo should report instruction count")
    assert(type(info.link) is "number", "traceInfo link should be numeric")
    assert(type(info.linktype) is "string", "traceInfo linktype should be a string")
+   assert(type(info.tryStores) is "number" and info.tryStores >= 0, "traceInfo should report try store count")
+   assert(type(info.trySkippedStores) is "number" and info.trySkippedStores >= 0, "traceInfo should report skipped try store count")
+   assert(type(info.tryEnterStores) is "number" and info.tryEnterStores >= 0, "traceInfo should report try-enter store count")
+   assert(type(info.tryEnterSnapRemoved) is "number" and info.tryEnterSnapRemoved >= 0,
+      "traceInfo should report try-enter snapshot removal count")
 
    allowed_links = {
       root = true,

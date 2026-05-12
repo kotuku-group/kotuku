@@ -162,6 +162,10 @@ GCtrace* lj_trace_alloc(lua_State* L, GCtrace *T)
    T2->nk = T->nk;
    T2->nsnap = T->nsnap;
    T2->nsnapmap = T->nsnapmap;
+   T2->try_stores = T->try_stores;
+   T2->try_skipped_stores = T->try_skipped_stores;
+   T2->try_enter_stores = T->try_enter_stores;
+   T2->try_enter_snap_removed = T->try_enter_snap_removed;
    memcpy(p, T->ir + T->nk, szins);
    return T2;
 }
@@ -567,6 +571,10 @@ static void trace_stop(jit_State *J)
    // Commit new mcode only after all patching is done.
    lj_mcode_commit(J, J->cur.mcode);
    J->postproc = LJ_POST_NONE;
+   J->cur.try_stores = J->try_stores;
+   J->cur.try_skipped_stores = J->try_skipped_stores;
+   J->cur.try_enter_stores = J->try_enter_stores;
+   J->cur.try_enter_snap_removed = J->try_enter_snap_removed;
    trace_save(J, T);
 
    L = J->L;

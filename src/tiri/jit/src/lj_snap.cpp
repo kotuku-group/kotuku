@@ -411,7 +411,9 @@ void lj_snap_shrink(jit_State* J)
    uint8_t udf[SNAP_USEDEF_SLOTS];
    BCREG maxslot = J->maxslot;
    BCREG baseslot = J->baseslot;
-   BCREG minslot = snap_usedef(J, udf, snap_pc(&map[nent]), maxslot);
+   const BCIns *pc = snap_pc(&map[nent]);
+   bool try_enter_pc = bc_op(*pc) IS BC_TRYENTER;
+   BCREG minslot = snap_usedef(J, udf, pc, maxslot);
    if (minslot < maxslot) snap_useuv(J->pt, udf);
    maxslot += baseslot;
    minslot += baseslot;
@@ -422,6 +424,7 @@ void lj_snap_shrink(jit_State* J)
          map[m++] = map[n];  //  Only copy used slots.
    }
    snap->nent = (uint8_t)m;
+   if (try_enter_pc and nent > m) J->try_enter_snap_removed += uint32_t(nent - m);
    nlim = J->cur.nsnapmap - snap->mapofs - 1;
    while (n <= nlim) map[m++] = map[n++];  //  Move PC + frame links down.
    J->cur.nsnapmap = (uint32_t)(snap->mapofs + m);  //  Free up space in map.

@@ -304,12 +304,16 @@ LJLIB_CF(jit_util_traceInfo)
    GCtrace *T = jit_checktrace(L);
    if (T) {
       GCtab *t;
-      lua_createtable(L, 0, 8);  //  Increment hash size if fields are added.
+      lua_createtable(L, 0, 12);  //  Increment hash size if fields are added.
       t = tabV(L->top - 1);
       setintfield(L, t, "nins", (int32_t)T->nins - REF_BIAS - 1);
       setintfield(L, t, "nk", REF_BIAS - (int32_t)T->nk);
       setintfield(L, t, "link", T->link);
       setintfield(L, t, "nexit", T->nsnap);
+      setintfield(L, t, "tryStores", int32_t(T->try_stores));
+      setintfield(L, t, "trySkippedStores", int32_t(T->try_skipped_stores));
+      setintfield(L, t, "tryEnterStores", int32_t(T->try_enter_stores));
+      setintfield(L, t, "tryEnterSnapRemoved", int32_t(T->try_enter_snap_removed));
       setstrV(L, L->top++, lj_str_newz(L, jit_trlinkname[uint32_t(T->linktype)]));
       lua_setfield(L, -2, "linktype");
       // There are many more fields. Add them only when needed.
