@@ -9,6 +9,224 @@
 // - Return statements
 // - Expression statements
 
+#include <cmath>
+
+namespace {
+
+[[nodiscard]] std::string identifier_text(const Identifier &Identifier)
+{
+   if (not Identifier.symbol) return {};
+   return std::string(strdata(Identifier.symbol), Identifier.symbol->len);
+}
+
+[[nodiscard]] bool token_is_contextual_enum(const Token &Token)
+{
+   if (not Token.is(TokenKind::Identifier)) return false;
+   GCstr *symbol = Token.identifier();
+   if (not symbol) return false;
+   return std::string_view(strdata(symbol), symbol->len) IS "enum";
+}
+
+[[nodiscard]] bool is_upper_identifier(std::string_view Text)
+{
+   if (Text.empty()) return false;
+   bool has_upper = false;
+
+   for (char ch : Text) {
+      if (ch >= 'A' and ch <= 'Z') {
+         has_upper = true;
+         continue;
+      }
+
+      if ((ch >= '0' and ch <= '9') or ch IS '_') continue;
+
+      return false;
+   }
+
+   return has_upper;
+}
+
+[[nodiscard]] bool contains_text(const std::vector<std::string> &Values, std::string_view Text)
+{
+   for (const auto &value : Values) {
+      if (value IS Text) return true;
+   }
+   return false;
+}
+
+} // namespace
+
+//********************************************************************************************************************
+// Checks for the contextual enum declaration RHS: enum { ... }
+
+bool AstBuilder::is_enum_declaration_rhs(size_t Offset) const
+{
+   return token_is_contextual_enum(this->ctx.tokens().peek(Offset)) and
+      this->ctx.tokens().peek(Offset + 1).is(TokenKind::LeftBrace);
+}
+
+//********************************************************************************************************************
+// Checks whether an assignment target has enum declaration prefix name syntax without consuming the RHS.
+
+bool AstBuilder::is_enum_declaration_prefix(const Identifier &Prefix) const
+{
+   std::string prefix = identifier_text(Prefix);
+   return not Prefix.is_blank and not prefix.empty() and is_upper_identifier(prefix);
+}
+
+//********************************************************************************************************************
+// Parses an enum declaration RHS and expands it to generated constant identifiers and numeric literal values.
+
+ParserResult<AstBuilder::EnumExpansion> AstBuilder::parse_enum_declaration(const Identifier &Prefix)
+{
+   std::string prefix = identifier_text(Prefix);
+
+   if (Prefix.is_blank or prefix.empty()) {
+      return this->fail<EnumExpansion>(ParserErrorCode::ExpectedIdentifier, Token::from_span(Prefix.span),
+         "enum prefix must be an identifier");
+   }
+
+   if (Prefix.has_close) {
+      return this->fail<EnumExpansion>(ParserErrorCode::UnexpectedToken, Token::from_span(Prefix.span),
+         "enum prefix cannot use the <close> attribute");
+   }
+
+   if (not (Prefix.type IS TiriType::Unknown)) {
+      return this->fail<EnumExpansion>(ParserErrorCode::UnexpectedToken, Token::from_span(Prefix.span),
+         "enum prefix cannot have a type annotation");
+   }
+
+   if (not is_upper_identifier(prefix)) {
+      return this->fail<EnumExpansion>(ParserErrorCode::ExpectedIdentifier, Token::from_span(Prefix.span),
+         "enum prefix must use uppercase identifier style");
+   }
+
+   Token enum_token = this->ctx.tokens().current();
+   if (not token_is_contextual_enum(enum_token)) {
+      return this->fail<EnumExpansion>(ParserErrorCode::ExpectedIdentifier, enum_token, "expected 'enum'");
+   }
+
+   this->ctx.tokens().advance();
+   this->ctx.consume(TokenKind::LeftBrace, ParserErrorCode::ExpectedToken);
+
+   if (this->ctx.check(TokenKind::RightBrace)) {
+      return this->fail<EnumExpansion>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+         "enum declaration requires at least one member");
+   }
+
+   EnumExpansion expansion;
+   std::vector<std::string> member_names;
+   std::vector<std::string> generated_names;
+   lua_Number next_value = 0;
+
+   auto parse_integer_literal = [&]() -> ParserResult<lua_Number> {
+      lua_Number sign = 1;
+      Token value_token = this->ctx.tokens().current();
+
+      if (value_token.is(TokenKind::Minus)) {
+         sign = -1;
+         this->ctx.tokens().advance();
+         value_token = this->ctx.tokens().current();
+      }
+      else if (value_token.is(TokenKind::Plus)) {
+         this->ctx.tokens().advance();
+         value_token = this->ctx.tokens().current();
+      }
+
+      if (not value_token.is(TokenKind::Number)) {
+         return this->fail<lua_Number>(ParserErrorCode::UnexpectedToken, value_token,
+            "enum member value must be an integer literal");
+      }
+
+      lua_Number value = sign * value_token.payload().as_number();
+      if (not (value IS std::floor(value))) {
+         return this->fail<lua_Number>(ParserErrorCode::UnexpectedToken, value_token,
+            "enum member value must be an integer literal");
+      }
+
+      this->ctx.tokens().advance();
+      return ParserResult<lua_Number>::success(value);
+   };
+
+   while (not this->ctx.check(TokenKind::RightBrace)) {
+      Token member_token = this->ctx.tokens().current();
+      if (not member_token.is(TokenKind::Identifier)) {
+         return this->fail<EnumExpansion>(ParserErrorCode::ExpectedIdentifier, member_token,
+            "enum member name must be an identifier");
+      }
+
+      Identifier member = make_identifier(member_token);
+      std::string member_name = identifier_text(member);
+      if (not is_upper_identifier(member_name)) {
+         return this->fail<EnumExpansion>(ParserErrorCode::ExpectedIdentifier, member_token,
+            "enum member name must use uppercase identifier style");
+      }
+
+      if (contains_text(member_names, member_name)) {
+         return this->fail<EnumExpansion>(ParserErrorCode::UnexpectedToken, member_token,
+            "duplicate enum member '" + member_name + "'");
+      }
+
+      this->ctx.tokens().advance();
+
+      lua_Number member_value = next_value;
+      if (this->ctx.match(TokenKind::Equals).ok()) {
+         auto explicit_value = parse_integer_literal();
+         if (not explicit_value.ok()) return ParserResult<EnumExpansion>::failure(explicit_value.error_ref());
+         member_value = explicit_value.value_ref();
+      }
+      next_value = member_value + 1;
+
+      std::string generated_name = prefix + "_" + member_name;
+      if (contains_text(generated_names, generated_name)) {
+         return this->fail<EnumExpansion>(ParserErrorCode::UnexpectedToken, member_token,
+            "duplicate enum constant '" + generated_name + "'");
+      }
+
+      Identifier generated = Identifier::from_keepstr(this->ctx.lex().keepstr(generated_name), member.span);
+      generated.has_const = true;
+      generated.type = TiriType::Num;
+
+      expansion.names.push_back(generated);
+      expansion.values.push_back(make_literal_expr(member.span, LiteralValue::number(member_value)));
+      member_names.push_back(std::move(member_name));
+      generated_names.push_back(std::move(generated_name));
+
+      if (this->ctx.match(TokenKind::Comma).ok()) continue;
+      if (this->ctx.check(TokenKind::RightBrace)) break;
+
+      return this->fail<EnumExpansion>(ParserErrorCode::ExpectedToken, this->ctx.tokens().current(),
+         "expected ',' or '}' after enum member");
+   }
+
+   this->ctx.consume(TokenKind::RightBrace, ParserErrorCode::ExpectedToken);
+   return ParserResult<EnumExpansion>::success(std::move(expansion));
+}
+
+//********************************************************************************************************************
+// Builds a local or global declaration statement from an enum expansion.
+
+ParserResult<StmtNodePtr> AstBuilder::make_enum_declaration_stmt(SourceSpan Span, Identifier Prefix, bool Global)
+{
+   auto expansion = this->parse_enum_declaration(Prefix);
+   if (not expansion.ok()) return ParserResult<StmtNodePtr>::failure(expansion.error_ref());
+   EnumExpansion &expanded = expansion.value_ref();
+
+   auto stmt = std::make_unique<StmtNode>(
+      Global ? AstNodeKind::GlobalDeclStmt : AstNodeKind::LocalDeclStmt, Span);
+
+   if (Global) {
+      stmt->data.emplace<GlobalDeclStmtPayload>(AssignmentOperator::Plain,
+         std::move(expanded.names), std::move(expanded.values));
+   }
+   else {
+      stmt->data.emplace<LocalDeclStmtPayload>(AssignmentOperator::Plain,
+         std::move(expanded.names), std::move(expanded.values));
+   }
+
+   return ParserResult<StmtNodePtr>::success(std::move(stmt));
+}
+
 //********************************************************************************************************************
 // Parses local variable declarations, local function statements and local thunk function statements.
 // Supports both explicit 'local' keyword and implicit local declarations with <const>/<close> attributes.
@@ -48,11 +266,23 @@ ParserResult<StmtNodePtr> AstBuilder::parse_local()
    auto names = this->parse_name_list();
    if (not names.ok()) return ParserResult<StmtNodePtr>::failure(names.error_ref());
 
+   auto& name_list = names.value_ref();
+
    ExprNodeList values;
    AssignmentOperator assign_op = AssignmentOperator::Plain;
 
    // Check for plain = or conditional ?=/??= assignment
-   if (this->ctx.match(TokenKind::Equals).ok()) {
+   if (this->ctx.check(TokenKind::Equals)) {
+      this->ctx.tokens().advance();
+      if (this->is_enum_declaration_rhs(0) and this->is_enum_declaration_prefix(name_list.front())) {
+         if (not (name_list.size() IS 1)) {
+            return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+               "enum declaration requires a single prefix name");
+         }
+
+         return this->make_enum_declaration_stmt(local_token.span(), name_list.front(), false);
+      }
+
       auto rhs = this->parse_expression_list();
       if (not rhs.ok()) return ParserResult<StmtNodePtr>::failure(rhs.error_ref());
       values = std::move(rhs.value_ref());
@@ -73,7 +303,6 @@ ParserResult<StmtNodePtr> AstBuilder::parse_local()
    // Check if any trailing expressions beyond the name count are bare identifiers,
    // and if so, convert them to additional variable names.
 
-   auto& name_list = names.value_ref();
    size_t name_count = name_list.size();
 
    if (values.size() > name_count) {
@@ -141,11 +370,23 @@ ParserResult<StmtNodePtr> AstBuilder::parse_global()
    auto names = this->parse_name_list();
    if (not names.ok()) return ParserResult<StmtNodePtr>::failure(names.error_ref());
 
+   auto &name_list = names.value_ref();
+
    ExprNodeList values;
    AssignmentOperator assign_op = AssignmentOperator::Plain;
 
    // Check for plain = or conditional ?=/??= assignment
-   if (this->ctx.match(TokenKind::Equals).ok()) {
+   if (this->ctx.check(TokenKind::Equals)) {
+      this->ctx.tokens().advance();
+      if (this->is_enum_declaration_rhs(0) and this->is_enum_declaration_prefix(name_list.front())) {
+         if (not (name_list.size() IS 1)) {
+            return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+               "enum declaration requires a single prefix name");
+         }
+
+         return this->make_enum_declaration_stmt(global_token.span(), name_list.front(), true);
+      }
+
       auto rhs = this->parse_expression_list();
       if (not rhs.ok()) return ParserResult<StmtNodePtr>::failure(rhs.error_ref());
       values = std::move(rhs.value_ref());
@@ -166,7 +407,6 @@ ParserResult<StmtNodePtr> AstBuilder::parse_global()
    // Check if any trailing expressions beyond the name count are bare identifiers,
    // and if so, convert them to additional variable names.
 
-   auto &name_list = names.value_ref();
    size_t name_count = name_list.size();
 
    if (values.size() > name_count) {

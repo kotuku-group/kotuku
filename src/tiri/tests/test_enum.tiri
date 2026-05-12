@@ -1,0 +1,201 @@
+-- Flute tests for contextual enum declarations.
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Successful declaration forms
+
+@Test function BareEnumDeclaration()
+   BARE_ENUM = enum {
+      ONE,
+      TWO,
+      THREE,
+   }
+
+   assert(BARE_ENUM_ONE is 0, 'First bare enum value should default to 0')
+   assert(BARE_ENUM_TWO is 1, 'Second bare enum value should auto-increment')
+   assert(BARE_ENUM_THREE is 2, 'Third bare enum value should auto-increment')
+   assert(debug.locality('BARE_ENUM') is 'nil', 'Enum prefix should not create a runtime binding')
+   assert(debug.locality('BARE_ENUM_ONE') is 'local', 'Generated bare enum constants should be local')
+end
+
+@Test function LocalEnumDeclaration()
+   local LOCAL_ENUM = enum {
+      FIRST = 10,
+      SECOND,
+      THIRD,
+   }
+
+   assert(LOCAL_ENUM_FIRST is 10, 'Explicit first enum value should be honoured')
+   assert(LOCAL_ENUM_SECOND is 11, 'Implicit value should increment from explicit value')
+   assert(LOCAL_ENUM_THIRD is 12, 'Implicit value should continue incrementing')
+   assert(debug.locality('LOCAL_ENUM') is 'nil', 'Local enum prefix should not create a runtime binding')
+   assert(debug.locality('LOCAL_ENUM_FIRST') is 'local', 'Generated local enum constants should be local')
+end
+
+@Test function GlobalEnumDeclaration()
+   global GLOBAL_ENUM = enum {
+      READY = 3,
+      RUNNING,
+      DONE,
+   }
+
+   assert(GLOBAL_ENUM_READY is 3, 'Explicit global enum value should be honoured')
+   assert(GLOBAL_ENUM_RUNNING is 4, 'Global enum value should auto-increment')
+   assert(GLOBAL_ENUM_DONE is 5, 'Global enum value should auto-increment')
+   assert(debug.locality('GLOBAL_ENUM') is 'nil', 'Global enum prefix should not create a runtime binding')
+   assert(debug.locality('GLOBAL_ENUM_READY') is 'global', 'Generated global enum constants should be global')
+end
+
+@Test function NegativeAndTrailingComma()
+   local NEG_ENUM = enum {
+      LOW = -2,
+      MID,
+      HIGH = +5,
+   }
+
+   assert(NEG_ENUM_LOW is -2, 'Negative enum value should be accepted')
+   assert(NEG_ENUM_MID is -1, 'Auto-increment should work after a negative value')
+   assert(NEG_ENUM_HIGH is 5, 'Explicit positive enum value should be accepted')
+end
+
+@Test function HexEnumValues()
+   local HEX_ENUM = enum {
+      ZERO = 0x0,
+      TEN = 0xA,
+      NEXT,
+   }
+
+   assert(HEX_ENUM_ZERO is 0, 'Hex zero enum value should be accepted')
+   assert(HEX_ENUM_TEN is 10, 'Hex enum value should be parsed as decimal 10')
+   assert(HEX_ENUM_NEXT is 11, 'Auto-increment should work after a hex value')
+end
+
+@Test function RedundantConstPrefix()
+   local CONST_ENUM <const> = enum {
+      VALUE = 20,
+   }
+
+   assert(CONST_ENUM_VALUE is 20, 'Redundant <const> on enum prefix should be accepted')
+   assert(debug.locality('CONST_ENUM') is 'nil', 'Const enum prefix should not create a runtime binding')
+end
+
+@Test function EnumIdentifierStillNormal()
+   enum = 7
+   assert(enum is 7, 'enum should remain usable as a normal identifier outside enum declaration syntax')
+end
+
+@Test function EnumTableCallWithLowercaseTarget()
+   enum = function(Table)
+      return Table.ONE
+   end
+
+   x = enum { ONE = 1 }
+   assert(x is 1, 'Lowercase assignment target should parse enum {...} as a normal table call')
+
+   local local_result = enum { ONE = 2 }
+   assert(local_result is 2, 'Local declaration should parse enum {...} as a normal table call')
+
+   global global_enum_table_call_result = enum { ONE = 3 }
+   assert(global_enum_table_call_result is 3, 'Global declaration should parse enum {...} as a normal table call')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Error cases
+
+@Test function LocalEnumReassignmentError()
+   try
+      exec([[
+local REASSIGN_ENUM = enum { ONE }
+REASSIGN_ENUM_ONE = 2
+]])
+   except ex
+      assert(ex.message:find('cannot assign to const local'), f'Error should mention const local: {ex.message}')
+      return
+   end
+   error('Reassigning generated local enum constant should fail')
+end
+
+@Test function GlobalEnumReassignmentError()
+   try
+      exec([[
+global REASSIGN_GLOBAL_ENUM = enum { ONE }
+REASSIGN_GLOBAL_ENUM_ONE = 2
+]])
+   except ex
+      assert(ex.message:find('cannot assign to const global'), f'Error should mention const global: {ex.message}')
+      return
+   end
+   error('Reassigning generated global enum constant should fail')
+end
+
+@Test function EmptyEnumError()
+   try
+      exec([[EMPTY_ENUM = enum { }]])
+   except ex
+      assert(ex.message:find('at least one member'), f'Error should mention empty enum: {ex.message}')
+      return
+   end
+   error('Empty enum declaration should fail')
+end
+
+@Test function LowercaseMemberError()
+   try
+      exec([[BAD_ENUM = enum { one }]])
+   except ex
+      assert(ex.message:find('uppercase'), f'Error should mention uppercase style: {ex.message}')
+      return
+   end
+   error('Lowercase enum member should fail')
+end
+
+@Test function NonIntegerValueError()
+   try
+      exec([[BAD_VALUE_ENUM = enum { ONE = 1.5 }]])
+   except ex
+      assert(ex.message:find('integer literal'), f'Error should mention integer literal: {ex.message}')
+      return
+   end
+   error('Non-integer enum value should fail')
+end
+
+@Test function DuplicateMemberError()
+   try
+      exec([[DUP_ENUM = enum { ONE, ONE }]])
+   except ex
+      assert(ex.message:find('duplicate enum member'), f'Error should mention duplicate enum member: {ex.message}')
+      return
+   end
+   error('Duplicate enum member should fail')
+end
+
+@Test function MultiTargetEnumError()
+   try
+      exec([[A_ENUM, B_ENUM = enum { ONE }]])
+   except ex
+      assert(ex.message:find('single prefix'), f'Error should mention single prefix: {ex.message}')
+      return
+   end
+   error('Multi-target enum declaration should fail')
+end
+
+@Test function TypeAnnotatedPrefixError()
+   try
+      exec([[local TYPED_ENUM: num = enum { ONE }]])
+   except ex
+      assert(ex.message:find('type annotation'), f'Error should mention type annotation: {ex.message}')
+      return
+   end
+   error('Enum prefix with type annotation should fail')
+end
+
+@Test function ClosePrefixError()
+   try
+      exec([[CLOSE_ENUM <close> = enum { ONE }]])
+   except ex
+      assert(ex.message:find('<close>'), f'Error should mention close attribute: {ex.message}')
+      return
+   end
+   error('Enum prefix with <close> should fail')
+end
