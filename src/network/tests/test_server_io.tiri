@@ -17,7 +17,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-@Test(requires='network') function RawHTTP()
+@Test; @Requires(network=true) function RawHTTP()
    netsocket = obj.new('netsocket', {
       feedback = function(Socket, State)
          state = printableState(State)

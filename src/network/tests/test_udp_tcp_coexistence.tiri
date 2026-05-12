@@ -9,7 +9,6 @@ This test verifies that UDP and TCP sockets can coexist and operate independentl
 --]]
 
    include 'network'
-   mNet ?= mod.load('network')
 
    glBasePort = 19840  -- Base port for coexistence tests
    glTestTimeout = 4.0
@@ -17,7 +16,7 @@ This test verifies that UDP and TCP sockets can coexist and operate independentl
 ------------------------------------------------------------------------------------------------------------------------
 -- Test UDP and TCP servers running simultaneously
 
-@Test(requires='network') function UDPTCPCoexistence()
+@Test; @Requires(network=true) function UDPTCPCoexistence()
    udpPort = glBasePort + 1
    tcpPort = glBasePort + 2
    udpReceived = false
@@ -134,7 +133,7 @@ end
 ------------------------------------------------------------------------------------------------------------------------
 -- Test mixed protocol communication patterns
 
-@Test(requires='network') function MixedProtocolPatterns()
+@Test; @Requires(network=true) function MixedProtocolPatterns()
    basePort = glBasePort + 10
    results = {}
 
@@ -219,7 +218,7 @@ end
 ------------------------------------------------------------------------------------------------------------------------
 -- Test resource cleanup and port reuse
 
-@Test(requires='network') function ResourceCleanup()
+@Test; @Requires(network=true) function ResourceCleanup()
    testPort = glBasePort + 20
 
    -- Create and destroy UDP socket

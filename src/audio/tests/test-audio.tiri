@@ -19,7 +19,7 @@ end
 -----------------------------------------------------------------------------------------------------------------------
 -- This test must result in playback of a low-tone, then followed by a high tone.
 
-@Test(requires='audio', priority=10)
+@Test(priority=10); @Requires(audio=true)
 function SequentialPlayback()
    snd = obj.new('sound', { path=glFolder .. 'low-tone.wav', volume=0.25 })
    assert(snd, 'Failed to process low-tone wav file.')
@@ -69,7 +69,7 @@ end
 -----------------------------------------------------------------------------------------------------------------------
 -- Test left and right speaker panning
 
-@Test(requires='audio', priority=20)
+@Test(priority=20); @Requires(audio=true)
 function Pan()
    proc = processing.new()
 
@@ -100,7 +100,7 @@ end
 -----------------------------------------------------------------------------------------------------------------------
 -- Test volume adjustment and OnStop trigger rates.
 
-@Test(requires='audio', priority=30)
+@Test(priority=30); @Requires(audio=true)
 function Volume()
    snd = obj.new('sound', { path=glFolder .. 'low-tone.wav' })
 
@@ -130,7 +130,7 @@ end
 -----------------------------------------------------------------------------------------------------------------------
 -- Increase the pitch repeatedly
 
-@Test(requires='audio', priority=40)
+@Test(priority=40); @Requires(audio=true)
 function Tones()
    proc = processing.new()
 
@@ -155,7 +155,7 @@ end
 
 -----------------------------------------------------------------------------------------------------------------------
 
-@Test(requires='audio', priority=50)
+@Test(priority=50); @Requires(audio=true)
 function Beep()
    glAudio.mtBeep(3000, 100, 5)
 end
@@ -164,7 +164,7 @@ end
 -- Test WAVE file saving by loading a file and saving it to a temp location, then comparing the binary content of
 -- both files.
 
-@Test(requires='audio', priority=60)
+@Test(priority=60); @Requires(audio=true)
 function WaveSave()
    snd = obj.new('sound', { path=glFolder .. 'low-tone.wav' })
    output_file = obj.new('file', { path='temp:low-tone.wav', flags='!NEW|WRITE' })

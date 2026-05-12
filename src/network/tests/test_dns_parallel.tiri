@@ -68,7 +68,7 @@ end
 -- for the same host.  In the log output you may see a thread being created for the first resolve, then the second call
 -- will hit the local DNS cache and return immediately.
 
-@Test(requires='network') function Duplication()
+@Test; @Requires(network=true) function Duplication()
    resolved = 0
 
    domains = array<string> { 'google.com', 'reddit.com' }
@@ -100,7 +100,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Non-blocking name resolution (default)
 
-@Test(requires='network') function NameResolutionAsync()
+@Test; @Requires(network=true) function NameResolutionAsync()
    nl = obj.new('NetLookup', { callback=name_resolved, flags=NLF_NO_CACHE })
 
    proc = processing.new({ timeout = 2.0, signals = array<object> { nl } })
@@ -116,7 +116,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Blocking name resolution
 
-@Test(requires='network') function BlockingNameResolution()
+@Test; @Requires(network=true) function BlockingNameResolution()
    nl = obj.new('NetLookup', { callback = name_resolved, flags=NLF_NO_CACHE })
 
    glTotalResolved = 0
@@ -129,7 +129,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-@Test(requires='network') function BlockingAddressResolution()
+@Test; @Requires(network=true) function BlockingAddressResolution()
    address_resolved = false
    nl = obj.new('NetLookup', {
       callback = function(NetLookup, Error)

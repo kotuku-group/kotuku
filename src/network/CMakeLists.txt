@@ -115,9 +115,7 @@ endif()
 set (NETWORK_TESTS
    bind_address dns_parallel server_io client_server error_handling ipv6 concurrency ssl
    # UDP Tests
-   udp_basic udp_ipv6 udp_broadcast_multicast udp_tcp_coexistence
-   # Performance test (may take a while)
-   # udp_performance
+   udp_basic udp_ipv6 udp_broadcast_multicast udp_tcp_coexistence udp_performance
 )
 
 foreach (TEST_NAME ${NETWORK_TESTS})

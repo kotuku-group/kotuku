@@ -90,6 +90,16 @@ global glSSLAvailable = thunk():bool
    return mNet.setSSL(nil, nil, nil) != ERR_NoSecureSockets
 end
 
+global glWindowsPlatform = thunk():bool
+   state = mSys.GetSystemState()
+   return state.platform is 'Windows'
+end
+
+global glLinuxPlatform = thunk():bool
+   state = mSys.GetSystemState()
+   return state.platform is 'Linux'
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 
 function checkAvailable(Requirement:str, Expectation:bool):bool
@@ -103,6 +113,10 @@ function checkAvailable(Requirement:str, Expectation:bool):bool
       return glAudioAvailable is Expectation
    elseif Requirement is 'display' then
       return glDisplayAvailable is Expectation
+   elseif Requirement in 'windows_platform' then
+      return glWindowsPlatform is Expectation
+   elseif Requirement in 'linux_platform' then
+      return glLinuxPlatform is Expectation
    else
       error('Invalid requirement: ' .. Requirement)
    end
