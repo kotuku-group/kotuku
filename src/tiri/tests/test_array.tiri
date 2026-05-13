@@ -488,6 +488,58 @@ end
    end
 end
 
+@Test function ArrayEqualityMetamethod()
+   int_a = array<int> { 1, 2, 3 }
+   int_b = array<int> { 1, 2, 3 }
+   int_c = array<int> { 1, 2, 4 }
+   int_short = array<int> { 1, 2 }
+   double_array = array<double> { 1.0, 2.0, 3.0 }
+
+   assert(int_a is int_b, 'Primitive arrays with identical contents should be equal')
+   assert(int_a != int_c, 'Primitive arrays with different contents should not be equal')
+   assert(int_a != int_short, 'Primitive arrays with different lengths should not be equal')
+   assert(int_a != double_array, 'Primitive arrays with different element types should not be equal')
+
+   byte_a = array<byte> { 65, 0, 66 }
+   byte_b = array<byte> { 65, 0, 66 }
+   byte_c = array<byte> { 65, 0, 67 }
+   assert(byte_a is byte_b, 'Byte arrays with embedded NUL bytes should compare equal by raw memory')
+   assert(byte_a != byte_c, 'Byte arrays with different raw bytes should not compare equal')
+
+   string_a = array<string> { 'hello', 'world' }
+   string_b = array<string> { 'hello', 'world' }
+   string_c = array<string> { 'hello', 'there' }
+   string_short = array<string> { 'hello' }
+
+   assert(string_a is string_b, 'String arrays with identical contents should be equal')
+   assert(string_a != string_c, 'String arrays with different contents should not be equal')
+   assert(string_a != string_short, 'String arrays with different lengths should not be equal')
+
+   obj_one = obj.new('time')
+   obj_two = obj.new('file')
+   obj_one_ref = obj.find(obj_one.id)
+
+   object_a = array<object> { obj_one, obj_two }
+   object_b = array<object> { obj_one_ref, obj_two }
+   object_c = array<object> { obj_two, obj_one }
+   object_short = array<object> { obj_one }
+
+   assert(object_a is object_b, 'Object arrays with matching UIDs should be equal')
+   assert(object_a != object_c, 'Object arrays with different UID order should not be equal')
+   assert(object_a != object_short, 'Object arrays with different lengths should not be equal')
+
+   table_a = array<table> { { value = 1 } }
+   table_b = array<table> { { value = 1 } }
+   try
+      unsupported_equal = table_a is table_b
+   success
+      error('Table array equality should fail until non-primitive equality is supported')
+   end
+
+   obj_one.free()
+   obj_two.free()
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- Test array.find() functionality
 

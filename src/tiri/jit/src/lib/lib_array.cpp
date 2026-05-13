@@ -2896,6 +2896,79 @@ static int array_concat_meta(lua_State *L)
    return 1;
 }
 
+static bool array_string_equal(GCarray *Left, GCarray *Right)
+{
+   GCRef *left_refs = Left->get<GCRef>();
+   GCRef *right_refs = Right->get<GCRef>();
+
+   for (MSize i = 0; i < Left->len; i++) {
+      GCobj *left_obj = gcref(left_refs[i]);
+      GCobj *right_obj = gcref(right_refs[i]);
+
+      if (left_obj IS right_obj) continue;
+      if (not left_obj or not right_obj) return false;
+
+      GCstr *left_str = gco_to_string(left_obj);
+      GCstr *right_str = gco_to_string(right_obj);
+
+      if (not (left_str->hash IS right_str->hash)) return false;
+      if (not (left_str->len IS right_str->len)) return false;
+      if (not (memcmp(strdata(left_str), strdata(right_str), left_str->len) IS 0)) return false;
+   }
+
+   return true;
+}
+
+static bool array_object_equal(GCarray *Left, GCarray *Right)
+{
+   GCRef *left_refs = Left->get<GCRef>();
+   GCRef *right_refs = Right->get<GCRef>();
+
+   for (MSize i = 0; i < Left->len; i++) {
+      GCobj *left_gc = gcref(left_refs[i]);
+      GCobj *right_gc = gcref(right_refs[i]);
+
+      if (left_gc IS right_gc) continue;
+      if (not left_gc or not right_gc) return false;
+
+      GCobject *left_obj = gco_to_object(left_gc);
+      GCobject *right_obj = gco_to_object(right_gc);
+
+      if (not (left_obj->uid IS right_obj->uid)) return false;
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+// __eq metamethod.
+
+static int array_eq_meta(lua_State *L)
+{
+   GCarray *left = lj_lib_checkarray(L, 1);
+   GCarray *right = lj_lib_checkarray(L, 2);
+
+   if ((not (left->elemtype IS right->elemtype)) or (not (left->len IS right->len))) {
+      lua_pushboolean(L, 0);
+      return 1;
+   }
+
+   if (glArrayConversion[size_t(left->elemtype)].primitive) {
+      size_t byte_count = size_t(left->len) * left->elemsize;
+      bool equal = (byte_count IS 0) or (memcmp(left->arraydata(), right->arraydata(), byte_count) IS 0);
+      lua_pushboolean(L, equal);
+   }
+   else if (left->elemtype IS AET::STR_GC) {
+      lua_pushboolean(L, array_string_equal(left, right));
+   }
+   else if (left->elemtype IS AET::OBJECT) {
+      lua_pushboolean(L, array_object_equal(left, right));
+   }
+   else lj_err_caller(L, ErrMsg::ARRTYPE);
+
+   return 1;
+}
+
 //********************************************************************************************************************
 // Registers the array library and sets up the base metatable for arrays.
 // Unlike the Lua table, arrays are created via conventional means, i.e. array.new().
@@ -2926,6 +2999,9 @@ extern "C" int luaopen_array(lua_State *L)
 
    lua_pushcfunction(L, array_concat_meta);
    lua_setfield(L, -2, "__concat");
+
+   lua_pushcfunction(L, array_eq_meta);
+   lua_setfield(L, -2, "__eq");
 
    // NOBARRIER: basemt is a GC root.
    setgcref(basemt_it(g, LJ_TARRAY), obj2gco(lib));

@@ -48,6 +48,18 @@ uint8_t lj_array_elemsize(AET Type)
 }
 
 //********************************************************************************************************************
+
+static void array_attach_basemt(lua_State *L, GCarray *Arr)
+{
+   GCRef mt_ref = basemt_it(G(L), LJ_TARRAY);
+   if (gcref(mt_ref)) {
+      GCtab *mt = tabref(mt_ref);
+      setgcref(Arr->metatable, obj2gco(mt));
+      lj_gc_objbarrier(L, Arr, mt);
+   }
+}
+
+//********************************************************************************************************************
 // Create a new array structure without placing it on the Lua stack (use lua_createarray otherwise).  Throws on error.
 //
 // For string arrays (CSTRING/STRING_CPP) with caching:
@@ -82,6 +94,7 @@ extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Dat
          // External arrays have capacity = length and cannot grow
          auto arr = (GCarray *)lj_mem_newgco(L, sizeof(GCarray));
          arr->init(Data, Type, elem_size, Length, Length, Flags, sdef);
+         array_attach_basemt(L, arr);
          return arr;
       }
       else {
@@ -91,7 +104,8 @@ extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Dat
             size_t byte_size = Length * sizeof(CSTRING);
             void *storage = (byte_size > 0) ? lj_mem_new(L, byte_size) : nullptr;
             auto arr = (GCarray *)lj_mem_newgco(L, sizeof(GCarray));
-            if (storage) arr->init(storage, AET::CSTR, sizeof(CSTRING), Length, Length, 0, sdef);
+            arr->init(storage, AET::CSTR, sizeof(CSTRING), Length, Length, 0, sdef);
+            array_attach_basemt(L, arr);
 
             // Calculate total string content size
             size_t content_size = 0;
@@ -151,6 +165,7 @@ extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Dat
             void *storage = (byte_size > 0) ? lj_mem_new(L, byte_size) : nullptr;
             auto arr = (GCarray *)lj_mem_newgco(L, sizeof(GCarray));
             arr->init(storage, Type, elem_size, Length, Length, Flags, sdef);
+            array_attach_basemt(L, arr);
 
             auto refs = arr->get<GCRef>();
             auto objects = (OBJECTPTR *)Data;
@@ -171,6 +186,7 @@ extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Dat
             void *storage = (byte_size > 0) ? lj_mem_new(L, byte_size) : nullptr;
             auto arr = (GCarray *)lj_mem_newgco(L, sizeof(GCarray));
             arr->init(storage, Type, elem_size, Length, Length, Flags, sdef);
+            array_attach_basemt(L, arr);
             if (byte_size > 0) {
                if (Type IS AET::ANY) lj_bulk_copy_tvalue((TValue *)storage, (const TValue *)Data, Length);
                else std::memcpy(storage, Data, byte_size);
@@ -186,6 +202,7 @@ extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Dat
       void *storage = (byte_size > 0) ? lj_mem_new(L, byte_size) : nullptr;
       auto arr = (GCarray *)lj_mem_newgco(L, sizeof(GCarray));
       arr->init(storage, Type, elem_size, Length, Length, Flags & ~(ARRAY_EXTERNAL|ARRAY_CACHED), sdef);
+      array_attach_basemt(L, arr);
       if (storage) {
          if (Type IS AET::ANY) {
             // _ANY arrays require explicit nil initialization (nil TValue = -1, not 0)

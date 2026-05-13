@@ -40,13 +40,13 @@ function RapidAcceptBurst()
          end
       end,
       incoming = function(Socket, Client)
-         buffer = string.alloc(128)
+         buffer = array<byte, 128>
          err, read_len = Client.acRead(buffer)
          if err is ERR_Disconnected then return end
          assert(err is ERR_Okay, 'Server failed to read burst message: ' .. mSys.GetErrorMsg(err))
 
          server_received++
-         err, len = Client.acWrite('ack:' .. buffer:sub(0, read_len))
+         err, len = Client.acWrite('ack:' .. buffer:getString(0, read_len))
          assert(err is ERR_Okay, 'Server failed to write ack: ' .. mSys.GetErrorMsg(err))
       end
    })
@@ -59,11 +59,11 @@ function RapidAcceptBurst()
          name     = 'IocpAcceptBurstClient' .. i,
          incoming = function(Socket)
             data   = client_data[Socket.id]
-            buffer = string.alloc(128)
+            buffer = array<byte, 128>
             err, read_len = Socket.acRead(buffer)
             assert(err is ERR_Okay, 'Client failed to read burst response: ' .. mSys.GetErrorMsg(err))
 
-            msg = buffer:sub(0, read_len)
+            msg = buffer:getString(0, read_len)
             if msg is 'ready' then
                err, len = Socket.acWrite('hello:' .. data.id)
                assert(err is ERR_Okay, 'Client failed to write hello: ' .. mSys.GetErrorMsg(err))
@@ -108,13 +108,13 @@ function LargeTCPReceive()
       flags    = 'SERVER',
       msgLimit = target_size + 65536,
       incoming = function(Socket, Client)
-         buffer        = string.alloc(65536)
+         buffer        = array<byte, 65536>
          err, read_len = Client.acRead(buffer)
          if err is ERR_Disconnected then return end
          assert(err is ERR_Okay, 'Server failed to read large payload: ' .. mSys.GetErrorMsg(err))
          if read_len <= 0 then return end
 
-         chunk = buffer:sub(0, read_len)
+         chunk = buffer:getString(0, read_len)
          if chunk != string.rep('P', read_len) then
             bad_data = true
          end
@@ -173,14 +173,14 @@ function LargeBidirectionalTCPTransfer()
          end
       end,
       incoming = function(Socket, Client)
-         buffer = string.alloc(65536)
+         buffer = array<byte, 65536>
          while true do
             err, read_len = Client.acRead(buffer)
             if err is ERR_Disconnected then return end
             assert(err is ERR_Okay, 'Server failed to read bidirectional payload: ' .. mSys.GetErrorMsg(err))
             if read_len <= 0 then break end
 
-            chunk = buffer:sub(0, read_len)
+            chunk = buffer:getString(0, read_len)
             if chunk != string.rep('C', read_len) then server_bad_data = true end
             server_received += read_len
             if server_received >= target_size then break end
@@ -204,14 +204,14 @@ function LargeBidirectionalTCPTransfer()
          end
       end,
       incoming = function(Socket)
-         buffer = string.alloc(65536)
+         buffer = array<byte, 65536>
          while true do
             err, read_len = Socket.acRead(buffer)
             if err is ERR_Disconnected then return end
             assert(err is ERR_Okay, 'Client failed to read bidirectional payload: ' .. mSys.GetErrorMsg(err))
             if read_len <= 0 then break end
 
-            chunk = buffer:sub(0, read_len)
+            chunk = buffer:getString(0, read_len)
             if chunk != string.rep('B', read_len) then client_bad_data = true end
             client_received += read_len
             if client_received >= target_size then break end

@@ -1252,6 +1252,10 @@ int lj_record_mm_lookup(jit_State *J, RecordIndex* ix, MMS mm)
       mt = tabref(tabV(&ix->tabv)->metatable);
       mix.tab = ir.fload_tab(ix->tab, IRFL_TAB_META);
    }
+   else if (tref_isarray(ix->tab)) {
+      mt = tabref(arrayV(&ix->tabv)->metatable);
+      mix.tab = ir.fload_tab(ix->tab, IRFL_ARRAY_META);
+   }
    else if (tref_isudata(ix->tab)) {
       udtype = udataV(&ix->tabv)->udtype;
       mt = tabref(udataV(&ix->tabv)->metatable);
@@ -1383,7 +1387,7 @@ static void rec_mm_callcomp(jit_State *J, RecordIndex* ix, int op)
 }
 
 //********************************************************************************************************************
-// Record call to equality comparison metamethod (for tab and udata only).
+// Record call to equality comparison metamethod.
 
 static void rec_mm_equal(jit_State *J, RecordIndex* ix, int op)
 {
@@ -1399,6 +1403,10 @@ static void rec_mm_equal(jit_State *J, RecordIndex* ix, int op)
       bv = &ix->keyv;
       if (tvistab(bv) and tabref(tabV(bv)->metatable) IS ix->mtv) {
          TRef mt2 = ir.fload_tab(ix->key, IRFL_TAB_META);
+         ir.guard_eq(mt2, ix->mt, IRT_TAB);
+      }
+      else if (tvisarray(bv) and tabref(arrayV(bv)->metatable) IS ix->mtv) {
+         TRef mt2 = ir.fload_tab(ix->key, IRFL_ARRAY_META);
          ir.guard_eq(mt2, ix->mt, IRT_TAB);
       }
       else if (tvisudata(bv) and tabref(udataV(bv)->metatable) IS ix->mtv) {
@@ -2438,14 +2446,14 @@ static void rec_comp_equality(jit_State *J, RecordOps *ops)
    RecordIndex *ix = &ops->ix;
    TValue *rav = ops->rav(), *rcv = ops->rcv();
 
-   // Emit nothing for two non-table, non-udata consts.
+   // Emit nothing for two non-table, non-array, non-udata consts.
 
-   if (tref_isk2(ra, rc) and !(tref_istab(ra) or tref_isudata(ra))) return;
+   if (tref_isk2(ra, rc) and !(tref_istab(ra) or tref_isarray(ra) or tref_isudata(ra))) return;
 
    rec_comp_prep(J);
    int diff = lj_record_objcmp(J, ra, rc, rav, rcv);
 
-   if (diff IS 2 or !(tref_istab(ra) or tref_isudata(ra))) {
+   if (diff IS 2 or !(tref_istab(ra) or tref_isarray(ra) or tref_isudata(ra))) {
       rec_comp_fixup(J, J->pc, ((int)op & 1) IS !diff);
    }
    else if (diff IS 1) { // Only check __eq if different, but same type.

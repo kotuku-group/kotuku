@@ -51,7 +51,7 @@ end
          end
       end,
       incoming = function(Socket, Client)
-         buffer = string.alloc(65536)
+         buffer = array<byte, 65536>
 
          while true do
             err, read_len = Client.acRead(buffer)
@@ -121,7 +121,7 @@ end
          end
       end,
       incoming = function(Socket, Script)
-         local buffer = string.alloc(256)
+         local buffer = array<byte, 256>
          Socket.acRead(buffer)
       end
    })
@@ -175,7 +175,7 @@ end
          if (current_size_index >= #message_sizes) then return end
 
          expected_size = message_sizes[current_size_index]
-         buffer = string.alloc(65536)
+         buffer = array<byte, 65536>
 
          while (current_bytes_received < expected_size) do
             err, read_len = Client.acRead(buffer)
@@ -230,7 +230,7 @@ end
    client = obj.new('netsocket', {
       name = 'LargeMessageClient',
       incoming = function(Socket, Script)
-         local buffer = string.alloc(65536)
+         local buffer = array<byte, 65536>
 
          while true do
             local err, read_len = Socket.acRead(buffer)
@@ -238,7 +238,7 @@ end
             assert(err is ERR_Okay, '[Client] Large message read failed: ' .. mSys.GetErrorMsg(err))
             if (read_len <= 0) then break end
 
-            local msg = buffer:sub(0, read_len)
+            local msg = buffer:getString(0, read_len)
             local write_err, len = Socket.acWrite(msg)
             assert(write_err is ERR_Okay, '[Client] Large message echo failed: ' .. mSys.GetErrorMsg(write_err))
             assert(len is read_len, '[Client] Large message echo accepted a partial chunk')
@@ -365,7 +365,7 @@ end
          end
       end,
       incoming = function(Socket, Client)
-         buffer = string.alloc(65536)
+         buffer = array<byte, 65536>
 
          while true do
             err, read_len = Client.acRead(buffer)
@@ -425,7 +425,7 @@ end
          end
       end,
       incoming = function(Socket, Script)
-         local buffer = string.alloc(256)
+         local buffer = array<byte, 256>
          Socket.acRead(buffer)
       end
    })
