@@ -1078,7 +1078,7 @@ matched to `photo.jpg` in the same folder).
 
 -INPUT-
 cstr Path: The path of the file.
-buf(ptr) Buffer: Pointer to a buffer that will receive the file content.
+^buf(ptr) Buffer: Pointer to a buffer that will receive the file content.
 bufsize BufferSize: The byte size of the `Buffer`.
 &int Result: The total number of bytes read into the `Buffer` will be returned here (optional).
 

@@ -943,6 +943,7 @@ global function buildDefs()
                result_name = func.result.struct
             end
             if func.result.allocated then fd ..= '|FD_ALLOC' end
+            if func.result.mutable then fd ..= '|FD_MUTABLE' end
             plist ..= " { \"" .. result_name .. "\", " .. fd .. " }, "
          else
             plist ..= " { \"" .. func.result.type .. "\", FD_VOID }, "
@@ -966,6 +967,7 @@ global function buildInputParameters(List)
       for param in values(List) do
          fd = param.fullType.fd
          if param.allocated then fd ..= '|FD_ALLOC' end
+         if param.mutable then fd ..= '|FD_MUTABLE' end
          if param.resultValue then fd ..= '|FD_RESULT' end
          if param.struct then
             plist ..= "{ \"" .. param.struct .. ":" .. param.name .. "\", " .. fd .. " }, "

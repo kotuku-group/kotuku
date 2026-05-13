@@ -2305,7 +2305,7 @@ static ResourceManager glNodeManager = {
     </constants>
 
     <constants lookup="FD" comment="Field descriptors.">
-      <const name="ALLOC">CLASSDEF Indicates the returned value is a dynamic allocation that needs to be manually freed (by default is a memory pointer, can be an object if combined with <code>FD_OBJECT</code>)</const>
+      <const name="ALLOC">Indicates the returned value is a dynamic allocation that needs to be manually freed (by default is a memory pointer, can be an object if combined with <code>FD_OBJECT</code>)</const>
       <const name="ARRAY">Indicates an array of values.  Follow with <code>ARRAYSIZE</code> if used in a function.</const>
       <const name="ARRAYSIZE">FUNCDEF Overrides <code>LOOKUP</code>.  Pair with <code>ARRAY</code> to indicate total elements in the array.  It is preferred that any null terminator is not counted.  If <code>ARRAYSIZE</code> not specified, <code>ARRAY</code> must be null-terminated.</const>
       <const name="BUFFER">FUNCDEF Overrides <code>WRITE</code>.  Indicates a buffer that can be filled with data by the function if paired with <code>RESULT</code>; must be paired with <code>BUFSIZE</code> in second argument.</const>
@@ -2328,6 +2328,7 @@ static ResourceManager glNodeManager = {
       <const name="INTRESULT">For actions and methods</const>
       <const name="LOCAL">CLASSDEF Pointer to an object that is local to the class</const>
       <const name="LOOKUP">CLASSDEF</const>
+      <const name="MUTABLE">FUNCDEF Overrides <code>VIRTUAL</code>.  The function will overwrite incoming BUFFER or STRING content.  If used in conjunction with the RESULT flag, it indicates that the returned content is volatile (valid for a limited time).</const>
       <const name="OBJECT">Supplementary, can be used with ints (for IDs) or pointers</const>
       <const name="OBJECTID">Synonym for <code>INT | OBJECT</code></const>
       <const name="OBJECTPTR">Synonym for <code>PTR | OBJECT</code></const>
@@ -2360,7 +2361,6 @@ static ResourceManager glNodeManager = {
       <const name="VARTAGS">FUNCDEF Overrides <code>FLAGS</code>.  Use for 64-bit taglists that require value definitions, e.g. <code>TDOUBLE</code>, <code>TINT</code> etc.</const>
       <const name="VIRTUAL">CLASSDEF Ensures that the field has no physical representation in the structure.</const>
       <const name="VOID"/>
-      <const name="VOLATILE">[Not yet allocated a bit]  Used on result pointers, usually strings, to indicate that the consecutive reads will overwrite the content of previous return values.  This indicates to scripting languages to make a copy of the data before the next interaction with the object.</const>
       <const name="W">Synonym for <code>WRITE</code></const>
       <const name="WORD">16 bit integer.</const>
       <const name="WRITE">CLASSDEF</const>
