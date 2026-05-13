@@ -316,9 +316,9 @@ set_module_defaults (${MOD})
 target_sources (${MOD} PRIVATE &quot;${CMAKE_CURRENT_SOURCE_DIR}/${MOD}.cpp&quot;)
 
 flute_test (${MOD}_tests &quot;${CMAKE_CURRENT_SOURCE_DIR}/tests/test.tiri&quot;)</code></pre>
-<p>The <code>idl_gen()</code> call will generate automated headers and documents from the <code>xml.tdl</code> file, which contains the public specifications of the module. This process is further discussed in the <a href="./TDL-Tools.md">TDL</a> manuals in this Wiki.</p>
+<p>The <code>idl_gen()</code> call will generate automated headers and documents from the <code>xml.tdl</code> file, which contains the public specifications of the module. This process is further discussed in the <a href="./TDL-Tools.html">TDL</a> manuals in this Wiki.</p>
 <p>The <code>add_library()</code> call registers the module with the build process and <code>set_module_defaults()</code> pre-configures the build for the named module. The <code>target_sources()</code> call associates the <code>cpp</code> source files with the module.</p>
-<p>The <code>flute_test()</code> references a Tiri script that will test the module&#39;s functionality; this is further discussed in the <a href="./Unit-Testing.md">Unit Testing</a> manual in this Wiki.</p>
+<p>The <code>flute_test()</code> references a Tiri script that will test the module&#39;s functionality; this is further discussed in the <a href="./Unit-Testing.html">Unit Testing</a> manual in this Wiki.</p>
 <h3 id="module-initialisation">Module Initialisation</h3>
 <p>When the Core API loads a module for the first time, it needs an accessible way to initialise the module. In C++ this is achieved with the <code>KOTUKU_MOD()</code> macro, which creates a publicly accessible table that the Core can interact with. The parameters that can be passed to the macro are:</p>
 <table>
@@ -412,7 +412,7 @@ flute_test (${MOD}_tests &quot;${CMAKE_CURRENT_SOURCE_DIR}/tests/test.tiri&quot;
 <span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> <span class="op">(</span>APTR<span class="op">)</span>netSetSSL<span class="op">,</span> <span class="st">&quot;SetSSL&quot;</span><span class="op">,</span> argsSetSSL <span class="op">},</span></span>
 <span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> NULL<span class="op">,</span> NULL<span class="op">,</span> NULL <span class="op">}</span></span>
 <span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
-<p>For information on how the function tables are generated, refer to <a href="./Embedded-Document-Formatting.md">Embedded Document Formatting</a>. Manually writing function tables is strongly discouraged as it can lead to the documentation being out-of-sync with the declarations in the module.</p>
+<p>For information on how the function tables are generated, refer to <a href="./Embedded-Document-Formatting.html">Embedded Document Formatting</a>. Manually writing function tables is strongly discouraged as it can lead to the documentation being out-of-sync with the declarations in the module.</p>
 <h3 id="writing-a-function">Writing a Function</h3>
 <p>A new module function should always be prefaced with a commented <code>-FUNCTION-</code> declaration as defined in the EDF standard. This must then be immediately followed with the function itself. If the module accepts parameters, include an <code>-INPUT-</code> declaration and likewise for a return code, specify a <code>-RESULT-</code>. Here&#39;s a working example for <code>HostToLong()</code> from the Network module:</p>
 <div class="sourceCode" id="cb6"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co">/***</span></span>
@@ -435,7 +435,7 @@ flute_test (${MOD}_tests &quot;${CMAKE_CURRENT_SOURCE_DIR}/tests/test.tiri&quot;
 <span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>   <span class="cf">return</span> htonl<span class="op">(</span>Value<span class="op">);</span></span>
 <span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
 <p><em>You might have noticed that a call to <code>HostToLong()</code> from a C++ program would be <code>netHostToLong()</code>. We leave out the <code>net</code> prefix in our module declaration as this is an implementation concern that is specific to the client&#39;s chosen language.</em></p>
-<p>The last requirement is to ensure that the function is named in the <a href="./TDL-Reference-Manual.md"><code>functionNames()</code></a> declaration in the module&#39;s TDL file. If this is not done then the function will not be exported by our automated tools.</p>
+<p>The last requirement is to ensure that the function is named in the <a href="./TDL-Reference-Manual.html"><code>functionNames()</code></a> declaration in the module&#39;s TDL file. If this is not done then the function will not be exported by our automated tools.</p>
 <h2 id="classes">Classes</h2>
 <p>Kōtuku classes are defined at run-time, not during the build process as is the case for many OO languages. This is a key design feature that maximises the potential for class introspection and allows dissimilar languages to talk over common OO protocols. Advanced features also include support for design-by-contract, virtual fields, permission based field access and resource tracking.</p>
 <h3 id="the-metaclass">The MetaClass</h3>
@@ -467,7 +467,7 @@ flute_test (${MOD}_tests &quot;${CMAKE_CURRENT_SOURCE_DIR}/tests/test.tiri&quot;
 <span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
 <p>Consequently, all XML object references in the XML module use the <code>extXML</code> type only.</p>
 <h3 id="class-specifications">Class Specifications</h3>
-<p>Building a class specification that will be accepted by the <code>MetaClass</code> starts with the creation of an <a href="./TDL-Reference-Manual.md">TDL</a> file before writing any code. The XML TDL file is too large to insert here, but we can look at the specification for the class itself:</p>
+<p>Building a class specification that will be accepted by the <code>MetaClass</code> starts with the creation of an <a href="./TDL-Reference-Manual.html">TDL</a> file before writing any code. The XML TDL file is too large to insert here, but we can look at the specification for the class itself:</p>
 <pre><code>methods(&quot;xml&quot;, &quot;XML&quot;, {
   { id=1,  name=&quot;SetAttrib&quot; },
   { id=2,  name=&quot;Serialise&quot; },
@@ -486,7 +486,7 @@ class(&quot;XML&quot;, { src=&quot;xml.cpp&quot;, output=&quot;xml_def.c&quot; }
   error ParseError # Private
   int LineNo       # Private
 ]])</code></pre>
-<p>The call to <code>class()</code> makes a reference to the <code>xml.cpp</code> file for the purpose of reading additional information from the class&#39; embedded documentation (see <a href="./Embedded-Document-Formatting.md">Embedded Document Formatting</a>). The generated output file, <code>xml_def.c</code> looks like this:</p>
+<p>The call to <code>class()</code> makes a reference to the <code>xml.cpp</code> file for the purpose of reading additional information from the class&#39; embedded documentation (see <a href="./Embedded-Document-Formatting.html">Embedded Document Formatting</a>). The generated output file, <code>xml_def.c</code> looks like this:</p>
 <div class="sourceCode" id="cb10"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Auto-generated by idl-c.tiri</span></span>
 <span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> <span class="at">const</span> <span class="kw">struct</span> FieldDef clXMLFlags<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span></span>
@@ -739,7 +739,7 @@ class(&quot;XML&quot;, { src=&quot;xml.cpp&quot;, output=&quot;xml_def.c&quot; }
 <p><em>Inheritance applies to fields only. Actions and methods are not propagated from local objects.</em></p>
 <h4 id="actions-contract-interfaces">Actions (Contract Interfaces)</h4>
 <p>Actions are a type of method that utilise a design-by-contract approach to object orientation. Supporting actions in a class is a great way of building a functional interface, as the developer will already know about the constraints and behaviours defined by the named contracts. The class interface will be seen as consistent and predictable, just like the other classes that support action interfaces.</p>
-<p>A complete and detailed guide on action interfaces is available in the <a href="./Action-Reference-Manual.md">Action Reference Manual</a>. In this section we will discuss how actions are supported in practice.</p>
+<p>A complete and detailed guide on action interfaces is available in the <a href="./Action-Reference-Manual.html">Action Reference Manual</a>. In this section we will discuss how actions are supported in practice.</p>
 <p>Actions are declared during MetaClass creation and utilise the <code>ActionArray</code>, as in this XML class example:</p>
 <div class="sourceCode" id="cb15"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> <span class="at">const</span> <span class="kw">struct</span> ActionArray clXMLActions<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span></span>
 <span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>Clear<span class="op">,</span>        XML_Clear <span class="op">},</span></span>
@@ -762,7 +762,7 @@ class(&quot;XML&quot;, { src=&quot;xml.cpp&quot;, output=&quot;xml_def.c&quot; }
 <span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> ERR XML_DataFeed<span class="op">(</span>extXML <span class="op">*</span>Self<span class="op">,</span> <span class="kw">struct</span> acDataFeed <span class="op">*</span>Args<span class="op">);</span></span>
 <span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> ERR XML_Reset<span class="op">(</span>extXML <span class="op">*</span>Self<span class="op">);</span></span>
 <span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> ERR XML_SaveToObject<span class="op">(</span>extXML <span class="op">*</span>Self<span class="op">,</span> <span class="kw">struct</span> acSaveToObject <span class="op">*</span>Args<span class="op">);</span></span></code></pre></div>
-<p>Notice how action parameters use a consistent template of <code>ac[Name]</code> structs, such as <code>acDataFeed</code> and <code>acSaveToObject</code>. Parameter names and their types are discussed in the <a href="./Action-Reference-Manual.md">Action Reference Manual</a>.</p>
+<p>Notice how action parameters use a consistent template of <code>ac[Name]</code> structs, such as <code>acDataFeed</code> and <code>acSaveToObject</code>. Parameter names and their types are discussed in the <a href="./Action-Reference-Manual.html">Action Reference Manual</a>.</p>
 <p>When writing the code for each action, always precede the code with an <code>-ACTION-</code> document tag and include a short description at minimum. This information will appear in the documentation for the class, and also ensures that the action is recognised by IDL compilers so that the <code>ActionArray</code> is generated accurately.</p>
 <div class="sourceCode" id="cb17"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="co">/***</span></span>
 <span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="co">-ACTION-</span></span>
@@ -818,7 +818,7 @@ OutOfRange: The `Index` or `Attrib` value is out of range.
 Search: The attribute, identified by `Name`, could not be found.
 ReadOnly: The XML object is read-only.
 -END-</code></pre>
-<p>For further information on formatting guidelines, see <a href="./Embedded-Document-Formatting.md">Embedded Document Formatting</a>.</p>
+<p>For further information on formatting guidelines, see <a href="./Embedded-Document-Formatting.html">Embedded Document Formatting</a>.</p>
 <p>Method prototypes follow the template <code>ERR CLASS_MethodName(*Object, struct abvMethodName *Args)</code>. The <code>abv</code> code is defined in the appropriate <code>methods()</code> call in the module&#39;s TDL file. Here&#39;s the prototype for <code>SetAttrib()</code>:</p>
 <div class="sourceCode" id="cb20"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> ERR XML_SetAttrib<span class="op">(</span>extXML <span class="op">*</span>Self<span class="op">,</span> <span class="kw">struct</span> xmlSetAttrib <span class="op">*</span>Args<span class="op">);</span></span></code></pre></div>
 <h3 id="sub-classes">Sub-Classes</h3>

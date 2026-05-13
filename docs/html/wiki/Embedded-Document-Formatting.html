@@ -258,299 +258,457 @@
 <div class="docs-content" id="default-page">
 
 <h1>Embedded Document Formatting</h1>
-<p>This guide describes the formatting that we use to document Kōtuku&#39;s class and module functionality. By following the standard, it is possible to use our tools to not only produce documentation, but the header files that will allow languages to utilise your work.</p>
-<p>A benefit of our approach is that you will be able to intersperse documentation throughout your code, targeting the areas where it is needed. It is not an issue if your code and documentation is split across multiple source files. The parsing tools can read everything from one folder if necessary.</p>
-<p>Documentation can be written for a class-based API or a module-based API. The tools will not accept a mixture of both in one file, nor can two or more of either type be processed in one session.</p>
-<p>The type of documentation that you are writing is determined by the first &#39;mark&#39;, which must be either a <code>-MODULE-</code> or <code>-CLASS-</code> mark. This is followed by the API&#39;s name and a short description. The full introduction to the API can then follow as a series of paragraphs.</p>
-<p>Here&#39;s an example header for the Config class:</p>
-<pre><code>-CLASS-
+<p>Embedded Document Formatting, or EDF, is the source-comment format used by the Kōtuku IDL tools to generate API
+documentation, C/C++ declarations and run-time interface metadata. EDF sections are written next to the code they
+describe, so documentation can stay close to module functions, class fields, actions and methods even when an API is
+implemented across several source files.</p>
+<p>To be parsed correctly, EDF source files must be referenced by a TDL file that represents a Kōtuku module. The <a href="./TDL-Reference-Manual.html">TDL Reference Manual</a> has more information on their construction, but the <code>module()</code> and <code>class()</code> declarations are pivotal in making the EDF—TDL connection. Consider the following TDL example:</p>
+<pre><code>module({ name=&quot;Vector&quot;, src={ &quot;vector_functions.cpp&quot;, &quot;vector_readpainter.cpp&quot; } }, function()
+   class(&quot;Vector&quot;, { src=&quot;vectors/vector.cpp&quot; }, [[
+      ...
+   ]])
+
+   ...
+end)</code></pre>
+<p>The <code>module()</code> declaration uses the <code>src</code> option to identify source files that contain <code>-MODULE-</code> and <code>-FUNCTION-</code> headers.</p>
+<p>The <code>class()</code> declaration uses the <code>src</code> option to identify the source files that contain <code>-CLASS-</code>, <code>-FIELD-</code>, <code>-ACTION-</code> and <code>-METHOD-</code> headers.</p>
+<p>The first recognised header in a source file determines whether the file contributes module documentation or class
+documentation. It must be either <code>-MODULE-</code> or <code>-CLASS-</code>. The tools do not accept a mixture of module and class API
+headers in one processing session.</p>
+<p>The parser reads recognised headers from C/C++ block comments. Each header starts with <code>-NAME-</code> marker, followed by sub-headers and can then either be terminated with <code>-END-</code> or the appearance of a new header.</p>
+<h2 id="api-headers">API Headers</h2>
+<p>Use <code>-MODULE-</code> for a module API and <code>-CLASS-</code> for a class API. The first content line gives the public API name and a
+short summary. Longer introductory paragraphs can follow.</p>
+<pre class="text"><code>-CLASS-
 Config: Manages the reading and writing of configuration files.
 
-The Config class is provided for reading text based key-values in a simple structured format.
-
-...
+The Config class reads text-based key-value data from a simple structured format.
 
 -END-</code></pre>
-<p>The documentation tools will consume as much recognisable paragraph content as possible until the next marker is reached, in this case <code>-END-</code>. Terminating the introduction with an <code>-END-</code> marker is recommended so that the parser doesn&#39;t consume unintended content.</p>
-<h2 id="documenting-functions">Documenting Functions</h2>
-<p>Standard module interfaces will typically export one or more public functions. Documenting a function is achieved as follows:</p>
-<pre><code>-FUNCTION-
-[name]:   A short description of the function&#39;s purpose.
-Category: Optional category name
-Status:   Can be set to &#39;Internal&#39; if the function is not to appear in official documentation.
+<p>The name in a <code>-CLASS-</code> header must match the name supplied to the corresponding <code>class()</code> declaration in the TDL file.
+The same rule applies to <code>-MODULE-</code> headers and <code>module()</code> declarations.</p>
+<h2 id="module-functions">Module Functions</h2>
+<p>Document each exported module function with <code>-FUNCTION-</code>. The function name is written without any private C++
+implementation prefix, because the documented name is the public API name exposed through the IDL.</p>
+<pre class="text"><code>-FUNCTION-
+HostToLong: Converts a 32-bit unsigned integer from host byte order to network byte order.
+Category: Byte Order
+Status:   Internal
 
-...Long description follows...</code></pre>
-<p>If a function accepts input, an <code>-INPUT-</code> marker is defined that is followed by each parameter in their correct order. The type of each parameter must be specified with the name. Here&#39;s an example:</p>
-<pre><code>-INPUT-
-double XCoord: Defines horizontal placement.
-double YCoord: Defines vertical placement.</code></pre>
-<h4 id="types">Types</h4>
-<p>The following table lists the base types that are recognised for declaring input and results:</p>
+Converts a host-order integer to the network byte order required by socket APIs.
+
+-INPUT-
+uint Value: Integer value in host byte order.
+
+-RESULT-
+uint: Integer value in network byte order.
+-END-</code></pre>
+<p>Supported function header fields are:</p>
 <table>
 <thead>
 <tr class="header">
-<th style="text-align: left;">Type</th>
-<th style="text-align: left;">C Type</th>
+<th style="text-align: left;">Field</th>
 <th style="text-align: left;">Description</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td style="text-align: left;">array(Type)</td>
-<td style="text-align: left;">Type []</td>
-<td style="text-align: left;">An array of <code>Type</code>. <em>Must</em> be followed by <code>arraysize</code>.</td>
+<td style="text-align: left;"><code>Category</code></td>
+<td style="text-align: left;">Optional category name. A preceding <code>-CATEGORY-</code> section can also set the current category for following functions.</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">arraysize</td>
-<td style="text-align: left;">LONG</td>
-<td style="text-align: left;">Specifies the size of the preceding array.</td>
+<td style="text-align: left;"><code>Status</code></td>
+<td style="text-align: left;">Optional visibility state. Use <code>Internal</code> or <code>Private</code> for functions that should not appear in public documentation.</td>
 </tr>
 <tr class="odd">
-<td style="text-align: left;">buf(Type)</td>
-<td style="text-align: left;">Type *</td>
-<td style="text-align: left;">Pointer to a buffer of <code>Type</code>. <em>Must</em> be followed by a <code>bufsize</code> or <code>structsize</code> in the next parameter.</td>
+<td style="text-align: left;"><code>ExtPrototype</code></td>
+<td style="text-align: left;">Optional external prototype override for functions whose generated prototype needs explicit control.</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">bufsize</td>
-<td style="text-align: left;">LONG</td>
-<td style="text-align: left;">Parameter specifies the byte-size of the preceding buffer.</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">char</td>
-<td style="text-align: left;">char</td>
-<td style="text-align: left;">8 bit value.</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">cid</td>
-<td style="text-align: left;">CLASSID</td>
-<td style="text-align: left;">Class UID.</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">cptr</td>
-<td style="text-align: left;">const void *</td>
-<td style="text-align: left;">Pointer to untyped const data.</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">cstr</td>
-<td style="text-align: left;">CSTRING</td>
-<td style="text-align: left;">Pointer to an immutable C-style character string.</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">double</td>
-<td style="text-align: left;">DOUBLE</td>
-<td style="text-align: left;">64 bit floating point value.</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">eid</td>
-<td style="text-align: left;">EVENTID</td>
-<td style="text-align: left;">Event UID.</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">error</td>
-<td style="text-align: left;">ERROR</td>
-<td style="text-align: left;">Error value.</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">ext</td>
-<td style="text-align: left;">OBJECTPTR</td>
-<td style="text-align: left;">Pointer to an object.</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">fid</td>
-<td style="text-align: left;">FIELD</td>
-<td style="text-align: left;">Field UID</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">flags</td>
-<td style="text-align: left;">LONG</td>
-<td style="text-align: left;">32 bit int representing bit flags.</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">float</td>
-<td style="text-align: left;">FLOAT</td>
-<td style="text-align: left;">32 bit floating point value.</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">func</td>
-<td style="text-align: left;">FUNCTION</td>
-<td style="text-align: left;">Callback function.</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">fptr(Synopsis)</td>
-<td style="text-align: left;">APTR</td>
-<td style="text-align: left;">C function pointer. The <code>Synopsis</code> must start by declaring the result value (which can be void) followed by the input parameters, if any.</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">hhandle</td>
-<td style="text-align: left;">HANDLE</td>
-<td style="text-align: left;">A host-specific resource handle. Could be an int or pointer, and has meaning to the host operating system only.</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">int</td>
-<td style="text-align: left;">LONG</td>
-<td style="text-align: left;">32 bit value.</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">int(Ref)</td>
-<td style="text-align: left;">LONG</td>
-<td style="text-align: left;">32 bit value referring to a named type</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">large</td>
-<td style="text-align: left;">LARGE</td>
-<td style="text-align: left;">64 bit value.</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">maxint</td>
-<td style="text-align: left;">LONG (32) / LARGE (64)</td>
-<td style="text-align: left;">32 or 64 bit value depending on target CPU.</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">mem</td>
-<td style="text-align: left;">MEMORYID</td>
-<td style="text-align: left;">Memory UID.</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">obj</td>
-<td style="text-align: left;">OBJECTPTR</td>
-<td style="text-align: left;">Pointer to an object.</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">oid</td>
-<td style="text-align: left;">OBJECTID</td>
-<td style="text-align: left;">Object UID.</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">ptr</td>
-<td style="text-align: left;">APTR</td>
-<td style="text-align: left;">Pointer to an untyped data buffer.</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">ptr(Type)</td>
-<td style="text-align: left;">APTR</td>
-<td style="text-align: left;">Pointer to a typed resource, where <code>Type</code> is one of those in this table.</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">resource</td>
-<td style="text-align: left;">APTR</td>
-<td style="text-align: left;">Reference to a system resource.</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">short</td>
-<td style="text-align: left;">WORD</td>
-<td style="text-align: left;">16 bit value.</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">str</td>
-<td style="text-align: left;">STRING</td>
-<td style="text-align: left;">Pointer to a C-style character string.</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">struct(Name)</td>
-<td style="text-align: left;">Name</td>
-<td style="text-align: left;">Reference to a struct identified by Name.</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">struct(*Name)</td>
-<td style="text-align: left;">Name *</td>
-<td style="text-align: left;">A pointer referring to a struct identified by Name.</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">structsize</td>
-<td style="text-align: left;">LONG</td>
-<td style="text-align: left;">Byte-size of the preceding struct reference.</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">uchar</td>
-<td style="text-align: left;">UBYTE</td>
-<td style="text-align: left;">Unsigned 8 bit value.</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">uint</td>
-<td style="text-align: left;">ULONG</td>
-<td style="text-align: left;">Unsigned 32 bit value.</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">ushort</td>
-<td style="text-align: left;">UWORD</td>
-<td style="text-align: left;">Unsigned 16 bit value.</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">void</td>
-<td style="text-align: left;">void</td>
-<td style="text-align: left;">Untyped</td>
+<td style="text-align: left;"><code>Attribute</code></td>
+<td style="text-align: left;">Optional generated declaration attribute.</td>
 </tr>
 </tbody>
 </table>
-<p>Further to the above, if a typed parameter is a pointer that receives a result, prefix the type with <code>&amp;</code>. For instance, the C type <code>LONG *</code> can be represented as <code>&amp;int</code>. If the result is an allocated resource pointer that can be terminated with <code>FreeResource()</code>, use <code>!</code> instead of <code>&amp;</code>. This will allow the resource to be terminated by Tiri so that it cannot be leaked.</p>
-<h3 id="results">Results</h3>
-<p>If the function returns an <code>ERR</code> code, you are expected to list the returnable codes in a <code>-RESULT-</code> section as in the following example:</p>
-<pre><code>-RESULT-
-Okay:
-AllocMemory:      Reason(s) for memory failure.
-InvalidDimension: Reason(s) why dimension values can fail checks.</code></pre>
-<p>It is not an absolute requirement that a reason is given for each code. When no reason is specified, a default explanation for that error code will be provided.</p>
-<p>In all other cases, the result can be specified in the form of this example with a declaration of the correct type:</p>
-<pre><code>-RESULT-
-int: Description of what the int value represents.</code></pre>
+<p>Use <code>-INPUT-</code> when the function accepts parameters. Parameter lines must appear in call order and use the format
+<code>type Name: Description</code>.</p>
+<p>Use <code>-RESULT-</code> only for functions that return a non-error value. Functions that return <code>ERR</code> must use <code>-ERRORS-</code>
+instead:</p>
+<pre class="text"><code>-ERRORS-
+Okay
+AllocMemory: Memory could not be allocated for the result buffer.
+Args: A required pointer was `NULL`.
+-END-</code></pre>
+<p>Descriptions after error names are optional. When no description is supplied, the generator uses the standard message
+for that <code>ERR</code> value.</p>
 <h2 id="class-fields">Class Fields</h2>
-<p>When documenting a class, all fields declared in the class blueprint must be documented. The template for each field is as follows:</p>
-<pre><code>-FIELD-
-[name]: A short description of the field&#39;s purpose.
-Lookup: Can refer to a named const type declared in the API&#39;s TDL.
-Private: If true, the field will not appear in generated documentation.
+<p>Every public field declared in a class blueprint should have a matching <code>-FIELD-</code> section. The field name must match
+the class field name declared in TDL or discovered from the compiled class metadata.</p>
+<pre class="text"><code>-FIELD-
+Path: Location of the configuration file.
+Lookup: CFG
+Status: private
 
-...Long description follows...</code></pre>
-<h2 id="class-methods-and-actions">Class Methods and Actions</h2>
-<p>All methods and actions declared by a class will need to be documented. The template for both is largely similar, except that actions do not require an <code>-INPUT-</code> section:</p>
-<pre><code>-METHOD|ACTION-
-[name]: A short description of the provided functionality.
+Stores the source path used when reading or writing configuration data.
+-END-</code></pre>
+<p>Supported field header fields are:</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Field</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><code>Lookup</code></td>
+<td style="text-align: left;">Names a lookup, flag or constant type declared in the API&#39;s TDL. The generated documentation includes the value table.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>Status</code></td>
+<td style="text-align: left;">Use <code>private</code> for fields that should be hidden from public documentation. A summary beginning with <code>Private</code> is also treated as private.</td>
+</tr>
+</tbody>
+</table>
+<p>For lookup or flag fields, keep the prose brief. The generator inserts the value breakdown from the TDL declaration.</p>
+<h2 id="class-actions-and-methods">Class Actions and Methods</h2>
+<p>Actions and methods use the same documentation shape. Methods normally include <code>-INPUT-</code>; actions only include it when
+their contract declares arguments. Both use <code>-ERRORS-</code> for returnable <code>ERR</code> values.</p>
+<pre class="text"><code>-METHOD-
+SetAttrib: Adds, updates and removes XML attributes.
 
-...Long description follows...
+Updates the selected XML tag by changing an existing attribute, creating a new attribute or removing an attribute.
 
 -INPUT-
-type Name: Description of input value.
-...
+int Index: Identifies the tag to update.
+int(XMS) Attrib: Attribute index to update, or `NEW` to create an attribute.
+cstr Name: New attribute name.  If `NULL`, the existing name is preserved.
+cstr Value: New attribute value.  If `NULL`, the attribute is removed.
 
--RESULT-
-ErrorCode: Optional description of error code.
-...</code></pre>
-<h2 id="markup-features">Markup Features</h2>
-<p>There are a number of markup features available when writing long descriptions, and these can be used to enhance the experience for the reader. This section documents these features in detail.</p>
-<h3 id="links">Links</h3>
-<h4 id="referencing-classes">Referencing Classes</h4>
-<p>Use <code>@ClassName</code> to refer to another class. For example, <code>@VectorRectangle</code> will generate the word <code>VectorRectangle</code> and provide a hyperlink that takes the user directly to the class document. Indexing is possible by appending a <code>.</code> suffix with the name of a supported field, action or method. For instance, <code>@VectorRectangle.RX</code> or <code>@VectorRectangle.Init()</code>.</p>
-<h4 id="local-references">Local References</h4>
-<p>The <code>#</code> symbol can be used to link to attributes of a class. For instance, a class can refer to refer to its own actions and methods with <code>#Name()</code>, e.g. <code>#Activate()</code>.
-References to fields can be achieved with <code>#FieldName</code>, e.g. <code>#Src</code>.</p>
-<h4 id="function-references">Function References</h4>
-<p>The <code>~</code> symbol is used to link to the functions exported by a module. E.g. <code>~AllocMemory()</code>.
-When documenting a class, or when a module needs to reference the function of another, use the format <code>~ModuleName.Function()</code> ,
-e.g. <code>~Core.AllocMemory()</code>.</p>
-<h3 id="constant-references">Constant References</h3>
-<p>Use <code>&amp;Name</code> to link to constants and struct definitions declared in the module&#39;s TDL file.</p>
-<p>There is a special usage in which <code>&amp;Name</code> can be declared on a single line with no other content. This results in the entire definition being pulled into the document and represented in a table.</p>
-<h3 id="backticks">Backticks</h3>
-<p>Embedded backticks are supported for writing text with a monotype font. This is suitable for declaring code, constants, numeric values and so forth.</p>
-<h3 id="code">Code</h3>
-<p>To write multiple lines of preformatted code, use <code>&lt;pre&gt;</code> on one line, follow this with the code, then end with <code>&lt;/pre&gt;</code> on its own line.</p>
-<h3 id="headings">Headings</h3>
-<p>Headings can be written inside a <code>&lt;header&gt;</code> tag on a single line, e.g. <code>&lt;header&gt;Technical Notes&lt;/header&gt;</code></p>
-<h3 id="lookup-injection">Lookup Injection</h3>
-<p>To insert tabulated documentation for a registered struct, enum or flag, use the <code>!</code> character followed by the name of the type, for example <code>!AudioLoop</code>, <code>!LOOP</code> or <code>!LTYPE</code>. The parser expects this feature to be invoked on a single line, on which the reference is the only token.</p>
-<h3 id="lists">Lists</h3>
-<p>Ordered lists can be written by starting a line with <code>&lt;list type=&quot;ordered&quot;&gt;</code>, followed by a series of <code>&lt;li&gt;</code> tags, one per line. For example:</p>
-<pre><code>&lt;list type=&quot;ordered&quot;&gt;
-&lt;li&gt;The new owner&#39;s class will receive notification via the #NewChild() action.  If the owner rejects the object by sending back an error, SetOwner() will fail immediately.&lt;/li&gt;
-&lt;li&gt;The object&#39;s class will then receive notification via the #NewOwner() action.&lt;/li&gt;
-&lt;li&gt;The resource tracking of the new owner will be modified so that the object is accepted as its child.  This means that if and when the owning object is destroyed, the new child object will be destroyed with it.&lt;/li&gt;
+-ERRORS-
+Okay
+Args: Required arguments were invalid.
+OutOfRange: `Index` or `Attrib` is outside the valid range.
+ReadOnly: The XML object is read-only.
+-END-</code></pre>
+<p>The method or action name can also be supplied with explicit fields:</p>
+<pre class="text"><code>-ACTION-
+Name: Clear
+Comment: Clears all data held by the object.
+
+An optional long description can be written here.
+-END-</code></pre>
+<h2 id="parameter-types">Parameter Types</h2>
+<p>The following base types are recognised in <code>-INPUT-</code> and <code>-RESULT-</code> declarations.</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">EDF Type</th>
+<th style="text-align: left;">C/C++ Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><code>array(Type)</code></td>
+<td style="text-align: left;"><code>Type *</code></td>
+<td style="text-align: left;">Pointer to an unsized array of <code>Type</code>. Use <code>array(Type,Size)</code> for fixed-size arrays.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>arraysize</code></td>
+<td style="text-align: left;"><code>int</code></td>
+<td style="text-align: left;">Element count for the preceding array parameter.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>buf(Type)</code></td>
+<td style="text-align: left;"><code>Type *</code></td>
+<td style="text-align: left;">Pointer to a buffer of <code>Type</code>. Follow with <code>bufsize</code> or <code>structsize</code>.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>bufsize</code></td>
+<td style="text-align: left;"><code>int</code></td>
+<td style="text-align: left;">Byte size of the preceding buffer.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>char</code></td>
+<td style="text-align: left;"><code>int8_t</code></td>
+<td style="text-align: left;">Signed 8-bit value.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>cid</code></td>
+<td style="text-align: left;"><code>CLASSID</code></td>
+<td style="text-align: left;">Class identifier.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>cptr</code></td>
+<td style="text-align: left;"><code>const void *</code></td>
+<td style="text-align: left;">Pointer to untyped constant data.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>cstr</code></td>
+<td style="text-align: left;"><code>CSTRING</code></td>
+<td style="text-align: left;">Pointer to an immutable C-style string.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>double</code></td>
+<td style="text-align: left;"><code>double</code></td>
+<td style="text-align: left;">64-bit floating point value.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>eid</code></td>
+<td style="text-align: left;"><code>EVENTID</code></td>
+<td style="text-align: left;">Event identifier.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>error</code></td>
+<td style="text-align: left;"><code>ERR</code></td>
+<td style="text-align: left;">Error value.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>ext</code></td>
+<td style="text-align: left;"><code>OBJECTPTR</code></td>
+<td style="text-align: left;">Pointer to an object implementation.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>fid</code></td>
+<td style="text-align: left;"><code>FIELD</code></td>
+<td style="text-align: left;">Field identifier.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>flags</code></td>
+<td style="text-align: left;"><code>int</code></td>
+<td style="text-align: left;">32-bit integer representing bit flags.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>float</code></td>
+<td style="text-align: left;"><code>float</code></td>
+<td style="text-align: left;">32-bit floating point value.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>func</code></td>
+<td style="text-align: left;"><code>FUNCTION</code></td>
+<td style="text-align: left;">Callback function descriptor.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>fptr(Synopsis)</code></td>
+<td style="text-align: left;"><code>APTR</code></td>
+<td style="text-align: left;">C function pointer. The synopsis starts with the result type, followed by parameters.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>hhandle</code></td>
+<td style="text-align: left;"><code>HOSTHANDLE</code></td>
+<td style="text-align: left;">Host-specific resource handle.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>int</code></td>
+<td style="text-align: left;"><code>int</code></td>
+<td style="text-align: left;">32-bit integer.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>int(Ref)</code></td>
+<td style="text-align: left;"><code>int</code></td>
+<td style="text-align: left;">32-bit integer associated with a named lookup or flag type.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>large</code></td>
+<td style="text-align: left;"><code>int64_t</code></td>
+<td style="text-align: left;">64-bit integer.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>maxint</code></td>
+<td style="text-align: left;"><code>MAXINT</code></td>
+<td style="text-align: left;">Maximum native integer size for the target.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>mem</code></td>
+<td style="text-align: left;"><code>MEMORYID</code></td>
+<td style="text-align: left;">Memory identifier.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>obj</code></td>
+<td style="text-align: left;"><code>OBJECTPTR</code></td>
+<td style="text-align: left;">Pointer to an object.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>oid</code></td>
+<td style="text-align: left;"><code>OBJECTID</code></td>
+<td style="text-align: left;">Object identifier.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>ptr</code></td>
+<td style="text-align: left;"><code>APTR</code></td>
+<td style="text-align: left;">Pointer to untyped data.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>ptr(Type)</code></td>
+<td style="text-align: left;"><code>Type *</code></td>
+<td style="text-align: left;">Pointer to typed data.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>resource</code></td>
+<td style="text-align: left;"><code>APTR</code></td>
+<td style="text-align: left;">Trackable resource reference.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>short</code></td>
+<td style="text-align: left;"><code>int16_t</code></td>
+<td style="text-align: left;">Signed 16-bit value.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;"><code>STRING</code></td>
+<td style="text-align: left;">Mutable C-style string.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>strview</code></td>
+<td style="text-align: left;"><code>std::string_view &amp;</code></td>
+<td style="text-align: left;">String view parameter for C++ API calls.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>struct(Name)</code></td>
+<td style="text-align: left;"><code>APTR</code></td>
+<td style="text-align: left;">Reference to a named TDL struct.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>struct(*Name)</code></td>
+<td style="text-align: left;"><code>Name *</code></td>
+<td style="text-align: left;">Pointer to a named TDL struct.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>structsize</code></td>
+<td style="text-align: left;"><code>int</code></td>
+<td style="text-align: left;">Byte size of the preceding struct reference.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>tags</code></td>
+<td style="text-align: left;"><code>...</code></td>
+<td style="text-align: left;">Tag-list parameter.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>uchar</code></td>
+<td style="text-align: left;"><code>uint8_t</code></td>
+<td style="text-align: left;">Unsigned 8-bit value.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>uint</code></td>
+<td style="text-align: left;"><code>uint32_t</code></td>
+<td style="text-align: left;">Unsigned 32-bit value.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>ushort</code></td>
+<td style="text-align: left;"><code>uint16_t</code></td>
+<td style="text-align: left;">Unsigned 16-bit value.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>va_list</code></td>
+<td style="text-align: left;"><code>va_list</code></td>
+<td style="text-align: left;">Variable argument list.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>void</code></td>
+<td style="text-align: left;"><code>void</code></td>
+<td style="text-align: left;">No value.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>vtags</code></td>
+<td style="text-align: left;"><code>...</code></td>
+<td style="text-align: left;">Variable tag-list parameter.</td>
+</tr>
+</tbody>
+</table>
+<p>Prefix a type with <code>&amp;</code> when the parameter is a pointer that receives a result, for example <code>&amp;int</code> for <code>int *</code>. Prefix
+the type with <code>!</code> when the result is an allocated resource pointer that can be released with <code>FreeResource()</code>; this lets
+Tiri manage the resource safely. Prefix the type with <code>^</code> when a buffer is modified by the function.</p>
+<h2 id="markup">Markup</h2>
+<p>Long descriptions support a small XML-like markup set. Use these features inside EDF comments rather than Markdown.</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Feature</th>
+<th style="text-align: left;">Syntax</th>
+<th style="text-align: left;">Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Class reference</td>
+<td style="text-align: left;"><code>@ClassName</code></td>
+<td style="text-align: left;">Links to another class document.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">External class member</td>
+<td style="text-align: left;"><code>@ClassName.Field</code> or <code>@ClassName.Method()</code></td>
+<td style="text-align: left;">Links to a field, method or action on another class.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Local field</td>
+<td style="text-align: left;"><code>#FieldName</code></td>
+<td style="text-align: left;">Links to a field on the current class.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Local action or method</td>
+<td style="text-align: left;"><code>#Activate()</code></td>
+<td style="text-align: left;">Links to an action or method on the current class.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Local function</td>
+<td style="text-align: left;"><code>~AllocMemory()</code></td>
+<td style="text-align: left;">Links to a function in the current module.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">External function</td>
+<td style="text-align: left;"><code>~Core.AllocMemory()</code></td>
+<td style="text-align: left;">Links to a function in another module.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Lookup or struct reference</td>
+<td style="text-align: left;"><code>!LOOP</code></td>
+<td style="text-align: left;">Links to a named lookup, flag or struct type.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Lookup or struct table</td>
+<td style="text-align: left;"><code>!LOOP</code> on its own line</td>
+<td style="text-align: left;">Inserts the full generated value table.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Inline code</td>
+<td style="text-align: left;"><code>`ERR::Okay`</code></td>
+<td style="text-align: left;">Renders code, constants or numeric values in monospace.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Preformatted block</td>
+<td style="text-align: left;"><code>&lt;pre&gt;...&lt;/pre&gt;</code></td>
+<td style="text-align: left;">Preserves line breaks and spacing.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Heading</td>
+<td style="text-align: left;"><code>&lt;header&gt;Technical Notes&lt;/header&gt;</code></td>
+<td style="text-align: left;">Adds a heading inside generated documentation.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Ordered list</td>
+<td style="text-align: left;"><code>&lt;list type=&quot;ordered&quot;&gt;</code> with <code>&lt;li&gt;</code> items</td>
+<td style="text-align: left;">Adds a numbered list.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Bullet list</td>
+<td style="text-align: left;"><code>&lt;list type=&quot;bullet&quot;&gt;</code> with <code>&lt;li&gt;</code> items</td>
+<td style="text-align: left;">Adds a bullet list.</td>
+</tr>
+</tbody>
+</table>
+<p>Example list:</p>
+<pre class="text"><code>&lt;list type=&quot;ordered&quot;&gt;
+&lt;li&gt;The new owner&#39;s class receives notification through #NewChild().&lt;/li&gt;
+&lt;li&gt;The object&#39;s class receives notification through #NewOwner().&lt;/li&gt;
+&lt;li&gt;Resource tracking is updated so the child is destroyed with its owner.&lt;/li&gt;
 &lt;/list&gt;</code></pre>
-<p>Bullet points can be invoked if the list <code>type</code> is set to <code>bullet</code>.</p>
-<hr>
-<h1 id="document-processing-tools">Document Processing Tools</h1>
-<p>The primary tool that we use to produce user documentation is bundled with Kōtuku as <code>idl-doc.tiri</code> and can be found in the <code>scripts\dev\idl\</code> folder.</p>
-<p>Despite it being written as a script, idl-doc is not a stand-alone tool and is instead implemented as an extension of <code>idl-c.tiri</code>. This is because the generation of fully accurate documentation requires inspection of the module&#39;s TDL file, as well as the compiled code.</p>
-<p>For generating your documentation, please refer to both idl-c and the TDL Reference Manual.</p>
+<h2 id="processing-tools">Processing Tools</h2>
+<p>The IDL documentation parser is implemented in <code>tools/idl/include/doc.tiri</code> and is loaded by <code>tools/idl/idl-c.tiri</code>.
+It is not a standalone command. Documentation is generated as part of the IDL processing step, because accurate output
+depends on the TDL file, the source comments and, for class documentation, compiled class metadata.</p>
+<p>For command-line options and CMake integration, see <a href="./TDL-Tools.html">TDL Tools</a>. For the TDL syntax used by <code>module()</code>,
+<code>class()</code>, <code>methods()</code>, constants, flags and structs, see <a href="./TDL-Reference-Manual.html">TDL Reference Manual</a>.</p>
 </div></div></div></div>
 
 <script src="../js/bootstrap.bundle.min.js"></script>
