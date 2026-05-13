@@ -1,6 +1,6 @@
 --$TIRI:Include
 
-module({ name="SVG", copyright="Paul Manias © 2010-2026", version=1.0, timestamp=20240611 }, function()
+module({ name="SVG", copyright="Paul Manias © 2010-2026", version=1.0, timestamp=20240611, src="svg.cpp" }, function()
   flags("SVF", { comment="SVG flags." },
     "AUTOSCALE: In auto-resize mode, vector dimensions are scaled to the width and height of the vector page.  The @VectorScene.PageWidth and @VectorScene.PageHeight must be set for this.",
     "ALPHA: Generate an alpha channel in the rendered image.",

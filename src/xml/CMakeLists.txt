@@ -6,7 +6,6 @@ set (INC_MOD_XML TRUE PARENT_SCOPE)
 idl_gen ("${MOD}.tdl"
    NAME ${MOD}_defs
    OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.h"
-   FILES "xml.cpp"
    ARGS  "output-defs=xml_def.c" "output-proto=xml_def.c"
    APPEND_IDL "${MOD}_def.c")
 

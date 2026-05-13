@@ -5,8 +5,11 @@
   <info>
     <name>Vector</name>
     <type>module</type>
+    <comment>Create, manipulate and draw vector graphics to bitmaps.</comment>
     <version>1</version>
     <copyright>Paul Manias © 2010-2026</copyright>
+    <description>
+<p>The Vector module exports a small number of functions to assist the <class name="Vector">Vector</class> class, as well as some primitive functions for creating paths and rendering them to bitmaps.</p></description>
     <classes>
       <class>BlurFX</class>
       <class>ColourFX</class>

@@ -53,8 +53,7 @@ idl_gen ("hashes.tdl" NAME ${MOD}_hashes OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/has
 idl_gen ("${MOD}.tdl" NAME ${MOD}_defs
    OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.h"
    APPEND_IDL "module_def.cpp"
-   ARGS "output-defs=module_def.cpp"
-   FILES "${MOD}.cpp")
+   ARGS "output-defs=module_def.cpp")
 
 # We build libFFI as a release build in all situations because ASAN doesn't like Debug builds of libFFI.
 

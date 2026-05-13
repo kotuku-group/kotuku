@@ -6,7 +6,9 @@ module({
   version=1.0,
   prefix="fl",
   status="beta",
-  comment="Tiri is a JIT optimised language that extends the Script class."
+  src="tiri.cpp",
+  comment="Tiri is a JIT optimised language that extends the Script class.",
+  timestamp=20240611
 },
 function()
   restrict(function()

@@ -11,7 +11,6 @@ set (INC_MOD_XQUERY TRUE PARENT_SCOPE)
 idl_gen ("${MOD}.tdl"
    NAME ${MOD}_defs
    OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.h"
-   FILES "xquery.cpp"
    ARGS  "output-defs=xquery_def.cpp" "output-proto=xquery_def.cpp"
    APPEND_IDL "${MOD}_def.cpp")
 

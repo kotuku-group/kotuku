@@ -126,8 +126,16 @@ global function module(Options:table, Function:func)
       priority()
    end
 
-   if glModule.src and type(glModule.src) is 'string' then
-      glModule.src = { glTDLFolder .. glModule.src }
+   if glModule.src then
+      if type(glModule.src) is 'string' then
+         glModule.src = { glTDLFolder .. glModule.src }
+      else
+         fixed_path = array<string>
+         for path in values(glModule.src) do
+            fixed_path:push(glTDLFolder .. path)
+         end
+         glModule.src = fixed_path
+      end
    end
 
    -- Module files used to be taken from the command-line; the src option is now preferred

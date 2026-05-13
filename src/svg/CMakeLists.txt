@@ -4,8 +4,7 @@ set (MOD svg)
 set (INC_MOD_SVG TRUE PARENT_SCOPE)
 
 idl_gen ("${MOD}.tdl" NAME ${MOD}_defs
-   OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.h"
-   FILES "class_rsvg.cpp" "class_svg.cpp")
+   OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.h")
 
 idl_compile ("${MOD}.tdl" NAME ${MOD}_idl OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/${MOD}_def.c")
 

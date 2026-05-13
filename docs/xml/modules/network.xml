@@ -5,10 +5,13 @@
   <info>
     <name>Network</name>
     <type>module</type>
+    <comment>Provides miscellaneous network functions and hosts the NetSocket and ClientSocket classes.</comment>
     <version>1</version>
     <status>stable</status>
     <prefix>net</prefix>
     <copyright>Paul Manias © 2005-2026</copyright>
+    <description>
+<p>The Network module exports a few miscellaneous networking functions.  For core network functionality surrounding sockets and HTTP, please refer to the <class name="NetSocket">NetSocket</class> and <class name="HTTP">HTTP</class> classes.</p></description>
     <classes>
       <class>ClientSocket</class>
       <class>NetClient</class>

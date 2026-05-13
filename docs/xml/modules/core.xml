@@ -5,7 +5,12 @@
   <info>
     <name>Core</name>
     <type>module</type>
+    <comment>The core library provides system calls and controls for the Kotuku system.</comment>
     <copyright>Paul Manias 1996-2026</copyright>
+    <description>
+<p>The Kotuku Core is a system library that provides a universal API that works on multiple platforms.  It follows an object oriented design with granular resource tracking to minimise resource usage and memory leaks.</p>
+<p>The portability of the core has been safe-guarded by keeping the functions as generalised as possible.  When writing code for a target platform it will be possible for the application to be completely sandboxed if the host's system calls are avoided.</p>
+<p>This documentation is intended for technical reference and is not suitable as an introductory guide to the framework.</p></description>
     <classes>
       <class>CompressedStream</class>
       <class>Compression</class>

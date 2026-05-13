@@ -5,8 +5,13 @@
   <info>
     <name>Font</name>
     <type>module</type>
+    <comment>Provides font management functionality and hosts the Font class.</comment>
     <version>1</version>
     <copyright>Paul Manias © 1998-2026</copyright>
+    <description>
+<p>The Font module is responsible for managing the font database and provides support for client queries.  Fixed size bitmap fonts are supported via the Windows .fon file format, while Truetype fonts are support for scalable fonts.</p>
+<p>Bitmap fonts can be opened and drawn by the <class name="Font">Font</class> class.  Drawing Truetype fonts is not supported by the Font module, but is instead provided by the <fl>Vector</fl> module and <class name="VectorText">VectorText</class> class.</p>
+<p>For a thorough introduction to typesetting history and terminology as it applies to computing, we recommend visiting Google Fonts Knowledge page: https://fonts.google.com/knowledge</p></description>
     <classes>
       <class>Font</class>
     </classes>

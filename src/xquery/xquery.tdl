@@ -10,7 +10,7 @@ module({ name='XQuery', src='xquery.cpp', copyright='Paul Manias © 2025-2026', 
 
   -- Shared enumerations for parser and evaluator state, including map/array node kinds.
   loadFile('sdk:src/xquery/constants.tdl')
-  
+
   flags("XEF", { comment="Options for XQuery evaluation flags." },
     "LIMIT_SCOPE: For tag specific queries, limit the scope to the specified element.")
 

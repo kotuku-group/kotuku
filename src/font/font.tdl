@@ -1,6 +1,6 @@
 --$TIRI:Include
 
-module({ name="Font", copyright="Paul Manias © 1998-2026", version=1.0, timestamp=20240611 }, function()
+module({ name="Font", copyright="Paul Manias © 1998-2026", version=1.0, timestamp=20240611, src="font.cpp" }, function()
   restrict(function()
     loadFile(glPath .. 'common-graphics.tdl')
   end)

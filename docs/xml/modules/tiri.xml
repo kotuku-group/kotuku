@@ -5,11 +5,15 @@
   <info>
     <name>Tiri</name>
     <type>module</type>
-    <comment>Tiri is a JIT optimised language that extends the Script class.</comment>
+    <comment>Tiri is a customised scripting language for the Script class.</comment>
     <version>1</version>
     <status>beta</status>
     <prefix>fl</prefix>
     <copyright>Paul Manias © 2006-2026</copyright>
+    <description>
+<p>Tiri is a custom scripting language for Kotuku developers.  It is implemented on the backbone of LuaJIT, a high performance version of the Lua scripting language.  It supports garbage collection, dynamic typing and a 64-bit byte-code interpreter for compiled code.</p>
+<p>Tiri files use the <code>.tiri</code> file extension.  Ideally, scripts should start with the comment '-- $TIRI' near the start of the document so that it can be correctly identified by the Tiri class.</p>
+<p>For more information on the Tiri syntax, please refer to the official Tiri Reference Manual.</p></description>
   </info>
 
   <function>
