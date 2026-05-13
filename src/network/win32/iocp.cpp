@@ -594,7 +594,6 @@ static IocpStoreResult store_operation_result(IocpSocketRecord &Record, const Io
          glSockets[Operation.AcceptedSocket] = accepted_record;
       }
 
-      result.RearmAccept = true;
       return result;
    }
 
@@ -1495,6 +1494,8 @@ ERR iocp_accept(WSW_SOCKET Server, WSW_SOCKET &Client, void *Address, int *Addre
       std::memcpy(Address, accepted.Address.data(), size_t(copy_size));
       *AddressSize = copy_size;
    }
+
+   post_accept(Server);
 
    return ERR::Okay;
 }
