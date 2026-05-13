@@ -169,8 +169,7 @@ end
          end
       end,
       incoming = function(Socket)
-         -- Simulate slow reading to cause server buffer buildup
-         processing.halt(0.1)
+         -- Read only a small chunk per notification; an explicit halt here makes the timeout scale with buffered data.
          buffer = string.alloc(1024)
          err, read_len = Socket.acRead(buffer)
          if err != ERR_Okay then
@@ -188,7 +187,9 @@ end
    proc = processing.new({ timeout = 4.0, signals = array<object> { server } })
    check client.mtConnect('127.0.0.1', glPort)
 
+   wait_start = mSys.PreciseTime()
    err = proc.sleep()
+   elapsed = (mSys.PreciseTime() - wait_start) / 1000000
 
    -- Note: This test may timeout if buffers are very large, which is also acceptable
    if (err is ERR_TimeOut) then
@@ -196,6 +197,8 @@ end
    else
       assert(err is ERR_Okay, 'Buffer overflow test failed: ' .. mSys.GetErrorMsg(err))
    end
+
+   assert(elapsed < 6.0, f'Buffer overflow test exceeded expected timeout duration: {elapsed}s')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
