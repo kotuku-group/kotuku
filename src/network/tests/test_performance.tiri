@@ -34,60 +34,53 @@ end
 -----------------------------------------------------------------------------------------------------------------------
 
 @Test(priority=10) function MessageThroughput()
-   start_time = mSys.PreciseTime()
+   start_time = 0
    messages_sent = 0
-   messages_received = 0
+   read_chunks = 0
    bytes_sent = 0
    bytes_received = 0
    target_messages = 1000
+   send_complete = false
    throughput_complete = false
 
    server = obj.new('netsocket', {
       name = 'ThroughputServer',
       feedback = function(Socket, Client, State)
          if (State is NTC_CONNECTED) then
-            logOutput('[Server] Client connected, starting throughput test...')
-            -- Start sending messages rapidly
-            for i = 1, target_messages do
-               local msg = 'THROUGHPUT_MSG_' .. i
-               local err, len = Client.acWrite(msg)
-               if (err is ERR_Okay) then
-                  messages_sent = messages_sent + 1
-                  bytes_sent += string.len(msg)
-               else
-                  logOutput('[Server] Send failed at message ' .. i .. ': ' .. mSys.GetErrorMsg(err))
-                  break
-               end
-            end
-            logOutput('[Server] Finished sending ' .. messages_sent .. ' messages')
+            logOutput('[Server] Client connected, waiting for throughput data...')
          end
       end,
       incoming = function(Socket, Client)
-         local buffer = string.alloc(1024)
-         local err, read_len = Client.acRead(buffer)
-         if (err is ERR_Okay and read_len > 0) then
-            messages_received = messages_received + 1
+         buffer = string.alloc(65536)
+
+         while true do
+            err, read_len = Client.acRead(buffer)
+            if (err is ERR_Disconnected) then break end
+            assert(err is ERR_Okay, '[Server] Throughput read failed: ' .. mSys.GetErrorMsg(err))
+            if (read_len <= 0) then break end
+
+            read_chunks = read_chunks + 1
             bytes_received += read_len
-            logOutput('Processed: ' .. messages_received)
+         end
 
-            if (bytes_received >= bytes_sent and messages_sent >= target_messages) then
-               local end_time = mSys.PreciseTime()
-               local duration = (end_time - start_time) / 1000000
-               local throughput = messages_sent / duration
+         if ((not throughput_complete) and send_complete and (bytes_received >= bytes_sent)) then
+            end_time = mSys.PreciseTime()
+            duration = (end_time - start_time) / 1000000
+            throughput = messages_sent / duration
 
-               logOutput('[Server] Throughput test completed:')
-               logOutput('  Messages: ' .. messages_sent)
-               logOutput('  Echo reads: ' .. messages_received)
-               logOutput('  Duration: ' .. string.format('%.3f', duration) .. ' seconds')
-               logOutput('  Throughput: ' .. string.format('%.1f', throughput) .. ' messages/second')
+            logOutput('[Server] Throughput test completed:')
+            logOutput('  Messages submitted: ' .. messages_sent)
+            logOutput('  Read chunks: ' .. read_chunks)
+            logOutput('  Bytes received: ' .. bytes_received)
+            logOutput('  Duration: ' .. string.format('%.3f', duration) .. ' seconds')
+            logOutput('  Throughput: ' .. string.format('%.1f', throughput) .. ' messages/second')
 
-               glThroughputStats.messages = messages_sent
-               glThroughputStats.duration = duration
-               glThroughputStats.throughput = throughput
+            glThroughputStats.messages = messages_sent
+            glThroughputStats.duration = duration
+            glThroughputStats.throughput = throughput
 
-               throughput_complete = true
-               Socket.acSignal()
-            end
+            throughput_complete = true
+            Socket.acSignal()
          end
       end,
       port = glPort,
@@ -98,22 +91,51 @@ end
 
    client = obj.new('netsocket', {
       name = 'ThroughputClient',
-      incoming = function(Socket, Script)
-         -- Echo back all received messages as quickly as possible
-         local buffer = string.alloc(1024)
-         local err, read_len = Socket.acRead(buffer)
-         if (err is ERR_Okay) then
-            local msg = buffer:sub(0, read_len)
-            Socket.acWrite(msg) -- Echo back immediately
+      feedback = function(Socket, State)
+         if (State is NTC_CONNECTED) then
+            logOutput('[Client] Connected, starting throughput test...')
+            start_time = mSys.PreciseTime()
+
+            for i = 1, target_messages do
+               local msg = 'THROUGHPUT_MSG_' .. i
+               local err, len = Socket.acWrite(msg)
+               if (err is ERR_Okay) then
+                  messages_sent = messages_sent + 1
+                  bytes_sent += len
+               else
+                  logOutput('[Client] Send failed at message ' .. i .. ': ' .. mSys.GetErrorMsg(err))
+                  break
+               end
+            end
+
+            send_complete = true
+            logOutput('[Client] Finished sending ' .. messages_sent .. ' messages')
+            if ((not throughput_complete) and (bytes_received >= bytes_sent)) then
+               throughput_complete = true
+               glThroughputStats.messages = messages_sent
+               glThroughputStats.duration = (mSys.PreciseTime() - start_time) / 1000000
+               glThroughputStats.throughput = messages_sent / glThroughputStats.duration
+               logOutput('[Client] Throughput test completed before returning from feedback')
+               server.acSignal()
+            end
          end
+      end,
+      incoming = function(Socket, Script)
+         local buffer = string.alloc(256)
+         Socket.acRead(buffer)
       end
    })
 
    check client.mtConnect('127.0.0.1', glPort)
    check proc.sleep()
+   assert(client != nil, 'Throughput client was released before the test completed')
 
-   logOutput('Received ' .. messages_received .. ' messages of ' .. target_messages)
+   logOutput('Received ' .. bytes_received .. ' bytes from ' .. bytes_sent .. ' queued bytes')
    assert(throughput_complete, 'Throughput test did not complete')
+   assert(messages_sent is target_messages,
+      'Not all throughput messages were queued. Expected: ' .. target_messages .. ', queued: ' .. messages_sent)
+   assert(bytes_received >= bytes_sent,
+      'Throughput byte count mismatch. Sent: ' .. bytes_sent .. ', received: ' .. bytes_received)
 
    -- Verify minimum acceptable performance
    assert(glThroughputStats.throughput > 100,
@@ -128,6 +150,7 @@ end
    message_sizes = array<int> { 1024, 8192, 65536, 262144 } -- 1KB, 8KB, 64KB, 256KB
    transfer_results = array<table>
    current_size_index = 0
+   current_bytes_received = 0
 
    server = obj.new('netsocket', {
       name = 'LargeMessageServer',
@@ -135,12 +158,12 @@ end
          if (State is NTC_CONNECTED) then
             logOutput('[Server] Starting large message test...')
             -- Send first large message
-            local size = message_sizes[current_size_index]
-            local large_msg = string.rep('X', size)
-            local start_time = mSys.PreciseTime()
+            size = message_sizes[current_size_index]
+            large_msg = string.rep('X', size)
+            start_time = mSys.PreciseTime()
 
             logOutput('[Server] Sending ' .. size .. ' byte message...')
-            local err, len = Client.acWrite(large_msg)
+            err, len = Client.acWrite(large_msg)
             if (err is ERR_Okay) then
                transfer_results:push({ size = size, start_time = start_time })
             else
@@ -149,27 +172,27 @@ end
          end
       end,
       incoming = function(Socket, Client)
-         -- Read the echoed large message
-         local expected_size = message_sizes[current_size_index]
-         local buffer = string.alloc(expected_size + 100)
-         local total_read = 0
-         local read_start = mSys.PreciseTime()
+         if (current_size_index >= #message_sizes) then return end
 
-         -- May need multiple reads for very large messages
-         while (total_read < expected_size) do
-            local err, read_len = Client.acRead(buffer:sub(total_read))
+         expected_size = message_sizes[current_size_index]
+         buffer = string.alloc(65536)
+
+         while (current_bytes_received < expected_size) do
+            err, read_len = Client.acRead(buffer)
             if (err is ERR_Okay and read_len > 0) then
-               total_read = total_read + read_len
-            elseif (err is ERR_NoData) then
-               processing.halt(0.001) -- Brief wait for more data
+               current_bytes_received += read_len
+            elseif (err is ERR_Disconnected) then
+               return
             else
                break
             end
          end
 
-         local end_time = mSys.PreciseTime()
-         local duration = (end_time - transfer_results[current_size_index].start_time) / 1000000
-         local throughput_mbps = (expected_size * 2 / 1024 / 1024) / duration -- *2 for round trip
+         if (current_bytes_received < expected_size) then return end
+
+         end_time = mSys.PreciseTime()
+         duration = (end_time - transfer_results[current_size_index].start_time) / 1000000
+         throughput_mbps = (expected_size * 2 / 1024 / 1024) / duration -- *2 for round trip
 
          logOutput('[Server] Large message ' .. expected_size .. ' bytes:')
          logOutput('  Duration: ' .. string.format('%.3f', duration) .. ' seconds')
@@ -179,14 +202,16 @@ end
          transfer_results[current_size_index].throughput = throughput_mbps
 
          current_size_index = current_size_index + 1
+         current_bytes_received = 0
+
          if (current_size_index < #message_sizes) then
             -- Send next size
-            local size = message_sizes[current_size_index]
-            local large_msg = string.rep('Y', size)
-            local start_time = mSys.PreciseTime()
+            size = message_sizes[current_size_index]
+            large_msg = string.rep('Y', size)
+            start_time = mSys.PreciseTime()
 
             logOutput('[Server] Sending ' .. size .. ' byte message...')
-            local err, len = Client.acWrite(large_msg)
+            err, len = Client.acWrite(large_msg)
             if (err is ERR_Okay) then
                transfer_results:push({ size = size, start_time = start_time })
             end
@@ -202,21 +227,28 @@ end
 
    proc = processing.new({ timeout = 15.0, signals = array<object> { server } })
 
-   local client = obj.new('netsocket', {
+   client = obj.new('netsocket', {
       name = 'LargeMessageClient',
       incoming = function(Socket, Script)
-         -- Echo back large messages
-         local buffer = string.alloc(300000) -- Large buffer
-         local err, read_len = Socket.acRead(buffer)
-         if (err is ERR_Okay and read_len > 0) then
+         local buffer = string.alloc(65536)
+
+         while true do
+            local err, read_len = Socket.acRead(buffer)
+            if (err is ERR_Disconnected) then break end
+            assert(err is ERR_Okay, '[Client] Large message read failed: ' .. mSys.GetErrorMsg(err))
+            if (read_len <= 0) then break end
+
             local msg = buffer:sub(0, read_len)
-            Socket.acWrite(msg) -- Echo back
+            local write_err, len = Socket.acWrite(msg)
+            assert(write_err is ERR_Okay, '[Client] Large message echo failed: ' .. mSys.GetErrorMsg(write_err))
+            assert(len is read_len, '[Client] Large message echo accepted a partial chunk')
          end
       end
    })
 
    check client.mtConnect('127.0.0.1', glPort + 1)
    check proc.sleep()
+   assert(client != nil, 'Large message client was released before the test completed')
 
    assert(#transfer_results is #message_sizes,
       'Not all message sizes tested. Expected: ' .. #message_sizes .. ', Got: ' .. #transfer_results)
@@ -285,18 +317,19 @@ end
    end
 
    check proc.sleep()
+   assert(clients[max_clients] != nil, 'Scaling clients were released before the test completed')
 
    assert(scaling_complete, 'Not all clients connected within timeout')
 
    -- Analyze connection timing
    if (#connection_times > 0) then
-      local total_time = 0
-      local max_time = 0
+      total_time = 0
+      max_time = 0
       for i, time in ipairs(connection_times) do
          total_time = total_time + time
          if (time > max_time) then max_time = time end
       end
-      local avg_time = total_time / #connection_times
+      avg_time = total_time / #connection_times
 
       logOutput('Connection Scaling Results:')
       logOutput('  Successful connections: ' .. #connection_times .. '/' .. max_clients)
@@ -314,57 +347,40 @@ end
 -----------------------------------------------------------------------------------------------------------------------
 
 @Test(priority=40) function WriteQueuePerformance()
-   local queue_messages = 500
-   local messages_queued = 0
-   local messages_processed = 0
-   local bytes_queued = 0
-   local bytes_processed = 0
-   local queue_test_complete = false
+   queue_messages = 500
+   messages_queued = 0
+   read_chunks = 0
+   bytes_queued = 0
+   bytes_received = 0
+   queue_complete = false
+   queue_test_complete = false
 
    logOutput('Testing write queue performance with ' .. queue_messages .. ' queued messages...')
 
-   local server = obj.new('netsocket', {
+   server = obj.new('netsocket', {
       name = 'QueueTestServer',
       feedback = function(Socket, Client, State)
          if (State is NTC_CONNECTED) then
-            logOutput('[Server] Client connected, flooding write queue...')
-            local start_time = mSys.PreciseTime()
-
-            -- Rapidly queue many messages without waiting
-            for i = 1, queue_messages do
-               local msg = 'QUEUE_TEST_' .. i .. '_' .. string.rep('DATA', 10)
-               local err, len = Client.acWrite(msg)
-               if (err is ERR_Okay) then
-                  messages_queued = messages_queued + 1
-                  bytes_queued += string.len(msg)
-               else
-                  logOutput('[Server] Queue write failed at message ' .. i .. ': ' .. mSys.GetErrorMsg(err))
-                  break
-               end
-            end
-
-            local queue_time = mSys.PreciseTime() - start_time
-            logOutput('[Server] Queued ' .. messages_queued .. ' messages in ' ..
-                  string.format('%.3f', queue_time / 1000000) .. ' seconds')
-
-            glPerformanceResults.queue_time = queue_time / 1000000
-            glPerformanceResults.queue_rate = messages_queued / glPerformanceResults.queue_time
+            logOutput('[Server] Client connected, waiting for queued data...')
          end
       end,
       incoming = function(Socket, Client)
-         local buffer = string.alloc(1024)
-         local err, read_len = Client.acRead(buffer)
-         if (err is ERR_Okay and read_len > 0) then
-            messages_processed = messages_processed + 1
-            bytes_processed += read_len
+         buffer = string.alloc(65536)
 
-            if (bytes_processed >= bytes_queued and messages_queued >= queue_messages) then
-               logOutput('[Server] All queued messages processed: ' .. messages_processed)
-               queue_test_complete = true
-               Socket.acSignal()
-            elseif (messages_processed % 100 is 0) then
-               logOutput('[Server] Processed ' .. messages_processed .. '/' .. messages_queued .. ' messages')
-            end
+         while true do
+            err, read_len = Client.acRead(buffer)
+            if (err is ERR_Disconnected) then break end
+            assert(err is ERR_Okay, '[Server] Queue read failed: ' .. mSys.GetErrorMsg(err))
+            if (read_len <= 0) then break end
+
+            read_chunks = read_chunks + 1
+            bytes_received += read_len
+         end
+
+         if ((not queue_test_complete) and queue_complete and (bytes_received >= bytes_queued)) then
+            logOutput('[Server] All queued bytes received in ' .. read_chunks .. ' read chunks')
+            queue_test_complete = true
+            Socket.acSignal()
          end
       end,
       port = glPort + 3,
@@ -375,24 +391,55 @@ end
 
    client = obj.new('netsocket', {
       name = 'QueueTestClient',
-      incoming = function(Socket, Script)
-         -- Read and echo back messages to test queue drainage
-         local buffer = string.alloc(1024)
-         local err, read_len = Socket.acRead(buffer)
-         if (err is ERR_Okay) then
-            local msg = buffer:sub(0, read_len)
-            Socket.acWrite(msg) -- Echo data to test queue drainage
+      feedback = function(Socket, State)
+         if (State is NTC_CONNECTED) then
+            logOutput('[Client] Connected, flooding write queue...')
+            local start_time = mSys.PreciseTime()
+
+            -- Rapidly queue many messages without waiting
+            for i = 1, queue_messages do
+               local msg = 'QUEUE_TEST_' .. i .. '_' .. string.rep('DATA', 10)
+               local err, len = Socket.acWrite(msg)
+               if (err is ERR_Okay) then
+                  messages_queued = messages_queued + 1
+                  bytes_queued += len
+               else
+                  logOutput('[Client] Queue write failed at message ' .. i .. ': ' .. mSys.GetErrorMsg(err))
+                  break
+               end
+            end
+
+            queue_complete = true
+            local queue_time = mSys.PreciseTime() - start_time
+            logOutput('[Client] Queued ' .. messages_queued .. ' messages in ' ..
+                  string.format('%.3f', queue_time / 1000000) .. ' seconds')
+
+            glPerformanceResults.queue_time = queue_time / 1000000
+            glPerformanceResults.queue_rate = messages_queued / glPerformanceResults.queue_time
+
+            if ((not queue_test_complete) and (bytes_received >= bytes_queued)) then
+               logOutput('[Client] Queue test completed before returning from feedback')
+               queue_test_complete = true
+               server.acSignal()
+            end
          end
+      end,
+      incoming = function(Socket, Script)
+         local buffer = string.alloc(256)
+         Socket.acRead(buffer)
       end
    })
 
    check client.mtConnect('127.0.0.1', glPort + 3)
    check proc.sleep()
+   assert(client != nil, 'Queue test client was released before the test completed')
 
    assert(queue_test_complete, 'Queue test did not complete')
+   assert(messages_queued is queue_messages,
+      'Not all queue messages were accepted. Expected: ' .. queue_messages .. ', queued: ' .. messages_queued)
 
-   assert(bytes_processed >= bytes_queued,
-      'Too much queued data was lost. Queued: ' .. bytes_queued .. ', Processed: ' .. bytes_processed)
+   assert(bytes_received >= bytes_queued,
+      'Too much queued data was lost. Queued: ' .. bytes_queued .. ', Received: ' .. bytes_received)
 
    logOutput('Queue rate: ' .. string.format('%.1f', glPerformanceResults.queue_rate) .. ' messages/second')
 end
@@ -401,11 +448,11 @@ end
 
 @Test(priority=50) function MemoryUsageUnderLoad()
    -- This test creates and destroys many network objects to check for leaks
-   local iterations = 50
-   local objects_per_iteration = 5
+   iterations = 50
+   objects_per_iteration = 5
 
    for iter = 1, iterations do
-      local temp_objects = {}
+      temp_objects = {}
 
       -- Create multiple network objects
       for i = 1, objects_per_iteration do

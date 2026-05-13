@@ -98,9 +98,17 @@ static void server_accept_client_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
 
    kt::SwitchContext context(Self);
 
-   // Check client limit before accepting to prevent resource exhaustion
+   auto accepted = network_platform().accept(Self, Self->Handle, Self->IPV6);
+   auto clientfd = accepted.Handle;
+   if (clientfd.is_invalid()) {
+      log.warning("accept() failed to return an FD.");
+      return;
+   }
+
+   // Accept before enforcing admission limits so IOCP-backed servers drain and close completed AcceptEx sockets.
    if ((Self->TotalClients >= Self->ClientLimit) or (Self->TotalClients >= glSocketLimit)) {
       log.error(ERR::ArrayFull);
+      network_platform().close_socket(clientfd);
       return;
    }
 
@@ -118,15 +126,9 @@ static void server_accept_client_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
       accept_count++;
       if (accept_count > 100) { // Maximum 100 accepts per second
          log.warning("Connection rate limit exceeded, rejecting connection");
+         network_platform().close_socket(clientfd);
          return;
       }
-   }
-
-   auto accepted = network_platform().accept(Self, Self->Handle, Self->IPV6);
-   auto clientfd = accepted.Handle;
-   if (clientfd.is_invalid()) {
-      log.warning("accept() failed to return an FD.");
-      return;
    }
 
    if ((accepted.Address.Type != IPADDR::V4) and (accepted.Address.Type != IPADDR::V6)) {

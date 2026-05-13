@@ -147,6 +147,99 @@ end
 -----------------------------------------------------------------------------------------------------------------------
 
 @Test; @Requires(network=true, windows_platform=true)
+function LargeBidirectionalTCPTransfer()
+   target_size     = 2 * 1024 * 1024
+   server_payload  = string.rep('B', target_size)
+   client_payload  = string.rep('C', target_size)
+   server_received = 0
+   client_received = 0
+   server_bad_data = false
+   client_bad_data = false
+   server_done     = false
+   client_done     = false
+   port            = nextPort()
+
+   server = obj.new('netsocket', {
+      name     = 'IocpBidirectionalServer',
+      address  = '127.0.0.1',
+      port     = port,
+      flags    = NSF_SERVER,
+      msgLimit = target_size + 65536,
+      feedback = function(Socket, Client, State)
+         if State is NTC_CONNECTED then
+            err, len = Client.acWrite(server_payload)
+            assert(err is ERR_Okay, 'Server failed to queue bidirectional payload: ' .. mSys.GetErrorMsg(err))
+            assert(len is target_size, 'Server bidirectional write length mismatch')
+         end
+      end,
+      incoming = function(Socket, Client)
+         buffer = string.alloc(65536)
+         while true do
+            err, read_len = Client.acRead(buffer)
+            if err is ERR_Disconnected then return end
+            assert(err is ERR_Okay, 'Server failed to read bidirectional payload: ' .. mSys.GetErrorMsg(err))
+            if read_len <= 0 then break end
+
+            chunk = buffer:sub(0, read_len)
+            if chunk != string.rep('C', read_len) then server_bad_data = true end
+            server_received += read_len
+            if server_received >= target_size then break end
+         end
+
+         if (server_received >= target_size) and (not server_done) then
+            server_done = true
+            if client_done then Socket.acSignal() end
+         end
+      end
+   })
+
+   client = obj.new('netsocket', {
+      name     = 'IocpBidirectionalClient',
+      msgLimit = target_size + 65536,
+      feedback = function(Socket, State)
+         if State is NTC_CONNECTED then
+            err, len = Socket.acWrite(client_payload)
+            assert(err is ERR_Okay, 'Client failed to queue bidirectional payload: ' .. mSys.GetErrorMsg(err))
+            assert(len is target_size, 'Client bidirectional write length mismatch')
+         end
+      end,
+      incoming = function(Socket)
+         buffer = string.alloc(65536)
+         while true do
+            err, read_len = Socket.acRead(buffer)
+            if err is ERR_Disconnected then return end
+            assert(err is ERR_Okay, 'Client failed to read bidirectional payload: ' .. mSys.GetErrorMsg(err))
+            if read_len <= 0 then break end
+
+            chunk = buffer:sub(0, read_len)
+            if chunk != string.rep('B', read_len) then client_bad_data = true end
+            client_received += read_len
+            if client_received >= target_size then break end
+         end
+
+         if (client_received >= target_size) and (not client_done) then
+            client_done = true
+            if server_done then server.acSignal() end
+         end
+      end
+   })
+
+   check client.mtConnect('127.0.0.1', port)
+
+   for i = 0, 199 do
+      if server_done and client_done then break end
+      processing.halt(0.05)
+   end
+
+   assert(not server_bad_data, 'Server received corrupted bidirectional payload')
+   assert(not client_bad_data, 'Client received corrupted bidirectional payload')
+   assert(server_received is target_size, 'Server bidirectional receive size mismatch: ' .. server_received)
+   assert(client_received is target_size, 'Client bidirectional receive size mismatch: ' .. client_received)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test; @Requires(network=true, windows_platform=true)
 function SlowReaderBackpressure()
    target_size = 1536 * 1024
    payload     = string.rep('S', target_size)

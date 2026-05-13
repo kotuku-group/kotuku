@@ -104,6 +104,7 @@ endif()
 
 set (NETWORK_TESTS
    bind_address dns_parallel server_io client_server error_handling ipv6 concurrency ssl iocp_pipeline
+   performance
    # UDP Tests
    udp_basic udp_ipv6 udp_broadcast_multicast udp_tcp_coexistence udp_performance
 )
@@ -111,7 +112,3 @@ set (NETWORK_TESTS
 foreach (TEST_NAME ${NETWORK_TESTS})
    flute_test(network_${TEST_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_${TEST_NAME}.tiri")
 endforeach ()
-
-# Heavy load/performance coverage is intentionally manual because it is timing-sensitive and expensive.
-# Run directly with tools/flute.tiri when network throughput changes need to be profiled:
-# src/network/tests/test_performance.tiri
