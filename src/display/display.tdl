@@ -1,6 +1,9 @@
 --$TIRI:Include
 
-module({ name="Display", copyright="Paul Manias © 2003-2026", version=1.0, status="stable", prefix="gfx", timestamp=20240611 }, function()
+module({
+    name="Display", copyright="Paul Manias © 2003-2026", version=1.0, status="stable", prefix="gfx", timestamp=20240611,
+    src={ "display-driver.cpp", "lib_bitmap.cpp", "lib_display.cpp", "lib_cursor.cpp", "lib_input.cpp", "lib_surfaces.cpp" }
+  }, function()
 
   restrict(function()
     loadFile(glPath .. 'common.tdl')

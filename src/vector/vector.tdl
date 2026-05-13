@@ -1,6 +1,8 @@
 --$TIRI:Include
 
-module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, timestamp=20240611 }, function()
+module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, timestamp=20240611,
+    src={ "vector_functions.cpp", "vector_readpainter.cpp" }
+  }, function()
   c_include("<kotuku/modules/display.h>", "<kotuku/modules/picture.h>")
 
   restrict(function()

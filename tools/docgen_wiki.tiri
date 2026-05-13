@@ -144,6 +144,7 @@ end
          mod_header = header:replace('<title>Kōtuku Wiki</title>', '<title>Kōtuku Wiki - ' .. v.title .. '</title>')
          md_output = md_output:replace('<hr />', '<hr>') -- HTML5 compliance
          md_output = md_output:replace("\r\n", "\n") -- CRLF conversion
+         md_output = md_output:replace(".md\">", ".html\">")
 
          fl.acWrite(mod_header)
          fl.acWrite('\n<h1>' .. v.title .. '</h1>\n')

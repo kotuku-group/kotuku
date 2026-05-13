@@ -4,7 +4,6 @@ set (MOD vector)
 set (INC_MOD_VECTOR TRUE PARENT_SCOPE)
 
 idl_gen ("${MOD}.tdl" NAME ${MOD}_defs OUTPUT "${INCLUDE_OUTPUT}/modules/vector.h"
-   FILES "vector_functions.cpp" "vector_readpainter.cpp"
    ARGS "output-defs=module_def.c")
 
 idl_compile ("${MOD}.tdl" NAME ${MOD}_idl OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/idl.h")

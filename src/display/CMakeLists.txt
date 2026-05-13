@@ -42,14 +42,14 @@ if (BUILD_DEFS) # Customised idl_c() equivalent, this is for defining the output
       "${CMAKE_CURRENT_SOURCE_DIR}/module_def.c"
       "${CMAKE_CURRENT_SOURCE_DIR}/prototypes.h")
 
-   list (APPEND COMMAND_LIST COMMAND ${CMAKE_COMMAND} -E echo "[idl_c] ${ORIGO_CMD} ${IDL_C_SCRIPT} --log-warning src=${MOD}.tdl sdk=${PROJECT_SOURCE_DIR} output-proto=prototypes.h output-defs=module_def.c files={ ${FUNCTIONS} lib_surfaces.cpp }")
+   list (APPEND COMMAND_LIST COMMAND ${CMAKE_COMMAND} -E echo "[idl_c] ${ORIGO_CMD} ${IDL_C_SCRIPT} --log-warning src=${MOD}.tdl sdk=${PROJECT_SOURCE_DIR} output-proto=prototypes.h output-defs=module_def.c")
    list (APPEND COMMAND_LIST COMMAND ${CMAKE_COMMAND} -E echo "[idl_comp] ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} --log-warning src=${MOD}.tdl output=${CMAKE_CURRENT_SOURCE_DIR}/idl.h sdk=${PROJECT_SOURCE_DIR} format=c")
 
    add_custom_command (OUTPUT "${DISPLAY_STAMP}"
       BYPRODUCTS ${DISPLAY_OUTPUTS}
       ${COMMAND_LIST}
       COMMAND ${ORIGO_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=${MOD}.tdl" "sdk=${PROJECT_SOURCE_DIR}"
-              "output-proto=prototypes.h" "output-defs=module_def.c" "files={" ${FUNCTIONS} "lib_surfaces.cpp" "}"
+              "output-proto=prototypes.h" "output-defs=module_def.c"
       COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=${MOD}.tdl" "output=${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
               "sdk=${PROJECT_SOURCE_DIR}" "format=c"
       COMMAND ${CMAKE_COMMAND} -E touch "${DISPLAY_STAMP}"

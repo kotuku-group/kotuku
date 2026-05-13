@@ -1,6 +1,6 @@
 --$TIRI:Include
 
-module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timestamp=20240611, src="audio.cpp" }, function()
+module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timestamp=20240611, src={ "audio.cpp", "commands.cpp" } }, function()
   flags("ADF", { comment="Optional flags for the Audio object." },
     "OVER_SAMPLING: Enables oversampling for higher quality audio at the cost of slower mixing.",
     "FILTER_LOW: Enable a low level of output filtering to minimise distortion.",

@@ -1,24 +1,24 @@
 
-local rx_doc_name        = <{ regex.new("^[Nn]ame:\\s+(.+?)\\n", regex.MULTILINE) }>
-local rx_doc_combo       = <{ regex.new("^(\\w+):\\s+(.+)\\n", regex.MULTILINE) }>
-local rx_doc_comment     = <{ regex.new("^[Cc]omment:\\s+(.+?)\\n", regex.MULTILINE) }>
-local rx_doc_category    = <{ regex.new("^[Cc]ategory:\\s+(.+?)\\n", regex.MULTILINE) }>
-local rx_doc_extproto    = <{ regex.new("^[Ee]xtPrototype:\\s+(.+?)\\n", regex.MULTILINE) }>
-local rx_doc_attrib      = <{ regex.new("^[Aa]ttribute:\\s+(.+?)\\n", regex.MULTILINE) }>
-local rx_doc_status      = <{ regex.new("^[Ss]tatus:\\s+(.+?)\\n", regex.MULTILINE) }>
-local rx_doc_lookup      = <{ regex.new("^[Ll]ookup:\\s+(.+?)\\n", regex.MULTILINE) }>
-local rx_doc_desc        = <{ regex.new("\\n\\n(.+?)\\n-[A-Z]+-\\n", regex.DOT_ALL) }>
-local rx_strip_ws        = <{ regex.new("^(.*\\S)") }>
-local rx_errors_section  = <{ regex.new("^-ERRORS-\\n+(.+?)-END-", regex.DOT_ALL|regex.MULTILINE) }>
-local rx_input_section   = <{ regex.new("^-INPUT-\\n+(.+?)\\n+-[A-Z]+-\\n", regex.DOT_ALL|regex.MULTILINE) }>
-local rx_result_section  = <{ regex.new("^-RESULT-\\n+(.+?)\\n+-END-", regex.DOT_ALL|regex.MULTILINE) }>
-local rx_ecode_comment   = <{ regex.new("^([A-Za-z]+):\\s+(.+)") }>
-local rx_ecode_only      = <{ regex.new("^([A-Za-z]+):?") }>
-local rx_private         = <{ regex.new("^[Pp]rivate") }>
-local rx_param           = <{ regex.new("^\\s*(.+)\\s+(\\S+)\\s*:\\s*(.+)$") }>
-local rx_result_type     = <{ regex.new("^(.+?):\\s+(.+)$") }>
-local rx_idl_section     = <{ regex.new("--IDL_BEGIN--(.+?)--IDL_END--", regex.DOT_ALL) }>
-local rx_extract_comment = <{ regex.new([[^\/\*+(.*?)\*+\/]], regex.MULTILINE|regex.DOT_ALL) }>
+rx_doc_name        = <{ regex.new("^[Nn]ame:\\s+(.+?)\\n", regex.MULTILINE) }>
+rx_doc_combo       = <{ regex.new("^(\\w+):\\s+(.+)\\n", regex.MULTILINE) }>
+rx_doc_comment     = <{ regex.new("^[Cc]omment:\\s+(.+?)\\n", regex.MULTILINE) }>
+rx_doc_category    = <{ regex.new("^[Cc]ategory:\\s+(.+?)\\n", regex.MULTILINE) }>
+rx_doc_extproto    = <{ regex.new("^[Ee]xtPrototype:\\s+(.+?)\\n", regex.MULTILINE) }>
+rx_doc_attrib      = <{ regex.new("^[Aa]ttribute:\\s+(.+?)\\n", regex.MULTILINE) }>
+rx_doc_status      = <{ regex.new("^[Ss]tatus:\\s+(.+?)\\n", regex.MULTILINE) }>
+rx_doc_lookup      = <{ regex.new("^[Ll]ookup:\\s+(.+?)\\n", regex.MULTILINE) }>
+rx_doc_desc        = <{ regex.new("\\n\\n(.+?)\\n-[A-Z]+-\\n", regex.DOT_ALL) }>
+rx_strip_ws        = <{ regex.new("^(.*\\S)") }>
+rx_errors_section  = <{ regex.new("^-ERRORS-\\n+(.+?)-END-", regex.DOT_ALL|regex.MULTILINE) }>
+rx_input_section   = <{ regex.new("^-INPUT-\\n+(.+?)\\n+-[A-Z]+-\\n", regex.DOT_ALL|regex.MULTILINE) }>
+rx_result_section  = <{ regex.new("^-RESULT-\\n+(.+?)\\n+-END-", regex.DOT_ALL|regex.MULTILINE) }>
+rx_ecode_comment   = <{ regex.new("^([A-Za-z]+):\\s+(.+)") }>
+rx_ecode_only      = <{ regex.new("^([A-Za-z]+):?") }>
+rx_private         = <{ regex.new("^[Pp]rivate") }>
+rx_param           = <{ regex.new("^\\s*(.+)\\s+(\\S+)\\s*:\\s*(.+)$") }>
+rx_result_type     = <{ regex.new("^(.+?):\\s+(.+)$") }>
+rx_idl_section     = <{ regex.new("--IDL_BEGIN--(.+?)--IDL_END--", regex.DOT_ALL) }>
+rx_extract_comment = <{ regex.new([[^\/\*+(.*?)\*+\/]], regex.MULTILINE|regex.DOT_ALL) }>
 
 ----------------------------------------------------------------------------------------------------------------------
 
@@ -309,18 +309,7 @@ end
 global function parseSourceFiles()
    if glFeedback is 'verbose' then print('Processing source files...') end
 
-   srcFiles = array<string>
-
-   for i=0, arg('files:size', 0)-1 do
-      srcFiles:push(arg('files(' .. i .. ')'))
-   end
-
-   if #srcFiles < 1 then
-      if glFeedback is 'verbose' then print('No source files were detected.') end
-      return
-   end
-
-   for path in values(srcFiles) do
+   for path in values(glModule.src ?? {}) do
       -- Process --IDL_BEGIN/END-- sections, which allow the developer to embed TDL functions in the source code.
 
       local idlExtract

@@ -369,13 +369,13 @@ global function outputClassHeader(class:table, Private:str, Custom:str)
          end
 
          if not field_type:startsWith('const ') then
-            if ((f.flags & FD_STRING) != 0) and ((f.flags & FD_ARRAY) is 0) then
+            if (f.flags has FD_STRING) and ((f.flags & FD_ARRAY) is 0) then
                if field_type:startsWith('STRING') or field_type:startsWith('CSTRING') then
                   field_type = 'T &&'
                else
                   field_type = 'const ' .. field_type
                end
-            elseif (f.flags & (FD_POINTER | FD_OBJECT)) != 0 then
+            elseif f.flags has (FD_POINTER | FD_OBJECT) then
                -- Applying const to pointers can cause type conversion issues.
             else
                field_type = 'const ' .. field_type
@@ -392,8 +392,8 @@ global function outputClassHeader(class:table, Private:str, Custom:str)
             if field_type:endsWith('[]') then
                field_type = field_type:sub(0,-3) .. '*'
                output(f'   inline ERR set{fid_name}({field_type} Value, int Elements) noexcept {{')
-            elseif (f.flags & FD_ARRAY) != 0 then
-               if (f.flags & FD_CPP) != 0 then
+            elseif f.flags has FD_ARRAY then
+               if f.flags has FD_CPP then
                   output(f'   inline ERR set{fid_name}({field_type} *Value) noexcept {{')
                else
                   output(f'   inline ERR set{fid_name}({field_type} Value, int Elements) noexcept {{')
@@ -423,33 +423,33 @@ global function outputClassHeader(class:table, Private:str, Custom:str)
                output(indent .. f'auto field = FindField(this, FID_{fid_name}, &target);')
             end
 
-            if (f.flags & FD_UNIT) != 0 then
-               if (f.flags & (FD_INT|FD_INT64|FD_DOUBLE|FD_FLOAT)) != 0 then
+            if f.flags has FD_UNIT then
+               if f.flags has (FD_INT|FD_INT64|FD_DOUBLE|FD_FLOAT) then
                   output(indent .. 'Unit var(Value);')
                   output(indent .. 'return field->WriteValue(target, field, FD_UNIT, &var, 1);')
                else
                   -- Pass through as pointer; requires further analysis to determine viability
                   output(indent .. 'return field->WriteValue(target, field, FD_POINTER, Value, 1);')
                end
-            elseif (f.flags & FD_ARRAY) != 0 then
-               if (f.flags & FD_CPP) != 0 then
+            elseif f.flags has FD_ARRAY then
+               if f.flags has FD_CPP then
                   flags = string.format('%08x', f.flags):sub(-8)
                   output(indent .. 'return field->WriteValue(target, field, 0x' .. flags .. ', Value, int(Value->size()));')
                else
                   flags = string.format('%08x', f.flags):sub(-8)
                   output(indent .. 'return field->WriteValue(target, field, 0x' .. flags .. ', Value, Elements);')
                end
-            elseif (f.flags & FD_FUNCTION) != 0 then
+            elseif f.flags has FD_FUNCTION then
                output(indent .. 'return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);')
-            elseif (f.flags & FD_STRING) != 0 then
+            elseif f.flags has FD_STRING then
                flags = string.format('%08x', f.flags):sub(-8)
                output(indent .. f'return field->WriteValue(target, field, 0x{flags}, to_cstring(Value), 1);')
-            elseif (f.flags & FD_POINTER) != 0 then
+            elseif f.flags has FD_POINTER then
                flags = string.format('%08x', f.flags):sub(-8)
                output(indent .. f'return field->WriteValue(target, field, 0x{flags}, Value, 1);')
-            elseif (f.flags & (FD_DOUBLE | FD_FLOAT)) != 0 then
+            elseif f.flags has (FD_DOUBLE | FD_FLOAT) then
                output(indent .. 'return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);')
-            elseif (f.flags & FD_INT64) != 0 then
+            elseif f.flags has FD_INT64 then
                output(indent .. 'return field->WriteValue(target, field, FD_INT64, &Value, 1);')
             else
                output(indent .. 'return field->WriteValue(target, field, FD_INT, &Value, 1);')

@@ -126,8 +126,29 @@ global function module(Options:table, Function:func)
       priority()
    end
 
-   if glModule.src then -- Primary source file
-      content = io.readAll(glTDLFolder .. glModule.src)
+   if glModule.src and type(glModule.src) is 'string' then
+      glModule.src = { glTDLFolder .. glModule.src }
+   end
+
+   -- Module files used to be taken from the command-line; the src option is now preferred
+
+   if not glModule.src then
+      glModule.src = array<string>
+
+      for i=0, arg('files:size', 0)-1 do
+         glModule.src:push(arg('files(' .. i .. ')'))
+      end
+   end
+
+   -- Look for the MODULE header and process it.
+
+   if glModule.src then
+      local content
+      content = ''
+      for src in values(glModule.src) do
+         content = io.readAll(src)
+         if content:find('-MODULE-') then break end
+      end
       content = content:replace('\r\n', '\n')
 
       -- Extract possible content from within comments so that we don't get interference from the code while parsing.

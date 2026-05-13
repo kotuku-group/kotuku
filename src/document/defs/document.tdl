@@ -1,6 +1,6 @@
 --$TIRI:Include
 
-module({ name="Document", copyright="Paul Manias © 2005-2026", version=1.0, timestamp=20240611 }, function()
+module({ name="Document", copyright="Paul Manias © 2005-2026", version=1.0, timestamp=20240611, src="../document.cpp" }, function()
   restrict(function()
     loadFile(glPath .. 'common-graphics.tdl')
   end)
