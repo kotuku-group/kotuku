@@ -18,7 +18,7 @@
 
 class AstBuilder {
 public:
-   explicit AstBuilder(ParserContext& context);
+   explicit AstBuilder(ParserContext& context, AstBuilder *Parent = nullptr);
    ~AstBuilder();
 
    AstBuilder(const AstBuilder &) = delete;
@@ -29,6 +29,7 @@ public:
    ParserResult<ExprNodeList> parse_expression_list();
    void commit_registered_enum_constants();
    void rollback_registered_enum_constants();
+   void rollback_registered_enum_hierarchy();
 
    [[nodiscard]] bool at_top_level() const { return function_depth IS 0 and block_depth IS 0; }
 
@@ -39,6 +40,7 @@ private:
    int function_depth = 0;           // Tracks nesting depth inside function bodies
    int block_depth = 0;              // Tracks nested statement blocks below chunk scope
    bool enum_constants_committed = false;
+   AstBuilder *parent_builder = nullptr;
    std::vector<GCstr *> function_name_stack;
    std::vector<uint32_t> registered_enum_constants;
 

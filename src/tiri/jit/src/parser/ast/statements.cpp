@@ -1202,18 +1202,19 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::st
    import_lex->fs = &fs;
    import_lex->L = L;
 
-   import_lex->next(); // Prime the lexer
-
    // Create a temporary parser context for the imported file
    ParserContext import_ctx(*import_lex, fs, *L, ParserAllocator::from(L), this->ctx.config());
+   import_ctx.set_error_rollback_callback(rollback_ast_builder_constants, this);
 
    // Copy the import stack to the child context for circular detection
    for (const auto& imported_path : this->ctx.import_stack()) {
       import_ctx.push_import(imported_path);
    }
 
+   import_lex->next(); // Prime the lexer
+
    // Parse up to EOF
-   AstBuilder import_builder(import_ctx);
+   AstBuilder import_builder(import_ctx, this);
    const TokenKind terms[] = { TokenKind::EndOfFile };
    auto result = import_builder.parse_block(terms);
 

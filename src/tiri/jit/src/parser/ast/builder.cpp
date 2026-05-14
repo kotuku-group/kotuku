@@ -35,7 +35,7 @@
 
 static void rollback_ast_builder_constants(void *UserData)
 {
-   ((AstBuilder *)UserData)->rollback_registered_enum_constants();
+   ((AstBuilder *)UserData)->rollback_registered_enum_hierarchy();
 }
 
 static FunctionExprPayload * function_payload_from(ExprNode &Node)
@@ -159,7 +159,7 @@ static ParserResult<StmtNodePtr> make_control_stmt(ParserContext& Context, AstNo
    return ParserResult<StmtNodePtr>::success(std::move(node));
 }
 
-AstBuilder::AstBuilder(ParserContext &Context) : ctx(Context)
+AstBuilder::AstBuilder(ParserContext &Context, AstBuilder *Parent) : ctx(Context), parent_builder(Parent)
 {
    this->ctx.set_error_rollback_callback(rollback_ast_builder_constants, this);
 }
@@ -198,6 +198,12 @@ void AstBuilder::rollback_registered_enum_constants()
       glConstantRegistry.erase(hash);
    }
    this->registered_enum_constants.clear();
+}
+
+void AstBuilder::rollback_registered_enum_hierarchy()
+{
+   this->rollback_registered_enum_constants();
+   if (this->parent_builder) this->parent_builder->rollback_registered_enum_hierarchy();
 }
 
 AstBuilder::FunctionNameScope::FunctionNameScope(AstBuilder &Builder, GCstr *FunctionName) : builder(Builder)

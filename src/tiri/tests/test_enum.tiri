@@ -142,6 +142,33 @@ assert(debug.locality('%s_ONE') is 'nil')
 ]], prefix, prefix, prefix))
 end
 
+@Test function ImportLexerErrorDoesNotLeakParentEnumConstants()
+   glDynamicEnumCounter++
+   local prefix = 'IMPORT_LEAK_ENUM_' .. tostring(glDynamicEnumCounter)
+   local failed = false
+
+   try
+      exec(string.format([[
+enum %s {
+   ONE,
+}
+import './src/tiri/tests/import_enum_bad_lexer'
+]], prefix))
+   except ex
+      failed = true
+   end
+
+   assert(failed, 'Broken imported chunk should fail before parent constants are committed')
+
+   exec(string.format([[
+enum %s {
+   ONE,
+}
+assert(%s_ONE is 0)
+assert(debug.locality('%s_ONE') is 'nil')
+]], prefix, prefix, prefix))
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- Error cases
 
