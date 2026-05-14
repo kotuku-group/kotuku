@@ -50,11 +50,6 @@ private:
       uint8_t right = 0;
    };
 
-   struct EnumExpansion {
-      std::vector<Identifier> names;
-      ExprNodeList values;
-   };
-
    [[nodiscard]] ParserResult<std::unique_ptr<BlockStmt>> parse_block(std::span<const TokenKind> terminators);
    ParserResult<StmtNodePtr> parse_statement();
    ParserResult<StmtNodePtr> parse_local();
@@ -94,10 +89,6 @@ private:
    ParserResult<FunctionReturnTypes> parse_return_type_annotation();
 
    ParserResult<std::vector<Identifier>> parse_name_list();
-   [[nodiscard]] bool is_enum_declaration_rhs(size_t Offset) const;
-   [[nodiscard]] bool is_enum_declaration_prefix(const Identifier &) const;
-   ParserResult<EnumExpansion> parse_enum_declaration(const Identifier &);
-   ParserResult<StmtNodePtr> make_enum_declaration_stmt(SourceSpan, Identifier, bool);
    struct ParameterListResult {
       std::vector<FunctionParameter> parameters;
       bool is_vararg = false;
