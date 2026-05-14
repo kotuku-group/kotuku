@@ -1305,11 +1305,6 @@ static void png_warning_hook(png_structp png_ptr, png_const_charp message)
    log.msg("libpng: %s", message); // PNG warnings aren't serious enough to warrant logging beyond the info level
 }
 
-ZEXTERN uLong ZEXPORT crc32   OF((uLong crc, const Bytef *buf, uInt len))
-{
-   return GenCRC32(crc, (APTR)buf, len);
-}
-
 //********************************************************************************************************************
 
 static ERR decompress_png(extPicture *Self, objBitmap *Bitmap, int BitDepth, int ColourType, png_structp ReadPtr,
