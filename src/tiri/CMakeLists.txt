@@ -83,6 +83,7 @@ ExternalProject_Add(${FFI_PROJECT}
       ${CMAKE_COMMAND} -E copy_if_different "${FFI_WRAPPER_CMAKELISTS}" <SOURCE_DIR>/CMakeLists.txt
       COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FFI_WRAPPER_OPTIONS}" <SOURCE_DIR>/configure_options.cmake
       COMMAND ${CMAKE_COMMAND} -E make_directory <SOURCE_DIR>/include
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FFI_WRAPPER_CONFIG}" <SOURCE_DIR>/include/fficonfig.cmake.in
    CMAKE_ARGS
       ${GLOBAL_DEFAULT_ARGS}
       ${GLOBAL_THIRDPARTY_LIB_ARGS}
