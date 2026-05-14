@@ -126,8 +126,26 @@ static int io_open(lua_State *Lua)
 static int io_close(lua_State *Lua)
 {
    if (lua_gettop(Lua) IS 0) {
-      // TODO: Close default output file with FreeResource() and remove it from the registry
-      return 0;
+      lua_pushstring(Lua, "io.defaultOutput");
+      lua_gettable(Lua, LUA_REGISTRYINDEX);
+
+      if (lua_isnil(Lua, -1)) {
+         lua_pop(Lua, 1);
+         lua_pushcfunction(Lua, io_output);
+         lua_call(Lua, 0, 1);
+      }
+
+      if (lua_isnil(Lua, -1)) luaL_error(Lua, ERR::ExpectedFile);
+
+      auto handle = check_file_handle(Lua, -1);
+      handle->close();
+
+      lua_pushstring(Lua, "io.defaultOutput");
+      lua_pushnil(Lua);
+      lua_settable(Lua, LUA_REGISTRYINDEX);
+
+      lua_pushboolean(Lua, 1);
+      return 1;
    }
 
    if (auto handle = check_file_handle(Lua, 1)) {
@@ -435,16 +453,6 @@ static int io_lines(lua_State *Lua)
       return 1;
    }
    else luaL_error(Lua, ERR::File);
-}
-
-//********************************************************************************************************************
-// TODO: Open pipe to running process - requires Task integration and using callbacks to receive data from stdout.
-// This is equivalent to Lua's io.popen()
-
-static int io_openPipe(lua_State *Lua)
-{
-   luaL_error(Lua, ERR::NoSupport, "io.openPipe not yet implemented");
-   return 0;
 }
 
 //********************************************************************************************************************
@@ -813,7 +821,6 @@ void register_io_class(lua_State *Lua)
       { "lines",        io_lines },
       { "open",         io_open },
       { "output",       io_output },
-      { "openPipe",     io_openPipe }, //
       { "read",         io_read },
       { "readAll",      io_readAll },
       { "sanitisePath", io_sanitisePath },
@@ -875,7 +882,6 @@ void register_io_class(lua_State *Lua)
    reg_iface_prototype("io", "input", { TiriType::Any }, { TiriType::Any });
    reg_iface_prototype("io", "output", { TiriType::Any }, { TiriType::Any });
    reg_iface_prototype("io", "lines", { TiriType::Func }, { TiriType::Any });
-   reg_iface_prototype("io", "openPipe", {}, { TiriType::Str });
    reg_iface_prototype("io", "tempFile", { TiriType::Any }, {});
    reg_iface_prototype("io", "type", { TiriType::Str }, { TiriType::Any });
    reg_iface_prototype("io", "readAll", { TiriType::Str }, { TiriType::Str });

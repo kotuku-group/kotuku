@@ -346,20 +346,6 @@ struct finput {
    int8_t Mode;
 };
 
-enum { NUM_DOUBLE=1, NUM_FLOAT, NUM_INT64, NUM_INT, NUM_INT16, NUM_BYTE };
-
-struct fnumber { // TODO: Use std::variant
-   int Type;     // Expressed as an FD_ flag.
-   union {
-      double  f64;
-      float   f32;
-      int64_t i64;
-      int     i32;
-      int16_t i16;
-      int8_t  i8;
-   };
-};
-
 struct module {
    struct Function *Functions = nullptr;
    OBJECTPTR Module = nullptr;
@@ -373,12 +359,6 @@ struct module {
 constexpr uint32_t simple_hash(CSTRING String, uint32_t Hash = 0) {
    auto crc = kt::detail::crc32c_finalise(Hash);
    while (auto c = *String++) crc = kt::detail::crc32c_byte(crc, uint8_t(c));
-   return kt::detail::crc32c_finalise(crc);
-}
-
-constexpr uint32_t char_hash(char Char, uint32_t Hash = 0) {
-   auto crc = kt::detail::crc32c_finalise(Hash);
-   crc = kt::detail::crc32c_byte(crc, uint8_t(Char));
    return kt::detail::crc32c_finalise(crc);
 }
 

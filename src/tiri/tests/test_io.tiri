@@ -5,7 +5,7 @@ glTestFolder = 'temp:'
 glTestFiles = array<string>
 
 @AfterAll function cleanup()
-   for _, path in glTestFiles do
+   for path in values(glTestFiles) do
       logOutput('Deleting test file ' .. path)
       mSys.DeleteFile(path)
    end
@@ -86,6 +86,28 @@ end
    assert(result is true, 'io.close should return true on success')
    file_type = io.type(file)
    assert(file_type is 'closed file', 'File should be marked as closed, got ' .. tostring(file_type))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test(labels=['io', 'file', 'defaults']) function IOCloseDefaultOutput()
+   output_path = glTestFolder .. 'test_close_default_output.txt'
+   output_file = io.output(output_path)
+   glTestFiles:push(output_path)
+
+   io.write('closed default output')
+   result = io.close()
+
+   assert(result is true, 'io.close() should return true when closing the default output')
+   assert(io.type(output_file) is 'closed file', 'Previous default output should be marked as closed')
+
+   content = readFileContent(output_path)
+   assert(content is 'closed default output', 'Default output content should be flushed when closed')
+
+   current_output = io.output()
+   assert(io.type(current_output) is 'file', 'io.output() should create a new default output after io.close()')
+   assert(current_output != output_file, 'io.output() should not return the closed default output handle')
+   io.close()
 end
 
 ----------------------------------------------------------------------------------------------------------------------
