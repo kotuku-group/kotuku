@@ -1834,6 +1834,7 @@ static void lj_lex_error_no_skip(LexState *State, LexToken tok, ErrMsg em)
       return;  // Don't skip, don't set had_lex_error - caller returns synthetic token
    }
 
+   if (State->active_context) State->active_context->rollback_before_error();
    lj_err_lex(State->L, State->chunk_name, tokstr, State->linenumber, em, nullptr);
 }
 
@@ -1916,6 +1917,7 @@ void lj_lex_error(LexState *State, LexToken tok, ErrMsg em, ...)
       return;  // Return without throwing - caller will handle recovery
    }
 
+   if (State->active_context) State->active_context->rollback_before_error();
    lj_err_lex(State->L, State->chunk_name, tokstr, State->lastline, em, argp);
    va_end(argp);
 }

@@ -115,6 +115,33 @@ assert(debug.locality('%s_ONE') is 'nil')
 ]], prefix, prefix, prefix))
 end
 
+@Test function LexerErrorChunkDoesNotLeakEnumConstants()
+   glDynamicEnumCounter++
+   local prefix = 'LEX_LEAK_ENUM_' .. tostring(glDynamicEnumCounter)
+   local failed = false
+
+   try
+      exec(string.format([[
+enum %s {
+   ONE,
+}
+local broken = "unterminated
+]], prefix))
+   except ex
+      failed = true
+   end
+
+   assert(failed, 'Broken lexer chunk should fail before constants are committed')
+
+   exec(string.format([[
+enum %s {
+   ONE,
+}
+assert(%s_ONE is 0)
+assert(debug.locality('%s_ONE') is 'nil')
+]], prefix, prefix, prefix))
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- Error cases
 
