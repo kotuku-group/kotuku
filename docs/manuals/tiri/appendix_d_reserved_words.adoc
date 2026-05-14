@@ -106,14 +106,3 @@ indexterm:[reserved words] indexterm:[keywords] This appendix provides a quick-r
 |`as`        |Provides an alias in `import` statements or performs type conversion.
 |`defer`     |Registers code to execute when the enclosing scope exits.  See <<ch-resource-management>>.
 |===
-
-=== Contextual Keywords
-
-indexterm:[contextual keywords] The following identifiers are not reserved but take on special meaning in specific syntactic positions.  They remain valid as variable names in all other contexts.
-
-[cols="2,5"]
-|===
-|Keyword |Description
-
-|`enum`  |Introduces an enum declaration when preceded by an uppercase identifier and `=`.  See <<sec-enum-declarations>>.
-|===

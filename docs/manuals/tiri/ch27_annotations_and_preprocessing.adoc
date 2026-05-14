@@ -326,14 +326,6 @@ Accepted arguments:
 |`display`
 |Boolean
 |Requires the display module to be available.
-
-|`platform_linux`
-|Boolean
-|Requires a Linux operating system.
-
-|`platform_windows`
-|Boolean
-|Requires a Microsoft Windows operating system.
 |===
 
 If a requirement evaluates to `false`, Flute omits the test from the discovered test list.
