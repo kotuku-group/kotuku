@@ -75,14 +75,15 @@ class extConvolveFX : public extFilterEffect {
    int    MatrixColumns, MatrixRows;
    int    MatrixSize;
    EM     EdgeMode;
-   bool   PreserveAlpha, MatrixProvided, TargetXProvided, TargetYProvided, UnitXProvided, UnitYProvided;
+   bool   PreserveAlpha, MatrixProvided, DivisorProvided, TargetXProvided, TargetYProvided, UnitXProvided,
+          UnitYProvided;
    double Matrix[MAX_DIM * MAX_DIM] = {};
 
    extConvolveFX() : UnitX(1), UnitY(1), Divisor(0), Bias(0),
       TargetX(-1), TargetY(-1), // If -ve, the target will be computed as the centre of the matrix.
       MatrixColumns(3), MatrixRows(3), MatrixSize(0), EdgeMode(EM::DUPLICATE), PreserveAlpha(false),
-      MatrixProvided(false), TargetXProvided(false), TargetYProvided(false), UnitXProvided(false),
-      UnitYProvided(false) { }
+      MatrixProvided(false), DivisorProvided(false), TargetXProvided(false), TargetYProvided(false),
+      UnitXProvided(false), UnitYProvided(false) { }
 
    inline uint8_t * getPixel(objBitmap *Bitmap, int X, int Y) const {
       if ((X >= Bitmap->Clip.Left) and (X < Bitmap->Clip.Right) and
@@ -571,6 +572,7 @@ static ERR CONVOLVEFX_SET_Divisor(extConvolveFX *Self, double Value)
    kt::Log log;
    if (!Value) return log.warning(ERR::InvalidValue);
    Self->Divisor = Value;
+   Self->DivisorProvided = true;
    return ERR::Okay;
 }
 
@@ -835,8 +837,62 @@ static ERR CONVOLVEFX_GET_XMLDef(extConvolveFX *Self, STRING *Value)
 
    stream << "feConvolveMatrix";
 
-   *Value = strclone(stream.str());
-   return ERR::Okay;
+   if ((Self->MatrixColumns != 3) or (Self->MatrixRows != 3)) {
+      stream << " order=\"";
+      if (Self->MatrixColumns IS Self->MatrixRows) stream << Self->MatrixColumns;
+      else stream << Self->MatrixColumns << " " << Self->MatrixRows;
+      stream << "\"";
+   }
+
+   if (Self->MatrixProvided) {
+      stream << " kernelMatrix=\"";
+      for (int i=0; i < Self->MatrixSize; i++) {
+         if (i) stream << " ";
+         stream << Self->Matrix[i];
+      }
+      stream << "\"";
+   }
+
+   double default_divisor = 0.0;
+   for (int i=0; i < Self->MatrixSize; i++) default_divisor += Self->Matrix[i];
+   if (!default_divisor) default_divisor = 1.0;
+
+   if (Self->DivisorProvided and (std::abs(Self->Divisor - default_divisor) > 1e-12)) {
+      stream << " divisor=\"" << Self->Divisor << "\"";
+   }
+
+   if (Self->Bias != 0.0) stream << " bias=\"" << Self->Bias << "\"";
+   if (Self->TargetXProvided and (Self->TargetX != (Self->MatrixColumns>>1))) {
+      stream << " targetX=\"" << Self->TargetX << "\"";
+   }
+
+   if (Self->TargetYProvided and (Self->TargetY != (Self->MatrixRows>>1))) {
+      stream << " targetY=\"" << Self->TargetY << "\"";
+   }
+
+   switch (Self->EdgeMode) {
+      case EM::WRAP:
+         stream << " edgeMode=\"wrap\"";
+         break;
+
+      case EM::NONE:
+         stream << " edgeMode=\"none\"";
+         break;
+
+      default:
+         break;
+   }
+
+   if (Self->UnitXProvided or Self->UnitYProvided) {
+      stream << " kernelUnitLength=\"" << Self->UnitX;
+      if (Self->UnitX != Self->UnitY) stream << " " << Self->UnitY;
+      stream << "\"";
+   }
+
+   if (Self->PreserveAlpha) stream << " preserveAlpha=\"true\"";
+
+   if ((*Value = strclone(stream.str()))) return ERR::Okay;
+   else return ERR::AllocMemory;
 }
 
 //********************************************************************************************************************

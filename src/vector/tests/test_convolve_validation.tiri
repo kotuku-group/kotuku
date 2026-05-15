@@ -86,3 +86,36 @@ end
       error('Negative UnitY should be rejected.')
    end
 end
+
+@Test function XMLDefOmitsDefaultAndAutoValues()
+   local filter, fx = newConvolve()
+   fx.matrix = array<double> { 0, 0, 0, 0, 1, 0, 0, 0, 0 }
+
+   local err = fx.init()
+   assert(err is ERR_Okay, 'ConvolveFX init failed: ' .. mSys.GetErrorMsg(err))
+
+   local expected = 'feConvolveMatrix kernelMatrix="0 0 0 0 1 0 0 0 0"'
+   assert(fx.xmlDef is expected, 'Unexpected default XMLDef: ' .. fx.xmlDef)
+end
+
+@Test function XMLDefIncludesNonDefaultSVGAttributes()
+   local filter, fx = newConvolve()
+   fx.matrixColumns = 3
+   fx.matrixRows = 2
+   fx.matrix = array<double> { 1, 2, 3, 4, 5, 6 }
+   fx.divisor = -2
+   fx.bias = 0.5
+   fx.targetX = 2
+   fx.targetY = 0
+   fx.edgeMode = 2
+   fx.unitX = 2
+   fx.unitY = 0.5
+   fx.preserveAlpha = true
+
+   local err = fx.init()
+   assert(err is ERR_Okay, 'ConvolveFX init failed: ' .. mSys.GetErrorMsg(err))
+
+   local expected = 'feConvolveMatrix order="3 2" kernelMatrix="1 2 3 4 5 6" divisor="-2" ' ..
+      'bias="0.5" targetX="2" targetY="0" edgeMode="wrap" kernelUnitLength="2 0.5" preserveAlpha="true"'
+   assert(fx.xmlDef is expected, 'Unexpected non-default XMLDef: ' .. fx.xmlDef)
+end
