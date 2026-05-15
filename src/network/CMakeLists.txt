@@ -39,8 +39,34 @@ elseif (WIN32)
    list (APPEND NETWORK_LIBS secur32 crypt32)
 elseif (OPENSSL_FOUND)
    message (STATUS "Network module will be compiled with OpenSSL support.")
-   # Linking against the .a files is necessary to ensure a static link.
-   list (APPEND NETWORK_LIBS ssl.a crypto.a)
+   list (APPEND NETWORK_LIBS OpenSSL::SSL OpenSSL::Crypto)
+
+   if (OPENSSL_CRYPTO_LIBRARY MATCHES "\\${CMAKE_STATIC_LIBRARY_SUFFIX}$")
+      list (APPEND NETWORK_LIBS zlib ${CMAKE_DL_LIBS})
+
+      find_library (OPENSSL_ZSTD_LIBRARY NAMES zstd)
+      if (NOT OPENSSL_ZSTD_LIBRARY)
+         get_filename_component (OPENSSL_CRYPTO_LIBRARY_DIR "${OPENSSL_CRYPTO_LIBRARY}" DIRECTORY)
+
+         find_file (OPENSSL_ZSTD_RUNTIME_LIBRARY
+            NAMES libzstd.so.1 libzstd.dylib
+            PATHS
+               "${OPENSSL_CRYPTO_LIBRARY_DIR}"
+               "/lib/${CMAKE_LIBRARY_ARCHITECTURE}"
+               "/usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}"
+               "/lib"
+               "/usr/lib"
+            PATH_SUFFIXES lib lib64)
+         if (OPENSSL_ZSTD_RUNTIME_LIBRARY)
+            set (OPENSSL_ZSTD_LIBRARY "${OPENSSL_ZSTD_RUNTIME_LIBRARY}")
+         endif ()
+      endif ()
+
+      if (OPENSSL_ZSTD_LIBRARY)
+         list (APPEND NETWORK_LIBS "${OPENSSL_ZSTD_LIBRARY}")
+      endif ()
+   endif ()
+
    target_include_directories (${MOD} PRIVATE "${OPENSSL_INCLUDE_DIR}")
 else ()
    message (STATUS "Network module will not be compiled with SSL support (OpenSSL not found).")

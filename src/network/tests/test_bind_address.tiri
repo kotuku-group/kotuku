@@ -18,10 +18,9 @@
    signal = obj.new('time', { })
    proc = processing.new({ timeout = 3.0, signals = array<object> { signal } })
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       port = port,
       address = '127.0.0.1',
-      flags = 'SERVER'
    })
 
    client = obj.new('netsocket', {
@@ -46,7 +45,7 @@ end
 @Test function BindAllInterfaces()
    port = glBasePort + 2
    try
-      obj.new('netsocket', { port = port, address = '0.0.0.0', flags = 'SERVER' })
+      obj.new('netserver', { port = port, address = '0.0.0.0' })
    except ex
       error('Failed to bind to 0.0.0.0:' .. port)
    end
@@ -58,7 +57,7 @@ end
 @Test function DefaultBinding()
    port = glBasePort + 3
    try
-      obj.new('netsocket', { port = port, flags = 'SERVER' })
+      obj.new('netserver', { port = port })
    except ex
       error('Failed to bind to port ' .. port)
    end
@@ -70,7 +69,7 @@ end
 @Test function BindWildcard()
    port = glBasePort + 4
    try
-      obj.new('netsocket', { port = port, address = '*', flags = 'SERVER' })
+      obj.new('netserver', { port = port, address = '*' })
    except ex
       error('Failed to bind with wildcard to port ' .. port)
    end
@@ -82,7 +81,7 @@ end
 @Test function BindIPv6Localhost()
    port = glBasePort + 5
    try
-      obj.new('netsocket', { port = port, address = '::1', flags = 'SERVER' })
+      obj.new('netserver', { port = port, address = '::1' })
    except ex
       error('Failed to bind to ::1:' .. port .. ' (IPv6 may not be available)')
    end
@@ -94,7 +93,7 @@ end
 @Test function BindIPv6AllInterfaces()
    port = glBasePort + 6
    try
-      obj.new('netsocket', { port = port, address = '::', flags = 'SERVER' })
+      obj.new('netserver', { port = port, address = '::' })
    except ex
       error('Failed to bind to :::' .. port .. ' (IPv6 may not be available)')
    end
@@ -106,7 +105,7 @@ end
 @Test function BindLocalhostString()
    port = glBasePort + 7
    try
-     obj.new('netsocket', { port = port, address = 'localhost', flags = 'SERVER' })
+     obj.new('netserver', { port = port, address = 'localhost' })
    except ex
       error('Failed to bind to localhost:' .. port)
    end
@@ -118,7 +117,7 @@ end
 @Test function InvalidBindAddress()
    port = glBasePort + 8
    try
-      server = obj.new('netsocket', { port = port, address = '999.999.999.999', flags = 'SERVER' })
+      server = obj.new('netserver', { port = port, address = '999.999.999.999' })
    success
       error('Unexpectedly succeeded binding to invalid address')
    end
@@ -132,10 +131,10 @@ end
 
    try
       -- First server on localhost
-      obj.new('netsocket', { port = port, address = '127.0.0.1', flags = 'SERVER' })
+      obj.new('netserver', { port = port, address = '127.0.0.1' })
 
       -- Second server on different port, all interfaces
-      obj.new('netsocket', { port = port + 1, address = '0.0.0.0', flags = 'SERVER' })
+      obj.new('netserver', { port = port + 1, address = '0.0.0.0' })
    except ex
       error('Failed to create concurrent servers')
    end

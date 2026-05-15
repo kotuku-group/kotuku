@@ -59,10 +59,9 @@ end
    client_connected = false
 
    -- Create IPv6 server
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       name = 'IPv6TestServer',
       port = glPort,
-      flags = NSF_SERVER,
       feedback = function(Socket, Client, State)
          logOutput('[Server] State change: ' .. State)
          if State is NTC_CONNECTED and Client then

@@ -2,6 +2,8 @@
 static SSL_CTX *glClientSSL = nullptr; // Thread-safe unless you call a SET function
 static SSL_CTX *glServerSSL = nullptr;
 static SSL_CTX *glClientSSLNV = nullptr; // No-verify version
+static std::mutex glSSLSetupMutex;
+static bool glSSLInitialised = false;
 
 static ERR loadPKCS12Certificate(const std::string &, std::optional<const std::string> &, SSL_CTX *);
 static ERR loadPEMCertificate(const std::string &, std::optional<const std::string> &, std::optional<const std::string> &, SSL_CTX *);
@@ -201,7 +203,7 @@ static void sslCtxMsgCallback(const SSL *s, int where, int ret)
 //********************************************************************************************************************
 // Load custom certificate from file for OpenSSL server context
 
-static ERR loadCustomCertificateOpenSSL(extNetSocket *Self, SSL_CTX *ctx)
+static ERR loadCustomCertificateOpenSSL(extNetServer *Self, SSL_CTX *ctx)
 {
    kt::Log log(__FUNCTION__);
 
@@ -331,10 +333,24 @@ static ERR loadPKCS12Certificate(const std::string &p12Path, std::optional<const
 }
 
 //********************************************************************************************************************
-// This only needs to be called once to setup the unique SSL context for the NetSocket object and the locations of the
-// certificates.
+// This only needs to be called once to setup OpenSSL's global state.
 
-static ERR tls_setup(extNetSocket *Self)
+static ERR tls_initialise(kt::Log &Log)
+{
+   if (not glSSLInitialised) {
+      if (OPENSSL_init_ssl(OPENSSL_INIT_LOAD_SSL_STRINGS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS, nullptr) != 1) {
+         return Log.warning(ERR::SystemCall);
+      }
+      glSSLInitialised = true;
+   }
+
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// This only needs to be called once to setup the unique SSL context for NetServer listeners and certificate locations.
+
+static ERR tls_setup_server(extNetServer *Self)
 {
    kt::Log log(__FUNCTION__);
 
@@ -342,87 +358,93 @@ static ERR tls_setup(extNetSocket *Self)
 
    ERR error = ERR::Okay;
 
-   static std::mutex ssl_init_mutex;
-   static bool ssl_initialised = false;
+   std::lock_guard<std::mutex> lock(glSSLSetupMutex);
 
-   std::lock_guard<std::mutex> lock(ssl_init_mutex);
-
-   if (!ssl_initialised) {
-      if (OPENSSL_init_ssl(OPENSSL_INIT_LOAD_SSL_STRINGS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS, nullptr) != 1) {
-         return log.warning(ERR::SystemCall);
-      }
-      ssl_initialised = true;
-   }
+   if ((error = tls_initialise(log)) != ERR::Okay) return error;
 
    bool setup_success = false;
 
-   if ((Self->Flags & NSF::SERVER) != NSF::NIL) {
-      if (glServerSSL) return ERR::Okay;
+   if (glServerSSL) return ERR::Okay;
 
-      if ((glServerSSL = SSL_CTX_new(TLS_server_method()))) {
-         // Check if custom certificate is specified
-         if (Self->SSLCertificate and *Self->SSLCertificate) {
-            log.msg("Loading custom SSL server certificate: %s", Self->SSLCertificate);
-            if ((error = loadCustomCertificateOpenSSL(Self, glServerSSL)) IS ERR::Okay) {
-               setup_success = true;
-               log.msg("Custom SSL server certificate loaded successfully.");
-            }
-            else {
-               log.warning("Failed to load custom SSL certificate: %s", GetErrorMsg(error));
-            }
+   if ((glServerSSL = SSL_CTX_new(TLS_server_method()))) {
+      // Check if custom certificate is specified
+      if (Self->SSLCertificate and *Self->SSLCertificate) {
+         log.msg("Loading custom SSL server certificate: %s", Self->SSLCertificate);
+         if ((error = loadCustomCertificateOpenSSL(Self, glServerSSL)) IS ERR::Okay) {
+            setup_success = true;
+            log.msg("Custom SSL server certificate loaded successfully.");
          }
+         else {
+            log.warning("Failed to load custom SSL certificate: %s", GetErrorMsg(error));
+         }
+      }
 
-         if (!setup_success) {
-            log.msg("Generating self-signed certificate for localhost...");
-            // Generate a simple self-signed certificate using modern OpenSSL APIs
-            EVP_PKEY *pkey = nullptr;
-            X509 *cert = nullptr;
+      if (!setup_success) {
+         log.msg("Generating self-signed certificate for localhost...");
+         // Generate a simple self-signed certificate using modern OpenSSL APIs
+         EVP_PKEY *pkey = nullptr;
+         X509 *cert = nullptr;
 
-            // Generate key pair using EVP interface
+         // Generate key pair using EVP interface
 
-            if (EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, nullptr); ctx) {
-               if (EVP_PKEY_keygen_init(ctx) > 0) {
-                  if (EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, 2048) > 0) {
-                     if (EVP_PKEY_keygen(ctx, &pkey) > 0) {
-                        // Create certificate
-                        if ((cert = X509_new())) {
-                           X509_set_version(cert, 2);
-                           ASN1_INTEGER_set(X509_get_serialNumber(cert), 1);
-                           X509_gmtime_adj(X509_get_notBefore(cert), 0);
-                           X509_gmtime_adj(X509_get_notAfter(cert), 365 * 24 * 3600);
-                           X509_set_pubkey(cert, pkey);
+         if (EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, nullptr); ctx) {
+            if (EVP_PKEY_keygen_init(ctx) > 0) {
+               if (EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, 2048) > 0) {
+                  if (EVP_PKEY_keygen(ctx, &pkey) > 0) {
+                     // Create certificate
+                     if ((cert = X509_new())) {
+                        X509_set_version(cert, 2);
+                        ASN1_INTEGER_set(X509_get_serialNumber(cert), 1);
+                        X509_gmtime_adj(X509_get_notBefore(cert), 0);
+                        X509_gmtime_adj(X509_get_notAfter(cert), 365 * 24 * 3600);
+                        X509_set_pubkey(cert, pkey);
 
-                           auto name = X509_get_subject_name(cert);
-                           X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, (unsigned char*)"localhost", -1, -1, 0);
-                           X509_set_issuer_name(cert, name);
+                        auto name = X509_get_subject_name(cert);
+                        X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, (unsigned char*)"localhost", -1, -1, 0);
+                        X509_set_issuer_name(cert, name);
 
-                           if (X509_sign(cert, pkey, EVP_sha256()) > 0) {
-                              if (SSL_CTX_use_certificate(glServerSSL, cert) and SSL_CTX_use_PrivateKey(glServerSSL, pkey)) {
-                                 setup_success = true;
-                              }
-                              else log.warning("Failed to set SSL server certificate and key.");
+                        if (X509_sign(cert, pkey, EVP_sha256()) > 0) {
+                           if (SSL_CTX_use_certificate(glServerSSL, cert) and SSL_CTX_use_PrivateKey(glServerSSL, pkey)) {
+                              setup_success = true;
                            }
-                           else log.warning("Failed to sign SSL certificate.");
+                           else log.warning("Failed to set SSL server certificate and key.");
                         }
+                        else log.warning("Failed to sign SSL certificate.");
                      }
                   }
                }
-               EVP_PKEY_CTX_free(ctx);
             }
-
-            if (pkey) EVP_PKEY_free(pkey);
-            if (cert) X509_free(cert);
+            EVP_PKEY_CTX_free(ctx);
          }
 
-         if (!setup_success) {
-            log.warning("SSL server certificate setup failed, trying with no certificate verification.");
-            // For testing, allow servers without proper certificates
-            SSL_CTX_set_verify(glServerSSL, SSL_VERIFY_NONE, nullptr);
-         }
-         return ERR::Okay;
+         if (pkey) EVP_PKEY_free(pkey);
+         if (cert) X509_free(cert);
       }
-      else return log.warning(ERR::SystemCall);
+
+      if (!setup_success) {
+         log.warning("SSL server certificate setup failed, trying with no certificate verification.");
+         // For testing, allow servers without proper certificates
+         SSL_CTX_set_verify(glServerSSL, SSL_VERIFY_NONE, nullptr);
+      }
+      return ERR::Okay;
    }
+   else return log.warning(ERR::SystemCall);
+}
+
+//********************************************************************************************************************
+// This only needs to be called once to setup the unique SSL context for client sockets.
+
+static ERR tls_setup_client(extNetSocket *Self)
+{
+   kt::Log log(__FUNCTION__);
+
+   log.traceBranch();
+
+   ERR error = ERR::Okay;
+
+   std::lock_guard<std::mutex> lock(glSSLSetupMutex);
+
+   if ((error = tls_initialise(log)) != ERR::Okay) return error;
 
    // Client mode - no CA verification
 
@@ -534,9 +556,13 @@ static ERR sslLinkSocket(extNetSocket *Self)
 //********************************************************************************************************************
 // Setup SSL state for a newly accepted server-side client socket.
 
-static ERR tls_accept_client(extClientSocket *Self, extNetSocket *Server)
+static ERR tls_accept_client(extClientSocket *Self, extNetServer *Server)
 {
    kt::Log log(__FUNCTION__);
+
+   if (!glServerSSL) {
+      if (auto error = tls_setup_server(Server); error != ERR::Okay) return error;
+   }
 
    if (auto client_ssl = SSL_new(glServerSSL)) { // Use glServerSSL because we represent the server side.
       if (auto client_bio = BIO_new_socket(Self->Handle, BIO_NOCLOSE)) {
@@ -606,7 +632,7 @@ static ERR tls_connect(extNetSocket *Self)
    // Set SNI (Server Name Indication) if we have a hostname
    // This is critical for modern HTTPS servers that serve multiple domains
 
-   if (Self->Address and (Self->Flags & NSF::SERVER) IS NSF::NIL) {
+   if (Self->Address) {
       // Only set SNI for client connections, and only if Address is a hostname (not IP)
       struct in_addr addr;
       if (inet_aton(Self->Address, &addr) == 0) {

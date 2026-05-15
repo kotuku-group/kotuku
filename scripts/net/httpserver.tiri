@@ -2125,7 +2125,7 @@ hslib.start = function(Options)
 
    cfg = {
       port     = self.port,
-      flags    = NSF_SERVER|NSF_MULTI_CONNECT,
+      flags    = NSF_MULTI_CONNECT,
       feedback = function(Server, ClientSocket, State)
          if State is NTC_CONNECTED then
             -- New client connection
@@ -2143,7 +2143,7 @@ hslib.start = function(Options)
       cfg.address = self.bind
    end
 
-   self._socket = obj.new('netsocket', cfg)
+   self._socket = obj.new('netserver', cfg)
 
    self.stop = function()
       if self._socket then

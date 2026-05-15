@@ -4,7 +4,7 @@ SSL Communication Test
 This test suite verifies SSL-enabled network communications using the NSF_SSL flag.
 
 Tests include:
-- SSL server socket creation and certificate handling
+- SSL NetServer creation and certificate handling
 - SSL client connection establishment and handshake
 - Encrypted data transfer verification
 - SSL-specific error conditions and recovery
@@ -51,7 +51,7 @@ function BasicSSLCommunication()
 
    glPort++
 
-   ssl_server = obj.new('netsocket', {
+   ssl_server = obj.new('netserver', {
       name = 'server',
       feedback = function(Socket, Client, State)
          logOutput('[Server] Client state: ' .. printableState(State))
@@ -101,10 +101,10 @@ function BasicSSLCommunication()
          end
       end,
       port = glPort,
-      flags = NSF_SERVER|NSF_SSL
+      flags = NSF_SSL
    })
 
-   assert(ssl_server, 'Failed to create SSL server socket')
+   assert(ssl_server, 'Failed to create SSL NetServer')
    assert(ssl_server.error is ERR_Okay, 'SSL server error: ' .. mSys.GetErrorMsg(ssl_server.error))
 
    ssl_client = obj.new('netsocket', {
@@ -167,7 +167,7 @@ function SSLStateTransitions()
 
    glPort++
 
-   ssl_server = obj.new('netsocket', {
+   ssl_server = obj.new('netserver', {
       name = 'SSLStateServer',
       feedback = function(Socket, Client, State)
          table.insert(state_sequence, 'SERVER:' .. printableState(State))
@@ -205,7 +205,7 @@ function SSLStateTransitions()
          end
       end,
       port = glPort,
-      flags = NSF_SERVER|NSF_SSL
+      flags = NSF_SSL
    })
 
    ssl_client = obj.new('netsocket', {
@@ -274,7 +274,7 @@ function SSLDataIntegrity()
    glPort++
 
    msgIndex = 0
-   ssl_server = obj.new('netsocket', {
+   ssl_server = obj.new('netserver', {
       name = 'SSLIntegrityServer',
       feedback = function(Socket:obj, Client:obj, State:num)
          if State is NTC_CONNECTED then
@@ -314,7 +314,7 @@ function SSLDataIntegrity()
          end
       end,
       port = glPort,
-      flags = 'SERVER|SSL'
+      flags = 'SSL'
    })
 
    ssl_client = obj.new('netsocket', {
@@ -541,7 +541,7 @@ function CustomCertificate()
    end
 
    -- Test with localhost.p12 certificate if available
-   ssl_server = obj.new('netsocket', {
+   ssl_server = obj.new('netserver', {
       name = 'CustomCertServer',
       sslCertificate = CERT_PATH,
       feedback = function(Socket, Client, State)
@@ -570,7 +570,7 @@ function CustomCertificate()
          end
       end,
       port = glPort,
-      flags = NSF_SERVER|NSF_SSL
+      flags = NSF_SSL
    })
 
    ssl_client = obj.new('netsocket', {

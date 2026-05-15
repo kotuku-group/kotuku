@@ -75,20 +75,18 @@ end
 
    -- Test 3: Port conflict (two servers on same port)
    logOutput('[Test 3] Testing port binding conflicts...')
-   server1 = obj.new('netsocket', {
+   server1 = obj.new('netserver', {
       name = 'FirstServer',
       port = glPort,
-      flags = 'SERVER'
    })
 
    assert(server1, 'Failed to create first server')
 
    local server2
    try
-       server2 = obj.new('netsocket', {
+       server2 = obj.new('netserver', {
           name = 'ConflictServer',
           port = glPort, -- Same port
-          flags = 'SERVER'
        })
    end
 
@@ -126,7 +124,7 @@ end
 
    large_msg = string.rep('OVERFLOW_TEST_DATA_', 1000) -- ~18KB per message
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       name = 'OverflowTestServer',
       feedback = function(Socket, Client, State)
          if State is NTC_CONNECTED then
@@ -154,7 +152,6 @@ end
          logOutput('[Server] Data available but not reading (simulating slow consumer)')
       end,
       port = glPort,
-      flags = NSF_SERVER
    })
 
    client = obj.new('netsocket', {
@@ -257,7 +254,7 @@ end
    close_handled = false
    glPort++
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       name = 'CloseTestServer',
       feedback = function(Socket, Client, State)
          if State is NTC_CONNECTED then
@@ -286,7 +283,6 @@ end
          end
       end,
       port = glPort,
-      flags = NSF_SERVER
    })
 
    client = obj.new('netsocket', {
@@ -361,10 +357,9 @@ end
    -- (puts pressure on threaded socket closures)
 
    for i = 1, 20 do
-      server = obj.new('netsocket', {
+      server = obj.new('netserver', {
          name = 'CleanupTestServer' .. i,
          port = glPort + 20 + i,
-         flags = 'SERVER'
       })
 
       client = obj.new('netsocket', {

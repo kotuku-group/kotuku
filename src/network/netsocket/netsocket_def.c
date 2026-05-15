@@ -11,21 +11,18 @@ static const struct FieldDef clNetSocketState[] = {
 };
 
 static const struct FieldDef clNetSocketFlags[] = {
-   { "Server", 0x00000001 },
-   { "SSL", 0x00000002 },
-   { "DisableServerVerify", 0x00000004 },
-   { "MultiConnect", 0x00000008 },
-   { "Synchronous", 0x00000010 },
-   { "LogAll", 0x00000020 },
-   { "Broadcast", 0x00000040 },
-   { "Udp", 0x00000080 },
+   { "SSL", 0x00000001 },
+   { "Synchronous", 0x00000002 },
+   { "LogAll", 0x00000004 },
+   { "Broadcast", 0x00000008 },
+   { "Udp", 0x00000010 },
+   { "DisableServerVerify", 0x00000020 },
+   { "MultiConnect", 0x00000040 },
    { nullptr, 0 }
 };
 
 FDEF maConnect[] = { { "Address", FD_STR }, { "Port", FD_INT }, { "Timeout", FD_DOUBLE }, { 0, 0 } };
 FDEF maGetLocalIPAddress[] = { { "IPAddress:Address", FD_PTR|FD_STRUCT }, { 0, 0 } };
-FDEF maDisconnectClient[] = { { "Client", FD_OBJECTPTR }, { 0, 0 } };
-FDEF maDisconnectSocket[] = { { "Socket", FD_OBJECTPTR }, { 0, 0 } };
 FDEF maSendTo[] = { { "Dest", FD_PTR }, { "Data", FD_BUFFER|FD_PTR }, { "Length", FD_INT|FD_BUFSIZE }, { "BytesSent", FD_INT|FD_RESULT }, { 0, 0 } };
 FDEF maRecvFrom[] = { { "Source", FD_PTR }, { "Buffer", FD_BUFFER|FD_PTR|FD_MUTABLE }, { "BufferSize", FD_INT|FD_BUFSIZE }, { "BytesRead", FD_INT|FD_RESULT }, { 0, 0 } };
 FDEF maJoinMulticastGroup[] = { { "Group", FD_STR }, { 0, 0 } };
@@ -34,12 +31,10 @@ FDEF maLeaveMulticastGroup[] = { { "Group", FD_STR }, { 0, 0 } };
 static const struct MethodEntry clNetSocketMethods[] = {
    { AC(-1), (APTR)NETSOCKET_Connect, "Connect", maConnect, sizeof(struct ns::Connect) },
    { AC(-2), (APTR)NETSOCKET_GetLocalIPAddress, "GetLocalIPAddress", maGetLocalIPAddress, sizeof(struct ns::GetLocalIPAddress) },
-   { AC(-3), (APTR)NETSOCKET_DisconnectClient, "DisconnectClient", maDisconnectClient, sizeof(struct ns::DisconnectClient) },
-   { AC(-4), (APTR)NETSOCKET_DisconnectSocket, "DisconnectSocket", maDisconnectSocket, sizeof(struct ns::DisconnectSocket) },
-   { AC(-5), (APTR)NETSOCKET_SendTo, "SendTo", maSendTo, sizeof(struct ns::SendTo) },
-   { AC(-6), (APTR)NETSOCKET_RecvFrom, "RecvFrom", maRecvFrom, sizeof(struct ns::RecvFrom) },
-   { AC(-7), (APTR)NETSOCKET_JoinMulticastGroup, "JoinMulticastGroup", maJoinMulticastGroup, sizeof(struct ns::JoinMulticastGroup) },
-   { AC(-8), (APTR)NETSOCKET_LeaveMulticastGroup, "LeaveMulticastGroup", maLeaveMulticastGroup, sizeof(struct ns::LeaveMulticastGroup) },
+   { AC(-3), (APTR)NETSOCKET_SendTo, "SendTo", maSendTo, sizeof(struct ns::SendTo) },
+   { AC(-4), (APTR)NETSOCKET_RecvFrom, "RecvFrom", maRecvFrom, sizeof(struct ns::RecvFrom) },
+   { AC(-5), (APTR)NETSOCKET_JoinMulticastGroup, "JoinMulticastGroup", maJoinMulticastGroup, sizeof(struct ns::JoinMulticastGroup) },
+   { AC(-6), (APTR)NETSOCKET_LeaveMulticastGroup, "LeaveMulticastGroup", maLeaveMulticastGroup, sizeof(struct ns::LeaveMulticastGroup) },
    { AC::NIL, 0, 0, 0, 0 }
 };
 

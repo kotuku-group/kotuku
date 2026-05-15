@@ -1,7 +1,7 @@
 --[[
 Concurrent Connections Test
 
-This test verifies multiple client connections to a single NetSocket server.
+This test verifies multiple client connections to a single NetServer.
 Tests include:
 - NSF::MULTI_CONNECT flag functionality
 - Multiple simultaneous client connections
@@ -36,7 +36,7 @@ end
    glPort++
    glClientsCreated = 0
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       name = 'ConcurrentServer',
       feedback = function(Socket, Client, State)
          if State is NTC_CONNECTED then
@@ -76,13 +76,13 @@ end
          assert(err is ERR_Okay, '[Server] Failed to echo to client: ' .. mSys.GetErrorMsg(err))
       end,
       port = glPort,
-      flags = 'SERVER|MULTI_CONNECT',
+      flags = 'MULTI_CONNECT',
       socketLimit = glMaxSockets
    })
 
    proc = processing.new({ timeout = 3.0, signals = array<object> { server } })
 
-   assert(server, 'Failed to create server socket')
+   assert(server, 'Failed to create NetServer')
 
    -- Create multiple clients
    clients = {}
@@ -167,7 +167,7 @@ end
    rejectedConnections = 0
    glPort++
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       name = 'LimitTestServer',
       feedback = function(Socket, Client, State)
          if (State is NTC_CONNECTED) then
@@ -176,7 +176,7 @@ end
          end
       end,
       port = glPort,
-      flags = 'SERVER|MULTI_CONNECT',
+      flags = 'MULTI_CONNECT',
       socketLimit = limit
    })
 
@@ -229,7 +229,7 @@ end
       end
    end
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       name = 'IsolationTestServer',
       feedback = function(Socket, Client, State)
          if (State is NTC_CONNECTED) then
@@ -255,7 +255,7 @@ end
          Client.acWrite(echo)
       end,
       port = glPort,
-      flags = 'SERVER|MULTI_CONNECT'
+      flags = 'MULTI_CONNECT'
    })
 
    clients = {}

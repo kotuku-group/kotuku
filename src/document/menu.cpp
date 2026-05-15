@@ -149,7 +149,8 @@ void doc_menu::refresh()
    #endif
 
    acClear(m_doc);
-   acDataXML(m_doc, buf.str().c_str());
+   auto bufstr = buf.str();
+   m_doc->dataFeed(m_doc, DATA::XML, bufstr.c_str(), bufstr.size());
 
    // Resize the menu to match the new content.  If the height of the menu is excessive (relative to the height
    // of the display), we reduce it and utilise a scrollbar to see all menu items.

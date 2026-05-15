@@ -8,14 +8,16 @@ that is distributed with this package.  Please refer to it for further informati
 -CLASS-
 NetSocket: Manages network connections via TCP/IP sockets.
 
-The NetSocket class provides a simple way of managing TCP/IP socket communications.  Connections from a single client
-to the server and from the server to multiple clients are supported.  SSL functionality is also integrated.
+The NetSocket class provides a simple way of managing outbound TCP/IP socket communications.  It can connect to
+remote TCP servers, exchange UDP datagrams when the `UDP` flag is set, and optionally use SSL.  Inbound listening and
+accepted client management are provided by the @NetServer subclass, with each accepted TCP connection represented by a
+@ClientSocket.
 
 The design of the NetSocket class caters to asynchronous (non-blocking) communication.  This is achieved primarily
 through callback fields - connection alerts are managed by #Feedback, incoming data is received through #Incoming
 and readiness for outgoing data is supported by #Outgoing.
 
-<header>Client-Server Connections</>
+<header>Outbound Connections</>
 
 After a connection has been established, data may be written using any of the following methods:
 
@@ -23,60 +25,18 @@ After a connection has been established, data may be written using any of the fo
 <li>Write directly to the socket with the #Write() action.</li>
 <li>Subscribe to the socket by referring to a routine in the #Outgoing field.  The routine will be called to
 initially fill the internal write buffer, thereafter it will be called whenever the buffer is empty.</li>
-</ul>
+</list>
 
 It is possible to write to a NetSocket object before the connection to a server is established.  Doing so will buffer
 the data in the socket until the connection with the server has been initiated, at which point the data will be
 immediately sent.
 
-<header>Server-Client Connections</>
+<header>Inbound Listeners</>
 
-To accept incoming client connections, create a NetSocket object with the `SERVER` flag set and define the #Port value
-on which to listen for new clients.  If multiple connections from a single client IP address are allowed, set the
-`MULTI_CONNECT` flag.
-
-When a new connection is detected, the #Feedback function will be called as `Feedback(*NetSocket, *ClientSocket, NTC State)`
-
-The NetSocket parameter refers to the original NetSocket object, @ClientSocket applies if a client connection is
-involved and the State value will be set to `NTC::CONNECTED`.  If a client disconnects, the #Feedback function will be
-called in the same manner but with a State value of `NTC::DISCONNECTED`.
-
-Information on all active connections can be read from the #Clients field.  This contains a linked list of IP
-addresses and their connections to the server port.
-
-To send data to a client, write it to the target @ClientSocket.
-
-All data that is received from client sockets will be passed to the #Incoming feedback routine with a reference to a @ClientSocket.
-
-<header>SSL Server Certificates</>
-
-For SSL server sockets, custom certificates can be specified using the #SSLCertificate field. Both PEM and PKCS#12
-formats are supported across all platforms.
-
-Example with PKCS#12 certificate:
-
-```
-netsocket = obj.new('netsocket', {
-   flags = 'SERVER|SSL',
-   port = 8443,
-   sslCertificate = 'config:ssl/server.p12',
-   sslKeyPassword = 'password123'
-})
-```
-
-Example with PEM certificate and separate private key:
-
-```
-netsocket = obj.new('netsocket', {
-   flags = 'SERVER|SSL',
-   port = 8443,
-   sslCertificate = 'config:ssl/server.crt',
-   sslPrivateKey = 'config:ssl/server.key'
-})
-```
-
-If no custom certificate is specified, the framework will automatically use a localhost self-signed certificate
-for development purposes.  For production use, always specify a proper certificate signed by a trusted CA.
+Use @NetServer when a program needs to bind a local port and accept inbound clients.  NetServer inherits common socket
+fields from NetSocket, reports client state changes through #Feedback with a @ClientSocket parameter, and exposes
+active clients through its `Clients` field.  Data for accepted TCP clients is read from and written to @ClientSocket
+objects.
 
 -END-
 
@@ -90,17 +50,17 @@ static size_t glMaxWriteLen = 16 * 1024;
 //********************************************************************************************************************
 // Prototypes for internal methods
 
-static void free_client(extNetSocket *, objNetClient *);
 static void free_socket(extNetSocket *);
+static void free_client(extNetServer *, objNetClient *);
 static CSTRING netsocket_state(NTC Value);
 
 // Implementation functions that take HOSTHANDLE
 static void netsocket_incoming_impl(HOSTHANDLE, extNetSocket *);
 static void netsocket_outgoing_impl(HOSTHANDLE, extNetSocket *);
 static void netsocket_connect_impl(HOSTHANDLE, extNetSocket *);
-static void server_accept_client_impl(HOSTHANDLE, extNetSocket *);
 static void server_incoming_from_client_impl(HOSTHANDLE, extClientSocket *);
 static void clientsocket_outgoing_impl(HOSTHANDLE, extClientSocket *);
+static void server_incoming_from_client(HOSTHANDLE, APTR);
 
 // Wrappers for RegisterFD
 static void netsocket_incoming(HOSTHANDLE FD, APTR Data) {
@@ -113,14 +73,6 @@ static void netsocket_outgoing(HOSTHANDLE FD, APTR Data) {
 
 static void netsocket_connect(HOSTHANDLE FD, APTR Data) {
    netsocket_connect_impl(FD, (extNetSocket *)Data);
-}
-
-static void server_accept_client(HOSTHANDLE FD, APTR Data) {
-   server_accept_client_impl(FD, (extNetSocket *)Data);
-}
-
-static void server_incoming_from_client(HOSTHANDLE FD, APTR Data) {
-   server_incoming_from_client_impl(FD, (extClientSocket *)Data);
 }
 
 static void clientsocket_outgoing(HOSTHANDLE FD, APTR Data) {
@@ -169,7 +121,7 @@ double Timeout: Connection timeout in seconds (0 = no timeout).
 -ERRORS-
 Okay: The NetSocket connecting process was successfully started.
 Args: Address was NULL, or Port was not in the required range.
-InvalidState: The NetSocket was not in the state `NTC::DISCONNECTED` or the object is in server mode.
+InvalidState: The NetSocket was not in the state `NTC::DISCONNECTED` or the object is a @NetServer.
 HostNotFound: Host name resolution failed.
 TimeOut: Connection attempt timed out.
 Failed: The connect failed for some other reason.
@@ -232,7 +184,7 @@ static ERR NETSOCKET_Connect(extNetSocket *Self, struct ns::Connect *Args)
 
    if ((!Args) or (!Args->Address) or (Args->Port <= 0) or (Args->Port >= 65536)) return log.warning(ERR::Args);
 
-   if ((Self->Flags & NSF::SERVER) != NSF::NIL) return ERR::InvalidState;
+   if (Self->isSubClass()) return ERR::InvalidState; // Server cannot use Connect()
 
    if ((Self->Flags & NSF::UDP) != NSF::NIL) return log.warning(ERR::NoSupport); // UDP is connectionless
 
@@ -412,16 +364,51 @@ static ERR connect_timeout_handler(OBJECTPTR Subscriber, int64_t TimeElapsed, in
    return ERR::Terminate; // Unsubscribe
 }
 
-//********************************************************************************************************************
-// TODO: Accept data-feed content for writing to the socket.
+/*********************************************************************************************************************
+-ACTION-
+DataFeed: Streams raw data to the socket for writing.
+
+Data sent to a NetSocket through this action is written using the same buffered behaviour as #Write().  If the feed
+size is zero, the buffer is treated as null-terminated text.
+
+*********************************************************************************************************************/
 
 static ERR NETSOCKET_DataFeed(extNetSocket *Self, struct acDataFeed *Args)
 {
    kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Buffer)) return log.warning(ERR::NullArgs);
 
-   return ERR::Okay;
+   if (not Args->Size) return ERR::Okay;
+   if (Args->Size < 0) return log.warning(ERR::Args);
+
+   switch(Args->Datatype) {
+      case DATA::TEXT:
+      case DATA::RAW:
+      case DATA::XML:
+      case DATA::AUDIO:
+      case DATA::IMAGE:
+         return acWrite(Self, Args->Buffer, Args->Size, nullptr);
+
+      case DATA::FILE: { // File path
+         auto file = objFile::create({ fl::Path(CSTRING(Args->Buffer)), fl::Flags(FL::READ) });
+         if (file.ok()) {
+            auto size = file->get<size_t>(FID_Size);
+            int8_t *buf;
+            if (AllocMemory(size, MEM::NO_CLEAR, (APTR *)&buf, nullptr) IS ERR::Okay) {
+               kt::LocalResource resource(buf);
+               if (file->read(buf, size) IS ERR::Okay) {
+                  return acWrite(Self, buf, size, nullptr);
+               }
+               else return log.warning(ERR::Read);
+            }
+         }
+         else return log.warning(ERR::File);
+      }
+
+      default:
+         return log.warning(ERR::NoSupport);
+   }
 }
 
 /*********************************************************************************************************************
@@ -453,71 +440,6 @@ static ERR NETSOCKET_Disable(extNetSocket *Self)
    return ERR::Okay;
 }
 
-/*********************************************************************************************************************
-
--METHOD-
-DisconnectClient: Disconnects all sockets connected to a specific client IP.
-
-For server sockets with client IP connections, this method will terminate all socket connections made to a specific
-client IP and free the resources allocated to it.  If #Feedback is defined, a `DISCONNECTED` state message will also
-be issued for each socket connection.
-
-If only one socket connection needs to be disconnected, please use #DisconnectSocket().
-
--INPUT-
-obj(NetClient) Client: The client to be disconnected.
-
--ERRORS-
-Okay
-NullArgs
-WrongClass: The Client object is not of type `NetClient`.
--END-
-
-*********************************************************************************************************************/
-
-static ERR NETSOCKET_DisconnectClient(extNetSocket *Self, struct ns::DisconnectClient *Args)
-{
-   kt::Log log;
-
-   if ((!Args) or (!Args->Client)) return ERR::NullArgs;
-
-   if (Args->Client->classID() != CLASSID::NETCLIENT) return log.warning(ERR::WrongClass);
-
-   log.branch("Disconnecting client #%d", Args->Client->UID);
-   free_client(Self, Args->Client);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--METHOD-
-DisconnectSocket: Disconnects a single socket that is connected to a client IP address.
-
-This method will disconnect a socket connection for a given client.  If #Feedback is defined, a `DISCONNECTED`
-state message will also be issued.
-
-NOTE: To terminate the connection of a socket acting as the client, either free the object or return/raise
-`ERR::Terminate` during #Incoming feedback.
-
--INPUT-
-obj(ClientSocket) Socket: The client socket to be disconnected.
-
--ERRORS-
-Okay
-NullArgs
--END-
-
-*********************************************************************************************************************/
-
-static ERR NETSOCKET_DisconnectSocket(extNetSocket *Self, struct ns::DisconnectSocket *Args)
-{
-   kt::Log log;
-   if ((!Args) or (!Args->Socket)) return log.warning(ERR::NullArgs);
-   if (Args->Socket->classID() != CLASSID::CLIENTSOCKET) return log.warning(ERR::WrongClass);
-   FreeResource(Args->Socket); // Disconnects & sends a Feedback message
-   return ERR::Okay;
-}
-
 //********************************************************************************************************************
 
 static ERR NETSOCKET_Free(extNetSocket *Self)
@@ -525,9 +447,6 @@ static ERR NETSOCKET_Free(extNetSocket *Self)
    if (Self->TimerHandle)    { UpdateTimer(Self->TimerHandle, 0); Self->TimerHandle = 0; }
    if (Self->Address)        { FreeResource(Self->Address); Self->Address = nullptr; }
    if (Self->NetLookup)      { FreeResource(Self->NetLookup); Self->NetLookup = nullptr; }
-   if (Self->SSLCertificate) { FreeResource(Self->SSLCertificate); Self->SSLCertificate = nullptr; }
-   if (Self->SSLKeyPassword) { FreeResource(Self->SSLKeyPassword); Self->SSLKeyPassword = nullptr; }
-   if (Self->SSLPrivateKey)  { FreeResource(Self->SSLPrivateKey); Self->SSLPrivateKey = nullptr; }
 
    if (Self->Feedback.isScript()) UnsubscribeAction(Self->Feedback.Context, AC::Free);
    if (Self->Incoming.isScript()) UnsubscribeAction(Self->Incoming.Context, AC::Free);
@@ -536,8 +455,6 @@ static ERR NETSOCKET_Free(extNetSocket *Self)
 #ifndef DISABLE_SSL
    tls_disconnect(Self);
 #endif
-
-   while (Self->Clients) free_client(Self, Self->Clients);
 
    free_socket(Self);
 
@@ -594,43 +511,6 @@ static ERR NETSOCKET_GetLocalIPAddress(extNetSocket *Self, struct ns::GetLocalIP
    else return log.warning(result);
 }
 
-static ERR activate_server_socket(extNetSocket *Self, const NetworkEndpoint &Endpoint)
-{
-   kt::Log log(__FUNCTION__);
-
-   if (auto error = network_platform().bind(Self->Handle, Endpoint); error != ERR::Okay) {
-      log.warning("Bind failed on port %d, error: %s", Self->Port, GetErrorMsg(error));
-      return error;
-   }
-
-   if ((Self->Flags & NSF::UDP) IS NSF::NIL) {
-      if (auto error = network_platform().listen(Self->Handle, Self->Backlog); error != ERR::Okay) {
-         log.warning("Listen failed on port %d, error: %s", Self->Port, GetErrorMsg(error));
-         return error;
-      }
-
-      network_platform().register_accept(Self->Handle, &server_accept_client, Self);
-   }
-   else network_platform().register_read(Self->Handle, &netsocket_incoming, Self);
-
-   return ERR::Okay;
-}
-
-static ERR setup_server_socket(extNetSocket *Self)
-{
-   kt::Log log(__FUNCTION__);
-
-   if (!Self->Port) return log.warning(ERR::FieldNotSet);
-
-   Self->State = NTC::MULTISTATE; // Permanent value to indicate that the socket serves multiple clients.
-
-   NetworkEndpoint endpoint;
-   if (auto error = network_platform().prepare_bind_address(Self->Address, Self->Port, Self->IPV6, endpoint);
-      error != ERR::Okay) return error;
-
-   return activate_server_socket(Self, endpoint);
-}
-
 //********************************************************************************************************************
 
 static ERR NETSOCKET_Init(extNetSocket *Self)
@@ -649,7 +529,8 @@ static ERR NETSOCKET_Init(extNetSocket *Self)
    // Initialise SSL ahead of any connections being made.
 
    if ((Self->Flags & NSF::SSL) != NSF::NIL) {
-      if ((error = tls_setup(Self)) != ERR::Okay) return error;
+      error = (Self->classID() IS CLASSID::NETSERVER) ? tls_setup_server((extNetServer *)Self) : tls_setup_client((extNetSocket *)Self);
+      if (error != ERR::Okay) return error;
    }
 #endif
 
@@ -675,14 +556,9 @@ static ERR NETSOCKET_Init(extNetSocket *Self)
       }
    }
 
-   if ((Self->Flags & NSF::SERVER) != NSF::NIL) {
-      if ((error = setup_server_socket(Self)) != ERR::Okay) {
-         free_socket(Self);
-         return error;
-      }
-      else return ERR::Okay;
-   }
-   else if ((Self->Address) and (Self->Port > 0)) {
+   if (Self->isSubClass()) return ERR::Okay; // Will hand-off to the sub-class
+
+   if ((Self->Address) and (Self->Port > 0)) {
       if ((error = Self->connect(Self->Address, Self->Port, 0)) != ERR::Okay) {
          free_socket(Self);
          return error;
@@ -833,10 +709,6 @@ static ERR NETSOCKET_Read(extNetSocket *Self, struct acRead *Args)
    Args->Result = 0;
    if (Args->Length < 0) return log.warning(ERR::Args);
 
-   if ((Self->Flags & NSF::SERVER) != NSF::NIL) { // Not allowed - client must read from the ClientSocket.
-      return ERR::NoSupport;
-   }
-
    if (Self->Handle.is_invalid()) return log.warning(ERR::Disconnected);
 
    Self->ReadCalled = true;
@@ -969,7 +841,7 @@ Writing data to a socket will send raw data to the remote client or server.  Wri
 data overflow generated in a call to this action will be buffered into a software queue.  Resource limits placed on
 the software queue are governed by the #MsgLimit field setting.
 
-Do not use this action if in server mode.  Instead, write to the @ClientSocket object that will receive the data.
+Do not use this action on a @NetServer listener.  Instead, write to the @ClientSocket object that will receive the data.
 
 It is possible to write to a socket in advance of any connection being made. The netsocket will queue the data
 and automatically send it once the first connection has been made.
@@ -1065,10 +937,6 @@ static ERR NETSOCKET_Write(extNetSocket *Self, struct acWrite *Args)
    if (Args->Length < 0) return log.warning(ERR::Args);
    if ((!Args->Buffer) and (Args->Length > 0)) return log.warning(ERR::NullArgs);
 
-   if ((Self->Flags & NSF::SERVER) != NSF::NIL) {
-      log.warning("Write to the ClientSocket objects of this server.");
-      return ERR::NoSupport;
-   }
 
    if ((Self->Handle.is_invalid()) or (Self->State != NTC::CONNECTED)) { // Queue the write prior to server connection
       return queue_socket_write(Self, Args, Self->MsgLimit);
@@ -1219,29 +1087,21 @@ static ERR NETSOCKET_SendTo(extNetSocket *Self, struct ns::SendTo *Args)
 //********************************************************************************************************************
 
 static const FieldArray clSocketFields[] = {
-   { "Clients",        FDF_OBJECT|FDF_R, nullptr, nullptr, CLASSID::NETCLIENT },
    { "ClientData",     FDF_POINTER|FDF_RW },
    { "Address",        FDF_STRING|FDF_RI, nullptr, SET_Address },
-   { "SSLCertificate", FDF_STRING|FDF_RI, nullptr, SET_SSLCertificate },
-   { "SSLPrivateKey",  FDF_STRING|FDF_RI, nullptr, SET_SSLPrivateKey },
-   { "SSLKeyPassword", FDF_STRING|FDF_RI, nullptr, SET_SSLKeyPassword },
    { "State",          FDF_INT|FDF_LOOKUP|FDF_RW, GET_State, SET_State, &clNetSocketState },
    { "Error",          FDF_ERROR|FDF_R },
    { "Port",           FDF_INT|FDF_RI },
    { "Flags",          FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clNetSocketFlags },
-   { "TotalClients",   FDF_INT|FDF_R },
-   { "Backlog",        FDF_INT|FDF_RI },
-   { "ClientLimit",    FDF_INT|FDF_RW },
-   { "SocketLimit",    FDF_INT|FDF_RW },
    { "MsgLimit",       FDF_INT|FDF_RI },
    { "MaxPacketSize",  FDF_INT|FDF_RI },
    { "MulticastTTL",   FDF_INT|FDF_RI },
    // Virtual fields
-   { "Handle",         FDF_POINTER|FDF_RI,     GET_Handle, SET_Handle },
-   { "Feedback",       FDF_FUNCTIONPTR|FDF_RW, GET_Feedback, SET_Feedback },
-   { "Incoming",       FDF_FUNCTIONPTR|FDF_RW, GET_Incoming, SET_Incoming },
-   { "Outgoing",       FDF_FUNCTIONPTR|FDF_W,  GET_Outgoing, SET_Outgoing },
-   { "OutQueueSize",   FDF_INT|FDF_R,          GET_OutQueueSize },
+   { "Handle",         FDF_VIRTUAL|FDF_POINTER|FDF_RI,     GET_Handle, SET_Handle },
+   { "Feedback",       FDF_VIRTUAL|FDF_FUNCTIONPTR|FDF_RW, GET_Feedback, SET_Feedback },
+   { "Incoming",       FDF_VIRTUAL|FDF_FUNCTIONPTR|FDF_RW, GET_Incoming, SET_Incoming },
+   { "Outgoing",       FDF_VIRTUAL|FDF_FUNCTIONPTR|FDF_W,  GET_Outgoing, SET_Outgoing },
+   { "OutQueueSize",   FDF_VIRTUAL|FDF_INT|FDF_R,          GET_OutQueueSize },
    END_FIELD
 };
 

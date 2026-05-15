@@ -1460,7 +1460,7 @@ proxylib.start = function(Options:table)
    -- Create server socket
    cfg = {
       port = self.port,
-      flags = NSF_SERVER|NSF_MULTI_CONNECT,
+      flags = NSF_MULTI_CONNECT,
       feedback = function(Server, ClientSocket, State)
          if State is NTC_CONNECTED then
             logMessage(self, 'DEBUG', 'Client connected')
@@ -1481,7 +1481,7 @@ proxylib.start = function(Options:table)
       cfg.address = self.bind
    end
 
-   self._socket = obj.new('netsocket', cfg)
+   self._socket = obj.new('netserver', cfg)
 
    if not self._socket then
       reportProxyError(self, 'server_socket_create_failed', 'Failed to create proxy server socket', nil, nil)

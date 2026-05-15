@@ -36,7 +36,7 @@ extern "C" void ssl_debug_to_kotuku_log(const char* message, int level)
 //********************************************************************************************************************
 // Setup SSL context for Windows
 
-static ERR tls_setup(extNetSocket *Self)
+static ERR tls_setup_client(extNetSocket *Self)
 {
    kt::Log log(__FUNCTION__);
 
@@ -47,38 +47,52 @@ static ERR tls_setup(extNetSocket *Self)
    if (GetResource(RES::LOG_LEVEL) >= 5) ssl_enable_logging();
 
    bool validate_cert = (Self->Flags & NSF::DISABLE_SERVER_VERIFY) != NSF::NIL ? false : true;
-   bool server_mode = ((Self->Flags & NSF::SERVER) != NSF::NIL);
-   if (Self->TLS.Handle = ssl_create_context(validate_cert, server_mode); !Self->TLS.Handle) {
+   if (Self->TLS.Handle = ssl_create_context(validate_cert, false); !Self->TLS.Handle) {
       return ERR::Failed;
    }
 
-   // Load custom certificate if specified for server mode
-   if (server_mode) {
-      if (Self->SSLCertificate) {
-         log.msg("Loading custom SSL server certificate: %s", Self->SSLCertificate);
+   return ERR::Okay;
+}
 
-         ssl_certificate_paths paths;
-         if (auto error = resolve_ssl_certificate_paths(Self, paths); error != ERR::Okay) {
-            ssl_free_context(Self->TLS.Handle);
-            Self->TLS.Handle = nullptr;
-            return log.warning(error);
-         }
+static ERR tls_setup_server(extNetServer *Self)
+{
+   kt::Log log(__FUNCTION__);
 
-         auto error = ssl_load_server_certificate(Self->TLS.Handle, paths.Certificate, paths.PrivateKey,
-            paths.Password);
-         if (error != SSL_OK) {
+   if (Self->TLS.Handle) return ERR::Okay;
+
+   log.traceBranch("Setting up SSL context.");
+
+   if (GetResource(RES::LOG_LEVEL) >= 5) ssl_enable_logging();
+
+   bool validate_cert = (Self->Flags & NSF::DISABLE_SERVER_VERIFY) != NSF::NIL ? false : true;
+   if (Self->TLS.Handle = ssl_create_context(validate_cert, true); !Self->TLS.Handle) {
+      return ERR::Failed;
+   }
+
+   if (Self->SSLCertificate) {
+      log.msg("Loading custom SSL server certificate: %s", Self->SSLCertificate);
+
+      ssl_certificate_paths paths;
+      if (auto error = resolve_ssl_certificate_paths(Self, paths); error != ERR::Okay) {
+         ssl_free_context(Self->TLS.Handle);
+         Self->TLS.Handle = nullptr;
+         return log.warning(error);
+      }
+
+      auto error = ssl_load_server_certificate(Self->TLS.Handle, paths.Certificate, paths.PrivateKey,
+         paths.Password);
+      if (error != SSL_OK) {
+         ssl_free_context(Self->TLS.Handle);
+         Self->TLS.Handle = nullptr;
+         return log.warning(ERR::Failed);
+      }
+   }
+   else {
+      if (!load_pkcs12_certificate(Self->TLS.Handle, glCertPath + "localhost.p12")) {
+         if (!load_pem_certificate(Self->TLS.Handle, glCertPath + "localhost.pem")) {
             ssl_free_context(Self->TLS.Handle);
             Self->TLS.Handle = nullptr;
             return log.warning(ERR::Failed);
-         }
-      }
-      else {
-         if (!load_pkcs12_certificate(Self->TLS.Handle, glCertPath + "localhost.p12")) {
-            if (!load_pem_certificate(Self->TLS.Handle, glCertPath + "localhost.pem")) {
-               ssl_free_context(Self->TLS.Handle);
-               Self->TLS.Handle = nullptr;
-               return log.warning(ERR::Failed);
-            }
          }
       }
    }
@@ -89,11 +103,11 @@ static ERR tls_setup(extNetSocket *Self)
 //********************************************************************************************************************
 // Setup SSL state for a newly accepted server-side client socket.
 
-static ERR tls_accept_client(extClientSocket *Self, extNetSocket *Server)
+static ERR tls_accept_client(extClientSocket *Self, extNetServer *Server)
 {
    kt::Log log(__FUNCTION__);
 
-   Self->TLS.Handle = ssl_create_context(false, true); // No verification, server mode.
+   Self->TLS.Handle = ssl_create_context(false, true); // No verification for server-side SSL.
    if (Self->TLS.Handle) {
       if (ssl_set_server_certificate(Server->TLS.Handle, Self->TLS.Handle) IS SSL_OK) {
          ssl_set_socket(Self->TLS.Handle, (void *)(size_t)Self->Handle.socket());

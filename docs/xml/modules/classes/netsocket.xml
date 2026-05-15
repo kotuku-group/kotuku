@@ -13,9 +13,9 @@
     <category>Network</category>
     <copyright>Paul Manias © 2005-2026</copyright>
     <description>
-<p>The NetSocket class provides a simple way of managing TCP/IP socket communications.  Connections from a single client to the server and from the server to multiple clients are supported.  SSL functionality is also integrated.</p>
+<p>The NetSocket class provides a simple way of managing outbound TCP/IP socket communications.  It can connect to remote TCP servers, exchange UDP datagrams when the <code>UDP</code> flag is set, and optionally use SSL.  Inbound listening and accepted client management are provided by the <class name="NetServer">NetServer</class> subclass, with each accepted TCP connection represented by a <class name="ClientSocket">ClientSocket</class>.</p>
 <p>The design of the NetSocket class caters to asynchronous (non-blocking) communication.  This is achieved primarily through callback fields - connection alerts are managed by <fl>Feedback</fl>, incoming data is received through <fl>Incoming</fl> and readiness for outgoing data is supported by <fl>Outgoing</fl>.</p>
-<header>Client-Server Connections</header>
+<header>Outbound Connections</header>
 <p>After a connection has been established, data may be written using any of the following methods:</p>
 <list type="bullet">
 <li>Write directly to the socket with the <action>Write</action> action.</li>
@@ -23,34 +23,8 @@
 initially fill the internal write buffer, thereafter it will be called whenever the buffer is empty.</li>
 </list>
 <p>It is possible to write to a NetSocket object before the connection to a server is established.  Doing so will buffer the data in the socket until the connection with the server has been initiated, at which point the data will be immediately sent.</p>
-<header>Server-Client Connections</header>
-<p>To accept incoming client connections, create a NetSocket object with the <code>SERVER</code> flag set and define the <fl>Port</fl> value on which to listen for new clients.  If multiple connections from a single client IP address are allowed, set the <code>MULTI_CONNECT</code> flag.</p>
-<p>When a new connection is detected, the <fl>Feedback</fl> function will be called as <code>Feedback(*NetSocket, *ClientSocket, NTC State)</code></p>
-<p>The NetSocket parameter refers to the original NetSocket object, <class name="ClientSocket">ClientSocket</class> applies if a client connection is involved and the State value will be set to <code>NTC::CONNECTED</code>.  If a client disconnects, the <fl>Feedback</fl> function will be called in the same manner but with a State value of <code>NTC::DISCONNECTED</code>.</p>
-<p>Information on all active connections can be read from the <fl>Clients</fl> field.  This contains a linked list of IP addresses and their connections to the server port.</p>
-<p>To send data to a client, write it to the target <class name="ClientSocket">ClientSocket</class>.</p>
-<p>All data that is received from client sockets will be passed to the <fl>Incoming</fl> feedback routine with a reference to a <class name="ClientSocket">ClientSocket</class>.</p>
-<header>SSL Server Certificates</header>
-<p>For SSL server sockets, custom certificates can be specified using the <fl>SSLCertificate</fl> field. Both PEM and PKCS#12 formats are supported across all platforms.</p>
-<p>Example with PKCS#12 certificate:</p>
-<pre>
-netsocket = obj.new('netsocket', {
-   flags = 'SERVER|SSL',
-   port = 8443,
-   sslCertificate = 'config:ssl/server.p12',
-   sslKeyPassword = 'password123'
-})
-</pre>
-<p>Example with PEM certificate and separate private key:</p>
-<pre>
-netsocket = obj.new('netsocket', {
-   flags = 'SERVER|SSL',
-   port = 8443,
-   sslCertificate = 'config:ssl/server.crt',
-   sslPrivateKey = 'config:ssl/server.key'
-})
-</pre>
-<p>If no custom certificate is specified, the framework will automatically use a localhost self-signed certificate for development purposes.  For production use, always specify a proper certificate signed by a trusted CA.</p></description>
+<header>Inbound Listeners</header>
+<p>Use <class name="NetServer">NetServer</class> when a program needs to bind a local port and accept inbound clients.  NetServer inherits common socket fields from NetSocket, reports client state changes through <fl>Feedback</fl> with a <class name="ClientSocket">ClientSocket</class> parameter, and exposes active clients through its <code>Clients</code> field.  Data for accepted TCP clients is read from and written to <class name="ClientSocket">ClientSocket</class> objects.</p></description>
     <source>
       <file path="netsocket/">netsocket.cpp</file>
       <file path="netsocket/">netsocket_fields.cpp</file>
@@ -107,7 +81,7 @@ netsocket = obj.new('netsocket', {
       </input>
       <description>
 <p>Writing data to a socket will send raw data to the remote client or server.  Write connections are buffered, so any data overflow generated in a call to this action will be buffered into a software queue.  Resource limits placed on the software queue are governed by the <fl>MsgLimit</fl> field setting.</p>
-<p>Do not use this action if in server mode.  Instead, write to the <class name="ClientSocket">ClientSocket</class> object that will receive the data.</p>
+<p>Do not use this action on a <class name="NetServer">NetServer</class> listener.  Instead, write to the <class name="ClientSocket">ClientSocket</class> object that will receive the data.</p>
 <p>It is possible to write to a socket in advance of any connection being made. The netsocket will queue the data and automatically send it once the first connection has been made.</p>
       </description>
     </action>
@@ -136,45 +110,8 @@ netsocket = obj.new('netsocket', {
         <error code="Failed">The connect failed for some other reason.</error>
         <error code="Args">Address was NULL, or Port was not in the required range.</error>
         <error code="TimeOut">Connection attempt timed out.</error>
-        <error code="InvalidState">The NetSocket was not in the state <code>NTC::DISCONNECTED</code> or the object is in server mode.</error>
+        <error code="InvalidState">The NetSocket was not in the state <code>NTC::DISCONNECTED</code> or the object is a <class name="NetServer">NetServer</class>.</error>
         <error code="HostNotFound">Host name resolution failed.</error>
-      </result>
-    </method>
-
-    <method>
-      <name>DisconnectClient</name>
-      <comment>Disconnects all sockets connected to a specific client IP.</comment>
-      <prototype>ERR ns::DisconnectClient(OBJECTPTR Object, objNetClient * Client)</prototype>
-      <tiriPrototype>err = DisconnectClient(Client:obj)</tiriPrototype>
-      <input>
-        <param type="objNetClient *" name="Client">The client to be disconnected.</param>
-      </input>
-      <description>
-<p>For server sockets with client IP connections, this method will terminate all socket connections made to a specific client IP and free the resources allocated to it.  If <fl>Feedback</fl> is defined, a <code>DISCONNECTED</code> state message will also be issued for each socket connection.</p>
-<p>If only one socket connection needs to be disconnected, please use <method>DisconnectSocket</method>.</p>
-      </description>
-      <result>
-        <error code="Okay">Operation successful.</error>
-        <error code="NullArgs">Function call missing argument value(s)</error>
-        <error code="WrongClass">The Client object is not of type <code>NetClient</code>.</error>
-      </result>
-    </method>
-
-    <method>
-      <name>DisconnectSocket</name>
-      <comment>Disconnects a single socket that is connected to a client IP address.</comment>
-      <prototype>ERR ns::DisconnectSocket(OBJECTPTR Object, objClientSocket * Socket)</prototype>
-      <tiriPrototype>err = DisconnectSocket(Socket:obj)</tiriPrototype>
-      <input>
-        <param type="objClientSocket *" name="Socket">The client socket to be disconnected.</param>
-      </input>
-      <description>
-<p>This method will disconnect a socket connection for a given client.  If <fl>Feedback</fl> is defined, a <code>DISCONNECTED</code> state message will also be issued.</p>
-<p>NOTE: To terminate the connection of a socket acting as the client, either free the object or return/raise <code>ERR::Terminate</code> during <fl>Incoming</fl> feedback.</p>
-      </description>
-      <result>
-        <error code="Okay">Operation successful.</error>
-        <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>
 
@@ -295,18 +232,8 @@ netsocket = obj.new('netsocket', {
       <access read="R" write="S">Read/Set</access>
       <type>STRING</type>
       <description>
-<p>If this field is set with an IP address or domain name prior to initialisation, an attempt to connect to that location will be made when the NetSocket is initialised.  Post-initialisation this field cannot be set by the client, however calls to <method>Connect</method> will result in it being updated so that it always reflects the named address of the current connection.</p>
-      </description>
-    </field>
-
-    <field>
-      <name>Backlog</name>
-      <comment>The maximum number of connections that can be queued against the socket.</comment>
-      <access read="R" write="I">Read/Init</access>
-      <type>INT</type>
-      <description>
-<p>Incoming connections to NetSocket objects are queued until they are answered by the object.  Setting the Backlog adjusts the maximum number of connections on the queue, which otherwise defaults to 10.</p>
-<p>If the backlog is exceeded, subsequent connections to the socket should expect a connection refused error.</p>
+<p>For NetSocket clients, if this field is set with an IP address or domain name prior to initialisation, an attempt to connect to that location will be made when the object is initialised.  Post-initialisation this field cannot be set by the client, however calls to <method>Connect</method> will result in it being updated so that it always reflects the named address of the current connection.</p>
+<p>For <class name="NetServer">NetServer</class> listeners, this inherited field identifies the local address to bind before initialisation.  Use <code>localhost</code>, <code>*</code>, an IPv4 address or an IPv6 address.</p>
       </description>
     </field>
 
@@ -318,23 +245,6 @@ netsocket = obj.new('netsocket', {
       <description>
 <p>This is a free-entry field value that can store client data for future reference.</p>
       </description>
-    </field>
-
-    <field>
-      <name>ClientLimit</name>
-      <comment>The maximum number of clients (unique IP addresses) that can be connected to a server socket.</comment>
-      <access read="R" write="W">Read/Write</access>
-      <type>INT</type>
-      <description>
-<p>The ClientLimit value limits the maximum number of IP addresses that can be connected to the socket at any one time. For socket limits per client, see the <fl>SocketLimit</fl> field.</p>
-      </description>
-    </field>
-
-    <field>
-      <name>Clients</name>
-      <comment>For server sockets, lists all clients connected to the server.</comment>
-      <access read="R">Read</access>
-      <type class="NetClient">*NetClient</type>
     </field>
 
     <field>
@@ -364,8 +274,8 @@ netsocket = obj.new('netsocket', {
       <type>FUNCTION</type>
       <description>
 <p>The client can define a function in this field to receive notifications whenever the state of the socket changes - typically connection messages.</p>
-<p>In server mode, the function must follow the prototype <code>Function(*NetSocket, *ClientSocket, NTC State)</code>.  Otherwise <code>Function(*NetSocket, NTC State)</code>.</p>
-<p>The <code>NetSocket</code> parameter refers to the NetSocket object to which the function is subscribed.  In server mode, <code>ClientSocket</code> refers to the <class name="ClientSocket">ClientSocket</class> on which the state has changed.</p>
+<p>For NetSocket clients, the function must follow the prototype <code>Function(*NetSocket, NTC State)</code>.  For <class name="NetServer">NetServer</class> listeners, the inherited field uses <code>Function(*NetServer, *ClientSocket, NTC State)</code>.</p>
+<p>The first parameter refers to the object to which the function is subscribed.  For NetServer listeners, <code>ClientSocket</code> refers to the <class name="ClientSocket">ClientSocket</class> on which the state has changed.</p>
       </description>
     </field>
 
@@ -393,7 +303,7 @@ netsocket = obj.new('netsocket', {
       <type>FUNCTION</type>
       <description>
 <p>The Incoming field can be set with a custom function that will be called whenever the socket receives data.  The function prototype for C++ is <code>ERR Incoming(*NetSocket, APTR Meta)</code>.  For Tiri use <code>function Incoming(NetSocket)</code>.</p>
-<p>The <code>NetSocket</code> parameter refers to the NetSocket object.  <code>Meta</code> is optional userdata from the <code>FUNCTION</code>.</p>
+<p>The <code>NetSocket</code> parameter refers to the NetSocket object.  <code>Meta</code> is optional userdata from the <code>FUNCTION</code>.  For <class name="NetServer">NetServer</class> listeners, this inherited field receives <code>Incoming(*NetServer, *ClientSocket, APTR Meta)</code> in C++ or <code>function Incoming(NetServer, ClientSocket)</code> in Tiri, and data must be read from the supplied <class name="ClientSocket">ClientSocket</class>.</p>
 <p>Retrieve data from the socket with the <action>Read</action> action. Reading at least some of the data from the socket is compulsory - if the function does not do this then the data will be cleared from the socket when the function returns. If the callback function returns/raises <code>ERR::Terminate</code> then the Incoming field will be cleared and the function will no longer be called.  All other error codes are ignored.</p>
       </description>
     </field>
@@ -451,8 +361,8 @@ netsocket = obj.new('netsocket', {
       <access read="G" write="S">Get/Set</access>
       <type>FUNCTION</type>
       <description>
-<p>The Outgoing field can be set with a custom function that will be called whenever the socket is ready to send data. In client mode the function must be in the format <code>ERR Outgoing(*NetSocket, APTR Meta)</code>.  In server mode the function format is <code>ERR Outgoing(*NetSocket, *ClientSocket, APTR Meta)</code>.</p>
-<p>To send data to the NetSocket object, call the <action>Write</action> action.  If the callback function returns an error other than <code>ERR::Okay</code> then the Outgoing field will be cleared and the function will no longer be called.</p>
+<p>The Outgoing field can be set with a custom function that will be called whenever the socket is ready to send data. For NetSocket clients the function must be in the format <code>ERR Outgoing(*NetSocket, APTR Meta)</code>.  For <class name="NetServer">NetServer</class> listeners, the inherited field uses <code>ERR Outgoing(*NetServer, *ClientSocket, APTR Meta)</code>.</p>
+<p>To send data from a NetSocket object, call the <action>Write</action> action.  To send data from a NetServer to a connected client, call <class name="ClientSocket" method="Write">ClientSocket.Write()</class> on the target client socket.  If the callback function returns an error other than <code>ERR::Okay</code> then the Outgoing field will be cleared and the function will no longer be called.</p>
       </description>
     </field>
 
@@ -461,33 +371,9 @@ netsocket = obj.new('netsocket', {
       <comment>The port number to use for connections.</comment>
       <access read="R" write="I">Read/Init</access>
       <type>INT</type>
-    </field>
-
-    <field>
-      <name>SSLCertificate</name>
-      <comment>SSL certificate file to use if in server mode.</comment>
-      <access read="R" write="S">Read/Set</access>
-      <type>STRING</type>
       <description>
-<p>Set SSLCertificate to the path of an SSL certificate file to use when the NetSocket is in server mode.  The certificate file must be in a supported format such as PEM, CRT, or P12.  If no certificate is defined, the NetSocket will either self-sign or use a localhost certificate, if available.</p>
+<p>For NetSocket clients, this is the remote port used by <method>Connect</method>.  For <class name="NetServer">NetServer</class> listeners, this inherited field is the local port to bind during initialisation.</p>
       </description>
-    </field>
-
-    <field>
-      <name>SSLKeyPassword</name>
-      <comment>SSL private key password.</comment>
-      <access read="R" write="S">Read/Set</access>
-      <type>STRING</type>
-      <description>
-<p>If the SSL private key is encrypted, set this field to the password required to decrypt it.  If the private key is not encrypted, this field can be left empty.</p>
-      </description>
-    </field>
-
-    <field>
-      <name>SocketLimit</name>
-      <comment>Limits the number of connected sockets per client IP address.</comment>
-      <access read="R" write="W">Read/Write</access>
-      <type>INT</type>
     </field>
 
     <field>
@@ -497,30 +383,18 @@ netsocket = obj.new('netsocket', {
       <type lookup="NTC">NTC</type>
       <description>
 <p>The State reflects the connection state of the NetSocket.  If the <fl>Feedback</fl> field is defined with a function, it will be called automatically whenever the state is changed.  Note that the ClientSocket parameter will be NULL when the Feedback function is called.</p>
-<p>Note that in server mode this State value should not be used as it cannot reflect the state of all connected client sockets.  Each <class name="ClientSocket">ClientSocket</class> carries its own independent State value for use instead.</p>
+<p>For <class name="NetServer">NetServer</class> listeners this State value should not be used as it cannot reflect the state of all connected client sockets.  When read from a NetServer, this inherited field reports <code>NTC::MULTISTATE</code>; each <class name="ClientSocket">ClientSocket</class> carries its own independent State value for accepted TCP connections.</p>
 <types lookup="NTC"/>
-      </description>
-    </field>
-
-    <field>
-      <name>TotalClients</name>
-      <comment>Indicates the total number of clients currently connected to the socket (if in server mode).</comment>
-      <access read="R">Read</access>
-      <type>INT</type>
-      <description>
-<p>In server mode, the NetSocket will maintain a count of the total number of clients currently connected to the socket. You can read the total number of connections from this field.</p>
-<p>In client mode, this field is always set to zero.</p>
       </description>
     </field>
 
   </fields>
   <types>
-    <constants lookup="NSF">
+    <constants lookup="NSF" comment="NetSocket options">
       <const name="BROADCAST">Enable broadcast (UDP only).</const>
-      <const name="DISABLE_SERVER_VERIFY">Disable SSL certificate verification (for testing only).</const>
+      <const name="DISABLE_SERVER_VERIFY">Disable SSL server certificate verification for client sockets (testing only).</const>
       <const name="LOG_ALL">Print extra log messages.</const>
-      <const name="MULTI_CONNECT">Allow multiple connections from the same IP when in server mode.</const>
-      <const name="SERVER">Puts the socket into server mode.  In this state the netsocket object will wait for incoming connections from clients.</const>
+      <const name="MULTI_CONNECT">Allow multiple connections from the same IP (NetServer only).</const>
       <const name="SSL">Use Secure Sockets Layer for all communication.</const>
       <const name="SYNCHRONOUS">Use synchronous (blocking) network calls.</const>
       <const name="UDP">Use UDP (connectionless datagram protocol) instead of TCP.</const>
@@ -531,7 +405,7 @@ netsocket = obj.new('netsocket', {
       <const name="CONNECTING">A connection is being established.</const>
       <const name="DISCONNECTED">There is no connection.</const>
       <const name="HANDSHAKING">An SSL connection is being established.</const>
-      <const name="MULTISTATE">In server mode the NetSocket will be set to MULTISTATE to indicate one or more client connections.</const>
+      <const name="MULTISTATE">A NetServer reports MULTISTATE because accepted ClientSocket objects track their own states.</const>
       <const name="RESOLVING">The host name is being resolved.</const>
     </constants>
 

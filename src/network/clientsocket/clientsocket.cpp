@@ -8,8 +8,8 @@ that is distributed with this package.  Please refer to it for further informati
 -CLASS-
 ClientSocket: Represents a single socket connection to a client IP address.
 
-If a @Netsocket is running in server mode then it will create a new ClientSocket object every time that a new connection
-is opened by a client.  This is a very simple class that assists in the management of I/O between the client and server.
+When a @NetServer accepts a TCP connection, it creates a new ClientSocket object for that connection.  This is a very
+simple class that assists in the management of I/O between the accepted client and the server.
 -END-
 
 *********************************************************************************************************************/
@@ -478,7 +478,7 @@ static ERR CLIENTSOCKET_Free(extClientSocket *Self)
 
          if (not Self->Client->Connections) {
             log.msg("No more connections for this IP, removing client.");
-            free_client((extNetSocket *)Self->Client->Owner, Self->Client);
+            free_client((extNetServer *)Self->Client->Owner, Self->Client);
          }
       }
    }
@@ -513,7 +513,7 @@ static ERR CLIENTSOCKET_Init(extClientSocket *Self)
    Self->State = NTC::CONNECTING;
 
 #ifndef DISABLE_SSL
-   auto server = (extNetSocket *)(Self->Client->Owner);
+   auto server = (extNetServer *)(Self->Client->Owner);
    if ((server->Flags & NSF::SSL) != NSF::NIL) {
       if (auto error = tls_accept_client(Self, server); error != ERR::Okay) return error;
    }
@@ -641,12 +641,8 @@ Prev: Previous socket in the chain.
 -FIELD-
 State: The current connection state of the ClientSocket object.
 
-The State reflects the connection state of the NetSocket.  If the #Feedback field is defined with a function, it will
-be called automatically whenever the state is changed.  Note that the ClientSocket parameter will be NULL when the
-Feedback function is called.
-
-Note that in server mode this State value should not be used as it cannot reflect the state of all connected
-client sockets.  Each @ClientSocket carries its own independent State value for use instead.
+The State reflects the connection state of this accepted client socket.  If the parent @NetServer has a #Feedback
+function, it will be called automatically whenever the state is changed.
 
 *********************************************************************************************************************/
 

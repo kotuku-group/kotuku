@@ -22,11 +22,11 @@ glTestTimeout = 3.0
    cl_buffer = string.alloc(1024)
    cl_source = struct.new('IPAddress')
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       name    = 'UDPServer',
       port    = server_port,
       address = '127.0.0.1',
-      flags   = NSF_SERVER|NSF_UDP,
+      flags   = NSF_UDP,
       incoming = function(Socket)
          local err, bytesRead = Socket.mtRecvFrom(sv_source, sv_buffer)
          assert(err is ERR_Okay, 'Server failed to receive UDP data: ' .. mSys.GetErrorMsg(err))
@@ -110,8 +110,8 @@ end
    assert(err != ERR_Okay, 'Connect should not work on UDP sockets')
 
    -- Test TCP-only operations on UDP socket
-   tcp_socket = obj.new('netsocket', {
-      flags = NSF_SERVER, port = 28390  -- TCP server
+   tcp_socket = obj.new('netserver', {
+      port = 28390  -- TCP server
    })
 
    dest = struct.new('IPAddress')
@@ -129,10 +129,10 @@ end
    server_port = glBasePort
    test_completed = false
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       port    = server_port,
       address = '127.0.0.1',
-      flags   = NSF_SERVER|NSF_UDP,
+      flags   = NSF_UDP,
       maxPacketSize = 65507,  -- Maximum UDP packet size
       incoming = function(Socket)
          local buffer = array<byte, 65600>  -- Larger than max packet

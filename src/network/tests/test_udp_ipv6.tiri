@@ -17,11 +17,11 @@ glTestTimeout = 3.0
    msg_recv    = false
    sv_source   = struct.new('IPAddress')
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       name    = 'UDPServer',
       port    = server_port,
       address = '::1',  -- IPv6 loopback
-      flags   = 'SERVER|UDP',
+      flags   = 'UDP',
       incoming = function(Socket)
          buffer = array<byte, 1024>
          err, bytesRead = Socket.mtRecvFrom(sv_source, buffer)
@@ -67,10 +67,10 @@ end
    ipv4Received = false
    ipv6Received = false
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       port    = server_port,
       address = '::',  -- Bind to all interfaces (dual-stack)
-      flags   = NSF_SERVER|NSF_UDP,
+      flags   = NSF_UDP,
       incoming = function(Socket)
          buffer = array<byte, 1024>
          source = struct.new('IPAddress')

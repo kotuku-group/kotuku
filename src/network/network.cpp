@@ -6,10 +6,10 @@ that is distributed with this package.  Please refer to it for further informati
 **********************************************************************************************************************
 
 -MODULE-
-Network: Provides miscellaneous network functions and hosts the NetSocket and ClientSocket classes.
+Network: Provides miscellaneous network functions and hosts the NetSocket, NetServer and ClientSocket classes.
 
 The Network module exports a few miscellaneous networking functions.  For core network functionality surrounding
-sockets and HTTP, please refer to the @NetSocket and @HTTP classes.
+sockets and HTTP, please refer to the @NetSocket, @NetServer and @HTTP classes.
 -END-
 
 *********************************************************************************************************************/
@@ -19,6 +19,7 @@ sockets and HTTP, please refer to the @NetSocket and @HTTP classes.
 #define PRV_NETWORK
 #define PRV_NETWORK_MODULE
 #define PRV_NETSOCKET
+#define PRV_NETSERVER
 #define PRV_CLIENTSOCKET
 #define PRV_NETCLIENT
 
@@ -115,12 +116,12 @@ struct TLSSession {
 class extClientSocket : public objClientSocket {
    public:
    SocketHandle Handle;
-   struct NetQueue WriteQueue; // Writes to the network socket are queued here in a buffer
-   uint8_t OutgoingRecursion;  // Recursion manager
-   uint8_t InUse;       // Recursion manager
-   bool ReadCalled;     // True if the Read action has been called
+   struct NetQueue WriteQueue;   // Writes to the network socket are queued here in a buffer
+   uint8_t OutgoingRecursion;    // Recursion manager
+   uint8_t InUse;                // Recursion manager
+   bool ReadCalled;              // True if the Read action has been called
    bool CloseAfterWrite = false; // True if Deactivate() is waiting for queued data to flush
-   uint8_t ErrorCountdown = 8;  // Counts down on each error, disconnect occurs at zero.
+   uint8_t ErrorCountdown = 8;   // Counts down on each error, disconnect occurs at zero.
 
    #ifndef DISABLE_SSL
       TLSSession TLS;
@@ -136,7 +137,6 @@ class extNetSocket : public objNetSocket {
    FUNCTION Incoming;
    FUNCTION Feedback;
    objNetLookup *NetLookup;
-   objNetClient *LastClient;      // For linked-list management for server sockets.  Points to the last client IP on the chain
    struct NetQueue WriteQueue;
    uint8_t ReadCalled:1;          // The Read() action sets this to TRUE whenever called.
    uint8_t IPV6:1;
@@ -154,13 +154,27 @@ class extNetSocket : public objNetSocket {
 
    extNetSocket() {
       // objNetSocket defaults
-      Error        = ERR::Okay;
-      Backlog      = 10;
-      State        = NTC::DISCONNECTED;
-      MsgLimit     = 1024768;
-      ClientLimit  = 1024;
-      SocketLimit  = 256;
+      Error    = ERR::Okay;
+      State    = NTC::DISCONNECTED;
+      MsgLimit = 1024768;
    }
+};
+
+class extNetServer : public extNetSocket {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::NETSERVER;
+   static constexpr CSTRING CLASS_NAME = "NetServer";
+   using create = kt::Create<extNetServer>;
+
+   objNetClient *LastClient;   // For linked-list management.
+   objNetClient *Clients;      // Lists all clients connected to the NetServer.
+   CSTRING SSLCertificate;     // SSL certificate file to use for SSL listeners.
+   CSTRING SSLPrivateKey;      // Private key file to use for SSL listeners.
+   CSTRING SSLKeyPassword;     // SSL private key password.
+   int    Backlog;             // The maximum number of connections that can be queued against the socket.
+   int    ClientLimit;         // The maximum number of client IP addresses that can be connected to the NetServer.
+   int    SocketLimit;         // Limits the number of connected sockets per client IP address.
+   int    TotalClients;        // Indicates the total number of clients currently connected to the NetServer.
 };
 
 class extNetLookup : public objNetLookup {
@@ -178,7 +192,7 @@ bool validate_iocp_completion_object(OBJECTPTR Object, SocketHandle Handle)
 {
    if ((!Object) or Object->terminating()) return false;
 
-   if (Object->classID() IS CLASSID::NETSOCKET) {
+   if (Object->baseClassID() IS CLASSID::NETSOCKET) {
       auto socket = (extNetSocket *)Object;
       if (socket->Terminating) return false;
       return socket->Handle.socket() IS Handle.socket();
@@ -206,15 +220,17 @@ JUMPTABLE_CORE
     template <class T> void tls_disconnect(T *);
     template <class T> ERR tls_flush_output(T *);
     template <class T> ERR tls_receive_encrypted(T *);
-    static ERR tls_setup(extNetSocket *);
-    static ERR tls_accept_client(extClientSocket *, extNetSocket *);
+    static ERR tls_setup_client(extNetSocket *);
+    static ERR tls_setup_server(extNetServer *);
+    static ERR tls_accept_client(extClientSocket *, extNetServer *);
   #else
     // OpenSSL forward declarations
     static bool ssl_init = false;
     static ERR tls_connect(extNetSocket *);
     static ERR sslLinkSocket(extNetSocket *);
-    static ERR tls_setup(extNetSocket *);
-    static ERR tls_accept_client(extClientSocket *, extNetSocket *);
+    static ERR tls_setup_client(extNetSocket *);
+    static ERR tls_setup_server(extNetServer *);
+    static ERR tls_accept_client(extClientSocket *, extNetServer *);
   #endif
 #endif
 
@@ -409,6 +425,7 @@ static bool parse_ipv6_literal(std::string_view Text, IPAddress &Address)
 static OBJECTPTR clNetLookup = nullptr;
 static OBJECTPTR clProxy = nullptr;
 static OBJECTPTR clNetSocket = nullptr;
+static OBJECTPTR clNetServer = nullptr;
 static OBJECTPTR clClientSocket = nullptr;
 static OBJECTPTR clNetClient = nullptr;
 static OBJECTPTR glNetworkModule = nullptr;
@@ -431,7 +448,7 @@ static std::string glCertPath;
       SSLCERTFORMAT Format = SSLCERTFORMAT::NIL;
    };
 
-   static ERR resolve_ssl_certificate_paths(extNetSocket *Self, ssl_certificate_paths &Paths)
+   static ERR resolve_ssl_certificate_paths(extNetServer *Self, ssl_certificate_paths &Paths)
    {
       if ((!Self) or (!Self->SSLCertificate) or (!*Self->SSLCertificate)) return ERR::FieldNotSet;
 
@@ -477,6 +494,7 @@ static void cleanup_proxy_config(void);
 
 static ERR init_netclient(void);
 static ERR init_netsocket(void);
+static ERR init_netserver(void);
 static ERR init_clientsocket(void);
 static ERR init_proxy(void);
 static ERR init_netlookup(void);
@@ -504,6 +522,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    if (init_clientsocket() != ERR::Okay) return ERR::AddClass;
    if (init_proxy() != ERR::Okay) return ERR::AddClass;
    if (init_netlookup() != ERR::Okay) return ERR::AddClass;
+   if (init_netserver() != ERR::Okay) return ERR::AddClass;
 
    glResolveNameMsgID = (MSGID)AllocateID(IDTYPE::MESSAGE);
    glResolveAddrMsgID = (MSGID)AllocateID(IDTYPE::MESSAGE);
@@ -547,6 +566,7 @@ static ERR MODExpunge(void)
 
    if (glPlatform) glPlatform->expunge();
 
+   if (clNetServer)    { FreeResource(clNetServer); clNetServer = nullptr; }
    if (clNetClient)    { FreeResource(clNetClient); clNetClient = nullptr; }
    if (clNetSocket)    { FreeResource(clNetSocket); clNetSocket = nullptr; }
    if (clClientSocket) { FreeResource(clClientSocket); clClientSocket = nullptr; }
@@ -769,13 +789,15 @@ uint32_t LongToHost(uint32_t Value)
 /*********************************************************************************************************************
 
 -FUNCTION-
-SetSSL: Alters SSL settings on an initialised NetSocket object.
+SetSSL: Alters SSL settings on an initialised NetSocket client object.
 
-Use the SetSSL() function to adjust the SSL capabilities of a NetSocket object.  The following commands are currently
+Use the SetSSL() function to adjust the SSL capabilities of a NetSocket client object.  Server-side SSL is configured
+on @NetServer before initialisation with the `SSL` flag and certificate fields.  The following commands are currently
 available:
 
 <list type="bullet">
-<li><b>EnableSSL</b>: Starts an SSL handshaking process with the remote server.  Does nothing if the socket is already in SSL mode.</li>
+<li><b>EnableSSL</b>: Starts an SSL handshaking process with the remote server.  Does nothing if the socket is already
+in SSL mode.</li>
 <li><b>DisableSSL</b>: Disconnects the SSL connection and reverts to unencrypted mode.</li>
 </list>
 
@@ -811,7 +833,8 @@ ERR SetSSL(objNetSocket *Socket, CSTRING Command, CSTRING Value)
    switch(hash) {
       case kt::strhash("EnableSSL"):
          if ((Socket->Flags & NSF::SSL) IS NSF::NIL) {
-            if (auto error = tls_setup((extNetSocket *)Socket); error IS ERR::Okay) {
+            auto error = (Socket->classID() IS CLASSID::NETSERVER) ? tls_setup_server((extNetServer *)Socket) : tls_setup_client((extNetSocket *)Socket);
+            if (error IS ERR::Okay) {
                if (error = tls_connect((extNetSocket *)Socket); error IS ERR::Okay) {
                   Socket->Flags |= NSF::SSL;
                }
@@ -974,6 +997,7 @@ static ERR send_data(T *Self, CPTR Buffer, size_t *Length)
 #include "class_proxy.cpp"
 #include "class_netlookup.cpp"
 #include "netclient/netclient.cpp"
+#include "class_netserver.cpp"
 
 //********************************************************************************************************************
 

@@ -371,24 +371,24 @@ end
       }
    })
 
-   global glEchoServer = obj.new('netsocket', {
+   global glEchoServer = obj.new('netserver', {
       address  = '127.0.0.1',
       port     = ECHO_PORT,
-      flags    = NSF_SERVER|NSF_MULTI_CONNECT,
+      flags    = NSF_MULTI_CONNECT,
       incoming = echoIncoming
    })
 
-   global glUpstreamProxyServer = obj.new('netsocket', {
+   global glUpstreamProxyServer = obj.new('netserver', {
       address  = '127.0.0.1',
       port     = UPSTREAM_PROXY_PORT,
-      flags    = NSF_SERVER|NSF_MULTI_CONNECT,
+      flags    = NSF_MULTI_CONNECT,
       incoming = upstreamProxyIncoming
    })
 
-   global glStallServer = obj.new('netsocket', {
+   global glStallServer = obj.new('netserver', {
       address  = '127.0.0.1',
       port     = STALL_SERVER_PORT,
-      flags    = NSF_SERVER|NSF_MULTI_CONNECT,
+      flags    = NSF_MULTI_CONNECT,
       incoming = stalledOriginIncoming
    })
 
@@ -695,10 +695,10 @@ function ConnectTunnelPassesSSLHandshake()
    local ssl_payload_sent = false
    local ssl_server_done = false
 
-   local ssl_server = obj.new('netsocket', {
+   local ssl_server = obj.new('netserver', {
       address = '127.0.0.1',
       port    = SSL_TUNNEL_PORT,
-      flags   = NSF_SERVER|NSF_SSL,
+      flags   = NSF_SSL,
       incoming = function(Server, Client)
          local buffer = string.alloc(2048)
          local err, read_len = Client.acRead(buffer, 2048)

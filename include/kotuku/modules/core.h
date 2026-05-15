@@ -3867,17 +3867,6 @@ class objCompressedStream : public Object {
 
 };
 
-#ifndef PRV_CORE
-
-// Note that the length of the data is only needed when messaging between processes, so we can skip it for these
-// direct-access data channel macros.
-
-#define acDataContent(a,b)  acDataFeed((a),0,DATA::CONTENT,(b),0)
-#define acDataXML(a,b)      acDataFeed((a),0,DATA::XML,(b),0)
-#define acDataText(a,b)     acDataFeed((a),0,DATA::TEXT,(b),0)
-
-#endif // PRV_CORE
-
 #ifdef __unix__
 #include <pthread.h>
 #endif

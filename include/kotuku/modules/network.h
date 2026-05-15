@@ -13,6 +13,7 @@ class objClientSocket;
 class objProxy;
 class objNetLookup;
 class objNetSocket;
+class objNetServer;
 
 // Address types for the IPAddress structure.
 
@@ -22,16 +23,17 @@ enum class IPADDR : int {
    V6 = 1,
 };
 
+// NetSocket options
+
 enum class NSF : uint32_t {
    NIL = 0,
-   SERVER = 0x00000001,
-   SSL = 0x00000002,
-   DISABLE_SERVER_VERIFY = 0x00000004,
-   MULTI_CONNECT = 0x00000008,
-   SYNCHRONOUS = 0x00000010,
-   LOG_ALL = 0x00000020,
-   BROADCAST = 0x00000040,
-   UDP = 0x00000080,
+   SSL = 0x00000001,
+   SYNCHRONOUS = 0x00000002,
+   LOG_ALL = 0x00000004,
+   BROADCAST = 0x00000008,
+   UDP = 0x00000010,
+   DISABLE_SERVER_VERIFY = 0x00000020,
+   MULTI_CONNECT = 0x00000040,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(NSF)
@@ -120,8 +122,8 @@ class objNetClient : public Object {
 
    using create = kt::Create<objNetClient>;
 
-   objNetClient * Next;              // The next client IP with connections to the server socket.
-   objNetClient * Prev;              // The previous client IP with connections to the server socket.
+   objNetClient * Next;              // The next client IP with connections to the NetServer.
+   objNetClient * Prev;              // The previous client IP with connections to the NetServer.
    objClientSocket * Connections;    // Pointer to the first established socket connection for the client IP.
    APTR ClientData;                  // A custom pointer available for userspace.
    int  TotalConnections;            // The total number of current socket connections for the IP address.
@@ -406,12 +408,10 @@ class objNetLookup : public Object {
 namespace ns {
 struct Connect { CSTRING Address; int Port; double Timeout; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct GetLocalIPAddress { struct IPAddress * Address; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DisconnectClient { objNetClient * Client; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DisconnectSocket { objClientSocket * Socket; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SendTo { struct IPAddress * Dest; APTR Data; int Length; int BytesSent; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct RecvFrom { struct IPAddress * Source; APTR Buffer; int BufferSize; int BytesRead; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct JoinMulticastGroup { CSTRING Group; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct LeaveMulticastGroup { CSTRING Group; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SendTo { struct IPAddress * Dest; APTR Data; int Length; int BytesSent; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct RecvFrom { struct IPAddress * Source; APTR Buffer; int BufferSize; int BytesRead; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct JoinMulticastGroup { CSTRING Group; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct LeaveMulticastGroup { CSTRING Group; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -422,23 +422,15 @@ class objNetSocket : public Object {
 
    using create = kt::Create<objNetSocket>;
 
-   objNetClient * Clients;    // For server sockets, lists all clients connected to the server.
-   APTR   ClientData;         // A client-defined value that can be useful in action notify events.
-   STRING Address;            // An IP address or domain name to connect to.
-   STRING SSLCertificate;     // SSL certificate file to use if in server mode.
-   STRING SSLPrivateKey;      // Private key file to use if in server mode.
-   STRING SSLKeyPassword;     // SSL private key password.
-   NTC    State;              // The current connection state of the NetSocket object.
-   ERR    Error;              // Information about the last error that occurred during a NetSocket operation
-   int    Port;               // The port number to use for connections.
-   NSF    Flags;              // Optional flags.
-   int    TotalClients;       // Indicates the total number of clients currently connected to the socket (if in server mode).
-   int    Backlog;            // The maximum number of connections that can be queued against the socket.
-   int    ClientLimit;        // The maximum number of clients (unique IP addresses) that can be connected to a server socket.
-   int    SocketLimit;        // Limits the number of connected sockets per client IP address.
-   int    MsgLimit;           // Limits the size of incoming and outgoing data packets.
-   int    MaxPacketSize;      // Maximum UDP packet size for sending and receiving data.
-   int    MulticastTTL;       // Time-to-live (hop limit) for multicast packets.
+   APTR   ClientData;  // A client-defined value that can be useful in action notify events.
+   STRING Address;     // An IP address or domain name to connect to.
+   NTC    State;       // The current connection state of the NetSocket object.
+   ERR    Error;       // Information about the last error that occurred during a NetSocket operation
+   int    Port;        // The port number to use for connections.
+   NSF    Flags;       // Optional flags.
+   int    MsgLimit;    // Limits the size of incoming and outgoing data packets.
+   int    MaxPacketSize; // Maximum UDP packet size for sending and receiving data.
+   int    MulticastTTL; // Time-to-live (hop limit) for multicast packets.
 
    // Action stubs
 
@@ -500,33 +492,25 @@ class objNetSocket : public Object {
       struct ns::GetLocalIPAddress args = { Address };
       return(Action(AC(-2), this, &args));
    }
-   inline ERR disconnectClient(objNetClient * Client) noexcept {
-      struct ns::DisconnectClient args = { Client };
-      return(Action(AC(-3), this, &args));
-   }
-   inline ERR disconnectSocket(objClientSocket * Socket) noexcept {
-      struct ns::DisconnectSocket args = { Socket };
-      return(Action(AC(-4), this, &args));
-   }
    inline ERR sendTo(struct IPAddress * Dest, APTR Data, int Length, int * BytesSent) noexcept {
       struct ns::SendTo args = { Dest, Data, Length, (int)0 };
-      ERR error = Action(AC(-5), this, &args);
+      ERR error = Action(AC(-3), this, &args);
       if (BytesSent) *BytesSent = args.BytesSent;
       return(error);
    }
    inline ERR recvFrom(struct IPAddress * Source, APTR Buffer, int BufferSize, int * BytesRead) noexcept {
       struct ns::RecvFrom args = { Source, Buffer, BufferSize, (int)0 };
-      ERR error = Action(AC(-6), this, &args);
+      ERR error = Action(AC(-4), this, &args);
       if (BytesRead) *BytesRead = args.BytesRead;
       return(error);
    }
    inline ERR joinMulticastGroup(CSTRING Group) noexcept {
       struct ns::JoinMulticastGroup args = { Group };
-      return(Action(AC(-7), this, &args));
+      return(Action(AC(-5), this, &args));
    }
    inline ERR leaveMulticastGroup(CSTRING Group) noexcept {
       struct ns::LeaveMulticastGroup args = { Group };
-      return(Action(AC(-8), this, &args));
+      return(Action(AC(-6), this, &args));
    }
 
    // Customised field setting
@@ -538,31 +522,13 @@ class objNetSocket : public Object {
 
    template <class T> inline ERR setAddress(T && Value) noexcept {
       auto target = this;
-      auto field = &this->Class->Dictionary[23];
-      return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
-   }
-
-   template <class T> inline ERR setSSLCertificate(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
-      return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
-   }
-
-   template <class T> inline ERR setSSLPrivateKey(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
-   }
-
-   template <class T> inline ERR setSSLKeyPassword(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[4];
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
    }
 
    inline ERR setState(const NTC Value) noexcept {
       auto target = this;
-      auto field = &this->Class->Dictionary[10];
+      auto field = &this->Class->Dictionary[6];
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -574,22 +540,6 @@ class objNetSocket : public Object {
 
    inline ERR setFlags(const NSF Value) noexcept {
       this->Flags = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setBacklog(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
-      this->Backlog = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setClientLimit(const int Value) noexcept {
-      this->ClientLimit = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setSocketLimit(const int Value) noexcept {
-      this->SocketLimit = Value;
       return ERR::Okay;
    }
 
@@ -613,26 +563,141 @@ class objNetSocket : public Object {
 
    inline ERR setHandle(APTR Value) noexcept {
       auto target = this;
-      auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(target, field, 0x08000500, Value, 1);
+      auto field = &this->Class->Dictionary[5];
+      return field->WriteValue(target, field, 0x08000508, Value, 1);
    }
 
    inline ERR setFeedback(FUNCTION Value) noexcept {
       auto target = this;
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[13];
       return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
    }
 
    inline ERR setIncoming(FUNCTION Value) noexcept {
       auto target = this;
-      auto field = &this->Class->Dictionary[5];
+      auto field = &this->Class->Dictionary[3];
       return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
    }
 
    inline ERR setOutgoing(FUNCTION Value) noexcept {
       auto target = this;
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[10];
       return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
+   }
+
+};
+
+// NetServer class definition
+
+#define VER_NETSERVER (1.000000)
+
+// NetServer methods
+
+namespace ns {
+struct DisconnectClient { objNetClient * Client; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct DisconnectSocket { objClientSocket * Socket; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+
+} // namespace
+
+class objNetServer : public objNetSocket {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::NETSERVER;
+   static constexpr CSTRING CLASS_NAME = "NetServer";
+
+   using create = kt::Create<objNetServer>;
+
+   // Action stubs
+
+   inline ERR init() noexcept { return InitObject(this); }
+   template <class T, class U> ERR read(APTR Buffer, T Size, U *Result) noexcept {
+      static_assert(std::is_integral<U>::value, "Result value must be an integer type");
+      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
+      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
+      struct acRead read = { (int8_t *)Buffer, bytes };
+      if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
+         *Result = static_cast<U>(read.Result);
+         return ERR::Okay;
+      }
+      else { *Result = 0; return error; }
+   }
+   template <class T> ERR read(APTR Buffer, T Size) noexcept {
+      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
+      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
+      struct acRead read = { (int8_t *)Buffer, bytes };
+      return Action(AC::Read, this, &read);
+   }
+   inline ERR write(CPTR Buffer, int Size, int *Result = nullptr) noexcept {
+      struct acWrite write = { (int8_t *)Buffer, Size };
+      if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
+         if (Result) *Result = write.Result;
+         return ERR::Okay;
+      }
+      else {
+         if (Result) *Result = 0;
+         return error;
+      }
+   }
+   inline ERR write(std::string Buffer, int *Result = nullptr) noexcept {
+      struct acWrite write = { (int8_t *)Buffer.c_str(), int(Buffer.size()) };
+      if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
+         if (Result) *Result = write.Result;
+         return ERR::Okay;
+      }
+      else {
+         if (Result) *Result = 0;
+         return error;
+      }
+   }
+   inline int writeResult(CPTR Buffer, int Size) noexcept {
+      struct acWrite write = { (int8_t *)Buffer, Size };
+      if (Action(AC::Write, this, &write) IS ERR::Okay) return write.Result;
+      else return 0;
+   }
+   inline ERR disconnectClient(objNetClient * Client) noexcept {
+      struct ns::DisconnectClient args = { Client };
+      return(Action(AC(-7), this, &args));
+   }
+   inline ERR disconnectSocket(objClientSocket * Socket) noexcept {
+      struct ns::DisconnectSocket args = { Socket };
+      return(Action(AC(-8), this, &args));
+   }
+
+   // Customised field setting
+
+   inline ERR setBacklog(const int Value) noexcept {
+      auto target = this;
+      auto field = &this->Class->Dictionary[4];
+      return field->WriteValue(target, field, FD_INT, &Value, 1);
+   }
+
+   inline ERR setClientLimit(const int Value) noexcept {
+      auto target = this;
+      auto field = &this->Class->Dictionary[6];
+      return field->WriteValue(target, field, FD_INT, &Value, 1);
+   }
+
+   inline ERR setSocketLimit(const int Value) noexcept {
+      auto target = this;
+      auto field = &this->Class->Dictionary[5];
+      return field->WriteValue(target, field, FD_INT, &Value, 1);
+   }
+
+   template <class T> inline ERR setSSLCertificate(T && Value) noexcept {
+      auto target = this;
+      auto field = &this->Class->Dictionary[0];
+      return field->WriteValue(target, field, 0x08800508, to_cstring(Value), 1);
+   }
+
+   template <class T> inline ERR setSSLPrivateKey(T && Value) noexcept {
+      auto target = this;
+      auto field = &this->Class->Dictionary[3];
+      return field->WriteValue(target, field, 0x08800508, to_cstring(Value), 1);
+   }
+
+   template <class T> inline ERR setSSLKeyPassword(T && Value) noexcept {
+      auto target = this;
+      auto field = &this->Class->Dictionary[1];
+      return field->WriteValue(target, field, 0x08800508, to_cstring(Value), 1);
    }
 
 };

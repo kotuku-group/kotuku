@@ -5,17 +5,18 @@
   <info>
     <name>Network</name>
     <type>module</type>
-    <comment>Provides miscellaneous network functions and hosts the NetSocket and ClientSocket classes.</comment>
+    <comment>Provides miscellaneous network functions and hosts the NetSocket, NetServer and ClientSocket classes.</comment>
     <version>1</version>
     <status>stable</status>
     <prefix>net</prefix>
     <copyright>Paul Manias © 2005-2026</copyright>
     <description>
-<p>The Network module exports a few miscellaneous networking functions.  For core network functionality surrounding sockets and HTTP, please refer to the <class name="NetSocket">NetSocket</class> and <class name="HTTP">HTTP</class> classes.</p></description>
+<p>The Network module exports a few miscellaneous networking functions.  For core network functionality surrounding sockets and HTTP, please refer to the <class name="NetSocket">NetSocket</class>, <class name="NetServer">NetServer</class> and <class name="HTTP">HTTP</class> classes.</p></description>
     <classes>
       <class>ClientSocket</class>
       <class>NetClient</class>
       <class>NetLookup</class>
+      <class>NetServer</class>
       <class>NetSocket</class>
       <class>Proxy</class>
     </classes>
@@ -79,7 +80,7 @@
 
   <function>
     <name>SetSSL</name>
-    <comment>Alters SSL settings on an initialised NetSocket object.</comment>
+    <comment>Alters SSL settings on an initialised NetSocket client object.</comment>
     <prototype>ERR net::SetSSL(objNetSocket * NetSocket, CSTRING Command, CSTRING Value)</prototype>
     <tiriPrototype>err = SetSSL(NetSocket:obj, Command:str, Value:str)</tiriPrototype>
     <input>
@@ -88,10 +89,11 @@
       <param type="CSTRING" name="Value">Value to set for the command or option.</param>
     </input>
     <description>
-<p>Use the SetSSL() function to adjust the SSL capabilities of a NetSocket object.  The following commands are currently available:</p>
+<p>Use the SetSSL() function to adjust the SSL capabilities of a NetSocket client object.  Server-side SSL is configured on <class name="NetServer">NetServer</class> before initialisation with the <code>SSL</code> flag and certificate fields.  The following commands are currently available:</p>
 <list type="bullet">
 <li>
-<b>EnableSSL</b>: Starts an SSL handshaking process with the remote server.  Does nothing if the socket is already in SSL mode.</li>
+<b>EnableSSL</b>: Starts an SSL handshaking process with the remote server.  Does nothing if the socket is already
+in SSL mode.</li>
 <li>
 <b>DisableSSL</b>: Disconnects the SSL connection and reverts to unencrypted mode.</li>
 </list>
@@ -153,12 +155,11 @@ if (!StrToAddress(&quot;127.0.0.1&quot;, &amp;addr)) {
       <const name="NO_CACHE">Contact the name service and do not use the local DNS cache.</const>
     </constants>
 
-    <constants lookup="NSF">
+    <constants lookup="NSF" comment="NetSocket options">
       <const name="BROADCAST">Enable broadcast (UDP only).</const>
-      <const name="DISABLE_SERVER_VERIFY">Disable SSL certificate verification (for testing only).</const>
+      <const name="DISABLE_SERVER_VERIFY">Disable SSL server certificate verification for client sockets (testing only).</const>
       <const name="LOG_ALL">Print extra log messages.</const>
-      <const name="MULTI_CONNECT">Allow multiple connections from the same IP when in server mode.</const>
-      <const name="SERVER">Puts the socket into server mode.  In this state the netsocket object will wait for incoming connections from clients.</const>
+      <const name="MULTI_CONNECT">Allow multiple connections from the same IP (NetServer only).</const>
       <const name="SSL">Use Secure Sockets Layer for all communication.</const>
       <const name="SYNCHRONOUS">Use synchronous (blocking) network calls.</const>
       <const name="UDP">Use UDP (connectionless datagram protocol) instead of TCP.</const>
@@ -169,7 +170,7 @@ if (!StrToAddress(&quot;127.0.0.1&quot;, &amp;addr)) {
       <const name="CONNECTING">A connection is being established.</const>
       <const name="DISCONNECTED">There is no connection.</const>
       <const name="HANDSHAKING">An SSL connection is being established.</const>
-      <const name="MULTISTATE">In server mode the NetSocket will be set to MULTISTATE to indicate one or more client connections.</const>
+      <const name="MULTISTATE">A NetServer reports MULTISTATE because accepted ClientSocket objects track their own states.</const>
       <const name="RESOLVING">The host name is being resolved.</const>
     </constants>
 

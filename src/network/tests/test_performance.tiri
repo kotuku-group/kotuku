@@ -43,7 +43,7 @@ end
    send_complete = false
    throughput_complete = false
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       name = 'ThroughputServer',
       feedback = function(Socket, Client, State)
          if (State is NTC_CONNECTED) then
@@ -84,7 +84,6 @@ end
          end
       end,
       port = glPort,
-      flags = 'SERVER'
    })
 
    proc = processing.new({ timeout = 5.0, signals = array<object> { server } })
@@ -152,7 +151,7 @@ end
    current_size_index = 0
    current_bytes_received = 0
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       name = 'LargeMessageServer',
       feedback = function(Socket, Client, State)
          if (State is NTC_CONNECTED) then
@@ -221,7 +220,6 @@ end
          end
       end,
       port = glPort + 1,
-      flags = 'SERVER',
       msgLimit = 512 * 1024 -- Allow large messages
    })
 
@@ -266,7 +264,7 @@ end
 
    logOutput('Testing connection scaling with ' .. max_clients .. ' concurrent clients...')
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       name = 'ScalingTestServer',
       feedback = function(Socket, Client, State)
          if (State is NTC_CONNECTED) then
@@ -283,7 +281,7 @@ end
          end
       end,
       port = glPort + 2,
-      flags = 'SERVER|MULTICONNECT',
+      flags = 'MULTI_CONNECT',
       clientLimit = max_clients + 5, -- Allow extra headroom
       backlog = max_clients
    })
@@ -357,7 +355,7 @@ end
 
    logOutput('Testing write queue performance with ' .. queue_messages .. ' queued messages...')
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       name = 'QueueTestServer',
       feedback = function(Socket, Client, State)
          if (State is NTC_CONNECTED) then
@@ -384,7 +382,6 @@ end
          end
       end,
       port = glPort + 3,
-      flags = 'SERVER'
    })
 
    proc = processing.new({ timeout = 15.0, signals = array<object> { server } })
@@ -456,10 +453,9 @@ end
 
       -- Create multiple network objects
       for i = 1, objects_per_iteration do
-         temp_objects[i] = obj.new('netsocket', {
+         temp_objects[i] = obj.new('netserver', {
             name = 'MemTestSocket' .. iter .. '_' .. i,
             port = glPort + 100 + (iter * objects_per_iteration) + i,
-            flags = 'SERVER'
          })
       end
 

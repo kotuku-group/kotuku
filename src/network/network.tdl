@@ -28,15 +28,14 @@ typedef int SOCKET_HANDLE;
     int Port            # For UDP packets, identifies the client port number in host byte order.
   ]])
 
-  flags("NSF", { },
-    "SERVER: Puts the socket into server mode.  In this state the netsocket object will wait for incoming connections from clients.",
+  flags("NSF", { comment="NetSocket options" },
     "SSL: Use Secure Sockets Layer for all communication.",
-    "DISABLE_SERVER_VERIFY: Disable SSL certificate verification (for testing only).",
-    "MULTI_CONNECT: Allow multiple connections from the same IP when in server mode.",
     "SYNCHRONOUS: Use synchronous (blocking) network calls.",
     "LOG_ALL: Print extra log messages.",
     "BROADCAST: Enable broadcast (UDP only).",
-    "UDP: Use UDP (connectionless datagram protocol) instead of TCP.")
+    "UDP: Use UDP (connectionless datagram protocol) instead of TCP.",
+    "DISABLE_SERVER_VERIFY: Disable SSL server certificate verification for client sockets (testing only).",
+    "MULTI_CONNECT: Allow multiple connections from the same IP (NetServer only).")
 
   flags("NLF", { comment="Options for NetLookup" },
     "NO_CACHE: Contact the name service and do not use the local DNS cache.")
@@ -47,10 +46,14 @@ typedef int SOCKET_HANDLE;
     "CONNECTING: A connection is being established.",
     "HANDSHAKING: An SSL connection is being established.",
     "CONNECTED: There is an active connection at present.",
-    "MULTISTATE: In server mode the NetSocket will be set to MULTISTATE to indicate one or more client connections."
+    "MULTISTATE: A NetServer reports MULTISTATE because accepted ClientSocket objects track their own states."
   )
 
-  class("NetClient", { src="netclient/netclient.cpp", output="netclient/netclient_def.c", comment="Simple data storage class utilised by NetSocket to represent a client machine/IP." }, [[
+  class("NetClient", {
+      src="netclient/netclient.cpp",
+      output="netclient/netclient_def.c",
+      comment="Simple data storage class utilised by NetServer to represent a client machine/IP."
+  }, [[
     obj(NetClient) Next            # Next client in the chain
     obj(NetClient) Prev            # Previous client in the chain
     obj(ClientSocket) Connections  # Pointer to a list of connections opened by this client.
@@ -110,33 +113,38 @@ typedef int SOCKET_HANDLE;
   methods("NetSocket", "ns", {
     { id=1, name="Connect" },
     { id=2, name="GetLocalIPAddress" },
-    { id=3, name="DisconnectClient" },
-    { id=4, name="DisconnectSocket" },
-    { id=5, name="SendTo" },
-    { id=6, name="RecvFrom" },
-    { id=7, name="JoinMulticastGroup" },
-    { id=8, name="LeaveMulticastGroup" }
+    { id=3, name="SendTo" },
+    { id=4, name="RecvFrom" },
+    { id=5, name="JoinMulticastGroup" },
+    { id=6, name="LeaveMulticastGroup" }
   })
 
-  class("NetSocket", { src={ "netsocket/netsocket.cpp", "netsocket/netsocket_fields.cpp" }, output="netsocket/netsocket_def.c" }, [[
-    obj(NetClient) Clients # ServerMode - Attached clients
-    ptr ClientData        # Pointer to user data that can be used during events
-    str Address           # Server: bind to this local address, Client: connect to this remote address
-    str SSLCertificate    # Path to SSL certificate file (PEM/P12 format, for SSL servers)
-    str SSLPrivateKey     # Path to SSL private key file (PEM format, optional if using P12)
-    str SSLKeyPassword    # Optional password for encrypted private keys
-    int(NTC) State        # Connection state
-    error Error           # The last NetSocket error can be read from this field
-    int Port              # Connect socket to this remote port if client, or local port if server
-    int(NSF) Flags        # Optional flags
-    int TotalClients      # Total number of clients registered (if socket is a server)
-    int Backlog           # Server connection backlog if in server mode
-    int ClientLimit       # Limits the number of connected client IP addresses
-    int SocketLimit       # Limits the number of connected sockets per client IP address.
-    int MsgLimit          # Limits the size of messages, in bytes.
-    int MaxPacketSize     # Maximum size for UDP packets (default 65507 bytes)
-    int MulticastTTL      # Time-to-live for multicast packets (UDP only)
+  methods("NetServer", "ns", {
+    { id=7, name="DisconnectClient" },
+    { id=8, name="DisconnectSocket" }
+  })
+
+  class("NetSocket", {
+      src={ "netsocket/netsocket.cpp", "netsocket/netsocket_fields.cpp" },
+      output="netsocket/netsocket_def.c"
+  }, [[
+    ptr ClientData         # Pointer to user data that can be used during events
+    str Address            # NetSocket: connect to this remote address; NetServer: bind to this local address
+    int(NTC) State         # Connection state
+    error Error            # The last NetSocket error can be read from this field
+    int Port               # NetSocket: remote port to connect to; NetServer: local port to bind
+    int(NSF) Flags         # Optional flags
+    int MsgLimit           # Limits the size of messages, in bytes.
+    int MaxPacketSize      # Maximum size for UDP packets (default 65507 bytes)
+    int MulticastTTL       # Time-to-live for multicast packets (UDP only)
   ]])
+
+  class("NetServer", {
+      base='NetSocket',
+      references={ 'NSF', 'NTC' },
+      src="class_netserver.cpp",
+      output="netserver_def.c"
+  })
 
   constants("SCV", { comment="These error codes for certificate validation match the OpenSSL error codes (X509 definitions)" }, {
     OK                                  = 0,

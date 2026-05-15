@@ -13,7 +13,7 @@
     <category>Network</category>
     <copyright>Paul Manias © 2005-2026</copyright>
     <description>
-<p>When a connection is opened between a client IP and a <class name="NetSocket">NetSocket</class> object, a new NetClient object will be created for the client's IP address if one does not already exist.  All <class name="ClientSocket">ClientSocket</class> connections to that IP address are then tracked under the single NetClient object.</p>
+<p>When a connection is opened between a client IP and a <class name="NetServer">NetServer</class> object, a new NetClient object will be created for the client's IP address if one does not already exist.  All <class name="ClientSocket">ClientSocket</class> connections to that IP address are then tracked under the single NetClient object.</p>
 <p>NetClient objects are intended to be created from the network interfacing code exclusively.</p></description>
     <source>
       <file path="netclient/">netclient.cpp</file>
@@ -47,14 +47,14 @@
 
     <field>
       <name>Next</name>
-      <comment>The next client IP with connections to the server socket.</comment>
+      <comment>The next client IP with connections to the NetServer.</comment>
       <access read="R">Read</access>
       <type class="NetClient">*NetClient</type>
     </field>
 
     <field>
       <name>Prev</name>
-      <comment>The previous client IP with connections to the server socket.</comment>
+      <comment>The previous client IP with connections to the NetServer.</comment>
       <access read="R">Read</access>
       <type class="NetClient">*NetClient</type>
     </field>

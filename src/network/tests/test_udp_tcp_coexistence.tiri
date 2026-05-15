@@ -24,10 +24,10 @@ This test verifies that UDP and TCP sockets can coexist and operate independentl
    tcpReceived = false
 
    -- Create UDP server
-   udpServer = obj.new('netsocket', {
+   udpServer = obj.new('netserver', {
       port = udpPort,
       address = '127.0.0.1',
-      flags = 'SERVER|UDP',
+      flags = 'UDP',
       incoming = function(Socket)
          buffer = array<byte, 1024>
          source = struct.new('IPAddress')
@@ -45,10 +45,9 @@ This test verifies that UDP and TCP sockets can coexist and operate independentl
    })
 
    -- Create TCP server
-   tcpServer = obj.new('netsocket', {
+   tcpServer = obj.new('netserver', {
       port = tcpPort,
       address = '127.0.0.1',
-      flags = 'SERVER',  -- TCP only
       feedback = function(Socket, Client, State)
          if (State is NTC_CONNECTED) then
             logOutput('[TCP Server] Client connected')
@@ -139,10 +138,10 @@ end
 
    -- Create multiple servers of different types
    servers = {
-      udp1 = obj.new('netsocket', {
+      udp1 = obj.new('netserver', {
          port = basePort + 1,
          address = '127.0.0.1',
-         flags = 'SERVER|UDP',
+         flags = 'UDP',
          incoming = function(Socket)
             buffer = array<byte, 256>
             source = struct.new('IPAddress')
@@ -155,10 +154,9 @@ end
          end
       }),
 
-      tcp1 = obj.new('netsocket', {
+      tcp1 = obj.new('netserver', {
          port = basePort + 2,
          address = '127.0.0.1',
-         flags = 'SERVER',
          feedback = function(Socket, Client, State)
             if (State is NTC_CONNECTED) then
                results.tcp1 = true
@@ -168,10 +166,10 @@ end
          end
       }),
 
-      udp2 = obj.new('netsocket', {
+      udp2 = obj.new('netserver', {
          port = basePort + 3,
          address = '127.0.0.1',
-         flags = 'SERVER|UDP|BROADCAST',
+         flags = 'UDP|BROADCAST',
          multicastTTL = 2,
          incoming = function(Socket)
             buffer = array<byte, 256>
@@ -223,11 +221,11 @@ end
 
    -- Create and destroy UDP socket
    do
-      udpSocket = obj.new('netsocket', { port = testPort, address = '127.0.0.1', flags = 'SERVER|UDP' })
+      udpSocket = obj.new('netserver', { port = testPort, address = '127.0.0.1', flags = 'UDP' })
       logOutput('UDP socket created and bound to port ' .. testPort)
    end  -- Socket goes out of scope and should be cleaned up
 
    -- Create TCP socket on same port (should work after UDP cleanup)
-   tcpSocket = obj.new('netsocket', { port = testPort, address = '127.0.0.1', flags = 'SERVER' })
+   tcpSocket = obj.new('netserver', { port = testPort, address = '127.0.0.1' })
    logOutput('TCP socket successfully bound to same port after UDP cleanup')
 end

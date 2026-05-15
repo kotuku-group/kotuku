@@ -24,11 +24,11 @@ function RapidAcceptBurst()
    port            = nextPort()
    client_data     = { }
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       name        = 'IocpAcceptBurstServer',
       address     = '127.0.0.1',
       port        = port,
-      flags       = NSF_SERVER|NSF_MULTI_CONNECT,
+      flags       = NSF_MULTI_CONNECT,
       backlog     = client_count,
       clientLimit = client_count + 4,
       socketLimit = client_count + 4,
@@ -101,11 +101,10 @@ function LargeTCPReceive()
    bad_data    = false
    port        = nextPort()
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       name     = 'IocpLargeReceiveServer',
       address  = '127.0.0.1',
       port     = port,
-      flags    = 'SERVER',
       msgLimit = target_size + 65536,
       incoming = function(Socket, Client)
          buffer        = array<byte, 65536>
@@ -159,11 +158,10 @@ function LargeBidirectionalTCPTransfer()
    client_done     = false
    port            = nextPort()
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       name     = 'IocpBidirectionalServer',
       address  = '127.0.0.1',
       port     = port,
-      flags    = NSF_SERVER,
       msgLimit = target_size + 65536,
       feedback = function(Socket, Client, State)
          if State is NTC_CONNECTED then
@@ -247,11 +245,10 @@ function SlowReaderBackpressure()
    delayed     = false
    port        = nextPort()
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       name     = 'IocpSlowReaderServer',
       address  = '127.0.0.1',
       port     = port,
-      flags    = NSF_SERVER,
       msgLimit = target_size + 65536,
       incoming = function(Socket, Client)
          if not delayed then
@@ -300,11 +297,10 @@ function PendingOperationTeardown()
    port = nextPort()
    connected = false
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       name    = 'IocpPendingTeardownServer',
       address = '127.0.0.1',
       port    = port,
-      flags   = NSF_SERVER,
       feedback = function(Socket, Client, State)
          if State is NTC_CONNECTED then connected = true end
       end,
@@ -369,11 +365,10 @@ function PendingAcceptFreeDropsCompletion()
    freed                = false
    port                 = nextPort()
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       name    = 'IocpPendingAcceptFreeServer',
       address = '127.0.0.1',
       port    = port,
-      flags   = NSF_SERVER,
       feedback = function(Socket, Client, State)
          if freed then late_accept_feedback++ end
       end
@@ -403,11 +398,10 @@ function PendingTCPReadWriteFreeDropsCompletion()
    target_size           = 2 * 1024 * 1024
    payload               = string.rep('W', target_size)
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       name     = 'IocpPendingTCPFreeServer',
       address  = '127.0.0.1',
       port     = port,
-      flags    = NSF_SERVER,
       msgLimit = target_size + 65536,
       feedback = function(Socket, Client, State)
          if State is NTC_CONNECTED then
@@ -484,11 +478,11 @@ function PendingUDPReceiveSendFreeDropsCompletion()
    source = struct.new('IPAddress')
    buffer = array<byte, 65536>
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       name          = 'IocpPendingUDPFreeServer',
       address       = '127.0.0.1',
       port          = port,
-      flags         = NSF_SERVER|NSF_UDP,
+      flags         = NSF_UDP,
       maxPacketSize = 65507,
       incoming = function(Socket)
          if server_freed then late_udp_callbacks++ end
@@ -549,11 +543,11 @@ function PendingSSLFreeDropsCompletion()
    client_freed          = false
    late_client_callbacks = 0
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       name    = 'IocpPendingSSLFreeServer',
       address = '127.0.0.1',
       port    = port,
-      flags   = NSF_SERVER|NSF_SSL,
+      flags   = NSF_SSL,
       feedback = function(Socket, Client, State)
          if State is NTC_CONNECTED then
             Client.acWrite('ssl-late-read-trigger')

@@ -364,7 +364,7 @@ static ERR DOCUMENT_Clipboard(extDocument *Self, struct acClipboard *Args)
                      int result;
                      if ((error = file->read(buffer, size, &result)) IS ERR::Okay) {
                         buffer[result] = 0;
-                        error = acDataText(Self, buffer);
+                        error = Self->dataFeed(Self, DATA::TEXT, buffer, result);
                      }
                      else error_dialog("Clipboard Paste Error", ERR::Read);
                      delete[] buffer;

@@ -20,10 +20,10 @@ UDP Performance and Stress Test
 
    print('Testing high-frequency UDP messaging (' .. targetMessages .. ' messages)')
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       port    = serverPort,
       address = '127.0.0.1',
-      flags   = 'SERVER|UDP',
+      flags   = 'UDP',
       incoming = function(Socket)
          buffer = array<byte, 1024>
          err, bytesRead = Socket.mtRecvFrom(sv_source, buffer)
@@ -81,10 +81,10 @@ end
    receivedSize = 0
    sv_source = struct.new('IPAddress')
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       port    = serverPort,
       address = '127.0.0.1',
-      flags   = 'SERVER|UDP',
+      flags   = 'UDP',
       maxPacketSize = 65507,  -- Maximum UDP payload size
       incoming = function(Socket)
          buffer = array<byte, 65600>  -- Slightly larger buffer
@@ -147,10 +147,10 @@ end
 
    print('Testing UDP concurrency with ' .. targetClients .. ' concurrent clients')
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       port    = serverPort,
       address = '127.0.0.1',
-      flags   = 'SERVER|UDP',
+      flags   = 'UDP',
       incoming = function(Socket)
          buffer = array<byte, 1024>
          err, bytesRead = Socket.mtRecvFrom(sv_source, buffer)
@@ -255,10 +255,10 @@ end
 
    print('Running UDP performance benchmark for ' .. benchmarkDuration .. ' seconds')
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       port = serverPort,
       address = '127.0.0.1',
-      flags = 'SERVER|UDP',
+      flags = 'UDP',
       incoming = function(Socket)
          buffer = array<byte, 1024>
          err, bytesRead = Socket.mtRecvFrom(sv_source, buffer)

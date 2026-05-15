@@ -13,7 +13,7 @@
     <category>Network</category>
     <copyright>Paul Manias © 2005-2026</copyright>
     <description>
-<p>If a <class name="Netsocket">Netsocket</class> is running in server mode then it will create a new ClientSocket object every time that a new connection is opened by a client.  This is a very simple class that assists in the management of I/O between the client and server.</p></description>
+<p>When a <class name="NetServer">NetServer</class> accepts a TCP connection, it creates a new ClientSocket object for that connection.  This is a very simple class that assists in the management of I/O between the accepted client and the server.</p></description>
     <source>
       <file path="clientsocket/">clientsocket.cpp</file>
     </source>
@@ -108,8 +108,7 @@
       <access read="R" write="S">Read/Set</access>
       <type lookup="NTC">NTC</type>
       <description>
-<p>The State reflects the connection state of the NetSocket.  If the #Feedback field is defined with a function, it will be called automatically whenever the state is changed.  Note that the ClientSocket parameter will be NULL when the Feedback function is called.</p>
-<p>Note that in server mode this State value should not be used as it cannot reflect the state of all connected client sockets.  Each <class name="ClientSocket">ClientSocket</class> carries its own independent State value for use instead.</p>
+<p>The State reflects the connection state of this accepted client socket.  If the parent <class name="NetServer">NetServer</class> has a #Feedback function, it will be called automatically whenever the state is changed.</p>
 <types lookup="NTC"/>
       </description>
     </field>
@@ -121,7 +120,7 @@
       <const name="CONNECTING">A connection is being established.</const>
       <const name="DISCONNECTED">There is no connection.</const>
       <const name="HANDSHAKING">An SSL connection is being established.</const>
-      <const name="MULTISTATE">In server mode the NetSocket will be set to MULTISTATE to indicate one or more client connections.</const>
+      <const name="MULTISTATE">A NetServer reports MULTISTATE because accepted ClientSocket objects track their own states.</const>
       <const name="RESOLVING">The host name is being resolved.</const>
     </constants>
 

@@ -1,5 +1,5 @@
 --[[
-Client-Server Network Communications test.  Creates a server socket and then starts client sockets to connect to itself.
+Client-Server Network Communications test.  Creates a NetServer and then starts NetSocket clients to connect to it.
 --]]
 
    include 'network'
@@ -60,7 +60,7 @@ end
    glPort++
    server_buffer = string.alloc(1024)
 
-   sockServer = obj.new('netsocket', {
+   sockServer = obj.new('netserver', {
       name    = 'Server',
       address = '127.0.0.1',
       feedback = function(Socket:obj, Client:obj, State)
@@ -88,7 +88,6 @@ end
          end
       end,
       port  = glPort,
-      flags = NSF_SERVER
    } )
 
    clientSocket = obj.new('netsocket', {
@@ -120,13 +119,53 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
+
+@Test function DataFeedWritesToSocket()
+   glPort++
+
+   expected_msg = 'DATAFEED:Buffer write path'
+   received_msg = nil
+
+   server = obj.new('netserver', {
+      name    = 'DataFeedServer',
+      address = '127.0.0.1',
+      incoming = function(Socket:obj, Client:obj)
+         buffer = string.alloc(1024)
+         err, read_len = Client.acRead(buffer)
+         assert(err is ERR_Okay, '[Server] Failed to read data-feed content: ' .. mSys.GetErrorMsg(err))
+
+         received_msg = buffer:sub(0, read_len)
+         Socket.acSignal()
+      end,
+      port = glPort,
+   } )
+
+   client = obj.new('netsocket', {
+      name = 'DataFeedClient',
+      feedback = function(Socket:obj, State:num)
+         if State is NTC_CONNECTED then
+            err = Socket.acDataFeed(nil, DATA_TEXT, expected_msg, #expected_msg)
+            assert(err is ERR_Okay, '[Client] Failed to feed socket data: ' .. mSys.GetErrorMsg(err))
+         end
+      end,
+   } )
+
+   proc = processing.new({ timeout = 5.0, signals = array<object> { server } })
+   check client.mtConnect('127.0.0.1', glPort)
+   check proc.sleep()
+
+   assert(received_msg is expected_msg,
+      'DataFeed payload mismatch. Expected: ' .. expected_msg .. ', Received: ' .. tostring(received_msg))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
 -- One-on-one basic communication test between client and server.
 
 @Test function BasicCommunication()
    glPort++
 
-   -- Create server socket with comprehensive message handling
-   sockServer = obj.new('netsocket', {
+   -- Create NetServer with comprehensive message handling
+   sockServer = obj.new('netserver', {
       name = 'BasicTestServer',
       feedback = function(Socket, Client, State)
          logOutput('[Server] Client state change: ' .. logOutputableState(State))
@@ -177,7 +216,7 @@ end
          end
       end,
       port = glPort,
-      flags = 'SERVER|MULTI_CONNECT'
+      flags = 'MULTI_CONNECT'
    })
 
    -- Create client socket with state-aware message handling
@@ -236,14 +275,13 @@ end
 
    glPort++
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       name = 'StateTestServer',
       feedback = function(Socket, Client, State)
          logOutput('Server received state change.')
          stateChanges:push('SERVER_CLIENT_' .. logOutputableState(State))
       end,
       port = glPort,
-      flags = NSF_SERVER
    })
 
    client = obj.new('netsocket', {
