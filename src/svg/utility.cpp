@@ -405,7 +405,7 @@ template <class T = double> std::string_view read_numseq(std::string_view String
 //********************************************************************************************************************
 // Read a sequence of doubles from a string.  Commas, parenthesis and whitespace is ignored.
 
-template<class T = double> std::vector<T> read_array(const std::string Value, int Limit = 0x7fffffff)
+template<class T = double> std::vector<T> read_array(const std::string &Value, int Limit = 0x7fffffff)
 {
    std::vector<T> result;
 

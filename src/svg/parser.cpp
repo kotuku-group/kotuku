@@ -782,7 +782,8 @@ ERR svgState::parse_fe_convolve_matrix(objVectorFilter *Filter, XTag &Tag) noexc
          }
 
          case SVF_kernelMatrix: {
-            auto matrix = read_array<double>(val);
+            constexpr int max_matrix_dim = 9; // Matches ConvolveFX's internal matrix limit.
+            auto matrix = read_array<double>(val, (max_matrix_dim * max_matrix_dim) + 1);
             if (fx->set(FID_Matrix, matrix) != ERR::Okay) return fail(ERR::InvalidValue);
             break;
          }

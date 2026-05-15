@@ -301,15 +301,19 @@ class extConvolveFX : public extFilterEffect {
 
       const double grid_scale_x = double(grid_width) / double(width);
       const double grid_scale_y = double(grid_height) / double(height);
+      const uint8_t A = InputBitmap->ColourFormat->AlphaPos>>3;
       uint8_t *outline = Output;
+      uint8_t *alpha_input = InputBitmap->Data + (pTop * InputBitmap->LineWidth);
       for (int y=0; y < height; y++) {
          auto out = outline;
          for (int x=0; x < width; x++) {
             const double gx = ((double(x) + 0.5) * grid_scale_x) - 0.5;
             const double gy = ((double(y) + 0.5) * grid_scale_y) - 0.5;
             sampleGrid(grid_out.data(), grid_width, grid_height, gx, gy, out);
+            if (PreserveAlpha) out[A] = (alpha_input + ((pLeft + x) * InputBitmap->BytesPerPixel))[A];
             out += 4;
          }
+         alpha_input += InputBitmap->LineWidth;
          outline += width * 4;
       }
 

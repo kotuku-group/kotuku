@@ -218,7 +218,7 @@ end
 @Test global function CoarsePaper()        hashTestSVG('filters/coarse_paper.svg', 0xedc2c5e4) end
 @Test global function Composite()          hashTestSVG('filters/composite.svg', 0x5bf2bee1) end
 @Test global function Convolve()           hashTestSVG('filters/convolve.svg', 0xc8676cf5) end
-@Test global function ConvolveUnit2()      hashTestSVG('filters/kernel_unit_length_2.svg', 0xf2e12250) end
+@Test global function ConvolveUnit2()      hashTestSVG('filters/kernel_unit_length_2.svg', 0x0526a856) end
 @Test global function ConvolveUnit05()     hashTestSVG('filters/kernel_unit_length_0_5.svg', 0xae9de7fa) end
 @Test global function RockyLighting()      hashTestSVG('filters/rocky_lighting.svg', 0xd89b7f75) end
 @Test global function ScaledLighting()     hashTestSVG('filters/lighting_scale.svg', 0x0ba5705d) end
