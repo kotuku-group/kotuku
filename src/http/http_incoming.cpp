@@ -345,7 +345,7 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
                Self->setCurrentState(HGS::AUTHENTICATING);
 
                // TODO: Needs a rewrite using the dialog script
-               std::string scriptfile((const char *)glAuthScript, 0, glAuthScriptLength);
+               std::string scriptfile((const char *)glAuthScript, glAuthScriptLength);
 
                objScript::create script = { fl::String(scriptfile) };
                if (script.ok()) {

@@ -296,7 +296,10 @@ ERR AddInfoTag(FileInfo *Info, const std::string_view &Name, const std::string_v
    auto tags = Info->getTags();
    if (not tags) return ERR::CreateResource;
 
-   if (Value.empty()) tags->erase(Name);
+   if (Value.empty()) {
+      tags->erase(Name);
+      if (tags->empty()) Info->clearTags();
+   }
    else tags->insert_or_assign(Name, Value);
    return ERR::Okay;
 }

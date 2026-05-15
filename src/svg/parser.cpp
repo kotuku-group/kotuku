@@ -1953,7 +1953,8 @@ static bool has_kotuku_volume(const std::string &Path)
 {
    auto volume_end = Path.find(':');
    if ((volume_end IS std::string::npos) or (volume_end IS 0)) return false;
-   if (Path.find_first_of("/\\", 0, volume_end) != std::string::npos) return false;
+   auto separator = Path.find_first_of("/\\");
+   if ((separator != std::string::npos) and (separator < volume_end)) return false;
 
    auto volume = Path.substr(0, volume_end + 1);
 
