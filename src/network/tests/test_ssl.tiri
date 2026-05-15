@@ -527,23 +527,29 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-@Test(priority=40); @Requires(ssl=true)
-function CustomCertificate()
+function customCertificateFilesAvailable(CertPath, KeyPath)
+   if mSys.AnalysePath(CertPath) != ERR_Okay then
+      logOutput('Test certificate not installed, skipping test: ' .. CertPath)
+      return false
+   end
+
+   if KeyPath and mSys.AnalysePath(KeyPath) != ERR_Okay then
+      logOutput('Test private key not installed, skipping test: ' .. KeyPath)
+      return false
+   end
+
+   return true
+end
+
+function runCustomCertificateHandshake(TestName, CertPath, KeyPath, KeyPassword)
    custom_cert_test_complete = false
    handshake_successful = false
-   CERT_PATH = 'config:ssl/localhost.p12'
 
    glPort++
 
-   if mSys.AnalysePath(CERT_PATH) != ERR_Okay then
-      logOutput('Test certificate not installed, skipping test...')
-      return
-   end
-
-   -- Test with localhost.p12 certificate if available
-   ssl_server = obj.new('netserver', {
-      name = 'CustomCertServer',
-      sslCertificate = CERT_PATH,
+   server_config = {
+      name = TestName .. 'Server',
+      sslCertificate = CertPath,
       feedback = function(Socket, Client, State)
          logOutput('[Server] State: ' .. printableState(State))
 
@@ -571,10 +577,15 @@ function CustomCertificate()
       end,
       port = glPort,
       flags = NSF_SSL
-   })
+   }
+
+   if KeyPath then server_config.sslPrivateKey = KeyPath end
+   if KeyPassword then server_config.sslKeyPassword = KeyPassword end
+
+   ssl_server = obj.new('netserver', server_config)
 
    ssl_client = obj.new('netsocket', {
-      name = 'CustomCertClient',
+      name = TestName .. 'Client',
       feedback = function(Socket, State)
          logOutput('[Client] State: ' .. printableState(State))
 
@@ -591,4 +602,51 @@ function CustomCertificate()
    check proc.sleep()
 
    assert(handshake_successful, 'Custom certificate SSL handshake failed')
+end
+
+@Test(priority=40); @Requires(ssl=true)
+function CustomCertificate()
+   cert_path = 'config:ssl/localhost.p12'
+   if not customCertificateFilesAvailable(cert_path, nil) then return end
+
+   runCustomCertificateHandshake('CustomCert', cert_path, nil, nil)
+end
+
+@Test(priority=41); @Requires(ssl=true)
+function PasswordProtectedCustomCertificate()
+   cert_path = 'config:ssl/localhost-password.p12'
+   if not customCertificateFilesAvailable(cert_path, nil) then return end
+
+   runCustomCertificateHandshake('PasswordCert', cert_path, nil, 'kotuku-test')
+end
+
+@Test(priority=42); @Requires(ssl=true)
+function PasswordProtectedCustomCertificateRejectsWrongPassword()
+   cert_path = 'config:ssl/localhost-password.p12'
+   if not customCertificateFilesAvailable(cert_path, nil) then return end
+
+   glPort++
+
+   local ssl_server
+   try
+      ssl_server = obj.new('netserver', {
+         name = 'WrongPasswordCertServer',
+         sslCertificate = cert_path,
+         sslKeyPassword = 'wrong-password',
+         port = glPort,
+         flags = NSF_SSL
+      })
+   end
+
+   assert((not ssl_server) or (ssl_server.error != ERR_Okay),
+      'Password-protected custom certificate should reject an incorrect password')
+end
+
+@Test(priority=43); @Requires(ssl=true)
+function PEMCustomCertificate()
+   cert_path = 'config:ssl/localhost.pem'
+   key_path = 'config:ssl/localhost-key.pem'
+   if not customCertificateFilesAvailable(cert_path, key_path) then return end
+
+   runCustomCertificateHandshake('PEMCert', cert_path, key_path, nil)
 end

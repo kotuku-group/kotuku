@@ -174,7 +174,7 @@ static void netsocket_incoming_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
       return;
     }
 
-    if (Self->TLS.HandshakeStatus != SHS::NIL) { // TODO: Check State is not HANDSHAKING instead
+    if (Self->TLS.HandshakeStatus != SHS::NIL) { // A TLS re-handshake can be pending while State remains CONNECTED.
       log.trace("SSL is handshaking.");
       return;
     }

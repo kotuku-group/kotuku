@@ -1,115 +1,268 @@
 
 //********************************************************************************************************************
 
-bool load_pkcs12_certificate(SSL_HANDLE SSL, const std::string &Path)
+static void clear_server_certificate(SSL_HANDLE SSL)
 {
-   HANDLE p12_file = CreateFileA(Path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-   if (p12_file == INVALID_HANDLE_VALUE) return false;
+   if (SSL->server_certificate) {
+      CertFreeCertificateContext(SSL->server_certificate);
+      SSL->server_certificate = nullptr;
+   }
 
-   DWORD p12_size = GetFileSize(p12_file, nullptr);
-   if (p12_size == INVALID_FILE_SIZE) {
-      CloseHandle(p12_file);
+   if (SSL->imported_private_key) {
+      NCryptFreeObject(SSL->imported_private_key);
+      SSL->imported_private_key = 0;
+   }
+}
+
+//********************************************************************************************************************
+
+static bool read_binary_file(const std::string &Path, std::vector<BYTE> &Data)
+{
+   HANDLE file = CreateFileA(Path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+      FILE_ATTRIBUTE_NORMAL, nullptr);
+   if (file IS INVALID_HANDLE_VALUE) return false;
+
+   DWORD file_size = GetFileSize(file, nullptr);
+   if ((file_size IS INVALID_FILE_SIZE) or (!file_size)) {
+      CloseHandle(file);
       return false;
    }
 
-   std::vector<BYTE> p12_data(p12_size);
+   Data.resize(file_size);
    DWORD bytes_read;
-   if (!ReadFile(p12_file, p12_data.data(), p12_size, &bytes_read, nullptr) or bytes_read != p12_size) {
-      CloseHandle(p12_file);
-      return false;
-   }
-   CloseHandle(p12_file);
-
-   CRYPT_DATA_BLOB pfx_blob;
-   pfx_blob.cbData = p12_size;
-   pfx_blob.pbData = p12_data.data();
-
-   HCERTSTORE pfx_store = PFXImportCertStore(&pfx_blob, L"", CRYPT_EXPORTABLE | CRYPT_USER_KEYSET);
-   if (!pfx_store) return false;
-
-   // Find the certificate in the imported store
-   PCCERT_CONTEXT cert_context = CertEnumCertificatesInStore(pfx_store, nullptr);
-   if (!cert_context) {
-      CertCloseStore(pfx_store, 0);
+   if ((!ReadFile(file, Data.data(), file_size, &bytes_read, nullptr)) or (bytes_read != file_size)) {
+      CloseHandle(file);
       return false;
    }
 
-   PCCERT_CONTEXT final_cert = CertDuplicateCertificateContext(cert_context);
-
-   HCERTSTORE personal_store = CertOpenSystemStore(0, "MY");
-   if (personal_store) {
-      CertAddCertificateContextToStore(personal_store, cert_context, CERT_STORE_ADD_REPLACE_EXISTING, nullptr);
-      CertCloseStore(personal_store, 0);
-   }
-
-   CertCloseStore(pfx_store, 0);
-
-   SSL->server_certificate = final_cert;
+   CloseHandle(file);
    return true;
 }
 
 //********************************************************************************************************************
 
-bool load_pem_certificate(SSL_HANDLE SSL, const std::string &Path)
+static bool read_text_file(const std::string &Path, std::string &Data)
 {
-   HANDLE cert_file = CreateFileA(Path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-   if (cert_file == INVALID_HANDLE_VALUE) return false;
+   std::vector<BYTE> file_data;
+   if (!read_binary_file(Path, file_data)) return false;
 
-   DWORD cert_size = GetFileSize(cert_file, nullptr);
-   if (cert_size == INVALID_FILE_SIZE) {
-      CloseHandle(cert_file);
-      return false;
-   }
+   Data.assign((const char *)file_data.data(), file_data.size());
+   return true;
+}
 
-   std::vector<BYTE> cert_data(cert_size + 1);
-   DWORD bytes_read;
-   if (!ReadFile(cert_file, cert_data.data(), cert_size, &bytes_read, nullptr) or bytes_read != cert_size) {
-      CloseHandle(cert_file);
-      return false;
-   }
-   cert_data[cert_size] = 0;
-   CloseHandle(cert_file);
+//********************************************************************************************************************
+
+static bool decode_pem_section(const std::string &PemData, const char *Label, std::vector<BYTE> &DerData)
+{
+   std::string begin = "-----BEGIN ";
+   begin.append(Label);
+   begin.append("-----");
+
+   std::string end = "-----END ";
+   end.append(Label);
+   end.append("-----");
+
+   auto begin_pos = PemData.find(begin);
+   if (begin_pos IS std::string::npos) return false;
+
+   auto end_pos = PemData.find(end, begin_pos);
+   if (end_pos IS std::string::npos) return false;
+
+   end_pos += end.size();
+   auto pem_block = PemData.substr(begin_pos, end_pos - begin_pos);
 
    DWORD der_size = 0;
-   if (!CryptStringToBinaryA((const char*)cert_data.data(), 0, CRYPT_STRING_BASE64HEADER, nullptr, &der_size, nullptr, nullptr)) {
+   if (!CryptStringToBinaryA(pem_block.c_str(), 0, CRYPT_STRING_BASE64HEADER, nullptr, &der_size, nullptr,
+       nullptr)) {
       return false;
    }
 
-   std::vector<BYTE> der_data(der_size);
-   if (!CryptStringToBinaryA((const char*)cert_data.data(), 0, CRYPT_STRING_BASE64HEADER, der_data.data(), &der_size, nullptr, nullptr)) {
+   DerData.resize(der_size);
+   return CryptStringToBinaryA(pem_block.c_str(), 0, CRYPT_STRING_BASE64HEADER, DerData.data(), &der_size,
+      nullptr, nullptr);
+}
+
+//********************************************************************************************************************
+
+static std::wstring utf8_to_wide(const std::string &Text)
+{
+   if (Text.empty()) return {};
+
+   auto wide_size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, Text.c_str(), int(Text.size()), nullptr, 0);
+   if (wide_size <= 0) return {};
+
+   std::wstring result(wide_size, L'\0');
+   MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, Text.c_str(), int(Text.size()), result.data(), wide_size);
+   return result;
+}
+
+//********************************************************************************************************************
+
+static std::wstring password_to_wide(std::optional<const std::string> &Password)
+{
+   if (!Password.has_value()) return {};
+   return utf8_to_wide(Password.value());
+}
+
+//********************************************************************************************************************
+
+static bool try_import_pkcs8_private_key(NCRYPT_PROV_HANDLE Provider, const std::vector<BYTE> &KeyDer,
+   NCryptBufferDesc *Params, NCRYPT_KEY_HANDLE &KeyHandle)
+{
+   auto status = NCryptImportKey(Provider, 0, NCRYPT_PKCS8_PRIVATE_KEY_BLOB, Params, &KeyHandle,
+      (PBYTE)KeyDer.data(), DWORD(KeyDer.size()), NCRYPT_SILENT_FLAG);
+   return status IS ERROR_SUCCESS;
+}
+
+//********************************************************************************************************************
+
+static bool import_pkcs8_private_key(const std::vector<BYTE> &KeyDer, std::optional<const std::string> &Password,
+   NCRYPT_KEY_HANDLE &KeyHandle)
+{
+   NCRYPT_PROV_HANDLE provider = 0;
+   if (NCryptOpenStorageProvider(&provider, MS_KEY_STORAGE_PROVIDER, 0) != ERROR_SUCCESS) return false;
+
+   std::wstring wide_password = password_to_wide(Password);
+   NCryptBuffer password_buffer {};
+   NCryptBufferDesc password_desc {};
+   NCryptBufferDesc *params = nullptr;
+
+   if (Password.has_value()) {
+      password_buffer.cbBuffer = DWORD((wide_password.size() + 1) * sizeof(wchar_t));
+      password_buffer.BufferType = NCRYPTBUFFER_PKCS_SECRET;
+      password_buffer.pvBuffer = (PVOID)wide_password.c_str();
+
+      password_desc.ulVersion = NCRYPTBUFFER_VERSION;
+      password_desc.cBuffers = 1;
+      password_desc.pBuffers = &password_buffer;
+      params = &password_desc;
+   }
+
+   auto result = try_import_pkcs8_private_key(provider, KeyDer, params, KeyHandle);
+   if ((!result) and Password.has_value()) result = try_import_pkcs8_private_key(provider, KeyDer, nullptr, KeyHandle);
+
+   NCryptFreeObject(provider);
+   return result;
+}
+
+//********************************************************************************************************************
+
+static bool certificate_has_private_key(PCCERT_CONTEXT Cert)
+{
+   HCRYPTPROV_OR_NCRYPT_KEY_HANDLE key_handle = 0;
+   DWORD key_spec = 0;
+   BOOL free_key = false;
+
+   if (!CryptAcquireCertificatePrivateKey(Cert, CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG | CRYPT_ACQUIRE_SILENT_FLAG,
+       nullptr, &key_handle, &key_spec, &free_key)) {
       return false;
    }
 
-   PCCERT_CONTEXT cert_context = CertCreateCertificateContext(X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, der_data.data(), der_size);
-   if (!cert_context) {
+   if (free_key) NCryptFreeObject(NCRYPT_KEY_HANDLE(key_handle));
+   return true;
+}
+
+//********************************************************************************************************************
+
+static bool attach_private_key(PCCERT_CONTEXT Cert, NCRYPT_KEY_HANDLE KeyHandle)
+{
+   CERT_KEY_CONTEXT key_context {};
+   key_context.cbSize = sizeof(key_context);
+   key_context.hNCryptKey = KeyHandle;
+   key_context.dwKeySpec = CERT_NCRYPT_KEY_SPEC;
+
+   if (!CertSetCertificateContextProperty(Cert, CERT_KEY_CONTEXT_PROP_ID, CERT_SET_PROPERTY_INHIBIT_PERSIST_FLAG,
+       &key_context)) {
       return false;
    }
 
-   // Open the personal certificate store
-   HCERTSTORE cert_store = CertOpenSystemStore(0, "MY");
-   if (!cert_store) {
+   return certificate_has_private_key(Cert);
+}
+
+//********************************************************************************************************************
+
+bool load_pkcs12_certificate(SSL_HANDLE SSL, const std::string &Path, std::optional<const std::string> &Password)
+{
+   std::vector<BYTE> p12_data;
+   if (!read_binary_file(Path, p12_data)) return false;
+
+   CRYPT_DATA_BLOB pfx_blob;
+   pfx_blob.cbData = DWORD(p12_data.size());
+   pfx_blob.pbData = p12_data.data();
+
+   auto wide_password = password_to_wide(Password);
+   DWORD import_flags = CRYPT_EXPORTABLE | CRYPT_USER_KEYSET;
+   #ifdef PKCS12_NO_PERSIST_KEY
+      import_flags |= PKCS12_NO_PERSIST_KEY;
+   #endif
+
+   HCERTSTORE pfx_store = PFXImportCertStore(&pfx_blob, wide_password.c_str(), import_flags);
+   if (!pfx_store) return false;
+
+   PCCERT_CONTEXT selected_cert = nullptr;
+   PCCERT_CONTEXT cert_context = nullptr;
+
+   while ((cert_context = CertEnumCertificatesInStore(pfx_store, cert_context))) {
+      if (certificate_has_private_key(cert_context)) {
+         selected_cert = CertDuplicateCertificateContext(cert_context);
+         break;
+      }
+   }
+
+   CertCloseStore(pfx_store, 0);
+   if (!selected_cert) return false;
+
+   clear_server_certificate(SSL);
+   SSL->server_certificate = selected_cert;
+   return true;
+}
+
+//********************************************************************************************************************
+
+bool load_pem_certificate(SSL_HANDLE SSL, const std::string &Path, std::optional<const std::string> &KeyPath,
+   std::optional<const std::string> &Password)
+{
+   std::string cert_pem;
+   if (!read_text_file(Path, cert_pem)) return false;
+
+   std::vector<BYTE> cert_der;
+   if (!decode_pem_section(cert_pem, "CERTIFICATE", cert_der)) return false;
+
+   PCCERT_CONTEXT cert_context = CertCreateCertificateContext(X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
+      cert_der.data(), DWORD(cert_der.size()));
+   if (!cert_context) return false;
+
+   std::string key_pem;
+   if (KeyPath.has_value()) {
+      if (!read_text_file(KeyPath.value(), key_pem)) {
+         CertFreeCertificateContext(cert_context);
+         return false;
+      }
+   }
+   else key_pem = cert_pem;
+
+   std::vector<BYTE> key_der;
+   if ((!decode_pem_section(key_pem, "PRIVATE KEY", key_der)) and
+       (!decode_pem_section(key_pem, "ENCRYPTED PRIVATE KEY", key_der))) {
       CertFreeCertificateContext(cert_context);
       return false;
    }
 
-   PCCERT_CONTEXT existing_cert = CertFindCertificateInStore(cert_store, X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, 0, CERT_FIND_EXISTING, cert_context, nullptr);
-   if (existing_cert) {
+   NCRYPT_KEY_HANDLE key_handle = 0;
+   if (!import_pkcs8_private_key(key_der, Password, key_handle)) {
       CertFreeCertificateContext(cert_context);
-      CertCloseStore(cert_store, 0);
-      if (SSL->server_certificate) CertFreeCertificateContext(SSL->server_certificate);
-      SSL->server_certificate = existing_cert;
-      return true;
-   }
-
-   if (!CertAddCertificateContextToStore(cert_store, cert_context, CERT_STORE_ADD_REPLACE_EXISTING, nullptr)) {
-      CertFreeCertificateContext(cert_context);
-      CertCloseStore(cert_store, 0);
       return false;
    }
 
-   CertCloseStore(cert_store, 0);
+   if (!attach_private_key(cert_context, key_handle)) {
+      NCryptFreeObject(key_handle);
+      CertFreeCertificateContext(cert_context);
+      return false;
+   }
 
+   clear_server_certificate(SSL);
    SSL->server_certificate = cert_context;
+   SSL->imported_private_key = key_handle;
    return true;
 }
 

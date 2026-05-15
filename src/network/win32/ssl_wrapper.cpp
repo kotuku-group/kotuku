@@ -21,6 +21,7 @@ Pure Windows implementation that avoids all Kotuku headers to prevent conflicts.
 #include <sspi.h>
 #include <security.h>
 #include <wincrypt.h>
+#include <ncrypt.h>
 #include <prsht.h>
 #include <cryptuiapi.h>
 #include <cstring>
@@ -161,6 +162,7 @@ struct ssl_context {
    PCCERT_CONTEXT server_certificate;          // Server certificate for server-side SSL
    PCCERT_CONTEXT peer_certificate;            // Peer certificate for validation
    PCCERT_CHAIN_CONTEXT certificate_chain;     // Certificate chain context for validation
+   NCRYPT_KEY_HANDLE imported_private_key;     // In-memory PEM private key attached to server_certificate
 
    // Connection information cache
    std::string protocol_version_str;
@@ -190,6 +192,7 @@ struct ssl_context {
       , server_certificate(nullptr)
       , peer_certificate(nullptr)
       , certificate_chain(nullptr)
+      , imported_private_key(0)
       , key_size_bits(0)
       , certificate_chain_valid(false)
       , certificate_chain_length(0)
@@ -214,6 +217,10 @@ struct ssl_context {
       if (server_certificate) {
          CertFreeCertificateContext(server_certificate);
          server_certificate = nullptr;
+      }
+      if (imported_private_key) {
+         NCryptFreeObject(imported_private_key);
+         imported_private_key = 0;
       }
       if (peer_certificate) {
          CertFreeCertificateContext(peer_certificate);
@@ -653,20 +660,19 @@ int ssl_get_key_size_bits(SSL_HANDLE SSL)
 //********************************************************************************************************************
 // Load server certificate from file
 
-// TODO: Key path and password handling for PKCS#12 files
-
-SSL_ERROR_CODE ssl_load_server_certificate(SSL_HANDLE SSL, const std::string &CertPath, std::optional<const std::string> &KeyPath, std::optional<const std::string> &Password)
+SSL_ERROR_CODE ssl_load_server_certificate(SSL_HANDLE SSL, const std::string &CertPath,
+   std::optional<const std::string> &KeyPath, std::optional<const std::string> &Password)
 {
    if (!SSL->is_server_mode) return SSL_ERROR_FAILED;
 
    bool success = false;
    switch (ssl_certificate_format(CertPath)) {
       case SSLCERTFORMAT::PKCS12:
-         success = load_pkcs12_certificate(SSL, CertPath);
+         success = load_pkcs12_certificate(SSL, CertPath, Password);
          break;
 
       case SSLCERTFORMAT::PEM:
-         success = load_pem_certificate(SSL, CertPath);
+         success = load_pem_certificate(SSL, CertPath, KeyPath, Password);
          break;
 
       default:

@@ -44,10 +44,12 @@ uint32_t ssl_last_win32_error(SSL_HANDLE);
 int ssl_last_security_status(SSL_HANDLE);
 size_t ssl_encrypted_input_size(SSL_HANDLE);
 bool ssl_get_verify_result(SSL_HANDLE);
-SSL_ERROR_CODE ssl_load_server_certificate(SSL_HANDLE, const std::string &, std::optional<const std::string> &, std::optional<const std::string> &);
+SSL_ERROR_CODE ssl_load_server_certificate(SSL_HANDLE, const std::string &, std::optional<const std::string> &,
+   std::optional<const std::string> &);
 SSL_ERROR_CODE ssl_set_server_certificate(SSL_HANDLE Server, SSL_HANDLE Client);
-bool load_pem_certificate(SSL_HANDLE SSL, const std::string &Path);
-bool load_pkcs12_certificate(SSL_HANDLE SSL, const std::string &Path);
+bool load_pem_certificate(SSL_HANDLE SSL, const std::string &Path, std::optional<const std::string> &KeyPath,
+   std::optional<const std::string> &Password);
+bool load_pkcs12_certificate(SSL_HANDLE SSL, const std::string &Path, std::optional<const std::string> &Password);
 
 // Connection information structure
 struct SSL_CONNECTION_INFO {
