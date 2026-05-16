@@ -4,7 +4,7 @@
 
 SSL_ERROR_CODE ssl_connect(SSL_HANDLE SSL, void *SocketHandle, const std::string &HostName)
 {
-   if ((!SSL) or ((SOCKET)SocketHandle == INVALID_SOCKET)) return SSL_ERROR_ARGS;
+   if ((!SSL) or ((SOCKET)SocketHandle IS INVALID_SOCKET)) return SSL_ERROR_ARGS;
 
    SSL->socket_handle = (SOCKET)SocketHandle;
    SSL->hostname = HostName;
@@ -138,15 +138,14 @@ SSL_ERROR_CODE ssl_accept(SSL_HANDLE SSL, const void* ClientData, int DataLength
          nullptr,
          &in_buffer_desc,
          ASC_REQ_SEQUENCE_DETECT | ASC_REQ_REPLAY_DETECT | ASC_REQ_CONFIDENTIALITY |
-         ASC_REQ_EXTENDED_ERROR | ASC_REQ_ALLOCATE_MEMORY | ASC_REQ_STREAM |
-         ASC_REQ_MUTUAL_AUTH,
+         ASC_REQ_EXTENDED_ERROR | ASC_REQ_ALLOCATE_MEMORY | ASC_REQ_STREAM,
          SECURITY_NATIVE_DREP,
          &SSL->context,
          &out_buffer_desc,
          &context_attr,
          &expiry);
 
-      if (status == SEC_E_OK or status == SEC_I_CONTINUE_NEEDED) {
+      if (status IS SEC_E_OK or status IS SEC_I_CONTINUE_NEEDED) {
          SSL->context_initialised = true;
       }
    }
@@ -156,8 +155,7 @@ SSL_ERROR_CODE ssl_accept(SSL_HANDLE SSL, const void* ClientData, int DataLength
          &SSL->context,
          &in_buffer_desc,
          ASC_REQ_SEQUENCE_DETECT | ASC_REQ_REPLAY_DETECT | ASC_REQ_CONFIDENTIALITY |
-         ASC_REQ_EXTENDED_ERROR | ASC_REQ_ALLOCATE_MEMORY | ASC_REQ_STREAM |
-         ASC_REQ_MUTUAL_AUTH,
+         ASC_REQ_EXTENDED_ERROR | ASC_REQ_ALLOCATE_MEMORY | ASC_REQ_STREAM,
          SECURITY_NATIVE_DREP,
          &SSL->context,
          &out_buffer_desc,
@@ -165,8 +163,8 @@ SSL_ERROR_CODE ssl_accept(SSL_HANDLE SSL, const void* ClientData, int DataLength
          &expiry);
    }
 
-   if ((status == SEC_E_OK) or (status == SEC_I_CONTINUE_NEEDED)) {
-      if (status == SEC_E_OK) {
+   if ((status IS SEC_E_OK) or (status IS SEC_I_CONTINUE_NEEDED)) {
+      if (status IS SEC_E_OK) {
          auto stream_status = QueryContextAttributes(&SSL->context, SECPKG_ATTR_STREAM_SIZES, &SSL->stream_sizes);
          if (stream_status != SEC_E_OK) {
             SSL->last_security_status = stream_status;
@@ -180,7 +178,7 @@ SSL_ERROR_CODE ssl_accept(SSL_HANDLE SSL, const void* ClientData, int DataLength
          }
       }
 
-      if (status == SEC_E_OK) return SSL_OK;
+      if (status IS SEC_E_OK) return SSL_OK;
       else return SSL_NEED_DATA;
    }
    else {

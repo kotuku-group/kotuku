@@ -89,6 +89,7 @@ static std::string client_ip_label(const IPAddress &Address)
 }
 
 //********************************************************************************************************************
+
 static void netsocket_connect_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
 {
    kt::Log log(__FUNCTION__);
