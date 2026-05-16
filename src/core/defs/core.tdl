@@ -1307,8 +1307,6 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
   class("File", { version=1.2, src="../classes/class_file.cpp", output="../classes/class_file_def.c" }, [[
     large     Position  # The current read/write byte position in a file.
     int(FL)   Flags     # File flags and options.
-    int       Static    # Set to `true` if a file object should be static.
-    oid       Target    # Specifies a surface ID to target for user feedback and dialog boxes.
     ptr(char) Buffer    # Points to the internal data buffer if the file content is held in memory.
   ]],
   nil,

@@ -529,27 +529,6 @@
     </field>
 
     <field>
-      <name>Static</name>
-      <comment>Set to <code>true</code> if a file object should be static.</comment>
-      <access read="R" write="I">Read/Init</access>
-      <type>INT</type>
-      <description>
-<p>This field applies when a file object has been created in an object script.  By default, a file object will auto-terminate when a closing tag is received.  If the object must remain live, set this field to <code>true</code>.</p>
-      </description>
-    </field>
-
-    <field>
-      <name>Target</name>
-      <comment>Specifies a surface ID to target for user feedback and dialog boxes.</comment>
-      <access read="R" write="W">Read/Write</access>
-      <type>OBJECTID</type>
-      <description>
-<p>User feedback can be enabled for certain file operations by setting the Target field to a valid surface ID, or zero for the default target for new windows.  This field is set to <code>-1</code> by default, in order to disable this feature.</p>
-<p>If set correctly, operations such as file deletion or copying will pop-up a progress box after a certain amount of time has elapsed during the operation.  The dialog box will also provide the user with a cancel option to terminate the process early.</p>
-      </description>
-    </field>
-
-    <field>
       <name>Timestamp</name>
       <comment>The last modification time set on a file, represented as a 64-bit integer.</comment>
       <access read="G">Get</access>

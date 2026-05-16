@@ -343,8 +343,8 @@ int fcmd_loadfile(lua_State *Lua)
             objFile::create src_file = { fl::Path(path) };
             if (src_file.ok()) {
                int64_t fb_ts, src_ts;
-               fb_file->get(FID_TimeStamp, &fb_ts);
-               src_file->get(FID_TimeStamp, &src_ts);
+               fb_file->get(FID_Timestamp, &fb_ts);
+               src_file->get(FID_Timestamp, &src_ts);
 
                if (fb_ts != src_ts) {
                   log.msg("Timestamp mismatch, will recompile the cached version.");

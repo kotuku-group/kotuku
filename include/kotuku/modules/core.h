@@ -2681,8 +2681,6 @@ class objFile : public Object {
 
    int64_t  Position;   // The current read/write byte position in a file.
    FL       Flags;      // File flags and options.
-   int      Static;     // Set to true if a file object should be static.
-   OBJECTID TargetID;   // Specifies a surface ID to target for user feedback and dialog boxes.
    int8_t * Buffer;     // Points to the internal data buffer if the file content is held in memory.
    public:
    inline CSTRING readLine() {
@@ -2813,17 +2811,6 @@ class objFile : public Object {
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
-   inline ERR setStatic(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
-      this->Static = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setTarget(OBJECTID Value) noexcept {
-      this->TargetID = Value;
-      return ERR::Okay;
-   }
-
    inline ERR setDate(APTR Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[10];
@@ -2844,7 +2831,7 @@ class objFile : public Object {
 
    inline ERR setPermissions(const int Value) noexcept {
       auto target = this;
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -2856,13 +2843,13 @@ class objFile : public Object {
 
    template <class T> inline ERR setLink(T && Value) noexcept {
       auto target = this;
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[15];
       return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
    }
 
    inline ERR setUser(const int Value) noexcept {
       auto target = this;
-      auto field = &this->Class->Dictionary[15];
+      auto field = &this->Class->Dictionary[14];
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 

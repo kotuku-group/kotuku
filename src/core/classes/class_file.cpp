@@ -710,10 +710,6 @@ static ERR FILE_Init(extFile *Self)
        }
    }
 
-   // Do not do anything if the File is used as a static object in a script
-
-   if (Self->Static and Self->Path.empty()) return ERR::Okay;
-
    if (Self->Path.starts_with(':')) {
       if ((Self->Flags & FL::FILE) != FL::NIL) return log.warning(ERR::ExpectedFile);
       log.trace("Root folder initialised.");
@@ -2581,22 +2577,6 @@ static ERR SET_Size(extFile *Self, int64_t Size)
 /*********************************************************************************************************************
 
 -FIELD-
-Static: Set to `true` if a file object should be static.
-
-This field applies when a file object has been created in an object script.  By default, a file object will
-auto-terminate when a closing tag is received.  If the object must remain live, set this field to `true`.
-
--FIELD-
-Target: Specifies a surface ID to target for user feedback and dialog boxes.
-
-User feedback can be enabled for certain file operations by setting the Target field to a valid surface ID, or zero
-for the default target for new windows.  This field is set to `-1` by default, in order to disable this feature.
-
-If set correctly, operations such as file deletion or copying will pop-up a progress box after a certain amount of time
-has elapsed during the operation.  The dialog box will also provide the user with a cancel option to terminate the
-process early.
-
--FIELD-
 Timestamp: The last modification time set on a file, represented as a 64-bit integer.
 
 The Timestamp field is a 64-bit representation of the last modification date/time set on a file.  It is not guaranteed
@@ -2739,8 +2719,6 @@ static const FieldDef PermissionFlags[] = {
 static const FieldArray FileFields[] = {
    { "Position",     FDF_INT64|FDF_RW, nullptr, SET_Position },
    { "Flags",        FDF_INTFLAGS|FDF_RW, nullptr, SET_Flags, &clFileFlags },
-   { "Static",       FDF_INT|FDF_RI },
-   { "Target",       FDF_OBJECTID|FDF_RW, nullptr, nullptr, CLASSID::SURFACE },
    { "Buffer",       FDF_ARRAY|FDF_BYTE|FDF_R, GET_Buffer },
    // Virtual fields
    { "Date",         FDF_POINTER|FDF_STRUCT|FDF_RW, GET_Date, SET_Date, "DateTime" },
