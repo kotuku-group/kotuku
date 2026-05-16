@@ -164,6 +164,36 @@ function convertPermissions(Permissions)
    return out
 end
 
+function file_to_info(Path:str):table
+   try
+      file = obj.new('file', { path=Path })
+
+      local folder_name, file_name = io.splitPath(file.path)
+
+      info = {
+         name        = file_name,
+         size        = file.size,
+         timestamp   = file.timestamp,
+         modified    = file.date,
+         permissions = file.permissions,
+         userID      = file.user,
+         groupID     = file.group,
+         flags       = 0
+      }
+
+      file_flags = file.flags
+      if file_flags has FL_FILE    then info.flags = info.flags | RDF_FILE end
+      if file_flags has FL_FOLDER  then info.flags = info.flags | RDF_FOLDER end
+      if file_flags has FL_LINK    then info.flags = info.flags | RDF_LINK end
+      if file_flags has FL_VIRTUAL then info.flags = info.flags | RDF_VIRTUAL end
+      if file_flags has FL_STREAM  then info.flags = info.flags | RDF_STREAM end
+
+      if Path:endsWith(':') then info.flags = info.flags | RDF_VOLUME end
+
+      return info
+   end
+end
+
 function updateFileAttributes(Item:table, Info)
    if Item.date then
       if Item.type is 'folder' then
@@ -448,7 +478,7 @@ end
 
 function createFileItem(self, Info)
    if not self.showHidden then
-      if Info.flags has RDF_HIDDEN then return end
+      if Info.permissions has PERMIT_HIDDEN then return end
    end
 
    msg('createFileItem() ' .. Info.name .. string.format(', $%.8x', Info.flags))
@@ -503,16 +533,16 @@ function createFileItem(self, Info)
          fill        = glFolderFill,
          name        = { sort = 'D' .. display_name:lower(), value = display_name },
          insensitive = true,
-         owner       = mSys.ResolveUserID(Info.UserID),
-         group       = mSys.ResolveGroupID(Info.GroupID),
-         permissions = convertPermissions(Info.Permissions),
+         owner       = mSys.ResolveUserID(Info.userID),
+         group       = mSys.ResolveGroupID(Info.groupID),
+         permissions = convertPermissions(Info.permissions),
          size        = { sort = sortNum(0), value = nil } -- Dummy required for sorting
       }
 
       if Info.modified.year?? then
          new_item.date = { sort = 'D' .. sortNum(Info.timestamp), value = printableTime(Info.modified) }
       end
-   elseif Info.Flags has RDF_FILE then
+   elseif Info.flags has RDF_FILE then
       if self.hideFiles then return end
 
       if not lFilter or lFilter.test(Info.name) then
@@ -526,9 +556,9 @@ function createFileItem(self, Info)
             hidden      = not filterCheck(self, filename),
             size        = { sort = sortNum(Info.size), value = Info.size },
             date        = { sort = 'F' .. sortNum(Info.timestamp), value = printableTime(Info.modified) },
-            owner       = mSys.ResolveUserID(Info.UserID),
-            group       = mSys.ResolveGroupID(Info.GroupID),
-            permissions = convertPermissions(Info.Permissions)
+            owner       = mSys.ResolveUserID(Info.userID),
+            group       = mSys.ResolveGroupID(Info.groupID),
+            permissions = convertPermissions(Info.permissions)
          }
       end
    end
@@ -595,9 +625,8 @@ gui.fileview = function(Options)
       if self.path then return end
 
       if not findItem(Info.name) then -- Add missing volume
-         info = struct.new('FileInfo')
-         err = mSys.GetFileInfo(Info.name .. ':', info)
-         if (err is ERR_Okay) and not (info.flags has RDF_HIDDEN) then
+         info = file_to_info(Info.name .. ':')
+         if (info) and not (info.permissions has PERMIT_HIDDEN) then
             addFileItem(self, info)
             self.view.sort()
          end
@@ -663,7 +692,7 @@ gui.fileview = function(Options)
 
          info = dirinfo.info
 
-         if (info.Flags has RDF_VOLUME) and (info.Flags has RDF_HIDDEN) then
+         if (info.flags has RDF_VOLUME) and (info.permissions has PERMIT_HIDDEN) then
             -- Ignore hidden volumes
          elseif #self.view.items is 0 then -- Empty view, this is the first file.
             addFileItem(self, info)
@@ -769,13 +798,15 @@ gui.fileview = function(Options)
 
       local info, info_err
       if not (Flags has MFF_DELETE) then
-         info = struct.new('FileInfo')
-         info_err = mSys.GetFileInfo(self.path .. Path, info)
-         if info_err is ERR_Okay then
-            if self.hideFiles and (info.Flags has RDF_FILE) then return end
+         info = file_to_info(self.path .. Path)
+         if info then
+            info_err = ERR_Okay
+            if self.hideFiles and (info.flags has RDF_FILE) then return end
             -- Use the true file name with the trailing slash if it is a folder (important
             -- for symbolically linked directories).
             Path = info.name
+         else
+            info_err = ERR_Failed
          end
       else
          info_err = ERR_Failed
@@ -1080,9 +1111,8 @@ gui.fileview = function(Options)
                   path = f'{self.path}{State.input}/'
                   if mSys.CreateFolder(path, 0) is ERR_Okay then
                      if not self.watch then
-                        info = struct.new('FileInfo')
-                        err = mSys.GetFileInfo(path, info)
-                        if err is ERR_Okay then
+                        info = file_to_info(path)
+                        if info then
                            addFileItem(self, info)
                            self.view.sort()
                         end

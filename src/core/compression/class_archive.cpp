@@ -39,10 +39,10 @@ struct prvFileArchive {
    z_stream Stream;
    extFile  *FileStream;
    extCompression *Archive;
-   uint8_t    InputBuffer[SIZE_COMPRESSION_BUFFER];
-   uint8_t    OutputBuffer[SIZE_COMPRESSION_BUFFER];
-   uint8_t    *ReadPtr;      // Current position within OutputBuffer
-   int     InputLength;
+   uint8_t  InputBuffer[SIZE_COMPRESSION_BUFFER];
+   uint8_t  OutputBuffer[SIZE_COMPRESSION_BUFFER];
+   uint8_t  *ReadPtr;      // Current position within OutputBuffer
+   int      InputLength;
    bool     Inflating;
    bool     InvalidState; // Set to true if the archive is corrupt.
 };
@@ -55,7 +55,7 @@ static ankerl::unordered_dense::map<uint32_t, extCompression *> glArchives;
 
 static ERR close_folder(DirInfo *);
 static ERR open_folder(DirInfo *);
-static ERR get_info(std::string_view, FileInfo *, int);
+static ERR get_info(std::string_view, FileInfo &);
 static ERR scan_folder(DirInfo *);
 static ERR test_path(std::string &, RSF, LOC *);
 
@@ -587,7 +587,7 @@ static ERR close_folder(DirInfo *Dir)
 
 //********************************************************************************************************************
 
-static ERR get_info(std::string_view Path, FileInfo *Info, int InfoSize)
+static ERR get_info(std::string_view Path, FileInfo &Info)
 {
    Log log(__FUNCTION__);
 
@@ -600,13 +600,13 @@ static ERR get_info(std::string_view Path, FileInfo *Info, int InfoSize)
    }
    else return ERR::DoesNotExist;
 
-   Info->Size     = item->OriginalSize;
-   Info->Flags    = RDF::NIL;
-   Info->Created  = item->Created;
-   Info->Modified = item->Modified;
+   Info.Size     = item->OriginalSize;
+   Info.Flags    = RDF::NIL;
+   Info.Created  = item->Created;
+   Info.Modified = item->Modified;
 
-   if ((item->Flags & FL::FOLDER) != FL::NIL) Info->Flags |= RDF::FOLDER;
-   else Info->Flags |= RDF::FILE|RDF::SIZE;
+   if ((item->Flags & FL::FOLDER) != FL::NIL) Info.Flags |= RDF::FOLDER;
+   else Info.Flags |= RDF::FILE|RDF::SIZE;
 
    // Extract the file name
 
@@ -614,14 +614,14 @@ static ERR get_info(std::string_view Path, FileInfo *Info, int InfoSize)
    auto i = Path.find_last_of("/\\:");
    if (i != std::string::npos) i++;
    if (Path.size()-i+1 > MAX_FILENAME) return ERR::BufferOverflow;
-   Info->Name.assign(Path, i, std::string::npos);
+   Info.Name.assign(Path, i, std::string::npos);
 
-   if ((Info->Flags & RDF::FOLDER) != RDF::NIL) Info->Name += '/';
+   if ((Info.Flags & RDF::FOLDER) != RDF::NIL) Info.Name += '/';
 
-   Info->Permissions = item->Permissions;
-   Info->UserID      = item->UserID;
-   Info->GroupID     = item->GroupID;
-   Info->Tags        = nullptr;
+   Info.Permissions = item->Permissions;
+   Info.UserID      = item->UserID;
+   Info.GroupID     = item->GroupID;
+   Info.Tags        = nullptr;
    return ERR::Okay;
 }
 

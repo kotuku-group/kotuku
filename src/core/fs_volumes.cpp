@@ -193,9 +193,9 @@ Exists: The named volume already exists.
 
 using CALL_CLOSE_DIR       = ERR (*)(DirInfo *);
 using CALL_DELETE          = ERR (*)(std::string_view, FUNCTION *);
-using CALL_GET_INFO        = ERR (*)(std::string_view, FileInfo*, int);
-using CALL_GET_DEVICE_INFO = ERR (*)(std::string_view, objStorageDevice*);
-using CALL_IDENTIFY_FILE   = ERR (*)(std::string_view, CLASSID*, CLASSID*);
+using CALL_GET_INFO        = ERR (*)(std::string_view, FileInfo &);
+using CALL_GET_DEVICE_INFO = ERR (*)(std::string_view, objStorageDevice *);
+using CALL_IDENTIFY_FILE   = ERR (*)(std::string_view, CLASSID *, CLASSID *);
 using CALL_IGNORE_FILE     = void (*)(extFile*);
 using CALL_MAKE_DIR        = ERR (*)(std::string_view, PERMIT);
 using CALL_OPEN_DIR        = ERR (*)(DirInfo*);
@@ -203,7 +203,7 @@ using CALL_RENAME          = ERR (*)(std::string_view, std::string_view);
 using CALL_SAME_FILE       = ERR (*)(std::string_view, std::string_view);
 using CALL_SCAN_DIR        = ERR (*)(DirInfo*);
 using CALL_TEST_PATH       = ERR (*)(std::string &, RSF, LOC *);
-using CALL_WATCH_PATH      = ERR (*)(extFile*);
+using CALL_WATCH_PATH      = ERR (*)(extFile *);
 
 ERR VirtualVolume(CSTRING Name, ...)
 {

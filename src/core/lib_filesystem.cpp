@@ -228,6 +228,82 @@ static std::optional<virtual_drive> get_virtual(std::string_view Path)
 }
 
 //********************************************************************************************************************
+// Gets information about a file or folder.
+//
+// NB: If you know that a path refers directly to the client's filesystem then you can revert to calling
+// fs_getinfo() instead.
+
+ERR get_file_info(const std::string_view &Path, FileInfo &Info)
+{
+   kt::Log log(__FUNCTION__);
+
+   if (Path.empty()) return log.warning(ERR::Args);
+
+   // Check if the location is a volume with no file reference
+
+   if (Path.ends_with(':')) {
+      auto vfs = get_fs(Path);
+
+      Info.Size        = 0;
+      Info.Timestamp   = 0;
+      Info.Next        = nullptr;
+      Info.Permissions = PERMIT::NIL;
+      Info.UserID      = 0;
+      Info.GroupID     = 0;
+      Info.Tags        = nullptr;
+      Info.Flags       = RDF::VOLUME;
+      Info.Created.clear();
+      Info.Modified.clear();
+
+      if (auto pos = Path.find(':'); pos != std::string::npos) Info.Name = Path.substr(0, pos);
+      else Info.Name = Path;
+
+      if (auto lock = std::unique_lock{glmVolumes, 1s}) {
+         if (glVolumes.contains(Info.Name)) {
+            if (glVolumes[Info.Name]["Hidden"] IS "Yes") Info.Permissions |= PERMIT::HIDDEN;
+         }
+      }
+
+      Info.Name += ':';
+
+      if (vfs.is_virtual()) {
+         Info.Flags |= RDF::VIRTUAL;
+         if (vfs.GetInfo) return vfs.GetInfo(Path, Info);
+         return ERR::Okay;
+      }
+      else return ERR::Okay;
+   }
+   else {
+      log.traceBranch("%.*s", int(Path.size()), Path.data());
+
+      std::string path;
+      if (auto error = ResolvePath(Path, RSF::NIL, &path); error IS ERR::Okay) {
+         auto vfs = get_fs(path);
+
+         if (not vfs.GetInfo) return log.warning(ERR::NoSupport);
+
+         Info.Size        = 0;
+         Info.Timestamp   = 0;
+         Info.Next        = nullptr;
+         Info.Permissions = PERMIT::NIL;
+         Info.UserID      = 0;
+         Info.GroupID     = 0;
+         Info.Tags        = nullptr;
+         Info.Flags       = (vfs.is_virtual()) ? RDF::VIRTUAL : RDF::NIL;
+         Info.Created.clear();
+         Info.Modified.clear();
+
+         if ((error = vfs.GetInfo(path, Info)) IS ERR::Okay) {
+            Info.Timestamp = calc_timestamp(&Info.Modified);
+         }
+
+         return error;
+      }
+      else return error;
+   }
+}
+
+//********************************************************************************************************************
 // Returns a virtual_drive structure for ALL path types. Defaults to the host file system if no virtual drive was
 // identified.
 //
@@ -771,103 +847,6 @@ void SetDefaultPermissions(int User, int Group, PERMIT Permissions)
    }
 
    glDefaultPermissions = Permissions;
-}
-
-/*********************************************************************************************************************
-
--FUNCTION-
-GetFileInfo: Gets information about a file or folder.
-
-This function will return information about a file or folder when given a valid file location.  The current user
-must have read access to the given file.  This function does not allow for the approximation of file names.  To
-approximate a file location, open it as a @File object or use ~ResolvePath() first.
-
--INPUT-
-cpp(strview) Path: String referring to the file or folder to be queried.
-struct(*FileInfo) Info: Pointer to a !FileInfo structure to be populated.
-bufsize InfoSize: Size of the !FileInfo structure in bytes.
-
--ERRORS-
-Okay:
-Args:
-LockFailed:
-NoSupport: The target filesystem does not support the operation.
-
--END-
-
-*********************************************************************************************************************/
-
-// NB: If you know that a path refers directly to the client's filesystem then you can revert to calling
-// fs_getinfo() instead.
-
-ERR GetFileInfo(const std::string_view &Path, FileInfo *Info, int InfoSize)
-{
-   kt::Log log(__FUNCTION__);
-
-   if (Path.empty() or (not Info) or (InfoSize <= 0)) return log.warning(ERR::Args);
-
-   // Check if the location is a volume with no file reference
-
-   if (Path.ends_with(':')) {
-      auto vfs = get_fs(Path);
-
-      Info->Size        = 0;
-      Info->Timestamp   = 0;
-      Info->Next        = nullptr;
-      Info->Permissions = PERMIT::NIL;
-      Info->UserID      = 0;
-      Info->GroupID     = 0;
-      Info->Tags        = nullptr;
-      Info->Flags       = RDF::VOLUME;
-      Info->Created.clear();
-      Info->Modified.clear();
-
-      if (auto pos = Path.find(':'); pos != std::string::npos) Info->Name = Path.substr(0, pos);
-      else Info->Name = Path;
-
-      if (auto lock = std::unique_lock{glmVolumes, 1s}) {
-         if (glVolumes.contains(Info->Name)) {
-            if (glVolumes[Info->Name]["Hidden"] IS "Yes") Info->Flags |= RDF::HIDDEN;
-         }
-      }
-
-      Info->Name += ':';
-
-      if (vfs.is_virtual()) {
-         Info->Flags |= RDF::VIRTUAL;
-         if (vfs.GetInfo) return vfs.GetInfo(Path, Info, InfoSize);
-         return ERR::Okay;
-      }
-      else return ERR::Okay;
-   }
-   else {
-      log.traceBranch("%.*s", int(Path.size()), Path.data());
-
-      std::string path;
-      if (auto error = ResolvePath(Path, RSF::NIL, &path); error IS ERR::Okay) {
-         auto vfs = get_fs(path);
-
-         if (not vfs.GetInfo) return log.warning(ERR::NoSupport);
-
-         Info->Size        = 0;
-         Info->Timestamp   = 0;
-         Info->Next        = nullptr;
-         Info->Permissions = PERMIT::NIL;
-         Info->UserID      = 0;
-         Info->GroupID     = 0;
-         Info->Tags        = nullptr;
-         Info->Flags       = (vfs.is_virtual()) ? RDF::VIRTUAL : RDF::NIL;
-         Info->Created.clear();
-         Info->Modified.clear();
-
-         if ((error = vfs.GetInfo(path, Info, InfoSize)) IS ERR::Okay) {
-            Info->Timestamp = calc_timestamp(&Info->Modified);
-         }
-
-         return error;
-      }
-      else return error;
-   }
 }
 
 /*********************************************************************************************************************
@@ -2047,7 +2026,7 @@ PERMIT get_parent_permissions(std::string_view Path, int *UserID, int *GroupID)
 
       if (not folder.empty()) {
          FileInfo info;
-         if (GetFileInfo(folder, &info, sizeof(info)) IS ERR::Okay) {
+         if (get_file_info(folder, info) IS ERR::Okay) {
             if (UserID) *UserID = info.UserID;
             if (GroupID) *GroupID = info.GroupID;
             return info.Permissions;
@@ -2207,9 +2186,9 @@ ERR fs_scandir(DirInfo *Dir)
    int8_t dir, hidden, readonly, archive;
 
    while (winScan(&Dir->prvHandle, Dir->prvResolvedPath, Dir->Info->Name, &Dir->Info->Size, &Dir->Info->Created, &Dir->Info->Modified, &dir, &hidden, &readonly, &archive)) {
-      if (hidden)   Dir->Info->Flags |= RDF::HIDDEN;
+      if (hidden)   Dir->Info->Permissions |= PERMIT::HIDDEN;
       if (readonly) Dir->Info->Flags |= RDF::READ_ONLY;
-      if (archive)  Dir->Info->Flags |= RDF::ARCHIVE;
+      if (archive)  Dir->Info->Permissions |= PERMIT::ARCHIVE;
 
       if (dir) {
          if ((Dir->prvFlags & RDF::FOLDER) IS RDF::NIL) { Dir->Info->Name.clear(); continue; }
@@ -2353,7 +2332,7 @@ ERR fs_testpath(std::string &Path, RSF Flags, LOC *Type)
 
 //********************************************************************************************************************
 
-ERR fs_getinfo(std::string_view Path, FileInfo *Info, int InfoSize)
+ERR fs_getinfo(std::string_view Path, FileInfo &Info)
 {
    kt::Log log(__FUNCTION__);
 
@@ -2373,86 +2352,86 @@ ERR fs_getinfo(std::string_view Path, FileInfo *Info, int InfoSize)
    struct stat64 info;
    if (lstat64(path_ref.c_str(), &info) IS -1) return ERR::FileNotFound;
 
-   Info->Flags = RDF::NIL;
+   Info.Flags = RDF::NIL;
 
    if (S_ISLNK(info.st_mode)) {
-      Info->Flags |= RDF::LINK;
+      Info.Flags |= RDF::LINK;
       if (stat64(path_ref.c_str(), &info) IS -1) {
          // We do not abort in the case of a broken link, just warn and treat it as an empty file
          log.warning("Broken link detected.");
       }
    }
 
-   if (S_ISDIR(info.st_mode)) Info->Flags |= RDF::FOLDER|RDF::TIME|RDF::PERMISSIONS;
-   else Info->Flags |= RDF::FILE|RDF::SIZE|RDF::TIME|RDF::PERMISSIONS;
+   if (S_ISDIR(info.st_mode)) Info.Flags |= RDF::FOLDER|RDF::TIME|RDF::PERMISSIONS;
+   else Info.Flags |= RDF::FILE|RDF::SIZE|RDF::TIME|RDF::PERMISSIONS;
 
    // Extract file/folder name
 
    int i = (int)path_ref.size();
    while ((i > 0) and (path_ref[i-1] != '/') and (path_ref[i-1] != '\\') and (path_ref[i-1] != ':')) i--;
-   Info->Name = path_ref.c_str() + i;
+   Info.Name = path_ref.c_str() + i;
 
-   if ((Info->Flags & RDF::FOLDER) != RDF::NIL) Info->Name += '/';
+   if ((Info.Flags & RDF::FOLDER) != RDF::NIL) Info.Name += '/';
 
-   Info->Tags = nullptr;
-   Info->Size = info.st_size;
+   Info.Tags = nullptr;
+   Info.Size = info.st_size;
 
    // Set file security information
 
-   Info->Permissions = PERMIT::NIL;
-   if (info.st_mode & S_IRUSR) Info->Permissions |= PERMIT::READ;
-   if (info.st_mode & S_IWUSR) Info->Permissions |= PERMIT::WRITE;
-   if (info.st_mode & S_IXUSR) Info->Permissions |= PERMIT::EXEC;
-   if (info.st_mode & S_IRGRP) Info->Permissions |= PERMIT::GROUP_READ;
-   if (info.st_mode & S_IWGRP) Info->Permissions |= PERMIT::GROUP_WRITE;
-   if (info.st_mode & S_IXGRP) Info->Permissions |= PERMIT::GROUP_EXEC;
-   if (info.st_mode & S_IROTH) Info->Permissions |= PERMIT::OTHERS_READ;
-   if (info.st_mode & S_IWOTH) Info->Permissions |= PERMIT::OTHERS_WRITE;
-   if (info.st_mode & S_IXOTH) Info->Permissions |= PERMIT::OTHERS_EXEC;
-   if (info.st_mode & S_ISUID) Info->Permissions |= PERMIT::USERID;
-   if (info.st_mode & S_ISGID) Info->Permissions |= PERMIT::GROUPID;
+   Info.Permissions = PERMIT::NIL;
+   if (info.st_mode & S_IRUSR) Info.Permissions |= PERMIT::READ;
+   if (info.st_mode & S_IWUSR) Info.Permissions |= PERMIT::WRITE;
+   if (info.st_mode & S_IXUSR) Info.Permissions |= PERMIT::EXEC;
+   if (info.st_mode & S_IRGRP) Info.Permissions |= PERMIT::GROUP_READ;
+   if (info.st_mode & S_IWGRP) Info.Permissions |= PERMIT::GROUP_WRITE;
+   if (info.st_mode & S_IXGRP) Info.Permissions |= PERMIT::GROUP_EXEC;
+   if (info.st_mode & S_IROTH) Info.Permissions |= PERMIT::OTHERS_READ;
+   if (info.st_mode & S_IWOTH) Info.Permissions |= PERMIT::OTHERS_WRITE;
+   if (info.st_mode & S_IXOTH) Info.Permissions |= PERMIT::OTHERS_EXEC;
+   if (info.st_mode & S_ISUID) Info.Permissions |= PERMIT::USERID;
+   if (info.st_mode & S_ISGID) Info.Permissions |= PERMIT::GROUPID;
 
-   Info->UserID = info.st_uid;
-   Info->GroupID = info.st_gid;
+   Info.UserID = info.st_uid;
+   Info.GroupID = info.st_gid;
 
    // Get time information.  NB: The timestamp is calculated by the filesystem's fs_getinfo() manager, using
    // calc_timestamp().
 
    struct tm *local;
    if ((local = localtime(&info.st_mtime))) {
-      Info->Modified.Year   = 1900 + local->tm_year;
-      Info->Modified.Month  = local->tm_mon + 1;
-      Info->Modified.Day    = local->tm_mday;
-      Info->Modified.Hour   = local->tm_hour;
-      Info->Modified.Minute = local->tm_min;
-      Info->Modified.Second = local->tm_sec;
+      Info.Modified.Year   = 1900 + local->tm_year;
+      Info.Modified.Month  = local->tm_mon + 1;
+      Info.Modified.Day    = local->tm_mday;
+      Info.Modified.Hour   = local->tm_hour;
+      Info.Modified.Minute = local->tm_min;
+      Info.Modified.Second = local->tm_sec;
    }
 
 #else
    int8_t dir;
 
-   Info->Flags = RDF::NIL;
+   Info.Flags = RDF::NIL;
    size_t isize;
-   if (not winFileInfo(Path.data(), &isize, &Info->Modified, &dir)) return ERR::File;
-   Info->Size = isize;
+   if (not winFileInfo(Path.data(), &isize, &Info.Modified, &dir)) return ERR::File;
+   Info.Size = isize;
 
    // Timestamp has to match that produced by GET_Timestamp
 
    struct stat64 stats;
    if (not stat64(Path.data(), &stats)) {
       if (auto local = localtime(&stats.st_mtime)) {
-         Info->Modified.Year   = 1900 + local->tm_year;
-         Info->Modified.Month  = local->tm_mon + 1;
-         Info->Modified.Day    = local->tm_mday;
-         Info->Modified.Hour   = local->tm_hour;
-         Info->Modified.Minute = local->tm_min;
-         Info->Modified.Second = local->tm_sec;
+         Info.Modified.Year   = 1900 + local->tm_year;
+         Info.Modified.Month  = local->tm_mon + 1;
+         Info.Modified.Day    = local->tm_mday;
+         Info.Modified.Hour   = local->tm_hour;
+         Info.Modified.Minute = local->tm_min;
+         Info.Modified.Second = local->tm_sec;
       }
    }
 
-   if (Path.ends_with('/') or Path.ends_with('\\')) Info->Flags |= RDF::FOLDER|RDF::TIME;
-   else if (dir) Info->Flags |= RDF::FOLDER|RDF::TIME;
-   else Info->Flags |= RDF::FILE|RDF::SIZE|RDF::TIME;
+   if (Path.ends_with('/') or Path.ends_with('\\')) Info.Flags |= RDF::FOLDER|RDF::TIME;
+   else if (dir) Info.Flags |= RDF::FOLDER|RDF::TIME;
+   else Info.Flags |= RDF::FILE|RDF::SIZE|RDF::TIME;
 
    // Extract the file name
 
@@ -2460,18 +2439,18 @@ ERR fs_getinfo(std::string_view Path, FileInfo *Info, int InfoSize)
    if (Path.ends_with('/') or Path.ends_with('\\')) fi = Path.find_last_of("/\\:", Path.size()-2);
    else fi = Path.find_last_of("/\\:");
 
-   if (fi IS std::string::npos) Info->Name = Path;
-   else Info->Name.assign(Path, fi + 1, std::string::npos);
+   if (fi IS std::string::npos) Info.Name = Path;
+   else Info.Name.assign(Path, fi + 1, std::string::npos);
 
-   if ((Info->Flags & RDF::FOLDER) != RDF::NIL) {
-      if (Info->Name.ends_with('\\')) Info->Name[Info->Name.size() - 1] = '/';
-      else if (not Info->Name.ends_with('/')) Info->Name += '/';
+   if ((Info.Flags & RDF::FOLDER) != RDF::NIL) {
+      if (Info.Name.ends_with('\\')) Info.Name[Info.Name.size() - 1] = '/';
+      else if (not Info.Name.ends_with('/')) Info.Name += '/';
    }
 
-   Info->Permissions = PERMIT::NIL;
-   Info->UserID      = 0;
-   Info->GroupID     = 0;
-   Info->Tags        = nullptr;
+   Info.Permissions = PERMIT::NIL;
+   Info.UserID      = 0;
+   Info.GroupID     = 0;
+   Info.Tags        = nullptr;
 
 #endif
 

@@ -900,14 +900,12 @@ enum class RDF : uint32_t {
    VOLUME = 0x00000020,
    LINK = 0x00000040,
    TAGS = 0x00000080,
-   HIDDEN = 0x00000100,
-   QUALIFY = 0x00000200,
-   QUALIFIED = 0x00000200,
-   VIRTUAL = 0x00000400,
-   STREAM = 0x00000800,
-   READ_ONLY = 0x00001000,
-   ARCHIVE = 0x00002000,
-   OPENDIR = 0x00004000,
+   QUALIFIED = 0x00000100,
+   QUALIFY = 0x00000100,
+   VIRTUAL = 0x00000200,
+   STREAM = 0x00000400,
+   READ_ONLY = 0x00000800,
+   OPENDIR = 0x00001000,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(RDF)
@@ -2129,7 +2127,6 @@ struct CoreBase {
    ERR (*_AsyncCancel)(OBJECTID *Objects, int Size);
    int (*_AsyncPending)(OBJECTID Object);
    ERR (*_AsyncWait)(OBJECTID *Objects, int Size, int TimeOut);
-   ERR (*_GetFileInfo)(const std::string_view & Path, struct FileInfo *Info, int InfoSize);
    ERR (*_ClassDatabase)(struct ClassRecord * **Classes);
 #endif // KOTUKU_STATIC
 };
@@ -2229,7 +2226,6 @@ inline ERR WakeThread(int Thread, int Stop) { return CoreBase->_WakeThread(Threa
 inline ERR AsyncCancel(OBJECTID *Objects, int Size) { return CoreBase->_AsyncCancel(Objects,Size); }
 inline int AsyncPending(OBJECTID Object) { return CoreBase->_AsyncPending(Object); }
 inline ERR AsyncWait(OBJECTID *Objects, int Size, int TimeOut) { return CoreBase->_AsyncWait(Objects,Size,TimeOut); }
-inline ERR GetFileInfo(const std::string_view & Path, struct FileInfo *Info, int InfoSize) { return CoreBase->_GetFileInfo(Path,Info,InfoSize); }
 inline ERR ClassDatabase(struct ClassRecord * **Classes) { return CoreBase->_ClassDatabase(Classes); }
 #else
 extern "C" ERR AccessMemory(MEMORYID Memory, MEM Flags, int MilliSeconds, APTR *Result);
@@ -2324,7 +2320,6 @@ extern "C" ERR WakeThread(int Thread, int Stop);
 extern "C" ERR AsyncCancel(OBJECTID *Objects, int Size);
 extern "C" int AsyncPending(OBJECTID Object);
 extern "C" ERR AsyncWait(OBJECTID *Objects, int Size, int TimeOut);
-extern "C" ERR GetFileInfo(const std::string_view & Path, struct FileInfo *Info, int InfoSize);
 extern "C" ERR ClassDatabase(struct ClassRecord * **Classes);
 #endif // KOTUKU_STATIC
 

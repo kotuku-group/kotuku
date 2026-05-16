@@ -29,7 +29,7 @@ extern CoreBase *CoreBase;
 static AAssetManager *glAssetManager = nullptr;
 static bool glAssetManagerFree = false;
 
-connst int LEN_ASSETS = 7; // "assets:" length
+constexpr int LEN_ASSETS = 7; // "assets:" length
 
 static ERR ASSET_Delete(objFile *, APTR);
 static ERR ASSET_Free(objFile *, APTR);
@@ -76,10 +76,10 @@ static const MethodEntry clMethods[] = {
 
 static ERR close_dir(DirInfo *);
 static ERR open_dir(DirInfo *);
-static ERR get_info(std::string_view, FileInfo *, int);
+static ERR get_info(std::string_view, FileInfo &);
 static ERR read_dir(CSTRING, DirInfo **, int);
 static ERR scan_dir(DirInfo *);
-static ERR test_path(std::string &, int *);
+static ERR test_path(std::string &, RSF, LOC *);
 static AAssetManager * get_asset_manager(void);
 
 //********************************************************************************************************************
@@ -461,70 +461,78 @@ static ERR close_dir(DirInfo *Dir)
 
 //********************************************************************************************************************
 
-static ERR get_info(std::string_view Path, FileInfo *Info, int InfoSize)
+static ERR get_info(std::string_view Path, FileInfo &Info)
 {
    kt::Log log(__FUNCTION__);
-   int8_t dir;
-   int i, len;
 
    // We need to open the file in order to retrieve its size.
 
+   if (not kt::startswith("assets:", Path)) return ERR::NoSupport; // Sanity check - Path should already be resolved.
+
    AAssetManager *mgr = get_asset_manager();
-   dir = FALSE;
-   if (mgr) {
-      AAsset *asset;
-      AAssetDir *assetdir;
-      if (kt::startswith("assets:", Path)) { // Just a sanity check - the Path is always meant to be resolved.
-         if ((asset = AAssetManager_open(mgr, Path+LEN_ASSETS, AASSET_MODE_UNKNOWN))) {
-            Info->Size = AAsset_getLength(asset);
-            AAsset_close(asset);
-         }
-         else if ((assetdir = AAssetManager_openDir(mgr, Path+LEN_ASSETS))) {
-            if (AAssetDir_getNextFileName(assetdir)) dir = TRUE;
-            AAssetDir_close(assetdir);
-         }
+   if (!mgr) return ERR::SystemCall;
+
+   bool dir = false;
+   bool file = false;
+
+   std::string asset_path(Path.substr(LEN_ASSETS));
+   if (not (Path.ends_with('/') or Path.ends_with('\\'))) {
+      if (auto asset = AAssetManager_open(mgr, asset_path.c_str(), AASSET_MODE_UNKNOWN)) {
+         Info.Size = AAsset_getLength(asset);
+         file = true;
+         AAsset_close(asset);
       }
-      else return ERR::NoSupport;
    }
-   else return ERR::SystemCall;
 
-   Info->Flags = 0;
-   Info->Time.Year   = 2013;
-   Info->Time.Month  = 1;
-   Info->Time.Day    = 1;
-   Info->Time.Hour   = 0;
-   Info->Time.Minute = 0;
-   Info->Time.Second = 0;
+   if (not file) {
+      std::string dir_path(asset_path);
+      while ((not dir_path.empty()) and ((dir_path.back() IS '/') or (dir_path.back() IS '\\'))) dir_path.pop_back();
 
-   for (len=0; Path[len]; len++);
+      if (auto assetdir = AAssetManager_openDir(mgr, dir_path.c_str())) {
+         if (AAssetDir_getNextFileName(assetdir)) dir = true;
+         AAssetDir_close(assetdir);
+      }
+   }
 
-   if ((Path[len-1] IS '/') or (Path[len-1] IS '\\')) Info->Flags |= RDF::FOLDER;
-   else if (dir) Info->Flags |= RDF::FOLDER;
-   else Info->Flags |= RDF::FILE|RDF::SIZE;
+   Info.Flags = RDF::NIL;
+   Info.Modified.Year   = 2013;
+   Info.Modified.Month  = 1;
+   Info.Modified.Day    = 1;
+   Info.Modified.Hour   = 0;
+   Info.Modified.Minute = 0;
+   Info.Modified.Second = 0;
+
+   if (Path.ends_with('/') or Path.ends_with('\\')) Info.Flags |= RDF::FOLDER;
+   else if (dir) Info.Flags |= RDF::FOLDER;
+   else Info.Flags |= RDF::FILE|RDF::SIZE;
 
    // Extract the file name
 
-   i = len;
-   if ((Path[i-1] IS '/') or (Path[i-1] IS '\\')) i--;
-   while ((i > 0) and (Path[i-1] != '/') and (Path[i-1] != '\\') and (Path[i-1] != ':')) i--;
-   Info->Name.assign(Path, i, std::string::npos);
-
-   if ((Info->Flags & RDF::FOLDER) != RDF::NIL) {
-      if (Info->Name.ends_with('\\')) Info->Name[Info->Name.size() - 1] = '/';
-      else if (not Info->Name.ends_with('/')) Info->Name += '/';
+   auto name_path = Path;
+   while ((name_path.size() > LEN_ASSETS) and (name_path.ends_with('/') or name_path.ends_with('\\'))) {
+      name_path.remove_suffix(1);
    }
 
-   Info->Permissions = 0;
-   Info->UserID      = 0;
-   Info->GroupID     = 0;
-   Info->Tags        = nullptr;
+   auto name_start = name_path.find_last_of("/\\:");
+   if (name_start IS std::string_view::npos) Info.Name = name_path;
+   else Info.Name.assign(name_path, name_start + 1, std::string::npos);
+
+   if ((Info.Flags & RDF::FOLDER) != RDF::NIL) {
+      if (Info.Name.ends_with('\\')) Info.Name[Info.Name.size() - 1] = '/';
+      else if (not Info.Name.ends_with('/')) Info.Name += '/';
+   }
+
+   Info.Permissions = 0;
+   Info.UserID      = 0;
+   Info.GroupID     = 0;
+   Info.Tags        = nullptr;
    return ERR::Okay;
 }
 
 //********************************************************************************************************************
 // Test an assets: location.
 
-static ERR test_path(std::string &Path, int Flags, LOC *Type)
+static ERR test_path(std::string &Path, RSF Flags, LOC *Type)
 {
    kt::Log log(__FUNCTION__);
    AAssetManager *mgr;
