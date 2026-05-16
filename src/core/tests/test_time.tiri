@@ -42,13 +42,13 @@ end
 end
 
 ------------------------------------------------------------------------------------------------------------------------
--- Test TimeStamp field functionality
+-- Test Timestamp field functionality
 
-@Test function TimeStamp()
+@Test function Timestamp()
    time_obj = obj.new('time')
    time_obj.acQuery()
-   timestamp = time_obj.timeStamp
-   assert(timestamp > 0, 'TimeStamp should be positive, got: ' .. tostring(timestamp))
+   timestamp = time_obj.timestamp
+   assert(timestamp > 0, 'Timestamp should be positive, got: ' .. tostring(timestamp))
 end
 
 ------------------------------------------------------------------------------------------------------------------------

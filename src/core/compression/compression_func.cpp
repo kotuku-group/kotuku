@@ -101,8 +101,8 @@ static ERR compress_folder(extCompression *Self, std::string Location, std::stri
 
       DateTime *tm;
       if (file->get(FID_Date, tm) IS ERR::Okay) {
-         if (tm->Year < 1980) entry.TimeStamp = 0x00210000;
-         else entry.TimeStamp = ((tm->Year-1980)<<25) | (tm->Month<<21) | (tm->Day<<16) | (tm->Hour<<11) | (tm->Minute<<5) | (tm->Second>>1);
+         if (tm->Year < 1980) entry.Timestamp = 0x00210000;
+         else entry.Timestamp = ((tm->Year-1980)<<25) | (tm->Month<<21) | (tm->Day<<16) | (tm->Hour<<11) | (tm->Minute<<5) | (tm->Second>>1);
       }
 
       // Write the compression file entry
@@ -113,7 +113,7 @@ static ERR compress_folder(extCompression *Self, std::string Location, std::stri
       copymem(glHeader, header, sizeof(glHeader));
 
       wrb<uint16_t>(entry.DeflateMethod, header + HEAD_DEFLATEMETHOD);
-      wrb<uint32_t>(entry.TimeStamp, header + HEAD_TIMESTAMP);
+      wrb<uint32_t>(entry.Timestamp, header + HEAD_TIMESTAMP);
       wrb<uint32_t>(entry.CRC, header + HEAD_CRC);
       wrb<uint32_t>(entry.CompressedSize, header + HEAD_COMPRESSEDSIZE);
       wrb<uint32_t>(entry.OriginalSize, header + HEAD_FILESIZE);
@@ -290,8 +290,8 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
 
    DateTime *time;
    if (file->get(FID_Date, time) IS ERR::Okay) {
-      if (time->Year < 1980) entry.TimeStamp = 0x00210000;
-      else entry.TimeStamp = ((time->Year-1980)<<25) | (time->Month<<21) | (time->Day<<16) | (time->Hour<<11) | (time->Minute<<5) | (time->Second>>1);
+      if (time->Year < 1980) entry.Timestamp = 0x00210000;
+      else entry.Timestamp = ((time->Year-1980)<<25) | (time->Month<<21) | (time->Day<<16) | (time->Hour<<11) | (time->Minute<<5) | (time->Second>>1);
    }
 
    PERMIT permissions;
@@ -387,7 +387,7 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
    uint8_t header[sizeof(glHeader)];
    copymem(glHeader, header, sizeof(glHeader));
    wrb<uint16_t>(entry.DeflateMethod, header + HEAD_DEFLATEMETHOD);
-   wrb<uint32_t>(entry.TimeStamp, header + HEAD_TIMESTAMP);
+   wrb<uint32_t>(entry.Timestamp, header + HEAD_TIMESTAMP);
    wrb<uint32_t>(entry.CRC, header + HEAD_CRC);
    wrb<uint32_t>(entry.CompressedSize, header + HEAD_COMPRESSEDSIZE);
    wrb<uint32_t>(entry.OriginalSize, header + HEAD_FILESIZE);
@@ -531,7 +531,7 @@ static ERR fast_scan_zip(extCompression *Self)
          zf.CompressedSize = scan->compressedsize;
          zf.OriginalSize   = scan->originalsize;
          zf.DeflateMethod  = scan->deflatemethod;
-         zf.TimeStamp      = scan->timestamp;
+         zf.Timestamp      = scan->timestamp;
          zf.CRC            = scan->crc32;
          zf.Offset         = scan->offset;
 
@@ -642,7 +642,7 @@ static ERR scan_zip(extCompression *Self)
          entry.CompressedSize = zipentry.compressedsize;
          entry.OriginalSize   = zipentry.originalsize;
          entry.DeflateMethod  = zipentry.deflatemethod;
-         entry.TimeStamp      = zipentry.timestamp;
+         entry.Timestamp      = zipentry.timestamp;
          entry.CRC            = zipentry.crc32;
          entry.Offset         = zipentry.offset;
 
@@ -730,7 +730,7 @@ static void write_eof(extCompression *Self)
             copymem(glList, elist, sizeof(glList));
 
             wrb<uint16_t>(chain.DeflateMethod, elist+LIST_METHOD);
-            wrb<uint32_t>(chain.TimeStamp, elist+LIST_TIMESTAMP);
+            wrb<uint32_t>(chain.Timestamp, elist+LIST_TIMESTAMP);
             wrb<uint32_t>(chain.CRC, elist+LIST_CRC);
             wrb<uint32_t>(chain.CompressedSize, elist+LIST_COMPRESSEDSIZE);
             wrb<uint32_t>(chain.OriginalSize, elist+LIST_FILESIZE);
@@ -772,12 +772,12 @@ void zipfile_to_item(ZipFile &ZF, CompressedItem &Item)
 {
    clearmem(&Item, sizeof(Item));
 
-   Item.Modified.Year   = 1980 + ((ZF.TimeStamp>>25) & 0x3f);
-   Item.Modified.Month  = (ZF.TimeStamp>>21) & 0x0f;
-   Item.Modified.Day    = (ZF.TimeStamp>>16) & 0x1f;
-   Item.Modified.Hour   = (ZF.TimeStamp>>11) & 0x1f;
-   Item.Modified.Minute = (ZF.TimeStamp>>5)  & 0x3f;
-   Item.Modified.Second = (ZF.TimeStamp>>1)  & 0x0f;
+   Item.Modified.Year   = 1980 + ((ZF.Timestamp>>25) & 0x3f);
+   Item.Modified.Month  = (ZF.Timestamp>>21) & 0x0f;
+   Item.Modified.Day    = (ZF.Timestamp>>16) & 0x1f;
+   Item.Modified.Hour   = (ZF.Timestamp>>11) & 0x1f;
+   Item.Modified.Minute = (ZF.Timestamp>>5)  & 0x3f;
+   Item.Modified.Second = (ZF.Timestamp>>1)  & 0x0f;
    Item.Path            = ZF.Name.c_str();
    Item.OriginalSize    = ZF.OriginalSize;
    Item.CompressedSize  = ZF.CompressedSize;

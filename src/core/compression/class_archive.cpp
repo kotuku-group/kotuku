@@ -444,8 +444,8 @@ static ERR ARCHIVE_GET_Size(extFile *Self, int64_t *Value)
 static ERR ARCHIVE_GET_Timestamp(extFile *Self, int64_t *Value)
 {
    if (auto prv = (prvFileArchive *)Self->ChildPrivate) {
-      if (prv->Info.TimeStamp) {
-         *Value = prv->Info.TimeStamp;
+      if (prv->Info.Timestamp) {
+         *Value = prv->Info.Timestamp;
          return ERR::Okay;
       }
       else {

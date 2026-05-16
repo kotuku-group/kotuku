@@ -143,7 +143,7 @@ struct ZipFile {
    uint32_t  OriginalSize = 0;
    int   Year = 0;
    int   Flags = 0;         // These match the zip 'attrib' value
-   uint32_t  TimeStamp = 0;     // Time stamp information
+   uint32_t  Timestamp = 0;     // Time stamp information
    uint32_t  CRC = 0;           // CRC validation number
    uint32_t  Offset = 0;        // Byte offset of the file within the archive
    uint16_t  NameLen = 0;       // The zip record's name length, including padding.
@@ -1160,12 +1160,12 @@ static ERR COMPRESSION_DecompressFile(extCompression *Self, struct cmp::Decompre
 
          // Send compression feedback
 
-         feedback.Year   = 1980 + ((zf.TimeStamp>>25) & 0x3f);
-         feedback.Month  = (zf.TimeStamp>>21) & 0x0f;
-         feedback.Day    = (zf.TimeStamp>>16) & 0x1f;
-         feedback.Hour   = (zf.TimeStamp>>11) & 0x1f;
-         feedback.Minute = (zf.TimeStamp>>5)  & 0x3f;
-         feedback.Second = (zf.TimeStamp>>1)  & 0x0f;
+         feedback.Year   = 1980 + ((zf.Timestamp>>25) & 0x3f);
+         feedback.Month  = (zf.Timestamp>>21) & 0x0f;
+         feedback.Day    = (zf.Timestamp>>16) & 0x1f;
+         feedback.Hour   = (zf.Timestamp>>11) & 0x1f;
+         feedback.Minute = (zf.Timestamp>>5)  & 0x3f;
+         feedback.Second = (zf.Timestamp>>1)  & 0x0f;
          feedback.FeedbackID     = FDB::DECOMPRESS_FILE;
          feedback.Index          = Self->FileIndex;
          feedback.Path           = zf.Name.c_str();
@@ -1480,12 +1480,12 @@ static ERR COMPRESSION_DecompressObject(extCompression *Self, struct cmp::Decomp
 
       // Send compression feedback
 
-      fb.Year   = 1980 + ((list.TimeStamp>>25) & 0x3f);
-      fb.Month  = (list.TimeStamp>>21) & 0x0f;
-      fb.Day    = (list.TimeStamp>>16) & 0x1f;
-      fb.Hour   = (list.TimeStamp>>11) & 0x1f;
-      fb.Minute = (list.TimeStamp>>5)  & 0x3f;
-      fb.Second = (list.TimeStamp>>1)  & 0x0f;
+      fb.Year   = 1980 + ((list.Timestamp>>25) & 0x3f);
+      fb.Month  = (list.Timestamp>>21) & 0x0f;
+      fb.Day    = (list.Timestamp>>16) & 0x1f;
+      fb.Hour   = (list.Timestamp>>11) & 0x1f;
+      fb.Minute = (list.Timestamp>>5)  & 0x3f;
+      fb.Second = (list.Timestamp>>1)  & 0x0f;
       fb.FeedbackID     = FDB::DECOMPRESS_OBJECT;
       fb.Index          = Self->FileIndex;
       fb.Path           = list.Name.c_str();

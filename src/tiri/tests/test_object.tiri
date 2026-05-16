@@ -160,11 +160,11 @@ end
       error("Expected error when accessing invalid field")
    end
 
-   -- Test OBSETF - write to a read-only field (runtime error, timeStamp exists in dictionary)
+   -- Test OBSETF - write to a read-only field (runtime error, timestamp exists in dictionary)
    try
-      t.timeStamp = 1
+      t.timestamp = 1
    except ex
-      assert(ex.message:find('Time.timeStamp'), "Error message should mention the accessed field, got: " .. ex.message)
+      assert(ex.message:find('Time.timestamp'), "Error message should mention the accessed field, got: " .. ex.message)
    success
       error("Expected error when writing a read-only field")
    end

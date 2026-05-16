@@ -30,7 +30,7 @@ To get the current system time, use the #Query() action.
 #include <unistd.h>
 #endif
 
-static ERR GET_TimeStamp(objTime *, int64_t *);
+static ERR GET_Timestamp(objTime *, int64_t *);
 
 static ERR TIME_Query(objTime *);
 static ERR TIME_SetTime(objTime *);
@@ -196,17 +196,17 @@ TimeZone: No information.
 Status: private
 
 -FIELD-
-TimeStamp: Read this field to get representation of the time as a single integer.
+Timestamp: Read this field to get representation of the time as a single integer.
 
-The TimeStamp field is a 64-bit integer that represents the time object as an approximation of the number of
+The Timestamp field is a 64-bit integer that represents the time object as an approximation of the number of
 milliseconds represented in the time object (approximately the total amount of time passed since Zero-AD).  This is
 convenient for summarising a time value for comparison with other time stamps, or for storing time in a 64-bit space.
 
-The TimeStamp value is dynamically calculated when reading this field.
+The Timestamp value is dynamically calculated when reading this field.
 
 *********************************************************************************************************************/
 
-static ERR GET_TimeStamp(objTime *Self, int64_t *Value)
+static ERR GET_Timestamp(objTime *Self, int64_t *Value)
 {
    *Value = Self->Second +
             (int64_t(Self->Minute) * 60) +
@@ -241,7 +241,7 @@ static const FieldArray clFields[] = {
    { "MilliSecond",  FDF_INT|FDF_RW },
    { "MicroSecond",  FDF_INT|FDF_RW },
    // Virtual fields
-   { "TimeStamp",    FDF_INT64|FDF_R, GET_TimeStamp },
+   { "Timestamp",    FDF_INT64|FDF_R, GET_Timestamp },
    END_FIELD
 };
 

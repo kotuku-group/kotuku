@@ -634,7 +634,7 @@ end
    report = {
       evals = { },
       config = { },
-      timestamp = tm.timeStamp,
+      timestamp = tm.timestamp,
       git = { branch=git_info.branch, commit=git_info.commit }
    }
 
