@@ -17,10 +17,14 @@ To get the current system time, use the #Query() action.
 
 #include "../defs.h"
 #include <kotuku/main.h>
+#include <cstring>
+#include <fstream>
 #include <chrono>
 #include <time.h>
+#include <vector>
 
 #ifdef __unix__
+#include <filesystem>
 #include <sys/ioctl.h>
 #include <sys/time.h>
  #ifdef __linux__
@@ -42,6 +46,316 @@ static ERR tzi_free(APTR Address)
 }
 
 static ResourceManager glTimeZoneHandler = { "TimeZoneInfo", &tzi_free };
+
+//********************************************************************************************************************
+
+static int64_t utc_year_start_us(const int Year)
+{
+   auto day = std::chrono::sys_days(std::chrono::year(Year) / std::chrono::January / 1);
+   return int64_t(std::chrono::duration_cast<std::chrono::microseconds>(day.time_since_epoch()).count());
+}
+
+//********************************************************************************************************************
+
+static bool is_utc_zone(std::string_view ZoneID)
+{
+   return iequals(ZoneID, "UTC") or iequals(ZoneID, "Etc/UTC") or iequals(ZoneID, "Etc/GMT") or
+      iequals(ZoneID, "GMT") or iequals(ZoneID, "Zulu");
+}
+
+//********************************************************************************************************************
+
+static void fill_utc_info(TimeZoneInfo &Info, const int StartYear, const int EndYear, const int IsLocal,
+   const int IsFallback)
+{
+   Info = TimeZoneInfo();
+   Info.ZoneID             = "UTC";
+   Info.NativeID           = "UTC";
+   Info.Source             = "utc";
+   Info.BaseOffset         = 0;
+   Info.TransitionCount    = 0;
+   Info.TransitionsWritten = 0;
+   Info.StartYear          = StartYear;
+   Info.EndYear            = EndYear;
+   Info.IsLocal            = IsLocal;
+   Info.IsFallback         = IsFallback;
+}
+
+#ifdef _WIN32
+
+static ERR get_windows_timezone_info(std::string_view ZoneID, const int StartYear, const int EndYear,
+   TimeZoneInfo &Info)
+{
+   rkTimeZoneInfo host_info;
+   ERR error = winGetTimeZoneInfo(ZoneID, StartYear, EndYear, host_info);
+   if (error IS ERR::Okay) { }
+   else return error;
+
+   Info = TimeZoneInfo();
+   Info.ZoneID             = std::move(host_info.ZoneID);
+   Info.NativeID           = std::move(host_info.NativeID);
+   Info.Source             = std::move(host_info.Source);
+   Info.DataPath           = std::move(host_info.DataPath);
+   Info.Version            = std::move(host_info.Version);
+   Info.BaseOffset         = host_info.BaseOffset;
+   Info.TransitionCount    = host_info.TransitionCount;
+   Info.TransitionsWritten = host_info.TransitionsWritten;
+   Info.StartYear          = host_info.StartYear;
+   Info.EndYear            = host_info.EndYear;
+   Info.IsLocal            = host_info.IsLocal;
+   Info.IsFallback         = host_info.IsFallback;
+
+   Info.Transitions.reserve(host_info.Transitions.size());
+   for (auto &host_transition : host_info.Transitions) {
+      auto &transition = Info.Transitions.emplace_back();
+      transition.Instant         = host_transition.Instant;
+      transition.Abbreviation    = std::move(host_transition.Abbreviation);
+      transition.OffsetBefore    = host_transition.OffsetBefore;
+      transition.OffsetAfter     = host_transition.OffsetAfter;
+      transition.DaylightSaving  = host_transition.DaylightSaving;
+   }
+
+   return ERR::Okay;
+}
+
+#endif
+
+#if defined(__linux__)
+
+struct TZifType {
+   int Offset;
+   int IsDst;
+   int Abbreviation;
+};
+
+//********************************************************************************************************************
+
+static uint32_t tzif_u32(const unsigned char *Data)
+{
+   return (uint32_t(Data[0]) << 24) | (uint32_t(Data[1]) << 16) | (uint32_t(Data[2]) << 8) | uint32_t(Data[3]);
+}
+
+//********************************************************************************************************************
+
+static int32_t tzif_i32(const unsigned char *Data)
+{
+   return int32_t(tzif_u32(Data));
+}
+
+//********************************************************************************************************************
+
+static int64_t tzif_i64(const unsigned char *Data)
+{
+   const uint64_t value = (uint64_t(Data[0]) << 56) | (uint64_t(Data[1]) << 48) | (uint64_t(Data[2]) << 40) |
+      (uint64_t(Data[3]) << 32) | (uint64_t(Data[4]) << 24) | (uint64_t(Data[5]) << 16) |
+      (uint64_t(Data[6]) << 8) | uint64_t(Data[7]);
+   return int64_t(value);
+}
+
+//********************************************************************************************************************
+
+static bool read_binary_file(const std::filesystem::path &Path, std::vector<unsigned char> &Data)
+{
+   std::ifstream file(Path, std::ios::binary);
+   if (not file) return false;
+
+   Data.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+   return not Data.empty();
+}
+
+//********************************************************************************************************************
+
+static std::string read_tzdb_version()
+{
+   std::ifstream file("/usr/share/zoneinfo/tzdata.zi");
+   std::string line;
+   if (std::getline(file, line) and line.starts_with("# version ")) return line.substr(10);
+   return {};
+}
+
+//********************************************************************************************************************
+
+static bool safe_iana_zone(std::string_view ZoneID)
+{
+   return (not ZoneID.empty()) and (ZoneID.front() != '/') and (ZoneID.front() != '\\') and
+      (ZoneID.find("..") IS std::string_view::npos) and (ZoneID.find('\\') IS std::string_view::npos);
+}
+
+//********************************************************************************************************************
+
+static bool tzif_block_size(const std::vector<unsigned char> &Data, const size_t Offset, const bool Wide,
+   size_t &BlockSize)
+{
+   if (Data.size() < Offset + 44) return false;
+   if (memcmp(Data.data() + Offset, "TZif", 4) != 0) return false;
+
+   const uint32_t ttisgmtcnt = tzif_u32(Data.data() + Offset + 20);
+   const uint32_t ttisstdcnt = tzif_u32(Data.data() + Offset + 24);
+   const uint32_t leapcnt    = tzif_u32(Data.data() + Offset + 28);
+   const uint32_t timecnt    = tzif_u32(Data.data() + Offset + 32);
+   const uint32_t typecnt    = tzif_u32(Data.data() + Offset + 36);
+   const uint32_t charcnt    = tzif_u32(Data.data() + Offset + 40);
+
+   const size_t time_size = Wide ? 8 : 4;
+   const size_t leap_size = Wide ? 12 : 8;
+   BlockSize = 44 + (size_t(timecnt) * time_size) + timecnt + (size_t(typecnt) * 6) + charcnt +
+      (size_t(leapcnt) * leap_size) + ttisstdcnt + ttisgmtcnt;
+
+   return Data.size() >= Offset + BlockSize;
+}
+
+//********************************************************************************************************************
+
+static bool parse_tzif_block(const std::vector<unsigned char> &Data, const size_t Offset, const bool Wide,
+   std::string_view ZoneID, const std::filesystem::path &Path, const int StartYear, const int EndYear,
+   const int IsLocal, TimeZoneInfo &Info)
+{
+   size_t block_size = 0;
+   if (not tzif_block_size(Data, Offset, Wide, block_size)) return false;
+
+   const uint32_t timecnt = tzif_u32(Data.data() + Offset + 32);
+   const uint32_t typecnt = tzif_u32(Data.data() + Offset + 36);
+   const uint32_t charcnt = tzif_u32(Data.data() + Offset + 40);
+   if (typecnt IS 0) return false;
+
+   size_t pos = Offset + 44;
+   std::vector<int64_t> times(timecnt);
+   for (uint32_t i = 0; i < timecnt; i++) {
+      times[i] = Wide ? tzif_i64(Data.data() + pos) : int64_t(tzif_i32(Data.data() + pos));
+      pos += Wide ? 8 : 4;
+   }
+
+   std::vector<unsigned char> indices(timecnt);
+   for (uint32_t i = 0; i < timecnt; i++) indices[i] = Data[pos++];
+
+   std::vector<TZifType> types(typecnt);
+   for (uint32_t i = 0; i < typecnt; i++) {
+      types[i].Offset       = tzif_i32(Data.data() + pos);
+      types[i].IsDst        = int(Data[pos + 4]);
+      types[i].Abbreviation = int(Data[pos + 5]);
+      pos += 6;
+   }
+
+   const char *abbreviations = (const char *)(Data.data() + pos);
+
+   int base_type = 0;
+   for (uint32_t i = 0; i < typecnt; i++) {
+      if (types[i].IsDst IS 0) {
+         base_type = int(i);
+         break;
+      }
+   }
+
+   Info = TimeZoneInfo();
+   Info.ZoneID      = std::string(ZoneID);
+   Info.NativeID    = std::string(ZoneID);
+   Info.Source      = "tzif";
+   Info.DataPath    = Path.generic_string();
+   Info.Version     = read_tzdb_version();
+   Info.BaseOffset  = types[base_type].Offset;
+   Info.StartYear   = StartYear;
+   Info.EndYear     = EndYear;
+   Info.IsLocal     = IsLocal;
+   Info.IsFallback  = 0;
+
+   int previous_type = base_type;
+   const int64_t start_us = utc_year_start_us(StartYear);
+   const int64_t end_us = utc_year_start_us(EndYear + 1);
+
+   for (uint32_t i = 0; i < timecnt; i++) {
+      const int after_type = int(indices[i]);
+      if ((after_type < 0) or (after_type >= int(types.size()))) return false;
+
+      const int64_t instant_us = times[i] * 1000000LL;
+      if ((instant_us >= start_us) and (instant_us < end_us)) {
+         TimeZoneTransition transition;
+         transition.Instant         = instant_us;
+         transition.OffsetBefore    = types[previous_type].Offset;
+         transition.OffsetAfter     = types[after_type].Offset;
+         transition.DaylightSaving  = types[after_type].IsDst ? 1 : 0;
+
+         const int abbr_index = types[after_type].Abbreviation;
+         if ((abbr_index >= 0) and (abbr_index < int(charcnt))) transition.Abbreviation = abbreviations + abbr_index;
+
+         Info.Transitions.push_back(std::move(transition));
+      }
+
+      previous_type = after_type;
+   }
+
+   Info.TransitionCount    = int(Info.Transitions.size());
+   Info.TransitionsWritten = Info.TransitionCount;
+   return true;
+}
+
+//********************************************************************************************************************
+
+static bool parse_tzif_file(const std::filesystem::path &Path, std::string_view ZoneID, const int StartYear,
+   const int EndYear, const int IsLocal, TimeZoneInfo &Info)
+{
+   std::vector<unsigned char> data;
+   if (not read_binary_file(Path, data)) return false;
+   if (data.size() < 44) return false;
+   if (memcmp(data.data(), "TZif", 4) != 0) return false;
+
+   const char version = char(data[4]);
+   if ((version IS '2') or (version IS '3') or (version IS '4')) {
+      size_t first_block = 0;
+      if (not tzif_block_size(data, 0, false, first_block)) return false;
+      return parse_tzif_block(data, first_block, true, ZoneID, Path, StartYear, EndYear, IsLocal, Info);
+   }
+
+   return parse_tzif_block(data, 0, false, ZoneID, Path, StartYear, EndYear, IsLocal, Info);
+}
+
+//********************************************************************************************************************
+
+static std::string local_linux_zone_id(const std::filesystem::path &Path)
+{
+   std::error_code error;
+   if (not std::filesystem::is_symlink(Path, error)) return "local";
+
+   auto target = std::filesystem::read_symlink(Path, error);
+   if (error) return "local";
+
+   if (target.is_relative()) target = std::filesystem::weakly_canonical(Path.parent_path() / target, error);
+   if (error) return "local";
+
+   const auto target_string = target.generic_string();
+   constexpr std::string_view prefix = "/usr/share/zoneinfo/";
+   if (target_string.starts_with(prefix)) return target_string.substr(prefix.size());
+   return "local";
+}
+
+//********************************************************************************************************************
+
+static ERR get_linux_timezone_info(std::string_view ZoneID, const int StartYear, const int EndYear, TimeZoneInfo &Info)
+{
+   const bool is_local = ZoneID.empty();
+   std::filesystem::path path;
+   std::string public_id;
+
+   if (is_local) {
+      path = "/etc/localtime";
+      public_id = local_linux_zone_id(path);
+   }
+   else {
+      if (not safe_iana_zone(ZoneID)) return ERR::Search;
+      path = std::filesystem::path("/usr/share/zoneinfo") / std::string(ZoneID);
+      public_id = std::string(ZoneID);
+   }
+
+   if (parse_tzif_file(path, public_id, StartYear, EndYear, is_local ? 1 : 0, Info)) return ERR::Okay;
+
+   if (is_local) {
+      fill_utc_info(Info, StartYear, EndYear, 1, 1);
+      return ERR::Okay;
+   }
+
+   return ERR::Search;
+}
+
+#endif
 
 /*********************************************************************************************************************
 -ACTION-
@@ -105,28 +419,44 @@ GetTimeZoneInfo: .
 cstr ZoneID: Empty or NULL requests the local system zone.
 int StartYear: Inclusive first year.  Must be non-zero.
 int EndYear: Inclusive final year.  Must be >= StartYear.
-&struct(TimeZoneInfo) Info: Receives metadata and transitions.
+!struct(*TimeZoneInfo) Info: Receives metadata and transitions.
 
 -END-
 
 *********************************************************************************************************************/
 
-static ERR TIME_GetTimeZoneInfo(objTime *Self, struct ptGetTimeZoneInfo *Args)
+static ERR TIME_GetTimeZoneInfo(objTime *Self, struct pt::GetTimeZoneInfo *Args)
 {
    kt::Log log;
 
    if (!Args) return log.warning(ERR::NullArgs);
+   if ((Args->StartYear IS 0) or (Args->EndYear < Args->StartYear)) return log.warning(ERR::OutOfRange);
 
    struct TimeZoneInfo *tz;
    if (AllocMemory(sizeof(struct TimeZoneInfo), MEM::DATA|MEM::MANAGED, (APTR *)&tz, nullptr) IS ERR::Okay) {
       new (tz) struct TimeZoneInfo;
       SetResourceMgr(tz, &glTimeZoneHandler);
+      Args->Info = tz;
 
+      const std::string_view zone_id = Args->ZoneID ? std::string_view(Args->ZoneID) : std::string_view();
+      if (is_utc_zone(zone_id)) {
+         fill_utc_info(*tz, Args->StartYear, Args->EndYear, zone_id.empty() ? 1 : 0, 0);
+         return ERR::Okay;
+      }
 
-
+   #ifdef _WIN32
+      return get_windows_timezone_info(zone_id, Args->StartYear, Args->EndYear, *tz);
+   #elif defined(__linux__)
+      return get_linux_timezone_info(zone_id, Args->StartYear, Args->EndYear, *tz);
+   #else
+      if (zone_id.empty()) {
+         fill_utc_info(*tz, Args->StartYear, Args->EndYear, 1, 1);
+         return ERR::Okay;
+      }
+      else return ERR::Search;
+   #endif
    }
-   else return ERR::AllocMemory;
-   return ERR::Okay;
+   else return log.warning(ERR::AllocMemory);
 }
 
 /*********************************************************************************************************************

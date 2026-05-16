@@ -190,6 +190,62 @@ end
 end
 
 ------------------------------------------------------------------------------------------------------------------------
+-- Test time zone information
+
+@Test function TimeZoneInfoLocal()
+   time_obj = obj.new('time')
+   err, info = time_obj.mtGetTimeZoneInfo(nil, 2024, 2025)
+
+   assert(err is ERR_Okay, 'Local GetTimeZoneInfo() failed: ' .. mSys.GetErrorMsg(err))
+   assert(info != nil, 'Local GetTimeZoneInfo() did not return an info table.')
+   assert(info.zoneID??, 'Local time zone should report a zone ID.')
+   assert(info.nativeID??, 'Local time zone should report a native ID.')
+   assert((info.source is 'win32') or (info.source is 'tzif') or (info.source is 'utc'), 'Unexpected local time zone source: ' .. tostring(info.source))
+   assert(info.startYear is 2024, 'StartYear was not preserved.')
+   assert(info.endYear is 2025, 'EndYear was not preserved.')
+   assert(info.isLocal is 1, 'Local query should set IsLocal.')
+   assert(info.transitionCount >= 0, 'Transition count should be non-negative.')
+   assert(info.transitionsWritten is info.transitionCount, 'Transition written count should match returned transitions.')
+end
+
+@Test function TimeZoneInfoUTC()
+   time_obj = obj.new('time')
+   err, info = time_obj.mtGetTimeZoneInfo('UTC', 2024, 2025)
+
+   assert(err is ERR_Okay, 'UTC GetTimeZoneInfo() failed: ' .. mSys.GetErrorMsg(err))
+   assert(info.zoneID is 'UTC', 'UTC query should report UTC zone ID.')
+   assert(info.nativeID is 'UTC', 'UTC query should report UTC native ID.')
+   assert(info.source is 'utc', 'UTC query should report utc source.')
+   assert(info.baseOffset is 0, 'UTC base offset should be zero.')
+   assert(info.transitionCount is 0, 'UTC should not report transitions.')
+   assert(info.transitionsWritten is 0, 'UTC should not write transitions.')
+   assert(info.isFallback is 0, 'Explicit UTC should not be marked as a fallback.')
+end
+
+@Test function TimeZoneInfoExplicitZone()
+   state = mSys.GetSystemState()
+   time_obj = obj.new('time')
+
+   if state.platform is 'Windows' then
+      err, info = time_obj.mtGetTimeZoneInfo('Europe/London', 2024, 2025)
+      assert(err is ERR_Okay, 'Europe/London should map to a Windows time zone: ' .. mSys.GetErrorMsg(err))
+      assert(info.nativeID is 'GMT Standard Time', 'Europe/London should map to GMT Standard Time.')
+      assert(info.source is 'win32', 'Windows explicit time zone should report win32 source.')
+   else
+      err, info = time_obj.mtGetTimeZoneInfo('UTC', 2024, 2025)
+      assert(err is ERR_Okay, 'Installed UTC zone should be available: ' .. mSys.GetErrorMsg(err))
+      assert(info.source is 'utc', 'Explicit UTC should use utc source.')
+   end
+end
+
+@Test function TimeZoneInfoInvalidZone()
+   time_obj = obj.new('time')
+   err, info = time_obj.mtGetTimeZoneInfo('Invalid/Definitely_Not_A_Zone', 2024, 2025)
+
+   assert(err is ERR_Search, 'Invalid explicit zone should return ERR_Search, got: ' .. mSys.GetErrorMsg(err))
+end
+
+------------------------------------------------------------------------------------------------------------------------
 -- Test SetTime method
 -- Note: Requires administrator privileges
 -- On Windows: needs SE_SYSTEMTIME_NAME privilege or admin rights

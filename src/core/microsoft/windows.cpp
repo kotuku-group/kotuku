@@ -4,7 +4,7 @@
 #pragma warning (disable : 4244 4311 4312 4267 4244 4068) // Disable annoying VC++ warnings
 #endif
 
-#define _WIN32_WINNT 0x0600 // Required for CRITICAL_SECTION - min version. Windows Vista
+#define _WIN32_WINNT 0x0601 // Required for time-zone APIs and CRITICAL_SECTION.
 #define NO_STRICT // Turn off type management due to C++ mangling issues.
 #define PSAPI_VERSION 1
 
@@ -59,6 +59,9 @@ constexpr int MAX_ENV_VALUE = 512;
 #include <string>
 #include <array>
 #include <chrono>
+#include <string_view>
+#include <cstring>
+#include <vector>
 
 #define WAITLOCK_EVENTS 1 // Use events instead of semaphores for waitlocks (recommended)
 
@@ -2686,6 +2689,302 @@ extern "C" int winCheckDirectoryExists(CSTRING Path)
 
       return 0;
    }
+}
+
+//********************************************************************************************************************
+// Time zone information wrappers.
+
+struct WindowsZoneMap {
+   CSTRING IANA;
+   CSTRING Windows;
+};
+
+static const WindowsZoneMap glWindowsZones[] = {
+   { "Etc/UTC",                "UTC" },
+   { "UTC",                    "UTC" },
+   { "Etc/GMT",                "UTC" },
+   { "Europe/London",          "GMT Standard Time" },
+   { "Europe/Dublin",          "GMT Standard Time" },
+   { "Europe/Lisbon",          "GMT Standard Time" },
+   { "Europe/Berlin",          "W. Europe Standard Time" },
+   { "Europe/Paris",           "Romance Standard Time" },
+   { "Europe/Madrid",          "Romance Standard Time" },
+   { "Europe/Rome",            "W. Europe Standard Time" },
+   { "Europe/Amsterdam",       "W. Europe Standard Time" },
+   { "America/New_York",       "Eastern Standard Time" },
+   { "America/Detroit",        "Eastern Standard Time" },
+   { "America/Chicago",        "Central Standard Time" },
+   { "America/Denver",         "Mountain Standard Time" },
+   { "America/Phoenix",        "US Mountain Standard Time" },
+   { "America/Los_Angeles",    "Pacific Standard Time" },
+   { "America/Anchorage",      "Alaskan Standard Time" },
+   { "Pacific/Honolulu",       "Hawaiian Standard Time" },
+   { "America/Toronto",        "Eastern Standard Time" },
+   { "America/Vancouver",      "Pacific Standard Time" },
+   { "America/Mexico_City",    "Central Standard Time (Mexico)" },
+   { "America/Sao_Paulo",      "E. South America Standard Time" },
+   { "America/Argentina/Buenos_Aires", "Argentina Standard Time" },
+   { "Asia/Tokyo",             "Tokyo Standard Time" },
+   { "Asia/Shanghai",          "China Standard Time" },
+   { "Asia/Hong_Kong",         "China Standard Time" },
+   { "Asia/Singapore",         "Singapore Standard Time" },
+   { "Asia/Seoul",             "Korea Standard Time" },
+   { "Asia/Kolkata",           "India Standard Time" },
+   { "Asia/Dubai",             "Arabian Standard Time" },
+   { "Australia/Sydney",       "AUS Eastern Standard Time" },
+   { "Australia/Melbourne",    "AUS Eastern Standard Time" },
+   { "Australia/Perth",        "W. Australia Standard Time" },
+   { "Pacific/Auckland",       "New Zealand Standard Time" },
+   { nullptr,                   nullptr }
+};
+
+//********************************************************************************************************************
+
+static bool win_string_iequals(std::string_view Left, CSTRING Right)
+{
+   if (not Right) return false;
+   const auto right_len = strlen(Right);
+   return (Left.size() IS right_len) and (_strnicmp(Left.data(), Right, right_len) IS 0);
+}
+
+//********************************************************************************************************************
+
+static bool win_is_utc_zone(std::string_view ZoneID)
+{
+   return win_string_iequals(ZoneID, "UTC") or win_string_iequals(ZoneID, "Etc/UTC") or
+      win_string_iequals(ZoneID, "Etc/GMT") or win_string_iequals(ZoneID, "GMT") or
+      win_string_iequals(ZoneID, "Zulu");
+}
+
+//********************************************************************************************************************
+
+static int64_t win_utc_year_start_us(const int Year)
+{
+   auto day = std::chrono::sys_days(std::chrono::year(Year) / std::chrono::January / 1);
+   return int64_t(std::chrono::duration_cast<std::chrono::microseconds>(day.time_since_epoch()).count());
+}
+
+//********************************************************************************************************************
+
+static void win_fill_utc_timezone_info(rkTimeZoneInfo &Info, const int StartYear, const int EndYear, const int IsLocal,
+   const int IsFallback)
+{
+   Info = rkTimeZoneInfo();
+   Info.ZoneID             = "UTC";
+   Info.NativeID           = "UTC";
+   Info.Source             = "utc";
+   Info.BaseOffset         = 0;
+   Info.TransitionCount    = 0;
+   Info.TransitionsWritten = 0;
+   Info.StartYear          = StartYear;
+   Info.EndYear            = EndYear;
+   Info.IsLocal            = IsLocal;
+   Info.IsFallback         = IsFallback;
+}
+
+//********************************************************************************************************************
+
+static std::string win_wide_to_utf8(const wchar_t *Text)
+{
+   if ((not Text) or (not Text[0])) return {};
+
+   const int size = WideCharToMultiByte(CP_UTF8, 0, Text, -1, nullptr, 0, nullptr, nullptr);
+   if (size <= 1) return {};
+
+   std::string result(size, 0);
+   WideCharToMultiByte(CP_UTF8, 0, Text, -1, result.data(), size, nullptr, nullptr);
+   result.pop_back();
+   return result;
+}
+
+//********************************************************************************************************************
+
+static std::wstring win_utf8_to_wide(std::string_view Text)
+{
+   if (Text.empty()) return {};
+
+   const int size = MultiByteToWideChar(CP_UTF8, 0, Text.data(), int(Text.size()), nullptr, 0);
+   if (size <= 0) return {};
+
+   std::wstring result(size, 0);
+   MultiByteToWideChar(CP_UTF8, 0, Text.data(), int(Text.size()), result.data(), size);
+   return result;
+}
+
+//********************************************************************************************************************
+
+static CSTRING win_windows_id_from_iana(std::string_view ZoneID)
+{
+   for (auto map = glWindowsZones; map->IANA; map++) {
+      if (win_string_iequals(ZoneID, map->IANA)) return map->Windows;
+   }
+
+   return nullptr;
+}
+
+//********************************************************************************************************************
+
+static CSTRING win_iana_from_windows_id(std::string_view NativeID)
+{
+   for (auto map = glWindowsZones; map->IANA; map++) {
+      if (win_string_iequals(NativeID, map->Windows)) return map->IANA;
+   }
+
+   return nullptr;
+}
+
+//********************************************************************************************************************
+
+static bool win_find_timezone(std::string_view NativeID, DYNAMIC_TIME_ZONE_INFORMATION &Zone)
+{
+   const auto native_wide = win_utf8_to_wide(NativeID);
+   if (native_wide.empty()) return false;
+   if (native_wide.size() >= std::size(Zone.TimeZoneKeyName)) return false;
+
+   memset(&Zone, 0, sizeof(Zone));
+   wcscpy_s(Zone.TimeZoneKeyName, std::size(Zone.TimeZoneKeyName), native_wide.c_str());
+   return true;
+}
+
+//********************************************************************************************************************
+
+static int win_timezone_offset_seconds(const LONG Bias, const LONG Adjustment)
+{
+   return -int(Bias + Adjustment) * 60;
+}
+
+//********************************************************************************************************************
+
+static int win_last_day_of_month(const int Year, const int Month)
+{
+   auto last = std::chrono::year_month_day_last(std::chrono::year(Year) / std::chrono::month(unsigned(Month)) /
+      std::chrono::last);
+   return int(unsigned(last.day()));
+}
+
+//********************************************************************************************************************
+
+static bool win_transition_local_us(const int Year, const SYSTEMTIME &Rule, int64_t &LocalTime)
+{
+   if (Rule.wMonth IS 0) return false;
+
+   const auto first_day = std::chrono::sys_days(std::chrono::year(Year) / std::chrono::month(Rule.wMonth) / 1);
+   const auto first_weekday = std::chrono::weekday(first_day).c_encoding();
+   int day = 1 + int((7 + int(Rule.wDayOfWeek) - int(first_weekday)) % 7) + (int(Rule.wDay) - 1) * 7;
+
+   const int month_days = win_last_day_of_month(Year, int(Rule.wMonth));
+   if (day > month_days) day -= 7;
+
+   LocalTime = int64_t(std::chrono::duration_cast<std::chrono::microseconds>(first_day.time_since_epoch()).count());
+   LocalTime += int64_t(day - 1) * 24LL * 60LL * 60LL * 1000000LL;
+   LocalTime += int64_t(Rule.wHour) * 60LL * 60LL * 1000000LL;
+   LocalTime += int64_t(Rule.wMinute) * 60LL * 1000000LL;
+   LocalTime += int64_t(Rule.wSecond) * 1000000LL;
+   LocalTime += int64_t(Rule.wMilliseconds) * 1000LL;
+   return true;
+}
+
+//********************************************************************************************************************
+
+static void win_add_timezone_transition(std::vector<rkTimeZoneTransition> &Transitions, const int Year,
+   const SYSTEMTIME &Rule, const int OffsetBefore, const int OffsetAfter, const int DaylightSaving,
+   const std::string &Name, const int StartYear, const int EndYear)
+{
+   int64_t local_us = 0;
+   if (not win_transition_local_us(Year, Rule, local_us)) return;
+
+   rkTimeZoneTransition transition;
+   transition.Instant         = local_us - (int64_t(OffsetBefore) * 1000000LL);
+   transition.Abbreviation    = Name;
+   transition.OffsetBefore    = OffsetBefore;
+   transition.OffsetAfter     = OffsetAfter;
+   transition.DaylightSaving  = DaylightSaving;
+
+   if ((transition.Instant >= win_utc_year_start_us(StartYear)) and
+         (transition.Instant < win_utc_year_start_us(EndYear + 1))) {
+      Transitions.push_back(std::move(transition));
+   }
+}
+
+//********************************************************************************************************************
+
+ERR winGetTimeZoneInfo(std::string_view ZoneID, const int StartYear, const int EndYear, rkTimeZoneInfo &Info)
+{
+   const bool is_local = ZoneID.empty();
+   DYNAMIC_TIME_ZONE_INFORMATION dynamic_zone;
+   memset(&dynamic_zone, 0, sizeof(dynamic_zone));
+
+   std::string native_id;
+
+   if (is_local) {
+      if (GetDynamicTimeZoneInformation(&dynamic_zone) IS TIME_ZONE_ID_INVALID) {
+         win_fill_utc_timezone_info(Info, StartYear, EndYear, 1, 1);
+         return ERR::Okay;
+      }
+
+      native_id = win_wide_to_utf8(dynamic_zone.TimeZoneKeyName);
+      if (native_id.empty()) native_id = win_wide_to_utf8(dynamic_zone.StandardName);
+   }
+   else {
+      CSTRING mapped_id = win_windows_id_from_iana(ZoneID);
+      native_id = mapped_id ? mapped_id : std::string(ZoneID);
+
+      if (win_is_utc_zone(native_id)) {
+         win_fill_utc_timezone_info(Info, StartYear, EndYear, 0, 0);
+         return ERR::Okay;
+      }
+
+      if (not win_find_timezone(native_id, dynamic_zone)) return ERR::Search;
+   }
+
+   Info = rkTimeZoneInfo();
+   Info.NativeID    = native_id;
+   Info.Source      = "win32";
+   Info.StartYear   = StartYear;
+   Info.EndYear     = EndYear;
+   Info.IsLocal     = is_local ? 1 : 0;
+   Info.IsFallback  = 0;
+
+   if (is_local) {
+      CSTRING iana_id = win_iana_from_windows_id(native_id);
+      Info.ZoneID = iana_id ? iana_id : native_id;
+   }
+   else Info.ZoneID = std::string(ZoneID);
+
+   TIME_ZONE_INFORMATION year_zone;
+   memset(&year_zone, 0, sizeof(year_zone));
+
+   if (not GetTimeZoneInformationForYear(USHORT(StartYear), &dynamic_zone, &year_zone)) {
+      if (is_local) return ERR::SystemCall;
+      else return ERR::Search;
+   }
+
+   Info.BaseOffset = win_timezone_offset_seconds(year_zone.Bias, year_zone.StandardBias);
+
+   for (int year = StartYear; year <= EndYear; year++) {
+      memset(&year_zone, 0, sizeof(year_zone));
+      if (not GetTimeZoneInformationForYear(USHORT(year), &dynamic_zone, &year_zone)) return ERR::SystemCall;
+
+      const int standard_offset = win_timezone_offset_seconds(year_zone.Bias, year_zone.StandardBias);
+      const int daylight_offset = win_timezone_offset_seconds(year_zone.Bias, year_zone.DaylightBias);
+
+      if ((year_zone.DaylightDate.wMonth IS 0) or (year_zone.StandardDate.wMonth IS 0) or
+            (standard_offset IS daylight_offset)) {
+         continue;
+      }
+
+      win_add_timezone_transition(Info.Transitions, year, year_zone.DaylightDate, standard_offset, daylight_offset, 1,
+         win_wide_to_utf8(year_zone.DaylightName), StartYear, EndYear);
+      win_add_timezone_transition(Info.Transitions, year, year_zone.StandardDate, daylight_offset, standard_offset, 0,
+         win_wide_to_utf8(year_zone.StandardName), StartYear, EndYear);
+   }
+
+   std::sort(Info.Transitions.begin(), Info.Transitions.end(), [](const rkTimeZoneTransition &A,
+      const rkTimeZoneTransition &B) { return A.Instant < B.Instant; });
+
+   Info.TransitionCount    = int(Info.Transitions.size());
+   Info.TransitionsWritten = Info.TransitionCount;
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************

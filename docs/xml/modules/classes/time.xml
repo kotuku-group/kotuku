@@ -41,13 +41,13 @@
     <method>
       <name>GetTimeZoneInfo</name>
       <comment>.</comment>
-      <prototype>ERR pt::GetTimeZoneInfo(OBJECTPTR Object, CSTRING ZoneID, INT StartYear, INT EndYear, struct TimeZoneInfo * Info)</prototype>
+      <prototype>ERR pt::GetTimeZoneInfo(OBJECTPTR Object, CSTRING ZoneID, INT StartYear, INT EndYear, struct TimeZoneInfo ** Info)</prototype>
       <tiriPrototype>err, Info:any = GetTimeZoneInfo(ZoneID:str, StartYear:num, EndYear:num)</tiriPrototype>
       <input>
         <param type="CSTRING" name="ZoneID">Empty or NULL requests the local system zone.</param>
         <param type="INT" name="StartYear">Inclusive first year.  Must be non-zero.</param>
         <param type="INT" name="EndYear">Inclusive final year.  Must be &gt;= StartYear.</param>
-        <param type="struct TimeZoneInfo *" name="Info">Receives metadata and transitions.</param>
+        <param type="struct TimeZoneInfo **" name="Info">Receives metadata and transitions.</param>
       </input>
       <description>
 

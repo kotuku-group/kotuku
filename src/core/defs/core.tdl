@@ -745,6 +745,9 @@ using ModTest    = void (*)(CSTRING, int *, int *);
      int OffsetBefore       # UTC offset in seconds before the transition.
      int OffsetAfter        # UTC offset in seconds after the transition.
      int DaylightSaving     # 1 if the resulting period observes daylight-saving time.
+  ]],
+  [[
+   TimeZoneTransition() : Instant(0), OffsetBefore(0), OffsetAfter(0), DaylightSaving(0) { }
   ]])
 
   struct("TimeZoneInfo", { comment="Time zone information returned from GetTimeZoneInfo()" }, [[
@@ -761,6 +764,11 @@ using ModTest    = void (*)(CSTRING, int *, int *);
      int EndYear            # Inclusive requested end year.
      int IsLocal            # 1 if ZoneID requested the local system zone.
      int IsFallback         # 1 if UTC fallback was used.
+  ]],
+  [[
+   TimeZoneInfo() : BaseOffset(0), TransitionCount(0), TransitionsWritten(0), StartYear(0), EndYear(0), IsLocal(0),
+      IsFallback(0) { }
+   TimeZoneInfo(int) : TimeZoneInfo() { }
   ]])
 
   struct("SystemState", { comment="Returned by the GetSystemState() function." }, [[

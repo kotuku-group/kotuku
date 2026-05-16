@@ -1789,6 +1789,7 @@ struct TimeZoneTransition {
    int     OffsetBefore;        // UTC offset in seconds before the transition.
    int     OffsetAfter;         // UTC offset in seconds after the transition.
    int     DaylightSaving;      // 1 if the resulting period observes daylight-saving time.
+   TimeZoneTransition() : Instant(0), OffsetBefore(0), OffsetAfter(0), DaylightSaving(0) { }
 };
 
 struct TimeZoneInfo {
@@ -1805,6 +1806,9 @@ struct TimeZoneInfo {
    int EndYear;                                   // Inclusive requested end year.
    int IsLocal;                                   // 1 if ZoneID requested the local system zone.
    int IsFallback;                                // 1 if UTC fallback was used.
+   TimeZoneInfo() : BaseOffset(0), TransitionCount(0), TransitionsWritten(0), StartYear(0), EndYear(0), IsLocal(0),
+      IsFallback(0) { }
+   TimeZoneInfo(int) : TimeZoneInfo() { }
 };
 
 struct SystemState {
@@ -3578,7 +3582,7 @@ class objModule : public Object {
 
 namespace pt {
 struct SetTime { static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct GetTimeZoneInfo { CSTRING ZoneID; int StartYear; int EndYear; struct TimeZoneInfo Info; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetTimeZoneInfo { CSTRING ZoneID; int StartYear; int EndYear; struct TimeZoneInfo * Info; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -3609,8 +3613,8 @@ class objTime : public Object {
    inline ERR setTime() noexcept {
       return(Action(AC(-1), this, nullptr));
    }
-   inline ERR getTimeZoneInfo(CSTRING ZoneID, int StartYear, int EndYear, struct TimeZoneInfo * Info) noexcept {
-      struct pt::GetTimeZoneInfo args = { ZoneID, StartYear, EndYear, (struct TimeZoneInfo)0 };
+   inline ERR getTimeZoneInfo(CSTRING ZoneID, int StartYear, int EndYear, struct TimeZoneInfo ** Info) noexcept {
+      struct pt::GetTimeZoneInfo args = { ZoneID, StartYear, EndYear, (struct TimeZoneInfo *)0 };
       ERR error = Action(AC(-2), this, &args);
       if (Info) *Info = args.Info;
       return(error);
