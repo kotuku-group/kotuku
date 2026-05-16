@@ -68,6 +68,9 @@ static void cache_connection_info(ssl_context* SSL);
 #ifndef MS_ENH_RSA_AES_PROV
 #define MS_ENH_RSA_AES_PROV "Microsoft Enhanced RSA and AES Cryptographic Provider"
 #endif
+#ifndef PKCS12_PREFER_CNG_KSP
+#define PKCS12_PREFER_CNG_KSP 0x00000100
+#endif
 
 // Buffer size for SSL operations - optimized for SSL record sizes
 constexpr size_t SSL_IO_BUFFER_SIZE = 0x8000;  // 32KB - 2x max SSL record size (16KB)
