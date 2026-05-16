@@ -188,6 +188,8 @@ function file_to_info(Path:str):table
       if file_flags has FL_VIRTUAL then info.flags = info.flags | RDF_VIRTUAL end
       if file_flags has FL_STREAM  then info.flags = info.flags | RDF_STREAM end
 
+      if Path:endsWith(':') then info.flags = info.flags | RDF_VOLUME end
+
       return info
    end
 end
