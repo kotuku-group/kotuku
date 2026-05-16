@@ -874,28 +874,6 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
   </function>
 
   <function>
-    <name>GetFileInfo</name>
-    <category>Files</category>
-    <comment>Gets information about a file or folder.</comment>
-    <prototype>ERR GetFileInfo(const std::string_view &amp; Path, struct FileInfo * Info, INT InfoSize)</prototype>
-    <tiriPrototype>err = GetFileInfo(Path:str, Info:any, InfoSize:num)</tiriPrototype>
-    <input>
-      <param type="const std::string_view &amp;" name="Path">String referring to the file or folder to be queried.</param>
-      <param type="struct FileInfo *" name="Info">Pointer to a <st>FileInfo</st> structure to be populated.</param>
-      <param type="INT" name="InfoSize">Size of the <st>FileInfo</st> structure in bytes.</param>
-    </input>
-    <description>
-<p>This function will return information about a file or folder when given a valid file location.  The current user must have read access to the given file.  This function does not allow for the approximation of file names.  To approximate a file location, open it as a <class name="File">File</class> object or use <function>ResolvePath</function> first.</p>
-    </description>
-    <result type="ERR">
-      <error code="Okay">Operation successful.</error>
-      <error code="Args">Invalid arguments passed to function</error>
-      <error code="LockFailed">Failed to lock a required resource</error>
-      <error code="NoSupport">The target filesystem does not support the operation.</error>
-    </result>
-  </function>
-
-  <function>
     <name>GetObjectPtr</name>
     <category>Objects</category>
     <comment>Returns a direct pointer for any object ID.</comment>

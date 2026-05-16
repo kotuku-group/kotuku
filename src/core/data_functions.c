@@ -42,7 +42,6 @@ FDEF argsGetActionMsg[] = { { "Message", FD_PTR|FD_STRUCT|FD_RESOURCE }, { 0, 0 
 FDEF argsGetClassID[] = { { "Result", FD_INT|FD_UNSIGNED }, { "Object", FD_OBJECTID }, { 0, 0 } };
 FDEF argsGetErrorMsg[] = { { "Result", FD_STR }, { "Error", FD_INT|FD_ERROR }, { 0, 0 } };
 FDEF argsGetEventID[] = { { "Result", FD_INT64 }, { "Group", FD_INT }, { "SubGroup", FD_STR }, { "Event", FD_STR }, { 0, 0 } };
-FDEF argsGetFileInfo[] = { { "Error", FD_INT|FD_ERROR }, { "Path", FD_CPP|FD_STR }, { "FileInfo:Info", FD_PTR|FD_STRUCT }, { "InfoSize", FD_INT|FD_BUFSIZE }, { 0, 0 } };
 FDEF argsGetObjectPtr[] = { { "Object", FD_OBJECTPTR }, { "Object", FD_OBJECTID }, { 0, 0 } };
 FDEF argsGetOwnerID[] = { { "Result", FD_OBJECTID }, { "Object", FD_OBJECTID }, { 0, 0 } };
 FDEF argsGetResource[] = { { "Result", FD_INT64 }, { "Resource", FD_INT }, { 0, 0 } };
@@ -194,7 +193,6 @@ const struct Function glFunctions[] = {
    { (APTR)AsyncCancel, "AsyncCancel", argsAsyncCancel },
    { (APTR)AsyncPending, "AsyncPending", argsAsyncPending },
    { (APTR)AsyncWait, "AsyncWait", argsAsyncWait },
-   { (APTR)GetFileInfo, "GetFileInfo", argsGetFileInfo },
    { (APTR)ClassDatabase, "ClassDatabase", argsClassDatabase },
    { nullptr, nullptr, nullptr }
 };

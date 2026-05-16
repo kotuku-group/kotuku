@@ -698,7 +698,7 @@ static ERR FILE_Init(extFile *Self)
       // If the file already exists, pull the permissions from it.  Otherwise use a default set of permissions (if
       // possible, inherit permissions from the file's folder).
 
-      if (((Self->Flags & FL::NEW) != FL::NIL) and (GetFileInfo(Self->Path, &info, sizeof(info)) IS ERR::Okay)) {
+      if (((Self->Flags & FL::NEW) != FL::NIL) and (get_file_info(Self->Path, info) IS ERR::Okay)) {
          log.msg("Using permissions of the original file.");
          Self->Permissions |= info.Permissions;
       }
@@ -2044,7 +2044,7 @@ static ERR GET_Icon(extFile *Self, CSTRING *Value)
 
    FileInfo info;
    bool link = false;
-   if (GetFileInfo(Self->Path, &info, sizeof(info)) IS ERR::Okay) {
+   if (get_file_info(Self->Path, info) IS ERR::Okay) {
       if ((info.Flags & RDF::LINK) != RDF::NIL) link = true;
 
       if ((info.Flags & RDF::VIRTUAL) != RDF::NIL) { // Virtual drives can specify custom icons, even for folders

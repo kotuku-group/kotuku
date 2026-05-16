@@ -324,11 +324,11 @@ struct virtual_drive {
    ERR (*Delete)(std::string_view, FUNCTION *);
    ERR (*OpenDir)(DirInfo *);
    ERR (*CloseDir)(DirInfo *);
-   ERR (*Obsolete)(std::string_view, DirInfo **, int);
+   ERR (*Obsolete)(void);
    ERR (*TestPath)(std::string &, RSF, LOC *);
    ERR (*WatchPath)(class extFile *);
    void  (*IgnoreFile)(class extFile *);
-   ERR (*GetInfo)(std::string_view, FileInfo *, int);
+   ERR (*GetInfo)(std::string_view, FileInfo &);
    ERR (*GetDeviceInfo)(std::string_view, objStorageDevice *);
    ERR (*IdentifyFile)(std::string_view, CLASSID *, CLASSID *);
    ERR (*CreateFolder)(std::string_view, PERMIT);
@@ -1093,9 +1093,9 @@ ERR WakeThread(int Thread, int Stop = false);
 ERR fs_closedir(DirInfo *);
 ERR fs_createlink(std::string_view, std::string_view);
 ERR fs_delete(std::string_view, FUNCTION *);
-ERR fs_getinfo(std::string_view, FileInfo *, int);
+ERR fs_getinfo(std::string_view, FileInfo &);
 ERR fs_getdeviceinfo(std::string_view, objStorageDevice *);
-void  fs_ignore_file(class extFile *);
+void fs_ignore_file(class extFile *);
 ERR fs_makedir(std::string_view, PERMIT);
 ERR fs_opendir(DirInfo *);
 ERR fs_readlink(std::string_view, STRING *);
@@ -1155,6 +1155,7 @@ void   register_sleep(int);
 void   deregister_sleep(void);
 void   remove_process_waitlocks(void);
 CLASSID lookup_class_by_ext(CLASSID, std::string_view);
+ERR get_file_info(const std::string_view &Path, FileInfo &Info);
 
 #ifndef KOTUKU_STATIC
 void   scan_classes(void);

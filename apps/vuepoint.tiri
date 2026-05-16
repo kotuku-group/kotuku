@@ -86,7 +86,7 @@ glIntroduction = [[
    glSaveFilter = array<table> { }
 
    glScript = obj.find('self')
-   mSys.SetVolume('vuepoint', glScript.workingPath)
+   mSys.SetVolume('vuepoint', glScript.workingPath, 'misc/gallery', 'Vuepoint', nil, VOLUME_HIDDEN)
 
    picmeta = mSys.FindClass(CLASSID_PICTURE)
    file_ext = picmeta.fileExtension

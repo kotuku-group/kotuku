@@ -1101,7 +1101,6 @@ struct ScriptArg { // For use with sc::Exec
     "AsyncCancel",
     "AsyncPending",
     "AsyncWait",
-    "GetFileInfo",
     "ClassDatabase")
 
   c_insert([==[
