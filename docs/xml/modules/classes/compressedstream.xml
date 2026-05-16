@@ -274,19 +274,17 @@
     </constants>
 
     <constants lookup="RDF" comment="Flags for the OpenDir() function.">
-      <const name="ARCHIVE">Feedback only - archive bit is set.</const>
       <const name="DATE">Retrieve the date stamp of each file.</const>
       <const name="FILE">Read all files in the folder.</const>
       <const name="FILES">Read all files in the folder.</const>
       <const name="FOLDER">Read all folders/volumes in the folder.</const>
       <const name="FOLDERS">Read all folders/volumes in the folder.</const>
-      <const name="HIDDEN">Feedback only - file/folder is hidden.</const>
       <const name="LINK">Feedback only - file/folder is actually a link to another location.</const>
       <const name="PERMISSIONS">Get permission/security information.</const>
       <const name="QUALIFIED">Return fully qualified folder names (i.e. trailing slash or colon for each name).</const>
       <const name="QUALIFY">Return fully qualified folder names (i.e. trailing slash or colon for each name).</const>
       <const name="READ_ALL">Synonym for <code>SIZE | DATE | PERMISSIONS | FILES | FOLDERS</code></const>
-      <const name="READ_ONLY">Read-only (not permissions related and might indicate read-only media).</const>
+      <const name="READ_ONLY">Read-only (not permissions related, can indicate read-only media).</const>
       <const name="SIZE">Retrieve the byte size of each file.</const>
       <const name="STREAM">Path is connected via a stream, e.g. network connection.</const>
       <const name="TAGS">Receive additional information for each file, such as comments, author and copyright.  The results are stored in the <code>Tags</code> field of each file.</const>

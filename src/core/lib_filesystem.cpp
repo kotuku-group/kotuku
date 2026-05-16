@@ -260,7 +260,7 @@ ERR get_file_info(const std::string_view &Path, FileInfo &Info)
 
       if (auto lock = std::unique_lock{glmVolumes, 1s}) {
          if (glVolumes.contains(Info.Name)) {
-            if (glVolumes[Info.Name]["Hidden"] IS "Yes") Info.Flags |= RDF::HIDDEN;
+            if (glVolumes[Info.Name]["Hidden"] IS "Yes") Info.Permissions |= PERMIT::HIDDEN;
          }
       }
 
@@ -2186,9 +2186,9 @@ ERR fs_scandir(DirInfo *Dir)
    int8_t dir, hidden, readonly, archive;
 
    while (winScan(&Dir->prvHandle, Dir->prvResolvedPath, Dir->Info->Name, &Dir->Info->Size, &Dir->Info->Created, &Dir->Info->Modified, &dir, &hidden, &readonly, &archive)) {
-      if (hidden)   Dir->Info->Flags |= RDF::HIDDEN;
+      if (hidden)   Dir->Info->Permissions |= PERMIT::HIDDEN;
       if (readonly) Dir->Info->Flags |= RDF::READ_ONLY;
-      if (archive)  Dir->Info->Flags |= RDF::ARCHIVE;
+      if (archive)  Dir->Info->Permissions |= PERMIT::ARCHIVE;
 
       if (dir) {
          if ((Dir->prvFlags & RDF::FOLDER) IS RDF::NIL) { Dir->Info->Name.clear(); continue; }

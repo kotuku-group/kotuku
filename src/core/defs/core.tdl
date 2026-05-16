@@ -200,12 +200,10 @@ constexpr bool defined(T flags, T test_flag) noexcept {
     "VOLUME: Feedback only - indicates a volume.",
     "LINK: Feedback only - file/folder is actually a link to another location.",
     "TAGS: Receive additional information for each file, such as comments, author and copyright.  The results are stored in the `Tags` field of each file.",
-    "HIDDEN: Feedback only - file/folder is hidden.",
     "QUALIFY|QUALIFIED: Return fully qualified folder names (i.e. trailing slash or colon for each name).",
     "VIRTUAL: Path is to a virtual device.",
     "STREAM: Path is connected via a stream, e.g. network connection.",
-    "READ_ONLY: Read-only (not permissions related and might indicate read-only media).",
-    "ARCHIVE: Feedback only - archive bit is set.",
+    "READ_ONLY: Read-only (not permissions related, can indicate read-only media).",
     "OPENDIR: Internal option.",
     { READ_ALL = "SIZE|DATE|PERMISSIONS|FILES|FOLDERS" })
 

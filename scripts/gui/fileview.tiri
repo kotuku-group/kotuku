@@ -168,7 +168,10 @@ function file_to_info(Path:str):table
    try
       file = obj.new('file', { path=Path })
 
+      local folder_name, file_name = io.splitPath(file.path)
+
       info = {
+         name        = file_name,
          size        = file.size,
          timestamp   = file.timestamp,
          modified    = file.date,
@@ -185,7 +188,6 @@ function file_to_info(Path:str):table
       if file_flags has FL_VIRTUAL then info.flags = info.flags | RDF_VIRTUAL end
       if file_flags has FL_STREAM  then info.flags = info.flags | RDF_STREAM end
 
-      if info.permissions has PERMIT_HIDDEN then info.flags = info.flags | RDF_HIDDEN end
       return info
    end
 end
@@ -474,7 +476,7 @@ end
 
 function createFileItem(self, Info)
    if not self.showHidden then
-      if Info.flags has RDF_HIDDEN then return end
+      if Info.permissions has PERMIT_HIDDEN then return end
    end
 
    msg('createFileItem() ' .. Info.name .. string.format(', $%.8x', Info.flags))
@@ -622,7 +624,7 @@ gui.fileview = function(Options)
 
       if not findItem(Info.name) then -- Add missing volume
          info = file_to_info(Info.name .. ':')
-         if (info) and not (info.flags has RDF_HIDDEN) then
+         if (info) and not (info.permissions has PERMIT_HIDDEN) then
             addFileItem(self, info)
             self.view.sort()
          end
@@ -688,7 +690,7 @@ gui.fileview = function(Options)
 
          info = dirinfo.info
 
-         if (info.flags has RDF_VOLUME) and (info.flags has RDF_HIDDEN) then
+         if (info.flags has RDF_VOLUME) and (info.permissions has PERMIT_HIDDEN) then
             -- Ignore hidden volumes
          elseif #self.view.items is 0 then -- Empty view, this is the first file.
             addFileItem(self, info)
