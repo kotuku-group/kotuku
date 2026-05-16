@@ -88,11 +88,14 @@ static ERR tls_setup_server(extNetServer *Self)
       }
    }
    else {
+      auto private_key_path = glCertPath + "localhost-key.pem";
+      std::optional<const std::string> private_key(private_key_path);
       std::optional<const std::string> no_private_key;
       std::optional<const std::string> no_password;
 
       if (!load_pkcs12_certificate(Self->TLS.Handle, glCertPath + "localhost.p12", no_password)) {
-         if (!load_pem_certificate(Self->TLS.Handle, glCertPath + "localhost.pem", no_private_key, no_password)) {
+         if ((!load_pem_certificate(Self->TLS.Handle, glCertPath + "localhost.pem", private_key, no_password)) and
+             (!load_pem_certificate(Self->TLS.Handle, glCertPath + "localhost.pem", no_private_key, no_password))) {
             ssl_free_context(Self->TLS.Handle);
             Self->TLS.Handle = nullptr;
             return log.warning(ERR::Failed);

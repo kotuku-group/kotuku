@@ -871,6 +871,7 @@ bool load_pkcs12_certificate(SSL_HANDLE SSL, const std::string &Path, std::optio
 
    auto wide_password = password_to_wide(Password);
    DWORD import_flags = CRYPT_EXPORTABLE | CRYPT_USER_KEYSET;
+   import_flags |= PKCS12_PREFER_CNG_KSP;
    #ifdef PKCS12_NO_PERSIST_KEY
       import_flags |= PKCS12_NO_PERSIST_KEY;
    #endif
