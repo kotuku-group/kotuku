@@ -754,7 +754,12 @@ static int struct_get(lua_State *Lua)
             APTR address = (int8_t *)fs->Data + field.Offset;
             int array_size = (not field.ArraySize) ? -1 : field.ArraySize;
 
-            if ((field.Type & FD_STRUCT) and (field.Type & FD_PTR) and (not field.StructRef.empty())) { // Pointer to structure
+            if ((field.Type & FD_CPP) and (field.Type & FD_ARRAY) and (not field.StructRef.empty()) and
+                  (not (field.Type & FD_PTR))) {
+               auto vector = (kt::vector<int> *)(address);
+               make_struct_serial_array(Lua, field.StructRef, vector->size(), vector->data());
+            }
+            else if ((field.Type & FD_STRUCT) and (field.Type & FD_PTR) and (not field.StructRef.empty())) { // Pointer to structure
                if (((APTR *)address)[0]) {
                   if (field.Type & FD_ARRAY) { // Array of pointers to structures.
                      if (field.Type & FD_CPP) {
@@ -766,6 +771,13 @@ static int struct_get(lua_State *Lua)
                   else push_struct(Lua->script, ((APTR *)address)[0], field.StructRef, false, false);
                }
                else lua_pushnil(Lua);
+            }
+            else if ((field.Type & FD_STRUCT) and (field.Type & FD_ARRAY)) { // Embedded structure array.
+               if (field.Type & FD_CPP) {
+                  auto vector = (kt::vector<int> *)(address);
+                  make_any_array(Lua, field.Type, field.StructRef, vector->size(), vector->data());
+               }
+               else make_any_array(Lua, field.Type, field.StructRef, array_size, address);
             }
             else if (field.Type & FD_STRUCT) { // Embedded structure
                push_struct(Lua->script, address, field.StructRef, false, false);
