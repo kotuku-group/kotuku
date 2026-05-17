@@ -569,9 +569,12 @@ function convert_time_zone_transition(Transition:table):table
 end
 
 function convert_time_zone_info(Info:table):table
-   local transitions = {}
-   for transition in values(Info.transitions ?? {}) do
-      table.insert(transitions, convert_time_zone_transition(transition))
+   local transitions = array<table> {}
+   local source_transitions = Info.transitions
+   if source_transitions is nil then source_transitions = {} end
+
+   for _, transition in ipairs(source_transitions) do
+      transitions:push(convert_time_zone_transition(transition))
    end
 
    return {
