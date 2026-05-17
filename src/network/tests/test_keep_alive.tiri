@@ -1,0 +1,126 @@
+--[[
+TCP keep-alive socket option smoke tests.
+--]]
+
+   include 'network'
+   mNet ?= mod.load('network')
+
+glPort = 18420
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ClientKeepAliveConnects()
+   glPort++
+   received_msg = nil
+
+   server = obj.new('netserver', {
+      name = 'KeepAliveServer',
+      address = '127.0.0.1',
+      incoming = function(Socket:obj, Client:obj)
+         buffer = string.alloc(256)
+         err, read_len = Client.acRead(buffer)
+         assert(err is ERR_Okay, '[Server] Read failed: ' .. mSys.GetErrorMsg(err))
+         received_msg = buffer:substr(0, read_len)
+         Socket.acSignal()
+      end,
+      port = glPort,
+   })
+
+   client = obj.new('netsocket', {
+      name = 'KeepAliveClient',
+      flags = NSF_KEEP_ALIVE,
+      feedback = function(Socket:obj, State:num)
+         if State is NTC_CONNECTED then
+            err, len = Socket.acWrite('client-keep-alive')
+            assert(err is ERR_Okay, '[Client] Write failed: ' .. mSys.GetErrorMsg(err))
+         end
+      end,
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<object> { server } })
+   check client.mtConnect('127.0.0.1', glPort)
+   check proc.sleep()
+
+   assert(received_msg is 'client-keep-alive', 'Server did not receive client keep-alive payload.')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ServerKeepAliveAcceptsClient()
+   glPort++
+   received_msg = nil
+
+   server = obj.new('netserver', {
+      name = 'KeepAliveAcceptServer',
+      address = '127.0.0.1',
+      flags = NSF_KEEP_ALIVE,
+      feedback = function(Socket:obj, Client:obj, State:num)
+         if State is NTC_CONNECTED then
+            err, len = Client.acWrite('server-keep-alive')
+            assert(err is ERR_Okay, '[Server] Write failed: ' .. mSys.GetErrorMsg(err))
+         end
+      end,
+      incoming = function(Socket:obj, Client:obj)
+         buffer = string.alloc(64)
+         err, read_len = Client.acRead(buffer)
+         assert((err is ERR_Okay) or (err is ERR_Disconnected), '[Server] Read failed: ' .. mSys.GetErrorMsg(err))
+      end,
+      port = glPort,
+   })
+
+   client = obj.new('netsocket', {
+      name = 'KeepAliveAcceptClient',
+      incoming = function(Socket:obj)
+         buffer = string.alloc(256)
+         err, read_len = Socket.acRead(buffer)
+         assert(err is ERR_Okay, '[Client] Read failed: ' .. mSys.GetErrorMsg(err))
+         received_msg = buffer:substr(0, read_len)
+         server.acSignal()
+      end,
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<object> { server } })
+   check client.mtConnect('127.0.0.1', glPort)
+   check proc.sleep()
+
+   assert(received_msg is 'server-keep-alive', 'Client did not receive server keep-alive payload.')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function UdpIgnoresKeepAliveFlag()
+   glPort++
+   received_msg = nil
+
+   server = obj.new('netserver', {
+      name = 'KeepAliveUdpServer',
+      address = '127.0.0.1',
+      flags = NSF_UDP|NSF_KEEP_ALIVE,
+      incoming = function(Socket:obj)
+         source = struct.new('IPAddress')
+         buffer = string.alloc(256)
+         err, read_len = Socket.mtRecvFrom(source, buffer)
+         assert(err is ERR_Okay, '[UDP Server] RecvFrom failed: ' .. mSys.GetErrorMsg(err))
+         received_msg = buffer:substr(0, read_len)
+         Socket.acSignal()
+      end,
+      port = glPort,
+   })
+
+   client = obj.new('netsocket', {
+      name = 'KeepAliveUdpClient',
+      flags = NSF_UDP|NSF_KEEP_ALIVE,
+   })
+
+   dest = struct.new('IPAddress')
+   check mNet.StrToAddress('127.0.0.1', dest)
+   dest.Port = glPort
+
+   proc = processing.new({ timeout = 5.0, signals = array<object> { server } })
+   err, sent = client.mtSendTo(dest, 'udp-keep-alive')
+   assert(err is ERR_Okay, '[UDP Client] SendTo failed: ' .. mSys.GetErrorMsg(err))
+   assert(sent is #'udp-keep-alive', 'UDP SendTo byte count mismatch.')
+   check proc.sleep()
+
+   assert(received_msg is 'udp-keep-alive', 'UDP keep-alive flag combination broke datagram delivery.')
+end

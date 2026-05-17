@@ -64,6 +64,7 @@ ERR iocp_receive_from(WSW_SOCKET Socket, void *Buffer, size_t BufferSize, size_t
    int *AddressSize);
 
 ERR iocp_get_local_ip(WSW_SOCKET Socket, void *Address, int *AddressSize);
+ERR iocp_enable_keep_alive(WSW_SOCKET Socket);
 ERR iocp_enable_broadcast(WSW_SOCKET Socket);
 ERR iocp_set_multicast_ttl(WSW_SOCKET Socket, int TTL, bool IPv6);
 ERR iocp_parse_multicast_group(const char *Group, bool &IPv6);

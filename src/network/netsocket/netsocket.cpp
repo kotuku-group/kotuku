@@ -540,6 +540,13 @@ static ERR NETSOCKET_Init(extNetSocket *Self)
    if (Self->Handle.is_invalid()) return ERR::SystemCall;
    Self->IPV6 = is_ipv6;
 
+   if ((!Self->isSubClass()) and (!is_udp) and ((Self->Flags & NSF::KEEP_ALIVE) != NSF::NIL)) {
+      if (auto error = network_platform().enable_keep_alive(Self->Handle); error != ERR::Okay) {
+         free_socket(Self);
+         return error;
+      }
+   }
+
    // Configure UDP-specific socket options
 
    if ((Self->Flags & NSF::UDP) != NSF::NIL) {

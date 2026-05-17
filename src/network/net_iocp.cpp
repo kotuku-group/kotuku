@@ -394,6 +394,11 @@ public:
       return iocp_has_pending_write(Handle.socket());
    }
 
+   ERR enable_keep_alive(SocketHandle Handle) override
+   {
+      return iocp_enable_keep_alive(Handle.socket());
+   }
+
    ERR enable_broadcast(SocketHandle Handle) override
    {
       return iocp_enable_broadcast(Handle.socket());

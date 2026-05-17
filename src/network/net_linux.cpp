@@ -294,6 +294,13 @@ public:
       return false;
    }
 
+   ERR enable_keep_alive(SocketHandle Handle) override
+   {
+      int keep_alive = 1;
+      return setsockopt(Handle, SOL_SOCKET, SO_KEEPALIVE, &keep_alive, sizeof(keep_alive)) ?
+         ERR::SystemCall : ERR::Okay;
+   }
+
    ERR enable_broadcast(SocketHandle Handle) override
    {
       int broadcast = 1;

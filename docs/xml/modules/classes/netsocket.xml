@@ -409,6 +409,7 @@ initially fill the internal write buffer, thereafter it will be called whenever 
     <constants lookup="NSF" comment="NetSocket options">
       <const name="BROADCAST">Enable broadcast (UDP only).</const>
       <const name="DISABLE_SERVER_VERIFY">Disable SSL server certificate verification for client sockets (testing only).</const>
+      <const name="KEEP_ALIVE">Enable TCP keep-alive probes using operating system defaults.</const>
       <const name="LOG_ALL">Print extra log messages.</const>
       <const name="MULTI_CONNECT">Allow multiple connections from the same IP (NetServer only).</const>
       <const name="SSL">Use Secure Sockets Layer for all communication.</const>

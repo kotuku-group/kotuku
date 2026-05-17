@@ -420,6 +420,14 @@ static void server_accept_client_impl(HOSTHANDLE SocketFD, extNetServer *Self)
       return;
    }
 
+   if ((Self->Flags & NSF::KEEP_ALIVE) != NSF::NIL) {
+      if (auto error = network_platform().enable_keep_alive(clientfd); error != ERR::Okay) {
+         log.warning("Failed to enable TCP keep-alive on accepted socket: %s", GetErrorMsg(error));
+         network_platform().close_socket(clientfd);
+         return;
+      }
+   }
+
    // Accept before enforcing admission limits so IOCP-backed servers drain and close completed AcceptEx sockets.
    if ((Self->TotalClients >= Self->ClientLimit) or (Self->TotalClients >= glSocketLimit)) {
       log.error(ERR::ArrayFull);

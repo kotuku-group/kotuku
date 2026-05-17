@@ -143,7 +143,7 @@ endif()
 
 set (NETWORK_TESTS
    bind_address dns_parallel server_io client_server error_handling ipv6 concurrency ssl iocp_pipeline
-   performance
+   performance keep_alive
    # UDP Tests
    udp_basic udp_ipv6 udp_broadcast_multicast udp_tcp_coexistence udp_performance
 )

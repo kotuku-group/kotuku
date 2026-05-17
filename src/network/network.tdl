@@ -35,7 +35,8 @@ typedef int SOCKET_HANDLE;
     "BROADCAST: Enable broadcast (UDP only).",
     "UDP: Use UDP (connectionless datagram protocol) instead of TCP.",
     "DISABLE_SERVER_VERIFY: Disable SSL server certificate verification for client sockets (testing only).",
-    "MULTI_CONNECT: Allow multiple connections from the same IP (NetServer only).")
+    "MULTI_CONNECT: Allow multiple connections from the same IP (NetServer only).",
+    "KEEP_ALIVE: Enable TCP keep-alive probes using operating system defaults.")
 
   flags("NLF", { comment="Options for NetLookup" },
     "NO_CACHE: Contact the name service and do not use the local DNS cache.")

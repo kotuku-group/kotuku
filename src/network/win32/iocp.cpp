@@ -1832,6 +1832,18 @@ ERR iocp_get_local_ip(WSW_SOCKET Socket, void *Address, int *AddressSize)
 
 //********************************************************************************************************************
 
+ERR iocp_enable_keep_alive(WSW_SOCKET Socket)
+{
+   BOOL keep_alive = TRUE;
+   if (setsockopt(socket_from_handle(Socket), SOL_SOCKET, SO_KEEPALIVE, (char *)&keep_alive,
+       sizeof(keep_alive)) IS SOCKET_ERROR) {
+      return convert_error();
+   }
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
 ERR iocp_enable_broadcast(WSW_SOCKET Socket)
 {
    BOOL broadcast = TRUE;

@@ -8,6 +8,7 @@ static const struct FieldDef clNetServerNSF[] = {
    { "Udp", 0x00000010 },
    { "DisableServerVerify", 0x00000020 },
    { "MultiConnect", 0x00000040 },
+   { "KeepAlive", 0x00000080 },
    { nullptr, 0 }
 };
 
