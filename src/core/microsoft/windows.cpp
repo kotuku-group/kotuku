@@ -2774,8 +2774,6 @@ static void win_fill_utc_timezone_info(rkTimeZoneInfo &Info, const int StartYear
    Info.NativeID           = "UTC";
    Info.Source             = "utc";
    Info.BaseOffset         = 0;
-   Info.TransitionCount    = 0;
-   Info.TransitionsWritten = 0;
    Info.StartYear          = StartYear;
    Info.EndYear            = EndYear;
    Info.IsLocal            = IsLocal;
@@ -2982,8 +2980,6 @@ ERR winGetTimeZoneInfo(std::string_view ZoneID, const int StartYear, const int E
    std::sort(Info.Transitions.begin(), Info.Transitions.end(), [](const rkTimeZoneTransition &A,
       const rkTimeZoneTransition &B) { return A.Instant < B.Instant; });
 
-   Info.TransitionCount    = int(Info.Transitions.size());
-   Info.TransitionsWritten = Info.TransitionCount;
    return ERR::Okay;
 }
 

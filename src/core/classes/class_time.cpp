@@ -86,8 +86,6 @@ static void fill_utc_info(TimeZoneInfo &Info, const int StartYear, const int End
    Info.NativeID           = "UTC";
    Info.Source             = "utc";
    Info.BaseOffset         = 0;
-   Info.TransitionCount    = 0;
-   Info.TransitionsWritten = 0;
    Info.StartYear          = StartYear;
    Info.EndYear            = EndYear;
    Info.IsLocal            = IsLocal;
@@ -111,8 +109,6 @@ static ERR get_windows_timezone_info(std::string_view ZoneID, const int StartYea
    Info.DataPath           = std::move(host_info.DataPath);
    Info.Version            = std::move(host_info.Version);
    Info.BaseOffset         = host_info.BaseOffset;
-   Info.TransitionCount    = host_info.TransitionCount;
-   Info.TransitionsWritten = host_info.TransitionsWritten;
    Info.StartYear          = host_info.StartYear;
    Info.EndYear            = host_info.EndYear;
    Info.IsLocal            = host_info.IsLocal;
@@ -625,8 +621,6 @@ static bool parse_tzif_block(const std::vector<unsigned char> &Data, const size_
       append_posix_transitions(posix_spec, StartYear, EndYear, start_us, end_us, last_explicit_us, Info);
    }
 
-   Info.TransitionCount    = int(Info.Transitions.size());
-   Info.TransitionsWritten = Info.TransitionCount;
    return true;
 }
 
@@ -806,29 +800,34 @@ static ERR TIME_GetTimeZoneInfo(objTime *Self, struct pt::GetTimeZoneInfo *Args)
    if (AllocMemory(sizeof(struct TimeZoneInfo), MEM::DATA|MEM::MANAGED, (APTR *)&tz, nullptr) IS ERR::Okay) {
       new (tz) struct TimeZoneInfo;
       SetResourceMgr(tz, &glTimeZoneHandler);
-      Args->Info = tz;
 
       const std::string_view zone_id = Args->ZoneID ? std::string_view(Args->ZoneID) : std::string_view();
       if (is_utc_zone(zone_id)) {
          fill_utc_info(*tz, Args->StartYear, Args->EndYear, zone_id.empty() ? 1 : 0, 0);
+         Args->Info = tz;
          return ERR::Okay;
       }
+      else {
+#ifdef _WIN32
+         auto error = get_windows_timezone_info(zone_id, Args->StartYear, Args->EndYear, *tz);
+#elif defined(__linux__)
+         auto error = get_linux_timezone_info(zone_id, Args->StartYear, Args->EndYear, *tz);
+#else
+#warning Platform does not support GetTimeZoneInfo()
+         auto error = ERR::Okay;
+         if (zone_id.empty()) fill_utc_info(*tz, Args->StartYear, Args->EndYear, 1, 1);
+         else error = ERR::Search;
+#endif
 
-   #ifdef _WIN32
-      auto error = get_windows_timezone_info(zone_id, Args->StartYear, Args->EndYear, *tz);
-   #elif defined(__linux__)
-      auto error = get_linux_timezone_info(zone_id, Args->StartYear, Args->EndYear, *tz);
-   #else
-      auto error = ERR::Okay;
-      if (zone_id.empty()) fill_utc_info(*tz, Args->StartYear, Args->EndYear, 1, 1);
-      else error = ERR::Search;
-   #endif
-
-      if (error IS ERR::Okay) return ERR::Okay;
-
-      Args->Info = nullptr;
-      FreeResource(tz);
-      return error;
+         if (error IS ERR::Okay) {
+            Args->Info = tz;
+            return ERR::Okay;
+         }
+         else {
+            FreeResource(tz);
+            return log.warning(error);
+         }
+      }
    }
    else return log.warning(ERR::AllocMemory);
 }

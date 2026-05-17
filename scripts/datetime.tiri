@@ -1,0 +1,3095 @@
+-- Datetime value library.
+
+   namespace 'datetime'
+
+   _LIB[_NS] = {}
+   datetime = _LIB[_NS]
+
+value_storage = setmetatable({}, { __mode = 'k' })
+metatable_by_type = {}
+time_zone_info_cache = {}
+
+NANOS_PER_SECOND <const> = 1000000000
+MICROS_PER_SECOND <const> = 1000000
+SECONDS_PER_DAY <const> = 86400
+MIN_OFFSET_SECONDS <const> = -18 * 3600
+MAX_OFFSET_SECONDS <const> = 18 * 3600
+MIN_ZONE_YEAR <const> = 1601
+MAX_ZONE_YEAR <const> = 9999
+ZONE_PROBE_YEAR <const> = 2024
+
+TYPE_NAMES = array<string> {
+   'Instant',
+   'Duration',
+   'Offset',
+   'LocalDate',
+   'LocalTime',
+   'LocalDateTime',
+   'OffsetDateTime',
+   'Zone',
+   'ZonedDateTime',
+   'Period',
+   'Interval',
+   'Clock',
+   'Resolver'
+}
+
+rx_date <const> = regex.new([[^([+\-]?\d{4,})-(\d{2})-(\d{2})$]])
+rx_time <const> = regex.new([[^(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,9}))?)?$]])
+rx_local_date_time <const> =
+   regex.new([[^([+\-]?\d{4,}-\d{2}-\d{2})T(\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?)$]])
+rx_instant <const> =
+   regex.new([[^([+\-]?\d{4,}-\d{2}-\d{2})T(\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?)Z$]])
+rx_offset_date_time <const> =
+   regex.new([[^([+\-]?\d{4,}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?)(Z|[+\-]\d{2}:\d{2})$]])
+rx_zoned_date_time <const> =
+   regex.new([[^([+\-]?\d{4,}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+\-]\d{2}:\d{2}))\[(.+)\]$]])
+rx_offset <const> = regex.new([[^(Z|([+\-])(\d{2}):(\d{2}))$]])
+rx_duration <const> =
+   regex.new([[^([+\-])?P(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)(?:\.(\d{1,9}))?S)?)$]])
+rx_period <const> = regex.new([[^([+\-])?P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)W)?(?:(\d+)D)?$]])
+
+----------------------------------------------------------------------------------------------------------------------
+
+function datetime._error(Code:num, Message:str)
+   raise Code, Message
+end
+
+function datetime._invalidValue(Message:str)
+   datetime._error(ERR_InvalidValue, Message)
+end
+
+function datetime._syntaxError(Message:str)
+   datetime._error(ERR_Syntax, Message)
+end
+
+function datetime._unknownZone(Message:str)
+   datetime._error(ERR_Search, Message)
+end
+
+function datetime._outOfRange(Message:str)
+   datetime._error(ERR_OutOfRange, Message)
+end
+
+function datetime._notReady(Name:str)
+   datetime._error(ERR_NotInitialised, f"datetime.{Name} is not implemented yet.")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function type_symbol(TypeName:str):str
+   return f'datetime.{TypeName}'
+end
+
+function copy_fields(Fields:table):table
+   local result = {}
+   if Fields then
+      for key, value in pairs(Fields) do
+         result[key] = value
+      end
+   end
+   return result
+end
+
+function require_type_name(TypeName:str)
+   for name in values(TYPE_NAMES) do
+      if TypeName is name then return end
+   end
+
+   datetime._invalidValue(f"Unknown datetime value type '{TypeName}'.")
+end
+
+function datetime._typeOf(Value:any):any
+   if type(Value) != 'table' then return nil end
+
+   local state = value_storage[Value]
+   if state is nil then return nil end
+   return state.type_name
+end
+
+function datetime._isValue(Value:any, TypeName:str):bool
+   return datetime._typeOf(Value) is TypeName
+end
+
+function datetime._fields(Value:any, TypeName:str):table
+   if not datetime._isValue(Value, TypeName) then
+      datetime._invalidValue(f"Expected datetime.{TypeName} value.")
+   end
+
+   return value_storage[Value].fields
+end
+
+function datetime._valueIndex(Self:table, Key:any):any
+   local state = value_storage[Self]
+   if state is nil then return nil end
+
+   local metatable = metatable_by_type[state.type_name]
+   local method = rawget(metatable, Key)
+   if method != nil then return method end
+
+   return state.fields[Key]
+end
+
+function datetime._immutableError(Self:table, Key:any, Value:any)
+   type_name = datetime._typeOf(Self) ?? 'Value'
+   error(f"datetime.{type_name} is immutable: Cannot set {Key}")
+end
+
+function datetime._tostring(Self:table):str
+   type_name = datetime._typeOf(Self) ?? 'Value'
+   return f"datetime.{type_name}"
+end
+
+function datetime._makeValue(TypeName:str, Fields:table):table
+   require_type_name(TypeName)
+
+   value = {}
+   value_storage[value] = {
+      type_name = TypeName,
+      fields = copy_fields(Fields)
+   }
+
+   return setmetatable(value, metatable_by_type[TypeName])
+end
+
+function datetime._requireNumber(Name:str, Value:any):num
+   if type(Value) != 'number' then
+      datetime._invalidValue(f"{Name} must be a number.")
+   end
+   return Value
+end
+
+function datetime._requireInteger(Name:str, Value:any):num
+   datetime._requireNumber(Name, Value)
+   if Value % 1 != 0 then
+      datetime._invalidValue(f"{Name} must be an integer.")
+   end
+   return Value
+end
+
+function datetime._requireTable(Name:str, Value:any):table
+   if type(Value) != 'table' then
+      datetime._invalidValue(f"{Name} must be a table.")
+   end
+   return Value
+end
+
+function make_metatable(TypeName:str):table
+   local metatable = {
+      __name = type_symbol(TypeName),
+      __metatable = type_symbol(TypeName),
+      __index = datetime._valueIndex,
+      __newindex = datetime._immutableError,
+      __tostring = datetime._tostring
+   }
+   metatable_by_type[TypeName] = metatable
+   return metatable
+end
+
+datetime.mtInstant        = make_metatable('Instant')
+datetime.mtDuration       = make_metatable('Duration')
+datetime.mtOffset         = make_metatable('Offset')
+datetime.mtLocalDate      = make_metatable('LocalDate')
+datetime.mtLocalTime      = make_metatable('LocalTime')
+datetime.mtLocalDateTime  = make_metatable('LocalDateTime')
+datetime.mtOffsetDateTime = make_metatable('OffsetDateTime')
+datetime.mtZone           = make_metatable('Zone')
+datetime.mtZonedDateTime  = make_metatable('ZonedDateTime')
+datetime.mtPeriod         = make_metatable('Period')
+datetime.mtInterval       = make_metatable('Interval')
+datetime.mtClock          = make_metatable('Clock')
+datetime.mtResolver       = make_metatable('Resolver')
+
+----------------------------------------------------------------------------------------------------------------------
+
+function pad_int(Value:num, Width:num):str
+   local prefix = ''
+   if Value < 0 then
+      prefix = '-'
+      Value = -Value
+   end
+
+   local text = tostring(Value)
+   while #text < Width do
+      text = '0' .. text
+   end
+   return prefix .. text
+end
+
+function format_year(Year:num):str
+   if Year >= 0 and Year <= 9999 then
+      return pad_int(Year, 4)
+   end
+   if Year < 0 then
+      return '-' .. pad_int(-Year, 4)
+   end
+   return tostring(Year)
+end
+
+function normalise_fraction(Fraction:any):num
+   if Fraction is nil or Fraction is '' then return 0 end
+
+   local text = tostring(Fraction)
+   while #text < 9 do
+      text ..= '0'
+   end
+   return tonumber(text)
+end
+
+function format_nano(Nano:num):str
+   if Nano is 0 then return '' end
+
+   local text = pad_int(Nano, 9)
+   while text:endsWith('0') do
+      text = text:substr(0, #text - 1)
+   end
+   return '.' .. text
+end
+
+function compare_pair(A1:num, A2:num, B1:num, B2:num):num
+   if A1 < B1 then return -1 end
+   if A1 > B1 then return 1 end
+   if A2 < B2 then return -1 end
+   if A2 > B2 then return 1 end
+   return 0
+end
+
+function compare_date_fields(A:table, B:table):num
+   if A.year < B.year then return -1 end
+   if A.year > B.year then return 1 end
+   if A.month < B.month then return -1 end
+   if A.month > B.month then return 1 end
+   if A.day < B.day then return -1 end
+   if A.day > B.day then return 1 end
+   return 0
+end
+
+function compare_time_fields(A:table, B:table):num
+   if A.hour < B.hour then return -1 end
+   if A.hour > B.hour then return 1 end
+   if A.minute < B.minute then return -1 end
+   if A.minute > B.minute then return 1 end
+   if A.second < B.second then return -1 end
+   if A.second > B.second then return 1 end
+   if A.nano < B.nano then return -1 end
+   if A.nano > B.nano then return 1 end
+   return 0
+end
+
+function normalise_second_nano(Seconds:any, Nano:any):<num, num>
+   local seconds = datetime._requireInteger('seconds', Seconds)
+   local nano = datetime._requireInteger('nano', Nano ?? 0)
+
+   if nano <= -NANOS_PER_SECOND or nano >= NANOS_PER_SECOND then
+      local extra = math.floor(nano / NANOS_PER_SECOND)
+      seconds += extra
+      nano -= extra * NANOS_PER_SECOND
+   end
+
+   if nano < 0 then
+      seconds -= 1
+      nano += NANOS_PER_SECOND
+   end
+
+   return seconds, nano
+end
+
+function require_duration(Value:any):table
+   if not datetime.isDuration(Value) then datetime._invalidValue('Expected datetime.Duration value.') end
+   return datetime._fields(Value, 'Duration')
+end
+
+function require_offset(Value:any):table
+   if not datetime.isOffset(Value) then datetime._invalidValue('Expected datetime.Offset value.') end
+   return datetime._fields(Value, 'Offset')
+end
+
+function require_local_date_time(Value:any):table
+   if not datetime.isLocalDateTime(Value) then datetime._invalidValue('Expected datetime.LocalDateTime value.') end
+   return datetime._fields(Value, 'LocalDateTime')
+end
+
+function require_offset_date_time(Value:any):table
+   if not datetime.isOffsetDateTime(Value) then datetime._invalidValue('Expected datetime.OffsetDateTime value.') end
+   return datetime._fields(Value, 'OffsetDateTime')
+end
+
+function require_instant(Value:any):table
+   if not datetime.isInstant(Value) then datetime._invalidValue('Expected datetime.Instant value.') end
+   return datetime._fields(Value, 'Instant')
+end
+
+function require_zone(Value:any):table
+   if not datetime.isZone(Value) then datetime._invalidValue('Expected datetime.Zone value.') end
+   return datetime._fields(Value, 'Zone')
+end
+
+function require_clock(Value:any):table
+   if not datetime.isClock(Value) then datetime._invalidValue('Expected datetime.Clock value.') end
+   return datetime._fields(Value, 'Clock')
+end
+
+function require_resolver(Value:any):table
+   if not datetime.isResolver(Value) then datetime._invalidValue('Expected datetime.Resolver value.') end
+   return datetime._fields(Value, 'Resolver')
+end
+
+function require_zoned_date_time(Value:any):table
+   if not datetime.isZonedDateTime(Value) then datetime._invalidValue('Expected datetime.ZonedDateTime value.') end
+   return datetime._fields(Value, 'ZonedDateTime')
+end
+
+function new_zoned_date_time(Instant:any, Zone:any):table
+   require_instant(Instant)
+   require_zone(Zone)
+   return datetime._makeValue('ZonedDateTime', { instant = Instant, zone = Zone })
+end
+
+function require_format_value(Values:table, Key:str, Token:str):any
+   local value = Values[Key]
+   if value is nil then
+      datetime._invalidValue(f"Format token '{Token}' is not available for datetime.{Values.type_name}.")
+   end
+   return value
+end
+
+function format_fraction_token(Nano:num, Width:num):str
+   local divisor = 1
+   if Width is 3 then divisor = 1000000
+   elseif Width is 6 then divisor = 1000
+   end
+
+   return pad_int(math.floor(Nano / divisor), Width)
+end
+
+function format_offset_token(Offset:table):str
+   require_offset(Offset)
+   return tostring(Offset)
+end
+
+function is_format_token_start(Text:str):bool
+   return (Text >= 'A' and Text <= 'Z') or (Text >= 'a' and Text <= 'z')
+end
+
+function format_temporal(Pattern:any, Values:table):str
+   if type(Pattern) != 'string' then datetime._invalidValue('Format pattern must be a string.') end
+
+   local result = ''
+   local index = 0
+   while index < #Pattern do
+      if Pattern:substr(index, index + 9) is 'SSSSSSSSS' then
+         result ..= format_fraction_token(require_format_value(Values, 'nano', 'SSSSSSSSS'), 9)
+         index += 9
+      elseif Pattern:substr(index, index + 6) is 'SSSSSS' then
+         result ..= format_fraction_token(require_format_value(Values, 'nano', 'SSSSSS'), 6)
+         index += 6
+      elseif Pattern:substr(index, index + 4) is 'yyyy' then
+         result ..= format_year(require_format_value(Values, 'year', 'yyyy'))
+         index += 4
+      elseif Pattern:substr(index, index + 3) is 'SSS' then
+         result ..= format_fraction_token(require_format_value(Values, 'nano', 'SSS'), 3)
+         index += 3
+      elseif Pattern:substr(index, index + 3) is 'XXX' then
+         result ..= format_offset_token(require_format_value(Values, 'offset', 'XXX'))
+         index += 3
+      elseif Pattern:substr(index, index + 2) is 'MM' then
+         result ..= pad_int(require_format_value(Values, 'month', 'MM'), 2)
+         index += 2
+      elseif Pattern:substr(index, index + 2) is 'dd' then
+         result ..= pad_int(require_format_value(Values, 'day', 'dd'), 2)
+         index += 2
+      elseif Pattern:substr(index, index + 2) is 'HH' then
+         result ..= pad_int(require_format_value(Values, 'hour', 'HH'), 2)
+         index += 2
+      elseif Pattern:substr(index, index + 2) is 'mm' then
+         result ..= pad_int(require_format_value(Values, 'minute', 'mm'), 2)
+         index += 2
+      elseif Pattern:substr(index, index + 2) is 'ss' then
+         result ..= pad_int(require_format_value(Values, 'second', 'ss'), 2)
+         index += 2
+      elseif Pattern:substr(index, index + 2) is 'VV' then
+         result ..= require_format_value(Values, 'zone_id', 'VV')
+         index += 2
+      elseif Pattern:substr(index, index + 1) is "'" then
+         index++
+         local closed = false
+         while index < #Pattern do
+            local literal = Pattern:substr(index, index + 1)
+            if literal is "'" then
+               closed = true
+               index++
+               break
+            end
+            result ..= literal
+            index++
+         end
+         if not closed then datetime._syntaxError('Unterminated datetime format literal.') end
+      else
+         local text = Pattern:substr(index, index + 1)
+         if is_format_token_start(text) then
+            datetime._syntaxError(f"Unsupported datetime format token '{text}'.")
+         end
+         result ..= text
+         index++
+      end
+   end
+
+   return result
+end
+
+function format_local_fields(TypeName:str, DateFields:any, TimeFields:any, Offset:any, ZoneID:any, Pattern:any):str
+   local values = { type_name = TypeName, offset = Offset, zone_id = ZoneID }
+   if DateFields != nil then
+      values.year = DateFields.year
+      values.month = DateFields.month
+      values.day = DateFields.day
+   end
+   if TimeFields != nil then
+      values.hour = TimeFields.hour
+      values.minute = TimeFields.minute
+      values.second = TimeFields.second
+      values.nano = TimeFields.nano
+   end
+
+   return format_temporal(Pattern, values)
+end
+
+function local_date_time_parts(LocalDateTime:table):<table, table>
+   local local_fields = require_local_date_time(LocalDateTime)
+   return datetime._fields(local_fields.date, 'LocalDate'), datetime._fields(local_fields.time, 'LocalTime')
+end
+
+function unsupported_operation(Left:any, Operator:str, Right:any)
+   local left_type = datetime._typeOf(Left) ?? type(Left)
+   local right_type = datetime._typeOf(Right) ?? type(Right)
+   datetime._invalidValue(f"Unsupported datetime operation: {left_type} {Operator} {right_type}.")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Gregorian calendar helpers.  These are civil-date algorithms based on the proleptic Gregorian calendar.
+
+function is_leap_year(Year:num):bool
+   return Year % 4 is 0 and (Year % 100 != 0 or Year % 400 is 0)
+end
+
+function days_in_month(Year:num, Month:num):num
+   if Month is 2 then return is_leap_year(Year) ? 29 :> 28 end
+   if Month is 4 or Month is 6 or Month is 9 or Month is 11 then return 30 end
+   return 31
+end
+
+function validate_date(Year:any, Month:any, Day:any)
+   Year = datetime._requireInteger('year', Year)
+   Month = datetime._requireInteger('month', Month)
+   Day = datetime._requireInteger('day', Day)
+
+   if Month < 1 or Month > 12 then
+      datetime._invalidValue(f"Invalid month {Month}.")
+   end
+
+   local max_day = days_in_month(Year, Month)
+   if Day < 1 or Day > max_day then
+      datetime._invalidValue(f"Invalid day {Day} for {format_year(Year)}-{pad_int(Month, 2)}.")
+   end
+end
+
+function validate_time(Hour:any, Minute:any, Second:any, Nano:any)
+   Hour = datetime._requireInteger('hour', Hour)
+   Minute = datetime._requireInteger('minute', Minute)
+   Second = datetime._requireInteger('second', Second)
+   Nano = datetime._requireInteger('nano', Nano)
+
+   if Hour < 0 or Hour > 23 then datetime._invalidValue(f"Invalid hour {Hour}.") end
+   if Minute < 0 or Minute > 59 then datetime._invalidValue(f"Invalid minute {Minute}.") end
+   if Second < 0 or Second > 59 then datetime._invalidValue(f"Invalid second {Second}.") end
+   if Nano < 0 or Nano >= NANOS_PER_SECOND then datetime._invalidValue(f"Invalid nano {Nano}.") end
+end
+
+function days_from_civil(Year:num, Month:num, Day:num):num
+   Year -= Month <= 2 ? 1 :> 0
+   local era = math.floor(Year / 400)
+   local yoe = Year - era * 400
+   local month_prime = Month + (Month > 2 ? -3 :> 9)
+   local doy = math.floor((153 * month_prime + 2) / 5) + Day - 1
+   local doe = yoe * 365 + math.floor(yoe / 4) - math.floor(yoe / 100) + doy
+   return era * 146097 + doe - 719468
+end
+
+function civil_from_days(Days:num):<num, num, num>
+   Days += 719468
+   local era = math.floor(Days / 146097)
+   local doe = Days - era * 146097
+   local yoe = math.floor((doe - math.floor(doe / 1460) + math.floor(doe / 36524) - math.floor(doe / 146096)) / 365)
+   local year = yoe + era * 400
+   local doy = doe - (365 * yoe + math.floor(yoe / 4) - math.floor(yoe / 100))
+   local mp = math.floor((5 * doy + 2) / 153)
+   local day = doy - math.floor((153 * mp + 2) / 5) + 1
+   local month = mp + (mp < 10 ? 3 :> -9)
+   year += month <= 2 ? 1 :> 0
+   return year, month, day
+end
+
+function day_of_year(Year:num, Month:num, Day:num):num
+   local total = Day
+   for month in {1..Month} do
+      total += days_in_month(Year, month)
+   end
+   return total
+end
+
+function date_time_to_epoch_second(DateFields:table, TimeFields:table):num
+   local days = days_from_civil(DateFields.year, DateFields.month, DateFields.day)
+   return days * SECONDS_PER_DAY + TimeFields.hour * 3600 + TimeFields.minute * 60 + TimeFields.second
+end
+
+function epoch_second_to_local(EpochSecond:num, Nano:num):<table, table>
+   local days = math.floor(EpochSecond / SECONDS_PER_DAY)
+   local day_second = EpochSecond - days * SECONDS_PER_DAY
+   if day_second < 0 then
+      days -= 1
+      day_second += SECONDS_PER_DAY
+   end
+
+   local year, month, day = civil_from_days(days)
+   local hour = math.floor(day_second / 3600)
+   day_second -= hour * 3600
+   local minute = math.floor(day_second / 60)
+   local second = day_second - minute * 60
+
+   return { year = year, month = month, day = day }, {
+      hour = hour,
+      minute = minute,
+      second = second,
+      nano = Nano
+   }
+end
+
+function date_plus_days(DateFields:table, Days:num):table
+   local day_count = days_from_civil(DateFields.year, DateFields.month, DateFields.day) + Days
+   local year, month, day = civil_from_days(day_count)
+   return { year = year, month = month, day = day }
+end
+
+function date_plus_period_fields(DateFields:table, PeriodFields:table, Direction:num):table
+   local total_month = DateFields.year * 12 + DateFields.month - 1 +
+      Direction * (PeriodFields.years * 12 + PeriodFields.months)
+   local year = math.floor(total_month / 12)
+   local month = total_month - year * 12 + 1
+   local day = math.min(DateFields.day, days_in_month(year, month))
+   return date_plus_days({ year = year, month = month, day = day },
+      Direction * (PeriodFields.weeks * 7 + PeriodFields.days))
+end
+
+function time_plus_duration_fields(TimeFields:table, DurationFields:table, Direction:num):table
+   local day_second = TimeFields.hour * 3600 + TimeFields.minute * 60 + TimeFields.second +
+      Direction * DurationFields.seconds
+   local seconds, nano = normalise_second_nano(day_second, TimeFields.nano + Direction * DurationFields.nano)
+
+   seconds %= SECONDS_PER_DAY
+   if seconds < 0 then seconds += SECONDS_PER_DAY end
+
+   local hour = math.floor(seconds / 3600)
+   seconds -= hour * 3600
+   local minute = math.floor(seconds / 60)
+   local second = seconds - minute * 60
+
+   return { hour = hour, minute = minute, second = second, nano = nano }
+end
+
+function local_date_time_plus_duration_fields(DateFields:table, TimeFields:table, DurationFields:table,
+   Direction:num):<table, table>
+   local epoch_second = date_time_to_epoch_second(DateFields, TimeFields) + Direction * DurationFields.seconds
+   local seconds, nano = normalise_second_nano(epoch_second, TimeFields.nano + Direction * DurationFields.nano)
+   return epoch_second_to_local(seconds, nano)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Constructors and parsers.
+
+function make_constructor(Name:str):table
+   return setmetatable({}, {
+      __call = function(Self, ...)
+         datetime._notReady(Name)
+      end
+   })
+end
+
+function new_instant(EpochSecond:any, Nano:any):table
+   local epoch_second, nano = normalise_second_nano(EpochSecond, Nano ?? 0)
+   return datetime._makeValue('Instant', { epoch_second = epoch_second, nano = nano })
+end
+
+function instant_from_system_micros(Micros:any):table
+   local micros = datetime._requireInteger('systemTime', Micros)
+   local seconds = math.floor(micros / MICROS_PER_SECOND)
+   local nano = (micros - seconds * MICROS_PER_SECOND) * 1000
+   return new_instant(seconds, nano)
+end
+
+function new_duration(Seconds:any, Nano:any):table
+   local seconds, nano = normalise_second_nano(Seconds, Nano ?? 0)
+   return datetime._makeValue('Duration', { seconds = seconds, nano = nano })
+end
+
+function new_period(Years:any, Months:any, Weeks:any, Days:any):table
+   local years = datetime._requireInteger('years', Years ?? 0)
+   local months = datetime._requireInteger('months', Months ?? 0)
+   local weeks = datetime._requireInteger('weeks', Weeks ?? 0)
+   local days = datetime._requireInteger('days', Days ?? 0)
+   return datetime._makeValue('Period', { years = years, months = months, weeks = weeks, days = days })
+end
+
+function new_interval(Start:any, Stop:any):table
+   require_instant(Start)
+   require_instant(Stop)
+   if Stop < Start then datetime._invalidValue('Interval stop must be greater than or equal to start.') end
+   return datetime._makeValue('Interval', { start = Start, stop = Stop })
+end
+
+function new_offset(Seconds:any):table
+   local seconds = datetime._requireInteger('seconds', Seconds)
+   if seconds < MIN_OFFSET_SECONDS or seconds > MAX_OFFSET_SECONDS then
+      datetime._invalidValue('Offset must be in the range -18:00 through +18:00.')
+   end
+   return datetime._makeValue('Offset', { seconds = seconds })
+end
+
+function time_zone_cache_key(ZoneID:any, StartYear:num, EndYear:num):str
+   return f'{ZoneID ?? "<local>"}:{StartYear}:{EndYear}'
+end
+
+function instant_utc_year(Instant:table):num
+   local fields = require_instant(Instant)
+   local date_fields, time_fields = epoch_second_to_local(fields.epoch_second, fields.nano)
+   return date_fields.year
+end
+
+function compare_instants(A:table, B:table):num
+   local a = require_instant(A)
+   local b = require_instant(B)
+   return compare_pair(a.epoch_second, a.nano, b.epoch_second, b.nano)
+end
+
+function check_zone_year_range(StartYear:num, EndYear:num)
+   if StartYear < MIN_ZONE_YEAR or EndYear > MAX_ZONE_YEAR or EndYear < StartYear then
+      datetime._outOfRange(f"Time zone year range {StartYear}-{EndYear} is outside the supported range.")
+   end
+end
+
+function convert_time_zone_transition(Transition:table):table
+   return {
+      instant = instant_from_system_micros(Transition.instant),
+      name = Transition.abbreviation ?? '',
+      offset_before = new_offset(Transition.offsetBefore),
+      offset_after = new_offset(Transition.offsetAfter),
+      daylight_saving = Transition.daylightSaving is 1
+   }
+end
+
+function convert_time_zone_info(Info:table):table
+   local transitions = array<table> {}
+   local source_transitions = Info.transitions
+   if source_transitions is nil then source_transitions = {} end
+
+   for _, transition in ipairs(source_transitions) do
+      transitions:push(convert_time_zone_transition(transition))
+   end
+
+   return {
+      id          = Info.zoneID,
+      native_id   = Info.nativeID,
+      source      = Info.source,
+      base_offset = new_offset(Info.baseOffset),
+      transitions = transitions,
+      is_fallback = Info.isFallback is 1
+   }
+end
+
+function get_time_zone_info(ZoneID:any, StartYear:any, EndYear:any):table
+   local start_year = datetime._requireInteger('start_year', StartYear)
+   local end_year = datetime._requireInteger('end_year', EndYear)
+   check_zone_year_range(start_year, end_year)
+
+   local requested_key = time_zone_cache_key(ZoneID, start_year, end_year)
+   local cached = time_zone_info_cache[requested_key]
+   if cached != nil then return cached end
+
+   local time_obj = obj.new('time')
+   local err, info = time_obj.mtGetTimeZoneInfo(ZoneID, start_year, end_year)
+
+   if err is ERR_Okay and info != nil then
+      local converted = convert_time_zone_info(info)
+      local canonical_key = time_zone_cache_key(converted.id, start_year, end_year)
+      time_zone_info_cache[canonical_key] = converted
+      time_zone_info_cache[requested_key] = converted
+      return converted
+   end
+
+   local display_id = ZoneID ?? 'local'
+   if err is ERR_Search then datetime._unknownZone(f"Unknown time zone '{display_id}'.") end
+   if err is ERR_OutOfRange then
+      datetime._outOfRange(f"Time zone year range {start_year}-{end_year} is outside the supported range.")
+   end
+   datetime._error(err, f"Time zone query failed for '{display_id}'.")
+end
+
+function new_zone(ZoneID:any):table
+   if ZoneID != nil and type(ZoneID) != 'string' then datetime._invalidValue('Zone ID must be a string.') end
+
+   local info = get_time_zone_info(ZoneID, ZONE_PROBE_YEAR, ZONE_PROBE_YEAR)
+   return datetime._makeValue('Zone', {
+      id          = info.id,
+      native_id   = info.native_id,
+      source      = info.source,
+      is_fallback = info.is_fallback,
+      query_id    = ZoneID
+   })
+end
+
+function zone_info_for_instant(ZoneFields:table, Instant:table, PreviousYears:num, NextYears:num):table
+   local year = instant_utc_year(Instant)
+   if year < MIN_ZONE_YEAR or year > MAX_ZONE_YEAR then
+      datetime._outOfRange(f"Instant year {year} is outside the supported time-zone range.")
+   end
+
+   local start_year = math.max(MIN_ZONE_YEAR, year - PreviousYears)
+   local end_year = math.min(MAX_ZONE_YEAR, year + NextYears)
+   return get_time_zone_info(ZoneFields.query_id, start_year, end_year)
+end
+
+function zone_info_for_local_date_time(ZoneFields:table, LocalDateTime:table):table
+   local local_fields = require_local_date_time(LocalDateTime)
+   local date_fields = datetime._fields(local_fields.date, 'LocalDate')
+   if date_fields.year < MIN_ZONE_YEAR or date_fields.year > MAX_ZONE_YEAR then
+      datetime._outOfRange(f"Local date-time year {date_fields.year} is outside the supported time-zone range.")
+   end
+
+   local start_year = math.max(MIN_ZONE_YEAR, date_fields.year - 1)
+   local end_year = math.min(MAX_ZONE_YEAR, date_fields.year + 1)
+   return get_time_zone_info(ZoneFields.query_id, start_year, end_year)
+end
+
+function transition_offset_at(Info:table, Instant:table):table
+   local offset = Info.base_offset
+   for transition in values(Info.transitions) do
+      if compare_instants(transition.instant, Instant) <= 0 then offset = transition.offset_after
+      else break end
+   end
+   return offset
+end
+
+function transition_name_at(Info:table, Instant:table):str
+   local name = Info.id
+   if Info.id is 'UTC' then name = 'UTC' end
+
+   for transition in values(Info.transitions) do
+      if compare_instants(transition.instant, Instant) <= 0 then
+         if transition.name != '' then name = transition.name end
+      else break end
+   end
+
+   return name
+end
+
+function local_date_time_epoch_pair(LocalDateTime:table):<num, num>
+   local local_fields = require_local_date_time(LocalDateTime)
+   local date_fields = datetime._fields(local_fields.date, 'LocalDate')
+   local time_fields = datetime._fields(local_fields.time, 'LocalTime')
+   return date_time_to_epoch_second(date_fields, time_fields), time_fields.nano
+end
+
+function local_transition_pair(Transition:table, Offset:table):<num, num>
+   local instant_fields = require_instant(Transition.instant)
+   local offset_fields = require_offset(Offset)
+   return instant_fields.epoch_second + offset_fields.seconds, instant_fields.nano
+end
+
+function is_local_pair_in_range(Seconds:num, Nano:num, StartSeconds:num, StartNano:num, StopSeconds:num,
+   StopNano:num):bool
+   return compare_pair(Seconds, Nano, StartSeconds, StartNano) >= 0 and
+      compare_pair(Seconds, Nano, StopSeconds, StopNano) < 0
+end
+
+function resolver_name(Resolver:any):str
+   Resolver ??= datetime.resolve.compatible
+   return require_resolver(Resolver).name
+end
+
+function rejected_local_time(LocalDateTime:table, Zone:table, Reason:str)
+   datetime._error(ERR_LimitedSuccess, f"Local date-time {LocalDateTime} {Reason} in time zone {Zone:id()}.")
+end
+
+function resolve_transition_local_date_time(LocalDateTime:table, Zone:table, Info:table, TargetSeconds:num,
+   TargetNano:num, ResolverName:str):<bool, any>
+   for transition in values(Info.transitions) do
+      local before_seconds = require_offset(transition.offset_before).seconds
+      local after_seconds = require_offset(transition.offset_after).seconds
+
+      if after_seconds > before_seconds then
+         local start_seconds, start_nano = local_transition_pair(transition, transition.offset_before)
+         local stop_seconds, stop_nano = local_transition_pair(transition, transition.offset_after)
+         if is_local_pair_in_range(TargetSeconds, TargetNano, start_seconds, start_nano, stop_seconds, stop_nano) then
+            if ResolverName is 'reject' or ResolverName is 'earlier' or ResolverName is 'later' then
+               rejected_local_time(LocalDateTime, Zone, 'is skipped')
+            end
+            return true, new_zoned_date_time(new_instant(TargetSeconds - before_seconds, TargetNano), Zone)
+         end
+      elseif after_seconds < before_seconds then
+         local start_seconds, start_nano = local_transition_pair(transition, transition.offset_after)
+         local stop_seconds, stop_nano = local_transition_pair(transition, transition.offset_before)
+         if is_local_pair_in_range(TargetSeconds, TargetNano, start_seconds, start_nano, stop_seconds, stop_nano) then
+            if ResolverName is 'reject' then rejected_local_time(LocalDateTime, Zone, 'is ambiguous') end
+
+            local selected_offset = transition.offset_before
+            if ResolverName is 'later' then selected_offset = transition.offset_after end
+            return true, new_zoned_date_time(new_instant(TargetSeconds - require_offset(selected_offset).seconds,
+               TargetNano), Zone)
+         end
+      end
+   end
+
+   return false, nil
+end
+
+function resolve_local_date_time(LocalDateTime:table, Zone:table, Resolver:any):table
+   require_zone(Zone)
+   resolver = resolver_name(Resolver)
+   zone_fields = datetime._fields(Zone, 'Zone')
+   info = zone_info_for_local_date_time(zone_fields, LocalDateTime)
+   target_seconds, target_nano = local_date_time_epoch_pair(LocalDateTime)
+   handled, result = resolve_transition_local_date_time(LocalDateTime, Zone, info, target_seconds, target_nano,
+      resolver)
+   if handled then return result end
+
+   earlier = nil
+   later = nil
+
+   consider_offset = function(Offset:table)
+      offset_seconds = require_offset(Offset).seconds
+      candidate = new_instant(target_seconds - offset_seconds, target_nano)
+      if Zone:offsetAt(candidate) is Offset then
+         if earlier is nil or candidate < earlier then earlier = candidate end
+         if later is nil or later < candidate then later = candidate end
+      end
+   end
+
+   consider_offset(info.base_offset)
+   for transition in values(info.transitions) do
+      consider_offset(transition.offset_before)
+      consider_offset(transition.offset_after)
+   end
+
+   if earlier is nil then rejected_local_time(LocalDateTime, Zone, 'is skipped') end
+   if resolver is 'reject' and not (earlier is later) then rejected_local_time(LocalDateTime, Zone, 'is ambiguous') end
+   if resolver is 'later' then return new_zoned_date_time(later, Zone) end
+   return new_zoned_date_time(earlier, Zone)
+end
+
+function new_clock(Kind:str, Fields:table):table
+   local fields = copy_fields(Fields)
+   fields.kind = Kind
+   return datetime._makeValue('Clock', fields)
+end
+
+function new_local_date(Year:any, Month:any, Day:any):table
+   Year = datetime._requireInteger('year', Year)
+   Month = datetime._requireInteger('month', Month)
+   Day = datetime._requireInteger('day', Day)
+   validate_date(Year, Month, Day)
+   return datetime._makeValue('LocalDate', { year = Year, month = Month, day = Day })
+end
+
+function new_local_time(Hour:any, Minute:any, Second:any, Nano:any):table
+   Hour = datetime._requireInteger('hour', Hour)
+   Minute = datetime._requireInteger('minute', Minute ?? 0)
+   Second = datetime._requireInteger('second', Second ?? 0)
+   Nano = datetime._requireInteger('nano', Nano ?? 0)
+   validate_time(Hour, Minute, Second, Nano)
+   return datetime._makeValue('LocalTime', { hour = Hour, minute = Minute, second = Second, nano = Nano })
+end
+
+function new_local_date_time_from_parts(Date:any, Time:any):table
+   if not datetime.isLocalDate(Date) then datetime._invalidValue('date must be a LocalDate value.') end
+   if not datetime.isLocalTime(Time) then datetime._invalidValue('time must be a LocalTime value.') end
+   return datetime._makeValue('LocalDateTime', { date = Date, time = Time })
+end
+
+function new_local_date_time(Year:any, Month:any, Day:any, Hour:any, Minute:any, Second:any, Nano:any):table
+   return new_local_date_time_from_parts(new_local_date(Year, Month, Day),
+      new_local_time(Hour ?? 0, Minute ?? 0, Second ?? 0, Nano ?? 0))
+end
+
+function new_offset_date_time(LocalDateTime:any, Offset:any):table
+   require_local_date_time(LocalDateTime)
+   require_offset(Offset)
+   return datetime._makeValue('OffsetDateTime', { local_date_time = LocalDateTime, offset = Offset })
+end
+
+function local_date_time_from_instant_in_zone(Instant:table, Zone:table):table
+   require_zone(Zone)
+   instant_fields = require_instant(Instant)
+   offset_fields = datetime._fields(Zone:offsetAt(Instant), 'Offset')
+   date_fields, time_fields = epoch_second_to_local(instant_fields.epoch_second + offset_fields.seconds,
+      instant_fields.nano)
+   return new_local_date_time(date_fields.year, date_fields.month, date_fields.day, time_fields.hour,
+      time_fields.minute, time_fields.second, time_fields.nano)
+end
+
+function offset_date_time_instant(OffsetDateTime:table):table
+   local fields = require_offset_date_time(OffsetDateTime)
+   local_fields = datetime._fields(fields.local_date_time, 'LocalDateTime')
+   date_fields = datetime._fields(local_fields.date, 'LocalDate')
+   time_fields = datetime._fields(local_fields.time, 'LocalTime')
+   offset_fields = datetime._fields(fields.offset, 'Offset')
+   return new_instant(date_time_to_epoch_second(date_fields, time_fields) - offset_fields.seconds, time_fields.nano)
+end
+
+function offset_date_time_from_instant(Instant:table, Offset:table):table
+   instant_fields = require_instant(Instant)
+   offset_fields = require_offset(Offset)
+   date_fields, time_fields = epoch_second_to_local(instant_fields.epoch_second + offset_fields.seconds,
+      instant_fields.nano)
+   return new_offset_date_time(new_local_date_time(date_fields.year, date_fields.month, date_fields.day,
+      time_fields.hour, time_fields.minute, time_fields.second, time_fields.nano), Offset)
+end
+
+function parse_date_text(Text:any):<num, num, num>
+   if type(Text) != 'string' then datetime._syntaxError('LocalDate text must be a string.') end
+
+   year_text, month_text, day_text = rx_date.extract(Text)
+   if year_text is nil then datetime._syntaxError(f"Invalid LocalDate string '{Text}'.") end
+
+   return tonumber(year_text), tonumber(month_text), tonumber(day_text)
+end
+
+function parse_time_text(Text:any):<num, num, num, num>
+   if type(Text) != 'string' then datetime._syntaxError('LocalTime text must be a string.') end
+
+   hour_text, minute_text, second_text, fraction_text = rx_time.extract(Text)
+   if hour_text is nil then datetime._syntaxError(f"Invalid LocalTime string '{Text}'.") end
+
+   return tonumber(hour_text), tonumber(minute_text), tonumber(second_text ?? '0'), normalise_fraction(fraction_text)
+end
+
+function parse_local_date_time_text(Text:any):<table, table>
+   if type(Text) != 'string' then datetime._syntaxError('LocalDateTime text must be a string.') end
+
+   date_text, time_text = rx_local_date_time.extract(Text)
+   if date_text is nil then datetime._syntaxError(f"Invalid LocalDateTime string '{Text}'.") end
+
+   return datetime.localDate.parse(date_text), datetime.localTime.parse(time_text)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+datetime.instant = make_constructor('instant')
+@Doc(text=[[
+@desc Create an instant from Unix seconds
+@input Seconds since the Unix epoch
+@result Instant value
+]])
+datetime.instant.fromUnixSeconds = function(Seconds:num):table
+   return new_instant(Seconds, 0)
+end
+
+@Doc(text=[[
+@desc Create an instant from Unix milliseconds
+@input Milliseconds since the Unix epoch
+@result Instant value
+]])
+datetime.instant.fromUnixMillis = function(Millis:num):table
+   millis = datetime._requireInteger('millis', Millis)
+   seconds = math.floor(millis / 1000)
+   nano = (millis - seconds * 1000) * 1000000
+   return new_instant(seconds, nano)
+end
+
+@Doc(text=[[
+@desc Create an instant from Unix nanoseconds
+@input Nanoseconds since the Unix epoch
+@result Instant value
+]])
+datetime.instant.fromUnixNanos = function(Nanos:num):table
+   nanos = datetime._requireInteger('nanos', Nanos)
+   seconds = math.floor(nanos / NANOS_PER_SECOND)
+   nano = nanos - seconds * NANOS_PER_SECOND
+   return new_instant(seconds, nano)
+end
+
+@Doc(text=[[
+@desc Parse an ISO instant
+@input Instant text
+@result Instant value
+]])
+datetime.instant.parse = function(Text:str):table
+   date_text, time_text = rx_instant.extract(Text)
+   if date_text is nil then datetime._syntaxError(f"Invalid Instant string '{Text}'.") end
+
+   local date = datetime.localDate.parse(date_text)
+   local time = datetime.localTime.parse(time_text)
+   date_fields = datetime._fields(date, 'LocalDate')
+   time_fields = datetime._fields(time, 'LocalTime')
+   return new_instant(date_time_to_epoch_second(date_fields, time_fields), time_fields.nano)
+end
+
+@Doc(text=[[
+@desc Create an instant from epoch seconds and nanoseconds
+@input Seconds since the Unix epoch
+@input Nanosecond adjustment
+@result Instant value
+]])
+getmetatable(datetime.instant).__call = function(Self, EpochSecond:any, Nano:any):table
+   return new_instant(EpochSecond, Nano ?? 0)
+end
+
+datetime.duration = make_constructor('duration')
+@Doc(text=[[
+@desc Create a duration from seconds
+@input Duration seconds
+@result Duration value
+]])
+datetime.duration.seconds = function(Seconds:num):table
+   return new_duration(Seconds, 0)
+end
+
+@Doc(text=[[
+@desc Create a duration from milliseconds
+@input Duration milliseconds
+@result Duration value
+]])
+datetime.duration.millis = function(Millis:num):table
+   millis = datetime._requireInteger('millis', Millis)
+   seconds = math.floor(millis / 1000)
+   nano = (millis - seconds * 1000) * 1000000
+   return new_duration(seconds, nano)
+end
+
+@Doc(text=[[
+@desc Create a duration from nanoseconds
+@input Duration nanoseconds
+@result Duration value
+]])
+datetime.duration.nanos = function(Nanos:num):table
+   nanos = datetime._requireInteger('nanos', Nanos)
+   seconds = math.floor(nanos / NANOS_PER_SECOND)
+   nano = nanos - seconds * NANOS_PER_SECOND
+   return new_duration(seconds, nano)
+end
+
+@Doc(text=[[
+@desc Parse an ISO time duration
+@input Duration text
+@result Duration value
+]])
+datetime.duration.parse = function(Text:str):table
+   if type(Text) != 'string' then datetime._syntaxError('Duration text must be a string.') end
+
+   sign_text, hours_text, minutes_text, seconds_text, fraction_text = rx_duration.extract(Text)
+   if (hours_text is nil or hours_text is '') and (minutes_text is nil or minutes_text is '') and
+      (seconds_text is nil or seconds_text is '') then
+      datetime._syntaxError(f"Invalid Duration string '{Text}'.")
+   end
+
+   seconds = (tonumber(hours_text ?? '0') * 3600) + (tonumber(minutes_text ?? '0') * 60) +
+      tonumber(seconds_text ?? '0')
+   nano = normalise_fraction(fraction_text)
+   if sign_text is '-' then
+      seconds = -seconds
+      nano = -nano
+   end
+   return new_duration(seconds, nano)
+end
+
+@Doc(text=[[
+@desc Create a duration from field values
+@input Table with hours, minutes, seconds, millis, or nanos
+@result Duration value
+]])
+getmetatable(datetime.duration).__call = function(Self, KV:any):table
+   datetime._requireTable('duration', KV)
+
+   seconds = datetime._requireInteger('hours', KV.hours ?? 0) * 3600 +
+      datetime._requireInteger('minutes', KV.minutes ?? 0) * 60 +
+      datetime._requireInteger('seconds', KV.seconds ?? 0)
+   nano = datetime._requireInteger('millis', KV.millis ?? 0) * 1000000 +
+      datetime._requireInteger('nanos', KV.nanos ?? 0)
+   return new_duration(seconds, nano)
+end
+
+datetime.offset = make_constructor('offset')
+@Doc(text=[[
+@desc Create an offset from hours
+@input Offset hours
+@result Offset value
+]])
+datetime.offset.hours = function(Hours:num):table
+   return new_offset(datetime._requireInteger('hours', Hours) * 3600)
+end
+
+@Doc(text=[[
+@desc Parse a UTC offset
+@input Offset text
+@result Offset value
+]])
+datetime.offset.parse = function(Text:str):table
+   if type(Text) != 'string' then datetime._syntaxError('Offset text must be a string.') end
+
+   full_text, sign_text, hour_text, minute_text = rx_offset.extract(Text)
+   if full_text is nil then datetime._syntaxError(f"Invalid Offset string '{Text}'.") end
+   if full_text is 'Z' then return new_offset(0) end
+
+   hour = tonumber(hour_text)
+   minute = tonumber(minute_text)
+   if minute > 59 then datetime._syntaxError(f"Invalid Offset string '{Text}'.") end
+
+   seconds = hour * 3600 + minute * 60
+   if sign_text is '-' then seconds = -seconds end
+   return new_offset(seconds)
+end
+
+@Doc(text=[[
+@desc Return the UTC offset
+@result Zero offset value
+]])
+datetime.offset.utc = function():table
+   return new_offset(0)
+end
+
+@Doc(text=[[
+@desc Create an offset from seconds
+@input Offset seconds
+@result Offset value
+]])
+getmetatable(datetime.offset).__call = function(Self, Seconds:any):table
+   return new_offset(Seconds)
+end
+
+datetime.localDate = make_constructor('localDate')
+@Doc(text=[[
+@desc Create a local date from field values
+@input Table with year, month, and day
+@result LocalDate value
+]])
+datetime.localDate.from = function(KV:table):table
+   datetime._requireTable('localDate', KV)
+   return new_local_date(KV.year, KV.month, KV.day)
+end
+
+@Doc(text=[[
+@desc Parse an ISO local date
+@input Date text
+@result LocalDate value
+]])
+datetime.localDate.parse = function(Text:str):table
+   year, month, day = parse_date_text(Text)
+   return new_local_date(year, month, day)
+end
+
+@Doc(text=[[
+@desc Create a local date
+@input Year
+@input Month number
+@input Day of month
+@result LocalDate value
+]])
+getmetatable(datetime.localDate).__call = function(Self, Year:any, Month:any, Day:any):table
+   return new_local_date(Year, Month, Day)
+end
+
+datetime.localTime = make_constructor('localTime')
+@Doc(text=[[
+@desc Create a local time from field values
+@input Table with hour, minute, second, or nano
+@result LocalTime value
+]])
+datetime.localTime.from = function(KV:table):table
+   datetime._requireTable('localTime', KV)
+   return new_local_time(KV.hour, KV.minute ?? 0, KV.second ?? 0, KV.nano ?? 0)
+end
+
+@Doc(text=[[
+@desc Parse an ISO local time
+@input Time text
+@result LocalTime value
+]])
+datetime.localTime.parse = function(Text:str):table
+   hour, minute, second, nano = parse_time_text(Text)
+   return new_local_time(hour, minute, second, nano)
+end
+
+@Doc(text=[[
+@desc Create a local time
+@input Hour
+@input Minute
+@input Second
+@input Nanosecond
+@result LocalTime value
+]])
+getmetatable(datetime.localTime).__call = function(Self, Hour:any, Minute:any, Second:any, Nano:any):table
+   return new_local_time(Hour, Minute ?? 0, Second ?? 0, Nano ?? 0)
+end
+
+datetime.localDateTime = make_constructor('localDateTime')
+@Doc(text=[[
+@desc Create a local date-time from field values
+@input Table with date and time, or date-time fields
+@result LocalDateTime value
+]])
+datetime.localDateTime.from = function(KV:table):table
+   datetime._requireTable('localDateTime', KV)
+   if KV.date != nil and KV.time != nil then
+      return new_local_date_time_from_parts(KV.date, KV.time)
+   end
+   return new_local_date_time(KV.year, KV.month, KV.day, KV.hour ?? 0, KV.minute ?? 0, KV.second ?? 0, KV.nano ?? 0)
+end
+
+@Doc(text=[[
+@desc Parse an ISO local date-time
+@input Date-time text
+@result LocalDateTime value
+]])
+datetime.localDateTime.parse = function(Text:str):table
+   local date, time = parse_local_date_time_text(Text)
+   return new_local_date_time_from_parts(date, time)
+end
+
+@Doc(text=[[
+@desc Create a local date-time
+@input Year
+@input Month number
+@input Day of month
+@input Hour
+@input Minute
+@input Second
+@input Nanosecond
+@result LocalDateTime value
+]])
+getmetatable(datetime.localDateTime).__call =
+   function(Self, Year:any, Month:any, Day:any, Hour:any, Minute:any, Second:any, Nano:any):table
+      return new_local_date_time(Year, Month, Day, Hour ?? 0, Minute ?? 0, Second ?? 0, Nano ?? 0)
+   end
+
+datetime.offsetDateTime = make_constructor('offsetDateTime')
+@Doc(text=[[
+@desc Create an offset date-time from field values
+@input Table with local_date_time and offset
+@result OffsetDateTime value
+]])
+datetime.offsetDateTime.from = function(KV:table):table
+   datetime._requireTable('offsetDateTime', KV)
+   return new_offset_date_time(KV.local_date_time, KV.offset)
+end
+
+@Doc(text=[[
+@desc Parse an ISO offset date-time
+@input Date-time text with offset
+@result OffsetDateTime value
+]])
+datetime.offsetDateTime.parse = function(Text:str):table
+   if type(Text) != 'string' then datetime._syntaxError('OffsetDateTime text must be a string.') end
+
+   local_text, offset_text = rx_offset_date_time.extract(Text)
+   if local_text is nil then datetime._syntaxError(f"Invalid OffsetDateTime string '{Text}'.") end
+
+   return new_offset_date_time(datetime.localDateTime.parse(local_text), datetime.offset.parse(offset_text))
+end
+
+@Doc(text=[[
+@desc Create an offset date-time
+@input LocalDateTime value
+@input Offset value
+@result OffsetDateTime value
+]])
+getmetatable(datetime.offsetDateTime).__call = function(Self, LocalDateTime:any, Offset:any):table
+   return new_offset_date_time(LocalDateTime, Offset)
+end
+
+datetime.period = make_constructor('period')
+@Doc(text=[[
+@desc Create a period from years
+@input Period years
+@result Period value
+]])
+datetime.period.years = function(Years:num):table
+   return new_period(Years, 0, 0, 0)
+end
+
+@Doc(text=[[
+@desc Create a period from months
+@input Period months
+@result Period value
+]])
+datetime.period.months = function(Months:num):table
+   return new_period(0, Months, 0, 0)
+end
+
+@Doc(text=[[
+@desc Create a period from weeks
+@input Period weeks
+@result Period value
+]])
+datetime.period.weeks = function(Weeks:num):table
+   return new_period(0, 0, Weeks, 0)
+end
+
+@Doc(text=[[
+@desc Create a period from days
+@input Period days
+@result Period value
+]])
+datetime.period.days = function(Days:num):table
+   return new_period(0, 0, 0, Days)
+end
+
+@Doc(text=[[
+@desc Parse an ISO date period
+@input Period text
+@result Period value
+]])
+datetime.period.parse = function(Text:str):table
+   if type(Text) != 'string' then datetime._syntaxError('Period text must be a string.') end
+
+   sign_text, years_text, months_text, weeks_text, days_text = rx_period.extract(Text)
+   if (years_text is nil or years_text is '') and (months_text is nil or months_text is '') and
+      (weeks_text is nil or weeks_text is '') and (days_text is nil or days_text is '') then
+      datetime._syntaxError(f"Invalid Period string '{Text}'.")
+   end
+
+   sign = sign_text is '-' ? -1 :> 1
+   return new_period(sign * tonumber(years_text ?? '0'), sign * tonumber(months_text ?? '0'),
+      sign * tonumber(weeks_text ?? '0'), sign * tonumber(days_text ?? '0'))
+end
+
+@Doc(text=[[
+@desc Create a period from field values
+@input Table with years, months, weeks, or days
+@result Period value
+]])
+getmetatable(datetime.period).__call = function(Self, KV:any):table
+   datetime._requireTable('period', KV)
+   return new_period(KV.years ?? 0, KV.months ?? 0, KV.weeks ?? 0, KV.days ?? 0)
+end
+
+datetime.interval = make_constructor('interval')
+@Doc(text=[[
+@desc Create an interval from field values
+@input Table with start and stop instants
+@result Interval value
+]])
+datetime.interval.from = function(KV:table):table
+   datetime._requireTable('interval', KV)
+   return new_interval(KV.start, KV.stop)
+end
+
+@Doc(text=[[
+@desc Create an interval from a start and duration
+@input Start instant
+@input Duration value
+@result Interval value
+]])
+datetime.interval.fromStartAndDuration = function(Start:table, Duration:table):table
+   start_fields = require_instant(Start)
+   duration_fields = require_duration(Duration)
+   return new_interval(Start, new_instant(start_fields.epoch_second + duration_fields.seconds,
+      start_fields.nano + duration_fields.nano))
+end
+
+@Doc(text=[[
+@desc Create an interval
+@input Start instant
+@input Stop instant
+@result Interval value
+]])
+getmetatable(datetime.interval).__call = function(Self, Start:any, Stop:any):table
+   return new_interval(Start, Stop)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Metatable methods.
+
+@Doc(text=[[
+@desc Return Unix epoch seconds
+@result Seconds since the Unix epoch
+]])
+function datetime.mtInstant:toUnixSeconds():num
+   return datetime._fields(self, 'Instant').epoch_second
+end
+
+@Doc(text=[[
+@desc Return Unix epoch milliseconds
+@result Milliseconds since the Unix epoch
+]])
+function datetime.mtInstant:toUnixMillis():num
+   fields = datetime._fields(self, 'Instant')
+   return fields.epoch_second * 1000 + math.floor(fields.nano / 1000000)
+end
+
+@Doc(text=[[
+@desc Return Unix epoch nanoseconds
+@result Nanoseconds since the Unix epoch
+]])
+function datetime.mtInstant:toUnixNanos():num
+   fields = datetime._fields(self, 'Instant')
+   return fields.epoch_second * NANOS_PER_SECOND + fields.nano
+end
+
+@Doc(text=[[
+@desc Convert this instant to text
+@result ISO instant text
+]])
+datetime.mtInstant.__tostring = function(Self:table):str
+   fields = datetime._fields(Self, 'Instant')
+   date_fields, time_fields = epoch_second_to_local(fields.epoch_second, fields.nano)
+   return f"{format_year(date_fields.year)}-{pad_int(date_fields.month, 2)}-{pad_int(date_fields.day, 2)}T" ..
+      f"{pad_int(time_fields.hour, 2)}:{pad_int(time_fields.minute, 2)}:{pad_int(time_fields.second, 2)}" ..
+      format_nano(time_fields.nano) .. 'Z'
+end
+
+@Doc(text=[[
+@desc Compare instants for equality
+@input First instant
+@input Second instant
+@result True when equal
+]])
+datetime.mtInstant.__eq = function(A:table, B:table):bool
+   a = datetime._fields(A, 'Instant')
+   b = datetime._fields(B, 'Instant')
+   return a.epoch_second is b.epoch_second and a.nano is b.nano
+end
+
+@Doc(text=[[
+@desc Compare instant ordering
+@input First instant
+@input Second instant
+@result True when first is earlier
+]])
+datetime.mtInstant.__lt = function(A:table, B:table):bool
+   a = datetime._fields(A, 'Instant')
+   b = datetime._fields(B, 'Instant')
+   return compare_pair(a.epoch_second, a.nano, b.epoch_second, b.nano) < 0
+end
+
+@Doc(text=[[
+@desc Compare instant ordering inclusively
+@input First instant
+@input Second instant
+@result True when first is not later
+]])
+datetime.mtInstant.__le = function(A:table, B:table):bool
+   a = datetime._fields(A, 'Instant')
+   b = datetime._fields(B, 'Instant')
+   return compare_pair(a.epoch_second, a.nano, b.epoch_second, b.nano) <= 0
+end
+
+@Doc(text=[[
+@desc Add a duration to an instant
+@input Instant value
+@input Duration value
+@result Instant value
+]])
+datetime.mtInstant.__add = function(A:table, B:table):table
+   a = datetime._fields(A, 'Instant')
+   if datetime.isDuration(B) then
+      b = datetime._fields(B, 'Duration')
+      return new_instant(a.epoch_second + b.seconds, a.nano + b.nano)
+   end
+   unsupported_operation(A, '+', B)
+end
+
+@Doc(text=[[
+@desc Subtract a duration or instant
+@input Instant value
+@input Duration or Instant value
+@result Instant or Duration value
+]])
+datetime.mtInstant.__sub = function(A:table, B:table):table
+   a = datetime._fields(A, 'Instant')
+   if datetime.isDuration(B) then
+      b = datetime._fields(B, 'Duration')
+      return new_instant(a.epoch_second - b.seconds, a.nano - b.nano)
+   end
+   if datetime.isInstant(B) then
+      b = datetime._fields(B, 'Instant')
+      return new_duration(a.epoch_second - b.epoch_second, a.nano - b.nano)
+   end
+   unsupported_operation(A, '-', B)
+end
+
+@Doc(text=[[
+@desc Return the duration until another instant
+@input Target instant
+@result Duration value
+]])
+function datetime.mtInstant:durationUntil(Other:table):table
+   if not datetime.isInstant(Other) then datetime._invalidValue('Other must be an Instant value.') end
+   return Other - self
+end
+
+@Doc(text=[[
+@desc Convert this instant to a zoned date-time
+@input Target time zone
+@result ZonedDateTime value
+]])
+function datetime.mtInstant:toZonedDateTime(Zone:table):table
+   return new_zoned_date_time(self, Zone)
+end
+
+@Doc(text=[[
+@desc Format this instant
+@input Format pattern
+@result Formatted text
+]])
+function datetime.mtInstant:format(Pattern:any):str
+   fields = datetime._fields(self, 'Instant')
+   date_fields, time_fields = epoch_second_to_local(fields.epoch_second, fields.nano)
+   return format_local_fields('Instant', date_fields, time_fields, datetime.offset.utc(), 'UTC', Pattern)
+end
+
+@Doc(text=[[
+@desc Return the duration in seconds
+@result Total seconds
+]])
+function datetime.mtDuration:totalSeconds():num
+   fields = datetime._fields(self, 'Duration')
+   return fields.seconds + fields.nano / NANOS_PER_SECOND
+end
+
+@Doc(text=[[
+@desc Return the duration in milliseconds
+@result Total milliseconds
+]])
+function datetime.mtDuration:totalMillis():num
+   fields = datetime._fields(self, 'Duration')
+   return fields.seconds * 1000 + fields.nano / 1000000
+end
+
+@Doc(text=[[
+@desc Convert this duration to text
+@result ISO duration text
+]])
+datetime.mtDuration.__tostring = function(Self:table):str
+   fields = datetime._fields(Self, 'Duration')
+   seconds = fields.seconds
+   nano = fields.nano
+   negative = seconds < 0
+   if negative then
+      seconds = -seconds - (nano > 0 ? 1 :> 0)
+      nano = nano > 0 ? NANOS_PER_SECOND - nano :> 0
+   end
+
+   hours = math.floor(seconds / 3600)
+   seconds -= hours * 3600
+   minutes = math.floor(seconds / 60)
+   seconds -= minutes * 60
+
+   local text = negative ? '-PT' :> 'PT'
+   if hours != 0 then text ..= tostring(hours) .. 'H' end
+   if minutes != 0 then text ..= tostring(minutes) .. 'M' end
+   if seconds != 0 or nano != 0 or (hours is 0 and minutes is 0) then
+      text ..= tostring(seconds) .. format_nano(nano) .. 'S'
+   end
+   return text
+end
+
+@Doc(text=[[
+@desc Compare durations for equality
+@input First duration
+@input Second duration
+@result True when equal
+]])
+datetime.mtDuration.__eq = function(A:table, B:table):bool
+   a = datetime._fields(A, 'Duration')
+   b = datetime._fields(B, 'Duration')
+   return a.seconds is b.seconds and a.nano is b.nano
+end
+
+@Doc(text=[[
+@desc Compare duration ordering
+@input First duration
+@input Second duration
+@result True when first is shorter
+]])
+datetime.mtDuration.__lt = function(A:table, B:table):bool
+   a = datetime._fields(A, 'Duration')
+   b = datetime._fields(B, 'Duration')
+   return compare_pair(a.seconds, a.nano, b.seconds, b.nano) < 0
+end
+
+@Doc(text=[[
+@desc Compare duration ordering inclusively
+@input First duration
+@input Second duration
+@result True when first is not longer
+]])
+datetime.mtDuration.__le = function(A:table, B:table):bool
+   a = datetime._fields(A, 'Duration')
+   b = datetime._fields(B, 'Duration')
+   return compare_pair(a.seconds, a.nano, b.seconds, b.nano) <= 0
+end
+
+@Doc(text=[[
+@desc Add two durations
+@input First duration
+@input Second duration
+@result Duration value
+]])
+datetime.mtDuration.__add = function(A:table, B:table):table
+   a = datetime._fields(A, 'Duration')
+   if datetime.isDuration(B) then
+      b = datetime._fields(B, 'Duration')
+      return new_duration(a.seconds + b.seconds, a.nano + b.nano)
+   end
+   unsupported_operation(A, '+', B)
+end
+
+@Doc(text=[[
+@desc Subtract two durations
+@input First duration
+@input Second duration
+@result Duration value
+]])
+datetime.mtDuration.__sub = function(A:table, B:table):table
+   a = datetime._fields(A, 'Duration')
+   if datetime.isDuration(B) then
+      b = datetime._fields(B, 'Duration')
+      return new_duration(a.seconds - b.seconds, a.nano - b.nano)
+   end
+   unsupported_operation(A, '-', B)
+end
+
+@Doc(text=[[
+@desc Negate this duration
+@result Duration value
+]])
+datetime.mtDuration.__unm = function(Self:table):table
+   fields = datetime._fields(Self, 'Duration')
+   return new_duration(-fields.seconds, -fields.nano)
+end
+
+@Doc(text=[[
+@desc Return the offset in seconds
+@result Offset seconds
+]])
+function datetime.mtOffset:totalSeconds():num
+   return datetime._fields(self, 'Offset').seconds
+end
+
+@Doc(text=[[
+@desc Negate this offset
+@result Offset value
+]])
+datetime.mtOffset.__unm = function(Self:table):table
+   return new_offset(-datetime._fields(Self, 'Offset').seconds)
+end
+
+@Doc(text=[[
+@desc Convert this offset to text
+@result Offset text
+]])
+datetime.mtOffset.__tostring = function(Self:table):str
+   seconds = datetime._fields(Self, 'Offset').seconds
+   if seconds is 0 then return 'Z' end
+
+   sign = seconds < 0 ? '-' :> '+'
+   if seconds < 0 then seconds = -seconds end
+   hours = math.floor(seconds / 3600)
+   minutes = math.floor((seconds - hours * 3600) / 60)
+   return sign .. pad_int(hours, 2) .. ':' .. pad_int(minutes, 2)
+end
+
+@Doc(text=[[
+@desc Compare offsets for equality
+@input First offset
+@input Second offset
+@result True when equal
+]])
+datetime.mtOffset.__eq = function(A:table, B:table):bool
+   return datetime._fields(A, 'Offset').seconds is datetime._fields(B, 'Offset').seconds
+end
+
+@Doc(text=[[
+@desc Compare offset ordering
+@input First offset
+@input Second offset
+@result True when first is smaller
+]])
+datetime.mtOffset.__lt = function(A:table, B:table):bool
+   return datetime._fields(A, 'Offset').seconds < datetime._fields(B, 'Offset').seconds
+end
+
+@Doc(text=[[
+@desc Compare offset ordering inclusively
+@input First offset
+@input Second offset
+@result True when first is not larger
+]])
+datetime.mtOffset.__le = function(A:table, B:table):bool
+   return datetime._fields(A, 'Offset').seconds <= datetime._fields(B, 'Offset').seconds
+end
+
+@Doc(text=[[
+@desc Return the year
+@result Year
+]])
+function datetime.mtLocalDate:year():num return datetime._fields(self, 'LocalDate').year end
+
+@Doc(text=[[
+@desc Return the month
+@result Month number
+]])
+function datetime.mtLocalDate:month():num return datetime._fields(self, 'LocalDate').month end
+
+@Doc(text=[[
+@desc Return the day of month
+@result Day of month
+]])
+function datetime.mtLocalDate:day():num return datetime._fields(self, 'LocalDate').day end
+
+@Doc(text=[[
+@desc Check whether the date is in a leap year
+@result True for leap years
+]])
+function datetime.mtLocalDate:isLeapYear():bool return is_leap_year(datetime._fields(self, 'LocalDate').year) end
+
+@Doc(text=[[
+@desc Return the number of days in the month
+@result Days in month
+]])
+function datetime.mtLocalDate:daysInMonth():num
+   fields = datetime._fields(self, 'LocalDate')
+   return days_in_month(fields.year, fields.month)
+end
+
+@Doc(text=[[
+@desc Return the number of days in the year
+@result Days in year
+]])
+function datetime.mtLocalDate:daysInYear():num return self:isLeapYear() ? 366 :> 365 end
+
+@Doc(text=[[
+@desc Return the ordinal day of year
+@result Day of year
+]])
+function datetime.mtLocalDate:dayOfYear():num
+   fields = datetime._fields(self, 'LocalDate')
+   return day_of_year(fields.year, fields.month, fields.day)
+end
+
+@Doc(text=[[
+@desc Return the ISO day of week
+@result Day number from 1 to 7
+]])
+function datetime.mtLocalDate:dayOfWeek():num
+   fields = datetime._fields(self, 'LocalDate')
+   return ((days_from_civil(fields.year, fields.month, fields.day) + 3) % 7) + 1
+end
+
+@Doc(text=[[
+@desc Return a date with replacement fields
+@input Table with replacement date fields
+@result LocalDate value
+]])
+local_date_with = function(Self:table, KV:table):table
+   datetime._requireTable('fields', KV)
+   fields = datetime._fields(Self, 'LocalDate')
+   return new_local_date(KV.year ?? fields.year, KV.month ?? fields.month, KV.day ?? fields.day)
+end
+
+datetime.mtLocalDate.withFields = local_date_with
+@Doc(text=[[
+@desc Format this local date
+@input Format pattern
+@result Formatted text
+]])
+function datetime.mtLocalDate:format(Pattern:any):str
+   return format_local_fields('LocalDate', datetime._fields(self, 'LocalDate'), nil, nil, nil, Pattern)
+end
+
+@Doc(text=[[
+@desc Combine this date with a time
+@input LocalTime value
+@result LocalDateTime value
+]])
+function datetime.mtLocalDate:atTime(Time:table):table
+   if not datetime.isLocalTime(Time) then datetime._invalidValue('Time must be a LocalTime value.') end
+   return new_local_date_time_from_parts(self, Time)
+end
+
+@Doc(text=[[
+@desc Add a period to a date
+@input LocalDate value
+@input Period value
+@result LocalDate value
+]])
+datetime.mtLocalDate.__add = function(A:table, B:table):table
+   a = datetime._fields(A, 'LocalDate')
+   if datetime.isPeriod(B) then
+      fields = date_plus_period_fields(a, datetime._fields(B, 'Period'), 1)
+      return new_local_date(fields.year, fields.month, fields.day)
+   end
+   unsupported_operation(A, '+', B)
+end
+
+@Doc(text=[[
+@desc Subtract a period or date
+@input LocalDate value
+@input Period or LocalDate value
+@result LocalDate or Period value
+]])
+datetime.mtLocalDate.__sub = function(A:table, B:table):table
+   a = datetime._fields(A, 'LocalDate')
+   if datetime.isPeriod(B) then
+      fields = date_plus_period_fields(a, datetime._fields(B, 'Period'), -1)
+      return new_local_date(fields.year, fields.month, fields.day)
+   end
+   if datetime.isLocalDate(B) then
+      b = datetime._fields(B, 'LocalDate')
+      return new_period(0, 0, 0, days_from_civil(a.year, a.month, a.day) - days_from_civil(b.year, b.month, b.day))
+   end
+   unsupported_operation(A, '-', B)
+end
+
+@Doc(text=[[
+@desc Convert this date to text
+@result ISO date text
+]])
+datetime.mtLocalDate.__tostring = function(Self:table):str
+   fields = datetime._fields(Self, 'LocalDate')
+   return f"{format_year(fields.year)}-{pad_int(fields.month, 2)}-{pad_int(fields.day, 2)}"
+end
+
+@Doc(text=[[
+@desc Compare dates for equality
+@input First date
+@input Second date
+@result True when equal
+]])
+datetime.mtLocalDate.__eq = function(A:table, B:table):bool
+   return compare_date_fields(datetime._fields(A, 'LocalDate'), datetime._fields(B, 'LocalDate')) is 0
+end
+
+@Doc(text=[[
+@desc Compare date ordering
+@input First date
+@input Second date
+@result True when first is earlier
+]])
+datetime.mtLocalDate.__lt = function(A:table, B:table):bool
+   return compare_date_fields(datetime._fields(A, 'LocalDate'), datetime._fields(B, 'LocalDate')) < 0
+end
+
+@Doc(text=[[
+@desc Compare date ordering inclusively
+@input First date
+@input Second date
+@result True when first is not later
+]])
+datetime.mtLocalDate.__le = function(A:table, B:table):bool
+   return compare_date_fields(datetime._fields(A, 'LocalDate'), datetime._fields(B, 'LocalDate')) <= 0
+end
+
+@Doc(text=[[
+@desc Return the hour
+@result Hour
+]])
+function datetime.mtLocalTime:hour():num return datetime._fields(self, 'LocalTime').hour end
+
+@Doc(text=[[
+@desc Return the minute
+@result Minute
+]])
+function datetime.mtLocalTime:minute():num return datetime._fields(self, 'LocalTime').minute end
+
+@Doc(text=[[
+@desc Return the second
+@result Second
+]])
+function datetime.mtLocalTime:second():num return datetime._fields(self, 'LocalTime').second end
+
+@Doc(text=[[
+@desc Return the nanosecond
+@result Nanosecond
+]])
+function datetime.mtLocalTime:nano():num return datetime._fields(self, 'LocalTime').nano end
+
+@Doc(text=[[
+@desc Return a time with replacement fields
+@input Table with replacement time fields
+@result LocalTime value
+]])
+local_time_with = function(Self:table, KV:table):table
+   datetime._requireTable('fields', KV)
+   fields = datetime._fields(Self, 'LocalTime')
+   return new_local_time(KV.hour ?? fields.hour, KV.minute ?? fields.minute, KV.second ?? fields.second,
+      KV.nano ?? fields.nano)
+end
+
+datetime.mtLocalTime.withFields = local_time_with
+@Doc(text=[[
+@desc Format this local time
+@input Format pattern
+@result Formatted text
+]])
+function datetime.mtLocalTime:format(Pattern:any):str
+   return format_local_fields('LocalTime', nil, datetime._fields(self, 'LocalTime'), nil, nil, Pattern)
+end
+
+@Doc(text=[[
+@desc Convert this time to text
+@result ISO time text
+]])
+datetime.mtLocalTime.__tostring = function(Self:table):str
+   fields = datetime._fields(Self, 'LocalTime')
+   return f"{pad_int(fields.hour, 2)}:{pad_int(fields.minute, 2)}:{pad_int(fields.second, 2)}" ..
+      format_nano(fields.nano)
+end
+
+@Doc(text=[[
+@desc Compare times for equality
+@input First time
+@input Second time
+@result True when equal
+]])
+datetime.mtLocalTime.__eq = function(A:table, B:table):bool
+   return compare_time_fields(datetime._fields(A, 'LocalTime'), datetime._fields(B, 'LocalTime')) is 0
+end
+
+@Doc(text=[[
+@desc Compare time ordering
+@input First time
+@input Second time
+@result True when first is earlier
+]])
+datetime.mtLocalTime.__lt = function(A:table, B:table):bool
+   return compare_time_fields(datetime._fields(A, 'LocalTime'), datetime._fields(B, 'LocalTime')) < 0
+end
+
+@Doc(text=[[
+@desc Compare time ordering inclusively
+@input First time
+@input Second time
+@result True when first is not later
+]])
+datetime.mtLocalTime.__le = function(A:table, B:table):bool
+   return compare_time_fields(datetime._fields(A, 'LocalTime'), datetime._fields(B, 'LocalTime')) <= 0
+end
+
+@Doc(text=[[
+@desc Add a duration to a time
+@input LocalTime value
+@input Duration value
+@result LocalTime value
+]])
+datetime.mtLocalTime.__add = function(A:table, B:table):table
+   if datetime.isDuration(B) then
+      fields = time_plus_duration_fields(datetime._fields(A, 'LocalTime'), datetime._fields(B, 'Duration'), 1)
+      return new_local_time(fields.hour, fields.minute, fields.second, fields.nano)
+   end
+   unsupported_operation(A, '+', B)
+end
+
+@Doc(text=[[
+@desc Subtract a duration from a time
+@input LocalTime value
+@input Duration value
+@result LocalTime value
+]])
+datetime.mtLocalTime.__sub = function(A:table, B:table):table
+   if datetime.isDuration(B) then
+      fields = time_plus_duration_fields(datetime._fields(A, 'LocalTime'), datetime._fields(B, 'Duration'), -1)
+      return new_local_time(fields.hour, fields.minute, fields.second, fields.nano)
+   end
+   unsupported_operation(A, '-', B)
+end
+
+@Doc(text=[[
+@desc Return the date part
+@result LocalDate value
+]])
+function datetime.mtLocalDateTime:date():table return datetime._fields(self, 'LocalDateTime').date end
+
+@Doc(text=[[
+@desc Return the time part
+@result LocalTime value
+]])
+function datetime.mtLocalDateTime:time():table return datetime._fields(self, 'LocalDateTime').time end
+
+@Doc(text=[[
+@desc Return a date-time with replacement fields
+@input Table with replacement date-time fields
+@result LocalDateTime value
+]])
+local_date_time_with = function(Self:table, KV:table):table
+   datetime._requireTable('fields', KV)
+   fields = datetime._fields(Self, 'LocalDateTime')
+   date_fields = datetime._fields(fields.date, 'LocalDate')
+   time_fields = datetime._fields(fields.time, 'LocalTime')
+   return new_local_date_time(KV.year ?? date_fields.year, KV.month ?? date_fields.month, KV.day ?? date_fields.day,
+      KV.hour ?? time_fields.hour, KV.minute ?? time_fields.minute, KV.second ?? time_fields.second,
+      KV.nano ?? time_fields.nano)
+end
+
+datetime.mtLocalDateTime.withFields = local_date_time_with
+
+@Doc(text=[[
+@desc Format this local date-time
+@input Format pattern
+@result Formatted text
+]])
+function datetime.mtLocalDateTime:format(Pattern:any):str
+   date_fields, time_fields = local_date_time_parts(self)
+   return format_local_fields('LocalDateTime', date_fields, time_fields, nil, nil, Pattern)
+end
+
+@Doc(text=[[
+@desc Attach an offset to this local date-time
+@input Offset value
+@result OffsetDateTime value
+]])
+function datetime.mtLocalDateTime:atOffset(Offset:table):table
+   return self:toOffsetDateTime(Offset)
+end
+
+@Doc(text=[[
+@desc Convert this local date-time to an offset date-time
+@input Offset value
+@result OffsetDateTime value
+]])
+function datetime.mtLocalDateTime:toOffsetDateTime(Offset:table):table
+   return new_offset_date_time(self, Offset)
+end
+
+@Doc(text=[[
+@desc Resolve this local date-time in a time zone
+@input Target time zone
+@input Resolver value
+@result ZonedDateTime value
+]])
+function datetime.mtLocalDateTime:inZone(Zone:table, Resolver:table):table
+   return self:toZonedDateTime(Zone, Resolver)
+end
+
+@Doc(text=[[
+@desc Convert this local date-time to a zoned date-time
+@input Target time zone
+@input Resolver value
+@result ZonedDateTime value
+]])
+function datetime.mtLocalDateTime:toZonedDateTime(Zone:table, Resolver:table):table
+   Resolver ??= datetime.resolve.compatible
+   return resolve_local_date_time(self, Zone, Resolver)
+end
+
+@Doc(text=[[
+@desc Add a duration or period
+@input LocalDateTime value
+@input Duration or Period value
+@result LocalDateTime value
+]])
+datetime.mtLocalDateTime.__add = function(A:table, B:table):table
+   a = datetime._fields(A, 'LocalDateTime')
+   date_fields = datetime._fields(a.date, 'LocalDate')
+   time_fields = datetime._fields(a.time, 'LocalTime')
+
+   if datetime.isDuration(B) then
+      new_date_fields, new_time_fields =
+         local_date_time_plus_duration_fields(date_fields, time_fields, datetime._fields(B, 'Duration'), 1)
+      return new_local_date_time(new_date_fields.year, new_date_fields.month, new_date_fields.day,
+         new_time_fields.hour, new_time_fields.minute, new_time_fields.second, new_time_fields.nano)
+   end
+
+   if datetime.isPeriod(B) then
+      new_date_fields = date_plus_period_fields(date_fields, datetime._fields(B, 'Period'), 1)
+      return new_local_date_time(new_date_fields.year, new_date_fields.month, new_date_fields.day,
+         time_fields.hour, time_fields.minute, time_fields.second, time_fields.nano)
+   end
+
+   unsupported_operation(A, '+', B)
+end
+
+@Doc(text=[[
+@desc Subtract a duration or period
+@input LocalDateTime value
+@input Duration or Period value
+@result LocalDateTime value
+]])
+datetime.mtLocalDateTime.__sub = function(A:table, B:table):table
+   a = datetime._fields(A, 'LocalDateTime')
+   date_fields = datetime._fields(a.date, 'LocalDate')
+   time_fields = datetime._fields(a.time, 'LocalTime')
+
+   if datetime.isDuration(B) then
+      new_date_fields, new_time_fields =
+         local_date_time_plus_duration_fields(date_fields, time_fields, datetime._fields(B, 'Duration'), -1)
+      return new_local_date_time(new_date_fields.year, new_date_fields.month, new_date_fields.day,
+         new_time_fields.hour, new_time_fields.minute, new_time_fields.second, new_time_fields.nano)
+   end
+
+   if datetime.isPeriod(B) then
+      new_date_fields = date_plus_period_fields(date_fields, datetime._fields(B, 'Period'), -1)
+      return new_local_date_time(new_date_fields.year, new_date_fields.month, new_date_fields.day,
+         time_fields.hour, time_fields.minute, time_fields.second, time_fields.nano)
+   end
+
+   unsupported_operation(A, '-', B)
+end
+
+@Doc(text=[[
+@desc Convert this local date-time to text
+@result ISO local date-time text
+]])
+datetime.mtLocalDateTime.__tostring = function(Self:table):str
+   fields = datetime._fields(Self, 'LocalDateTime')
+   return f'{fields.date}T{fields.time}'
+end
+
+@Doc(text=[[
+@desc Compare local date-times for equality
+@input First local date-time
+@input Second local date-time
+@result True when equal
+]])
+datetime.mtLocalDateTime.__eq = function(A:table, B:table):bool
+   a = datetime._fields(A, 'LocalDateTime')
+   b = datetime._fields(B, 'LocalDateTime')
+   return a.date is b.date and a.time is b.time
+end
+
+@Doc(text=[[
+@desc Compare local date-time ordering
+@input First local date-time
+@input Second local date-time
+@result True when first is earlier
+]])
+datetime.mtLocalDateTime.__lt = function(A:table, B:table):bool
+   a = datetime._fields(A, 'LocalDateTime')
+   b = datetime._fields(B, 'LocalDateTime')
+   date_compare = compare_date_fields(datetime._fields(a.date, 'LocalDate'),
+      datetime._fields(b.date, 'LocalDate'))
+   if date_compare != 0 then return date_compare < 0 end
+   return compare_time_fields(datetime._fields(a.time, 'LocalTime'), datetime._fields(b.time, 'LocalTime')) < 0
+end
+
+@Doc(text=[[
+@desc Compare local date-time ordering inclusively
+@input First local date-time
+@input Second local date-time
+@result True when first is not later
+]])
+datetime.mtLocalDateTime.__le = function(A:table, B:table):bool
+   return A < B or A is B
+end
+
+@Doc(text=[[
+@desc Return the instant represented by this value
+@result Instant value
+]])
+function datetime.mtOffsetDateTime:instant():table
+   return offset_date_time_instant(self)
+end
+
+@Doc(text=[[
+@desc Return the offset
+@result Offset value
+]])
+function datetime.mtOffsetDateTime:offset():table
+   return require_offset_date_time(self).offset
+end
+
+@Doc(text=[[
+@desc Return the local date
+@result LocalDate value
+]])
+function datetime.mtOffsetDateTime:date():table
+   return require_offset_date_time(self).local_date_time:date()
+end
+
+@Doc(text=[[
+@desc Return the local time
+@result LocalTime value
+]])
+function datetime.mtOffsetDateTime:time():table
+   return require_offset_date_time(self).local_date_time:time()
+end
+
+@Doc(text=[[
+@desc Return the local date-time
+@result LocalDateTime value
+]])
+function datetime.mtOffsetDateTime:localDateTime():table
+   return require_offset_date_time(self).local_date_time
+end
+
+@Doc(text=[[
+@desc Format this offset date-time
+@input Format pattern
+@result Formatted text
+]])
+function datetime.mtOffsetDateTime:format(Pattern:any):str
+   fields = require_offset_date_time(self)
+   date_fields, time_fields = local_date_time_parts(fields.local_date_time)
+   return format_local_fields('OffsetDateTime', date_fields, time_fields, fields.offset, nil, Pattern)
+end
+
+@Doc(text=[[
+@desc Convert this value to a zoned date-time
+@input Target time zone
+@result ZonedDateTime value
+]])
+function datetime.mtOffsetDateTime:toZonedDateTime(Zone:table):table
+   return new_zoned_date_time(offset_date_time_instant(self), Zone)
+end
+
+@Doc(text=[[
+@desc Compare by represented instant
+@input Instant or OffsetDateTime value
+@result True when instants match
+]])
+function datetime.mtOffsetDateTime:instantEquals(Other:table):bool
+   if datetime.isInstant(Other) then return self:instant() is Other end
+   if datetime.isOffsetDateTime(Other) then return self:instant() is Other:instant() end
+   datetime._invalidValue('Other must be an Instant or OffsetDateTime value.')
+end
+
+@Doc(text=[[
+@desc Convert this offset date-time to text
+@result ISO offset date-time text
+]])
+datetime.mtOffsetDateTime.__tostring = function(Self:table):str
+   fields = datetime._fields(Self, 'OffsetDateTime')
+   return tostring(fields.local_date_time) .. tostring(fields.offset)
+end
+
+@Doc(text=[[
+@desc Compare offset date-times for equality
+@input First offset date-time
+@input Second offset date-time
+@result True when equal
+]])
+datetime.mtOffsetDateTime.__eq = function(A:table, B:table):bool
+   a = datetime._fields(A, 'OffsetDateTime')
+   b = datetime._fields(B, 'OffsetDateTime')
+   return offset_date_time_instant(A) is offset_date_time_instant(B) and a.offset is b.offset
+end
+
+@Doc(text=[[
+@desc Compare offset date-time ordering
+@input First offset date-time
+@input Second offset date-time
+@result True when first is earlier
+]])
+datetime.mtOffsetDateTime.__lt = function(A:table, B:table):bool
+   return offset_date_time_instant(A) < offset_date_time_instant(B)
+end
+
+@Doc(text=[[
+@desc Compare offset date-time ordering inclusively
+@input First offset date-time
+@input Second offset date-time
+@result True when first is not later
+]])
+datetime.mtOffsetDateTime.__le = function(A:table, B:table):bool
+   return offset_date_time_instant(A) <= offset_date_time_instant(B)
+end
+
+@Doc(text=[[
+@desc Add a duration or period
+@input OffsetDateTime value
+@input Duration or Period value
+@result OffsetDateTime value
+]])
+datetime.mtOffsetDateTime.__add = function(A:table, B:table):table
+   fields = datetime._fields(A, 'OffsetDateTime')
+   if datetime.isDuration(B) then
+      return offset_date_time_from_instant(offset_date_time_instant(A) + B, fields.offset)
+   end
+   if datetime.isPeriod(B) then return new_offset_date_time(fields.local_date_time + B, fields.offset) end
+   unsupported_operation(A, '+', B)
+end
+
+@Doc(text=[[
+@desc Subtract a duration, period, or offset date-time
+@input OffsetDateTime value
+@input Duration, Period, or OffsetDateTime value
+@result OffsetDateTime or Duration value
+]])
+datetime.mtOffsetDateTime.__sub = function(A:table, B:table):table
+   fields = datetime._fields(A, 'OffsetDateTime')
+   if datetime.isDuration(B) then
+      return offset_date_time_from_instant(offset_date_time_instant(A) - B, fields.offset)
+   end
+   if datetime.isPeriod(B) then return new_offset_date_time(fields.local_date_time - B, fields.offset) end
+   if datetime.isOffsetDateTime(B) then return offset_date_time_instant(A) - offset_date_time_instant(B) end
+   unsupported_operation(A, '-', B)
+end
+
+@Doc(text=[[
+@desc Return the represented instant
+@result Instant value
+]])
+function datetime.mtZonedDateTime:instant():table
+   return require_zoned_date_time(self).instant
+end
+
+@Doc(text=[[
+@desc Return the time zone
+@result Zone value
+]])
+function datetime.mtZonedDateTime:zone():table
+   return require_zoned_date_time(self).zone
+end
+
+@Doc(text=[[
+@desc Return the offset at this instant
+@result Offset value
+]])
+function datetime.mtZonedDateTime:offset():table
+   fields = require_zoned_date_time(self)
+   return fields.zone:offsetAt(fields.instant)
+end
+
+@Doc(text=[[
+@desc Return the local date-time
+@result LocalDateTime value
+]])
+function datetime.mtZonedDateTime:localDateTime():table
+   fields = require_zoned_date_time(self)
+   return local_date_time_from_instant_in_zone(fields.instant, fields.zone)
+end
+
+@Doc(text=[[
+@desc Return the local date
+@result LocalDate value
+]])
+function datetime.mtZonedDateTime:date():table
+   return self:localDateTime():date()
+end
+
+@Doc(text=[[
+@desc Return the local time
+@result LocalTime value
+]])
+function datetime.mtZonedDateTime:time():table
+   return self:localDateTime():time()
+end
+
+@Doc(text=[[
+@desc Change zone while preserving the instant
+@input Target time zone
+@result ZonedDateTime value
+]])
+function datetime.mtZonedDateTime:withZoneSameInstant(Zone:table):table
+   return new_zoned_date_time(require_zoned_date_time(self).instant, Zone)
+end
+
+@Doc(text=[[
+@desc Change zone while preserving local fields
+@input Target time zone
+@input Resolver value
+@result ZonedDateTime value
+]])
+function datetime.mtZonedDateTime:withZoneSameLocal(Zone:table, Resolver:table):table
+   Resolver ??= datetime.resolve.compatible
+   return self:localDateTime():toZonedDateTime(Zone, Resolver)
+end
+
+@Doc(text=[[
+@desc Return a zoned date-time with replacement local fields
+@input Table with replacement local fields
+@result ZonedDateTime value
+]])
+zoned_date_time_with_local = function(Self:table, KV:table):table
+   datetime._requireTable('fields', KV)
+   fields = require_zoned_date_time(Self)
+   resolver = KV.resolver ?? datetime.resolve.compatible
+   return Self:localDateTime():withFields(KV):toZonedDateTime(fields.zone, resolver)
+end
+
+datetime.mtZonedDateTime.withLocal = zoned_date_time_with_local
+
+@Doc(text=[[
+@desc Convert this value to an offset date-time
+@result OffsetDateTime value
+]])
+function datetime.mtZonedDateTime:toOffsetDateTime():table
+   return new_offset_date_time(self:localDateTime(), self:offset())
+end
+
+@Doc(text=[[
+@desc Format this zoned date-time
+@input Format pattern
+@result Formatted text
+]])
+function datetime.mtZonedDateTime:format(Pattern:any):str
+   fields = require_zoned_date_time(self)
+   date_fields, time_fields = local_date_time_parts(self:localDateTime())
+   return format_local_fields('ZonedDateTime', date_fields, time_fields, self:offset(), fields.zone:id(), Pattern)
+end
+
+@Doc(text=[[
+@desc Compare by represented instant
+@input Instant, OffsetDateTime, or ZonedDateTime value
+@result True when instants match
+]])
+function datetime.mtZonedDateTime:instantEquals(Other:table):bool
+   fields = require_zoned_date_time(self)
+   if datetime.isInstant(Other) then return fields.instant is Other end
+   if datetime.isOffsetDateTime(Other) then return fields.instant is Other:instant() end
+   if datetime.isZonedDateTime(Other) then return fields.instant is Other:instant() end
+   datetime._invalidValue('Other must be an Instant, OffsetDateTime, or ZonedDateTime value.')
+end
+
+@Doc(text=[[
+@desc Convert this zoned date-time to text
+@result ISO zoned date-time text
+]])
+datetime.mtZonedDateTime.__tostring = function(Self:table):str
+   fields = datetime._fields(Self, 'ZonedDateTime')
+   return tostring(Self:localDateTime()) .. tostring(Self:offset()) .. '[' .. fields.zone:id() .. ']'
+end
+
+@Doc(text=[[
+@desc Compare zoned date-times for equality
+@input First zoned date-time
+@input Second zoned date-time
+@result True when equal
+]])
+datetime.mtZonedDateTime.__eq = function(A:table, B:table):bool
+   a = datetime._fields(A, 'ZonedDateTime')
+   b = datetime._fields(B, 'ZonedDateTime')
+   return a.instant is b.instant and a.zone is b.zone
+end
+
+@Doc(text=[[
+@desc Compare zoned date-time ordering
+@input First zoned date-time
+@input Second zoned date-time
+@result True when first is earlier
+]])
+datetime.mtZonedDateTime.__lt = function(A:table, B:table):bool
+   return datetime._fields(A, 'ZonedDateTime').instant < datetime._fields(B, 'ZonedDateTime').instant
+end
+
+@Doc(text=[[
+@desc Compare zoned date-time ordering inclusively
+@input First zoned date-time
+@input Second zoned date-time
+@result True when first is not later
+]])
+datetime.mtZonedDateTime.__le = function(A:table, B:table):bool
+   return datetime._fields(A, 'ZonedDateTime').instant <= datetime._fields(B, 'ZonedDateTime').instant
+end
+
+@Doc(text=[[
+@desc Add a duration or period
+@input ZonedDateTime value
+@input Duration or Period value
+@result ZonedDateTime value
+]])
+datetime.mtZonedDateTime.__add = function(A:table, B:table):table
+   fields = datetime._fields(A, 'ZonedDateTime')
+   if datetime.isDuration(B) then return new_zoned_date_time(fields.instant + B, fields.zone) end
+   if datetime.isPeriod(B) then return (A:localDateTime() + B):toZonedDateTime(fields.zone) end
+   unsupported_operation(A, '+', B)
+end
+
+@Doc(text=[[
+@desc Subtract a duration, period, or zoned date-time
+@input ZonedDateTime value
+@input Duration, Period, or ZonedDateTime value
+@result ZonedDateTime or Duration value
+]])
+datetime.mtZonedDateTime.__sub = function(A:table, B:table):table
+   fields = datetime._fields(A, 'ZonedDateTime')
+   if datetime.isDuration(B) then return new_zoned_date_time(fields.instant - B, fields.zone) end
+   if datetime.isPeriod(B) then return (A:localDateTime() - B):toZonedDateTime(fields.zone) end
+   if datetime.isZonedDateTime(B) then return fields.instant - B:instant() end
+   unsupported_operation(A, '-', B)
+end
+
+@Doc(text=[[
+@desc Normalise months and weeks
+@result Period value
+]])
+function datetime.mtPeriod:normalise():table
+   fields = datetime._fields(self, 'Period')
+   total_months = fields.years * 12 + fields.months
+   years = math.floor(total_months / 12)
+   months = total_months - years * 12
+   return new_period(years, months, 0, fields.weeks * 7 + fields.days)
+end
+
+@Doc(text=[[
+@desc Convert this period to text
+@result ISO period text
+]])
+datetime.mtPeriod.__tostring = function(Self:table):str
+   fields = datetime._fields(Self, 'Period')
+   text = 'P'
+   if fields.years != 0 then text ..= tostring(fields.years) .. 'Y' end
+   if fields.months != 0 then text ..= tostring(fields.months) .. 'M' end
+   if fields.weeks != 0 then text ..= tostring(fields.weeks) .. 'W' end
+   if fields.days != 0 then text ..= tostring(fields.days) .. 'D' end
+   if text is 'P' then text ..= '0D' end
+   return text
+end
+
+@Doc(text=[[
+@desc Compare periods for equality
+@input First period
+@input Second period
+@result True when equal
+]])
+datetime.mtPeriod.__eq = function(A:table, B:table):bool
+   a = datetime._fields(A, 'Period')
+   b = datetime._fields(B, 'Period')
+   return a.years is b.years and a.months is b.months and a.weeks is b.weeks and a.days is b.days
+end
+
+@Doc(text=[[
+@desc Add two periods
+@input First period
+@input Second period
+@result Period value
+]])
+datetime.mtPeriod.__add = function(A:table, B:table):table
+   a = datetime._fields(A, 'Period')
+   if datetime.isPeriod(B) then
+      b = datetime._fields(B, 'Period')
+      return new_period(a.years + b.years, a.months + b.months, a.weeks + b.weeks, a.days + b.days)
+   end
+   unsupported_operation(A, '+', B)
+end
+
+@Doc(text=[[
+@desc Subtract two periods
+@input First period
+@input Second period
+@result Period value
+]])
+datetime.mtPeriod.__sub = function(A:table, B:table):table
+   a = datetime._fields(A, 'Period')
+   if datetime.isPeriod(B) then
+      b = datetime._fields(B, 'Period')
+      return new_period(a.years - b.years, a.months - b.months, a.weeks - b.weeks, a.days - b.days)
+   end
+   unsupported_operation(A, '-', B)
+end
+
+@Doc(text=[[
+@desc Negate this period
+@result Period value
+]])
+datetime.mtPeriod.__unm = function(Self:table):table
+   fields = datetime._fields(Self, 'Period')
+   return new_period(-fields.years, -fields.months, -fields.weeks, -fields.days)
+end
+
+@Doc(text=[[
+@desc Return the start instant
+@result Instant value
+]])
+function datetime.mtInterval:start():table
+   return datetime._fields(self, 'Interval').start
+end
+
+@Doc(text=[[
+@desc Return the stop instant
+@result Instant value
+]])
+function datetime.mtInterval:stop():table
+   return datetime._fields(self, 'Interval').stop
+end
+
+@Doc(text=[[
+@desc Return the interval duration
+@result Duration value
+]])
+function datetime.mtInterval:duration():table
+   fields = datetime._fields(self, 'Interval')
+   return fields.stop - fields.start
+end
+
+@Doc(text=[[
+@desc Check if an instant is inside this interval
+@input Instant value
+@result True when contained
+]])
+function datetime.mtInterval:contains(Instant:table):bool
+   if not datetime.isInstant(Instant) then datetime._invalidValue('Instant must be an Instant value.') end
+   fields = datetime._fields(self, 'Interval')
+   return fields.start <= Instant and Instant < fields.stop
+end
+
+@Doc(text=[[
+@desc Check if two intervals overlap
+@input Other interval
+@result True when intervals overlap
+]])
+function datetime.mtInterval:overlaps(Other:table):bool
+   if not datetime.isInterval(Other) then datetime._invalidValue('Other must be an Interval value.') end
+   fields = datetime._fields(self, 'Interval')
+   other = datetime._fields(Other, 'Interval')
+   return fields.start < other.stop and other.start < fields.stop
+end
+
+@Doc(text=[[
+@desc Return the overlapping interval
+@input Other interval
+@result Intersection interval
+]])
+function datetime.mtInterval:intersection(Other:table):table
+   if not datetime.isInterval(Other) then datetime._invalidValue('Other must be an Interval value.') end
+   fields = datetime._fields(self, 'Interval')
+   other = datetime._fields(Other, 'Interval')
+   start = fields.start < other.start ? other.start :> fields.start
+   stop = fields.stop < other.stop ? fields.stop :> other.stop
+   if stop < start then stop = start end
+   return new_interval(start, stop)
+end
+
+@Doc(text=[[
+@desc Return the combined interval
+@input Overlapping interval
+@result Union interval
+]])
+function datetime.mtInterval:union(Other:table):table
+   if not datetime.isInterval(Other) then datetime._invalidValue('Other must be an Interval value.') end
+   fields = datetime._fields(self, 'Interval')
+   other = datetime._fields(Other, 'Interval')
+   if fields.stop < other.start or other.stop < fields.start then
+      datetime._invalidValue('Cannot union separate intervals.')
+   end
+
+   start = fields.start < other.start ? fields.start :> other.start
+   stop = fields.stop < other.stop ? other.stop :> fields.stop
+   return new_interval(start, stop)
+end
+
+@Doc(text=[[
+@desc Check if this interval is empty
+@result True for an empty interval
+]])
+function datetime.mtInterval:isEmpty():bool
+   fields = datetime._fields(self, 'Interval')
+   return fields.start is fields.stop
+end
+
+@Doc(text=[[
+@desc Convert this interval to text
+@result Interval text
+]])
+datetime.mtInterval.__tostring = function(Self:table):str
+   fields = datetime._fields(Self, 'Interval')
+   return f'{fields.start}/{fields.stop}'
+end
+
+@Doc(text=[[
+@desc Compare intervals for equality
+@input First interval
+@input Second interval
+@result True when equal
+]])
+datetime.mtInterval.__eq = function(A:table, B:table):bool
+   a = datetime._fields(A, 'Interval')
+   b = datetime._fields(B, 'Interval')
+   return a.start is b.start and a.stop is b.stop
+end
+
+@Doc(text=[[
+@desc Return the canonical zone ID
+@result Zone ID
+]])
+function datetime.mtZone:id():str
+   return datetime._fields(self, 'Zone').id
+end
+
+@Doc(text=[[
+@desc Return the native zone ID
+@result Native zone ID
+]])
+function datetime.mtZone:nativeId():str
+   return datetime._fields(self, 'Zone').native_id
+end
+
+@Doc(text=[[
+@desc Return the zone data source
+@result Source name
+]])
+function datetime.mtZone:source():str
+   return datetime._fields(self, 'Zone').source
+end
+
+@Doc(text=[[
+@desc Check if fallback zone data is used
+@result True when fallback data is used
+]])
+function datetime.mtZone:isFallback():bool
+   return datetime._fields(self, 'Zone').is_fallback
+end
+
+@Doc(text=[[
+@desc Return the offset at an instant
+@input Instant value
+@result Offset value
+]])
+function datetime.mtZone:offsetAt(Instant:table):table
+   require_instant(Instant)
+   fields = datetime._fields(self, 'Zone')
+   info = zone_info_for_instant(fields, Instant, 1, 0)
+   return transition_offset_at(info, Instant)
+end
+
+@Doc(text=[[
+@desc Return the zone name at an instant
+@input Instant value
+@result Zone name
+]])
+function datetime.mtZone:nameAt(Instant:table):str
+   require_instant(Instant)
+   fields = datetime._fields(self, 'Zone')
+   info = zone_info_for_instant(fields, Instant, 1, 0)
+   return transition_name_at(info, Instant)
+end
+
+@Doc(text=[[
+@desc Return the next zone transition
+@input Instant value
+@result Next transition instant, or nil
+]])
+function datetime.mtZone:nextTransition(Instant:table):any
+   require_instant(Instant)
+   fields = datetime._fields(self, 'Zone')
+   info = zone_info_for_instant(fields, Instant, 0, 1)
+   for transition in values(info.transitions) do
+      if compare_instants(Instant, transition.instant) < 0 then return transition.instant end
+   end
+   return nil
+end
+
+@Doc(text=[[
+@desc Return the previous zone transition
+@input Instant value
+@result Previous transition instant, or nil
+]])
+function datetime.mtZone:previousTransition(Instant:table):any
+   require_instant(Instant)
+   fields = datetime._fields(self, 'Zone')
+   info = zone_info_for_instant(fields, Instant, 1, 0)
+   previous = nil
+   for transition in values(info.transitions) do
+      if compare_instants(transition.instant, Instant) < 0 then previous = transition.instant
+      else break end
+   end
+   return previous
+end
+
+@Doc(text=[[
+@desc Convert this zone to text
+@result Zone ID
+]])
+datetime.mtZone.__tostring = function(Self:table):str
+   return datetime._fields(Self, 'Zone').id
+end
+
+@Doc(text=[[
+@desc Compare zones for equality
+@input First zone
+@input Second zone
+@result True when equal
+]])
+datetime.mtZone.__eq = function(A:table, B:table):bool
+   return datetime._fields(A, 'Zone').id is datetime._fields(B, 'Zone').id
+end
+
+@Doc(text=[[
+@desc Return the clock instant
+@result Instant value
+]])
+function datetime.mtClock:instant():table
+   fields = datetime._fields(self, 'Clock')
+
+   if fields.kind is 'fixed' then return fields.instant end
+   if fields.kind is 'offset' then return fields.base_clock:instant() + fields.offset end
+   if fields.kind is 'system' then
+      time_obj = obj.new('time')
+      check time_obj.acQuery() -- Get epoch time
+      return instant_from_system_micros(time_obj.systemTime)
+   end
+
+   datetime._invalidValue(f"Unknown Clock kind '{fields.kind}'.")
+end
+
+@Doc(text=[[
+@desc Return today's date for a zone
+@input Time zone
+@result LocalDate value
+]])
+function datetime.mtClock:today(Zone:table):table
+   return self:localDateTime(Zone):date()
+end
+
+@Doc(text=[[
+@desc Return the clock local date-time for a zone
+@input Time zone
+@result LocalDateTime value
+]])
+function datetime.mtClock:localDateTime(Zone:table):table
+   Zone ??= datetime.zone.local()
+   require_zone(Zone)
+
+   instant = self:instant()
+   instant_fields = datetime._fields(instant, 'Instant')
+   offset_fields = datetime._fields(Zone:offsetAt(instant), 'Offset')
+   date_fields, time_fields = epoch_second_to_local(instant_fields.epoch_second + offset_fields.seconds,
+      instant_fields.nano)
+   return new_local_date_time(date_fields.year, date_fields.month, date_fields.day, time_fields.hour,
+      time_fields.minute, time_fields.second, time_fields.nano)
+end
+
+@Doc(text=[[
+@desc Return the clock zoned date-time
+@input Time zone
+@result ZonedDateTime value
+]])
+function datetime.mtClock:zonedDateTime(Zone:table):table
+   Zone ??= datetime.zone.local()
+   return new_zoned_date_time(self:instant(), Zone)
+end
+
+@Doc(text=[[
+@desc Convert this clock to text
+@result Clock description
+]])
+datetime.mtClock.__tostring = function(Self:table):str
+   return f"datetime.Clock({datetime._fields(Self, 'Clock').kind})"
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Zone, clock, and resolver public API
+
+datetime.zone = make_constructor('zone')
+
+@Doc(text=[[
+@desc Return the local time zone
+@result Zone value
+]])
+datetime.zone.local = function():table
+   return new_zone(nil)
+end
+
+@Doc(text=[[
+@desc Return the UTC time zone
+@result Zone value
+]])
+datetime.zone.utc = function():table
+   return new_zone('UTC')
+end
+
+@Doc(text=[[
+@desc Create a time zone
+@input Zone ID, or nil for local
+@result Zone value
+]])
+getmetatable(datetime.zone).__call = function(Self, ZoneID:any):table
+   return new_zone(ZoneID)
+end
+
+datetime.zonedDateTime = make_constructor('zonedDateTime')
+
+@Doc(text=[[
+@desc Create a zoned date-time from field values
+@input Table with instant and zone, or local_date_time and zone
+@result ZonedDateTime value
+]])
+datetime.zonedDateTime.from = function(KV:table):table
+   datetime._requireTable('zonedDateTime', KV)
+   if KV.instant != nil then return new_zoned_date_time(KV.instant, KV.zone) end
+   if KV.local_date_time != nil then
+      return KV.local_date_time:toZonedDateTime(KV.zone, KV.resolver ?? datetime.resolve.compatible)
+   end
+   datetime._invalidValue('zonedDateTime.from requires instant or local_date_time.')
+end
+
+@Doc(text=[[
+@desc Parse an ISO zoned date-time
+@input Zoned date-time text
+@result ZonedDateTime value
+]])
+datetime.zonedDateTime.parse = function(Text:str):table
+   if type(Text) != 'string' then datetime._syntaxError('ZonedDateTime text must be a string.') end
+
+   offset_text, zone_text = rx_zoned_date_time.extract(Text)
+   if offset_text is nil then datetime._syntaxError(f"Invalid ZonedDateTime string '{Text}'.") end
+
+   offset_date_time = datetime.offsetDateTime.parse(offset_text)
+   return new_zoned_date_time(offset_date_time:instant(), datetime.zone(zone_text))
+end
+
+@Doc(text=[[
+@desc Create a zoned date-time
+@input Instant value
+@input Zone value
+@result ZonedDateTime value
+]])
+getmetatable(datetime.zonedDateTime).__call = function(Self, Instant:any, Zone:any):table
+   return new_zoned_date_time(Instant, Zone)
+end
+
+datetime.clock = {}
+
+@Doc(text=[[
+@desc Create a system clock
+@result Clock value
+]])
+datetime.clock.system = function():table
+   return new_clock('system', {})
+end
+
+@Doc(text=[[
+@desc Create a fixed clock
+@input Fixed instant
+@result Clock value
+]])
+datetime.clock.fixed = function(Instant:table):table
+   require_instant(Instant)
+   return new_clock('fixed', { instant = Instant })
+end
+
+@Doc(text=[[
+@desc Create a clock offset from another clock
+@input Base clock
+@input Offset duration
+@result Clock value
+]])
+datetime.clock.offset = function(BaseClock:table, Duration:table):table
+   require_clock(BaseClock)
+   require_duration(Duration)
+   return new_clock('offset', { base_clock = BaseClock, offset = Duration })
+end
+
+datetime.resolve = {
+   reject = datetime._makeValue('Resolver', { name = 'reject' }),
+   earlier = datetime._makeValue('Resolver', { name = 'earlier' }),
+   later = datetime._makeValue('Resolver', { name = 'later' }),
+   skip = datetime._makeValue('Resolver', { name = 'skip' }),
+   compatible = datetime._makeValue('Resolver', { name = 'compatible' })
+}
+
+@Doc(text=[[
+@desc Return the current instant
+@input Clock to query
+@result Instant value
+]])
+datetime.now = function(Clock:table):table
+   Clock ??= datetime.clock.system()
+   require_clock(Clock)
+   return Clock:instant()
+end
+
+@Doc(text=[[
+@desc Return today's date
+@input Time zone
+@input Clock to query
+@result LocalDate value
+]])
+datetime.today = function(Zone:table, Clock:table):table
+   Zone ??= datetime.zone.local()
+   Clock ??= datetime.clock.system()
+   require_zone(Zone)
+   require_clock(Clock)
+   return Clock:today(Zone)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Check if a value is an Instant
+@input Value to test
+@result True for Instant values
+]])
+datetime.isInstant = function(Value:any):bool return datetime._isValue(Value, 'Instant') end
+
+@Doc(text=[[
+@desc Check if a value is a Duration
+@input Value to test
+@result True for Duration values
+]])
+datetime.isDuration = function(Value:any):bool return datetime._isValue(Value, 'Duration') end
+
+@Doc(text=[[
+@desc Check if a value is an Offset
+@input Value to test
+@result True for Offset values
+]])
+datetime.isOffset = function(Value:any):bool return datetime._isValue(Value, 'Offset') end
+
+@Doc(text=[[
+@desc Check if a value is a LocalDate
+@input Value to test
+@result True for LocalDate values
+]])
+datetime.isLocalDate = function(Value:any):bool return datetime._isValue(Value, 'LocalDate') end
+
+@Doc(text=[[
+@desc Check if a value is a LocalTime
+@input Value to test
+@result True for LocalTime values
+]])
+datetime.isLocalTime = function(Value:any):bool return datetime._isValue(Value, 'LocalTime') end
+
+@Doc(text=[[
+@desc Check if a value is a LocalDateTime
+@input Value to test
+@result True for LocalDateTime values
+]])
+datetime.isLocalDateTime = function(Value:any):bool return datetime._isValue(Value, 'LocalDateTime') end
+
+@Doc(text=[[
+@desc Check if a value is an OffsetDateTime
+@input Value to test
+@result True for OffsetDateTime values
+]])
+datetime.isOffsetDateTime = function(Value:any):bool return datetime._isValue(Value, 'OffsetDateTime') end
+
+@Doc(text=[[
+@desc Check if a value is a Zone
+@input Value to test
+@result True for Zone values
+]])
+datetime.isZone = function(Value:any):bool return datetime._isValue(Value, 'Zone') end
+
+@Doc(text=[[
+@desc Check if a value is a ZonedDateTime
+@input Value to test
+@result True for ZonedDateTime values
+]])
+datetime.isZonedDateTime = function(Value:any):bool return datetime._isValue(Value, 'ZonedDateTime') end
+
+@Doc(text=[[
+@desc Check if a value is a Period
+@input Value to test
+@result True for Period values
+]])
+datetime.isPeriod = function(Value:any):bool return datetime._isValue(Value, 'Period') end
+
+@Doc(text=[[
+@desc Check if a value is an Interval
+@input Value to test
+@result True for Interval values
+]])
+datetime.isInterval = function(Value:any):bool return datetime._isValue(Value, 'Interval') end
+
+@Doc(text=[[
+@desc Check if a value is a Clock
+@input Value to test
+@result True for Clock values
+]])
+datetime.isClock = function(Value:any):bool return datetime._isValue(Value, 'Clock') end
+
+@Doc(text=[[
+@desc Check if a value is a Resolver
+@input Value to test
+@result True for Resolver values
+]])
+datetime.isResolver = function(Value:any):bool return datetime._isValue(Value, 'Resolver') end

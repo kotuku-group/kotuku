@@ -204,8 +204,6 @@ end
    assert(info.startYear is 2024, 'StartYear was not preserved.')
    assert(info.endYear is 2025, 'EndYear was not preserved.')
    assert(info.isLocal is 1, 'Local query should set IsLocal.')
-   assert(info.transitionCount >= 0, 'Transition count should be non-negative.')
-   assert(info.transitionsWritten is info.transitionCount, 'Transition written count should match returned transitions.')
 end
 
 @Test function TimeZoneInfoLocalEmptyString()
@@ -230,8 +228,7 @@ end
    assert(info.nativeID is 'UTC', 'UTC query should report UTC native ID.')
    assert(info.source is 'utc', 'UTC query should report utc source.')
    assert(info.baseOffset is 0, 'UTC base offset should be zero.')
-   assert(info.transitionCount is 0, 'UTC should not report transitions.')
-   assert(info.transitionsWritten is 0, 'UTC should not write transitions.')
+   assert((info.transitions is nil) or (#info.transitions is 0), 'UTC should not report transitions.')
    assert(info.isFallback is 0, 'Explicit UTC should not be marked as a fallback.')
 end
 
@@ -247,7 +244,7 @@ end
       assert(info.nativeID is 'UTC', aliases[i] .. ' alias should report UTC native ID.')
       assert(info.source is 'utc', aliases[i] .. ' alias should report utc source.')
       assert(info.baseOffset is 0, aliases[i] .. ' alias should have zero base offset.')
-      assert(info.transitionCount is 0, aliases[i] .. ' alias should not report transitions.')
+      assert((info.transitions is nil) or (#info.transitions is 0), aliases[i] .. ' alias should not report transitions.')
       assert(info.isLocal is 0, aliases[i] .. ' alias should be treated as an explicit zone.')
    end
 end
@@ -258,6 +255,7 @@ end
 
    if state.platform is 'Windows' then
       err, info = time_obj.mtGetTimeZoneInfo('Europe/London', 2024, 2025)
+      assert(#info.transitions >= 2, f"Incorrect number of transitions, got {#info.transitions}")
       assert(err is ERR_Okay, 'Europe/London should map to a Windows time zone: ' .. mSys.GetErrorMsg(err))
       assert(info.nativeID is 'GMT Standard Time', 'Europe/London should map to GMT Standard Time.')
       assert(info.source is 'win32', 'Windows explicit time zone should report win32 source.')
@@ -268,10 +266,8 @@ end
    end
 end
 
-@Test function TimeZoneInfoLinuxIanaBaseOffset()
-   state = mSys.GetSystemState()
-   if state.platform != 'Linux' then return end
-
+@Test; @Requires(linux_platform=true)
+function TimeZoneInfoLinuxIanaBaseOffset()
    time_obj = obj.new('time')
 
    err, info = time_obj.mtGetTimeZoneInfo('Europe/London', 2024, 2024)
@@ -279,8 +275,6 @@ end
    assert(info.source is 'tzif', 'Europe/London should report tzif source on Linux.')
    assert(info.baseOffset is 0,
       'Europe/London 2024 standard base offset should be 0, got: ' .. tostring(info.baseOffset))
-   assert(info.transitionCount is 2,
-      'Europe/London 2024 should report two DST transitions, got: ' .. tostring(info.transitionCount))
    assert(#info.transitions is 2,
       'Europe/London 2024 should expose two transition records, got: ' .. tostring(#info.transitions))
    assert(info.transitions[0].instant is 1711846800000000,
@@ -301,18 +295,14 @@ end
       'America/New_York 2024 standard base offset should be -18000, got: ' .. tostring(info.baseOffset))
 end
 
-@Test function TimeZoneInfoLinuxIanaFooterTransitions()
-   state = mSys.GetSystemState()
-   if state.platform != 'Linux' then return end
-
+@Test; @Requires(linux_platform=true)
+function TimeZoneInfoLinuxIanaFooterTransitions()
    time_obj = obj.new('time')
    err, info = time_obj.mtGetTimeZoneInfo('Europe/London', 2040, 2041)
 
    assert(err is ERR_Okay, 'Europe/London future TZif query failed: ' .. mSys.GetErrorMsg(err))
    assert(info.source is 'tzif', 'Europe/London future query should report tzif source on Linux.')
    assert(info.baseOffset is 0, 'Europe/London future standard base offset should be 0.')
-   assert(info.transitionCount is 4,
-      'Europe/London 2040-2041 should report four DST transitions, got: ' .. tostring(info.transitionCount))
    assert(#info.transitions is 4,
       'Europe/London 2040-2041 should expose four transition records, got: ' .. tostring(#info.transitions))
    assert(info.transitions[0].instant < info.transitions[1].instant,

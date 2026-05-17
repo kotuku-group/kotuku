@@ -1800,14 +1800,11 @@ struct TimeZoneInfo {
    std::string Version;                           // TZDB/source version if available, otherwise empty.
    kt::vector<TimeZoneTransition> Transitions;    // Transitions available for the requested range.
    int BaseOffset;                                // Standard UTC offset in seconds.
-   int TransitionCount;                           // Total transitions available for the requested range.
-   int TransitionsWritten;                        // Number of records written to the supplied buffer.
    int StartYear;                                 // Inclusive requested start year.
    int EndYear;                                   // Inclusive requested end year.
    int IsLocal;                                   // 1 if ZoneID requested the local system zone.
    int IsFallback;                                // 1 if UTC fallback was used.
-   TimeZoneInfo() : BaseOffset(0), TransitionCount(0), TransitionsWritten(0), StartYear(0), EndYear(0), IsLocal(0),
-      IsFallback(0) { }
+   TimeZoneInfo() : BaseOffset(0), StartYear(0), EndYear(0), IsLocal(0), IsFallback(0) { }
    TimeZoneInfo(int) : TimeZoneInfo() { }
 };
 
