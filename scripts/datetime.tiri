@@ -1287,10 +1287,6 @@ function datetime.mtInstant:toZonedDateTime(Zone:table):table
    return new_zoned_date_time(self, Zone)
 end
 
-function datetime.mtInstant:toZone(Zone:table):table
-   return self:toZonedDateTime(Zone)
-end
-
 function datetime.mtInstant:format(Pattern:any):str
    fields = datetime._fields(self, 'Instant')
    date_fields, time_fields = epoch_second_to_local(fields.epoch_second, fields.nano)
@@ -1434,7 +1430,7 @@ local_date_with = function(Self:table, KV:table):table
    return new_local_date(KV.year ?? fields.year, KV.month ?? fields.month, KV.day ?? fields.day)
 end
 
-datetime.mtLocalDate['with'] = local_date_with
+datetime.mtLocalDate.withFields = local_date_with
 function datetime.mtLocalDate:format(Pattern:any):str
    return format_local_fields('LocalDate', datetime._fields(self, 'LocalDate'), nil, nil, nil, Pattern)
 end
@@ -1498,7 +1494,7 @@ local_time_with = function(Self:table, KV:table):table
       KV.nano ?? fields.nano)
 end
 
-datetime.mtLocalTime['with'] = local_time_with
+datetime.mtLocalTime.withFields = local_time_with
 function datetime.mtLocalTime:format(Pattern:any):str
    return format_local_fields('LocalTime', nil, datetime._fields(self, 'LocalTime'), nil, nil, Pattern)
 end
@@ -1551,7 +1547,7 @@ local_date_time_with = function(Self:table, KV:table):table
       KV.nano ?? time_fields.nano)
 end
 
-datetime.mtLocalDateTime['with'] = local_date_time_with
+datetime.mtLocalDateTime.withFields = local_date_time_with
 function datetime.mtLocalDateTime:format(Pattern:any):str
    date_fields, time_fields = local_date_time_parts(self)
    return format_local_fields('LocalDateTime', date_fields, time_fields, nil, nil, Pattern)
@@ -1670,10 +1666,6 @@ function datetime.mtOffsetDateTime:toZonedDateTime(Zone:table):table
    return new_zoned_date_time(offset_date_time_instant(self), Zone)
 end
 
-function datetime.mtOffsetDateTime:toZone(Zone:table):table
-   return self:toZonedDateTime(Zone)
-end
-
 function datetime.mtOffsetDateTime:instantEquals(Other:table):bool
    if datetime.isInstant(Other) then return self:instant() is Other end
    if datetime.isOffsetDateTime(Other) then return self:instant() is Other:instant() end
@@ -1757,7 +1749,7 @@ zoned_date_time_with_local = function(Self:table, KV:table):table
    datetime._requireTable('fields', KV)
    fields = require_zoned_date_time(Self)
    resolver = KV.resolver ?? datetime.resolve.compatible
-   return Self:localDateTime():with(KV):toZonedDateTime(fields.zone, resolver)
+   return Self:localDateTime():withFields(KV):toZonedDateTime(fields.zone, resolver)
 end
 
 datetime.mtZonedDateTime.withLocal = zoned_date_time_with_local

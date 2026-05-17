@@ -175,7 +175,7 @@ end
    end)
 end
 
-@Test function LocalDateTimeConstructionParsingAndWith()
+@Test function LocalDateTimeConstructionParsingAndWithFields()
    local local_date_time = datetime.localDateTime(2026, 5, 17, 10, 30, 45, 123000000)
 
    assert(tostring(local_date_time) is '2026-05-17T10:30:45.123', 'LocalDateTime string should combine date and time')
@@ -194,8 +194,9 @@ end
       nano = 123000000
    } is local_date_time, 'LocalDateTime property-table construction should match positional construction')
 
-   local changed = local_date_time:with({ month = 6, day = 1, hour = 9 })
-   assert(tostring(changed) is '2026-06-01T09:30:45.123', 'LocalDateTime with() should copy modified fields')
+   local changed = local_date_time:withFields({ month = 6, day = 1, hour = 9 })
+   assert(tostring(changed) is '2026-06-01T09:30:45.123',
+      'LocalDateTime withFields() should copy modified fields')
    assert(local_date_time < changed, 'LocalDateTime ordering should compare date then time')
 end
 
@@ -274,7 +275,7 @@ end
       'OffsetDateTime toZonedDateTime() should preserve the instant in the target zone')
 
    expect_error('Expected datetime.Zone value', function()
-      start:toZone({})
+      start:toZonedDateTime({})
    end)
 end
 
@@ -285,7 +286,6 @@ end
    local local_date_time = datetime.localDateTime(2026, 5, 17, 10, 30, 45, 123456789)
 
    assert(instant:toZonedDateTime(zone) is zoned, 'Instant toZonedDateTime() should create a ZonedDateTime')
-   assert(instant:toZone(zone) is zoned, 'Instant toZone() should alias toZonedDateTime()')
    assert(local_date_time:toZonedDateTime(zone) is zoned, 'LocalDateTime UTC resolution should match the same instant')
    assert(local_date_time:inZone(zone) is zoned, 'LocalDateTime inZone() should alias toZonedDateTime()')
    assert(datetime.zonedDateTime.from { instant = instant, zone = zone } is zoned,
@@ -769,12 +769,12 @@ end
       'System now should be close to Core Time.SystemTime')
 end
 
-@Test function WithMethodsAndImmutability()
+@Test function WithFieldsMethodsAndImmutability()
    local date = datetime.localDate(2026, 5, 17)
    local time = datetime.localTime(10, 30)
 
-   assert(tostring(date:with({ month = 6 })) is '2026-06-17', 'LocalDate with() should copy fields')
-   assert(tostring(time:with({ second = 15 })) is '10:30:15', 'LocalTime with() should copy fields')
+   assert(tostring(date:withFields({ month = 6 })) is '2026-06-17', 'LocalDate withFields() should copy fields')
+   assert(tostring(time:withFields({ second = 15 })) is '10:30:15', 'LocalTime withFields() should copy fields')
    assert(tostring(date:atTime(time)) is '2026-05-17T10:30:00', 'LocalDate atTime() should create LocalDateTime')
 
    expect_error('immutable', function()
