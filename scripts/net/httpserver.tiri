@@ -2123,7 +2123,7 @@ hslib.start = function(Options)
 
    cfg = {
       port     = self.port,
-      flags    = NSF_MULTI_CONNECT,
+      flags    = NSF_MULTI_CONNECT|NSF_KEEP_ALIVE,
       feedback = function(Server, ClientSocket, State)
          if State is NTC_CONNECTED then
             -- New client connection

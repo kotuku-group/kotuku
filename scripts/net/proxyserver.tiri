@@ -1195,6 +1195,7 @@ function connectUpstream(self, State:table):bool
    logMessage(self, 'DEBUG', 'Connecting upstream to ' .. connect_host .. ':' .. connect_port)
 
    upstream_socket = obj.new('netsocket', {
+      flags = NSF_KEEP_ALIVE,
       incoming = function(Socket)
          if State.phase is 'tunnelling' then
             upstreamTunnelIncoming(self, State, Socket)
@@ -1458,7 +1459,7 @@ proxylib.start = function(Options:table)
    -- Create server socket
    cfg = {
       port = self.port,
-      flags = NSF_MULTI_CONNECT,
+      flags = NSF_MULTI_CONNECT|NSF_KEEP_ALIVE,
       feedback = function(Server, ClientSocket, State)
          if State is NTC_CONNECTED then
             logMessage(self, 'DEBUG', 'Client connected')
