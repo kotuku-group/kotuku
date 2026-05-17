@@ -1,7 +1,7 @@
 -- Flute tests for parser and bytecode-emitter overflow regressions.
 
 -- The assignments below force individual KSTR emissions before annotation registration.  That makes the generated
--- debug.anno.set lookup use the bcemit_tgets() overflow path without importing datetime or any other library.
+-- debug.anno.set lookup use the bcemit_tgets() overflow path without importing tempus or any other library.
 
 local constant_pool = {}
 constant_pool[0] = 'constant_000'
@@ -276,18 +276,18 @@ function source_after_large_constant_pool(Tail)
    return lines:concat('%s', '\n')
 end
 
-@Test function DatetimeImportBeforeAnnotatedFunction()
+@Test function TempusImportBeforeAnnotatedFunction()
    local result = exec([[
-      import 'datetime'
+      import 'tempus'
 
-      @Test function GeneratedAnnotationAfterDatetimeImport()
-         return datetime.instant(0):toUnixSeconds()
+      @Test function GeneratedAnnotationAfterTempusImport()
+         return tempus.instant(0):toUnixSeconds()
       end
 
-      return GeneratedAnnotationAfterDatetimeImport()
+      return GeneratedAnnotationAfterTempusImport()
    ]])
 
-   assert(result is 0, 'Annotated function after datetime import should compile and run')
+   assert(result is 0, 'Annotated function after tempus import should compile and run')
 end
 
 @Test function MethodLookupAfterLargeConstantPool()

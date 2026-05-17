@@ -1,9 +1,9 @@
--- Datetime value library.
+-- Tempus value library.
 
-   namespace 'datetime'
+   namespace 'tempus'
 
    _LIB[_NS] = {}
-   datetime = _LIB[_NS]
+   tempus = _LIB[_NS]
 
 value_storage = setmetatable({}, { __mode = 'k' })
 metatable_by_type = {}
@@ -51,34 +51,34 @@ rx_period <const> = regex.new([[^([+\-])?P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)W)?(?:(\
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function datetime._error(Code:num, Message:str)
+function tempus._error(Code:num, Message:str)
    raise Code, Message
 end
 
-function datetime._invalidValue(Message:str)
-   datetime._error(ERR_InvalidValue, Message)
+function tempus._invalidValue(Message:str)
+   tempus._error(ERR_InvalidValue, Message)
 end
 
-function datetime._syntaxError(Message:str)
-   datetime._error(ERR_Syntax, Message)
+function tempus._syntaxError(Message:str)
+   tempus._error(ERR_Syntax, Message)
 end
 
-function datetime._unknownZone(Message:str)
-   datetime._error(ERR_Search, Message)
+function tempus._unknownZone(Message:str)
+   tempus._error(ERR_Search, Message)
 end
 
-function datetime._outOfRange(Message:str)
-   datetime._error(ERR_OutOfRange, Message)
+function tempus._outOfRange(Message:str)
+   tempus._error(ERR_OutOfRange, Message)
 end
 
-function datetime._notReady(Name:str)
-   datetime._error(ERR_NotInitialised, f"datetime.{Name} is not implemented yet.")
+function tempus._notReady(Name:str)
+   tempus._error(ERR_NotInitialised, f"tempus.{Name} is not implemented yet.")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
 function type_symbol(TypeName:str):str
-   return f'datetime.{TypeName}'
+   return f'tempus.{TypeName}'
 end
 
 function copy_fields(Fields:table):table
@@ -96,10 +96,10 @@ function require_type_name(TypeName:str)
       if TypeName is name then return end
    end
 
-   datetime._invalidValue(f"Unknown datetime value type '{TypeName}'.")
+   tempus._invalidValue(f"Unknown tempus value type '{TypeName}'.")
 end
 
-function datetime._typeOf(Value:any):any
+function tempus._typeOf(Value:any):any
    if type(Value) != 'table' then return nil end
 
    local state = value_storage[Value]
@@ -107,19 +107,19 @@ function datetime._typeOf(Value:any):any
    return state.type_name
 end
 
-function datetime._isValue(Value:any, TypeName:str):bool
-   return datetime._typeOf(Value) is TypeName
+function tempus._isValue(Value:any, TypeName:str):bool
+   return tempus._typeOf(Value) is TypeName
 end
 
-function datetime._fields(Value:any, TypeName:str):table
-   if not datetime._isValue(Value, TypeName) then
-      datetime._invalidValue(f"Expected datetime.{TypeName} value.")
+function tempus._fields(Value:any, TypeName:str):table
+   if not tempus._isValue(Value, TypeName) then
+      tempus._invalidValue(f"Expected tempus.{TypeName} value.")
    end
 
    return value_storage[Value].fields
 end
 
-function datetime._valueIndex(Self:table, Key:any):any
+function tempus._valueIndex(Self:table, Key:any):any
    local state = value_storage[Self]
    if state is nil then return nil end
 
@@ -130,17 +130,17 @@ function datetime._valueIndex(Self:table, Key:any):any
    return state.fields[Key]
 end
 
-function datetime._immutableError(Self:table, Key:any, Value:any)
-   type_name = datetime._typeOf(Self) ?? 'Value'
-   error(f"datetime.{type_name} is immutable: Cannot set {Key}")
+function tempus._immutableError(Self:table, Key:any, Value:any)
+   type_name = tempus._typeOf(Self) ?? 'Value'
+   error(f"tempus.{type_name} is immutable: Cannot set {Key}")
 end
 
-function datetime._tostring(Self:table):str
-   type_name = datetime._typeOf(Self) ?? 'Value'
-   return f"datetime.{type_name}"
+function tempus._tostring(Self:table):str
+   type_name = tempus._typeOf(Self) ?? 'Value'
+   return f"tempus.{type_name}"
 end
 
-function datetime._makeValue(TypeName:str, Fields:table):table
+function tempus._makeValue(TypeName:str, Fields:table):table
    require_type_name(TypeName)
 
    value = {}
@@ -152,24 +152,24 @@ function datetime._makeValue(TypeName:str, Fields:table):table
    return setmetatable(value, metatable_by_type[TypeName])
 end
 
-function datetime._requireNumber(Name:str, Value:any):num
+function tempus._requireNumber(Name:str, Value:any):num
    if type(Value) != 'number' then
-      datetime._invalidValue(f"{Name} must be a number.")
+      tempus._invalidValue(f"{Name} must be a number.")
    end
    return Value
 end
 
-function datetime._requireInteger(Name:str, Value:any):num
-   datetime._requireNumber(Name, Value)
+function tempus._requireInteger(Name:str, Value:any):num
+   tempus._requireNumber(Name, Value)
    if Value % 1 != 0 then
-      datetime._invalidValue(f"{Name} must be an integer.")
+      tempus._invalidValue(f"{Name} must be an integer.")
    end
    return Value
 end
 
-function datetime._requireTable(Name:str, Value:any):table
+function tempus._requireTable(Name:str, Value:any):table
    if type(Value) != 'table' then
-      datetime._invalidValue(f"{Name} must be a table.")
+      tempus._invalidValue(f"{Name} must be a table.")
    end
    return Value
 end
@@ -178,27 +178,27 @@ function make_metatable(TypeName:str):table
    local metatable = {
       __name = type_symbol(TypeName),
       __metatable = type_symbol(TypeName),
-      __index = datetime._valueIndex,
-      __newindex = datetime._immutableError,
-      __tostring = datetime._tostring
+      __index = tempus._valueIndex,
+      __newindex = tempus._immutableError,
+      __tostring = tempus._tostring
    }
    metatable_by_type[TypeName] = metatable
    return metatable
 end
 
-datetime.mtInstant        = make_metatable('Instant')
-datetime.mtDuration       = make_metatable('Duration')
-datetime.mtOffset         = make_metatable('Offset')
-datetime.mtLocalDate      = make_metatable('LocalDate')
-datetime.mtLocalTime      = make_metatable('LocalTime')
-datetime.mtLocalDateTime  = make_metatable('LocalDateTime')
-datetime.mtOffsetDateTime = make_metatable('OffsetDateTime')
-datetime.mtZone           = make_metatable('Zone')
-datetime.mtZonedDateTime  = make_metatable('ZonedDateTime')
-datetime.mtPeriod         = make_metatable('Period')
-datetime.mtInterval       = make_metatable('Interval')
-datetime.mtClock          = make_metatable('Clock')
-datetime.mtResolver       = make_metatable('Resolver')
+tempus.mtInstant        = make_metatable('Instant')
+tempus.mtDuration       = make_metatable('Duration')
+tempus.mtOffset         = make_metatable('Offset')
+tempus.mtLocalDate      = make_metatable('LocalDate')
+tempus.mtLocalTime      = make_metatable('LocalTime')
+tempus.mtLocalDateTime  = make_metatable('LocalDateTime')
+tempus.mtOffsetDateTime = make_metatable('OffsetDateTime')
+tempus.mtZone           = make_metatable('Zone')
+tempus.mtZonedDateTime  = make_metatable('ZonedDateTime')
+tempus.mtPeriod         = make_metatable('Period')
+tempus.mtInterval       = make_metatable('Interval')
+tempus.mtClock          = make_metatable('Clock')
+tempus.mtResolver       = make_metatable('Resolver')
 
 ----------------------------------------------------------------------------------------------------------------------
 
@@ -277,8 +277,8 @@ function compare_time_fields(A:table, B:table):num
 end
 
 function normalise_second_nano(Seconds:any, Nano:any):<num, num>
-   local seconds = datetime._requireInteger('seconds', Seconds)
-   local nano = datetime._requireInteger('nano', Nano ?? 0)
+   local seconds = tempus._requireInteger('seconds', Seconds)
+   local nano = tempus._requireInteger('nano', Nano ?? 0)
 
    if nano <= -NANOS_PER_SECOND or nano >= NANOS_PER_SECOND then
       local extra = math.floor(nano / NANOS_PER_SECOND)
@@ -295,60 +295,60 @@ function normalise_second_nano(Seconds:any, Nano:any):<num, num>
 end
 
 function require_duration(Value:any):table
-   if not datetime.isDuration(Value) then datetime._invalidValue('Expected datetime.Duration value.') end
-   return datetime._fields(Value, 'Duration')
+   if not tempus.isDuration(Value) then tempus._invalidValue('Expected tempus.Duration value.') end
+   return tempus._fields(Value, 'Duration')
 end
 
 function require_offset(Value:any):table
-   if not datetime.isOffset(Value) then datetime._invalidValue('Expected datetime.Offset value.') end
-   return datetime._fields(Value, 'Offset')
+   if not tempus.isOffset(Value) then tempus._invalidValue('Expected tempus.Offset value.') end
+   return tempus._fields(Value, 'Offset')
 end
 
 function require_local_date_time(Value:any):table
-   if not datetime.isLocalDateTime(Value) then datetime._invalidValue('Expected datetime.LocalDateTime value.') end
-   return datetime._fields(Value, 'LocalDateTime')
+   if not tempus.isLocalDateTime(Value) then tempus._invalidValue('Expected tempus.LocalDateTime value.') end
+   return tempus._fields(Value, 'LocalDateTime')
 end
 
 function require_offset_date_time(Value:any):table
-   if not datetime.isOffsetDateTime(Value) then datetime._invalidValue('Expected datetime.OffsetDateTime value.') end
-   return datetime._fields(Value, 'OffsetDateTime')
+   if not tempus.isOffsetDateTime(Value) then tempus._invalidValue('Expected tempus.OffsetDateTime value.') end
+   return tempus._fields(Value, 'OffsetDateTime')
 end
 
 function require_instant(Value:any):table
-   if not datetime.isInstant(Value) then datetime._invalidValue('Expected datetime.Instant value.') end
-   return datetime._fields(Value, 'Instant')
+   if not tempus.isInstant(Value) then tempus._invalidValue('Expected tempus.Instant value.') end
+   return tempus._fields(Value, 'Instant')
 end
 
 function require_zone(Value:any):table
-   if not datetime.isZone(Value) then datetime._invalidValue('Expected datetime.Zone value.') end
-   return datetime._fields(Value, 'Zone')
+   if not tempus.isZone(Value) then tempus._invalidValue('Expected tempus.Zone value.') end
+   return tempus._fields(Value, 'Zone')
 end
 
 function require_clock(Value:any):table
-   if not datetime.isClock(Value) then datetime._invalidValue('Expected datetime.Clock value.') end
-   return datetime._fields(Value, 'Clock')
+   if not tempus.isClock(Value) then tempus._invalidValue('Expected tempus.Clock value.') end
+   return tempus._fields(Value, 'Clock')
 end
 
 function require_resolver(Value:any):table
-   if not datetime.isResolver(Value) then datetime._invalidValue('Expected datetime.Resolver value.') end
-   return datetime._fields(Value, 'Resolver')
+   if not tempus.isResolver(Value) then tempus._invalidValue('Expected tempus.Resolver value.') end
+   return tempus._fields(Value, 'Resolver')
 end
 
 function require_zoned_date_time(Value:any):table
-   if not datetime.isZonedDateTime(Value) then datetime._invalidValue('Expected datetime.ZonedDateTime value.') end
-   return datetime._fields(Value, 'ZonedDateTime')
+   if not tempus.isZonedDateTime(Value) then tempus._invalidValue('Expected tempus.ZonedDateTime value.') end
+   return tempus._fields(Value, 'ZonedDateTime')
 end
 
 function new_zoned_date_time(Instant:any, Zone:any):table
    require_instant(Instant)
    require_zone(Zone)
-   return datetime._makeValue('ZonedDateTime', { instant = Instant, zone = Zone })
+   return tempus._makeValue('ZonedDateTime', { instant = Instant, zone = Zone })
 end
 
 function require_format_value(Values:table, Key:str, Token:str):any
    local value = Values[Key]
    if value is nil then
-      datetime._invalidValue(f"Format token '{Token}' is not available for datetime.{Values.type_name}.")
+      tempus._invalidValue(f"Format token '{Token}' is not available for tempus.{Values.type_name}.")
    end
    return value
 end
@@ -372,7 +372,7 @@ function is_format_token_start(Text:str):bool
 end
 
 function format_temporal(Pattern:any, Values:table):str
-   if type(Pattern) != 'string' then datetime._invalidValue('Format pattern must be a string.') end
+   if type(Pattern) != 'string' then tempus._invalidValue('Format pattern must be a string.') end
 
    local result = ''
    local index = 0
@@ -423,11 +423,11 @@ function format_temporal(Pattern:any, Values:table):str
             result ..= literal
             index++
          end
-         if not closed then datetime._syntaxError('Unterminated datetime format literal.') end
+         if not closed then tempus._syntaxError('Unterminated tempus format literal.') end
       else
          local text = Pattern:substr(index, index + 1)
          if is_format_token_start(text) then
-            datetime._syntaxError(f"Unsupported datetime format token '{text}'.")
+            tempus._syntaxError(f"Unsupported tempus format token '{text}'.")
          end
          result ..= text
          index++
@@ -456,13 +456,13 @@ end
 
 function local_date_time_parts(LocalDateTime:table):<table, table>
    local local_fields = require_local_date_time(LocalDateTime)
-   return datetime._fields(local_fields.date, 'LocalDate'), datetime._fields(local_fields.time, 'LocalTime')
+   return tempus._fields(local_fields.date, 'LocalDate'), tempus._fields(local_fields.time, 'LocalTime')
 end
 
 function unsupported_operation(Left:any, Operator:str, Right:any)
-   local left_type = datetime._typeOf(Left) ?? type(Left)
-   local right_type = datetime._typeOf(Right) ?? type(Right)
-   datetime._invalidValue(f"Unsupported datetime operation: {left_type} {Operator} {right_type}.")
+   local left_type = tempus._typeOf(Left) ?? type(Left)
+   local right_type = tempus._typeOf(Right) ?? type(Right)
+   tempus._invalidValue(f"Unsupported tempus operation: {left_type} {Operator} {right_type}.")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -479,30 +479,30 @@ function days_in_month(Year:num, Month:num):num
 end
 
 function validate_date(Year:any, Month:any, Day:any)
-   Year = datetime._requireInteger('year', Year)
-   Month = datetime._requireInteger('month', Month)
-   Day = datetime._requireInteger('day', Day)
+   Year = tempus._requireInteger('year', Year)
+   Month = tempus._requireInteger('month', Month)
+   Day = tempus._requireInteger('day', Day)
 
    if Month < 1 or Month > 12 then
-      datetime._invalidValue(f"Invalid month {Month}.")
+      tempus._invalidValue(f"Invalid month {Month}.")
    end
 
    local max_day = days_in_month(Year, Month)
    if Day < 1 or Day > max_day then
-      datetime._invalidValue(f"Invalid day {Day} for {format_year(Year)}-{pad_int(Month, 2)}.")
+      tempus._invalidValue(f"Invalid day {Day} for {format_year(Year)}-{pad_int(Month, 2)}.")
    end
 end
 
 function validate_time(Hour:any, Minute:any, Second:any, Nano:any)
-   Hour = datetime._requireInteger('hour', Hour)
-   Minute = datetime._requireInteger('minute', Minute)
-   Second = datetime._requireInteger('second', Second)
-   Nano = datetime._requireInteger('nano', Nano)
+   Hour = tempus._requireInteger('hour', Hour)
+   Minute = tempus._requireInteger('minute', Minute)
+   Second = tempus._requireInteger('second', Second)
+   Nano = tempus._requireInteger('nano', Nano)
 
-   if Hour < 0 or Hour > 23 then datetime._invalidValue(f"Invalid hour {Hour}.") end
-   if Minute < 0 or Minute > 59 then datetime._invalidValue(f"Invalid minute {Minute}.") end
-   if Second < 0 or Second > 59 then datetime._invalidValue(f"Invalid second {Second}.") end
-   if Nano < 0 or Nano >= NANOS_PER_SECOND then datetime._invalidValue(f"Invalid nano {Nano}.") end
+   if Hour < 0 or Hour > 23 then tempus._invalidValue(f"Invalid hour {Hour}.") end
+   if Minute < 0 or Minute > 59 then tempus._invalidValue(f"Invalid minute {Minute}.") end
+   if Second < 0 or Second > 59 then tempus._invalidValue(f"Invalid second {Second}.") end
+   if Nano < 0 or Nano >= NANOS_PER_SECOND then tempus._invalidValue(f"Invalid nano {Nano}.") end
 end
 
 function days_from_civil(Year:num, Month:num, Day:num):num
@@ -609,18 +609,18 @@ end
 function make_constructor(Name:str):table
    return setmetatable({}, {
       __call = function(Self, ...)
-         datetime._notReady(Name)
+         tempus._notReady(Name)
       end
    })
 end
 
 function new_instant(EpochSecond:any, Nano:any):table
    local epoch_second, nano = normalise_second_nano(EpochSecond, Nano ?? 0)
-   return datetime._makeValue('Instant', { epoch_second = epoch_second, nano = nano })
+   return tempus._makeValue('Instant', { epoch_second = epoch_second, nano = nano })
 end
 
 function instant_from_system_micros(Micros:any):table
-   local micros = datetime._requireInteger('systemTime', Micros)
+   local micros = tempus._requireInteger('systemTime', Micros)
    local seconds = math.floor(micros / MICROS_PER_SECOND)
    local nano = (micros - seconds * MICROS_PER_SECOND) * 1000
    return new_instant(seconds, nano)
@@ -628,30 +628,30 @@ end
 
 function new_duration(Seconds:any, Nano:any):table
    local seconds, nano = normalise_second_nano(Seconds, Nano ?? 0)
-   return datetime._makeValue('Duration', { seconds = seconds, nano = nano })
+   return tempus._makeValue('Duration', { seconds = seconds, nano = nano })
 end
 
 function new_period(Years:any, Months:any, Weeks:any, Days:any):table
-   local years = datetime._requireInteger('years', Years ?? 0)
-   local months = datetime._requireInteger('months', Months ?? 0)
-   local weeks = datetime._requireInteger('weeks', Weeks ?? 0)
-   local days = datetime._requireInteger('days', Days ?? 0)
-   return datetime._makeValue('Period', { years = years, months = months, weeks = weeks, days = days })
+   local years = tempus._requireInteger('years', Years ?? 0)
+   local months = tempus._requireInteger('months', Months ?? 0)
+   local weeks = tempus._requireInteger('weeks', Weeks ?? 0)
+   local days = tempus._requireInteger('days', Days ?? 0)
+   return tempus._makeValue('Period', { years = years, months = months, weeks = weeks, days = days })
 end
 
 function new_interval(Start:any, Stop:any):table
    require_instant(Start)
    require_instant(Stop)
-   if Stop < Start then datetime._invalidValue('Interval stop must be greater than or equal to start.') end
-   return datetime._makeValue('Interval', { start = Start, stop = Stop })
+   if Stop < Start then tempus._invalidValue('Interval stop must be greater than or equal to start.') end
+   return tempus._makeValue('Interval', { start = Start, stop = Stop })
 end
 
 function new_offset(Seconds:any):table
-   local seconds = datetime._requireInteger('seconds', Seconds)
+   local seconds = tempus._requireInteger('seconds', Seconds)
    if seconds < MIN_OFFSET_SECONDS or seconds > MAX_OFFSET_SECONDS then
-      datetime._invalidValue('Offset must be in the range -18:00 through +18:00.')
+      tempus._invalidValue('Offset must be in the range -18:00 through +18:00.')
    end
-   return datetime._makeValue('Offset', { seconds = seconds })
+   return tempus._makeValue('Offset', { seconds = seconds })
 end
 
 function time_zone_cache_key(ZoneID:any, StartYear:num, EndYear:num):str
@@ -672,7 +672,7 @@ end
 
 function check_zone_year_range(StartYear:num, EndYear:num)
    if StartYear < MIN_ZONE_YEAR or EndYear > MAX_ZONE_YEAR or EndYear < StartYear then
-      datetime._outOfRange(f"Time zone year range {StartYear}-{EndYear} is outside the supported range.")
+      tempus._outOfRange(f"Time zone year range {StartYear}-{EndYear} is outside the supported range.")
    end
 end
 
@@ -706,8 +706,8 @@ function convert_time_zone_info(Info:table):table
 end
 
 function get_time_zone_info(ZoneID:any, StartYear:any, EndYear:any):table
-   local start_year = datetime._requireInteger('start_year', StartYear)
-   local end_year = datetime._requireInteger('end_year', EndYear)
+   local start_year = tempus._requireInteger('start_year', StartYear)
+   local end_year = tempus._requireInteger('end_year', EndYear)
    check_zone_year_range(start_year, end_year)
 
    local requested_key = time_zone_cache_key(ZoneID, start_year, end_year)
@@ -726,18 +726,18 @@ function get_time_zone_info(ZoneID:any, StartYear:any, EndYear:any):table
    end
 
    local display_id = ZoneID ?? 'local'
-   if err is ERR_Search then datetime._unknownZone(f"Unknown time zone '{display_id}'.") end
+   if err is ERR_Search then tempus._unknownZone(f"Unknown time zone '{display_id}'.") end
    if err is ERR_OutOfRange then
-      datetime._outOfRange(f"Time zone year range {start_year}-{end_year} is outside the supported range.")
+      tempus._outOfRange(f"Time zone year range {start_year}-{end_year} is outside the supported range.")
    end
-   datetime._error(err, f"Time zone query failed for '{display_id}'.")
+   tempus._error(err, f"Time zone query failed for '{display_id}'.")
 end
 
 function new_zone(ZoneID:any):table
-   if ZoneID != nil and type(ZoneID) != 'string' then datetime._invalidValue('Zone ID must be a string.') end
+   if ZoneID != nil and type(ZoneID) != 'string' then tempus._invalidValue('Zone ID must be a string.') end
 
    local info = get_time_zone_info(ZoneID, ZONE_PROBE_YEAR, ZONE_PROBE_YEAR)
-   return datetime._makeValue('Zone', {
+   return tempus._makeValue('Zone', {
       id          = info.id,
       native_id   = info.native_id,
       source      = info.source,
@@ -749,7 +749,7 @@ end
 function zone_info_for_instant(ZoneFields:table, Instant:table, PreviousYears:num, NextYears:num):table
    local year = instant_utc_year(Instant)
    if year < MIN_ZONE_YEAR or year > MAX_ZONE_YEAR then
-      datetime._outOfRange(f"Instant year {year} is outside the supported time-zone range.")
+      tempus._outOfRange(f"Instant year {year} is outside the supported time-zone range.")
    end
 
    local start_year = math.max(MIN_ZONE_YEAR, year - PreviousYears)
@@ -759,9 +759,9 @@ end
 
 function zone_info_for_local_date_time(ZoneFields:table, LocalDateTime:table):table
    local local_fields = require_local_date_time(LocalDateTime)
-   local date_fields = datetime._fields(local_fields.date, 'LocalDate')
+   local date_fields = tempus._fields(local_fields.date, 'LocalDate')
    if date_fields.year < MIN_ZONE_YEAR or date_fields.year > MAX_ZONE_YEAR then
-      datetime._outOfRange(f"Local date-time year {date_fields.year} is outside the supported time-zone range.")
+      tempus._outOfRange(f"Local date-time year {date_fields.year} is outside the supported time-zone range.")
    end
 
    local start_year = math.max(MIN_ZONE_YEAR, date_fields.year - 1)
@@ -793,8 +793,8 @@ end
 
 function local_date_time_epoch_pair(LocalDateTime:table):<num, num>
    local local_fields = require_local_date_time(LocalDateTime)
-   local date_fields = datetime._fields(local_fields.date, 'LocalDate')
-   local time_fields = datetime._fields(local_fields.time, 'LocalTime')
+   local date_fields = tempus._fields(local_fields.date, 'LocalDate')
+   local time_fields = tempus._fields(local_fields.time, 'LocalTime')
    return date_time_to_epoch_second(date_fields, time_fields), time_fields.nano
 end
 
@@ -811,12 +811,12 @@ function is_local_pair_in_range(Seconds:num, Nano:num, StartSeconds:num, StartNa
 end
 
 function resolver_name(Resolver:any):str
-   Resolver ??= datetime.resolve.compatible
+   Resolver ??= tempus.resolve.compatible
    return require_resolver(Resolver).name
 end
 
 function rejected_local_time(LocalDateTime:table, Zone:table, Reason:str)
-   datetime._error(ERR_LimitedSuccess, f"Local date-time {LocalDateTime} {Reason} in time zone {Zone:id()}.")
+   tempus._error(ERR_LimitedSuccess, f"Local date-time {LocalDateTime} {Reason} in time zone {Zone:id()}.")
 end
 
 function resolve_transition_local_date_time(LocalDateTime:table, Zone:table, Info:table, TargetSeconds:num,
@@ -854,7 +854,7 @@ end
 function resolve_local_date_time(LocalDateTime:table, Zone:table, Resolver:any):table
    require_zone(Zone)
    resolver = resolver_name(Resolver)
-   zone_fields = datetime._fields(Zone, 'Zone')
+   zone_fields = tempus._fields(Zone, 'Zone')
    info = zone_info_for_local_date_time(zone_fields, LocalDateTime)
    target_seconds, target_nano = local_date_time_epoch_pair(LocalDateTime)
    handled, result = resolve_transition_local_date_time(LocalDateTime, Zone, info, target_seconds, target_nano,
@@ -888,30 +888,30 @@ end
 function new_clock(Kind:str, Fields:table):table
    local fields = copy_fields(Fields)
    fields.kind = Kind
-   return datetime._makeValue('Clock', fields)
+   return tempus._makeValue('Clock', fields)
 end
 
 function new_local_date(Year:any, Month:any, Day:any):table
-   Year = datetime._requireInteger('year', Year)
-   Month = datetime._requireInteger('month', Month)
-   Day = datetime._requireInteger('day', Day)
+   Year = tempus._requireInteger('year', Year)
+   Month = tempus._requireInteger('month', Month)
+   Day = tempus._requireInteger('day', Day)
    validate_date(Year, Month, Day)
-   return datetime._makeValue('LocalDate', { year = Year, month = Month, day = Day })
+   return tempus._makeValue('LocalDate', { year = Year, month = Month, day = Day })
 end
 
 function new_local_time(Hour:any, Minute:any, Second:any, Nano:any):table
-   Hour = datetime._requireInteger('hour', Hour)
-   Minute = datetime._requireInteger('minute', Minute ?? 0)
-   Second = datetime._requireInteger('second', Second ?? 0)
-   Nano = datetime._requireInteger('nano', Nano ?? 0)
+   Hour = tempus._requireInteger('hour', Hour)
+   Minute = tempus._requireInteger('minute', Minute ?? 0)
+   Second = tempus._requireInteger('second', Second ?? 0)
+   Nano = tempus._requireInteger('nano', Nano ?? 0)
    validate_time(Hour, Minute, Second, Nano)
-   return datetime._makeValue('LocalTime', { hour = Hour, minute = Minute, second = Second, nano = Nano })
+   return tempus._makeValue('LocalTime', { hour = Hour, minute = Minute, second = Second, nano = Nano })
 end
 
 function new_local_date_time_from_parts(Date:any, Time:any):table
-   if not datetime.isLocalDate(Date) then datetime._invalidValue('date must be a LocalDate value.') end
-   if not datetime.isLocalTime(Time) then datetime._invalidValue('time must be a LocalTime value.') end
-   return datetime._makeValue('LocalDateTime', { date = Date, time = Time })
+   if not tempus.isLocalDate(Date) then tempus._invalidValue('date must be a LocalDate value.') end
+   if not tempus.isLocalTime(Time) then tempus._invalidValue('time must be a LocalTime value.') end
+   return tempus._makeValue('LocalDateTime', { date = Date, time = Time })
 end
 
 function new_local_date_time(Year:any, Month:any, Day:any, Hour:any, Minute:any, Second:any, Nano:any):table
@@ -922,13 +922,13 @@ end
 function new_offset_date_time(LocalDateTime:any, Offset:any):table
    require_local_date_time(LocalDateTime)
    require_offset(Offset)
-   return datetime._makeValue('OffsetDateTime', { local_date_time = LocalDateTime, offset = Offset })
+   return tempus._makeValue('OffsetDateTime', { local_date_time = LocalDateTime, offset = Offset })
 end
 
 function local_date_time_from_instant_in_zone(Instant:table, Zone:table):table
    require_zone(Zone)
    instant_fields = require_instant(Instant)
-   offset_fields = datetime._fields(Zone:offsetAt(Instant), 'Offset')
+   offset_fields = tempus._fields(Zone:offsetAt(Instant), 'Offset')
    date_fields, time_fields = epoch_second_to_local(instant_fields.epoch_second + offset_fields.seconds,
       instant_fields.nano)
    return new_local_date_time(date_fields.year, date_fields.month, date_fields.day, time_fields.hour,
@@ -937,10 +937,10 @@ end
 
 function offset_date_time_instant(OffsetDateTime:table):table
    local fields = require_offset_date_time(OffsetDateTime)
-   local_fields = datetime._fields(fields.local_date_time, 'LocalDateTime')
-   date_fields = datetime._fields(local_fields.date, 'LocalDate')
-   time_fields = datetime._fields(local_fields.time, 'LocalTime')
-   offset_fields = datetime._fields(fields.offset, 'Offset')
+   local_fields = tempus._fields(fields.local_date_time, 'LocalDateTime')
+   date_fields = tempus._fields(local_fields.date, 'LocalDate')
+   time_fields = tempus._fields(local_fields.time, 'LocalTime')
+   offset_fields = tempus._fields(fields.offset, 'Offset')
    return new_instant(date_time_to_epoch_second(date_fields, time_fields) - offset_fields.seconds, time_fields.nano)
 end
 
@@ -954,41 +954,41 @@ function offset_date_time_from_instant(Instant:table, Offset:table):table
 end
 
 function parse_date_text(Text:any):<num, num, num>
-   if type(Text) != 'string' then datetime._syntaxError('LocalDate text must be a string.') end
+   if type(Text) != 'string' then tempus._syntaxError('LocalDate text must be a string.') end
 
    year_text, month_text, day_text = rx_date.extract(Text)
-   if year_text is nil then datetime._syntaxError(f"Invalid LocalDate string '{Text}'.") end
+   if year_text is nil then tempus._syntaxError(f"Invalid LocalDate string '{Text}'.") end
 
    return tonumber(year_text), tonumber(month_text), tonumber(day_text)
 end
 
 function parse_time_text(Text:any):<num, num, num, num>
-   if type(Text) != 'string' then datetime._syntaxError('LocalTime text must be a string.') end
+   if type(Text) != 'string' then tempus._syntaxError('LocalTime text must be a string.') end
 
    hour_text, minute_text, second_text, fraction_text = rx_time.extract(Text)
-   if hour_text is nil then datetime._syntaxError(f"Invalid LocalTime string '{Text}'.") end
+   if hour_text is nil then tempus._syntaxError(f"Invalid LocalTime string '{Text}'.") end
 
    return tonumber(hour_text), tonumber(minute_text), tonumber(second_text ?? '0'), normalise_fraction(fraction_text)
 end
 
 function parse_local_date_time_text(Text:any):<table, table>
-   if type(Text) != 'string' then datetime._syntaxError('LocalDateTime text must be a string.') end
+   if type(Text) != 'string' then tempus._syntaxError('LocalDateTime text must be a string.') end
 
    date_text, time_text = rx_local_date_time.extract(Text)
-   if date_text is nil then datetime._syntaxError(f"Invalid LocalDateTime string '{Text}'.") end
+   if date_text is nil then tempus._syntaxError(f"Invalid LocalDateTime string '{Text}'.") end
 
-   return datetime.localDate.parse(date_text), datetime.localTime.parse(time_text)
+   return tempus.localDate.parse(date_text), tempus.localTime.parse(time_text)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-datetime.instant = make_constructor('instant')
+tempus.instant = make_constructor('instant')
 @Doc(text=[[
 @desc Create an instant from Unix seconds
 @input Seconds since the Unix epoch
 @result Instant value
 ]])
-datetime.instant.fromUnixSeconds = function(Seconds:num):table
+tempus.instant.fromUnixSeconds = function(Seconds:num):table
    return new_instant(Seconds, 0)
 end
 
@@ -997,8 +997,8 @@ end
 @input Milliseconds since the Unix epoch
 @result Instant value
 ]])
-datetime.instant.fromUnixMillis = function(Millis:num):table
-   millis = datetime._requireInteger('millis', Millis)
+tempus.instant.fromUnixMillis = function(Millis:num):table
+   millis = tempus._requireInteger('millis', Millis)
    seconds = math.floor(millis / 1000)
    nano = (millis - seconds * 1000) * 1000000
    return new_instant(seconds, nano)
@@ -1009,8 +1009,8 @@ end
 @input Nanoseconds since the Unix epoch
 @result Instant value
 ]])
-datetime.instant.fromUnixNanos = function(Nanos:num):table
-   nanos = datetime._requireInteger('nanos', Nanos)
+tempus.instant.fromUnixNanos = function(Nanos:num):table
+   nanos = tempus._requireInteger('nanos', Nanos)
    seconds = math.floor(nanos / NANOS_PER_SECOND)
    nano = nanos - seconds * NANOS_PER_SECOND
    return new_instant(seconds, nano)
@@ -1021,14 +1021,14 @@ end
 @input Instant text
 @result Instant value
 ]])
-datetime.instant.parse = function(Text:str):table
+tempus.instant.parse = function(Text:str):table
    date_text, time_text = rx_instant.extract(Text)
-   if date_text is nil then datetime._syntaxError(f"Invalid Instant string '{Text}'.") end
+   if date_text is nil then tempus._syntaxError(f"Invalid Instant string '{Text}'.") end
 
-   local date = datetime.localDate.parse(date_text)
-   local time = datetime.localTime.parse(time_text)
-   date_fields = datetime._fields(date, 'LocalDate')
-   time_fields = datetime._fields(time, 'LocalTime')
+   local date = tempus.localDate.parse(date_text)
+   local time = tempus.localTime.parse(time_text)
+   date_fields = tempus._fields(date, 'LocalDate')
+   time_fields = tempus._fields(time, 'LocalTime')
    return new_instant(date_time_to_epoch_second(date_fields, time_fields), time_fields.nano)
 end
 
@@ -1038,17 +1038,17 @@ end
 @input Nanosecond adjustment
 @result Instant value
 ]])
-getmetatable(datetime.instant).__call = function(Self, EpochSecond:any, Nano:any):table
+getmetatable(tempus.instant).__call = function(Self, EpochSecond:any, Nano:any):table
    return new_instant(EpochSecond, Nano ?? 0)
 end
 
-datetime.duration = make_constructor('duration')
+tempus.duration = make_constructor('duration')
 @Doc(text=[[
 @desc Create a duration from seconds
 @input Duration seconds
 @result Duration value
 ]])
-datetime.duration.seconds = function(Seconds:num):table
+tempus.duration.seconds = function(Seconds:num):table
    return new_duration(Seconds, 0)
 end
 
@@ -1057,8 +1057,8 @@ end
 @input Duration milliseconds
 @result Duration value
 ]])
-datetime.duration.millis = function(Millis:num):table
-   millis = datetime._requireInteger('millis', Millis)
+tempus.duration.millis = function(Millis:num):table
+   millis = tempus._requireInteger('millis', Millis)
    seconds = math.floor(millis / 1000)
    nano = (millis - seconds * 1000) * 1000000
    return new_duration(seconds, nano)
@@ -1069,8 +1069,8 @@ end
 @input Duration nanoseconds
 @result Duration value
 ]])
-datetime.duration.nanos = function(Nanos:num):table
-   nanos = datetime._requireInteger('nanos', Nanos)
+tempus.duration.nanos = function(Nanos:num):table
+   nanos = tempus._requireInteger('nanos', Nanos)
    seconds = math.floor(nanos / NANOS_PER_SECOND)
    nano = nanos - seconds * NANOS_PER_SECOND
    return new_duration(seconds, nano)
@@ -1081,13 +1081,13 @@ end
 @input Duration text
 @result Duration value
 ]])
-datetime.duration.parse = function(Text:str):table
-   if type(Text) != 'string' then datetime._syntaxError('Duration text must be a string.') end
+tempus.duration.parse = function(Text:str):table
+   if type(Text) != 'string' then tempus._syntaxError('Duration text must be a string.') end
 
    sign_text, hours_text, minutes_text, seconds_text, fraction_text = rx_duration.extract(Text)
    if (hours_text is nil or hours_text is '') and (minutes_text is nil or minutes_text is '') and
       (seconds_text is nil or seconds_text is '') then
-      datetime._syntaxError(f"Invalid Duration string '{Text}'.")
+      tempus._syntaxError(f"Invalid Duration string '{Text}'.")
    end
 
    seconds = (tonumber(hours_text ?? '0') * 3600) + (tonumber(minutes_text ?? '0') * 60) +
@@ -1105,25 +1105,25 @@ end
 @input Table with hours, minutes, seconds, millis, or nanos
 @result Duration value
 ]])
-getmetatable(datetime.duration).__call = function(Self, KV:any):table
-   datetime._requireTable('duration', KV)
+getmetatable(tempus.duration).__call = function(Self, KV:any):table
+   tempus._requireTable('duration', KV)
 
-   seconds = datetime._requireInteger('hours', KV.hours ?? 0) * 3600 +
-      datetime._requireInteger('minutes', KV.minutes ?? 0) * 60 +
-      datetime._requireInteger('seconds', KV.seconds ?? 0)
-   nano = datetime._requireInteger('millis', KV.millis ?? 0) * 1000000 +
-      datetime._requireInteger('nanos', KV.nanos ?? 0)
+   seconds = tempus._requireInteger('hours', KV.hours ?? 0) * 3600 +
+      tempus._requireInteger('minutes', KV.minutes ?? 0) * 60 +
+      tempus._requireInteger('seconds', KV.seconds ?? 0)
+   nano = tempus._requireInteger('millis', KV.millis ?? 0) * 1000000 +
+      tempus._requireInteger('nanos', KV.nanos ?? 0)
    return new_duration(seconds, nano)
 end
 
-datetime.offset = make_constructor('offset')
+tempus.offset = make_constructor('offset')
 @Doc(text=[[
 @desc Create an offset from hours
 @input Offset hours
 @result Offset value
 ]])
-datetime.offset.hours = function(Hours:num):table
-   return new_offset(datetime._requireInteger('hours', Hours) * 3600)
+tempus.offset.hours = function(Hours:num):table
+   return new_offset(tempus._requireInteger('hours', Hours) * 3600)
 end
 
 @Doc(text=[[
@@ -1131,16 +1131,16 @@ end
 @input Offset text
 @result Offset value
 ]])
-datetime.offset.parse = function(Text:str):table
-   if type(Text) != 'string' then datetime._syntaxError('Offset text must be a string.') end
+tempus.offset.parse = function(Text:str):table
+   if type(Text) != 'string' then tempus._syntaxError('Offset text must be a string.') end
 
    full_text, sign_text, hour_text, minute_text = rx_offset.extract(Text)
-   if full_text is nil then datetime._syntaxError(f"Invalid Offset string '{Text}'.") end
+   if full_text is nil then tempus._syntaxError(f"Invalid Offset string '{Text}'.") end
    if full_text is 'Z' then return new_offset(0) end
 
    hour = tonumber(hour_text)
    minute = tonumber(minute_text)
-   if minute > 59 then datetime._syntaxError(f"Invalid Offset string '{Text}'.") end
+   if minute > 59 then tempus._syntaxError(f"Invalid Offset string '{Text}'.") end
 
    seconds = hour * 3600 + minute * 60
    if sign_text is '-' then seconds = -seconds end
@@ -1151,7 +1151,7 @@ end
 @desc Return the UTC offset
 @result Zero offset value
 ]])
-datetime.offset.utc = function():table
+tempus.offset.utc = function():table
    return new_offset(0)
 end
 
@@ -1160,18 +1160,18 @@ end
 @input Offset seconds
 @result Offset value
 ]])
-getmetatable(datetime.offset).__call = function(Self, Seconds:any):table
+getmetatable(tempus.offset).__call = function(Self, Seconds:any):table
    return new_offset(Seconds)
 end
 
-datetime.localDate = make_constructor('localDate')
+tempus.localDate = make_constructor('localDate')
 @Doc(text=[[
 @desc Create a local date from field values
 @input Table with year, month, and day
 @result LocalDate value
 ]])
-datetime.localDate.from = function(KV:table):table
-   datetime._requireTable('localDate', KV)
+tempus.localDate.from = function(KV:table):table
+   tempus._requireTable('localDate', KV)
    return new_local_date(KV.year, KV.month, KV.day)
 end
 
@@ -1180,7 +1180,7 @@ end
 @input Date text
 @result LocalDate value
 ]])
-datetime.localDate.parse = function(Text:str):table
+tempus.localDate.parse = function(Text:str):table
    year, month, day = parse_date_text(Text)
    return new_local_date(year, month, day)
 end
@@ -1192,18 +1192,18 @@ end
 @input Day of month
 @result LocalDate value
 ]])
-getmetatable(datetime.localDate).__call = function(Self, Year:any, Month:any, Day:any):table
+getmetatable(tempus.localDate).__call = function(Self, Year:any, Month:any, Day:any):table
    return new_local_date(Year, Month, Day)
 end
 
-datetime.localTime = make_constructor('localTime')
+tempus.localTime = make_constructor('localTime')
 @Doc(text=[[
 @desc Create a local time from field values
 @input Table with hour, minute, second, or nano
 @result LocalTime value
 ]])
-datetime.localTime.from = function(KV:table):table
-   datetime._requireTable('localTime', KV)
+tempus.localTime.from = function(KV:table):table
+   tempus._requireTable('localTime', KV)
    return new_local_time(KV.hour, KV.minute ?? 0, KV.second ?? 0, KV.nano ?? 0)
 end
 
@@ -1212,7 +1212,7 @@ end
 @input Time text
 @result LocalTime value
 ]])
-datetime.localTime.parse = function(Text:str):table
+tempus.localTime.parse = function(Text:str):table
    hour, minute, second, nano = parse_time_text(Text)
    return new_local_time(hour, minute, second, nano)
 end
@@ -1225,18 +1225,18 @@ end
 @input Nanosecond
 @result LocalTime value
 ]])
-getmetatable(datetime.localTime).__call = function(Self, Hour:any, Minute:any, Second:any, Nano:any):table
+getmetatable(tempus.localTime).__call = function(Self, Hour:any, Minute:any, Second:any, Nano:any):table
    return new_local_time(Hour, Minute ?? 0, Second ?? 0, Nano ?? 0)
 end
 
-datetime.localDateTime = make_constructor('localDateTime')
+tempus.localDateTime = make_constructor('localDateTime')
 @Doc(text=[[
 @desc Create a local date-time from field values
 @input Table with date and time, or date-time fields
 @result LocalDateTime value
 ]])
-datetime.localDateTime.from = function(KV:table):table
-   datetime._requireTable('localDateTime', KV)
+tempus.localDateTime.from = function(KV:table):table
+   tempus._requireTable('localDateTime', KV)
    if KV.date != nil and KV.time != nil then
       return new_local_date_time_from_parts(KV.date, KV.time)
    end
@@ -1248,7 +1248,7 @@ end
 @input Date-time text
 @result LocalDateTime value
 ]])
-datetime.localDateTime.parse = function(Text:str):table
+tempus.localDateTime.parse = function(Text:str):table
    local date, time = parse_local_date_time_text(Text)
    return new_local_date_time_from_parts(date, time)
 end
@@ -1264,19 +1264,19 @@ end
 @input Nanosecond
 @result LocalDateTime value
 ]])
-getmetatable(datetime.localDateTime).__call =
+getmetatable(tempus.localDateTime).__call =
    function(Self, Year:any, Month:any, Day:any, Hour:any, Minute:any, Second:any, Nano:any):table
       return new_local_date_time(Year, Month, Day, Hour ?? 0, Minute ?? 0, Second ?? 0, Nano ?? 0)
    end
 
-datetime.offsetDateTime = make_constructor('offsetDateTime')
+tempus.offsetDateTime = make_constructor('offsetDateTime')
 @Doc(text=[[
 @desc Create an offset date-time from field values
 @input Table with local_date_time and offset
 @result OffsetDateTime value
 ]])
-datetime.offsetDateTime.from = function(KV:table):table
-   datetime._requireTable('offsetDateTime', KV)
+tempus.offsetDateTime.from = function(KV:table):table
+   tempus._requireTable('offsetDateTime', KV)
    return new_offset_date_time(KV.local_date_time, KV.offset)
 end
 
@@ -1285,13 +1285,13 @@ end
 @input Date-time text with offset
 @result OffsetDateTime value
 ]])
-datetime.offsetDateTime.parse = function(Text:str):table
-   if type(Text) != 'string' then datetime._syntaxError('OffsetDateTime text must be a string.') end
+tempus.offsetDateTime.parse = function(Text:str):table
+   if type(Text) != 'string' then tempus._syntaxError('OffsetDateTime text must be a string.') end
 
    local_text, offset_text = rx_offset_date_time.extract(Text)
-   if local_text is nil then datetime._syntaxError(f"Invalid OffsetDateTime string '{Text}'.") end
+   if local_text is nil then tempus._syntaxError(f"Invalid OffsetDateTime string '{Text}'.") end
 
-   return new_offset_date_time(datetime.localDateTime.parse(local_text), datetime.offset.parse(offset_text))
+   return new_offset_date_time(tempus.localDateTime.parse(local_text), tempus.offset.parse(offset_text))
 end
 
 @Doc(text=[[
@@ -1300,17 +1300,17 @@ end
 @input Offset value
 @result OffsetDateTime value
 ]])
-getmetatable(datetime.offsetDateTime).__call = function(Self, LocalDateTime:any, Offset:any):table
+getmetatable(tempus.offsetDateTime).__call = function(Self, LocalDateTime:any, Offset:any):table
    return new_offset_date_time(LocalDateTime, Offset)
 end
 
-datetime.period = make_constructor('period')
+tempus.period = make_constructor('period')
 @Doc(text=[[
 @desc Create a period from years
 @input Period years
 @result Period value
 ]])
-datetime.period.years = function(Years:num):table
+tempus.period.years = function(Years:num):table
    return new_period(Years, 0, 0, 0)
 end
 
@@ -1319,7 +1319,7 @@ end
 @input Period months
 @result Period value
 ]])
-datetime.period.months = function(Months:num):table
+tempus.period.months = function(Months:num):table
    return new_period(0, Months, 0, 0)
 end
 
@@ -1328,7 +1328,7 @@ end
 @input Period weeks
 @result Period value
 ]])
-datetime.period.weeks = function(Weeks:num):table
+tempus.period.weeks = function(Weeks:num):table
    return new_period(0, 0, Weeks, 0)
 end
 
@@ -1337,7 +1337,7 @@ end
 @input Period days
 @result Period value
 ]])
-datetime.period.days = function(Days:num):table
+tempus.period.days = function(Days:num):table
    return new_period(0, 0, 0, Days)
 end
 
@@ -1346,13 +1346,13 @@ end
 @input Period text
 @result Period value
 ]])
-datetime.period.parse = function(Text:str):table
-   if type(Text) != 'string' then datetime._syntaxError('Period text must be a string.') end
+tempus.period.parse = function(Text:str):table
+   if type(Text) != 'string' then tempus._syntaxError('Period text must be a string.') end
 
    sign_text, years_text, months_text, weeks_text, days_text = rx_period.extract(Text)
    if (years_text is nil or years_text is '') and (months_text is nil or months_text is '') and
       (weeks_text is nil or weeks_text is '') and (days_text is nil or days_text is '') then
-      datetime._syntaxError(f"Invalid Period string '{Text}'.")
+      tempus._syntaxError(f"Invalid Period string '{Text}'.")
    end
 
    sign = sign_text is '-' ? -1 :> 1
@@ -1365,19 +1365,19 @@ end
 @input Table with years, months, weeks, or days
 @result Period value
 ]])
-getmetatable(datetime.period).__call = function(Self, KV:any):table
-   datetime._requireTable('period', KV)
+getmetatable(tempus.period).__call = function(Self, KV:any):table
+   tempus._requireTable('period', KV)
    return new_period(KV.years ?? 0, KV.months ?? 0, KV.weeks ?? 0, KV.days ?? 0)
 end
 
-datetime.interval = make_constructor('interval')
+tempus.interval = make_constructor('interval')
 @Doc(text=[[
 @desc Create an interval from field values
 @input Table with start and stop instants
 @result Interval value
 ]])
-datetime.interval.from = function(KV:table):table
-   datetime._requireTable('interval', KV)
+tempus.interval.from = function(KV:table):table
+   tempus._requireTable('interval', KV)
    return new_interval(KV.start, KV.stop)
 end
 
@@ -1387,7 +1387,7 @@ end
 @input Duration value
 @result Interval value
 ]])
-datetime.interval.fromStartAndDuration = function(Start:table, Duration:table):table
+tempus.interval.fromStartAndDuration = function(Start:table, Duration:table):table
    start_fields = require_instant(Start)
    duration_fields = require_duration(Duration)
    return new_interval(Start, new_instant(start_fields.epoch_second + duration_fields.seconds,
@@ -1400,7 +1400,7 @@ end
 @input Stop instant
 @result Interval value
 ]])
-getmetatable(datetime.interval).__call = function(Self, Start:any, Stop:any):table
+getmetatable(tempus.interval).__call = function(Self, Start:any, Stop:any):table
    return new_interval(Start, Stop)
 end
 
@@ -1411,16 +1411,16 @@ end
 @desc Return Unix epoch seconds
 @result Seconds since the Unix epoch
 ]])
-function datetime.mtInstant:toUnixSeconds():num
-   return datetime._fields(self, 'Instant').epoch_second
+function tempus.mtInstant:toUnixSeconds():num
+   return tempus._fields(self, 'Instant').epoch_second
 end
 
 @Doc(text=[[
 @desc Return Unix epoch milliseconds
 @result Milliseconds since the Unix epoch
 ]])
-function datetime.mtInstant:toUnixMillis():num
-   fields = datetime._fields(self, 'Instant')
+function tempus.mtInstant:toUnixMillis():num
+   fields = tempus._fields(self, 'Instant')
    return fields.epoch_second * 1000 + math.floor(fields.nano / 1000000)
 end
 
@@ -1428,8 +1428,8 @@ end
 @desc Return Unix epoch nanoseconds
 @result Nanoseconds since the Unix epoch
 ]])
-function datetime.mtInstant:toUnixNanos():num
-   fields = datetime._fields(self, 'Instant')
+function tempus.mtInstant:toUnixNanos():num
+   fields = tempus._fields(self, 'Instant')
    return fields.epoch_second * NANOS_PER_SECOND + fields.nano
 end
 
@@ -1437,8 +1437,8 @@ end
 @desc Convert this instant to text
 @result ISO instant text
 ]])
-datetime.mtInstant.__tostring = function(Self:table):str
-   fields = datetime._fields(Self, 'Instant')
+tempus.mtInstant.__tostring = function(Self:table):str
+   fields = tempus._fields(Self, 'Instant')
    date_fields, time_fields = epoch_second_to_local(fields.epoch_second, fields.nano)
    return f"{format_year(date_fields.year)}-{pad_int(date_fields.month, 2)}-{pad_int(date_fields.day, 2)}T" ..
       f"{pad_int(time_fields.hour, 2)}:{pad_int(time_fields.minute, 2)}:{pad_int(time_fields.second, 2)}" ..
@@ -1451,9 +1451,9 @@ end
 @input Second instant
 @result True when equal
 ]])
-datetime.mtInstant.__eq = function(A:table, B:table):bool
-   a = datetime._fields(A, 'Instant')
-   b = datetime._fields(B, 'Instant')
+tempus.mtInstant.__eq = function(A:table, B:table):bool
+   a = tempus._fields(A, 'Instant')
+   b = tempus._fields(B, 'Instant')
    return a.epoch_second is b.epoch_second and a.nano is b.nano
 end
 
@@ -1463,9 +1463,9 @@ end
 @input Second instant
 @result True when first is earlier
 ]])
-datetime.mtInstant.__lt = function(A:table, B:table):bool
-   a = datetime._fields(A, 'Instant')
-   b = datetime._fields(B, 'Instant')
+tempus.mtInstant.__lt = function(A:table, B:table):bool
+   a = tempus._fields(A, 'Instant')
+   b = tempus._fields(B, 'Instant')
    return compare_pair(a.epoch_second, a.nano, b.epoch_second, b.nano) < 0
 end
 
@@ -1475,9 +1475,9 @@ end
 @input Second instant
 @result True when first is not later
 ]])
-datetime.mtInstant.__le = function(A:table, B:table):bool
-   a = datetime._fields(A, 'Instant')
-   b = datetime._fields(B, 'Instant')
+tempus.mtInstant.__le = function(A:table, B:table):bool
+   a = tempus._fields(A, 'Instant')
+   b = tempus._fields(B, 'Instant')
    return compare_pair(a.epoch_second, a.nano, b.epoch_second, b.nano) <= 0
 end
 
@@ -1487,10 +1487,10 @@ end
 @input Duration value
 @result Instant value
 ]])
-datetime.mtInstant.__add = function(A:table, B:table):table
-   a = datetime._fields(A, 'Instant')
-   if datetime.isDuration(B) then
-      b = datetime._fields(B, 'Duration')
+tempus.mtInstant.__add = function(A:table, B:table):table
+   a = tempus._fields(A, 'Instant')
+   if tempus.isDuration(B) then
+      b = tempus._fields(B, 'Duration')
       return new_instant(a.epoch_second + b.seconds, a.nano + b.nano)
    end
    unsupported_operation(A, '+', B)
@@ -1502,14 +1502,14 @@ end
 @input Duration or Instant value
 @result Instant or Duration value
 ]])
-datetime.mtInstant.__sub = function(A:table, B:table):table
-   a = datetime._fields(A, 'Instant')
-   if datetime.isDuration(B) then
-      b = datetime._fields(B, 'Duration')
+tempus.mtInstant.__sub = function(A:table, B:table):table
+   a = tempus._fields(A, 'Instant')
+   if tempus.isDuration(B) then
+      b = tempus._fields(B, 'Duration')
       return new_instant(a.epoch_second - b.seconds, a.nano - b.nano)
    end
-   if datetime.isInstant(B) then
-      b = datetime._fields(B, 'Instant')
+   if tempus.isInstant(B) then
+      b = tempus._fields(B, 'Instant')
       return new_duration(a.epoch_second - b.epoch_second, a.nano - b.nano)
    end
    unsupported_operation(A, '-', B)
@@ -1520,8 +1520,8 @@ end
 @input Target instant
 @result Duration value
 ]])
-function datetime.mtInstant:durationUntil(Other:table):table
-   if not datetime.isInstant(Other) then datetime._invalidValue('Other must be an Instant value.') end
+function tempus.mtInstant:durationUntil(Other:table):table
+   if not tempus.isInstant(Other) then tempus._invalidValue('Other must be an Instant value.') end
    return Other - self
 end
 
@@ -1530,7 +1530,7 @@ end
 @input Target time zone
 @result ZonedDateTime value
 ]])
-function datetime.mtInstant:toZonedDateTime(Zone:table):table
+function tempus.mtInstant:toZonedDateTime(Zone:table):table
    return new_zoned_date_time(self, Zone)
 end
 
@@ -1539,18 +1539,18 @@ end
 @input Format pattern
 @result Formatted text
 ]])
-function datetime.mtInstant:format(Pattern:any):str
-   fields = datetime._fields(self, 'Instant')
+function tempus.mtInstant:format(Pattern:any):str
+   fields = tempus._fields(self, 'Instant')
    date_fields, time_fields = epoch_second_to_local(fields.epoch_second, fields.nano)
-   return format_local_fields('Instant', date_fields, time_fields, datetime.offset.utc(), 'UTC', Pattern)
+   return format_local_fields('Instant', date_fields, time_fields, tempus.offset.utc(), 'UTC', Pattern)
 end
 
 @Doc(text=[[
 @desc Return the duration in seconds
 @result Total seconds
 ]])
-function datetime.mtDuration:totalSeconds():num
-   fields = datetime._fields(self, 'Duration')
+function tempus.mtDuration:totalSeconds():num
+   fields = tempus._fields(self, 'Duration')
    return fields.seconds + fields.nano / NANOS_PER_SECOND
 end
 
@@ -1558,8 +1558,8 @@ end
 @desc Return the duration in milliseconds
 @result Total milliseconds
 ]])
-function datetime.mtDuration:totalMillis():num
-   fields = datetime._fields(self, 'Duration')
+function tempus.mtDuration:totalMillis():num
+   fields = tempus._fields(self, 'Duration')
    return fields.seconds * 1000 + fields.nano / 1000000
 end
 
@@ -1567,8 +1567,8 @@ end
 @desc Convert this duration to text
 @result ISO duration text
 ]])
-datetime.mtDuration.__tostring = function(Self:table):str
-   fields = datetime._fields(Self, 'Duration')
+tempus.mtDuration.__tostring = function(Self:table):str
+   fields = tempus._fields(Self, 'Duration')
    seconds = fields.seconds
    nano = fields.nano
    negative = seconds < 0
@@ -1597,9 +1597,9 @@ end
 @input Second duration
 @result True when equal
 ]])
-datetime.mtDuration.__eq = function(A:table, B:table):bool
-   a = datetime._fields(A, 'Duration')
-   b = datetime._fields(B, 'Duration')
+tempus.mtDuration.__eq = function(A:table, B:table):bool
+   a = tempus._fields(A, 'Duration')
+   b = tempus._fields(B, 'Duration')
    return a.seconds is b.seconds and a.nano is b.nano
 end
 
@@ -1609,9 +1609,9 @@ end
 @input Second duration
 @result True when first is shorter
 ]])
-datetime.mtDuration.__lt = function(A:table, B:table):bool
-   a = datetime._fields(A, 'Duration')
-   b = datetime._fields(B, 'Duration')
+tempus.mtDuration.__lt = function(A:table, B:table):bool
+   a = tempus._fields(A, 'Duration')
+   b = tempus._fields(B, 'Duration')
    return compare_pair(a.seconds, a.nano, b.seconds, b.nano) < 0
 end
 
@@ -1621,9 +1621,9 @@ end
 @input Second duration
 @result True when first is not longer
 ]])
-datetime.mtDuration.__le = function(A:table, B:table):bool
-   a = datetime._fields(A, 'Duration')
-   b = datetime._fields(B, 'Duration')
+tempus.mtDuration.__le = function(A:table, B:table):bool
+   a = tempus._fields(A, 'Duration')
+   b = tempus._fields(B, 'Duration')
    return compare_pair(a.seconds, a.nano, b.seconds, b.nano) <= 0
 end
 
@@ -1633,10 +1633,10 @@ end
 @input Second duration
 @result Duration value
 ]])
-datetime.mtDuration.__add = function(A:table, B:table):table
-   a = datetime._fields(A, 'Duration')
-   if datetime.isDuration(B) then
-      b = datetime._fields(B, 'Duration')
+tempus.mtDuration.__add = function(A:table, B:table):table
+   a = tempus._fields(A, 'Duration')
+   if tempus.isDuration(B) then
+      b = tempus._fields(B, 'Duration')
       return new_duration(a.seconds + b.seconds, a.nano + b.nano)
    end
    unsupported_operation(A, '+', B)
@@ -1648,10 +1648,10 @@ end
 @input Second duration
 @result Duration value
 ]])
-datetime.mtDuration.__sub = function(A:table, B:table):table
-   a = datetime._fields(A, 'Duration')
-   if datetime.isDuration(B) then
-      b = datetime._fields(B, 'Duration')
+tempus.mtDuration.__sub = function(A:table, B:table):table
+   a = tempus._fields(A, 'Duration')
+   if tempus.isDuration(B) then
+      b = tempus._fields(B, 'Duration')
       return new_duration(a.seconds - b.seconds, a.nano - b.nano)
    end
    unsupported_operation(A, '-', B)
@@ -1661,8 +1661,8 @@ end
 @desc Negate this duration
 @result Duration value
 ]])
-datetime.mtDuration.__unm = function(Self:table):table
-   fields = datetime._fields(Self, 'Duration')
+tempus.mtDuration.__unm = function(Self:table):table
+   fields = tempus._fields(Self, 'Duration')
    return new_duration(-fields.seconds, -fields.nano)
 end
 
@@ -1670,24 +1670,24 @@ end
 @desc Return the offset in seconds
 @result Offset seconds
 ]])
-function datetime.mtOffset:totalSeconds():num
-   return datetime._fields(self, 'Offset').seconds
+function tempus.mtOffset:totalSeconds():num
+   return tempus._fields(self, 'Offset').seconds
 end
 
 @Doc(text=[[
 @desc Negate this offset
 @result Offset value
 ]])
-datetime.mtOffset.__unm = function(Self:table):table
-   return new_offset(-datetime._fields(Self, 'Offset').seconds)
+tempus.mtOffset.__unm = function(Self:table):table
+   return new_offset(-tempus._fields(Self, 'Offset').seconds)
 end
 
 @Doc(text=[[
 @desc Convert this offset to text
 @result Offset text
 ]])
-datetime.mtOffset.__tostring = function(Self:table):str
-   seconds = datetime._fields(Self, 'Offset').seconds
+tempus.mtOffset.__tostring = function(Self:table):str
+   seconds = tempus._fields(Self, 'Offset').seconds
    if seconds is 0 then return 'Z' end
 
    sign = seconds < 0 ? '-' :> '+'
@@ -1703,8 +1703,8 @@ end
 @input Second offset
 @result True when equal
 ]])
-datetime.mtOffset.__eq = function(A:table, B:table):bool
-   return datetime._fields(A, 'Offset').seconds is datetime._fields(B, 'Offset').seconds
+tempus.mtOffset.__eq = function(A:table, B:table):bool
+   return tempus._fields(A, 'Offset').seconds is tempus._fields(B, 'Offset').seconds
 end
 
 @Doc(text=[[
@@ -1713,8 +1713,8 @@ end
 @input Second offset
 @result True when first is smaller
 ]])
-datetime.mtOffset.__lt = function(A:table, B:table):bool
-   return datetime._fields(A, 'Offset').seconds < datetime._fields(B, 'Offset').seconds
+tempus.mtOffset.__lt = function(A:table, B:table):bool
+   return tempus._fields(A, 'Offset').seconds < tempus._fields(B, 'Offset').seconds
 end
 
 @Doc(text=[[
@@ -1723,40 +1723,40 @@ end
 @input Second offset
 @result True when first is not larger
 ]])
-datetime.mtOffset.__le = function(A:table, B:table):bool
-   return datetime._fields(A, 'Offset').seconds <= datetime._fields(B, 'Offset').seconds
+tempus.mtOffset.__le = function(A:table, B:table):bool
+   return tempus._fields(A, 'Offset').seconds <= tempus._fields(B, 'Offset').seconds
 end
 
 @Doc(text=[[
 @desc Return the year
 @result Year
 ]])
-function datetime.mtLocalDate:year():num return datetime._fields(self, 'LocalDate').year end
+function tempus.mtLocalDate:year():num return tempus._fields(self, 'LocalDate').year end
 
 @Doc(text=[[
 @desc Return the month
 @result Month number
 ]])
-function datetime.mtLocalDate:month():num return datetime._fields(self, 'LocalDate').month end
+function tempus.mtLocalDate:month():num return tempus._fields(self, 'LocalDate').month end
 
 @Doc(text=[[
 @desc Return the day of month
 @result Day of month
 ]])
-function datetime.mtLocalDate:day():num return datetime._fields(self, 'LocalDate').day end
+function tempus.mtLocalDate:day():num return tempus._fields(self, 'LocalDate').day end
 
 @Doc(text=[[
 @desc Check whether the date is in a leap year
 @result True for leap years
 ]])
-function datetime.mtLocalDate:isLeapYear():bool return is_leap_year(datetime._fields(self, 'LocalDate').year) end
+function tempus.mtLocalDate:isLeapYear():bool return is_leap_year(tempus._fields(self, 'LocalDate').year) end
 
 @Doc(text=[[
 @desc Return the number of days in the month
 @result Days in month
 ]])
-function datetime.mtLocalDate:daysInMonth():num
-   fields = datetime._fields(self, 'LocalDate')
+function tempus.mtLocalDate:daysInMonth():num
+   fields = tempus._fields(self, 'LocalDate')
    return days_in_month(fields.year, fields.month)
 end
 
@@ -1764,14 +1764,14 @@ end
 @desc Return the number of days in the year
 @result Days in year
 ]])
-function datetime.mtLocalDate:daysInYear():num return self:isLeapYear() ? 366 :> 365 end
+function tempus.mtLocalDate:daysInYear():num return self:isLeapYear() ? 366 :> 365 end
 
 @Doc(text=[[
 @desc Return the ordinal day of year
 @result Day of year
 ]])
-function datetime.mtLocalDate:dayOfYear():num
-   fields = datetime._fields(self, 'LocalDate')
+function tempus.mtLocalDate:dayOfYear():num
+   fields = tempus._fields(self, 'LocalDate')
    return day_of_year(fields.year, fields.month, fields.day)
 end
 
@@ -1779,8 +1779,8 @@ end
 @desc Return the ISO day of week
 @result Day number from 1 to 7
 ]])
-function datetime.mtLocalDate:dayOfWeek():num
-   fields = datetime._fields(self, 'LocalDate')
+function tempus.mtLocalDate:dayOfWeek():num
+   fields = tempus._fields(self, 'LocalDate')
    return ((days_from_civil(fields.year, fields.month, fields.day) + 3) % 7) + 1
 end
 
@@ -1790,19 +1790,19 @@ end
 @result LocalDate value
 ]])
 local_date_with = function(Self:table, KV:table):table
-   datetime._requireTable('fields', KV)
-   fields = datetime._fields(Self, 'LocalDate')
+   tempus._requireTable('fields', KV)
+   fields = tempus._fields(Self, 'LocalDate')
    return new_local_date(KV.year ?? fields.year, KV.month ?? fields.month, KV.day ?? fields.day)
 end
 
-datetime.mtLocalDate.withFields = local_date_with
+tempus.mtLocalDate.withFields = local_date_with
 @Doc(text=[[
 @desc Format this local date
 @input Format pattern
 @result Formatted text
 ]])
-function datetime.mtLocalDate:format(Pattern:any):str
-   return format_local_fields('LocalDate', datetime._fields(self, 'LocalDate'), nil, nil, nil, Pattern)
+function tempus.mtLocalDate:format(Pattern:any):str
+   return format_local_fields('LocalDate', tempus._fields(self, 'LocalDate'), nil, nil, nil, Pattern)
 end
 
 @Doc(text=[[
@@ -1810,8 +1810,8 @@ end
 @input LocalTime value
 @result LocalDateTime value
 ]])
-function datetime.mtLocalDate:atTime(Time:table):table
-   if not datetime.isLocalTime(Time) then datetime._invalidValue('Time must be a LocalTime value.') end
+function tempus.mtLocalDate:atTime(Time:table):table
+   if not tempus.isLocalTime(Time) then tempus._invalidValue('Time must be a LocalTime value.') end
    return new_local_date_time_from_parts(self, Time)
 end
 
@@ -1821,10 +1821,10 @@ end
 @input Period value
 @result LocalDate value
 ]])
-datetime.mtLocalDate.__add = function(A:table, B:table):table
-   a = datetime._fields(A, 'LocalDate')
-   if datetime.isPeriod(B) then
-      fields = date_plus_period_fields(a, datetime._fields(B, 'Period'), 1)
+tempus.mtLocalDate.__add = function(A:table, B:table):table
+   a = tempus._fields(A, 'LocalDate')
+   if tempus.isPeriod(B) then
+      fields = date_plus_period_fields(a, tempus._fields(B, 'Period'), 1)
       return new_local_date(fields.year, fields.month, fields.day)
    end
    unsupported_operation(A, '+', B)
@@ -1836,14 +1836,14 @@ end
 @input Period or LocalDate value
 @result LocalDate or Period value
 ]])
-datetime.mtLocalDate.__sub = function(A:table, B:table):table
-   a = datetime._fields(A, 'LocalDate')
-   if datetime.isPeriod(B) then
-      fields = date_plus_period_fields(a, datetime._fields(B, 'Period'), -1)
+tempus.mtLocalDate.__sub = function(A:table, B:table):table
+   a = tempus._fields(A, 'LocalDate')
+   if tempus.isPeriod(B) then
+      fields = date_plus_period_fields(a, tempus._fields(B, 'Period'), -1)
       return new_local_date(fields.year, fields.month, fields.day)
    end
-   if datetime.isLocalDate(B) then
-      b = datetime._fields(B, 'LocalDate')
+   if tempus.isLocalDate(B) then
+      b = tempus._fields(B, 'LocalDate')
       return new_period(0, 0, 0, days_from_civil(a.year, a.month, a.day) - days_from_civil(b.year, b.month, b.day))
    end
    unsupported_operation(A, '-', B)
@@ -1853,8 +1853,8 @@ end
 @desc Convert this date to text
 @result ISO date text
 ]])
-datetime.mtLocalDate.__tostring = function(Self:table):str
-   fields = datetime._fields(Self, 'LocalDate')
+tempus.mtLocalDate.__tostring = function(Self:table):str
+   fields = tempus._fields(Self, 'LocalDate')
    return f"{format_year(fields.year)}-{pad_int(fields.month, 2)}-{pad_int(fields.day, 2)}"
 end
 
@@ -1864,8 +1864,8 @@ end
 @input Second date
 @result True when equal
 ]])
-datetime.mtLocalDate.__eq = function(A:table, B:table):bool
-   return compare_date_fields(datetime._fields(A, 'LocalDate'), datetime._fields(B, 'LocalDate')) is 0
+tempus.mtLocalDate.__eq = function(A:table, B:table):bool
+   return compare_date_fields(tempus._fields(A, 'LocalDate'), tempus._fields(B, 'LocalDate')) is 0
 end
 
 @Doc(text=[[
@@ -1874,8 +1874,8 @@ end
 @input Second date
 @result True when first is earlier
 ]])
-datetime.mtLocalDate.__lt = function(A:table, B:table):bool
-   return compare_date_fields(datetime._fields(A, 'LocalDate'), datetime._fields(B, 'LocalDate')) < 0
+tempus.mtLocalDate.__lt = function(A:table, B:table):bool
+   return compare_date_fields(tempus._fields(A, 'LocalDate'), tempus._fields(B, 'LocalDate')) < 0
 end
 
 @Doc(text=[[
@@ -1884,33 +1884,33 @@ end
 @input Second date
 @result True when first is not later
 ]])
-datetime.mtLocalDate.__le = function(A:table, B:table):bool
-   return compare_date_fields(datetime._fields(A, 'LocalDate'), datetime._fields(B, 'LocalDate')) <= 0
+tempus.mtLocalDate.__le = function(A:table, B:table):bool
+   return compare_date_fields(tempus._fields(A, 'LocalDate'), tempus._fields(B, 'LocalDate')) <= 0
 end
 
 @Doc(text=[[
 @desc Return the hour
 @result Hour
 ]])
-function datetime.mtLocalTime:hour():num return datetime._fields(self, 'LocalTime').hour end
+function tempus.mtLocalTime:hour():num return tempus._fields(self, 'LocalTime').hour end
 
 @Doc(text=[[
 @desc Return the minute
 @result Minute
 ]])
-function datetime.mtLocalTime:minute():num return datetime._fields(self, 'LocalTime').minute end
+function tempus.mtLocalTime:minute():num return tempus._fields(self, 'LocalTime').minute end
 
 @Doc(text=[[
 @desc Return the second
 @result Second
 ]])
-function datetime.mtLocalTime:second():num return datetime._fields(self, 'LocalTime').second end
+function tempus.mtLocalTime:second():num return tempus._fields(self, 'LocalTime').second end
 
 @Doc(text=[[
 @desc Return the nanosecond
 @result Nanosecond
 ]])
-function datetime.mtLocalTime:nano():num return datetime._fields(self, 'LocalTime').nano end
+function tempus.mtLocalTime:nano():num return tempus._fields(self, 'LocalTime').nano end
 
 @Doc(text=[[
 @desc Return a time with replacement fields
@@ -1918,28 +1918,28 @@ function datetime.mtLocalTime:nano():num return datetime._fields(self, 'LocalTim
 @result LocalTime value
 ]])
 local_time_with = function(Self:table, KV:table):table
-   datetime._requireTable('fields', KV)
-   fields = datetime._fields(Self, 'LocalTime')
+   tempus._requireTable('fields', KV)
+   fields = tempus._fields(Self, 'LocalTime')
    return new_local_time(KV.hour ?? fields.hour, KV.minute ?? fields.minute, KV.second ?? fields.second,
       KV.nano ?? fields.nano)
 end
 
-datetime.mtLocalTime.withFields = local_time_with
+tempus.mtLocalTime.withFields = local_time_with
 @Doc(text=[[
 @desc Format this local time
 @input Format pattern
 @result Formatted text
 ]])
-function datetime.mtLocalTime:format(Pattern:any):str
-   return format_local_fields('LocalTime', nil, datetime._fields(self, 'LocalTime'), nil, nil, Pattern)
+function tempus.mtLocalTime:format(Pattern:any):str
+   return format_local_fields('LocalTime', nil, tempus._fields(self, 'LocalTime'), nil, nil, Pattern)
 end
 
 @Doc(text=[[
 @desc Convert this time to text
 @result ISO time text
 ]])
-datetime.mtLocalTime.__tostring = function(Self:table):str
-   fields = datetime._fields(Self, 'LocalTime')
+tempus.mtLocalTime.__tostring = function(Self:table):str
+   fields = tempus._fields(Self, 'LocalTime')
    return f"{pad_int(fields.hour, 2)}:{pad_int(fields.minute, 2)}:{pad_int(fields.second, 2)}" ..
       format_nano(fields.nano)
 end
@@ -1950,8 +1950,8 @@ end
 @input Second time
 @result True when equal
 ]])
-datetime.mtLocalTime.__eq = function(A:table, B:table):bool
-   return compare_time_fields(datetime._fields(A, 'LocalTime'), datetime._fields(B, 'LocalTime')) is 0
+tempus.mtLocalTime.__eq = function(A:table, B:table):bool
+   return compare_time_fields(tempus._fields(A, 'LocalTime'), tempus._fields(B, 'LocalTime')) is 0
 end
 
 @Doc(text=[[
@@ -1960,8 +1960,8 @@ end
 @input Second time
 @result True when first is earlier
 ]])
-datetime.mtLocalTime.__lt = function(A:table, B:table):bool
-   return compare_time_fields(datetime._fields(A, 'LocalTime'), datetime._fields(B, 'LocalTime')) < 0
+tempus.mtLocalTime.__lt = function(A:table, B:table):bool
+   return compare_time_fields(tempus._fields(A, 'LocalTime'), tempus._fields(B, 'LocalTime')) < 0
 end
 
 @Doc(text=[[
@@ -1970,8 +1970,8 @@ end
 @input Second time
 @result True when first is not later
 ]])
-datetime.mtLocalTime.__le = function(A:table, B:table):bool
-   return compare_time_fields(datetime._fields(A, 'LocalTime'), datetime._fields(B, 'LocalTime')) <= 0
+tempus.mtLocalTime.__le = function(A:table, B:table):bool
+   return compare_time_fields(tempus._fields(A, 'LocalTime'), tempus._fields(B, 'LocalTime')) <= 0
 end
 
 @Doc(text=[[
@@ -1980,9 +1980,9 @@ end
 @input Duration value
 @result LocalTime value
 ]])
-datetime.mtLocalTime.__add = function(A:table, B:table):table
-   if datetime.isDuration(B) then
-      fields = time_plus_duration_fields(datetime._fields(A, 'LocalTime'), datetime._fields(B, 'Duration'), 1)
+tempus.mtLocalTime.__add = function(A:table, B:table):table
+   if tempus.isDuration(B) then
+      fields = time_plus_duration_fields(tempus._fields(A, 'LocalTime'), tempus._fields(B, 'Duration'), 1)
       return new_local_time(fields.hour, fields.minute, fields.second, fields.nano)
    end
    unsupported_operation(A, '+', B)
@@ -1994,9 +1994,9 @@ end
 @input Duration value
 @result LocalTime value
 ]])
-datetime.mtLocalTime.__sub = function(A:table, B:table):table
-   if datetime.isDuration(B) then
-      fields = time_plus_duration_fields(datetime._fields(A, 'LocalTime'), datetime._fields(B, 'Duration'), -1)
+tempus.mtLocalTime.__sub = function(A:table, B:table):table
+   if tempus.isDuration(B) then
+      fields = time_plus_duration_fields(tempus._fields(A, 'LocalTime'), tempus._fields(B, 'Duration'), -1)
       return new_local_time(fields.hour, fields.minute, fields.second, fields.nano)
    end
    unsupported_operation(A, '-', B)
@@ -2006,13 +2006,13 @@ end
 @desc Return the date part
 @result LocalDate value
 ]])
-function datetime.mtLocalDateTime:date():table return datetime._fields(self, 'LocalDateTime').date end
+function tempus.mtLocalDateTime:date():table return tempus._fields(self, 'LocalDateTime').date end
 
 @Doc(text=[[
 @desc Return the time part
 @result LocalTime value
 ]])
-function datetime.mtLocalDateTime:time():table return datetime._fields(self, 'LocalDateTime').time end
+function tempus.mtLocalDateTime:time():table return tempus._fields(self, 'LocalDateTime').time end
 
 @Doc(text=[[
 @desc Return a date-time with replacement fields
@@ -2020,23 +2020,23 @@ function datetime.mtLocalDateTime:time():table return datetime._fields(self, 'Lo
 @result LocalDateTime value
 ]])
 local_date_time_with = function(Self:table, KV:table):table
-   datetime._requireTable('fields', KV)
-   fields = datetime._fields(Self, 'LocalDateTime')
-   date_fields = datetime._fields(fields.date, 'LocalDate')
-   time_fields = datetime._fields(fields.time, 'LocalTime')
+   tempus._requireTable('fields', KV)
+   fields = tempus._fields(Self, 'LocalDateTime')
+   date_fields = tempus._fields(fields.date, 'LocalDate')
+   time_fields = tempus._fields(fields.time, 'LocalTime')
    return new_local_date_time(KV.year ?? date_fields.year, KV.month ?? date_fields.month, KV.day ?? date_fields.day,
       KV.hour ?? time_fields.hour, KV.minute ?? time_fields.minute, KV.second ?? time_fields.second,
       KV.nano ?? time_fields.nano)
 end
 
-datetime.mtLocalDateTime.withFields = local_date_time_with
+tempus.mtLocalDateTime.withFields = local_date_time_with
 
 @Doc(text=[[
 @desc Format this local date-time
 @input Format pattern
 @result Formatted text
 ]])
-function datetime.mtLocalDateTime:format(Pattern:any):str
+function tempus.mtLocalDateTime:format(Pattern:any):str
    date_fields, time_fields = local_date_time_parts(self)
    return format_local_fields('LocalDateTime', date_fields, time_fields, nil, nil, Pattern)
 end
@@ -2046,7 +2046,7 @@ end
 @input Offset value
 @result OffsetDateTime value
 ]])
-function datetime.mtLocalDateTime:atOffset(Offset:table):table
+function tempus.mtLocalDateTime:atOffset(Offset:table):table
    return self:toOffsetDateTime(Offset)
 end
 
@@ -2055,7 +2055,7 @@ end
 @input Offset value
 @result OffsetDateTime value
 ]])
-function datetime.mtLocalDateTime:toOffsetDateTime(Offset:table):table
+function tempus.mtLocalDateTime:toOffsetDateTime(Offset:table):table
    return new_offset_date_time(self, Offset)
 end
 
@@ -2065,7 +2065,7 @@ end
 @input Resolver value
 @result ZonedDateTime value
 ]])
-function datetime.mtLocalDateTime:inZone(Zone:table, Resolver:table):table
+function tempus.mtLocalDateTime:inZone(Zone:table, Resolver:table):table
    return self:toZonedDateTime(Zone, Resolver)
 end
 
@@ -2075,8 +2075,8 @@ end
 @input Resolver value
 @result ZonedDateTime value
 ]])
-function datetime.mtLocalDateTime:toZonedDateTime(Zone:table, Resolver:table):table
-   Resolver ??= datetime.resolve.compatible
+function tempus.mtLocalDateTime:toZonedDateTime(Zone:table, Resolver:table):table
+   Resolver ??= tempus.resolve.compatible
    return resolve_local_date_time(self, Zone, Resolver)
 end
 
@@ -2086,20 +2086,20 @@ end
 @input Duration or Period value
 @result LocalDateTime value
 ]])
-datetime.mtLocalDateTime.__add = function(A:table, B:table):table
-   a = datetime._fields(A, 'LocalDateTime')
-   date_fields = datetime._fields(a.date, 'LocalDate')
-   time_fields = datetime._fields(a.time, 'LocalTime')
+tempus.mtLocalDateTime.__add = function(A:table, B:table):table
+   a = tempus._fields(A, 'LocalDateTime')
+   date_fields = tempus._fields(a.date, 'LocalDate')
+   time_fields = tempus._fields(a.time, 'LocalTime')
 
-   if datetime.isDuration(B) then
+   if tempus.isDuration(B) then
       new_date_fields, new_time_fields =
-         local_date_time_plus_duration_fields(date_fields, time_fields, datetime._fields(B, 'Duration'), 1)
+         local_date_time_plus_duration_fields(date_fields, time_fields, tempus._fields(B, 'Duration'), 1)
       return new_local_date_time(new_date_fields.year, new_date_fields.month, new_date_fields.day,
          new_time_fields.hour, new_time_fields.minute, new_time_fields.second, new_time_fields.nano)
    end
 
-   if datetime.isPeriod(B) then
-      new_date_fields = date_plus_period_fields(date_fields, datetime._fields(B, 'Period'), 1)
+   if tempus.isPeriod(B) then
+      new_date_fields = date_plus_period_fields(date_fields, tempus._fields(B, 'Period'), 1)
       return new_local_date_time(new_date_fields.year, new_date_fields.month, new_date_fields.day,
          time_fields.hour, time_fields.minute, time_fields.second, time_fields.nano)
    end
@@ -2113,20 +2113,20 @@ end
 @input Duration or Period value
 @result LocalDateTime value
 ]])
-datetime.mtLocalDateTime.__sub = function(A:table, B:table):table
-   a = datetime._fields(A, 'LocalDateTime')
-   date_fields = datetime._fields(a.date, 'LocalDate')
-   time_fields = datetime._fields(a.time, 'LocalTime')
+tempus.mtLocalDateTime.__sub = function(A:table, B:table):table
+   a = tempus._fields(A, 'LocalDateTime')
+   date_fields = tempus._fields(a.date, 'LocalDate')
+   time_fields = tempus._fields(a.time, 'LocalTime')
 
-   if datetime.isDuration(B) then
+   if tempus.isDuration(B) then
       new_date_fields, new_time_fields =
-         local_date_time_plus_duration_fields(date_fields, time_fields, datetime._fields(B, 'Duration'), -1)
+         local_date_time_plus_duration_fields(date_fields, time_fields, tempus._fields(B, 'Duration'), -1)
       return new_local_date_time(new_date_fields.year, new_date_fields.month, new_date_fields.day,
          new_time_fields.hour, new_time_fields.minute, new_time_fields.second, new_time_fields.nano)
    end
 
-   if datetime.isPeriod(B) then
-      new_date_fields = date_plus_period_fields(date_fields, datetime._fields(B, 'Period'), -1)
+   if tempus.isPeriod(B) then
+      new_date_fields = date_plus_period_fields(date_fields, tempus._fields(B, 'Period'), -1)
       return new_local_date_time(new_date_fields.year, new_date_fields.month, new_date_fields.day,
          time_fields.hour, time_fields.minute, time_fields.second, time_fields.nano)
    end
@@ -2138,8 +2138,8 @@ end
 @desc Convert this local date-time to text
 @result ISO local date-time text
 ]])
-datetime.mtLocalDateTime.__tostring = function(Self:table):str
-   fields = datetime._fields(Self, 'LocalDateTime')
+tempus.mtLocalDateTime.__tostring = function(Self:table):str
+   fields = tempus._fields(Self, 'LocalDateTime')
    return f'{fields.date}T{fields.time}'
 end
 
@@ -2149,9 +2149,9 @@ end
 @input Second local date-time
 @result True when equal
 ]])
-datetime.mtLocalDateTime.__eq = function(A:table, B:table):bool
-   a = datetime._fields(A, 'LocalDateTime')
-   b = datetime._fields(B, 'LocalDateTime')
+tempus.mtLocalDateTime.__eq = function(A:table, B:table):bool
+   a = tempus._fields(A, 'LocalDateTime')
+   b = tempus._fields(B, 'LocalDateTime')
    return a.date is b.date and a.time is b.time
 end
 
@@ -2161,13 +2161,13 @@ end
 @input Second local date-time
 @result True when first is earlier
 ]])
-datetime.mtLocalDateTime.__lt = function(A:table, B:table):bool
-   a = datetime._fields(A, 'LocalDateTime')
-   b = datetime._fields(B, 'LocalDateTime')
-   date_compare = compare_date_fields(datetime._fields(a.date, 'LocalDate'),
-      datetime._fields(b.date, 'LocalDate'))
+tempus.mtLocalDateTime.__lt = function(A:table, B:table):bool
+   a = tempus._fields(A, 'LocalDateTime')
+   b = tempus._fields(B, 'LocalDateTime')
+   date_compare = compare_date_fields(tempus._fields(a.date, 'LocalDate'),
+      tempus._fields(b.date, 'LocalDate'))
    if date_compare != 0 then return date_compare < 0 end
-   return compare_time_fields(datetime._fields(a.time, 'LocalTime'), datetime._fields(b.time, 'LocalTime')) < 0
+   return compare_time_fields(tempus._fields(a.time, 'LocalTime'), tempus._fields(b.time, 'LocalTime')) < 0
 end
 
 @Doc(text=[[
@@ -2176,7 +2176,7 @@ end
 @input Second local date-time
 @result True when first is not later
 ]])
-datetime.mtLocalDateTime.__le = function(A:table, B:table):bool
+tempus.mtLocalDateTime.__le = function(A:table, B:table):bool
    return A < B or A is B
 end
 
@@ -2184,7 +2184,7 @@ end
 @desc Return the instant represented by this value
 @result Instant value
 ]])
-function datetime.mtOffsetDateTime:instant():table
+function tempus.mtOffsetDateTime:instant():table
    return offset_date_time_instant(self)
 end
 
@@ -2192,7 +2192,7 @@ end
 @desc Return the offset
 @result Offset value
 ]])
-function datetime.mtOffsetDateTime:offset():table
+function tempus.mtOffsetDateTime:offset():table
    return require_offset_date_time(self).offset
 end
 
@@ -2200,7 +2200,7 @@ end
 @desc Return the local date
 @result LocalDate value
 ]])
-function datetime.mtOffsetDateTime:date():table
+function tempus.mtOffsetDateTime:date():table
    return require_offset_date_time(self).local_date_time:date()
 end
 
@@ -2208,7 +2208,7 @@ end
 @desc Return the local time
 @result LocalTime value
 ]])
-function datetime.mtOffsetDateTime:time():table
+function tempus.mtOffsetDateTime:time():table
    return require_offset_date_time(self).local_date_time:time()
 end
 
@@ -2216,7 +2216,7 @@ end
 @desc Return the local date-time
 @result LocalDateTime value
 ]])
-function datetime.mtOffsetDateTime:localDateTime():table
+function tempus.mtOffsetDateTime:localDateTime():table
    return require_offset_date_time(self).local_date_time
 end
 
@@ -2225,7 +2225,7 @@ end
 @input Format pattern
 @result Formatted text
 ]])
-function datetime.mtOffsetDateTime:format(Pattern:any):str
+function tempus.mtOffsetDateTime:format(Pattern:any):str
    fields = require_offset_date_time(self)
    date_fields, time_fields = local_date_time_parts(fields.local_date_time)
    return format_local_fields('OffsetDateTime', date_fields, time_fields, fields.offset, nil, Pattern)
@@ -2236,7 +2236,7 @@ end
 @input Target time zone
 @result ZonedDateTime value
 ]])
-function datetime.mtOffsetDateTime:toZonedDateTime(Zone:table):table
+function tempus.mtOffsetDateTime:toZonedDateTime(Zone:table):table
    return new_zoned_date_time(offset_date_time_instant(self), Zone)
 end
 
@@ -2245,18 +2245,18 @@ end
 @input Instant or OffsetDateTime value
 @result True when instants match
 ]])
-function datetime.mtOffsetDateTime:instantEquals(Other:table):bool
-   if datetime.isInstant(Other) then return self:instant() is Other end
-   if datetime.isOffsetDateTime(Other) then return self:instant() is Other:instant() end
-   datetime._invalidValue('Other must be an Instant or OffsetDateTime value.')
+function tempus.mtOffsetDateTime:instantEquals(Other:table):bool
+   if tempus.isInstant(Other) then return self:instant() is Other end
+   if tempus.isOffsetDateTime(Other) then return self:instant() is Other:instant() end
+   tempus._invalidValue('Other must be an Instant or OffsetDateTime value.')
 end
 
 @Doc(text=[[
 @desc Convert this offset date-time to text
 @result ISO offset date-time text
 ]])
-datetime.mtOffsetDateTime.__tostring = function(Self:table):str
-   fields = datetime._fields(Self, 'OffsetDateTime')
+tempus.mtOffsetDateTime.__tostring = function(Self:table):str
+   fields = tempus._fields(Self, 'OffsetDateTime')
    return tostring(fields.local_date_time) .. tostring(fields.offset)
 end
 
@@ -2266,9 +2266,9 @@ end
 @input Second offset date-time
 @result True when equal
 ]])
-datetime.mtOffsetDateTime.__eq = function(A:table, B:table):bool
-   a = datetime._fields(A, 'OffsetDateTime')
-   b = datetime._fields(B, 'OffsetDateTime')
+tempus.mtOffsetDateTime.__eq = function(A:table, B:table):bool
+   a = tempus._fields(A, 'OffsetDateTime')
+   b = tempus._fields(B, 'OffsetDateTime')
    return offset_date_time_instant(A) is offset_date_time_instant(B) and a.offset is b.offset
 end
 
@@ -2278,7 +2278,7 @@ end
 @input Second offset date-time
 @result True when first is earlier
 ]])
-datetime.mtOffsetDateTime.__lt = function(A:table, B:table):bool
+tempus.mtOffsetDateTime.__lt = function(A:table, B:table):bool
    return offset_date_time_instant(A) < offset_date_time_instant(B)
 end
 
@@ -2288,7 +2288,7 @@ end
 @input Second offset date-time
 @result True when first is not later
 ]])
-datetime.mtOffsetDateTime.__le = function(A:table, B:table):bool
+tempus.mtOffsetDateTime.__le = function(A:table, B:table):bool
    return offset_date_time_instant(A) <= offset_date_time_instant(B)
 end
 
@@ -2298,12 +2298,12 @@ end
 @input Duration or Period value
 @result OffsetDateTime value
 ]])
-datetime.mtOffsetDateTime.__add = function(A:table, B:table):table
-   fields = datetime._fields(A, 'OffsetDateTime')
-   if datetime.isDuration(B) then
+tempus.mtOffsetDateTime.__add = function(A:table, B:table):table
+   fields = tempus._fields(A, 'OffsetDateTime')
+   if tempus.isDuration(B) then
       return offset_date_time_from_instant(offset_date_time_instant(A) + B, fields.offset)
    end
-   if datetime.isPeriod(B) then return new_offset_date_time(fields.local_date_time + B, fields.offset) end
+   if tempus.isPeriod(B) then return new_offset_date_time(fields.local_date_time + B, fields.offset) end
    unsupported_operation(A, '+', B)
 end
 
@@ -2313,13 +2313,13 @@ end
 @input Duration, Period, or OffsetDateTime value
 @result OffsetDateTime or Duration value
 ]])
-datetime.mtOffsetDateTime.__sub = function(A:table, B:table):table
-   fields = datetime._fields(A, 'OffsetDateTime')
-   if datetime.isDuration(B) then
+tempus.mtOffsetDateTime.__sub = function(A:table, B:table):table
+   fields = tempus._fields(A, 'OffsetDateTime')
+   if tempus.isDuration(B) then
       return offset_date_time_from_instant(offset_date_time_instant(A) - B, fields.offset)
    end
-   if datetime.isPeriod(B) then return new_offset_date_time(fields.local_date_time - B, fields.offset) end
-   if datetime.isOffsetDateTime(B) then return offset_date_time_instant(A) - offset_date_time_instant(B) end
+   if tempus.isPeriod(B) then return new_offset_date_time(fields.local_date_time - B, fields.offset) end
+   if tempus.isOffsetDateTime(B) then return offset_date_time_instant(A) - offset_date_time_instant(B) end
    unsupported_operation(A, '-', B)
 end
 
@@ -2327,7 +2327,7 @@ end
 @desc Return the represented instant
 @result Instant value
 ]])
-function datetime.mtZonedDateTime:instant():table
+function tempus.mtZonedDateTime:instant():table
    return require_zoned_date_time(self).instant
 end
 
@@ -2335,7 +2335,7 @@ end
 @desc Return the time zone
 @result Zone value
 ]])
-function datetime.mtZonedDateTime:zone():table
+function tempus.mtZonedDateTime:zone():table
    return require_zoned_date_time(self).zone
 end
 
@@ -2343,7 +2343,7 @@ end
 @desc Return the offset at this instant
 @result Offset value
 ]])
-function datetime.mtZonedDateTime:offset():table
+function tempus.mtZonedDateTime:offset():table
    fields = require_zoned_date_time(self)
    return fields.zone:offsetAt(fields.instant)
 end
@@ -2352,7 +2352,7 @@ end
 @desc Return the local date-time
 @result LocalDateTime value
 ]])
-function datetime.mtZonedDateTime:localDateTime():table
+function tempus.mtZonedDateTime:localDateTime():table
    fields = require_zoned_date_time(self)
    return local_date_time_from_instant_in_zone(fields.instant, fields.zone)
 end
@@ -2361,7 +2361,7 @@ end
 @desc Return the local date
 @result LocalDate value
 ]])
-function datetime.mtZonedDateTime:date():table
+function tempus.mtZonedDateTime:date():table
    return self:localDateTime():date()
 end
 
@@ -2369,7 +2369,7 @@ end
 @desc Return the local time
 @result LocalTime value
 ]])
-function datetime.mtZonedDateTime:time():table
+function tempus.mtZonedDateTime:time():table
    return self:localDateTime():time()
 end
 
@@ -2378,7 +2378,7 @@ end
 @input Target time zone
 @result ZonedDateTime value
 ]])
-function datetime.mtZonedDateTime:withZoneSameInstant(Zone:table):table
+function tempus.mtZonedDateTime:withZoneSameInstant(Zone:table):table
    return new_zoned_date_time(require_zoned_date_time(self).instant, Zone)
 end
 
@@ -2388,8 +2388,8 @@ end
 @input Resolver value
 @result ZonedDateTime value
 ]])
-function datetime.mtZonedDateTime:withZoneSameLocal(Zone:table, Resolver:table):table
-   Resolver ??= datetime.resolve.compatible
+function tempus.mtZonedDateTime:withZoneSameLocal(Zone:table, Resolver:table):table
+   Resolver ??= tempus.resolve.compatible
    return self:localDateTime():toZonedDateTime(Zone, Resolver)
 end
 
@@ -2399,19 +2399,19 @@ end
 @result ZonedDateTime value
 ]])
 zoned_date_time_with_local = function(Self:table, KV:table):table
-   datetime._requireTable('fields', KV)
+   tempus._requireTable('fields', KV)
    fields = require_zoned_date_time(Self)
-   resolver = KV.resolver ?? datetime.resolve.compatible
+   resolver = KV.resolver ?? tempus.resolve.compatible
    return Self:localDateTime():withFields(KV):toZonedDateTime(fields.zone, resolver)
 end
 
-datetime.mtZonedDateTime.withLocal = zoned_date_time_with_local
+tempus.mtZonedDateTime.withLocal = zoned_date_time_with_local
 
 @Doc(text=[[
 @desc Convert this value to an offset date-time
 @result OffsetDateTime value
 ]])
-function datetime.mtZonedDateTime:toOffsetDateTime():table
+function tempus.mtZonedDateTime:toOffsetDateTime():table
    return new_offset_date_time(self:localDateTime(), self:offset())
 end
 
@@ -2420,7 +2420,7 @@ end
 @input Format pattern
 @result Formatted text
 ]])
-function datetime.mtZonedDateTime:format(Pattern:any):str
+function tempus.mtZonedDateTime:format(Pattern:any):str
    fields = require_zoned_date_time(self)
    date_fields, time_fields = local_date_time_parts(self:localDateTime())
    return format_local_fields('ZonedDateTime', date_fields, time_fields, self:offset(), fields.zone:id(), Pattern)
@@ -2431,20 +2431,20 @@ end
 @input Instant, OffsetDateTime, or ZonedDateTime value
 @result True when instants match
 ]])
-function datetime.mtZonedDateTime:instantEquals(Other:table):bool
+function tempus.mtZonedDateTime:instantEquals(Other:table):bool
    fields = require_zoned_date_time(self)
-   if datetime.isInstant(Other) then return fields.instant is Other end
-   if datetime.isOffsetDateTime(Other) then return fields.instant is Other:instant() end
-   if datetime.isZonedDateTime(Other) then return fields.instant is Other:instant() end
-   datetime._invalidValue('Other must be an Instant, OffsetDateTime, or ZonedDateTime value.')
+   if tempus.isInstant(Other) then return fields.instant is Other end
+   if tempus.isOffsetDateTime(Other) then return fields.instant is Other:instant() end
+   if tempus.isZonedDateTime(Other) then return fields.instant is Other:instant() end
+   tempus._invalidValue('Other must be an Instant, OffsetDateTime, or ZonedDateTime value.')
 end
 
 @Doc(text=[[
 @desc Convert this zoned date-time to text
 @result ISO zoned date-time text
 ]])
-datetime.mtZonedDateTime.__tostring = function(Self:table):str
-   fields = datetime._fields(Self, 'ZonedDateTime')
+tempus.mtZonedDateTime.__tostring = function(Self:table):str
+   fields = tempus._fields(Self, 'ZonedDateTime')
    return tostring(Self:localDateTime()) .. tostring(Self:offset()) .. '[' .. fields.zone:id() .. ']'
 end
 
@@ -2454,9 +2454,9 @@ end
 @input Second zoned date-time
 @result True when equal
 ]])
-datetime.mtZonedDateTime.__eq = function(A:table, B:table):bool
-   a = datetime._fields(A, 'ZonedDateTime')
-   b = datetime._fields(B, 'ZonedDateTime')
+tempus.mtZonedDateTime.__eq = function(A:table, B:table):bool
+   a = tempus._fields(A, 'ZonedDateTime')
+   b = tempus._fields(B, 'ZonedDateTime')
    return a.instant is b.instant and a.zone is b.zone
 end
 
@@ -2466,8 +2466,8 @@ end
 @input Second zoned date-time
 @result True when first is earlier
 ]])
-datetime.mtZonedDateTime.__lt = function(A:table, B:table):bool
-   return datetime._fields(A, 'ZonedDateTime').instant < datetime._fields(B, 'ZonedDateTime').instant
+tempus.mtZonedDateTime.__lt = function(A:table, B:table):bool
+   return tempus._fields(A, 'ZonedDateTime').instant < tempus._fields(B, 'ZonedDateTime').instant
 end
 
 @Doc(text=[[
@@ -2476,8 +2476,8 @@ end
 @input Second zoned date-time
 @result True when first is not later
 ]])
-datetime.mtZonedDateTime.__le = function(A:table, B:table):bool
-   return datetime._fields(A, 'ZonedDateTime').instant <= datetime._fields(B, 'ZonedDateTime').instant
+tempus.mtZonedDateTime.__le = function(A:table, B:table):bool
+   return tempus._fields(A, 'ZonedDateTime').instant <= tempus._fields(B, 'ZonedDateTime').instant
 end
 
 @Doc(text=[[
@@ -2486,10 +2486,10 @@ end
 @input Duration or Period value
 @result ZonedDateTime value
 ]])
-datetime.mtZonedDateTime.__add = function(A:table, B:table):table
-   fields = datetime._fields(A, 'ZonedDateTime')
-   if datetime.isDuration(B) then return new_zoned_date_time(fields.instant + B, fields.zone) end
-   if datetime.isPeriod(B) then return (A:localDateTime() + B):toZonedDateTime(fields.zone) end
+tempus.mtZonedDateTime.__add = function(A:table, B:table):table
+   fields = tempus._fields(A, 'ZonedDateTime')
+   if tempus.isDuration(B) then return new_zoned_date_time(fields.instant + B, fields.zone) end
+   if tempus.isPeriod(B) then return (A:localDateTime() + B):toZonedDateTime(fields.zone) end
    unsupported_operation(A, '+', B)
 end
 
@@ -2499,11 +2499,11 @@ end
 @input Duration, Period, or ZonedDateTime value
 @result ZonedDateTime or Duration value
 ]])
-datetime.mtZonedDateTime.__sub = function(A:table, B:table):table
-   fields = datetime._fields(A, 'ZonedDateTime')
-   if datetime.isDuration(B) then return new_zoned_date_time(fields.instant - B, fields.zone) end
-   if datetime.isPeriod(B) then return (A:localDateTime() - B):toZonedDateTime(fields.zone) end
-   if datetime.isZonedDateTime(B) then return fields.instant - B:instant() end
+tempus.mtZonedDateTime.__sub = function(A:table, B:table):table
+   fields = tempus._fields(A, 'ZonedDateTime')
+   if tempus.isDuration(B) then return new_zoned_date_time(fields.instant - B, fields.zone) end
+   if tempus.isPeriod(B) then return (A:localDateTime() - B):toZonedDateTime(fields.zone) end
+   if tempus.isZonedDateTime(B) then return fields.instant - B:instant() end
    unsupported_operation(A, '-', B)
 end
 
@@ -2511,8 +2511,8 @@ end
 @desc Normalise months and weeks
 @result Period value
 ]])
-function datetime.mtPeriod:normalise():table
-   fields = datetime._fields(self, 'Period')
+function tempus.mtPeriod:normalise():table
+   fields = tempus._fields(self, 'Period')
    total_months = fields.years * 12 + fields.months
    years = math.floor(total_months / 12)
    months = total_months - years * 12
@@ -2523,8 +2523,8 @@ end
 @desc Convert this period to text
 @result ISO period text
 ]])
-datetime.mtPeriod.__tostring = function(Self:table):str
-   fields = datetime._fields(Self, 'Period')
+tempus.mtPeriod.__tostring = function(Self:table):str
+   fields = tempus._fields(Self, 'Period')
    text = 'P'
    if fields.years != 0 then text ..= tostring(fields.years) .. 'Y' end
    if fields.months != 0 then text ..= tostring(fields.months) .. 'M' end
@@ -2540,9 +2540,9 @@ end
 @input Second period
 @result True when equal
 ]])
-datetime.mtPeriod.__eq = function(A:table, B:table):bool
-   a = datetime._fields(A, 'Period')
-   b = datetime._fields(B, 'Period')
+tempus.mtPeriod.__eq = function(A:table, B:table):bool
+   a = tempus._fields(A, 'Period')
+   b = tempus._fields(B, 'Period')
    return a.years is b.years and a.months is b.months and a.weeks is b.weeks and a.days is b.days
 end
 
@@ -2552,10 +2552,10 @@ end
 @input Second period
 @result Period value
 ]])
-datetime.mtPeriod.__add = function(A:table, B:table):table
-   a = datetime._fields(A, 'Period')
-   if datetime.isPeriod(B) then
-      b = datetime._fields(B, 'Period')
+tempus.mtPeriod.__add = function(A:table, B:table):table
+   a = tempus._fields(A, 'Period')
+   if tempus.isPeriod(B) then
+      b = tempus._fields(B, 'Period')
       return new_period(a.years + b.years, a.months + b.months, a.weeks + b.weeks, a.days + b.days)
    end
    unsupported_operation(A, '+', B)
@@ -2567,10 +2567,10 @@ end
 @input Second period
 @result Period value
 ]])
-datetime.mtPeriod.__sub = function(A:table, B:table):table
-   a = datetime._fields(A, 'Period')
-   if datetime.isPeriod(B) then
-      b = datetime._fields(B, 'Period')
+tempus.mtPeriod.__sub = function(A:table, B:table):table
+   a = tempus._fields(A, 'Period')
+   if tempus.isPeriod(B) then
+      b = tempus._fields(B, 'Period')
       return new_period(a.years - b.years, a.months - b.months, a.weeks - b.weeks, a.days - b.days)
    end
    unsupported_operation(A, '-', B)
@@ -2580,8 +2580,8 @@ end
 @desc Negate this period
 @result Period value
 ]])
-datetime.mtPeriod.__unm = function(Self:table):table
-   fields = datetime._fields(Self, 'Period')
+tempus.mtPeriod.__unm = function(Self:table):table
+   fields = tempus._fields(Self, 'Period')
    return new_period(-fields.years, -fields.months, -fields.weeks, -fields.days)
 end
 
@@ -2589,24 +2589,24 @@ end
 @desc Return the start instant
 @result Instant value
 ]])
-function datetime.mtInterval:start():table
-   return datetime._fields(self, 'Interval').start
+function tempus.mtInterval:start():table
+   return tempus._fields(self, 'Interval').start
 end
 
 @Doc(text=[[
 @desc Return the stop instant
 @result Instant value
 ]])
-function datetime.mtInterval:stop():table
-   return datetime._fields(self, 'Interval').stop
+function tempus.mtInterval:stop():table
+   return tempus._fields(self, 'Interval').stop
 end
 
 @Doc(text=[[
 @desc Return the interval duration
 @result Duration value
 ]])
-function datetime.mtInterval:duration():table
-   fields = datetime._fields(self, 'Interval')
+function tempus.mtInterval:duration():table
+   fields = tempus._fields(self, 'Interval')
    return fields.stop - fields.start
 end
 
@@ -2615,9 +2615,9 @@ end
 @input Instant value
 @result True when contained
 ]])
-function datetime.mtInterval:contains(Instant:table):bool
-   if not datetime.isInstant(Instant) then datetime._invalidValue('Instant must be an Instant value.') end
-   fields = datetime._fields(self, 'Interval')
+function tempus.mtInterval:contains(Instant:table):bool
+   if not tempus.isInstant(Instant) then tempus._invalidValue('Instant must be an Instant value.') end
+   fields = tempus._fields(self, 'Interval')
    return fields.start <= Instant and Instant < fields.stop
 end
 
@@ -2626,10 +2626,10 @@ end
 @input Other interval
 @result True when intervals overlap
 ]])
-function datetime.mtInterval:overlaps(Other:table):bool
-   if not datetime.isInterval(Other) then datetime._invalidValue('Other must be an Interval value.') end
-   fields = datetime._fields(self, 'Interval')
-   other = datetime._fields(Other, 'Interval')
+function tempus.mtInterval:overlaps(Other:table):bool
+   if not tempus.isInterval(Other) then tempus._invalidValue('Other must be an Interval value.') end
+   fields = tempus._fields(self, 'Interval')
+   other = tempus._fields(Other, 'Interval')
    return fields.start < other.stop and other.start < fields.stop
 end
 
@@ -2638,10 +2638,10 @@ end
 @input Other interval
 @result Intersection interval
 ]])
-function datetime.mtInterval:intersection(Other:table):table
-   if not datetime.isInterval(Other) then datetime._invalidValue('Other must be an Interval value.') end
-   fields = datetime._fields(self, 'Interval')
-   other = datetime._fields(Other, 'Interval')
+function tempus.mtInterval:intersection(Other:table):table
+   if not tempus.isInterval(Other) then tempus._invalidValue('Other must be an Interval value.') end
+   fields = tempus._fields(self, 'Interval')
+   other = tempus._fields(Other, 'Interval')
    start = fields.start < other.start ? other.start :> fields.start
    stop = fields.stop < other.stop ? fields.stop :> other.stop
    if stop < start then stop = start end
@@ -2653,12 +2653,12 @@ end
 @input Overlapping interval
 @result Union interval
 ]])
-function datetime.mtInterval:union(Other:table):table
-   if not datetime.isInterval(Other) then datetime._invalidValue('Other must be an Interval value.') end
-   fields = datetime._fields(self, 'Interval')
-   other = datetime._fields(Other, 'Interval')
+function tempus.mtInterval:union(Other:table):table
+   if not tempus.isInterval(Other) then tempus._invalidValue('Other must be an Interval value.') end
+   fields = tempus._fields(self, 'Interval')
+   other = tempus._fields(Other, 'Interval')
    if fields.stop < other.start or other.stop < fields.start then
-      datetime._invalidValue('Cannot union separate intervals.')
+      tempus._invalidValue('Cannot union separate intervals.')
    end
 
    start = fields.start < other.start ? fields.start :> other.start
@@ -2670,8 +2670,8 @@ end
 @desc Check if this interval is empty
 @result True for an empty interval
 ]])
-function datetime.mtInterval:isEmpty():bool
-   fields = datetime._fields(self, 'Interval')
+function tempus.mtInterval:isEmpty():bool
+   fields = tempus._fields(self, 'Interval')
    return fields.start is fields.stop
 end
 
@@ -2679,8 +2679,8 @@ end
 @desc Convert this interval to text
 @result Interval text
 ]])
-datetime.mtInterval.__tostring = function(Self:table):str
-   fields = datetime._fields(Self, 'Interval')
+tempus.mtInterval.__tostring = function(Self:table):str
+   fields = tempus._fields(Self, 'Interval')
    return f'{fields.start}/{fields.stop}'
 end
 
@@ -2690,9 +2690,9 @@ end
 @input Second interval
 @result True when equal
 ]])
-datetime.mtInterval.__eq = function(A:table, B:table):bool
-   a = datetime._fields(A, 'Interval')
-   b = datetime._fields(B, 'Interval')
+tempus.mtInterval.__eq = function(A:table, B:table):bool
+   a = tempus._fields(A, 'Interval')
+   b = tempus._fields(B, 'Interval')
    return a.start is b.start and a.stop is b.stop
 end
 
@@ -2700,32 +2700,32 @@ end
 @desc Return the canonical zone ID
 @result Zone ID
 ]])
-function datetime.mtZone:id():str
-   return datetime._fields(self, 'Zone').id
+function tempus.mtZone:id():str
+   return tempus._fields(self, 'Zone').id
 end
 
 @Doc(text=[[
 @desc Return the native zone ID
 @result Native zone ID
 ]])
-function datetime.mtZone:nativeId():str
-   return datetime._fields(self, 'Zone').native_id
+function tempus.mtZone:nativeId():str
+   return tempus._fields(self, 'Zone').native_id
 end
 
 @Doc(text=[[
 @desc Return the zone data source
 @result Source name
 ]])
-function datetime.mtZone:source():str
-   return datetime._fields(self, 'Zone').source
+function tempus.mtZone:source():str
+   return tempus._fields(self, 'Zone').source
 end
 
 @Doc(text=[[
 @desc Check if fallback zone data is used
 @result True when fallback data is used
 ]])
-function datetime.mtZone:isFallback():bool
-   return datetime._fields(self, 'Zone').is_fallback
+function tempus.mtZone:isFallback():bool
+   return tempus._fields(self, 'Zone').is_fallback
 end
 
 @Doc(text=[[
@@ -2733,9 +2733,9 @@ end
 @input Instant value
 @result Offset value
 ]])
-function datetime.mtZone:offsetAt(Instant:table):table
+function tempus.mtZone:offsetAt(Instant:table):table
    require_instant(Instant)
-   fields = datetime._fields(self, 'Zone')
+   fields = tempus._fields(self, 'Zone')
    info = zone_info_for_instant(fields, Instant, 1, 0)
    return transition_offset_at(info, Instant)
 end
@@ -2745,9 +2745,9 @@ end
 @input Instant value
 @result Zone name
 ]])
-function datetime.mtZone:nameAt(Instant:table):str
+function tempus.mtZone:nameAt(Instant:table):str
    require_instant(Instant)
-   fields = datetime._fields(self, 'Zone')
+   fields = tempus._fields(self, 'Zone')
    info = zone_info_for_instant(fields, Instant, 1, 0)
    return transition_name_at(info, Instant)
 end
@@ -2757,9 +2757,9 @@ end
 @input Instant value
 @result Next transition instant, or nil
 ]])
-function datetime.mtZone:nextTransition(Instant:table):any
+function tempus.mtZone:nextTransition(Instant:table):any
    require_instant(Instant)
-   fields = datetime._fields(self, 'Zone')
+   fields = tempus._fields(self, 'Zone')
    info = zone_info_for_instant(fields, Instant, 0, 1)
    for transition in values(info.transitions) do
       if compare_instants(Instant, transition.instant) < 0 then return transition.instant end
@@ -2772,9 +2772,9 @@ end
 @input Instant value
 @result Previous transition instant, or nil
 ]])
-function datetime.mtZone:previousTransition(Instant:table):any
+function tempus.mtZone:previousTransition(Instant:table):any
    require_instant(Instant)
-   fields = datetime._fields(self, 'Zone')
+   fields = tempus._fields(self, 'Zone')
    info = zone_info_for_instant(fields, Instant, 1, 0)
    previous = nil
    for transition in values(info.transitions) do
@@ -2788,8 +2788,8 @@ end
 @desc Convert this zone to text
 @result Zone ID
 ]])
-datetime.mtZone.__tostring = function(Self:table):str
-   return datetime._fields(Self, 'Zone').id
+tempus.mtZone.__tostring = function(Self:table):str
+   return tempus._fields(Self, 'Zone').id
 end
 
 @Doc(text=[[
@@ -2798,16 +2798,16 @@ end
 @input Second zone
 @result True when equal
 ]])
-datetime.mtZone.__eq = function(A:table, B:table):bool
-   return datetime._fields(A, 'Zone').id is datetime._fields(B, 'Zone').id
+tempus.mtZone.__eq = function(A:table, B:table):bool
+   return tempus._fields(A, 'Zone').id is tempus._fields(B, 'Zone').id
 end
 
 @Doc(text=[[
 @desc Return the clock instant
 @result Instant value
 ]])
-function datetime.mtClock:instant():table
-   fields = datetime._fields(self, 'Clock')
+function tempus.mtClock:instant():table
+   fields = tempus._fields(self, 'Clock')
 
    if fields.kind is 'fixed' then return fields.instant end
    if fields.kind is 'offset' then return fields.base_clock:instant() + fields.offset end
@@ -2817,7 +2817,7 @@ function datetime.mtClock:instant():table
       return instant_from_system_micros(time_obj.systemTime)
    end
 
-   datetime._invalidValue(f"Unknown Clock kind '{fields.kind}'.")
+   tempus._invalidValue(f"Unknown Clock kind '{fields.kind}'.")
 end
 
 @Doc(text=[[
@@ -2825,7 +2825,7 @@ end
 @input Time zone
 @result LocalDate value
 ]])
-function datetime.mtClock:today(Zone:table):table
+function tempus.mtClock:today(Zone:table):table
    return self:localDateTime(Zone):date()
 end
 
@@ -2834,13 +2834,13 @@ end
 @input Time zone
 @result LocalDateTime value
 ]])
-function datetime.mtClock:localDateTime(Zone:table):table
-   Zone ??= datetime.zone.local()
+function tempus.mtClock:localDateTime(Zone:table):table
+   Zone ??= tempus.zone.local()
    require_zone(Zone)
 
    instant = self:instant()
-   instant_fields = datetime._fields(instant, 'Instant')
-   offset_fields = datetime._fields(Zone:offsetAt(instant), 'Offset')
+   instant_fields = tempus._fields(instant, 'Instant')
+   offset_fields = tempus._fields(Zone:offsetAt(instant), 'Offset')
    date_fields, time_fields = epoch_second_to_local(instant_fields.epoch_second + offset_fields.seconds,
       instant_fields.nano)
    return new_local_date_time(date_fields.year, date_fields.month, date_fields.day, time_fields.hour,
@@ -2852,8 +2852,8 @@ end
 @input Time zone
 @result ZonedDateTime value
 ]])
-function datetime.mtClock:zonedDateTime(Zone:table):table
-   Zone ??= datetime.zone.local()
+function tempus.mtClock:zonedDateTime(Zone:table):table
+   Zone ??= tempus.zone.local()
    return new_zoned_date_time(self:instant(), Zone)
 end
 
@@ -2861,20 +2861,20 @@ end
 @desc Convert this clock to text
 @result Clock description
 ]])
-datetime.mtClock.__tostring = function(Self:table):str
-   return f"datetime.Clock({datetime._fields(Self, 'Clock').kind})"
+tempus.mtClock.__tostring = function(Self:table):str
+   return f"tempus.Clock({tempus._fields(Self, 'Clock').kind})"
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Zone, clock, and resolver public API
 
-datetime.zone = make_constructor('zone')
+tempus.zone = make_constructor('zone')
 
 @Doc(text=[[
 @desc Return the local time zone
 @result Zone value
 ]])
-datetime.zone.local = function():table
+tempus.zone.local = function():table
    return new_zone(nil)
 end
 
@@ -2882,7 +2882,7 @@ end
 @desc Return the UTC time zone
 @result Zone value
 ]])
-datetime.zone.utc = function():table
+tempus.zone.utc = function():table
    return new_zone('UTC')
 end
 
@@ -2891,24 +2891,24 @@ end
 @input Zone ID, or nil for local
 @result Zone value
 ]])
-getmetatable(datetime.zone).__call = function(Self, ZoneID:any):table
+getmetatable(tempus.zone).__call = function(Self, ZoneID:any):table
    return new_zone(ZoneID)
 end
 
-datetime.zonedDateTime = make_constructor('zonedDateTime')
+tempus.zonedDateTime = make_constructor('zonedDateTime')
 
 @Doc(text=[[
 @desc Create a zoned date-time from field values
 @input Table with instant and zone, or local_date_time and zone
 @result ZonedDateTime value
 ]])
-datetime.zonedDateTime.from = function(KV:table):table
-   datetime._requireTable('zonedDateTime', KV)
+tempus.zonedDateTime.from = function(KV:table):table
+   tempus._requireTable('zonedDateTime', KV)
    if KV.instant != nil then return new_zoned_date_time(KV.instant, KV.zone) end
    if KV.local_date_time != nil then
-      return KV.local_date_time:toZonedDateTime(KV.zone, KV.resolver ?? datetime.resolve.compatible)
+      return KV.local_date_time:toZonedDateTime(KV.zone, KV.resolver ?? tempus.resolve.compatible)
    end
-   datetime._invalidValue('zonedDateTime.from requires instant or local_date_time.')
+   tempus._invalidValue('zonedDateTime.from requires instant or local_date_time.')
 end
 
 @Doc(text=[[
@@ -2916,14 +2916,14 @@ end
 @input Zoned date-time text
 @result ZonedDateTime value
 ]])
-datetime.zonedDateTime.parse = function(Text:str):table
-   if type(Text) != 'string' then datetime._syntaxError('ZonedDateTime text must be a string.') end
+tempus.zonedDateTime.parse = function(Text:str):table
+   if type(Text) != 'string' then tempus._syntaxError('ZonedDateTime text must be a string.') end
 
    offset_text, zone_text = rx_zoned_date_time.extract(Text)
-   if offset_text is nil then datetime._syntaxError(f"Invalid ZonedDateTime string '{Text}'.") end
+   if offset_text is nil then tempus._syntaxError(f"Invalid ZonedDateTime string '{Text}'.") end
 
-   offset_date_time = datetime.offsetDateTime.parse(offset_text)
-   return new_zoned_date_time(offset_date_time:instant(), datetime.zone(zone_text))
+   offset_date_time = tempus.offsetDateTime.parse(offset_text)
+   return new_zoned_date_time(offset_date_time:instant(), tempus.zone(zone_text))
 end
 
 @Doc(text=[[
@@ -2932,17 +2932,17 @@ end
 @input Zone value
 @result ZonedDateTime value
 ]])
-getmetatable(datetime.zonedDateTime).__call = function(Self, Instant:any, Zone:any):table
+getmetatable(tempus.zonedDateTime).__call = function(Self, Instant:any, Zone:any):table
    return new_zoned_date_time(Instant, Zone)
 end
 
-datetime.clock = {}
+tempus.clock = {}
 
 @Doc(text=[[
 @desc Create a system clock
 @result Clock value
 ]])
-datetime.clock.system = function():table
+tempus.clock.system = function():table
    return new_clock('system', {})
 end
 
@@ -2951,7 +2951,7 @@ end
 @input Fixed instant
 @result Clock value
 ]])
-datetime.clock.fixed = function(Instant:table):table
+tempus.clock.fixed = function(Instant:table):table
    require_instant(Instant)
    return new_clock('fixed', { instant = Instant })
 end
@@ -2962,18 +2962,18 @@ end
 @input Offset duration
 @result Clock value
 ]])
-datetime.clock.offset = function(BaseClock:table, Duration:table):table
+tempus.clock.offset = function(BaseClock:table, Duration:table):table
    require_clock(BaseClock)
    require_duration(Duration)
    return new_clock('offset', { base_clock = BaseClock, offset = Duration })
 end
 
-datetime.resolve = {
-   reject = datetime._makeValue('Resolver', { name = 'reject' }),
-   earlier = datetime._makeValue('Resolver', { name = 'earlier' }),
-   later = datetime._makeValue('Resolver', { name = 'later' }),
-   skip = datetime._makeValue('Resolver', { name = 'skip' }),
-   compatible = datetime._makeValue('Resolver', { name = 'compatible' })
+tempus.resolve = {
+   reject = tempus._makeValue('Resolver', { name = 'reject' }),
+   earlier = tempus._makeValue('Resolver', { name = 'earlier' }),
+   later = tempus._makeValue('Resolver', { name = 'later' }),
+   skip = tempus._makeValue('Resolver', { name = 'skip' }),
+   compatible = tempus._makeValue('Resolver', { name = 'compatible' })
 }
 
 @Doc(text=[[
@@ -2981,8 +2981,8 @@ datetime.resolve = {
 @input Clock to query
 @result Instant value
 ]])
-datetime.now = function(Clock:table):table
-   Clock ??= datetime.clock.system()
+tempus.now = function(Clock:table):table
+   Clock ??= tempus.clock.system()
    require_clock(Clock)
    return Clock:instant()
 end
@@ -2993,9 +2993,9 @@ end
 @input Clock to query
 @result LocalDate value
 ]])
-datetime.today = function(Zone:table, Clock:table):table
-   Zone ??= datetime.zone.local()
-   Clock ??= datetime.clock.system()
+tempus.today = function(Zone:table, Clock:table):table
+   Zone ??= tempus.zone.local()
+   Clock ??= tempus.clock.system()
    require_zone(Zone)
    require_clock(Clock)
    return Clock:today(Zone)
@@ -3008,88 +3008,88 @@ end
 @input Value to test
 @result True for Instant values
 ]])
-datetime.isInstant = function(Value:any):bool return datetime._isValue(Value, 'Instant') end
+tempus.isInstant = function(Value:any):bool return tempus._isValue(Value, 'Instant') end
 
 @Doc(text=[[
 @desc Check if a value is a Duration
 @input Value to test
 @result True for Duration values
 ]])
-datetime.isDuration = function(Value:any):bool return datetime._isValue(Value, 'Duration') end
+tempus.isDuration = function(Value:any):bool return tempus._isValue(Value, 'Duration') end
 
 @Doc(text=[[
 @desc Check if a value is an Offset
 @input Value to test
 @result True for Offset values
 ]])
-datetime.isOffset = function(Value:any):bool return datetime._isValue(Value, 'Offset') end
+tempus.isOffset = function(Value:any):bool return tempus._isValue(Value, 'Offset') end
 
 @Doc(text=[[
 @desc Check if a value is a LocalDate
 @input Value to test
 @result True for LocalDate values
 ]])
-datetime.isLocalDate = function(Value:any):bool return datetime._isValue(Value, 'LocalDate') end
+tempus.isLocalDate = function(Value:any):bool return tempus._isValue(Value, 'LocalDate') end
 
 @Doc(text=[[
 @desc Check if a value is a LocalTime
 @input Value to test
 @result True for LocalTime values
 ]])
-datetime.isLocalTime = function(Value:any):bool return datetime._isValue(Value, 'LocalTime') end
+tempus.isLocalTime = function(Value:any):bool return tempus._isValue(Value, 'LocalTime') end
 
 @Doc(text=[[
 @desc Check if a value is a LocalDateTime
 @input Value to test
 @result True for LocalDateTime values
 ]])
-datetime.isLocalDateTime = function(Value:any):bool return datetime._isValue(Value, 'LocalDateTime') end
+tempus.isLocalDateTime = function(Value:any):bool return tempus._isValue(Value, 'LocalDateTime') end
 
 @Doc(text=[[
 @desc Check if a value is an OffsetDateTime
 @input Value to test
 @result True for OffsetDateTime values
 ]])
-datetime.isOffsetDateTime = function(Value:any):bool return datetime._isValue(Value, 'OffsetDateTime') end
+tempus.isOffsetDateTime = function(Value:any):bool return tempus._isValue(Value, 'OffsetDateTime') end
 
 @Doc(text=[[
 @desc Check if a value is a Zone
 @input Value to test
 @result True for Zone values
 ]])
-datetime.isZone = function(Value:any):bool return datetime._isValue(Value, 'Zone') end
+tempus.isZone = function(Value:any):bool return tempus._isValue(Value, 'Zone') end
 
 @Doc(text=[[
 @desc Check if a value is a ZonedDateTime
 @input Value to test
 @result True for ZonedDateTime values
 ]])
-datetime.isZonedDateTime = function(Value:any):bool return datetime._isValue(Value, 'ZonedDateTime') end
+tempus.isZonedDateTime = function(Value:any):bool return tempus._isValue(Value, 'ZonedDateTime') end
 
 @Doc(text=[[
 @desc Check if a value is a Period
 @input Value to test
 @result True for Period values
 ]])
-datetime.isPeriod = function(Value:any):bool return datetime._isValue(Value, 'Period') end
+tempus.isPeriod = function(Value:any):bool return tempus._isValue(Value, 'Period') end
 
 @Doc(text=[[
 @desc Check if a value is an Interval
 @input Value to test
 @result True for Interval values
 ]])
-datetime.isInterval = function(Value:any):bool return datetime._isValue(Value, 'Interval') end
+tempus.isInterval = function(Value:any):bool return tempus._isValue(Value, 'Interval') end
 
 @Doc(text=[[
 @desc Check if a value is a Clock
 @input Value to test
 @result True for Clock values
 ]])
-datetime.isClock = function(Value:any):bool return datetime._isValue(Value, 'Clock') end
+tempus.isClock = function(Value:any):bool return tempus._isValue(Value, 'Clock') end
 
 @Doc(text=[[
 @desc Check if a value is a Resolver
 @input Value to test
 @result True for Resolver values
 ]])
-datetime.isResolver = function(Value:any):bool return datetime._isValue(Value, 'Resolver') end
+tempus.isResolver = function(Value:any):bool return tempus._isValue(Value, 'Resolver') end
