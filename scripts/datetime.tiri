@@ -7,12 +7,16 @@
 
 value_storage = setmetatable({}, { __mode = 'k' })
 metatable_by_type = {}
+time_zone_info_cache = {}
 
 NANOS_PER_SECOND <const> = 1000000000
 MICROS_PER_SECOND <const> = 1000000
 SECONDS_PER_DAY <const> = 86400
 MIN_OFFSET_SECONDS <const> = -18 * 3600
 MAX_OFFSET_SECONDS <const> = 18 * 3600
+MIN_ZONE_YEAR <const> = 1601
+MAX_ZONE_YEAR <const> = 9999
+ZONE_PROBE_YEAR <const> = 2024
 
 TYPE_NAMES = array<string> {
    'Instant',
@@ -72,7 +76,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 function type_symbol(TypeName:str):str
-   return 'datetime.' .. TypeName
+   return f'datetime.{TypeName}'
 end
 
 function copy_fields(Fields:table):table
@@ -532,14 +536,132 @@ function new_offset(Seconds:any):table
    return datetime._makeValue('Offset', { seconds = seconds })
 end
 
-function new_zone_utc():table
+function time_zone_cache_key(ZoneID:any, StartYear:num, EndYear:num):str
+   return f'{ZoneID ?? "<local>"}:{StartYear}:{EndYear}'
+end
+
+function instant_utc_year(Instant:table):num
+   local fields = require_instant(Instant)
+   local date_fields, time_fields = epoch_second_to_local(fields.epoch_second, fields.nano)
+   return date_fields.year
+end
+
+function compare_instants(A:table, B:table):num
+   local a = require_instant(A)
+   local b = require_instant(B)
+   return compare_pair(a.epoch_second, a.nano, b.epoch_second, b.nano)
+end
+
+function check_zone_year_range(StartYear:num, EndYear:num)
+   if StartYear < MIN_ZONE_YEAR or EndYear > MAX_ZONE_YEAR or EndYear < StartYear then
+      datetime._outOfRange(f"Time zone year range {StartYear}-{EndYear} is outside the supported range.")
+   end
+end
+
+function convert_time_zone_transition(Transition:table):table
+   return {
+      instant = instant_from_system_micros(Transition.instant),
+      name = Transition.abbreviation ?? '',
+      offset_before = new_offset(Transition.offsetBefore),
+      offset_after = new_offset(Transition.offsetAfter),
+      daylight_saving = Transition.daylightSaving is 1
+   }
+end
+
+function convert_time_zone_info(Info:table):table
+   local transitions = {}
+   for transition in values(Info.transitions ?? {}) do
+      table.insert(transitions, convert_time_zone_transition(transition))
+   end
+
+   return {
+      id = Info.zoneID,
+      native_id = Info.nativeID,
+      source = Info.source,
+      data_path = Info.dataPath,
+      version = Info.version,
+      base_offset = new_offset(Info.baseOffset),
+      transitions = transitions,
+      start_year = Info.startYear,
+      end_year = Info.endYear,
+      is_local = Info.isLocal is 1,
+      is_fallback = Info.isFallback is 1
+   }
+end
+
+function get_time_zone_info(ZoneID:any, StartYear:any, EndYear:any):table
+   local start_year = datetime._requireInteger('start_year', StartYear)
+   local end_year = datetime._requireInteger('end_year', EndYear)
+   check_zone_year_range(start_year, end_year)
+
+   local requested_key = time_zone_cache_key(ZoneID, start_year, end_year)
+   local cached = time_zone_info_cache[requested_key]
+   if cached != nil then return cached end
+
+   local time_obj = obj.new('time')
+   local err, info = time_obj.mtGetTimeZoneInfo(ZoneID, start_year, end_year)
+
+   if err is ERR_Okay and info != nil then
+      local converted = convert_time_zone_info(info)
+      local canonical_key = time_zone_cache_key(converted.id, start_year, end_year)
+      time_zone_info_cache[canonical_key] = converted
+      time_zone_info_cache[requested_key] = converted
+      return converted
+   end
+
+   local display_id = ZoneID ?? 'local'
+   if err is ERR_Search then datetime._unknownZone(f"Unknown time zone '{display_id}'.") end
+   if err is ERR_OutOfRange then
+      datetime._outOfRange(f"Time zone year range {start_year}-{end_year} is outside the supported range.")
+   end
+   datetime._error(err, f"Time zone query failed for '{display_id}'.")
+end
+
+function new_zone(ZoneID:any):table
+   if ZoneID != nil and type(ZoneID) != 'string' then datetime._invalidValue('Zone ID must be a string.') end
+
+   local info = get_time_zone_info(ZoneID, ZONE_PROBE_YEAR, ZONE_PROBE_YEAR)
    return datetime._makeValue('Zone', {
-      id = 'UTC',
-      native_id = 'UTC',
-      source = 'utc',
-      is_fallback = false,
-      offset = new_offset(0)
+      id = info.id,
+      native_id = info.native_id,
+      source = info.source,
+      is_fallback = info.is_fallback,
+      is_local = info.is_local,
+      query_id = ZoneID
    })
+end
+
+function zone_info_for_instant(ZoneFields:table, Instant:table, PreviousYears:num, NextYears:num):table
+   local year = instant_utc_year(Instant)
+   if year < MIN_ZONE_YEAR or year > MAX_ZONE_YEAR then
+      datetime._outOfRange(f"Instant year {year} is outside the supported time-zone range.")
+   end
+
+   local start_year = math.max(MIN_ZONE_YEAR, year - PreviousYears)
+   local end_year = math.min(MAX_ZONE_YEAR, year + NextYears)
+   return get_time_zone_info(ZoneFields.query_id, start_year, end_year)
+end
+
+function transition_offset_at(Info:table, Instant:table):table
+   local offset = Info.base_offset
+   for transition in values(Info.transitions) do
+      if compare_instants(transition.instant, Instant) <= 0 then offset = transition.offset_after
+      else break end
+   end
+   return offset
+end
+
+function transition_name_at(Info:table, Instant:table):str
+   local name = Info.id
+   if Info.id is 'UTC' then name = 'UTC' end
+
+   for transition in values(Info.transitions) do
+      if compare_instants(transition.instant, Instant) <= 0 then
+         if transition.name != '' then name = transition.name end
+      else break end
+   end
+
+   return name
 end
 
 function new_clock(Kind:str, Fields:table):table
@@ -1240,7 +1362,7 @@ end
 
 datetime.mtLocalDateTime.__tostring = function(Self:table):str
    local fields = datetime._fields(Self, 'LocalDateTime')
-   return tostring(fields.date) .. 'T' .. tostring(fields.time)
+   return f'{fields.date}T{fields.time}'
 end
 
 datetime.mtLocalDateTime.__eq = function(A:table, B:table):bool
@@ -1439,7 +1561,7 @@ end
 
 datetime.mtInterval.__tostring = function(Self:table):str
    local fields = datetime._fields(Self, 'Interval')
-   return tostring(fields.start) .. '/' .. tostring(fields.stop)
+   return f'{fields.start}/{fields.stop}'
 end
 
 datetime.mtInterval.__eq = function(A:table, B:table):bool
@@ -1466,22 +1588,38 @@ end
 
 function datetime.mtZone:offsetAt(Instant:table):table
    require_instant(Instant)
-   return datetime._fields(self, 'Zone').offset
+   local fields = datetime._fields(self, 'Zone')
+   local info = zone_info_for_instant(fields, Instant, 1, 0)
+   return transition_offset_at(info, Instant)
 end
 
 function datetime.mtZone:nameAt(Instant:table):str
    require_instant(Instant)
-   return datetime._fields(self, 'Zone').id
+   local fields = datetime._fields(self, 'Zone')
+   local info = zone_info_for_instant(fields, Instant, 1, 0)
+   return transition_name_at(info, Instant)
 end
 
 function datetime.mtZone:nextTransition(Instant:table):any
    require_instant(Instant)
+   local fields = datetime._fields(self, 'Zone')
+   local info = zone_info_for_instant(fields, Instant, 0, 1)
+   for transition in values(info.transitions) do
+      if compare_instants(Instant, transition.instant) < 0 then return transition.instant end
+   end
    return nil
 end
 
 function datetime.mtZone:previousTransition(Instant:table):any
    require_instant(Instant)
-   return nil
+   local fields = datetime._fields(self, 'Zone')
+   local info = zone_info_for_instant(fields, Instant, 1, 0)
+   local previous = nil
+   for transition in values(info.transitions) do
+      if compare_instants(transition.instant, Instant) < 0 then previous = transition.instant
+      else break end
+   end
+   return previous
 end
 
 datetime.mtZone.__tostring = function(Self:table):str
@@ -1535,9 +1673,14 @@ end
 -- Future-stage public shells.
 
 datetime.zone = make_constructor('zone')
-datetime.zone.local = make_not_ready('zone.local')
+datetime.zone.local = function():table
+   return new_zone(nil)
+end
 datetime.zone.utc = function():table
-   return new_zone_utc()
+   return new_zone('UTC')
+end
+getmetatable(datetime.zone).__call = function(Self, ZoneID:any):table
+   return new_zone(ZoneID)
 end
 
 datetime.zonedDateTime = make_constructor('zonedDateTime')

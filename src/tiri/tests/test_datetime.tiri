@@ -465,6 +465,77 @@ end
    assert(datetime.zone.utc() is zone, 'UTC zone values should compare by ID')
 end
 
+@Test function ExplicitUtcAliasesUseCoreCanonicalZone()
+   local zone = datetime.zone('Etc/UTC')
+   local instant = datetime.instant.parse('2026-05-17T10:30:00Z')
+
+   assert(zone:id() is 'UTC', 'UTC aliases should use the canonical Core zone ID')
+   assert(zone:nativeId() is 'UTC', 'UTC aliases should expose the native Core zone ID')
+   assert(zone:source() is 'utc', 'UTC aliases should expose the Core source')
+   assert(zone:offsetAt(instant) is datetime.offset.utc(), 'UTC aliases should resolve to a zero offset')
+   assert(zone:nextTransition(instant) is nil, 'UTC aliases should not report transitions')
+end
+
+@Test function UnknownZoneRaisesSearchError()
+   expect_error('Unknown time zone', function()
+      datetime.zone('Invalid/Definitely_Not_A_Zone')
+   end)
+end
+
+@Test function LocalZoneUsesCoreMetadata()
+   local zone = datetime.zone.local()
+   local instant = datetime.instant.parse('2026-05-17T10:30:00Z')
+   local offset = zone:offsetAt(instant)
+
+   assert(datetime.isZone(zone), 'Local zone construction should return a Zone value')
+   assert(type(zone:id()) is 'string' and #zone:id() > 0, 'Local zone should expose a public ID')
+   assert(type(zone:nativeId()) is 'string' and #zone:nativeId() > 0, 'Local zone should expose a native ID')
+   assert((zone:source() is 'win32') or (zone:source() is 'tzif') or (zone:source() is 'utc'),
+      'Local zone source should come from Core')
+   assert(type(zone:isFallback()) is 'boolean', 'Local zone fallback state should be boolean')
+   assert(datetime.isOffset(offset), 'Local zone offsetAt() should return an Offset value')
+   assert(type(zone:nameAt(instant)) is 'string', 'Local zone nameAt() should return a string')
+end
+
+@Test function EuropeLondonTransitionsWhenAvailable()
+   local zone
+   try
+      zone = datetime.zone('Europe/London')
+   except e when ERR_Search
+      return
+   end
+
+   local spring_transition = datetime.instant.parse('2024-03-31T01:00:00Z')
+   local autumn_transition = datetime.instant.parse('2024-10-27T01:00:00Z')
+   local before_spring = datetime.instant.parse('2024-03-31T00:59:59Z')
+   local after_spring = spring_transition
+   local before_autumn = datetime.instant.parse('2024-10-27T00:59:59Z')
+   local after_autumn = autumn_transition
+   local before_spring_offset = zone:offsetAt(before_spring)
+   local after_spring_offset = zone:offsetAt(after_spring)
+   local before_autumn_offset = zone:offsetAt(before_autumn)
+   local after_autumn_offset = zone:offsetAt(after_autumn)
+   local next_spring_transition = zone:nextTransition(before_spring)
+   local previous_autumn_transition = zone:previousTransition(after_autumn + datetime.duration.seconds(1))
+
+   assert(zone:id() is 'Europe/London', 'Europe/London should keep its public ID')
+   assert(before_spring_offset is datetime.offset.utc(),
+      'London should be GMT before the spring transition, got ' .. tostring(before_spring_offset))
+   assert(after_spring_offset is datetime.offset.hours(1),
+      'London should be BST from the spring transition, got ' .. tostring(after_spring_offset) ..
+      ', next transition was ' .. tostring(next_spring_transition))
+   assert(before_autumn_offset is datetime.offset.hours(1),
+      'London should be BST before the autumn transition, got ' .. tostring(before_autumn_offset))
+   assert(after_autumn_offset is datetime.offset.utc(),
+      'London should be GMT from the autumn transition, got ' .. tostring(after_autumn_offset))
+   assert(next_spring_transition is spring_transition,
+      'nextTransition() should find the spring transition, got ' .. tostring(next_spring_transition))
+   assert(previous_autumn_transition is autumn_transition,
+      'previousTransition() should find the autumn transition, got ' .. tostring(previous_autumn_transition))
+   assert(type(zone:nameAt(after_spring)) is 'string' and #zone:nameAt(after_spring) > 0,
+      'nameAt() should expose a period name where Core supplies one')
+end
+
 @Test function FixedAndOffsetClocksAreDeterministic()
    local instant = datetime.instant.parse('2026-05-17T23:30:45.123456Z')
    local fixed = datetime.clock.fixed(instant)
@@ -529,10 +600,6 @@ end
 end
 
 @Test function FutureStageShellErrorsRemainClear()
-   expect_error('datetime.zone is not implemented yet', function()
-      datetime.zone('UTC')
-   end)
-
    expect_error("Unknown datetime value type 'Missing'", function()
       datetime._makeValue('Missing', {})
    end)
