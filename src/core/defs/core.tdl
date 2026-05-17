@@ -758,10 +758,10 @@ using ModTest    = void (*)(CSTRING, int *, int *);
      cpp(str) Version       # TZDB/source version if available, otherwise empty.
      cpp(array(struct(TimeZoneTransition))) Transitions # Transitions available for the requested range.
      int BaseOffset         # Standard UTC offset in seconds.
-     int StartYear          # Inclusive requested start year.
-     int EndYear            # Inclusive requested end year.
-     int IsLocal            # 1 if ZoneID requested the local system zone.
-     int IsFallback         # 1 if UTC fallback was used.
+     short StartYear        # Inclusive requested start year.
+     short EndYear          # Inclusive requested end year.
+     char IsLocal           # 1 if ZoneID requested the local system zone.
+     char IsFallback        # 1 if UTC fallback was used.
   ]],
   [[
    TimeZoneInfo() : BaseOffset(0), StartYear(0), EndYear(0), IsLocal(0), IsFallback(0) { }

@@ -6,6 +6,7 @@
 -- proxy.stop()
 
    include 'network'
+   import 'tempus'
    import 'json'
 
    namespace 'proxylib'
@@ -49,10 +50,7 @@ glMimeTypes = {
 -- Utility Functions
 
 function timestamp()
-   tm = obj.new('time')
-   tm.acQuery()
-   return string.format('%04d-%02d-%02d %02d:%02d:%02d.%03d',
-      tm.year, tm.month, tm.day, tm.hour, tm.minute, tm.second, tm.milliSecond)
+   return tempus.now():toZonedDateTime(tempus.zone.local()):format('yyyy-MM-dd HH:mm:ss.SSS')
 end
 
 function logMessage(self, level, message)

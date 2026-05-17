@@ -5,6 +5,7 @@
 -- httpServer.stop()
 
    include 'network'
+   import 'tempus'
    import 'json'
 
    namespace 'hslib'
@@ -12,8 +13,6 @@
    hslib = _LIB[_NS]
 
 global mNet ?= mod.load('network')
-
-glTime = obj.new('time')
 
 rxControlChars    <const> = <{ regex.new([=[[\x00-\x1f\x7f]]=]) }>
 rxQueryFragment   <const> = <{ regex.new([[^([^?#]*)]]) }>
@@ -113,8 +112,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 function timestamp()
-   glTime.acQuery()
-   return string.format('%04d-%02d-%02d %02d:%02d:%02d', glTime.year, glTime.month, glTime.day, glTime.hour, glTime.minute, glTime.second)
+   return tempus.now():toZonedDateTime(tempus.zone.local()):format('yyyy-MM-dd HH:mm:ss')
 end
 
 function logMessage(self:table, message:str)
@@ -1110,8 +1108,8 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 function printableTime(Time)
-   return string.format('%04d-%02d-%02d %02d:%02d:%02d',
-      Time.Year, Time.Month, Time.Day, Time.Hour, Time.Minute, Time.Second)
+   return tempus.localDateTime(Time.Year, Time.Month, Time.Day, Time.Hour, Time.Minute, Time.Second):format(
+      'yyyy-MM-dd HH:mm:ss')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
