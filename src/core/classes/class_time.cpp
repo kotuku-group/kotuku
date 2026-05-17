@@ -78,18 +78,18 @@ static bool valid_timezone_year_range(const int StartYear, const int EndYear)
 
 //********************************************************************************************************************
 
-static void fill_utc_info(TimeZoneInfo &Info, const int StartYear, const int EndYear, const int IsLocal,
-   const int IsFallback)
+static void fill_utc_info(TimeZoneInfo &Info, const int StartYear, const int EndYear, const bool IsLocal,
+   const bool IsFallback)
 {
    Info = TimeZoneInfo();
-   Info.ZoneID             = "UTC";
-   Info.NativeID           = "UTC";
-   Info.Source             = "utc";
-   Info.BaseOffset         = 0;
-   Info.StartYear          = StartYear;
-   Info.EndYear            = EndYear;
-   Info.IsLocal            = IsLocal;
-   Info.IsFallback         = IsFallback;
+   Info.ZoneID     = "UTC";
+   Info.NativeID   = "UTC";
+   Info.Source     = "utc";
+   Info.BaseOffset = 0;
+   Info.StartYear  = StartYear;
+   Info.EndYear    = EndYear;
+   Info.IsLocal    = IsLocal;
+   Info.IsFallback = IsFallback;
 }
 
 #ifdef _WIN32
@@ -540,7 +540,7 @@ static bool select_tzif_types(const std::vector<int64_t> &Times, const std::vect
 
 static bool parse_tzif_block(const std::vector<unsigned char> &Data, const size_t Offset, const bool Wide,
    std::string_view ZoneID, const std::filesystem::path &Path, const int StartYear, const int EndYear,
-   const int IsLocal, std::string_view Footer, TimeZoneInfo &Info)
+   const bool IsLocal, std::string_view Footer, TimeZoneInfo &Info)
 {
    size_t block_size = 0;
    if (not tzif_block_size(Data, Offset, Wide, block_size)) return false;
@@ -568,7 +568,7 @@ static bool parse_tzif_block(const std::vector<unsigned char> &Data, const size_
       pos += 6;
    }
 
-   const char *abbreviations = (const char *)(Data.data() + pos);
+   auto abbreviations = (const char *)(Data.data() + pos);
 
    const int64_t start_us = utc_year_start_us(StartYear);
    const int64_t end_us = utc_year_start_us(EndYear + 1);
@@ -587,7 +587,7 @@ static bool parse_tzif_block(const std::vector<unsigned char> &Data, const size_
    Info.StartYear   = StartYear;
    Info.EndYear     = EndYear;
    Info.IsLocal     = IsLocal;
-   Info.IsFallback  = 0;
+   Info.IsFallback  = false;
 
    int previous_type = start_type;
 
@@ -627,7 +627,7 @@ static bool parse_tzif_block(const std::vector<unsigned char> &Data, const size_
 //********************************************************************************************************************
 
 static bool parse_tzif_file(const std::filesystem::path &Path, std::string_view ZoneID, const int StartYear,
-   const int EndYear, const int IsLocal, TimeZoneInfo &Info)
+   const int EndYear, const bool IsLocal, TimeZoneInfo &Info)
 {
    std::vector<unsigned char> data;
    if (not read_binary_file(Path, data)) return false;

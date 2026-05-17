@@ -3293,10 +3293,10 @@ static ResourceManager glNodeManager = {
       <field name="Version" type="std::string">TZDB/source version if available, otherwise empty.</field>
       <field name="Transitions" type="kt::vector&lt;TimeZoneTransition&gt;">Transitions available for the requested range.</field>
       <field name="BaseOffset" type="INT">Standard UTC offset in seconds.</field>
-      <field name="StartYear" type="INT">Inclusive requested start year.</field>
-      <field name="EndYear" type="INT">Inclusive requested end year.</field>
-      <field name="IsLocal" type="INT">1 if ZoneID requested the local system zone.</field>
-      <field name="IsFallback" type="INT">1 if UTC fallback was used.</field>
+      <field name="StartYear" type="INT16">Inclusive requested start year.</field>
+      <field name="EndYear" type="INT16">Inclusive requested end year.</field>
+      <field name="IsLocal" type="INT8">1 if ZoneID requested the local system zone.</field>
+      <field name="IsFallback" type="INT8">1 if UTC fallback was used.</field>
     </struct>
 
     <struct name="TimeZoneTransition" comment="Time zone transition information for GetTimeZoneInfo()">

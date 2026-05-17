@@ -1799,11 +1799,11 @@ struct TimeZoneInfo {
    std::string DataPath;                          // TZif path on Linux, otherwise empty.
    std::string Version;                           // TZDB/source version if available, otherwise empty.
    kt::vector<TimeZoneTransition> Transitions;    // Transitions available for the requested range.
-   int BaseOffset;                                // Standard UTC offset in seconds.
-   int StartYear;                                 // Inclusive requested start year.
-   int EndYear;                                   // Inclusive requested end year.
-   int IsLocal;                                   // 1 if ZoneID requested the local system zone.
-   int IsFallback;                                // 1 if UTC fallback was used.
+   int     BaseOffset;                            // Standard UTC offset in seconds.
+   int16_t StartYear;                             // Inclusive requested start year.
+   int16_t EndYear;                               // Inclusive requested end year.
+   int8_t  IsLocal;                               // 1 if ZoneID requested the local system zone.
+   int8_t  IsFallback;                            // 1 if UTC fallback was used.
    TimeZoneInfo() : BaseOffset(0), StartYear(0), EndYear(0), IsLocal(0), IsFallback(0) { }
    TimeZoneInfo(int) : TimeZoneInfo() { }
 };
