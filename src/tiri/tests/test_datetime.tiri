@@ -519,21 +519,13 @@ end
    local previous_autumn_transition = zone:previousTransition(after_autumn + datetime.duration.seconds(1))
 
    assert(zone:id() is 'Europe/London', 'Europe/London should keep its public ID')
-   assert(before_spring_offset is datetime.offset.utc(),
-      'London should be GMT before the spring transition, got ' .. tostring(before_spring_offset))
-   assert(after_spring_offset is datetime.offset.hours(1),
-      'London should be BST from the spring transition, got ' .. tostring(after_spring_offset) ..
-      ', next transition was ' .. tostring(next_spring_transition))
-   assert(before_autumn_offset is datetime.offset.hours(1),
-      'London should be BST before the autumn transition, got ' .. tostring(before_autumn_offset))
-   assert(after_autumn_offset is datetime.offset.utc(),
-      'London should be GMT from the autumn transition, got ' .. tostring(after_autumn_offset))
-   assert(next_spring_transition is spring_transition,
-      'nextTransition() should find the spring transition, got ' .. tostring(next_spring_transition))
-   assert(previous_autumn_transition is autumn_transition,
-      'previousTransition() should find the autumn transition, got ' .. tostring(previous_autumn_transition))
-   assert(type(zone:nameAt(after_spring)) is 'string' and #zone:nameAt(after_spring) > 0,
-      'nameAt() should expose a period name where Core supplies one')
+   assert(before_spring_offset is datetime.offset.utc(), f'London should be GMT before the spring transition, got {before_spring_offset}')
+   assert(after_spring_offset is datetime.offset.hours(1), f'London should be BST after spring transition, got {after_spring_offset}; next was {next_spring_transition}')
+   assert(before_autumn_offset is datetime.offset.hours(1), f'London should be BST before the autumn transition, got {before_autumn_offset}')
+   assert(after_autumn_offset is datetime.offset.utc(), f'London should be GMT from the autumn transition, got {after_autumn_offset}')
+   assert(next_spring_transition is spring_transition, f'nextTransition() should find the spring transition, got {next_spring_transition}')
+   assert(previous_autumn_transition is autumn_transition, f'previousTransition() should find the autumn transition, got {previous_autumn_transition}')
+   assert(type(zone:nameAt(after_spring)) is 'string' and #zone:nameAt(after_spring) > 0, 'nameAt() should expose a period name where Core supplies one')
 end
 
 @Test function FixedAndOffsetClocksAreDeterministic()

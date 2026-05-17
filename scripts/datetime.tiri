@@ -575,16 +575,16 @@ function convert_time_zone_info(Info:table):table
    end
 
    return {
-      id = Info.zoneID,
-      native_id = Info.nativeID,
-      source = Info.source,
-      data_path = Info.dataPath,
-      version = Info.version,
+      id          = Info.zoneID,
+      native_id   = Info.nativeID,
+      source      = Info.source,
+      data_path   = Info.dataPath,
+      version     = Info.version,
       base_offset = new_offset(Info.baseOffset),
       transitions = transitions,
-      start_year = Info.startYear,
-      end_year = Info.endYear,
-      is_local = Info.isLocal is 1,
+      start_year  = Info.startYear,
+      end_year    = Info.endYear,
+      is_local    = Info.isLocal is 1,
       is_fallback = Info.isFallback is 1
    }
 end
@@ -622,12 +622,12 @@ function new_zone(ZoneID:any):table
 
    local info = get_time_zone_info(ZoneID, ZONE_PROBE_YEAR, ZONE_PROBE_YEAR)
    return datetime._makeValue('Zone', {
-      id = info.id,
-      native_id = info.native_id,
-      source = info.source,
+      id          = info.id,
+      native_id   = info.native_id,
+      source      = info.source,
       is_fallback = info.is_fallback,
-      is_local = info.is_local,
-      query_id = ZoneID
+      is_local    = info.is_local,
+      query_id    = ZoneID
    })
 end
 
@@ -1676,9 +1676,11 @@ datetime.zone = make_constructor('zone')
 datetime.zone.local = function():table
    return new_zone(nil)
 end
+
 datetime.zone.utc = function():table
    return new_zone('UTC')
 end
+
 getmetatable(datetime.zone).__call = function(Self, ZoneID:any):table
    return new_zone(ZoneID)
 end

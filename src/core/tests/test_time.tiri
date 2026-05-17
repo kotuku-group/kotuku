@@ -228,7 +228,7 @@ end
    assert(info.nativeID is 'UTC', 'UTC query should report UTC native ID.')
    assert(info.source is 'utc', 'UTC query should report utc source.')
    assert(info.baseOffset is 0, 'UTC base offset should be zero.')
-   assert(#info.transitions is 0, 'UTC should not report transitions.')
+   assert((info.transitions is nil) or (#info.transitions is 0), 'UTC should not report transitions.')
    assert(info.isFallback is 0, 'Explicit UTC should not be marked as a fallback.')
 end
 
@@ -244,7 +244,7 @@ end
       assert(info.nativeID is 'UTC', aliases[i] .. ' alias should report UTC native ID.')
       assert(info.source is 'utc', aliases[i] .. ' alias should report utc source.')
       assert(info.baseOffset is 0, aliases[i] .. ' alias should have zero base offset.')
-      assert(#info.transitions is 0, aliases[i] .. ' alias should not report transitions.')
+      assert((info.transitions is nil) or (#info.transitions is 0), aliases[i] .. ' alias should not report transitions.')
       assert(info.isLocal is 0, aliases[i] .. ' alias should be treated as an explicit zone.')
    end
 end
@@ -255,6 +255,7 @@ end
 
    if state.platform is 'Windows' then
       err, info = time_obj.mtGetTimeZoneInfo('Europe/London', 2024, 2025)
+      assert(#info.transitions >= 2, f"Incorrect number of transitions, got {#info.transitions}")
       assert(err is ERR_Okay, 'Europe/London should map to a Windows time zone: ' .. mSys.GetErrorMsg(err))
       assert(info.nativeID is 'GMT Standard Time', 'Europe/London should map to GMT Standard Time.')
       assert(info.source is 'win32', 'Windows explicit time zone should report win32 source.')
