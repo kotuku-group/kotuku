@@ -57,11 +57,13 @@ vfx.apply_easing = function(Value, Easing)
 
    if not Easing then return progress end
 
-   easing = Easing
-   if type(easing) is 'string' then
+   local easing
+   if type(Easing) is 'string' then
       easing = vfx.ease[easing]
       if not easing then error(f"Unsupported VFX easing '{Easing}'") end
-   elseif type(easing) != 'function' then
+   elseif type(Easing) is 'function' then
+      easing = Easing
+   else
       error('VFX easing must be a string or function')
    end
 
@@ -138,7 +140,7 @@ end
 -- Options.delay: Delays the initial start of the effect, measured in seconds.
 -- Options.style: 'shutter', 'simple', 'radial', 'spiral', 'clock'
 
-vfx.wipe = function(Viewport, Options)
+vfx.wipe = function(Viewport:obj, Options:table)
    Options ?= { }
    assert(type(Options) is 'table', 'VFX wipe options must be supplied as a table')
 
@@ -180,11 +182,11 @@ end
 -- Move the viewport to its indicated (x,y) position within the allotted time.  By default the move will commence from
 -- an out-of-bounds position on the left.  The client can override this with a custom FromX, FromY position.
 
-vfx.moveIn = function(Viewport, Options)
+vfx.moveIn = function(Viewport:obj, Options:table)
 
 end
 
-vfx.moveOut = function(Viewport, Options)
+vfx.moveOut = function(Viewport:obj, Options:table)
 
 end
 
@@ -194,7 +196,7 @@ end
 -- Options.seconds: Specifies the maximum number of seconds for the effect to complete.
 -- Options.delay:   Delays the initial start of the effect, measured in seconds.
 
-vfx.fadeIn = function(Viewport, Options)
+vfx.fadeIn = function(Viewport:obj, Options:table)
    config = vfx.effect_config(Options)
    state = {
       name = 'fadeIn', seconds = config.seconds, delay = config.delay,
@@ -204,7 +206,7 @@ vfx.fadeIn = function(Viewport, Options)
    local err
    Viewport.opacity = 0
    err, state.timerID = mSys.SubscribeTimer(1*vfx.fps, function(Subscriber, Elapsed, CurrentTime)
-      Viewport.exists() ?? check ERR_Terminate
+      Viewport.exists() ?? raise ERR_Terminate
 
       state.time ?= CurrentTime
       if state.delay > 0 then
@@ -218,8 +220,8 @@ vfx.fadeIn = function(Viewport, Options)
          if value >= 1.0 then
             Viewport.opacity = 1.0
             Viewport.acDraw()
-            if state.callback then state.callback(state) end
-            check ERR_Terminate
+            state?.callback(state)
+            raise ERR_Terminate
          else
             Viewport.opacity = vfx.apply_easing(value, state.easing)
             Viewport.acDraw()
@@ -233,7 +235,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Scale the viewport from nothing to full-size within the allotted time.
 
-vfx.zoomIn = function(Viewport, Options)
+vfx.zoomIn = function(Viewport:obj, Options:table)
    config = vfx.effect_config(Options)
    state = {
       name = 'zoomIn', seconds = config.seconds, delay = config.delay,
@@ -249,7 +251,7 @@ vfx.zoomIn = function(Viewport, Options)
    Viewport.acDraw()
 
    err, state.timerID = mSys.SubscribeTimer(1*vfx.fps, function(Subscriber, Elapsed, CurrentTime)
-      Viewport.exists() ?? check ERR_Terminate
+      Viewport.exists() ?? raise ERR_Terminate
 
       state.time ?= CurrentTime
       if state.delay > 0 then
@@ -270,8 +272,8 @@ vfx.zoomIn = function(Viewport, Options)
          Viewport.acDraw()
 
          if value >= 1.0 then
-            if state.callback then state.callback(state) end
-            check ERR_Terminate
+            state?.callback(state)
+            raise ERR_Terminate
          end
       end
    end)
@@ -282,7 +284,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Scale the viewport from full-size to nothing within the allotted time.
 
-vfx.zoomOut = function(Viewport, Options)
+vfx.zoomOut = function(Viewport:obj, Options:table)
    config = vfx.effect_config(Options)
    state = {
       name = 'zoomOut', seconds = config.seconds, delay = config.delay,
@@ -298,7 +300,7 @@ vfx.zoomOut = function(Viewport, Options)
    Viewport.acDraw()
 
    err, state.timerID = mSys.SubscribeTimer(1*vfx.fps, function(Subscriber, Elapsed, CurrentTime)
-      Viewport.exists() ?? check ERR_Terminate
+      Viewport.exists() ?? raise ERR_Terminate
 
       state.time ?= CurrentTime
       if state.delay > 0 then
@@ -319,8 +321,8 @@ vfx.zoomOut = function(Viewport, Options)
          Viewport.acDraw()
 
          if value >= 1.0 then
-            if state.callback then state.callback(state) end
-            check ERR_Terminate
+            state?.callback(state)
+            raise ERR_Terminate
          end
       end
    end)
@@ -332,7 +334,7 @@ end
 -- 'Shake' a vector by applying an alternating rotation around its center.  Intensity is between 0.1 and 2.0 and
 -- affects the number of shakes and maximum angle of rotation.
 
-vfx.shake = function(Viewport, Options)
+vfx.shake = function(Viewport:obj, Options:table)
    Options ?= { }
    assert(type(Options) is 'table', 'VFX shake options must be supplied as a table')
 
@@ -358,7 +360,7 @@ vfx.shake = function(Viewport, Options)
    local err
    err, state.matrix = Viewport.mtNewMatrix(false)
    err, state.timerID = mSys.SubscribeTimer(1*vfx.fps, function(Subscriber, Elapsed, CurrentTime)
-      Viewport.exists() ?? check ERR_Terminate
+      Viewport.exists() ?? raise ERR_Terminate
 
       state.time ?= CurrentTime
       if state.delay > 0 then
@@ -372,8 +374,8 @@ vfx.shake = function(Viewport, Options)
 
          if CurrentTime > state.time + (state.seconds * 1000000) then
             Viewport.acDraw()
-            if state.callback then state.callback(state) end
-            check ERR_Terminate
+            state?.callback(state)
+            raise ERR_Terminate
          end
 
          cycle = (state.seconds / SHAKES) * 1000000
@@ -404,7 +406,7 @@ end
 -- Rotate the viewport 360 degrees within the allotted time.  This feature is typically chained for use with other
 -- effects.
 
-vfx.rotate = function(Viewport, Options)
+vfx.rotate = function(Viewport:obj, Options:table)
    config = vfx.effect_config(Options)
    state = {
       name = 'rotate', seconds = config.seconds, delay = config.delay,
@@ -414,7 +416,7 @@ vfx.rotate = function(Viewport, Options)
    local err
    err, state.matrix = Viewport.mtNewMatrix(false)
    err, state.timerID = mSys.SubscribeTimer(1*vfx.fps, function(Subscriber, Elapsed, CurrentTime)
-      Viewport.exists() ?? check ERR_Terminate
+      Viewport.exists() ?? raise ERR_Terminate
 
       state.time ?= CurrentTime
       if state.delay > 0 then
@@ -434,8 +436,8 @@ vfx.rotate = function(Viewport, Options)
          Viewport.acDraw()
 
          if value >= 1.0 then
-            if state.callback then state.callback(state) end
-            check ERR_Terminate
+            state?.callback(state)
+            raise ERR_Terminate
          end
       end
    end)
@@ -679,7 +681,7 @@ end
 vfx.initTimer = function(State, Options)
    local err
    err, State.timerID = mSys.SubscribeTimer(1 * vfx.fps, function(Subscriber, Elapsed, CurrentTime)
-      State.viewport.exists() ?? check ERR_Terminate
+      State.viewport.exists() ?? raise ERR_Terminate
 
       State.time ?= CurrentTime
       if State.delay > 0 then
@@ -692,8 +694,8 @@ vfx.initTimer = function(State, Options)
          value = (CurrentTime - State.time) / (State.seconds * 1000000)
          if value >= 1.0 then
             if (State.free != nil) then State:free() end
-            if State.callback then State.callback(State) end
-            check ERR_Terminate
+            state?.callback(state)
+            raise ERR_Terminate
          else
             progress = vfx.apply_easing(value, State.easing)
             State.animate(State, Options, Options.invert ? 1.0 - progress :> progress)
