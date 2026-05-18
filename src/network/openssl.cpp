@@ -1,6 +1,5 @@
 
 static SSL_CTX *glClientSSL = nullptr; // Thread-safe unless you call a SET function
-static SSL_CTX *glServerSSL = nullptr;
 static SSL_CTX *glClientSSLNV = nullptr; // No-verify version
 static std::mutex glSSLSetupMutex;
 static bool glSSLInitialised = false;
@@ -364,18 +363,20 @@ static ERR tls_setup_server(extNetServer *Self)
 
    bool setup_success = false;
 
-   if (glServerSSL) return ERR::Okay;
+   if (Self->ServerSSLContext) return ERR::Okay;
 
-   if ((glServerSSL = SSL_CTX_new(TLS_server_method()))) {
+   if (auto server_ctx = SSL_CTX_new(TLS_server_method())) {
       // Check if custom certificate is specified
       if (Self->SSLCertificate and *Self->SSLCertificate) {
          log.msg("Loading custom SSL server certificate: %s", Self->SSLCertificate);
-         if ((error = loadCustomCertificateOpenSSL(Self, glServerSSL)) IS ERR::Okay) {
+         if ((error = loadCustomCertificateOpenSSL(Self, server_ctx)) IS ERR::Okay) {
             setup_success = true;
             log.msg("Custom SSL server certificate loaded successfully.");
          }
          else {
             log.warning("Failed to load custom SSL certificate: %s", GetErrorMsg(error));
+            SSL_CTX_free(server_ctx);
+            return error;
          }
       }
 
@@ -404,7 +405,7 @@ static ERR tls_setup_server(extNetServer *Self)
                         X509_set_issuer_name(cert, name);
 
                         if (X509_sign(cert, pkey, EVP_sha256()) > 0) {
-                           if (SSL_CTX_use_certificate(glServerSSL, cert) and SSL_CTX_use_PrivateKey(glServerSSL, pkey)) {
+                           if (SSL_CTX_use_certificate(server_ctx, cert) and SSL_CTX_use_PrivateKey(server_ctx, pkey)) {
                               setup_success = true;
                            }
                            else log.warning("Failed to set SSL server certificate and key.");
@@ -424,8 +425,10 @@ static ERR tls_setup_server(extNetServer *Self)
       if (!setup_success) {
          log.warning("SSL server certificate setup failed, trying with no certificate verification.");
          // For testing, allow servers without proper certificates
-         SSL_CTX_set_verify(glServerSSL, SSL_VERIFY_NONE, nullptr);
+         SSL_CTX_set_verify(server_ctx, SSL_VERIFY_NONE, nullptr);
       }
+
+      Self->ServerSSLContext = server_ctx;
       return ERR::Okay;
    }
    else return log.warning(ERR::SystemCall);
@@ -560,11 +563,11 @@ static ERR tls_accept_client(extClientSocket *Self, extNetServer *Server)
 {
    kt::Log log(__FUNCTION__);
 
-   if (!glServerSSL) {
+   if (!Server->ServerSSLContext) {
       if (auto error = tls_setup_server(Server); error != ERR::Okay) return error;
    }
 
-   if (auto client_ssl = SSL_new(glServerSSL)) { // Use glServerSSL because we represent the server side.
+   if (auto client_ssl = SSL_new(Server->ServerSSLContext)) {
       if (auto client_bio = BIO_new_socket(Self->Handle, BIO_NOCLOSE)) {
          SSL_set_bio(client_ssl, client_bio, client_bio);
 

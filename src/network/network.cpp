@@ -175,6 +175,12 @@ class extNetServer : public extNetSocket {
    int    ClientLimit;         // The maximum number of client IP addresses that can be connected to the NetServer.
    int    SocketLimit;         // Limits the number of connected sockets per client IP address.
    int    TotalClients;        // Indicates the total number of clients currently connected to the NetServer.
+
+   #ifndef DISABLE_SSL
+      #ifndef _WIN32
+         SSL_CTX *ServerSSLContext = nullptr;
+      #endif
+   #endif
 };
 
 class extNetLookup : public objNetLookup {
@@ -580,7 +586,6 @@ static ERR MODExpunge(void)
     if (ssl_init) {
        if (glClientSSL)   { SSL_CTX_free(glClientSSL);   glClientSSL = nullptr; }
        if (glClientSSLNV) { SSL_CTX_free(glClientSSLNV); glClientSSLNV = nullptr; }
-       if (glServerSSL)   { SSL_CTX_free(glServerSSL);   glServerSSL = nullptr; }
        ERR_free_strings();
        EVP_cleanup();
        CRYPTO_cleanup_all_ex_data();

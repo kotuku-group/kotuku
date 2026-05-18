@@ -627,6 +627,7 @@ function PasswordProtectedCustomCertificateRejectsWrongPassword()
 
    glPort++
 
+   rejected = false
    local ssl_server
    try
       ssl_server = obj.new('netserver', {
@@ -636,9 +637,12 @@ function PasswordProtectedCustomCertificateRejectsWrongPassword()
          port = glPort,
          flags = NSF_SSL
       })
+      rejected = (not ssl_server) or (ssl_server.error != ERR_Okay)
+   except ex
+      rejected = true
    end
 
-   assert((not ssl_server) or (ssl_server.error != ERR_Okay),
+   assert(rejected,
       'Password-protected custom certificate should reject an incorrect password')
 end
 

@@ -125,6 +125,15 @@ static ERR NETSERVER_Free(extNetServer *Self)
    if (Self->SSLKeyPassword) { FreeResource(Self->SSLKeyPassword); Self->SSLKeyPassword = nullptr; }
    if (Self->SSLPrivateKey)  { FreeResource(Self->SSLPrivateKey); Self->SSLPrivateKey = nullptr; }
 
+   #ifndef DISABLE_SSL
+      #ifndef _WIN32
+         if (Self->ServerSSLContext) {
+            SSL_CTX_free(Self->ServerSSLContext);
+            Self->ServerSSLContext = nullptr;
+         }
+      #endif
+   #endif
+
    while (Self->Clients) free_client(Self, Self->Clients);
 
    return ERR::Okay;
