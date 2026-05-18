@@ -512,8 +512,8 @@ end
 function route_handler_stub(Route:table):str
    proto = 'const BackstageRequest &Request, BackstageResponse &Response'
 
-   out = ''
-   out ..= f'// {Route.method} {Route.path}\n// {Route.interface.desc}\n\n'
+   out = '//********************************************************************************************************************\n'
+   out ..= f'// @doc {Route.method} {Route.path} {Route.interface.desc}\n\n'
    out ..= f"static ERR {Route.funcName}({proto})\n{{\n"
    out ..= "   return ERR::NoSupport;\n"
    out ..= "}\n\n"
@@ -527,6 +527,7 @@ function append_missing_route_handler(Route:table)
 
    if content:find(signature) then return end
 
+   local file:obj
    if content?? then
       file = obj.new('file', { path=target_path, flags=FL_WRITE })
       file.acSeek(0, SEEK_END)

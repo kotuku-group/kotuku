@@ -1,5 +1,4 @@
-// GET /ping
-// Return a small JSON response to confirm that Backstage can receive HTTP requests and send responses.
+// @comment GET /ping
 
 static ERR get_ping(const BackstageRequest &Request, BackstageResponse &Response)
 {

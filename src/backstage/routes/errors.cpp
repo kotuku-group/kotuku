@@ -1,13 +1,13 @@
-// GET /errors
-// Return a JSON list of known error codes and their symbolic names.
+//********************************************************************************************************************
+// @doc GET /errors Return a JSON list of known error codes and their symbolic names.
 
 static ERR get_errors(const BackstageRequest &Request, BackstageResponse &Response)
 {
    return ERR::NoSupport;
 }
 
-// GET /errors/{code}
-// Return meta data for a single error code.
+//********************************************************************************************************************
+// @doc GET /errors/{code} Return meta data for a single error code.
 
 static ERR get_errors_code(const BackstageRequest &Request, BackstageResponse &Response)
 {
