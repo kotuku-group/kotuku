@@ -1,5 +1,7 @@
 //********************************************************************************************************************
 // @doc GET /diagnostics/memory Returns a summary of memory allocations.  Specifying additional parameters can result in more detail
+//
+// Schema { id: int, flags: int, size: int, address: int, locks: int }
 
 static ERR get_diagnostics_memory(const BackstageRequest &Request, BackstageResponse &Response)
 {
@@ -13,4 +15,3 @@ static ERR get_diagnostics_timers(const BackstageRequest &Request, BackstageResp
 {
    return ERR::NoSupport;
 }
-

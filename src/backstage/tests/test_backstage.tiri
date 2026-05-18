@@ -238,6 +238,77 @@ function UnimplementedRouteReturnsNotImplemented()
 end
 
 @Test; @Requires(network=true)
+function ErrorsReturnsKnownErrorList()
+   request = 'GET /errors HTTP/1.1\r\n' ..
+      'Host: 127.0.0.1\r\n' ..
+      'Connection: close\r\n\r\n'
+
+   response = request_backstage_full(request)
+
+   assert(response:find('HTTP/1.1 200 OK'), 'Expected errors to return 200 OK, got: ' .. response)
+   assert(response:find('Content-Type: application/json'), 'Expected errors to return JSON, got: ' .. response)
+   assert(response:find('"code":0'), 'Expected ERR_Okay in error list, got: ' .. response)
+   assert(response:find('"name":"Okay","aliases":["True"]'), 'Expected ERR_Okay alias in error list, got: ' .. response)
+   assert(response:find('"name":"NoSupport"'), 'Expected ERR_NoSupport in error list, got: ' .. response)
+   assert(response:find('"message":"Operation not supported"'), 'Expected Core error message, got: ' .. response)
+end
+
+@Test; @Requires(network=true)
+function ErrorsSupportsCsvFilter()
+   request = 'GET /errors?filter=NoSupport,28 HTTP/1.1\r\n' ..
+      'Host: 127.0.0.1\r\n' ..
+      'Connection: close\r\n\r\n'
+
+   response = request_backstage_full(request)
+
+   assert(response:find('HTTP/1.1 200 OK'), 'Expected filtered errors to return 200 OK, got: ' .. response)
+   assert(response:find('"code":28'), 'Expected filtered ERR_NoSupport by name/code, got: ' .. response)
+   assert(response:find('"name":"NoSupport"'), 'Expected filtered ERR_NoSupport name, got: ' .. response)
+   assert(not response:find('"aliases"'), 'Did not expect aliases for ERR_NoSupport, got: ' .. response)
+   assert(not response:find('"code":27'), 'Did not expect ERR_NoAction in filtered response, got: ' .. response)
+end
+
+@Test; @Requires(network=true)
+function ErrorsCodeAcceptsSymbolicName()
+   request = 'GET /errors/ERR_NoSupport HTTP/1.1\r\n' ..
+      'Host: 127.0.0.1\r\n' ..
+      'Connection: close\r\n\r\n'
+
+   response = request_backstage_full(request)
+
+   assert(response:find('HTTP/1.1 200 OK'), 'Expected symbolic error lookup to return 200 OK, got: ' .. response)
+   assert(response:find('"code":28'), 'Expected ERR_NoSupport code, got: ' .. response)
+   assert(response:find('"name":"NoSupport"'), 'Expected ERR_NoSupport name, got: ' .. response)
+   assert(response:find('"exception":true'), 'Expected ERR_NoSupport to be marked as exception, got: ' .. response)
+end
+
+@Test; @Requires(network=true)
+function ErrorsCodeUsesCanonicalAliasOrder()
+   request = 'GET /errors/NotFound HTTP/1.1\r\n' ..
+      'Host: 127.0.0.1\r\n' ..
+      'Connection: close\r\n\r\n'
+
+   response = request_backstage_full(request)
+
+   assert(response:find('HTTP/1.1 200 OK'), 'Expected alias error lookup to return 200 OK, got: ' .. response)
+   assert(response:find('"code":16'), 'Expected ERR_Search code, got: ' .. response)
+   assert(response:find('"name":"Search","aliases":["NotFound"]'),
+      'Expected canonical ERR_Search name, got: ' .. response)
+end
+
+@Test; @Requires(network=true)
+function ErrorsCodeRejectsUnknownCode()
+   request = 'GET /errors/99999 HTTP/1.1\r\n' ..
+      'Host: 127.0.0.1\r\n' ..
+      'Connection: close\r\n\r\n'
+
+   response = request_backstage(request, 'HTTP/1.1 404 Not Found')
+
+   assert(response:find('HTTP/1.1 404 Not Found'), 'Expected unknown error code to return 404, got: ' .. response)
+   assert(response:find('"error":"not_found"'), 'Expected not_found JSON body, got: ' .. response)
+end
+
+@Test; @Requires(network=true)
 function DocsReturnsRouteIndex()
    request = 'GET /docs HTTP/1.1\r\n' ..
       'Host: 127.0.0.1\r\n' ..

@@ -27,6 +27,7 @@ See interface.tiri for the REST interface.
 #include <kotuku/modules/regex.h>
 #include <kotuku/strings.hpp>
 
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <cstdint>
@@ -188,6 +189,7 @@ static ERR MODExpunge(void)
 
 //********************************************************************************************************************
 
+#include "utility.cpp"
 #include "routes.cpp"
 #include "http.cpp"
 #include "websocket.cpp"
