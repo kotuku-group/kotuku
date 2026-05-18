@@ -479,7 +479,7 @@ end
 
 global function extractFields(Def:str, Origin:str):table
    fields = { }
-   Def ?? return fields
+   Def ?! return fields
    for line, content in Def:split('\n') do
       local content_b, comment = rx_field_extract.extract(content)
       if content_b then content = content_b end
@@ -909,7 +909,7 @@ end
 -- Generate private C definitions that describe the public functions of a module.
 
 global function buildDefs()
-   glFunctions ?? return ''
+   glFunctions ?! return ''
 
    prefix = ''
    if glFunctionPrefix?? then prefix = glFunctionPrefix .. '::' end

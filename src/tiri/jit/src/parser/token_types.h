@@ -70,6 +70,7 @@ enum class TokenKind : uint16_t {
    SafeIndex = TK_safe_index,
    SafeMethod = TK_safe_method,
    Presence = TK_if_empty, // NOTE: This single token covers use of both `if present?? then` (postfix) and `(variable ?? default_value)` (if empty).
+   Guard = TK_guard,
    PlusPlus = TK_plusplus,
    Power = TK_pow,
    Pipe = TK_pipe,
@@ -176,6 +177,7 @@ enum class TokenKind : uint16_t {
       case TokenKind::SafeIndex: return "?[";
       case TokenKind::SafeMethod: return "?:";
       case TokenKind::Presence: return "??";
+      case TokenKind::Guard: return "?!";
       case TokenKind::PlusPlus: return "++";
       case TokenKind::Power: return "**";
       case TokenKind::Pipe: return "|>";

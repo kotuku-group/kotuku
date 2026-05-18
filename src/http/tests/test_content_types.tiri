@@ -17,7 +17,7 @@ rxSplitPair <const> = <{ regex.new('([^=]+)=([^=]*)') }>
 ----------------------------------------------------------------------------------------------------------------------
 
 function decodeFormComponent(Value:str):str
-   Value ?? return ''
+   Value ?! return ''
 
    Value = Value:replace('+', ' ')
    result = ''

@@ -33,11 +33,11 @@ function columnText(Value:any, Type:str):any
       Value = Value.value
    end
 
-   Value ?? return ''
+   Value ?! return ''
 
    if Type is 'bytesize' then
       Value = tonumber(Value)
-      Value ?? return ''
+      Value ?! return ''
       if Value < 1024 then
          return string.format('%.0f', Value)
       elseif Value < 1024 * 1024 then
@@ -510,8 +510,8 @@ gui.columnView = function(Options)
    -- Process new items that have been added to the view
 
    function newItems(View:table, Items)
-      View.columns ?? return
-      Items ?? return
+      View.columns ?! return
+      Items ?! return
 
       width = View.frame.width - EDGE - EDGE
       y = View._last_y

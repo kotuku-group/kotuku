@@ -136,7 +136,7 @@ end
 local cxml
 
 global function cleanXMLString(String:str, Caller:str):str
-   String ?? return ''
+   String ?! return ''
 
    if rx_angle_brackets.test(String) then
       String = f'<ROOT>{String}</ROOT>'

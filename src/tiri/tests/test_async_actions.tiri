@@ -10,7 +10,7 @@
    glPictures = array<table>
 
 @BeforeAll function init()
-   mGfx ?? return
+   mGfx ?! return
 
    folder = 'icons:programs/'
    list = ''

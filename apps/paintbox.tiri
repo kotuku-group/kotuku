@@ -6,7 +6,7 @@
    import 'options'
 
 function lowercaseOption(Value:any, Param:table):str
-   Value ?? return
+   Value ?! return
    return tostring(Value):lower()
 end
 

@@ -414,7 +414,7 @@ gui.toolbar = function(Options)
 
    self.applySticker = function(ID, Content)
       item = self._lookup[ID]
-      item ?? return
+      item ?! return
 
       sticker_size = math.floor(self._iconSize * 0.5)
 
@@ -464,7 +464,7 @@ gui.toolbar = function(Options)
 
    self.removeSticker = function(ID)
       item = self._lookup[ID]
-      item ?? return
+      item ?! return
       if item.sticker then
          item.sticker.viewport.free()
          item.sticker = { }
@@ -497,7 +497,7 @@ gui.toolbar = function(Options)
 
       if redraw then self.viewport.acDraw() end
 
-      found ?? raise ERR_Search
+      found ?! raise ERR_Search
    end
 
    function hoverUpdate(Item, StateChanged) -- Highlight items that the user hovers over.

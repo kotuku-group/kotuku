@@ -65,7 +65,7 @@ end
 
 function rawHttpBody(Response:str):str
    header_end = Response:find("\r\n\r\n")
-   header_end ?? return ''
+   header_end ?! return ''
    return Response:substr(header_end + 4)
 end
 

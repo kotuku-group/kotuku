@@ -48,7 +48,7 @@ gui.listView = function(Options:table)
    -- When an item is hovered, create a highlight for it.
 
    function highlightItem(View, Item:table, Highlighted:bool)
-      Item._vectors.viewport ?? return
+      Item._vectors.viewport ?! return
 
       if not Item._vectors.highlight then
          Item._vectors.highlight = Item._vectors.viewport.new('VectorRectangle', {

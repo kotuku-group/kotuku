@@ -323,7 +323,7 @@ end
 -- Read a style value and return it in pixel units.  Supports px, in, mm, pt, dp
 
 gui.pixel = function(val:str):num
-   val ?? return 0
+   val ?! return 0
    num, alpha = rxPixel.extract(val)
    num = tonumber(num)
    assert(num, f'Invalid graphics unit \'{val}\'')

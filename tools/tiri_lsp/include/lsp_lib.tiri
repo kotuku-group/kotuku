@@ -457,7 +457,7 @@ end
 -- Returns true if successful
 
 global function lspInitDocs(DocPath)
-   DocPath ?? return false
+   DocPath ?! return false
 
    if not (DocPath:endsWith('/') or DocPath:endsWith('\\')) then -- Ensure path ends with separator
       DocPath ..= '/'

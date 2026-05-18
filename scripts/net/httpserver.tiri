@@ -100,7 +100,7 @@ glMimeTypes <const> = {
 -- HTML escape function for security
 
 function escHTML(str:str):str
-   str ?? return ''
+   str ?! return ''
    str = str:replace('&', '&amp;')
    str = str:replace('<', '&lt;')
    str = str:replace('>', '&gt;')
@@ -153,7 +153,7 @@ end
 -- Canonicalize path to prevent directory traversal attacks
 
 function canonicalizePath(self, Path:str):str
-   Path ?? return
+   Path ?! return
 
    Path = rxControlChars.replace(Path, '')   -- Remove any control characters
    Path = urlDecode(Path)         -- Decode URL encoding first
@@ -501,7 +501,7 @@ end
 @Doc(text="Parse query string into key-value pairs")
 function parseQueryString(QueryString:str):table
    query = {}
-   QueryString ?? return query
+   QueryString ?! return query
 
    for start, stop, cap in rxQueryPair.findAll(QueryString) do
       local pair = cap[0]
@@ -530,7 +530,7 @@ end
 -- Parse JSON body
 
 function parseJsonBody(Body:str):table
-   Body ?? return {}
+   Body ?! return {}
 
    try
       return json.decode(Body)
@@ -564,7 +564,7 @@ end
 
 function parseMultipartBody(Body:str, ContentType:str):table
    result = {}
-   Body ?? return result
+   Body ?! return result
 
    boundary = rxMultipartBoundary.extract(ContentType ?? '')
    if boundary is nil or boundary:trim() is '' then return result end
@@ -628,7 +628,7 @@ end
 
 function parseCookies(CookieHeader:str):table
    cookies = {}
-   CookieHeader ?? return cookies
+   CookieHeader ?! return cookies
 
    for start, stop, cap in rxCookieItem.findAll(CookieHeader) do
       local cookie = cap[0]
@@ -921,10 +921,10 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 function parseByteRange(Header:str, FileSize:num):table
-   Header ?? return nil
+   Header ?! return nil
 
    captures = rxByteRange.match(Header:trim())
-   captures ?? return nil
+   captures ?! return nil
 
    start_text = captures[1]
    end_text = captures[2]
@@ -1424,10 +1424,10 @@ end
 
 @Doc(text="Find matching route for a request from a server instance")
 function matchRoute(serverInstance, method, path)
-   serverInstance._routes ?? return
+   serverInstance._routes ?! return
 
    methodRoutes = serverInstance._routes[method]
-   methodRoutes ?? return
+   methodRoutes ?! return
 
    for route in values(methodRoutes) do
       pattern = route.pattern
@@ -1484,7 +1484,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 function allowedMethodsForPath(serverInstance, path):str
-   serverInstance._routes ?? return nil
+   serverInstance._routes ?! return nil
 
    methods = {}
    for method, methodRoutes in pairs(serverInstance._routes) do
@@ -1636,7 +1636,7 @@ function serverIncoming(self, ClientSocket)
    if state.phase is 'READING_HEADERS' then
       -- Look for end of headers marker
       header_end = state.buffer:find('\r\n\r\n')
-      header_end ?? return -- Wait for more data
+      header_end ?! return -- Wait for more data
 
       -- Extract header section
       header_section = state.buffer:substr(0, header_end + 3) -- Include the \r\n\r\n

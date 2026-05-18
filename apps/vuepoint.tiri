@@ -234,7 +234,7 @@ function displayText(Path:str)
 end
 
 function displayFile(Path:str)
-   Path ?? return
+   Path ?! return
 
    msg(f'Load file {Path}')
 
@@ -341,7 +341,7 @@ end
                   warnExists  = true,
                   allowNew    = true,
                   feedback = function(Dialog, Path:str, Files)
-                     Files ?? return
+                     Files ?! return
 
                      target_file = Path .. Files[0].filename
                      print('Saving image to ' .. target_file)

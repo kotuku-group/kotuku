@@ -20,7 +20,7 @@ function counter()
 end
 
 function activateItem(self) -- Activate the current menu item.
-   self._currentItem ?? return
+   self._currentItem ?! return
 
    self._currentItem?.callback(self._currentItem.id, self._currentItem.name)
 

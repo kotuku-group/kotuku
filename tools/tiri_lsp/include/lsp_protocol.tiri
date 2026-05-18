@@ -29,7 +29,7 @@ function parseHeader(Buffer:str):<str,num,str>
       header_end = Buffer:find('\n\n')
       separator_len = 2
    end
-   header_end ?? return nil, nil, nil  -- Need more data
+   header_end ?! return nil, nil, nil  -- Need more data
    header_section = Buffer:sub(0, header_end)
    content_length = nil
 
@@ -42,7 +42,7 @@ function parseHeader(Buffer:str):<str,num,str>
       end
    end
 
-   content_length ?? return nil, nil, 'Missing Content-Length header'
+   content_length ?! return nil, nil, 'Missing Content-Length header'
    return content_length, header_end + separator_len, nil
 end
 
@@ -75,7 +75,7 @@ function formatResponse(ResponseTable:table, TextOutput:bool):str
 end
 
 global function sendResponse(Self:table, ClientSocket, ResponseTable, RequestLog)
-   ResponseTable ?? return -- Notifications don't get responses
+   ResponseTable ?! return -- Notifications don't get responses
 
    formatted = formatResponse(ResponseTable, Self.stdioTextOutput)
    err = ClientSocket.acWrite(formatted)

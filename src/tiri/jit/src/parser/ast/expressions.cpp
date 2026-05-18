@@ -39,56 +39,72 @@ ParserResult<StmtNodePtr> AstBuilder::parse_expression_stmt()
       return ParserResult<StmtNodePtr>::success(std::move(stmt));
    }
 
-   // Conditional shorthand pattern: value ?? return/break/continue/raise/check
+   // Guard shorthand pattern: value ?! return/break/continue/raise/check
+
+   if (op.kind() IS TokenKind::Guard) {
+      if (targets.size() > 1) {
+         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, op,
+            "guard operator '?!' requires a single condition expression");
+      }
+
+      this->ctx.tokens().advance();
+      Token next = this->ctx.tokens().current();
+      if (not is_shorthand_statement_keyword(next.kind())) {
+         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, next,
+            "expected return, break, continue, raise, or check after guard operator '?!'");
+      }
+
+      ExprNodePtr condition = std::move(targets[0]);
+      StmtNodePtr body;
+
+      if (next.kind() IS TokenKind::ReturnToken) {
+         Token return_token = next;
+         this->ctx.tokens().advance();
+
+         auto payload = this->parse_return_payload(return_token, true);
+         if (not payload.ok()) return ParserResult<StmtNodePtr>::failure(payload.error_ref());
+
+         auto node = std::make_unique<StmtNode>(AstNodeKind::ReturnStmt, return_token.span());
+         node->data = std::move(payload.value_ref());
+         body = std::move(node);
+      }
+      else if (next.kind() IS TokenKind::BreakToken) {
+         auto control = make_control_stmt(this->ctx, AstNodeKind::BreakStmt, next);
+         if (not control.ok()) return ParserResult<StmtNodePtr>::failure(control.error_ref());
+         body = std::move(control.value_ref());
+      }
+      else if (next.kind() IS TokenKind::ContinueToken) {
+         auto control = make_control_stmt(this->ctx, AstNodeKind::ContinueStmt, next);
+         if (not control.ok()) return ParserResult<StmtNodePtr>::failure(control.error_ref());
+         body = std::move(control.value_ref());
+      }
+      else if (next.kind() IS TokenKind::RaiseToken) {
+         auto raise_stmt = this->parse_raise();
+         if (not raise_stmt.ok()) return raise_stmt;
+         body = std::move(raise_stmt.value_ref());
+      }
+      else if (next.kind() IS TokenKind::CheckToken) {
+         auto check_stmt = this->parse_check();
+         if (not check_stmt.ok()) return check_stmt;
+         body = std::move(check_stmt.value_ref());
+      }
+
+      if (body) {
+         SourceSpan span = combine_spans(condition->span, body->span);
+         auto stmt = std::make_unique<StmtNode>(AstNodeKind::ConditionalShorthandStmt, span);
+         ConditionalShorthandStmtPayload payload(std::move(condition), std::move(body));
+         stmt->data = std::move(payload);
+         return ParserResult<StmtNodePtr>::success(std::move(stmt));
+      }
+   }
+
+   // Old guard shorthand pattern: value ?? return/break/continue/raise/check
 
    if (targets.size() IS 1 and is_presence_expr(targets[0])) {
       Token next = this->ctx.tokens().current();
       if (is_shorthand_statement_keyword(next.kind())) {
-         auto* presence_payload = std::get_if<PresenceExprPayload>(&targets[0]->data);
-         if (presence_payload and presence_payload->value) {
-            ExprNodePtr condition = std::move(presence_payload->value);
-            StmtNodePtr body;
-
-            if (next.kind() IS TokenKind::ReturnToken) {
-               Token return_token = next;
-               this->ctx.tokens().advance();
-
-               auto payload = this->parse_return_payload(return_token, true);
-               if (not payload.ok()) return ParserResult<StmtNodePtr>::failure(payload.error_ref());
-
-               auto node = std::make_unique<StmtNode>(AstNodeKind::ReturnStmt, return_token.span());
-               node->data = std::move(payload.value_ref());
-               body = std::move(node);
-            }
-            else if (next.kind() IS TokenKind::BreakToken) {
-               auto control = make_control_stmt(this->ctx, AstNodeKind::BreakStmt, next);
-               if (not control.ok()) return ParserResult<StmtNodePtr>::failure(control.error_ref());
-               body = std::move(control.value_ref());
-            }
-            else if (next.kind() IS TokenKind::ContinueToken) {
-               auto control = make_control_stmt(this->ctx, AstNodeKind::ContinueStmt, next);
-               if (not control.ok()) return ParserResult<StmtNodePtr>::failure(control.error_ref());
-               body = std::move(control.value_ref());
-            }
-            else if (next.kind() IS TokenKind::RaiseToken) {
-               auto raise_stmt = this->parse_raise();
-               if (not raise_stmt.ok()) return raise_stmt;
-               body = std::move(raise_stmt.value_ref());
-            }
-            else if (next.kind() IS TokenKind::CheckToken) {
-               auto check_stmt = this->parse_check();
-               if (not check_stmt.ok()) return check_stmt;
-               body = std::move(check_stmt.value_ref());
-            }
-
-            if (body) {
-               SourceSpan span = combine_spans(condition->span, body->span);
-               auto stmt = std::make_unique<StmtNode>(AstNodeKind::ConditionalShorthandStmt, span);
-               ConditionalShorthandStmtPayload payload(std::move(condition), std::move(body));
-               stmt->data = std::move(payload);
-               return ParserResult<StmtNodePtr>::success(std::move(stmt));
-            }
-         }
+         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, next,
+            "guard shorthand uses '?!'; replace '??' with '?!' before control-flow statements");
       }
    }
 

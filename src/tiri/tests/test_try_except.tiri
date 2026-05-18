@@ -1445,14 +1445,14 @@ end
    falsy_value = nil
 
    try
-      truthy_value ?? raise ERR_Failed
+      truthy_value ?! raise ERR_Failed
    except e
       error("Truthy value should not trigger raise")
    end
 
    caught = false
    try
-      falsy_value ?? raise ERR_Failed
+      falsy_value ?! raise ERR_Failed
    except e
       caught = true
       assert(e.code is ERR_Failed, "Should catch ERR_Failed")
@@ -1465,14 +1465,14 @@ end
    falsy_value = nil
 
    try
-      truthy_value ?? check ERR_Failed  -- Would fail if executed, but shouldn't execute
+      truthy_value ?! check ERR_Failed  -- Would fail if executed, but shouldn't execute
    except e
       error("Truthy value should not trigger check")
    end
 
    caught = false
    try
-      falsy_value ?? check ERR_Failed
+      falsy_value ?! check ERR_Failed
    except e
       caught = true
       assert(e.code is ERR_Failed, "Should catch ERR_Failed")

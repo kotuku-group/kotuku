@@ -62,7 +62,7 @@ static std::unique_ptr<FunctionExprPayload> move_function_payload(ExprNodePtr &N
    return result;
 }
 
-// Checks if a token kind is a statement keyword that can be used in conditional shorthand syntax (e.g., value ?? return).
+// Checks if a token kind is a statement keyword that can be used in conditional shorthand syntax (e.g., value ?! return).
 
 static bool is_shorthand_statement_keyword(TokenKind Kind)
 {

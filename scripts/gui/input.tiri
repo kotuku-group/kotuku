@@ -7,7 +7,7 @@ Documentation is available in the Kotuku Wiki.
    namespace 'gui'
 
 function reportActivate(self:table, State:str, Force:bool)
-   self.events.activate ?? return
+   self.events.activate ?! return
    text = self.text.string
    hash = string.hash(text)
    if Force or hash != self.hash then

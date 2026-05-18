@@ -205,7 +205,7 @@ vfx.fadeIn = function(Viewport:obj, Options:table)
    local err
    Viewport.opacity = 0
    err, state.timerID = mSys.SubscribeTimer(1*vfx.fps, function(Subscriber, Elapsed, CurrentTime)
-      Viewport.exists() ?? raise ERR_Terminate
+      Viewport.exists() ?! raise ERR_Terminate
 
       state.time ?= CurrentTime
       if state.delay > 0 then
@@ -250,7 +250,7 @@ vfx.zoomIn = function(Viewport:obj, Options:table)
    Viewport.acDraw()
 
    err, state.timerID = mSys.SubscribeTimer(1*vfx.fps, function(Subscriber, Elapsed, CurrentTime)
-      Viewport.exists() ?? raise ERR_Terminate
+      Viewport.exists() ?! raise ERR_Terminate
 
       state.time ?= CurrentTime
       if state.delay > 0 then
@@ -299,7 +299,7 @@ vfx.zoomOut = function(Viewport:obj, Options:table)
    Viewport.acDraw()
 
    err, state.timerID = mSys.SubscribeTimer(1*vfx.fps, function(Subscriber, Elapsed, CurrentTime)
-      Viewport.exists() ?? raise ERR_Terminate
+      Viewport.exists() ?! raise ERR_Terminate
 
       state.time ?= CurrentTime
       if state.delay > 0 then
@@ -359,7 +359,7 @@ vfx.shake = function(Viewport:obj, Options:table)
    local err
    err, state.matrix = Viewport.mtNewMatrix(false)
    err, state.timerID = mSys.SubscribeTimer(1*vfx.fps, function(Subscriber, Elapsed, CurrentTime)
-      Viewport.exists() ?? raise ERR_Terminate
+      Viewport.exists() ?! raise ERR_Terminate
 
       state.time ?= CurrentTime
       if state.delay > 0 then
@@ -415,7 +415,7 @@ vfx.rotate = function(Viewport:obj, Options:table)
    local err
    err, state.matrix = Viewport.mtNewMatrix(false)
    err, state.timerID = mSys.SubscribeTimer(1*vfx.fps, function(Subscriber, Elapsed, CurrentTime)
-      Viewport.exists() ?? raise ERR_Terminate
+      Viewport.exists() ?! raise ERR_Terminate
 
       state.time ?= CurrentTime
       if state.delay > 0 then
@@ -680,7 +680,7 @@ end
 vfx.initTimer = function(State, Options)
    local err
    err, State.timerID = mSys.SubscribeTimer(1 * vfx.fps, function(Subscriber, Elapsed, CurrentTime)
-      State.viewport.exists() ?? raise ERR_Terminate
+      State.viewport.exists() ?! raise ERR_Terminate
 
       State.time ?= CurrentTime
       if State.delay > 0 then

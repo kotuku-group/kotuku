@@ -72,7 +72,7 @@ end
 
 function signatureReadCallName(Content:str, ParenPos:num):table
    name_info = signatureReadIdentifierBefore(Content, ParenPos - 1)
-   name_info ?? return nil
+   name_info ?! return nil
 
    object_name = nil
    separator = nil
@@ -208,7 +208,7 @@ end
 -- Wrap text as LSP markdown documentation when meaningful content is available.
 
 function signatureMarkup(Text:str):table
-   Text ?? return nil
+   Text ?! return nil
    if Text is '' then return nil end
    return {
       kind = 'markdown',
@@ -299,7 +299,7 @@ end
 -- Extract raw parameter labels from the first parenthesised parameter list in a prototype.
 
 function signatureParamsFromPrototype(Prototype:str):array
-   Prototype ?? return array<table>
+   Prototype ?! return array<table>
    open_pos = Prototype:find('(', 0, true)
    close_pos = Prototype:find(')', open_pos or 0, true)
    if not open_pos or not close_pos or close_pos <= open_pos then return array<table> end
@@ -389,7 +389,7 @@ end
 
 function resolveDocumentSignature(Doc:table, Context:table):table
    symbols = signatureGetDocumentSymbols(Doc)
-   symbols ?? return nil
+   symbols ?! return nil
 
    for symbol in values(symbols) do
       if signatureSymbolMatches(symbol, Context) then
@@ -406,7 +406,7 @@ end
 function signatureFromBuiltin(Context:table):table
    key = Context.object and (Context.object .. '.' .. Context.name) or Context.name
    builtin = glDefs?.builtins?[key]
-   builtin ?? return nil
+   builtin ?! return nil
 
    return signatureBuildInfo(builtin.prototype or key, builtin.comment, signatureParamsFromPrototype(builtin.prototype))
 end
@@ -512,9 +512,9 @@ function signaturePrototypeIsTiri(Prototype:str):bool
    if Prototype:find('=', 0, true) then return true end
 
    open_pos = Prototype:find('(', 0, true)
-   open_pos ?? return false
+   open_pos ?! return false
    close_pos = Prototype:find(')', open_pos, true)
-   close_pos ?? return false
+   close_pos ?! return false
 
    param_text = Prototype:sub(open_pos + 1, close_pos)
    if param_text:find(':', 0, true) then return true end
@@ -601,7 +601,7 @@ end
 -- Convert a generated API entry into LSP signature information.
 
 function signatureFromXmlEntry(DisplayName:str, Doc:table, HideReceiver:bool):table
-   Doc ?? return nil
+   Doc ?! return nil
 
    local params
    local label
@@ -636,7 +636,7 @@ function resolveApiSignature(Doc:table, Context:table):table
    type_map = signatureBuildTypeMap(Doc)
    class_name = type_map[Context.object] ?? signatureNormaliseClassName(Context.object)
    class_doc = class_name and glDocCache.classes and glDocCache.classes[class_name] or nil
-   class_doc ?? return nil
+   class_doc ?! return nil
 
    token = Context.name
    if token:startsWith('ac') then
@@ -673,16 +673,16 @@ Doc: Document record from glDocuments[URI]
 Position: Document position being queried
 ]])
 global function resolveSignatureHelp(Doc:table, Position:table):table
-   Doc ?? return nil
-   Position ?? return nil
+   Doc ?! return nil
+   Position ?! return nil
 
    context = signatureFindCallContext(Doc, Position)
-   context ?? return nil
+   context ?! return nil
 
    signature = resolveDocumentSignature(Doc, context)
    signature ?= signatureFromBuiltin(context)
    signature ?= resolveApiSignature(Doc, context)
-   signature ?? return nil
+   signature ?! return nil
 
    return {
       signatures = array<table> { signature },

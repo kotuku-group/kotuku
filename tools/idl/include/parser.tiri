@@ -67,7 +67,7 @@ global function parseAction(Class:table, Extract:str)
       action.results = { }
 
       for line in values(errors:split('\n')) do
-         line ?? break -- A double line-break forces a premature end to error processing.
+         line ?! break -- A double line-break forces a premature end to error processing.
 
          local ecode, emsg = rx_ecode_comment.extract(line)
          if ecode then
@@ -180,7 +180,7 @@ global function parseMethod(Class:table, Extract:str)
       method.results = { }
 
       for line in values(errors:split('\n')) do
-         line ?? break -- A double line-break forces a premature end to error processing.
+         line ?! break -- A double line-break forces a premature end to error processing.
 
          local ecode, emsg = rx_ecode_comment.extract(line)
          if ecode then
@@ -414,7 +414,7 @@ global function parseFunction(Extract:str)
       def.result = cType({ type="error", values={ }, isFunction=true }, "Function " .. name)
 
       for line in values(errors:split('\n')) do
-         line ?? break -- A double line-break forces a premature end to error processing.
+         line ?! break -- A double line-break forces a premature end to error processing.
 
          local ecode, emsg = rx_ecode_comment.extract(line)
          if ecode then

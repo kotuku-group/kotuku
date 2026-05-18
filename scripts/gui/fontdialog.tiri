@@ -166,7 +166,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
    end
 
    function highlightSize(Size)
-      Size ?? return
+      Size ?! return
       selectSize = Size
       for i=0,#lSizes-1 do
          if lSizes[i] <= Size then

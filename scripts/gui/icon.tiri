@@ -74,7 +74,7 @@ gui.icon = function(Options)
    function calcWords()
       lWords = array<table>
       lLines = array<string>
-      lText ?? return
+      lText ?! return
 
       lFontSize = choose lIconSize from
          < 26 -> 6
@@ -128,7 +128,7 @@ gui.icon = function(Options)
       -- Create a dark rounded box in the background of the text, this will make it easier to distinguish the text
       -- against a busy background or one of a similar colour.
 
-      lLines ?? return
+      lLines ?! return
 
       box_height = self.viewport.height - (lIconSize + MARGIN)
       y = lIconSize + MARGIN

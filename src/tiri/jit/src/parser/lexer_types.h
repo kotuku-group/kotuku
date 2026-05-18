@@ -61,6 +61,7 @@ struct TokenDefinition {
    TOKEN_DEF(with,         "with",     true) \
    TOKEN_DEF(case_arrow,   "->",       false) \
    TOKEN_DEF(if_empty,     "??",       false) \
+   TOKEN_DEF(guard,        "?!",       false) \
    TOKEN_DEF(safe_field,   "?.",       false) \
    TOKEN_DEF(safe_index,   "?[",       false) \
    TOKEN_DEF(safe_method,  "?:",       false) \

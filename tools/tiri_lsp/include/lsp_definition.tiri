@@ -45,7 +45,7 @@ function lspPercentEncode(Text:str):str
 end
 
 global function lspUriToPath(Uri:str):str
-   Uri ?? return nil
+   Uri ?! return nil
    path = Uri
 
    if path:startsWith('file://') then
@@ -63,7 +63,7 @@ global function lspUriToPath(Uri:str):str
 end
 
 global function lspPathToUri(Path:str):str
-   Path ?? return nil
+   Path ?! return nil
 
    local resolved
    err, resolved = mSys.ResolvePath(Path)
@@ -83,7 +83,7 @@ global function lspPathToUri(Path:str):str
 end
 
 function getParentPath(Path:str):str
-   Path ?? return ''
+   Path ?! return ''
    path = Path:replace('\\', '/')
    last_slash = -1
 
@@ -96,7 +96,7 @@ function getParentPath(Path:str):str
 end
 
 function resolveExistingPath(Path:str):str
-   Path ?? return nil
+   Path ?! return nil
    local resolved
    err, resolved = mSys.ResolvePath(Path)
    if err is ERR_Okay then return resolved end
@@ -129,7 +129,7 @@ end
 
 function makeLocation(Path:str, StartLine:num, StartChar:num, EndLine:num, EndChar:num):table
    uri = lspPathToUri(Path)
-   uri ?? return nil
+   uri ?! return nil
 
    return {
       uri = uri,
@@ -213,10 +213,10 @@ end
 
 function getLoaderStringAtPosition(Doc:table, Position:table):table
    string_info = getStringAtPosition(Doc, Position.line, Position.character)
-   string_info ?? return nil
+   string_info ?! return nil
 
    keyword = rx_def_loader_before.extract(string_info.before)
-   keyword ?? return nil
+   keyword ?! return nil
 
    string_info.keyword = keyword
    return string_info
@@ -224,7 +224,7 @@ end
 
 function getObjNewStringAtPosition(Doc:table, Position:table):table
    string_info = getStringAtPosition(Doc, Position.line, Position.character)
-   string_info ?? return nil
+   string_info ?! return nil
    if rx_def_obj_new_before.test(string_info.before) then return string_info end
    return nil
 end
@@ -248,7 +248,7 @@ function addSymbol(Symbols:array, Name:str, Kind:str, Line:num, StartChar:num, E
 end
 
 function addFunctionParameters(Symbols:array, Params:str, LineText:str, Line:num, SearchFrom:num)
-   Params ?? return
+   Params ?! return
    scan_from = SearchFrom or 0
 
    for start, stop, cap in rx_def_param.findAll(Params) do
@@ -360,7 +360,7 @@ function symbolNameMatches(SymbolName:str, TokenInfo:table):bool
 end
 
 function resolveDocumentSymbolDefinition(Doc:table, TokenInfo:table, Position:table):array
-   TokenInfo ?? return nil
+   TokenInfo ?! return nil
 
    symbols = extractDefinitionSymbols(Doc)
    best = nil
@@ -382,7 +382,7 @@ function resolveDocumentSymbolDefinition(Doc:table, TokenInfo:table, Position:ta
    end
 
    best ?= fallback_function
-   best ?? return nil
+   best ?! return nil
 
    locations = array<table>
    pushLocation(locations, makeDocLocation(Doc, best.line, best.startChar, best.line, best.endChar))
@@ -423,7 +423,7 @@ end
 
 function resolveLoaderDefinition(Doc:table, Position:table):array
    string_info = getLoaderStringAtPosition(Doc, Position)
-   string_info ?? return nil
+   string_info ?! return nil
 
    locations = array<table>
 
@@ -488,7 +488,7 @@ end
 
 function resolveClassDefinition(ClassName:str):array
    class_name = normaliseClassName(ClassName)
-   class_name ?? return nil
+   class_name ?! return nil
 
    class_doc = glDocCache.classes[class_name]
    locations = array<table>
@@ -595,8 +595,8 @@ end
 -- Public Resolver
 
 global function resolveDefinition(Doc:table, Position:table):array
-   Doc ?? return nil
-   Position ?? return nil
+   Doc ?! return nil
+   Position ?! return nil
 
    loader_locations = resolveLoaderDefinition(Doc, Position)
    if loader_locations then return loader_locations end

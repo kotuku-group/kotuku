@@ -22,7 +22,7 @@ function iconTheme(Widget:table):str
 end
 
 function reportFeedback(self:table)
-   self.events.activate ?? return
+   self.events.activate ?! return
    text = self.text.string
    hash = string.hash(text)
    if hash != self.hash then

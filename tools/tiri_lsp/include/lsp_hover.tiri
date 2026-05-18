@@ -305,7 +305,7 @@ end
 
 function resolveDocumentSymbolHover(TokenInfo:table, Doc:table):str
    symbols = hoverGetDocumentSymbols(Doc)
-   symbols ?? return nil
+   symbols ?! return nil
 
    for symbol in values(symbols) do
       if hoverSymbolMatches(symbol, TokenInfo) then

@@ -86,7 +86,7 @@ glDisplayAvailable = thunk():bool
 end
 
 global glSSLAvailable = thunk():bool
-   glNetworkAvailable ?? return false -- Opens network module
+   glNetworkAvailable ?! return false -- Opens network module
    return mNet.setSSL(nil, nil, nil) != ERR_NoSecureSockets
 end
 

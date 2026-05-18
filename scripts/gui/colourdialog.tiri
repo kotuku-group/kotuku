@@ -35,7 +35,7 @@ local glRainbowBitmap
 ----------------------------------------------------------------------------------------------------------------------
 
 function saveColours(self)
-   self._paletteChanged ?? return
+   self._paletteChanged ?! return
 
    svgColours = array<string> {}
    for col in values(self._userColours) do
@@ -56,7 +56,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 function updateRGBInput(self, RGB:table)
-   RGB ?? return
+   RGB ?! return
    self._rgb = RGB
    self.vecChosenColour?.fill = tostring(self._rgb)
    self.inputRGB:setText(tostring(self._rgb))
@@ -148,7 +148,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 function buildLayout(self, Options)
-   self.scene ?? return
+   self.scene ?! return
 
    self._links = array<table>
 
@@ -423,7 +423,7 @@ end
 -- Locate the picker within the rainbow palette, if active
 
 function arrangePicker(self)
-   self.vecPicker ?? return
+   self.vecPicker ?! return
 
    if self._picker then
       val = (self._picker.y * 255) / (getRainbowBitmap().height * 0.75)

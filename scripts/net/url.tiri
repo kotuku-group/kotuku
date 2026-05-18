@@ -53,7 +53,7 @@ rxPathSegment    <const> = <{ regex.new('([^\\/]+)') }>
 @result Encoded string
 ]])
 url.encode = function(String:str, ExtraChars:str):str
-   String ?? return ''
+   String ?! return ''
 
    chars_to_encode = RESERVED_CHARS.general .. RESERVED_CHARS.query
    if ExtraChars then chars_to_encode ..= ExtraChars end
@@ -81,7 +81,7 @@ end
 @result Encoded string with spaces represented as plus signs
 ]])
 url.encodePlus = function(String:str, ExtraChars:str):str
-   String ?? return ''
+   String ?! return ''
 
    encoded = url.encode(String, ExtraChars)
    if encoded then
@@ -99,7 +99,7 @@ end
 @result Decoded string
 ]])
 url.decode = function(String:str):str
-   String ?? return ''
+   String ?! return ''
 
    result = ''
    last_stop = 0
@@ -122,7 +122,7 @@ end
 @result Decoded string
 ]])
 url.decodePlus = function(String:str):str
-   String ?? return ''
+   String ?! return ''
    decoded = String:replace('+', ' ')
    return url.decode(decoded)
 end
@@ -135,7 +135,7 @@ end
 @result Encoded path component
 ]])
 url.encodeComponent = function(String:str):str
-   String ?? return ''
+   String ?! return ''
    return url.encode(String, RESERVED_CHARS.path)
 end
 
@@ -184,7 +184,7 @@ end
 ]])
 url.parseQueryList = function(Query:str):array
    params = array<table>
-   Query ?? return params
+   Query ?! return params
 
    for start, stop, cap in rxQueryPair.findAll(Query) do
       local pair = cap[0]
@@ -211,7 +211,7 @@ end
 @result URL-encoded query string
 ]])
 url.buildQuery = function(Params:any):str
-   Params ?? return ''
+   Params ?! return ''
 
    parts = array<string>
 
@@ -259,7 +259,7 @@ end
 @result Error message when parsing cannot start
 ]])
 url.parse = function(URL:str):<table, str>
-   URL ?? return nil, 'Empty URL string'
+   URL ?! return nil, 'Empty URL string'
 
    components = {
       scheme = nil,
@@ -356,7 +356,7 @@ end
 @result URL string
 ]])
 url.unparse = function(Components:table):str
-   Components ?? return ''
+   Components ?! return ''
 
    parts = array<string>
 
@@ -393,7 +393,7 @@ end
 ]])
 url.split = function(URL:str):table
    components = url.parse(URL)
-   components ?? return
+   components ?! return
 
    return {
       scheme   = components.scheme,
@@ -412,7 +412,7 @@ end
 @result URL string
 ]])
 url.unsplit = function(Components:table):str
-   Components ?? return ''
+   Components ?! return ''
    parts = array<string>
    if Components.scheme then parts:push(Components.scheme .. ':') end
    if Components.netloc then parts:push('//' .. Components.netloc) end
@@ -430,7 +430,7 @@ end
 @result Network location string, or nil when no host is present
 ]])
 url._buildNetloc = function(Components:table):str
-   Components.host ?? return nil
+   Components.host ?! return nil
    netloc = array<string>
    if Components.auth then netloc:push(Components.auth .. '@') end
    if Components.host:find(':') then
@@ -451,7 +451,7 @@ end
 @result Removed fragment, or nil when no fragment exists
 ]])
 url.defrag = function(URL:str):<str, str>
-   URL ?? return nil, nil
+   URL ?! return nil, nil
 
    frag_pos = URL:find('#')
    if frag_pos then
@@ -532,7 +532,7 @@ end
 @result Normalised path
 ]])
 url.normalize = function(Path:str):str
-   Path ?? return ''
+   Path ?! return ''
 
    segments = array<string>
    isAbsolute = Path:sub(0, 1) is '/'
@@ -569,7 +569,7 @@ end
 @result True if the URL is absolute
 ]])
 url.isAbsolute = function(URL:str):bool
-   URL ?? return false
+   URL ?! return false
    return rxAbsoluteUrl.test(URL)
 end
 
@@ -592,7 +592,7 @@ end
 @result Scheme name, or nil when no scheme is present
 ]])
 url.getScheme = function(URL:str):str
-   URL ?? return nil
+   URL ?! return nil
    return rxSchemeExtract.extract(URL)
 end
 

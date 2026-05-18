@@ -349,7 +349,7 @@ end
    not_true = false
    returned_early = true
    function test()
-      not_true ?? return
+      not_true ?! return
       returned_early = false
    end
 
@@ -362,9 +362,9 @@ end
 
 -- Test return with value
 @Test function ShortHandReturnValue()
-   function getValue(input)
-      input ?? return "default"
-      return input
+   function getValue(Input)
+      Input ?! return "default"
+      return Input
    end
 
    assert(getValue(nil) is "default", "nil should return default")
@@ -381,7 +381,7 @@ end
    values = { 1, 2, 0, 4, 5 }  -- 0 at index 2 should break
 
    for i = 0, #values - 1 do
-      values[i] ?? break
+      values[i] ?! break
       iterations += 1
    end
 
@@ -394,7 +394,7 @@ end
    values = { 1, 0, 2, "", 3 }  -- Skip falsey values
 
    for i = 0, #values - 1 do
-      values[i] ?? continue
+      values[i] ?! continue
       sum += values[i]
    end
 
@@ -409,7 +409,7 @@ end
 
    executed_body = false
    function test()
-      getCondition() ?? return
+      getCondition() ?! return
       executed_body = true
    end
 
@@ -421,12 +421,62 @@ end
 @Test function ShortHandTruthySkipsBody()
    body_executed = false
    function test()
-      "truthy" ?? return
+      "truthy" ?! return
       body_executed = true
    end
 
    test()
    assert(body_executed is true, "Body should execute when condition is truthy")
+end
+
+function expect_old_guard_parse_error(Source:str, Label:str)
+   try
+      exec(Source)
+   except e
+      message = tostring(e.message ?? e)
+      assert(message:find("guard shorthand uses") != nil and message:find("?!") != nil,
+         Label .. " should report the ?! guard replacement, got: " .. message)
+      return
+   end
+
+   error(Label .. " should fail to parse")
+end
+
+@Test function OldGuardSyntaxRejected()
+   expect_old_guard_parse_error([[
+      function guardReturn(Value:any)
+         Value ?? return "default"
+         return Value
+      end
+   ]], "?? return")
+
+   expect_old_guard_parse_error([[
+      function guardBreak(Value:any)
+         for i = 0, 1 do
+            Value ?? break
+         end
+      end
+   ]], "?? break")
+
+   expect_old_guard_parse_error([[
+      function guardContinue(Value:any)
+         for i = 0, 1 do
+            Value ?? continue
+         end
+      end
+   ]], "?? continue")
+
+   expect_old_guard_parse_error([[
+      function guardRaise(Value:any)
+         Value ?? raise ERR_Failed
+      end
+   ]], "?? raise")
+
+   expect_old_guard_parse_error([[
+      function guardCheck(Value:any)
+         Value ?? check ERR_Failed
+      end
+   ]], "?? check")
 end
 
 @Test function MultiValues()

@@ -782,7 +782,7 @@ end
 
 function splitHttpHeaders(Data:str):<str, str>
    header_end = Data:find('\r\n\r\n')
-   header_end ?? return nil, Data
+   header_end ?! return nil, Data
 
    return Data:substr(0, header_end + 4), Data:substr(header_end + 4)
 end
@@ -878,7 +878,7 @@ function buildHttpResponseHeaders(Response:table):str
 end
 
 function writeUpstream(State:table, Data:str):bool
-   Data ?? return true
+   Data ?! return true
 
    if not State.upstreamSocket then
       State.pendingClientData ..= Data
@@ -896,7 +896,7 @@ function writeUpstream(State:table, Data:str):bool
 end
 
 function writeTunnelClientData(self, State:table, Data:str):bool
-   Data ?? return true
+   Data ?! return true
 
    if not State.upstreamSocket or State.phase != 'tunnelling' then
       State.pendingClientData ..= Data

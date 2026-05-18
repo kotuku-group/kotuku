@@ -15,7 +15,7 @@ io.search = function(Path:str, Options:table)
    end
 
    function contentMatch(Path:str):bool
-      lOptions.contentFilter ?? return true
+      lOptions.contentFilter ?! return true
 
       try
          fl = obj.new('file', { path=Path, flags=FL_READ } )

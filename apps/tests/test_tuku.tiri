@@ -8,6 +8,8 @@ glOutputFile <const> = 'temp:tuku-test-output.txt'
 glBodyFile <const> = 'temp:tuku-test-body.txt'
 glUploadFile <const> = 'temp:tuku-test-upload.txt'
 
+glTask = mSys.CurrentTask()
+
 function resolveFirstPath(Candidates:array):str
    for candidate in values(Candidates) do
       err, resolved = mSys.ResolvePath(candidate)
@@ -19,6 +21,7 @@ end
 
 @BeforeAll function init(State)
    global glOrigoPath = resolveFirstPath(array<string> {
+      glTask.processPath .. 'origo',
       'sdk:build/agents-install/origo',
       'sdk:build/agents-install/origo.exe',
       'origo',

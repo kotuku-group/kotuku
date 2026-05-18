@@ -42,7 +42,7 @@ rx_internal_status = <{ regex.new([[^[Ii]nternal]]) }>
 ----------------------------------------------------------------------------------------------------------------------
 
 global function ignoreAction(actionID:num)
-   actionID ?? return
+   actionID ?! return
    return glIgnoreList[actionID]
 end
 

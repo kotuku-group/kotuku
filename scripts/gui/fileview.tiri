@@ -867,8 +867,8 @@ gui.fileview = function(Options)
    -- a mass execution operation.
 
    function openFiles(Items:array, Mode:str)
-      Items ?? return
-      self.path ?? return
+      Items ?! return
+      self.path ?! return
 
       for item in values(Items) do
          err, class_id, command = mSys.IdentifyFile(self.path .. item.name.value, Mode, 0)
@@ -1036,7 +1036,7 @@ gui.fileview = function(Options)
    end
 
    self.cutFiles = function()
-      self.path ?? return
+      self.path ?! return
 
       clipboard = obj.new('clipboard')
       clipboard.mtRemove(CLIPTYPE_FILE)
@@ -1046,7 +1046,7 @@ gui.fileview = function(Options)
    end
 
    self.copyFiles = function() -- Copy all user-selected files and directories from the view to the clipboard
-      self.path ?? return
+      self.path ?! return
 
       clipboard = obj.new('clipboard')
       clipboard.mtRemove(CLIPTYPE_FILE)
@@ -1075,7 +1075,7 @@ gui.fileview = function(Options)
    -- Jumps to the parent folder of a FileView's current path.
 
    self.parentFolder = function()
-      self.path ?? return
+      self.path ?! return
       if self.limitPath and self.limitPath:lower() is self.path:lower() then return end
 
       reduced_path, count = rxParentFolder.extract(self.path:substr(0, -2))
@@ -1260,10 +1260,10 @@ gui.fileview = function(Options)
    -- Prompt the user to rename the most recently selected item in the file view.
 
    self.renameFile = function()
-      self.path ?? return
+      self.path ?! return
 
       sel = self.selection()
-      sel ?? return
+      sel ?! return
 
       self.dlgRename = gui.dialog.message({
          title     = 'Rename',

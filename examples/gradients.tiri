@@ -195,7 +195,7 @@ function buildScene()
                allowNew    = true,
                filterList  = { { name='PNG Images', ext='png' } },
                feedback    = function(Dialog, Path, Files)
-                  Files ?? return
+                  Files ?! return
 
                   target_file = Path .. Files[0].filename
 

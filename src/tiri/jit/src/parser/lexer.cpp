@@ -1242,6 +1242,7 @@ static LexToken lex_scan(LexState *State, TValue *tv)
             else if (State->c IS '[') { lex_next(State); return TK_safe_index; }
             else if (State->c IS ':') { lex_next(State); return TK_safe_method; }
             else if (State->c IS '=') { lex_next(State); return TK_cif_nil; }  // ?=
+            else if (State->c IS '!') { lex_next(State); return TK_guard; }    // ?!
             else if (State->c IS '?') {
                lex_next(State);
                if (State->c IS '=') { lex_next(State); return TK_cif_empty; }  // ??=

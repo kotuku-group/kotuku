@@ -74,15 +74,23 @@ end
    assert(result[0] is 30, "first element should be 30")
    assert(result[1] is 40, "second element should be 40")
    assert(result[2] is 50, "third element should be 50")
+
+   result = t[{-3..-1}]  -- Last 3 elements, excluding the resolved stop: {30, 40}
+   assert(#result is 2, "exclusive negative slice should have 2 elements, got " .. #result)
+   assert(result[0] is 30, "exclusive first element should be 30")
+   assert(result[1] is 40, "exclusive second element should be 40")
 end
 
 @Test function TableSliceNegativeStart()
    t = {10, 20, 30, 40, 50}
-   -- Negative indices force inclusive mode per design doc
-   result = t[{-2..-1}]  -- {40, 50} (inclusive due to negative indices)
-   assert(#result is 2, "negative indices slice should have 2 elements, got " .. #result)
+   result = t[{-2...-1}]  -- {40, 50}
+   assert(#result is 2, "inclusive negative indices slice should have 2 elements, got " .. #result)
    assert(result[0] is 40, "first element should be 40")
    assert(result[1] is 50, "second element should be 50")
+
+   result = t[{-2..-1}]  -- {40}
+   assert(#result is 1, "exclusive negative indices slice should have 1 element, got " .. #result)
+   assert(result[0] is 40, "exclusive first element should be 40")
 end
 
 @Test function TableSliceNegativeEnd()
@@ -91,6 +99,11 @@ end
    assert(#result is 4, "slice to negative end should have 4 elements, got " .. #result)
    assert(result[0] is 10)
    assert(result[3] is 40)
+
+   result = t[{0..-2}]  -- From start to second-to-last (exclusive)
+   assert(#result is 3, "exclusive slice to negative end should have 3 elements, got " .. #result)
+   assert(result[0] is 10)
+   assert(result[2] is 30)
 end
 
 @Test function TableSliceMixedIndices()

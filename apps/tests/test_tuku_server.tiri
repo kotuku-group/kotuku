@@ -109,11 +109,11 @@ function sendHttpRequest(Host:str, Port:num, Request:str):str
 
    function isCompleteResponse(Response:str):bool
       local header_end = Response:find('\r\n\r\n')
-      header_end ?? return false
+      header_end ?! return false
 
       local headers = Response:substr(0, header_end + 2)
       local length_text = rxContentLength.extract(headers)
-      length_text ?? return false
+      length_text ?! return false
 
       local body = Response:substr(header_end + 4)
       return #body >= tonumber(length_text)

@@ -1735,17 +1735,17 @@ function load_user_config_defaults(Parser:table, RawResult:table):table
    Parser._user_config_defaults = nil
    Parser._user_config_loaded = nil
 
-   Parser.userConfig ?? return
+   Parser.userConfig ?! return
 
    config_param = Parser._lookup.config
-   config_param ?? return
+   config_param ?! return
 
    raw_path = RawResult.config
-   raw_path ?? return
+   raw_path ?! return
 
    config_path = convert_value(Parser, config_param, raw_path)
    config_path = tostring(config_path)
-   config_path ?? return
+   config_path ?! return
 
    err, location = mSys.AnalysePath(config_path)
    if err != ERR_Okay then return end

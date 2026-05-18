@@ -87,10 +87,10 @@ function extractXMLElement(Content:str, TagName:str, StartPos):table
    closeTag = f'</{TagName}>'
 
    tagStart = Content:find(openTag, StartPos)
-   tagStart ?? return
+   tagStart ?! return
 
    tagEnd = Content:find(closeTag, tagStart)
-   tagEnd ?? return
+   tagEnd ?! return
 
    content = Content:sub(tagStart + #openTag, tagEnd - 1)
    content = content?:unescapeXML()
@@ -121,7 +121,7 @@ end
 function extractSources(Content:str):array
    sources = array<table>
    sourceMatch = extractXMLElement(Content, 'source', 0)
-   sourceMatch ?? return sources
+   sourceMatch ?! return sources
 
    for start, stop, cap in rx_source_file_path.findAll(sourceMatch.content) do
       sources:push({
@@ -143,7 +143,7 @@ end
 function extractInputParams(Content:str):array
    params = array<table>
    inputMatch = extractXMLElement(Content, 'input', 0)
-   inputMatch ?? return params
+   inputMatch ?! return params
 
    for start, stop, cap in rx_input_param.findAll(inputMatch.content) do
       attrs = cap[0] or ''
@@ -162,16 +162,16 @@ end
 function processModuleXML(FilePath:str, DocPath:str):<str,table>
    -- Process a module XML file and extract function information
    content = io.readAll(FilePath)
-   content ?? return
+   content ?! return
 
    relativePath = FilePath:replace(DocPath, '')
 
    -- Extract module info
    infoMatch = extractXMLElement(content, 'info', 0)
-   infoMatch ?? return
+   infoMatch ?! return
 
    modName = extractChildText(infoMatch.content, 'name')
-   modName ?? return
+   modName ?! return
 
    modEntry = {
       file = relativePath,
@@ -186,7 +186,7 @@ function processModuleXML(FilePath:str, DocPath:str):<str,table>
    pos = 0
    while true do
       funcMatch = extractXMLElement(content, 'function', pos)
-      funcMatch ?? break
+      funcMatch ?! break
 
       funcName = extractChildText(funcMatch.content, 'name')
       if funcName then
@@ -211,16 +211,16 @@ end
 
 function processClassXML(FilePath, DocPath)
    content = io.readAll(FilePath)
-   content ?? return
+   content ?! return
 
    relativePath = FilePath:replace(DocPath, '')
 
    -- Extract class info
    infoMatch = extractXMLElement(content, 'info', 0)
-   infoMatch ?? return
+   infoMatch ?! return
 
    className = extractChildText(infoMatch.content, 'name')
-   className ?? return
+   className ?! return
 
    classEntry = {
       file      = relativePath,
@@ -238,7 +238,7 @@ function processClassXML(FilePath, DocPath)
    pos = 0
    while true do
       methodMatch = extractXMLElement(content, 'method', pos)
-      methodMatch ?? break
+      methodMatch ?! break
 
       methodName = extractChildText(methodMatch.content, 'name')
       if methodName then
@@ -259,7 +259,7 @@ function processClassXML(FilePath, DocPath)
    pos = 0
    while true do
       actionMatch = extractXMLElement(content, 'action', pos)
-      actionMatch ?? break
+      actionMatch ?! break
 
       actionName = extractChildText(actionMatch.content, 'name')
       if actionName then
@@ -280,7 +280,7 @@ function processClassXML(FilePath, DocPath)
    pos = 0
    while true do
       fieldMatch = extractXMLElement(content, 'field', pos)
-      fieldMatch ?? break
+      fieldMatch ?! break
 
       fieldName = extractChildText(fieldMatch.content, 'name')
       if fieldName then
