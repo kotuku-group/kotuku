@@ -875,6 +875,16 @@ enum class OPF : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(OPF)
 
+// Console types
+
+enum class CONTYPE : uint8_t {
+   NIL = 0,
+   NONE = 0,
+   TERMINAL = 1,
+   HANDLE = 2,
+   MANUAL = 3,
+};
+
 enum class TOI : int {
    NIL = 0,
    LOCAL_CACHE = 0,

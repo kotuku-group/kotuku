@@ -301,12 +301,20 @@ static int8_t is_console(HANDLE h)
 // If the program is launched from a console, attach to it.  Otherwise create a new console window and redirect output
 // to it (e.g. if launched from a desktop icon).
 
-extern "C" bool activate_console(int8_t AllowOpenConsole)
+enum class CONTYPE : uint8_t;
+
+constexpr CONTYPE CONTYPE_NIL      = CONTYPE(0); // No console available
+constexpr CONTYPE CONTYPE_TERMINAL = CONTYPE(1); // Launched from a terminal
+constexpr CONTYPE CONTYPE_HANDLE   = CONTYPE(2); // Redirected to a file handle
+constexpr CONTYPE CONTYPE_MANUAL   = CONTYPE(3); // Console created manually
+
+extern "C" CONTYPE activate_console(int8_t AllowOpenConsole)
 {
    static bool activated = false;
-   static bool console_available = false;
+   static CONTYPE console_type = CONTYPE_NIL;
 
    if (not activated) {
+      activated = true;
       HANDLE current_out = GetStdHandle(STD_OUTPUT_HANDLE);
       HANDLE current_err = GetStdHandle(STD_ERROR_HANDLE);
       const bool out_valid = (current_out) and (current_out != INVALID_HANDLE_VALUE);
@@ -321,13 +329,13 @@ extern "C" bool activate_console(int8_t AllowOpenConsole)
             SetConsoleCP(CP_UTF8);
          }
 
-         activated = true;
-         console_available = has_console;
-         return console_available;
+         console_type = CONTYPE_HANDLE;
+         return CONTYPE_HANDLE;
       }
 
       if (has_console) {
          // Already attached to a console; keep the inherited handles and update the code page below.
+         console_type = CONTYPE_TERMINAL;
       }
       else {
          char value[8];
@@ -339,26 +347,35 @@ extern "C" bool activate_console(int8_t AllowOpenConsole)
 
             if (((stdout_fd >= 0) and (not _isatty(stdout_fd))) or ((stderr_fd >= 0) and (not _isatty(stderr_fd))) or
                 (out_valid and not out_console) or (err_valid and not err_console)) {
-               activated = true;
-               console_available = false;
-               return console_available;
+               return CONTYPE_NIL;
             }
 
-            AttachConsole(ATTACH_PARENT_PROCESS);
+            if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+               const HANDLE attached_out = GetStdHandle(STD_OUTPUT_HANDLE);
+               const HANDLE attached_err = GetStdHandle(STD_ERROR_HANDLE);
+               const bool attached_out_valid = (attached_out) and (attached_out != INVALID_HANDLE_VALUE);
+               const bool attached_err_valid = (attached_err) and (attached_err != INVALID_HANDLE_VALUE);
+               const bool attached_out_console = attached_out_valid and is_console(attached_out);
+               const bool attached_err_console = attached_err_valid and is_console(attached_err);
 
-            // Double-check if we're attached to the console with is_console() because the parent process may have
-            // redirected the std* descriptors to a file for instance.  If we freopen() blindly then we otherwise
-            // revert output back to the console.
+               // Double-check if we're attached to the console with is_console() because the parent process may have
+               // redirected the std* descriptors to a file for instance.  If we freopen() blindly then we otherwise
+               // revert output back to the console.
 
-            if (is_console(current_out)) freopen("CON", "w", stdout);  // Redirect stdout and stderr descriptors to the attached console.
-            if (is_console(current_err)) freopen("CON", "w", stderr);
+               if (attached_out_console) freopen("CON", "w", stdout);
+               if (attached_err_console) freopen("CON", "w", stderr);
+               if (attached_out_console or attached_err_console) console_type = CONTYPE_TERMINAL;
+               else return CONTYPE_NIL;
+            }
+            else return CONTYPE_NIL;
          }
          else if (AllowOpenConsole) { // Assume that executable was launched from desktop without a console
             AllocConsole();
             freopen("CON", "w", stdout);  // Redirect stdout and stderr descriptors to the attached console.
             freopen("CON", "w", stderr);
+            console_type = CONTYPE_MANUAL;
          }
-         else return false;
+         else return CONTYPE_NIL;
       }
 
       // Set console mode to handle UTF-8 properly
@@ -382,11 +399,9 @@ extern "C" bool activate_console(int8_t AllowOpenConsole)
          SetConsoleTitle(last_slash);
       }
 
-      activated = true;
-      console_available = true;
-      return console_available;
+      return console_type;
    }
-   else return console_available;
+   else return console_type;
 }
 
 //********************************************************************************************************************

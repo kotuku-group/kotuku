@@ -497,8 +497,10 @@ const SystemState * GetSystemState(void)
       initialised = true;
 
       state.ConsoleFD = glConsoleFD;
-      state.HasConsole = glConsoleEnabled;
-      #ifdef __unix__
+      state.HasConsole = not (glConsoleType IS CONTYPE::NONE);
+      #ifdef __ANDROID__
+         state.Platform = "Android";
+      #elif __unix__
          state.Platform = "Linux";
       #elif _WIN32
          state.Platform = "Windows";

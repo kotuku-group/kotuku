@@ -135,6 +135,7 @@ enum class PERMIT : uint32_t;
 enum class CCF    : uint32_t;
 enum class MEM    : uint32_t;
 enum class ALF    : uint16_t;
+enum class CONTYPE : uint8_t;
 enum class EVG    : int;
 enum class AC     : int;
 enum class MSGID  : int;
@@ -161,6 +162,7 @@ struct rkWatchPath {
 
 #include <kotuku/main.h>
 #include <kotuku/strings.hpp>
+#include <kotuku/system/internals.h>
 
 using namespace kt;
 
@@ -270,34 +272,6 @@ struct CaseInsensitiveEqual {
 };
 
 //********************************************************************************************************************
-// Private memory management structures.
-
-class PrivateAddress {
-public:
-   union {
-      APTR      Address;
-      OBJECTPTR Object;
-   };
-   MEMORYID MemoryID;   // Unique identifier
-   OBJECTID OwnerID;    // The object that allocated this block.
-   uint32_t Size;       // 4GB max (user-requested size)
-   THREADID ThreadLockID = THREADID(0);
-   MEM      Flags;
-   int16_t  AccessCount = 0; // Total number of locks
-
-   PrivateAddress(APTR aAddress, MEMORYID aMemoryID, OBJECTID aOwnerID, uint32_t aSize, MEM aFlags) :
-      Address(aAddress), MemoryID(aMemoryID), OwnerID(aOwnerID), Size(aSize), Flags(aFlags) { };
-
-   void clear() {
-      Address  = 0;
-      MemoryID = 0;
-      OwnerID  = 0;
-      Flags    = MEM::NIL;
-      ThreadLockID = THREADID(0);
-   }
-};
-
-//********************************************************************************************************************
 
 struct ActionSubscription {
    OBJECTPTR Subscriber; // The object that initiated the subscription
@@ -327,7 +301,7 @@ struct virtual_drive {
    ERR (*Obsolete)(void);
    ERR (*TestPath)(std::string &, RSF, LOC *);
    ERR (*WatchPath)(class extFile *);
-   void  (*IgnoreFile)(class extFile *);
+   void (*IgnoreFile)(class extFile *);
    ERR (*GetInfo)(std::string_view, FileInfo &);
    ERR (*GetDeviceInfo)(std::string_view, objStorageDevice *);
    ERR (*IdentifyFile)(std::string_view, CLASSID *, CLASSID *);
@@ -379,39 +353,6 @@ extern ankerl::unordered_dense::map<uint32_t, virtual_drive> glVirtual;
 enum {
    RT_OBJECT,
    RT_SLEEP // Thread is sleeping in ProcessMessages / sleep_task
-};
-
-//********************************************************************************************************************
-// This structure is used for internally timed broadcasting.
-
-class CoreTimer {
-public:
-   int64_t   NextCall;       // Cycle when PreciseTime() reaches this value (us)
-   int64_t   LastCall;       // PreciseTime() recorded at the last call (us)
-   int64_t   Interval;       // The amount of microseconds to wait at each interval
-   OBJECTPTR Subscriber;     // The object that is subscribed (pointer, if private)
-   OBJECTID  SubscriberID;   // The object that is subscribed
-   FUNCTION  Routine;        // Routine to call if not using AC::Timer - ERR Routine(OBJECTID, int, int);
-   uint8_t   Cycle;
-   bool      Locked;
-};
-
-//********************************************************************************************************************
-// Crash index numbers.  Please note that the order of this index must match the order in which resources are freed in
-// the shutdown process.
-
-enum {
-   CP_START=1,
-   CP_PRINT_CONTEXT,
-   CP_PRINT_ACTION,
-   CP_REMOVE_PRIVATE_LOCKS,
-   CP_BROADCAST,
-   CP_REMOVE_TASK,
-   CP_REMOVE_TABLES,
-   CP_FREE_ACTION_MANAGEMENT,
-   CP_FREE_COREBASE,
-   CP_FREE_PRIVATE_MEMORY,
-   CP_FINISHED
 };
 
 class extMetaClass : public objMetaClass {
@@ -688,23 +629,13 @@ struct extClassRecord : public ClassRecord {
 };
 
 //********************************************************************************************************************
-// These values are set against glProgramStage to indicate the current state of the program (either starting up, active
-// or shutting down).
-
-enum {
-   STAGE_STARTUP=1,
-   STAGE_ACTIVE,
-   STAGE_SHUTDOWN
-};
-
-//********************************************************************************************************************
 
 struct ModuleHeader {
    int Total;          // Total number of registered modules
 };
 
 struct ModuleItem {
-   uint32_t Hash;       // Hash of the module file name
+   uint32_t Hash;   // Hash of the module file name
    int  Size;       // Size of the item structure, all accompanying strings and byte alignment
    // Followed by path
 };
@@ -736,7 +667,7 @@ extern std::string glRootPath;
 extern std::string glDisplayDriver;
 extern bool glShowIO, glShowPrivate, glEnableCrashHandler;
 extern bool glJanitorActive;
-extern bool glConsoleEnabled;
+extern CONTYPE glConsoleType;
 extern bool glLogThreads;
 extern int16_t glLogLevel, glMaxDepth;
 extern TSTATE glTaskState;
@@ -1066,17 +997,17 @@ class RootModule : public Object {
    #endif
    std::string Name;       // Name of the module (as declared by the header)
    struct ModHeader *Table;
-   int16_t Version;
-   int16_t OpenCount;          // Amount of programs with this module open
-   float  ModVersion;          // Version of this module
-   MHF    Flags;
-   bool   NoUnload;
-   bool   DLL;                 // TRUE if the module is a Windows DLL
-   ModInit Init;
-   ModClose Close;
-   ModOpen Open;
+   int16_t    Version;
+   int16_t    OpenCount;          // Amount of programs with this module open
+   float      ModVersion;          // Version of this module
+   MHF        Flags;
+   bool       NoUnload;
+   bool       DLL;                 // TRUE if the module is a Windows DLL
+   ModInit    Init;
+   ModClose   Close;
+   ModOpen    Open;
    ModExpunge Expunge;
-   ModTest Test;
+   ModTest    Test;
    struct ActionEntry prvActions[int(AC::END)]; // Action routines to be intercepted by the program
    std::string LibraryName; // Name of the library loaded from disk
 
@@ -1184,7 +1115,7 @@ extern "C" ERR validate_process(int);
 #endif
 
 #ifdef _WIN32
-extern "C" bool activate_console(int8_t);
+extern "C" CONTYPE activate_console(int8_t);
 extern "C" void free_threadlock(void);
 extern "C" int winCheckProcessExists(int);
 extern "C" int winCloseHandle(WINHANDLE);

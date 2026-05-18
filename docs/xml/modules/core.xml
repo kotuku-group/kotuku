@@ -2175,6 +2175,13 @@ static ResourceManager glNodeManager = {
       <const name="START">Gamepad start button.</const>
     </constants>
 
+    <constants lookup="CONTYPE" comment="Console types">
+      <const name="HANDLE">Redirected to a handle</const>
+      <const name="MANUAL">Console created manually</const>
+      <const name="NONE">No console available</const>
+      <const name="TERMINAL">Launched from a terminal</const>
+    </constants>
+
     <constants lookup="DATA" comment="Data codes">
       <const name="AUDIO">Audio file data, recognised by the Sound class</const>
       <const name="CONTENT">Document content (between XML tags) - sent by document objects only</const>

@@ -184,6 +184,12 @@ constexpr bool defined(T flags, T test_flag) noexcept {
     "ROOT_PATH",
     "SCAN_MODULES")
 
+  enums("CONTYPE", { type="uchar", start=0, comment="Console types" },
+    "NONE: No console available",
+    "TERMINAL: Launched from a terminal",
+    "HANDLE: Redirected to a handle",
+    "MANUAL: Console created manually")
+
   enums("TOI", { type="int" },
     "LOCAL_CACHE",        -- For Android.  Defines the path of the local cache for assignment to localcache:
     "LOCAL_STORAGE",      -- For Android.  Defines the path of the local storage for assignment to localstorage:

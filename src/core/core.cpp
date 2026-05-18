@@ -493,7 +493,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
    AdjustLogLevel(1); // Temporarily limit log output when opening the Core because it's not that interesting
 
 #ifdef _WIN32
-   glConsoleEnabled = activate_console((glLogLevel > 0) and (auto_console));
+   glConsoleType = activate_console((glLogLevel > 0) and (auto_console));
 
    // An exception handler deals with crashes unless the program is being debugged.
 
@@ -502,7 +502,16 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
    }
    else log.msg("A debugger is active.");
 #else
-   glConsoleEnabled = isatty(STDOUT_FILENO) or isatty(STDERR_FILENO);
+   struct stat stdout_info;
+   struct stat stderr_info;
+   const bool stdout_valid = (fstat(STDOUT_FILENO, &stdout_info) != -1);
+   const bool stderr_valid = (fstat(STDERR_FILENO, &stderr_info) != -1);
+
+   if ((stdout_valid and isatty(STDOUT_FILENO)) or (stderr_valid and isatty(STDERR_FILENO))) {
+      glConsoleType = CONTYPE::TERMINAL;
+   }
+   else if (stdout_valid or stderr_valid) glConsoleType = CONTYPE::HANDLE;
+   else glConsoleType = CONTYPE::NONE;
 #endif
 
    // Sockets are used on Unix systems to tell our processes when new messages are available for them to read.
@@ -556,7 +565,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
       RegisterFD(glChildSignalFD[0], RFD::READ, &process_child_signals, nullptr);
    #endif
 
-   log.msg("Process: %d, Sync: %s, Root: %s", glProcessID, (glSync) ? "Y" : "N", glRootPath.c_str());
+   log.msg("Process: %d, Sync: %s, Root: %s, Console Type: %d", glProcessID, (glSync) ? "Y" : "N", glRootPath.c_str(), int(glConsoleType));
 #ifdef __unix__
    log.msg("UID: %d (%d), EUID: %d (%d); GID: %d (%d), EGID: %d (%d)", getuid(), glUID, geteuid(), glEUID, getgid(), glGID, getegid(), glEGID);
 #endif
