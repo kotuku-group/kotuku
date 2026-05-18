@@ -463,14 +463,18 @@ end
 end
 
 @Test function StringSliceNegativeIndices()
-   -- Test negative indices (always inclusive per design doc)
+   -- Test negative indices with explicit inclusive/exclusive stop semantics
    s = "Hello, World!"
-   assert(s[{-6..-1}] is "World!", "s[{-6..-1}] should be 'World!', got '" .. s[{-6..-1}] .. "'")
-   assert(s[{-1..-1}] is "!", "s[{-1..-1}] should be '!', got '" .. s[{-1..-1}] .. "'")
+   assert(s[{-6...-1}] is "World!", "s[{-6...-1}] should be 'World!', got '" .. s[{-6...-1}] .. "'")
+   assert(s[{-6..-1}] is "World", "s[{-6..-1}] should be 'World', got '" .. s[{-6..-1}] .. "'")
+   assert(s[{-1...-1}] is "!", "s[{-1...-1}] should be '!', got '" .. s[{-1...-1}] .. "'")
+   assert(s[{-1..-1}] is "", "s[{-1..-1}] should be empty, got '" .. s[{-1..-1}] .. "'")
 
    s2 = "ABCDE"
-   assert(s2[{-3..-1}] is "CDE", "s2[{-3..-1}] should be 'CDE', got '" .. s2[{-3..-1}] .. "'")
-   assert(s2[{-5..-1}] is "ABCDE", "s2[{-5..-1}] should be 'ABCDE', got '" .. s2[{-5..-1}] .. "'")
+   assert(s2[{-3...-1}] is "CDE", "s2[{-3...-1}] should be 'CDE', got '" .. s2[{-3...-1}] .. "'")
+   assert(s2[{-3..-1}] is "CD", "s2[{-3..-1}] should be 'CD', got '" .. s2[{-3..-1}] .. "'")
+   assert(s2[{-5...-1}] is "ABCDE", "s2[{-5...-1}] should be 'ABCDE', got '" .. s2[{-5...-1}] .. "'")
+   assert(s2[{-5..-1}] is "ABCD", "s2[{-5..-1}] should be 'ABCD', got '" .. s2[{-5..-1}] .. "'")
 end
 
 @Test function StringSliceOutOfBounds()
@@ -505,6 +509,9 @@ end
 
    r2 = range(7, 12)
    assert(s[r2] is "World", "s[r2] with r2=range(7,12) should be 'World'")
+
+   negative_range = {-6..-1}
+   assert(s[negative_range] is "World", "s[negative_range] with {-6..-1} should be 'World'")
 end
 
 @Test function StringSliceBoundsClipping()
@@ -1151,6 +1158,9 @@ end
    s = "Hello, World!"
    result = range.slice(s, {-6...-1})
    assert(result is "World!", "negative range.slice on string should return 'World!', got: " .. result)
+
+   result = range.slice(s, {-6..-1})
+   assert(result is "World", "exclusive negative range.slice on string should return 'World', got: " .. result)
 end
 
 @Test function RangeSliceTableWithStep()
@@ -1226,6 +1236,9 @@ end
    s = "Hello, World!"
    result = s[{-1...-13}]  -- Full reverse
    assert(result is "!dlroW ,olleH", "reverse negative indices should return '!dlroW ,olleH', got: " .. result)
+
+   result = s[{-1..-13}]
+   assert(result is "!dlroW ,olle", "exclusive reverse negative indices should return '!dlroW ,olle', got: " .. result)
 end
 
 @Test function StringSliceSimpleForwardUnchanged()

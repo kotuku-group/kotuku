@@ -855,10 +855,9 @@ static int string_index_handler(lua_State *L)
       int32_t start = r->start;
       int32_t stop = r->stop;
 
-      // Handle negative indices (always inclusive for negative ranges)
+      // Resolve negative indices while preserving the range's inclusive/exclusive mode.
       bool use_inclusive = r->inclusive;
       if (start < 0 or stop < 0) {
-         use_inclusive = true;  // Negative indices ignore inclusive flag
          if (start < 0) start += len;
          if (stop < 0) stop += len;
       }
