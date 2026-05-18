@@ -109,14 +109,10 @@ static bool parse_size_header(std::string_view Value, size_t &Result)
    if (value.empty()) return false;
 
    size_t length = 0;
-
-   for (auto ch : value) {
-      if ((ch < '0') or (ch > '9')) return false;
-
-      auto next_length = (length * 10) + size_t(ch - '0');
-      if (next_length < length) return false;
-      length = next_length;
-   }
+   auto value_end = value.data() + value.size();
+   auto conversion = std::from_chars(value.data(), value_end, length);
+   if (not (conversion.ec IS std::errc())) return false;
+   if (not (conversion.ptr IS value_end)) return false;
 
    Result = length;
    return true;
@@ -131,9 +127,8 @@ static bool header_name_is(std::string_view Name, const char *Expected)
 
 //********************************************************************************************************************
 
-static HttpBodyInfo parse_body_headers(std::string_view Headers)
+template <class Callback> static void for_each_header(std::string_view Headers, Callback CallbackFn)
 {
-   HttpBodyInfo info;
    size_t pos = 0;
 
    while (pos < Headers.size()) {
@@ -144,28 +139,39 @@ static HttpBodyInfo parse_body_headers(std::string_view Headers)
       auto colon = line.find(':');
       if (not (colon IS std::string_view::npos)) {
          auto name = line.substr(0, colon);
-         auto value = line.substr(colon + 1);
-
-         if (header_name_is(name, "Content-Length")) {
-            size_t length = 0;
-            if (not parse_size_header(value, length)) info.malformed_content_length = true;
-            else if ((not info.has_content_length) or (info.content_length IS length)) {
-               info.has_content_length = true;
-               info.content_length = length;
-            }
-            else info.malformed_content_length = true;
-         }
-         else if (header_name_is(name, "Transfer-Encoding")) {
-            auto encoding = trim_header_value(value);
-            if ((not encoding.empty()) and (not kt::iequals(encoding, "identity"))) {
-               info.unsupported_transfer_encoding = true;
-            }
-         }
+         auto value = trim_header_value(line.substr(colon + 1));
+         if (not CallbackFn(name, value)) return;
       }
 
       if (line_end IS Headers.size()) break;
       pos = line_end + 2;
    }
+}
+
+//********************************************************************************************************************
+
+static HttpBodyInfo parse_body_headers(std::string_view Headers)
+{
+   HttpBodyInfo info;
+
+   for_each_header(Headers, [&info](std::string_view Name, std::string_view Value) {
+      if (header_name_is(Name, "Content-Length")) {
+         size_t length = 0;
+         if (not parse_size_header(Value, length)) info.malformed_content_length = true;
+         else if ((not info.has_content_length) or (info.content_length IS length)) {
+            info.has_content_length = true;
+            info.content_length = length;
+         }
+         else info.malformed_content_length = true;
+      }
+      else if (header_name_is(Name, "Transfer-Encoding")) {
+         if ((not Value.empty()) and (not kt::iequals(Value, "identity"))) {
+            info.unsupported_transfer_encoding = true;
+         }
+      }
+
+      return true;
+   });
 
    return info;
 }
@@ -174,24 +180,18 @@ static HttpBodyInfo parse_body_headers(std::string_view Headers)
 
 static std::string_view get_header_value(std::string_view Headers, const char *HeaderName)
 {
-   size_t pos = 0;
+   std::string_view result;
 
-   while (pos < Headers.size()) {
-      auto line_end = Headers.find("\r\n", pos);
-      if (line_end IS std::string_view::npos) line_end = Headers.size();
-
-      auto line = Headers.substr(pos, line_end - pos);
-      auto colon = line.find(':');
-      if (not (colon IS std::string_view::npos)) {
-         auto name = line.substr(0, colon);
-         if (header_name_is(name, HeaderName)) return trim_header_value(line.substr(colon + 1));
+   for_each_header(Headers, [HeaderName, &result](std::string_view Name, std::string_view Value) {
+      if (header_name_is(Name, HeaderName)) {
+         result = Value;
+         return false;
       }
 
-      if (line_end IS Headers.size()) break;
-      pos = line_end + 2;
-   }
+      return true;
+   });
 
-   return {};
+   return result;
 }
 
 //********************************************************************************************************************

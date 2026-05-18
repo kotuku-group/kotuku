@@ -25,7 +25,10 @@ See interface.tiri for the REST interface.
 #include <kotuku/strings.hpp>
 
 #include <array>
+#include <charconv>
+#include <cstdint>
 #include <mutex>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -43,7 +46,7 @@ JUMPTABLE_REGEX
 static ERR init_backstage(int = 8765);
 static void release_backstage_routes();
 
-class objNetSocket *glServer = nullptr;
+objNetServer *glServer = nullptr;
 static std::mutex glRequestLock;
 static std::unordered_map<OBJECTID, std::string> glRequestBuffers;
 
@@ -75,18 +78,14 @@ struct BackstageRouteMetadata {
    std::string_view description;
    std::string_view body;
    std::string_view returns;
-   const BackstageParam *path_params = nullptr;
-   size_t path_param_count = 0;
-   const BackstageParam *query_params = nullptr;
-   size_t query_param_count = 0;
+   std::span<const BackstageParam> path_params;
+   std::span<const BackstageParam> query_params;
 
-   constexpr BackstageRouteMetadata() {}
+   constexpr BackstageRouteMetadata() = default;
 
    constexpr BackstageRouteMetadata(std::string_view Description, std::string_view Body, std::string_view Returns,
-      const BackstageParam *PathParams = nullptr, size_t PathParamCount = 0,
-      const BackstageParam *QueryParams = nullptr, size_t QueryParamCount = 0) :
-      description(Description), body(Body), returns(Returns), path_params(PathParams),
-      path_param_count(PathParamCount), query_params(QueryParams), query_param_count(QueryParamCount) {}
+      std::span<const BackstageParam> PathParams = {}, std::span<const BackstageParam> QueryParams = {}) :
+      description(Description), body(Body), returns(Returns), path_params(PathParams), query_params(QueryParams) {}
 };
 
 struct BackstageRoute {
@@ -94,18 +93,20 @@ struct BackstageRoute {
    std::string_view path;    // Human readable path (decorative)
    std::string_view pattern; // Regex pattern for matching requests
    BackstageHandler handler = nullptr; // Function handling this route
+   std::span<const std::string_view> path_param_names;
    BackstageRouteMetadata metadata;
    Regex *regex = nullptr;
 
-   BackstageRoute() {}
-
-   BackstageRoute(std::string_view Method, std::string_view Path, Regex *CompiledRegex, BackstageHandler Handler,
-      const BackstageRouteMetadata &Metadata = {}) :
-      method(Method), path(Path), handler(Handler), metadata(Metadata), regex(CompiledRegex) {}
+   BackstageRoute() = default;
+   BackstageRoute(const BackstageRoute &) = delete;
+   BackstageRoute &operator=(const BackstageRoute &) = delete;
+   BackstageRoute(BackstageRoute &&) = delete;
+   BackstageRoute &operator=(BackstageRoute &&) = delete;
 
    BackstageRoute(std::string_view Method, std::string_view Path, std::string_view Regex, BackstageHandler Handler,
-      const BackstageRouteMetadata &Metadata = {}) :
-      method(Method), path(Path), pattern(Regex), handler(Handler), metadata(Metadata) {}
+      std::span<const std::string_view> PathParamNames = {}, const BackstageRouteMetadata &Metadata = {}) :
+      method(Method), path(Path), pattern(Regex), handler(Handler), path_param_names(PathParamNames),
+      metadata(Metadata) {}
 
    ~BackstageRoute() {
       if (regex) FreeResource(regex);
@@ -118,12 +119,12 @@ struct BackstageRequest {
    BackstageRoute   *route;
    objNetServer     *server;  // NB: Lock the server when you need to interact with it
    objClientSocket  *client;
-   std::string method;
-   std::string path;
-   std::string rawPath;
-   std::string queryString;
-   std::string version;
-   std::vector<uint8_t> body;
+   std::string_view method;
+   std::string_view path;
+   std::string_view rawPath;
+   std::string_view queryString;
+   std::string_view version;
+   std::span<const uint8_t> body;
    std::unordered_map<std::string, std::string> pathParams;
    std::unordered_map<std::string, std::string> queryParams;
 };
@@ -142,9 +143,6 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
    CoreBase = argCoreBase;
 
-   if (objModule::load("network", &modNetwork, &NetworkBase) != ERR::Okay) return ERR::InitModule;
-   if (objModule::load("regex", &modRegex, &RegexBase) != ERR::Okay) return ERR::InitModule;
-
    // Parse commandline arguments to confirm if the user wants to enable Backstage.
 
    if (auto state = GetSystemState()) {
@@ -152,19 +150,10 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
          if (kt::iequals(state->OpenInfo->Args[i], "--backstage")) {
             if (i + 1 < state->OpenInfo->ArgCount) {
                int port = atoi(state->OpenInfo->Args[i + 1]);
-               if (port > 0) {
-                  init_backstage(port);
-                  break;
-               }
-               else {
-                  init_backstage();
-                  break;
-               }
+               if (port > 0) return init_backstage(port);
+               else return init_backstage();
             }
-            else {
-               init_backstage();
-               break;
-            }
+            else return init_backstage();
          }
       }
    }

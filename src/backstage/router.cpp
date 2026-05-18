@@ -70,20 +70,8 @@ static void parse_query_params(std::string_view QueryString,
 static void extract_path_params(const BackstageRoute &Route, const std::vector<std::string_view> &Captures,
    std::unordered_map<std::string, std::string> &Params)
 {
-   size_t capture_index = 1;
-   size_t search = 0;
-
-   while (capture_index < Captures.size()) {
-      auto name_start = Route.path.find('{', search);
-      if (name_start IS std::string_view::npos) break;
-
-      auto name_end = Route.path.find('}', name_start + 1);
-      if (name_end IS std::string_view::npos) break;
-
-      Params.emplace(std::string(Route.path.substr(name_start + 1, name_end - name_start - 1)),
-         std::string(Captures[capture_index]));
-      capture_index++;
-      search = name_end + 1;
+   for (size_t i = 0; (i < Route.path_param_names.size()) and (i + 1 < Captures.size()); i++) {
+      Params.emplace(std::string(Route.path_param_names[i]), std::string(Captures[i + 1]));
    }
 }
 
@@ -166,17 +154,13 @@ static BackstageRequest build_route_request(objClientSocket *Client, BackstageRo
       .route       = &Route,
       .server      = (objNetServer *)glServer,
       .client      = Client,
-      .method      = std::string(HttpRequest.line.method),
-      .path        = std::string(HttpRequest.line.path),
-      .rawPath     = std::string(HttpRequest.line.rawPath),
-      .queryString = std::string(HttpRequest.line.queryString),
-      .version     = std::string(HttpRequest.line.version)
+      .method      = HttpRequest.line.method,
+      .path        = HttpRequest.line.path,
+      .rawPath     = HttpRequest.line.rawPath,
+      .queryString = HttpRequest.line.queryString,
+      .version     = HttpRequest.line.version,
+      .body        = std::span<const uint8_t>((const uint8_t *)HttpRequest.body.data(), HttpRequest.body.size())
    };
-
-   if (not HttpRequest.body.empty()) {
-      auto body_start = (const uint8_t *)HttpRequest.body.data();
-      request.body.assign(body_start, body_start + HttpRequest.body.size());
-   }
 
    parse_query_params(HttpRequest.line.queryString, request.queryParams);
    extract_path_params(Route, Match.captures, request.pathParams);

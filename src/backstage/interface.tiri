@@ -454,12 +454,32 @@ function route_param_array(Name:str, Names:array, Fields:table):str
    return out
 end
 
+function route_path_param_names(Route:table):str
+   name = Route.funcName .. '_path_param_names'
+   out = f"static constexpr std::array<std::string_view, {#Route.params}> {name} = {{"
+
+   if #Route.params > 0 then
+      out ..= '\n'
+
+      for i, param_name in Route.params do
+         if i > 0 then out ..= ',\n' end
+         out ..= '   ' .. cpp_string(param_name)
+      end
+
+      out ..= '\n'
+   end
+
+   out ..= '};\n\n'
+   return out
+end
+
 function route_param_arrays(Route:table):str
    out = ''
    path_fields = Route.interface.path ?? {}
    query_fields = Route.interface.query ?? {}
    query_names = sorted_field_names(Route.interface.query)
 
+   out ..= route_path_param_names(Route)
    out ..= route_param_array(Route.funcName .. '_path_params', Route.params, path_fields)
    out ..= route_param_array(Route.funcName .. '_query_params', query_names, query_fields)
    return out
@@ -473,18 +493,19 @@ function route_metadata(Route:table):str
       '         ' .. cpp_string(Route.interface.desc ?? '', '         ') .. ',\n' ..
       '         ' .. cpp_string(Route.interface.body ?? '') .. ',\n' ..
       '         ' .. cpp_string(Route.interface.returns ?? '') .. ',\n' ..
-      f'         {path_name}.data(),\n' ..
-      f'         {path_name}.size(),\n' ..
-      f'         {query_name}.data(),\n' ..
-      f'         {query_name}.size())'
+      f'         {path_name},\n' ..
+      f'         {query_name})'
 end
 
 function route_table_entry(Route:table):str
+   path_names = Route.funcName .. '_path_param_names'
+
    return '   BackstageRoute(\n' ..
       '      ' .. cpp_string(Route.method) .. ',\n' ..
       '      ' .. cpp_string(Route.path) .. ',\n' ..
       '      "' .. Route.regex .. '",\n' ..
       '      ' .. Route.funcName .. ',\n' ..
+      f'      {path_names},\n' ..
       '      ' .. route_metadata(Route) .. ')'
 end
 
@@ -494,7 +515,7 @@ function route_handler_stub(Route:table):str
    out = ''
    out ..= f'// {Route.method} {Route.path}\n// {Route.interface.desc}\n\n'
    out ..= f"static ERR {Route.funcName}({proto})\n{{\n"
-   out ..= "   return ERR::Okay;\n"
+   out ..= "   return ERR::NoSupport;\n"
    out ..= "}\n\n"
    return out
 end

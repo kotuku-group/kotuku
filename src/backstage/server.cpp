@@ -78,6 +78,9 @@ static ERR init_backstage(int Port)
 {
    kt::Log log(__FUNCTION__);
 
+   if (objModule::load("network", &modNetwork, &NetworkBase) != ERR::Okay) return ERR::InitModule;
+   if (objModule::load("regex", &modRegex, &RegexBase) != ERR::Okay) return ERR::InitModule;
+
    if (auto error = compile_backstage_routes(); error != ERR::Okay) return error;
 
    glServer = objNetServer::create::global({
