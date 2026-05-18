@@ -964,9 +964,6 @@ extern int luaopen_string(lua_State *L)
    reg_iface_prototype("string", "trim", { TiriType::Str }, { TiriType::Str });
    reg_iface_prototype("string", "unescapeXML", { TiriType::Str }, { TiriType::Str });
    reg_iface_prototype("string", "upper", { TiriType::Str }, { TiriType::Str });
-   // These are implemented in translate.tiri
-   reg_iface_prototype("string", "translateRefresh", { }, { });
-   reg_iface_prototype("string", "translate", { TiriType::Str }, { TiriType::Str });
 
    return 1;
 }
