@@ -120,7 +120,7 @@ Origo::
 The Tiri interpreter and application launcher executable.  Executes Tiri scripts from the command line with configurable options for logging, graphics drivers, and script arguments.  See <<ch-origo>>.
 
 Pipe operator::
-The `|>` operator, which passes the left operand as the first argument to the function on the right.  Enables function chaining in a left-to-right reading order.  See <<sec-pipe-operator>>.
+The `|>` operator, which passes the left operand as the first argument to the function on the right.  When the left operand is a range or array and the right operand is a bare function reference, the pipe becomes an iteration operator that calls the function for each element.  See <<sec-pipe-operator>>.
 
 Range::
 An immutable sequence of numeric values defined by start, stop, and optional step values.  Exclusive ranges (`{apass:[..]b}`) exclude the stop value; inclusive ranges (`{apass:[...]b}`) include it.  See <<ch-ranges>>.

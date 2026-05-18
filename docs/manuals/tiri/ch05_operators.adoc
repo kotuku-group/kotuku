@@ -450,7 +450,7 @@ indexterm:[operators, pipe] The pipe operator (`|>`) passes the result of the le
 pipe_expr = expression "|>" function_call ;
 ----
 
-The right-hand side must be a function call; `x |> 5` is a syntax error.  When the LHS is a range literal, the RHS accepts a bare function reference without parentheses (see <<sec-pipe-iteration,Pipe Iteration with Ranges>>).
+The right-hand side must be a function call; `x |> 5` is a syntax error.  When the LHS is a range or array, the RHS accepts a bare function reference without parentheses; the pipe becomes an iteration operator (see <<sec-pipe-iteration,Pipe Iteration>>).
 
 [source,tiri]
 ----
@@ -495,9 +495,26 @@ result = 3 |> double() |> square()  -- square(double(3))
 ----
 
 [[sec-pipe-iteration]]
-==== Pipe Iteration with Ranges
+==== Pipe Iteration
 
-When the LHS is a range literal, the pipe iterates and calls the RHS function for each value in the range:
+The pipe operator doubles as an iteration operator when the LHS is a range or array and the RHS is a bare function reference (not a function call with parentheses).  The compiler rewrites the expression to an `:each()` method call on the LHS, invoking the function once for each element.
+
+===== Distinguishing Transform from Iteration
+
+The RHS syntax determines the pipe mode:
+
+[cols="3,3,4a",options="header"]
+|===
+|Syntax           |Mode       |Equivalent
+
+|`x \|> func()`   |Transform  |`func(x)`
+|`range \|> func`  |Iteration  |`range:each(func)`
+|`array \|> func`  |Iteration  |`array:each(func)`
+|===
+
+===== Ranges
+
+When the LHS is a range literal, the pipe calls the RHS function for each value in the range:
 
 [source,tiri]
 ----
@@ -517,7 +534,34 @@ Return `false` from the callback to terminate iteration early:
 end
 ----
 
-Pipe iteration applies only to range literals.  For ranges stored in variables, use the `:each()` method: `r:each(func)`.
+For ranges stored in variables, use the `:each()` method directly: `r:each(func)`.
+
+===== Arrays
+
+Array literals and typed array variables also support pipe iteration.  The callback receives the element value and its index:
+
+[source,tiri]
+----
+array<int> { 10, 20, 30 } |> function(v, i)
+   print(f'[{i}] = {v}')
+end
+
+items = array<string> { 'a', 'b', 'c' }
+items |> print          -- prints a, b, c
+----
+
+===== Chaining Iterations
+
+Pipe iteration returns the original range or array, enabling multiple iteration passes to be chained:
+
+[source,tiri]
+----
+{1..4} |> function(i) log_value(i) end
+       |> function(i) process(i) end
+
+array<int> { 5, 10, 15 } |> function(v) validate(v) end
+                         |> function(v) store(v) end
+----
 
 [[sec-operator-precedence]]
 === Operator Precedence
@@ -526,15 +570,15 @@ indexterm:[operators, precedence] The following table lists all operators from h
 [cols="1,4a,2",options="header"]
 |===
 |Level |Operators |Associativity
-|10 |`pass:[**]`                                                |Right
-|9  |`-` (unary), `not`, `#`, `~` (unary)               |Unary (right)
-|8  |`*`, `/`, `%`                                       |Left
-|7  |`+`, `-`                                            |Left
-|6  |`..`, `<<`, `>>`                                    |`..` right; shifts left
-|5  |`&`                                                 |Left
+|10 |`pass:[**]`                          |Right
+|9  |`-` (unary), `not`, `#`, `~` (unary) |Unary (right)
+|8  |`*`, `/`, `%`                        |Left
+|7  |`+`, `-`                             |Left
+|6  |`..`, `<<`, `>>`                     |`..` right; shifts left
+|5  |`&`                                  |Left
 |4  |`^`, `is`, `is not`, `!=`, `<`, `>`, `\<=`, `>=`, `in` |Left
-|3  |`has`, `\|`, `and`, `\|>`                            |Left
-|2  |`or`, `??`, `? :>`                                  |Left (`? :>` right)
+|3  |`has`, `\|`, `and`, `\|>`            |Left
+|2  |`or`, `??`, `? :>`                   |Left (`? :>` right)
 |===
 
 Postfix operators (`++`, `??` postfix) bind tighter than all binary operators and evaluate immediately after suffix chains (field access, indexing, calls).

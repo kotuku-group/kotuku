@@ -326,7 +326,7 @@ NOTE: When using a custom `signals` list, `proc.signal()` has no effect because 
 [discrete]
 ===== Array Pipe Dispatch
 
-The pipe iteration operator can be combined with `async.script()` to fan out work across an array of objects without an explicit loop.  The pipe automatically iterates the array and calls the function for each element:
+The pipe iteration operator (see <<sec-pipe-iteration>>) can be combined with `async.script()` to fan out work across an array of objects without an explicit loop.  The pipe iterates the array and calls the function for each element:
 
 [source,tiri]
 ----
