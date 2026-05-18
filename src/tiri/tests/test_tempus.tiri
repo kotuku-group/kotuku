@@ -15,11 +15,11 @@ function expect_error(MessagePart:str, Callback:func)
 end
 
 function core_current_instant():table
-   local time_obj = obj.new('time')
+   time_obj = obj.new('time')
    check(time_obj.acQuery())
 
-   local micros = time_obj.systemTime
-   local seconds = math.floor(micros / 1000000)
+   micros = time_obj.systemTime
+   seconds = math.floor(micros / 1000000)
    return tempus.instant(seconds, (micros - seconds * 1000000) * 1000)
 end
 
@@ -51,14 +51,14 @@ end
 end
 
 @Test function TypePredicates()
-   local instant = tempus.instant(0)
-   local date = tempus.localDate(2026, 5, 17)
-   local period = tempus.period.days(1)
-   local interval = tempus.interval(instant, tempus.instant(1))
-   local zone = tempus.zone.utc()
-   local clock = tempus.clock.fixed(instant)
-   local offset_date_time = tempus.localDateTime(1970, 1, 1):atOffset(tempus.offset.utc())
-   local zoned_date_time = instant:toZonedDateTime(zone)
+   instant = tempus.instant(0)
+   date = tempus.localDate(2026, 5, 17)
+   period = tempus.period.days(1)
+   interval = tempus.interval(instant, tempus.instant(1))
+   zone = tempus.zone.utc()
+   clock = tempus.clock.fixed(instant)
+   offset_date_time = tempus.localDateTime(1970, 1, 1):atOffset(tempus.offset.utc())
+   zoned_date_time = instant:toZonedDateTime(zone)
 
    assert(tempus.isInstant(instant), 'Instant predicate should match Instant values')
    assert(not tempus.isLocalDate(instant), 'LocalDate predicate should reject Instant values')
@@ -74,8 +74,8 @@ end
 end
 
 @Test function ProtectedMetatables()
-   local a = tempus.instant(0)
-   local b = tempus.instant(1)
+   a = tempus.instant(0)
+   b = tempus.instant(1)
 
    assert(getmetatable(a) is 'tempus.Instant', 'Instant metatable should be protected')
    assert(getmetatable(a) is getmetatable(b), 'Instant values should report the same protected metatable name')
@@ -86,7 +86,7 @@ end
 end
 
 @Test function ValuesAreImmutable()
-   local instant = tempus.instant(0)
+   instant = tempus.instant(0)
 
    assert(instant:toUnixSeconds() is 0, 'Instant accessor should expose the stored second')
 
@@ -100,12 +100,12 @@ end
 end
 
 @Test function InstantConstructionParsingAndOrdering()
-   local instant = tempus.instant(1, -1)
+   instant = tempus.instant(1, -1)
    assert(instant:toUnixSeconds() is 0, 'Negative nanos should normalise into the second field')
    assert(instant:toUnixNanos() is 999999999, 'Instant nanos should preserve nanosecond precision')
    assert(tostring(instant) is '1970-01-01T00:00:00.999999999Z', 'Instant string should format UTC')
 
-   local parsed = tempus.instant.parse('2026-05-17T10:30:45.123456789Z')
+   parsed = tempus.instant.parse('2026-05-17T10:30:45.123456789Z')
    assert(tostring(parsed) is '2026-05-17T10:30:45.123456789Z', 'Instant parse/string round trip should work')
    assert(tempus.instant.fromUnixMillis(-1) is tempus.instant(-1, 999000000),
       'Negative Unix milliseconds should normalise correctly')
@@ -176,7 +176,7 @@ end
 end
 
 @Test function LocalDateTimeConstructionParsingAndWithFields()
-   local local_date_time = tempus.localDateTime(2026, 5, 17, 10, 30, 45, 123000000)
+   local_date_time = tempus.localDateTime(2026, 5, 17, 10, 30, 45, 123000000)
 
    assert(tostring(local_date_time) is '2026-05-17T10:30:45.123', 'LocalDateTime string should combine date and time')
    assert(local_date_time:date() is tempus.localDate(2026, 5, 17), 'LocalDateTime date accessor should work')
@@ -194,16 +194,16 @@ end
       nano = 123000000
    } is local_date_time, 'LocalDateTime property-table construction should match positional construction')
 
-   local changed = local_date_time:withFields({ month = 6, day = 1, hour = 9 })
+   changed = local_date_time:withFields({ month = 6, day = 1, hour = 9 })
    assert(tostring(changed) is '2026-06-01T09:30:45.123',
       'LocalDateTime withFields() should copy modified fields')
    assert(local_date_time < changed, 'LocalDateTime ordering should compare date then time')
 end
 
 @Test function OffsetDateTimeConstructionParsingAndAccessors()
-   local local_date_time = tempus.localDateTime(2026, 5, 17, 10, 30, 45, 123456789)
-   local offset = tempus.offset.parse('+01:30')
-   local offset_date_time = tempus.offsetDateTime(local_date_time, offset)
+   local_date_time = tempus.localDateTime(2026, 5, 17, 10, 30, 45, 123456789)
+   offset = tempus.offset.parse('+01:30')
+   offset_date_time = tempus.offsetDateTime(local_date_time, offset)
 
    assert(offset_date_time:localDateTime() is local_date_time, 'OffsetDateTime localDateTime accessor should work')
    assert(offset_date_time:date() is tempus.localDate(2026, 5, 17), 'OffsetDateTime date accessor should work')
@@ -233,10 +233,10 @@ end
 end
 
 @Test function OffsetDateTimeInstantConversionEqualityAndOrdering()
-   local plus_one = tempus.offsetDateTime.parse('2026-05-17T10:00:00+01:00')
-   local utc = tempus.offsetDateTime.parse('2026-05-17T09:00:00Z')
-   local same_plus_one = tempus.offsetDateTime(tempus.localDateTime(2026, 5, 17, 10, 0), tempus.offset.hours(1))
-   local later = tempus.offsetDateTime.parse('2026-05-17T09:00:01Z')
+   plus_one = tempus.offsetDateTime.parse('2026-05-17T10:00:00+01:00')
+   utc = tempus.offsetDateTime.parse('2026-05-17T09:00:00Z')
+   same_plus_one = tempus.offsetDateTime(tempus.localDateTime(2026, 5, 17, 10, 0), tempus.offset.hours(1))
+   later = tempus.offsetDateTime.parse('2026-05-17T09:00:01Z')
 
    assert(plus_one:instant() is tempus.instant.parse('2026-05-17T09:00:00Z'),
       'OffsetDateTime instant() should subtract the offset')
@@ -254,11 +254,11 @@ end
 end
 
 @Test function OffsetDateTimeArithmeticAndZoneBoundary()
-   local start = tempus.offsetDateTime.parse('2026-01-31T23:30:00+01:00')
-   local elapsed = start + tempus.duration { hours = 2 }
-   local previous = elapsed - tempus.duration { hours = 2 }
-   local calendar = tempus.offsetDateTime.parse('2024-01-31T08:15:00+01:00') + tempus.period.months(1)
-   local calendar_back = calendar - tempus.period.months(1)
+   start = tempus.offsetDateTime.parse('2026-01-31T23:30:00+01:00')
+   elapsed = start + tempus.duration { hours = 2 }
+   previous = elapsed - tempus.duration { hours = 2 }
+   calendar = tempus.offsetDateTime.parse('2024-01-31T08:15:00+01:00') + tempus.period.months(1)
+   calendar_back = calendar - tempus.period.months(1)
 
    assert(elapsed is tempus.offsetDateTime.parse('2026-02-01T01:30:00+01:00'),
       'OffsetDateTime Duration addition should preserve the offset and advance the instant')
@@ -280,10 +280,10 @@ end
 end
 
 @Test function ZonedDateTimeUtcConstructionAccessorsAndParsing()
-   local zone = tempus.zone.utc()
-   local instant = tempus.instant.parse('2026-05-17T10:30:45.123456789Z')
-   local zoned = tempus.zonedDateTime(instant, zone)
-   local local_date_time = tempus.localDateTime(2026, 5, 17, 10, 30, 45, 123456789)
+   zone = tempus.zone.utc()
+   instant = tempus.instant.parse('2026-05-17T10:30:45.123456789Z')
+   zoned = tempus.zonedDateTime(instant, zone)
+   local_date_time = tempus.localDateTime(2026, 5, 17, 10, 30, 45, 123456789)
 
    assert(instant:toZonedDateTime(zone) is zoned, 'Instant toZonedDateTime() should create a ZonedDateTime')
    assert(local_date_time:toZonedDateTime(zone) is zoned, 'LocalDateTime UTC resolution should match the same instant')
@@ -312,11 +312,11 @@ end
 end
 
 @Test function ZonedDateTimeUtcArithmeticAndWithMethods()
-   local zone = tempus.zone.utc()
-   local start = tempus.localDateTime(2026, 1, 31, 23, 30):toZonedDateTime(zone)
-   local elapsed = start + tempus.duration { hours = 2 }
-   local calendar = start + tempus.period.days(1)
-   local changed = start:withLocal { month = 2, day = 1, hour = 9 }
+   zone = tempus.zone.utc()
+   start = tempus.localDateTime(2026, 1, 31, 23, 30):toZonedDateTime(zone)
+   elapsed = start + tempus.duration { hours = 2 }
+   calendar = start + tempus.period.days(1)
+   changed = start:withLocal { month = 2, day = 1, hour = 9 }
 
    assert(elapsed is tempus.localDateTime(2026, 2, 1, 1, 30):toZonedDateTime(zone),
       'ZonedDateTime Duration addition should advance the instant')
@@ -340,9 +340,9 @@ end
 @Test function TempusPatternFormatting()
    local date = tempus.localDate(2026, 5, 17)
    local time = tempus.localTime(10, 30, 45, 123456789)
-   local local_date_time = tempus.localDateTime(2026, 5, 17, 10, 30, 45, 123456789)
-   local offset_date_time = tempus.offsetDateTime(local_date_time, tempus.offset.parse('+01:30'))
-   local zoned = tempus.zonedDateTime(tempus.instant.parse('2026-05-17T10:30:45.123456789Z'),
+   local_date_time = tempus.localDateTime(2026, 5, 17, 10, 30, 45, 123456789)
+   offset_date_time = tempus.offsetDateTime(local_date_time, tempus.offset.parse('+01:30'))
+   zoned = tempus.zonedDateTime(tempus.instant.parse('2026-05-17T10:30:45.123456789Z'),
       tempus.zone.utc())
 
    assert(date:format('yyyy-MM-dd') is '2026-05-17', 'LocalDate format() should support date tokens')
@@ -374,9 +374,9 @@ end
 end
 
 @Test function OffsetConstructionParsingAndOrdering()
-   local utc = tempus.offset.utc()
-   local plus = tempus.offset.parse('+05:30')
-   local minus = tempus.offset(-3600)
+   utc = tempus.offset.utc()
+   plus = tempus.offset.parse('+05:30')
+   minus = tempus.offset(-3600)
 
    assert(tostring(utc) is 'Z', 'UTC offset should format as Z')
    assert(plus:totalSeconds() is 19800, 'Positive offset seconds should be east of UTC')
@@ -405,7 +405,7 @@ end
 end
 
 @Test function DurationConstructionParsingAndOrdering()
-   local duration = tempus.duration { hours = 1, minutes = 30, seconds = 5, millis = 250 }
+   duration = tempus.duration { hours = 1, minutes = 30, seconds = 5, millis = 250 }
 
    assert(duration:totalSeconds() is 5405.25, 'Duration total seconds should include fractional nanos')
    assert(duration:totalMillis() is 5405250, 'Duration total millis should include nanos')
@@ -427,8 +427,8 @@ end
 end
 
 @Test function DurationAndInstantArithmetic()
-   local base = tempus.duration { seconds = 1, nanos = 900000000 }
-   local addition = base + tempus.duration { seconds = 2, nanos = 200000000 }
+   base = tempus.duration { seconds = 1, nanos = 900000000 }
+   addition = base + tempus.duration { seconds = 2, nanos = 200000000 }
 
    assert(addition is tempus.duration { seconds = 4, nanos = 100000000 },
       'Duration addition should normalise nanosecond overflow')
@@ -437,7 +437,7 @@ end
    assert(-tempus.duration { millis = 250 } is tempus.duration { seconds = -1, nanos = 750000000 },
       'Unary duration negation should normalise')
 
-   local instant = tempus.instant.parse('2026-05-17T10:30:00Z')
+   instant = tempus.instant.parse('2026-05-17T10:30:00Z')
    assert(instant + tempus.duration { minutes = 30 } is tempus.instant.parse('2026-05-17T11:00:00Z'),
       'Instant plus Duration should move forward on the timeline')
    assert(instant - tempus.duration { seconds = 1 } is tempus.instant.parse('2026-05-17T10:29:59Z'),
@@ -453,7 +453,7 @@ end
 end
 
 @Test function PeriodConstructionParsingNormalisationAndArithmetic()
-   local period = tempus.period { years = 1, months = 2, weeks = 1, days = 3 }
+   period = tempus.period { years = 1, months = 2, weeks = 1, days = 3 }
 
    assert(tostring(period) is 'P1Y2M1W3D', 'Period string should include calendar fields')
    assert(tempus.period {} is tempus.period.days(0), 'Empty Period construction should produce zero')
@@ -494,7 +494,7 @@ end
    assert(tempus.localTime(23, 59, 59, 900000000) + tempus.duration { millis = 200 } is
       tempus.localTime(0, 0, 0, 100000000), 'LocalTime arithmetic should carry fractional seconds')
 
-   local local_date_time = tempus.localDateTime(2024, 2, 28, 23, 30)
+   local_date_time = tempus.localDateTime(2024, 2, 28, 23, 30)
    assert(local_date_time + tempus.duration { hours = 2 } is tempus.localDateTime(2024, 2, 29, 1, 30),
       'LocalDateTime Duration addition should carry across dates')
    assert(local_date_time - tempus.duration { hours = 24 } is tempus.localDateTime(2024, 2, 27, 23, 30),
@@ -512,14 +512,14 @@ end
 end
 
 @Test function IntervalContainmentOverlapIntersectionAndUnion()
-   local start = tempus.instant.parse('2026-05-17T10:00:00Z')
-   local middle = tempus.instant.parse('2026-05-17T10:30:00Z')
-   local stop = tempus.instant.parse('2026-05-17T11:00:00Z')
-   local later = tempus.instant.parse('2026-05-17T11:30:00Z')
-   local slot = tempus.interval(start, stop)
-   local overlapping = tempus.interval(middle, later)
-   local extension = tempus.interval.fromStartAndDuration(stop, tempus.duration { minutes = 30 })
-   local separate = tempus.interval(tempus.instant.parse('2026-05-17T12:00:00Z'),
+   start = tempus.instant.parse('2026-05-17T10:00:00Z')
+   middle = tempus.instant.parse('2026-05-17T10:30:00Z')
+   stop = tempus.instant.parse('2026-05-17T11:00:00Z')
+   later = tempus.instant.parse('2026-05-17T11:30:00Z')
+   slot = tempus.interval(start, stop)
+   overlapping = tempus.interval(middle, later)
+   extension = tempus.interval.fromStartAndDuration(stop, tempus.duration { minutes = 30 })
+   separate = tempus.interval(tempus.instant.parse('2026-05-17T12:00:00Z'),
       tempus.instant.parse('2026-05-17T13:00:00Z'))
 
    assert(slot:start() is start and slot:stop() is stop, 'Interval accessors should expose the bounds')
@@ -549,8 +549,8 @@ end
 end
 
 @Test function UtcZoneProvidesFixedOffset()
-   local zone = tempus.zone.utc()
-   local instant = tempus.instant.parse('2026-05-17T10:30:00Z')
+   zone = tempus.zone.utc()
+   instant = tempus.instant.parse('2026-05-17T10:30:00Z')
 
    assert(tostring(zone) is 'UTC', 'UTC zone should stringify to its ID')
    assert(zone:id() is 'UTC', 'UTC zone public ID should be UTC')
@@ -565,13 +565,13 @@ end
 end
 
 @Test function ExplicitUtcAliasesUseCoreCanonicalZone()
-   local zone = tempus.zone('Etc/UTC')
-   local instant = tempus.instant.parse('2026-05-17T10:30:00Z')
+   zone = tempus.zone('Etc/UTC')
+   instant = tempus.instant.parse('2026-05-17T10:30:00Z')
 
-   assert(zone:id() is 'UTC', 'UTC aliases should use the canonical Core zone ID')
-   assert(zone:nativeId() is 'UTC', 'UTC aliases should expose the native Core zone ID')
-   assert(zone:source() is 'utc', 'UTC aliases should expose the Core source')
-   assert(zone:offsetAt(instant) is tempus.offset.utc(), 'UTC aliases should resolve to a zero offset')
+   assert(zone:id() is 'UTC', f'UTC aliases should use the canonical Core zone ID, got {zone:id()}')
+   assert(zone:nativeId() is f'UTC', 'UTC aliases should expose the native Core zone ID, got {zone:nativeId()}')
+   assert(zone:source() is 'utc', f'UTC aliases should expose the Core source, got {zone:source()}')
+   assert(zone:offsetAt(instant) is tempus.offset.utc(), f'UTC aliases should resolve to a zero offset, got {zone:offsetAt(instant)}')
    assert(zone:nextTransition(instant) is nil, 'UTC aliases should not report transitions')
 end
 
@@ -582,9 +582,9 @@ end
 end
 
 @Test function LocalZoneUsesCoreMetadata()
-   local zone = tempus.zone.local()
-   local instant = tempus.instant.parse('2026-05-17T10:30:00Z')
-   local offset = zone:offsetAt(instant)
+   zone = tempus.zone.local()
+   instant = tempus.instant.parse('2026-05-17T10:30:00Z')
+   offset = zone:offsetAt(instant)
 
    assert(tempus.isZone(zone), 'Local zone construction should return a Zone value')
    assert(type(zone:id()) is 'string' and #zone:id() > 0, 'Local zone should expose a public ID')
@@ -604,18 +604,18 @@ end
       return
    end
 
-   local spring_transition = tempus.instant.parse('2024-03-31T01:00:00Z')
-   local autumn_transition = tempus.instant.parse('2024-10-27T01:00:00Z')
-   local before_spring = tempus.instant.parse('2024-03-31T00:59:59Z')
-   local after_spring = spring_transition
-   local before_autumn = tempus.instant.parse('2024-10-27T00:59:59Z')
-   local after_autumn = autumn_transition
-   local before_spring_offset = zone:offsetAt(before_spring)
-   local after_spring_offset = zone:offsetAt(after_spring)
-   local before_autumn_offset = zone:offsetAt(before_autumn)
-   local after_autumn_offset = zone:offsetAt(after_autumn)
-   local next_spring_transition = zone:nextTransition(before_spring)
-   local previous_autumn_transition = zone:previousTransition(after_autumn + tempus.duration.seconds(1))
+   spring_transition = tempus.instant.parse('2024-03-31T01:00:00Z')
+   autumn_transition = tempus.instant.parse('2024-10-27T01:00:00Z')
+   before_spring = tempus.instant.parse('2024-03-31T00:59:59Z')
+   after_spring = spring_transition
+   before_autumn = tempus.instant.parse('2024-10-27T00:59:59Z')
+   after_autumn = autumn_transition
+   before_spring_offset = zone:offsetAt(before_spring)
+   after_spring_offset = zone:offsetAt(after_spring)
+   before_autumn_offset = zone:offsetAt(before_autumn)
+   after_autumn_offset = zone:offsetAt(after_autumn)
+   next_spring_transition = zone:nextTransition(before_spring)
+   previous_autumn_transition = zone:previousTransition(after_autumn + tempus.duration.seconds(1))
 
    assert(zone:id() is 'Europe/London', 'Europe/London should keep its public ID')
    assert(before_spring_offset is tempus.offset.utc(), f'London should be GMT before the spring transition, got {before_spring_offset}')
@@ -635,9 +635,9 @@ end
       return
    end
 
-   local skipped = tempus.localDateTime(2024, 3, 31, 1, 30)
-   local compatible = skipped:toZonedDateTime(zone)
-   local skipped_explicit = skipped:toZonedDateTime(zone, tempus.resolve.skip)
+   skipped = tempus.localDateTime(2024, 3, 31, 1, 30)
+   compatible = skipped:toZonedDateTime(zone)
+   skipped_explicit = skipped:toZonedDateTime(zone, tempus.resolve.skip)
 
    assert(compatible:instant() is tempus.instant.parse('2024-03-31T01:30:00Z'),
       'Compatible resolver should move skipped London time forward by the gap')
@@ -657,9 +657,9 @@ end
       skipped:toZonedDateTime(zone, tempus.resolve.later)
    end)
 
-   local ambiguous = tempus.localDateTime(2024, 10, 27, 1, 30)
-   local earlier = ambiguous:toZonedDateTime(zone, tempus.resolve.earlier)
-   local later = ambiguous:toZonedDateTime(zone, tempus.resolve.later)
+   ambiguous = tempus.localDateTime(2024, 10, 27, 1, 30)
+   earlier = ambiguous:toZonedDateTime(zone, tempus.resolve.earlier)
+   later = ambiguous:toZonedDateTime(zone, tempus.resolve.later)
 
    assert(ambiguous:toZonedDateTime(zone, tempus.resolve.compatible) is earlier,
       'Compatible resolver should choose the earlier instant for ambiguous local times')
@@ -687,17 +687,11 @@ end
       return
    end
 
-   local utc = tempus.zone.utc()
-   local start = tempus.localDateTime(2024, 3, 30, 12, 0):toZonedDateTime(london)
-   local elapsed = start + tempus.duration { hours = 24 }
-   local calendar = start + tempus.period.days(1)
-   local later_overlap = start:withLocal {
-      month = 10,
-      day = 27,
-      hour = 1,
-      minute = 30,
-      resolver = tempus.resolve.later
-   }
+   utc = tempus.zone.utc()
+   start = tempus.localDateTime(2024, 3, 30, 12, 0):toZonedDateTime(london)
+   elapsed = start + tempus.duration { hours = 24 }
+   calendar = start + tempus.period.days(1)
+   later_overlap = start:withLocal { month = 10, day = 27, hour = 1, minute = 30, resolver = tempus.resolve.later }
 
    assert(elapsed:localDateTime() is tempus.localDateTime(2024, 3, 31, 13, 0),
       'Elapsed 24 hours should preserve timeline duration across the spring transition')
@@ -708,8 +702,8 @@ end
    assert(later_overlap:instant() is tempus.instant.parse('2024-10-27T01:30:00Z'),
       'withLocal() should honour an explicit later resolver')
 
-   local same_instant_utc = start:withZoneSameInstant(utc)
-   local same_local_utc = start:withZoneSameLocal(utc)
+   same_instant_utc = start:withZoneSameInstant(utc)
+   same_local_utc = start:withZoneSameLocal(utc)
    assert(same_instant_utc:instant() is start:instant(), 'withZoneSameInstant() should preserve the instant')
    assert(same_instant_utc:localDateTime() is tempus.localDateTime(2024, 3, 30, 12, 0),
       'UTC same-instant conversion before DST should keep matching local time')
@@ -718,9 +712,9 @@ end
 end
 
 @Test function FixedAndOffsetClocksAreDeterministic()
-   local instant = tempus.instant.parse('2026-05-17T23:30:45.123456Z')
-   local fixed = tempus.clock.fixed(instant)
-   local offset = tempus.clock.offset(fixed, tempus.duration { minutes = 45, millis = 500 })
+   instant = tempus.instant.parse('2026-05-17T23:30:45.123456Z')
+   fixed = tempus.clock.fixed(instant)
+   offset = tempus.clock.offset(fixed, tempus.duration { minutes = 45, millis = 500 })
 
    assert(fixed:instant() is instant, 'Fixed clock should return its configured instant')
    assert(tempus.now(fixed) is instant, 'tempus.now(clock) should use the supplied clock')
@@ -738,8 +732,8 @@ end
 end
 
 @Test function ClockUtcTodayAndLocalDateTime()
-   local zone = tempus.zone.utc()
-   local fixed = tempus.clock.fixed(tempus.instant.parse('2026-05-17T23:30:45.123456Z'))
+   zone = tempus.zone.utc()
+   fixed = tempus.clock.fixed(tempus.instant.parse('2026-05-17T23:30:45.123456Z'))
 
    assert(fixed:localDateTime(zone) is tempus.localDateTime(2026, 5, 17, 23, 30, 45, 123456000),
       'Clock localDateTime(UTC) should convert the instant to UTC local fields')
@@ -759,10 +753,10 @@ end
 end
 
 @Test function SystemClockNowUsesCoreSystemTime()
-   local before = core_current_instant()
-   local current = tempus.now(tempus.clock.system())
-   local after = core_current_instant()
-   local tolerance = tempus.duration.seconds(1)
+   before = core_current_instant()
+   current = tempus.now(tempus.clock.system())
+   after = core_current_instant()
+   tolerance = tempus.duration.seconds(1)
 
    assert(tempus.isInstant(current), 'System now should return an Instant')
    assert(before - tolerance <= current and current <= after + tolerance,
