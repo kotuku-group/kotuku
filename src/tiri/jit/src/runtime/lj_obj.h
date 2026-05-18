@@ -112,7 +112,7 @@ enum class AstNodeKind : uint16_t {
    DoStmt,
    ConditionalShorthandStmt,
    TryExceptStmt,  // try...except...end exception handling
-   RaiseStmt,      // raise expression [, message]
+   RaiseStmt,      // raise error_code [, message] or raise message
    CheckStmt,      // check expression
    ImportStmt,     // import 'module' statement
    WithStmt,       // with obj1, obj2 do ... end

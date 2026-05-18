@@ -1396,13 +1396,37 @@ end
    error("raise with message did not throw an exception")
 end
 
-@Test(priority=62) function CheckBelowThreshold()
+@Test(priority=62) function RaiseWithDefaultCodeMessage()
+   try
+      raise "Default code message"
+   except e
+      assert(e.code is ERR_Exception, "raise with only a message should default to ERR_Exception")
+      assert(e.message is "Default code message", "raise should use the first string expression as the message")
+      return
+   end
+   error("raise with default code message did not throw an exception")
+end
+
+@Test(priority=63) function RaiseWithDefaultCodeMessageVariable()
+   err_text = "Variable default code message"
+
+   try
+      raise err_text
+   except e
+      assert(e.code is ERR_Exception, "raise with only a message variable should default to ERR_Exception")
+      assert(e.message is "Variable default code message", "raise should use the first string variable as the message")
+      return
+   end
+   error("raise with default code message variable did not throw an exception")
+end
+
+@Test(priority=64) function CheckBelowThreshold()
    -- ERR_Okay should not raise an exception
    check ERR_Okay
    -- If we reach here, the test passed
 end
 
-@Test(priority=63) function CheckAboveThreshold()
+@Test(priority=65) function CheckAboveThreshold()
    try
       check ERR_Failed
    except e
@@ -1412,7 +1436,7 @@ end
    error("check should have raised an exception for ERR_Failed")
 end
 
-@Test(priority=64) function CheckWithExpression()
+@Test(priority=66) function CheckWithExpression()
    function returns_error()
       return ERR_Args
    end
@@ -1425,7 +1449,7 @@ end
    error("check with expression should have thrown")
 end
 
-@Test(priority=65) function RaiseWithVariable()
+@Test(priority=67) function RaiseWithVariable()
    -- Test that raise works with variables, not just constants
    err_code = ERR_Failed
    caught = false
@@ -1440,7 +1464,7 @@ end
    assert(caught, "Exception should have been caught")
 end
 
-@Test(priority=66) function RaiseConditionalShorthand()
+@Test(priority=68) function RaiseConditionalShorthand()
    truthy_value = "has_something"
    falsy_value = nil
 
@@ -1460,7 +1484,7 @@ end
    assert(caught, "Falsy value should have triggered raise")
 end
 
-@Test(priority=67) function CheckConditionalShorthand()
+@Test(priority=69) function CheckConditionalShorthand()
    truthy_value = true
    falsy_value = nil
 
