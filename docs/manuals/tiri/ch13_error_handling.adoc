@@ -570,7 +570,7 @@ result ?? raise ERR_Failed
 [discrete]
 ==== Interaction with defer and <close>
 
-When an exception is caught, `<close>` handlers for variables declared in the `try` scope are called in LIFO order (last declared, first closed).  Each `<close>` handler receives the error as its second argument.  `defer` blocks in the `try` scope execute after the exception frame is unwound but before the `success` block (see <<ch-resource-management>>).
+When an exception is caught, `<close>` handlers for variables declared in the `try` scope are called in LIFO order (last declared, first closed).  Each `<close>` handler receives the error as its second argument.  `defer` blocks do not execute during error unwinding; on the normal (no-exception) path, they execute after the exception frame is removed but before the `success` block (see <<ch-resource-management>>).
 
 If a `<close>` handler raises an error, it replaces the original exception.  All remaining `<close>` handlers still execute.
 

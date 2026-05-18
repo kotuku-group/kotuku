@@ -9,7 +9,7 @@ All three mechanisms share a common execution guarantee: cleanup code runs when 
 .Cleanup execution order on scope exit
 image::defer_close_order.svg[]
 
-NOTE: `<close>` handlers run during error unwinding.  `defer` blocks do NOT run during error unwinding (unless enclosed in a try block).
+NOTE: `<close>` handlers run during error unwinding.  `defer` blocks do NOT run during error unwinding.  For error-safe cleanup, use `<close>` variables (<<sec-to-be-closed-variables>>).
 
 [[sec-defer-statement]]
 === Defer Statement
@@ -595,7 +595,7 @@ The following patterns demonstrate common resource management techniques.
 [discrete]
 ==== Resource Acquisition and Cleanup
 
-Place `defer` immediately after acquiring a resource to guarantee cleanup:
+Place `defer` immediately after acquiring a resource to guarantee cleanup on normal exit paths:
 
 [source,tiri]
 ----

@@ -45,7 +45,7 @@ Const variable::
 A variable declared with the `<const>` attribute.  Prevents reassignment after initialisation; the value itself remains mutable if it is a reference type.  See <<sec-constant-variables>>.
 
 Defer statement::
-Registers a code block for guaranteed execution when the enclosing scope exits, regardless of whether an exception occurred.  Multiple defers execute in LIFO order.  See <<sec-defer-statement>>.
+Registers a code block for execution when the enclosing scope exits via normal completion, `return`, `break`, or `continue`.  Does not execute during error unwinding; use `<close>` for error-safe cleanup.  Multiple defers execute in LIFO order.  See <<sec-defer-statement>>.
 
 Error code::
 A 16-bit integer constant (prefixed with `ERR_`) indicating the result of an operation.  Codes below the exception threshold are safe codes; codes at or above the threshold are exception codes.  See <<sec-the-exception-model>>.
