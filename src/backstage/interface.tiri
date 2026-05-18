@@ -7,6 +7,11 @@ POST  Creates resources
 PUT   Requests are idempotent and either update or create if the target doesn't exist
 PATCH Should be used for updating existing resources
 
+Route options:
+   desc
+   query
+   returns
+
 Types:
    json     - JSON object or array
    object   - JSON object
@@ -14,17 +19,35 @@ Types:
    schema:* - JSON schema
    raw      - Raw data, text or binary
 
+Query options:
+   type
+   desc
+   required
+
 --]]
 
 glRoutes = array<table> { }
 glSelf = obj.find('self')
 glWorkingPath = glSelf.workingPath
+
 rx_func_name_chars <const> = <{ regex.new('[^A-Za-z0-9_]+') }>
 
 function route(Method:str, Path:str, Interface:table)
    glRoutes:push({ method=Method, path=Path, interface=Interface })
 end
 
+----------------------------------------------------------------------------------------------------------------------
+-- Agentic Interfaces
+
+route('GET', '/agents/context', {
+   desc = 'Return a compact runtime context bundle for AI agents: process info, loaded modules, object counts, active windows/surfaces, recent errors, and notable diagnostics.',
+   query = {
+      detail = { type='string', desc='One of summary, normal, verbose.' }
+   },
+   returns = 'object'
+})
+
+----------------------------------------------------------------------------------------------------------------------
 -- Proof-of-concept Interface
 
 route('GET', '/ping', {
@@ -32,15 +55,17 @@ route('GET', '/ping', {
    returns = 'json'
 })
 
+----------------------------------------------------------------------------------------------------------------------
 -- Object Interfaces
 
 route('GET', '/objects', {
    desc = 'Return a JSON list of all objects and their basic meta data.',
    query = {
-      classFilter = { type='csv', required=false, desc='Only return objects belonging to these classes' },
-      nested = { type='bool', required=false, desc='Return a nested JSON tree that matches the object hierarchy; otherwise return a flat list in order of object creation' },
-      depth = { type='int', required=false, desc='In nested mode, limits the depth of the tree' },
-      limit = { type='int', required=false, desc='Limit count for lists of objects' }
+      classFilter = { type='csv', desc='Only return objects belonging to these classes' },
+      root = { type='int', desc='Root object UID.' },
+      nested = { type='bool', desc='Return a nested JSON tree that matches the object graph; otherwise return a flat list in order of object creation' },
+      depth = { type='int', desc='In nested mode, limits the depth of the tree' },
+      limit = { type='int', desc='Limit count for lists of objects' }
    },
    returns = 'json'
 })
@@ -69,9 +94,9 @@ route('GET', '/objects/{uid}/children', {
       uid = { type = 'int', desc = 'Object UID.' }
    },
    query = {
-      nested = { type='bool', required=false, desc='Return a nested JSON tree that matches the child hierarchy' },
-      depth = { type='int', required=false, desc='In nested mode, limits the depth of the child tree' },
-      limit = { type='int', required=false, desc='Limit count for lists of child objects' }
+      nested = { type='bool', desc='Return a nested JSON tree that matches the child hierarchy' },
+      depth = { type='int', desc='In nested mode, limits the depth of the child tree' },
+      limit = { type='int', desc='Limit count for lists of child objects' }
    },
    returns = 'array'
 })
@@ -101,7 +126,7 @@ route('POST', '/objects/{uid}', {
 route('GET', '/classes', {
    desc = 'Return a JSON list of all classes and their meta data.',
    query = {
-      filter = { type='csv', required=false, desc='CSV list of class names to filter for' }
+      filter = { type='csv', desc='CSV list of class names to filter for' }
    },
    returns = 'array'
 })
@@ -143,7 +168,7 @@ route('GET', '/classes/{class}/methods', {
 route('GET', '/modules', {
    desc = 'Return a JSON list of all modules and their meta data.',
    query = {
-      filter = { type='csv', required=false, desc='Limit the list to the named modules' }
+      filter = { type='csv', desc='Limit the list to the named modules' }
    },
    returns = 'array'
 })
@@ -161,7 +186,7 @@ route('GET', '/modules/{name}', {
 route('GET', '/errors', {
    desc = 'Return a JSON list of known error codes and their symbolic names.',
    query = {
-      filter = { type='csv', required=false, desc='Limit the list to matching error names or numeric codes' }
+      filter = { type='csv', desc='Limit the list to matching error names or numeric codes' }
    },
    returns = 'array'
 })
@@ -179,7 +204,7 @@ route('GET', '/errors/{code}', {
 route('GET', '/diagnostics/memory', {
    desc = 'Returns a summary of memory allocations.  Specifying additional parameters can result in more detail',
    query = {
-      list = { required=false, type='bool', desc='Returns a list of all memory allocations (ID and size) if true.' }
+      list = { type='bool', desc='Returns a list of all memory allocations (ID and size) if true.' }
    },
    returns = 'object'
 })
@@ -187,7 +212,7 @@ route('GET', '/diagnostics/memory', {
 route('GET', '/diagnostics/timers', {
    desc = 'Return timer and scheduled callback diagnostics.',
    query = {
-      active = { required=false, type='bool', desc='Limit results to active timers if true.' }
+      active = { type='bool', desc='Limit results to active timers if true.' }
    },
    returns = 'array'
 })
@@ -216,6 +241,23 @@ route('POST', '/logs/level', {
    desc = 'Change runtime logging levels for Backstage or another module.',
    body = 'json',
    returns = 'object'
+})
+
+route('POST', '/logs/start', {
+   desc = 'Activates internal log recording.',
+   body = 'json',
+   returns = 'object'
+})
+
+route('POST', '/logs/stop', {
+   desc = 'Stops internal log recording.',
+   body = 'json',
+   returns = 'object'
+})
+
+route('GET', '/logs', {
+   desc = 'Returns all logged messages, then clears the log message stack (the client is responsible for maintaining a permanent record).',
+   returns = 'array'
 })
 
 -- Subscription Interfaces
@@ -259,8 +301,8 @@ route('GET', '/docs/routes', {
 route('POST', '/scripts', {
    desc = 'Accepts a Tiri script for compilation.  Returns an object identifier for the script and any results if executed.',
    query = {
-      ['function'] = { required=false, type='string', desc='Run this function after compilation.' },
-      exec = { required=false, type='bool', desc='Run the script after compilation.' },
+      ['function'] = { type='string', desc='Run this function after compilation.' },
+      exec = { type='bool', desc='Run the script after compilation.' },
       async = { type = 'bool', default = false, desc='Return immediately.  A job ID is returned for follow-up' },
    },
    body = 'raw',
@@ -348,24 +390,21 @@ end
 
    for _, route in glRoutes do
       routes = route.path:split('/')
-      route_path = ''
-      for i=0, #routes-1 do
-         if routes[i]:startsWith('{') and routes[i]:endsWith('}') then
-            -- Ignore embedded parameters
-         else
-            route_path ..= routes[i] .. '/'
-         end
+      route_path = 'routes/' .. routes[1] .. '.cpp'
+
+      local file:obj
+      target_path = glWorkingPath .. route_path
+      if mSys.AnalysePath(target_path) is ERR_Okay then
+         file = obj.new('file', { path=target_path, flags=FL_WRITE })
+         file.acSeek(0, SEEK_END)
+      else
+         file = obj.new('file', { path=target_path, flags=FL_NEW|FL_WRITE })
       end
-
-      if route_path:endsWith('/') then route_path = route_path[{0..-1}] end
-      source_file = 'routes' .. route_path .. '.cpp'
-
-      file = obj.new('file', { path=glWorkingPath .. source_file, flags=FL_NEW|FL_WRITE })
 
       func_name = rx_func_name_chars.replace(route.method .. route.path, '_'):lower()
       if func_name:endsWith('_') then func_name = func_name[{0..-1}] end
       route.funcName = func_name
-      route.source   = source_file
+      route.source   = route_path
 
       path_to_regex(route)
 
@@ -378,7 +417,9 @@ end
          else     -> 'void'
       end
 
-      out = f"\nstatic ERR {func_name}({proto})\n{{\n"
+      out = ''
+      out ..= f'// {route.method} {route.path}\n// {route.interface.desc}\n\n'
+      out ..= f"static ERR {func_name}({proto})\n{{\n"
       out ..= "   return ERR::Okay;\n"
       out ..= "}\n\n"
 
@@ -391,17 +432,19 @@ end
    file = obj.new('file', { path=target_path, flags=FL_NEW|FL_WRITE })
 
    glIncludes = {}
-   out ..= "// Auto-generated source code\n\n"
-   out ..= "static std::array<BackstageRoute> glRoutes = {\n"
+
+   rtab = f"static std::array<BackstageRoute, {#glRoutes}> glRoutes = {{\n"
    for i, route in glRoutes do
-      if i > 0 then out ..= ',\n' end
-      out ..= f'   {{ BackstageRoute("{route.method}", "{route.path}", "{route.regex}", {route.funcName}) }}'
+      if i > 0 then rtab ..= ',\n' end
+      rtab ..= f'   {{ BackstageRoute("{route.method}", "{route.path}", "{route.regex}", {route.funcName}) }}'
       glIncludes[route.source] = true
    end
-   out ..= '\n};\n\n'
+   rtab ..= '\n};\n\n'
 
+   inc = ''
    for k,v in pairs(glIncludes) do
-      out ..= f'#include "{k}"\n'
+      inc ..= f'#include "{k}"\n'
    end
 
+   out = "// Auto-generated source code\n\n" .. inc .. '\n' .. rtab
    file.acWrite(out)

@@ -1,0 +1,77 @@
+-- Backstage interface tests
+
+   include 'network'
+
+SERVER_PORT <const> = 18876
+
+glBackstageTask = nil
+
+@BeforeAll function startBackstage()
+   current_task = mSys.CurrentTask()
+
+   glBackstageTask = obj.new('task', {
+      location = current_task.processPath .. 'origo',
+      args = f'--backstage {SERVER_PORT} --statement "processing.sleep(10)" --log-warning',
+      outputCallback = function(Task:obj, Buffer)
+         print(Buffer:getString())
+      end,
+      errorCallback = function(Task:obj, Buffer)
+         print(Buffer:getString())
+      end
+   })
+
+   check glBackstageTask.acActivate()
+   processing.halt(0.25)
+end
+
+@AfterAll function stopBackstage()
+   if glBackstageTask then
+      glBackstageTask.acDeactivate()
+      glBackstageTask.free()
+      glBackstageTask = nil
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test; @Requires(network=true)
+function PingReturnsJsonPong()
+   response = ''
+   client = obj.new('netsocket', {
+      name = 'BackstagePingClient',
+      feedback = function(Socket:obj, State:num)
+         if State is NTC_CONNECTED then
+            request = 'GET /ping HTTP/1.1\r\n' ..
+               'Host: 127.0.0.1\r\n' ..
+               'Connection: close\r\n\r\n'
+
+            _, len = check Socket.acWrite(request)
+            assert(len is #request, 'Ping request write length mismatch.')
+         end
+      end,
+      incoming = function(Socket:obj)
+         buffer = string.alloc(2048)
+         err, read_len = Socket.acRead(buffer)
+         if err is ERR_Disconnected then
+            Socket.acSignal()
+            return
+         end
+         assert(err is ERR_Okay, 'Failed to read ping response: ' .. mSys.GetErrorMsg(err))
+         if read_len <= 0 then return end
+
+         response ..= buffer:substr(0, read_len)
+         if response:find('{"status":"pong"}') then
+            Socket.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<object> { client } })
+   check client.mtConnect('127.0.0.1', SERVER_PORT)
+   check proc.sleep()
+
+   assert(response:find('HTTP/1.1 200 OK'), 'Expected 200 OK response, got: ' .. response)
+   assert(response:find('Content-Type: application/json'), 'Expected JSON content type, got: ' .. response)
+   assert(response:find('Content-Length: 17'), 'Expected Content-Length 17, got: ' .. response)
+   assert(response:find('{"status":"pong"}'), 'Expected pong JSON body, got: ' .. response)
+end
