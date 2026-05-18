@@ -816,7 +816,7 @@ struct TryExceptPayload {
    ~TryExceptPayload();
 };
 
-// Raise statement payload: raise error_code [, message]
+// Raise statement payload: raise error_code [, message] or raise message
 struct RaiseStmtPayload {
    RaiseStmtPayload() = default;
    RaiseStmtPayload(const RaiseStmtPayload&) = delete;
@@ -824,8 +824,8 @@ struct RaiseStmtPayload {
    RaiseStmtPayload(RaiseStmtPayload&&) noexcept = default;
    RaiseStmtPayload& operator=(RaiseStmtPayload&&) noexcept = default;
 
-   ExprNodePtr error_code;   // Required: expression evaluating to error code
-   ExprNodePtr message;      // Optional: custom error message
+   ExprNodePtr error_code;   // Required: expression evaluating to error code, or message when no explicit code is used
+   ExprNodePtr message;      // Optional: explicit custom error message
 
    ~RaiseStmtPayload();
 };

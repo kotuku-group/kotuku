@@ -240,10 +240,13 @@ ParserResult<IrEmitUnit> IrEmitter::emit_try_except_stmt(const TryExceptPayload 
 }
 
 //********************************************************************************************************************
-// Emit bytecode for raise statement: raise error_code [, message]
+// Emit bytecode for raise statement:
+//   raise error_code
+//   raise error_code, message
+//   raise message
 //
 // Bytecode structure:
-//   BC_RAISE  A=error_reg, D=msg_reg (0xFF if no message)
+//   BC_RAISE  A=error_reg, D=msg_reg
 
 ParserResult<IrEmitUnit> IrEmitter::emit_raise_stmt(const RaiseStmtPayload &Payload, const SourceSpan &Span)
 {
@@ -262,8 +265,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_raise_stmt(const RaiseStmtPayload &Payl
    expr_toanyreg(fs, &code_expr);
    auto error_reg = BCReg(code_expr.u.s.info);
    BCReg msg_reg = BCReg(0);
+   bool release_msg_reg = false;
 
-   // Evaluate optional message expression, or emit nil if not provided
+   // Evaluate optional message expression.  If there is no explicit comma message, copy the first expression to a
+   // separate message slot so that `raise "message"` defaults the code to ERR::Exception and keeps the custom text.
 
    if (Payload.message) {
       auto msg_result = this->emit_expression(*Payload.message);
@@ -277,14 +282,14 @@ ParserResult<IrEmitUnit> IrEmitter::emit_raise_stmt(const RaiseStmtPayload &Payl
       expr_free(fs, &msg_expr);
    }
    else {
-      // No message provided - emit nil to a register
       msg_reg = BCReg(fs->freereg++);
-      bcemit_AD(fs, BC_KPRI, msg_reg, BCREG(ExpKind::Nil));
-      fs->freereg--;  // Free the nil register
+      release_msg_reg = true;
+      bcemit_AD(fs, BC_MOV, msg_reg, error_reg);
    }
 
    // Emit BC_RAISE: A=error_reg, D=msg_reg
    bcemit_AD(fs, BC_RAISE, error_reg, msg_reg);
+   if (release_msg_reg) fs->freereg--;
    expr_free(fs, &code_expr);
 
    return ParserResult<IrEmitUnit>::success(IrEmitUnit{});

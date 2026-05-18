@@ -5393,7 +5393,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |.endif
     |  call extern lj_raise_with_msg  // Never returns
     |3:
-    |  mov RAd, 13                      // ERR_Failed = 13
+    |  mov RAd, 162                     // ERR_Exception = 162
     |  jmp <2
     break;
 

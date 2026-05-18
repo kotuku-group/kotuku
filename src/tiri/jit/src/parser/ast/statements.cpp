@@ -868,7 +868,8 @@ ParserResult<StmtNodePtr> AstBuilder::parse_try()
 //********************************************************************************************************************
 // Parses raise statements: raise expression [, message]
 //
-// The raise keyword always triggers an exception with the given error code.
+// The first expression is normally the error code.  If it evaluates to a string and no comma message is supplied, the
+// emitter treats it as the custom message and lets the runtime default the error code to ERR::Exception.
 
 ParserResult<StmtNodePtr> AstBuilder::parse_raise()
 {
