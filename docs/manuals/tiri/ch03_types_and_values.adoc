@@ -2,7 +2,7 @@
 
 [[ch-types-and-values]]
 == Types & Values
-indexterm:[types] indexterm:[values] Tiri is a dynamically typed language.  Every value carries its type at runtime.  Variables are not bound to a fixed type by default, but Tiri's type inference system commits a variable to its first assigned type unless overridden.  See <<ch-type-system>> for a complete treatment of type inference, sticky types, and type annotations.
+indexterm:[types] indexterm:[values] Tiri is dynamically typed: every value carries its type at runtime, and variables do not require explicit type declarations.  However, Tiri enforces type consistency through _sticky types_: when a variable receives its first non-`nil` value, the variable commits to that value's type.  All subsequent non-`nil` assignments must match the committed type; assigning a value of a different type produces a compile-time or runtime error.  Assigning `nil` is always permitted, acting as a "clear" operation that preserves the type constraint.  The `:any` annotation opts a variable out of type fixing entirely.  See <<ch-type-system>> for the complete rules governing type inference, explicit annotations, and the `any` escape hatch.
 
 Tiri defines the following types: nil, boolean, number, string, table, array, function, userdata and object.
 

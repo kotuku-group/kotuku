@@ -156,7 +156,7 @@ Standard falsiness::
 The conservative falsiness rules used by `and`, `or`, `not`, and `if` conditions.  Under standard falsiness, only `nil` and `false` are falsey; all other values (including `0` and `""`) are truthy.  See <<sec-truthiness>>.
 
 Sticky type::
-Tiri's type inference mechanism in which a variable commits to the type of its first non-nil assignment.  Subsequent assignments of incompatible types raise an error.  See <<sec-sticky-types>>.
+Tiri's type inference mechanism in which a variable commits to the type of its first non-`nil` assignment.  Subsequent non-`nil` assignments of a different type raise an error.  Assigning `nil` is always permitted, acting as a "clear" operation that preserves the type constraint.  See <<sec-sticky-types>>.
 
 String::
 An immutable sequence of bytes.  Strings with identical content share the same internal object (interning).  Zero-based indexing.  See <<ch-strings>>.
