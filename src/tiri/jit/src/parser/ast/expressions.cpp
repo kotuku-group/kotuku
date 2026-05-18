@@ -98,16 +98,6 @@ ParserResult<StmtNodePtr> AstBuilder::parse_expression_stmt()
       }
    }
 
-   // Old guard shorthand pattern: value ?? return/break/continue/raise/check
-
-   if (targets.size() IS 1 and is_presence_expr(targets[0])) {
-      Token next = this->ctx.tokens().current();
-      if (is_shorthand_statement_keyword(next.kind())) {
-         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, next,
-            "guard shorthand uses '?!'; replace '??' with '?!' before control-flow statements");
-      }
-   }
-
    if (targets.size() > 1) {
       return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
          "unexpected expression list without assignment");

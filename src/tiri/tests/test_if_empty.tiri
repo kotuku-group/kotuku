@@ -166,7 +166,7 @@ end
 @Test function RHSOnce()
    count = 0
    function rhs()
-      count += 1
+      count++
       return "Y"
    end
    v = 0 ?? rhs()
@@ -382,7 +382,7 @@ end
 
    for i = 0, #values - 1 do
       values[i] ?! break
-      iterations += 1
+      iterations++
    end
 
    assert(iterations is 2, "Should break after 2 iterations, got " .. tostring(iterations))
@@ -429,56 +429,6 @@ end
    assert(body_executed is true, "Body should execute when condition is truthy")
 end
 
-function expect_old_guard_parse_error(Source:str, Label:str)
-   try
-      exec(Source)
-   except e
-      message = tostring(e.message ?? e)
-      assert(message:find("guard shorthand uses") != nil and message:find("?!") != nil,
-         Label .. " should report the ?! guard replacement, got: " .. message)
-      return
-   end
-
-   error(Label .. " should fail to parse")
-end
-
-@Test function OldGuardSyntaxRejected()
-   expect_old_guard_parse_error([[
-      function guardReturn(Value:any)
-         Value ?? return "default"
-         return Value
-      end
-   ]], "?? return")
-
-   expect_old_guard_parse_error([[
-      function guardBreak(Value:any)
-         for i = 0, 1 do
-            Value ?? break
-         end
-      end
-   ]], "?? break")
-
-   expect_old_guard_parse_error([[
-      function guardContinue(Value:any)
-         for i = 0, 1 do
-            Value ?? continue
-         end
-      end
-   ]], "?? continue")
-
-   expect_old_guard_parse_error([[
-      function guardRaise(Value:any)
-         Value ?? raise ERR_Failed
-      end
-   ]], "?? raise")
-
-   expect_old_guard_parse_error([[
-      function guardCheck(Value:any)
-         Value ?? check ERR_Failed
-      end
-   ]], "?? check")
-end
-
 @Test function MultiValues()
    function getValues()
       return 1, 2, 3
@@ -506,7 +456,7 @@ end
 @Test function ArrayShortCircuit()
    call_count = 0
    function rhs()
-      call_count += 1
+      call_count++
       return "RHS"
    end
    filled = array<int, 3>
