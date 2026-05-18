@@ -55,11 +55,31 @@ indexterm:[operators, comparison] Comparison operators return a boolean value.  
 
 ==== Equality Semantics
 
-The `is` operator compares by value for numbers, strings, and booleans.  Arrays also compare by value: two arrays are equal if they share the same element type, length, and contents.  For tables, functions, and userdata, `is` compares by identity -- two distinct objects are never equal unless a `pass:[__]eq` metamethod overrides this.  The runtime invokes the `pass:[__]eq` metamethod only when both operands share the same metatable.
+The `is` operator compares by value for value types (numbers, strings, booleans, nil).  For reference types, the default behaviour is identity comparison: two distinct tables, functions, or userdata values are never equal unless a `pass:[__]eq` metamethod overrides this.  The runtime invokes the `pass:[__]eq` metamethod only when both operands share the same metatable.
+
+**Arrays are the deliberate exception.** Although arrays are reference types, `is` compares them by content: two arrays are equal if they share the same element type, length, and element values.  This is implemented via a built-in `pass:[__]eq` metamethod on the array base metatable.  The rationale is that arrays model typed value sequences — they are routinely constructed, returned, and compared without the caller retaining a reference to the original.  Identity comparison would make array equality impractical in most use cases.  To test whether two array variables refer to the same underlying object, use `rawequal(a, b)`.
 
 `is not` and `!=` both negate the result of `is`.
 
 `nil is nil` evaluates to `true`.  Values of different types are never equal.
+
+.Equality summary by type
+[cols="1,2,2",options="header"]
+|===
+|Type |`is` behaviour |Override
+
+|nil, bool, number, string
+|Value comparison
+|N/A
+
+|Array
+|Content comparison (type, length, elements)
+|Built-in `pass:[__]eq`
+
+|Table, function, userdata, object
+|Identity (same reference)
+|Custom `pass:[__]eq`
+|===
 
 ==== String Ordering
 
@@ -71,6 +91,12 @@ print(1 is 1)          -- true
 print(1 is not 2)      -- true
 print('abc' is 'abc')  -- true
 print({} is {})        -- false (distinct tables)
+
+a = array<int> { 1, 2 }
+b = array<int> { 1, 2 }
+print(a is b)          -- true  (content equality)
+print(rawequal(a, b))  -- false (distinct references)
+
 print(1 < 2)           -- true
 print('abc' < 'abd')   -- true
 ----

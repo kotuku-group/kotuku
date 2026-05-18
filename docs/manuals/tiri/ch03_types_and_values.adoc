@@ -83,7 +83,7 @@ See <<ch-tables>> for the complete table library.
 === Arrays
 indexterm:[arrays] Arrays are mutable, typed, contiguous sequences of elements.  Each array holds elements of a single declared type.  Arrays are a distinct type from tables, purpose-built for sequential data storage with efficient memory layout and direct access.
 
-Arrays are reference types.  The `is` operator compares arrays by content: two arrays are equal if they have the same element type, length, and contents.  Elements are stored in sequential order from index 0; iteration order matches storage order.
+Arrays are reference types, but unlike other reference types, the `is` operator compares arrays by content rather than identity: two arrays are equal if they have the same element type, length, and contents.  This is a deliberate design decision — see <<sec-comparison-operators>> for the rationale and a comparison with table identity semantics.  Elements are stored in sequential order from index 0; iteration order matches storage order.
 
 [source,tiri]
 ----

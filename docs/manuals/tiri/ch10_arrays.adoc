@@ -98,7 +98,7 @@ Returns `true` if the array is read-only.  Read-only arrays are produced by Kōt
 [discrete]
 ==== Length and Equality
 
-The `#` operator returns the current element count.  The `is` operator performs deep equality comparison: two arrays are equal if they have the same element type, the same length, and identical contents.
+The `#` operator returns the current element count.  The `is` operator performs content equality comparison: two arrays are equal if they have the same element type, the same length, and identical contents.  This differs from tables, where `is` compares by identity.  See <<sec-comparison-operators>> for the rationale behind this deliberate asymmetry.
 
 [source,tiri]
 ----
@@ -106,9 +106,12 @@ a = array<int> { 1, 2, 3 }
 b = array<int> { 1, 2, 3 }
 c = a
 
-a is c   -- true  (same object)
-a is b   -- true  (same type, length, and contents)
+a is c   -- true  (same object — also same contents)
+a is b   -- true  (distinct objects, but same type, length, and contents)
 #a       -- 3
+
+rawequal(a, b) -- false (identity comparison: distinct objects)
+rawequal(a, c) -- true  (identity comparison: same object)
 ----
 
 Equality rules depend on the element type:
@@ -128,6 +131,8 @@ Equality rules depend on the element type:
 |===
 
 Arrays with different element types are never equal, even if the raw values are numerically equivalent.  Equality for `table` and `any` element types is not yet supported and raises an error.
+
+NOTE: Content equality is O(n) in the array length.  For primitive element types, the comparison uses `memcmp` and is highly efficient.  For string and object arrays, each element is compared individually.  If reference identity is sufficient, use `rawequal(a, b)` which is O(1).
 
 [discrete]
 ==== String Conversion

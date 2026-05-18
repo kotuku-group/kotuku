@@ -12,7 +12,7 @@ Anonymous function::
 A function expression that produces a callable value without binding it to a name.  Created with the `function` keyword or arrow syntax (`pass:[=>]`).  See <<sec-arrow-functions>>.
 
 Array::
-A mutable, typed, contiguous sequence of single-type elements with zero-based indexing.  Arrays enforce a declared element type and provide functional methods such as `map`, `filter`, and `reduce`.  See <<ch-arrays>>.
+A mutable, typed, contiguous sequence of single-type elements with zero-based indexing.  Arrays enforce a declared element type and provide functional methods such as `map`, `filter`, and `reduce`.  Unlike other reference types, the `is` operator compares arrays by content rather than identity.  See <<ch-arrays>>.
 
 Array part::
 The sequential integer-keyed portion of a table, stored contiguously in memory.  Integer keys from 0 up to the first `nil` gap form the array part.  See <<sec-table-fundamentals>>.
