@@ -1,7 +1,7 @@
 // POST /logs/level
 // Change runtime logging levels for Backstage or another module.
 
-static ERR post_logs_level(const BackstageRequest &Request, std::string_view Body, BackstageResponse &Response)
+static ERR post_logs_level(const BackstageRequest &Request, BackstageResponse &Response)
 {
    return ERR::Okay;
 }
@@ -9,7 +9,7 @@ static ERR post_logs_level(const BackstageRequest &Request, std::string_view Bod
 // POST /logs/start
 // Activates internal log recording.
 
-static ERR post_logs_start(const BackstageRequest &Request, std::string_view Body, BackstageResponse &Response)
+static ERR post_logs_start(const BackstageRequest &Request, BackstageResponse &Response)
 {
    return ERR::Okay;
 }
@@ -17,7 +17,7 @@ static ERR post_logs_start(const BackstageRequest &Request, std::string_view Bod
 // POST /logs/stop
 // Stops internal log recording.
 
-static ERR post_logs_stop(const BackstageRequest &Request, std::string_view Body, BackstageResponse &Response)
+static ERR post_logs_stop(const BackstageRequest &Request, BackstageResponse &Response)
 {
    return ERR::Okay;
 }
@@ -29,4 +29,3 @@ static ERR get_logs(const BackstageRequest &Request, BackstageResponse &Response
 {
    return ERR::Okay;
 }
-

@@ -12,4 +12,11 @@ set_module_defaults (${MOD} "Bk")
 
 target_sources (${MOD} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/${MOD}.cpp")
 
-flute_test (backstage_ping "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ping.tiri")
+add_custom_target (backstage_routes
+   COMMAND ${ORIGO_CMD} "${CMAKE_CURRENT_SOURCE_DIR}/interface.tiri" "--log-warning"
+   WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+   SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/interface.tiri"
+   COMMENT "Generating Backstage route table and missing route stubs"
+   VERBATIM)
+
+flute_test (backstage_ping "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_backstage.tiri")

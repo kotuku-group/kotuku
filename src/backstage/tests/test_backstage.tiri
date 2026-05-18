@@ -45,7 +45,8 @@ function PingReturnsJsonPong()
                'Host: 127.0.0.1\r\n' ..
                'Connection: close\r\n\r\n'
 
-            _, len = check Socket.acWrite(request)
+            err, len = Socket.acWrite(request)
+            check err
             assert(len is #request, 'Ping request write length mismatch.')
          end
       end,

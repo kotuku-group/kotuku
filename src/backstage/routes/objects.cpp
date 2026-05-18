@@ -9,7 +9,7 @@ static ERR get_objects(const BackstageRequest &Request, BackstageResponse &Respo
 // POST /objects
 // Create a new object, using the provided JSON fields as the object field values
 
-static ERR post_objects(const BackstageRequest &Request, std::string_view Body, BackstageResponse &Response)
+static ERR post_objects(const BackstageRequest &Request, BackstageResponse &Response)
 {
    return ERR::Okay;
 }
@@ -41,8 +41,7 @@ static ERR get_objects_uid_subscribers(const BackstageRequest &Request, Backstag
 // POST /objects/{uid}
 // Process a series of commands (e.g. call an action, set a field) for the target object.  Returns an error code and any result values.
 
-static ERR post_objects_uid(const BackstageRequest &Request, std::string_view Body, BackstageResponse &Response)
+static ERR post_objects_uid(const BackstageRequest &Request, BackstageResponse &Response)
 {
    return ERR::Okay;
 }
-

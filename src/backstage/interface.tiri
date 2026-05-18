@@ -340,10 +340,10 @@ function path_param_regex(Route:table, ParamName:str):str
       'float'  -> '(-?(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?)'
       'double' -> '(-?(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?)'
       'bool'   -> '(true|false|0|1)'
-      'csv'    -> '([^/]+(?:,[^/]+)*)'
-      'str'    -> '([^/]+)'
-      'string' -> '([^/]+)'
-      else     -> '([^/]+)'
+      'csv'    -> '([^\\\\/]+(?:,[^\\\\/]+)*)'
+      'str'    -> '([^\\\\/]+)'
+      'string' -> '([^\\\\/]+)'
+      else     -> '([^\\\\/]+)'
    end
 end
 
@@ -386,20 +386,54 @@ function path_to_regex(Route:table):str
    return rx
 end
 
+function read_text_file(Path:str):str
+   if mSys.AnalysePath(Path) != ERR_Okay then return '' end
+
+   file = obj.new('file', { path=Path, flags=FL_READ })
+   if file.size <= 0 then return '' end
+
+   buffer = array<byte, file.size>
+   check mSys.ReadFileToBuffer(Path, buffer)
+   return buffer:getString()
+end
+
+function route_handler_stub(Route:table):str
+   proto = 'const BackstageRequest &Request, BackstageResponse &Response'
+
+   out = ''
+   out ..= f'// {Route.method} {Route.path}\n// {Route.interface.desc}\n\n'
+   out ..= f"static ERR {Route.funcName}({proto})\n{{\n"
+   out ..= "   return ERR::Okay;\n"
+   out ..= "}\n\n"
+   return out
+end
+
+function append_missing_route_handler(Route:table)
+   target_path = glWorkingPath .. Route.source
+   content = read_text_file(target_path)
+   signature = 'static ERR ' .. Route.funcName .. '('
+
+   if content:find(signature) then return end
+
+   if content?? then
+      file = obj.new('file', { path=target_path, flags=FL_WRITE })
+      file.acSeek(0, SEEK_END)
+      if not content:endsWith('\n') then file.acWrite('\n') end
+   else
+      file = obj.new('file', { path=target_path, flags=FL_NEW|FL_WRITE })
+   end
+
+   file.acWrite(route_handler_stub(Route))
+end
+
 ----------------------------------------------------------------------------------------------------------------------
+
+   glIncludes = {}
+   glIncludeList = array<string> { }
 
    for _, route in glRoutes do
       routes = route.path:split('/')
       route_path = 'routes/' .. routes[1] .. '.cpp'
-
-      local file:obj
-      target_path = glWorkingPath .. route_path
-      if mSys.AnalysePath(target_path) is ERR_Okay then
-         file = obj.new('file', { path=target_path, flags=FL_WRITE })
-         file.acSeek(0, SEEK_END)
-      else
-         file = obj.new('file', { path=target_path, flags=FL_NEW|FL_WRITE })
-      end
 
       func_name = rx_func_name_chars.replace(route.method .. route.path, '_'):lower()
       if func_name:endsWith('_') then func_name = func_name[{0..-1}] end
@@ -408,22 +442,12 @@ end
 
       path_to_regex(route)
 
-      proto = choose route.method from
-         'GET'    -> 'const BackstageRequest &Request, BackstageResponse &Response'
-         'POST'   -> 'const BackstageRequest &Request, std::string_view Body, BackstageResponse &Response'
-         'PUT'    -> 'const BackstageRequest &Request, std::string_view Body, BackstageResponse &Response'
-         'PATCH'  -> 'const BackstageRequest &Request, std::string_view Body, BackstageResponse &Response'
-         'DELETE' -> 'const BackstageRequest &Request, BackstageResponse &Response'
-         else     -> 'void'
+      if not glIncludes[route.source] then
+         glIncludes[route.source] = true
+         glIncludeList:push(route.source)
       end
 
-      out = ''
-      out ..= f'// {route.method} {route.path}\n// {route.interface.desc}\n\n'
-      out ..= f"static ERR {func_name}({proto})\n{{\n"
-      out ..= "   return ERR::Okay;\n"
-      out ..= "}\n\n"
-
-      file.acWrite(out)
+      append_missing_route_handler(route)
    end
 
    -- Write out the route table and include paths
@@ -431,20 +455,17 @@ end
    target_path = glWorkingPath .. 'routes.cpp'
    file = obj.new('file', { path=target_path, flags=FL_NEW|FL_WRITE })
 
-   glIncludes = {}
-
    rtab = f"static std::array<BackstageRoute, {#glRoutes}> glRoutes = {{\n"
    for i, route in glRoutes do
       if i > 0 then rtab ..= ',\n' end
-      rtab ..= f'   {{ BackstageRoute("{route.method}", "{route.path}", "{route.regex}", {route.funcName}) }}'
-      glIncludes[route.source] = true
+      rtab ..= f'   BackstageRoute("{route.method}", "{route.path}", "{route.regex}", {route.funcName})'
    end
-   rtab ..= '\n};\n\n'
+   rtab ..= '\n};\n'
 
    inc = ''
-   for k,v in pairs(glIncludes) do
-      inc ..= f'#include "{k}"\n'
+   for _, source in glIncludeList do
+      inc ..= f'#include "{source}"\n'
    end
 
-   out = "// Auto-generated source code\n\n" .. inc .. '\n' .. rtab
+   out = "// Auto-generated source code.  Regenerate with the backstage_routes CMake target.\n\n" .. inc .. '\n' .. rtab
    file.acWrite(out)
