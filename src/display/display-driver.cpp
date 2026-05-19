@@ -898,8 +898,6 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    if (!glHeadless) {
       // Attempt to open X11.  Use KOTUKU_XDISPLAY if set, otherwise use the DISPLAY variable.
 
-      log.msg("Attempting to open X11...");
-
       CSTRING strdisplay = getenv("KOTUKU_XDISPLAY");
       if (!strdisplay) strdisplay = getenv("DISPLAY");
 
@@ -911,14 +909,13 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
          if (glX11.WSLg) {
             glX11.Manager = false;
-            log.msg("WSLg detected; disabling legacy X11 direct-display features.");
          }
          else {
             XSetErrorHandler((XErrorHandler)CatchRedirectError);
 
             XSelectInput(XDisplay, RootWindow(XDisplay, DefaultScreen(XDisplay)),
                LeaveWindowMask|EnterWindowMask|PointerMotionMask|
-               PropertyChangeMask| //SubstructureRedirectMask| // SubstructureNotifyMask |
+               PropertyChangeMask|SubstructureRedirectMask| // SubstructureNotifyMask |
                KeyPressMask|ButtonPressMask|ButtonReleaseMask);
 
             XSync(XDisplay, 0);
