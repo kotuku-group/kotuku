@@ -157,6 +157,7 @@ static int processing_sleep(lua_State *Lua)
 
    log.branch("Timeout: %g", seconds);
 
+   ERR error;
    if (seconds != 0) {
       // Always collect your garbage before going to sleep.  Can be prevented with processing.stopCollector() if
       // absolutely necessary.
@@ -165,33 +166,33 @@ static int processing_sleep(lua_State *Lua)
          log.traceBranch("Collecting garbage.");
          lua_gc(Lua, LUA_GCCOLLECT, 0);
       }
-   }
 
-   ERR error;
-   if ((fp) and (fp->Signals) and (not fp->Signals->empty())) {
-      // Use custom signals provided by the client
-      auto signal_list_c = std::make_unique<ObjectSignal[]>(fp->Signals->size() + 1);
-      int i = 0;
-      for (auto &entry : *fp->Signals) signal_list_c[i++] = entry;
-      signal_list_c[i].Object = nullptr;
+      if ((fp) and (fp->Signals) and (not fp->Signals->empty())) {
+         // Use custom signals provided by the client
+         auto signal_list_c = std::make_unique<ObjectSignal[]>(fp->Signals->size() + 1);
+         int i = 0;
+         for (auto &entry : *fp->Signals) signal_list_c[i++] = entry;
+         signal_list_c[i].Object = nullptr;
 
-      std::scoped_lock lock(recursion);
-      auto timeout = int(seconds * 1000.0);
-      error = WaitForObjects(timeout IS -1 ? PMF::EVENT_LOOP : PMF::NIL, timeout, signal_list_c.get());
-   }
-   else { // Default behaviour: Sleeping can be broken with a signal to the Tiri object.
-      if (Lua->script->defined(NF::SIGNALLED)) {
-         log.detail("Tiri script already in signalled state.");
-         Lua->script->clearFlag(NF::SIGNALLED);
-         error = ERR::Okay;
-      }
-      else {
-         ObjectSignal signal_list_c[2] = { { .Object = Lua->script }, { .Object = nullptr } };
          std::scoped_lock lock(recursion);
          auto timeout = int(seconds * 1000.0);
-         error = WaitForObjects(timeout IS -1 ? PMF::EVENT_LOOP : PMF::NIL, timeout, signal_list_c);
+         error = WaitForObjects(timeout IS -1 ? PMF::EVENT_LOOP : PMF::NIL, timeout, signal_list_c.get());
+      }
+      else { // Default behaviour: Sleeping can be broken with a signal to the Tiri object.
+         if (Lua->script->defined(NF::SIGNALLED)) {
+            log.detail("Tiri script already in signalled state.");
+            Lua->script->clearFlag(NF::SIGNALLED);
+            error = ERR::Okay;
+         }
+         else {
+            ObjectSignal signal_list_c[2] = { { .Object = Lua->script }, { .Object = nullptr } };
+            std::scoped_lock lock(recursion);
+            auto timeout = int(seconds * 1000.0);
+            error = WaitForObjects(timeout IS -1 ? PMF::EVENT_LOOP : PMF::NIL, timeout, signal_list_c);
+         }
       }
    }
+   else error = ProcessMessages(PMF::NIL, 0);
 
    // Promote errors to exceptions
    if ((error != ERR::Okay) and (in_try_immediate_scope(Lua))) luaL_error(Lua, error);
@@ -207,6 +208,8 @@ static int processing_sleep(lua_State *Lua)
 
 static int processing_signal(lua_State *Lua)
 {
+   kt::Log log("processing.signal");
+   log.msg("Signaling Tiri object #%d.", Lua->script->UID);
    Action(AC::Signal, Lua->script, nullptr);
    return 0;
 }

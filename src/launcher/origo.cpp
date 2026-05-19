@@ -63,21 +63,27 @@ The following options can be used when executing script files:
 
 static std::string glDialogScript =
 R"(STRING:import 'gui/filedialog'
-gui.dialog.file({
- filterList = { { name='Script Files', ext='.tiri' } },
- strictFilter = true,
- title      = 'Run a Script',
- okText     = 'Run Script',
- cancelText = 'Exit',
- path       = '%%PATH%%',
- feedback = function(Dialog, Path, Files)
-  if not Files then mSys.SendMessage(MSGID_QUIT) return end
-  global glRunFile = Path .. Files[0].filename
-  processing.signal()
- end
-})
-processing.sleep(nil, true)
-if glRunFile then obj.new('script', { src = glRunFile }).acActivate() end
+try
+ gui.dialog.file({
+  filterList = { { name='Script Files', ext='.tiri' } },
+  strictFilter = true,
+  title = 'Run a Script',
+  okText = 'Run Script',
+  cancelText = 'Exit',
+  path = '%%PATH%%',
+  feedback = function(Dialog, Path, Files)
+   if not Files then mSys.SendMessage(MSGID_QUIT) return end
+   global glRunFile = Path .. Files[0].filename
+   processing.signal()
+  end
+ })
+except ex
+ raise ERR_NoSupport
+end
+processing.sleep()
+if glRunFile then
+ obj.new('script', { src = glRunFile }).acActivate()
+end
 )";
 
 //********************************************************************************************************************
@@ -93,7 +99,7 @@ static ERR process_args(void)
    if ((glTask->get(FID_Parameters, glArgs) IS ERR::Okay) and (glArgs)) {
       kt::vector<std::string> &args = *glArgs;
       for (unsigned i=0; i < args.size(); i++) {
-         if (kt::iequals(args[i], "--help")) { // Print help for the user
+         if (kt::iequals(args[i], "--help") or kt::iequals(args[i], "help")) { // Print help for the user
             printf("%s", glHelp.c_str());
             return ERR::Terminate;
          }
@@ -161,6 +167,28 @@ static ERR process_args(void)
 }
 
 //********************************************************************************************************************
+
+static ERR select_file_dialog(void)
+{
+   auto driver = CSTRING(GetResourcePtr(RES::DISPLAY_DRIVER));
+   if ((driver) and kt::iequals(driver, "headless")) return ERR::NoSupport;
+
+   auto start = glDialogScript.find("%%PATH%%");
+   if (not glTargetFile.empty()) {
+      std::string::size_type n = 0;
+      while ((n = glTargetFile.find('\\', n)) != std::string::npos) {
+            glTargetFile.replace(n, 1, "\\\\");
+            n += 2;
+      }
+
+      glDialogScript.replace(start, 8, glTargetFile);
+   }
+   else glDialogScript.replace(start, 8, "kotuku:");
+
+   return exec_source(glDialogScript.c_str(), glTime, glProcedure);
+}
+
+//********************************************************************************************************************
 // Note: In Windows, if the program is failing to load and no output is printed, pipe to Out-Host to see error messages.
 // E.g. .\origo.exe --version | Out-Host
 
@@ -185,19 +213,7 @@ extern "C" int main(int argc, char **argv)
       }
 
       if (glDialog) {
-         auto start = glDialogScript.find("%%PATH%%");
-         if (not glTargetFile.empty()) {
-            std::string::size_type n = 0;
-            while ((n = glTargetFile.find('\\', n)) != std::string::npos) {
-                glTargetFile.replace(n, 1, "\\\\");
-                n += 2;
-            }
-
-            glDialogScript.replace(start, 8, glTargetFile);
-         }
-         else glDialogScript.replace(start, 8, "kotuku:");
-
-         result = int(exec_source(glDialogScript.c_str(), glTime, glProcedure));
+         result = int(select_file_dialog());
       }
       else if (not glStatement.empty()) {
          result = int(exec_source(std::string("STRING:") + glStatement, glTime, glProcedure));
@@ -214,6 +230,7 @@ extern "C" int main(int argc, char **argv)
          else result = int(exec_source(glTargetFile.c_str(), glTime, glProcedure));
       }
       else {
+         // Engage default behaviour if no parameters have been specified
          // Check for the presence of package.zip or main.tiri files in the working directory
 
          auto path = glTask->get<CSTRING>(FID_ProcessPath);
@@ -240,7 +257,16 @@ extern "C" int main(int argc, char **argv)
             if ((AnalysePath("main.tiri", &type) IS ERR::Okay) and (type IS LOC::FILE)) {
                result = (int)exec_source("main.tiri", glTime, glProcedure);
             }
-            else printf("%s", glHelp.c_str());
+            else {
+               auto error = select_file_dialog();
+
+               if (error IS ERR::NoSupport) {
+                  printf("%s", glHelp.c_str());
+                  error = ERR::Okay;
+               }
+
+               result = int(error);
+            }
          }
       }
    }
