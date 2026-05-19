@@ -95,7 +95,7 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
          }
 
          case ClientMessage:
-            if ((Atom)xevent.xclient.data.l[0] == XWADeleteWindow) {
+            if (Atom(xevent.xclient.data.l[0]) IS XWADeleteWindow) {
                if (auto display_id = get_display(xevent.xany.window)) {
                   auto surface_id = GetOwnerID(display_id);
                   const WinHook hook(surface_id, WH::CLOSE);
@@ -128,6 +128,9 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
                   log.msg("Failed to retrieve display ID for window $%x.", (unsigned int)xevent.xany.window);
                   XDestroyWindow(XDisplay, (Window)xevent.xany.window);
                }
+            }
+            else if (Atom(xevent.xclient.data.l[0]) IS XWATakeFocus) {
+               XSetInputFocus(XDisplay, xevent.xclient.window, RevertToParent, Time(xevent.xclient.data.l[1]));
             }
             break;
 
@@ -245,7 +248,10 @@ void handle_button_release(XEvent *xevent)
 
    XFlush(XDisplay);
 
-   XSetInputFocus(XDisplay, xevent->xany.window, RevertToNone, CurrentTime);
+   XWindowAttributes attributes;
+   if ((XGetWindowAttributes(XDisplay, xevent->xany.window, &attributes)) and (attributes.override_redirect)) {
+      XSetInputFocus(XDisplay, xevent->xany.window, RevertToNone, CurrentTime);
+   }
 }
 
 //********************************************************************************************************************

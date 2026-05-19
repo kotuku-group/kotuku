@@ -45,7 +45,7 @@ uint8_t KeyHeld[int(KEY::LIST_END)];
 uint8_t glTrayIcon = 0, glTaskBar = 1, glStickToFront = 0;
 KQ glKeyFlags = KQ::NIL;
 int glXFD = -1, glDGAPixelsPerLine = 0, glDGABankSize = 0;
-Atom atomSurfaceID = 0, XWADeleteWindow = 0;
+Atom atomSurfaceID = 0, XWADeleteWindow = 0, XWATakeFocus = 0;
 GC glXGC = 0, glClipXGC = 0;
 XWindowAttributes glRootWindow;
 Window glDisplayWindow = 0;
@@ -278,6 +278,8 @@ ERR xr_set_display_mode(int *Width, int *Height)
    int width = *Width;
    int height = *Height;
 
+   if (glX11.WSLg) return ERR::NoSupport;
+
    XRRScreenSize *sizes;
    if ((sizes = XRRSizes(XDisplay, DefaultScreen(XDisplay), &count)) and (count)) {
       int16_t index    = -1;
@@ -422,6 +424,15 @@ void unlock_graphics(void)
 
 int16_t glDGAAvailable = -1; // -1 indicates that we have not tried the setup process yet
 
+static bool detect_wslg(void)
+{
+   if (auto gui_enabled = getenv("WSL2_GUI_APPS_ENABLED")) {
+      if (gui_enabled[0] IS '1') return true;
+   }
+
+   return access("/mnt/wslg", F_OK) IS 0;
+}
+
 #ifdef XDGA_AVAILABLE
 APTR glDGAMemory = nullptr;
 
@@ -432,6 +443,18 @@ int x11DGAAvailable(APTR *VideoAddress, int *PixelsPerLine, int *BankSize)
 
    static int checked = true;
    *VideoAddress = NULL;
+
+   if (glX11.WSLg) {
+      glDGAAvailable = FALSE;
+      glDGAMemory = nullptr;
+      glDGAVideo = nullptr;
+      glX11.PixelsPerLine = 0;
+      glX11.BankSize = 0;
+
+      if (PixelsPerLine) *PixelsPerLine = 0;
+      if (BankSize) *BankSize = 0;
+      return glDGAAvailable;
+   }
 
    if (glDGAAvailable IS -1) {
       // Check for the DGA driver.  This will only work if the extension is version 2.0+ and we have permissions
@@ -884,16 +907,24 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
          // Select the X messages that we want to receive from the root window.  This will also tell us if an X11 manager
          // is currently running or not (refer to the CatchRedirectError() exception routine).
 
-         XSetErrorHandler((XErrorHandler)CatchRedirectError);
+         glX11.WSLg = detect_wslg();
 
-         XSelectInput(XDisplay, RootWindow(XDisplay, DefaultScreen(XDisplay)),
-            LeaveWindowMask|EnterWindowMask|PointerMotionMask|
-            PropertyChangeMask|SubstructureRedirectMask| // SubstructureNotifyMask |
-            KeyPressMask|ButtonPressMask|ButtonReleaseMask);
+         if (glX11.WSLg) {
+            glX11.Manager = false;
+            log.msg("WSLg detected; disabling legacy X11 direct-display features.");
+         }
+         else {
+            XSetErrorHandler((XErrorHandler)CatchRedirectError);
+
+            XSelectInput(XDisplay, RootWindow(XDisplay, DefaultScreen(XDisplay)),
+               LeaveWindowMask|EnterWindowMask|PointerMotionMask|
+               PropertyChangeMask| //SubstructureRedirectMask| // SubstructureNotifyMask |
+               KeyPressMask|ButtonPressMask|ButtonReleaseMask);
+
+            XSync(XDisplay, 0);
+         }
 
          if (!getenv("KOTUKU_XDISPLAY")) setenv("KOTUKU_XDISPLAY", strdisplay, FALSE);
-
-         XSync(XDisplay, 0);
 
          XSetErrorHandler((XErrorHandler)CatchXError);
          XSetIOErrorHandler(CatchXIOError);
@@ -940,6 +971,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
       C_Default = XCreateFontCursor(XDisplay, XC_left_ptr);
 
       XWADeleteWindow = XInternAtom(XDisplay, "WM_DELETE_WINDOW", False);
+      XWATakeFocus    = XInternAtom(XDisplay, "WM_TAKE_FOCUS", False);
       atomSurfaceID   = XInternAtom(XDisplay, "KOTUKU_SCREENID", False);
 
       XGetWindowAttributes(XDisplay, DefaultRootWindow(XDisplay), &glRootWindow);
@@ -969,7 +1001,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
       char buffer[512];
 
       int events;
-      if ((glX11.Manager) and (XRRQueryExtension(XDisplay, &events, &errors))) {
+      if ((not glX11.WSLg) and (glX11.Manager) and (XRRQueryExtension(XDisplay, &events, &errors))) {
          glXRRAvailable = true;
          if ((sizes = XRRSizes(XDisplay, DefaultScreen(XDisplay), &count)) and (count)) {
             glSizes = sizes;

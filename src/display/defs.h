@@ -493,6 +493,7 @@ extern WinCursor winCursors[24];
 
 struct X11Globals {
    bool Manager;
+   bool WSLg;
    int PixelsPerLine; // Defined by DGA
    int BankSize; // Definfed by DGA
 };
@@ -522,7 +523,7 @@ extern bool glXCompositeSupported;
 extern uint8_t KeyHeld[int(KEY::LIST_END)];
 extern KQ glKeyFlags;
 extern int glXFD, glDGAPixelsPerLine, glDGABankSize;
-extern Atom atomSurfaceID, XWADeleteWindow;
+extern Atom atomSurfaceID, XWADeleteWindow, XWATakeFocus;
 extern GC glXGC, glClipXGC;
 extern XWindowAttributes glRootWindow;
 extern Window glDisplayWindow;

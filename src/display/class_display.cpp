@@ -24,6 +24,16 @@ static ERR DISPLAY_Resize(extDisplay *, struct acResize *);
 
 static void alloc_display_buffer(extDisplay *Self);
 
+#ifdef __xwindows__
+static void set_x11_input_hints(Window WindowHandle)
+{
+   XWMHints hints = { };
+   hints.flags = InputHint;
+   hints.input = True;
+   XSetWMHints(XDisplay, WindowHandle, &hints);
+}
+#endif
+
 #ifdef _GLES_
 static const int attributes[] = {
    EGL_BUFFER_SIZE,
@@ -324,7 +334,9 @@ static ERR DISPLAY_Focus(extDisplay *Self)
 #ifdef _WIN32
    winFocus(Self->WindowHandle);
 #elif __xwindows__
-   if ((Self->Flags & SCR::BORDERLESS) != SCR::NIL) XSetInputFocus(XDisplay, Self->XWindowHandle, RevertToNone, CurrentTime);
+   if ((Self->Flags & (SCR::BORDERLESS|SCR::COMPOSITE)) != SCR::NIL) {
+      XSetInputFocus(XDisplay, Self->XWindowHandle, RevertToNone, CurrentTime);
+   }
 #endif
    return ERR::Okay;
 }
@@ -588,6 +600,11 @@ static ERR DISPLAY_Init(extDisplay *Self)
    #ifdef __xwindows__
       // If the display object will act as window manager, the dimensions must match that of the root window.
 
+      if ((glX11.WSLg) and ((Self->Flags & (SCR::BORDERLESS|SCR::MAXIMISE)) IS (SCR::BORDERLESS|SCR::MAXIMISE))) {
+         log.msg("WSLg detected; using a managed maximised window instead of fullscreen override-redirect.");
+         Self->Flags = Self->Flags & (~SCR::BORDERLESS);
+      }
+
       if ((glX11.Manager) or ((Self->Flags & SCR::MAXIMISE) != SCR::NIL)) {
          Self->Width  = glRootWindow.width;
          Self->Height = glRootWindow.height;
@@ -716,7 +733,9 @@ static ERR DISPLAY_Init(extDisplay *Self)
          }
          else XStoreName(XDisplay, Self->XWindowHandle, "Kotuku");
 
-         Atom protocols[1] = { XWADeleteWindow };
+         set_x11_input_hints(Self->XWindowHandle);
+
+         Atom protocols[2] = { XWADeleteWindow, XWATakeFocus };
          XSetWMProtocols(XDisplay, Self->XWindowHandle, protocols, std::ssize(protocols));
 
          Self->Flags |= SCR::HOSTED;
@@ -2203,7 +2222,10 @@ static ERR SET_Flags(extDisplay *Self, SCR Value)
 
       #elif __xwindows__
 
-         if (glX11.Manager) return ERR::NoSupport;
+         if ((glX11.Manager) or
+             ((glX11.WSLg) and ((Value & (SCR::BORDERLESS|SCR::MAXIMISE)) IS (SCR::BORDERLESS|SCR::MAXIMISE)))) {
+            return ERR::NoSupport;
+         }
 
          XSetWindowAttributes swa;
 
@@ -2254,8 +2276,10 @@ static ERR SET_Flags(extDisplay *Self, SCR Value)
          }
          else XStoreName(XDisplay, Self->XWindowHandle, "Kotuku");
 
-         Atom protocols[1] = { XWADeleteWindow };
-         XSetWMProtocols(XDisplay, Self->XWindowHandle, protocols, 1);
+         set_x11_input_hints(Self->XWindowHandle);
+
+         Atom protocols[2] = { XWADeleteWindow, XWATakeFocus };
+         XSetWMProtocols(XDisplay, Self->XWindowHandle, protocols, std::ssize(protocols));
 
          if (glStickToFront) {
             XSetTransientForHint(XDisplay, Self->XWindowHandle, DefaultRootWindow(XDisplay));
@@ -2278,7 +2302,9 @@ static ERR SET_Flags(extDisplay *Self, SCR Value)
 
          if ((Self->Flags & SCR::VISIBLE) != SCR::NIL) {
             acShow(Self);
-            XSetInputFocus(XDisplay, Self->XWindowHandle, RevertToNone, CurrentTime);
+            if ((Self->Flags & (SCR::BORDERLESS|SCR::COMPOSITE)) != SCR::NIL) {
+               XSetInputFocus(XDisplay, Self->XWindowHandle, RevertToNone, CurrentTime);
+            }
             QueueAction(AC::Focus, Self->UID);
          }
 
