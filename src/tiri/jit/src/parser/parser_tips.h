@@ -42,7 +42,7 @@ struct ParserTip {
 
 class TipEmitter {
 public:
-   explicit TipEmitter(uint8_t Level) : level(Level) {}
+   explicit TipEmitter(uint8_t Level, bool PrintOutput = true) : level(Level), print_output(PrintOutput) {}
 
    // Returns true if tip at given priority should be emitted.
    [[nodiscard]] bool should_emit(uint8_t Priority) const {
@@ -65,5 +65,6 @@ public:
 
 private:
    uint8_t level;
+   bool print_output;
    std::vector<ParserTip> tip;
 };

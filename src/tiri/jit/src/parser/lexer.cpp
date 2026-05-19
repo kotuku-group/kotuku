@@ -1409,9 +1409,15 @@ LexState::LexState(lua_State* L, std::string_view Source, std::string_view Chunk
 
 #ifdef INCLUDE_TIPS
    // Initialise tip system from JIT options
-   this->tip_level = compute_tip_level(glJitOptions);
+   JOF tip_options = glJitOptions;
+   if (L and L->script and L->script->ChildPrivate) {
+      auto *prv = (prvTiri *)L->script->ChildPrivate;
+      tip_options |= prv->JitOptions;
+   }
+   this->tip_level = compute_tip_level(tip_options);
    if (this->tip_level > 0) {
-      this->tip_emitter = std::make_unique<TipEmitter>(this->tip_level);
+      bool print_tips = (tip_options & JOF::DIAGNOSE) IS JOF::NIL;
+      this->tip_emitter = std::make_unique<TipEmitter>(this->tip_level, print_tips);
    }
 #endif
 

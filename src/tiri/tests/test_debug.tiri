@@ -412,6 +412,46 @@ end
    assert(type(result.tips) is 'table', "tips should be a table")
 end
 
+function hasTipMessage(Result, Message)
+   if not Result.tips then return false end
+   for tip in values(Result.tips) do
+      if tip.message is Message then return true end
+   end
+   return false
+end
+
+@Test function ValidateChooseWithoutElseTip()
+   message = "Choose expression has no else branch; unmatched values evaluate to nil"
+   result = debug.validate([[
+      _ = choose 'missing' from
+         'found' -> 'ok'
+      end
+   ]])
+   assert(result.success is true, "Choose without else should still parse")
+   assert(hasTipMessage(result, message), "Expected missing-else choose tip")
+end
+
+@Test function ValidateChooseFallbackSuppressesTip()
+   message = "Choose expression has no else branch; unmatched values evaluate to nil"
+
+   with_else = debug.validate([[
+      _ = choose 'missing' from
+         'found' -> 'ok'
+         else -> 'fallback'
+      end
+   ]])
+   assert(with_else.success is true, "Choose with else should parse")
+   assert(not hasTipMessage(with_else, message), "Choose with else should not emit missing-else tip")
+
+   with_wildcard = debug.validate([[
+      _ = choose 'missing' from
+         _ -> 'fallback'
+      end
+   ]])
+   assert(with_wildcard.success is true, "Choose with wildcard should parse")
+   assert(not hasTipMessage(with_wildcard, message), "Choose with wildcard should not emit missing-else tip")
+end
+
 @Test function ValidateComplexCode()
    code = [[
       function hello(Name)
