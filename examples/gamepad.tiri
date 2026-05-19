@@ -6,6 +6,8 @@ Gamepad demonstration
    import 'gui'
    import 'gui/window'
 
+   mVec ?= mod.load('vector')
+
    glSelf = obj.find('self')
    glPath = glSelf.workingPath
 
@@ -34,7 +36,21 @@ Gamepad demonstration
 
    svg = obj.new('svg', { target=ballVP, path=glPath .. 'data/football.svg' })
 
-   MAX_SPEED = 3
+   GRAVITY = 900
+   BOUNCE = 0.82
+   INPUT_ACCELERATION = 1720
+   MAX_HORIZONTAL_SPEED = 460
+   MIN_BALL_SIZE = 32
+   MAX_BALL_SIZE = 120
+   ROTATION_SPEED_SCALE = 0.75
+
+   ball_vx = 220
+   ball_vy = -260
+   ball_spin = ball_vx * ROTATION_SPEED_SCALE
+   ball_angle = 0
+   last_time = nil
+   err, ball_matrix = ballVP.mtNewMatrix(false)
+
    ctrl = obj.new('controller', { port=0 })
    err, controllerTimer = mSys.SubscribeTimer(1/60, function(Subscriber, Elapsed, CurrentTime)
       ctrl.acQuery()
@@ -43,16 +59,79 @@ Gamepad demonstration
       txtRightStick.string = 'Right Stick: ' .. string.format('%.2f %.2f', ctrl.rightStickX, ctrl.rightStickY)
       txtButtons.string    = 'Buttons: ' .. string.format('%.8x', ctrl.buttons)
 
-      speed = MAX_SPEED
+      dt = 1 / 60
+      if last_time then
+         dt = (CurrentTime - last_time) / 1000000
+         if dt <= 0 or dt > 0.1 then
+            dt = 1 / 60
+         end
+      end
+      last_time = CurrentTime
+
+      input_acceleration = INPUT_ACCELERATION
       if (ctrl.buttons & CON_GAMEPAD_S)?? then
-         speed = speed * 2
+         input_acceleration = input_acceleration * 2
       end
 
-      ballVP.x = ballVP.x + (ctrl.leftStickX * speed)
-      ballVP.y = ballVP.y - (ctrl.leftStickY * speed)
+      ball_vx = ball_vx + (ctrl.leftStickX * input_acceleration * dt)
+      ball_vy = ball_vy - (ctrl.leftStickY * input_acceleration * dt) + (GRAVITY * dt)
 
-      ballVP.width = ballVP.width + ctrl.rightStickY
-      ballVP.height = ballVP.height + ctrl.rightStickY
+      if ball_vx > MAX_HORIZONTAL_SPEED then
+         ball_vx = MAX_HORIZONTAL_SPEED
+      elseif ball_vx < -MAX_HORIZONTAL_SPEED then
+         ball_vx = -MAX_HORIZONTAL_SPEED
+      end
+
+      ballVP.x = ballVP.x + (ball_vx * dt)
+      ballVP.y = ballVP.y + (ball_vy * dt)
+
+      ball_size = ballVP.width + ctrl.rightStickY
+      if ball_size < MIN_BALL_SIZE then
+         ball_size = MIN_BALL_SIZE
+      elseif ball_size > MAX_BALL_SIZE then
+         ball_size = MAX_BALL_SIZE
+      end
+
+      ballVP.width = ball_size
+      ballVP.height = ball_size
+
+      min_x = 0
+      max_x = viewport.width - ballVP.width
+      min_y = 0
+      max_y = viewport.height - ballVP.height
+
+      if max_x < min_x then max_x = min_x end
+      if max_y < min_y then max_y = min_y end
+
+      bounced = false
+      if ballVP.x < min_x then
+         ballVP.x = min_x
+         ball_vx = -ball_vx * BOUNCE
+         bounced = true
+      elseif ballVP.x > max_x then
+         ballVP.x = max_x
+         ball_vx = -ball_vx * BOUNCE
+         bounced = true
+      end
+
+      if ballVP.y < min_y then
+         ballVP.y = min_y
+         ball_vy = -ball_vy * BOUNCE
+         bounced = true
+      elseif ballVP.y > max_y then
+         ballVP.y = max_y
+         ball_vy = -ball_vy * BOUNCE
+         bounced = true
+      end
+
+      if bounced then
+         ball_spin = ball_vx * ROTATION_SPEED_SCALE
+      end
+
+      ball_angle = math.fmod(ball_angle + (ball_spin * dt), 360)
+      mVec.ResetMatrix(ball_matrix)
+      mVec.Rotate(ball_matrix, ball_angle, ballVP.width * 0.5, ballVP.height * 0.5)
+      ballVP.acDraw()
 
       viewport.scene.surface.mtScheduleRedraw()
    end)

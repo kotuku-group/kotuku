@@ -87,7 +87,10 @@ The port number can be changed at any time, so multiple controllers can be queri
 of overwriting the previous state.  Check #TotalPorts if your program supports more than one controller.
 
 -FIELD-
-TotalPorts: Reports the total number of controllers connected to the system.
+TotalPorts: Reports the number of controller ports that should be scanned.
+
+Port values range from zero to `TotalPorts - 1`.  Some platforms, including Linux, may expose sparse controller
+indices, so an individual port in that range can fail to query if its device is not currently connected.
 
 *********************************************************************************************************************/
 

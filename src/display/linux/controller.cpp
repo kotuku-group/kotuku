@@ -286,12 +286,17 @@ ERR linuxGetControllerPorts(int &Value)
 {
    std::lock_guard lock(glControllerLock);
 
-   int total = 0;
+   int last_port = -1;
    for (int port=0; port < MAX_CONTROLLER_PORTS; port++) {
-      if ((glLinuxControllers[port].fd >= 0) or (open_controller(port) IS ERR::Okay)) total++;
+      auto &controller = glLinuxControllers[port];
+
+      if (controller.fd >= 0) {
+         if (read_controller(controller) IS ERR::Okay) last_port = port;
+      }
+      else if (open_controller(port) IS ERR::Okay) last_port = port;
    }
 
-   Value = total;
+   Value = last_port + 1;
    return ERR::Okay;
 }
 
