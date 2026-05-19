@@ -436,10 +436,10 @@
       <field name="IDL" type="CSTRING">The Core module's compressed IDL string</field>
       <field name="OpenInfo" type="const struct OpenInfo *">The OpenInfo structure originally used to initialise the system</field>
       <field name="ConsoleFD" type="HOSTHANDLE">Internal</field>
-      <field name="Stage" type="INT">The current operating stage.  <code>-1</code> = Initialising, <code>0</code> indicates normal operating status; <code>1</code> means that the program is shutting down; <code>2</code> indicates a program restart; <code>3</code> is for mode switches.</field>
-      <field name="ReleaseBuild" type="INT"><code>1</code> = Release build, <code>0</code> = Debug build</field>
-      <field name="StaticBuild" type="INT"><code>1</code> = Static build, <code>0</code> = Dynamic build</field>
-      <field name="HasConsole" type="INT"><code>1</code> = Console available, <code>0</code> = Console not available</field>
+      <field name="ConsoleType" type="CONTYPE" lookup="CONTYPE">The console type for stdout and stderr, if any</field>
+      <field name="Stage" type="INT16">The current operating stage.  <code>-1</code> = Initialising, <code>0</code> indicates normal operating status; <code>1</code> means that the program is shutting down; <code>2</code> indicates a program restart; <code>3</code> is for mode switches.</field>
+      <field name="ReleaseBuild" type="UINT8"><code>1</code> = Release build, <code>0</code> = Debug build</field>
+      <field name="StaticBuild" type="UINT8"><code>1</code> = Static build, <code>0</code> = Dynamic build</field>
     </struct>
 
   </structs>

@@ -135,7 +135,7 @@ enum class PERMIT : uint32_t;
 enum class CCF    : uint32_t;
 enum class MEM    : uint32_t;
 enum class ALF    : uint16_t;
-enum class CONTYPE : uint8_t;
+enum class CONTYPE : int;
 enum class EVG    : int;
 enum class AC     : int;
 enum class MSGID  : int;
