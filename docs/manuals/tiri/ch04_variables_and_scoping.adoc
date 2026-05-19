@@ -36,18 +36,18 @@ indexterm:[local variables] The `local` keyword explicitly declares one or more 
 
 [source,tiri]
 ----
-local config                    -- nil, no type commitment
-local a, b, c = 1, 2, 3         -- multiple locals
-local limit:num                 -- typed, starts as nil
-local max <const> = 100         -- constant (see <<sec-constant-variables>>)
+local config                -- nil, no type commitment
+local a, b, c = 1, 2, 3     -- multiple locals
+local limit:num             -- typed, starts as nil
+local max <const> = 100     -- constant (see <<sec-constant-variables>>)
 ----
 
 A `local` declaration without an initialiser sets the variable to `nil`.  Multiple variables on the left receive values from the right in left-to-right order; excess variables receive `nil` and excess values are discarded.
 
 [source,tiri]
 ----
-local x, y = 10                 -- x is 10, y is nil
-local a, b = 1, 2, 3            -- a is 1, b is 2, 3 is discarded
+local x, y = 10          -- x is 10, y is nil
+local a, b = 1, 2, 3     -- a is 1, b is 2, 3 is discarded
 ----
 
 ==== The Blank Identifier
@@ -56,8 +56,8 @@ The single underscore `_` is the blank identifier.  It discards a value without 
 
 [source,tiri]
 ----
-_, result = getValues()         -- discard first return value
-local x, _, y = 1, 2, 3         -- x is 1, y is 3
+_, result = getValues()   -- discard first return value
+local x, _, y = 1, 2, 3   -- x is 1, y is 3
 
 for _, value in ipairs(items) do -- discard index
    print(value)
@@ -86,10 +86,10 @@ A local variable can shadow a global with the same name if explicitly declared w
 global VERBOSE = true
 
 function run()
-   local VERBOSE = false         -- shadows the global within this scope
-   print(VERBOSE)                -- 'false'
+   local VERBOSE = false   -- shadows the global within this scope
+   print(VERBOSE)          -- 'false'
 end
-print(VERBOSE)                   -- 'true'
+print(VERBOSE)             -- 'true'
 ----
 
 Global variables are accessible from nested functions without re-declaration.  The `global` keyword can appear at any scope level, but the variable becomes globally visible.
@@ -135,16 +135,16 @@ Multiple targets and values are matched left-to-right.  Excess targets receive `
 
 [source,tiri]
 ----
-a, b = b, a                     -- swap two existing variables
-local x, y, z = f()             -- f() may return multiple values
+a, b = b, a           -- swap two existing variables
+local x, y, z = f()   -- f() may return multiple values
 ----
 
 Safe-navigation targets are not permitted in multi-assignment statements.  Use separate assignments instead:
 
 [source,tiri]
 ----
-a?.x, b = 10, 20                -- compile-time error
-a?.x = 10                       -- OK: single target
+a?.x, b = 10, 20     -- compile-time error
+a?.x = 10            -- OK: single target
 b = 20
 ----
 
@@ -178,17 +178,17 @@ Safe navigation is permitted on assignment targets.  The assignment is skipped w
 
 [source,tiri]
 ----
-config?.theme = 'dark'          -- plain assignment
-stats?.count += 1               -- compound assignment
-opts?.timeout ?= 30             -- if-nil assignment
-opts?.label ??= 'untitled'      -- if-empty assignment
+config?.theme = 'dark'       -- plain assignment
+stats?.count += 1            -- compound assignment
+opts?.timeout ?= 30          -- if-nil assignment
+opts?.label ??= 'untitled'   -- if-empty assignment
 ----
 
 For a single target, a failed safe-nav hop short-circuits both the store and the RHS evaluation:
 
 [source,tiri]
 ----
-config?.theme = load_theme()    -- load_theme() is not called if config is nil
+config?.theme = load_theme()   -- function is not called if config is nil
 ----
 
 Bitwise compound variants (`&=`, `|=`, `^=`) do not exist.  Use `x = x & y` instead.
@@ -204,9 +204,9 @@ indexterm:[type annotations] indexterm:[variables, type annotations] Variables c
 
 [source,tiri]
 ----
-local limit:num              -- constrained to number
-local message:str = ''       -- constrained to string
-variant:any = 0              -- unconstrained (accepts any type)
+local limit:num       -- constrained to number
+message:str = ''      -- constrained to string
+variant:any = 0       -- unconstrained (accepts any type)
 ----
 
 Supported type names: `any`, `nil`, `bool` (or `boolean`), `num` (or `number`), `str` (or `string`), `table`, `array`, `func` (or `function`), `obj` (or `object`).  An unrecognised type name raises a parse-time diagnostic.
@@ -215,8 +215,8 @@ The type annotation can appear before or after a `<const>` or `<close>` attribut
 
 [source,tiri]
 ----
-local x <const>:num = 42       -- attribute before type
-local y:num <const> = 42       -- type before attribute
+x <const>:num = 42   -- attribute before type
+y:num <const> = 42   -- type before attribute
 ----
 
 Type annotations interact with the type inference system.  See <<ch-type-system>> for sticky types, implicit type fixing, and the `any` escape hatch.
@@ -238,7 +238,7 @@ A `<const>` variable must have an initialiser.  Declaring a constant without a v
 
 [source,tiri]
 ----
-local x <const>                 -- error: const 'x' requires an initialiser
+local x <const>      -- error: const 'x' requires an initialiser
 ----
 
 ==== Reassignment Prevention
@@ -247,8 +247,8 @@ Assigning to a `<const>` variable is a compile-time error:
 
 [source,tiri]
 ----
-local x <const> = 1
-x = 2                           -- error: cannot assign to const local 'x'
+x <const> = 1
+x = 2           -- error: cannot assign to const local 'x'
 ----
 
 ==== Binding Immutability
@@ -257,9 +257,9 @@ The `<const>` attribute protects the variable binding, not the contents of the v
 
 [source,tiri]
 ----
-local data <const> = { x = 1 }
-data.x = 999                    -- valid: modifying table contents
-data = {}                       -- error: cannot reassign the binding
+data <const> = { x = 1 }
+data.x = 999       -- valid: modifying table contents
+data = {}          -- error: cannot reassign the binding
 ----
 
 ==== Multiple Declarations with <const>
@@ -269,8 +269,8 @@ Each variable in a multiple declaration independently carries the attribute:
 [source,tiri]
 ----
 local a <const>, b, c <const> = 1, 2, 3
-b = 20                          -- valid
-a = 10                          -- error: cannot assign to const local 'a'
+b = 20             -- valid
+a = 10             -- error: cannot assign to const local 'a'
 ----
 
 ==== Shadowing
@@ -279,10 +279,10 @@ A `<const>` variable follows normal scoping rules.  An inner scope can shadow a 
 
 [source,tiri]
 ----
-local x <const> = 1
+x <const> = 1
 do
-   local x = 2                  -- valid: shadows outer const
-   x = 3                        -- valid: inner x is mutable
+   local x = 2       -- valid: shadows outer const
+   x = 3             -- valid: inner x is mutable
 end
 -- outer x is still 1, still const
 ----
@@ -348,10 +348,10 @@ Enum declarations are permitted at the top level of a script only.  Declaring an
 
 [source,tiri]
 ----
-enum STATE { IDLE, RUNNING }       -- valid: top-level
+enum STATE { IDLE, RUNNING }  -- valid: top-level
 
 function setup()
-   enum MODE { FAST, SLOW }       -- error: not at top-level scope
+   enum MODE { FAST, SLOW }   -- error: not at top-level scope
 end
 ----
 
@@ -418,9 +418,10 @@ The runtime ignores values without metatables (`nil`, `false`, strings, numbers)
 ----
 try
    file <close> = open_file()
-   risky_operation()             -- if this throws, file.__close still runs
+   risky_operation() <1>
 end
 ----
+<1> if this throws, `file.__close` still runs
 
 The close handler receives the active error as its second argument, enabling error-aware cleanup logic.
 

@@ -505,8 +505,8 @@ The RHS syntax determines the pipe mode:
 |Syntax           |Mode       |Equivalent
 
 |`x \|> func()`   |Transform  |`func(x)`
-|`range \|> func`  |Iteration  |`range:each(func)`
-|`array \|> func`  |Iteration  |`array:each(func)`
+|`range \|> func` |Iteration  |`range:each(func)`
+|`array \|> func` |Iteration  |`array:each(func)`
 |===
 
 ===== Ranges
@@ -515,8 +515,8 @@ When the LHS is a range literal, the pipe calls the RHS function for each value 
 
 [source,tiri]
 ----
-{1..5} |> print         -- prints 1, 2, 3, 4
-{1...5} |> print        -- prints 1, 2, 3, 4, 5
+{1..5} |> print     -- prints 1, 2, 3, 4
+{1...5} |> print    -- prints 1, 2, 3, 4, 5
 ----
 
 Return `false` from the callback to terminate iteration early:
