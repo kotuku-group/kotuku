@@ -373,7 +373,7 @@ class extDisplay : public objDisplay {
    #else
       APTR   WindowHandle;
    #endif
-   int16_t  Opacity;
+   float Opacity;
    char  Manufacturer[60];
    char  Chipset[40];
    char  Display[32];

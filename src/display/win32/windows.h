@@ -99,7 +99,7 @@ extern void winSetDIBitsToDevice(void *, int, int, int, int, int, int, int, int,
 
 extern void win32RedrawWindow(HWND, HDC, int X, int Y, int Width,
    int Height, int XDest, int YDest, int ScanWidth, int ScanHeight,
-   int BPP, unsigned char *Data, int RedMask, int GreenMask, int BlueMask, int AlphaMask, unsigned char Opacity);
+   int BPP, unsigned char *Data, int RedMask, int GreenMask, int BlueMask, int AlphaMask, double Opacity);
 
 extern void MsgKeyPress(int, int, int);
 extern void MsgKeyRelease(int, int);
@@ -125,7 +125,7 @@ void Win32ManagerLoop(void);
 
 extern void winGetDPI(int *, int *);
 extern HWND winCreateChild(HWND, int, int, int, int);
-extern HWND winCreateScreen(HWND, int *, int *, int *, int *, char, char, const char *, char, unsigned char, char);
+extern HWND winCreateScreen(HWND, int *, int *, int *, int *, char, char, const char *, char, double, char);
 extern int winCreateScreenClass(void);
 extern void winDisableBatching(void);
 extern void winRemoveWindowClass(const char *);

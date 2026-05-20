@@ -14,8 +14,8 @@
     <copyright>Paul Manias © 2003-2026</copyright>
     <description>
 <p>The Surface class represents a rectangular region in the display hierarchy.  It manages positioning, visibility, redraws, backing storage and focus for layered user interfaces.  Surfaces work with <class name="Bitmap">Bitmap</class> objects for rendered pixel data and with the <class name="Pointer">Pointer</class> class for pointer interaction.</p>
-<p>A top-level surface is normally backed by an application window on hosted platforms such as Windows and Linux.  On native displays, full screen displays and Android, a top-level surface can cover the display without a separate host window.  Child surfaces are attached to a parent surface, creating a hierarchy whose ordering, clipping, redraw and input behaviour is managed by this class.</p>
-<p>Surface-only interfaces are supported, but most applications should use surfaces as hosts for <class name="VectorScene">VectorScene</class> objects. This keeps interfaces resolution independent and matches the rendering path that Kōtuku optimises most heavily.</p>
+<p>A top-level surface is normally backed by an application window on hosted platforms such as Windows and Linux.  For full screen displays and Android, a top-level surface can cover the display without a separate host window.  Child surfaces are attached to a parent surface, creating a hierarchy whose ordering, clipping, redraw and input behaviour is managed by this class.</p>
+<p>Building nested surface-only interfaces is supported, but most applications should use surfaces as hosts for <class name="VectorScene">VectorScene</class> objects.  This keeps interfaces resolution independent and matches the rendering path that Kōtuku optimises most heavily.</p>
 <p>Surface content is preserved with a backing store where required.  Surfaces that share a backing store are composited through their parent, while surfaces that need independent redraw, opacity, video memory or cursor behaviour can own a separate bitmap buffer.</p></description>
     <source>
       <file path="class_surface/">class_surface.cpp</file>
@@ -791,7 +791,7 @@ the surface area first).</li>
       <description>
 <p>Read <code>VisibleX</code>, <fl>VisibleY</fl>, <fl>VisibleWidth</fl> and <fl>VisibleHeight</fl> to determine the portion of the surface that is visible within the parent chain.</p>
 <p>
-<code>VisibleX</code> is the first visible horizontal coordinate inside the surface's own coordinate space.  It is calculated by clipping the surface area against its parent surfaces.</p>
+<code>VisibleX</code> is the first visible horizontal coordinate inside the surface's own coordinate space.  It is calculated by clipping the surface area against its parent surfaces.  If the surface is hosted, the value will reflect the window position, as determined by the <fl>X</fl> field.</p>
 <p>If none of the surface area is visible, zero is returned.  The result is never negative.</p>
       </description>
     </field>
@@ -804,7 +804,7 @@ the surface area first).</li>
       <description>
 <p>Read <fl>VisibleX</fl>, <code>VisibleY</code>, <fl>VisibleWidth</fl> and <fl>VisibleHeight</fl> to determine the portion of the surface that is visible within the parent chain.</p>
 <p>
-<code>VisibleY</code> is the first visible vertical coordinate inside the surface's own coordinate space.  It is calculated by clipping the surface area against its parent surfaces.</p>
+<code>VisibleY</code> is the first visible vertical coordinate inside the surface's own coordinate space.  It is calculated by clipping the surface area against its parent surfaces.  If the surface is hosted, the value will reflect the window position, as determined by the <fl>Y</fl> field.</p>
 <p>If none of the surface area is visible, zero is returned.  The result is never negative.</p>
       </description>
     </field>

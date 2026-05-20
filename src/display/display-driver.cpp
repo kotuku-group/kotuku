@@ -1606,9 +1606,7 @@ ERR update_display(extDisplay *Self, extBitmap *Bitmap, int X, int Y, int Width,
    dest->get(FID_Handle, drawable);
 
    win32RedrawWindow(Self->WindowHandle, drawable,
-      x, y,
-      width, height,
-      xdest, ydest,
+      x, y, width, height, xdest, ydest,
       Bitmap->Width, Bitmap->Height,
       Bitmap->BitsPerPixel, Bitmap->Data,
       Bitmap->ColourFormat->RedMask   << Bitmap->ColourFormat->RedPos,
