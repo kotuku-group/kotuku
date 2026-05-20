@@ -1384,8 +1384,6 @@ Search: The supplied `Surface` ID did not refer to a recognised surface object.
 
 ERR GetVisibleArea(OBJECTID SurfaceID, int *X, int *Y, int *AbsX, int *AbsY, int *Width, int *Height)
 {
-   kt::Log log(__FUNCTION__);
-
    if (!SurfaceID) {
       DISPLAYINFO *display;
       if (gfx::GetDisplayInfo(0, &display) IS ERR::Okay) {

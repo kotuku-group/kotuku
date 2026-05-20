@@ -4,10 +4,10 @@
 -FIELD-
 AbsX: The absolute horizontal position of a surface object.
 
-This field returns the absolute horizontal position of a surface object. The absolute value is calculated based on the
-surface object's position relative to the top most surface object in the local hierarchy.
+This field returns the surface's horizontal position relative to the top-level surface in its local hierarchy.
 
-It is possible to set this field, but only after initialisation of the surface object has occurred.
+Writing `AbsX` moves the surface so that its absolute horizontal position matches the supplied value.  The surface
+must be initialised before this field can be changed.
 
 *********************************************************************************************************************/
 
@@ -44,10 +44,10 @@ static ERR SET_AbsX(extSurface *Self, int Value)
 -FIELD-
 AbsY: The absolute vertical position of a surface object.
 
-This field returns the absolute vertical position of a surface object. The absolute value is calculated based on the
-surface object's position relative to the top most surface object in the local hierarchy.
+This field returns the surface's vertical position relative to the top-level surface in its local hierarchy.
 
-It is possible to set this field, but only after initialisation of the surface object has occurred.
+Writing `AbsY` moves the surface so that its absolute vertical position matches the supplied value.  The surface must
+be initialised before this field can be changed.
 
 *********************************************************************************************************************/
 
@@ -85,10 +85,12 @@ static ERR SET_AbsY(extSurface *Self, int Value)
 -FIELD-
 Align: This field allows you to align a surface area within its owner.
 
-If you would like to set an abstract position for a surface area, you can give it an alignment.  This feature is most
-commonly used for horizontal and vertical centring, as aligning to the the edges of a surface area is already handled
-by existing dimension fields.  Note that setting the alignment overrides any settings in related coordinate fields.
-Valid alignment flags are `BOTTOM`, `CENTER/MIDDLE`, `LEFT`, `HORIZONTAL`, `RIGHT`, `TOP`, `VERTICAL`.
+Use `Align` to position a surface within its owner without calculating explicit coordinates.  It is most useful for
+horizontal or vertical centring; edge alignment is normally clearer when expressed through #X, #Y, #XOffset and
+#YOffset.
+
+Setting `Align` replaces related coordinate settings.  Valid alignment flags are `BOTTOM`, `CENTER`, `MIDDLE`, `LEFT`,
+`HORIZONTAL`, `RIGHT`, `TOP` and `VERTICAL`.
 
 -FIELD-
 Bottom: Returns the bottom-most coordinate of a surface object, `Y + Height`.
@@ -106,12 +108,10 @@ static ERR GET_Bottom(extSurface *Self, int *Bottom)
 -FIELD-
 BottomLimit: Prevents a surface object from moving beyond a given point at the bottom of its container.
 
-A client can prevent a surface object from moving beyond a given point at the bottom of its container by setting this field.
-If for example you were to set the BottomLimit to 5, then any attempt to move the surface object into or beyond the 5
-units at the bottom of its container would fail.
+Set `BottomLimit` to reserve a margin at the bottom of the parent container.  For example, a value of `5` prevents
+#Move() from placing the surface inside the bottom-most five coordinate units.
 
-Limits only apply to movement, as induced through the #Move() action.  This means that limits can be over-ridden by
-setting the coordinate fields directly (which can be useful in certain cases).
+Movement limits apply only to #Move().  Direct writes to coordinate fields bypass them.
 
 *********************************************************************************************************************/
 
@@ -127,13 +127,11 @@ static ERR SET_BottomLimit(extSurface *Self, int Value)
 Dimensions: Indicates currently active dimension settings.
 Lookup: DMF
 
-The dimension settings of a surface object can be read from this field.  The flags indicate the dimension fields that
-are in use, and whether the values are fixed or relative.
+The `Dimensions` flags identify which coordinate and size fields currently define the surface layout, and whether
+those values are fixed or scaled against the parent.
 
-It is strongly recommended that this field is never set manually, because the flags are automatically managed for the
-client when setting fields such as #X and #Width.  If circumstances require manual configuration, take care to ensure
-that the flags do not conflict.  For instance, `FIXED_X` and `SCALED_X` cannot be paired, nor could `FIXED_X`,
-`FIXED_XOFFSET` and `FIXED_WIDTH` simultaneously.
+This field is normally managed automatically when fields such as #X, #Y, #Width, #Height, #XOffset and #YOffset are
+changed.  If manual configuration is required, avoid conflicting fixed and scaled variants on the same axis.
 
 *********************************************************************************************************************/
 
@@ -211,15 +209,17 @@ static ERR SET_Dimensions(extSurface *Self, DMF Value)
 -FIELD-
 Height: Defines the height of a surface object.
 
-The height of a surface object is manipulated through this field.  Alternatively, use the #Resize() action to adjust the
-Width and Height at the same time.  A client can set the Height as a fixed value by default, or as a scaled value in
-conjunction with the `FD_SCALED` flag.  Scaled values are multiplied by the height of their parent container.
+Use `Height` to read or change the surface height.  Alternatively, call #Resize() to change #Width and `Height`
+together.
 
-Setting the Height while a surface object is on display causes an immediate graphical update to reflect the change.
-Any objects that are within the surface area will be re-drawn and resized as necessary.
+By default the value is a fixed coordinate unit.  With the `FD_SCALED` flag, the value is treated as a multiplier of
+the parent surface height.
 
-If a value less than zero is passed to an initialised surface, the height will be 'turned off' - this is convenient
-for pairing the #Y and #YOffset fields together for dynamic height adjustment.
+Changing `Height` on a visible surface updates the displayed area immediately, including any child surfaces that need
+to be redrawn or resized.
+
+Before initialisation, setting `Height` to zero or less clears the height dimension so that #Y and #YOffset can define
+the height dynamically.  After initialisation, values of zero or less are invalid.
 
 *********************************************************************************************************************/
 
@@ -292,12 +292,10 @@ static ERR SET_Height(extSurface *Self, Unit *Value)
 -FIELD-
 LeftLimit: Prevents a surface object from moving beyond a given point on the left-hand side.
 
-A client can prevent a surface object from moving beyond a given point at the left-hand side of its container by setting
-this field.  If for example you were to set the LeftLimit to 3, then any attempt to move the surface object into or
-beyond the 3 units at the left of its container would fail.
+Set `LeftLimit` to reserve a margin at the left-hand side of the parent container.  For example, a value of `3`
+prevents #Move() from placing the surface inside the left-most three coordinate units.
 
-Limits only apply to movement, as induced through the #Move() action.  This means it is possible to override limits by
-setting the coordinate fields directly.
+Movement limits apply only to #Move().  Direct writes to coordinate fields bypass them.
 
 *********************************************************************************************************************/
 
@@ -312,10 +310,10 @@ static ERR SET_LeftLimit(extSurface *Self, int Value)
 -FIELD-
 MaxHeight: Prevents the height of a surface object from exceeding a certain value.
 
-A client can limit the maximum height of a surface object by setting this field.  Limiting the height affects resizing,
-making it impossible to use the Resize() action to extend beyond the height you specify.
+Set `MaxHeight` to limit the maximum height that can be applied through resizing.  #Resize() cannot increase the
+surface beyond this value.
 
-It is possible to circumvent the MaxHeight by setting the Height field directly.
+Direct writes to #Height bypass this limit.
 
 *********************************************************************************************************************/
 
@@ -339,10 +337,10 @@ static ERR SET_MaxHeight(extSurface *Self, int Value)
 -FIELD-
 MaxWidth: Prevents the width of a surface object from exceeding a certain value.
 
-A client can limit the maximum width of a surface object by setting this field.  Limiting the width affects resizing, making
-it impossible to use the #Resize() action to extend beyond the width you specify.
+Set `MaxWidth` to limit the maximum width that can be applied through resizing.  #Resize() cannot increase the surface
+beyond this value.
 
-It is possible to circumvent the MaxWidth by setting the Width field directly.
+Direct writes to #Width bypass this limit.
 
 *********************************************************************************************************************/
 
@@ -367,11 +365,10 @@ static ERR SET_MaxWidth(extSurface *Self, int Value)
 -FIELD-
 MinHeight: Prevents the height of a surface object from shrinking beyond a certain value.
 
-A client can prevent the height of a surface object from shrinking too far by setting this field.  This feature specifically
-affects resizing, making it impossible to use the Resize() action to shrink the height of a surface object to a value
-less than the one you specify.
+Set `MinHeight` to limit the minimum height that can be applied through resizing.  #Resize() cannot shrink the surface
+below this value.
 
-It is possible to circumvent the MinHeight by setting the #Height field directly.
+Direct writes to #Height bypass this limit.  Values less than `1` are clamped to `1`.
 
 *********************************************************************************************************************/
 
@@ -395,11 +392,10 @@ static ERR SET_MinHeight(extSurface *Self, int Value)
 -FIELD-
 MinWidth: Prevents the width of a surface object from shrinking beyond a certain value.
 
-A client can prevent the width of a surface object from shrinking too far by setting this field.  This feature specifically
-affects resizing, making it impossible to use the #Resize() action to shrink the width of a surface object to a value
-less than the one you specify.
+Set `MinWidth` to limit the minimum width that can be applied through resizing.  #Resize() cannot shrink the surface
+below this value.
 
-It is possible to circumvent the MinWidth by setting the #Width field directly.
+Direct writes to #Width bypass this limit.  Values less than `1` are clamped to `1`.
 
 *********************************************************************************************************************/
 
@@ -436,12 +432,10 @@ static ERR GET_Right(extSurface *Self, int *Value)
 -FIELD-
 RightLimit: Prevents a surface object from moving beyond a given point on the right-hand side.
 
-A client can prevent a surface object from moving beyond a given point at the right-hand side of its container by setting
-this field.  If for example you were to set the RightLimit to 8, then any attempt to move the surface object into or
-beyond the 8 units at the right-hand side of its container would fail.
+Set `RightLimit` to reserve a margin at the right-hand side of the parent container.  For example, a value of `8`
+prevents #Move() from placing the surface inside the right-most eight coordinate units.
 
-Limits only apply to movement, as induced through the #Move() action.  This means that limits can be over-ridden by
-setting the coordinate fields directly (which can be useful in certain cases).
+Movement limits apply only to #Move().  Direct writes to coordinate fields bypass them.
 
 *********************************************************************************************************************/
 
@@ -456,12 +450,10 @@ static ERR SET_RightLimit(extSurface *Self, int Value)
 -FIELD-
 TopLimit: Prevents a surface object from moving beyond a given point at the top of its container.
 
-A client can prevent a surface object from moving beyond a given point at the top of its container by setting this field.
-If for example you were to set the TopLimit to 10, then any attempt to move the surface object into or beyond the 10
-units at the top of its container would fail.
+Set `TopLimit` to reserve a margin at the top of the parent container.  For example, a value of `10` prevents #Move()
+from placing the surface inside the top-most ten coordinate units.
 
-Limits only apply to movement, as induced through the #Move() action.  This means that limits can be over-ridden by
-setting the coordinate fields directly (which can be useful in certain cases).
+Movement limits apply only to #Move().  Direct writes to coordinate fields bypass them.
 
 *********************************************************************************************************************/
 
@@ -476,13 +468,13 @@ static ERR SET_TopLimit(extSurface *Self, int Value)
 -FIELD-
 VisibleHeight: The visible height of the surface area, relative to its parents.
 
-To determine the visible area of a surface, read the #VisibleX, #VisibleY, #VisibleWidth and VisibleHeight fields.
+Read #VisibleX, #VisibleY, #VisibleWidth and `VisibleHeight` to determine the portion of the surface that is visible
+within the parent chain.
 
-The 'visible area' is determined by the position of the surface relative to its parents.  For example, if the surface
-is 100 pixels across and smallest parent is 50 pixels across, the number of pixels visible to the user must be 50
-pixels or less, depending on the position of the surface.
+The visible area is calculated by clipping the surface area against its parent surfaces.  If a 100-unit-high surface is
+inside a 50-unit-high parent, at most 50 units can be visible, depending on the surface position.
 
-If none of the surface area is visible then zero is returned.  The result is never negative.
+If none of the surface area is visible, zero is returned.  The result is never negative.
 
 *********************************************************************************************************************/
 
@@ -492,17 +484,7 @@ static ERR GET_VisibleHeight(extSurface *Self, int *Value)
       *Value = Self->Height;
       return ERR::Okay;
    }
-   else {
-      const std::lock_guard<std::recursive_mutex> lock(glSurfaceLock);
-
-      int16_t i;
-      if ((i = find_surface_list(Self)) IS -1) return ERR::Search;
-
-      auto clip = glSurfaces[i].area();
-      restrict_region_to_parents(glSurfaces, i, clip, false);
-      *Value = clip.height();
-      return ERR::Okay;
-   }
+   else return gfx::GetVisibleArea(Self->UID, nullptr, nullptr, nullptr, nullptr, nullptr, Value);
 }
 
 /*********************************************************************************************************************
@@ -510,33 +492,23 @@ static ERR GET_VisibleHeight(extSurface *Self, int *Value)
 -FIELD-
 VisibleWidth: The visible width of the surface area, relative to its parents.
 
-To determine the visible area of a surface, read the VisibleX, VisibleY, VisibleWidth and VisibleHeight fields.
+Read #VisibleX, #VisibleY, `VisibleWidth` and #VisibleHeight to determine the portion of the surface that is visible
+within the parent chain.
 
-The 'visible area' is determined by the position of the surface relative to its parents.  For example, if the surface
-is 100 pixels across and smallest parent is 50 pixels across, the number of pixels visible to the user must be 50
-pixels or less, depending on the position of the surface.
+The visible area is calculated by clipping the surface area against its parent surfaces.  If a 100-unit-wide surface is
+inside a 50-unit-wide parent, at most 50 units can be visible, depending on the surface position.
 
-If none of the surface area is visible then zero is returned.  The result is never negative.
+If none of the surface area is visible, zero is returned.  The result is never negative.
 
 *********************************************************************************************************************/
 
 static ERR GET_VisibleWidth(extSurface *Self, int *Value)
 {
    if (!Self->ParentID) {
-      *Value = Self->Height;
+      *Value = Self->Width;
       return ERR::Okay;
    }
-   else {
-      const std::lock_guard<std::recursive_mutex> lock(glSurfaceLock);
-
-      if (auto i = find_surface_list(Self); i != -1) {
-         auto clip = glSurfaces[i].area();
-         restrict_region_to_parents(glSurfaces, i, clip, false);
-         *Value = clip.width();
-         return ERR::Okay;
-      }
-      else return ERR::Search;
-   }
+   else return gfx::GetVisibleArea(Self->UID, nullptr, nullptr, nullptr, nullptr, Value, nullptr);
 }
 
 /*********************************************************************************************************************
@@ -544,33 +516,23 @@ static ERR GET_VisibleWidth(extSurface *Self, int *Value)
 -FIELD-
 VisibleX: The first visible X coordinate of the surface area, relative to its parents.
 
-To determine the visible area of a surface, read the VisibleX, #VisibleY, #VisibleWidth and #VisibleHeight fields.
+Read `VisibleX`, #VisibleY, #VisibleWidth and #VisibleHeight to determine the portion of the surface that is visible
+within the parent chain.
 
-The 'visible area' is determined by the position of the surface relative to its parents.  For example, if the surface
-is 100 pixels across and smallest parent is 50 pixels across, the number of pixels visible to the user must be 50
-pixels or less, depending on the position of the surface.
+`VisibleX` is the first visible horizontal coordinate inside the surface's own coordinate space.  It is calculated by
+clipping the surface area against its parent surfaces.
 
-If none of the surface area is visible then zero is returned.  The result is never negative.
+If none of the surface area is visible, zero is returned.  The result is never negative.
 
 *********************************************************************************************************************/
 
 static ERR GET_VisibleX(extSurface *Self, int *Value)
 {
    if (!Self->ParentID) {
-      *Value = Self->Height;
+      *Value = Self->X;
       return ERR::Okay;
    }
-   else {
-      const std::lock_guard<std::recursive_mutex> lock(glSurfaceLock);
-
-      if (auto i = find_surface_list(Self); i != -1) {
-         auto clip = glSurfaces[i].area();
-         restrict_region_to_parents(glSurfaces, i, clip, false);
-         *Value = clip.Left - glSurfaces[i].Left;
-         return ERR::Okay;
-      }
-      else return ERR::Search;
-   }
+   else return gfx::GetVisibleArea(Self->UID, Value, nullptr, nullptr, nullptr, nullptr, nullptr);
 }
 
 /*********************************************************************************************************************
@@ -578,33 +540,23 @@ static ERR GET_VisibleX(extSurface *Self, int *Value)
 -FIELD-
 VisibleY: The first visible Y coordinate of the surface area, relative to its parents.
 
-To determine the visible area of a surface, read the #VisibleX, VisibleY, #VisibleWidth and #VisibleHeight fields.
+Read #VisibleX, `VisibleY`, #VisibleWidth and #VisibleHeight to determine the portion of the surface that is visible
+within the parent chain.
 
-The 'visible area' is determined by the position of the surface relative to its parents.  For example, if the surface
-is 100 pixels across and smallest parent is 50 pixels across, the number of pixels visible to the user must be 50
-pixels or less, depending on the position of the surface.
+`VisibleY` is the first visible vertical coordinate inside the surface's own coordinate space.  It is calculated by
+clipping the surface area against its parent surfaces.
 
-If none of the surface area is visible then zero is returned.  The result is never negative.
+If none of the surface area is visible, zero is returned.  The result is never negative.
 
 *********************************************************************************************************************/
 
 static ERR GET_VisibleY(extSurface *Self, int *Value)
 {
    if (!Self->ParentID) {
-      *Value = Self->Height;
+      *Value = Self->Y;
       return ERR::Okay;
    }
-   else {
-      const std::lock_guard<std::recursive_mutex> lock(glSurfaceLock);
-
-      if (auto i = find_surface_list(Self); i != -1) {
-         auto clip = glSurfaces[i].area();
-         restrict_region_to_parents(glSurfaces, i, clip, false);
-         *Value = clip.Top - glSurfaces[i].Top;
-         return ERR::Okay;
-      }
-      else return ERR::Search;
-   }
+   else return gfx::GetVisibleArea(Self->UID, nullptr, Value, nullptr, nullptr, nullptr, nullptr);
 }
 
 /*********************************************************************************************************************
@@ -612,14 +564,17 @@ static ERR GET_VisibleY(extSurface *Self, int *Value)
 -FIELD-
 Width: Defines the width of a surface object.
 
-The width of a surface object is manipulated through this field.  Alternatively, use the #Resize() action to adjust the
-Width and #Height at the same time.  A client can set the Width as a fixed value by default, or as a scaled value in
-conjunction with the `FD_SCALED` flag.  Scaled values are multiplied by the width of their parent container.
+Use `Width` to read or change the surface width.  Alternatively, call #Resize() to change `Width` and #Height
+together.
 
-Setting the Width while a surface object is on display causes an immediate graphical update to reflect the change.  Any
-objects that are within the surface area will be re-drawn and resized as necessary.
+By default the value is a fixed coordinate unit.  With the `FD_SCALED` flag, the value is treated as a multiplier of
+the parent surface width.
 
-Width values of 0 or less are illegal, and will result in an `ERR::OutOfRange` error-code.
+Changing `Width` on a visible surface updates the displayed area immediately, including any child surfaces that need
+to be redrawn or resized.
+
+Before initialisation, setting `Width` to zero or less clears the width dimension so that #X and #XOffset can define
+the width dynamically.  After initialisation, values of zero or less are invalid.
 
 *********************************************************************************************************************/
 
@@ -685,11 +640,13 @@ static ERR SET_Width(extSurface *Self, Unit *Value)
 -FIELD-
 X: Determines the horizontal position of a surface object.
 
-The horizontal position of a surface object can be set through this field.  You have the choice of setting a fixed
-coordinate (the default) or a scaled coordinate if you use the `FD_SCALED` flag.
+Use `X` to read or change the horizontal position of the surface relative to its parent.
 
-If you set the X while the surface object is on display, the position of the surface area will be updated
-immediately.
+By default the value is a fixed coordinate unit.  With the `FD_SCALED` flag, the value is treated as a multiplier of
+the parent surface width.
+
+Changing `X` on a visible surface updates its position immediately.  If #XOffset also defines the right-hand edge, the
+surface width is recalculated to preserve that offset.
 
 *********************************************************************************************************************/
 
@@ -735,14 +692,13 @@ static ERR SET_XCoord(extSurface *Self, Unit *Value)
 -FIELD-
 XOffset: Determines the horizontal offset of a surface object.
 
-The XOffset has a dual purpose depending on whether or not it is set in conjunction with the #X or #Width fields.
+`XOffset` defines a distance from the right-hand edge of the parent surface.
 
-If set in conjunction with the #X field, the width of the surface object will be from that X coordinate up to the width
-of the container, minus the value given in the XOffset.  This means that the width of the surface object is dynamically
-calculated in relation to the width of its container.
+When #X is set and #Width is not set, `XOffset` makes the surface width dynamic.  The width extends from #X to the
+parent width minus `XOffset`.
 
-If the XOffset field is set in conjunction with a fixed or scaled width then the surface object will be positioned at
-an X coordinate calculated from the formula `X = ContainerWidth - SurfaceWidth - XOffset`.
+When #Width is set, `XOffset` positions the surface from the parent right-hand edge:
+`X = ParentWidth - Width - XOffset`.
 -END-
 
 *********************************************************************************************************************/
@@ -822,10 +778,12 @@ static ERR SET_XOffset(extSurface *Self, Unit *Value)
 -FIELD-
 Y: Determines the vertical position of a surface object.
 
-The vertical position of a surface object can be set through this field.  You have the choice of setting a fixed
-coordinate (the default) or a scaled coordinate if you use the `FD_SCALED` flag.
+Use `Y` to read or change the vertical position of the surface relative to its parent.
 
-If the value is changed while the surface is on display, its position will be updated immediately.
+By default the value is a fixed coordinate unit.  With the `FD_SCALED` flag, the value is treated as a multiplier of
+the parent surface height.
+
+Changing `Y` on a visible surface updates its position immediately.
 
 *********************************************************************************************************************/
 
@@ -860,14 +818,13 @@ static ERR SET_YCoord(extSurface *Self, Unit *Value)
 -FIELD-
 YOffset: Determines the vertical offset of a surface object.
 
-The YOffset has a dual purpose depending on whether or not it is set in conjunction with the #Y or #Height fields.
+`YOffset` defines a distance from the bottom edge of the parent surface.
 
-If set in conjunction with the #Y field, the height of the surface object will be from that Y coordinate up to the
-height of the container, minus the value given in the YOffset.  This means that the height of the surface object is
-dynamically calculated in relation to the height of its container.
+When #Y is set and #Height is not set, `YOffset` makes the surface height dynamic.  The height extends from #Y to the
+parent height minus `YOffset`.
 
-If the YOffset field is set in conjunction with a fixed or scaled height then the surface object will be positioned
-at a Y coordinate calculated from the formula `Y = ContainerHeight - SurfaceHeight - YOffset`.
+When #Height is set, `YOffset` positions the surface from the parent bottom edge:
+`Y = ParentHeight - Height - YOffset`.
 -END-
 
 *********************************************************************************************************************/

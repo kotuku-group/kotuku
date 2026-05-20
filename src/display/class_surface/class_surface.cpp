@@ -6,25 +6,26 @@ that is distributed with this package.  Please refer to it for further informati
 **********************************************************************************************************************
 
 -CLASS-
-Surface: Manages the display and positioning of 2-Dimensional rendered graphics.
+Surface: Manages display regions for two-dimensional rendered graphics.
 
-The Surface class is used to manage the positioning, drawing and interaction with layered display interfaces.  It
-works in conjunction with the @Bitmap class for rendering graphics, and the @Pointer class for user interaction.
+The Surface class represents a rectangular region in the display hierarchy.  It manages positioning, visibility,
+redraws, backing storage and focus for layered user interfaces.  Surfaces work with @Bitmap objects for rendered
+pixel data and with the @Pointer class for pointer interaction.
 
-On a platform such as Windows or Linux, the top-level surface will typically be hosted in an application
-window.  On Android or when a full screen display is required, a surface can cover the entire display and be
-window-less.  The top-level surface can act as a host to additional surfaces, which are referred to as children.
-Placing more surface objects inside of these children will create a hierarchy of many objects that requires
-sophisticated management that is provisioned by the Surface class.
+A top-level surface is normally backed by an application window on hosted platforms such as Windows and Linux.  For
+full screen displays and Android, a top-level surface can cover the display without a separate host
+window.  Child surfaces are attached to a parent surface, creating a hierarchy whose ordering, clipping, redraw and
+input behaviour is managed by this class.
 
-Although pure surface based UI's are possible, clients should always pursue the more simplistic approach of using
-surfaces to host @VectorScene objects that describe vector based interfaces.  Doing so is in keeping with our goal
-of proving fully scalable interfaces to users, and we optimise features with that use-case in mind.
+Building nested surface-only interfaces is supported, but most applications should use surfaces as hosts for
+@VectorScene objects.  This keeps interfaces resolution independent and matches the rendering path that Kōtuku
+optimises most heavily.
+
+Surface content is preserved with a backing store where required.  Surfaces that share a backing store are composited
+through their parent, while surfaces that need independent redraw, opacity, video memory or cursor behaviour can own a
+separate bitmap buffer.
 
 -END-
-
-Technical Note: The Surface class uses the "backing store" technique for always preserving the graphics of rendered
-areas.
 
 *********************************************************************************************************************/
 
@@ -565,6 +566,9 @@ static void notify_redimension_parent(OBJECTPTR Object, ACTIONID ActionID, ERR R
 /*********************************************************************************************************************
 -ACTION-
 Activate: Shows a surface object on the display.
+
+For top-level surfaces, Activate() delegates to #Show() so that the hosted display window becomes visible.  Child
+surfaces are not affected by this action.
 -END-
 *********************************************************************************************************************/
 
@@ -579,26 +583,27 @@ static ERR SURFACE_Activate(extSurface *Self)
 -METHOD-
 AddCallback: Inserts a function hook into the drawing process of a surface object.
 
-The AddCallback() method provides a hook for custom functions to draw directly to a surface.  Whenever a surface
-object performs a redraw event, all functions inserted by this method will be called in their original subscription
-order with a direct reference to the Surface's target bitmap.  The C/C++ prototype is
-`Function(APTR Context, *Surface, *Bitmap, APTR Meta)`.
+The AddCallback() method installs a draw callback for custom rendering directly into a surface.  During a redraw,
+callbacks are invoked in subscription order and receive the target @Bitmap for the surface.
 
-The Tiri prototype is `function draw(Surface, Bitmap)`
+The C/C++ callback prototype is `ERR Function(APTR Context, objSurface *Surface, objBitmap *Bitmap, APTR Meta)`.
+The Tiri callback prototype is `function draw(Surface, Bitmap)`.
 
-The subscriber can draw to the bitmap surface as it would with any freshly allocated bitmap object (refer to the
-@Bitmap class).  To get the width and height of the available drawing space, please read the Width and
-Height fields from the Surface object.  If writing to the bitmap directly, please observe the bitmap's clipping
-region and the XOffset and YOffset values.
+Callbacks may draw to the bitmap as they would to any other @Bitmap.  Use the Surface #Width and #Height fields to
+determine the drawable area, and respect the bitmap clipping region when writing pixels directly.
+
+Calling AddCallback() with a callback that is already registered for the same object moves that callback to the end of
+the callback list, making it run after the callbacks that remain before it.
 
 -INPUT-
-ptr(func) Callback: Pointer to the callback routine or NULL to remove callbacks for the given Object.
+ptr(func) Callback: Callback routine to insert or move in the draw callback list.
 
 -ERRORS-
 Okay
 NullArgs
-ExecViolation: The call was not made from the process that owns the object.
-AllocMemory
+NoPermission: Public objects cannot draw directly to surfaces.
+AllocMemory: The callback list could not be expanded.
+ArrayFull: The callback list has reached its maximum size.
 -END-
 
 *********************************************************************************************************************/
@@ -695,6 +700,8 @@ static ERR SURFACE_AddCallback(extSurface *Self, struct drw::AddCallback *Args)
 /*********************************************************************************************************************
 -ACTION-
 Disable: Disables a surface object.
+
+Disabled surfaces remain visible but cannot accept user focus through #Focus().
 -END-
 *********************************************************************************************************************/
 
@@ -708,6 +715,8 @@ static ERR SURFACE_Disable(extSurface *Self)
 /*********************************************************************************************************************
 -ACTION-
 Enable: Enables a disabled surface object.
+
+Enable() clears the disabled state so that the surface can receive focus and normal interaction again.
 -END-
 *********************************************************************************************************************/
 
@@ -721,6 +730,12 @@ static ERR SURFACE_Enable(extSurface *Self)
 /*********************************************************************************************************************
 -ACTION-
 Focus: Changes the primary user focus to the surface object.
+
+Focus() makes the surface the primary focus target and notifies the affected focus subscribers.  Focus is propagated
+through the surface hierarchy so that parent surfaces also record inherited focus.
+
+The request is ignored if the surface is disabled, marked with `RNF::NO_FOCUS`, or outside the active modal surface.
+If `RNF::IGNORE_FOCUS` is set, the focus request is forwarded to the parent surface instead.
 -END-
 *********************************************************************************************************************/
 
@@ -981,6 +996,10 @@ static ERR SURFACE_Free(extSurface *Self)
 /*********************************************************************************************************************
 -ACTION-
 Hide: Hides a surface object from the display.
+
+Hide() clears the visible state.  For top-level surfaces it hides the hosted display window; for child surfaces it
+invalidates and exposes the covered parent area so that the background is redrawn.  Hiding a modal surface also
+restores the previous modal surface, or clears modal mode if there is no previous surface.
 -END-
 *********************************************************************************************************************/
 
@@ -1519,6 +1538,9 @@ static ERR SURFACE_Init(extSurface *Self)
 /*********************************************************************************************************************
 -ACTION-
 LostFocus: Informs a surface object that it has lost the user focus.
+
+LostFocus() clears the `RNF::HAS_FOCUS` flag when the surface currently holds focus.  If the surface has already lost
+focus, the action returns without further notification.
 -END-
 *********************************************************************************************************************/
 
@@ -1550,9 +1572,8 @@ static ERR SURFACE_LostFocus(extSurface *Self)
 -METHOD-
 Minimise: For hosted surfaces only, this method will minimise the surface to an icon.
 
-If a surface is hosted in a desktop window, calling the Minimise() method will perform the default minimise action
-on that window.  On a platform such as Microsoft Windows, this would normally result in the window being
-minimised to the task bar.
+If a surface is hosted in a desktop window, calling Minimise() performs the host platform's default minimise action
+on that window.  On Microsoft Windows, this normally minimises the window to the taskbar.
 
 Calling Minimise() on a surface that is already in the minimised state may result in the host window being restored to
 the desktop.  This behaviour is platform dependent and should be manually tested to confirm its reliability on the
@@ -1573,6 +1594,13 @@ static ERR SURFACE_Minimise(extSurface *Self)
 /*********************************************************************************************************************
 -ACTION-
 Move: Moves a surface object to a new display position.
+
+Move() applies relative X and Y deltas to the surface.  The request honours movement restrictions such as
+`RNF::STICKY`, `RNF::NO_HORIZONTAL`, `RNF::NO_VERTICAL` and the configured movement limits.  Child surfaces are
+clamped within their parent surface when limits are active.
+
+Queued Move() requests for the same surface may be combined before drawing occurs.  After a successful move,
+redimension subscribers are notified with the surface's updated position and size.
 -END-
 *********************************************************************************************************************/
 
@@ -1697,6 +1725,10 @@ static ERR SURFACE_Move(extSurface *Self, struct acMove *Args)
 /*********************************************************************************************************************
 -ACTION-
 MoveToBack: Moves a surface object to the back of its container.
+
+For child surfaces, MoveToBack() reorders the surface within its parent while preserving child hierarchy, bitmap
+ownership constraints, pop-over relationships and `RNF::STICK_TO_BACK` ordering.  Top-level surfaces delegate the
+request to their hosted display window.
 -END-
 *********************************************************************************************************************/
 
@@ -1757,6 +1789,10 @@ static ERR SURFACE_MoveToBack(extSurface *Self)
 /*********************************************************************************************************************
 -ACTION-
 MoveToFront: Moves a surface object to the front of its container.
+
+For child surfaces, MoveToFront() raises the surface within its parent while preserving child hierarchy, cursor
+ordering, bitmap ownership constraints, pop-over relationships and `RNF::STICK_TO_FRONT` ordering.  Top-level
+surfaces delegate the request to their hosted display window.
 -END-
 *********************************************************************************************************************/
 
@@ -1880,6 +1916,9 @@ static ERR SURFACE_MoveToFront(extSurface *Self)
 /*********************************************************************************************************************
 -ACTION-
 MoveToPoint: Moves a surface object to an absolute coordinate.
+
+MoveToPoint() converts the supplied absolute X and Y values into relative movement and forwards the request to
+#Move().  Coordinates are changed only for axes enabled by the `MTF::X` and `MTF::Y` flags.
 -END-
 *********************************************************************************************************************/
 
@@ -1937,17 +1976,17 @@ static ERR SURFACE_NewObject(extSurface *Self)
 -METHOD-
 RemoveCallback: Removes a callback previously inserted by AddCallback().
 
-The RemoveCallback() method is used to remove any callback that has been previously inserted by #AddCallback().
+RemoveCallback() removes a draw callback that was previously inserted by #AddCallback().
 
-This method is scope restricted, meaning that callbacks added by other objects will not be affected irrespective of
-the parameters that are passed to it.
+This method is scope restricted.  A caller can remove only callbacks associated with its own object context, so
+callbacks added by other objects are not affected.
 
 -INPUT-
-ptr(func) Callback: Pointer to the callback routine to remove, or NULL to remove all assoicated callback routines.
+ptr(func) Callback: Callback routine to remove, or `NULL` to remove all associated callback routines for the caller.
 
 -ERRORS-
 Okay
-Search
+Search: The requested callback was not found.
 -END-
 
 *********************************************************************************************************************/
@@ -2025,15 +2064,15 @@ static ERR SURFACE_RemoveCallback(extSurface *Self, struct drw::RemoveCallback *
 -METHOD-
 ResetDimensions: Changes the dimensions of a surface.
 
-The ResetDimensions() method provides a simple way of re-declaring the dimensions of a surface object.  This is
-sometimes necessary when a surface needs to make a significant alteration to its display configuration.  For
-instance if the width of the surface is declared through a combination of `X` and `XOffset` settings and the width
-needs to change to a fixed setting, then ResetDimensions() will have to be used.
+ResetDimensions() replaces the dimensional declaration used by a surface.  Use this when the relationship between
+fields changes, for example when a width previously derived from `X` and `XOffset` must become a fixed width.
 
 It is not necessary to define a value for every parameter - only the ones that are relevant to the new dimension
-settings.  For instance if `X` and `Width` are set, `XOffset` is ignored and the Dimensions value must include
-`DMF::FIXED_X` and `DMF::FIXED_WIDTH` (or the relative equivalents).  Please refer to the #Dimensions field for a full
-list of dimension flags that can be specified.
+settings.  For example, if `X` and `Width` are set, `XOffset` is ignored and the `Dimensions` value must include
+`DMF::FIXED_X` and `DMF::FIXED_WIDTH` or their scaled equivalents.  Refer to the #Dimensions field for the supported
+dimension flags.
+
+After the new dimensions are applied, the union of the old and new areas is redrawn and exposed.
 
 -INPUT-
 double X: New X coordinate.
@@ -2047,7 +2086,6 @@ int(DMF) Dimensions: Dimension flags.
 -ERRORS-
 Okay
 NullArgs
-AccessMemory: Unable to access internal surface list.
 -END-
 
 *********************************************************************************************************************/
@@ -2121,19 +2159,20 @@ static ERR SURFACE_ResetDimensions(extSurface *Self, struct drw::ResetDimensions
 -METHOD-
 ScheduleRedraw: Schedules a redraw operation for the next frame.
 
-Use ScheduleRedraw to indicate that a surface needs to be drawn to the display.  The surface and all child surfaces
-will be drawn on the next frame cycle (typically 1/60th of a second).  All manual draw operations for the target
-surface are ignored until the scheduled operation is completed.
+Use ScheduleRedraw() to mark a surface for redraw on the next frame cycle.  The surface and its child surfaces are
+redrawn together, typically on the next 1/60th of a second timer tick.  Direct redraw requests for the target surface
+are coalesced until the scheduled redraw is processed.
 
 Scheduling is ideal in situations where a cluster of redraw events may occur within a tight time period, and it
 would be inefficient to draw those changes to the display individually.
 
-Note that redraw schedules do not 'see each other', meaning if a surface and a child are both scheduled, this will
-trigger two redraw operations when one would suffice.  It is the client's responsibility to target the most
-relevant top-level surface for scheduling.
+Redraw schedules do not merge across the hierarchy.  If both a surface and one of its children are scheduled, two
+redraw operations may be triggered where one would otherwise suffice.  Schedule the highest relevant surface when a
+single redraw should cover a group of changes.
 
 -ERRORS-
 Okay
+Failed
 -END-
 
 *********************************************************************************************************************/
@@ -2163,13 +2202,22 @@ static ERR SURFACE_ScheduleRedraw(extSurface *Self)
 -ACTION-
 SaveImage: Saves the graphics of a surface object.
 
-To store the rendered image of a surface object, use the SaveImage() action.  Calling SaveImage() on a surface object
-will cause it to render an image of its contents and save them to the given destination object.  Any child surfaces
-in the region will also be included in the resulting image data.
+SaveImage() renders the visible content of a surface into an image and writes it to the destination object supplied in
+the action arguments.  Visible child surfaces in the captured region are included in the resulting image.
 
-The image data will be saved in the data format that is indicated by the setting in the `ClassID` parameter.  Options
-are limited to members of the @Picture class, for example `CLASSID::JPEG` and `CLASSID::PICTURE` (PNG).  If no `ClassID` is
-specified, the user's preferred default file format is used.
+The image format is selected with the `ClassID` argument.  Supported values are @Picture-compatible image classes such
+as `CLASSID::JPEG` and `CLASSID::PICTURE` (PNG).  If `ClassID` is `CLASSID::NIL`, the default @Picture implementation
+is used.
+
+Errors returned while copying individual child surfaces can be propagated from ~CopySurface().
+
+-ERRORS-
+Okay
+NullArgs
+NewObject: The intermediate picture object could not be created.
+Failed: The intermediate picture object could not be initialised or saved.
+Search
+AccessObject
 -END-
 
 *********************************************************************************************************************/
@@ -2252,15 +2300,19 @@ static ERR SURFACE_SaveImage(extSurface *Self, struct acSaveImage *Args)
 -METHOD-
 SetOpacity: Alters the opacity of a surface object.
 
-This method will change the opacity of the surface and execute a redraw to make the changes to the display.
+SetOpacity() changes the opacity multiplier for a surface that owns its bitmap buffer.  The final value is clamped by
+the #Opacity field setter.  If the surface is visible, a redraw is queued so the new opacity is reflected on the
+display without blocking the caller.
 
 -INPUT-
-double Value: The new opacity multiplier between `0.0` and `1.0` (ignored if you have set the Adjustment parameter).
-double Adjustment: Adjustment to add to the current opacity multiplier.  Set this to zero to assign `Value` directly.
+double Value: New opacity multiplier, used when `Adjustment` is zero.
+double Adjustment: Value to add to the current opacity multiplier, or zero to assign `Value` directly.
 
 -ERRORS-
-Okay: The opacity of the surface object was changed.
+Okay
 NullArgs
+NoSupport: The surface does not own the bitmap buffer required for independent opacity.
+-END-
 
 *********************************************************************************************************************/
 
@@ -2295,6 +2347,10 @@ static ERR SURFACE_SetOpacity(extSurface *Self, struct drw::SetOpacity *Args)
 /*********************************************************************************************************************
 -ACTION-
 Show: Shows a surface object on the display.
+
+Show() makes the surface visible.  For top-level surfaces it shows the hosted display window; for child surfaces it
+sets the visible flag, redraws the surface and exposes the affected area.  If the surface is modal, it becomes the
+active modal surface until it is hidden.
 -END-
 *********************************************************************************************************************/
 
