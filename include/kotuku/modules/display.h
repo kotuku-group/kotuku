@@ -272,6 +272,30 @@ enum class BMF : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(BMF)
 
+// Gamepad controller buttons.
+
+enum class CON : uint32_t {
+   NIL = 0,
+   GAMEPAD_S = 0x00000001,
+   GAMEPAD_E = 0x00000002,
+   GAMEPAD_W = 0x00000004,
+   GAMEPAD_N = 0x00000008,
+   DPAD_UP = 0x00000010,
+   DPAD_DOWN = 0x00000020,
+   DPAD_LEFT = 0x00000040,
+   DPAD_RIGHT = 0x00000080,
+   START = 0x00000100,
+   SELECT = 0x00000200,
+   LEFT_BUMPER_1 = 0x00000400,
+   LEFT_BUMPER_2 = 0x00000800,
+   RIGHT_BUMPER_1 = 0x00001000,
+   RIGHT_BUMPER_2 = 0x00002000,
+   LEFT_THUMB = 0x00004000,
+   RIGHT_THUMB = 0x00008000,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(CON)
+
 // Display flags.
 
 enum class SCR : uint32_t {
@@ -1203,7 +1227,7 @@ class objController : public Object {
    double LeftStickY;     // Left analog stick value for Y axis, between -1.0 and 1.0.
    double RightStickX;    // Right analog stick value for X axis, between -1.0 and 1.0.
    double RightStickY;    // Right analog stick value for Y axis, between -1.0 and 1.0.
-   CON    Buttons;        // JET button values expressed as bit-fields.
+   CON    Buttons;        // Button values expressed as bit-fields.
    int    Port;           // The port number assigned to the controller.
 
    // Action stubs
@@ -1214,7 +1238,6 @@ class objController : public Object {
    // Customised field setting
 
    inline ERR setPort(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
       this->Port = Value;
       return ERR::Okay;
    }

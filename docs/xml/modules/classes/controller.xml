@@ -16,7 +16,7 @@
 <p>Use the Controller class to read the state of game controllers that are recognised by the operating system.</p>
 <p>Unlike analog devices that stream input commands (e.g. mice), gamepad controllers maintain a state that can be read at any time.  The controller state is normally read at least once per frame, which can be achieved in a program's inner loop, or in a separate timer.</p>
 <p>On Linux, controllers are read through the <code>/dev/input/js*</code> joystick API.  The user running the application must have read access to these device nodes.</p>
-<p>Controller input management is governed by the <class name="Display">Display</class> class.  The <code>GRAB_CONTROLLERS</code> flag must be defined in the active Display's Flags field in order to ensure that controller input can be received.  Failure to do so may mean that the Controller object appears to work but does not receive input.</p></description>
+<p>Controller input management is governed by the <class name="Display">Display</class> class.  The <code>GRAB_CONTROLLERS</code> flag should be defined in the active <class name="Display" field="Flags">Display.Flags</class> field in order to ensure that controller input can be received from the host.  Failure to do so may mean that the Controller object works inconsistently across different systems.</p></description>
     <source>
       <file>class_controller.cpp</file>
     </source>
@@ -28,6 +28,16 @@
       <comment>Get the current controller state.</comment>
       <prototype>ERR acQuery(*Object)</prototype>
       <tiriPrototype>err = Object.acQuery()</tiriPrototype>
+      <description>
+<p>Query will update the controller field values with the state of the controller connected to the specified port. The most likely failure is a disconnection - if this occurs the port number will be set to <code>-1</code> and <code>ERR::Disconnected</code> is returned.  Repeated calls to Query() will return the same error until a controller is connected to any port.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NoSupport">The host does not support controller input.</error>
+        <error code="OutOfRange">The port number is outside of acceptable range.</error>
+        <error code="SystemCall">A call to the host system failed.</error>
+        <error code="Disconnected">No controller is connected to the specified port.</error>
+      </result>
     </action>
 
   </actions>
@@ -35,7 +45,7 @@
   <fields>
     <field>
       <name>Buttons</name>
-      <comment>JET button values expressed as bit-fields.</comment>
+      <comment>Button values expressed as bit-fields.</comment>
       <access read="R">Read</access>
       <type lookup="CON">CON</type>
       <description>
@@ -67,11 +77,12 @@
     <field>
       <name>Port</name>
       <comment>The port number assigned to the controller.</comment>
-      <access read="R" write="I">Read/Init</access>
+      <access read="R" write="W">Read/Write</access>
       <type>INT</type>
       <description>
-<p>Set the port number to choose the controller that will be queried for state changes.  The default of -1 is used to indicate the primary controller.  Fixed port numbers start from zero.  There is no guarantee that the existence of a port means that a controller is connected to it.</p>
-<p>It is acceptable to set the port number post-initialisation, so multiple controllers can be queried through one interface at the cost of overwriting the previous state.  Check <fl>TotalPorts</fl> if your program supports more than one controller.</p>
+<p>Set the port number to choose the controller that will be queried for state changes.  The default of -1 is used to indicate the primary (first available) controller.  Fixed port numbers start from zero.  There is no guarantee that the existence of a port means that a controller is connected to it.</p>
+<p>It is acceptable to set the port number post-initialisation, so multiple controllers can be queried through one interface at the cost of overwriting the previous state.  Enumeration for the discovery of controllers can be achieved by calling <action>Query</action> for each port and checking for <code>ERR::Okay</code>.</p>
+<p>Read <fl>TotalPorts</fl> to get the maximum number of controller ports.</p>
       </description>
     </field>
 
@@ -107,6 +118,27 @@
     </field>
 
   </fields>
+  <types>
+    <constants lookup="CON" comment="Gamepad controller buttons.">
+      <const name="DPAD_DOWN">Directional pad down.</const>
+      <const name="DPAD_LEFT">Directional pad left.</const>
+      <const name="DPAD_RIGHT">Directional pad right.</const>
+      <const name="DPAD_UP">Directional pad up.</const>
+      <const name="GAMEPAD_E">East button (B)</const>
+      <const name="GAMEPAD_N">North button (Y)</const>
+      <const name="GAMEPAD_S">South button (A)</const>
+      <const name="GAMEPAD_W">West button (X)</const>
+      <const name="LEFT_BUMPER_1">Gamepad left-hand bumper 1 (top, primary).</const>
+      <const name="LEFT_BUMPER_2">Gamepad left-hand bumper 2 (lower).</const>
+      <const name="LEFT_THUMB">Left thumb stick depressed.</const>
+      <const name="RIGHT_BUMPER_1">Gamepad right-hand bumper 1 (top, primary).</const>
+      <const name="RIGHT_BUMPER_2">Gamepad right-hand bumper 2 (lower).</const>
+      <const name="RIGHT_THUMB">Right thumb stick depressed.</const>
+      <const name="SELECT">Gamepad select or back button.</const>
+      <const name="START">Gamepad start button.</const>
+    </constants>
+
+  </types>
   <structs>
   </structs>
 </book>

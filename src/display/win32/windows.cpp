@@ -1084,23 +1084,40 @@ static int winFindPrimaryController(void)
 
 //********************************************************************************************************************
 
+static ERR winControllerError(DWORD Result)
+{
+   switch (Result) {
+      case ERROR_DEVICE_NOT_CONNECTED:
+         return ERR::Disconnected;
+
+      case ERROR_INVALID_PARAMETER:
+         return ERR::Args;
+
+      default:
+         return ERR::SystemCall;
+   }
+}
+
+//********************************************************************************************************************
+
 ERR winReadController(int Port, double *Values, CON &Buttons)
 {
    constexpr double tolerance = 0.08; // At-rest dead zone tolerance for thumb sticks
 
    if (Port < 0) {
-      if (Port < -1) return ERR::Search;
+      if (Port < -1) return ERR::OutOfRange;
       const auto primary_port = glPrimaryPort.load();
       if (primary_port >= 0) Port = primary_port;
       else {
          Port = winFindPrimaryController();
-         if (Port < 0) return ERR::Search;
+         if (Port < 0) return ERR::Disconnected;
       }
    }
-   else if (Port >= int(XUSER_MAX_COUNT)) return ERR::Search;
+   else if (Port >= int(XUSER_MAX_COUNT)) return ERR::OutOfRange;
 
    XINPUT_STATE state;
-   if (!XInputGetState(DWORD(Port), &state)) {
+   const auto result = XInputGetState(DWORD(Port), &state);
+   if (!result) {
       Values[0] = double(state.Gamepad.bLeftTrigger) * (1.0 / 255.0);
       Values[1] = double(state.Gamepad.bRightTrigger) * (1.0 / 255.0);
       Values[2] = std::clamp(double(state.Gamepad.sThumbLX) * (1.0 / 32767.0), -1.0, 1.0);
@@ -1142,7 +1159,7 @@ ERR winReadController(int Port, double *Values, CON &Buttons)
    else {
       auto primary_port = Port;
       glPrimaryPort.compare_exchange_strong(primary_port, -1);
-      return ERR::SystemCall;
+      return winControllerError(result);
    }
 }
 

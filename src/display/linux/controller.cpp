@@ -204,7 +204,7 @@ static void close_controller(LinuxController &Controller)
 
 static ERR open_controller(int Port)
 {
-   if ((Port < 0) or (Port >= MAX_CONTROLLER_PORTS)) return ERR::Search;
+   if ((Port < 0) or (Port >= MAX_CONTROLLER_PORTS)) return ERR::OutOfRange;
 
    auto &controller = glLinuxControllers[Port];
    if (controller.fd >= 0) return ERR::Okay;
@@ -212,7 +212,7 @@ static ERR open_controller(int Port)
    const auto path = std::string("/dev/input/js") + std::to_string(Port);
    const auto fd = open(path.c_str(), O_RDONLY|O_NONBLOCK|O_CLOEXEC);
    if (fd < 0) {
-      if ((errno IS ENOENT) or (errno IS ENODEV)) return ERR::Search;
+      if ((errno IS ENOENT) or (errno IS ENODEV)) return ERR::Disconnected;
       if (errno IS EACCES) return ERR::NoPermission;
       return ERR::SystemCall;
    }
@@ -241,7 +241,7 @@ static ERR open_controller(int Port)
 
 static ERR read_controller(LinuxController &Controller, int Port)
 {
-   for (;;) {
+   while (true) {
       js_event event;
       const auto bytes = read(Controller.fd, &event, sizeof(event));
       if (bytes IS ssize_t(sizeof(event))) {
@@ -258,7 +258,7 @@ static ERR read_controller(LinuxController &Controller, int Port)
          if (errno IS ENODEV) {
             close_controller(Controller);
             if (Port IS glPrimaryPort) glPrimaryPort = -1;
-            return ERR::Search;
+            return ERR::Disconnected;
          }
          return ERR::SystemCall;
       }
@@ -278,7 +278,7 @@ static ERR read_controller(LinuxController &Controller, int Port)
 
 static ERR find_primary_controller(int &Port)
 {
-   ERR first_error = ERR::Search;
+   ERR first_error = ERR::Disconnected;
 
    for (int port=0; port < MAX_CONTROLLER_PORTS; port++) {
       auto &controller = glLinuxControllers[port];

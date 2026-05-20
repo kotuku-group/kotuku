@@ -367,30 +367,6 @@ enum class JTYPE : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(JTYPE)
 
-// Gamepad controller buttons.
-
-enum class CON : uint32_t {
-   NIL = 0,
-   GAMEPAD_S = 0x00000001,
-   GAMEPAD_E = 0x00000002,
-   GAMEPAD_W = 0x00000004,
-   GAMEPAD_N = 0x00000008,
-   DPAD_UP = 0x00000010,
-   DPAD_DOWN = 0x00000020,
-   DPAD_LEFT = 0x00000040,
-   DPAD_RIGHT = 0x00000080,
-   START = 0x00000100,
-   SELECT = 0x00000200,
-   LEFT_BUMPER_1 = 0x00000400,
-   LEFT_BUMPER_2 = 0x00000800,
-   RIGHT_BUMPER_1 = 0x00001000,
-   RIGHT_BUMPER_2 = 0x00002000,
-   LEFT_THUMB = 0x00004000,
-   RIGHT_THUMB = 0x00008000,
-};
-
-DEFINE_ENUM_FLAG_OPERATORS(CON)
-
 // JET constants are documented in GetInputEvent()
 
 enum class JET : int {

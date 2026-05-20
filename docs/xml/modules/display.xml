@@ -957,6 +957,25 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <const name="TEXT">Plain text files such as ASCII and UTF-8 must be identified through this clip type.</const>
     </constants>
 
+    <constants lookup="CON" comment="Gamepad controller buttons.">
+      <const name="DPAD_DOWN">Directional pad down.</const>
+      <const name="DPAD_LEFT">Directional pad left.</const>
+      <const name="DPAD_RIGHT">Directional pad right.</const>
+      <const name="DPAD_UP">Directional pad up.</const>
+      <const name="GAMEPAD_E">East button (B)</const>
+      <const name="GAMEPAD_N">North button (Y)</const>
+      <const name="GAMEPAD_S">South button (A)</const>
+      <const name="GAMEPAD_W">West button (X)</const>
+      <const name="LEFT_BUMPER_1">Gamepad left-hand bumper 1 (top, primary).</const>
+      <const name="LEFT_BUMPER_2">Gamepad left-hand bumper 2 (lower).</const>
+      <const name="LEFT_THUMB">Left thumb stick depressed.</const>
+      <const name="RIGHT_BUMPER_1">Gamepad right-hand bumper 1 (top, primary).</const>
+      <const name="RIGHT_BUMPER_2">Gamepad right-hand bumper 2 (lower).</const>
+      <const name="RIGHT_THUMB">Right thumb stick depressed.</const>
+      <const name="SELECT">Gamepad select or back button.</const>
+      <const name="START">Gamepad start button.</const>
+    </constants>
+
     <constants lookup="CPF" comment="Clipboard flags">
       <const name="DRAG_DROP">Enables drag and drop mode.  The clipboard content will be private and not share data with the host system in this mode.</const>
       <const name="HISTORY_BUFFER">Enables the history buffer.  Note that this results in active clipboard monitoring and the program will make copies of all potential clipboard content - whether it is used or not.</const>

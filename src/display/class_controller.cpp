@@ -12,9 +12,9 @@ inner loop, or in a separate timer.
 On Linux, controllers are read through the `/dev/input/js*` joystick API.  The user running the application must have
 read access to these device nodes.
 
-Controller input management is governed by the @Display class.  The `GRAB_CONTROLLERS` flag must be defined in the
-active Display's Flags field in order to ensure that controller input can be received.  Failure to do so may mean
-that the Controller object appears to work but does not receive input.
+Controller input management is governed by the @Display class.  The `GRAB_CONTROLLERS` flag should be defined in the
+active @Display.Flags field in order to ensure that controller input can be received from the host.  Failure to do
+so may mean that the Controller object works inconsistently across different systems.
 
 -END-
 
@@ -42,21 +42,27 @@ static ERR CONTROLLER_NewObject(objController *Self)
 /*********************************************************************************************************************
 -ACTION-
 Query: Get the current controller state.
+
+Query will update the controller field values with the state of the controller connected to the specified port.
+The most likely failure is a disconnection - if this occurs the port number will be set to `-1` and
+`ERR::Disconnected` is returned.  Repeated calls to Query() will return the same error until a controller is
+connected to any port.
+
+-ERRORS-
+Okay:
+NoSupport: The host does not support controller input.
+Disconnected: No controller is connected to the specified port.
+OutOfRange: The port number is outside of acceptable range.
+SystemCall: A call to the host system failed.
 -END-
 *********************************************************************************************************************/
 
 static ERR CONTROLLER_Query(objController *Self)
 {
 #ifdef _WIN32
-   if (auto error = winReadController(Self->Port, (double *)&Self->LeftTrigger, Self->Buttons); error IS ERR::Okay) {
-      return ERR::Okay;
-   }
-   else return error;
+   return winReadController(Self->Port, (double *)&Self->LeftTrigger, Self->Buttons);
 #elif defined(__linux__)
-   if (auto error = linuxReadController(Self->Port, (double *)&Self->LeftTrigger, Self->Buttons); error IS ERR::Okay) {
-      return ERR::Okay;
-   }
-   else return error;
+   return linuxReadController(Self->Port, (double *)&Self->LeftTrigger, Self->Buttons);
 #else
    return ERR::NoSupport;
 #endif
@@ -89,12 +95,14 @@ Buttons: Button values expressed as bit-fields.
 Port: The port number assigned to the controller.
 
 Set the port number to choose the controller that will be queried for state changes.  The default of -1 is used
-to indicate the primary controller.  Fixed port numbers start from zero.  There is no guarantee that the existence
-of a port means that a controller is connected to it.
+to indicate the primary (first available) controller.  Fixed port numbers start from zero.  There is no guarantee
+that the existence of a port means that a controller is connected to it.
 
 It is acceptable to set the port number post-initialisation, so multiple controllers can be queried through one
-interface at the cost of overwriting the previous state.  Check #TotalPorts if your program supports more than one
-controller.
+interface at the cost of overwriting the previous state.  Enumeration for the discovery of controllers can be
+achieved by calling #Query() for each port and checking for `ERR::Okay`.
+
+Read #TotalPorts to get the maximum number of controller ports.
 
 -FIELD-
 TotalPorts: Reports the number of controller ports that should be scanned.

@@ -2156,25 +2156,6 @@ static ResourceManager glNodeManager = {
       <const name="STRIP_QUOTES">Removes quotes from key values that are quote-encapsulated.</const>
     </constants>
 
-    <constants lookup="CON" comment="Gamepad controller buttons.">
-      <const name="DPAD_DOWN">Directional pad down.</const>
-      <const name="DPAD_LEFT">Directional pad left.</const>
-      <const name="DPAD_RIGHT">Directional pad right.</const>
-      <const name="DPAD_UP">Directional pad up.</const>
-      <const name="GAMEPAD_E">East button (B)</const>
-      <const name="GAMEPAD_N">North button (Y)</const>
-      <const name="GAMEPAD_S">South button (A)</const>
-      <const name="GAMEPAD_W">West button (X)</const>
-      <const name="LEFT_BUMPER_1">Gamepad left-hand bumper 1 (top, primary).</const>
-      <const name="LEFT_BUMPER_2">Gamepad left-hand bumper 2 (lower).</const>
-      <const name="LEFT_THUMB">Left thumb stick depressed.</const>
-      <const name="RIGHT_BUMPER_1">Gamepad right-hand bumper 1 (top, primary).</const>
-      <const name="RIGHT_BUMPER_2">Gamepad right-hand bumper 2 (lower).</const>
-      <const name="RIGHT_THUMB">Right thumb stick depressed.</const>
-      <const name="SELECT">Gamepad select or back button.</const>
-      <const name="START">Gamepad start button.</const>
-    </constants>
-
     <constants lookup="CONTYPE" comment="Console types">
       <const name="HANDLE">Redirected to a handle</const>
       <const name="MANUAL">Console created manually</const>

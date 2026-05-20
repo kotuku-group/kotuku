@@ -194,25 +194,6 @@ flags("JTYPE", { comment="JTYPE flags are used to categorise input types.", modu
     "REPEATED: Input is a repeated entry (i.e. user is holding down a button and a repetition timer is being triggered)",
     "DRAG_ITEM: This special flag is set by the input system if the pointer is click-dragging an object at the time of the event.")
 
-flags("CON", { comment="Gamepad controller buttons.", module="core" },
-    "GAMEPAD_S:  South button (A)",
-    "GAMEPAD_E:  East button (B)",
-    "GAMEPAD_W:  West button (X)",
-    "GAMEPAD_N:  North button (Y)",
-    "DPAD_UP:    Directional pad up.",
-    "DPAD_DOWN:  Directional pad down.",
-    "DPAD_LEFT:  Directional pad left.",
-    "DPAD_RIGHT: Directional pad right.",
-    "START:      Gamepad start button.",
-    "SELECT:     Gamepad select or back button.",
-    "LEFT_BUMPER_1:  Gamepad left-hand bumper 1 (top, primary).",
-    "LEFT_BUMPER_2:  Gamepad left-hand bumper 2 (lower).",
-    "RIGHT_BUMPER_1: Gamepad right-hand bumper 1 (top, primary).",
-    "RIGHT_BUMPER_2: Gamepad right-hand bumper 2 (lower).",
-    "LEFT_THUMB:  Left thumb stick depressed.",
-    "RIGHT_THUMB: Right thumb stick depressed."
-    )
-
 enums("JET", { type="int", start=1, comment="JET constants are documented in GetInputEvent()", module="Core" },
     "BUTTON_1|LMB: Left mouse button; XBox A button, PS square button.  Value is pressure sensitive, ranging between 0 - 1.0 (0 is released, 1.0 is fully depressed).",
     "BUTTON_2|RMB: Right mouse button; XBox X button, PS cross button.",
