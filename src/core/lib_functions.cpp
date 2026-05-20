@@ -63,8 +63,8 @@ thread_local std::shared_ptr<ThreadRecord> tlThreadRecord;
 
 void deregister_thread(void)
 {
-   tlThreadRecord.reset();
    auto tid = get_thread_id();
+   tlThreadRecord.reset();
    std::lock_guard lock(glmThreadRegistry);
    glThreadRegistry.erase(int(tid));
 }
@@ -74,11 +74,7 @@ void deregister_thread(void)
 
 std::shared_ptr<ThreadRecord> get_thread_record(void)
 {
-   if (not tlThreadRecord) {
-      auto tid = get_thread_id();
-      std::lock_guard lock(glmThreadRegistry);
-      if (auto it = glThreadRegistry.find(int(tid)); it != glThreadRegistry.end()) tlThreadRecord = it->second;
-   }
+   if (not tlThreadRecord) get_thread_id();
    return tlThreadRecord;
 }
 

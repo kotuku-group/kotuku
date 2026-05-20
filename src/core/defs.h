@@ -248,6 +248,7 @@ struct ThreadRecord {
 
 extern std::mutex glmThreadRegistry;
 extern std::unordered_map<int, std::shared_ptr<ThreadRecord>> glThreadRegistry;
+extern thread_local std::shared_ptr<ThreadRecord> tlThreadRecord;
 
 //********************************************************************************************************************
 

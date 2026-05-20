@@ -59,23 +59,17 @@ static std::atomic_int glThreadIDCount = 1;
 
 THREADID get_thread_id(void)
 {
-   if (tlUniqueThreadID.defined()) {
-      // Preserve the invariant that a defined thread ID always has a registry record.
-      std::lock_guard lock(glmThreadRegistry);
-      if (auto it = glThreadRegistry.find(int(tlUniqueThreadID)); it IS glThreadRegistry.end()) {
-         glThreadRegistry[int(tlUniqueThreadID)] = std::make_shared<ThreadRecord>();
-      }
-      return tlUniqueThreadID;
-   }
+   if ((tlUniqueThreadID.defined()) and (tlThreadRecord)) return tlUniqueThreadID;
+   if (not tlUniqueThreadID.defined()) tlUniqueThreadID = THREADID(glThreadIDCount++);
 
-   tlUniqueThreadID = THREADID(glThreadIDCount++);
+   // Register or repair the global record once, then use the thread-local record as the fast-path proof.
 
-   // Register the new thread in the global thread registry
-   auto record = std::make_shared<ThreadRecord>();
-   {
-      std::lock_guard lock(glmThreadRegistry);
-      glThreadRegistry[int(tlUniqueThreadID)] = std::move(record);
+   std::lock_guard lock(glmThreadRegistry);
+   if (auto it = glThreadRegistry.find(int(tlUniqueThreadID)); it IS glThreadRegistry.end()) {
+      tlThreadRecord = std::make_shared<ThreadRecord>();
+      glThreadRegistry[int(tlUniqueThreadID)] = tlThreadRecord;
    }
+   else tlThreadRecord = it->second;
 
    return tlUniqueThreadID;
 }
@@ -85,7 +79,7 @@ THREADID get_thread_id(void)
 
 ERR msg_threadcallback(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgSize)
 {
-   kt::Log log;
+   kt::Log log(__FUNCTION__);
 
    auto msg = (ThreadMessage *)Message;
    auto uid = msg->ThreadID;
@@ -109,9 +103,7 @@ ERR msg_threadcallback(APTR Custom, int MsgID, int MsgType, APTR Message, int Ms
       // NB: If a client wants notification of the thread ending, they can use WaitForObjects()
       // if not using callbacks.
       thread->Active = false;
-      if ((thread->Flags & THF::AUTO_FREE) != THF::NIL) {
-         FreeResource(*thread);
-      }
+      if ((thread->Flags & THF::AUTO_FREE) != THF::NIL) FreeResource(*thread);
       else acSignal(*thread); // Convenience for the client
    }
    else log.warning(ERR::AccessObject);
@@ -125,8 +117,7 @@ ERR msg_threadcallback(APTR Custom, int MsgID, int MsgType, APTR Message, int Ms
 static void thread_entry_cleanup(void *Arg)
 {
    if (tlThreadCrashed) {
-      kt::Log log("thread_cleanup");
-      log.error("A thread in this program has crashed.");
+      kt::Log("thread_cleanup").error("A thread in this program has crashed.");
       if (tlThreadRef) {
          tlThreadRef->InterruptThreadID.store(0, std::memory_order_release);
          tlThreadRef->Active = false;
@@ -279,8 +270,6 @@ static ERR THREAD_FreeWarning(extThread *Self)
 
 static ERR THREAD_Init(extThread *Self)
 {
-   kt::Log log;
-
    return ERR::Okay;
 }
 
