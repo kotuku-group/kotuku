@@ -144,6 +144,13 @@ namespace display {
 
 extern void RepaintWindow(int, int, int, int, int);
 
+static inline uint8_t win_opacity_to_byte(double Opacity)
+{
+   if (Opacity <= 0.0) return 0;
+   if (Opacity >= 1.0) return 255;
+   return uint8_t(Opacity * 255.0 + 0.5);
+}
+
 /*
 static void printerror(void)
 {
@@ -1264,7 +1271,7 @@ int winCreateScreenClass(void)
 */
 
 HWND winCreateScreen(HWND PopOver, int *X, int *Y, int *Width, int *Height, char Maximise, char Borderless, const char *Name,
-   char Composite, unsigned char Opacity, char Desktop)
+   char Composite, double Opacity, char Desktop)
 {
    if (!Name) Name = "Kotuku";
 
@@ -1321,7 +1328,7 @@ HWND winCreateScreen(HWND PopOver, int *X, int *Y, int *Width, int *Height, char
 
    if (glStickToFront > 0) glStickToFront--;
 
-   if ((Composite) or (Opacity < 255)) {
+   if ((Composite) or (Opacity < 1.0)) {
       SetLastError(0);
       if (!SetWindowLong(Window, GWL_EXSTYLE, GetWindowLong(Window, GWL_EXSTYLE) | WS_EX_LAYERED)) {
          if (!GetLastError()) {
@@ -1331,7 +1338,8 @@ HWND winCreateScreen(HWND PopOver, int *X, int *Y, int *Width, int *Height, char
       }
 
       if (!Composite) {
-         if (!SetLayeredWindowAttributes(Window, 0, Opacity, LWA_ALPHA)) {
+         const uint8_t opacity = win_opacity_to_byte(Opacity);
+         if (!SetLayeredWindowAttributes(Window, 0, opacity, LWA_ALPHA)) {
             DestroyWindow(Window);
             return nullptr;
          }
@@ -1602,7 +1610,7 @@ static BITMAPV4HEADER make_bitmap_v4_header(int ScanWidth, int ScanHeight, int B
 
 void win32RedrawWindow(HWND Window, HDC WindowDC, int X, int Y, int Width,
    int Height, int XDest, int YDest, int ScanWidth, int ScanHeight,
-   int BPP, unsigned char *Data, int RedMask, int GreenMask, int BlueMask, int AlphaMask, unsigned char Opacity)
+   int BPP, unsigned char *Data, int RedMask, int GreenMask, int BlueMask, int AlphaMask, double Opacity)
 {
    POINT ptSrc = { 0, 0 };
    SIZE size;
@@ -1613,8 +1621,9 @@ void win32RedrawWindow(HWND Window, HDC WindowDC, int X, int Y, int Width,
 
    direct_blit = TRUE;
    if (GetWindowLong(Window, GWL_EXSTYLE) & WS_EX_LAYERED) {
+      const uint8_t opacity = win_opacity_to_byte(Opacity);
       if (AlphaMask) {
-         BLENDFUNCTION blend_alpha = { AC_SRC_OVER, 0, Opacity, AC_SRC_ALPHA };
+         BLENDFUNCTION blend_alpha = { AC_SRC_OVER, 0, opacity, AC_SRC_ALPHA };
 
          GetWindowRect(Window,&rect);
          size.cx = rect.right - rect.left;
@@ -1649,7 +1658,7 @@ void win32RedrawWindow(HWND Window, HDC WindowDC, int X, int Y, int Width,
             DeleteDC(dcMemory);
          }
       }
-      else SetLayeredWindowAttributes(Window, 0, Opacity, LWA_ALPHA);
+      else SetLayeredWindowAttributes(Window, 0, opacity, LWA_ALPHA);
    }
 
    if (direct_blit) {

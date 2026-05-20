@@ -555,17 +555,17 @@ class objBitmap : public Object {
    struct ClipRectangle Clip;                                      // Defines the bitmap's clipping region.
    int       Size;                                                 // The total size of the bitmap, in bytes.
    MEM       DataFlags;                                            // Defines the memory flags to use in allocating a bitmap's data area.
-   int       AmtColours;                                           // The maximum number of displayable colours.
+   int       AmtColours;                                           // The maximum number of colours represented by the bitmap format.
    BMF       Flags;                                                // Optional flags.
    int       TransIndex;                                           // The transparent colour of the bitmap, represented as an index.
    int       BytesPerPixel;                                        // The number of bytes per pixel.
-   int       BitsPerPixel;                                         // The number of bits per pixel
+   int       BitsPerPixel;                                         // The number of bits used to represent each pixel.
    int       Position;                                             // The current read/write data position.
    int       Opacity;                                              // Determines the translucency setting to use in drawing operations.
    BLM       BlendMode;                                            // Defines the blending algorithm to use when rendering transparent pixels.
    struct RGB8 TransColour;                                        // The transparent colour of the bitmap, in RGB format.
-   struct RGB8 Bkgd;                                               // The bitmap's background colour is defined here in RGB format.
-   int       BkgdIndex;                                            // The bitmap's background colour is defined here as a colour index.
+   struct RGB8 Bkgd;                                               // Background colour in RGB format.
+   int       BkgdIndex;                                            // Background colour as a packed pixel value or palette index.
    CS        ColourSpace;                                          // Defines the colour space for RGB values.
    public:
    inline uint32_t getColour(struct RGB8 &RGB) {
@@ -920,7 +920,7 @@ class objDisplay : public Object {
 
    using create = kt::Create<objDisplay>;
 
-   double   RefreshRate;  // This field manages the display refresh rate.
+   double   RefreshRate;  // Active display refresh rate.
    objBitmap * Bitmap;    // Reference to the display's bitmap information.
    SCR      Flags;        // Optional flag settings.
    int      Width;        // Defines the width of the display.
@@ -935,7 +935,7 @@ class objDisplay : public Object {
    int      MaxHScan;     // The maximum horizontal scan rate of the display output device.
    int      MinVScan;     // The minimum vertical scan rate of the display output device.
    int      MaxVScan;     // The maximum vertical scan rate of the display output device.
-   DT       DisplayType;  // In hosted mode, indicates the bottom margin of the client window.
+   DT       DisplayType;  // Identifies the active display backend.
    DPMS     PowerMode;    // The display's power management method.
    OBJECTID PopOverID;    // Enables pop-over support for hosted display windows.
    int      LeftMargin;   // In hosted mode, indicates the left-hand margin of the client window.
@@ -1155,7 +1155,7 @@ class objClipboard : public Object {
 
    using create = kt::Create<objClipboard>;
 
-   CPF Flags;    // Optional flags.
+   CPF Flags;    // Optional clipboard behaviour flags.
 
 #ifdef PRV_CLIPBOARD
    FUNCTION RequestHandler;
@@ -1259,17 +1259,17 @@ class objPointer : public Object {
    double   Acceleration;  // The rate of acceleration for relative pointer movement.
    double   DoubleClick;   // The maximum interval between two clicks for a double click to be recognised.
    double   WheelSpeed;    // Defines a multiplier to be applied to the mouse wheel.
-   double   X;             // The horizontal position of the pointer within its parent display.
-   double   Y;             // The vertical position of the pointer within its parent display.
-   double   OverX;         // The horizontal position of the pointer with respect to the object underneath the hot-spot.
-   double   OverY;         // The vertical position of the pointer with respect to the object underneath the hot-spot.
+   double   X;             // The horizontal position of the pointer within its display.
+   double   Y;             // The vertical position of the pointer within its display.
+   double   OverX;         // The horizontal position of the pointer with respect to the object underneath the hot spot.
+   double   OverY;         // The vertical position of the pointer with respect to the object underneath the hot spot.
    double   OverZ;         // The position of the Pointer within an object.
    int      MaxSpeed;      // Restricts the maximum speed of a pointer's movement.
    OBJECTID InputID;       // Declares the I/O object to read movement from.
    OBJECTID SurfaceID;     // The top-most surface that is under the pointer's hot spot.
    OBJECTID AnchorID;      // Can refer to a surface that the pointer has been anchored to.
-   PTC      CursorID;      // Sets the user's cursor image, selected from the pre-defined graphics bank.
-   OBJECTID CursorOwnerID; // The current owner of the cursor, as defined by ~Display.SetCursor().
+   PTC      CursorID;      // Identifies the active cursor image.
+   OBJECTID CursorOwnerID; // The object that currently owns the cursor state.
    PF       Flags;         // Optional flags.
    OBJECTID RestrictID;    // Refers to a surface when the pointer is restricted.
    int      HostX;         // Indicates the current position of the host cursor on Windows or X11

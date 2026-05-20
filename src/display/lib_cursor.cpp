@@ -367,11 +367,10 @@ SetCursor: Sets the cursor image and can anchor the pointer to any surface.
 
 Use the SetCursor() function to change the pointer image and/or restrict the movement of the pointer to a surface area.
 
-To change the cursor image, set the `Cursor` or `Name` parameters to define the new image.  Valid cursor ID's and
-their equivalent names are listed in the documentation for the @Pointer.Cursor field.  If the `Surface` field is set
-to a valid surface, the cursor image will switch back to its default once the pointer moves outside of the surface's
-area.  If both the `Cursor` and `Name` parameters are `NULL`, the cursor image will remain unchanged from its
-current image.
+To change the cursor image, set the `Cursor` or `Name` parameters to define the new image.  Valid cursor IDs and their
+equivalent names are listed in the documentation for the @Pointer.CursorID field.  If the `Surface` field is set to a
+valid surface, the cursor image will switch back to its default once the pointer moves outside of the surface's area.
+If both the `Cursor` and `Name` parameters are `NULL`, the cursor image will remain unchanged from its current image.
 
 The SetCursor() function accepts the following flags in the `Flags` parameter:
 

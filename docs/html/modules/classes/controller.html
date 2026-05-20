@@ -27,7 +27,23 @@
 <h3>Structure</h3><p>The Controller class consists of the following fields:</p><table class="table"><thead><th class="col-md-1"><div data-bs-toggle="tooltip" title="Read/Write access indicators are listed below">Access</div></th><th class="col-md-1">Name</th><th class="col-md-1">Type</th><th>Comment</th></thead><tbody><tr data-bs-toggle="collapse" data-bs-target="#fl-Buttons" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Buttons"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
                           <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">Buttons</th><td class="col-md-1"><span class="text-nowrap">CON</span></td><td>Button values expressed as bit-fields.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Buttons" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
-<table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody></tbody></table>
+<table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th class="col-md-1">CON::DPAD_DOWN</th><td>Directional pad down.</td></tr>
+<tr><th class="col-md-1">CON::DPAD_LEFT</th><td>Directional pad left.</td></tr>
+<tr><th class="col-md-1">CON::DPAD_RIGHT</th><td>Directional pad right.</td></tr>
+<tr><th class="col-md-1">CON::DPAD_UP</th><td>Directional pad up.</td></tr>
+<tr><th class="col-md-1">CON::GAMEPAD_E</th><td>East button (B)</td></tr>
+<tr><th class="col-md-1">CON::GAMEPAD_N</th><td>North button (Y)</td></tr>
+<tr><th class="col-md-1">CON::GAMEPAD_S</th><td>South button (A)</td></tr>
+<tr><th class="col-md-1">CON::GAMEPAD_W</th><td>West button (X)</td></tr>
+<tr><th class="col-md-1">CON::LEFT_BUMPER_1</th><td>Gamepad left-hand bumper 1 (top, primary).</td></tr>
+<tr><th class="col-md-1">CON::LEFT_BUMPER_2</th><td>Gamepad left-hand bumper 2 (lower).</td></tr>
+<tr><th class="col-md-1">CON::LEFT_THUMB</th><td>Left thumb stick depressed.</td></tr>
+<tr><th class="col-md-1">CON::RIGHT_BUMPER_1</th><td>Gamepad right-hand bumper 1 (top, primary).</td></tr>
+<tr><th class="col-md-1">CON::RIGHT_BUMPER_2</th><td>Gamepad right-hand bumper 2 (lower).</td></tr>
+<tr><th class="col-md-1">CON::RIGHT_THUMB</th><td>Right thumb stick depressed.</td></tr>
+<tr><th class="col-md-1">CON::SELECT</th><td>Gamepad select or back button.</td></tr>
+<tr><th class="col-md-1">CON::START</th><td>Gamepad start button.</td></tr>
+</tbody></table>
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-LeftStickX" style="scroll-margin:3em;"><td class="col-md-1" id="tf-LeftStickX"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
@@ -71,7 +87,24 @@
 <tr><th class="col-md-1">SystemCall</th><td>A call to the host system failed.</td></tr>
 <tr><th class="col-md-1">Disconnected</th><td>No controller is connected to the specified port.</td></tr>
 </tbody></table></div></div></td></tr>
-</tbody></table><div class="footer copyright text-right">Controller class documentation © Paul Manias © 2003-2026</div></div></div></div></div><script type="text/javascript" src="../../js/bootstrap.bundle.min.js"></script><script type="text/javascript" src="../../js/base.js"></script><script type="text/javascript">
+</tbody></table><div class="footer copyright text-right">Controller class documentation © Paul Manias © 2003-2026</div></div><div class="docs-content" style="display:none;" id="CON"><h1>CON Type</h1><p class="lead">Gamepad controller buttons.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>CON::DPAD_DOWN</th><td>Directional pad down.</td></tr>
+<tr><th>CON::DPAD_LEFT</th><td>Directional pad left.</td></tr>
+<tr><th>CON::DPAD_RIGHT</th><td>Directional pad right.</td></tr>
+<tr><th>CON::DPAD_UP</th><td>Directional pad up.</td></tr>
+<tr><th>CON::GAMEPAD_E</th><td>East button (B)</td></tr>
+<tr><th>CON::GAMEPAD_N</th><td>North button (Y)</td></tr>
+<tr><th>CON::GAMEPAD_S</th><td>South button (A)</td></tr>
+<tr><th>CON::GAMEPAD_W</th><td>West button (X)</td></tr>
+<tr><th>CON::LEFT_BUMPER_1</th><td>Gamepad left-hand bumper 1 (top, primary).</td></tr>
+<tr><th>CON::LEFT_BUMPER_2</th><td>Gamepad left-hand bumper 2 (lower).</td></tr>
+<tr><th>CON::LEFT_THUMB</th><td>Left thumb stick depressed.</td></tr>
+<tr><th>CON::RIGHT_BUMPER_1</th><td>Gamepad right-hand bumper 1 (top, primary).</td></tr>
+<tr><th>CON::RIGHT_BUMPER_2</th><td>Gamepad right-hand bumper 2 (lower).</td></tr>
+<tr><th>CON::RIGHT_THUMB</th><td>Right thumb stick depressed.</td></tr>
+<tr><th>CON::SELECT</th><td>Gamepad select or back button.</td></tr>
+<tr><th>CON::START</th><td>Gamepad start button.</td></tr>
+</tbody></table><div class="footer copyright text-right">Controller module documentation © Paul Manias © 2003-2026</div></div>
+</div></div></div><script type="text/javascript" src="../../js/bootstrap.bundle.min.js"></script><script type="text/javascript" src="../../js/base.js"></script><script type="text/javascript">
 const ready = fn => document.readyState !== 'loading' ? fn() : document.addEventListener('DOMContentLoaded', fn);
 
    var xslt = false;

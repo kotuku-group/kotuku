@@ -1348,7 +1348,7 @@ static ERR SURFACE_Init(extSurface *Self)
             fl::BitsPerPixel(glpDisplayDepth),
             fl::RefreshRate(glpRefreshRate),
             fl::Flags(scrflags),
-            fl::Opacity(Self->Opacity * 100.0),
+            fl::Opacity(Self->Opacity),
             fl::PopOver(pop_display),
             fl::WindowHandle((APTR)Self->DisplayWindow))) { // Sometimes a window may be preset, e.g. for a web plugin
 

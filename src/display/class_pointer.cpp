@@ -1,14 +1,17 @@
 /*********************************************************************************************************************
 
 -CLASS-
-Pointer: Interface for mouse cursor support.
+Pointer: Tracks pointer position, button state and cursor image selection.
 
-The Pointer class provides the user with a means of interacting with the graphical interface.  On a host system such
-as Windows, the pointer functionality will hook into the host's capabilities.  If the display is native then the
-pointer service will manage its own cursor exclusively.
+The Pointer class represents the active pointing device used by the display system.  It tracks global pointer
+coordinates, the surface and object under the hot spot, button state, drag state and the cursor image currently being
+shown to the user.
 
-Internally, a system-wide pointer object is automatically created with a name of `SystemPointer`.  This should be
-used for all interactions with this service.
+On hosted systems such as Windows and X11, pointer movement and cursor images are synchronised with the host windowing
+system.  On native displays, the display module is responsible for drawing and managing the cursor directly.
+
+A system-wide pointer object named `SystemPointer` is created automatically.  Applications and module code should use
+this shared object, usually via ~Display.AccessPointer(), when reading pointer state or changing cursor behaviour.
 
 -END-
 
@@ -114,13 +117,13 @@ static ERR PTR_UngrabX11Pointer(extPointer *Self)
 /*********************************************************************************************************************
 
 -ACTION-
-DataFeed: This action can be used to send fake input to a pointer object.
+DataFeed: Sends device input events to the pointer.
 
-Fake input can be sent to a pointer object with the `DATA::DEVICE_INPUT` data type, as if the user was using the mouse.
-The data will be interpreted no differently to genuine user input from hardware.
+Use DataFeed with the `DATA::DEVICE_INPUT` data type to submit one or more `dcDeviceInput` records to a pointer object.
+The supplied records are interpreted in the same way as input received from host or native hardware.
 
-Note that if a button click is used in a device input message, the client must follow up with the equivalent release
-flag for that button.
+Button presses are stateful.  If a submitted record presses a button, the client must later submit the corresponding
+release record so click, drag and repeat handling can return to a consistent state.
 
 -END-
 
@@ -510,7 +513,7 @@ static ERR PTR_Free(extPointer *Self)
 
 /*********************************************************************************************************************
 -ACTION-
-Hide: Hides the pointer from the display.
+Hide: Hides the pointer cursor.
 -END-
 *********************************************************************************************************************/
 
@@ -579,11 +582,12 @@ static ERR PTR_Init(extPointer *Self)
 /*********************************************************************************************************************
 
 -ACTION-
-Move: Moves the cursor to a new location.
+Move: Moves the pointer by a relative offset.
 
-The Move action will move the cursor to a new location instantly.  This has the effect of bypassing the normal set
-of routines for pointer movement (i.e. no UserMovement signals will be sent to applications to indicate the
-change).
+The Move action adjusts the current #X and #Y coordinates by the supplied delta values.  It applies the movement
+immediately by forwarding the resulting position to #MoveToPoint().
+
+-END-
 
 *********************************************************************************************************************/
 
@@ -599,13 +603,14 @@ static ERR PTR_Move(extPointer *Self, struct acMove *Args)
 /*********************************************************************************************************************
 
 -ACTION-
-MoveToPoint: Moves the cursor to a new location..
+MoveToPoint: Moves the pointer to an absolute location.
 
-The MoveToPoint action will move the cursor to a new location instantly.  This has the effect of bypassing the
-normal set of routines for pointer movement (i.e. no UserMovement signals will be sent to applications to
-indicate the change).
+The MoveToPoint action changes the pointer's #X and #Y coordinates immediately.  It updates the host cursor position
+where supported, refreshes the object under the hot spot and notifies subscribers to MoveToPoint with the final
+coordinates.
 
-The client can subscribe to this action to listen for changes to the cursor's position.
+This action is intended for programmatic repositioning.  Hardware input is normally delivered through DataFeed and is
+translated into input events for the affected surface or object.
 -END-
 
 *********************************************************************************************************************/
@@ -682,7 +687,11 @@ static ERR PTR_NewObject(extPointer *Self)
 
 /*********************************************************************************************************************
 -ACTION-
-Refresh: Refreshes the pointer's cursor status.
+Refresh: Refreshes the pointer's target and cursor image.
+
+This action recalculates the object under the pointer hot spot and reapplies any cursor image selected by the
+underlying surface.
+
 -END-
 *********************************************************************************************************************/
 
@@ -697,7 +706,11 @@ static ERR PTR_Refresh(extPointer *Self)
 
 /*********************************************************************************************************************
 -ACTION-
-Reset: Resets the pointer settings back to the default.
+Reset: Restores user-adjustable pointer settings to their defaults.
+
+This action resets movement speed, acceleration, double-click interval, maximum speed and wheel speed.  It does not
+move the pointer or clear the current cursor ownership state.
+
 -END-
 *********************************************************************************************************************/
 
@@ -713,7 +726,11 @@ static ERR PTR_Reset(extPointer *Self)
 
 /*********************************************************************************************************************
 -ACTION-
-SaveToObject: Saves the current pointer settings to another object.
+SaveToObject: Saves pointer preferences to another object.
+
+This action writes the current speed, acceleration, double-click interval, maximum speed, wheel speed and button order
+to the destination object in configuration format.
+
 -END-
 *********************************************************************************************************************/
 
@@ -739,7 +756,7 @@ static ERR PTR_SaveToObject(extPointer *Self, struct acSaveToObject *Args)
 
 /*********************************************************************************************************************
 -ACTION-
-Show: Shows the pointer if it is not already on the display.
+Show: Shows the pointer cursor.
 -END-
 *********************************************************************************************************************/
 
@@ -774,36 +791,35 @@ static ERR PTR_Show(extPointer *Self)
 -FIELD-
 Acceleration: The rate of acceleration for relative pointer movement.
 
-This field affects the rate of acceleration as the pointer is moved across the display.  It is recommended that this
-field is never set manually, as the user will need to determine the best acceleration level through trial and error in
-the user preferences program.
+This field affects relative pointer movement before the final coordinates are applied.  It is normally treated as a
+user preference, because suitable acceleration values depend on the input device and user expectations.
 
-This field is not relevant in a hosted environment.
+Hosted display drivers may apply their own pointer acceleration before events reach the display module, so this field
+is not always relevant in hosted environments.
 
 -FIELD-
 Anchor: Can refer to a surface that the pointer has been anchored to.
 
-If the pointer is anchored to a surface through ~SetCursor(), this field will refer to the surface that holds the
-anchor.
+If the pointer has been anchored to a surface through ~Display.SetCursor(), this field refers to the surface that receives
+anchored movement events.
 
 -FIELD-
 Bitmap: Refers to bitmap in which custom cursor images can be drawn.
 
-The pointer graphic can be changed to a custom image if the `PTC::CUSTOM` #CursorID type is defined and an image is
-drawn to the @Bitmap object referenced by this field.
+The pointer graphic can be changed to a custom image by drawing into this @Bitmap and selecting `PTC::CUSTOM` with
+~Display.SetCustomCursor().
 
 -FIELD-
 ButtonOrder: Defines the order in which mouse buttons are interpreted.
 
-This field defines the order of interpretation of the mouse buttons when they are pressed.  This allows a right handed
-device to have its buttons remapped to mimic a left-handed device for instance.
+This field defines how physical pointer buttons are mapped to logical button positions when pressed.  It can be used
+to remap a right-handed device for left-handed use, or to normalise unusual button layouts.
 
-The default button order is defined as `123456789AB`.  The left, right and middle mouse buttons are defined as 1, 2 and
-3 respectively.  The rest of the buttons are assigned by the device, preferably starting from the left of the device and
-moving clockwise.
+The default button order is `123456789AB`.  The left, right and middle buttons are defined as `1`, `2` and `3`
+respectively.  Additional buttons are assigned by the device.
 
-It is legal for buttons to be referenced more than once, for instance a setting of `111` will force the middle and right
-mouse buttons to translate to the left mouse button.
+Buttons may be referenced more than once.  For example, `111` maps the first three physical buttons to the logical
+left button.
 
 Changes to this field will have an immediate impact on the pointing device's behaviour.
 
@@ -865,10 +881,11 @@ static ERR SET_ButtonOrder(extPointer *Self, CSTRING Value)
 -FIELD-
 ButtonState: Indicates the current button-press state.
 
-This field returns the state of mouse input buttons as bit-flags, sorted by order of their importance.  A bit flag
-of `1` indicates that the user is holding the button down.  The bit order is `LMB`, `RMB`, `MMB`, with the `LMB`
-starting at bit position zero.  Additional buttons are supported but their exact order will depend on the device
-that is in use, and the configuration of their order may be further customised by the user.
+This field returns the current pointer button state as bit flags after #ButtonOrder mapping has been applied.  A set
+bit indicates that the corresponding logical button is being held down.
+
+The first three bits represent left, right and middle button state respectively, with the left button at bit position
+zero.  Additional buttons are supported, but their order depends on the device and the active #ButtonOrder setting.
 
 *********************************************************************************************************************/
 
@@ -889,38 +906,42 @@ static ERR GET_ButtonState(extPointer *Self, int *Value)
 -FIELD-
 ClickSlop: A leniency value that assists in determining if the user intended to click or drag.
 
-The ClickSlop value defines the allowable pixel distance between two clicks for them to be considered a double-click
-(or a drag operation if they exceed the distance).
+ClickSlop defines the allowed pointer movement, in pixels, before a press-and-release sequence is treated as a drag
+rather than a click.  The same tolerance is used when deciding whether a second click is close enough to qualify as a
+double-click.
 
 -FIELD-
-CursorID: Sets the user's cursor image, selected from the pre-defined graphics bank.
+CursorID: Identifies the active cursor image.
+Lookup: PTC
+
+This field stores the cursor image currently selected for the pointer.  Use ~Display.SetCursor() or ~Display.SetCustomCursor() to
+change the cursor after initialisation.
 
 -FIELD-
-CursorOwner: The current owner of the cursor, as defined by ~Display.SetCursor().
+CursorOwner: The object that currently owns the cursor state.
 
-If the pointer is currently owned by an object, this field will refer to that object ID.  Pointer ownership is managed
-by the ~Display.SetCursor() function.
+If the cursor is currently locked by an owner, this field refers to that owner's object ID.  Cursor ownership is
+managed by ~Display.SetCursor() and released with ~Display.RestoreCursor().
 
 -FIELD-
 DoubleClick: The maximum interval between two clicks for a double click to be recognised.
 
-A double-click is recognised when two separate clicks occur within a pre-determined time frame.  The length of that
-time frame is determined in the DoubleClick field and is measured in seconds.  The recommended interval is 0.3 seconds,
-although the user can store his own preference in the pointer configuration file.
+A double-click is recognised when two presses of the same logical button occur within this interval.  The value is
+measured in seconds and defaults to the user's pointer preference.
 
 -FIELD-
 DragItem: The currently dragged item, as defined by ~Display.StartCursorDrag().
 
-When the pointer is in drag-mode, the custom item number that was defined in the initial call to
-~Display.StartCursorDrag() will be defined here.  At all other times this field will be set to zero.
+When a drag-and-drop operation is active, this field contains the custom item number supplied to ~Display.StartCursorDrag().
+At all other times it is zero.
 
 -FIELD-
 DragSource: The object managing the current drag operation, as defined by ~Display.StartCursorDrag().
 
-When the pointer is in drag-mode, the object that is managing the source data will be referenced in this field.  At all
-other times this field will be set to zero.
+When a drag-and-drop operation is active, this field refers to the object managing the source data.  At all other times
+it is zero.
 
-Item dragging is managed by the ~Display.StartCursorDrag() function.
+Item dragging is managed by ~Display.StartCursorDrag().
 
 -FIELD-
 Flags: Optional flags.
@@ -929,16 +950,14 @@ Lookup: PF
 -FIELD-
 Input: Declares the I/O object to read movement from.
 
-By default a pointer will read its input directly from the mouse port.  However it may be convenient for the pointer to
-receive its information from elsewhere, in which case you can set this field to point to a different input object.  The
-object that you use <i>must</i> be able to send joyport information over data channels.
+This field records an alternate object intended to supply pointer movement.  Input records delivered to the pointer
+must use the same `DATA::DEVICE_INPUT` format accepted by #DataFeed().
 
 -FIELD-
 MaxSpeed: Restricts the maximum speed of a pointer's movement.
 
-The maximum speed at which the pointer can move per frame is specified in this field.  This field is provided to help
-the user for times where the pointer may be moving to fast (for example if the hardware driver is interpreting the mouse
-movement at larger offsets than what is normal).  You can also set the value to 1 if a digital simulation is required.
+This field limits the maximum relative movement applied to the pointer during a single update.  Values assigned to the
+field are clamped to the supported range.
 
 *********************************************************************************************************************/
 
@@ -955,57 +974,53 @@ static ERR SET_MaxSpeed(extPointer *Self, int Value)
 -FIELD-
 OverObject: Readable field that gives the ID of the object under the pointer.
 
-This field returns a reference to the object directly under the pointer's hot-spot.  `NULL` can be returned if there
-is no surface object under the pointer.
+This field returns the object directly under the pointer hot spot.  `NULL` can be returned if there is no surface
+object under the pointer.
 
 -FIELD-
-OverX: The horizontal position of the pointer with respect to the object underneath the hot-spot.
+OverX: The horizontal position of the pointer with respect to the object underneath the hot spot.
 
-The OverX field provides other classes with a means of finding out exactly where the pointer is positioned over their
-display area.  For example, if a user click occurs on an Image and it is necessary to find out what coordinates where
-affected, the OverX and #OverY fields can be polled to determine the exact position of the user click.
+This field gives the horizontal position of the pointer hot spot relative to #OverObject.  It can be read when handling
+input to determine the object-local coordinate affected by a click, wheel or movement event.
 
 -FIELD-
-OverY: The vertical position of the pointer with respect to the object underneath the hot-spot.
+OverY: The vertical position of the pointer with respect to the object underneath the hot spot.
 
-The OverY field provides other classes with a means of finding out exactly where the pointer is positioned over their
-display area.  For example, if a user click occurs on an Image and it is necessary to find out what coordinates where
-affected, the #OverX and OverY fields can be polled to determine the exact position of the user click.
+This field gives the vertical position of the pointer hot spot relative to #OverObject.  It can be read together with
+#OverX to determine the object-local coordinate affected by pointer input.
 
 -FIELD-
 OverZ: The position of the Pointer within an object.
 
-This special field applies to 3D interfaces only.  It reflects the position of the pointer within 3-Dimensional
-displays, by returning its coordinate along the Z axis.
+This field is reserved for interfaces that can report pointer depth.  It reflects the pointer coordinate on the Z axis
+relative to the object under the hot spot.
 
 -FIELD-
 Restrict: Refers to a surface when the pointer is restricted.
 
-If the pointer has been restricted to a surface through ~Display.SetCursor(), this field refers to the ID of that
-surface.  If the pointer is not restricted, this field is set to zero.
+If the pointer has been restricted to a surface through ~Display.SetCursor(), this field refers to that surface.  If the
+pointer is not restricted, this field is zero.
 
 -FIELD-
 Speed: Speed multiplier for pointer movement.
 
-The speed at which the pointer moves can be adjusted with this field.  To lower the speed, use a value between 0 and
-100%.  To increase the speed, use a value between 100 and 1000%.  The speed of the pointer is complemented by the
-#MaxSpeed field, which restricts the maximum amount of pixels that a pointer can move each time the input device is
-polled.
+This field controls the relative movement multiplier, expressed as a percentage.  Values below 100 reduce movement,
+while values above 100 increase movement.  #MaxSpeed is applied as a separate upper limit.
 
 -FIELD-
 Surface: The top-most surface that is under the pointer's hot spot.
 
-The surface that is directly under the pointer's hot spot is referenced by this field.  It is automatically updated
-whenever the position of the pointer changes or a new surface appears under the pointer.
+This field refers to the top-most @Surface under the pointer hot spot.  It is automatically updated when the pointer
+moves or when surface visibility, position or stacking changes affect the object under the pointer.
 
 -FIELD-
 WheelSpeed: Defines a multiplier to be applied to the mouse wheel.
 
-This field defines a multiplier that is applied to values coming from the mouse wheel.  A setting of 1.0 leaves the
-wheel speed unaltered, while a setting of 2.0 would double the regular speed.
+This field defines a multiplier applied to pointer wheel values.  A setting of `1.0` leaves wheel input unchanged,
+while `2.0` doubles the reported value.
 
 -FIELD-
-X: The horizontal position of the pointer within its parent display.
+X: The horizontal position of the pointer within its display.
 
 *********************************************************************************************************************/
 
@@ -1019,7 +1034,9 @@ static ERR PTR_SET_X(extPointer *Self, double Value)
 /*********************************************************************************************************************
 
 -FIELD-
-Y: The vertical position of the pointer within its parent display.
+Y: The vertical position of the pointer within its display.
+
+Setting #X or #Y on an initialised pointer forwards the change through #MoveToPoint().
 -END-
 
 *********************************************************************************************************************/

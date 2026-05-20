@@ -520,7 +520,8 @@ Read `VisibleX`, #VisibleY, #VisibleWidth and #VisibleHeight to determine the po
 within the parent chain.
 
 `VisibleX` is the first visible horizontal coordinate inside the surface's own coordinate space.  It is calculated by
-clipping the surface area against its parent surfaces.
+clipping the surface area against its parent surfaces.  If the surface is hosted, the value will reflect the window
+position, as determined by the #X field.
 
 If none of the surface area is visible, zero is returned.  The result is never negative.
 
@@ -529,7 +530,7 @@ If none of the surface area is visible, zero is returned.  The result is never n
 static ERR GET_VisibleX(extSurface *Self, int *Value)
 {
    if (!Self->ParentID) {
-      *Value = Self->X;
+      *Value = Self->X; // For hosted surfaces, this will be the Window position
       return ERR::Okay;
    }
    else return gfx::GetVisibleArea(Self->UID, Value, nullptr, nullptr, nullptr, nullptr, nullptr);
@@ -544,7 +545,8 @@ Read #VisibleX, `VisibleY`, #VisibleWidth and #VisibleHeight to determine the po
 within the parent chain.
 
 `VisibleY` is the first visible vertical coordinate inside the surface's own coordinate space.  It is calculated by
-clipping the surface area against its parent surfaces.
+clipping the surface area against its parent surfaces.  If the surface is hosted, the value will reflect the window
+position, as determined by the #Y field.
 
 If none of the surface area is visible, zero is returned.  The result is never negative.
 
@@ -553,7 +555,7 @@ If none of the surface area is visible, zero is returned.  The result is never n
 static ERR GET_VisibleY(extSurface *Self, int *Value)
 {
    if (!Self->ParentID) {
-      *Value = Self->Y;
+      *Value = Self->Y; // For hosted surfaces, this will be the Window position
       return ERR::Okay;
    }
    else return gfx::GetVisibleArea(Self->UID, nullptr, Value, nullptr, nullptr, nullptr, nullptr);
