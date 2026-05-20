@@ -161,6 +161,7 @@ ERR exec_source(std::string TargetFile, int ShowTime, const std::string Procedur
 
       if (auto error = InitObject(glScript); error IS ERR::Okay) {
          if (auto error = acActivate(glScript); error IS ERR::Okay) {
+            CSTRING msg;
             if (ShowTime) { // Print the execution time of the script
                auto start_seconds = (double)start_time / 1000000.0;
                auto end_seconds   = (double)PreciseTime() / 1000000.0;
@@ -168,13 +169,23 @@ ERR exec_source(std::string TargetFile, int ShowTime, const std::string Procedur
             }
 
             if (glScript->Error != ERR::Okay) {
-               log.msg("Script returned an error code of %d: %s", int(glScript->Error), GetErrorMsg(glScript->Error));
+               if (GetResource(RES::LOG_LEVEL) <= 1) {
+                  if ((glScript->get(FID_ErrorMessage, msg) IS ERR::Okay) and (msg)) {
+                     printf("%s\n", msg);
+                  }
+                  else if (glScript->Error IS ERR::Exception) {
+                     printf("Script threw an exception: %s\n", GetErrorMsg(glScript->Error));
+                  }
+                  else printf("Script returned an error code of %d: %s\n", int(glScript->Error), GetErrorMsg(glScript->Error));
+               }
+
                return glScript->Error;
             }
 
-            CSTRING msg;
             if ((glScript->get(FID_ErrorMessage, msg) IS ERR::Okay) and (msg)) {
-               log.msg("Script returned error message: %s", msg);
+               if (GetResource(RES::LOG_LEVEL) <= 1) {
+                  printf("Script returned error message: %s\n", msg);
+               }
                return ERR::Failed;
             }
             else return ERR::Okay;
