@@ -783,16 +783,7 @@ LJLIB_CF(array_clear)
    GCarray *arr = lj_lib_checkarray(L, 1);
    if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
 
-   // For GC-tracked types, clear references to allow garbage collection
-   if (arr->elemtype IS AET::STR_GC or arr->elemtype IS AET::TABLE or arr->elemtype IS AET::ARRAY or
-       arr->elemtype IS AET::OBJECT) {
-      auto refs = arr->get<GCRef>();
-      for (MSize i = 0; i < arr->len; i++) setgcrefnull(refs[i]);
-   }
-   else if (arr->elemtype IS AET::ANY) {
-      lj_bulk_nil_tvalue(arr->get<TValue>(), arr->len);
-   }
-
+   lj_array_clear_range(arr, 0, arr->len);
    arr->len = 0;
    return 0;
 }
@@ -826,52 +817,19 @@ LJLIB_CF(array_resize)
          if (not lj_array_grow(L, arr, target_len)) lj_err_caller(L, ErrMsg::ARREXT);
       }
 
-      // Zero-initialize new elements based on type
-
-      switch (arr->elemtype) {
-         case AET::STR_GC:
-         case AET::TABLE:
-         case AET::ARRAY:
-         case AET::OBJECT: {
-            auto refs = arr->get<GCRef>();
-            for (MSize i = old_len; i < target_len; i++) setgcrefnull(refs[i]);
-            break;
-         }
-
-         case AET::ANY: {
-            lj_bulk_nil_tvalue(&arr->get<TValue>()[old_len], target_len - old_len);
-            break;
-         }
-
-         default: {
-            // Numeric types: zero-fill the new region
-            void *start = (char*)arr->arraydata() + (old_len * arr->elemsize);
-            size_t bytes = (target_len - old_len) * arr->elemsize;
-            memset(start, 0, bytes);
-            break;
-         }
+      if (arr->elemtype IS AET::STR_GC or arr->elemtype IS AET::TABLE or arr->elemtype IS AET::ARRAY or
+          arr->elemtype IS AET::OBJECT or arr->elemtype IS AET::ANY) {
+         lj_array_clear_range(arr, old_len, target_len - old_len);
+      }
+      else {
+         // Numeric types: zero-fill the new region
+         void *start = (char*)arr->arraydata() + (old_len * arr->elemsize);
+         size_t bytes = (target_len - old_len) * arr->elemsize;
+         memset(start, 0, bytes);
       }
    }
    else if (target_len < old_len) {
-      // Shrinking: clear references for GC-tracked types
-      switch (arr->elemtype) {
-         case AET::STR_GC:
-         case AET::TABLE:
-         case AET::ARRAY:
-         case AET::OBJECT: {
-            auto refs = arr->get<GCRef>();
-            for (MSize i = target_len; i < old_len; i++) setgcrefnull(refs[i]);
-            break;
-         }
-
-         case AET::ANY: {
-            lj_bulk_nil_tvalue(&arr->get<TValue>()[target_len], old_len - target_len);
-            break;
-         }
-
-         default:
-            break; // Numeric types don't need clearing
-      }
+      lj_array_clear_range(arr, target_len, old_len - target_len);
    }
 
    arr->len = target_len;
@@ -2523,38 +2481,8 @@ LJLIB_CF(array_filter)
             lj_err_caller(L, ErrMsg::ARREXT);
          }
 
-         // Copy element to result array
-         void *src = lj_array_index(arr, i);
-         void *dst = lj_array_index(result, result->len);
-
-         switch (result->elemtype) {
-            case AET::STR_GC:
-            case AET::TABLE:
-            case AET::ARRAY:
-            case AET::OBJECT: {
-               GCRef ref = *(GCRef *)src;
-               *(GCRef *)dst = ref;
-               if (gcref(ref)) lj_gc_objbarrier(L, result, gcref(ref));
-               break;
-            }
-            case AET::ANY: {
-               TValue *tv_src = (TValue *)src;
-               TValue *tv_dst = (TValue *)dst;
-               copyTV(L, tv_dst, tv_src);
-               if (tvisgcv(tv_src)) lj_gc_objbarrier(L, result, gcV(tv_src));
-               break;
-            }
-            case AET::FLOAT:  *(float *)dst = *(float *)src; break;
-            case AET::DOUBLE: *(double *)dst = *(double *)src; break;
-            case AET::INT64:  *(int64_t *)dst = *(int64_t *)src; break;
-            case AET::INT32:  *(int32_t *)dst = *(int32_t *)src; break;
-            case AET::INT16:  *(int16_t *)dst = *(int16_t *)src; break;
-            case AET::BYTE:   *(uint8_t *)dst = *(uint8_t *)src; break;
-            default:
-               memcpy(dst, src, arr->elemsize);
-               break;
-         }
          result->len = new_len;
+         lj_array_copy(L, result, new_len - 1, arr, i, 1);
       }
 
       lua_pop(L, 1);
@@ -2834,16 +2762,7 @@ LJLIB_CF(array_remove)
       else memmove(dst, src, shift_count * arr->elemsize);
    }
 
-   // Clear trailing elements for GC-tracked types
-   if (arr->elemtype IS AET::STR_GC or arr->elemtype IS AET::TABLE or arr->elemtype IS AET::OBJECT) {
-      auto refs = arr->get<GCRef>();
-      for (MSize i = arr->len - MSize(count); i < arr->len; i++) {
-         setgcrefnull(refs[i]);
-      }
-   }
-   else if (arr->elemtype IS AET::ANY) {
-      lj_bulk_nil_tvalue(&arr->get<TValue>()[arr->len - MSize(count)], MSize(count));
-   }
+   lj_array_clear_range(arr, arr->len - MSize(count), MSize(count));
 
    arr->len -= MSize(count);
    setintV(L->top++, int32_t(arr->len));
@@ -2867,51 +2786,18 @@ LJLIB_CF(array_clone)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
 
+   if (arr->elemtype IS AET::STRUCT) {
+      luaL_error(L, ERR::NoSupport, "array.clone() does not support struct types.");
+      return 0;
+   }
+
    // Create new array with same type and length
    GCarray *result = lj_array_new(L, arr->len, arr->elemtype);
    setarrayV(L, L->top++, result);
 
    if (arr->len IS 0) return 1;
 
-   // Copy elements
-   switch (arr->elemtype) {
-      case AET::STR_GC:
-      case AET::TABLE:
-      case AET::ARRAY:
-      case AET::OBJECT: {
-         // For GC-tracked types, copy references and set up barriers
-         auto src_refs = arr->get<GCRef>();
-         auto dst_refs = result->get<GCRef>();
-         for (MSize i = 0; i < arr->len; i++) {
-            GCRef ref = src_refs[i];
-            dst_refs[i] = ref;
-            if (gcref(ref)) lj_gc_objbarrier(L, result, gcref(ref));
-         }
-         break;
-      }
-      case AET::ANY: {
-         // For any-type arrays, copy TValues and set up barriers for GC values
-         auto src_slots = arr->get<TValue>();
-         auto dst_slots = result->get<TValue>();
-         lj_bulk_copy_tvalue(dst_slots, src_slots, arr->len);
-         for (MSize i = 0; i < arr->len; i++) {
-            if (tvisgcv(&src_slots[i])) lj_gc_objbarrier(L, result, gcV(&src_slots[i]));
-         }
-         break;
-      }
-      case AET::STRUCT: {
-         luaL_error(L, ERR::NoSupport, "array.clone() does not support struct types.");
-         break;
-      }
-      default: {
-         // For all other types, direct memory copy
-         void *src = arr->arraydata();
-         void *dst = result->arraydata();
-         memcpy(dst, src, size_t(arr->len) * arr->elemsize);
-         break;
-      }
-   }
-
+   lj_array_copy(L, result, 0, arr, 0, arr->len);
    return 1;
 }
 

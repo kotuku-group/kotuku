@@ -49,6 +49,13 @@ uint8_t lj_array_elemsize(AET Type)
 
 //********************************************************************************************************************
 
+static bool array_is_gc_ref_type(AET Type)
+{
+   return Type IS AET::STR_GC or Type IS AET::TABLE or Type IS AET::ARRAY or Type IS AET::OBJECT;
+}
+
+//********************************************************************************************************************
+
 static void array_attach_basemt(lua_State *L, GCarray *Arr)
 {
    GCRef mt_ref = basemt_it(G(L), LJ_TARRAY);
@@ -270,17 +277,47 @@ void lj_array_free(global_State *g, GCarray *Array)
 
 //********************************************************************************************************************
 
+void lj_array_clear_range(GCarray *Array, MSize Start, MSize Count)
+{
+   if (Count IS 0) return;
+
+   if (array_is_gc_ref_type(Array->elemtype)) {
+      auto refs = &Array->get<GCRef>()[Start];
+      for (MSize i = 0; i < Count; i++) setgcrefnull(refs[i]);
+   }
+   else if (Array->elemtype IS AET::ANY) {
+      lj_bulk_nil_tvalue(&Array->get<TValue>()[Start], Count);
+   }
+}
+
+//********************************************************************************************************************
+
 void lj_array_copy(lua_State *L, GCarray *Dest, uint32_t DstIdx, GCarray *Src, uint32_t SrcIdx, uint32_t Count)
 {
-   // Safety checks - unsigned types can't be negative so just check bounds
-   if (SrcIdx + Count > Src->len or DstIdx + Count > Dest->len) lj_err_caller(L, ErrMsg::IDXRNG);
+   if (SrcIdx > Src->len or Count > Src->len - SrcIdx or DstIdx > Dest->len or Count > Dest->len - DstIdx) {
+      lj_err_caller(L, ErrMsg::IDXRNG);
+   }
    if (Dest->is_readonly()) lj_err_caller(L, ErrMsg::ARRRO);
-   if (Dest->elemtype != Src->elemtype) lj_err_caller(L, ErrMsg::ARRTYPE);
+   if (not (Dest->elemtype IS Src->elemtype)) lj_err_caller(L, ErrMsg::ARRTYPE);
+   if (Count IS 0) return;
 
    void *dst_ptr = lj_array_index(Dest, DstIdx);
    void *src_ptr = lj_array_index(Src, SrcIdx);
    if (Dest->elemtype IS AET::ANY) {
       lj_bulk_move_tvalue((TValue *)dst_ptr, (const TValue *)src_ptr, Count);
+      auto dst_slots = (TValue *)dst_ptr;
+      for (MSize i = 0; i < Count; i++) {
+         if (tvisgcv(&dst_slots[i])) lj_gc_objbarrier(L, Dest, gcV(&dst_slots[i]));
+      }
+   }
+   else if (array_is_gc_ref_type(Dest->elemtype)) {
+      size_t byte_count = Count * Dest->elemsize;
+      memmove(dst_ptr, src_ptr, byte_count);
+
+      auto refs = (GCRef *)dst_ptr;
+      for (MSize i = 0; i < Count; i++) {
+         if (gcref(refs[i])) lj_gc_objbarrier(L, Dest, gcref(refs[i]));
+      }
    }
    else {
       size_t byte_count = Count * Dest->elemsize;

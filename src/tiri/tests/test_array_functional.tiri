@@ -190,6 +190,26 @@ end
    assert(aWords[0] is 'apple' and aWords[1] is 'apricot', "filter() should return correct string matches")
 end
 
+@Test function FilterArrayArray()
+   one = array<int> { 1 }
+   two = array<int> { 2, 20 }
+   three = array<int> { 3, 30, 300 }
+   arr = array<array> { one, two, three }
+
+   result = arr:filter(item => #item > 1)
+   assert(#result is 2, "filter() should keep two nested arrays")
+   assert(result[0][0] is 2 and result[0][1] is 20, "filter() should keep the first matching nested array")
+   assert(result[1][0] is 3 and result[1][2] is 300, "filter() should keep the second matching nested array")
+
+   one = nil
+   two = nil
+   three = nil
+   arr = nil
+   processing.collect()
+   assert(result[0][0] is 2, "Filtered nested array should survive GC")
+   assert(result[1][0] is 3, "Second filtered nested array should survive GC")
+end
+
 @Test function FilterFloatArray()
    arr = array<float> { 1.5, 2.5, 3.0, 4.5, 5.0 }
    whole = arr:filter(v => v % 1 is 0)

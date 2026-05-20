@@ -263,6 +263,29 @@ end
    end
 end
 
+@Test function ArrayCopyArrayReferences()
+   first = array<int> { 1, 10 }
+   second = array<int> { 2, 20 }
+   third = array<int> { 3, 30 }
+   source = array<array> { first, second, third }
+   dest = array<array, 3>
+
+   dest:copy(source, 0, 1, 2)
+   assert(dest[0][0] is 2 and dest[0][1] is 20, "copy() should copy first nested array reference")
+   assert(dest[1][0] is 3 and dest[1][1] is 30, "copy() should copy second nested array reference")
+   assert(dest[2] is nil, "copy() should leave untouched destination slots as nil")
+
+   second:push(200)
+   assert(dest[0][2] is 200, "Array copy should preserve shallow nested array references")
+
+   second = nil
+   third = nil
+   source = nil
+   processing.collect()
+   assert(dest[0][0] is 2, "Copied nested array should survive GC")
+   assert(dest[1][0] is 3, "Second copied nested array should survive GC")
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- Verify native array iteration uses the specialised iterator semantics.
 

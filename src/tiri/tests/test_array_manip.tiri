@@ -671,6 +671,28 @@ end
    assert(arr[1].name is 'fourth', "arr[1].name should still be 'fourth' after GC")
 end
 
+@Test function ArrayRemoveArrayGC()
+   first = array<int> { 1 }
+   second = array<int> { 2 }
+   third = array<int> { 3 }
+   arr = array<array> { first, second, third }
+
+   arr:remove(1)
+   assert(#arr is 2, "Array should have 2 elements")
+   assert(arr[0][0] is 1, "arr[0][0] should be 1")
+   assert(arr[1][0] is 3, "arr[1][0] should be 3")
+
+   second = nil
+   processing.collect()
+   assert(arr[0][0] is 1, "arr[0][0] should still be 1 after GC")
+   assert(arr[1][0] is 3, "arr[1][0] should still be 3 after GC")
+
+   fourth = array<int> { 4 }
+   arr:push(fourth)
+   assert(#arr is 3, "Array should accept pushes after nested array removal")
+   assert(arr[2][0] is 4, "arr[2][0] should be 4")
+end
+
 @Test function ArrayRemoveAllStringsGC()
    -- Remove all elements from a string array
    arr = array<string> { 'one', 'two', 'three' }
@@ -860,6 +882,28 @@ end
    -- Note: For tables, it's a shallow copy (same table references)
    original[0].x = 100
    assert(copy[0].x is 100, "Table clone is shallow - same reference")
+end
+
+@Test function ArrayCloneArray()
+   first = array<int> { 1, 10 }
+   second = array<int> { 2, 20 }
+   original = array<array> { first, second }
+   copy = original:clone()
+
+   assert(#copy is 2, "Clone should have same length")
+   assert(copy:type() is 'array', "Clone should preserve array element type")
+   assert(copy[0][0] is 1 and copy[0][1] is 10, "Clone should copy first nested array")
+   assert(copy[1][0] is 2 and copy[1][1] is 20, "Clone should copy second nested array")
+
+   first:push(100)
+   assert(copy[0][2] is 100, "Nested array clone should be shallow")
+
+   first = nil
+   second = nil
+   original = nil
+   processing.collect()
+   assert(copy[0][0] is 1, "Copied nested array should survive GC")
+   assert(copy[1][0] is 2, "Copied second nested array should survive GC")
 end
 
 @Test function ArrayCloneObject()
