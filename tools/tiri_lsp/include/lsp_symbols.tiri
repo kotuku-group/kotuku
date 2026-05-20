@@ -107,7 +107,7 @@ function symbolBuildDetail(Base:str, Annotations:array):str
       parts:push(label)
    end
    if #parts is 0 then return nil end
-   return parts:join(' ')
+   return parts:concat(' ')
 end
 
 function symbolMergeAnnotations(Left:array, Right:array):array

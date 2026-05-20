@@ -13,8 +13,6 @@ Gradient Demonstration
    local win, viewport, gradient, gradientVP, rect
    local focalEllipse, contourShape, uiEvent
 
-   LORES_COUNT = 10
-
 ----------------------------------------------------------------------------------------------------------------------
 
 function selectGradient(Text)
@@ -130,14 +128,12 @@ function buildScene()
       items  = { { item='Pad' }, { item='Repeat' }, { item='Reflect' }, { item='Clip' } },
       events = {
          activate = function(Widget, Text)
-            if Text is 'Pad' then
-               gradient.spreadMethod = VSPREAD_PAD
-            elseif Text is 'Reflect' then
-               gradient.spreadMethod = VSPREAD_REFLECT
-            elseif Text is 'Repeat' then
-               gradient.spreadMethod = VSPREAD_REPEAT
-            elseif Text is 'Clip' then
-               gradient.spreadMethod = VSPREAD_CLIP
+            gradient.spreadMethod = choose Text from
+               'Pad'     -> VSPREAD_PAD
+               'Reflect' -> VSPREAD_REFLECT
+               'Repeat'  -> VSPREAD_REPEAT
+               'Clip'    -> VSPREAD_CLIP
+               else      -> VSPREAD_PAD
             end
             gradientVP.scene.surface.mtScheduleRedraw()
          end
@@ -249,5 +245,5 @@ end
       end
    end)
 
-   win:show(true)
+   win:show()
    processing.sleep()

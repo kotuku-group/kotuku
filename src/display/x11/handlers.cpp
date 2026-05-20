@@ -99,22 +99,34 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
                if (auto display_id = get_display(xevent.xany.window)) {
                   auto surface_id = GetOwnerID(display_id);
                   const WinHook hook(surface_id, WH::CLOSE);
+                  FUNCTION func;
+                  bool has_hook = false;
 
-                  if (glWindowHooks.contains(hook)) {
-                     auto func = &glWindowHooks[hook];
+                  {
+                     const std::lock_guard<std::recursive_mutex> lock(glWindowHookLock);
+                     if (auto it = glWindowHooks.find(hook); it != glWindowHooks.end()) {
+                        func = it->second;
+                        has_hook = true;
+                     }
+                  }
+
+                  if (has_hook) {
                      ERR result;
 
-                     if (func->isC()) {
-                        kt::SwitchContext ctx(func->Context);
-                        auto callback = (ERR (*)(OBJECTID, APTR))func->Routine;
-                        result = callback(surface_id, func->Meta);
+                     if (func.isC()) {
+                        kt::SwitchContext ctx(func.Context);
+                        auto callback = (ERR (*)(OBJECTID, APTR))func.Routine;
+                        result = callback(surface_id, func.Meta);
                      }
-                     else if (func->isScript()) {
-                        sc::Call(*func, std::to_array<ScriptArg>({ { "SurfaceID", surface_id, FDF_OBJECTID } }), result);
+                     else if (func.isScript()) {
+                        sc::Call(func, std::to_array<ScriptArg>({ { "SurfaceID", surface_id, FDF_OBJECTID } }), result);
                      }
                      else result = ERR::Okay;
 
-                     if (result IS ERR::Terminate) glWindowHooks.erase(hook);
+                     if (result IS ERR::Terminate) {
+                        const std::lock_guard<std::recursive_mutex> lock(glWindowHookLock);
+                        glWindowHooks.erase(hook);
+                     }
                      else if (result IS ERR::Cancelled) {
                         log.msg("Window closure cancelled by client.");
                         break;

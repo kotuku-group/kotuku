@@ -23,28 +23,19 @@ Image Filter Demonstration
 ----------------------------------------------------------------------------------------------------------------------
 
 function selectFilter(Text)
-   if Text is 'Bilinear' then
-      mainVP.scene.sampleMethod = VSM_BILINEAR
-   elseif (Text is 'Bicubic') then
-      mainVP.scene.sampleMethod = VSM_BICUBIC
-   elseif Text is 'Blackman' then
-      mainVP.scene.sampleMethod = VSM_BLACKMAN
-   elseif Text is 'Sinc' then
-      mainVP.scene.sampleMethod = VSM_SINC
-   elseif Text is 'Nearest Neighbour' then
-      mainVP.scene.sampleMethod = VSM_NEIGHBOUR
-   elseif Text is 'Spline16' then
-      mainVP.scene.sampleMethod = VSM_SPLINE16
-   elseif Text is 'Kaiser' then
-      mainVP.scene.sampleMethod = VSM_KAISER
-   elseif Text is 'Quadric' then
-      mainVP.scene.sampleMethod = VSM_QUADRIC
-   elseif Text is 'Gaussian' then
-      mainVP.scene.sampleMethod = VSM_GAUSSIAN
-   elseif Text is 'Bessel' then
-      mainVP.scene.sampleMethod = VSM_BESSEL
-   elseif Text is 'Mitchell' then
-      mainVP.scene.sampleMethod = VSM_MITCHELL
+   mainVP.scene.sampleMethod = choose Text from
+      'Nearest Neighbour' -> VSM_NEIGHBOUR
+      'Bilinear' -> VSM_BILINEAR
+      'Bicubic'  -> VSM_BICUBIC
+      'Blackman' -> VSM_BLACKMAN
+      'Sinc'     -> VSM_SINC
+      'Spline16' -> VSM_SPLINE16
+      'Kaiser'   -> VSM_KAISER
+      'Quadric'  -> VSM_QUADRIC
+      'Gaussian' -> VSM_GAUSSIAN
+      'Bessel'   -> VSM_BESSEL
+      'Mitchell' -> VSM_MITCHELL
+      else       -> VSM_BILINEAR
    end
    mainVP.scene.surface.mtScheduleRedraw()
 end
@@ -109,13 +100,11 @@ function addPattern()
    })
 
    pattern.viewport.new('VectorPath', {
-      stroke='black', strokeWidth=0.05,
-      sequence="M0,0 L1,1"
+      stroke='black', strokeWidth=0.05, sequence="M0,0 L1,1"
    })
 
    pattern.viewport.new('VectorPath', {
-      stroke='red', strokeWidth=0.025,
-      sequence="M0.5,0 L1,0.5Z M0,0.5 L0.5,1 Z"
+      stroke='red', strokeWidth=0.025, sequence="M0.5,0 L1,0.5Z M0,0.5 L0.5,1 Z"
    })
 
    pattern.viewport.new('VectorPath', {
@@ -136,12 +125,12 @@ function addGradient()
       spreadMethod = VSPREAD_REPEAT
    })
 
-   pattern.viewport.viewWidth = 1
+   pattern.viewport.viewWidth  = 1
    pattern.viewport.viewHeight = 1
 
-   gui.simpleGradient(pattern.viewport.scene, 'red_blue', { { r=255,g=0, b=0 }, { r=0, g=0, b=255 } }, 0, 0, 0, 1)
+   gui.simpleGradient(pattern.viewport.scene, 'red_blue', { { r=1,g=0, b=0 }, { r=0, g=0, b=1 } }, 0, 0, 0, 1)
 
-   gui.simpleGradient(pattern.viewport.scene, 'grey', { { r=255,g=255, b=255 }, { r=0, g=0, b=0 } }, 0, 0, 0, 1)
+   gui.simpleGradient(pattern.viewport.scene, 'grey', { { r=1,g=1, b=1 }, { r=0, g=0, b=0 } }, 0, 0, 0, 1)
 
    pattern.viewport.new('VectorRectangle', {
       fill='url(#red_blue)', x=0, y=0, width=1, height=0.5, stroke='none'
@@ -163,7 +152,7 @@ function buildScene()
    addPattern()
    addGradient()
 
-   viewport.scene.flags = bit.bor(viewport.scene.flags, VPF_RENDER_TIME)
+   viewport.scene.flags = viewport.scene.flags | VPF_RENDER_TIME
 
    viewport.scene.subscribe('draw', function(Surface, Args)
       print('Rendering Time: ' .. string.format('%gs', viewport.scene.renderTime / 1000000))
@@ -176,7 +165,7 @@ function buildScene()
       x = 0, y = 20,
       width = '100%', height = '100%',
       viewWidth = 1, viewHeight = 1,
-      aspectRatio = bit.bor(ARF_MEET, ARF_X_MID, ARF_Y_MID),
+      aspectRatio = ARF_MEET | ARF_X_MID | ARF_Y_MID,
       overflow = 'hidden',
       buffered = true
    })
@@ -282,5 +271,5 @@ end
 
    buildScene()
 
-   win:show(true)
+   win:show()
    processing.sleep()

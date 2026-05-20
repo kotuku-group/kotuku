@@ -153,6 +153,9 @@ private:
    // String concatenation in loop detection - warns when .. is used in loops
    void check_concat_in_loop(SourceSpan Location);
 
+   // Choose expression fallback detection - warns when no else or unguarded wildcard can handle no-match cases
+   void check_choose_missing_fallback(const ChooseExprPayload &, SourceSpan);
+
    // Track a global variable declaration
    void track_global(GCstr *Name);
    #endif
@@ -320,7 +323,7 @@ void TypeAnalyser::check_function_in_loop(SourceSpan Location)
 //********************************************************************************************************************
 // String Concatenation in Loop Detection:  Warns when string concatenation (..) is used inside loops. Each
 // concatenation creates a new intermediate string object, which is inefficient when building strings iteratively.
-// For building strings in loops, array.join() is more efficient as it allocates only once.
+// For building strings in loops, array.concat() is more efficient as it allocates only once.
 
 void TypeAnalyser::check_concat_in_loop(SourceSpan Location)
 {
@@ -328,8 +331,25 @@ void TypeAnalyser::check_concat_in_loop(SourceSpan Location)
    if (this->loop_depth_ IS 0) return;
 
    this->ctx_.emit_tip(2, TipCategory::Performance,
-      "String concatenation in loop; consider using array.join() for better performance",
+      "String concatenation in loop; consider using array.concat() for better performance",
       Token::from_span(Location, TokenKind::Cat));
+}
+
+//********************************************************************************************************************
+// Choose Missing Fallback Detection: Warns when a choose expression has no fallback branch.  Without an else branch
+// or unguarded wildcard, unmatched values evaluate to nil, which is easy to miss in assignment expressions.
+
+void TypeAnalyser::check_choose_missing_fallback(const ChooseExprPayload &Payload, SourceSpan Location)
+{
+   if (not this->ctx_.should_emit_tip(1)) return;
+
+   for (const ChooseCase &case_item : Payload.cases) {
+      if (case_item.is_else or (case_item.is_wildcard and not case_item.guard)) return;
+   }
+
+   this->ctx_.emit_tip(1, TipCategory::TypeSafety,
+      "Choose expression has no else branch; unmatched values evaluate to nil",
+      Token::from_span(Location, TokenKind::Choose));
 }
 #endif
 
@@ -1160,6 +1180,10 @@ void TypeAnalyser::analyse_expression(const ExprNode &Expression)
       case AstNodeKind::ChooseExpr: {
          auto *payload = std::get_if<ChooseExprPayload>(&Expression.data);
          if (payload) {
+            #ifdef INCLUDE_TIPS
+            this->check_choose_missing_fallback(*payload, Expression.span);
+            #endif
+
             // Analyse scrutinee (the value being matched)
             if (payload->scrutinee) this->analyse_expression(*payload->scrutinee);
             for (const auto &tuple_elem : payload->scrutinee_tuple) {

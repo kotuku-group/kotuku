@@ -48,7 +48,7 @@ This code illustrates how to read environment variables (any platform) and Windo
 
       if err is ERR_Okay then
          print('Sub-keys under HKEY_CURRENT_USER\\Software:\n')
-         print(string.split(entries, '\t'):join(', '))
+         print(string.split(entries, '\t'):concat(', '))
       else
          print('Failed to enumerate HKEY_CURRENT_USER\\Software.\n')
       end

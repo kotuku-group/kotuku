@@ -140,6 +140,83 @@ static CSTRING elemtype_name(AET Type)
 }
 
 //********************************************************************************************************************
+
+template <typename... Args>
+static void append_formatted(std::string &Result, CSTRING Format, Args... Values)
+{
+   constexpr size_t BUFFER_SIZE = 256;
+
+   if ((Result.capacity() - Result.size()) >= BUFFER_SIZE) {
+      const auto start = Result.size();
+      Result.resize(start + BUFFER_SIZE);
+
+      const int written = snprintf(Result.data() + start, BUFFER_SIZE, Format, Values...);
+      if (written < 0) {
+         Result.resize(start);
+         return;
+      }
+
+      const auto used = strlen(Result.data() + start);
+      Result.resize(start + used);
+   }
+   else {
+      char buffer[BUFFER_SIZE];
+      const int written = snprintf(buffer, sizeof(buffer), Format, Values...);
+      if (written < 0) return;
+
+      Result += buffer;
+   }
+}
+
+//********************************************************************************************************************
+
+static char * write_integer(char *End, uint64_t Magnitude, bool Negative)
+{
+   char *pos = End;
+
+   if (Magnitude IS 0) *--pos = '0';
+   else {
+      while (Magnitude > 0) {
+         const auto digit = Magnitude % 10;
+         *--pos = char('0' + digit);
+         Magnitude /= 10;
+      }
+   }
+
+   if (Negative) *--pos = '-';
+   return pos;
+}
+
+//********************************************************************************************************************
+
+static void append_integer(std::string &Result, int64_t Value)
+{
+   constexpr size_t BUFFER_SIZE = 21;
+
+   const bool negative = Value < 0;
+   const uint64_t magnitude = negative ? uint64_t(-(Value + 1)) + 1 : uint64_t(Value);
+
+   if ((Result.capacity() - Result.size()) >= BUFFER_SIZE) {
+      const auto start = Result.size();
+      Result.resize(start + BUFFER_SIZE);
+
+      char *end = Result.data() + start + BUFFER_SIZE;
+      char *text = write_integer(end, magnitude, negative);
+      const auto used = size_t(end - text);
+
+      memmove(Result.data() + start, text, used);
+      Result.resize(start + used);
+   }
+   else {
+      char buffer[BUFFER_SIZE];
+      char *end = buffer + BUFFER_SIZE;
+      char *text = write_integer(end, magnitude, negative);
+
+      Result.append(text, size_t(end - text));
+   }
+}
+
+//********************************************************************************************************************
 // Usage: array.new(size, type) or array.new('string')
 //
 // Creates a new array of the specified size and element type.
@@ -289,219 +366,204 @@ LJLIB_CF(array_table)
 }
 
 //********************************************************************************************************************
-// Usage: array.concat(StringFormat, JoinString)
+// Usage: array.concat([Separator], [StringFormat], [Start], [End])
 //
-// Concatenates array elements into a string using the specified format and join string.
+// Concatenates array elements into a string using the specified separator and optional format.
 //
-// StringFormat specifies how each element should be formatted (e.g., "%d", "%f", "%s").
-// JoinString is placed between each concatenated element.
+// Separator is placed between each concatenated element.  StringFormat optionally specifies how each element should be
+// formatted (e.g., "%d", "%f", "%s").  If no format is provided, the fastest available conversion path is used.
+// Start and End are optional zero-based, inclusive indexes.
 
 LJLIB_CF(array_concat)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
+   const bool start_provided = !lua_isnoneornil(L, 4);
+   const bool end_provided = !lua_isnoneornil(L, 5);
 
    if (arr->len < 1) {
+      if (start_provided or end_provided) lj_err_caller(L, ErrMsg::IDXRNG);
       lua_pushstring(L, "");
       return 1;
    }
 
-   auto format = luaL_checkstring(L, 2);
-   auto join_str = luaL_optstring(L, 3, "");
+   size_t separator_len = 0;
+   auto separator = luaL_optlstring(L, 2, "", &separator_len);
+   auto format = lua_isnoneornil(L, 3) ? nullptr : luaL_checkstring(L, 3);
+   auto start = start_provided ? lj_lib_checkint(L, 4) : 0;
+   auto end = end_provided ? lj_lib_checkint(L, 5) : int32_t(arr->len - 1);
 
-   // Validate format string - ensure exactly one format specifier
-
-   int format_count = 0;
-   bool in_format = false;
-   for (auto p = format; *p; p++) {
-      if (*p IS '%') {
-         if (*(p+1) IS '%') {
-            p++; // Skip escaped %
-            continue;
-         }
-
-         if (in_format) {
-            luaL_error(L, ERR::Syntax, "Invalid format string: multiple format specifiers not allowed");
-            return 0;
-         }
-         in_format = true;
-      }
-      else if (in_format) {
-         // Check for end of format specifier
-         if (*p IS 'd' or *p IS 'i' or *p IS 'o' or *p IS 'x' or *p IS 'X' or
-             *p IS 'u' or *p IS 'c' or *p IS 's' or *p IS 'p' or
-             *p IS 'f' or *p IS 'F' or *p IS 'e' or *p IS 'E' or
-             *p IS 'g' or *p IS 'G') {
-            format_count++;
-            in_format = false;
-         }
-         // Allow format modifiers and flags
-         else if (!(*p IS '-' or *p IS '+' or *p IS ' ' or *p IS '#' or *p IS '0' or
-                    (*p >= '1' and *p <= '9') or *p IS '.' or *p IS 'l' or *p IS 'h')) {
-            luaL_error(L, ERR::Syntax, "Invalid character '%c' in format string", *p);
-            return 0;
-         }
-      }
+   if (start < 0 or end < 0 or MSize(start) >= arr->len or MSize(end) >= arr->len) {
+      lj_err_caller(L, ErrMsg::IDXRNG);
    }
 
-   if (in_format) {
-      luaL_error(L, ERR::Syntax, "Incomplete format specifier");
-      return 0;
-   }
-
-   if (format_count != 1) {
-      luaL_error(L, ERR::Syntax, "Format string must contain exactly one format specifier, found %d", format_count);
-      return 0;
-   }
-
-   std::string result;
-   result.reserve(arr->len * 16);
-   char buffer[256];
-
-   for (MSize i = 0; i < arr->len; i++) {
-      if (i > 0) result += join_str;
-
-      switch(arr->elemtype) {
-         case AET::STR_GC: {
-            GCRef ref = arr->get<GCRef>()[i];
-            if (gcref(ref)) snprintf(buffer, sizeof(buffer), format, strdata(gco_to_string(gcref(ref))));
-            else snprintf(buffer, sizeof(buffer), format, "");
-            break;
-         }
-         case AET::CSTR:
-            snprintf(buffer, sizeof(buffer), format, arr->get<CSTRING>()[i]);
-            break;
-         case AET::STR_CPP:
-            snprintf(buffer, sizeof(buffer), format, arr->get<std::string>()[i].c_str());
-            break;
-         case AET::PTR:
-            snprintf(buffer, sizeof(buffer), format, arr->get<void **>()[i]);
-            break;
-         case AET::FLOAT:
-            snprintf(buffer, sizeof(buffer), format, arr->get<float>()[i]);
-            break;
-         case AET::DOUBLE:
-            snprintf(buffer, sizeof(buffer), format, arr->get<double>()[i]);
-            break;
-         case AET::INT64:
-            snprintf(buffer, sizeof(buffer), format, arr->get<long long>()[i]);
-            break;
-         case AET::INT32:
-            snprintf(buffer, sizeof(buffer), format, arr->get<int>()[i]);
-            break;
-         case AET::INT16:
-            snprintf(buffer, sizeof(buffer), format, arr->get<int16_t>()[i]);
-            break;
-         case AET::BYTE:
-            snprintf(buffer, sizeof(buffer), format, arr->get<int8_t>()[i]);
-            break;
-         case AET::TABLE:
-         case AET::STRUCT:
-         case AET::ARRAY:
-         default:
-            luaL_error(L, ERR::InvalidType, "concat() does not support %s types.", elemtype_name(arr->elemtype));
-            return 0;
-      }
-
-      result += buffer;
-   }
-
-   lua_pushstring(L, result.c_str());
-   return 1;
-}
-
-//********************************************************************************************************************
-// Usage: array.join(arr [, separator])
-//
-// Concatenates array elements into a string, inserting the separator between elements.  This is the complement to
-// string.split() which returns arrays.  Simpler than concat() which requires a format string, this also makes it
-// faster for string concatenation.
-//
-// Parameters:
-//   arr: the array to join
-//   separator: string to insert between elements (default: "")
-//
-// Returns: concatenated string
-//
-// Note: For non-string types, elements are converted to their string representation.
-
-LJLIB_CF(array_join)
-{
-   GCarray *arr = lj_lib_checkarray(L, 1);
-
-   if (arr->len < 1) {
+   if (end < start) {
       lua_pushstring(L, "");
       return 1;
    }
 
-   auto separator = luaL_optstring(L, 2, "");
+   if (format) {
+      // Validate format string - ensure exactly one format specifier
 
-   std::string result;
-   result.reserve(arr->len * 16);
-   char buffer[256];
+      int format_count = 0;
+      bool in_format = false;
+      for (auto p = format; *p; p++) {
+         if (*p IS '%') {
+            if (*(p + 1) IS '%') {
+               p++; // Skip escaped %
+               continue;
+            }
 
-   for (MSize i = 0; i < arr->len; i++) {
-      if (i > 0) result += separator;
-
-      switch(arr->elemtype) {
-         case AET::STR_GC: {
-            GCRef ref = arr->get<GCRef>()[i];
-            if (gcref(ref)) result += strdata(gco_to_string(gcref(ref)));
-            break;
+            if (in_format) {
+               luaL_error(L, ERR::Syntax, "Invalid format string: multiple format specifiers not allowed");
+               return 0;
+            }
+            in_format = true;
          }
-         case AET::CSTR: {
-            CSTRING str = arr->get<CSTRING>()[i];
-            if (str) result += str;
-            break;
+         else if (in_format) {
+            // Check for end of format specifier
+            if (*p IS 'd' or *p IS 'i' or *p IS 'o' or *p IS 'x' or *p IS 'X' or
+                *p IS 'u' or *p IS 'c' or *p IS 's' or *p IS 'p' or
+                *p IS 'f' or *p IS 'F' or *p IS 'e' or *p IS 'E' or
+                *p IS 'g' or *p IS 'G') {
+               format_count++;
+               in_format = false;
+            }
+            // Allow format modifiers and flags
+            else if (!(*p IS '-' or *p IS '+' or *p IS ' ' or *p IS '#' or *p IS '0' or
+                       (*p >= '1' and *p <= '9') or *p IS '.' or *p IS 'l' or *p IS 'h')) {
+               luaL_error(L, ERR::Syntax, "Invalid character '%c' in format string", *p);
+               return 0;
+            }
          }
-         case AET::STR_CPP:
-            result += arr->get<std::string>()[i];
-            break;
-         case AET::FLOAT:
-            snprintf(buffer, sizeof(buffer), "%g", double(arr->get<float>()[i]));
-            result += buffer;
-            break;
-         case AET::DOUBLE:
-            snprintf(buffer, sizeof(buffer), "%g", arr->get<double>()[i]);
-            result += buffer;
-            break;
-         case AET::INT64:
-            snprintf(buffer, sizeof(buffer), "%lld", arr->get<long long>()[i]);
-            result += buffer;
-            break;
-         case AET::INT32:
-            snprintf(buffer, sizeof(buffer), "%d", arr->get<int>()[i]);
-            result += buffer;
-            break;
-         case AET::INT16:
-            snprintf(buffer, sizeof(buffer), "%d", int(arr->get<int16_t>()[i]));
-            result += buffer;
-            break;
-         case AET::BYTE:
-            snprintf(buffer, sizeof(buffer), "%d", int(arr->get<uint8_t>()[i]));
-            result += buffer;
-            break;
-         case AET::PTR:
-            snprintf(buffer, sizeof(buffer), "%p", arr->get<void *>()[i]);
-            result += buffer;
-            break;
-         case AET::TABLE:
-            // Tables cannot be meaningfully converted to strings
-            result += "table";
-            break;
-         case AET::ARRAY:
-            // Arrays cannot be meaningfully converted to strings
-            result += "array";
-            break;
-         case AET::STRUCT:
-            result += "struct";
-            break;
-         default:
-            result += "?";
-            break;
+      }
+
+      if (in_format) {
+         luaL_error(L, ERR::Syntax, "Incomplete format specifier");
+         return 0;
+      }
+
+      if (format_count != 1) {
+         luaL_error(L, ERR::Syntax, "Format string must contain exactly one format specifier, found %d", format_count);
+         return 0;
       }
    }
 
-   lua_pushstring(L, result.c_str());
+   std::string result;
+   result.reserve(MSize(end - start + 1) * 16);
+
+   for (MSize i = MSize(start); i <= MSize(end); i++) {
+      if (i > MSize(start)) result.append(separator, separator_len);
+
+      if (format) {
+         switch(arr->elemtype) {
+            case AET::STR_GC: {
+               GCRef ref = arr->get<GCRef>()[i];
+               if (gcref(ref)) {
+                  GCstr *str = gco_to_string(gcref(ref));
+                  if (strcmp(format, "%s") IS 0) result.append(strdata(str), str->len);
+                  else append_formatted(result, format, strdata(str));
+               }
+               else append_formatted(result, format, "");
+               break;
+            }
+            case AET::CSTR:
+               append_formatted(result, format, arr->get<CSTRING>()[i]);
+               break;
+            case AET::STR_CPP: {
+               const auto &str = arr->get<std::string>()[i];
+               if (strcmp(format, "%s") IS 0) result.append(str.data(), str.size());
+               else append_formatted(result, format, str.c_str());
+               break;
+            }
+            case AET::PTR:
+               append_formatted(result, format, arr->get<void **>()[i]);
+               break;
+            case AET::FLOAT:
+               append_formatted(result, format, arr->get<float>()[i]);
+               break;
+            case AET::DOUBLE:
+               append_formatted(result, format, arr->get<double>()[i]);
+               break;
+            case AET::INT64:
+               append_formatted(result, format, arr->get<long long>()[i]);
+               break;
+            case AET::INT32:
+               append_formatted(result, format, arr->get<int>()[i]);
+               break;
+            case AET::INT16:
+               append_formatted(result, format, arr->get<int16_t>()[i]);
+               break;
+            case AET::BYTE:
+               append_formatted(result, format, arr->get<int8_t>()[i]);
+               break;
+            case AET::TABLE:
+            case AET::STRUCT:
+            case AET::ARRAY:
+            default:
+               luaL_error(L, ERR::InvalidType, "concat() does not support %s types.", elemtype_name(arr->elemtype));
+               return 0;
+         }
+      }
+      else {
+         switch(arr->elemtype) {
+            case AET::STR_GC: {
+               GCRef ref = arr->get<GCRef>()[i];
+               if (gcref(ref)) {
+                  GCstr *str = gco_to_string(gcref(ref));
+                  result.append(strdata(str), str->len);
+               }
+               break;
+            }
+            case AET::CSTR: {
+               CSTRING str = arr->get<CSTRING>()[i];
+               if (str) result += str;
+               break;
+            }
+            case AET::STR_CPP: {
+               const auto &str = arr->get<std::string>()[i];
+               result.append(str.data(), str.size());
+               break;
+            }
+            case AET::FLOAT:
+               append_formatted(result, "%g", double(arr->get<float>()[i]));
+               break;
+            case AET::DOUBLE:
+               append_formatted(result, "%g", arr->get<double>()[i]);
+               break;
+            case AET::INT64:
+               append_integer(result, arr->get<int64_t>()[i]);
+               break;
+            case AET::INT32:
+               append_integer(result, arr->get<int32_t>()[i]);
+               break;
+            case AET::INT16:
+               append_integer(result, arr->get<int16_t>()[i]);
+               break;
+            case AET::BYTE:
+               append_integer(result, arr->get<uint8_t>()[i]);
+               break;
+            case AET::PTR:
+               append_formatted(result, "%p", arr->get<void *>()[i]);
+               break;
+            case AET::TABLE:
+               // Tables cannot be meaningfully converted to strings
+               result += "table";
+               break;
+            case AET::ARRAY:
+               // Arrays cannot be meaningfully converted to strings
+               result += "array";
+               break;
+            case AET::STRUCT:
+               result += "struct";
+               break;
+            default:
+               result += "?";
+               break;
+         }
+      }
+   }
+
+   lua_pushlstring(L, result.data(), result.size());
    return 1;
 }
 
@@ -1055,7 +1117,17 @@ LJLIB_CF(array_copy)
       GCarray *src  = lj_lib_checkarray(L, 2);
       auto dest_idx = lj_lib_optint(L, 3, 0);
       auto src_idx  = lj_lib_optint(L, 4, 0);
-      auto count    = lj_lib_optint(L, 5, int32_t(src->len - src_idx));
+      if (dest_idx < 0 or src_idx < 0 or MSize(dest_idx) > dest->len or MSize(src_idx) > src->len) {
+         lj_err_caller(L, ErrMsg::IDXRNG);
+      }
+
+      auto count = lj_lib_optint(L, 5, int32_t(src->len - MSize(src_idx)));
+      if (count < 0) lj_err_caller(L, ErrMsg::IDXRNG);
+      if (not (dest->elemtype IS src->elemtype)) lj_err_caller(L, ErrMsg::ARRTYPE);
+      if (count IS 0) return 0;
+      if (MSize(count) > src->len - MSize(src_idx) or MSize(count) > dest->len - MSize(dest_idx)) {
+         lj_err_caller(L, ErrMsg::IDXRNG);
+      }
 
       lj_array_copy(L, dest, dest_idx, src, src_idx, count);
       return 0;
@@ -3011,8 +3083,8 @@ extern "C" int luaopen_array(lua_State *L)
    reg_iface_prototype("array", "of", { TiriType::Array }, { TiriType::Str }, FProtoFlags::Variadic);
    // Methods
    reg_iface_prototype("array", "table", { TiriType::Table }, { TiriType::Array });
-   reg_iface_prototype("array", "concat", { TiriType::Str }, { TiriType::Array, TiriType::Str, TiriType::Str });
-   reg_iface_prototype("array", "join", { TiriType::Str }, { TiriType::Array, TiriType::Str });
+   reg_iface_prototype("array", "concat", { TiriType::Str },
+      { TiriType::Array, TiriType::Str, TiriType::Str, TiriType::Num, TiriType::Num });
    reg_iface_prototype("array", "contains", { TiriType::Bool }, { TiriType::Array, TiriType::Any });
    reg_iface_prototype("array", "first", { TiriType::Any }, { TiriType::Array, TiriType::Func });
    reg_iface_prototype("array", "last", { TiriType::Any }, { TiriType::Array, TiriType::Func });

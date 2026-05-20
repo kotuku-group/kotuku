@@ -12,8 +12,11 @@ static void android_init_window(int MsgID)
    // We want EGL to be initialised in the Kōtuku Core thread, so we set glEGLState and let
    // lock_graphics() take care of the initialisation.
 
-   glDisplayInfo.DisplayID = 0xffffffff; // Inform that a refresh of the cache is required.
-   glEGLState = EGL_REQUIRES_INIT;
+   if (!pthread_mutex_lock(&glGraphicsMutex)) {
+      glDisplayInfo.DisplayID = 0xffffffff; // Inform that a refresh of the cache is required.
+      glEGLState = EGL_REQUIRES_INIT;
+      pthread_mutex_unlock(&glGraphicsMutex);
+   }
 
    if (glActiveDisplayID) {
       // Send a Show and Draw action to the top-most graphics object of the target display.
@@ -42,4 +45,3 @@ static void android_term_window(int MsgID)
    free_egl(); // It is OK to terminate EGL in this thread.  Note that this function will do the lock_graphics() for us.
    LogReturn();
 }
-

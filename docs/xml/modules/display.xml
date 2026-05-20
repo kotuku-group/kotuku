@@ -626,7 +626,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     </input>
     <description>
 <p>Use the SetCursor() function to change the pointer image and/or restrict the movement of the pointer to a surface area.</p>
-<p>To change the cursor image, set the <code>Cursor</code> or <code>Name</code> parameters to define the new image.  Valid cursor ID's and their equivalent names are listed in the documentation for the <class name="Pointer" field="Cursor">_Pointer.Cursor_</class> field.  If the <code>Surface</code> field is set to a valid surface, the cursor image will switch back to its default once the pointer moves outside of the surface's area.  If both the <code>Cursor</code> and <code>Name</code> parameters are <code>NULL</code>, the cursor image will remain unchanged from its current image.</p>
+<p>To change the cursor image, set the <code>Cursor</code> or <code>Name</code> parameters to define the new image.  Valid cursor IDs and their equivalent names are listed in the documentation for the <class name="Pointer" field="CursorID">Pointer.CursorID</class> field.  If the <code>Surface</code> field is set to a valid surface, the cursor image will switch back to its default once the pointer moves outside of the surface's area. If both the <code>Cursor</code> and <code>Name</code> parameters are <code>NULL</code>, the cursor image will remain unchanged from its current image.</p>
 <p>The SetCursor() function accepts the following flags in the <code>Flags</code> parameter:</p>
 <types lookup="CRF"/>
 <p>The <code>Owner</code> parameter is used as a locking mechanism to prevent the cursor from being changed whilst it is locked.  We recommend that it is set to an object ID such as the program's task ID.  As the owner, the cursor remains under your program's control until <function>RestoreCursor</function> is called.</p>
@@ -955,6 +955,25 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <const name="IMAGE">Images that are recognised by the Picture class may be stored as this type (such as jpeg's and png files).</const>
       <const name="OBJECT">An object that has been deserialised into binary form.</const>
       <const name="TEXT">Plain text files such as ASCII and UTF-8 must be identified through this clip type.</const>
+    </constants>
+
+    <constants lookup="CON" comment="Gamepad controller buttons.">
+      <const name="DPAD_DOWN">Directional pad down.</const>
+      <const name="DPAD_LEFT">Directional pad left.</const>
+      <const name="DPAD_RIGHT">Directional pad right.</const>
+      <const name="DPAD_UP">Directional pad up.</const>
+      <const name="GAMEPAD_E">East button (B)</const>
+      <const name="GAMEPAD_N">North button (Y)</const>
+      <const name="GAMEPAD_S">South button (A)</const>
+      <const name="GAMEPAD_W">West button (X)</const>
+      <const name="LEFT_BUMPER_1">Gamepad left-hand bumper 1 (top, primary).</const>
+      <const name="LEFT_BUMPER_2">Gamepad left-hand bumper 2 (lower).</const>
+      <const name="LEFT_THUMB">Left thumb stick depressed.</const>
+      <const name="RIGHT_BUMPER_1">Gamepad right-hand bumper 1 (top, primary).</const>
+      <const name="RIGHT_BUMPER_2">Gamepad right-hand bumper 2 (lower).</const>
+      <const name="RIGHT_THUMB">Right thumb stick depressed.</const>
+      <const name="SELECT">Gamepad select or back button.</const>
+      <const name="START">Gamepad start button.</const>
     </constants>
 
     <constants lookup="CPF" comment="Clipboard flags">

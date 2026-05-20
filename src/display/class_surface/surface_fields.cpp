@@ -1,11 +1,14 @@
 /*********************************************************************************************************************
 
 -FIELD-
-BitsPerPixel: Defines the number of bits per pixel for a surface.
+BitsPerPixel: Defines the pixel depth used by the surface buffer.
 
-The BitsPerPixel field may be set prior to initialisation in order to force a particular bits-per-pixel setting that
-may not match the display.  This will result in the graphics system converting each pixel when drawing the surface to
-the display and as such is not recommended.
+Set `BitsPerPixel` before initialisation to request a fixed pixel depth for the surface buffer.  If the requested
+depth differs from the display or parent buffer, the graphics system converts pixels when the surface is drawn, which
+is usually slower than using the native display depth.
+
+Reading this field returns the active tracked depth for the surface.  A value of zero is returned if the surface is not
+available in the display surface list.
 
 *********************************************************************************************************************/
 
@@ -28,38 +31,33 @@ static ERR SET_BitsPerPixel(extSurface *Self, int Value)
 /*********************************************************************************************************************
 
 -FIELD-
-Buffer: The ID of the bitmap that manages the surface's graphics.
+Buffer: Refers to the @Bitmap that stores the surface's graphics.
 
-Each surface is assigned a bitmap buffer that is referred to in this field. In many cases the bitmap will be shared
-between multiple surfaces.  A client should avoid interacting with the buffer unless circumstances are such that
-there are no other means to get access to internal graphics information.
+Each surface is assigned a bitmap buffer for drawing.  In many cases this buffer is shared between multiple surfaces,
+so clients should treat it as an implementation detail unless no public drawing API provides the required access.
 
-Please note that the bitmap object represents an off-screen, temporary buffer.  Drawing to the bitmap directly will
-have no impact on the display.
+The bitmap is an off-screen buffer.  Direct changes to it are not exposed to the display automatically.
 
 -FIELD-
-Colour: String-based field for setting the background colour.
+Colour: Defines the background colour used when clearing the surface.
 
-If the surface object should have a plain background colour, set this field to the colour value that you want to use.
-The colour must be specified in the standard format of `#RRGGBB` for hexadecimal or `Red,Green,Blue` for decimal
-components.
+Set this field when a surface should be cleared to a solid background colour before drawing.  String values may use
+`#RRGGBB` hexadecimal notation or `Red,Green,Blue` decimal components.
 
-Surface objects that do not have a colour will not be cleared when being drawn.  The background will thus consist of
-'junk' graphics and the background will need to be drawn using another method.  This gives your the power to choose the
-fastest drawing model to suit your needs.
+A surface that does not define a colour is not cleared during redraw.  In that case, draw the full background manually
+to avoid stale or uninitialised graphics appearing in exposed areas.
 
-If you set the Colour and later want to turn the background colour off, write a `NULL` value to the Colour field or set
-the Alpha component to zero.  Changing the Colour field does not cause a graphics redraw.
+A preset colour can be disabled by writing `NULL`, which clears the colour by setting its alpha component to zero.
+Changing `Colour` does not schedule a redraw.
 
 -FIELD-
-Cursor: A default cursor image can be set here for changing the mouse pointer.
+Cursor: Sets the pointer image used while the mouse is over the surface.
 
-The Cursor field provides a convenient way of setting the pointer's cursor image in a single operation.  The mouse
-pointer will automatically switch to the specified cursor image when it enters the surface area.
+The pointer automatically switches to the selected cursor image when it enters the surface area.
 
 The available cursor image settings are listed in the @Pointer.CursorID documentation.
 
-The Cursor field may be written with valid cursor names or their ID's, as you prefer.
+The `Cursor` field may be written with a valid cursor name or cursor ID.
 
 *********************************************************************************************************************/
 
@@ -80,22 +78,19 @@ static ERR SET_Cursor(extSurface *Self, PTC Value)
 /*********************************************************************************************************************
 
 -FIELD-
-Display: Refers to the @Display object that is managing the surface's graphics.
+Display: Refers to the @Display object that manages the surface's graphics.
 
-All surfaces belong to a @Display object that manages drawing to the user's video display.  This field refers
-to the Display object of which the surface is a member.
+All surfaces belong to a @Display object that manages drawing to the user's video display.  This field identifies the
+display that owns the surface.
 
 -FIELD-
-Drag: This object-based field is used to control the dragging of objects around the display.
+Drag: Defines the @Surface that moves when this surface is dragged.
 
-Click-dragging of surfaces is enabled by utilising the Drag field.
+Set this field to the @Surface that should move when the user starts a click-drag operation over the current surface.
+For example, a window title bar would set `Drag` to the window surface.  A surface may also set `Drag` to itself for
+icon-like or small draggable objects.
 
-To use, write this field with reference to a Surface that is to be dragged when the user starts a click-drag operation.
-For instance, if you create a window with a title-bar at the top, you would set the Drag field of the title-bar to
-point to the object ID of the window. If necessary, you can set the Drag field to point back to your surface object
-(this can be useful for creating icons and other small widgets).
-
-To turn off dragging, set the field to zero.
+Set `Drag` to zero to disable drag handling.
 
 *********************************************************************************************************************/
 
@@ -119,16 +114,18 @@ static ERR SET_Drag(extSurface *Self, OBJECTID Value)
 /*********************************************************************************************************************
 
 -FIELD-
-DragStatus: Indicates the draggable state when dragging is enabled.
+DragStatus: Reports the current drag state when dragging is enabled.
 
-If the surface is draggable, the DragStatus indicates the current state of the surface with respect to it being
-dragged.
+Read this field to determine whether the surface is idle, anchored for dragging or actively being moved.
 
 -FIELD-
-Flags: Optional flags.
+Flags: Controls optional surface behaviour.
 
-The Flags field allows special options to be set for a surface object.  Use a logical-OR operation when setting this
-field so that existing flags are not overwritten.  To not do so can produce unexpected behaviour.
+Use `Flags` to enable optional surface behaviours.  Preserve existing flags when updating this field, typically by
+combining the current value with the flags being added.
+
+Read-only flags cannot be changed by writing this field.  Initialisation-only flags can be set before the surface is
+initialised, but are preserved once the surface is active.
 
 *********************************************************************************************************************/
 
@@ -150,9 +147,11 @@ static ERR SET_Flags(extSurface *Self, RNF Value)
 -FIELD-
 Modal: Sets the surface as modal (prevents user interaction with other surfaces).
 
-If `true`, the surface will become the modal surface for the program when it is shown.  This prevents interaction with
-other surfaces until the modal surface is either hidden or destroyed.  Children of the modal surface may be interacted
-with normally.
+If set to `true`, the surface becomes the program's modal surface when shown.  This prevents interaction with other
+surfaces until the modal surface is hidden, destroyed or no longer modal.  Children of the modal surface remain
+interactive.
+
+Clearing this field restores the previous modal surface if one was recorded.
 
 *********************************************************************************************************************/
 
@@ -175,11 +174,10 @@ static ERR SET_Modal(extSurface *Self, int Value)
 Movement: Limits the movement of a surface object to vertical or horizontal shifts.
 Lookup: MOVE
 
-The directions in which a surface object can move can be limited by setting the Movement field.  By default, a surface
-object is capable of moving both horizontally and vertically.
+Set `Movement` to limit movement performed by #Move() to horizontal movement, vertical movement, both axes or neither
+axis.  By default, surfaces can move horizontally and vertically.
 
-This field is only effective in relation to the Move action, and it is possible to circumvent the restrictions by
-setting the coordinate fields directly.
+This field affects #Move() only.  Direct writes to coordinate fields bypass the movement restriction.
 
 *********************************************************************************************************************/
 
@@ -196,41 +194,39 @@ static ERR SET_Movement(extSurface *Self, int Flags)
 
 /*********************************************************************************************************************
 -FIELD-
-Opacity: Affects the level of translucency applied to a surface object.
+Opacity: Defines the translucency applied when drawing a surface.
 
-This field determines the translucency level of a surface area.  The default setting is 100%, which means that the
-surface will be solid.  Any other value that you set here will alter the impact of a surface over its destination area.
-High values will retain the boldness of the graphics, while low values can surface it close to invisible.
+`Opacity` is expressed as a normalised multiplier.  The default value of `1.0` draws the surface as fully opaque.  Lower
+values make the surface more transparent.  Values outside the allowable range are clipped.
 
-Note: The translucent drawing routine works by drawing the surface content to its internal buffer first, then copying
-the graphics that are immediately in the background straight over the top with an alpha-blending routine.  This is not
-always ideal and better results might be obtainable with the pre-copy feature.
+Non-opaque surfaces are drawn by rendering the surface content to its internal buffer and blending it with the
+background graphics.  This can be costly, and the pre-copy feature may give better results for some compositions.
 
-Please note that the use of translucency is realised at a significant cost to CPU usage.
+Translucency can significantly increase CPU usage.
 
 *********************************************************************************************************************/
 
 static ERR GET_Opacity(extSurface *Self, double *Value)
 {
-   *Value = Self->Opacity * 100 / 255;
+   *Value = Self->Opacity;
    return ERR::Okay;
 }
 
 static ERR SET_Opacity(extSurface *Self, double Value)
 {
-   int opacity;
+   double opacity;
 
    // NB: It is OK to set the opacity on a surface object when it does not own its own bitmap, as the aftercopy
    // routines will refer the copy so that it starts from the bitmap owner.
 
-   if (Value >= 100) {
-      opacity = 255;
+   if (Value >= 1.0) {
+      opacity = 1.0;
       if (opacity IS Self->Opacity) return ERR::Okay;
       Self->Flags &= ~RNF::AFTER_COPY;
    }
    else {
-      if (Value < 0) opacity = 0;
-      else opacity = (Value * 255) / 100;
+      if (Value < 0.0) opacity = 0.0;
+      else opacity = Value;
       if (opacity IS Self->Opacity) return ERR::Okay;
       Self->Flags |= RNF::AFTER_COPY; // See PrepareBackground() to see what these flags are for
 
@@ -246,11 +242,13 @@ static ERR SET_Opacity(extSurface *Self, double Value)
 
 /*********************************************************************************************************************
 -FIELD-
-Parent: The parent for a surface is defined here.
+Parent: Identifies the parent @Surface.
 
-The parent for child surfaces is defined here.  Top level surfaces will have no parent.  If the Parent field is not set
-prior to initialisation, the surface class will attempt to discover a valid parent by checking its ownership chain for
-a surface object.  This behaviour can be switched off by setting a Parent of zero prior to initialisation.
+Child surfaces use this field to identify their parent.  Top-level surfaces have no parent.
+
+If `Parent` is not set before initialisation, the surface class searches the ownership chain for the nearest @Surface.
+Set `Parent` to zero before initialisation to disable that automatic lookup.  An initialised child surface may be
+reparented, but a top-level surface cannot be converted into a child surface after initialisation.
 
 *********************************************************************************************************************/
 
@@ -296,14 +294,14 @@ static ERR SET_Parent(extSurface *Self, int Value)
 -FIELD-
 PopOver: Keeps a surface in front of another surface in the Z order.
 
-Setting the PopOver field to a sibling surface ID will keep the surface in front of its sibling at all times.  For
-dialog windows, it is recommended that the popover and modal options be combined together to prevent interaction with
-other surfaces created by the current program.
+Set `PopOver` before initialisation to the object ID of a sibling @Surface that this surface should stay in front of.
+For dialog windows, combine this field with #Modal to keep the dialog in front and prevent interaction with other
+surfaces in the current program.
 
-Setting the PopOver field to zero will return the surface to its normal state.
+Set `PopOver` to zero before initialisation to use normal Z-order behaviour.
 
-If an object that does not belong to the Surface class is detected, an attempt will be made to read that object's
-Surface field, if available.  If this does not yield a valid surface then `ERR::InvalidObject` is returned.
+This field cannot be changed after initialisation.  The value must identify a @Surface; otherwise `ERR::InvalidObject`
+is returned.
 
 *********************************************************************************************************************/
 
@@ -354,9 +352,9 @@ static ERR SET_RootLayer(extSurface *Self, OBJECTID Value)
 /*********************************************************************************************************************
 
 -FIELD-
-UserFocus: Refers to the surface object that has the current focus.
+UserFocus: Refers to the surface object that has the current user focus.
 
-Returns the surface object that has the primary user focus.  Returns zero if no object has the focus.
+Returns the object ID of the surface that has the primary user focus.  Returns zero if no surface has focus.
 
 *********************************************************************************************************************/
 
@@ -372,14 +370,12 @@ static ERR GET_UserFocus(extSurface *Self, OBJECTID *Value)
 -FIELD-
 Visible: Indicates the visibility of a surface object.
 
-If you need to know if a surface object is visible or hidden, you can read this field to find out either way.  A `true`
-value is returned if the object is visible and `false` is returned if the object is invisible.  Note that visibility is
-subject to the properties of the container that the surface object resides in.  For example, if a surface object is
-visible but is contained within a surface object that is invisible, the end result is that both objects are actually
-invisible.
+Read this field to determine whether the surface itself is marked visible.  A `true` value means the surface is shown;
+`false` means it is hidden.
 
-Visibility is directly affected by the #Hide() and #Show() actions if you wish to change the visibility of a
-surface object.
+Effective on-screen visibility also depends on the parent chain.  A visible child of a hidden parent is not displayed.
+
+Set this field, or call #Hide() and #Show(), to change the surface visibility.
 
 *********************************************************************************************************************/
 
@@ -400,15 +396,13 @@ static ERR SET_Visible(extSurface *Self, int Value)
 /*********************************************************************************************************************
 
 -FIELD-
-WindowType: Indicator for surfaces that represent themselves as a desktop window.
+WindowType: Defines how a top-level surface is represented by a hosted desktop.
 Lookup: SWIN
 
-This field affects a surface's status on hosted desktops such as Windows and X11. It only affects top-level surfaces
-that have no parent - child surfaces ignore this field.  Surfaces created in the desktop area will also ignore
-this field, as the desktop is treated as a parent.
+This field affects hosted desktops such as Windows and X11.  It only applies to top-level surfaces that have no parent.
+Child surfaces ignore this field, and surfaces created inside the desktop area treat the desktop as their parent.
 
-It is the responsibility of the developer to provide window gadgets such as titlebars and set the resize borders for
-custom surfaces.
+Custom surfaces remain responsible for their own window controls, such as title bars and resize borders.
 
 *********************************************************************************************************************/
 
@@ -472,12 +466,11 @@ static ERR SET_WindowType(extSurface *Self, SWIN Value)
 -FIELD-
 WindowHandle: Refers to a surface object's window handle, if relevant.
 
-This field refers to the window handle of a surface object, but only if such a thing is relevant to the platform that
-the system is running on.  Currently, this field is only usable when creating a primary surface object within an X11
-window manager or Microsoft Windows.
+This field exposes the host window handle for platforms that provide one.  It is currently relevant when creating a
+primary surface within an X11 window manager or Microsoft Windows.
 
-It is possible to set the WindowHandle field prior to initialisation if you want a surface object to be based on a
-window that already exists.
+Set `WindowHandle` before initialisation to attach the surface to an existing native window.  The field is immutable
+after initialisation.
 -END-
 
 *********************************************************************************************************************/

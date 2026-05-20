@@ -166,6 +166,25 @@ module({
     "PREMUL: The RGB values are premultiplied (32-bit only)."
   )
 
+  flags("CON", { comment="Gamepad controller buttons." },
+    "GAMEPAD_S:  South button (A)",
+    "GAMEPAD_E:  East button (B)",
+    "GAMEPAD_W:  West button (X)",
+    "GAMEPAD_N:  North button (Y)",
+    "DPAD_UP:    Directional pad up.",
+    "DPAD_DOWN:  Directional pad down.",
+    "DPAD_LEFT:  Directional pad left.",
+    "DPAD_RIGHT: Directional pad right.",
+    "START:      Gamepad start button.",
+    "SELECT:     Gamepad select or back button.",
+    "LEFT_BUMPER_1:  Gamepad left-hand bumper 1 (top, primary).",
+    "LEFT_BUMPER_2:  Gamepad left-hand bumper 2 (lower).",
+    "RIGHT_BUMPER_1: Gamepad right-hand bumper 1 (top, primary).",
+    "RIGHT_BUMPER_2: Gamepad right-hand bumper 2 (lower).",
+    "LEFT_THUMB:  Left thumb stick depressed.",
+    "RIGHT_THUMB: Right thumb stick depressed."
+  )
+
   flags("SCR", { comment="Display flags." },
     "VISIBLE: Set if the screen is on display.",
     "AUTO_SAVE: Saves settings to the global display state when the object is freed.",

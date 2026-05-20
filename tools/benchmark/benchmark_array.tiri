@@ -384,13 +384,13 @@ end
 
 @Test function ArrayJoinToString()
    for i in {0..50} do
-      local joined1 = glIntArray:join("-")
-      local joined2 = glIntArray:join(", ")
-      local joined3 = glIntArray:join("")
+      local joined1 = glIntArray:concat("-")
+      local joined2 = glIntArray:concat(", ")
+      local joined3 = glIntArray:concat("")
 
-      local joined5 = glStrArray:join(" ")
-      local joined6 = glStrArray:join(", ")
-      local joined7 = glStrArray:join("")
+      local joined5 = glStrArray:concat(" ")
+      local joined6 = glStrArray:concat(", ")
+      local joined7 = glStrArray:concat("")
    end
 end
 
@@ -411,9 +411,9 @@ end
 
 @Test function ArrayConcatFormatted()
    for i in {0..25} do
-      local result1 = glIntArray:concat("%d", ", ")
-      local result2 = glIntArray:concat("%03d", "-")
-      local result5 = glStrArray:concat("%s", " ")
+      local result1 = glIntArray:concat(", ", "%d")
+      local result2 = glIntArray:concat("-", "%03d")
+      local result5 = glStrArray:concat(" ", "%s")
    end
 end
 

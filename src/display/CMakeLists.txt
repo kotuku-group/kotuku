@@ -113,7 +113,7 @@ else ()
 	set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-strict-overflow")
 	set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-strict-overflow")
 
-   target_sources (${MOD} PRIVATE ${FUNCTIONS} ${CLASSES})
+   target_sources (${MOD} PRIVATE ${FUNCTIONS} ${CLASSES} "linux/controller.cpp")
 
    set (DISPLAY_PRIVATE_LIBS ${MATH_LINK})
 

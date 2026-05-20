@@ -21,6 +21,7 @@ static const struct FieldDef clControllerButtons[] = {
 };
 
 static const struct ActionArray clControllerActions[] = {
+   { AC::NewObject, CONTROLLER_NewObject },
    { AC::Query, CONTROLLER_Query },
    { AC::NIL, nullptr }
 };

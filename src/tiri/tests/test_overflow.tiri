@@ -273,7 +273,7 @@ function source_after_large_constant_pool(Tail)
    end
 
    lines:push(Tail)
-   return lines:concat('%s', '\n')
+   return lines:concat('\n', '%s')
 end
 
 @Test function TempusImportBeforeAnnotatedFunction()

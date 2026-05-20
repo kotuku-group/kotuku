@@ -240,7 +240,7 @@ function hoverAppendParamSection(Markdown:str, Params:array):str
    end
 
    if #lines > 0 then
-      Markdown ..= '\n\n**Parameters**\n\n' .. lines:join('\n')
+      Markdown ..= '\n\n**Parameters**\n\n' .. lines:concat('\n')
    end
 
    return Markdown
@@ -259,7 +259,7 @@ function hoverAppendResultSection(Markdown:str, Results:array):str
    end
 
    if #lines > 0 then
-      Markdown ..= '\n\n**Results**\n\n' .. lines:join('\n')
+      Markdown ..= '\n\n**Results**\n\n' .. lines:concat('\n')
    end
 
    return Markdown
@@ -278,7 +278,7 @@ function hoverAppendErrorSection(Markdown:str, Errors:array):str
    end
 
    if #lines > 0 then
-      Markdown ..= '\n\n**Errors**\n\n' .. lines:join('\n')
+      Markdown ..= '\n\n**Errors**\n\n' .. lines:concat('\n')
    end
 
    return Markdown

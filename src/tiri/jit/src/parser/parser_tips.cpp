@@ -39,7 +39,7 @@ void TipEmitter::emit(const ParserTip &Tip, std::string_view Filename)
 {
    if (should_emit(Tip.priority)) {
       tip.push_back(Tip);
-      printf("%s\n", Tip.to_string(Filename).c_str());
+      if (this->print_output) printf("%s\n", Tip.to_string(Filename).c_str());
    }
 }
 

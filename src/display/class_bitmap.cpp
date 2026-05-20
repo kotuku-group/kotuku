@@ -6,31 +6,27 @@ that is distributed with this package.  Please refer to it for further informati
 **********************************************************************************************************************
 
 -CLASS-
-Bitmap: Manages bitmap graphics and provides drawing functionality.
+Bitmap: Represents a pixel buffer used for drawing, image transfer and display backing.
 
-The Bitmap class provides a way of describing an area of memory that an application can draw to, and/or display if the
-data is held in video memory.  Bitmaps are used in the handling of @Display and @Picture objects, and form the backbone
-of Kōtuku's graphics functionality.  The Bitmap class supports everything from basic graphics primitives to masking and
-alpha blending features.
+The Bitmap class describes a rectangular block of pixel data together with its dimensions, colour format, palette,
+clipping region and drawing state.  Bitmaps are used directly by @Display and @Picture objects and provide the
+low-level pixel storage behind much of Kōtuku's 2D graphics pipeline.
 
-To create a new bitmap object, you need to specify its #Width and #Height at a minimum.  Preferably, you should also
-know how many colours you want to use and whether the bitmap data should be held in standard memory (for CPU based
-reading and writing) or video memory (for hardware based drawing).  After creating a bitmap you can use a number of
-available drawing methods for the purpose of image management.  Please note that these methods are designed to be
-called under exclusive conditions, and it is not recommended that you call methods on a bitmap using the message
-system.
+To create a bitmap, set #Width and #Height before initialisation.  The pixel format can be selected explicitly with
+#BitsPerPixel, #BytesPerPixel, #AmtColours and #Type, or left for #Query() and #Init() to derive from the current
+display environment.  #DataFlags controls whether the bitmap uses regular CPU-accessible memory or a platform-specific
+video or texture resource where supported.
 
-By default, the CPU can only be used to read and write data directly to or from a bitmap when it is held in standard
-memory (this is the default type).  If the `TEXTURE` or `VIDEO` flags are specified in the #DataFlags field then the
-CPU cannot access this memory, unless you specifically request it.  To do this, use the #Lock() and #Unlock() actions
-to temporarily gain read/write access to a bitmap.
+Direct CPU access is reliable for regular data bitmaps.  Bitmaps backed by video or texture resources may require
+#Lock() before reading or writing #Data, and #Unlock() after direct access is complete.  Code that uses the drawing
+methods exposed by this class does not normally need to manage locking itself.
 
-If you require complex drawing functionality that is not available in the Bitmap class, consider using the
-functionality provided by the Vector module.
+Bitmap methods are intentionally low-level and operate on immediate pixel data.  Use the Vector module when retained
+scene graphs, paths, gradients, filters or higher-level drawing composition are required.  Use @Picture when decoding
+or encoding image formats is the main concern.
 
-To save the image of a bitmap, either copy its image to a @Picture object, or use the SaveImage()
-action to save the data in PNG format.  Raw data can also be processed through a bitmap by using the Read and Write
-actions.
+Raw image bytes can be read and written with #Read() and #Write().  #SaveImage() writes the clipped bitmap image as PCX
+data to a destination object that supports writing.
 -END-
 
 *********************************************************************************************************************/
@@ -218,7 +214,11 @@ ERR lock_surface(extBitmap *Bitmap, int16_t Access)
             }
             return ERR::Okay;
          }
-         else XDestroyImage(Bitmap->x11.readable);
+         else {
+            XDestroyImage(Bitmap->x11.readable);
+            Bitmap->x11.readable = nullptr;
+            Bitmap->Data = nullptr;
+         }
       }
 
       // Generate a fresh XImage from the current drawable
@@ -245,7 +245,11 @@ ERR lock_surface(extBitmap *Bitmap, int16_t Access)
          }
          return ERR::Okay;
       }
-      else return ERR::CreateResource;
+      else {
+         free(Bitmap->Data);
+         Bitmap->Data = nullptr;
+         return ERR::CreateResource;
+      }
    }
    return ERR::Okay;
 }
@@ -385,6 +389,7 @@ static ERR alloc_shm(int Size, uint8_t **Data, int *ID)
    }
    else {
       log.warning("shmat() returned: %s", strerror(errno));
+      shmctl(id, IPC_RMID, nullptr);
       return ERR::LockFailed;
    }
 }
@@ -393,6 +398,39 @@ static void free_shm(APTR Address, int ID)
 {
    shmdt(Address);
    shmctl(ID, IPC_RMID, nullptr);
+}
+
+//********************************************************************************************************************
+// Initialises fields shared by standard XImage and XShm image paths.
+
+static void init_x11_image(extBitmap *Self, bool UseShm)
+{
+   int16_t alignment;
+   if (Self->LineWidth & 0x0001) alignment = 8;
+   else if (Self->LineWidth & 0x0002) alignment = 16;
+   else alignment = 32;
+
+   clearmem(&Self->x11.ximage, sizeof(Self->x11.ximage));
+
+   Self->x11.ximage.width            = Self->Width;
+   Self->x11.ximage.height           = Self->Height;
+   Self->x11.ximage.xoffset          = 0;
+   Self->x11.ximage.format           = ZPixmap;      // XYBitmap, XYPixmap, ZPixmap
+   Self->x11.ximage.data             = (char *)Self->Data;
+   if (UseShm) Self->x11.ximage.obdata = (char *)&Self->x11.ShmInfo;
+   Self->x11.ximage.byte_order       = LSBFirst;     // LSBFirst / MSBFirst
+   Self->x11.ximage.bitmap_unit      = alignment;    // Quant. of scanline - 8, 16, 32
+   Self->x11.ximage.bitmap_bit_order = LSBFirst;     // LSBFirst / MSBFirst
+   Self->x11.ximage.bitmap_pad       = alignment;    // 8, 16, 32, either XY or Zpixmap
+   if ((Self->BitsPerPixel IS 32) and ((Self->Flags & BMF::ALPHA_CHANNEL) IS BMF::NIL)) Self->x11.ximage.depth = 24;
+   else Self->x11.ximage.depth       = Self->BitsPerPixel;
+   Self->x11.ximage.bytes_per_line   = Self->LineWidth;         // Accelerator to next line
+   Self->x11.ximage.bits_per_pixel   = Self->BytesPerPixel * 8; // Bits per pixel-group
+   Self->x11.ximage.red_mask         = 0;
+   Self->x11.ximage.green_mask       = 0;
+   Self->x11.ximage.blue_mask        = 0;
+
+   XInitImage(&Self->x11.ximage);
 }
 #endif
 
@@ -445,14 +483,17 @@ inline static uint8_t conv_l2r(double X) {
 /*********************************************************************************************************************
 
 -ACTION-
-Clear: Clears a bitmap's image to #BkgdIndex.
+Clear: Clears the bitmap image to #BkgdIndex.
 
-Clearing a bitmap wipes away its graphical contents by drawing a blank area over its existing graphics.  The colour of
-the blank area is determined by the #BkgdIndex field.  To clear a bitmap to a different colour, use the #DrawRectangle()
-method instead.
+Clear fills the full bitmap with the current background colour.  The colour used by the operation is #BkgdIndex, which
+is derived from #Bkgd when the background colour is set through the RGB field.
 
-If the bitmap supports alpha blending and a transparent result is desired, setting #BkgdIndex to zero is
-an efficient way to achieve this outcome.
+To clear a bitmap to a different colour without changing the background fields, call #DrawRectangle() with `BAF::FILL`.
+For alpha-capable bitmaps, setting #BkgdIndex to zero is an efficient way to clear the image to transparent black.
+
+-ERRORS-
+Okay
+LockFailed
 
 *********************************************************************************************************************/
 
@@ -494,25 +535,26 @@ static ERR BITMAP_Clear(extBitmap *Self)
 -METHOD-
 Compress: Compresses bitmap data to save memory.
 
-A bitmap can be compressed with the CompressBitmap() method to save memory when the bitmap is not in use.  This is
-useful if a large bitmap needs to be stored in memory and it is anticipated that the bitmap will be used infrequently.
+Compress() stores a compressed copy of the bitmap's pixel data and releases the uncompressed #Data buffer.  It is
+useful for large data-backed bitmaps that need to remain available but are accessed infrequently.
 
-Once a bitmap is compressed, its image data is invalid.  Any attempt to access the bitmap's image data will likely
-result in a memory access fault.  The image data will remain invalid until the #Decompress() method is
-called to restore the bitmap to its original state.
+Once a bitmap is compressed, #Data is no longer available for direct access.  Call #Decompress() before reading pixels,
+writing pixels or passing the bitmap to code that expects an active data buffer.
 
-The `BMF::COMPRESSED` bit will be set in the #Flags field after a successful call to this function to indicate that the
-bitmap is compressed.
+The `BMF::COMPRESSED` flag is set in #Flags after successful compression.  Video and texture-backed bitmaps are not
+supported by this method.
 
 -INPUT-
-int Level: Level of compression.  Zero uses a default setting (recommended), the maximum is 10.
+int Level: Reserved compression level.  The current implementation uses the compression module's default level.
 
 -ERRORS-
 Okay
 NullArgs
+NoSupport
 AllocMemory
 ReallocMemory
 CreateObject: A Compression object could not be created.
+Compression
 -END-
 
 *********************************************************************************************************************/
@@ -557,11 +599,12 @@ static ERR BITMAP_Compress(extBitmap *Self, struct bmp::Compress *Args)
       if (glCompress->compressBuffer(Self->Data, Self->Size, buffer, Self->Size, &result) IS ERR::Okay) {
          if (AllocMemory(result, MEM::NO_CLEAR, &Self->prvCompress) IS ERR::Okay) {
             copymem(buffer, Self->prvCompress, result);
-            FreeResource(buffer);
          }
          else error = ERR::ReallocMemory;
       }
       else error = ERR::Compression;
+
+      FreeResource(buffer);
    }
    else error = ERR::AllocMemory;
 
@@ -579,15 +622,15 @@ static ERR BITMAP_Compress(extBitmap *Self, struct bmp::Compress *Args)
 
 /*********************************************************************************************************************
 -METHOD-
-ConvertToLinear: Convert a bitmap's colour space to linear RGB.
+ConvertToLinear: Converts a bitmap's colour space to linear RGB.
 
-Use ConvertToLinear to convert the colour space of a bitmap from sRGB to linear RGB.  If the `BMF::ALPHA_CHANNEL` flag
-is enabled on the bitmap, pixels with an alpha value of 0 are ignored.
+ConvertToLinear() converts the bitmap's clipped region from sRGB to linear RGB.  If `BMF::ALPHA_CHANNEL` is set, pixels
+with an alpha value of zero are left unchanged.
 
-The #ColourSpace will be set to `LINEAR_RGB` on completion.  This method returns immediately if the #ColourSpace is
-already set to `LINEAR_RGB`.
+#ColourSpace is set to `CS::LINEAR_RGB` on completion.  The method returns `ERR::NothingDone` if the bitmap is already
+marked as linear RGB.
 
-For the sake of efficiency, lookup tables are used to quickly perform the conversion process.
+This method currently requires a 32-bit bitmap.
 
 -ERRORS-
 Okay
@@ -655,15 +698,15 @@ ERR BITMAP_ConvertToLinear(extBitmap *Self)
 /*********************************************************************************************************************
 
 -METHOD-
-ConvertToRGB: Convert a bitmap's colour space to standard RGB.
+ConvertToRGB: Converts a bitmap's colour space to standard RGB.
 
-Use ConvertToRGB() to convert the colour space of a bitmap from linear RGB to sRGB.  If the `BMF::ALPHA_CHANNEL` flag is
-enabled on the bitmap, pixels with an alpha value of 0 are ignored.
+ConvertToRGB() converts the bitmap's clipped region from linear RGB to sRGB.  If `BMF::ALPHA_CHANNEL` is set, pixels
+with an alpha value of zero are left unchanged.
 
-The #ColourSpace will be set to `SRGB` on completion.  This method returns immediately if the #ColourSpace is
-already set to `SRGB`.
+#ColourSpace is set to `CS::SRGB` on completion.  The method returns `ERR::NothingDone` if the bitmap is already marked
+as sRGB.
 
-For the sake of efficiency, lookup tables are used to quickly perform the conversion process.
+This method currently requires a 32-bit bitmap.
 
 -ERRORS-
 Okay
@@ -733,7 +776,10 @@ ERR BITMAP_ConvertToRGB(extBitmap *Self)
 -METHOD-
 CopyArea: Copies a rectangular area from one bitmap to another.
 
-This method is a proxy for ~Display.CopyArea().
+CopyArea() copies a rectangular region from this bitmap to `DestBitmap`.  The source rectangle starts at `X`, `Y` and
+has the supplied `Width` and `Height`; the destination position is `XDest`, `YDest`.
+
+The operation is implemented by ~Display.CopyArea() and supports the same !BAF options.
 
 -INPUT-
 obj(Bitmap) DestBitmap: The target bitmap.
@@ -763,11 +809,11 @@ static ERR BITMAP_CopyArea(objBitmap *Self, struct bmp::CopyArea *Args)
 -METHOD-
 Decompress: Decompresses a compressed bitmap.
 
-The Decompress() method is used to restore a compressed bitmap to its original state.  If the bitmap is not compressed,
-the method does nothing.
+Decompress() restores #Data for a bitmap previously compressed with #Compress().  If no compressed data is available,
+the method returns `ERR::Okay` without changing the bitmap.
 
-The compressed data will be terminated unless `RetainData` is `true`.  Retaining the data will allow the client to
-repeatedly restore the content of the most recent #Compress() call.
+Compressed data is released after a successful restore unless `RetainData` is `true`.  Retaining it allows the most
+recent compressed image to be restored again later.
 
 -INPUT-
 int RetainData: Retains the compression data if `true`.
@@ -775,6 +821,7 @@ int RetainData: Retains the compression data if `true`.
 -ERRORS-
 Okay
 AllocMemory: Insufficient memory in recreating the bitmap data buffer.
+CreateObject: A Compression object could not be created.
 
 *********************************************************************************************************************/
 
@@ -823,10 +870,15 @@ static ERR BITMAP_Decompress(extBitmap *Self, struct bmp::Decompress *Args)
 -ACTION-
 CopyData: Copies bitmap image data to other bitmaps with colour remapping enabled.
 
-This action will copy the image of the bitmap to any other initialised bitmap that you specify.  Support for copying
-the image data to other object class types is not provided.
+CopyData copies this bitmap into another initialised @Bitmap object.  Other destination classes are not supported.
 
-This action features automatic clipping and remapping, for occasions where the bitmaps do not match up in size or colour.
+The copy is clipped to the destination dimensions.  If the destination is wider or taller than the source, the exposed
+area is cleared to the destination bitmap's background colour.
+
+-ERRORS-
+Okay
+NullArgs
+Args
 
 *********************************************************************************************************************/
 
@@ -863,9 +915,11 @@ static ERR BITMAP_CopyData(extBitmap *Self, struct acCopyData *Args)
 -METHOD-
 Demultiply: Reverses the conversion process performed by Premultiply().
 
-Use Demultiply() to normalise RGB values that have previously been converted by #Premultiply().  This method will
-return immediately if the bitmap values are already normalised, as determined by the presence of the `PREMUL` value
-in #Flags.
+Demultiply() restores straight RGB channel values after #Premultiply() has converted them to premultiplied alpha.  The
+method returns `ERR::NothingDone` if `BMF::PREMUL` is not set in #Flags.
+
+This method operates only on 32-bit bitmaps that have an alpha channel, and it processes only the current clipping
+region.
 
 -ERRORS-
 Okay
@@ -937,7 +991,10 @@ static ERR BITMAP_Demultiply(extBitmap *Self)
 /*********************************************************************************************************************
 
 -ACTION-
-Draw: Clears a bitmap's image to #BkgdIndex.
+Draw: Clears the bitmap image to #BkgdIndex.
+
+Draw fills the full bitmap with the current background colour.  It is equivalent to drawing a filled rectangle over the
+entire bitmap with #BkgdIndex.
 
 *********************************************************************************************************************/
 
@@ -952,10 +1009,12 @@ static ERR BITMAP_Draw(extBitmap *Self)
 -METHOD-
 DrawRectangle: Draws rectangles, both filled and unfilled.
 
-This method draws both filled and unfilled rectangles.  The rectangle is drawn to the target bitmap at position `(X, Y)`
-with dimensions determined by the specified `Width` and `Height`.  If the `Flags` parameter sets the `FILL` flag then
-the rectangle will be filled, otherwise the rectangle's outline will be drawn.  The colour of the rectangle is
-determined by the pixel value in the `Colour` parameter.
+This method draws both filled and unfilled rectangles.  The rectangle is drawn to the target bitmap at position
+`(X, Y)` with dimensions determined by the specified `Width` and `Height`.  If the `Flags` parameter sets the `FILL`
+flag then the rectangle will be filled, otherwise the rectangle's outline will be drawn.  The colour of the rectangle
+is determined by the pixel value in the `Colour` parameter.
+
+The draw operation is clipped to the bitmap's current clipping region.
 
 -INPUT-
 int X: The left-most coordinate of the rectangle.
@@ -967,7 +1026,7 @@ int(BAF) Flags:  Supports `FILL` and `BLEND`.
 
 -ERRORS-
 Okay
-Args
+NullArgs
 
 *********************************************************************************************************************/
 
@@ -983,9 +1042,8 @@ static ERR BITMAP_DrawRectangle(extBitmap *Self, struct bmp::DrawRectangle *Args
 -ACTION-
 Flush: Flushes pending graphics operations and returns when the accelerator is idle.
 
-The Flush() action ensures that client graphics operations are synchronised with the graphics accelerator.
-Synchronisation is essential prior to drawing to the bitmap with the CPU.  Failure to synchronise may
-result in corruption in the bitmap's graphics display.
+Flush synchronises pending graphics operations with the active graphics backend.  Synchronisation is required before
+direct CPU access to accelerator-managed bitmap memory.
 
 Clients do not need to call this function if solely using the graphics methods provided in the @Bitmap class.
 -END-
@@ -1101,13 +1159,19 @@ static ERR BITMAP_GetColour(extBitmap *Self, struct bmp::GetColour *Args)
 -ACTION-
 Init: Initialises a bitmap.
 
-This action will initialise a bitmap object so that it is ready for use, which primarily means that a suitable area of
-memory is reserved for drawing.  If the #Data field has not already been defined, a new memory block will be allocated
-for the bitmap region.  The type of memory that is allocated is dependent on the #DataFlags field, which defaults to
-`MEM::DATA`.  To request video RAM, use `MEM::VIDEO`.  To store graphics data in fast write-able memory, use
-`MEM::TEXTURE`.
+Init prepares a queried bitmap for use.  It validates the calculated bitmap state, allocates #Data when required,
+configures platform-specific backing resources and selects the pixel access routines used by drawing operations.
 
-The Init() action requires that the #Width and #Height fields are defined at minimum.
+If #Data has already been supplied, Init uses the caller-provided memory.  Otherwise allocation is controlled by
+#DataFlags and #Flags.  #Width and #Height must be set before this action is called.
+
+-ERRORS-
+Okay
+Query
+FieldNotSet
+AllocMemory
+SystemCall
+NoSupport
 
 *********************************************************************************************************************/
 
@@ -1166,29 +1230,7 @@ static ERR BITMAP_Init(extBitmap *Self)
             if (alloc_shm(Self->Size, &Self->Data, &Self->x11.ShmInfo.shmid) IS ERR::Okay) {
                Self->prvAFlags |= BF_DATA;
 
-               int16_t alignment;
-               if (Self->LineWidth & 0x0001) alignment = 8;
-               else if (Self->LineWidth & 0x0002) alignment = 16;
-               else alignment = 32;
-
-               Self->x11.ximage.width            = Self->Width;  // Image width
-               Self->x11.ximage.height           = Self->Height; // Image height
-               Self->x11.ximage.xoffset          = 0;            // Number of pixels offset in X direction
-               Self->x11.ximage.format           = ZPixmap;      // XYBitmap, XYPixmap, ZPixmap
-               Self->x11.ximage.data             = (char *)Self->Data; // Pointer to image data
-               if (glX11ShmImage) Self->x11.ximage.obdata = (char *)&Self->x11.ShmInfo; // Magic pointer for the XShm extension
-               Self->x11.ximage.byte_order       = LSBFirst;     // LSBFirst / MSBFirst
-               Self->x11.ximage.bitmap_unit      = alignment;    // Quant. of scanline - 8, 16, 32
-               Self->x11.ximage.bitmap_bit_order = LSBFirst;     // LSBFirst / MSBFirst
-               Self->x11.ximage.bitmap_pad       = alignment;    // 8, 16, 32, either XY or Zpixmap
-               if ((Self->BitsPerPixel IS 32) and ((Self->Flags & BMF::ALPHA_CHANNEL) IS BMF::NIL)) Self->x11.ximage.depth = 24;
-               else Self->x11.ximage.depth = Self->BitsPerPixel;            // Actual bits per pixel
-               Self->x11.ximage.bytes_per_line   = Self->LineWidth;         // Accelerator to next line
-               Self->x11.ximage.bits_per_pixel   = Self->BytesPerPixel * 8; // Bits per pixel-group
-               Self->x11.ximage.red_mask         = 0;
-               Self->x11.ximage.green_mask       = 0;
-               Self->x11.ximage.blue_mask        = 0;
-               XInitImage(&Self->x11.ximage);
+               init_x11_image(Self, glX11ShmImage);
 
                // If the XShm extension is available, try using it.  Using XShm allows the
                // X11 server to copy image memory straight to the display rather than
@@ -1348,7 +1390,21 @@ static ERR BITMAP_Init(extBitmap *Self)
 /*********************************************************************************************************************
 -ACTION-
 Lock: Locks the bitmap surface for direct read/write access.
--END-
+
+Lock makes bitmap memory available through #Data for direct CPU access.  It is mainly required for bitmaps backed by a
+video or platform drawable resource; data-backed bitmaps are already CPU-accessible.
+
+Call #Unlock() when direct access is complete so platform resources can be released or synchronised.
+
+-ERRORS-
+Okay
+AllocMemory
+CreateResource
+FieldNotSet
+LockFailed
+NoData
+SystemCall
+NoSupport
 *********************************************************************************************************************/
 
 static ERR BITMAP_Lock(extBitmap *Self)
@@ -1368,7 +1424,11 @@ static ERR BITMAP_Lock(extBitmap *Self)
                Self->Clip.Left, Self->Clip.Top);
             return ERR::Okay;
          }
-         else XDestroyImage(Self->x11.readable);
+         else {
+            XDestroyImage(Self->x11.readable);
+            Self->x11.readable = nullptr;
+            Self->Data = nullptr;
+         }
       }
 
       // Generate a fresh XImage from the current drawable
@@ -1383,6 +1443,7 @@ static ERR BITMAP_Lock(extBitmap *Self)
       else size = Self->ByteWidth * Self->Height;
 
       Self->Data = (uint8_t *)malloc(size);
+      if (!Self->Data) return ERR::AllocMemory;
 
       if ((bpp = Self->BitsPerPixel) IS 32) bpp = 24;
 
@@ -1393,7 +1454,11 @@ static ERR BITMAP_Lock(extBitmap *Self)
             Self->Clip.Bottom - Self->Clip.Top, 0xffffffff, ZPixmap, Self->x11.readable,
             Self->Clip.Left, Self->Clip.Top);
       }
-      else return ERR::CreateResource;
+      else {
+         free(Self->Data);
+         Self->Data = nullptr;
+         return ERR::CreateResource;
+      }
    }
 
    return ERR::Okay;
@@ -1483,11 +1548,11 @@ static ERR BITMAP_NewObject(extBitmap *Self)
 -METHOD-
 Premultiply: Premultiplies RGB channel values by the alpha channel.
 
-Use Premultiply() to convert all RGB values in the bitmap's clipping region to pre-multiplied values.  The
-exact formula applied per channel is `(Colour * Alpha + 0xff)>>8`.  The alpha channel is not affected.
+Premultiply() converts RGB values in the current clipping region to premultiplied-alpha form.  The formula applied to
+each colour channel is `(Colour * Alpha + 0xff)>>8`.  The alpha channel is not changed.
 
-This method will only operate on 32 bit bitmaps, and an alpha channel must be present.  If the RGB values are
-already pre-multiplied, the method returns immediately.
+This method operates only on 32-bit bitmaps that have an alpha channel.  If the bitmap is already marked as
+premultiplied, the method returns `ERR::NothingDone`.
 
 The process can be reversed with a call to #Demultiply().
 
@@ -1548,12 +1613,16 @@ static ERR BITMAP_Premultiply(extBitmap *Self)
 -ACTION-
 Query: Populates a bitmap with pre-initialised/default values prior to initialisation.
 
-This action will pre-initialise a bitmap object so that its fields are populated with default values.  It stops
-short of allocating the bitmap's memory.
+Query calculates the bitmap's derived fields without allocating image memory.  It resolves values such as #Type,
+#BytesPerPixel, #BitsPerPixel, #AmtColours, #ByteWidth, #LineWidth, #PlaneMod and #Size from the fields already set by
+the caller.
 
-This action requires that the #Width and #Height fields of the bitmap are defined at minimum.  Populating the bitmap
-fields is done on a best efforts basis, e.g. if the #BytesPerPixel is set to 2 then it will be determined
-that the bitmap is a 16 bit, 64k colour bitmap.
+At minimum, #Width and #Height must be positive.  If format fields are incomplete, Query derives a compatible format
+where possible; for example, #BytesPerPixel set to `2` implies a 16-bit bitmap.
+
+-ERRORS-
+Okay
+InvalidDimension
 
 *********************************************************************************************************************/
 
@@ -1724,13 +1793,24 @@ static ERR BITMAP_Query(extBitmap *Self)
 /*********************************************************************************************************************
 -ACTION-
 Read: Reads raw image data from a bitmap object.
--END-
+
+Read copies bytes from #Data into the supplied output buffer, starting at #Position.  #Position is advanced by the
+number of bytes copied and the result count is returned in the action arguments.
+
+If the requested length would pass the end of the bitmap data, Read truncates the transfer to the remaining byte count.
+
+-ERRORS-
+Okay
+NoData
+NullArgs
+OutOfRange
 *********************************************************************************************************************/
 
 static ERR BITMAP_Read(extBitmap *Self, struct acRead *Args)
 {
    if (!Self->Data) return ERR::NoData;
    if ((!Args) or (!Args->Buffer)) return ERR::NullArgs;
+   if (Args->Length < 0) return ERR::OutOfRange;
 
    int len = Args->Length;
    if (Self->Position + len > Self->Size) len = Self->Size - Self->Position;
@@ -1745,16 +1825,19 @@ static ERR BITMAP_Read(extBitmap *Self, struct acRead *Args)
 -ACTION-
 Resize: Resizes a bitmap object's dimensions.
 
-Resizing a bitmap will change its #Width, #Height and optionally #BitsPerPixel.  Existing image data is not retained by
-this process.
+Resize changes #Width, #Height and, unless `BMF::FIXED_DEPTH` is set, #BitsPerPixel.  Existing image content is not
+preserved.
 
-The image data is cleared with #Bkgd if the `CLEAR` flag is defined in #Flags.
+If `BMF::NEVER_SHRINK` is set, requested dimensions smaller than the current bitmap are raised to the current size.  If
+`BMF::CLEAR` is set, the resized bitmap is cleared to #Bkgd.
 
 -ERRORS-
 Okay
 NullArgs
+Args
 AllocMemory
-FieldNotSet
+NoSupport
+UndefinedField
 
 *********************************************************************************************************************/
 
@@ -1799,8 +1882,7 @@ static ERR BITMAP_Resize(extBitmap *Self, struct acResize *Args)
       case 16: bytesperpixel = 2; amtcolours = 65536; break;
       case 24: bytesperpixel = 3; amtcolours = 16777216; break;
       case 32: bytesperpixel = 4; amtcolours = 16777216; break;
-      default: bytesperpixel = bpp / 8;
-               amtcolours = 1<<bpp;
+      default: return log.warning(ERR::Args);
    }
 
    if (Self->Type IS BMP::PLANAR) bytewidth = (width + (width % 16))/8;
@@ -1863,7 +1945,6 @@ setfields:
    Self->Clip.Bottom    = height;
 
 #ifdef __xwindows__
-   int16_t alignment;
    if (Self->x11.XShmImage) {
       Self->x11.XShmImage = false; // Set to FALSE in case we fail (will drop through to standard XImage support)
       XShmDetach(XDisplay, &Self->x11.ShmInfo);  // Remove the previous attachment
@@ -1872,57 +1953,20 @@ setfields:
       free_shm(Self->Data, Self->x11.ShmInfo.shmid);
       Self->Data = nullptr;
 
-      alloc_shm(size, &Self->Data, &Self->x11.ShmInfo.shmid);
+      if (alloc_shm(size, &Self->Data, &Self->x11.ShmInfo.shmid) != ERR::Okay) {
+         return log.warning(ERR::AllocMemory);
+      }
 
       Self->x11.ShmInfo.readOnly = False;
       Self->x11.ShmInfo.shmaddr  = (char *)Self->Data;
       if (XShmAttach(XDisplay, &Self->x11.ShmInfo)) {
-         if (Self->LineWidth & 0x0001) alignment = 8;
-         else if (Self->LineWidth & 0x0002) alignment = 16;
-         else alignment = 32;
-
-         clearmem(&Self->x11.ximage, sizeof(Self->x11.ximage));
-
-         Self->x11.ximage.width       = Self->Width;
-         Self->x11.ximage.height      = Self->Height;
-         Self->x11.ximage.format      = ZPixmap;      // XYBitmap, XYPixmap, ZPixmap
-         Self->x11.ximage.data        = (char *)Self->Data;
-         Self->x11.ximage.byte_order  = LSBFirst;        // LSBFirst / MSBFirst
-         Self->x11.ximage.bitmap_bit_order = LSBFirst;
-         Self->x11.ximage.obdata      = (char *)&Self->x11.ShmInfo;
-         Self->x11.ximage.bitmap_unit = alignment;    // Quant. of scanline - 8, 16, 32
-         Self->x11.ximage.bitmap_pad  = alignment;    // 8, 16, 32
-         if ((Self->BitsPerPixel IS 32) and ((Self->Flags & BMF::ALPHA_CHANNEL) IS BMF::NIL)) Self->x11.ximage.depth = 24;
-         else Self->x11.ximage.depth = Self->BitsPerPixel;
-         Self->x11.ximage.bytes_per_line = Self->LineWidth;
-         Self->x11.ximage.bits_per_pixel = Self->BytesPerPixel * 8; // Bits per pixel-group
-
-         XInitImage(&Self->x11.ximage);
+         init_x11_image(Self, true);
          Self->x11.XShmImage = TRUE;
       }
    }
 
    if ((!Self->x11.drawable) and (Self->x11.XShmImage != TRUE)) {
-      if (Self->LineWidth & 0x0001) alignment = 8;
-      else if (Self->LineWidth & 0x0002) alignment = 16;
-      else alignment = 32;
-
-      clearmem(&Self->x11.ximage, sizeof(XImage));
-
-      Self->x11.ximage.width       = Self->Width;
-      Self->x11.ximage.height      = Self->Height;
-      Self->x11.ximage.format      = ZPixmap;      // XYBitmap, XYPixmap, ZPixmap
-      Self->x11.ximage.data        = (char *)Self->Data;
-      Self->x11.ximage.byte_order  = LSBFirst;     // LSBFirst / MSBFirst
-      Self->x11.ximage.bitmap_bit_order = LSBFirst;
-      Self->x11.ximage.bitmap_unit = alignment;    // Quant. of scanline - 8, 16, 32
-      Self->x11.ximage.bitmap_pad  = alignment;    // 8, 16, 32
-      if ((Self->BitsPerPixel IS 32) and ((Self->Flags & BMF::ALPHA_CHANNEL) IS BMF::NIL)) Self->x11.ximage.depth = 24;
-      else Self->x11.ximage.depth = Self->BitsPerPixel;
-      Self->x11.ximage.bytes_per_line = Self->LineWidth;
-      Self->x11.ximage.bits_per_pixel = Self->BytesPerPixel * 8; // Bits per pixel-group
-
-      XInitImage(&Self->x11.ximage);
+      init_x11_image(Self, false);
    }
 
 #endif
@@ -1942,8 +1986,19 @@ setfields:
 
 /*********************************************************************************************************************
 -ACTION-
-SaveImage: Saves a bitmap's image to a data object of your choosing in PCX format.
--END-
+SaveImage: Saves the bitmap image to a writable object in PCX format.
+
+SaveImage writes the current clipping region to `Dest` as PCX image data.  Paletted bitmaps are written with a palette;
+true-colour bitmaps are written as three colour planes.  If #ColourSpace is `CS::LINEAR_RGB`, RGB values are converted
+to sRGB while the image is written.
+
+Errors returned by the destination object's Write action are propagated to the caller.
+
+-ERRORS-
+Okay
+NullArgs
+AllocMemory
+BufferOverflow
 *********************************************************************************************************************/
 
 static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
@@ -1999,17 +2054,21 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
 
    size = width * height * pcx.NumPlanes;
    if (AllocMemory(size, MEM::DATA|MEM::NO_CLEAR, &buffer) IS ERR::Okay) {
-      acWrite(Args->Dest, &pcx, sizeof(pcx), nullptr);
+      auto write_error = acWrite(Args->Dest, &pcx, sizeof(pcx), nullptr);
+      if (write_error != ERR::Okay) {
+         FreeResource(buffer);
+         return log.warning(write_error);
+      }
 
       int dp = 0;
       for (i=Self->Clip.Top; i < (Self->Clip.Bottom); i++) {
          if (pcx.NumPlanes IS 1) { // Save as a 256 colour image
             lastpixel = Self->ReadUCPixel(Self, Self->Clip.Left, i);
             uint8_t counter = 1;
-            for (j=Self->Clip.Left+1; j <= width; j++) {
+            for (j=Self->Clip.Left+1; j < Self->Clip.Right; j++) {
                newpixel = Self->ReadUCPixel(Self, j, i);
 
-               if ((newpixel IS lastpixel) and (j != width - 1) and (counter <= 62)) {
+               if ((newpixel IS lastpixel) and (counter < 63)) {
                   counter++;
                }
                else {
@@ -2026,6 +2085,19 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
                   return log.warning(ERR::BufferOverflow);
                }
             }
+
+            if (!((counter IS 1) and (lastpixel < 192))) {
+               if (dp >= (size - 2)) {
+                  FreeResource(buffer);
+                  return log.warning(ERR::BufferOverflow);
+               }
+               buffer[dp++] = 192 + counter;
+            }
+            else if (dp >= (size - 1)) {
+               FreeResource(buffer);
+               return log.warning(ERR::BufferOverflow);
+            }
+            buffer[dp++] = lastpixel;
          }
          else { // Save as a true colour image with run-length encoding
             for (p=0; p < 3; p++) {
@@ -2086,8 +2158,9 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
          }
       }
 
-      acWrite(Args->Dest, buffer, dp, nullptr);
+      write_error = acWrite(Args->Dest, buffer, dp, nullptr);
       FreeResource(buffer);
+      if (write_error != ERR::Okay) return log.warning(write_error);
 
       // Setup palette
 
@@ -2101,7 +2174,8 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
             palette[j++] = Self->Palette->Col[i].Blue;
          }
 
-         acWrite(Args->Dest, palette, sizeof(palette), nullptr);
+         write_error = acWrite(Args->Dest, palette, sizeof(palette), nullptr);
+         if (write_error != ERR::Okay) return log.warning(write_error);
       }
 
       return ERR::Okay;
@@ -2114,10 +2188,20 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
 -ACTION-
 Seek: Changes the current byte position for read/write operations.
 
+Seek sets #Position from the supplied byte offset and origin.  Positions before the start of the bitmap are clamped to
+zero, and positions beyond #Size are clamped to #Size.
+
+-ERRORS-
+Okay
+NullArgs
+Args
+
 *********************************************************************************************************************/
 
 static ERR BITMAP_Seek(extBitmap *Self, struct acSeek *Args)
 {
+   if (!Args) return ERR::NullArgs;
+
    if (Args->Position IS SEEK::START) Self->Position = (int)Args->Offset;
    else if (Args->Position IS SEEK::END) Self->Position = (int)(Self->Size - Args->Offset);
    else if (Args->Position IS SEEK::CURRENT) Self->Position = (int)(Self->Position + Args->Offset);
@@ -2134,14 +2218,17 @@ static ERR BITMAP_Seek(extBitmap *Self, struct acSeek *Args)
 -METHOD-
 SetClipRegion: Sets a clipping region for a bitmap object.
 
-This method is a proxy for ~Display.SetClipRegion().
+SetClipRegion() updates one entry in the bitmap's clipping region list.  Drawing operations are restricted to the
+combined region.
+
+This method is implemented by ~Display.SetClipRegion().
 
 -INPUT-
 int Number:    The number of the clip region to set.
 int Left:      The horizontal start of the clip region.
 int Top:       The vertical start of the clip region.
-int Right:     The right-most edge of the clip region.
-int Bottom:    The bottom-most edge of the clip region.
+int Right:     The exclusive right edge of the clip region.
+int Bottom:    The exclusive bottom edge of the clip region.
 int Terminate: Set to `true` if this is the last clip region in the list, otherwise `false`.
 
 -ERRORS-
@@ -2162,6 +2249,11 @@ static ERR BITMAP_SetClipRegion(extBitmap *Self, struct bmp::SetClipRegion *Args
 -ACTION-
 Unlock: Unlocks the bitmap surface once direct access is no longer required.
 
+Unlock releases or synchronises any platform resources held for direct CPU access after #Lock().
+
+-ERRORS-
+Okay
+
 *********************************************************************************************************************/
 
 static ERR BITMAP_Unlock(extBitmap *Self)
@@ -2175,7 +2267,17 @@ static ERR BITMAP_Unlock(extBitmap *Self)
 /*********************************************************************************************************************
 -ACTION-
 Write: Writes raw image data to a bitmap object.
--END-
+
+Write copies bytes from the supplied input buffer into #Data, starting at #Position.  #Position is advanced by the
+number of bytes written and the result count is returned in the action arguments.
+
+The write must fit within the bitmap's allocated #Size.  Use #Seek() to change the target position before writing.
+
+-ERRORS-
+Okay
+NoData
+NullArgs
+OutOfSpace
 *********************************************************************************************************************/
 
 static ERR BITMAP_Write(extBitmap *Self, struct acWrite *Args)
@@ -2202,19 +2304,21 @@ static ERR BITMAP_Write(extBitmap *Self, struct acWrite *Args)
 /*********************************************************************************************************************
 
 -FIELD-
-AmtColours: The maximum number of displayable colours.
+AmtColours: The maximum number of colours represented by the bitmap format.
+
+For indexed bitmaps, this is the size of the usable palette.  For direct-colour bitmaps, it reflects the colour range
+implied by #BitsPerPixel and the selected #ColourFormat.
 
 -FIELD-
-BitsPerPixel: The number of bits per pixel
+BitsPerPixel: The number of bits used to represent each pixel.
 
-The BitsPerPixel field clarifies exactly how many bits are being used to manage each pixel on the display.  This
-includes any 'special' bits that are in use, e.g. alpha-channel bits.
+This includes all bits used by the pixel format, including alpha bits where present.
 
 -FIELD-
-Bkgd: The bitmap's background colour is defined here in RGB format.
+Bkgd: Background colour in RGB format.
 
-The default background colour for a bitmap is black.  To change it, set this field with the new RGB colour.  The
-background colour is used in operations that require a default colour, such as when clearing the bitmap.
+The background colour is used by operations that need a default fill colour, such as #Clear(), #Draw() and some resize
+paths.  The default background colour is black.
 
 The #BkgdIndex will be updated as a result of setting this field.
 
@@ -2237,11 +2341,10 @@ static ERR SET_Bkgd(extBitmap *Self, RGB8 *Value)
 /*********************************************************************************************************************
 
 -FIELD-
-BkgdIndex: The bitmap's background colour is defined here as a colour index.
+BkgdIndex: Background colour as a packed pixel value or palette index.
 
-The bitmap's background colour is defined in this field as a colour index.  It is recommended that the #Bkgd
-field is used for altering the bitmap background unless efficiency requires that the colour index is calculated and set
-directly.
+Use #Bkgd for most updates.  Set BkgdIndex directly only when the caller has already calculated the target bitmap's
+native pixel value or palette index.
 
 *********************************************************************************************************************/
 
@@ -2258,21 +2361,20 @@ static ERR SET_BkgdIndex(extBitmap *Self, int Index)
 -FIELD-
 BlendMode: Defines the blending algorithm to use when rendering transparent pixels.
 
-The BlendMode field defines the blending algorithm to use when rendering transparent pixels.  The default value is
-`AUTO` which will use the best blending algorithm available for the current graphics context.
+The default value is `BLM::AUTO`, which selects the preferred blending path for the current bitmap and graphics
+backend.
 
 -FIELD-
 BytesPerPixel: The number of bytes per pixel.
 
-This field reflects the number of bytes used to construct one pixel.  The maximum number of bytes a client can typically
-expect is 4 and the minimum is 1.  If the graphics type is planar then refer to the #BitsPerPixel field, which should
-yield more useful information.
+This field reflects the byte count used by one chunky pixel.  Values normally range from 1 to 4.  For planar bitmaps,
+#BitsPerPixel is the more useful format indicator.
 
 -FIELD-
 ByteWidth: The width of the bitmap, in bytes.
 
-The ByteWidth of the bitmap is calculated directly from the bitmap's #Width and #Type settings. Under no circumstances
-should you attempt to calculate this value in advance, as it is heavily dependent on the bitmap's #Type.
+ByteWidth is calculated from #Width, #Type and #BytesPerPixel.  It describes the meaningful pixel bytes in a row and
+does not include alignment padding.
 
 The formulas used to calculate the value of this field are:
 
@@ -2288,38 +2390,34 @@ Chunky/32   = Width * 4
 To learn the total byte-width per line including any additional padded bytes, refer to the #LineWidth field.
 
 -FIELD-
-ClipBottom: The bottom-most edge of  bitmap's clipping region.
+ClipBottom: The exclusive bottom edge of the bitmap clipping region.
 
-During the initialisation of a bitmap, a default clipping region will be created that matches the bitmap's dimensions.
-Clipping regions define the area under which graphics can be drawn to a bitmap.  This particular field reflects the
-bottom-most edge of all clipping regions that have been set or altered through the #SetClipRegion() method.
+The default clipping region matches the bitmap dimensions.  Drawing operations are limited to the active clipping
+region.
 
 -FIELD-
 ClipLeft: The left-most edge of a bitmap's clipping region.
 
-During the initialisation of a bitmap, a default clipping region will be created that matches the bitmap's dimensions.
-Clipping regions define the area under which graphics can be drawn to a bitmap.  This particular field reflects the
-left-most edge of all clipping regions that have been set or altered through the #SetClipRegion() method.
+The default clipping region matches the bitmap dimensions.  Drawing operations are limited to the active clipping
+region.
 
 -FIELD-
-ClipRight: The right-most edge of a bitmap's clipping region.
+ClipRight: The exclusive right edge of the bitmap clipping region.
 
-During the initialisation of a bitmap, a default clipping region will be created that matches the bitmap's dimensions.
-Clipping regions define the area under which graphics can be drawn to a bitmap.  This particular field reflects the
-right-most edge of all clipping regions that have been set or altered through the #SetClipRegion() method.
+The default clipping region matches the bitmap dimensions.  Drawing operations are limited to the active clipping
+region.
 
 -FIELD-
 ClipTop: The top-most edge of a bitmap's clipping region.
 
-During the initialisation of a bitmap, a default clipping region will be created that matches the bitmap's dimensions.
-Clipping regions define the area under which graphics can be drawn to a bitmap.  This particular field reflects the
-top-most edge of all clipping regions that have been set or altered through the #SetClipRegion() method.
+The default clipping region matches the bitmap dimensions.  Drawing operations are limited to the active clipping
+region.
 
 -FIELD-
 Clip: Defines the bitmap's clipping region.
 
-The Clip field is a short-hand reference for the #ClipLeft, #ClipTop, #ClipRight and #ClipBottom fields, returning
-all four values as a single !ClipRectangle structure.
+Clip is a shorthand reference for #ClipLeft, #ClipTop, #ClipRight and #ClipBottom, returning all four values as a
+single !ClipRectangle structure.
 
 *********************************************************************************************************************/
 
@@ -2340,12 +2438,12 @@ static ERR SET_Clip(extBitmap *Self, ClipRectangle *Value)
 -FIELD-
 ColourFormat: Describes the colour format used to construct each bitmap pixel.
 
-The ColourFormat field points to a structure that defines the colour format used to construct each bitmap pixel.  It
-only applies to bitmaps that use 2-bytes per colour value or better.  The structure consists of the following fields:
+ColourFormat points to the structure that describes how packed pixel values map to red, green, blue and alpha channels.
+It is relevant for direct-colour bitmaps, normally those with two or more bytes per pixel.
 
 !ColourFormat
 
-The following C++ methods can called on any bitmap in order to build colour values from individual RGB components:
+The following C++ helper methods can be called on a bitmap to build packed colour values from channel components:
 
 <pre>
 packPixel(Red, Green, Blue)
@@ -2355,14 +2453,14 @@ packPixelRGB(RGB8 &RGB)
 packPixelRGBA(RGB8 &RGB)
 </pre>
 
-The following C macros are optimised versions of the above that are limited to 24 and 32-bit bitmaps:
+The following C macros are optimised forms for 24 and 32-bit bitmaps:
 
 <pre>
 PackPixelWB(Red, Green, Blue)
 PackPixelWBA(Red, Green, Blue, Alpha)
 </pre>
 
-The following C++ methods can be used to unpack individual colour components from any colour value read from the bitmap:
+The following C++ helper methods unpack individual colour components from a packed colour value:
 
 <pre>
 unpackRed(Colour)
@@ -2374,9 +2472,10 @@ unpackAlpha(Colour)
 -FIELD-
 Data: Pointer to a bitmap's data area.
 
-This field points directly to the start of a bitmap's data area.  Allocating your own bitmap memory is acceptable
-if creating a bitmap that is not based on video memory.  However, it is usually a better idea for the
-initialisation process to allocate the correct amount of memory for you by not interfering with this field.
+Data points to the first byte of the bitmap's pixel buffer when CPU-visible memory is available.  Caller-supplied
+memory can be used for data-backed bitmaps, but most callers should let #Init() allocate the correctly sized buffer.
+
+For video or texture-backed bitmaps, #Data may be unavailable until #Lock() succeeds.
 
 *********************************************************************************************************************/
 
@@ -2413,46 +2512,40 @@ ERR SET_Data(extBitmap *Self, uint8_t *Value)
 -FIELD-
 DataFlags: Defines the memory flags to use in allocating a bitmap's data area.
 
-This field determines the type of memory that will be allocated for the #Data field during the initialisation process.
-This field accepts the `MEM::DATA`, `MEM::VIDEO` and `MEM::TEXTURE` memory flags.
+DataFlags controls the kind of backing storage requested during initialisation.  Common values are `MEM::DATA`,
+`MEM::VIDEO` and `MEM::TEXTURE`.
 
-Please note that video based bitmaps may be faster than data bitmaps for certain applications, but the content is typically
-read-only.  Under normal circumstances it is not possible to use the pixel reading functions, or read from the
-bitmap #Data field directly with these bitmap types.  To circumvent this problem use the #Lock() action
-to enable read access when you require it.
+Video or texture-backed bitmaps can be faster for some drawing paths, but direct CPU access is platform dependent.  Use
+#Lock() before reading or writing #Data directly when the bitmap is not a regular data bitmap.
 
 -FIELD-
 DrawUCPixel: Points to a C function that draws pixels to the bitmap using colour indexes.
 
-This field points to an internal C function that can be used for drawing pixels to the bitmap.  It is intended that the
-function is only ever called by C programs and that caution is exercised by the programmer, as no clipping checks will
-be performed (meaning it is possible to supply invalid coordinates that would result in a segfault).
+DrawUCPixel points to the active low-level pixel writer for packed colour or palette-index values.  It is intended for
+C callers that need direct pixel access.  No clipping or bounds checks are performed.
 
 The prototype of the DrawUCPixel function is `Function(*Bitmap, LONG X, LONG Y, uint32_t Colour)`.
 
-The new pixel value must be defined in the `Colour` parameter.
+The new pixel value is supplied in the `Colour` parameter.
 
 -FIELD-
 DrawUCRIndex: Points to a C function that draws pixels to the bitmap in RGB format.
 
-This field points to an internal C function that can be used for drawing pixels to the bitmap.  It is intended that
-the function is only ever called by C programs and that caution is exercised by the programmer, as no clipping checks
-will be performed (meaning it is possible to supply an invalid address that would result in a segfault).
+DrawUCRIndex points to the active low-level RGB pixel writer for a caller-supplied address inside #Data.  It is
+intended for C callers that need direct pixel access.  No clipping, bounds or address validation is performed.
 
 The prototype of the DrawUCRIndex function is `Function(*Bitmap, uint8_t *Data, RGB8 *RGB)`.
 
-The Data parameter must point to a location within the Bitmap's graphical address space. The new pixel value must be
+The Data parameter must point to a location within the Bitmap's graphical address space.  The new pixel value must be
 defined in the `RGB` parameter.
 
-Note that a colour indexing equivalent of this function is not available in the Bitmap class - this is because it is
-more efficient to index the Bitmap's #Data field directly.
+There is no colour-index equivalent because callers can write indexed pixel bytes directly through #Data.
 
 -FIELD-
 DrawUCRPixel: Points to a C function that draws pixels to the bitmap in RGB format.
 
-This field points to an internal C function that can be used for drawing pixels to the bitmap.  It is intended that the
-function is only ever called by C programs and that caution is exercised by the programmer, as no clipping checks will
-be performed (meaning it is possible to supply invalid coordinates that would result in a segfault).
+DrawUCRPixel points to the active low-level RGB pixel writer for `X`, `Y` coordinates.  It is intended for C callers
+that need direct pixel access.  No clipping or bounds checks are performed.
 
 The prototype of the DrawUCRPixel function is `Function(*Bitmap, LONG X, LONG Y, RGB8 *RGB)`.
 
@@ -2462,7 +2555,7 @@ The new pixel value must be defined in the `RGB` parameter.
 Flags: Optional flags.
 
 -FIELD-
-Handle: Private. Platform dependent field for referencing video memory.
+Handle: Private.  Platform-dependent field for referencing video memory.
 -END-
 
 *********************************************************************************************************************/
@@ -2503,22 +2596,25 @@ Height: The height of the bitmap, in pixels.
 -FIELD-
 LineWidth: The length of each bitmap line in bytes, including alignment.
 
+LineWidth includes any row padding required by the active bitmap type or platform backend.  Use #ByteWidth for the
+number of meaningful pixel bytes in a row.
+
 -FIELD-
 Opacity: Determines the translucency setting to use in drawing operations.
 
-Some drawing operations support the concept of applying an opacity rating to create translucent graphics.  By adjusting
-the opacity rating, you can affect the level of translucency that is applied when executing certain graphics operations.
+Opacity is an 8-bit alpha multiplier used by drawing operations that support translucent bitmap copies.  A value of
+`255` is fully opaque and disables additional translucency.  Lower values make copied pixels more transparent.
 
-Methods that support opacity should document the fact that they support the feature.  By default the opacity rating is
-set to 255 to turn off translucency effects.  Lowering the value will increase the level of translucency when drawing
-graphics.
+This value is separate from any per-pixel alpha channel stored in the bitmap.
 
 -FIELD-
 Palette: Points to a bitmap's colour palette.
 
-A palette is an array of containing colour values in standard RGB format `0xRRGGBB`.  The first value must have a
-header ID of `ID_PALETTE`, followed by the amount of values in the array. Following this is the actual list itself -
-colour 0, then colour 1 and so on. There is no termination signal at the end of the list.
+Palette points to the bitmap's colour table.  Indexed bitmaps use this table to map pixel values to RGB colours, and
+some conversion paths use it even when the bitmap itself is direct-colour.
+
+The structure starts with the palette header and colour count, followed by colour entries in index order.  There is no
+terminating entry.
 
 The following example is for a 32 colour palette:
 
@@ -2537,11 +2633,11 @@ RGBPalette Palette = {
 };
 </pre>
 
-Palettes are created for all bitmap types, including RGB based bitmaps above 8-bit colour.  This is because a number of
-drawing functions require a palette table for conversion between the bitmap types.
+Palettes are created for all bitmap types, including RGB bitmaps above 8-bit colour, because several drawing functions
+use a palette table when converting between bitmap formats.
 
-Although the array is dynamic, parent objects such as the Display need to be notified if you want a palette's colours
-to be propagated to the video display.
+Parent objects such as @Display may need to be updated separately before palette changes are reflected by the visible
+display.
 
 *********************************************************************************************************************/
 
@@ -2557,7 +2653,7 @@ ERR SET_Palette(extBitmap *Self, RGBPalette *SrcPalette)
    if (SrcPalette->AmtColours <= 256) {
       if (!Self->Palette) {
          if (AllocMemory(sizeof(RGBPalette), MEM::NO_CLEAR, &Self->Palette) != ERR::Okay) {
-            log.warning(ERR::AllocMemory);
+            return log.warning(ERR::AllocMemory);
          }
       }
 
@@ -2580,36 +2676,32 @@ ERR SET_Palette(extBitmap *Self, RGBPalette *SrcPalette)
 -FIELD-
 PlaneMod: The differential between each bitmap plane.
 
-This field specifies the distance (in bytes) between each bitplane.  For non-planar types like `CHUNKY`, this field
-will reflect the total size of the bitmap.  The calculation used for `PLANAR` types is `ByteWidth * Height`.
+PlaneMod specifies the byte distance between each bitplane in planar bitmaps.  For chunky bitmaps, it reflects the
+total size of the bitmap buffer.
 
 -FIELD-
 Position: The current read/write data position.
 
-This field reflects the current byte position for reading and writing raw data to and from a bitmap object.  If you
-need to change the current byte position, use the Seek action.
+Position is the byte offset used by #Read() and #Write().  Use #Seek() to change it.
 
 -FIELD-
 ReadUCRIndex: Points to a C function that reads pixels from the bitmap in RGB format.
 
-This field points to an internal C function that can be used for reading pixels from the bitmap.  It is intended that
-the function is only ever called by C programs and that caution is exercised by the programmer, as no clipping checks
-will be performed (meaning it is possible to supply an invalid address that would result in a segfault).
+ReadUCRIndex points to the active low-level RGB pixel reader for a caller-supplied address inside #Data.  It is
+intended for C callers that need direct pixel access.  No clipping, bounds or address validation is performed.
 
 The prototype of the ReadUCRIndex function is `Function(*Bitmap, uint8_t *Data, RGB8 *RGB)`.
 
-The `Data` parameter must point to a location within the Bitmap's graphical address space. The pixel value will be
+The `Data` parameter must point to a location within the Bitmap's graphical address space.  The pixel value will be
 returned in the `RGB` parameter.
 
-Note that a colour indexing equivalent of this function is not available in the Bitmap class - this is because it is
-more efficient to index the Bitmap's #Data field directly.
+There is no colour-index equivalent because callers can read indexed pixel bytes directly through #Data.
 
 -FIELD-
 ReadUCPixel: Points to a C function that reads pixels from the bitmap in colour index format.
 
-This field points to an internal C function that can be used for reading pixels from the bitmap.  It is intended that
-the function is only ever called by C programs and that caution is exercised by the programmer, as no clipping checks
-will be performed (meaning it is possible to supply invalid X/Y coordinates that would result in a segfault).
+ReadUCPixel points to the active low-level pixel reader for packed colour or palette-index values.  It is intended for
+C callers that need direct pixel access.  No clipping or bounds checks are performed.
 
 The prototype of the ReadUCPixel function is `Function(*Bitmap, LONG X, LONG Y, LONG *Index)`.
 
@@ -2618,15 +2710,13 @@ The pixel value will be returned in the `Index` parameter.
 -FIELD-
 ReadUCRPixel: Points to a C function that reads pixels from the bitmap in RGB format.
 
-This field points to an internal C function that can be used for reading pixels from the bitmap.  It is intended that
-the function is only ever called by C programs and that caution is exercised by the programmer, as no clipping checks
-will be performed (meaning it is possible to supply invalid X/Y coordinates that would result in a segfault).
+ReadUCRPixel points to the active low-level RGB pixel reader for `X`, `Y` coordinates.  It is intended for C callers
+that need direct pixel access.  No clipping or bounds checks are performed.
 
 The prototype of the ReadUCRPixel function is `Function(*Bitmap, LONG X, LONG Y, RGB8 *RGB)`.
 
-The pixel value will be returned in the RGB parameter.  It should be noted that as this function converts the pixel
-value into RGB format, #ReadUCPixel or #ReadUCRIndex should be used as faster alternatives if the
-pixel value does not need to be de-constructed into its RGB components.
+The pixel value is returned in the `RGB` parameter.  Because this function expands the pixel value to RGB components,
+#ReadUCPixel or #ReadUCRIndex may be faster when RGB decomposition is not required.
 
 -FIELD-
 Size: The total size of the bitmap, in bytes.
@@ -2634,10 +2724,9 @@ Size: The total size of the bitmap, in bytes.
 -FIELD-
 TransColour: The transparent colour of the bitmap, in RGB format.
 
-The transparent colour of the bitmap is defined here.  Colours in the bitmap that match this value will not be copied
-during drawing operations.
+Pixels matching this colour are skipped by drawing operations that honour colour-key transparency.
 
-NOTE: This field should never be set if the bitmap utilises alpha transparency.
+Do not use colour-key transparency on bitmaps that use alpha transparency.
 
 *********************************************************************************************************************/
 
@@ -2662,11 +2751,12 @@ static ERR SET_Trans(extBitmap *Self, RGB8 *Value)
 -FIELD-
 TransIndex: The transparent colour of the bitmap, represented as an index.
 
-The transparent colour of the bitmap is defined here.  Colours in the bitmap that match this value will not be copied
-during graphics operations.  It is recommended that the #TransColour field is used for altering the bitmap
-transparency unless efficiency requires that the transparency is set directly.
+TransIndex stores the transparent colour as a packed pixel value or palette index.  Pixels matching this value are
+skipped by drawing operations that honour colour-key transparency.
 
-NOTE: This field should never be set if the bitmap utilises alpha transparency.
+Use #TransColour for most updates.  Set TransIndex directly only when the caller has already calculated the target
+bitmap's native pixel value or palette index.  Do not use colour-key transparency on bitmaps that use alpha
+transparency.
 
 *********************************************************************************************************************/
 
@@ -2686,10 +2776,13 @@ static ERR SET_TransIndex(extBitmap *Self, int Index)
 -FIELD-
 Type: Defines the data type of the bitmap.
 
-This field defines the graphics data type - either `PLANAR` (required for 1-bit bitmaps) or `CHUNKY` (the default).
+Type defines the bitmap layout, either `BMP::PLANAR` for planar bitmaps or `BMP::CHUNKY` for interleaved pixel data.
+Chunky is the default.
 
 -FIELD-
 Width: The width of the bitmap, in pixels.
+
+Width must be set before #Query() or #Init() can derive the bitmap layout.
 
 *********************************************************************************************************************/
 

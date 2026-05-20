@@ -187,7 +187,7 @@ end
    })
 
    -- Test readable serialisation
-   err, readable = xml.mtSerialise(0, bit.bor(XMF_READABLE, XMF_INCLUDE_SIBLINGS))
+   err, readable = xml.mtSerialise(0, XMF_READABLE|XMF_INCLUDE_SIBLINGS)
    assert(err is ERR_Okay, "Readable serialisation should succeed")
    assert(string.find(readable, '\n'), "Readable format should include newlines")
 
@@ -196,7 +196,7 @@ end
    assert(err is ERR_Okay, "Compact serialisation should succeed")
 
    -- Test omit tags serialisation
-   err, content = xml.mtSerialise(0, bit.bor(XMF_OMIT_TAGS, XMF_INCLUDE_SIBLINGS))
+   err, content = xml.mtSerialise(0, XMF_OMIT_TAGS|XMF_INCLUDE_SIBLINGS)
    assert(err is ERR_Okay, "Content-only serialisation should succeed")
 end
 

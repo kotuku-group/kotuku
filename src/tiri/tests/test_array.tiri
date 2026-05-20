@@ -11,12 +11,14 @@ function enforce_hotpath() end
    int_array[3] = 40
    int_array[4] = 50
 
-   result = int_array:concat('%d', ', ')
-   assert(result is '10, 20, 30, 40, 50', "Integer array concat failed, expected '10, 20, 30, 40, 50', got '" .. result .. "'")
+   result = int_array:concat(', ', '%d')
+   assert(result is '10, 20, 30, 40, 50',
+      "Integer array concat failed, expected '10, 20, 30, 40, 50', got '" .. result .. "'")
 
-   -- Test without join string
-   result2 = int_array:concat('%d', '')
-   assert(result2 is '1020304050', "Integer array concat without join failed, expected '1020304050', got '" .. result2 .. "'")
+   -- Test without separator
+   result2 = int_array:concat('', '%d')
+   assert(result2 is '1020304050',
+      "Integer array concat without separator failed, expected '1020304050', got '" .. result2 .. "'")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -27,8 +29,9 @@ end
    float_array[1] = 2.7
    float_array[2] = 3.14
 
-   result = float_array:concat('%.2f', ' | ')
-   assert(result is '1.50 | 2.70 | 3.14', "Float array concat failed, expected '1.50 | 2.70 | 3.14', got '" .. result .. "'")
+   result = float_array:concat(' | ', '%.2f')
+   assert(result is '1.50 | 2.70 | 3.14',
+      "Float array concat failed, expected '1.50 | 2.70 | 3.14', got '" .. result .. "'")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -40,13 +43,13 @@ end
    byte_array[2] = 67  -- 'C'
    byte_array[3] = 68  -- 'D'
 
-   result = byte_array:concat('%c', '')
+   result = byte_array:concat('', '%c')
    if result != 'ABCD' then
       error("Byte array concat failed, expected 'ABCD', got '" .. result .. "'")
    end
 
    -- Test with separator
-   result2 = byte_array:concat('%d', '-')
+   result2 = byte_array:concat('-', '%d')
    if result2 != '65-66-67-68' then
       error("Byte array numeric concat failed, expected '65-66-67-68', got '" .. result2 .. "'")
    end
@@ -59,7 +62,7 @@ end
    double_array[0] = 3.141592653589793
    double_array[1] = 2.718281828459045
 
-   result = double_array:concat('%.3f', ' and ')
+   result = double_array:concat(' and ', '%.3f')
    assert(result is '3.142 and 2.718', "Double array concat failed, expected '3.142 and 2.718', got '" .. result .. "'")
 end
 
@@ -71,7 +74,7 @@ end
    word_array[1] = 2000
    word_array[2] = 3000
 
-   result = word_array:concat('%04d', ', ')
+   result = word_array:concat(', ', '%04d')
    assert(result is '1000, 2000, 3000', "Word array concat failed, expected '1000, 2000, 3000', got '" .. result .. "'")
 end
 
@@ -81,7 +84,7 @@ end
    single_array = array<int, 1>
    single_array[0] = 42
 
-   result = single_array:concat('%d', ', ')
+   result = single_array:concat(', ', '%d')
    assert(result is '42', "Single element array concat failed, expected '42', got '" .. result .. "'")
 end
 
@@ -93,33 +96,34 @@ end
    int_array[1] = 20
 
    -- Test valid formats work
-   result = int_array:concat('%d', ', ')
+   result = int_array:concat(', ', '%d')
    assert(result is '10, 20', "Valid format test failed, expected '10, 20', got '" .. result .. "'")
 
    -- Test multiple format specifiers are rejected
    try
-      int_array:concat('%d %s', ', ')
+      int_array:concat(', ', '%d %s')
    success
       error("Multiple format specifiers should be rejected")
    end
 
    -- Test no format specifier is rejected
    try
-      int_array:concat('no format', ', ')
+      int_array:concat(', ', 'no format')
    success
       error("No format specifier should be rejected")
    end
 
    -- Test incomplete format specifier is rejected
    try
-      int_array:concat('incomplete %', ', ')
+      int_array:concat(', ', 'incomplete %')
    success
       error("Incomplete format specifier should be rejected")
    end
 
    -- Test escaped %% works
-   result_escaped = int_array:concat('%%d:%d', ', ')
-   assert(result_escaped is '%d:10, %d:20', "Escaped %% test failed, expected '%d:10, %d:20', got '" .. result_escaped .. "'")
+   result_escaped = int_array:concat(', ', '%%d:%d')
+   assert(result_escaped is '%d:10, %d:20',
+      "Escaped %% test failed, expected '%d:10, %d:20', got '" .. result_escaped .. "'")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -129,8 +133,9 @@ end
    string_array[0] = 'hello'
    string_array[1] = 'world'
    string_array[2] = '!'
-   result = string_array:concat('%s', ' ')
-   assert(result is 'hello world !', "String array concat failed, expected 'hello world !', got '" .. tostring(result) .. "'")
+   result = string_array:concat(' ', '%s')
+   assert(result is 'hello world !',
+      "String array concat failed, expected 'hello world !', got '" .. tostring(result) .. "'")
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -229,6 +234,32 @@ end
       dest:copy(source, 15) -- Beyond array size 10
    success
       error('Should reject destination index beyond array size')
+   end
+end
+
+@Test function ArrayCopyArraySourceBounds()
+   dest = array<int> { 0, 0, 0 }
+   source = array<int> { 10, 20, 30 }
+
+   dest:copy(source, 0, 0, 2)
+   assert(dest[0] is 10 and dest[1] is 20 and dest[2] is 0, 'Valid array-to-array copy failed')
+
+   try
+      dest:copy(source, -1, 0, 1)
+   success
+      error('Should reject negative destination index before array copy')
+   end
+
+   try
+      dest:copy(source, 0, -1, 1)
+   success
+      error('Should reject negative source index before array copy')
+   end
+
+   try
+      dest:copy(source, 0, 0, -1)
+   success
+      error('Should reject negative count before array copy')
    end
 end
 
@@ -886,7 +917,7 @@ end
    assert(#empty_float is 0, "empty float array should have length 0")
 
    -- concat on empty array should return empty string
-   result = empty_int:concat('%d', ', ')
+   result = empty_int:concat(', ', '%d')
    assert(result is '', "concat on empty array should return empty string")
 
    -- find on empty array should return nil
@@ -1092,7 +1123,7 @@ end
    arr[1] = {b = 2}
 
    try
-      arr:concat('%s', ', ')
+      arr:concat(', ', '%s')
    success
       error("Concat should be rejected for table arrays")
    end
@@ -1262,7 +1293,7 @@ end
 @Test function ArrayOfStringConcat()
    arr = array<string> { 'hello', 'world', '!' }
 
-   result = arr:concat('%s', ' ')
+   result = arr:concat(' ', '%s')
    assert(result is 'hello world !', "concat should produce 'hello world !', got '" .. result .. "'")
 end
 
@@ -1512,107 +1543,216 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Test array.join() functionality
+-- Test array.concat() functionality
 
-@Test function ArrayJoinString()
+@Test function ArrayConcatString()
    arr = array<string> { 'hello', 'world', '!' }
-   result = arr:join(' ')
-   assert(result is 'hello world !', "join(' ') should produce 'hello world !', got '" .. result .. "'")
+   result = arr:concat(' ')
+   assert(result is 'hello world !', "concat(' ') should produce 'hello world !', got '" .. result .. "'")
 end
 
-@Test function ArrayJoinStringComma()
+@Test function ArrayConcatStringComma()
    arr = array<string> { 'apple', 'banana', 'cherry' }
-   result = arr:join(', ')
-   assert(result is 'apple, banana, cherry', "join(', ') failed, got '" .. result .. "'")
+   result = arr:concat(', ')
+   assert(result is 'apple, banana, cherry', "concat(', ') failed, got '" .. result .. "'")
 end
 
-@Test function ArrayJoinStringEmpty()
+@Test function ArrayConcatStringEmpty()
    arr = array<string> { 'a', 'b', 'c' }
-   result = arr:join('')
-   assert(result is 'abc', "join('') should concatenate without separator, got '" .. result .. "'")
+   result = arr:concat('')
+   assert(result is 'abc', "concat('') should concatenate without separator, got '" .. result .. "'")
 end
 
-@Test function ArrayJoinStringDefault()
+@Test function ArrayConcatStringDefault()
    arr = array<string> { 'one', 'two', 'three' }
-   result = arr:join()
-   assert(result is 'onetwothree', "join() with no separator should concatenate directly, got '" .. result .. "'")
+   result = arr:concat()
+   assert(result is 'onetwothree', "concat() with no separator should concatenate directly, got '" .. result .. "'")
 end
 
-@Test function ArrayJoinInt()
+@Test function ArrayConcatStringEmbeddedNul()
+   nul = string.char(0)
+   arr = array<string> { 'a' .. nul .. 'b', 'c' }
+   result = arr:concat('|')
+   expected = 'a' .. nul .. 'b|c'
+
+   assert(result is expected, 'concat should preserve embedded NUL bytes in string array elements')
+   assert(#result is 5, 'concat result should preserve full byte length with embedded NUL, got ' .. #result)
+end
+
+@Test function ArrayConcatStringEmbeddedNulFormat()
+   nul = string.char(0)
+   arr = array<string> { 'a' .. nul .. 'b', 'c' }
+   result = arr:concat('|', '%s')
+   expected = 'a' .. nul .. 'b|c'
+
+   assert(result is expected, 'concat with %s should preserve embedded NUL bytes in string array elements')
+   assert(#result is 5, 'formatted concat result should preserve full byte length with embedded NUL, got ' .. #result)
+end
+
+@Test function ArrayConcatStringNulSeparator()
+   nul = string.char(0)
+   arr = array<string> { 'a', 'b' }
+   result = arr:concat(nul)
+   expected = 'a' .. nul .. 'b'
+
+   assert(result is expected, 'concat should preserve embedded NUL bytes in the separator')
+   assert(#result is 3, 'concat result should preserve full byte length with NUL separator, got ' .. #result)
+end
+
+@Test function ArrayConcatInt()
    arr = array<int> { 1, 2, 3, 4, 5 }
-   result = arr:join('-')
-   assert(result is '1-2-3-4-5', "join('-') on int array failed, got '" .. result .. "'")
+   result = arr:concat('-')
+   assert(result is '1-2-3-4-5', "concat('-') on int array failed, got '" .. result .. "'")
+
+   result = arr:concat('-', nil)
+   assert(result is '1-2-3-4-5', "concat with nil format should use default conversion, got '" .. result .. "'")
+
+   result = arr:concat(nil, '%02d')
+   assert(result is '0102030405', "concat with nil separator should format without separators, got '" .. result .. "'")
 end
 
-@Test function ArrayJoinFloat()
+@Test function ArrayConcatRangeString()
+   arr = array<string> { 'a', 'b', 'c', 'd' }
+   result = arr:concat(',', nil, 1, 2)
+   assert(result is 'b,c', "concat with range 1..2 should return 'b,c', got '" .. result .. "'")
+end
+
+@Test function ArrayConcatRangeIntFormat()
+   arr = array<int> { 1, 2, 3, 4 }
+   result = arr:concat('-', '%02d', 1, 3)
+   assert(result is '02-03-04', "formatted concat with range 1..3 should return '02-03-04', got '" .. result .. "'")
+end
+
+@Test function ArrayConcatRangeNilSeparator()
+   arr = array<int> { 1, 2, 3, 4 }
+   result = arr:concat(nil, '%d', 1, 3)
+   assert(result is '234', "concat with nil separator and range 1..3 should return '234', got '" .. result .. "'")
+end
+
+@Test function ArrayConcatRangeSingleElement()
+   arr = array<string> { 'zero', 'one', 'two' }
+   result = arr:concat(', ', nil, 1, 1)
+   assert(result is 'one', "single-element concat range should return only that element, got '" .. result .. "'")
+end
+
+@Test function ArrayConcatRangeEmptySpan()
+   arr = array<string> { 'zero', 'one', 'two' }
+   result = arr:concat(', ', nil, 2, 1)
+   assert(result is '', "concat range with End before Start should return an empty string, got '" .. result .. "'")
+end
+
+@Test function ArrayConcatRangeOmittedIndexes()
+   arr = array<string> { 'a', 'b', 'c' }
+   result = arr:concat(',')
+   assert(result is 'a,b,c', "concat with omitted range should preserve full-array behaviour, got '" .. result .. "'")
+end
+
+@Test function ArrayConcatRangeInvalidIndexes()
+   arr = array<string> { 'a', 'b', 'c' }
+
+   try
+      arr:concat(',', nil, -1, 1)
+   success
+      error('concat should reject negative Start indexes')
+   end
+
+   try
+      arr:concat(',', nil, 0, -1)
+   success
+      error('concat should reject negative End indexes')
+   end
+
+   try
+      arr:concat(',', nil, 3, 3)
+   success
+      error('concat should reject Start indexes beyond the array length')
+   end
+
+   try
+      arr:concat(',', nil, 0, 3)
+   success
+      error('concat should reject End indexes beyond the array length')
+   end
+end
+
+@Test function ArrayConcatFloat()
    arr = array<float> { 1.5, 2.5, 3.5 }
-   result = arr:join(', ')
+   result = arr:concat(', ')
    -- Float formatting may vary, check contains expected values
-   assert(string.find(result, '1.5') != nil, "join result should contain 1.5")
-   assert(string.find(result, '2.5') != nil, "join result should contain 2.5")
-   assert(string.find(result, '3.5') != nil, "join result should contain 3.5")
+   assert(string.find(result, '1.5') != nil, "concat result should contain 1.5")
+   assert(string.find(result, '2.5') != nil, "concat result should contain 2.5")
+   assert(string.find(result, '3.5') != nil, "concat result should contain 3.5")
 end
 
-@Test function ArrayJoinDouble()
+@Test function ArrayConcatDouble()
    arr = array<double> { 3.14159, 2.71828 }
-   result = arr:join(' and ')
-   assert(string.find(result, '3.14') != nil, "join result should contain pi")
-   assert(string.find(result, '2.71') != nil, "join result should contain e")
-   assert(string.find(result, ' and ') != nil, "join result should contain separator")
+   result = arr:concat(' and ')
+   assert(string.find(result, '3.14') != nil, "concat result should contain pi")
+   assert(string.find(result, '2.71') != nil, "concat result should contain e")
+   assert(string.find(result, ' and ') != nil, "concat result should contain separator")
 end
 
-@Test function ArrayJoinByte()
+@Test function ArrayConcatByte()
    arr = array<byte> { 65, 66, 67 }  -- ASCII codes
-   result = arr:join('-')
-   assert(result is '65-66-67', "join on byte array should use numeric representation, got '" .. result .. "'")
+   result = arr:concat('-')
+   assert(result is '65-66-67', "concat on byte array should use numeric representation, got '" .. result .. "'")
 end
 
-@Test function ArrayJoinInt16()
+@Test function ArrayConcatInt16()
    arr = array<int16> { 100, 200, 300 }
-   result = arr:join(':')
-   assert(result is '100:200:300', "join on int16 array failed, got '" .. result .. "'")
+   result = arr:concat(':')
+   assert(result is '100:200:300', "concat on int16 array failed, got '" .. result .. "'")
 end
 
-@Test function ArrayJoinInt64()
+@Test function ArrayConcatInt64()
    arr = array<int64> { 1234567890123, 9876543210987 }
-   result = arr:join(' | ')
-   assert(string.find(result, '1234567890123') != nil, "join should contain first int64")
-   assert(string.find(result, '9876543210987') != nil, "join should contain second int64")
+   result = arr:concat(' | ')
+   assert(string.find(result, '1234567890123') != nil, "concat should contain first int64")
+   assert(string.find(result, '9876543210987') != nil, "concat should contain second int64")
 end
 
-@Test function ArrayJoinEmpty()
+@Test function ArrayConcatEmpty()
    arr = array<string>
-   result = arr:join(', ')
-   assert(result is '', "join on empty array should return empty string, got '" .. result .. "'")
+   result = arr:concat(', ')
+   assert(result is '', "concat on empty array should return empty string, got '" .. result .. "'")
 end
 
-@Test function ArrayJoinSingle()
+@Test function ArrayConcatSingle()
    arr = array<string> { 'only' }
-   result = arr:join(', ')
-   assert(result is 'only', "join on single element should return just that element, got '" .. result .. "'")
+   result = arr:concat(', ')
+   assert(result is 'only', "concat on single element should return just that element, got '" .. result .. "'")
 end
 
-@Test function ArrayJoinSingleInt()
+@Test function ArrayConcatSingleInt()
    arr = array<int> { 42 }
-   result = arr:join('-')
-   assert(result is '42', "join on single int should return '42', got '" .. result .. "'")
+   result = arr:concat('-')
+   assert(result is '42', "concat on single int should return '42', got '" .. result .. "'")
 end
 
-@Test function ArrayJoinWithSplit()
-   -- Test that join is the inverse of split
+@Test function ArrayConcatWithSplit()
+   -- Test that concat is the inverse of split
    original = 'one,two,three,four'
    parts = string.split(original, ',')
-   rejoined = parts:join(',')
-   assert(rejoined is original, "join should reverse split, got '" .. rejoined .. "'")
+   rejoined = parts:concat(',')
+   assert(rejoined is original, "concat should reverse split, got '" .. rejoined .. "'")
 end
 
-@Test function ArrayJoinTable()
+@Test function ArrayConcatTable()
    arr = array<table, 2>
    arr[0] = {x = 1}
    arr[1] = {y = 2}
-   result = arr:join(', ')
+   result = arr:concat(', ')
    -- Tables should be converted to "table" placeholder
-   assert(result is 'table, table', "join on table array should use 'table' placeholder, got '" .. result .. "'")
+   assert(result is 'table, table', "concat on table array should use 'table' placeholder, got '" .. result .. "'")
+end
+
+@Test function ArrayJoinRemoved()
+   arr = array<string> { 'a', 'b' }
+   try
+      arr:join(',')
+   success
+      error("array.join() should no longer be available")
+   end
 end
 
 -----------------------------------------------------------------------------------------------------------------------

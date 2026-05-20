@@ -23,6 +23,7 @@
 
 #include <unordered_set>
 #include <mutex>
+#include <atomic>
 #include <queue>
 #include <sstream>
 #include <array>
@@ -124,20 +125,20 @@ struct SurfaceRecord {
    OBJECTID RootID;        // RootLayer
    OBJECTID PopOverID;
    RNF      Flags;         // Surface flags (RNF::VISIBLE etc)
-   int     X;             // Horizontal coordinate
-   int     Y;             // Vertical coordinate
-   int     Width;         // Width
-   int     Height;        // Height
-   int     Left;          // Absolute X
-   int     Top;           // Absolute Y
-   int     Right;         // Absolute right coordinate
-   int     Bottom;        // Absolute bottom coordinate
-   int16_t     Level;         // Level number within the hierarchy
-   int16_t     LineWidth;     // [applies to the bitmap owner]
-   int8_t     BytesPerPixel; // [applies to the bitmap owner]
-   int8_t     BitsPerPixel;  // [applies to the bitmap owner]
-   int8_t     Cursor;        // Preferred cursor image ID
-   uint8_t    Opacity;       // Current opacity setting 0 - 255
+   int      X;             // Horizontal coordinate
+   int      Y;             // Vertical coordinate
+   int      Width;         // Width
+   int      Height;        // Height
+   int      Left;          // Absolute X
+   int      Top;           // Absolute Y
+   int      Right;         // Absolute right coordinate
+   int      Bottom;        // Absolute bottom coordinate
+   int16_t  Level;         // Level number within the hierarchy
+   int16_t  LineWidth;     // [applies to the bitmap owner]
+   int8_t   BytesPerPixel; // [applies to the bitmap owner]
+   int8_t   BitsPerPixel;  // [applies to the bitmap owner]
+   int8_t   Cursor;        // Preferred cursor image ID
+   uint8_t  Opacity;       // Current opacity setting, 0 - 255
 
    inline void setArea(int pLeft, int pTop, int pRight, int pBottom) {
       Left   = pLeft;
@@ -158,6 +159,13 @@ struct SurfaceRecord {
    inline bool isVolatile() const { return (Flags & RNF::VOLATILE) != RNF::NIL; }
    inline bool isCursor() const { return (Flags & RNF::CURSOR) != RNF::NIL; }
 };
+
+static inline uint8_t surface_opacity_to_byte(double Opacity)
+{
+   if (Opacity <= 0.0) return 0;
+   if (Opacity >= 1.0) return 255;
+   return uint8_t(Opacity * 255.0 + 0.5);
+}
 
 typedef std::vector<SurfaceRecord> SURFACELIST;
 extern std::recursive_mutex glSurfaceLock;
@@ -317,18 +325,18 @@ class extSurface : public objSurface {
    objBitmap *Bitmap;
    SurfaceCallback *Callback;
    APTR      Data;
+   double   Opacity;
    WINHANDLE DisplayWindow;       // Reference to the platform dependent window representing the Surface object
    OBJECTID PrevModalID;          // Previous surface to have been modal
    OBJECTID BitmapOwnerID;        // The surface object that owns the root bitmap
    OBJECTID RevertFocusID;
-   int     LineWidth;            // Bitmap line width, in bytes
-   int     ListIndex;            // Last known list index
-   int     InputHandle;          // Input handler for dragging of surfaces
+   int      LineWidth;            // Bitmap line width, in bytes
+   int      ListIndex;            // Last known list index
+   int      InputHandle;          // Input handler for dragging of surfaces
    SWIN     WindowType;           // See SWIN constants
    TIMER    RedrawTimer;          // For ScheduleRedraw()
    SurfaceCallback CallbackCache[4];
-   int16_t     ScrollProgress;
-   int16_t     Opacity;
+   int16_t  ScrollProgress;
    uint16_t InheritedRoot:1;      // TRUE if the user set the RootLayer manually
    uint16_t ParentDefined:1;      // TRUE if the parent field was set manually
    uint16_t SkipPopOver:1;
@@ -337,11 +345,11 @@ class extSurface : public objSurface {
    uint16_t Document:1;
    uint16_t RedrawScheduled:1;
    uint16_t RedrawCountdown;      // Unsubscribe from the timer when this value reaches zero.
-   int8_t     BitsPerPixel;         // Bitmap bits per pixel
-   int8_t     BytesPerPixel;        // Bitmap bytes per pixel
-   uint8_t    CallbackCount;
-   uint8_t    CallbackSize;         // Current size of the callback array.
-   int8_t     Anchored;
+   int8_t   BitsPerPixel;         // Bitmap bits per pixel
+   int8_t   BytesPerPixel;        // Bitmap bytes per pixel
+   uint8_t  CallbackCount;
+   uint8_t  CallbackSize;         // Current size of the callback array.
+   int8_t   Anchored;
 };
 
 class extDisplay : public objDisplay {
@@ -365,7 +373,7 @@ class extDisplay : public objDisplay {
    #else
       APTR   WindowHandle;
    #endif
-   int16_t  Opacity;
+   float Opacity;
    char  Manufacturer[60];
    char  Chipset[40];
    char  Display[32];
@@ -438,9 +446,11 @@ extern char glpDPMS[20];
 extern uint8_t *glDemultiply;
 extern std::array<uint8_t, 256 * 256> glAlphaLookup;
 extern std::list<ClipRecord> glClips;
-extern int glLastPort;
+extern std::recursive_mutex glClipboardLock;
+extern std::atomic<int> glLastPort;
 
 extern ankerl::unordered_dense::map<WinHook, FUNCTION> glWindowHooks;
+extern std::recursive_mutex glWindowHookLock;
 extern std::vector<OBJECTID> glFocusList;
 extern std::recursive_mutex glFocusLock;
 extern std::recursive_mutex glSurfaceLock;
@@ -541,6 +551,7 @@ template <typename T>
 void UpdateSurfaceField(objSurface *Self, T SurfaceRecord::*LValue, T Value)
 {
    if (Self->initialised()) {
+      const std::lock_guard<std::recursive_mutex> lock(glSurfaceLock);
       for (auto &record : glSurfaces) {
          if (record.SurfaceID IS Self->UID) {
             record.*LValue = Value;

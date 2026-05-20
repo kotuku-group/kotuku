@@ -141,5 +141,5 @@ end
    waveVP.y = cmbColours.viewport.y + cmbColours.viewport.height + 12
    updateText()
 
-   win:show(true)
+   win:show()
    processing.sleep()

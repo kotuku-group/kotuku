@@ -396,5 +396,5 @@ end
       }
    })
 
-   win:show(true)
+   win:show()
    processing.sleep() -- Will sleep until the window sends MSGID_QUIT

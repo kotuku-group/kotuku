@@ -816,7 +816,7 @@ end
       order:push('success')
    end
 
-   result = order:join(',')
+   result = order:concat(',')
    assert(result is 'try-body,close,success', "<close> should run before success: '" .. result .. "'")
 end
 
@@ -1030,7 +1030,7 @@ end
    end
 
    subject()
-   result = order:join(',')
+   result = order:concat(',')
    assert(result is 'try-body,deferred,success', "Defer should run before success block: '" .. tostring(result) .. "'")
 end
 
@@ -1055,8 +1055,8 @@ end
    subject()
 
    -- Document actual behavior - defer may or may not run depending on implementation
-   assert(#order >= 2, "Should have at least before-error and except: '" .. order:join(',') .. "'")
-   assert(order[0] is 'before-error', "First should be before-error: '" .. order:join(',') .. "'")
+   assert(#order >= 2, "Should have at least before-error and except: '" .. order:concat(',') .. "'")
+   assert(order[0] is 'before-error', "First should be before-error: '" .. order:concat(',') .. "'")
 end
 
 -- Test multiple defers when exception is caught
@@ -1085,8 +1085,8 @@ end
    subject()
 
    -- Document actual behavior
-   assert(#order >= 2, "Should have at least body and except: '" .. order:join(',') .. "'")
-   assert(order[0] is 'body', "First should be body: '" .. order:join(',') .. "'")
+   assert(#order >= 2, "Should have at least body and except: '" .. order:concat(',') .. "'")
+   assert(order[0] is 'body', "First should be body: '" .. order:concat(',') .. "'")
 end
 
 -- Defer in except block runs correctly when except exits
@@ -1109,7 +1109,8 @@ end
 
    subject()
 
-   assert(order:join(',') is 'except-body,except-defer,after-try', "Defer in except block should run when except exits: '" .. order:join(',') .. "'")
+   assert(order:concat(',') is 'except-body,except-defer,after-try',
+      "Defer in except block should run when except exits: '" .. order:concat(',') .. "'")
 end
 
 -- Test defer behavior with nested try blocks
@@ -1143,8 +1144,8 @@ end
    subject()
 
    -- Document actual behavior - outer-defer should run, inner-defer behavior may vary
-   assert(order[0] is 'outer-body', "First should be outer-body: '" .. order:join(',') .. "'")
-   assert(order[1] is 'inner-body', "Second should be inner-body: '" .. order:join(',') .. "'")
+   assert(order[0] is 'outer-body', "First should be outer-body: '" .. order:concat(',') .. "'")
+   assert(order[1] is 'inner-body', "Second should be inner-body: '" .. order:concat(',') .. "'")
 end
 
 -- Defer runs when returning from try block (no exception)
@@ -1169,7 +1170,8 @@ end
 
    result = subject()
    assert(result is 'from-try', "Should return from try block, got '" .. tostring(result) .. "'")
-   assert(order:join(',') is 'before-return,deferred', "Defer should run before return: '" .. order:join(',') .. "'")
+   assert(order:concat(',') is 'before-return,deferred',
+      "Defer should run before return: '" .. order:concat(',') .. "'")
 end
 
 -- Defer runs when breaking from try block in loop (no exception)
@@ -1193,7 +1195,8 @@ end
    subject()
 
    expected = 'body-1,defer-1,body-2,defer-2,body-3,defer-3,body-4,defer-4'
-   assert(order:join(',') is expected, "Defer should run on break from try:\n" .. expected .. '\n' .. order:join(','))
+   assert(order:concat(',') is expected,
+      "Defer should run on break from try:\n" .. expected .. '\n' .. order:concat(','))
 end
 
 -- Test defer behavior with continue in try loop
@@ -1221,7 +1224,7 @@ end
    subject()
 
    -- Document actual behavior
-   assert(#order >= 3, "Should have multiple entries: '" .. order:join(',') .. "'")
+   assert(#order >= 3, "Should have multiple entries: '" .. order:concat(',') .. "'")
 end
 
 -- Test interaction between defer and <close> in try block with exception
@@ -1246,13 +1249,13 @@ end
    subject()
 
    -- Document actual behavior - close should run, defer behavior may vary
-   assert(order[0] is 'body', "First should be body: '" .. order:join(',') .. "'")
+   assert(order[0] is 'body', "First should be body: '" .. order:concat(',') .. "'")
 
    local has_close = false
    for v in values(order) do
       if v is 'close' then has_close = true end
    end
-   assert(has_close, "<close> handler should be called: '" .. order:join(',') .. "'")
+   assert(has_close, "<close> handler should be called: '" .. order:concat(',') .. "'")
 end
 
 -----------------------------------------------------------------------------------------------------------------------

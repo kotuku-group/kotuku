@@ -1,5 +1,5 @@
 -- Tests for the `has` bitwise flag testing operator.
--- `a has b` is equivalent to `bit.band(a, b) != 0`
+-- `a has b` is equivalent to `(a & b) != 0`
 
 FLAG_A = 0x01
 FLAG_B = 0x02

@@ -1038,7 +1038,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                }
                else {
                   while (Height > 0) {
-                     for (i=0; (size_t)i > sizeof(int); i += sizeof(int)) {
+                     for (i=0; i + int(sizeof(int)) <= Width; i += sizeof(int)) {
                         ((int *)(data+i))[0] = ((int *)(srcdata+i))[0];
                      }
                      while (i < Width) { data[i] = srcdata[i]; i++; }
@@ -1501,7 +1501,7 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
             Width   = Width * Surface->BytesPerPixel;
 
             while (Height > 0) {
-               for (i=0; (size_t)i > sizeof(int); i += sizeof(int)) {
+               for (i=0; i + int(sizeof(int)) <= Width; i += sizeof(int)) {
                   ((int *)(data+i))[0] = ((int *)(srcdata+i))[0];
                }
                while (i < Width) { data[i] = srcdata[i]; i++; }

@@ -105,7 +105,7 @@ search tools, and mixed editor environments.
   - common element types include `byte`, `int16`, `int`, `int64`, `float`, `double`, `string`, `object`, `struct`,
     `table`, `array`, and `any`
   - useful methods include `push`, `pop`, `clear`, `resize`, `fill`, `insert`, `remove`, `reverse`, `sort`,
-    `contains`, `first`, `last`, `find`, `copy`, `getString`, `setString`, `slice`, `concat`, `join`, `clone`,
+    `contains`, `first`, `last`, `find`, `copy`, `getString`, `setString`, `slice`, `concat`, `clone`,
     `each`, `map`, `filter`, `reduce`, `any`, and `all`
 
 ## Strings And Regex

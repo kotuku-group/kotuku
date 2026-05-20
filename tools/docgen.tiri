@@ -55,7 +55,7 @@ end
    platform = mSys.GetSystemState().platform
 
    if platform is 'Windows' then
-      error('Windows not supported.')
+      error('Windows not supported (requires xsltproc).')
    else
       err, xsltproc_path = mSys.ResolvePath("xsltproc", RSF_PATH)
       assert(xsltproc_path, 'xsltproc not found on system path, please install it first.')

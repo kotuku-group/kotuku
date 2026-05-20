@@ -99,7 +99,7 @@ end
    assert(single[0] is "hello", "Single element should be 'hello'")
 
    -- Verify concat method works on string arrays
-   rejoined = parts:concat("%s", ",")
+   rejoined = parts:concat(",", "%s")
    assert(rejoined is "a,b,c", "concat should rejoin elements, got '" .. rejoined .. "'")
 end
 

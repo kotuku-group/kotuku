@@ -29,7 +29,7 @@ function timer(ID, Elapsed, CurrentTime)
 
    local x = mSys.randomNumber(glWindow.insidewidth-20)
    local y = mSys.randomNumber(glWindow.insideheight-20)
-   glRectangleMTP.acMoveToPoint(x, y, 0, bit.bor(MTF_X, MTF_Y))
+   glRectangleMTP.acMoveToPoint(x, y, 0, MTF_X|MTF_Y)
    glRectangleMTP.width = 10 + mSys.randomNumber(10)
    glRectangleMTP.height = 10 + mSys.randomNumber(10)
 

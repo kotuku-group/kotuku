@@ -34,7 +34,7 @@ directly to the relevant files unless the user explicitly asks for review-only f
 - Ensure source code has priority over existing prose when they conflict.
 - Document parameters, return values, and error behaviour clearly when the existing section includes those concerns.
 - If a function returns error codes, ensure the `-ERRORS-` section references only `ERR` values that are explicitly
-  returnable by the main function body.
+  returnable by the main function body.  Verify that the list is complete and adjust as necessary.  Do not associate a short description with an error unless you can add sufficient value beyond the default error description for that code.
 - Use abstract API type names where possible because the generated API documentation is relevant to languages beyond C++:
   `INT`, `INT64`, `STRING`, `NULL`, and `BYTE` instead of C++-specific type spelling.
 - Use backticks for named coding constants, enums, and flags that are defined in include headers.

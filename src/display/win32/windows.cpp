@@ -18,6 +18,7 @@
 #include <objidl.h>
 #include <xinput.h>
 #include <map>
+#include <atomic>
 
 #include <kotuku/system/errors.h>
 
@@ -68,9 +69,10 @@ typedef long long int64_t;
 #define MSG(...)
 
 extern HINSTANCE glInstance;
-extern int glLastPort;
+extern std::atomic<int> glLastPort;
 void KillMessageHook(void);
 
+static std::atomic<int> glPrimaryPort = -1;
 static HWND glMainScreen = 0;
 static char glCursorEntry = FALSE;
 static HCURSOR glDefaultCursor = 0;
@@ -141,6 +143,13 @@ int winLookupSurfaceID(HWND Window)
 namespace display {
 
 extern void RepaintWindow(int, int, int, int, int);
+
+static inline uint8_t win_opacity_to_byte(double Opacity)
+{
+   if (Opacity <= 0.0) return 0;
+   if (Opacity >= 1.0) return 255;
+   return uint8_t(Opacity * 255.0 + 0.5);
+}
 
 /*
 static void printerror(void)
@@ -231,7 +240,7 @@ char GetMonitorSizeFromEDID(const HKEY hDevRegKey, short *WidthMm, short *Height
 
     for (int i = 0, retValue = ERROR_SUCCESS; retValue != ERROR_NO_MORE_ITEMS; ++i) {
         retValue = RegEnumValue ( hDevRegKey, i, &valueName[0], &AcutalValueNameLength, nullptr, &dwType, EDIDdata, &edidsize);
-        if (retValue != ERROR_SUCCESS || 0 != _tcscmp(valueName,_T("EDID"))) continue;
+        if ((retValue != ERROR_SUCCESS) or (0 != _tcscmp(valueName,_T("EDID"))) or (edidsize <= 68)) continue;
         *WidthMm  = ((EDIDdata[68] & 0xF0) << 4) + EDIDdata[66];
         *HeightMm = ((EDIDdata[68] & 0x0F) << 8) + EDIDdata[67];
         return TRUE; // valid EDID found
@@ -277,14 +286,14 @@ void get_dpi(void)
    dd.cb = sizeof(dd);
    DWORD dev = 0; // device index
    char bFoundDevice = FALSE;
-   while (EnumDisplayDevices(0, dev, &dd, 0) && !bFoundDevice) {
+   while (EnumDisplayDevices(0, dev, &dd, 0) and !bFoundDevice) {
       DISPLAY_DEVICE ddMon;
       ZeroMemory(&ddMon, sizeof(ddMon));
       ddMon.cb = sizeof(ddMon);
       DWORD devMon = 0;
 
-      while (EnumDisplayDevices(dd.DeviceName, devMon, &ddMon, 0) && !bFoundDevice) {
-         if (ddMon.StateFlags & DISPLAY_DEVICE_ACTIVE && !(ddMon.StateFlags & DISPLAY_DEVICE_MIRRORING_DRIVER)) {
+      while (EnumDisplayDevices(dd.DeviceName, devMon, &ddMon, 0) and !bFoundDevice) {
+         if ((ddMon.StateFlags & DISPLAY_DEVICE_ACTIVE) and !(ddMon.StateFlags & DISPLAY_DEVICE_MIRRORING_DRIVER)) {
             // THIS IS UNTESTED
             char device_id[9], buffer[80];
             vsprintf(buffer, sizeof(buffer), "%s", ddMon.DeviceID);
@@ -649,7 +658,7 @@ static void HandleKeyPress(WPARAM value)
       result = ToUnicode(value, MapVirtualKey(value, 0), keystate, printable, sizeof(printable)/sizeof(printable[0]), 0);
 
       int flags = 0;
-      if ((value >= 0x60) && (value < 0x70)) flags |= KQ_NUM_PAD;
+      if ((value >= 0x60) and (value < 0x70)) flags |= KQ_NUM_PAD;
       if (LOWORD(GetKeyState(VK_CAPITAL)) == 1) flags |= KQ_CAPS_LOCK;
       if (keyconv[value]) MsgKeyPress(flags|glQualifiers, keyconv[value], printable[0]);
       else MSG("No equivalent key value for MS key %d.\n", (int)value);
@@ -794,13 +803,12 @@ static LRESULT CALLBACK WindowProcedure(HWND window, UINT msgcode, WPARAM wParam
                //XInputEnable(FALSE);
             #endif
 
-            glLastPort = 0;
+            glLastPort = -1;
             for (DWORD i = 0; i < XUSER_MAX_COUNT; i++) {
                XINPUT_CAPABILITIES cap;
-               if (XInputGetCapabilities(i, XINPUT_FLAG_GAMEPAD, &cap) == ERROR_SUCCESS) {
+               if (!XInputGetCapabilities(i, XINPUT_FLAG_GAMEPAD, &cap)) {
                   glLastPort = i;
                }
-               else break;
             }
          }
          else {
@@ -1067,11 +1075,56 @@ void winDisableBatching(void)
 
 //********************************************************************************************************************
 
+static int winFindPrimaryController(void)
+{
+   for (DWORD port=0; port < XUSER_MAX_COUNT; port++) {
+      XINPUT_CAPABILITIES cap = { };
+      if (!XInputGetCapabilities(port, XINPUT_FLAG_GAMEPAD, &cap)) {
+         const auto primary_port = int(port);
+         glPrimaryPort.store(primary_port);
+         return primary_port;
+      }
+   }
+
+   return -1;
+}
+
+//********************************************************************************************************************
+
+static ERR winControllerError(DWORD Result)
+{
+   switch (Result) {
+      case ERROR_DEVICE_NOT_CONNECTED:
+         return ERR::Disconnected;
+
+      case ERROR_INVALID_PARAMETER:
+         return ERR::Args;
+
+      default:
+         return ERR::SystemCall;
+   }
+}
+
+//********************************************************************************************************************
+
 ERR winReadController(int Port, double *Values, CON &Buttons)
 {
    constexpr double tolerance = 0.08; // At-rest dead zone tolerance for thumb sticks
+
+   if (Port < 0) {
+      if (Port < -1) return ERR::OutOfRange;
+      const auto primary_port = glPrimaryPort.load();
+      if (primary_port >= 0) Port = primary_port;
+      else {
+         Port = winFindPrimaryController();
+         if (Port < 0) return ERR::Disconnected;
+      }
+   }
+   else if (Port >= int(XUSER_MAX_COUNT)) return ERR::OutOfRange;
+
    XINPUT_STATE state;
-   if (XInputGetState(Port, &state) == ERROR_SUCCESS) {
+   const auto result = XInputGetState(DWORD(Port), &state);
+   if (!result) {
       Values[0] = double(state.Gamepad.bLeftTrigger) * (1.0 / 255.0);
       Values[1] = double(state.Gamepad.bRightTrigger) * (1.0 / 255.0);
       Values[2] = std::clamp(double(state.Gamepad.sThumbLX) * (1.0 / 32767.0), -1.0, 1.0);
@@ -1091,6 +1144,7 @@ ERR winReadController(int Port, double *Values, CON &Buttons)
          Values[5] = 0;
       }
 
+      Buttons = CON::NIL;
       if (state.Gamepad.wButtons) {
          if (state.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_UP) Buttons |= CON::DPAD_UP;
          if (state.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_DOWN) Buttons |= CON::DPAD_DOWN;
@@ -1107,10 +1161,13 @@ ERR winReadController(int Port, double *Values, CON &Buttons)
          if (state.Gamepad.wButtons & XINPUT_GAMEPAD_X) Buttons |= CON::GAMEPAD_W;
          if (state.Gamepad.wButtons & XINPUT_GAMEPAD_Y) Buttons |= CON::GAMEPAD_N;
       }
-      else Buttons = CON::NIL; //state.Gamepad.wButtons;
       return ERR::Okay;
    }
-   else return ERR::SystemCall;
+   else {
+      auto primary_port = Port;
+      glPrimaryPort.compare_exchange_strong(primary_port, -1);
+      return winControllerError(result);
+   }
 }
 
 //********************************************************************************************************************
@@ -1214,7 +1271,7 @@ int winCreateScreenClass(void)
 */
 
 HWND winCreateScreen(HWND PopOver, int *X, int *Y, int *Width, int *Height, char Maximise, char Borderless, const char *Name,
-   char Composite, unsigned char Opacity, char Desktop)
+   char Composite, double Opacity, char Desktop)
 {
    if (!Name) Name = "Kotuku";
 
@@ -1271,16 +1328,19 @@ HWND winCreateScreen(HWND PopOver, int *X, int *Y, int *Width, int *Height, char
 
    if (glStickToFront > 0) glStickToFront--;
 
-   if ((Composite) or (Opacity < 255)) {
+   if ((Composite) or (Opacity < 1.0)) {
       SetLastError(0);
       if (!SetWindowLong(Window, GWL_EXSTYLE, GetWindowLong(Window, GWL_EXSTYLE) | WS_EX_LAYERED)) {
          if (!GetLastError()) {
+            DestroyWindow(Window);
             return nullptr;
          }
       }
 
       if (!Composite) {
-         if (!SetLayeredWindowAttributes(Window, 0, Opacity, LWA_ALPHA)) {
+         const uint8_t opacity = win_opacity_to_byte(Opacity);
+         if (!SetLayeredWindowAttributes(Window, 0, opacity, LWA_ALPHA)) {
+            DestroyWindow(Window);
             return nullptr;
          }
       }
@@ -1392,6 +1452,7 @@ int winDestroyWindow(HWND window)
    NOTIFYICONDATA notify;
 
    if (window == glMainScreen) glMainScreen = nullptr;
+   RevokeDragDrop(window);
 
    ZeroMemory(&notify, sizeof(notify));
    notify.cbSize = sizeof(notify);
@@ -1506,16 +1567,12 @@ void precalc_rgb(unsigned char *Data, unsigned char *Dest, int Width, int Height
    }
 }
 
-void win32RedrawWindow(HWND Window, HDC WindowDC, int X, int Y, int Width,
-   int Height, int XDest, int YDest, int ScanWidth, int ScanHeight,
-   int BPP, unsigned char *Data, int RedMask, int GreenMask, int BlueMask, int AlphaMask, unsigned char Opacity)
+//********************************************************************************************************************
+
+static BITMAPV4HEADER make_bitmap_v4_header(int ScanWidth, int ScanHeight, int BPP, int RedMask, int GreenMask,
+   int BlueMask, int AlphaMask)
 {
-   POINT ptSrc = { 0, 0 };
-   SIZE size;
-   char direct_blit;
-   BITMAPV4HEADER info;
-   RECT rect;
-   unsigned char *alpha_data;
+   BITMAPV4HEADER info = { };
 
    info.bV4Size          = sizeof(info);
    info.bV4Width         = ScanWidth;     // Width in pixels
@@ -1538,15 +1595,35 @@ void win32RedrawWindow(HWND Window, HDC WindowDC, int X, int Y, int Width,
 
    // NB: wingdi.h sometimes defines bV4Compression as bV4V4Compression
 
-   if (BPP == 24) info.bV4V4Compression = BI_RGB; // Must use BI_RGB in 24bit mode, or GDI does nothing
-   else info.bV4V4Compression = BI_BITFIELDS; // Must use BI_BITFIELDS and set the RGB masks in other packed modes
+   switch (BPP) {
+      case 24: info.bV4V4Compression = BI_RGB; break; // Must use BI_RGB in 24bit mode, or GDI does nothing
+      default: info.bV4V4Compression = BI_BITFIELDS; break; // Must set the RGB masks in other packed modes
+   }
 
-   if (info.bV4BitCount == 15) info.bV4BitCount = 16;
+   switch (info.bV4BitCount) {
+      case 15: info.bV4BitCount = 16; break;
+      default: break;
+   }
+
+   return info;
+}
+
+void win32RedrawWindow(HWND Window, HDC WindowDC, int X, int Y, int Width,
+   int Height, int XDest, int YDest, int ScanWidth, int ScanHeight,
+   int BPP, unsigned char *Data, int RedMask, int GreenMask, int BlueMask, int AlphaMask, double Opacity)
+{
+   POINT ptSrc = { 0, 0 };
+   SIZE size;
+   char direct_blit;
+   auto info = make_bitmap_v4_header(ScanWidth, ScanHeight, BPP, RedMask, GreenMask, BlueMask, AlphaMask);
+   RECT rect;
+   unsigned char *alpha_data;
 
    direct_blit = TRUE;
    if (GetWindowLong(Window, GWL_EXSTYLE) & WS_EX_LAYERED) {
+      const uint8_t opacity = win_opacity_to_byte(Opacity);
       if (AlphaMask) {
-         BLENDFUNCTION blend_alpha = { AC_SRC_OVER, 0, Opacity, AC_SRC_ALPHA };
+         BLENDFUNCTION blend_alpha = { AC_SRC_OVER, 0, opacity, AC_SRC_ALPHA };
 
          GetWindowRect(Window,&rect);
          size.cx = rect.right - rect.left;
@@ -1581,7 +1658,7 @@ void win32RedrawWindow(HWND Window, HDC WindowDC, int X, int Y, int Width,
             DeleteDC(dcMemory);
          }
       }
-      else SetLayeredWindowAttributes(Window, 0, Opacity, LWA_ALPHA);
+      else SetLayeredWindowAttributes(Window, 0, opacity, LWA_ALPHA);
    }
 
    if (direct_blit) {
@@ -1600,11 +1677,14 @@ int winGetPixelFormat(int *redmask, int *greenmask, int *bluemask, int *alphamas
    // WARNING: Calling DescribePixelFormat() causes layered windows to flicker for some bizarre reason.  Therefore this routine has been modified so that DescribePixelFormat() is only called once.
 
    if (!mred) {
-      if (DescribePixelFormat(GetDC(nullptr), 1, sizeof(PIXELFORMATDESCRIPTOR), &pfd)) {
-         if (pfd.cRedBits <= 8) mred = formats[pfd.cRedBits] << pfd.cRedShift;
-         if (pfd.cGreenBits <= 8) mgreen = formats[pfd.cGreenBits] << pfd.cGreenShift;
-         if (pfd.cBlueBits <= 8) mblue = formats[pfd.cBlueBits] << pfd.cBlueShift;
-         if (pfd.cAlphaBits <= 8) malpha = formats[pfd.cAlphaBits] << pfd.cAlphaShift;
+      if (auto dc = GetDC(nullptr)) {
+         if (DescribePixelFormat(dc, 1, sizeof(PIXELFORMATDESCRIPTOR), &pfd)) {
+            if (pfd.cRedBits <= 8) mred = formats[pfd.cRedBits] << pfd.cRedShift;
+            if (pfd.cGreenBits <= 8) mgreen = formats[pfd.cGreenBits] << pfd.cGreenShift;
+            if (pfd.cBlueBits <= 8) mblue = formats[pfd.cBlueBits] << pfd.cBlueShift;
+            if (pfd.cAlphaBits <= 8) malpha = formats[pfd.cAlphaBits] << pfd.cAlphaShift;
+         }
+         ReleaseDC(nullptr, dc);
       }
    }
 
@@ -1663,33 +1743,7 @@ void winSetDIBitsToDevice(HDC hdc, int xdest, int ydest, int width, int height,
         int xstart, int ystart, int scanwidth, int scanheight, int bpp, void *data,
         int redmask, int greenmask, int bluemask)
 {
-   BITMAPV4HEADER info;
-
-   info.bV4Size          = sizeof(info);
-   info.bV4Width         = scanwidth;     // Width in pixels
-   info.bV4Height        = -scanheight;   // Height in pixels
-   info.bV4Planes        = 1;             // Always 1
-   info.bV4BitCount      = bpp;           // Bits per pixel
-   info.bV4SizeImage     = 0;
-   info.bV4XPelsPerMeter = 0;
-   info.bV4YPelsPerMeter = 0;
-   info.bV4ClrUsed       = 0;
-   info.bV4ClrImportant  = 0;
-   info.bV4RedMask       = redmask;
-   info.bV4GreenMask     = greenmask;
-   info.bV4BlueMask      = bluemask;
-   info.bV4AlphaMask     = 0;
-   info.bV4CSType        = 0;
-   info.bV4GammaRed      = 0;
-   info.bV4GammaGreen    = 0;
-   info.bV4GammaBlue     = 0;
-
-   // NB: wingdi.h sometimes defines bV4Compression as bV4V4Compression
-
-   if (bpp == 24) info.bV4V4Compression = BI_RGB; // Must use BI_RGB in 24bit mode, or GDI does nothing
-   else info.bV4V4Compression = BI_BITFIELDS; // Must use BI_BITFIELDS and set the RGB masks in other packed modes
-
-   if (info.bV4BitCount == 15) info.bV4BitCount = 16;
+   auto info = make_bitmap_v4_header(scanwidth, scanheight, bpp, redmask, greenmask, bluemask, 0);
 
    ystart = scanheight - (ystart + height);
    SetDIBitsToDevice(hdc, xdest, ydest, width, height, xstart, ystart, 0, scanheight, data, (BITMAPINFO *)&info, DIB_RGB_COLORS);

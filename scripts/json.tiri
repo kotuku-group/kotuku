@@ -113,7 +113,7 @@ json.encode = function(Value:any, ErrorCallback:func, AsKey:bool):str
          end
          s:push(']')
       end
-      return s:join()
+      return s:concat()
    elseif kind is 'table' then
       s = array<string>
       if AsKey then
@@ -126,7 +126,7 @@ json.encode = function(Value:any, ErrorCallback:func, AsKey:bool):str
          end
          s:push('}')
       end
-      return s:join()
+      return s:concat()
    elseif kind is 'string' then
       return '"' .. escape_str(Value) .. '"'
    elseif kind is 'number' then

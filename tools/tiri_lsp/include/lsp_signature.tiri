@@ -582,7 +582,7 @@ function signatureXmlLabel(DisplayName:str, Params:array):str
    for param in values(Params or array<table>) do
       labels:push(signatureParamLabel(param))
    end
-   return DisplayName .. '(' .. labels:join(', ') .. ')'
+   return DisplayName .. '(' .. labels:concat(', ') .. ')'
 end
 
 -- Build the display label for a signature that has an explicit Tiri prototype.

@@ -364,8 +364,14 @@ ERR SURFACE_Draw(extSurface *Self, struct acDraw *Args)
 
 
    log.traceBranch("%dx%d,%dx%d", x, y, width, height);
-   RedrawSurface(Self->UID, x, y, width, height, IRF::RELATIVE|IRF::IGNORE_CHILDREN);
-   gfx::ExposeSurface(Self->UID, x, y, width, height, EXF::REDRAW_VOLATILE);
+   if (auto error = RedrawSurface(Self->UID, x, y, width, height, IRF::RELATIVE|IRF::IGNORE_CHILDREN);
+         error != ERR::Okay) {
+      return error|ERR::Notified;
+   }
+   if (auto error = gfx::ExposeSurface(Self->UID, x, y, width, height, EXF::REDRAW_VOLATILE);
+         error != ERR::Okay) {
+      return error|ERR::Notified;
+   }
    return ERR::Okay|ERR::Notified;
 }
 
@@ -525,12 +531,24 @@ static ERR SURFACE_InvalidateRegion(extSurface *Self, struct drw::InvalidateRegi
 
 
    if (Args) {
-      RedrawSurface(Self->UID, Args->X, Args->Y, Args->Width, Args->Height, IRF::RELATIVE);
-      gfx::ExposeSurface(Self->UID, Args->X, Args->Y, Args->Width, Args->Height, EXF::CHILDREN|EXF::REDRAW_VOLATILE_OVERLAP);
+      if (auto error = RedrawSurface(Self->UID, Args->X, Args->Y, Args->Width, Args->Height, IRF::RELATIVE);
+            error != ERR::Okay) {
+         return error|ERR::Notified;
+      }
+      if (auto error = gfx::ExposeSurface(Self->UID, Args->X, Args->Y, Args->Width, Args->Height,
+            EXF::CHILDREN|EXF::REDRAW_VOLATILE_OVERLAP); error != ERR::Okay) {
+         return error|ERR::Notified;
+      }
    }
    else {
-      RedrawSurface(Self->UID, 0, 0, Self->Width, Self->Height, IRF::RELATIVE);
-      gfx::ExposeSurface(Self->UID, 0, 0, Self->Width, Self->Height, EXF::CHILDREN|EXF::REDRAW_VOLATILE_OVERLAP);
+      if (auto error = RedrawSurface(Self->UID, 0, 0, Self->Width, Self->Height, IRF::RELATIVE);
+            error != ERR::Okay) {
+         return error|ERR::Notified;
+      }
+      if (auto error = gfx::ExposeSurface(Self->UID, 0, 0, Self->Width, Self->Height,
+            EXF::CHILDREN|EXF::REDRAW_VOLATILE_OVERLAP); error != ERR::Okay) {
+         return error|ERR::Notified;
+      }
    }
 
    return ERR::Okay|ERR::Notified;
@@ -587,6 +605,7 @@ void move_layer(extSurface *Self, int X, int Y)
    int desty = old.Top  + Y - Self->Y;
 
    int parent_index = find_parent_list(glSurfaces, Self);
+   if (parent_index IS -1) return;
 
    // Since we do not own our graphics buffer, we need to shift the content in the buffer first, then send an
    // expose message to have the changes displayed on screen.
@@ -616,7 +635,8 @@ void move_layer(extSurface *Self, int X, int Y)
 
    // Expose underlying graphics resulting from the movement
 
-   for (vindex=index+1; glSurfaces[vindex].Level > glSurfaces[index].Level; vindex++);
+   for (vindex=index+1; (vindex < int(glSurfaces.size())) and
+         (glSurfaces[vindex].Level > glSurfaces[index].Level); vindex++);
    tlVolatileIndex = vindex;
    auto clip = glSurfaces[index].area();
    redraw_nonintersect(Self->ParentID, glSurfaces, parent_index, clip, old,
@@ -676,16 +696,18 @@ void prepare_background(extSurface *Self, const SURFACELIST &List, int Index, ex
    if (!List[end].ParentID) return;
    int parentindex = end;
    while ((parentindex > 0) and (List[parentindex].SurfaceID != List[end].ParentID)) parentindex--;
+   if (List[parentindex].SurfaceID != List[end].ParentID) return;
 
    // If the parent object is invisible, we need to scan back to a visible parent
 
    OBJECTID id = List[parentindex].SurfaceID;
-   for (j=parentindex; List[parentindex].Level > 1; j--) {
+   for (j=parentindex; (j >= 0) and (List[j].Level > 1); j--) {
       if (List[j].SurfaceID IS id) {
          if (!List[j].transparent()) break;
          id = List[j].ParentID;
       }
    }
+   if (j < 0) return;
    parentindex = j;
 
    // This loop will copy surface content to the buffered graphics area.  If the parentindex and end values are
@@ -769,7 +791,7 @@ void copy_bkgd(const SURFACELIST &List, int Index, int End, int Master, ClipRect
       // siblings that are in our way.
 
       int j = i + 1;
-      while (List[j].Level > List[i].Level) j++;
+      while ((j < End) and (j < int(List.size())) and (List[j].Level > List[i].Level)) j++;
       i = j - 1;
    }
 

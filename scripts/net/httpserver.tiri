@@ -1151,7 +1151,7 @@ a:hover { text-decoration: underline; }
 
    -- List directory contents
    logMessage(self, 'Scanning folder ' .. DirPath)
-   err, dir = mSys.OpenDir(DirPath, bit.bor(RDF_FOLDERS, RDF_FILES, RDF_PERMISSIONS, RDF_DATE, RDF_SIZE, RDF_TAGS))
+   err, dir = mSys.OpenDir(DirPath, RDF_FOLDERS|RDF_FILES|RDF_PERMISSIONS|RDF_DATE|RDF_SIZE|RDF_TAGS)
    if err is ERR_Okay then
       count = 0
       maxEntries = 1000 -- Limit directory entries to prevent DoS

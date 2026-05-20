@@ -6,18 +6,18 @@
     <name>Bitmap</name>
     <type>class</type>
     <module>Display</module>
-    <comment>Manages bitmap graphics and provides drawing functionality.</comment>
+    <comment>Represents a pixel buffer used for drawing, image transfer and display backing.</comment>
     <version>2</version>
     <id>ff557b59</id>
     <idstring>BITMAP</idstring>
     <category>Graphics</category>
     <copyright>Paul Manias © 2003-2026</copyright>
     <description>
-<p>The Bitmap class provides a way of describing an area of memory that an application can draw to, and/or display if the data is held in video memory.  Bitmaps are used in the handling of <class name="Display">Display</class> and <class name="Picture">Picture</class> objects, and form the backbone of Kōtuku's graphics functionality.  The Bitmap class supports everything from basic graphics primitives to masking and alpha blending features.</p>
-<p>To create a new bitmap object, you need to specify its <fl>Width</fl> and <fl>Height</fl> at a minimum.  Preferably, you should also know how many colours you want to use and whether the bitmap data should be held in standard memory (for CPU based reading and writing) or video memory (for hardware based drawing).  After creating a bitmap you can use a number of available drawing methods for the purpose of image management.  Please note that these methods are designed to be called under exclusive conditions, and it is not recommended that you call methods on a bitmap using the message system.</p>
-<p>By default, the CPU can only be used to read and write data directly to or from a bitmap when it is held in standard memory (this is the default type).  If the <code>TEXTURE</code> or <code>VIDEO</code> flags are specified in the <fl>DataFlags</fl> field then the CPU cannot access this memory, unless you specifically request it.  To do this, use the <action>Lock</action> and <action>Unlock</action> actions to temporarily gain read/write access to a bitmap.</p>
-<p>If you require complex drawing functionality that is not available in the Bitmap class, consider using the functionality provided by the Vector module.</p>
-<p>To save the image of a bitmap, either copy its image to a <class name="Picture">Picture</class> object, or use the SaveImage() action to save the data in PNG format.  Raw data can also be processed through a bitmap by using the Read and Write actions.</p></description>
+<p>The Bitmap class describes a rectangular block of pixel data together with its dimensions, colour format, palette, clipping region and drawing state.  Bitmaps are used directly by <class name="Display">Display</class> and <class name="Picture">Picture</class> objects and provide the low-level pixel storage behind much of Kōtuku's 2D graphics pipeline.</p>
+<p>To create a bitmap, set <fl>Width</fl> and <fl>Height</fl> before initialisation.  The pixel format can be selected explicitly with <fl>BitsPerPixel</fl>, <fl>BytesPerPixel</fl>, <fl>AmtColours</fl> and <fl>Type</fl>, or left for <action>Query</action> and <action>Init</action> to derive from the current display environment.  <fl>DataFlags</fl> controls whether the bitmap uses regular CPU-accessible memory or a platform-specific video or texture resource where supported.</p>
+<p>Direct CPU access is reliable for regular data bitmaps.  Bitmaps backed by video or texture resources may require <action>Lock</action> before reading or writing <fl>Data</fl>, and <action>Unlock</action> after direct access is complete.  Code that uses the drawing methods exposed by this class does not normally need to manage locking itself.</p>
+<p>Bitmap methods are intentionally low-level and operate on immediate pixel data.  Use the Vector module when retained scene graphs, paths, gradients, filters or higher-level drawing composition are required.  Use <class name="Picture">Picture</class> when decoding or encoding image formats is the main concern.</p>
+<p>Raw image bytes can be read and written with <action>Read</action> and <action>Write</action>.  <action>SaveImage</action> writes the clipped bitmap image as PCX data to a destination object that supports writing.</p></description>
     <source>
       <file>class_bitmap.cpp</file>
     </source>
@@ -26,13 +26,17 @@
   <actions>
     <action>
       <name>Clear</name>
-      <comment>Clears a bitmap's image to <fl>BkgdIndex</fl>.</comment>
+      <comment>Clears the bitmap image to <fl>BkgdIndex</fl>.</comment>
       <prototype>ERR acClear(*Object)</prototype>
       <tiriPrototype>err = Object.acClear()</tiriPrototype>
       <description>
-<p>Clearing a bitmap wipes away its graphical contents by drawing a blank area over its existing graphics.  The colour of the blank area is determined by the <fl>BkgdIndex</fl> field.  To clear a bitmap to a different colour, use the <method>DrawRectangle</method> method instead.</p>
-<p>If the bitmap supports alpha blending and a transparent result is desired, setting <fl>BkgdIndex</fl> to zero is an efficient way to achieve this outcome.</p>
+<p>Clear fills the full bitmap with the current background colour.  The colour used by the operation is <fl>BkgdIndex</fl>, which is derived from <fl>Bkgd</fl> when the background colour is set through the RGB field.</p>
+<p>To clear a bitmap to a different colour without changing the background fields, call <method>DrawRectangle</method> with <code>BAF::FILL</code>. For alpha-capable bitmaps, setting <fl>BkgdIndex</fl> to zero is an efficient way to clear the image to transparent black.</p>
       </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="LockFailed">Failed to lock a required resource</error>
+      </result>
     </action>
 
     <action>
@@ -44,14 +48,19 @@
         <param type="OBJECTID" name="Dest">The unique ID of the destination object.</param>
       </input>
       <description>
-<p>This action will copy the image of the bitmap to any other initialised bitmap that you specify.  Support for copying the image data to other object class types is not provided.</p>
-<p>This action features automatic clipping and remapping, for occasions where the bitmaps do not match up in size or colour.</p>
+<p>CopyData copies this bitmap into another initialised <class name="Bitmap">Bitmap</class> object.  Other destination classes are not supported.</p>
+<p>The copy is clipped to the destination dimensions.  If the destination is wider or taller than the source, the exposed area is cleared to the destination bitmap's background colour.</p>
       </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Args">Invalid arguments passed to function</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
     </action>
 
     <action>
       <name>Draw</name>
-      <comment>Clears a bitmap's image to <fl>BkgdIndex</fl>.</comment>
+      <comment>Clears the bitmap image to <fl>BkgdIndex</fl>.</comment>
       <prototype>ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)</prototype>
       <tiriPrototype>err = Object.acDraw(X:num, Y:num, Width:num, Height:num)</tiriPrototype>
       <input>
@@ -60,6 +69,9 @@
         <param type="INT" name="Width">The width of the region to be drawn.</param>
         <param type="INT" name="Height">The height of the region to be drawn.</param>
       </input>
+      <description>
+<p>Draw fills the full bitmap with the current background colour.  It is equivalent to drawing a filled rectangle over the entire bitmap with <fl>BkgdIndex</fl>.</p>
+      </description>
     </action>
 
     <action>
@@ -68,7 +80,7 @@
       <prototype>ERR acFlush(*Object)</prototype>
       <tiriPrototype>err = Object.acFlush()</tiriPrototype>
       <description>
-<p>The Flush() action ensures that client graphics operations are synchronised with the graphics accelerator. Synchronisation is essential prior to drawing to the bitmap with the CPU.  Failure to synchronise may result in corruption in the bitmap's graphics display.</p>
+<p>Flush synchronises pending graphics operations with the active graphics backend.  Synchronisation is required before direct CPU access to accelerator-managed bitmap memory.</p>
 <p>Clients do not need to call this function if solely using the graphics methods provided in the <class name="Bitmap">Bitmap</class> class.</p>
       </description>
     </action>
@@ -79,9 +91,17 @@
       <prototype>ERR InitObject(*Object)</prototype>
       <tiriPrototype>err = Object.init()</tiriPrototype>
       <description>
-<p>This action will initialise a bitmap object so that it is ready for use, which primarily means that a suitable area of memory is reserved for drawing.  If the <fl>Data</fl> field has not already been defined, a new memory block will be allocated for the bitmap region.  The type of memory that is allocated is dependent on the <fl>DataFlags</fl> field, which defaults to <code>MEM::DATA</code>.  To request video RAM, use <code>MEM::VIDEO</code>.  To store graphics data in fast write-able memory, use <code>MEM::TEXTURE</code>.</p>
-<p>The Init() action requires that the <fl>Width</fl> and <fl>Height</fl> fields are defined at minimum.</p>
+<p>Init prepares a queried bitmap for use.  It validates the calculated bitmap state, allocates <fl>Data</fl> when required, configures platform-specific backing resources and selects the pixel access routines used by drawing operations.</p>
+<p>If <fl>Data</fl> has already been supplied, Init uses the caller-provided memory.  Otherwise allocation is controlled by <fl>DataFlags</fl> and <fl>Flags</fl>.  <fl>Width</fl> and <fl>Height</fl> must be set before this action is called.</p>
       </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NoSupport">Operation not supported</error>
+        <error code="Query">Attempt to Query() failed</error>
+        <error code="FieldNotSet">A required field value is undefined</error>
+        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+        <error code="SystemCall">A call to the host system has failed</error>
+      </result>
     </action>
 
     <action>
@@ -89,6 +109,20 @@
       <comment>Locks the bitmap surface for direct read/write access.</comment>
       <prototype>ERR acLock(*Object)</prototype>
       <tiriPrototype>err = Object.acLock()</tiriPrototype>
+      <description>
+<p>Lock makes bitmap memory available through <fl>Data</fl> for direct CPU access.  It is mainly required for bitmaps backed by a video or platform drawable resource; data-backed bitmaps are already CPU-accessible.</p>
+<p>Call <action>Unlock</action> when direct access is complete so platform resources can be released or synchronised.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NoData">No data is available for use</error>
+        <error code="LockFailed">Failed to lock a required resource</error>
+        <error code="NoSupport">Operation not supported</error>
+        <error code="FieldNotSet">A required field value is undefined</error>
+        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+        <error code="SystemCall">A call to the host system has failed</error>
+        <error code="CreateResource">Failed to create a new resource</error>
+      </result>
     </action>
 
     <action>
@@ -97,9 +131,13 @@
       <prototype>ERR acQuery(*Object)</prototype>
       <tiriPrototype>err = Object.acQuery()</tiriPrototype>
       <description>
-<p>This action will pre-initialise a bitmap object so that its fields are populated with default values.  It stops short of allocating the bitmap's memory.</p>
-<p>This action requires that the <fl>Width</fl> and <fl>Height</fl> fields of the bitmap are defined at minimum.  Populating the bitmap fields is done on a best efforts basis, e.g. if the <fl>BytesPerPixel</fl> is set to 2 then it will be determined that the bitmap is a 16 bit, 64k colour bitmap.</p>
+<p>Query calculates the bitmap's derived fields without allocating image memory.  It resolves values such as <fl>Type</fl>, <fl>BytesPerPixel</fl>, <fl>BitsPerPixel</fl>, <fl>AmtColours</fl>, <fl>ByteWidth</fl>, <fl>LineWidth</fl>, <fl>PlaneMod</fl> and <fl>Size</fl> from the fields already set by the caller.</p>
+<p>At minimum, <fl>Width</fl> and <fl>Height</fl> must be positive.  If format fields are incomplete, Query derives a compatible format where possible; for example, <fl>BytesPerPixel</fl> set to <code>2</code> implies a 16-bit bitmap.</p>
       </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="InvalidDimension">A dimension specification is invalid</error>
+      </result>
     </action>
 
     <action>
@@ -112,6 +150,16 @@
         <param type="INT" name="Length">The total number of bytes to read from the object.  This value cannot exceed the size of the Buffer.</param>
         <param type="INT" name="Result">The Read action will write this parameter with the total number of bytes read into the Buffer.</param>
       </input>
+      <description>
+<p>Read copies bytes from <fl>Data</fl> into the supplied output buffer, starting at <fl>Position</fl>.  <fl>Position</fl> is advanced by the number of bytes copied and the result count is returned in the action arguments.</p>
+<p>If the requested length would pass the end of the bitmap data, Read truncates the transfer to the remaining byte count.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NoData">No data is available for use</error>
+        <error code="OutOfRange">A value is outside of the valid range</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
     </action>
 
     <action>
@@ -125,12 +173,14 @@
         <param type="DOUBLE" name="Depth">The new depth of the object.</param>
       </input>
       <description>
-<p>Resizing a bitmap will change its <fl>Width</fl>, <fl>Height</fl> and optionally <fl>BitsPerPixel</fl>.  Existing image data is not retained by this process.</p>
-<p>The image data is cleared with <fl>Bkgd</fl> if the <code>CLEAR</code> flag is defined in <fl>Flags</fl>.</p>
+<p>Resize changes <fl>Width</fl>, <fl>Height</fl> and, unless <code>BMF::FIXED_DEPTH</code> is set, <fl>BitsPerPixel</fl>.  Existing image content is not preserved.</p>
+<p>If <code>BMF::NEVER_SHRINK</code> is set, requested dimensions smaller than the current bitmap are raised to the current size.  If <code>BMF::CLEAR</code> is set, the resized bitmap is cleared to <fl>Bkgd</fl>.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="FieldNotSet">A required field value is undefined</error>
+        <error code="Args">Invalid arguments passed to function</error>
+        <error code="NoSupport">Operation not supported</error>
+        <error code="UndefinedField">A required field value is undefined</error>
         <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
@@ -138,13 +188,23 @@
 
     <action>
       <name>SaveImage</name>
-      <comment>Saves a bitmap's image to a data object of your choosing in PCX format.</comment>
+      <comment>Saves the bitmap image to a writable object in PCX format.</comment>
       <prototype>ERR acSaveImage(*Object, OBJECTID Dest, CLASSID ClassID)</prototype>
       <tiriPrototype>err = Object.acSaveImage(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded image data.</param>
         <param type="CLASSID" name="ClassID">The Picture class to use for encoding the image data.</param>
       </input>
+      <description>
+<p>SaveImage writes the current clipping region to <code>Dest</code> as PCX image data.  Paletted bitmaps are written with a palette; true-colour bitmaps are written as three colour planes.  If <fl>ColourSpace</fl> is <code>CS::LINEAR_RGB</code>, RGB values are converted to sRGB while the image is written.</p>
+<p>Errors returned by the destination object's Write action are propagated to the caller.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+        <error code="BufferOverflow">A buffer overflow has occurred</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
     </action>
 
     <action>
@@ -156,6 +216,14 @@
         <param type="DOUBLE" name="Offset">The desired offset to seek to, relative to the Position parameter.</param>
         <param type="POS" name="Position">The position that defines the starting point for Offset.</param>
       </input>
+      <description>
+<p>Seek sets <fl>Position</fl> from the supplied byte offset and origin.  Positions before the start of the bitmap are clamped to zero, and positions beyond <fl>Size</fl> are clamped to <fl>Size</fl>.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Args">Invalid arguments passed to function</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
     </action>
 
     <action>
@@ -163,6 +231,12 @@
       <comment>Unlocks the bitmap surface once direct access is no longer required.</comment>
       <prototype>ERR acUnlock(*Object)</prototype>
       <tiriPrototype>err = Object.acUnlock()</tiriPrototype>
+      <description>
+<p>Unlock releases or synchronises any platform resources held for direct CPU access after <action>Lock</action>.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+      </result>
     </action>
 
     <action>
@@ -175,6 +249,16 @@
         <param type="INT" name="Length">The total number of bytes to write to the object.</param>
         <param type="INT" name="Result">This parameter with be updated with the total number of bytes written from the Buffer.</param>
       </input>
+      <description>
+<p>Write copies bytes from the supplied input buffer into <fl>Data</fl>, starting at <fl>Position</fl>.  <fl>Position</fl> is advanced by the number of bytes written and the result count is returned in the action arguments.</p>
+<p>The write must fit within the bitmap's allocated <fl>Size</fl>.  Use <action>Seek</action> to change the target position before writing.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NoData">No data is available for use</error>
+        <error code="OutOfSpace">Out of space.  There is no available room to complete the request</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
     </action>
 
   </actions>
@@ -186,31 +270,34 @@
       <prototype>ERR bmp::Compress(OBJECTPTR Object, INT Level)</prototype>
       <tiriPrototype>err = Compress(Level:num)</tiriPrototype>
       <input>
-        <param type="INT" name="Level">Level of compression.  Zero uses a default setting (recommended), the maximum is 10.</param>
+        <param type="INT" name="Level">Reserved compression level.  The current implementation uses the compression module's default level.</param>
       </input>
       <description>
-<p>A bitmap can be compressed with the CompressBitmap() method to save memory when the bitmap is not in use.  This is useful if a large bitmap needs to be stored in memory and it is anticipated that the bitmap will be used infrequently.</p>
-<p>Once a bitmap is compressed, its image data is invalid.  Any attempt to access the bitmap's image data will likely result in a memory access fault.  The image data will remain invalid until the <method>Decompress</method> method is called to restore the bitmap to its original state.</p>
-<p>The <code>BMF::COMPRESSED</code> bit will be set in the <fl>Flags</fl> field after a successful call to this function to indicate that the bitmap is compressed.</p>
+<p>Compress() stores a compressed copy of the bitmap's pixel data and releases the uncompressed <fl>Data</fl> buffer.  It is useful for large data-backed bitmaps that need to remain available but are accessed infrequently.</p>
+<p>Once a bitmap is compressed, <fl>Data</fl> is no longer available for direct access.  Call <method>Decompress</method> before reading pixels, writing pixels or passing the bitmap to code that expects an active data buffer.</p>
+<p>The <code>BMF::COMPRESSED</code> flag is set in <fl>Flags</fl> after successful compression.  Video and texture-backed bitmaps are not supported by this method.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
+        <error code="NoSupport">Operation not supported</error>
         <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="ReallocMemory">The reallocation of a memory block failed</error>
         <error code="CreateObject">A Compression object could not be created.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="Compression">Unspecified failure during compression of a data stream</error>
       </result>
     </method>
 
     <method>
       <name>ConvertToLinear</name>
-      <comment>Convert a bitmap's colour space to linear RGB.</comment>
+      <comment>Converts a bitmap's colour space to linear RGB.</comment>
       <prototype>ERR bmp::ConvertToLinear(OBJECTPTR Object)</prototype>
       <tiriPrototype>err = ConvertToLinear()</tiriPrototype>
       <description>
-<p>Use ConvertToLinear to convert the colour space of a bitmap from sRGB to linear RGB.  If the <code>BMF::ALPHA_CHANNEL</code> flag is enabled on the bitmap, pixels with an alpha value of 0 are ignored.</p>
-<p>The <fl>ColourSpace</fl> will be set to <code>LINEAR_RGB</code> on completion.  This method returns immediately if the <fl>ColourSpace</fl> is already set to <code>LINEAR_RGB</code>.</p>
-<p>For the sake of efficiency, lookup tables are used to quickly perform the conversion process.</p>
+<p>ConvertToLinear() converts the bitmap's clipped region from sRGB to linear RGB.  If <code>BMF::ALPHA_CHANNEL</code> is set, pixels with an alpha value of zero are left unchanged.</p>
+<p>
+<fl>ColourSpace</fl> is set to <code>CS::LINEAR_RGB</code> on completion.  The method returns <code>ERR::NothingDone</code> if the bitmap is already marked as linear RGB.</p>
+<p>This method currently requires a 32-bit bitmap.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
@@ -222,13 +309,14 @@
 
     <method>
       <name>ConvertToRGB</name>
-      <comment>Convert a bitmap's colour space to standard RGB.</comment>
+      <comment>Converts a bitmap's colour space to standard RGB.</comment>
       <prototype>ERR bmp::ConvertToRGB(OBJECTPTR Object)</prototype>
       <tiriPrototype>err = ConvertToRGB()</tiriPrototype>
       <description>
-<p>Use ConvertToRGB() to convert the colour space of a bitmap from linear RGB to sRGB.  If the <code>BMF::ALPHA_CHANNEL</code> flag is enabled on the bitmap, pixels with an alpha value of 0 are ignored.</p>
-<p>The <fl>ColourSpace</fl> will be set to <code>SRGB</code> on completion.  This method returns immediately if the <fl>ColourSpace</fl> is already set to <code>SRGB</code>.</p>
-<p>For the sake of efficiency, lookup tables are used to quickly perform the conversion process.</p>
+<p>ConvertToRGB() converts the bitmap's clipped region from linear RGB to sRGB.  If <code>BMF::ALPHA_CHANNEL</code> is set, pixels with an alpha value of zero are left unchanged.</p>
+<p>
+<fl>ColourSpace</fl> is set to <code>CS::SRGB</code> on completion.  The method returns <code>ERR::NothingDone</code> if the bitmap is already marked as sRGB.</p>
+<p>This method currently requires a 32-bit bitmap.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
@@ -254,7 +342,8 @@
         <param type="INT" name="YDest">The vertical position to copy the area to.</param>
       </input>
       <description>
-<p>This method is a proxy for <function module="Display">CopyArea</function>.</p>
+<p>CopyArea() copies a rectangular region from this bitmap to <code>DestBitmap</code>.  The source rectangle starts at <code>X</code>, <code>Y</code> and has the supplied <code>Width</code> and <code>Height</code>; the destination position is <code>XDest</code>, <code>YDest</code>.</p>
+<p>The operation is implemented by <function module="Display">CopyArea</function> and supports the same <lk>BAF</lk> options.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
@@ -272,12 +361,13 @@
         <param type="INT" name="RetainData">Retains the compression data if <code>true</code>.</param>
       </input>
       <description>
-<p>The Decompress() method is used to restore a compressed bitmap to its original state.  If the bitmap is not compressed, the method does nothing.</p>
-<p>The compressed data will be terminated unless <code>RetainData</code> is <code>true</code>.  Retaining the data will allow the client to repeatedly restore the content of the most recent <method>Compress</method> call.</p>
+<p>Decompress() restores <fl>Data</fl> for a bitmap previously compressed with <method>Compress</method>.  If no compressed data is available, the method returns <code>ERR::Okay</code> without changing the bitmap.</p>
+<p>Compressed data is released after a successful restore unless <code>RetainData</code> is <code>true</code>.  Retaining it allows the most recent compressed image to be restored again later.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="AllocMemory">Insufficient memory in recreating the bitmap data buffer.</error>
+        <error code="CreateObject">A Compression object could not be created.</error>
       </result>
     </method>
 
@@ -287,7 +377,8 @@
       <prototype>ERR bmp::Demultiply(OBJECTPTR Object)</prototype>
       <tiriPrototype>err = Demultiply()</tiriPrototype>
       <description>
-<p>Use Demultiply() to normalise RGB values that have previously been converted by <method>Premultiply</method>.  This method will return immediately if the bitmap values are already normalised, as determined by the presence of the <code>PREMUL</code> value in <fl>Flags</fl>.</p>
+<p>Demultiply() restores straight RGB channel values after <method>Premultiply</method> has converted them to premultiplied alpha.  The method returns <code>ERR::NothingDone</code> if <code>BMF::PREMUL</code> is not set in <fl>Flags</fl>.</p>
+<p>This method operates only on 32-bit bitmaps that have an alpha channel, and it processes only the current clipping region.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
@@ -312,10 +403,11 @@
       </input>
       <description>
 <p>This method draws both filled and unfilled rectangles.  The rectangle is drawn to the target bitmap at position <code>(X, Y)</code> with dimensions determined by the specified <code>Width</code> and <code>Height</code>.  If the <code>Flags</code> parameter sets the <code>FILL</code> flag then the rectangle will be filled, otherwise the rectangle's outline will be drawn.  The colour of the rectangle is determined by the pixel value in the <code>Colour</code> parameter.</p>
+<p>The draw operation is clipped to the bitmap's current clipping region.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>
 
@@ -346,8 +438,8 @@
       <prototype>ERR bmp::Premultiply(OBJECTPTR Object)</prototype>
       <tiriPrototype>err = Premultiply()</tiriPrototype>
       <description>
-<p>Use Premultiply() to convert all RGB values in the bitmap's clipping region to pre-multiplied values.  The exact formula applied per channel is <code>(Colour * Alpha + 0xff)&gt;&gt;8</code>.  The alpha channel is not affected.</p>
-<p>This method will only operate on 32 bit bitmaps, and an alpha channel must be present.  If the RGB values are already pre-multiplied, the method returns immediately.</p>
+<p>Premultiply() converts RGB values in the current clipping region to premultiplied-alpha form.  The formula applied to each colour channel is <code>(Colour * Alpha + 0xff)&gt;&gt;8</code>.  The alpha channel is not changed.</p>
+<p>This method operates only on 32-bit bitmaps that have an alpha channel.  If the bitmap is already marked as premultiplied, the method returns <code>ERR::NothingDone</code>.</p>
 <p>The process can be reversed with a call to <method>Demultiply</method>.</p>
       </description>
       <result>
@@ -367,12 +459,13 @@
         <param type="INT" name="Number">The number of the clip region to set.</param>
         <param type="INT" name="Left">The horizontal start of the clip region.</param>
         <param type="INT" name="Top">The vertical start of the clip region.</param>
-        <param type="INT" name="Right">The right-most edge of the clip region.</param>
-        <param type="INT" name="Bottom">The bottom-most edge of the clip region.</param>
+        <param type="INT" name="Right">The exclusive right edge of the clip region.</param>
+        <param type="INT" name="Bottom">The exclusive bottom edge of the clip region.</param>
         <param type="INT" name="Terminate">Set to <code>true</code> if this is the last clip region in the list, otherwise <code>false</code>.</param>
       </input>
       <description>
-<p>This method is a proxy for <function module="Display">SetClipRegion</function>.</p>
+<p>SetClipRegion() updates one entry in the bitmap's clipping region list.  Drawing operations are restricted to the combined region.</p>
+<p>This method is implemented by <function module="Display">SetClipRegion</function>.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
@@ -385,39 +478,42 @@
   <fields>
     <field>
       <name>AmtColours</name>
-      <comment>The maximum number of displayable colours.</comment>
+      <comment>The maximum number of colours represented by the bitmap format.</comment>
       <access read="R" write="I">Read/Init</access>
       <type>INT</type>
+      <description>
+<p>For indexed bitmaps, this is the size of the usable palette.  For direct-colour bitmaps, it reflects the colour range implied by <fl>BitsPerPixel</fl> and the selected <fl>ColourFormat</fl>.</p>
+      </description>
     </field>
 
     <field>
       <name>BitsPerPixel</name>
-      <comment>The number of bits per pixel</comment>
+      <comment>The number of bits used to represent each pixel.</comment>
       <access read="R" write="I">Read/Init</access>
       <type>INT</type>
       <description>
-<p>The BitsPerPixel field clarifies exactly how many bits are being used to manage each pixel on the display.  This includes any 'special' bits that are in use, e.g. alpha-channel bits.</p>
+<p>This includes all bits used by the pixel format, including alpha bits where present.</p>
       </description>
     </field>
 
     <field>
       <name>Bkgd</name>
-      <comment>The bitmap's background colour is defined here in RGB format.</comment>
+      <comment>Background colour in RGB format.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>RGB8</type>
       <description>
-<p>The default background colour for a bitmap is black.  To change it, set this field with the new RGB colour.  The background colour is used in operations that require a default colour, such as when clearing the bitmap.</p>
+<p>The background colour is used by operations that need a default fill colour, such as <action>Clear</action>, <action>Draw</action> and some resize paths.  The default background colour is black.</p>
 <p>The <fl>BkgdIndex</fl> will be updated as a result of setting this field.</p>
       </description>
     </field>
 
     <field>
       <name>BkgdIndex</name>
-      <comment>The bitmap's background colour is defined here as a colour index.</comment>
+      <comment>Background colour as a packed pixel value or palette index.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
-<p>The bitmap's background colour is defined in this field as a colour index.  It is recommended that the <fl>Bkgd</fl> field is used for altering the bitmap background unless efficiency requires that the colour index is calculated and set directly.</p>
+<p>Use <fl>Bkgd</fl> for most updates.  Set BkgdIndex directly only when the caller has already calculated the target bitmap's native pixel value or palette index.</p>
       </description>
     </field>
 
@@ -427,7 +523,7 @@
       <access read="R" write="W">Read/Write</access>
       <type lookup="BLM">BLM</type>
       <description>
-<p>The BlendMode field defines the blending algorithm to use when rendering transparent pixels.  The default value is <code>AUTO</code> which will use the best blending algorithm available for the current graphics context.</p>
+<p>The default value is <code>BLM::AUTO</code>, which selects the preferred blending path for the current bitmap and graphics backend.</p>
 <types lookup="BLM"/>
       </description>
     </field>
@@ -438,7 +534,7 @@
       <access read="R">Read</access>
       <type>INT</type>
       <description>
-<p>The ByteWidth of the bitmap is calculated directly from the bitmap's <fl>Width</fl> and <fl>Type</fl> settings. Under no circumstances should you attempt to calculate this value in advance, as it is heavily dependent on the bitmap's <fl>Type</fl>.</p>
+<p>ByteWidth is calculated from <fl>Width</fl>, <fl>Type</fl> and <fl>BytesPerPixel</fl>.  It describes the meaningful pixel bytes in a row and does not include alignment padding.</p>
 <p>The formulas used to calculate the value of this field are:</p>
 <pre>Planar      = Width/8
 Chunky/8    = Width
@@ -457,7 +553,7 @@ Chunky/32   = Width * 4
       <access read="R" write="I">Read/Init</access>
       <type>INT</type>
       <description>
-<p>This field reflects the number of bytes used to construct one pixel.  The maximum number of bytes a client can typically expect is 4 and the minimum is 1.  If the graphics type is planar then refer to the <fl>BitsPerPixel</fl> field, which should yield more useful information.</p>
+<p>This field reflects the byte count used by one chunky pixel.  Values normally range from 1 to 4.  For planar bitmaps, <fl>BitsPerPixel</fl> is the more useful format indicator.</p>
       </description>
     </field>
 
@@ -467,17 +563,17 @@ Chunky/32   = Width * 4
       <access read="G" write="S">Get/Set</access>
       <type>struct ClipRectangle</type>
       <description>
-<p>The Clip field is a short-hand reference for the <fl>ClipLeft</fl>, <fl>ClipTop</fl>, <fl>ClipRight</fl> and <fl>ClipBottom</fl> fields, returning all four values as a single <st>ClipRectangle</st> structure.</p>
+<p>Clip is a shorthand reference for <fl>ClipLeft</fl>, <fl>ClipTop</fl>, <fl>ClipRight</fl> and <fl>ClipBottom</fl>, returning all four values as a single <st>ClipRectangle</st> structure.</p>
       </description>
     </field>
 
     <field>
       <name>ClipBottom</name>
-      <comment>The bottom-most edge of  bitmap's clipping region.</comment>
+      <comment>The exclusive bottom edge of the bitmap clipping region.</comment>
       <access read="R" write="W">Read/Write</access>
       <type>INT</type>
       <description>
-<p>During the initialisation of a bitmap, a default clipping region will be created that matches the bitmap's dimensions. Clipping regions define the area under which graphics can be drawn to a bitmap.  This particular field reflects the bottom-most edge of all clipping regions that have been set or altered through the <method>SetClipRegion</method> method.</p>
+<p>The default clipping region matches the bitmap dimensions.  Drawing operations are limited to the active clipping region.</p>
       </description>
     </field>
 
@@ -487,17 +583,17 @@ Chunky/32   = Width * 4
       <access read="R" write="W">Read/Write</access>
       <type>INT</type>
       <description>
-<p>During the initialisation of a bitmap, a default clipping region will be created that matches the bitmap's dimensions. Clipping regions define the area under which graphics can be drawn to a bitmap.  This particular field reflects the left-most edge of all clipping regions that have been set or altered through the <method>SetClipRegion</method> method.</p>
+<p>The default clipping region matches the bitmap dimensions.  Drawing operations are limited to the active clipping region.</p>
       </description>
     </field>
 
     <field>
       <name>ClipRight</name>
-      <comment>The right-most edge of a bitmap's clipping region.</comment>
+      <comment>The exclusive right edge of the bitmap clipping region.</comment>
       <access read="R" write="W">Read/Write</access>
       <type>INT</type>
       <description>
-<p>During the initialisation of a bitmap, a default clipping region will be created that matches the bitmap's dimensions. Clipping regions define the area under which graphics can be drawn to a bitmap.  This particular field reflects the right-most edge of all clipping regions that have been set or altered through the <method>SetClipRegion</method> method.</p>
+<p>The default clipping region matches the bitmap dimensions.  Drawing operations are limited to the active clipping region.</p>
       </description>
     </field>
 
@@ -507,7 +603,7 @@ Chunky/32   = Width * 4
       <access read="R" write="W">Read/Write</access>
       <type>INT</type>
       <description>
-<p>During the initialisation of a bitmap, a default clipping region will be created that matches the bitmap's dimensions. Clipping regions define the area under which graphics can be drawn to a bitmap.  This particular field reflects the top-most edge of all clipping regions that have been set or altered through the <method>SetClipRegion</method> method.</p>
+<p>The default clipping region matches the bitmap dimensions.  Drawing operations are limited to the active clipping region.</p>
       </description>
     </field>
 
@@ -517,20 +613,20 @@ Chunky/32   = Width * 4
       <access read="R">Read</access>
       <type>struct ColourFormat *</type>
       <description>
-<p>The ColourFormat field points to a structure that defines the colour format used to construct each bitmap pixel.  It only applies to bitmaps that use 2-bytes per colour value or better.  The structure consists of the following fields:</p>
+<p>ColourFormat points to the structure that describes how packed pixel values map to red, green, blue and alpha channels. It is relevant for direct-colour bitmaps, normally those with two or more bytes per pixel.</p>
 <struct lookup="ColourFormat"/>
-<p>The following C++ methods can called on any bitmap in order to build colour values from individual RGB components:</p>
+<p>The following C++ helper methods can be called on a bitmap to build packed colour values from channel components:</p>
 <pre>packPixel(Red, Green, Blue)
 packPixel(Red, Green, Blue, Alpha)
 packAlpha(Alpha)
 packPixelRGB(RGB8 &amp;RGB)
 packPixelRGBA(RGB8 &amp;RGB)
 </pre>
-<p>The following C macros are optimised versions of the above that are limited to 24 and 32-bit bitmaps:</p>
+<p>The following C macros are optimised forms for 24 and 32-bit bitmaps:</p>
 <pre>PackPixelWB(Red, Green, Blue)
 PackPixelWBA(Red, Green, Blue, Alpha)
 </pre>
-<p>The following C++ methods can be used to unpack individual colour components from any colour value read from the bitmap:</p>
+<p>The following C++ helper methods unpack individual colour components from a packed colour value:</p>
 <pre>unpackRed(Colour)
 unpackGreen(Colour)
 unpackBlue(Colour)
@@ -555,7 +651,8 @@ unpackAlpha(Colour)
       <access read="R" write="S">Read/Set</access>
       <type>UINT8 *</type>
       <description>
-<p>This field points directly to the start of a bitmap's data area.  Allocating your own bitmap memory is acceptable if creating a bitmap that is not based on video memory.  However, it is usually a better idea for the initialisation process to allocate the correct amount of memory for you by not interfering with this field.</p>
+<p>Data points to the first byte of the bitmap's pixel buffer when CPU-visible memory is available.  Caller-supplied memory can be used for data-backed bitmaps, but most callers should let <action>Init</action> allocate the correctly sized buffer.</p>
+<p>For video or texture-backed bitmaps, <fl>Data</fl> may be unavailable until <action>Lock</action> succeeds.</p>
       </description>
     </field>
 
@@ -565,8 +662,8 @@ unpackAlpha(Colour)
       <access read="R" write="I">Read/Init</access>
       <type lookup="MEM">MEM</type>
       <description>
-<p>This field determines the type of memory that will be allocated for the <fl>Data</fl> field during the initialisation process. This field accepts the <code>MEM::DATA</code>, <code>MEM::VIDEO</code> and <code>MEM::TEXTURE</code> memory flags.</p>
-<p>Please note that video based bitmaps may be faster than data bitmaps for certain applications, but the content is typically read-only.  Under normal circumstances it is not possible to use the pixel reading functions, or read from the bitmap <fl>Data</fl> field directly with these bitmap types.  To circumvent this problem use the <action>Lock</action> action to enable read access when you require it.</p>
+<p>DataFlags controls the kind of backing storage requested during initialisation.  Common values are <code>MEM::DATA</code>, <code>MEM::VIDEO</code> and <code>MEM::TEXTURE</code>.</p>
+<p>Video or texture-backed bitmaps can be faster for some drawing paths, but direct CPU access is platform dependent.  Use <action>Lock</action> before reading or writing <fl>Data</fl> directly when the bitmap is not a regular data bitmap.</p>
 <types lookup="MEM"/>
       </description>
     </field>
@@ -577,9 +674,9 @@ unpackAlpha(Colour)
       <access read="R">Read</access>
       <type prototype="void (*DrawUCPixel)(objBitmap *, int, int, uint32_t)">FUNCTION *</type>
       <description>
-<p>This field points to an internal C function that can be used for drawing pixels to the bitmap.  It is intended that the function is only ever called by C programs and that caution is exercised by the programmer, as no clipping checks will be performed (meaning it is possible to supply invalid coordinates that would result in a segfault).</p>
+<p>DrawUCPixel points to the active low-level pixel writer for packed colour or palette-index values.  It is intended for C callers that need direct pixel access.  No clipping or bounds checks are performed.</p>
 <p>The prototype of the DrawUCPixel function is <code>Function(*Bitmap, LONG X, LONG Y, uint32_t Colour)</code>.</p>
-<p>The new pixel value must be defined in the <code>Colour</code> parameter.</p>
+<p>The new pixel value is supplied in the <code>Colour</code> parameter.</p>
       </description>
     </field>
 
@@ -589,10 +686,10 @@ unpackAlpha(Colour)
       <access read="R">Read</access>
       <type prototype="void (*DrawUCRIndex)(objBitmap *, uint8_t *, struct RGB8 *)">FUNCTION *</type>
       <description>
-<p>This field points to an internal C function that can be used for drawing pixels to the bitmap.  It is intended that the function is only ever called by C programs and that caution is exercised by the programmer, as no clipping checks will be performed (meaning it is possible to supply an invalid address that would result in a segfault).</p>
+<p>DrawUCRIndex points to the active low-level RGB pixel writer for a caller-supplied address inside <fl>Data</fl>.  It is intended for C callers that need direct pixel access.  No clipping, bounds or address validation is performed.</p>
 <p>The prototype of the DrawUCRIndex function is <code>Function(*Bitmap, uint8_t *Data, RGB8 *RGB)</code>.</p>
-<p>The Data parameter must point to a location within the Bitmap's graphical address space. The new pixel value must be defined in the <code>RGB</code> parameter.</p>
-<p>Note that a colour indexing equivalent of this function is not available in the Bitmap class - this is because it is more efficient to index the Bitmap's <fl>Data</fl> field directly.</p>
+<p>The Data parameter must point to a location within the Bitmap's graphical address space.  The new pixel value must be defined in the <code>RGB</code> parameter.</p>
+<p>There is no colour-index equivalent because callers can write indexed pixel bytes directly through <fl>Data</fl>.</p>
       </description>
     </field>
 
@@ -602,7 +699,7 @@ unpackAlpha(Colour)
       <access read="R">Read</access>
       <type prototype="void (*DrawUCRPixel)(objBitmap *, int, int, struct RGB8 *)">FUNCTION *</type>
       <description>
-<p>This field points to an internal C function that can be used for drawing pixels to the bitmap.  It is intended that the function is only ever called by C programs and that caution is exercised by the programmer, as no clipping checks will be performed (meaning it is possible to supply invalid coordinates that would result in a segfault).</p>
+<p>DrawUCRPixel points to the active low-level RGB pixel writer for <code>X</code>, <code>Y</code> coordinates.  It is intended for C callers that need direct pixel access.  No clipping or bounds checks are performed.</p>
 <p>The prototype of the DrawUCRPixel function is <code>Function(*Bitmap, LONG X, LONG Y, RGB8 *RGB)</code>.</p>
 <p>The new pixel value must be defined in the <code>RGB</code> parameter.</p>
       </description>
@@ -630,6 +727,9 @@ unpackAlpha(Colour)
       <comment>The length of each bitmap line in bytes, including alignment.</comment>
       <access read="R">Read</access>
       <type>INT</type>
+      <description>
+<p>LineWidth includes any row padding required by the active bitmap type or platform backend.  Use <fl>ByteWidth</fl> for the number of meaningful pixel bytes in a row.</p>
+      </description>
     </field>
 
     <field>
@@ -638,8 +738,8 @@ unpackAlpha(Colour)
       <access read="R" write="W">Read/Write</access>
       <type>INT</type>
       <description>
-<p>Some drawing operations support the concept of applying an opacity rating to create translucent graphics.  By adjusting the opacity rating, you can affect the level of translucency that is applied when executing certain graphics operations.</p>
-<p>Methods that support opacity should document the fact that they support the feature.  By default the opacity rating is set to 255 to turn off translucency effects.  Lowering the value will increase the level of translucency when drawing graphics.</p>
+<p>Opacity is an 8-bit alpha multiplier used by drawing operations that support translucent bitmap copies.  A value of <code>255</code> is fully opaque and disables additional translucency.  Lower values make copied pixels more transparent.</p>
+<p>This value is separate from any per-pixel alpha channel stored in the bitmap.</p>
       </description>
     </field>
 
@@ -649,7 +749,8 @@ unpackAlpha(Colour)
       <access read="R" write="S">Read/Set</access>
       <type>struct RGBPalette *</type>
       <description>
-<p>A palette is an array of containing colour values in standard RGB format <code>0xRRGGBB</code>.  The first value must have a header ID of <code>ID_PALETTE</code>, followed by the amount of values in the array. Following this is the actual list itself - colour 0, then colour 1 and so on. There is no termination signal at the end of the list.</p>
+<p>Palette points to the bitmap's colour table.  Indexed bitmaps use this table to map pixel values to RGB colours, and some conversion paths use it even when the bitmap itself is direct-colour.</p>
+<p>The structure starts with the palette header and colour count, followed by colour entries in index order.  There is no terminating entry.</p>
 <p>The following example is for a 32 colour palette:</p>
 <pre>RGBPalette Palette = {
   ID_PALETTE, VER_PALETTE, 32,
@@ -664,8 +765,8 @@ unpackAlpha(Colour)
    }
 };
 </pre>
-<p>Palettes are created for all bitmap types, including RGB based bitmaps above 8-bit colour.  This is because a number of drawing functions require a palette table for conversion between the bitmap types.</p>
-<p>Although the array is dynamic, parent objects such as the Display need to be notified if you want a palette's colours to be propagated to the video display.</p>
+<p>Palettes are created for all bitmap types, including RGB bitmaps above 8-bit colour, because several drawing functions use a palette table when converting between bitmap formats.</p>
+<p>Parent objects such as <class name="Display">Display</class> may need to be updated separately before palette changes are reflected by the visible display.</p>
       </description>
     </field>
 
@@ -675,7 +776,7 @@ unpackAlpha(Colour)
       <access read="R">Read</access>
       <type>INT</type>
       <description>
-<p>This field specifies the distance (in bytes) between each bitplane.  For non-planar types like <code>CHUNKY</code>, this field will reflect the total size of the bitmap.  The calculation used for <code>PLANAR</code> types is <code>ByteWidth * Height</code>.</p>
+<p>PlaneMod specifies the byte distance between each bitplane in planar bitmaps.  For chunky bitmaps, it reflects the total size of the bitmap buffer.</p>
       </description>
     </field>
 
@@ -685,7 +786,7 @@ unpackAlpha(Colour)
       <access read="R">Read</access>
       <type>INT</type>
       <description>
-<p>This field reflects the current byte position for reading and writing raw data to and from a bitmap object.  If you need to change the current byte position, use the Seek action.</p>
+<p>Position is the byte offset used by <action>Read</action> and <action>Write</action>.  Use <action>Seek</action> to change it.</p>
       </description>
     </field>
 
@@ -695,7 +796,7 @@ unpackAlpha(Colour)
       <access read="R">Read</access>
       <type prototype="uint32_t (*ReadUCPixel)(objBitmap *, int, int)">FUNCTION *</type>
       <description>
-<p>This field points to an internal C function that can be used for reading pixels from the bitmap.  It is intended that the function is only ever called by C programs and that caution is exercised by the programmer, as no clipping checks will be performed (meaning it is possible to supply invalid X/Y coordinates that would result in a segfault).</p>
+<p>ReadUCPixel points to the active low-level pixel reader for packed colour or palette-index values.  It is intended for C callers that need direct pixel access.  No clipping or bounds checks are performed.</p>
 <p>The prototype of the ReadUCPixel function is <code>Function(*Bitmap, LONG X, LONG Y, LONG *Index)</code>.</p>
 <p>The pixel value will be returned in the <code>Index</code> parameter.</p>
       </description>
@@ -707,10 +808,10 @@ unpackAlpha(Colour)
       <access read="R">Read</access>
       <type prototype="void (*ReadUCRIndex)(objBitmap *, uint8_t *, struct RGB8 *)">FUNCTION *</type>
       <description>
-<p>This field points to an internal C function that can be used for reading pixels from the bitmap.  It is intended that the function is only ever called by C programs and that caution is exercised by the programmer, as no clipping checks will be performed (meaning it is possible to supply an invalid address that would result in a segfault).</p>
+<p>ReadUCRIndex points to the active low-level RGB pixel reader for a caller-supplied address inside <fl>Data</fl>.  It is intended for C callers that need direct pixel access.  No clipping, bounds or address validation is performed.</p>
 <p>The prototype of the ReadUCRIndex function is <code>Function(*Bitmap, uint8_t *Data, RGB8 *RGB)</code>.</p>
-<p>The <code>Data</code> parameter must point to a location within the Bitmap's graphical address space. The pixel value will be returned in the <code>RGB</code> parameter.</p>
-<p>Note that a colour indexing equivalent of this function is not available in the Bitmap class - this is because it is more efficient to index the Bitmap's <fl>Data</fl> field directly.</p>
+<p>The <code>Data</code> parameter must point to a location within the Bitmap's graphical address space.  The pixel value will be returned in the <code>RGB</code> parameter.</p>
+<p>There is no colour-index equivalent because callers can read indexed pixel bytes directly through <fl>Data</fl>.</p>
       </description>
     </field>
 
@@ -720,9 +821,9 @@ unpackAlpha(Colour)
       <access read="R">Read</access>
       <type prototype="void (*ReadUCRPixel)(objBitmap *, int, int, struct RGB8 *)">FUNCTION *</type>
       <description>
-<p>This field points to an internal C function that can be used for reading pixels from the bitmap.  It is intended that the function is only ever called by C programs and that caution is exercised by the programmer, as no clipping checks will be performed (meaning it is possible to supply invalid X/Y coordinates that would result in a segfault).</p>
+<p>ReadUCRPixel points to the active low-level RGB pixel reader for <code>X</code>, <code>Y</code> coordinates.  It is intended for C callers that need direct pixel access.  No clipping or bounds checks are performed.</p>
 <p>The prototype of the ReadUCRPixel function is <code>Function(*Bitmap, LONG X, LONG Y, RGB8 *RGB)</code>.</p>
-<p>The pixel value will be returned in the RGB parameter.  It should be noted that as this function converts the pixel value into RGB format, <fl>ReadUCPixel</fl> or <fl>ReadUCRIndex</fl> should be used as faster alternatives if the pixel value does not need to be de-constructed into its RGB components.</p>
+<p>The pixel value is returned in the <code>RGB</code> parameter.  Because this function expands the pixel value to RGB components, <fl>ReadUCPixel</fl> or <fl>ReadUCRIndex</fl> may be faster when RGB decomposition is not required.</p>
       </description>
     </field>
 
@@ -739,8 +840,8 @@ unpackAlpha(Colour)
       <access read="R" write="S">Read/Set</access>
       <type>RGB8</type>
       <description>
-<p>The transparent colour of the bitmap is defined here.  Colours in the bitmap that match this value will not be copied during drawing operations.</p>
-<p>NOTE: This field should never be set if the bitmap utilises alpha transparency.</p>
+<p>Pixels matching this colour are skipped by drawing operations that honour colour-key transparency.</p>
+<p>Do not use colour-key transparency on bitmaps that use alpha transparency.</p>
       </description>
     </field>
 
@@ -750,8 +851,8 @@ unpackAlpha(Colour)
       <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
-<p>The transparent colour of the bitmap is defined here.  Colours in the bitmap that match this value will not be copied during graphics operations.  It is recommended that the <fl>TransColour</fl> field is used for altering the bitmap transparency unless efficiency requires that the transparency is set directly.</p>
-<p>NOTE: This field should never be set if the bitmap utilises alpha transparency.</p>
+<p>TransIndex stores the transparent colour as a packed pixel value or palette index.  Pixels matching this value are skipped by drawing operations that honour colour-key transparency.</p>
+<p>Use <fl>TransColour</fl> for most updates.  Set TransIndex directly only when the caller has already calculated the target bitmap's native pixel value or palette index.  Do not use colour-key transparency on bitmaps that use alpha transparency.</p>
       </description>
     </field>
 
@@ -761,7 +862,7 @@ unpackAlpha(Colour)
       <access read="R" write="I">Read/Init</access>
       <type lookup="BMP">BMP</type>
       <description>
-<p>This field defines the graphics data type - either <code>PLANAR</code> (required for 1-bit bitmaps) or <code>CHUNKY</code> (the default).</p>
+<p>Type defines the bitmap layout, either <code>BMP::PLANAR</code> for planar bitmaps or <code>BMP::CHUNKY</code> for interleaved pixel data. Chunky is the default.</p>
 <types lookup="BMP"/>
       </description>
     </field>
@@ -771,6 +872,9 @@ unpackAlpha(Colour)
       <comment>The width of the bitmap, in pixels.</comment>
       <access read="R" write="I">Read/Init</access>
       <type>INT</type>
+      <description>
+<p>Width must be set before <action>Query</action> or <action>Init</action> can derive the bitmap layout.</p>
+      </description>
     </field>
 
   </fields>

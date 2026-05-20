@@ -293,7 +293,7 @@ function runTuku(Parameters:array):table
 
    local task = obj.new('task', {
       src = glOrigoPath,
-      args = task_params:join(' '),
+      args = task_params:concat(' '),
       flags = TSF_WAIT|TSF_SHELL, -- The SHELL option keeps the DOS window from opening.
       timeOut = 10,
       outputCallback = function(Task:obj, Buffer:array)

@@ -156,7 +156,7 @@ end
 
 @Test function ArrayTypedInExpression()
    -- Ensure it works in expression contexts
-   result = array<int> { 1, 2, 3 }:concat('%d', ', ')
+   result = array<int> { 1, 2, 3 }:concat(', ', '%d')
    assert(result is '1, 2, 3', "Method chain on typed array failed, got '" .. result .. "'")
 end
 
@@ -338,7 +338,7 @@ end
 @Test function ArrayTypedConcat()
    -- Concat method for string representation
    arr = array<int> { 1, 2, 3, 4, 5 }
-   result = arr:concat('%d', '-')
+   result = arr:concat('-', '%d')
    assert(result is '1-2-3-4-5', "Concat should join with separator, got '" .. result .. "'")
 end
 

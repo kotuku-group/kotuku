@@ -395,7 +395,7 @@ function serializeTable(Tbl:any, Indent):str
       return '{}'
    end
 
-   return '{\n' .. parts:join(',\n') .. Indent .. '}'
+   return '{\n' .. parts:concat(',\n') .. Indent .. '}'
 end
 
 ----------------------------------------------------------------------------------------------------------------------

@@ -305,11 +305,11 @@ end
    if (#missing > 0) or (#mismatches > 0) then
       message = ''
       if #missing > 0 then
-         message ..= 'Missing Picture PNG CRC values:\n' .. missing:join('\n')
+         message ..= 'Missing Picture PNG CRC values:\n' .. missing:concat('\n')
       end
       if #mismatches > 0 then
          if #message > 0 then message ..= '\n\n' end
-         message ..= 'Picture PNG CRC mismatches or load failures:\n' .. mismatches:join('\n')
+         message ..= 'Picture PNG CRC mismatches or load failures:\n' .. mismatches:concat('\n')
       end
       error(message)
    end
@@ -329,6 +329,6 @@ end
    end
 
    if #failures > 0 then
-      error('Invalid PNG files loaded successfully:\n' .. failures:join('\n'))
+      error('Invalid PNG files loaded successfully:\n' .. failures:concat('\n'))
    end
 end

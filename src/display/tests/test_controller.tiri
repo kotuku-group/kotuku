@@ -1,0 +1,29 @@
+
+   mGfx ?= mod.load('display')
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ControllerAvailability()
+   local controller = obj.new('controller', { })
+   local total_ports = controller.totalPorts
+
+   assert(total_ports >= 0, 'Controller totalPorts should not be negative.')
+
+   local state = mSys.GetSystemState()
+   if state.platform != 'Linux' then
+      return
+   end
+
+   local err = controller.acQuery()
+   if total_ports > 0 then
+      assert(err is ERR_Okay, 'Controller query failed: ' .. mSys.GetErrorMsg(err))
+      assert(controller.leftTrigger >= 0 and controller.leftTrigger <= 1, 'Left trigger outside normalised range.')
+      assert(controller.rightTrigger >= 0 and controller.rightTrigger <= 1, 'Right trigger outside normalised range.')
+      assert(controller.leftStickX >= -1 and controller.leftStickX <= 1, 'Left stick X outside normalised range.')
+      assert(controller.leftStickY >= -1 and controller.leftStickY <= 1, 'Left stick Y outside normalised range.')
+      assert(controller.rightStickX >= -1 and controller.rightStickX <= 1, 'Right stick X outside normalised range.')
+      assert(controller.rightStickY >= -1 and controller.rightStickY <= 1, 'Right stick Y outside normalised range.')
+   else
+      assert(err != ERR_NoSupport, 'Linux Controller query should not report unsupported.')
+   end
+end

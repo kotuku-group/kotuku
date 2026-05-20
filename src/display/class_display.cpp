@@ -1,11 +1,15 @@
 /*********************************************************************************************************************
 
 -CLASS-
-Display: Manages the video display and graphics hardware.
+Display: Represents a drawable display target and its host window or video mode.
 
-A Display object represents a region of displayable video memory and metadata that defines the display mode.
-The Display is a primitive, hardware oriented interface.  It is recommended that unless otherwise required, the
-@Surface class is used to create displayable graphics regions.
+A Display object owns the bitmap-backed area that is presented to the user.  Depending on the active display driver,
+the object may represent a hosted desktop window, a native full-screen video mode or a platform-managed rendering
+surface.
+
+Display is a low-level interface for display mode, window and bitmap management.  Most application code should create
+and manipulate @Surface objects instead, using Display directly only when it needs to configure the underlying window,
+display mode, palette, gamma or hardware-facing bitmap.
 
 -END-
 
@@ -15,6 +19,10 @@ The Display is a primitive, hardware oriented interface.  It is recommended that
 
 #ifdef _WIN32
 using namespace display;
+#endif
+
+#ifdef __xwindows__
+static ankerl::unordered_dense::map<Window, Colormap> glX11Colormaps;
 #endif
 
 // Class definition at end of this source file.
@@ -147,7 +155,7 @@ static void notify_resize_free(OBJECTPTR Object, ACTIONID ActionID, ERR Result, 
 
 /*********************************************************************************************************************
 -ACTION-
-Activate: Activating a display has the same effect as calling the Show action.
+Activate: Shows the display.
 -END-
 *********************************************************************************************************************/
 
@@ -190,7 +198,7 @@ static ERR DISPLAY_CheckXWindow(extDisplay *Self)
 
 /*********************************************************************************************************************
 -ACTION-
-Clear: Clears a display's image data and hardware buffers (e.g. OpenGL)
+Clear: Clears the display's drawable image data.
 -END-
 *********************************************************************************************************************/
 
@@ -225,6 +233,7 @@ static ERR DISPLAY_DataFeed(extDisplay *Self, struct acDataFeed *Args)
    if (Args->Datatype IS DATA::REQUEST) {
       // Supported for handling the windows clipboard
 
+      if ((!Args->Buffer) or (!Args->Object)) return log.warning(ERR::NullArgs);
       auto request = (struct dcRequest *)Args->Buffer;
 
       log.traceBranch("Received data request from object %d, item %d", Args->Object ? Args->Object->UID : 0, request->Item);
@@ -252,7 +261,9 @@ static ERR DISPLAY_DataFeed(extDisplay *Self, struct acDataFeed *Args)
          dc.Datatype = DATA::RECEIPT;
          dc.Buffer   = kt::strclone(result);
          dc.Size     = result.size() + 1;
-         Action(AC::DataFeed, Args->Object, &dc);
+         auto error = Action(AC::DataFeed, Args->Object, &dc);
+         FreeResource(dc.Buffer);
+         return error;
       }
       else return log.warning(ERR::NoSupport);
       #endif
@@ -267,8 +278,9 @@ static ERR DISPLAY_DataFeed(extDisplay *Self, struct acDataFeed *Args)
 -ACTION-
 Disable: Disables the display (goes into power saving mode).
 
-Disabling a display will put the display into power saving mode.  The DPMS mode is determined by the user's system
-settings and cannot be changed by the developer.  The display will remain off until the Enable action is called.
+Disabling a display requests display power management, where supported by the active driver.  The DPMS mode is
+determined by user and system configuration.  The display remains disabled until #Enable() is called or the platform
+restores it.
 
 This action does nothing if the display is in hosted mode.
 
@@ -286,7 +298,7 @@ static ERR DISPLAY_Disable(extDisplay *Self)
 
 /*********************************************************************************************************************
 -ACTION-
-Enable: Restores the screen display from power saving mode.
+Enable: Restores the display from power saving mode.
 -END-
 *********************************************************************************************************************/
 
@@ -307,7 +319,11 @@ static ERR DISPLAY_Draw(extDisplay *Self)
 
 /*********************************************************************************************************************
 -ACTION-
-Flush: Flush pending graphics operations to the display.
+Flush: Flushes pending graphics operations to the display driver.
+
+Flush synchronises pending X11 requests or flushes OpenGL ES commands where those backends are active.  On other
+drivers it is a harmless no-op.
+
 -END-
 *********************************************************************************************************************/
 
@@ -364,6 +380,13 @@ static ERR DISPLAY_Free(extDisplay *Self)
       ((extBitmap *)Self->Bitmap)->x11.drawable = 0;
    }
 
+   if (Self->XWindowHandle) {
+      if (auto colormap = glX11Colormaps.find(Self->XWindowHandle); colormap != glX11Colormaps.end()) {
+         XFreeColormap(XDisplay, colormap->second);
+         glX11Colormaps.erase(colormap);
+      }
+   }
+
    // Kill all expose events associated with the X Window owned by the display
 
    if (XDisplay) {
@@ -410,7 +433,19 @@ static ERR DISPLAY_Free(extDisplay *Self)
 
 /*********************************************************************************************************************
 -ACTION-
-GetKey: Retrieve formatted information from the display.
+GetKey: Retrieves formatted display information.
+
+GetKey currently supports the `resolution(Index, Format)` key.  `Index` selects a display resolution and `Format` is a
+string containing replacement tokens.  Supported tokens are `%w` for width, `%h` for height, `%d` for bit depth, `%c`
+for colour count and `%%` for a literal percent sign.
+
+-ERRORS-
+Okay
+NullArgs
+Args
+OutOfRange
+NoData
+NoSupport
 -END-
 *********************************************************************************************************************/
 
@@ -467,9 +502,10 @@ static ERR DISPLAY_GetKey(extDisplay *Self, struct acGetKey *Args)
 -ACTION-
 Hide: Hides a display from the user's view.
 
-Calling this action will hide a display from the user's view.  If the hidden display was at the front of the display
-and there is a display object behind it, then the next underlying display will be displayed.  If there are no other
-displays available then the user's viewport will be blank after calling this action.
+Hide removes a hosted display window from view, or releases the visible presentation resources used by native and
+OpenGL ES drivers.  The display remains valid and can be shown again with #Show().
+
+The `SCR::VISIBLE` flag is cleared after the hide request is processed.
 -END-
 *********************************************************************************************************************/
 
@@ -667,8 +703,10 @@ static ERR DISPLAY_Init(extDisplay *Self)
          int cwflags   = CWEventMask|CWOverrideRedirect;
          int depth     = CopyFromParent;
          Visual *visual = CopyFromParent;
+         Colormap colormap = 0;
          if ((swa.override_redirect) and (glXCompositeSupported)) {
-            swa.colormap         = XCreateColormap(XDisplay, DefaultRootWindow(XDisplay), glXInfoAlpha.visual, AllocNone);
+            colormap             = XCreateColormap(XDisplay, DefaultRootWindow(XDisplay), glXInfoAlpha.visual, AllocNone);
+            swa.colormap         = colormap;
             swa.background_pixel = 0;
             swa.border_pixel     = 0;
             cwflags |= CWColormap|CWBackPixel|CWBorderPixel;
@@ -684,15 +722,19 @@ static ERR DISPLAY_Init(extDisplay *Self)
             if (!(Self->XWindowHandle = XCreateWindow(XDisplay, DefaultRootWindow(XDisplay),
                   Self->X, Self->Y, Self->Width, Self->Height, 0 /* Border */, depth, InputOutput,
                   visual, cwflags, &swa))) {
+               if (colormap) XFreeColormap(XDisplay, colormap);
                return log.warning(ERR::SystemCall);
             }
          }
          else { // If the WindowHandle field is already set, use it as the parent for the new window.
             if (!(Self->XWindowHandle = XCreateWindow(XDisplay, Self->XWindowHandle,
                   0, 0, Self->Width, Self->Height, 0, depth, InputOutput, visual, cwflags, &swa))) {
+               if (colormap) XFreeColormap(XDisplay, colormap);
                return log.warning(ERR::SystemCall);
             }
          }
+
+         if (colormap) glX11Colormaps[Self->XWindowHandle] = colormap;
 
          bmp->x11.window = Self->XWindowHandle;
 
@@ -893,13 +935,12 @@ static ERR DISPLAY_Init(extDisplay *Self)
 -METHOD-
 Minimise: Minimise the desktop window hosting the display.
 
-If a display is hosted in a desktop window, calling the Minimise method will perform the default minimise action
-on that window.  On a platform such as Microsoft Windows, this would normally result in the window being
-minimised to the task bar.
+If a display is hosted in a desktop window, Minimise() performs the platform's default minimise action for that window.
+On Microsoft Windows this normally minimises the window to the taskbar.  On X11 the current implementation unmaps the
+window.
 
-Calling Minimise on a display that is already in the minimised state may result in the host window being restored to
-the desktop.  This behaviour is platform dependent and should be manually tested to confirm its reliability on the
-host platform.
+Calling Minimise() on a display that is already minimised may restore the host window on some platforms.  Treat that
+behaviour as platform dependent.
 
 -ERRORS-
 Okay
@@ -946,7 +987,16 @@ host graphics card may need a large amount of memory to support this method of s
 
 /*********************************************************************************************************************
 -ACTION-
-Move: Move the display to a new display position (relative coordinates).
+Move: Moves the display by a relative offset.
+
+Move adjusts the hosted window or native display position by the supplied delta values.  Hosted drivers interpret the
+movement in window-manager coordinates.
+
+-ERRORS-
+Okay
+NullArgs
+SystemCall
+NoSupport
 -END-
 *********************************************************************************************************************/
 
@@ -991,7 +1041,10 @@ static ERR DISPLAY_Move(extDisplay *Self, struct acMove *Args)
 
 /*********************************************************************************************************************
 -ACTION-
-MoveToBack: Move the display to the back of the display list.
+MoveToBack: Moves the hosted display window behind other windows.
+
+This action lowers the host window where the active platform supports window stacking.
+
 -END-
 *********************************************************************************************************************/
 
@@ -1011,7 +1064,10 @@ static ERR DISPLAY_MoveToBack(extDisplay *Self)
 
 /*********************************************************************************************************************
 -ACTION-
-MoveToFront: Move the display to the front of the display list.
+MoveToFront: Moves the hosted display window in front of other windows.
+
+This action raises the host window where the active platform supports window stacking.
+
 -END-
 *********************************************************************************************************************/
 
@@ -1034,14 +1090,21 @@ static ERR DISPLAY_MoveToFront(extDisplay *Self)
 -ACTION-
 MoveToPoint: Move the display to a new position.
 
-The MoveToPoint action moves the display to a new position.
+MoveToPoint moves the display to an absolute position.  The `MTF::X` and `MTF::Y` flags determine which coordinates
+are applied.
 
-In a hosted environment, the supplied coordinates are treated as being indicative of the absolute position of the host
-window (not the client area).
+In a hosted environment, the supplied coordinates describe the host window position.  The #LeftMargin and #TopMargin
+fields can be used when translating between host window coordinates and client-area coordinates.
 
 For full-screen displays, MoveToPoint can alter the screen position for the hardware device managing the display
 output.  This is a rare feature that requires hardware support.  `ERR::NoSupport` is returned if this feature is
 unavailable.
+
+-ERRORS-
+Okay
+NullArgs
+SystemCall
+NoSupport
 -END-
 *********************************************************************************************************************/
 
@@ -1133,7 +1196,7 @@ static ERR DISPLAY_NewObject(extDisplay *Self)
    Self->Gamma[0]    = 1.0;
    Self->Gamma[1]    = 1.0;
    Self->Gamma[2]    = 1.0;
-   Self->Opacity     = 255;
+   Self->Opacity     = 1.0;
 
    #ifdef __xwindows__
       Self->DisplayType = DT::X11;
@@ -1165,18 +1228,28 @@ static ERR DISPLAY_Redimension(extDisplay *Self, struct acRedimension *Args)
    if (!Args) return ERR::NullArgs;
 
    struct acMoveToPoint moveto = { Args->X, Args->Y, 0, MTF::X|MTF::Y };
-   DISPLAY_MoveToPoint(Self, &moveto);
+   if (auto error = DISPLAY_MoveToPoint(Self, &moveto); error != ERR::Okay) return error;
 
    struct acResize resize = { Args->Width, Args->Height, Args->Depth };
-   DISPLAY_Resize(Self, &resize);
-   return ERR::Okay;
+   return DISPLAY_Resize(Self, &resize);
 }
 
 /*********************************************************************************************************************
 -ACTION-
 Resize: Resizes the dimensions of a display object.
 
-If the display is hosted, the Width and Height values will determine the size of the inside area of the window.
+Resize changes the display viewport size and resizes the underlying #Bitmap.  If a display buffer is active, it is
+reallocated after the resize.
+
+For hosted displays, `Width` and `Height` describe the client area inside the host window, not the full outer window
+including frame decorations.
+
+-ERRORS-
+Okay
+NullArgs
+NotInitialised
+Resize
+NoSupport
 -END-
 *********************************************************************************************************************/
 
@@ -1196,7 +1269,7 @@ static ERR DISPLAY_Resize(extDisplay *Self, struct acResize *Args)
       return ERR::Resize;
    }
 
-   Action(AC::Resize, Self->Bitmap, Args);
+   if (auto error = Action(AC::Resize, Self->Bitmap, Args); error != ERR::Okay) return error;
    Self->Width = Self->Bitmap->Width;
    Self->Height = Self->Bitmap->Height;
 
@@ -1209,7 +1282,7 @@ static ERR DISPLAY_Resize(extDisplay *Self, struct acResize *Args)
       XResizeWindow(XDisplay, Self->XWindowHandle, Args->Width, Args->Height);
    }
 
-   Action(AC::Resize, Self->Bitmap, Args);
+   if (auto error = Action(AC::Resize, Self->Bitmap, Args); error != ERR::Okay) return error;
    Self->Width = Self->Bitmap->Width;
    Self->Height = Self->Bitmap->Height;
 
@@ -1280,7 +1353,7 @@ static ERR DISPLAY_Resize(extDisplay *Self, struct acResize *Args)
 
 /*********************************************************************************************************************
 -ACTION-
-SaveImage: Saves the image of a display to a data object.
+SaveImage: Saves the display bitmap image to a data object.
 -END-
 *********************************************************************************************************************/
 
@@ -1291,7 +1364,14 @@ static ERR DISPLAY_SaveImage(extDisplay *Self, struct acSaveImage *Args)
 
 /*********************************************************************************************************************
 -ACTION-
-SaveSettings: Saves the current display settings as the default.
+SaveSettings: Saves the current display settings as defaults.
+
+SaveSettings stores supported window and display preferences, such as window position, size, DPMS setting and
+full-screen state, in the user display configuration.
+
+-ERRORS-
+Okay
+CreateObject
 -END-
 *********************************************************************************************************************/
 
@@ -1365,11 +1445,12 @@ will be returned if it is not implemented.
 int MinWidth: The minimum width of the window.
 int MinHeight: The minimum height of the window.
 int MaxWidth: The maximum width of the window.
-int MaxHeight: The maximum width of the window.
+int MaxHeight: The maximum height of the window.
 int EnforceAspect: Set to true to enforce an aspect ratio that is scaled from MinWidth,MinHeight to MaxWidth,MaxHeight.
 
 -ERRORS-
 Okay
+NullArgs
 NoSupport: The host platform does not support this feature.
 -END-
 
@@ -1377,6 +1458,8 @@ NoSupport: The host platform does not support this feature.
 
 static ERR DISPLAY_SizeHints(extDisplay *Self, gfx::SizeHints *Args)
 {
+   if (!Args) return ERR::NullArgs;
+
 #ifdef __xwindows__
    XSizeHints hints = { .flags = 0 };
 
@@ -1412,16 +1495,15 @@ static ERR DISPLAY_SizeHints(extDisplay *Self, gfx::SizeHints *Args)
 -METHOD-
 SetDisplay: Changes the current display mode.
 
-The SetDisplay method changes the current display settings for the screen. It can alter the position and screen
-dimensions and the display refresh rate. The new settings are applied immediately, although minor delays are possible
-while the graphics card and monitor adjust to the changes.
+SetDisplay() changes the active display mode or hosted display size, depending on the platform.  It can alter display
+position, viewport dimensions, bit depth and refresh rate when the active display driver supports those features.  The
+new settings are applied immediately, although the graphics card, monitor or host window manager may introduce a short
+delay.
 
 To keep any of the display settings at their current value, set the appropriate parameters to zero to leave them
 unchanged.  Only the parameters that you set will be used.
 
-If the display parameters do not match with a valid display mode - for instance if you request a screen size of
-1280x1024 and the nearest equivalent is 1024x768, the SetDisplay method will automatically adjust to match against the
-nearest screen size.
+If a requested full-screen mode is not available, the driver may choose the closest supported mode.
 
 Only the original owner of the display object is allowed to change the display settings.
 
@@ -1437,8 +1519,10 @@ double RefreshRate: Refresh rate, measured in floating point format for precisio
 int Flags: Optional flags.
 
 -ERRORS-
-Okay:
-NullArgs:
+Okay
+NullArgs
+Resize
+NoSupport
 Failed: Failed to switch to the requested display mode.
 -END-
 
@@ -1525,8 +1609,8 @@ The SetGamma method controls the gamma correction levels for the display.  Gamma
 colour components can be set at floating point precision.  The default gamma level for each component is 1.0; the
 minimum value is 0.0 and the maximum value is 100.
 
-Optional flags include `GMF::SAVE`.  This option will save the requested settings as the user default when future displays
-are opened.
+Optional flags include `GMF::SAVE`.  This option stores the requested gamma values on the Display object so they can
+be saved as defaults where the driver supports persistent display settings.
 
 If you would like to know the default gamma correction settings for a display, please refer to the #Gamma
 field.
@@ -1591,8 +1675,8 @@ static ERR DISPLAY_SetGamma(extDisplay *Self, gfx::SetGamma *Args)
 -METHOD-
 SetGammaLinear: Sets the display gamma level using a linear algorithm.
 
-Call SetGammaLinear() to update a target display's gamma values with a linear algorithm that takes input from `Red`,
-`Green` and `Blue` parameters provided by the client.
+SetGammaLinear() updates display gamma values with a linear algorithm where the active driver supports it.  Values are
+clamped to the supported range before being applied.
 
 -INPUT-
 double Red: New red gamma value.
@@ -1601,8 +1685,9 @@ double Blue: New blue gamma value.
 int(GMF) Flags: Use `SAVE` to store the new settings.
 
 -ERRORS-
-Okay:
-NullArgs:
+Okay
+NullArgs
+NoSupport
 -END-
 
 *********************************************************************************************************************/
@@ -1659,13 +1744,11 @@ static ERR DISPLAY_SetGammaLinear(extDisplay *Self, gfx::SetGammaLinear *Args)
 -METHOD-
 SetMonitor: Changes the default monitor settings.
 
-Use the SetMonitor() method to change the settings that configure the user's monitor display.  You can set the model name
-of the monitor and the frequencies that are supported by it.  Altering the display frequencies will affect the
-available display resolutions, as well as the maximum allowable refresh rate.
+Use SetMonitor() to change the monitor metadata and scan-rate limits used by native display drivers.  Altering the
+supported frequencies can change the available display resolutions and maximum refresh rate.
 
-An AutoDetect option is available, which if defined will cause the display settings to be automatically detected when
-the desktop is loaded at startup. If it is not possible to detect the correct settings for the plugged-in display, it
-reverts to the default display settings.
+The auto-detect option requests monitor detection when the desktop starts.  If detection fails, the system reverts to
+its default monitor settings.
 
 This method does not work on hosted platforms.  All parameters passed to this method are optional (set a value to zero
 if it should not be changed).
@@ -1681,6 +1764,8 @@ int(MON) Flags: Set to `AUTO_DETECT` if the monitor settings should be auto-dete
 -ERRORS-
 Okay
 NullArgs
+NoPermission
+NoSupport
 -END-
 
 *********************************************************************************************************************/
@@ -1774,14 +1859,13 @@ static ERR DISPLAY_SetMonitor(extDisplay *Self, gfx::SetMonitor *Args)
 -ACTION-
 Show: Presents a display object to the user.
 
-This method presents a display object to the user.  On a hosted platform, this will result in a window appearing on
-screen.  By default the window will be hosted within a window border which may contain regular window gadgets such as a
-titlebar and buttons for close, maximise and minimise operations.  The position of the window is determined by the
-#X and #Y fields.  In Kōtuku's native environment, the user's screen display will be altered to match the required
-resolution and the graphics of the display's #Bitmap object will take up the entirety of the screen.
+Show presents a display object to the user.  On hosted platforms this maps or shows the host window.  By default the
+window uses the platform's normal border, title and window controls.  The initial window position is determined by the
+#X and #Y fields.  On native full-screen drivers, showing the display may switch the active video mode and present the
+display #Bitmap across the screen.
 
-If the `BORDERLESS` flag has been set in the #Flags field, the window will appear without the surrounding border
-and gadgets normally associated with new windows.
+If `SCR::BORDERLESS` is set in #Flags, the host window is created without the normal window border and controls where
+the platform supports that mode.
 
 In Microsoft Windows, the #LeftMargin, #RightMargin, #TopMargin and #BottomMargin fields will be updated to reflect
 the position of the client area within the hosted window.  In X11 these field values are all set to zero.
@@ -1789,7 +1873,12 @@ the position of the client area within the hosted window.  In X11 these field va
 If the window is minimised at the time this action is called, the window will be restored to its original position if
 the code for the host platform supports this capability.
 
-The `VISIBLE` flag in the #Flags field will be set if the Show operation is successful.
+The `SCR::VISIBLE` flag is set if the Show operation succeeds.  Showing the first display also ensures that the shared
+`SystemPointer` object exists.
+
+-ERRORS-
+Okay
+NoSupport
 -END-
 
 *********************************************************************************************************************/
@@ -1893,8 +1982,8 @@ ERR DISPLAY_Show(extDisplay *Self)
 -METHOD-
 UpdatePalette: Updates the video display palette to new colour values if in 256 colour mode.
 
-Call UpdatePalette() to copy a new palette to the display bitmap's internal palette.  If the video display is running in
-256 colour mode, the new palette colours will also be reflected in the display.
+Call UpdatePalette() to copy a new palette to the display bitmap's internal palette.  If the video display is running
+in 256-colour mode, the new palette colours are also applied to the display where supported.
 
 This method has no visible effect on RGB pixel displays.
 
@@ -1904,6 +1993,7 @@ struct(*RGBPalette) NewPalette: The new palette to apply to the display bitmap.
 -ERRORS-
 Okay
 NullArgs
+Args
 
 *********************************************************************************************************************/
 
@@ -1930,8 +2020,8 @@ static ERR DISPLAY_UpdatePalette(extDisplay *Self, gfx::UpdatePalette *Args)
 -METHOD-
 WaitVBL: Waits for a vertical blank.
 
-This method waits for the strobe to reach the vertical blank area at the bottom of the display.  Not all graphics
-hardware will support this method.  If this is the case, WaitVBL() will return immediately with `ERR::NoSupport`.
+WaitVBL() waits for the display to reach vertical blank where the active driver exposes that timing primitive.  Drivers
+that do not support it return `ERR::NoSupport` immediately.
 
 -ERRORS-
 Okay
@@ -1949,23 +2039,23 @@ ERR DISPLAY_WaitVBL(extDisplay *Self)
 -FIELD-
 Bitmap: Reference to the display's bitmap information.
 
-The @Bitmap object describes the video region that will be used for displaying graphics. It holds details on the width,
-height, type, number of colours and so on.  The display class inherits the bitmap's attributes, so it is not necessary
-to retrieve a direct reference to the bitmap object in order to make adjustments.
+The @Bitmap object describes the drawable pixel region presented by the display.  It stores the width, height, colour
+format, palette and related bitmap state.  Display fields mirror the most common bitmap dimensions, so callers rarely
+need to access the bitmap directly for simple sizing operations.
 
-The @Bitmap.Width and @Bitmap.Height can be larger than the display area, but never smaller.
+The @Bitmap.Width and @Bitmap.Height can be larger than the visible display area, but never smaller.
 
 -FIELD-
 BmpX: The horizontal coordinate of the bitmap within a display.
 
-This field defines the horizontal offset for the #Bitmap, which is positioned 'behind' the display. To achieve
-hardware scrolling, call the #Move() action on the Bitmap in order to change this value and update the display.
+This field stores the horizontal offset of the #Bitmap relative to the visible display viewport.  It is used by drivers
+that support a bitmap larger than the visible display area.
 
 -FIELD-
 BmpY: The vertical coordinate of the Bitmap within a display.
 
-This field defines the vertical offset for the #Bitmap, which is positioned 'behind' the display.  To achieve hardware
-scrolling, you will need to call the Move() action on the #Bitmap in order to change this value and update the display.
+This field stores the vertical offset of the #Bitmap relative to the visible display viewport.  It is used by drivers
+that support a bitmap larger than the visible display area.
 
 -FIELD-
 BottomMargin: In hosted mode, indicates the bottom margin of the client window.
@@ -1991,8 +2081,8 @@ static ERR GET_Chipset(extDisplay *Self, STRING *Value)
 HDensity: Returns the horizontal pixel density for the display.
 
 Reading the HDensity field will return the horizontal pixel density for the display (pixels per inch).  If the physical
-size of the display is unknown, a default value based on knowledge of the platform will be retuned.  For standard PC's
-this will usually be 96.
+size of the display is unknown, a default value based on the platform is returned.  For standard desktop systems this
+will usually be 96.
 
 A custom density value can be enforced by setting the `/interface/@dpi` value in the loaded style, or by setting
 HDensity.
@@ -2061,8 +2151,8 @@ static ERR SET_HDensity(extDisplay *Self, int Value)
 VDensity: Returns the vertical pixel density for the display.
 
 Reading the VDensity field will return the vertical pixel density for the display (pixels per inch).  If the physical
-size of the display is unknown, a default value based on knowledge of the platform will be retuned.  For standard PC's
-this will usually be 96.
+size of the display is unknown, a default value based on the platform is returned.  For standard desktop systems this
+will usually be 96.
 
 A custom density value can be enforced by setting the `/interface/@dpi` value in the loaded style, or by setting
 VDensity.
@@ -2160,16 +2250,18 @@ static ERR GET_DisplayManufacturer(extDisplay *Self, CSTRING *Value)
 /*********************************************************************************************************************
 
 -FIELD-
-DisplayType: In hosted mode, indicates the bottom margin of the client window.
+DisplayType: Identifies the active display backend.
+Lookup: DT
 
-If the display is hosted in a client window, the #BottomMargin indicates the number of pixels between the client area
-and the bottom window edge.
+This field reports the display driver type, such as native, X11, Windows GDI or OpenGL ES.
 
 -FIELD-
 Flags: Optional flag settings.
+Lookup: SCR
 
-Optional display flags can be defined here.  Post-initialisation, the only flags that can be set are `AUTO_SAVE` and
-`BORDERLESS`.
+Display flags configure hosted-window behaviour, buffering, visibility, controller grabbing and driver-reported
+capabilities.  After initialisation, only a limited subset can be changed and support for changing window style is
+platform dependent.
 
 *********************************************************************************************************************/
 
@@ -2343,7 +2435,7 @@ static ERR SET_Flags(extDisplay *Self, SCR Value)
 Gamma: Contains red, green and blue values for the display's gamma setting.
 
 The gamma settings for the display are stored in this field.  The settings are stored in an array of 3 floating point
-values that represent red, green and blue colours guns.  The default gamma value for each colour gun is 1.0.
+values that represent the red, green and blue colour components.  The default gamma value for each component is 1.0.
 
 To modify the display gamma values, please refer to the #SetGamma() and #SetGammaLinear() methods.
 
@@ -2371,8 +2463,8 @@ static ERR SET_Gamma(extDisplay *Self, double *Value, int Elements)
 -FIELD-
 Height: Defines the height of the display.
 
-This field defines the height of a display.  This is known as the 'viewport' that the bitmap data is displayed through.
-If the height exceeds allowable limits, it will be restricted to a value that the display hardware can handle.
+This field defines the visible display viewport height.  If the height exceeds allowable limits, it is restricted to a
+value that the display driver can handle.
 
 If the display is hosted, the height reflects the internal height of the host window.  On some hosted systems, the true
 height of the window can be calculated by reading the #TopMargin and #BottomMargin fields.
@@ -2390,9 +2482,8 @@ static ERR SET_Height(extDisplay *Self, int Value)
 -FIELD-
 InsideHeight: Represents the internal height of the display.
 
-On full-screen displays, the video data area can exceed the height of the screen display.  The InsideHeight reflects
-the height of the video data in pixels.  If this feature is not in use or is unavailable, the InsideWidth is equal to
-the display #Height.
+On drivers that support a drawable area larger than the visible viewport, InsideHeight reflects the internal bitmap
+height in pixels.  If this feature is not in use, InsideHeight is equal to #Height.
 
 *********************************************************************************************************************/
 
@@ -2407,9 +2498,8 @@ static ERR GET_InsideHeight(extDisplay *Self, int *Value)
 -FIELD-
 InsideWidth: Represents the internal width of the display.
 
-On full-screen displays, the video data area can exceed the width of the screen display.  The InsideWidth reflects the
-width of the video data in pixels.  If this feature is not in use or is unavailable, the InsideWidth is equal to the
-display #Width.
+On drivers that support a drawable area larger than the visible viewport, InsideWidth reflects the internal bitmap
+width in pixels.  If this feature is not in use, InsideWidth is equal to #Width.
 
 *********************************************************************************************************************/
 
@@ -2469,17 +2559,17 @@ If the display output device supports variable refresh rates, this field will re
 supported by the device.  If variable refresh rates are not supported, this field is set to zero.
 
 -FIELD-
-Opacity: Determines the level of translucency applied to the display (hosted displays only).
+Opacity: Determines the level of translucency applied to the display window (hosted displays only).
 
-This field determines the translucency level applied to a display. Its support level is limited to hosted displays that
-support translucent windows (for example, Windows XP).  The default setting is 100%, which means that the display will
-be solid.  High values will retain the boldness of the display, while low values reduce visibility.
+This field determines the translucency level applied to a hosted display window, expressed as a normalised value.  The
+default setting is 1, which makes the display fully opaque.  Lower values make the window more transparent where the
+host platform supports translucent windows.
 
-****************************************************************************/
+*********************************************************************************************************************/
 
 static ERR GET_Opacity(extDisplay *Self, double *Value)
 {
-   *Value = Self->Opacity * 100 / 255;
+   *Value = Self->Opacity;
    return ERR::Okay;
 }
 
@@ -2487,8 +2577,8 @@ static ERR SET_Opacity(extDisplay *Self, double Value)
 {
 #ifdef _WIN32
    if (Value < 0) Self->Opacity = 0;
-   else if (Value > 100) Self->Opacity = 255;
-   else Self->Opacity = Value * 255 / 100;
+   else if (Value > 1) Self->Opacity = 1.0;
+   else Self->Opacity = Value;
    return ERR::Okay;
 #else
    return ERR::NoSupport;
@@ -2559,15 +2649,17 @@ static ERR SET_PopOver(extDisplay *Self, OBJECTID Value)
 
 -FIELD-
 PowerMode: The display's power management method.
+Lookup: DPMS
 
-When DPMS is enabled via a call to #Disable(), the DPMS method that is applied is controlled by this field.
+When DPMS is supported and #Disable() is called, this field identifies the requested power-management mode.
 
-DPMS is a user configurable option and it is not recommended that the PowerMode value is changed manually.
+DPMS is normally user-configurable, so applications should avoid changing PowerMode without user intent.
 
 -FIELD-
-RefreshRate: This field manages the display refresh rate.
+RefreshRate: Active display refresh rate.
 
-The value in this field reflects the refresh rate of the currently active display, if operating in full-screen mode.
+This field reflects the refresh rate of the currently active full-screen display mode where the driver can report it.
+Hosted display drivers may leave this value unset or set it to a sentinel value.
 
 *********************************************************************************************************************/
 
@@ -2579,9 +2671,10 @@ static ERR SET_RefreshRate(extDisplay *Self, double Value)
 /*********************************************************************************************************************
 
 -FIELD-
-ResizeFeedback: This field manages the display refresh rate.
+ResizeFeedback: Callback invoked when the display position or size changes.
 
-The value in this field reflects the refresh rate of the currently active display, if operating in full-screen mode.
+Set this field to receive display resize feedback from hosted-window events and display-managed coordinate repairs.
+The callback receives the display object ID, X, Y, Width and Height values.
 
 *********************************************************************************************************************/
 
@@ -2635,8 +2728,8 @@ static ERR GET_TotalResolutions(extDisplay *Self, int *Value)
 -FIELD-
 Width: Defines the width of the display.
 
-This field defines the width of a display.  This is known as the 'viewport' that the bitmap data is displayed through.
-If the width exceeds allowable limits, it will be restricted to a value that the display hardware can handle.
+This field defines the visible display viewport width.  If the width exceeds allowable limits, it is restricted to a
+value that the display driver can handle.
 
 If the display is hosted, the width reflects the internal width of the host window.  On some hosted systems, the true
 width of the window can be calculated by reading the #LeftMargin and #RightMargin fields.
@@ -2659,12 +2752,11 @@ static ERR SET_Width(extDisplay *Self, int Value)
 -FIELD-
 WindowHandle: Refers to a display object's window handle, if relevant.
 
-This field refers to the window handle of a display object, but only if such a thing is relevant to the platform that
-the system is running on.  Currently, this field is only usable when creating a display within an X11 window manager or
-Microsoft Windows.
+This field refers to the platform window handle owned or used by the display.  It is relevant only on hosted display
+backends such as X11 and Microsoft Windows.
 
-It is possible to set the WindowHandle field prior to initialisation if you want a display object to be based on a
-window that already exists.
+Set WindowHandle before initialisation to bind the Display object to an existing host window.  In that case the display
+sets `SCR::CUSTOM_WINDOW` and will not destroy the host window as its own resource.
 
 *********************************************************************************************************************/
 
@@ -2739,8 +2831,8 @@ static ERR SET_Title(extDisplay *Self, CSTRING Value)
 -FIELD-
 X: Defines the horizontal coordinate of the display.
 
-The X field defines the horizontal hardware coordinate for a display.  This field should be set to zero unless the
-screen requires adjustment.  Most hardware drivers and output devices do not support this feature.
+The X field defines the horizontal coordinate of the display.  On native full-screen drivers this is a hardware offset
+and should normally remain zero unless the output device requires adjustment.
 
 On hosted displays, prior to initialisation the coordinate will reflect the position of the display window when it is
 created.  After initialisation, the coordinate is altered to reflect the absolute position of the client area of the
@@ -2763,10 +2855,10 @@ static ERR SET_X(extDisplay *Self, int Value)
 -FIELD-
 Y: Defines the vertical coordinate of the display.
 
-The Y field defines the vertical hardware coordinate for a display.  This field should be set to zero unless the
-screen requires adjustment.  Most hardware drivers and output devices do not support this feature.
+The Y field defines the vertical coordinate of the display.  On native full-screen drivers this is a hardware offset
+and should normally remain zero unless the output device requires adjustment.
 
-On hosted displays, prior to initialisation the coordinate will reflect the position of the display window  when it is
+On hosted displays, prior to initialisation the coordinate will reflect the position of the display window when it is
 created.  After initialisation, the coordinate is altered to reflect the absolute position of the client area of the
 display window.  The #TopMargin can be used to determine the actual position of the host window.
 
@@ -2850,7 +2942,7 @@ static const FieldArray DisplayFields[] = {
    { "InsideWidth",         FDF_VIRTUAL|FDF_INT|FDF_R,       GET_InsideWidth },
    { "InsideHeight",        FDF_VIRTUAL|FDF_INT|FDF_R,       GET_InsideHeight },
    { "Manufacturer",        FDF_VIRTUAL|FDF_STRING|FDF_R,    GET_Manufacturer },
-   { "Opacity",             FDF_VIRTUAL|FDF_DOUBLE|FDF_W,    GET_Opacity, SET_Opacity },
+   { "Opacity",             FDF_VIRTUAL|FDF_DOUBLE|FDF_RW,   GET_Opacity, SET_Opacity },
    { "ResizeFeedback",      FDF_VIRTUAL|FDF_FUNCTION|FDF_RW, GET_ResizeFeedback, SET_ResizeFeedback },
    { "WindowHandle",        FDF_VIRTUAL|FDF_POINTER|FDF_RW,  GET_WindowHandle, SET_WindowHandle },
    { "Title",               FDF_VIRTUAL|FDF_STRING|FDF_RW,   GET_Title, SET_Title },

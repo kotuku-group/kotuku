@@ -69,7 +69,7 @@ url.encode = function(String:str, ExtraChars:str):str
       end
    end
 
-   return result:join()
+   return result:concat()
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -236,7 +236,7 @@ url.buildQuery = function(Params:any):str
       end
    end
 
-   return parts:join('&')
+   return parts:concat('&')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -381,7 +381,7 @@ url.unparse = function(Components:table):str
    if Components.query then parts:push('?' .. Components.query) end
    if Components.fragment then parts:push('#' .. Components.fragment) end
 
-   return parts:join()
+   return parts:concat()
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -419,7 +419,7 @@ url.unsplit = function(Components:table):str
    if Components.path then parts:push(Components.path) end
    if Components.query then parts:push('?' .. Components.query) end
    if Components.fragment then parts:push('#' .. Components.fragment) end
-   return parts:join()
+   return parts:concat()
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -439,7 +439,7 @@ url._buildNetloc = function(Components:table):str
       netloc:push(Components.host)
    end
    if Components.port then netloc:push(':' .. Components.port) end
-   return netloc:join()
+   return netloc:concat()
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -550,7 +550,7 @@ url.normalize = function(Path:str):str
       end
    end
 
-   result = segments:join('/')
+   result = segments:concat('/')
    if isAbsolute then result = '/' .. result end
 
    -- Preserve trailing slash

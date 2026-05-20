@@ -141,7 +141,7 @@ function declareErrors()
     "ConnectionRefused",             -- The remote host refused the connection
     "NetworkUnreachable",            -- The network was unreachable
     "HostUnreachable",               -- No route to host
-    "Disconnected",                  -- A hard disconnect occurred
+    "Disconnected",                  -- Device or end-point disconnected
     "TaskStillExists",               -- Task/Process still exists and is running
     "IntegrityViolation|ConstraintViolation", -- Referential integrity / constraint violation
     "SchemaViolation",         -- Record changes would violate the DB schema

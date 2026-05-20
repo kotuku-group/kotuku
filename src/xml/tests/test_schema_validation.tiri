@@ -45,7 +45,7 @@ glPrefixedRootXML = [[<?xml version="1.0" encoding="UTF-8"?>
    err = glXML.mtLoadSchema(glScriptFolder .. "schema_inventory.xsd")
    assert(err is ERR_Okay, "LoadSchema() failed: " .. mSys.GetErrorMsg(err))
 
-   assert(bit.band(glXML.flags, XMF_HAS_SCHEMA) != 0, "XMF_HAS_SCHEMA undefined")
+   assert(glXML.flags has XMF_HAS_SCHEMA, "XMF_HAS_SCHEMA undefined")
 end
 
 @Test(priority=2) function ValidateDocumentPass()

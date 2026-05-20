@@ -238,7 +238,7 @@ int glpMaximise = FALSE, glpFullScreen = FALSE;
 SWIN glpWindowType = SWIN::HOST;
 char glpDPMS[20] = "Standby";
 uint8_t *glDemultiply = nullptr;
-int glLastPort = -1;
+std::atomic<int> glLastPort = -1;
 
 std::vector<OBJECTID> glFocusList;
 std::recursive_mutex glFocusLock;
@@ -1250,7 +1250,10 @@ static ERR MODExpunge(void)
 
    if (clDisplay) {
       clean_clipboard();
-      glClips.clear();
+      {
+         const std::lock_guard<std::recursive_mutex> lock(glClipboardLock);
+         glClips.clear();
+      }
    }
 
    if (glRefreshPointerTimer) { UpdateTimer(glRefreshPointerTimer, 0); glRefreshPointerTimer = 0; }
@@ -1517,10 +1520,9 @@ void free_egl(void)
 
    log.branch("Current Display: $%x", (int)glEGLDisplay);
 
-   glEGLState = EGL_TERMINATED; // The sooner we set this, the better.  It stops other threads from thinking that it's OK to keep using OpenGL.
-
    if (!pthread_mutex_lock(&glGraphicsMutex)) {
       log.msg("Lock granted - terminating EGL resources.");
+      glEGLState = EGL_TERMINATED;
 
       if (glEGLDisplay != EGL_NO_DISPLAY) {
          eglMakeCurrent(glEGLDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
@@ -1604,9 +1606,7 @@ ERR update_display(extDisplay *Self, extBitmap *Bitmap, int X, int Y, int Width,
    dest->get(FID_Handle, drawable);
 
    win32RedrawWindow(Self->WindowHandle, drawable,
-      x, y,
-      width, height,
-      xdest, ydest,
+      x, y, width, height, xdest, ydest,
       Bitmap->Width, Bitmap->Height,
       Bitmap->BitsPerPixel, Bitmap->Data,
       Bitmap->ColourFormat->RedMask   << Bitmap->ColourFormat->RedPos,

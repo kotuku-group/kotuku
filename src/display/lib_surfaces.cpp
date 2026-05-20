@@ -10,6 +10,7 @@ Name: Surfaces
 
 SURFACELIST glSurfaces;
 static OBJECTID glModalID = 0;
+static std::recursive_mutex glModalLock;
 
 //********************************************************************************************************************
 // Called when windows has an item to be dropped on our display area.
@@ -382,7 +383,9 @@ void _redraw_surface_do(extSurface *Self, const SURFACELIST &list, int Index, Cl
    // our Index field will not match with the surface that is referenced in Self.  We need to ensure
    // correctness before going any further.
 
+   if ((Index < 0) or (Index >= int(list.size()))) return;
    if (list[Index].SurfaceID != Self->UID) Index = find_surface_list(Self, list.size());
+   if ((Index < 0) or (Index >= int(list.size()))) return;
 
    // Prepare the buffer so that it matches the exposed area
 
@@ -390,6 +393,7 @@ void _redraw_surface_do(extSurface *Self, const SURFACELIST &list, int Index, Cl
    int xo = 0, yo = 0;
    if (Self->BitmapOwnerID != Self->UID) {
       for (i=Index; (i > 0) and (list[i].SurfaceID != Self->BitmapOwnerID); i--);
+      if (list[i].SurfaceID != Self->BitmapOwnerID) return;
       xo = list[Index].Left - list[i].Left;
       yo = list[Index].Top - list[i].Top;
       data = DestBitmap->offset(xo, yo);
@@ -516,7 +520,7 @@ ERR track_layer(extSurface *Self)
    record.Flags         = Self->Flags;
    record.X             = Self->X;
    record.Y             = Self->Y;
-   record.Opacity       = Self->Opacity;
+   record.Opacity       = surface_opacity_to_byte(Self->Opacity);
    record.BitsPerPixel  = Self->BitsPerPixel;
    record.BytesPerPixel = Self->BytesPerPixel;
    record.LineWidth     = Self->LineWidth;
@@ -639,7 +643,7 @@ ERR update_surface_copy(extSurface *Self)
       list[i].Right         = absx + Self->Width;
       list[i].Bottom        = absy + Self->Height;
       list[i].Flags         = Self->Flags;
-      list[i].Opacity       = Self->Opacity;
+      list[i].Opacity       = surface_opacity_to_byte(Self->Opacity);
       list[i].BitsPerPixel  = Self->BitsPerPixel;
       list[i].BytesPerPixel = Self->BytesPerPixel;
       list[i].LineWidth     = Self->LineWidth;
@@ -808,6 +812,7 @@ ERR resize_layer(extSurface *Self, int X, int Y, int Width, int Height, int Insi
          for (parent_index=index-1; parent_index >= 0; parent_index--) {
             if (list[parent_index].SurfaceID IS Self->ParentID) break;
          }
+         if (parent_index < 0) return log.warning(ERR::Search);
 
          ClipRectangle region_b(list[parent_index].Left + oldx, list[parent_index].Top + oldy,
             (list[parent_index].Left + oldx) + oldw, (list[parent_index].Top + oldy) + oldh);
@@ -1163,6 +1168,8 @@ oid: The UID of the modal surface, or zero.
 
 OBJECTID GetModalSurface(void)
 {
+   const std::lock_guard<std::recursive_mutex> lock(glModalLock);
+
    // Safety check: Confirm that the object still exists
    if ((glModalID) and (CheckObjectExists(glModalID) != ERR::True)) {
       kt::Log log(__FUNCTION__);
@@ -1377,8 +1384,6 @@ Search: The supplied `Surface` ID did not refer to a recognised surface object.
 
 ERR GetVisibleArea(OBJECTID SurfaceID, int *X, int *Y, int *AbsX, int *AbsY, int *Width, int *Height)
 {
-   kt::Log log(__FUNCTION__);
-
    if (!SurfaceID) {
       DISPLAYINFO *display;
       if (gfx::GetDisplayInfo(0, &display) IS ERR::Okay) {
@@ -1437,6 +1442,7 @@ oid: The object ID of the previous modal surface is returned (zero if there was 
 OBJECTID SetModalSurface(OBJECTID SurfaceID)
 {
    kt::Log log(__FUNCTION__);
+   const std::lock_guard<std::recursive_mutex> lock(glModalLock);
 
    log.branch("#%d, CurrentFocus: %d", SurfaceID, gfx::GetUserFocus());
 
@@ -1502,6 +1508,7 @@ ERR WindowHook(OBJECTID SurfaceID, WH Event, FUNCTION *Callback)
    if ((!SurfaceID) or (Event IS WH::NIL) or (!Callback)) return ERR::NullArgs;
 
    const WinHook hook(SurfaceID, Event);
+   const std::lock_guard<std::recursive_mutex> lock(glWindowHookLock);
    glWindowHooks[hook] = *Callback;
    return ERR::Okay;
 }

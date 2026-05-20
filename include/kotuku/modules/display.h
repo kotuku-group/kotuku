@@ -272,6 +272,30 @@ enum class BMF : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(BMF)
 
+// Gamepad controller buttons.
+
+enum class CON : uint32_t {
+   NIL = 0,
+   GAMEPAD_S = 0x00000001,
+   GAMEPAD_E = 0x00000002,
+   GAMEPAD_W = 0x00000004,
+   GAMEPAD_N = 0x00000008,
+   DPAD_UP = 0x00000010,
+   DPAD_DOWN = 0x00000020,
+   DPAD_LEFT = 0x00000040,
+   DPAD_RIGHT = 0x00000080,
+   START = 0x00000100,
+   SELECT = 0x00000200,
+   LEFT_BUMPER_1 = 0x00000400,
+   LEFT_BUMPER_2 = 0x00000800,
+   RIGHT_BUMPER_1 = 0x00001000,
+   RIGHT_BUMPER_2 = 0x00002000,
+   LEFT_THUMB = 0x00004000,
+   RIGHT_THUMB = 0x00008000,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(CON)
+
 // Display flags.
 
 enum class SCR : uint32_t {
@@ -531,17 +555,17 @@ class objBitmap : public Object {
    struct ClipRectangle Clip;                                      // Defines the bitmap's clipping region.
    int       Size;                                                 // The total size of the bitmap, in bytes.
    MEM       DataFlags;                                            // Defines the memory flags to use in allocating a bitmap's data area.
-   int       AmtColours;                                           // The maximum number of displayable colours.
+   int       AmtColours;                                           // The maximum number of colours represented by the bitmap format.
    BMF       Flags;                                                // Optional flags.
    int       TransIndex;                                           // The transparent colour of the bitmap, represented as an index.
    int       BytesPerPixel;                                        // The number of bytes per pixel.
-   int       BitsPerPixel;                                         // The number of bits per pixel
+   int       BitsPerPixel;                                         // The number of bits used to represent each pixel.
    int       Position;                                             // The current read/write data position.
    int       Opacity;                                              // Determines the translucency setting to use in drawing operations.
    BLM       BlendMode;                                            // Defines the blending algorithm to use when rendering transparent pixels.
    struct RGB8 TransColour;                                        // The transparent colour of the bitmap, in RGB format.
-   struct RGB8 Bkgd;                                               // The bitmap's background colour is defined here in RGB format.
-   int       BkgdIndex;                                            // The bitmap's background colour is defined here as a colour index.
+   struct RGB8 Bkgd;                                               // Background colour in RGB format.
+   int       BkgdIndex;                                            // Background colour as a packed pixel value or palette index.
    CS        ColourSpace;                                          // Defines the colour space for RGB values.
    public:
    inline uint32_t getColour(struct RGB8 &RGB) {
@@ -896,7 +920,7 @@ class objDisplay : public Object {
 
    using create = kt::Create<objDisplay>;
 
-   double   RefreshRate;  // This field manages the display refresh rate.
+   double   RefreshRate;  // Active display refresh rate.
    objBitmap * Bitmap;    // Reference to the display's bitmap information.
    SCR      Flags;        // Optional flag settings.
    int      Width;        // Defines the width of the display.
@@ -911,7 +935,7 @@ class objDisplay : public Object {
    int      MaxHScan;     // The maximum horizontal scan rate of the display output device.
    int      MinVScan;     // The minimum vertical scan rate of the display output device.
    int      MaxVScan;     // The maximum vertical scan rate of the display output device.
-   DT       DisplayType;  // In hosted mode, indicates the bottom margin of the client window.
+   DT       DisplayType;  // Identifies the active display backend.
    DPMS     PowerMode;    // The display's power management method.
    OBJECTID PopOverID;    // Enables pop-over support for hosted display windows.
    int      LeftMargin;   // In hosted mode, indicates the left-hand margin of the client window.
@@ -1131,7 +1155,7 @@ class objClipboard : public Object {
 
    using create = kt::Create<objClipboard>;
 
-   CPF Flags;    // Optional flags.
+   CPF Flags;    // Optional clipboard behaviour flags.
 
 #ifdef PRV_CLIPBOARD
    FUNCTION RequestHandler;
@@ -1203,7 +1227,7 @@ class objController : public Object {
    double LeftStickY;     // Left analog stick value for Y axis, between -1.0 and 1.0.
    double RightStickX;    // Right analog stick value for X axis, between -1.0 and 1.0.
    double RightStickY;    // Right analog stick value for Y axis, between -1.0 and 1.0.
-   CON    Buttons;        // JET button values expressed as bit-fields.
+   CON    Buttons;        // Button values expressed as bit-fields.
    int    Port;           // The port number assigned to the controller.
 
    // Action stubs
@@ -1214,7 +1238,6 @@ class objController : public Object {
    // Customised field setting
 
    inline ERR setPort(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
       this->Port = Value;
       return ERR::Okay;
    }
@@ -1236,17 +1259,17 @@ class objPointer : public Object {
    double   Acceleration;  // The rate of acceleration for relative pointer movement.
    double   DoubleClick;   // The maximum interval between two clicks for a double click to be recognised.
    double   WheelSpeed;    // Defines a multiplier to be applied to the mouse wheel.
-   double   X;             // The horizontal position of the pointer within its parent display.
-   double   Y;             // The vertical position of the pointer within its parent display.
-   double   OverX;         // The horizontal position of the pointer with respect to the object underneath the hot-spot.
-   double   OverY;         // The vertical position of the pointer with respect to the object underneath the hot-spot.
+   double   X;             // The horizontal position of the pointer within its display.
+   double   Y;             // The vertical position of the pointer within its display.
+   double   OverX;         // The horizontal position of the pointer with respect to the object underneath the hot spot.
+   double   OverY;         // The vertical position of the pointer with respect to the object underneath the hot spot.
    double   OverZ;         // The position of the Pointer within an object.
    int      MaxSpeed;      // Restricts the maximum speed of a pointer's movement.
    OBJECTID InputID;       // Declares the I/O object to read movement from.
    OBJECTID SurfaceID;     // The top-most surface that is under the pointer's hot spot.
    OBJECTID AnchorID;      // Can refer to a surface that the pointer has been anchored to.
-   PTC      CursorID;      // Sets the user's cursor image, selected from the pre-defined graphics bank.
-   OBJECTID CursorOwnerID; // The current owner of the cursor, as defined by ~Display.SetCursor().
+   PTC      CursorID;      // Identifies the active cursor image.
+   OBJECTID CursorOwnerID; // The object that currently owns the cursor state.
    PF       Flags;         // Optional flags.
    OBJECTID RestrictID;    // Refers to a surface when the pointer is restricted.
    int      HostX;         // Indicates the current position of the host cursor on Windows or X11
@@ -1368,9 +1391,9 @@ class objSurface : public Object {
 
    using create = kt::Create<objSurface>;
 
-   OBJECTID DragID;     // This object-based field is used to control the dragging of objects around the display.
-   OBJECTID BufferID;   // The ID of the bitmap that manages the surface's graphics.
-   OBJECTID ParentID;   // The parent for a surface is defined here.
+   OBJECTID DragID;     // Defines the Surface that moves when this surface is dragged.
+   OBJECTID BufferID;   // Refers to the Bitmap that stores the surface's graphics.
+   OBJECTID ParentID;   // Identifies the parent Surface.
    OBJECTID PopOverID;  // Keeps a surface in front of another surface in the Z order.
    int      MinWidth;   // Prevents the width of a surface object from shrinking beyond a certain value.
    int      MinHeight;  // Prevents the height of a surface object from shrinking beyond a certain value.
@@ -1380,8 +1403,8 @@ class objSurface : public Object {
    int      RightLimit; // Prevents a surface object from moving beyond a given point on the right-hand side.
    int      TopLimit;   // Prevents a surface object from moving beyond a given point at the top of its container.
    int      BottomLimit; // Prevents a surface object from moving beyond a given point at the bottom of its container.
-   OBJECTID DisplayID;  // Refers to the Display object that is managing the surface's graphics.
-   RNF      Flags;      // Optional flags.
+   OBJECTID DisplayID;  // Refers to the Display object that manages the surface's graphics.
+   RNF      Flags;      // Controls optional surface behaviour.
    int      X;          // Determines the horizontal position of a surface object.
    int      Y;          // Determines the vertical position of a surface object.
    int      Width;      // Defines the width of a surface object.
@@ -1389,9 +1412,9 @@ class objSurface : public Object {
    OBJECTID RootID;     // Surface that is acting as a root for many surface children (useful when applying translucency)
    ALIGN    Align;      // This field allows you to align a surface area within its owner.
    DMF      Dimensions; // Indicates currently active dimension settings.
-   DRAG     DragStatus; // Indicates the draggable state when dragging is enabled.
-   PTC      Cursor;     // A default cursor image can be set here for changing the mouse pointer.
-   struct RGB8 Colour;  // String-based field for setting the background colour.
+   DRAG     DragStatus; // Reports the current drag state when dragging is enabled.
+   PTC      Cursor;     // Sets the pointer image used while the mouse is over the surface.
+   struct RGB8 Colour;  // Defines the background colour used when clearing the surface.
    RT       Type;       // Internal surface type flags
    int      Modal;      // Sets the surface as modal (prevents user interaction with other surfaces).
 

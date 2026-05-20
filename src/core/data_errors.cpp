@@ -133,7 +133,7 @@ const CSTRING glMessages[int(ERR::END)+1] = {
  "The remote host refused the connection",
  "The network was unreachable",
  "No route to host",
- "The connection between client and server was terminated",
+ "Device or end-point disconnected",
  "Task/Process still exists and is running",
  "Referential integrity / constraint violation",
  "Record changes would violate the DB schema",

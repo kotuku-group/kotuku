@@ -264,22 +264,34 @@ void MsgWindowClose(OBJECTID SurfaceID)
 
    if (SurfaceID) {
       const WinHook hook(SurfaceID, WH::CLOSE);
+      FUNCTION func;
+      bool has_hook = false;
 
-      if (glWindowHooks.contains(hook)) {
-         auto func = &glWindowHooks[hook];
+      {
+         const std::lock_guard<std::recursive_mutex> lock(glWindowHookLock);
+         if (auto it = glWindowHooks.find(hook); it != glWindowHooks.end()) {
+            func = it->second;
+            has_hook = true;
+         }
+      }
+
+      if (has_hook) {
          ERR result;
 
-         if (func->isC()) {
-            kt::SwitchContext ctx(func->Context);
-            auto callback = (ERR (*)(OBJECTID SurfaceID, APTR))func->Routine;
-            result = callback(SurfaceID, func->Meta);
+         if (func.isC()) {
+            kt::SwitchContext ctx(func.Context);
+            auto callback = (ERR (*)(OBJECTID SurfaceID, APTR))func.Routine;
+            result = callback(SurfaceID, func.Meta);
          }
-         else if (func->isScript()) {
-            sc::Call(*func, std::to_array<ScriptArg>({ { "SurfaceID", SurfaceID, FDF_OBJECTID } }), result);
+         else if (func.isScript()) {
+            sc::Call(func, std::to_array<ScriptArg>({ { "SurfaceID", SurfaceID, FDF_OBJECTID } }), result);
          }
          else result = ERR::Okay;
 
-         if (result IS ERR::Terminate) glWindowHooks.erase(hook);
+         if (result IS ERR::Terminate) {
+            const std::lock_guard<std::recursive_mutex> lock(glWindowHookLock);
+            glWindowHooks.erase(hook);
+         }
          else if (result IS ERR::Cancelled) {
             log.msg("Window closure cancelled by client.");
             return;

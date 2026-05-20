@@ -6,14 +6,15 @@
     <name>Display</name>
     <type>class</type>
     <module>Display</module>
-    <comment>Manages the video display and graphics hardware.</comment>
+    <comment>Represents a drawable display target and its host window or video mode.</comment>
     <version>1</version>
     <id>39413236</id>
     <idstring>DISPLAY</idstring>
     <category>Graphics</category>
     <copyright>Paul Manias © 2003-2026</copyright>
     <description>
-<p>A Display object represents a region of displayable video memory and metadata that defines the display mode. The Display is a primitive, hardware oriented interface.  It is recommended that unless otherwise required, the <class name="Surface">Surface</class> class is used to create displayable graphics regions.</p></description>
+<p>A Display object owns the bitmap-backed area that is presented to the user.  Depending on the active display driver, the object may represent a hosted desktop window, a native full-screen video mode or a platform-managed rendering surface.</p>
+<p>Display is a low-level interface for display mode, window and bitmap management.  Most application code should create and manipulate <class name="Surface">Surface</class> objects instead, using Display directly only when it needs to configure the underlying window, display mode, palette, gamma or hardware-facing bitmap.</p></description>
     <source>
       <file>class_display.cpp</file>
     </source>
@@ -22,14 +23,14 @@
   <actions>
     <action>
       <name>Activate</name>
-      <comment>Activating a display has the same effect as calling the Show action.</comment>
+      <comment>Shows the display.</comment>
       <prototype>ERR acActivate(*Object)</prototype>
       <tiriPrototype>err = Object.acActivate()</tiriPrototype>
     </action>
 
     <action>
       <name>Clear</name>
-      <comment>Clears a display's image data and hardware buffers (e.g. OpenGL)</comment>
+      <comment>Clears the display's drawable image data.</comment>
       <prototype>ERR acClear(*Object)</prototype>
       <tiriPrototype>err = Object.acClear()</tiriPrototype>
     </action>
@@ -40,7 +41,7 @@
       <prototype>ERR acDisable(*Object)</prototype>
       <tiriPrototype>err = Object.acDisable()</tiriPrototype>
       <description>
-<p>Disabling a display will put the display into power saving mode.  The DPMS mode is determined by the user's system settings and cannot be changed by the developer.  The display will remain off until the Enable action is called.</p>
+<p>Disabling a display requests display power management, where supported by the active driver.  The DPMS mode is determined by user and system configuration.  The display remains disabled until <action>Enable</action> is called or the platform restores it.</p>
 <p>This action does nothing if the display is in hosted mode.</p>
       </description>
       <result>
@@ -64,16 +65,19 @@
 
     <action>
       <name>Enable</name>
-      <comment>Restores the screen display from power saving mode.</comment>
+      <comment>Restores the display from power saving mode.</comment>
       <prototype>ERR acEnable(*Object)</prototype>
       <tiriPrototype>err = Object.acEnable()</tiriPrototype>
     </action>
 
     <action>
       <name>Flush</name>
-      <comment>Flush pending graphics operations to the display.</comment>
+      <comment>Flushes pending graphics operations to the display driver.</comment>
       <prototype>ERR acFlush(*Object)</prototype>
       <tiriPrototype>err = Object.acFlush()</tiriPrototype>
+      <description>
+<p>Flush synchronises pending X11 requests or flushes OpenGL ES commands where those backends are active.  On other drivers it is a harmless no-op.</p>
+      </description>
     </action>
 
     <action>
@@ -85,7 +89,7 @@
 
     <action>
       <name>GetKey</name>
-      <comment>Retrieve formatted information from the display.</comment>
+      <comment>Retrieves formatted display information.</comment>
       <prototype>ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)</prototype>
       <tiriPrototype>err = Object.acGetKey(Key:str, Value:str, Size:num)</tiriPrototype>
       <input>
@@ -93,6 +97,17 @@
         <param type="STRING" name="Value">Pointer to a buffer space large enough to hold the retrieved value.</param>
         <param type="INT" name="Size">Indicates the byte size of the Buffer.</param>
       </input>
+      <description>
+<p>GetKey currently supports the <code>resolution(Index, Format)</code> key.  <code>Index</code> selects a display resolution and <code>Format</code> is a string containing replacement tokens.  Supported tokens are <code>%w</code> for width, <code>%h</code> for height, <code>%d</code> for bit depth, <code>%c</code> for colour count and <code>%%</code> for a literal percent sign.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Args">Invalid arguments passed to function</error>
+        <error code="NoData">No data is available for use</error>
+        <error code="NoSupport">Operation not supported</error>
+        <error code="OutOfRange">A value is outside of the valid range</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
     </action>
 
     <action>
@@ -101,13 +116,14 @@
       <prototype>ERR acHide(*Object)</prototype>
       <tiriPrototype>err = Object.acHide()</tiriPrototype>
       <description>
-<p>Calling this action will hide a display from the user's view.  If the hidden display was at the front of the display and there is a display object behind it, then the next underlying display will be displayed.  If there are no other displays available then the user's viewport will be blank after calling this action.</p>
+<p>Hide removes a hosted display window from view, or releases the visible presentation resources used by native and OpenGL ES drivers.  The display remains valid and can be shown again with <action>Show</action>.</p>
+<p>The <code>SCR::VISIBLE</code> flag is cleared after the hide request is processed.</p>
       </description>
     </action>
 
     <action>
       <name>Move</name>
-      <comment>Move the display to a new display position (relative coordinates).</comment>
+      <comment>Moves the display by a relative offset.</comment>
       <prototype>ERR acMove(*Object, DOUBLE DeltaX, DOUBLE DeltaY, DOUBLE DeltaZ)</prototype>
       <tiriPrototype>err = Object.acMove(DeltaX:num, DeltaY:num, DeltaZ:num)</tiriPrototype>
       <input>
@@ -115,20 +131,35 @@
         <param type="DOUBLE" name="DeltaY">The number of units to move along the Y axis.</param>
         <param type="DOUBLE" name="DeltaZ">The number of units to move along the Z axis.</param>
       </input>
+      <description>
+<p>Move adjusts the hosted window or native display position by the supplied delta values.  Hosted drivers interpret the movement in window-manager coordinates.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NoSupport">Operation not supported</error>
+        <error code="SystemCall">A call to the host system has failed</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
     </action>
 
     <action>
       <name>MoveToBack</name>
-      <comment>Move the display to the back of the display list.</comment>
+      <comment>Moves the hosted display window behind other windows.</comment>
       <prototype>ERR acMoveToBack(*Object)</prototype>
       <tiriPrototype>err = Object.acMoveToBack()</tiriPrototype>
+      <description>
+<p>This action lowers the host window where the active platform supports window stacking.</p>
+      </description>
     </action>
 
     <action>
       <name>MoveToFront</name>
-      <comment>Move the display to the front of the display list.</comment>
+      <comment>Moves the hosted display window in front of other windows.</comment>
       <prototype>ERR acMoveToFront(*Object)</prototype>
       <tiriPrototype>err = Object.acMoveToFront()</tiriPrototype>
+      <description>
+<p>This action raises the host window where the active platform supports window stacking.</p>
+      </description>
     </action>
 
     <action>
@@ -143,10 +174,16 @@
         <param type="MTF" name="Flags" lookup="MTF">Set the relevant MTF flag for each provided parameter.</param>
       </input>
       <description>
-<p>The MoveToPoint action moves the display to a new position.</p>
-<p>In a hosted environment, the supplied coordinates are treated as being indicative of the absolute position of the host window (not the client area).</p>
+<p>MoveToPoint moves the display to an absolute position.  The <code>MTF::X</code> and <code>MTF::Y</code> flags determine which coordinates are applied.</p>
+<p>In a hosted environment, the supplied coordinates describe the host window position.  The <fl>LeftMargin</fl> and <fl>TopMargin</fl> fields can be used when translating between host window coordinates and client-area coordinates.</p>
 <p>For full-screen displays, MoveToPoint can alter the screen position for the hardware device managing the display output.  This is a rare feature that requires hardware support.  <code>ERR::NoSupport</code> is returned if this feature is unavailable.</p>
       </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NoSupport">Operation not supported</error>
+        <error code="SystemCall">A call to the host system has failed</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
     </action>
 
     <action>
@@ -175,13 +212,21 @@
         <param type="DOUBLE" name="Depth">The new depth of the object.</param>
       </input>
       <description>
-<p>If the display is hosted, the Width and Height values will determine the size of the inside area of the window.</p>
+<p>Resize changes the display viewport size and resizes the underlying <fl>Bitmap</fl>.  If a display buffer is active, it is reallocated after the resize.</p>
+<p>For hosted displays, <code>Width</code> and <code>Height</code> describe the client area inside the host window, not the full outer window including frame decorations.</p>
       </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NoSupport">Operation not supported</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
+        <error code="Resize">Failure during the resize of an object</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
     </action>
 
     <action>
       <name>SaveImage</name>
-      <comment>Saves the image of a display to a data object.</comment>
+      <comment>Saves the display bitmap image to a data object.</comment>
       <prototype>ERR acSaveImage(*Object, OBJECTID Dest, CLASSID ClassID)</prototype>
       <tiriPrototype>err = Object.acSaveImage(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
@@ -192,9 +237,16 @@
 
     <action>
       <name>SaveSettings</name>
-      <comment>Saves the current display settings as the default.</comment>
+      <comment>Saves the current display settings as defaults.</comment>
       <prototype>ERR acSaveSettings(*Object)</prototype>
       <tiriPrototype>err = Object.acSaveSettings()</tiriPrototype>
+      <description>
+<p>SaveSettings stores supported window and display preferences, such as window position, size, DPMS setting and full-screen state, in the user display configuration.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="CreateObject">A call to CreateObject() failed</error>
+      </result>
     </action>
 
     <action>
@@ -203,12 +255,16 @@
       <prototype>ERR acShow(*Object)</prototype>
       <tiriPrototype>err = Object.acShow()</tiriPrototype>
       <description>
-<p>This method presents a display object to the user.  On a hosted platform, this will result in a window appearing on screen.  By default the window will be hosted within a window border which may contain regular window gadgets such as a titlebar and buttons for close, maximise and minimise operations.  The position of the window is determined by the <fl>X</fl> and <fl>Y</fl> fields.  In Kōtuku's native environment, the user's screen display will be altered to match the required resolution and the graphics of the display's <fl>Bitmap</fl> object will take up the entirety of the screen.</p>
-<p>If the <code>BORDERLESS</code> flag has been set in the <fl>Flags</fl> field, the window will appear without the surrounding border and gadgets normally associated with new windows.</p>
+<p>Show presents a display object to the user.  On hosted platforms this maps or shows the host window.  By default the window uses the platform's normal border, title and window controls.  The initial window position is determined by the <fl>X</fl> and <fl>Y</fl> fields.  On native full-screen drivers, showing the display may switch the active video mode and present the display <fl>Bitmap</fl> across the screen.</p>
+<p>If <code>SCR::BORDERLESS</code> is set in <fl>Flags</fl>, the host window is created without the normal window border and controls where the platform supports that mode.</p>
 <p>In Microsoft Windows, the <fl>LeftMargin</fl>, <fl>RightMargin</fl>, <fl>TopMargin</fl> and <fl>BottomMargin</fl> fields will be updated to reflect the position of the client area within the hosted window.  In X11 these field values are all set to zero.</p>
 <p>If the window is minimised at the time this action is called, the window will be restored to its original position if the code for the host platform supports this capability.</p>
-<p>The <code>VISIBLE</code> flag in the <fl>Flags</fl> field will be set if the Show operation is successful.</p>
+<p>The <code>SCR::VISIBLE</code> flag is set if the Show operation succeeds.  Showing the first display also ensures that the shared <code>SystemPointer</code> object exists.</p>
       </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NoSupport">Operation not supported</error>
+      </result>
     </action>
 
   </actions>
@@ -220,8 +276,8 @@
       <prototype>ERR gfx::Minimise(OBJECTPTR Object)</prototype>
       <tiriPrototype>err = Minimise()</tiriPrototype>
       <description>
-<p>If a display is hosted in a desktop window, calling the Minimise method will perform the default minimise action on that window.  On a platform such as Microsoft Windows, this would normally result in the window being minimised to the task bar.</p>
-<p>Calling Minimise on a display that is already in the minimised state may result in the host window being restored to the desktop.  This behaviour is platform dependent and should be manually tested to confirm its reliability on the host platform.</p>
+<p>If a display is hosted in a desktop window, Minimise() performs the platform's default minimise action for that window. On Microsoft Windows this normally minimises the window to the taskbar.  On X11 the current implementation unmaps the window.</p>
+<p>Calling Minimise() on a display that is already minimised may restore the host window on some platforms.  Treat that behaviour as platform dependent.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
@@ -245,14 +301,16 @@
         <param type="INT" name="Flags">Optional flags.</param>
       </input>
       <description>
-<p>The SetDisplay method changes the current display settings for the screen. It can alter the position and screen dimensions and the display refresh rate. The new settings are applied immediately, although minor delays are possible while the graphics card and monitor adjust to the changes.</p>
+<p>SetDisplay() changes the active display mode or hosted display size, depending on the platform.  It can alter display position, viewport dimensions, bit depth and refresh rate when the active display driver supports those features.  The new settings are applied immediately, although the graphics card, monitor or host window manager may introduce a short delay.</p>
 <p>To keep any of the display settings at their current value, set the appropriate parameters to zero to leave them unchanged.  Only the parameters that you set will be used.</p>
-<p>If the display parameters do not match with a valid display mode - for instance if you request a screen size of 1280x1024 and the nearest equivalent is 1024x768, the SetDisplay method will automatically adjust to match against the nearest screen size.</p>
+<p>If a requested full-screen mode is not available, the driver may choose the closest supported mode.</p>
 <p>Only the original owner of the display object is allowed to change the display settings.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="Failed">Failed to switch to the requested display mode.</error>
+        <error code="NoSupport">Operation not supported</error>
+        <error code="Resize">Failure during the resize of an object</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>
@@ -270,7 +328,7 @@
       </input>
       <description>
 <p>The SetGamma method controls the gamma correction levels for the display.  Gamma levels for the red, green and blue colour components can be set at floating point precision.  The default gamma level for each component is 1.0; the minimum value is 0.0 and the maximum value is 100.</p>
-<p>Optional flags include <code>GMF::SAVE</code>.  This option will save the requested settings as the user default when future displays are opened.</p>
+<p>Optional flags include <code>GMF::SAVE</code>.  This option stores the requested gamma values on the Display object so they can be saved as defaults where the driver supports persistent display settings.</p>
 <p>If you would like to know the default gamma correction settings for a display, please refer to the <fl>Gamma</fl> field.</p>
       </description>
       <result>
@@ -292,10 +350,11 @@
         <param type="GMF" name="Flags" lookup="GMF">Use <code>SAVE</code> to store the new settings.</param>
       </input>
       <description>
-<p>Call SetGammaLinear() to update a target display's gamma values with a linear algorithm that takes input from <code>Red</code>, <code>Green</code> and <code>Blue</code> parameters provided by the client.</p>
+<p>SetGammaLinear() updates display gamma values with a linear algorithm where the active driver supports it.  Values are clamped to the supported range before being applied.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
+        <error code="NoSupport">Operation not supported</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>
@@ -314,12 +373,14 @@
         <param type="MON" name="Flags" lookup="MON">Set to <code>AUTO_DETECT</code> if the monitor settings should be auto-detected on startup.  Set <code>BIT_6</code> if the device is limited to 6-bit colour output.</param>
       </input>
       <description>
-<p>Use the SetMonitor() method to change the settings that configure the user's monitor display.  You can set the model name of the monitor and the frequencies that are supported by it.  Altering the display frequencies will affect the available display resolutions, as well as the maximum allowable refresh rate.</p>
-<p>An AutoDetect option is available, which if defined will cause the display settings to be automatically detected when the desktop is loaded at startup. If it is not possible to detect the correct settings for the plugged-in display, it reverts to the default display settings.</p>
+<p>Use SetMonitor() to change the monitor metadata and scan-rate limits used by native display drivers.  Altering the supported frequencies can change the available display resolutions and maximum refresh rate.</p>
+<p>The auto-detect option requests monitor detection when the desktop starts.  If detection fails, the system reverts to its default monitor settings.</p>
 <p>This method does not work on hosted platforms.  All parameters passed to this method are optional (set a value to zero if it should not be changed).</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
+        <error code="NoSupport">Operation not supported</error>
+        <error code="NoPermission">General security violation</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>
@@ -333,7 +394,7 @@
         <param type="INT" name="MinWidth">The minimum width of the window.</param>
         <param type="INT" name="MinHeight">The minimum height of the window.</param>
         <param type="INT" name="MaxWidth">The maximum width of the window.</param>
-        <param type="INT" name="MaxHeight">The maximum width of the window.</param>
+        <param type="INT" name="MaxHeight">The maximum height of the window.</param>
         <param type="INT" name="EnforceAspect">Set to true to enforce an aspect ratio that is scaled from MinWidth,MinHeight to MaxWidth,MaxHeight.</param>
       </input>
       <description>
@@ -342,6 +403,7 @@
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="NoSupport">The host platform does not support this feature.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>
 
@@ -354,11 +416,12 @@
         <param type="struct RGBPalette *" name="NewPalette">The new palette to apply to the display bitmap.</param>
       </input>
       <description>
-<p>Call UpdatePalette() to copy a new palette to the display bitmap's internal palette.  If the video display is running in 256 colour mode, the new palette colours will also be reflected in the display.</p>
+<p>Call UpdatePalette() to copy a new palette to the display bitmap's internal palette.  If the video display is running in 256-colour mode, the new palette colours are also applied to the display where supported.</p>
 <p>This method has no visible effect on RGB pixel displays.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>
@@ -369,7 +432,7 @@
       <prototype>ERR gfx::WaitVBL(OBJECTPTR Object)</prototype>
       <tiriPrototype>err = WaitVBL()</tiriPrototype>
       <description>
-<p>This method waits for the strobe to reach the vertical blank area at the bottom of the display.  Not all graphics hardware will support this method.  If this is the case, WaitVBL() will return immediately with <code>ERR::NoSupport</code>.</p>
+<p>WaitVBL() waits for the display to reach vertical blank where the active driver exposes that timing primitive.  Drivers that do not support it return <code>ERR::NoSupport</code> immediately.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
@@ -386,8 +449,8 @@
       <access read="R">Read</access>
       <type class="Bitmap">*Bitmap</type>
       <description>
-<p>The <class name="Bitmap">Bitmap</class> object describes the video region that will be used for displaying graphics. It holds details on the width, height, type, number of colours and so on.  The display class inherits the bitmap's attributes, so it is not necessary to retrieve a direct reference to the bitmap object in order to make adjustments.</p>
-<p>The <class name="Bitmap" field="Width">Bitmap.Width</class> and <class name="Bitmap" field="Height">Bitmap.Height</class> can be larger than the display area, but never smaller.</p>
+<p>The <class name="Bitmap">Bitmap</class> object describes the drawable pixel region presented by the display.  It stores the width, height, colour format, palette and related bitmap state.  Display fields mirror the most common bitmap dimensions, so callers rarely need to access the bitmap directly for simple sizing operations.</p>
+<p>The <class name="Bitmap" field="Width">Bitmap.Width</class> and <class name="Bitmap" field="Height">Bitmap.Height</class> can be larger than the visible display area, but never smaller.</p>
       </description>
     </field>
 
@@ -397,7 +460,7 @@
       <access read="R" write="W">Read/Write</access>
       <type>INT</type>
       <description>
-<p>This field defines the horizontal offset for the <fl>Bitmap</fl>, which is positioned 'behind' the display. To achieve hardware scrolling, call the <action>Move</action> action on the Bitmap in order to change this value and update the display.</p>
+<p>This field stores the horizontal offset of the <fl>Bitmap</fl> relative to the visible display viewport.  It is used by drivers that support a bitmap larger than the visible display area.</p>
       </description>
     </field>
 
@@ -407,7 +470,7 @@
       <access read="R" write="W">Read/Write</access>
       <type>INT</type>
       <description>
-<p>This field defines the vertical offset for the <fl>Bitmap</fl>, which is positioned 'behind' the display.  To achieve hardware scrolling, you will need to call the Move() action on the <fl>Bitmap</fl> in order to change this value and update the display.</p>
+<p>This field stores the vertical offset of the <fl>Bitmap</fl> relative to the visible display viewport.  It is used by drivers that support a bitmap larger than the visible display area.</p>
       </description>
     </field>
 
@@ -453,11 +516,11 @@
 
     <field>
       <name>DisplayType</name>
-      <comment>In hosted mode, indicates the bottom margin of the client window.</comment>
+      <comment>Identifies the active display backend.</comment>
       <access read="R">Read</access>
       <type lookup="DT">DT</type>
       <description>
-<p>If the display is hosted in a client window, the <fl>BottomMargin</fl> indicates the number of pixels between the client area and the bottom window edge.</p>
+<p>This field reports the display driver type, such as native, X11, Windows GDI or OpenGL ES.</p>
 <types lookup="DT"/>
       </description>
     </field>
@@ -468,7 +531,7 @@
       <access read="R" write="S">Read/Set</access>
       <type lookup="SCR">SCR</type>
       <description>
-<p>Optional display flags can be defined here.  Post-initialisation, the only flags that can be set are <code>AUTO_SAVE</code> and <code>BORDERLESS</code>.</p>
+<p>Display flags configure hosted-window behaviour, buffering, visibility, controller grabbing and driver-reported capabilities.  After initialisation, only a limited subset can be changed and support for changing window style is platform dependent.</p>
 <types lookup="SCR"/>
       </description>
     </field>
@@ -479,7 +542,7 @@
       <access read="G" write="S">Get/Set</access>
       <type>DOUBLE []</type>
       <description>
-<p>The gamma settings for the display are stored in this field.  The settings are stored in an array of 3 floating point values that represent red, green and blue colours guns.  The default gamma value for each colour gun is 1.0.</p>
+<p>The gamma settings for the display are stored in this field.  The settings are stored in an array of 3 floating point values that represent the red, green and blue colour components.  The default gamma value for each component is 1.0.</p>
 <p>To modify the display gamma values, please refer to the <method>SetGamma</method> and <method>SetGammaLinear</method> methods.</p>
       </description>
     </field>
@@ -490,7 +553,7 @@
       <access read="G" write="S">Get/Set</access>
       <type>INT</type>
       <description>
-<p>Reading the HDensity field will return the horizontal pixel density for the display (pixels per inch).  If the physical size of the display is unknown, a default value based on knowledge of the platform will be retuned.  For standard PC's this will usually be 96.</p>
+<p>Reading the HDensity field will return the horizontal pixel density for the display (pixels per inch).  If the physical size of the display is unknown, a default value based on the platform is returned.  For standard desktop systems this will usually be 96.</p>
 <p>A custom density value can be enforced by setting the <code>/interface/@dpi</code> value in the loaded style, or by setting HDensity.</p>
 <p>Reading this field always succeeds.</p>
       </description>
@@ -502,7 +565,7 @@
       <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
-<p>This field defines the height of a display.  This is known as the 'viewport' that the bitmap data is displayed through. If the height exceeds allowable limits, it will be restricted to a value that the display hardware can handle.</p>
+<p>This field defines the visible display viewport height.  If the height exceeds allowable limits, it is restricted to a value that the display driver can handle.</p>
 <p>If the display is hosted, the height reflects the internal height of the host window.  On some hosted systems, the true height of the window can be calculated by reading the <fl>TopMargin</fl> and <fl>BottomMargin</fl> fields.</p>
       </description>
     </field>
@@ -513,7 +576,7 @@
       <access read="G">Get</access>
       <type>INT</type>
       <description>
-<p>On full-screen displays, the video data area can exceed the height of the screen display.  The InsideHeight reflects the height of the video data in pixels.  If this feature is not in use or is unavailable, the InsideWidth is equal to the display <fl>Height</fl>.</p>
+<p>On drivers that support a drawable area larger than the visible viewport, InsideHeight reflects the internal bitmap height in pixels.  If this feature is not in use, InsideHeight is equal to <fl>Height</fl>.</p>
       </description>
     </field>
 
@@ -523,7 +586,7 @@
       <access read="G">Get</access>
       <type>INT</type>
       <description>
-<p>On full-screen displays, the video data area can exceed the width of the screen display.  The InsideWidth reflects the width of the video data in pixels.  If this feature is not in use or is unavailable, the InsideWidth is equal to the display <fl>Width</fl>.</p>
+<p>On drivers that support a drawable area larger than the visible viewport, InsideWidth reflects the internal bitmap width in pixels.  If this feature is not in use, InsideWidth is equal to <fl>Width</fl>.</p>
       </description>
     </field>
 
@@ -589,11 +652,11 @@
 
     <field>
       <name>Opacity</name>
-      <comment>Determines the level of translucency applied to the display (hosted displays only).</comment>
+      <comment>Determines the level of translucency applied to the display window (hosted displays only).</comment>
       <access read="G" write="S">Get/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>This field determines the translucency level applied to a display. Its support level is limited to hosted displays that support translucent windows (for example, Windows XP).  The default setting is 100%, which means that the display will be solid.  High values will retain the boldness of the display, while low values reduce visibility.</p>
+<p>This field determines the translucency level applied to a hosted display window, expressed as a normalised value.  The default setting is 1, which makes the display fully opaque.  Lower values make the window more transparent where the host platform supports translucent windows.</p>
       </description>
     </field>
 
@@ -614,29 +677,29 @@
       <access read="R" write="W">Read/Write</access>
       <type lookup="DPMS">DPMS</type>
       <description>
-<p>When DPMS is enabled via a call to <action>Disable</action>, the DPMS method that is applied is controlled by this field.</p>
-<p>DPMS is a user configurable option and it is not recommended that the PowerMode value is changed manually.</p>
+<p>When DPMS is supported and <action>Disable</action> is called, this field identifies the requested power-management mode.</p>
+<p>DPMS is normally user-configurable, so applications should avoid changing PowerMode without user intent.</p>
 <types lookup="DPMS"/>
       </description>
     </field>
 
     <field>
       <name>RefreshRate</name>
-      <comment>This field manages the display refresh rate.</comment>
+      <comment>Active display refresh rate.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>The value in this field reflects the refresh rate of the currently active display, if operating in full-screen mode.</p>
+<p>This field reflects the refresh rate of the currently active full-screen display mode where the driver can report it. Hosted display drivers may leave this value unset or set it to a sentinel value.</p>
       </description>
     </field>
 
     <field>
       <name>ResizeFeedback</name>
-      <comment>This field manages the display refresh rate.</comment>
+      <comment>Callback invoked when the display position or size changes.</comment>
       <access read="G" write="S">Get/Set</access>
       <type>FUNCTION</type>
       <description>
-<p>The value in this field reflects the refresh rate of the currently active display, if operating in full-screen mode.</p>
+<p>Set this field to receive display resize feedback from hosted-window events and display-managed coordinate repairs. The callback receives the display object ID, X, Y, Width and Height values.</p>
       </description>
     </field>
 
@@ -681,7 +744,7 @@
       <access read="G" write="S">Get/Set</access>
       <type>INT</type>
       <description>
-<p>Reading the VDensity field will return the vertical pixel density for the display (pixels per inch).  If the physical size of the display is unknown, a default value based on knowledge of the platform will be retuned.  For standard PC's this will usually be 96.</p>
+<p>Reading the VDensity field will return the vertical pixel density for the display (pixels per inch).  If the physical size of the display is unknown, a default value based on the platform is returned.  For standard desktop systems this will usually be 96.</p>
 <p>A custom density value can be enforced by setting the <code>/interface/@dpi</code> value in the loaded style, or by setting VDensity.</p>
 <p>Reading this field always succeeds.</p>
       </description>
@@ -693,7 +756,7 @@
       <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
-<p>This field defines the width of a display.  This is known as the 'viewport' that the bitmap data is displayed through. If the width exceeds allowable limits, it will be restricted to a value that the display hardware can handle.</p>
+<p>This field defines the visible display viewport width.  If the width exceeds allowable limits, it is restricted to a value that the display driver can handle.</p>
 <p>If the display is hosted, the width reflects the internal width of the host window.  On some hosted systems, the true width of the window can be calculated by reading the <fl>LeftMargin</fl> and <fl>RightMargin</fl> fields.</p>
       </description>
     </field>
@@ -704,8 +767,8 @@
       <access read="G" write="S">Get/Set</access>
       <type>APTR</type>
       <description>
-<p>This field refers to the window handle of a display object, but only if such a thing is relevant to the platform that the system is running on.  Currently, this field is only usable when creating a display within an X11 window manager or Microsoft Windows.</p>
-<p>It is possible to set the WindowHandle field prior to initialisation if you want a display object to be based on a window that already exists.</p>
+<p>This field refers to the platform window handle owned or used by the display.  It is relevant only on hosted display backends such as X11 and Microsoft Windows.</p>
+<p>Set WindowHandle before initialisation to bind the Display object to an existing host window.  In that case the display sets <code>SCR::CUSTOM_WINDOW</code> and will not destroy the host window as its own resource.</p>
       </description>
     </field>
 
@@ -715,7 +778,7 @@
       <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
-<p>The X field defines the horizontal hardware coordinate for a display.  This field should be set to zero unless the screen requires adjustment.  Most hardware drivers and output devices do not support this feature.</p>
+<p>The X field defines the horizontal coordinate of the display.  On native full-screen drivers this is a hardware offset and should normally remain zero unless the output device requires adjustment.</p>
 <p>On hosted displays, prior to initialisation the coordinate will reflect the position of the display window when it is created.  After initialisation, the coordinate is altered to reflect the absolute position of the client area of the display window.  The <fl>LeftMargin</fl> can be used to determine the actual position of the host window.</p>
 <p>To adjust the position of the display, use the <action>MoveToPoint</action> action rather than setting this field directly.</p>
       </description>
@@ -727,8 +790,8 @@
       <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
-<p>The Y field defines the vertical hardware coordinate for a display.  This field should be set to zero unless the screen requires adjustment.  Most hardware drivers and output devices do not support this feature.</p>
-<p>On hosted displays, prior to initialisation the coordinate will reflect the position of the display window  when it is created.  After initialisation, the coordinate is altered to reflect the absolute position of the client area of the display window.  The <fl>TopMargin</fl> can be used to determine the actual position of the host window.</p>
+<p>The Y field defines the vertical coordinate of the display.  On native full-screen drivers this is a hardware offset and should normally remain zero unless the output device requires adjustment.</p>
+<p>On hosted displays, prior to initialisation the coordinate will reflect the position of the display window when it is created.  After initialisation, the coordinate is altered to reflect the absolute position of the client area of the display window.  The <fl>TopMargin</fl> can be used to determine the actual position of the host window.</p>
 <p>To adjust the position of the display, use the <action>MoveToPoint</action> action rather than setting this field directly.</p>
       </description>
     </field>

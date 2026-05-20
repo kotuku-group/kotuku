@@ -9,6 +9,7 @@ Name: Display
 #include "defs.h"
 
 ankerl::unordered_dense::map<WinHook, FUNCTION> glWindowHooks;
+std::recursive_mutex glWindowHookLock;
 
 namespace gfx {
 
