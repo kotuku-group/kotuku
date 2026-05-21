@@ -1153,7 +1153,7 @@ the surface area first).</li>
       <field name="BitsPerPixel" type="INT16">Preferred bits-per-pixel setting for custom cursors</field>
     </struct>
 
-    <struct name="DisplayInfo" typeName="DISPLAYINFO">
+    <struct name="DisplayInfo">
       <field name="Display" type="OBJECTID">Object ID related to the display</field>
       <field name="Flags" type="SCR" lookup="SCR">Display flags</field>
       <field name="Width" type="INT16">Pixel width of the display</field>
@@ -1169,6 +1169,18 @@ the surface area first).</li>
       <field name="Index" type="INT">Display mode ID (internal)</field>
       <field name="HDensity" type="INT">Horizontal pixel density per inch.</field>
       <field name="VDensity" type="INT">Vertical pixel density per inch.</field>
+      <field name="HostedX" type="INT">Horizontal display position in virtual desktop coordinates</field>
+      <field name="HostedY" type="INT">Vertical display position in virtual desktop coordinates</field>
+      <field name="MonitorX" type="INT">Horizontal position of the monitor, relative to the primary monitor</field>
+      <field name="MonitorY" type="INT">Vertical position of the monitor, relative to the primary monitor</field>
+      <field name="MonitorWidth" type="INT">Pixel width of the monitor</field>
+      <field name="MonitorHeight" type="INT">Pixel height of the monitor</field>
+      <field name="VirtualX" type="INT">Horizontal position of the complete desktop spanning all monitors</field>
+      <field name="VirtualY" type="INT">Vertical position of the complete desktop spanning all monitors</field>
+      <field name="VirtualWidth" type="INT">Width of the complete desktop spanning all monitors</field>
+      <field name="VirtualHeight" type="INT">Height of the complete desktop spanning all monitors</field>
+      <field name="PhysicalWidth" type="INT">Width in millimeters, 0 if unknown</field>
+      <field name="PhysicalHeight" type="INT">Height in millimeters, 0 if unknown</field>
     </struct>
 
     <struct name="InputEvent">

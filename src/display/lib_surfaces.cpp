@@ -90,7 +90,7 @@ static void check_bmp_buffer_depth(extSurface *Self, objBitmap *Bitmap)
 
    if ((Bitmap->Flags & BMF::FIXED_DEPTH) != BMF::NIL) return;  // Don't change bitmaps marked as fixed-depth
 
-   DISPLAYINFO *info;
+   DisplayInfo *info;
    if (gfx::GetDisplayInfo(Self->DisplayID, &info) IS ERR::Okay) {
       if (info->BitsPerPixel != Bitmap->BitsPerPixel) {
          log.msg("[%d] Updating buffer Bitmap %dx%dx%d to match new display depth of %dbpp.", Bitmap->UID, Bitmap->Width, Bitmap->Height, Bitmap->BitsPerPixel, info->BitsPerPixel);
@@ -1208,7 +1208,7 @@ ERR GetSurfaceCoords(OBJECTID SurfaceID, int *X, int *Y, int *AbsX, int *AbsY, i
    kt::Log log(__FUNCTION__);
 
    if (!SurfaceID) {
-      DISPLAYINFO *display;
+      DisplayInfo *display;
       if (gfx::GetDisplayInfo(0, &display) IS ERR::Okay) {
          if (X)      *X = 0;
          if (Y)      *Y = 0;
@@ -1277,7 +1277,7 @@ ERR GetSurfaceFlags(OBJECTID SurfaceID, RNF *Flags)
 /*********************************************************************************************************************
 
 -FUNCTION-
-GetSurfaceInfo: Retrieves display information for any surface object without having to access it directly.
+GetSurfaceInfo: Retrieves display information for any surface object, whilst avoiding direct access.
 
 GetSurfaceInfo() is used for quickly retrieving basic information from surfaces, allowing the client to bypass the
 ~Core.AccessObject() function.  The resulting structure values are good only up until the next call to this function,
@@ -1385,7 +1385,7 @@ Search: The supplied `Surface` ID did not refer to a recognised surface object.
 ERR GetVisibleArea(OBJECTID SurfaceID, int *X, int *Y, int *AbsX, int *AbsY, int *Width, int *Height)
 {
    if (!SurfaceID) {
-      DISPLAYINFO *display;
+      DisplayInfo *display;
       if (gfx::GetDisplayInfo(0, &display) IS ERR::Okay) {
          if (X) *X = 0;
          if (Y) *Y = 0;

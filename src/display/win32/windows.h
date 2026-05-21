@@ -115,9 +115,9 @@ extern void MsgTimer(void);
 extern void MsgWindowClose(int SurfaceID);
 extern void MsgWindowDestroyed(int SurfaceID);
 
-#define AXIS_VERTICAL 1
-#define AXIS_HORIZONTAL 2
-#define AXIS_BOTH 3
+constexpr int AXIS_VERTICAL   = 1;
+constexpr int AXIS_HORIZONTAL = 2;
+constexpr int AXIS_BOTH       = 3;
 
 extern void CheckWindowSize(int, int &, int &, int, int, int = AXIS_BOTH);
 

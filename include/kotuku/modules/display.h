@@ -310,6 +310,11 @@ enum class SCR : uint32_t {
    COMPOSITE = 0x00000040,
    ALPHA_BLEND = 0x00000040,
    GRAB_CONTROLLERS = 0x00000080,
+   PRIMARY = 0x00000100,
+   ACTIVE = 0x00000200,
+   MIRRORED = 0x00000400,
+   VIRTUAL = 0x00000800,
+   ROTATED = 0x00001000,
    MAXSIZE = 0x00100000,
    REFRESH = 0x00200000,
    HOSTED = 0x02000000,
@@ -406,9 +411,7 @@ enum class CEF : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(CEF)
 
-#define VER_SURFACEINFO 2.000000
-
-typedef struct SurfaceInfoV2 {
+typedef struct SurfaceInfo {
    APTR     Data;           // Bitmap data memory ID
    OBJECTID ParentID;       // Object that contains the surface area
    OBJECTID BitmapID;       // Surface bitmap buffer
@@ -465,9 +468,7 @@ typedef struct PixelFormat {
    uint8_t AlphaPos;    // Left shift/positional value for alpha
 } PIXELFORMAT;
 
-#define VER_DISPLAYINFO 3.000000
-
-typedef struct DisplayInfoV3 {
+struct DisplayInfo {
    OBJECTID DisplayID;                // Object ID related to the display
    SCR      Flags;                    // Display flags
    int16_t  Width;                    // Pixel width of the display
@@ -483,7 +484,19 @@ typedef struct DisplayInfoV3 {
    int      Index;                    // Display mode ID (internal)
    int      HDensity;                 // Horizontal pixel density per inch.
    int      VDensity;                 // Vertical pixel density per inch.
-} DISPLAYINFO;
+   int      HostedX;                  // Horizontal display position in virtual desktop coordinates
+   int      HostedY;                  // Vertical display position in virtual desktop coordinates
+   int      MonitorX;                 // Horizontal position of the monitor, relative to the primary monitor
+   int      MonitorY;                 // Vertical position of the monitor, relative to the primary monitor
+   int      MonitorWidth;             // Pixel width of the monitor
+   int      MonitorHeight;            // Pixel height of the monitor
+   int      VirtualX;                 // Horizontal position of the complete desktop spanning all monitors
+   int      VirtualY;                 // Vertical position of the complete desktop spanning all monitors
+   int      VirtualWidth;             // Width of the complete desktop spanning all monitors
+   int      VirtualHeight;            // Height of the complete desktop spanning all monitors
+   int      PhysicalWidth;            // Width in millimeters, 0 if unknown
+   int      PhysicalHeight;           // Height in millimeters, 0 if unknown
+};
 
 struct CursorInfo {
    int     Width;           // Maximum cursor width for custom cursors
@@ -492,9 +505,7 @@ struct CursorInfo {
    int16_t BitsPerPixel;    // Preferred bits-per-pixel setting for custom cursors
 };
 
-#define VER_BITMAPSURFACE 2.000000
-
-typedef struct BitmapSurfaceV2 {
+typedef struct BitmapSurface {
    APTR    Data;                 // Pointer to the bitmap graphics data.
    int16_t Width;                // Pixel width of the bitmap.
    int16_t Height;               // Pixel height of the bitmap.
@@ -512,7 +523,7 @@ typedef struct BitmapSurfaceV2 {
 
 // Bitmap class definition
 
-#define VER_BITMAP (2.000000)
+#define VER_BITMAP (1.000000)
 
 // Bitmap methods
 
@@ -1737,7 +1748,7 @@ struct DisplayBase {
    objPointer * (*_AccessPointer)(void);
    ERR (*_CheckIfChild)(OBJECTID Parent, OBJECTID Child);
    ERR (*_CopyArea)(objBitmap *Bitmap, objBitmap *Dest, BAF Flags, int X, int Y, int Width, int Height, int XDest, int YDest);
-   ERR (*_CopyRawBitmap)(struct BitmapSurfaceV2 *Surface, objBitmap *Dest, CSRF Flags, int X, int Y, int Width, int Height, int XDest, int YDest);
+   ERR (*_CopyRawBitmap)(struct BitmapSurface *Surface, objBitmap *Dest, CSRF Flags, int X, int Y, int Width, int Height, int XDest, int YDest);
    ERR (*_CopySurface)(OBJECTID Surface, objBitmap *Bitmap, BDF Flags, int X, int Y, int Width, int Height, int XDest, int YDest);
    void (*_DrawPixel)(objBitmap *Bitmap, int X, int Y, uint32_t Colour);
    void (*_DrawRGBPixel)(objBitmap *Bitmap, int X, int Y, struct RGB8 *RGB);
@@ -1746,14 +1757,14 @@ struct DisplayBase {
    void (*_GetColourFormat)(struct ColourFormat *Format, int BitsPerPixel, int RedMask, int GreenMask, int BlueMask, int AlphaMask);
    ERR (*_GetCursorInfo)(struct CursorInfo *Info, int Size);
    ERR (*_GetCursorPos)(double *X, double *Y);
-   ERR (*_GetDisplayInfo)(OBJECTID Display, struct DisplayInfoV3 **Info);
+   ERR (*_GetDisplayInfo)(OBJECTID Display, struct DisplayInfo **Info);
    DT (*_GetDisplayType)(void);
    CSTRING (*_GetInputTypeName)(JET Type);
    OBJECTID (*_GetModalSurface)(void);
    ERR (*_GetRelativeCursorPos)(OBJECTID Surface, double *X, double *Y);
    ERR (*_GetSurfaceCoords)(OBJECTID Surface, int *X, int *Y, int *AbsX, int *AbsY, int *Width, int *Height);
    ERR (*_GetSurfaceFlags)(OBJECTID Surface, RNF *Flags);
-   ERR (*_GetSurfaceInfo)(OBJECTID Surface, struct SurfaceInfoV2 **Info);
+   ERR (*_GetSurfaceInfo)(OBJECTID Surface, struct SurfaceInfo **Info);
    OBJECTID (*_GetUserFocus)(void);
    ERR (*_GetVisibleArea)(OBJECTID Surface, int *X, int *Y, int *AbsX, int *AbsY, int *Width, int *Height);
    ERR (*_LockCursor)(OBJECTID Surface);
@@ -1762,7 +1773,7 @@ struct DisplayBase {
    ERR (*_Resample)(objBitmap *Bitmap, struct ColourFormat *ColourFormat);
    ERR (*_RestoreCursor)(PTC Cursor, OBJECTID Owner);
    double (*_ScaleToDPI)(double Value);
-   ERR (*_ScanDisplayModes)(CSTRING Filter, struct DisplayInfoV3 *Info, int Size);
+   ERR (*_ScanDisplayModes)(CSTRING Filter, struct DisplayInfo *Info);
    void (*_SetClipRegion)(objBitmap *Bitmap, int Number, int Left, int Top, int Right, int Bottom, int Terminate);
    ERR (*_SetCursor)(OBJECTID Surface, CRF Flags, PTC Cursor, CSTRING Name, OBJECTID Owner);
    ERR (*_SetCursorPos)(double X, double Y);
@@ -1784,7 +1795,7 @@ namespace gfx {
 inline objPointer * AccessPointer(void) { return DisplayBase->_AccessPointer(); }
 inline ERR CheckIfChild(OBJECTID Parent, OBJECTID Child) { return DisplayBase->_CheckIfChild(Parent,Child); }
 inline ERR CopyArea(objBitmap *Bitmap, objBitmap *Dest, BAF Flags, int X, int Y, int Width, int Height, int XDest, int YDest) { return DisplayBase->_CopyArea(Bitmap,Dest,Flags,X,Y,Width,Height,XDest,YDest); }
-inline ERR CopyRawBitmap(struct BitmapSurfaceV2 *Surface, objBitmap *Dest, CSRF Flags, int X, int Y, int Width, int Height, int XDest, int YDest) { return DisplayBase->_CopyRawBitmap(Surface,Dest,Flags,X,Y,Width,Height,XDest,YDest); }
+inline ERR CopyRawBitmap(struct BitmapSurface *Surface, objBitmap *Dest, CSRF Flags, int X, int Y, int Width, int Height, int XDest, int YDest) { return DisplayBase->_CopyRawBitmap(Surface,Dest,Flags,X,Y,Width,Height,XDest,YDest); }
 inline ERR CopySurface(OBJECTID Surface, objBitmap *Bitmap, BDF Flags, int X, int Y, int Width, int Height, int XDest, int YDest) { return DisplayBase->_CopySurface(Surface,Bitmap,Flags,X,Y,Width,Height,XDest,YDest); }
 inline void DrawPixel(objBitmap *Bitmap, int X, int Y, uint32_t Colour) { return DisplayBase->_DrawPixel(Bitmap,X,Y,Colour); }
 inline void DrawRGBPixel(objBitmap *Bitmap, int X, int Y, struct RGB8 *RGB) { return DisplayBase->_DrawRGBPixel(Bitmap,X,Y,RGB); }
@@ -1793,14 +1804,14 @@ inline ERR ExposeSurface(OBJECTID Surface, int X, int Y, int Width, int Height, 
 inline void GetColourFormat(struct ColourFormat *Format, int BitsPerPixel, int RedMask, int GreenMask, int BlueMask, int AlphaMask) { return DisplayBase->_GetColourFormat(Format,BitsPerPixel,RedMask,GreenMask,BlueMask,AlphaMask); }
 inline ERR GetCursorInfo(struct CursorInfo *Info, int Size) { return DisplayBase->_GetCursorInfo(Info,Size); }
 inline ERR GetCursorPos(double *X, double *Y) { return DisplayBase->_GetCursorPos(X,Y); }
-inline ERR GetDisplayInfo(OBJECTID Display, struct DisplayInfoV3 **Info) { return DisplayBase->_GetDisplayInfo(Display,Info); }
+inline ERR GetDisplayInfo(OBJECTID Display, struct DisplayInfo **Info) { return DisplayBase->_GetDisplayInfo(Display,Info); }
 inline DT GetDisplayType(void) { return DisplayBase->_GetDisplayType(); }
 inline CSTRING GetInputTypeName(JET Type) { return DisplayBase->_GetInputTypeName(Type); }
 inline OBJECTID GetModalSurface(void) { return DisplayBase->_GetModalSurface(); }
 inline ERR GetRelativeCursorPos(OBJECTID Surface, double *X, double *Y) { return DisplayBase->_GetRelativeCursorPos(Surface,X,Y); }
 inline ERR GetSurfaceCoords(OBJECTID Surface, int *X, int *Y, int *AbsX, int *AbsY, int *Width, int *Height) { return DisplayBase->_GetSurfaceCoords(Surface,X,Y,AbsX,AbsY,Width,Height); }
 inline ERR GetSurfaceFlags(OBJECTID Surface, RNF *Flags) { return DisplayBase->_GetSurfaceFlags(Surface,Flags); }
-inline ERR GetSurfaceInfo(OBJECTID Surface, struct SurfaceInfoV2 **Info) { return DisplayBase->_GetSurfaceInfo(Surface,Info); }
+inline ERR GetSurfaceInfo(OBJECTID Surface, struct SurfaceInfo **Info) { return DisplayBase->_GetSurfaceInfo(Surface,Info); }
 inline OBJECTID GetUserFocus(void) { return DisplayBase->_GetUserFocus(); }
 inline ERR GetVisibleArea(OBJECTID Surface, int *X, int *Y, int *AbsX, int *AbsY, int *Width, int *Height) { return DisplayBase->_GetVisibleArea(Surface,X,Y,AbsX,AbsY,Width,Height); }
 inline ERR LockCursor(OBJECTID Surface) { return DisplayBase->_LockCursor(Surface); }
@@ -1809,7 +1820,7 @@ inline void ReadRGBPixel(objBitmap *Bitmap, int X, int Y, struct RGB8 **RGB) { r
 inline ERR Resample(objBitmap *Bitmap, struct ColourFormat *ColourFormat) { return DisplayBase->_Resample(Bitmap,ColourFormat); }
 inline ERR RestoreCursor(PTC Cursor, OBJECTID Owner) { return DisplayBase->_RestoreCursor(Cursor,Owner); }
 inline double ScaleToDPI(double Value) { return DisplayBase->_ScaleToDPI(Value); }
-inline ERR ScanDisplayModes(CSTRING Filter, struct DisplayInfoV3 *Info, int Size) { return DisplayBase->_ScanDisplayModes(Filter,Info,Size); }
+inline ERR ScanDisplayModes(CSTRING Filter, struct DisplayInfo *Info) { return DisplayBase->_ScanDisplayModes(Filter,Info); }
 inline void SetClipRegion(objBitmap *Bitmap, int Number, int Left, int Top, int Right, int Bottom, int Terminate) { return DisplayBase->_SetClipRegion(Bitmap,Number,Left,Top,Right,Bottom,Terminate); }
 inline ERR SetCursor(OBJECTID Surface, CRF Flags, PTC Cursor, CSTRING Name, OBJECTID Owner) { return DisplayBase->_SetCursor(Surface,Flags,Cursor,Name,Owner); }
 inline ERR SetCursorPos(double X, double Y) { return DisplayBase->_SetCursorPos(X,Y); }
@@ -1828,7 +1839,7 @@ namespace gfx {
 extern objPointer * AccessPointer(void);
 extern ERR CheckIfChild(OBJECTID Parent, OBJECTID Child);
 extern ERR CopyArea(objBitmap *Bitmap, objBitmap *Dest, BAF Flags, int X, int Y, int Width, int Height, int XDest, int YDest);
-extern ERR CopyRawBitmap(struct BitmapSurfaceV2 *Surface, objBitmap *Dest, CSRF Flags, int X, int Y, int Width, int Height, int XDest, int YDest);
+extern ERR CopyRawBitmap(struct BitmapSurface *Surface, objBitmap *Dest, CSRF Flags, int X, int Y, int Width, int Height, int XDest, int YDest);
 extern ERR CopySurface(OBJECTID Surface, objBitmap *Bitmap, BDF Flags, int X, int Y, int Width, int Height, int XDest, int YDest);
 extern void DrawPixel(objBitmap *Bitmap, int X, int Y, uint32_t Colour);
 extern void DrawRGBPixel(objBitmap *Bitmap, int X, int Y, struct RGB8 *RGB);
@@ -1837,14 +1848,14 @@ extern ERR ExposeSurface(OBJECTID Surface, int X, int Y, int Width, int Height, 
 extern void GetColourFormat(struct ColourFormat *Format, int BitsPerPixel, int RedMask, int GreenMask, int BlueMask, int AlphaMask);
 extern ERR GetCursorInfo(struct CursorInfo *Info, int Size);
 extern ERR GetCursorPos(double *X, double *Y);
-extern ERR GetDisplayInfo(OBJECTID Display, struct DisplayInfoV3 **Info);
+extern ERR GetDisplayInfo(OBJECTID Display, struct DisplayInfo **Info);
 extern DT GetDisplayType(void);
 extern CSTRING GetInputTypeName(JET Type);
 extern OBJECTID GetModalSurface(void);
 extern ERR GetRelativeCursorPos(OBJECTID Surface, double *X, double *Y);
 extern ERR GetSurfaceCoords(OBJECTID Surface, int *X, int *Y, int *AbsX, int *AbsY, int *Width, int *Height);
 extern ERR GetSurfaceFlags(OBJECTID Surface, RNF *Flags);
-extern ERR GetSurfaceInfo(OBJECTID Surface, struct SurfaceInfoV2 **Info);
+extern ERR GetSurfaceInfo(OBJECTID Surface, struct SurfaceInfo **Info);
 extern OBJECTID GetUserFocus(void);
 extern ERR GetVisibleArea(OBJECTID Surface, int *X, int *Y, int *AbsX, int *AbsY, int *Width, int *Height);
 extern ERR LockCursor(OBJECTID Surface);
@@ -1853,7 +1864,7 @@ extern void ReadRGBPixel(objBitmap *Bitmap, int X, int Y, struct RGB8 **RGB);
 extern ERR Resample(objBitmap *Bitmap, struct ColourFormat *ColourFormat);
 extern ERR RestoreCursor(PTC Cursor, OBJECTID Owner);
 extern double ScaleToDPI(double Value);
-extern ERR ScanDisplayModes(CSTRING Filter, struct DisplayInfoV3 *Info, int Size);
+extern ERR ScanDisplayModes(CSTRING Filter, struct DisplayInfo *Info);
 extern void SetClipRegion(objBitmap *Bitmap, int Number, int Left, int Top, int Right, int Bottom, int Terminate);
 extern ERR SetCursor(OBJECTID Surface, CRF Flags, PTC Cursor, CSTRING Name, OBJECTID Owner);
 extern ERR SetCursorPos(double X, double Y);

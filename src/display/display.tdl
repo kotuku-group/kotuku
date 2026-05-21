@@ -194,6 +194,11 @@ module({
     "BORDERLESS: If display is hosted, create it as a popup / borderless window.",
     "ALPHA_BLEND|COMPOSITE: Enables alpha channel blending (if display is hosted and 32-bit).",
     "GRAB_CONTROLLERS: Grab controllers for receiving input when the display has the focus.",
+    "PRIMARY: The display is flagged as being the primary.",
+    "ACTIVE: The display is participating in the desktop view - but does not guarantee it is visible.",
+    "MIRRORED: The display is a mirrored copy.",
+    "VIRTUAL: The display is virtual or not visible (device not switched on).",
+    "ROTATED: True if the display is rotated.",
     { MAXIMISE        = "0x80000000: Special win32 flag." },
     { CUSTOM_WINDOW   = "0x40000000: The display has been created with a custom window reference." },
     { FLIPPABLE       = "0x20000000: If `SCR::BUFFER` is used, this flag may be set by the display manager if it is possible to flip the buffer." },
@@ -246,7 +251,7 @@ module({
     'DELETE: Requests that the original file source is deleted if a successful paste operation takes place.',
     'EXTEND: Instead of replacing existing clipboard data, add the new data to the group.')
 
-  struct("SurfaceInfo", { version=2, type="surfaceinfo" }, [[
+  struct("SurfaceInfo", { type="surfaceinfo" }, [[
     ptr Data            # Bitmap data memory ID
     oid ParentID        # Object that contains the surface area
     oid BitmapID        # Surface bitmap buffer
@@ -307,7 +312,7 @@ module({
     uchar  AlphaPos    # Left shift/positional value for alpha
   ]])
 
-  struct("DisplayInfo", { type="displayinfo", version=3 }, [[
+  struct("DisplayInfo", { }, [[
     oid   Display         # Object ID related to the display
     int(SCR) Flags        # Display flags
     short Width           # Pixel width of the display
@@ -323,6 +328,18 @@ module({
     int   Index          # Display mode ID (internal)
     int   HDensity       # Horizontal pixel density per inch.
     int   VDensity       # Vertical pixel density per inch.
+    int   HostedX        # Horizontal display position in virtual desktop coordinates
+    int   HostedY        # Vertical display position in virtual desktop coordinates
+    int   MonitorX       # Horizontal position of the monitor, relative to the primary monitor
+    int   MonitorY       # Vertical position of the monitor, relative to the primary monitor
+    int   MonitorWidth   # Pixel width of the monitor
+    int   MonitorHeight  # Pixel height of the monitor
+    int   VirtualX       # Horizontal position of the complete desktop spanning all monitors
+    int   VirtualY       # Vertical position of the complete desktop spanning all monitors
+    int   VirtualWidth   # Width of the complete desktop spanning all monitors
+    int   VirtualHeight  # Height of the complete desktop spanning all monitors
+    int   PhysicalWidth  # Width in millimeters, 0 if unknown
+    int   PhysicalHeight # Height in millimeters, 0 if unknown
   ]])
 
   struct("CursorInfo", { }, [[
@@ -332,7 +349,7 @@ module({
     short BitsPerPixel  # Preferred bits-per-pixel setting for custom cursors
   ]])
 
-  struct("BitmapSurface", { type="bitmapsurface", version=2 }, [[
+  struct("BitmapSurface", { type="bitmapsurface" }, [[
     ptr   Data           # Pointer to the bitmap graphics data.
     short Width          # Pixel width of the bitmap.
     short Height         # Pixel height of the bitmap.
@@ -361,7 +378,7 @@ module({
     { id=10, name="ConvertToRGB" }
   })
 
-  class("Bitmap", { version=2.0, src="class_bitmap.cpp", output="class_bitmap_def.c", references={ "ColourFormat" } }, [[
+  class("Bitmap", { src="class_bitmap.cpp", output="class_bitmap_def.c", references={ "ColourFormat" } }, [[
     struct(*RGBPalette) Palette          # Pointer to the Bitmap's palette
     struct(*ColourFormat) ColourFormat   # Pointer to colour information
     fptr(void obj(Bitmap) int int uint) DrawUCPixel
@@ -480,7 +497,7 @@ module({
     { id=9, name="CheckXWindow" }
   })
 
-  class("Display", { version=1.0, src="class_display.cpp", output="class_display_def.c" }, [[
+  class('Display', { src='class_display.cpp', output='class_display_def.c' }, [[
     double RefreshRate   # The active refresh rate
     obj(Bitmap) Bitmap   # Reference to the display's bitmap information.
     int(SCR) Flags       # Optional flags
@@ -531,7 +548,7 @@ module({
     int    Port         # The port number assigned to the controller.
   ]])
 
-  class("Pointer", { version=1.0, src="class_pointer.cpp", output="class_pointer_def.c", references={ 'PTC', 'PF' } }, [[
+  class('Pointer', { src='class_pointer.cpp', output='class_pointer_def.c', references={ 'PTC', 'PF' } }, [[
     double Speed           # Speed multiplier (%)
     double Acceleration    # Acceleration level - keep between 0.0 and 3.0
     double DoubleClick     # Double click speed
@@ -558,26 +575,26 @@ module({
     int    ClickSlop       # Leniency value for determining whether the user intended to make a click or drag.
   ]])
 
-  methods("surface", "Drw", {
-    { id=1, name="InheritedFocus" },
-    { id=2, name="ExposeToDisplay" },
-    { id=3, name="InvalidateRegion" },
-    { id=4, name="SetDisplay" },
-    { id=5, name="SetOpacity" },
-    { id=6, name="AddCallback" },
-    { id=7, name="Minimise" },
-    { id=8, name="ResetDimensions" },
-    { id=9, name="RemoveCallback" },
-    { id=10, name="ScheduleRedraw" }
+  methods('surface', 'Drw', {
+    { id=1, name='InheritedFocus' },
+    { id=2, name='ExposeToDisplay' },
+    { id=3, name='InvalidateRegion' },
+    { id=4, name='SetDisplay' },
+    { id=5, name='SetOpacity' },
+    { id=6, name='AddCallback' },
+    { id=7, name='Minimise' },
+    { id=8, name='ResetDimensions' },
+    { id=9, name='RemoveCallback' },
+    { id=10, name='ScheduleRedraw' }
   })
 
-  class("Surface", { references={ 'DMF', 'ALIGN', 'JTYPE', 'JET', 'InputEvent' }, src={
-      "class_surface/class_surface.cpp",
-      "class_surface/surface_dimensions.cpp",
-      "class_surface/surface_drawing.cpp",
-      "class_surface/surface_fields.cpp",
-      "class_surface/surface_resize.cpp"
-    }, output="class_surface/surface_def.c" }, [[
+  class('Surface', { references={ 'DMF', 'ALIGN', 'JTYPE', 'JET', 'InputEvent' }, src={
+      'class_surface/class_surface.cpp',
+      'class_surface/surface_dimensions.cpp',
+      'class_surface/surface_drawing.cpp',
+      'class_surface/surface_fields.cpp',
+      'class_surface/surface_resize.cpp'
+    }, output='class_surface/surface_def.c' }, [[
     oid Drag              # Drag the object that this field points to
     oid Buffer            # Buffer bitmap (backing store)
     oid Parent            # Graphical container of the Surface object, if any
@@ -622,48 +639,48 @@ module({
    inline bool isCursor() const { return (Flags & RNF::CURSOR) != RNF::NIL; }
   ]])
 
-  functionNames("gfx",
-    "AccessPointer",
-    "CheckIfChild",
-    "CopyArea",
-    "CopyRawBitmap",
-    "CopySurface",
-    "DrawPixel",
-    "DrawRGBPixel",
-    "DrawRectangle",
-    "ExposeSurface",
-    "GetColourFormat",
-    "GetCursorInfo",
-    "GetCursorPos",
-    "GetDisplayInfo",
-    "GetDisplayType",
-    "GetInputTypeName",
-    "GetModalSurface",
-    "GetRelativeCursorPos",
-    "GetSurfaceCoords",
-    "GetSurfaceFlags",
-    "GetSurfaceInfo",
-    "GetUserFocus",
-    "GetVisibleArea",
-    "LockCursor",
-    "ReadPixel",
-    "ReadRGBPixel",
-    "Resample",
-    "RestoreCursor",
-    "ScaleToDPI",
-    "ScanDisplayModes",
-    "SetClipRegion",
-    "SetCursor",
-    "SetCursorPos",
-    "SetCustomCursor",
-    "SetHostOption",
-    "SetModalSurface",
-    "StartCursorDrag",
-    "SubscribeInput",
-    "Sync",
-    "UnlockCursor",
-    "UnsubscribeInput",
-    "WindowHook")
+  functionNames('gfx',
+    'AccessPointer',
+    'CheckIfChild',
+    'CopyArea',
+    'CopyRawBitmap',
+    'CopySurface',
+    'DrawPixel',
+    'DrawRGBPixel',
+    'DrawRectangle',
+    'ExposeSurface',
+    'GetColourFormat',
+    'GetCursorInfo',
+    'GetCursorPos',
+    'GetDisplayInfo',
+    'GetDisplayType',
+    'GetInputTypeName',
+    'GetModalSurface',
+    'GetRelativeCursorPos',
+    'GetSurfaceCoords',
+    'GetSurfaceFlags',
+    'GetSurfaceInfo',
+    'GetUserFocus',
+    'GetVisibleArea',
+    'LockCursor',
+    'ReadPixel',
+    'ReadRGBPixel',
+    'Resample',
+    'RestoreCursor',
+    'ScaleToDPI',
+    'ScanDisplayModes',
+    'SetClipRegion',
+    'SetCursor',
+    'SetCursorPos',
+    'SetCustomCursor',
+    'SetHostOption',
+    'SetModalSurface',
+    'StartCursorDrag',
+    'SubscribeInput',
+    'Sync',
+    'UnlockCursor',
+    'UnsubscribeInput',
+    'WindowHook')
 
   c_insert([[
 // Direct ColourFormat versions

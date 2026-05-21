@@ -7,7 +7,7 @@
     <type>class</type>
     <module>Display</module>
     <comment>Represents a pixel buffer used for drawing, image transfer and display backing.</comment>
-    <version>2</version>
+    <version>1</version>
     <id>ff557b59</id>
     <idstring>BITMAP</idstring>
     <category>Graphics</category>
