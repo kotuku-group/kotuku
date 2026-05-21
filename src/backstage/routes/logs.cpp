@@ -11,6 +11,7 @@ static std::mutex glLogRecordingLock;
 static std::vector<LogMessage> glLogMessages;
 static int glLogRecordingThread = 0;
 static bool glLogRecordingActive = false;
+static bool glLogIncludeThreads = false;
 static int glLogMaxDepth = 255;
 static int glLogMaxLevel = 9;
 
@@ -22,9 +23,26 @@ static bool parse_log_level(std::string_view Value, int &Level)
    if (Value.empty()) return false;
 
    auto result = std::from_chars(Value.data(), Value.data() + Value.size(), Level);
-   if ((not (result.ec IS std::errc())) or (result.ptr != Value.data() + Value.size())) return false;
+   if ((not (result.ec IS std::errc())) or (not (result.ptr IS Value.data() + Value.size()))) return false;
 
    return (Level >= 0) and (Level <= 9);
+}
+
+//********************************************************************************************************************
+// Parses a boolean log-recording query parameter.
+
+static bool parse_log_bool(std::string_view Value, bool &Flag)
+{
+   if (kt::iequals(Value, "true") or kt::iequals(Value, "1")) {
+      Flag = true;
+      return true;
+   }
+   else if (kt::iequals(Value, "false") or kt::iequals(Value, "0")) {
+      Flag = false;
+      return true;
+   }
+
+   return false;
 }
 
 //********************************************************************************************************************
@@ -112,6 +130,20 @@ static bool parse_optional_log_limit(const BackstageRequest &Request, const char
 }
 
 //********************************************************************************************************************
+// Reads an optional boolean query parameter, falling back to a default value when the client omits it.
+
+static bool parse_optional_log_bool(const BackstageRequest &Request, const char *Name, bool DefaultValue, bool &Flag)
+{
+   auto param = Request.queryParams.find(Name);
+   if (param IS Request.queryParams.end()) {
+      Flag = DefaultValue;
+      return true;
+   }
+
+   return parse_log_bool(param->second, Flag);
+}
+
+//********************************************************************************************************************
 // Returns a consistent JSON error payload for invalid log-recording query parameters.
 
 static void set_log_recording_error(BackstageResponse &Response, std::string_view Code, std::string_view Message)
@@ -126,17 +158,16 @@ static void set_log_recording_error(BackstageResponse &Response, std::string_vie
 }
 
 //********************************************************************************************************************
-// Captures log messages from the main thread while internal Backstage log recording is active.
+// Captures log messages while internal Backstage log recording is active.
 
 static void backstage_log_callback(CSTRING Header, CSTRING Message, int Depth, int MsgLevel, int LogLevel)
 {
    auto thread_id = kt::_get_thread_id();
-   if (not glLogRecordingThread) glLogRecordingThread = GetResource(RES::MAIN_THREAD_ID);
 
    std::lock_guard<std::mutex> lock(glLogRecordingLock);
 
    if (not glLogRecordingActive) return;
-   if (not (thread_id IS glLogRecordingThread)) return;
+   if ((not glLogIncludeThreads) and (not (thread_id IS glLogRecordingThread))) return;
    if (Depth > glLogMaxDepth) return;
    if (MsgLevel > glLogMaxLevel) return;
 
@@ -157,6 +188,8 @@ static void release_backstage_logs()
    {
       std::lock_guard<std::mutex> lock(glLogRecordingLock);
       glLogRecordingActive = false;
+      glLogIncludeThreads = false;
+      glLogRecordingThread = 0;
       glLogMessages.clear();
    }
 
@@ -170,6 +203,7 @@ static ERR post_logs_start(const BackstageRequest &Request, BackstageResponse &R
 {
    int max_depth;
    int max_level;
+   bool include_threads;
 
    if (not parse_optional_log_limit(Request, "maxDepth", 255, 0, 255, max_depth)) {
       set_log_recording_error(Response, "invalid_max_depth", "Expected maxDepth query parameter from 0 to 255");
@@ -181,9 +215,17 @@ static ERR post_logs_start(const BackstageRequest &Request, BackstageResponse &R
       return ERR::Okay;
    }
 
+   if (not parse_optional_log_bool(Request, "includeThreads", false, include_threads)) {
+      set_log_recording_error(Response, "invalid_include_threads",
+         "Expected includeThreads query parameter to be true, false, 0 or 1");
+      return ERR::Okay;
+   }
+
    {
       std::lock_guard<std::mutex> lock(glLogRecordingLock);
       glLogMessages.clear();
+      glLogRecordingThread = GetResource(RES::MAIN_THREAD_ID);
+      glLogIncludeThreads = include_threads;
       glLogMaxDepth = max_depth;
       glLogMaxLevel = max_level;
       glLogRecordingActive = true;
@@ -195,7 +237,9 @@ static ERR post_logs_start(const BackstageRequest &Request, BackstageResponse &R
 
    Response.status = 200;
    Response.contentType = "application/json";
-   Response.body = "{\"active\":true,\"maxDepth\":";
+   Response.body = "{\"active\":true,\"includeThreads\":";
+   Response.body.append(include_threads ? "true" : "false");
+   Response.body.append(",\"maxDepth\":");
    Response.body.append(std::to_string(max_depth));
    Response.body.append(",\"maxLevel\":");
    Response.body.append(std::to_string(max_level));
@@ -213,6 +257,8 @@ static ERR post_logs_stop(const BackstageRequest &Request, BackstageResponse &Re
    {
       std::lock_guard<std::mutex> lock(glLogRecordingLock);
       glLogRecordingActive = false;
+      glLogIncludeThreads = false;
+      glLogRecordingThread = 0;
       total = glLogMessages.size();
    }
 
@@ -227,7 +273,8 @@ static ERR post_logs_stop(const BackstageRequest &Request, BackstageResponse &Re
 }
 
 //********************************************************************************************************************
-// @doc GET /logs Returns all logged messages, then clears the log message stack (the client is responsible for maintaining a permanent record).
+// @doc GET /logs Returns all logged messages, then clears the log message stack.  The client is responsible for
+// maintaining a permanent record.
 
 static ERR get_logs(const BackstageRequest &Request, BackstageResponse &Response)
 {
