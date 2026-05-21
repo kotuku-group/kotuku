@@ -1118,6 +1118,31 @@ static LRESULT CALLBACK WindowProcedure(HWND window, UINT msgcode, WPARAM wParam
          return 0;
       }
 
+      case WM_GETMINMAXINFO: {
+         auto minmax = (LPMINMAXINFO)lParam;
+
+         RECT winrect, client;
+         GetWindowRect(window, &winrect);
+         GetClientRect(window, &client);
+
+         const int h_margins = ((winrect.right - winrect.left) - (client.right - client.left));
+         const int v_margins = ((winrect.bottom - winrect.top) - (client.bottom - client.top));
+         auto surface_id = winLookupSurfaceID(window);
+
+         int min_width = minmax->ptMinTrackSize.x - h_margins;
+         int min_height = minmax->ptMinTrackSize.y - v_margins;
+         CheckWindowSize(surface_id, min_width, min_height, -1, -1, AXIS_BOTH);
+         minmax->ptMinTrackSize.x = min_width + h_margins;
+         minmax->ptMinTrackSize.y = min_height + v_margins;
+
+         int max_width = minmax->ptMaxTrackSize.x - h_margins;
+         int max_height = minmax->ptMaxTrackSize.y - v_margins;
+         CheckWindowSize(surface_id, max_width, max_height, -1, -1, AXIS_BOTH);
+         minmax->ptMaxTrackSize.x = max_width + h_margins;
+         minmax->ptMaxTrackSize.y = max_height + v_margins;
+         return 0;
+      }
+
       case WM_DPICHANGED: {
          MsgDPIChanged(winLookupSurfaceID(window));
          return 0;
