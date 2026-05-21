@@ -197,10 +197,10 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
    int i;
 
    if (!Info) return ERR::NullArgs;
-   glOpenInfo   = *Info;
-   tlMainThread = true;
+   glOpenInfo     = *Info;
+   tlMainThread   = true;
    glMainThreadID = get_thread_id();
-   glCodeIndex  = 0; // Reset the code index so that CloseCore() will work.
+   glCodeIndex    = 0; // Reset the code index so that CloseCore() will work.
 
    if (glProcessID) fprintf(log_output(), "Core module has already been initialised (OpenCore() called more than once.)\n");
 

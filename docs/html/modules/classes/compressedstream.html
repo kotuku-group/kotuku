@@ -254,6 +254,7 @@
 <tr><th>RES::LOG_DEPTH</th><td>The current depth of log messages.</td></tr>
 <tr><th>RES::LOG_LEVEL</th><td>The current level of log detail (larger numbers indicate more detail).</td></tr>
 <tr><th>RES::MAIN_THREAD</th><td>Read-only, returns <code>true</code> if called from the main thread.</td></tr>
+<tr><th>RES::MAIN_THREAD_ID</th><td>Read-only, returns the ID of the main thread.</td></tr>
 <tr><th>RES::MEMORY_USAGE</th><td>The total amount of memory used by the current process, in bytes.</td></tr>
 <tr><th>RES::PRIVILEGED</th><td>This is set to <code>true</code> if the process has elevated privileges (such as superuser or administrative rights).</td></tr>
 <tr><th>RES::PRIVILEGED_USER</th><td>If this value is set to 1, the process will operate in privileged mode (typically this enables full administrator rights).  This feature will only work for Unix processes that are granted admin rights when launched.  Setting the Value to 0 reverts to the user's permission settings.  SetResource() will return an error code indicating the level of success.</td></tr>

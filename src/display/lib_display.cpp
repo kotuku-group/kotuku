@@ -22,12 +22,12 @@ The GetDisplayInfo() function returns information about a display, which include
 depth.  If the system is running on a hosted display (e.g. Windows or X11) then GetDisplayInfo() can also be used to
 retrieve information about the default monitor by using a Display of zero.
 
-The resulting `DISPLAYINFO` structure values remain good until the next call to this function, at which point they will
+The resulting !DisplayInfo structure values remain good until the next call to this function, at which point they will
 be overwritten.
 
 -INPUT-
 oid Display: Object ID of the display to be analysed.
-&struct(*DisplayInfo) Info: This reference will receive a pointer to a DISPLAYINFO structure.
+&struct(*DisplayInfo) Info: This reference will receive a pointer to a !DisplayInfo structure.
 
 -ERRORS-
 Okay:
@@ -101,8 +101,8 @@ while (!scrScanDisplayModes("depth=32", &info, sizeof(info))) {
 
 -INPUT-
 cstr Filter: The filter to apply to the resolution database.  May be NULL for no filter.
-struct(*DisplayInfo) Info: A pointer to a screenINFO structure must be referenced here.  The structure will be filled with information when the function returns.
-structsize Size: Size of the screenINFO structure.
+struct(*DisplayInfo) Info: A pointer to a !DisplayInfo structure must be referenced here.  The structure will be filled with information when the function returns.
+structsize Size: Size of the !DisplayInfo structure.
 
 -ERRORS-
 Okay: The resolution information was retrieved.

@@ -301,11 +301,11 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <tiriPrototype>err, Info:any = GetDisplayInfo(Display:obj)</tiriPrototype>
     <input>
       <param type="OBJECTID" name="Display">Object ID of the display to be analysed.</param>
-      <param type="struct DisplayInfoV3 **" name="Info">This reference will receive a pointer to a DISPLAYINFO structure.</param>
+      <param type="struct DisplayInfoV3 **" name="Info">This reference will receive a pointer to a <st>DisplayInfo</st> structure.</param>
     </input>
     <description>
 <p>The GetDisplayInfo() function returns information about a display, which includes information such as its size and bit depth.  If the system is running on a hosted display (e.g. Windows or X11) then GetDisplayInfo() can also be used to retrieve information about the default monitor by using a Display of zero.</p>
-<p>The resulting <code>DISPLAYINFO</code> structure values remain good until the next call to this function, at which point they will be overwritten.</p>
+<p>The resulting <st>DisplayInfo</st> structure values remain good until the next call to this function, at which point they will be overwritten.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
