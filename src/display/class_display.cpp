@@ -510,21 +510,6 @@ static ERR DISPLAY_GetFrame(extDisplay *Self, gfx::GetFrame *Args)
    }
 
    Window frame = parent;
-   while (parent != root) {
-      Window next_root, next_parent;
-      Window *next_children = nullptr;
-      unsigned int next_child_count = 0;
-
-      if (XQueryTree(XDisplay, frame, &next_root, &next_parent, &next_children, &next_child_count) IS 0) {
-         return ERR::SystemCall;
-      }
-      if (next_children) XFree(next_children);
-
-      if ((next_parent IS 0) or (next_parent IS root)) break;
-
-      frame = next_parent;
-      parent = next_parent;
-   }
 
    Window child;
    int client_x, client_y, frame_x, frame_y;
@@ -558,73 +543,6 @@ static ERR DISPLAY_GetFrame(extDisplay *Self, gfx::GetFrame *Args)
    Args->Left   = 0;
    return ERR::Okay;
 #endif
-}
-
-/*********************************************************************************************************************
--ACTION-
-GetKey: Retrieves formatted display information.
-
-GetKey currently supports the `resolution(Index, Format)` key.  `Index` selects a display resolution and `Format` is a
-string containing replacement tokens.  Supported tokens are `%w` for width, `%h` for height, `%d` for bit depth, `%c`
-for colour count and `%%` for a literal percent sign.
-
--ERRORS-
-Okay
-NullArgs
-Args
-OutOfRange
-NoData
-NoSupport
--END-
-*********************************************************************************************************************/
-
-static ERR DISPLAY_GetKey(extDisplay *Self, struct acGetKey *Args)
-{
-   kt::Log log;
-
-   if ((not Args) or (not Args->Key) or (not Args->Value)) return log.warning(ERR::NullArgs);
-   if (Args->Size < 1) return log.warning(ERR::Args);
-
-   if (kt::startswith("resolution(", Args->Key)) {
-      // Field is in the format:  Resolution(Index, Format) Where 'Format' contains % symbols to indicate variable references.
-
-      CSTRING str = Args->Key + 11;
-      int index = strtol(str, nullptr, 0);
-      while ((*str) and (*str != ')') and (*str != ',')) str++;
-      if (*str IS ',') str++;
-      while ((*str) and (*str <= 0x20)) str++;
-
-      if (Self->Resolutions.empty()) get_resolutions(Self);
-
-      if (not Self->Resolutions.empty()) {
-         if (index >= std::ssize(Self->Resolutions)) return ERR::OutOfRange;
-
-         std::ostringstream out;
-         while ((*str) and (*str != ')')) {
-            if (*str != '%') out << *str++;
-            else if (str[1] IS '%') { // Escape?
-               out << '%';
-               str += 2;
-            }
-            else {
-               switch (str[1]) {
-                  case 'w': out << Self->Resolutions[index].width; break;
-                  case 'h': out << Self->Resolutions[index].height; break;
-                  case 'd': out << Self->Resolutions[index].bpp; break;
-                  case 'c': if (Self->Resolutions[index].bpp <= 24) out << (1<<Self->Resolutions[index].bpp);
-                            else out << (1<<24);
-                            break;
-               }
-               str += 2;
-            }
-         }
-         kt::strcopy(out.str(), Args->Value, Args->Size);
-
-         return ERR::Okay;
-      }
-      else return ERR::NoData;
-   }
-   else return ERR::NoSupport;
 }
 
 /*********************************************************************************************************************

@@ -972,12 +972,6 @@ class objDisplay : public Object {
    inline ERR enable() noexcept { return Action(AC::Enable, this, nullptr); }
    inline ERR flush() noexcept { return Action(AC::Flush, this, nullptr); }
    inline ERR focus() noexcept { return Action(AC::Focus, this, nullptr); }
-   inline ERR getKey(CSTRING Key, STRING Value, int Size) noexcept {
-      struct acGetKey args = { Key, Value, Size };
-      auto error = Action(AC::GetKey, this, &args);
-      if ((error != ERR::Okay) and (Value)) Value[0] = 0;
-      return error;
-   }
    inline ERR hide() noexcept { return Action(AC::Hide, this, nullptr); }
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR move(double X, double Y, double Z) noexcept {

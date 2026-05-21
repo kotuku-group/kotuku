@@ -88,29 +88,6 @@
     </action>
 
     <action>
-      <name>GetKey</name>
-      <comment>Retrieves formatted display information.</comment>
-      <prototype>ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)</prototype>
-      <tiriPrototype>err = Object.acGetKey(Key:str, Value:str, Size:num)</tiriPrototype>
-      <input>
-        <param type="CSTRING" name="Key">The name of a key value.</param>
-        <param type="STRING" name="Value">Pointer to a buffer space large enough to hold the retrieved value.</param>
-        <param type="INT" name="Size">Indicates the byte size of the Buffer.</param>
-      </input>
-      <description>
-<p>GetKey currently supports the <code>resolution(Index, Format)</code> key.  <code>Index</code> selects a display resolution and <code>Format</code> is a string containing replacement tokens.  Supported tokens are <code>%w</code> for width, <code>%h</code> for height, <code>%d</code> for bit depth, <code>%c</code> for colour count and <code>%%</code> for a literal percent sign.</p>
-      </description>
-      <result>
-        <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function</error>
-        <error code="NoData">No data is available for use</error>
-        <error code="NoSupport">Operation not supported</error>
-        <error code="OutOfRange">A value is outside of the valid range</error>
-        <error code="NullArgs">Function call missing argument value(s)</error>
-      </result>
-    </action>
-
-    <action>
       <name>Hide</name>
       <comment>Hides a display from the user's view.</comment>
       <prototype>ERR acHide(*Object)</prototype>
