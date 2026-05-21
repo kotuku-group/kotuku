@@ -226,7 +226,7 @@ OBJECTPTR glModule = nullptr, glDisplayContext = nullptr;
 static OBJECTPTR modRegex = nullptr;
 OBJECTPTR clDisplay = nullptr, clPointer = nullptr, clBitmap = nullptr, clClipboard = nullptr, clSurface = nullptr, clController = nullptr;
 OBJECTID glPointerID = 0;
-DISPLAYINFO glDisplayInfo;
+DisplayInfo glDisplayInfo;
 bool glSixBitDisplay = false;
 TIMER glRefreshPointerTimer = 0;
 extBitmap *glComposite = nullptr;
@@ -638,22 +638,30 @@ extern ERR resize_pixmap(extDisplay *Self, int Width, int Height)
 
 //********************************************************************************************************************
 
-ERR get_display_info(OBJECTID DisplayID, DISPLAYINFO *Info, int InfoSize)
+ERR get_display_info(OBJECTID DisplayID, DisplayInfo *Info)
 {
    kt::Log log(__FUNCTION__);
 
-  //log.traceBranch("Display: %d, Info: %p, Size: %d", DisplayID, Info, InfoSize);
+  //log.traceBranch("Display: %d, Info: %p", DisplayID, Info);
 
    if (!Info) return log.warning(ERR::NullArgs);
 
-   if (InfoSize != sizeof(DisplayInfoV3)) {
-      log.error("Invalid InfoSize of %d (V3: %d)", InfoSize, int(sizeof(DisplayInfoV3)));
-      return log.warning(ERR::Args);
-   }
+   Info->HostedX  = 0;
+   Info->HostedY  = 0;
+   Info->MonitorX = 0;
+   Info->MonitorY = 0;
+   Info->MonitorWidth   = 0;
+   Info->MonitorHeight  = 0;
+   Info->VirtualX       = 0;
+   Info->VirtualY       = 0;
+   Info->VirtualWidth   = 0;
+   Info->VirtualHeight  = 0;
+   Info->PhysicalWidth  = 0;
+   Info->PhysicalHeight = 0;
 
    if (DisplayID) {
       if (glDisplayInfo.DisplayID IS DisplayID) {
-         kt::copymem(&glDisplayInfo, Info, InfoSize);
+         kt::copymem(&glDisplayInfo, Info, sizeof(DisplayInfo));
          return ERR::Okay;
       }
       else if (ScopedObjectLock<extDisplay> display(DisplayID, 5000); display.granted()) {
@@ -1164,7 +1172,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
       glpFullScreen = TRUE;
       glpDisplayDepth = 16;
 
-      DISPLAYINFO *info;
+      DisplayInfo *info;
       if (!gfxGetDisplayInfo(0, &info)) {
          glpDisplayWidth  = info.Width;
          glpDisplayHeight = info.Height;
@@ -1637,12 +1645,12 @@ ERR update_display(extDisplay *Self, extBitmap *Bitmap, int X, int Y, int Width,
 //********************************************************************************************************************
 
 static STRUCTS glStructures = {
-   { "BitmapSurface", sizeof(BitmapSurfaceV2) },
+   { "BitmapSurface", sizeof(BitmapSurface) },
    { "CursorInfo",    sizeof(CursorInfo) },
-   { "DisplayInfo",   sizeof(DisplayInfoV3) },
+   { "DisplayInfo",   sizeof(DisplayInfo) },
    { "PixelFormat",   sizeof(PixelFormat) },
    { "SurfaceCoords", sizeof(SurfaceCoords) },
-   { "SurfaceInfo",   sizeof(SurfaceInfoV2) }
+   { "SurfaceInfo",   sizeof(SurfaceInfo) }
 };
 
 KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, nullptr, MOD_IDL, &glStructures)

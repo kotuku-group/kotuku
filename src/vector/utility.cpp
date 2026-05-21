@@ -111,7 +111,7 @@ static void update_dpi(void)
    int64_t current_time = PreciseTime();
 
    if (current_time - last_update > 3000000LL) {
-      DISPLAYINFO *display;
+      DisplayInfo *display;
       if (gfx::GetDisplayInfo(0, &display) IS ERR::Okay) {
          last_update = PreciseTime();
          if ((display->VDensity >= 72) and (display->HDensity >= 72)) {

@@ -485,7 +485,7 @@ static void notify_redimension_parent(OBJECTPTR Object, ACTIONID ActionID, ERR R
       parentheight = glSurfaces[i].Height;
    }
    else {
-      DISPLAYINFO *display;
+      DisplayInfo *display;
       if (gfx::GetDisplayInfo(0, &display) IS ERR::Okay) {
          parentwidth  = display->Width;
          parentheight = display->Height;
@@ -1304,7 +1304,7 @@ static ERR SURFACE_Init(extSurface *Self)
       if (gfx::GetDisplayType() != DT::NATIVE) {
          // Alignment adjustments
 
-         DISPLAYINFO *display;
+         DisplayInfo *display;
          if (gfx::GetDisplayInfo(0, &display) IS ERR::Okay) {
             if ((Self->Align & ALIGN::LEFT) != ALIGN::NIL) { Self->X = 0; Self->setX(Self->X); }
             else if ((Self->Align & ALIGN::RIGHT) != ALIGN::NIL) { Self->X = display->Width - Self->Width; Self->setX(Self->X); }
@@ -1429,7 +1429,7 @@ static ERR SURFACE_Init(extSurface *Self)
    else if ((Self->Flags & (RNF::PRECOPY|RNF::COMPOSITE|RNF::AFTER_COPY|RNF::CURSOR)) != RNF::NIL) require_store = true;
    else {
       if (Self->BitsPerPixel >= 8) {
-         DISPLAYINFO *info;
+         DisplayInfo *info;
          if (gfx::GetDisplayInfo(Self->DisplayID, &info) IS ERR::Okay) {
             if (info->BitsPerPixel != Self->BitsPerPixel) require_store = true;
          }

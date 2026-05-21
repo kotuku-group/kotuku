@@ -161,7 +161,7 @@ void doc_menu::refresh()
    double view_width  = doc_width;
    double view_height = doc_height;
 
-   DISPLAYINFO *display;
+   DisplayInfo *display;
    if (gfx::GetDisplayInfo(0, &display) IS ERR::Okay) {
       if (view_height > display->Height * 0.25) view_height = display->Height * 0.25;
    }
@@ -193,7 +193,7 @@ void doc_menu::refresh()
 
 void doc_menu::reposition(objVectorViewport *RelativeViewport)
 {
-   DISPLAYINFO *display;
+   DisplayInfo *display;
    gfx::GetDisplayInfo(0, &display);
 
    kt::ScopedObjectLock<objSurface> lk_surface(RelativeViewport->Scene->SurfaceID); // Window surface

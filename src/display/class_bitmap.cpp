@@ -1731,7 +1731,7 @@ static ERR BITMAP_Query(extBitmap *Self)
             }
          }
 #else
-         DISPLAYINFO info;
+         DisplayInfo info;
          if (!get_display_info(0, &info)) {
             Self->AmtColours    = info.AmtColours;
             Self->BytesPerPixel = info.BytesPerPixel;

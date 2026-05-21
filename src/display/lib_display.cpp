@@ -36,21 +36,21 @@ AllocMemory:
 
 *********************************************************************************************************************/
 
-ERR GetDisplayInfo(OBJECTID DisplayID, DISPLAYINFO **Result)
+ERR GetDisplayInfo(OBJECTID DisplayID, DisplayInfo **Result)
 {
-   static thread_local DISPLAYINFO *t_info = nullptr;
+   static thread_local DisplayInfo *t_info = nullptr;
 
    if (!Result) return ERR::NullArgs;
 
    if (!t_info) {
       // Each thread gets an allocation that can't be resource tracked, so MEM::HIDDEN is used in this case.
       // Note that this could conceivably cause memory leaks if temporary threads were to use this function.
-      if (AllocMemory(sizeof(DISPLAYINFO), MEM::NO_CLEAR|MEM::HIDDEN, &t_info) != ERR::Okay) {
+      if (AllocMemory(sizeof(DisplayInfo), MEM::NO_CLEAR|MEM::HIDDEN, &t_info) != ERR::Okay) {
          return ERR::AllocMemory;
       }
    }
 
-   if (auto error = get_display_info(DisplayID, t_info, sizeof(DISPLAYINFO)); error IS ERR::Okay) {
+   if (auto error = get_display_info(DisplayID, t_info); error IS ERR::Okay) {
       *Result = t_info;
       return ERR::Okay;
    }
@@ -92,9 +92,9 @@ ScanDisplayModes: Private. Returns formatted resolution information from the dis
 For internal use only.
 
 <pre>
-DISPLAYINFO info;
+DisplayInfo info;
 clearmem(&info, sizeof(info));
-while (!scrScanDisplayModes("depth=32", &info, sizeof(info))) {
+while (!scrScanDisplayModes("depth=32", &info)) {
    ...
 }
 </pre>
@@ -102,7 +102,6 @@ while (!scrScanDisplayModes("depth=32", &info, sizeof(info))) {
 -INPUT-
 cstr Filter: The filter to apply to the resolution database.  May be NULL for no filter.
 struct(*DisplayInfo) Info: A pointer to a !DisplayInfo structure must be referenced here.  The structure will be filled with information when the function returns.
-structsize Size: Size of the !DisplayInfo structure.
 
 -ERRORS-
 Okay: The resolution information was retrieved.
@@ -112,7 +111,7 @@ Search: There are no more display modes to return that are a match for the Filte
 
 *********************************************************************************************************************/
 
-ERR ScanDisplayModes(CSTRING Filter, DISPLAYINFO *Info, int Size)
+ERR ScanDisplayModes(CSTRING Filter, DisplayInfo *Info)
 {
 #ifdef __snap__
 
@@ -127,7 +126,7 @@ ERR ScanDisplayModes(CSTRING Filter, DISPLAYINFO *Info, int Size)
    int16_t f_maxrefresh, c_maxrefresh;
    int8_t interlace, matched;
 
-   if ((!Info) or (Size < sizeof(DisplayInfoV3))) return ERR::Args;
+   if (!Info) return ERR::Args;
 
    // Reset all filters
 

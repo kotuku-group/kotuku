@@ -116,10 +116,10 @@ static void printConfig(EGLDisplay display, EGLConfig config) {
 
 static void update_displayinfo(extDisplay *Self)
 {
-   if (!iequals("SystemDisplay", Self->Name)) return;
+   if (not iequals("SystemDisplay", Self->Name)) return;
 
    glDisplayInfo.DisplayID = 0;
-   get_display_info(Self->UID, &glDisplayInfo, sizeof(DISPLAYINFO));
+   get_display_info(Self->UID, &glDisplayInfo);
 }
 
 //********************************************************************************************************************
@@ -205,7 +205,7 @@ Clear: Clears the display's drawable image data.
 static ERR DISPLAY_Clear(extDisplay *Self)
 {
 #ifdef _GLES_
-   if (!lock_graphics_active(__func__)) {
+   if (not lock_graphics_active(__func__)) {
       glClearColorx(Self->Bitmap->BkgdRGB.Red, Self->Bitmap->BkgdRGB.Green, Self->Bitmap->BkgdRGB.Blue, 255);
       glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
       unlock_graphics();
@@ -227,13 +227,13 @@ static ERR DISPLAY_DataFeed(extDisplay *Self, struct acDataFeed *Args)
 {
    kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
 #ifdef _WIN32
    if (Args->Datatype IS DATA::REQUEST) {
       // Supported for handling the windows clipboard
 
-      if ((!Args->Buffer) or (!Args->Object)) return log.warning(ERR::NullArgs);
+      if ((not Args->Buffer) or (not Args->Object)) return log.warning(ERR::NullArgs);
       auto request = (struct dcRequest *)Args->Buffer;
 
       log.traceBranch("Received data request from object %d, item %d", Args->Object ? Args->Object->UID : 0, request->Item);
@@ -241,7 +241,7 @@ static ERR DISPLAY_DataFeed(extDisplay *Self, struct acDataFeed *Args)
       #ifdef WIN_DRAGDROP
       struct WinDT *data;
       int total_items;
-      if (!winGetData(request->Preference, &data, &total_items)) {
+      if (not winGetData(request->Preference, &data, &total_items)) {
          std::ostringstream xml;
          xml << "<receipt totalitems=\"" << total_items << "\" id=\"" << request->Item << "\">";
          for (int i=0; i < total_items; i++) {
@@ -332,7 +332,7 @@ static ERR DISPLAY_Flush(extDisplay *Self)
 #ifdef __xwindows__
    XSync(XDisplay, False);
 #elif _GLES_
-   if (!lock_graphics_active(__func__)) {
+   if (not lock_graphics_active(__func__)) {
       glFlush();
       unlock_graphics();
    }
@@ -453,7 +453,7 @@ static ERR DISPLAY_GetKey(extDisplay *Self, struct acGetKey *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Key) or (!Args->Value)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Key) or (not Args->Value)) return log.warning(ERR::NullArgs);
    if (Args->Size < 1) return log.warning(ERR::Args);
 
    if (kt::startswith("resolution(", Args->Key)) {
@@ -467,7 +467,7 @@ static ERR DISPLAY_GetKey(extDisplay *Self, struct acGetKey *Args)
 
       if (Self->Resolutions.empty()) get_resolutions(Self);
 
-      if (!Self->Resolutions.empty()) {
+      if (not Self->Resolutions.empty()) {
          if (index >= std::ssize(Self->Resolutions)) return ERR::OutOfRange;
 
          std::ostringstream out;
@@ -580,7 +580,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
 
       if ((xbpp IS 24) and (xbytes IS 3)) {
          static bool bpp_warning = false;
-         if (!bpp_warning) {
+         if (not bpp_warning) {
             bpp_warning = true;
             log.warning("Running in 32bpp instead of 24bpp is strongly recommended.");
          }
@@ -598,17 +598,17 @@ static ERR DISPLAY_Init(extDisplay *Self)
 
    auto bmp = (extBitmap *)Self->Bitmap;
 
-   DISPLAYINFO info;
-   if (get_display_info(0, &info, sizeof(info)) != ERR::Okay) return log.warning(ERR::SystemCall);
+   DisplayInfo info;
+   if (get_display_info(0, &info) != ERR::Okay) return log.warning(ERR::SystemCall);
 
-   if (!Self->Width) {
+   if (not Self->Width) {
       Self->Width = info.Width;
       #ifdef _WIN32
          Self->Width -= 60;
       #endif
    }
 
-   if (!Self->Height) {
+   if (not Self->Height) {
       Self->Height = info.Height;
       #ifdef _WIN32
          Self->Height -= 80;
@@ -655,10 +655,10 @@ static ERR DISPLAY_Init(extDisplay *Self)
 
    // Fix up the bitmap dimensions
 
-   if (!bmp->Width) bmp->Width  = Self->Width;
+   if (not bmp->Width) bmp->Width  = Self->Width;
    else if (Self->Width > bmp->Width) bmp->Width  = Self->Width;
 
-   if (!bmp->Height) bmp->Height = Self->Height;
+   if (not bmp->Height) bmp->Height = Self->Height;
    else if (Self->Height > bmp->Height) bmp->Height = Self->Height;
 
    bmp->Type = BMP::CHUNKY;
@@ -675,7 +675,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
       }
    #endif
 
-   if (!bmp->BitsPerPixel) {
+   if (not bmp->BitsPerPixel) {
       bmp->BitsPerPixel = info.BitsPerPixel;
       bmp->BytesPerPixel = info.BytesPerPixel;
    }
@@ -695,7 +695,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
       swa.event_mask  = ExposureMask|EnterWindowMask|LeaveWindowMask|PointerMotionMask|StructureNotifyMask
                         |KeyPressMask|KeyReleaseMask|ButtonPressMask|ButtonReleaseMask|FocusChangeMask;
 
-      if (!glX11.Manager) {
+      if (not glX11.Manager) {
          // Window creation for running inside a foreign window manager.
 
          log.msg("Creating X11 window %dx%d,%dx%d, Override: %d, XDisplay: %p, Parent: %" PRId64, Self->X, Self->Y, Self->Width, Self->Height, swa.override_redirect, XDisplay, (int64_t)Self->XWindowHandle);
@@ -718,8 +718,8 @@ static ERR DISPLAY_Init(extDisplay *Self)
             xbpp = 32;
          }
 
-         if (!Self->XWindowHandle) {
-            if (!(Self->XWindowHandle = XCreateWindow(XDisplay, DefaultRootWindow(XDisplay),
+         if (not Self->XWindowHandle) {
+            if (not (Self->XWindowHandle = XCreateWindow(XDisplay, DefaultRootWindow(XDisplay),
                   Self->X, Self->Y, Self->Width, Self->Height, 0 /* Border */, depth, InputOutput,
                   visual, cwflags, &swa))) {
                if (colormap) XFreeColormap(XDisplay, colormap);
@@ -727,7 +727,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
             }
          }
          else { // If the WindowHandle field is already set, use it as the parent for the new window.
-            if (!(Self->XWindowHandle = XCreateWindow(XDisplay, Self->XWindowHandle,
+            if (not (Self->XWindowHandle = XCreateWindow(XDisplay, Self->XWindowHandle,
                   0, 0, Self->Width, Self->Height, 0, depth, InputOutput, visual, cwflags, &swa))) {
                if (colormap) XFreeColormap(XDisplay, colormap);
                return log.warning(ERR::SystemCall);
@@ -749,7 +749,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
             // the best user experience when resizing windows
             bmp->x11.pix_width  = info.Width;  //Self->Width;
             bmp->x11.pix_height = info.Height; //Self->Height;
-            if (!(Self->XPixmap = XCreatePixmap(XDisplay, Self->XWindowHandle, bmp->x11.pix_width, bmp->x11.pix_height, xbpp))) {
+            if (not (Self->XPixmap = XCreatePixmap(XDisplay, Self->XWindowHandle, bmp->x11.pix_width, bmp->x11.pix_height, xbpp))) {
                return log.warning(ERR::SystemCall);
             }
 
@@ -804,7 +804,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
          if (InitObject(bmp) != ERR::Okay) return log.warning(ERR::Init);
       }
       else { // If we are the window manager, set up the root window as our display.
-         if (!Self->WindowHandle) Self->XWindowHandle = DefaultRootWindow(XDisplay);
+         if (not Self->WindowHandle) Self->XWindowHandle = DefaultRootWindow(XDisplay);
          bmp->set(FID_Handle, (APTR)Self->XWindowHandle);
          XChangeWindowAttributes(XDisplay, Self->XWindowHandle, CWEventMask|CWCursor, &swa);
 
@@ -844,7 +844,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
          return log.warning(ERR::Init);
       }
 
-      if (!Self->WindowHandle) {
+      if (not Self->WindowHandle) {
          bool desktop = false;
          if ((Self->Flags & SCR::COMPOSITE) != SCR::NIL) {
             // Not a desktop
@@ -866,7 +866,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
             else log.warning(ERR::AccessObject);
          }
 
-         if (!(Self->WindowHandle = (APTR)winCreateScreen(popover, &Self->X, &Self->Y, &Self->Width, &Self->Height,
+         if (not (Self->WindowHandle = (APTR)winCreateScreen(popover, &Self->X, &Self->Y, &Self->Width, &Self->Height,
                ((Self->Flags & SCR::MAXIMISE) != SCR::NIL) ? 1 : 0, ((Self->Flags & SCR::BORDERLESS) != SCR::NIL) ? 1 : 0, name,
                ((Self->Flags & SCR::COMPOSITE) != SCR::NIL) ? 1 : 0, Self->Opacity, desktop))) {
             return log.warning(ERR::SystemCall);
@@ -876,7 +876,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
          // If we have been passed a foreign window handle, we need to set the procedure for it so that we can process
          // window related messages.
 
-         if (!(Self->WindowHandle = (APTR)winCreateChild(Self->WindowHandle, Self->X, Self->Y, Self->Width, Self->Height))) {
+         if (not (Self->WindowHandle = (APTR)winCreateChild(Self->WindowHandle, Self->X, Self->Y, Self->Width, Self->Height))) {
             return log.warning(ERR::SystemCall);
          }
       }
@@ -894,7 +894,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
       if (Self->Bitmap->BitsPerPixel) glEGLPreferredDepth = Self->Bitmap->BitsPerPixel;
       else glEGLPreferredDepth = 0;
 
-      if (!pthread_mutex_lock(&glGraphicsMutex)) {
+      if (not pthread_mutex_lock(&glGraphicsMutex)) {
          error = init_egl();
          eglMakeCurrent(glEGLDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT); // Give up our access to EGL because we're releasing the graphics mutex.
          pthread_mutex_unlock(&glGraphicsMutex);
@@ -1004,13 +1004,13 @@ static ERR DISPLAY_Move(extDisplay *Self, struct acMove *Args)
 {
    kt::Log log;
 
-   if (!Args) return ERR::NullArgs;
+   if (not Args) return ERR::NullArgs;
 
    //log.branch("Moving display by %dx%d", (LONG)Args->DeltaX, (LONG)Args->DeltaY);
 
 #ifdef _WIN32
 
-   if (!winMoveWindow(Self->WindowHandle,
+   if (not winMoveWindow(Self->WindowHandle,
       Self->X + Self->LeftMargin + Args->DeltaX,
       Self->Y + Self->TopMargin + Args->DeltaY)) return ERR::SystemCall;
 
@@ -1020,7 +1020,7 @@ static ERR DISPLAY_Move(extDisplay *Self, struct acMove *Args)
 
    // Handling margins isn't necessary as the window manager will take that into account when it receives the move request.
 
-   if (!XDisplay) return ERR::NoSupport;
+   if (not XDisplay) return ERR::NoSupport;
 
    XMoveWindow(XDisplay, Self->XWindowHandle, Self->X + Args->DeltaX, Self->Y + Args->DeltaY);
    return ERR::Okay;
@@ -1112,7 +1112,7 @@ static ERR DISPLAY_MoveToPoint(extDisplay *Self, struct acMoveToPoint *Args)
 {
    kt::Log log;
 
-   if (!Args) return ERR::NullArgs;
+   if (not Args) return ERR::NullArgs;
 
    log.traceBranch("Moving display to %dx%d", int(Args->X), int(Args->Y));
 
@@ -1120,7 +1120,7 @@ static ERR DISPLAY_MoveToPoint(extDisplay *Self, struct acMoveToPoint *Args)
 
    // winMoveWindow() treats the coordinates as being indicative of the client area.
 
-   if (!winMoveWindow(Self->WindowHandle,
+   if (not winMoveWindow(Self->WindowHandle,
          ((Args->Flags & MTF::X) != MTF::NIL) ? Args->X : int(Self->X) + Self->LeftMargin,
          ((Args->Flags & MTF::Y) != MTF::NIL) ? Args->Y : int(Self->Y) + Self->TopMargin)) return ERR::SystemCall;
 
@@ -1156,7 +1156,7 @@ static ERR DISPLAY_NewObject(extDisplay *Self)
    OBJECTID id;
    if (FindObject("SystemVideo", CLASSID::NIL, FOF::NIL, &id) != ERR::Okay) SetName(Self->Bitmap, "SystemVideo");
 
-   if (!Self->Name[0]) {
+   if (not Self->Name[0]) {
       if (FindObject("SystemDisplay", CLASSID::NIL, FOF::NIL, &id) != ERR::Okay) SetName(Self, "SystemDisplay");
    }
 
@@ -1225,7 +1225,7 @@ Redimension: Moves and resizes a display object in a single action call.
 
 static ERR DISPLAY_Redimension(extDisplay *Self, struct acRedimension *Args)
 {
-   if (!Args) return ERR::NullArgs;
+   if (not Args) return ERR::NullArgs;
 
    struct acMoveToPoint moveto = { Args->X, Args->Y, 0, MTF::X|MTF::Y };
    if (auto error = DISPLAY_MoveToPoint(Self, &moveto); error != ERR::Okay) return error;
@@ -1259,13 +1259,13 @@ static ERR DISPLAY_Resize(extDisplay *Self, struct acResize *Args)
 
    log.branch();
 
-   if (!Self->initialised()) return log.warning(ERR::NotInitialised);
+   if (not Self->initialised()) return log.warning(ERR::NotInitialised);
 
 #ifdef _WIN32
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
-   if (!winResizeWindow(Self->WindowHandle, 0x7fffffff, 0x7fffffff, Args->Width, Args->Height)) {
+   if (not winResizeWindow(Self->WindowHandle, 0x7fffffff, 0x7fffffff, Args->Width, Args->Height)) {
       return ERR::Resize;
    }
 
@@ -1275,7 +1275,7 @@ static ERR DISPLAY_Resize(extDisplay *Self, struct acResize *Args)
 
 #elif __xwindows__
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
    if (XDisplay) {
       resize_pixmap(Self, Args->Width, Args->Height);
@@ -1290,8 +1290,8 @@ static ERR DISPLAY_Resize(extDisplay *Self, struct acResize *Args)
 
    // Scan the available display modes and choose the one that most closely matches the requested display dimensions.
 
-   if (!(width = Args->Width)) width = Self->Width;
-   if (!(height = Args->Height)) height = Self->Height;
+   if (not (width = Args->Width)) width = Self->Width;
+   if (not (height = Args->Height)) height = Self->Height;
 
    uint16_t *modes = glSNAPDevice->AvailableModes;
    if (glSNAP->Init.GetDisplayOutput) display = glSNAP->Init.GetDisplayOutput() & gaOUTPUT_SELECTMASK;
@@ -1300,7 +1300,7 @@ static ERR DISPLAY_Resize(extDisplay *Self, struct acResize *Args)
    bestweight = 0x7fffffff;
    for (i=0; modes[i] != 0xffff; i++) {
       modeinfo.dwSize = sizeof(modeinfo);
-      if (!glSNAP->Init.GetVideoModeInfoExt(modes[i], &modeinfo, display, nullptr)) {
+      if (not glSNAP->Init.GetVideoModeInfoExt(modes[i], &modeinfo, display, nullptr)) {
          if (modeinfo.AttributesExt & gaIsPanningMode) continue;
          if (modeinfo.Attributes & gaIsTextMode) continue;
 
@@ -1458,7 +1458,7 @@ NoSupport: The host platform does not support this feature.
 
 static ERR DISPLAY_SizeHints(extDisplay *Self, gfx::SizeHints *Args)
 {
-   if (!Args) return ERR::NullArgs;
+   if (not Args) return ERR::NullArgs;
 
 #ifdef __xwindows__
    XSizeHints hints = { .flags = 0 };
@@ -1532,14 +1532,14 @@ static ERR DISPLAY_SetDisplay(extDisplay *Self, gfx::SetDisplay *Args)
 {
    kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
 #ifdef _WIN32
    // NOTE: Dimensions are measured relative to the client area, not the window including its borders.
 
    log.msg(VLF::BRANCH|VLF::DETAIL, "%dx%d, %dx%d", Args->X, Args->Y, Args->Width, Args->Height);
 
-   if (!winResizeWindow(Self->WindowHandle, Args->X, Args->Y, Args->Width, Args->Height)) {
+   if (not winResizeWindow(Self->WindowHandle, Args->X, Args->Y, Args->Width, Args->Height)) {
       return log.warning(ERR::Resize);
    }
 
@@ -1636,7 +1636,7 @@ static ERR DISPLAY_SetGamma(extDisplay *Self, gfx::SetGamma *Args)
    GA_palette palette[256];
    double intensity, red, green, blue;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
    red   = Args->Red;
    green = Args->Green;
@@ -1698,7 +1698,7 @@ static ERR DISPLAY_SetGammaLinear(extDisplay *Self, gfx::SetGammaLinear *Args)
    kt::Log log;
    GA_palette palette[256];
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
    double red   = Args->Red;
    double green = Args->Green;
@@ -1778,7 +1778,7 @@ static ERR DISPLAY_SetMonitor(extDisplay *Self, gfx::SetMonitor *Args)
    GA_monitor monitor;
    ERR priverror;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
    if (CurrentTaskID() != Self->ownerTask()) {
       log.warning("Only the owner of the display may call this method.");
@@ -1847,7 +1847,7 @@ static ERR DISPLAY_SetMonitor(extDisplay *Self, gfx::SetMonitor *Args)
       config->saveSettings();
    }
 
-   if (!priverror) SetResource(RES::PRIVILEGED_USER, 0);
+   if (not priverror) SetResource(RES::PRIVILEGED_USER, 0);
    return ERR::Okay;
 #else
    return ERR::NoSupport;
@@ -1890,7 +1890,7 @@ ERR DISPLAY_Show(extDisplay *Self)
    log.branch();
 
    #ifdef __xwindows__
-      if (!XDisplay) {
+      if (not XDisplay) {
          log.error("No X11 display has been found for this machine.");
          return ERR::NoSupport;
       }
@@ -1962,7 +1962,7 @@ ERR DISPLAY_Show(extDisplay *Self)
 
          #ifdef __ANDROID__
             AConfiguration *config;
-            if (!adGetConfig(&config)) {
+            if (not adGetConfig(&config)) {
                double dp_factor = 160.0 / AConfiguration_getDensity(config);
                pointer->ClickSlop = F2I(8.0 * dp_factor);
                log.trace("Click-slop calculated as %d.", pointer->ClickSlop);
@@ -2001,7 +2001,7 @@ static ERR DISPLAY_UpdatePalette(extDisplay *Self, gfx::UpdatePalette *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->NewPalette)) return ERR::NullArgs;
+   if ((not Args) or (not Args->NewPalette)) return ERR::NullArgs;
 
    log.branch("Palette: %p, Colours: %d", Args->NewPalette, Args->NewPalette->AmtColours);
 
@@ -2114,7 +2114,7 @@ ERR GET_HDensity(extDisplay *Self, int *Value)
          if (acGetKey(style.obj, "/interface/@dpi", strdpi, sizeof(strdpi)) IS ERR::Okay) {
             *Value = strtol(strdpi, NULL, 0);
             Self->HDensity = *Value; // Store for future use.
-            if (!Self->VDensity) Self->VDensity = Self->HDensity;
+            if (not Self->VDensity) Self->VDensity = Self->HDensity;
          }
          if (*Value >= 96) return ERR::Okay;
       }
@@ -2122,7 +2122,7 @@ ERR GET_HDensity(extDisplay *Self, int *Value)
 
    #ifdef __ANDROID__
       AConfiguration *config;
-      if (!adGetConfig(&config)) {
+      if (not adGetConfig(&config)) {
          int density = AConfiguration_getDensity(config);
          if ((density > 60) and (density < 20000)) {
             Self->HDensity = density;
@@ -2184,7 +2184,7 @@ ERR GET_VDensity(extDisplay *Self, int *Value)
          if (acGetKey(style.obj, "/interface/@dpi", strdpi, sizeof(strdpi)) IS ERR::Okay) {
             *Value = strtol(strdpi, NULL, 0);
             Self->VDensity = *Value;
-            if (!Self->HDensity) Self->HDensity = Self->VDensity;
+            if (not Self->HDensity) Self->HDensity = Self->VDensity;
          }
          if (*Value >= 96) return ERR::Okay;
       }
@@ -2192,7 +2192,7 @@ ERR GET_VDensity(extDisplay *Self, int *Value)
 
    #ifdef __ANDROID__
       AConfiguration *config;
-      if (!adGetConfig(&config)) {
+      if (not adGetConfig(&config)) {
          int density = AConfiguration_getDensity(config);
          if ((density > 60) and (density < 20000)) {
             Self->HDensity = density;
@@ -2355,7 +2355,7 @@ static ERR SET_Flags(extDisplay *Self, SCR Value)
             if (Self->Y+Self->Height > glRootWindow.height) Self->Height = glRootWindow.height - Self->Y;
          }
 
-         if (!(Self->WindowHandle = (APTR)XCreateWindow(XDisplay, DefaultRootWindow(XDisplay),
+         if (not (Self->WindowHandle = (APTR)XCreateWindow(XDisplay, DefaultRootWindow(XDisplay),
                Self->X, Self->Y, Self->Width, Self->Height, 0, CopyFromParent, InputOutput,
                CopyFromParent, cwflags, &swa))) {
             log.warning("Failed in call to XCreateWindow().");
@@ -2606,7 +2606,7 @@ static ERR SET_PopOver(extDisplay *Self, OBJECTID Value)
 #ifdef __xwindows__
 
    if (Self->initialised()) {
-      if (!Value) {
+      if (not Value) {
          Self->PopOverID = 0;
          XSetTransientForHint(XDisplay, Self->XWindowHandle, (Window)0);
       }
@@ -2844,7 +2844,7 @@ To adjust the position of the display, use the #MoveToPoint() action rather than
 
 static ERR SET_X(extDisplay *Self, int Value)
 {
-   if (!(Self->initialised())) {
+   if (not (Self->initialised())) {
       Self->X = Value;
       return ERR::Okay;
    }
@@ -2868,7 +2868,7 @@ To adjust the position of the display, use the #MoveToPoint() action rather than
 
 static ERR SET_Y(extDisplay *Self, int Value)
 {
-   if (!(Self->initialised())) {
+   if (not (Self->initialised())) {
       Self->Y = Value;
       return ERR::Okay;
    }

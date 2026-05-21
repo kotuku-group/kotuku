@@ -822,6 +822,7 @@
     </constants>
 
     <constants lookup="SCR" comment="Display flags.">
+      <const name="ACTIVE">The display is participating in the desktop view - but does not guarantee it is visible.</const>
       <const name="ALPHA_BLEND">Enables alpha channel blending (if display is hosted and 32-bit).</const>
       <const name="AUTO_SAVE">Saves settings to the global display state when the object is freed.</const>
       <const name="BIT_6">Display is limited to 6-bit output per colour gun.</const>
@@ -836,10 +837,14 @@
       <const name="HOSTED">The display is a desktop hosted window.</const>
       <const name="MAXIMISE">Special win32 flag.</const>
       <const name="MAXSIZE">For <function module="Display">GetDisplayInfo</function> only, indicates that the width and height values indicate the display's maximum size.</const>
+      <const name="MIRRORED">The display is a mirrored copy.</const>
       <const name="NO_ACCELERATION">2D graphics card acceleration is not available.</const>
       <const name="POWERSAVE">Power saving is active (read-only).</const>
+      <const name="PRIMARY">The display is flagged as being the primary.</const>
       <const name="READ_ONLY">Synonym for <code>MAXIMISE | CUSTOM_WINDOW | FLIPPABLE | GTF_ENABLED | DPMS_ENABLED | POWERSAVE | HOSTED | MAXSIZE | REFRESH | BIT_6 | VISIBLE | NO_ACCELERATION</code></const>
       <const name="REFRESH">For <function module="Display">GetDisplayInfo</function> only, used to indicate that a display change has recently occurred and cache refresh is required.</const>
+      <const name="ROTATED">True if the display is rotated.</const>
+      <const name="VIRTUAL">The display is virtual or not visible (device not switched on).</const>
       <const name="VISIBLE">Set if the screen is on display.</const>
     </constants>
 

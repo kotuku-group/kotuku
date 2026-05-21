@@ -116,7 +116,7 @@ Scintilla::PRectangle Scintilla::Window::GetClientPosition()
 
 Scintilla::PRectangle Scintilla::Window::GetMonitorRect(Scintilla::Point)
 {
-   DISPLAYINFO *info;
+   DisplayInfo *info;
    if (gfx::GetDisplayInfo(0, &info) IS ERR::Okay) {
       return Scintilla::PRectangle(0, 0, info->Width, info->Height);
    }
