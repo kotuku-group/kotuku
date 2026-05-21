@@ -836,12 +836,12 @@ ERR get_display_info(OBJECTID DisplayID, DisplayInfo *Info)
       }
       else return log.warning(ERR::TimeOut);
 
-      kt::copymem(&glDisplayInfo, Info, InfoSize);
+      kt::copymem(&glDisplayInfo, Info, sizeof(DisplayInfo));
       return ERR::Okay;
 #else
 
       if (glDisplayInfo.DisplayID) {
-         kt::copymem(&glDisplayInfo, Info, InfoSize);
+         kt::copymem(&glDisplayInfo, Info, sizeof(DisplayInfo));
          return ERR::Okay;
       }
       else {
