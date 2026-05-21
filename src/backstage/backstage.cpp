@@ -52,6 +52,7 @@ JUMPTABLE_NETWORK
 JUMPTABLE_REGEX
 
 static ERR init_backstage(int = 8765);
+static void release_backstage_logs();
 static void release_backstage_routes();
 static void release_backstage_websockets();
 
@@ -180,6 +181,7 @@ static ERR MODExpunge(void)
       glRequestBuffers.clear();
    }
    release_backstage_websockets();
+   release_backstage_logs();
    release_backstage_routes();
    if (glServer)   { FreeResource(glServer);   glServer = nullptr; }
    if (modRegex)   { FreeResource(modRegex);   modRegex = nullptr; }

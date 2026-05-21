@@ -228,7 +228,10 @@ static constexpr std::array<std::string_view, 0> post_logs_start_path_param_name
 
 static constexpr std::array<BackstageParam, 0> post_logs_start_path_params = {};
 
-static constexpr std::array<BackstageParam, 0> post_logs_start_query_params = {};
+static constexpr std::array<BackstageParam, 2> post_logs_start_query_params = {
+   BackstageParam("maxDepth", "int", "Only record messages that are less or equal to this depth level.", "", false),
+   BackstageParam("maxLevel", "int", "Only record messages that are less or equal to this log level.", "", false)
+};
 
 static constexpr std::array<std::string_view, 0> post_logs_stop_path_param_names = {};
 
@@ -580,7 +583,7 @@ static std::array<BackstageRoute, 32> glRoutes = {
       put_logs_level,
       put_logs_level_path_param_names,
       BackstageRouteMetadata(
-         "Change the logging level for the program (affects console output).",
+         "Change the logging level for the program (affects console output only).",
          "",
          "object",
          "",
@@ -594,7 +597,7 @@ static std::array<BackstageRoute, 32> glRoutes = {
       post_logs_start_path_param_names,
       BackstageRouteMetadata(
          "Activates internal log recording.",
-         "json",
+         "",
          "object",
          "",
          post_logs_start_path_params,
@@ -607,7 +610,7 @@ static std::array<BackstageRoute, 32> glRoutes = {
       post_logs_stop_path_param_names,
       BackstageRouteMetadata(
          "Stops internal log recording.",
-         "json",
+         "",
          "object",
          "",
          post_logs_stop_path_params,

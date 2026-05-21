@@ -239,7 +239,7 @@ route('DELETE', '/jobs/{job}', {
 -- Log Interfaces
 
 route('PUT', '/logs/level', {
-   desc = 'Change the logging level for the program (affects console output).',
+   desc = 'Change the logging level for the program (affects console output only).',
    query = {
       level = { type='int', desc='The new log level value, ranging from 0 - 9.' },
    },
@@ -248,13 +248,15 @@ route('PUT', '/logs/level', {
 
 route('POST', '/logs/start', {
    desc = 'Activates internal log recording.',
-   body = 'json',
+   query = {
+      maxLevel = { type='int', desc='Only record messages that are less or equal to this log level.' },
+      maxDepth = { type='int', desc='Only record messages that are less or equal to this depth level.' }
+   },
    returns = 'object'
 })
 
 route('POST', '/logs/stop', {
    desc = 'Stops internal log recording.',
-   body = 'json',
    returns = 'object'
 })
 

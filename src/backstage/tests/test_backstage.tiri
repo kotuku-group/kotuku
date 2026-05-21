@@ -37,7 +37,7 @@ end
 function request_backstage(Request:str, ExpectedToken:str):str
    response = ''
    client = obj.new('netsocket', {
-      name = 'BackstagePingClient',
+      name = 'BackstageClient',
       feedback = function(Socket:obj, State:num)
          if State is NTC_CONNECTED then
             err, len = Socket.acWrite(Request)
@@ -52,7 +52,7 @@ function request_backstage(Request:str, ExpectedToken:str):str
             Socket.acSignal()
             return
          end
-         assert(err is ERR_Okay, 'Failed to read ping response: ' .. mSys.GetErrorMsg(err))
+         assert(err is ERR_Okay, 'Failed to read response: ' .. mSys.GetErrorMsg(err))
          if read_len <= 0 then return end
 
          response ..= buffer:substr(0, read_len)
@@ -386,6 +386,44 @@ function LogsLevelRejectsInvalidValue()
    response = request_backstage(request, 'HTTP/1.1 400 Bad Request')
    assert(response:find('HTTP/1.1 400 Bad Request'), 'Expected invalid log level to return 400, got: ' .. response)
    assert(response:find('"error":"invalid_level"'), 'Expected invalid_level JSON body, got: ' .. response)
+end
+
+@Test; @Requires(network=true)
+function LogsCanBeRecordedAndDrained()
+   start_request = 'POST /logs/start?maxLevel=5&maxDepth=255 HTTP/1.1\r\n' ..
+      'Host: 127.0.0.1\r\n' ..
+      'Connection: close\r\n\r\n'
+
+   response = request_backstage(start_request, '"active":true')
+   assert(response:find('HTTP/1.1 200 OK'), 'Expected logs/start to return 200 OK, got: ' .. response)
+   assert(response:find('"maxLevel":5'), 'Expected logs/start to report maxLevel, got: ' .. response)
+
+   ping_request = 'GET /ping HTTP/1.1\r\n' ..
+      'Host: 127.0.0.1\r\n' ..
+      'Connection: close\r\n\r\n'
+
+   response = request_backstage(ping_request, '{"status":"pong"}')
+   assert(response:find('HTTP/1.1 200 OK'), 'Expected ping during log recording to return 200 OK, got: ' .. response)
+
+   logs_request = 'GET /logs HTTP/1.1\r\n' ..
+      'Host: 127.0.0.1\r\n' ..
+      'Connection: close\r\n\r\n'
+
+   response = request_backstage_full(logs_request)
+   assert(response:find('HTTP/1.1 200 OK'), 'Expected logs to return 200 OK, got: ' .. response)
+   assert(response:find('"header":"backstage_logs"'), 'Expected captured start marker, got: ' .. response)
+   assert(response:find('"message":"Internal log recording started."'), 'Expected captured start message, got: ' .. response)
+
+   response = request_backstage_full(logs_request)
+   assert(response:find('HTTP/1.1 200 OK'), 'Expected drained logs request to return 200 OK, got: ' .. response)
+   assert(not response:find('"message":"Internal log recording started."'), 'Expected logs to drain after read, got: ' .. response)
+
+   stop_request = 'POST /logs/stop HTTP/1.1\r\n' ..
+      'Host: 127.0.0.1\r\n' ..
+      'Connection: close\r\n\r\n'
+
+   response = request_backstage(stop_request, '"active":false')
+   assert(response:find('HTTP/1.1 200 OK'), 'Expected logs/stop to return 200 OK, got: ' .. response)
 end
 
 @Test; @Requires(network=true)
