@@ -390,13 +390,14 @@ end
 
 @Test; @Requires(network=true)
 function LogsCanBeRecordedAndDrained()
-   start_request = 'POST /logs/start?maxLevel=5&maxDepth=255 HTTP/1.1\r\n' ..
+   start_request = 'POST /logs/start?maxLevel=5&maxDepth=255&includeThreads=true HTTP/1.1\r\n' ..
       'Host: 127.0.0.1\r\n' ..
       'Connection: close\r\n\r\n'
 
    response = request_backstage(start_request, '"active":true')
    assert(response:find('HTTP/1.1 200 OK'), 'Expected logs/start to return 200 OK, got: ' .. response)
    assert(response:find('"maxLevel":5'), 'Expected logs/start to report maxLevel, got: ' .. response)
+   assert(response:find('"includeThreads":true'), 'Expected logs/start to report includeThreads, got: ' .. response)
 
    ping_request = 'GET /ping HTTP/1.1\r\n' ..
       'Host: 127.0.0.1\r\n' ..
@@ -424,6 +425,18 @@ function LogsCanBeRecordedAndDrained()
 
    response = request_backstage(stop_request, '"active":false')
    assert(response:find('HTTP/1.1 200 OK'), 'Expected logs/stop to return 200 OK, got: ' .. response)
+end
+
+@Test; @Requires(network=true)
+function LogsStartRejectsInvalidIncludeThreads()
+   request = 'POST /logs/start?includeThreads=maybe HTTP/1.1\r\n' ..
+      'Host: 127.0.0.1\r\n' ..
+      'Connection: close\r\n\r\n'
+
+   response = request_backstage(request, 'HTTP/1.1 400 Bad Request')
+   assert(response:find('HTTP/1.1 400 Bad Request'), 'Expected invalid includeThreads to return 400, got: ' .. response)
+   message = 'Expected invalid_include_threads JSON body, got: ' .. response
+   assert(response:find('"error":"invalid_include_threads"'), message)
 end
 
 @Test; @Requires(network=true)

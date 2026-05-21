@@ -228,7 +228,8 @@ static constexpr std::array<std::string_view, 0> post_logs_start_path_param_name
 
 static constexpr std::array<BackstageParam, 0> post_logs_start_path_params = {};
 
-static constexpr std::array<BackstageParam, 2> post_logs_start_query_params = {
+static constexpr std::array<BackstageParam, 3> post_logs_start_query_params = {
+   BackstageParam("includeThreads", "bool", "Include log messages from child threads.", "", false),
    BackstageParam("maxDepth", "int", "Only record messages that are less or equal to this depth level.", "", false),
    BackstageParam("maxLevel", "int", "Only record messages that are less or equal to this log level.", "", false)
 };
