@@ -59,6 +59,8 @@ typedef int HANDLE;
 #include <errno.h>
 #include <map>
 #include <mutex>
+#include <condition_variable>
+#include <memory>
 #include <bit>
 
 #ifdef _WIN32
@@ -148,8 +150,17 @@ namespace std {
    };
 }
 
-static ankerl::unordered_dense::map<CacheFileIndex, extCacheFile> glCache;
+static ankerl::unordered_dense::map<CacheFileIndex, std::unique_ptr<extCacheFile>> glCache;
 static std::mutex glCacheLock;
+
+struct CacheLoadState {
+   std::mutex Lock;
+   std::condition_variable Ready;
+   bool Loading = true;
+   ERR Error = ERR::Okay;
+};
+
+static ankerl::unordered_dense::map<CacheFileIndex, std::shared_ptr<CacheLoadState>> glCacheLoading;
 
 //********************************************************************************************************************
 
@@ -174,6 +185,7 @@ static std::mutex glCacheLock;
 void free_file_cache(void)
 {
    glCache.clear();
+   glCacheLoading.clear();
 }
 
 //********************************************************************************************************************
@@ -331,14 +343,14 @@ ERR check_cache(OBJECTPTR Subscriber, int64_t Elapsed, int64_t CurrentTime)
 
    const std::lock_guard<std::mutex> lock(glCacheLock);
    for (auto it=glCache.begin(); it != glCache.end(); ) {
-      if ((CurrentTime - it->second.LastUse >= CACHE_EXPIRY_MICROSECONDS) and (it->second.Locks <= 0)) {
-         log.msg("Removing expired cache file: %.80s", it->second.Path);
+      if ((CurrentTime - it->second->LastUse >= CACHE_EXPIRY_MICROSECONDS) and (it->second->Locks <= 0)) {
+         log.msg("Removing expired cache file: %.80s", it->second->Path);
          it = glCache.erase(it);
       }
       else it++;
    }
 
-   if (glCache.empty()) {
+   if (glCache.empty() and glCacheLoading.empty()) {
       glCacheTimer = 0;
       return ERR::Terminate;
    }
@@ -887,14 +899,13 @@ ERR LoadFile(CSTRING Path, LDF Flags, CacheFile **Cache)
    kt::Log log(__FUNCTION__);
 
    if ((not Path) or (not Cache)) return ERR::NullArgs;
+   *Cache = nullptr;
 
    // Check if the file is already cached.  If it is, check that the file hasn't been written since the last time it was cached.
 
    std::string path;
    ERR error;
    if ((error = ResolvePath(Path, RSF::APPROXIMATE, &path)) != ERR::Okay) return error;
-
-   const std::lock_guard<std::mutex> lock(glCacheLock);
 
    log.branch("%.80s, Flags: $%.8x", path.c_str(), int(Flags));
 
@@ -905,39 +916,78 @@ ERR LoadFile(CSTRING Path, LDF Flags, CacheFile **Cache)
       auto timestamp = file->get<int64_t>(FID_Timestamp);
 
       CacheFileIndex index(path, timestamp, file_size);
+      std::shared_ptr<CacheLoadState> loading_state;
 
-      if (glCache.contains(index)) {
-         *((extCacheFile **)Cache) = &glCache[index];
-         if ((Flags & LDF::CHECK_EXISTS) IS LDF::NIL) glCache[index].Locks++;
-         return ERR::Okay;
+      while (true) {
+         {
+            const std::lock_guard<std::mutex> lock(glCacheLock);
+
+            if (auto cache = glCache.find(index); cache != glCache.end()) {
+               *Cache = cache->second.get();
+               (*Cache)->LastUse = PreciseTime();
+               if ((Flags & LDF::CHECK_EXISTS) IS LDF::NIL) cache->second->Locks++;
+               return ERR::Okay;
+            }
+
+            // If the client just wanted to check for the existence of the file, do not proceed in loading it.
+
+            if ((Flags & LDF::CHECK_EXISTS) != LDF::NIL) return ERR::Search;
+
+            if (auto pending = glCacheLoading.find(index); pending != glCacheLoading.end()) {
+               loading_state = pending->second;
+            }
+            else {
+               loading_state = std::make_shared<CacheLoadState>();
+               glCacheLoading.emplace(index, loading_state);
+               break;
+            }
+         }
+
+         std::unique_lock<std::mutex> pending_lock(loading_state->Lock);
+         loading_state->Ready.wait(pending_lock, [&loading_state] { return not loading_state->Loading; });
+
+         if (loading_state->Error != ERR::Okay) return loading_state->Error;
       }
 
-      // If the client just wanted to check for the existence of the file, do not proceed in loading it.
-
-      if ((Flags & LDF::CHECK_EXISTS) != LDF::NIL) {
-         return ERR::Search;
-      }
-
-      glCache.emplace(index, extCacheFile(path, file_size, timestamp));
+      auto loaded_cache = std::make_unique<extCacheFile>(path, file_size, timestamp);
 
       if (file_size) {
          int result;
-         error = file->read(glCache[index].Data, file_size, &result);
-         if ((error IS ERR::Okay) and (file_size != result)) return ERR::Read;
+         error = file->read(loaded_cache->Data, file_size, &result);
+         if ((error IS ERR::Okay) and (file_size != result)) error = ERR::Read;
       }
 
       if (error IS ERR::Okay) {
-         *((extCacheFile **)Cache) = &glCache[index];
+         {
+            const std::lock_guard<std::mutex> lock(glCacheLock);
+            auto result = glCache.emplace(index, std::move(loaded_cache));
+            auto cache = result.first;
+            *Cache = cache->second.get();
+            if (not result.second) cache->second->Locks++;
 
-         if (not glCacheTimer) {
-            kt::SwitchContext context(CurrentTask());
-            auto call = C_FUNCTION(check_cache);
-            SubscribeTimer(60, &call, &glCacheTimer);
+            if (not glCacheTimer) {
+               kt::SwitchContext context(CurrentTask());
+               auto call = C_FUNCTION(check_cache);
+               SubscribeTimer(60, &call, &glCacheTimer);
+            }
+
+            glCacheLoading.erase(index);
          }
-
-         return ERR::Okay;
       }
-      else return error;
+
+      if (error != ERR::Okay) {
+         const std::lock_guard<std::mutex> lock(glCacheLock);
+         glCacheLoading.erase(index);
+      }
+
+      {
+         const std::lock_guard<std::mutex> lock(loading_state->Lock);
+         loading_state->Error = error;
+         loading_state->Loading = false;
+      }
+
+      loading_state->Ready.notify_all();
+      return error;
    }
    else return ERR::CreateObject;
 }
