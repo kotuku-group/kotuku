@@ -1726,7 +1726,7 @@ void parser::tag_print(const tag_view &Tag)
          // This option is only supported in unrestricted mode
          if ((Self->Flags & DCF::UNRESTRICTED) != DCF::NIL) {
             CacheFile *cache;
-            if (LoadFile(Tag.Attribs[1].Value.c_str(), LDF::NIL, &cache) IS ERR::Okay) {
+            if (LoadFile(Tag.Attribs[1].Value, LDF::NIL, &cache) IS ERR::Okay) {
                insert_text(Self, m_stream, m_index, std::string((CSTRING)cache->Data), (m_style.options & FSO::PREFORMAT) != FSO::NIL);
                UnloadFile(cache);
             }

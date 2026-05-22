@@ -293,10 +293,10 @@ if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) == ERR::Okay) {
     <name>AnalysePath</name>
     <category>Files</category>
     <comment>Analyses paths to determine their type (file, folder or volume).</comment>
-    <prototype>ERR AnalysePath(CSTRING Path, LOC * Type)</prototype>
+    <prototype>ERR AnalysePath(const std::string_view &amp; Path, LOC * Type)</prototype>
     <tiriPrototype>err, Type:num = AnalysePath(Path:str)</tiriPrototype>
     <input>
-      <param type="CSTRING" name="Path">The path to analyse.</param>
+      <param type="const std::string_view &amp;" name="Path">The path to analyse.</param>
       <param type="LOC *" name="Type" lookup="LOC">The result will be stored in the variable referred to by this parameter.  The return types are <code>DIRECTORY</code>, <code>FILE</code> and <code>VOLUME</code>.  Set this parameter to <code>NULL</code> if you are only interested in checking if the file exists.</param>
     </input>
     <description>
@@ -510,11 +510,11 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <name>CompareFilePaths</name>
     <category>Files</category>
     <comment>Checks if two file paths refer to the same physical file.</comment>
-    <prototype>ERR CompareFilePaths(CSTRING PathA, CSTRING PathB)</prototype>
+    <prototype>ERR CompareFilePaths(const std::string_view &amp; PathA, const std::string_view &amp; PathB)</prototype>
     <tiriPrototype>err = CompareFilePaths(PathA:str, PathB:str)</tiriPrototype>
     <input>
-      <param type="CSTRING" name="PathA">File location 1.</param>
-      <param type="CSTRING" name="PathB">File location 2.</param>
+      <param type="const std::string_view &amp;" name="PathA">File location 1.</param>
+      <param type="const std::string_view &amp;" name="PathB">File location 2.</param>
     </input>
     <description>
 <p>This function will test two file paths, checking if they refer to the same file in a storage device.  It uses a string comparison on the resolved path names, then attempts a second test based on an in-depth analysis of file attributes if the string comparison fails.  In the event of a match, <code>ERR::Okay</code> is returned.  All other error codes indicate a mis-match or internal failure.</p>
@@ -531,11 +531,11 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <name>CopyFile</name>
     <category>Files</category>
     <comment>Makes copies of folders and files.</comment>
-    <prototype>ERR CopyFile(CSTRING Source, CSTRING Dest, FUNCTION * Callback)</prototype>
+    <prototype>ERR CopyFile(const std::string_view &amp; Source, const std::string_view &amp; Dest, FUNCTION * Callback)</prototype>
     <tiriPrototype>err = CopyFile(Source:str, Dest:str, Callback:func)</tiriPrototype>
     <input>
-      <param type="CSTRING" name="Source">The source location.</param>
-      <param type="CSTRING" name="Dest">The destination location.</param>
+      <param type="const std::string_view &amp;" name="Source">The source location.</param>
+      <param type="const std::string_view &amp;" name="Dest">The destination location.</param>
       <param type="FUNCTION *" name="Callback">Optional callback for receiving feedback during the operation.</param>
     </input>
     <description>
@@ -563,10 +563,10 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <name>CreateFolder</name>
     <category>Files</category>
     <comment>Makes new folders.</comment>
-    <prototype>ERR CreateFolder(CSTRING Path, PERMIT Permissions)</prototype>
+    <prototype>ERR CreateFolder(const std::string_view &amp; Path, PERMIT Permissions)</prototype>
     <tiriPrototype>err = CreateFolder(Path:str, Permissions:num)</tiriPrototype>
     <input>
-      <param type="CSTRING" name="Path">The location of the folder.</param>
+      <param type="const std::string_view &amp;" name="Path">The location of the folder.</param>
       <param type="PERMIT" name="Permissions" lookup="PERMIT">Security permissions to apply to the created Dir(s).  Set to <code>NULL</code> if only the current user should have access.</param>
     </input>
     <description>
@@ -586,11 +586,11 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <name>CreateLink</name>
     <category>Files</category>
     <comment>Creates symbolic links on supported file systems.</comment>
-    <prototype>ERR CreateLink(CSTRING From, CSTRING To)</prototype>
+    <prototype>ERR CreateLink(const std::string_view &amp; From, const std::string_view &amp; To)</prototype>
     <tiriPrototype>err = CreateLink(From:str, To:str)</tiriPrototype>
     <input>
-      <param type="CSTRING" name="From">The symbolic link will be created at the location specified here.</param>
-      <param type="CSTRING" name="To">The file that you are linking to is specified here.</param>
+      <param type="const std::string_view &amp;" name="From">The symbolic link will be created at the location specified here.</param>
+      <param type="const std::string_view &amp;" name="To">The file that you are linking to is specified here.</param>
     </input>
     <description>
 <p>Use the CreateLink() function to create symbolic links on supported file systems. The link connects a new file created at <code>From</code> to an existing file referenced at <code>To</code>. The <code>To</code> link is allowed to be relative to the <code>From</code> location - for instance, you can link <code>documents:myfiles/newlink.txt</code> to <code>../readme.txt</code> or <code>folder/readme.txt</code>. The <code>..</code> path component must be used when making references to parent folders.</p>
@@ -640,10 +640,10 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <name>DeleteFile</name>
     <category>Files</category>
     <comment>Deletes files and folders.</comment>
-    <prototype>ERR DeleteFile(CSTRING Path, FUNCTION * Callback)</prototype>
+    <prototype>ERR DeleteFile(const std::string_view &amp; Path, FUNCTION * Callback)</prototype>
     <tiriPrototype>err = DeleteFile(Path:str, Callback:func)</tiriPrototype>
     <input>
-      <param type="CSTRING" name="Path">String referring to the file or folder to be deleted.  Folders must be denoted with a trailing slash.</param>
+      <param type="const std::string_view &amp;" name="Path">String referring to the file or folder to be deleted.  Folders must be denoted with a trailing slash.</param>
       <param type="FUNCTION *" name="Callback">Optional callback for receiving feedback during the operation.</param>
     </input>
     <description>
@@ -665,10 +665,10 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <name>DeleteVolume</name>
     <category>Files</category>
     <comment>Deletes volumes from the system.</comment>
-    <prototype>ERR DeleteVolume(CSTRING Name)</prototype>
+    <prototype>ERR DeleteVolume(const std::string_view &amp; Name)</prototype>
     <tiriPrototype>err = DeleteVolume(Name:str)</tiriPrototype>
     <input>
-      <param type="CSTRING" name="Name">The name of the volume.</param>
+      <param type="const std::string_view &amp;" name="Name">The name of the volume.</param>
     </input>
     <description>
 <p>This function deletes volume names from the system.  Once a volume is deleted, any further references to it will result in errors unless the volume is recreated.</p>
@@ -938,10 +938,10 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     <name>IdentifyFile</name>
     <category>Files</category>
     <comment>Analyse a file and identify a class that can process it.</comment>
-    <prototype>ERR IdentifyFile(CSTRING Path, CLASSID Filter, CLASSID * Class, CLASSID * SubClass)</prototype>
+    <prototype>ERR IdentifyFile(const std::string_view &amp; Path, CLASSID Filter, CLASSID * Class, CLASSID * SubClass)</prototype>
     <tiriPrototype>err, Class:num, SubClass:num = IdentifyFile(Path:str, Filter:num)</tiriPrototype>
     <input>
-      <param type="CSTRING" name="Path">The location of the object data.</param>
+      <param type="const std::string_view &amp;" name="Path">The location of the object data.</param>
       <param type="CLASSID" name="Filter">Restrict the search to classes in this subset, or use <code>CLASSID::NIL</code> to search all classes.</param>
       <param type="CLASSID *" name="Class">Must refer to a <code>CLASSID</code> variable that will store the resulting class ID.</param>
       <param type="CLASSID *" name="SubClass">Optional argument that can refer to a variable that will store the resulting sub-class ID (if the result is a base-class, this variable will receive a value of zero).</param>
@@ -1008,10 +1008,10 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
     <name>LoadFile</name>
     <category>Files</category>
     <comment>Loads files into a local cache for fast file processing.</comment>
-    <prototype>ERR LoadFile(CSTRING Path, LDF Flags, struct CacheFile ** Cache)</prototype>
+    <prototype>ERR LoadFile(const std::string_view &amp; Path, LDF Flags, struct CacheFile ** Cache)</prototype>
     <tiriPrototype>err, Cache:any = LoadFile(Path:str, Flags:num)</tiriPrototype>
     <input>
-      <param type="CSTRING" name="Path">The location of the file to be cached.</param>
+      <param type="const std::string_view &amp;" name="Path">The location of the file to be cached.</param>
       <param type="LDF" name="Flags" lookup="LDF">Optional flags are specified here.</param>
       <param type="struct CacheFile **" name="Cache">A pointer to a CacheFile structure is returned here if successful.</param>
     </input>
@@ -1117,11 +1117,11 @@ if (!MemoryPtrInfo(ptr, &amp;info)) {
     <name>MoveFile</name>
     <category>Files</category>
     <comment>Moves folders and files to new locations.</comment>
-    <prototype>ERR MoveFile(CSTRING Source, CSTRING Dest, FUNCTION * Callback)</prototype>
+    <prototype>ERR MoveFile(const std::string_view &amp; Source, const std::string_view &amp; Dest, FUNCTION * Callback)</prototype>
     <tiriPrototype>err = MoveFile(Source:str, Dest:str, Callback:func)</tiriPrototype>
     <input>
-      <param type="CSTRING" name="Source">The source path.</param>
-      <param type="CSTRING" name="Dest">The destination path.</param>
+      <param type="const std::string_view &amp;" name="Source">The source path.</param>
+      <param type="const std::string_view &amp;" name="Dest">The destination path.</param>
       <param type="FUNCTION *" name="Callback">Optional callback for receiving feedback during the operation.</param>
     </input>
     <description>
@@ -1208,16 +1208,16 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <name>OpenDir</name>
     <category>Files</category>
     <comment>Opens a folder for content scanning.</comment>
-    <prototype>ERR OpenDir(CSTRING Path, RDF Flags, struct DirInfo ** Info)</prototype>
+    <prototype>ERR OpenDir(const std::string_view &amp; Path, RDF Flags, struct DirInfo ** Info)</prototype>
     <tiriPrototype>err, Info:any = OpenDir(Path:str, Flags:num)</tiriPrototype>
     <input>
-      <param type="CSTRING" name="Path">The folder location to be scanned.  Using an empty string will scan for volume names.</param>
+      <param type="const std::string_view &amp;" name="Path">The folder location to be scanned.  Using an empty string will scan for volume names.</param>
       <param type="RDF" name="Flags" lookup="RDF">Optional flags.</param>
       <param type="struct DirInfo **" name="Info">A <st>DirInfo</st> structure will be returned in the pointer referenced here.</param>
     </input>
     <description>
 <p>The OpenDir() function is used to open a folder for scanning via the <function>ScanDir</function> function.  If the provided Path can be accessed, a <st>DirInfo</st> structure will be returned in the Info parameter, which will need to be passed to <function>ScanDir</function>.  Once the scanning process is complete, call the <function>FreeResource</function> function.</p>
-<p>When opening a folder, it is necessary to indicate the type of files that are of interest.  If no flags are defined, the scanner will return file and folder names only.  Only a subset of the available <code>RDF</code> flags may be used, namely <code>SIZE</code>, <code>DATE</code>, <code>PERMISSIONS</code>, <code>FILE</code>, <code>FOLDER</code>, <code>QUALIFY</code>, <code>TAGS</code>.</p>
+<p>When opening a folder, it is necessary to indicate the type of files that are of interest.  If no flags are defined, the scanner will return file and folder names only.  Only a subset of the available <code>RDF</code> flags may be used, specifically <code>SIZE</code>, <code>DATE</code>, <code>PERMISSIONS</code>, <code>FILE</code>, <code>FOLDER</code>, <code>QUALIFY</code>, <code>TAGS</code>.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
@@ -1328,10 +1328,10 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <name>ReadFileToBuffer</name>
     <category>Files</category>
     <comment>Reads a file into a buffer.</comment>
-    <prototype>ERR ReadFileToBuffer(CSTRING Path, APTR Buffer, INT BufferSize, INT * Result)</prototype>
+    <prototype>ERR ReadFileToBuffer(const std::string_view &amp; Path, APTR Buffer, INT BufferSize, INT * Result)</prototype>
     <tiriPrototype>err, Result:num = ReadFileToBuffer(Path:str, Buffer:any, BufferSize:num)</tiriPrototype>
     <input>
-      <param type="CSTRING" name="Path">The path of the file.</param>
+      <param type="const std::string_view &amp;" name="Path">The path of the file.</param>
       <param type="APTR" name="Buffer">Pointer to a buffer that will receive the file content.</param>
       <param type="INT" name="BufferSize">The byte size of the <code>Buffer</code>.</param>
       <param type="INT *" name="Result">The total number of bytes read into the <code>Buffer</code> will be returned here (optional).</param>
@@ -1355,11 +1355,11 @@ kotuku:pictures/    kotuku:documents    kotuku:documents (Existing documents fol
     <name>ReadInfoTag</name>
     <category>Files</category>
     <comment>Read a named tag from a <st>FileInfo</st> structure.</comment>
-    <prototype>ERR ReadInfoTag(struct FileInfo * Info, CSTRING Name, CSTRING * Value)</prototype>
+    <prototype>ERR ReadInfoTag(struct FileInfo * Info, const std::string_view &amp; Name, CSTRING * Value)</prototype>
     <tiriPrototype>err, Value:str = ReadInfoTag(Info:any, Name:str)</tiriPrototype>
     <input>
       <param type="struct FileInfo *" name="Info">Pointer to a valid <st>FileInfo</st> structure.</param>
-      <param type="CSTRING" name="Name">The name of the tag, which must be declared in camel-case as tags are case-sensitive.</param>
+      <param type="const std::string_view &amp;" name="Name">The name of the tag, which must be declared in camel-case as tags are case-sensitive.</param>
       <param type="CSTRING *" name="Value">The discovered string value is returned here if found.</param>
     </input>
     <description>
@@ -1794,14 +1794,14 @@ static ResourceManager glNodeManager = {
     <name>SetVolume</name>
     <category>Files</category>
     <comment>Create or modify a filesystem volume.</comment>
-    <prototype>ERR SetVolume(CSTRING Name, CSTRING Path, CSTRING Icon, CSTRING Label, CSTRING Device, VOLUME Flags)</prototype>
+    <prototype>ERR SetVolume(const std::string_view &amp; Name, const std::string_view &amp; Path, const std::string_view &amp; Icon, const std::string_view &amp; Label, const std::string_view &amp; Device, VOLUME Flags)</prototype>
     <tiriPrototype>err = SetVolume(Name:str, Path:str, Icon:str, Label:str, Device:str, Flags:num)</tiriPrototype>
     <input>
-      <param type="CSTRING" name="Name">Required.  The name of the volume.</param>
-      <param type="CSTRING" name="Path">Required.  The path to be associated with the volume.  If setting multiple paths, separate each path with a semi-colon character.  Each path must terminate with a forward slash to denote a folder.</param>
-      <param type="CSTRING" name="Icon">An icon can be associated with the volume so that it has graphical representation when viewed in the UI.  The required icon string format is <code>category/name</code>.</param>
-      <param type="CSTRING" name="Label">An optional label or short comment may be applied to the volume.  This may be useful if the volume name has little meaning to the user (e.g. <code>drive1</code>, <code>drive2</code> ...).</param>
-      <param type="CSTRING" name="Device">If the volume references the root of a device, specify a device name of <code>portable</code>, <code>fixed</code>, <code>cd</code>, <code>network</code> or <code>usb</code>.</param>
+      <param type="const std::string_view &amp;" name="Name">Required.  The name of the volume.</param>
+      <param type="const std::string_view &amp;" name="Path">Required.  The path to be associated with the volume.  If setting multiple paths, separate each path with a semi-colon character.  Each path must terminate with a forward slash to denote a folder.</param>
+      <param type="const std::string_view &amp;" name="Icon">An icon can be associated with the volume so that it has graphical representation when viewed in the UI.  The required icon string format is <code>category/name</code>.</param>
+      <param type="const std::string_view &amp;" name="Label">An optional label or short comment may be applied to the volume.  This may be useful if the volume name has little meaning to the user (e.g. <code>drive1</code>, <code>drive2</code> ...).</param>
+      <param type="const std::string_view &amp;" name="Device">If the volume references the root of a device, specify a device name of <code>portable</code>, <code>fixed</code>, <code>cd</code>, <code>network</code> or <code>usb</code>.</param>
       <param type="VOLUME" name="Flags" lookup="VOLUME">Optional flags.</param>
     </input>
     <description>

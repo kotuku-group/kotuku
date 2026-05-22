@@ -133,7 +133,7 @@ ERR ResolvePath(const std::string_view &pPath, RSF Flags, std::string *Result)
    else if (Path.starts_with("\\\\")) resolved = true; // UNC path discovered
 
 #elif __unix__
-   if ((Path[0] IS '/') or (Path[0] IS '\\')) resolved = true;
+   if (Path.starts_with('/') or Path.starts_with('\\')) resolved = true;
 #endif
 
    if (!resolved) {
@@ -149,15 +149,16 @@ ERR ResolvePath(const std::string_view &pPath, RSF Flags, std::string *Result)
       if ((sep IS std::string::npos) or (Path[sep] != ':')) resolved = true;
    }
 
+   std::string_view final_path(Path);
    if (resolved) {
-      dest.assign(Path);
+      dest.assign(final_path);
 
       if ((Flags & RSF::APPROXIMATE) != RSF::NIL) {
-         if (test_path(dest, RSF::APPROXIMATE) IS ERR::Okay) Path = dest.c_str();
+         if (test_path(dest, RSF::APPROXIMATE) IS ERR::Okay) final_path = dest;
          else return ERR::FileNotFound;
       }
       else if ((Flags & RSF::NO_FILE_CHECK) IS RSF::NIL) {
-         if (test_path(dest, RSF::NIL) IS ERR::Okay) Path = dest.c_str();
+         if (test_path(dest, RSF::NIL) IS ERR::Okay) final_path = dest;
          else return ERR::FileNotFound;
       }
 
@@ -169,7 +170,7 @@ ERR ResolvePath(const std::string_view &pPath, RSF Flags, std::string *Result)
       return ERR::Okay;
    }
 
-   src.assign(Path);
+   src.assign(final_path);
 
    // Keep looping until the volume is resolved
 
@@ -345,7 +346,7 @@ static ERR resolve(const std::string &Source, std::string &Dest, RSF Flags)
 
    std::string fullpath;
    if (auto lock = std::unique_lock{glmVolumes, 2s}) {
-      auto vol = glVolumes.find(Source.substr(0, vol_pos));
+      auto vol = glVolumes.find(std::string_view(Source.data(), vol_pos));
       if (vol != glVolumes.end()) fullpath.assign(vol->second["Path"]);
       else {
          log.msg("No matching volume for \"%s\".", Source.c_str());

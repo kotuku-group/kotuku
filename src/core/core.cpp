@@ -1109,7 +1109,7 @@ static void BreakHandler(void)
 #ifdef _WIN32
 static void win32_enum_folders(CSTRING Volume, CSTRING Label, CSTRING Path, CSTRING Icon, int8_t Hidden)
 {
-   SetVolume(Volume, Path, Icon, Label, nullptr, VOLUME::REPLACE | (Hidden ? VOLUME::HIDDEN : VOLUME::NIL));
+   SetVolume(Volume, Path, Icon, Label, "", VOLUME::REPLACE | (Hidden ? VOLUME::HIDDEN : VOLUME::NIL));
 }
 #endif
 
@@ -1155,26 +1155,26 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
    // OPF::SYSTEM_PATH : system  : glSystemPath = %ROOT%/share/kotuku
 
    #if defined(_WIN32)
-      SetVolume("kotuku", glRootPath.c_str(), "programs/filemanager", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
-      SetVolume("system", glRootPath.c_str(), "misc/brick", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+      SetVolume("kotuku", glRootPath, "programs/filemanager", "", "", VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+      SetVolume("system", glRootPath, "misc/brick", "", "", VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
 
       #ifndef KOTUKU_STATIC
       if (!glModulePath.empty()) {
-         SetVolume("modules", glModulePath.c_str(), "misc/brick", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+         SetVolume("modules", glModulePath, "misc/brick", "", "", VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
       }
-      else SetVolume("modules", "system:lib/", "misc/brick", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+      else SetVolume("modules", "system:lib/", "misc/brick", "", "", VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
       #endif
    #elif defined(__unix__) or defined(__APPLE__)
-      SetVolume("kotuku", glRootPath.c_str(), "programs/filemanager", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
-      SetVolume("system", glSystemPath.c_str(), "misc/brick", nullptr, nullptr, VOLUME::REPLACE|VOLUME::SYSTEM);
+      SetVolume("kotuku", glRootPath, "programs/filemanager", "", "", VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+      SetVolume("system", glSystemPath, "misc/brick", "", "", VOLUME::REPLACE|VOLUME::SYSTEM);
 
       #ifndef KOTUKU_STATIC
       if (!glModulePath.empty()) {
-         SetVolume("modules", glModulePath.c_str(), "misc/brick", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+         SetVolume("modules", glModulePath, "misc/brick", "", "", VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
       }
       else {
          std::string path = glRootPath + "lib/kotuku/";
-         SetVolume("modules", path.c_str(), "misc/brick", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+         SetVolume("modules", path, "misc/brick", "", "", VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
       }
       #endif
 
@@ -1184,33 +1184,33 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
          SetVolume("drive1", "/", "devices/storage", "Mac", "fixed", VOLUME::REPLACE|VOLUME::SYSTEM);
       #endif
 
-      SetVolume("etc", "/etc", "tools/cog", nullptr, nullptr, VOLUME::REPLACE|VOLUME::SYSTEM);
-      SetVolume("usr", "/usr", nullptr, nullptr, nullptr, VOLUME::REPLACE|VOLUME::SYSTEM);
+      SetVolume("etc", "/etc", "tools/cog", "", "", VOLUME::REPLACE|VOLUME::SYSTEM);
+      SetVolume("usr", "/usr", "", "", "", VOLUME::REPLACE|VOLUME::SYSTEM);
 
       auto temp_path = host_temp_path();
-      SetVolume("HostTemp:", temp_path.c_str(), "items/trash", "Temp", nullptr, VOLUME::REPLACE|VOLUME::HIDDEN);
+      SetVolume("HostTemp:", temp_path, "items/trash", "Temp", "", VOLUME::REPLACE|VOLUME::HIDDEN);
    #endif
 
    // Configure some standard volumes.
 
    #ifdef __ANDROID__
-      SetVolume("assets", "EXT:FileAssets", nullptr, nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
-      SetVolume("templates", "assets:templates/", "misc/openbook", nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
-      SetVolume("config", "localcache:config/|assets:config/", "tools/cog", nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
-      SetVolume("HostTemp:", "temp:", "items/trash", "Temp", nullptr, VOLUME::REPLACE|VOLUME::HIDDEN);
+      SetVolume("assets", "EXT:FileAssets", "", "", "", VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+      SetVolume("templates", "assets:templates/", "misc/openbook", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
+      SetVolume("config", "localcache:config/|assets:config/", "tools/cog", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
+      SetVolume("HostTemp:", "temp:", "items/trash", "Temp", "", VOLUME::REPLACE|VOLUME::HIDDEN);
    #else
-      SetVolume("templates", "scripts:templates/", "misc/openbook", nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
-      SetVolume("config", "system:config/", "tools/cog", nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
+      SetVolume("templates", "scripts:templates/", "misc/openbook", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
+      SetVolume("config", "system:config/", "tools/cog", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
       if (AnalysePath("kotuku:bin/", nullptr) IS ERR::Okay) { // Bin is the location of the tiri and kotuku binaries
-         SetVolume("bin", "kotuku:bin/", nullptr, nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
+         SetVolume("bin", "kotuku:bin/", "", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
       }
-      else SetVolume("bin", "kotuku:", nullptr, nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
+      else SetVolume("bin", "kotuku:", "", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
    #endif
 
-   SetVolume("temp", "user:temp/", "items/trash", nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
-   SetVolume("fonts", "system:config/fonts/", "items/font", nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
-   SetVolume("scripts", "system:scripts/", "filetypes/source", nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
-   SetVolume("styles", "system:config/styles/", "tools/image_gallery", nullptr, nullptr, VOLUME::HIDDEN);
+   SetVolume("temp", "user:temp/", "items/trash", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
+   SetVolume("fonts", "system:config/fonts/", "items/font", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
+   SetVolume("scripts", "system:scripts/", "filetypes/source", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
+   SetVolume("styles", "system:config/styles/", "tools/image_gallery", "", "", VOLUME::HIDDEN);
 
    // Some platforms need to have special volumes added - these are provided in the OpenInfo structure passed to
    // the Core.
@@ -1219,11 +1219,11 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
       for (int i=0; int(glOpenInfo.Options[i].Tag) != TAGEND; i++) {
          switch (glOpenInfo.Options[i].Tag) {
             case TOI::LOCAL_CACHE: {
-               SetVolume("localcache", glOpenInfo.Options[i].Value.String, nullptr, nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+               SetVolume("localcache", glOpenInfo.Options[i].Value.String, "", "", "", VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
                break;
             }
             case TOI::LOCAL_STORAGE: {
-               SetVolume("localstorage", glOpenInfo.Options[i].Value.String, nullptr, nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+               SetVolume("localstorage", glOpenInfo.Options[i].Value.String, "", "", "", VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
                break;
             }
             default:
@@ -1243,7 +1243,7 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
          buffer = homedir;
          if (buffer.back() IS '/') buffer.pop_back();
 
-         SetVolume("home", buffer.c_str(), "users/user", nullptr, nullptr, VOLUME::REPLACE);
+         SetVolume("home", buffer, "users/user", "", "", VOLUME::REPLACE);
 
          buffer += "/." + glHomeFolderName + "/";
       }
@@ -1269,10 +1269,10 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
 
    if (buffer != "config:users/default/") {
       LOC location_type = LOC::NIL;
-      if ((AnalysePath(buffer.c_str(), &location_type) != ERR::Okay) or (location_type != LOC::DIRECTORY)) {
+      if ((AnalysePath(buffer, &location_type) != ERR::Okay) or (location_type != LOC::DIRECTORY)) {
          buffer.pop_back();
          SetDefaultPermissions(-1, -1, PERMIT::READ|PERMIT::WRITE);
-            CopyFile("config:users/default/", buffer.c_str(), nullptr);
+            CopyFile("config:users/default/", buffer, nullptr);
          SetDefaultPermissions(-1, -1, PERMIT::NIL);
          buffer += '/';
       }
@@ -1280,7 +1280,7 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
       buffer += "|config:users/default/";
    }
 
-   SetVolume("user", buffer.c_str(), "users/user", nullptr, nullptr, VOLUME::REPLACE|VOLUME::SYSTEM);
+   SetVolume("user", buffer, "users/user", "", "", VOLUME::REPLACE|VOLUME::SYSTEM);
 
    // Make sure that certain default directories exist
 
@@ -1288,11 +1288,11 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
    CreateFolder("user:temp/", PERMIT::READ|PERMIT::EXEC|PERMIT::WRITE);
 
    if (AnalysePath("temp:", nullptr) != ERR::Okay) {
-      SetVolume("temp", "user:temp/", "items/trash", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+      SetVolume("temp", "user:temp/", "items/trash", "", "", VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
    }
 
    if (AnalysePath("clipboard:", nullptr) != ERR::Okay) {
-      SetVolume("clipboard", "temp:clipboard/", "items/clipboard", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+      SetVolume("clipboard", "temp:clipboard/", "items/clipboard", "", "", VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
    }
 
 #ifdef _WIN32
@@ -1315,23 +1315,23 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
 
             switch(type) {
                case DRIVETYPE_USB:
-                  SetVolume(usb, buffer+i, "devices/usb_drive", label.c_str(), "usb", VOLUME::NIL);
+                  SetVolume(usb, buffer+i, "devices/usb_drive", label, "usb", VOLUME::NIL);
                   usb[sizeof(usb)-2]++;
                   break;
                case DRIVETYPE_REMOVABLE: // Unspecific removable media, possibly USB or some form of disk or tape.
-                  SetVolume(portable, buffer+i, "devices/storage", label.c_str(), "portable", VOLUME::NIL);
+                  SetVolume(portable, buffer+i, "devices/storage", label, "portable", VOLUME::NIL);
                   portable[sizeof(portable)-2]++;
                   break;
                case DRIVETYPE_CDROM:
-                  SetVolume(cd, buffer+i, "devices/compactdisc", label.c_str(), "cd", VOLUME::NIL);
+                  SetVolume(cd, buffer+i, "devices/compactdisc", label, "cd", VOLUME::NIL);
                   cd[sizeof(cd)-2]++;
                   break;
                case DRIVETYPE_FIXED:
                   hd[0] = buffer[i];
-                  SetVolume(hd, buffer+i, "devices/storage", label.c_str(), "fixed", VOLUME::NIL);
+                  SetVolume(hd, buffer+i, "devices/storage", label, "fixed", VOLUME::NIL);
                   break;
                case DRIVETYPE_NETWORK:
-                  SetVolume(net, buffer+i, "devices/network", label.c_str(), "network", VOLUME::NIL);
+                  SetVolume(net, buffer+i, "devices/network", label, "network", VOLUME::NIL);
                   net[sizeof(net)-2]++;
                   break;
                default:
@@ -1390,7 +1390,7 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
                   if ((mount[0] IS '/') and (!mount[1]));
                   else {
                      strcopy(std::to_string(driveno++), drivename+5, 3);
-                     SetVolume(drivename, mount, "devices/storage", nullptr, "fixed", VOLUME::NIL);
+                     SetVolume(drivename, mount, "devices/storage", "", "fixed", VOLUME::NIL);
                   }
                }
 
@@ -1415,7 +1415,7 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
 
    for (int i=0; i < std::ssize(cdroms); i++) {
       if (!access(cdroms[i], F_OK)) {
-         SetVolume(cdname, cdroms[i], "devices/compactdisc", nullptr, "cd", VOLUME::NIL);
+         SetVolume(cdname, cdroms[i], "devices/compactdisc", "", "cd", VOLUME::NIL);
          cdname[2] = cdname[2] + 1;
       }
    }
@@ -1434,7 +1434,7 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
 
          VOLUME flags = glVolumes.contains(name) ? VOLUME::NIL : VOLUME::HIDDEN;
 
-         SetVolume(name.c_str(), path.c_str(), nullptr, nullptr, nullptr, VOLUME::PRIORITY|flags);
+         SetVolume(name, path, "", "", "", VOLUME::PRIORITY|flags);
       }
    }
 

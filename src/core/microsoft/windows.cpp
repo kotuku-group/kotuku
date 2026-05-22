@@ -407,21 +407,6 @@ extern "C" CONTYPE activate_console(int8_t AllowOpenConsole)
 
 //********************************************************************************************************************
 
-static inline unsigned int LCASEHASH(const char* String) noexcept
-{
-   unsigned int hash = 5381;
-   unsigned char c;
-   while ((c = *String++)) {
-      if ((c >= 'A') and (c <= 'Z')) {
-         hash = (hash<<5) + hash + c - 'A' + 'a';
-      }
-      else hash = (hash<<5) + hash + c;
-   }
-   return hash;
-}
-
-//********************************************************************************************************************
-
 #ifndef NDEBUG
 static char glSymbolsLoaded = false;
 static void windows_print_stacktrace(CONTEXT* context)
@@ -518,7 +503,7 @@ extern "C" ERR winInitialise(unsigned int *PathHash, BREAK_HANDLER BreakHandler)
       if (VirtualQuery(LPCVOID(winInitialise), &mbiInfo, sizeof(mbiInfo))) {
          if ((len = GetModuleFileName((HINSTANCE)mbiInfo.AllocationBase, path, sizeof(path) - 1))) {
             path[sizeof(path) - 1] = 0;
-            *PathHash = LCASEHASH(path);
+            *PathHash = kt::strihash(path);
          }
       }
    }

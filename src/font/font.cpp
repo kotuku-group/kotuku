@@ -863,7 +863,7 @@ static void scan_truetype_folder(objConfig *Config)
    std::string ttpath;
    if (ResolvePath("fonts:truetype/", RSF::NO_FILE_CHECK|RSF::PATH, &ttpath) IS ERR::Okay) {
       DirInfo *dir;
-      if (OpenDir(ttpath.c_str(), RDF::FILE, &dir) IS ERR::Okay) {
+      if (OpenDir(ttpath, RDF::FILE, &dir) IS ERR::Okay) {
          LocalResource free_dir(dir);
 
          auto ttpath_len = ttpath.size();

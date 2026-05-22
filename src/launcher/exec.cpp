@@ -16,7 +16,7 @@ ERR exec_source(std::string TargetFile, int ShowTime, const std::string Procedur
       subclass = CLASSID::SCRIPT;
       class_id = CLASSID::SCRIPT;
    }
-   else if ((error = IdentifyFile(TargetFile.c_str(), CLASSID::NIL, &class_id, &subclass)) != ERR::Okay) {
+   else if ((error = IdentifyFile(TargetFile, CLASSID::NIL, &class_id, &subclass)) != ERR::Okay) {
       printf("Failed to identify the type of file for path '%s', error: %s.  Assuming CLASSID::SCRIPT.\n", TargetFile.c_str(), GetErrorMsg(error));
       subclass = CLASSID::SCRIPT;
       class_id = CLASSID::SCRIPT;

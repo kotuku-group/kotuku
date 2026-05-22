@@ -224,7 +224,7 @@ extern "C" int main(int argc, char **argv)
          else log.error("No working path.");
 
          LOC type;
-         if ((AnalysePath(glTargetFile.c_str(), &type) != ERR::Okay) or (type != LOC::FILE)) {
+         if ((AnalysePath(glTargetFile, &type) != ERR::Okay) or (type != LOC::FILE)) {
             printf("File '%s' does not exist.\n", glTargetFile.c_str());
          }
          else result = int(exec_source(glTargetFile.c_str(), glTime, glProcedure));
@@ -244,10 +244,10 @@ extern "C" int main(int argc, char **argv)
 
          LOC type;
          static objCompression *glPackageArchive;
-         if ((AnalysePath(pkg_path.c_str(), &type) IS ERR::Okay) and (type IS LOC::FILE)) {
+         if ((AnalysePath(pkg_path, &type) IS ERR::Okay) and (type IS LOC::FILE)) {
             // Create a "package:" volume and attempt to run "package:main.tiri"
             if ((glPackageArchive = objCompression::create::local(fl::Path(pkg_path), fl::ArchiveName("package"), fl::Flags(CMF::READ_ONLY)))) {
-               if (SetVolume("package", "archive:package/", "filetypes/archive", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN) != ERR::Okay) return -1;
+               if (SetVolume("package", "archive:package/", "filetypes/archive", "", "", VOLUME::REPLACE|VOLUME::HIDDEN) != ERR::Okay) return -1;
 
                result = (int)exec_source("package:main.tiri", glTime, glProcedure);
             }

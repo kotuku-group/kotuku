@@ -125,7 +125,7 @@ void clean_clipboard(void)
                if (dir->Info->Timestamp < yesterday) {
                   std::string path("clipboard:");
                   path.append(dir->Info->Name);
-                  DeleteFile(path.c_str(), nullptr);
+                  DeleteFile(path, nullptr);
                }
             }
          }
@@ -141,7 +141,7 @@ ClipRecord::~ClipRecord() {
 
    if (Datatype != CLIPTYPE::FILE) {
       log.branch("Deleting clip files for %s datatype.", get_datatype(Datatype).c_str());
-      for (auto &item : Items) DeleteFile(item.Path.c_str(), nullptr);
+      for (auto &item : Items) DeleteFile(item.Path, nullptr);
    }
    else log.branch("Datatype: File");
 }
@@ -393,8 +393,8 @@ static ERR CLIPBOARD_Clear(objClipboard *Self)
 {
    std::string path;
    if (ResolvePath("clipboard:", RSF::NO_FILE_CHECK, &path) IS ERR::Okay) {
-      DeleteFile(path.c_str(), nullptr);
-      CreateFolder(path.c_str(), PERMIT::READ|PERMIT::WRITE);
+      DeleteFile(path, nullptr);
+      CreateFolder(path, PERMIT::READ|PERMIT::WRITE);
    }
 
    {

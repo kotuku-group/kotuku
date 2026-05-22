@@ -2051,7 +2051,7 @@ struct CoreBase {
    ERR (*_AccessMemory)(MEMORYID Memory, MEM Flags, int MilliSeconds, APTR *Result);
    ERR (*_Action)(AC Action, OBJECTPTR Object, APTR Parameters);
    void (*_ActionList)(struct ActionTable **Actions, int *Size);
-   ERR (*_DeleteFile)(CSTRING Path, FUNCTION *Callback);
+   ERR (*_DeleteFile)(const std::string_view & Path, FUNCTION *Callback);
    CSTRING (*_ResolveClassID)(CLASSID ID);
    int (*_AllocateID)(IDTYPE Type);
    ERR (*_AllocMemory)(int Size, MEM Flags, APTR *Address, MEMORYID *ID);
@@ -2060,18 +2060,18 @@ struct CoreBase {
    ERR (*_CheckMemoryExists)(MEMORYID ID);
    ERR (*_CheckObjectExists)(OBJECTID Object);
    ERR (*_InitObject)(OBJECTPTR Object);
-   ERR (*_VirtualVolume)(CSTRING Name, ...);
+   ERR (*_VirtualVolume)(const std::string_view & Name, ...);
    OBJECTPTR (*_CurrentContext)(void);
    void (*_SetLogCallback)(APTR Callback, int DepthLimit, int LogLimit);
    int (*_AdjustLogLevel)(int Delta);
-   ERR (*_ReadFileToBuffer)(CSTRING Path, APTR Buffer, int BufferSize, int *Result);
+   ERR (*_ReadFileToBuffer)(const std::string_view & Path, APTR Buffer, int BufferSize, int *Result);
    ERR (*_FindObject)(CSTRING Name, CLASSID ClassID, FOF Flags, OBJECTID *ObjectID);
    objMetaClass * (*_FindClass)(CLASSID ClassID);
-   ERR (*_AnalysePath)(CSTRING Path, LOC *Type);
+   ERR (*_AnalysePath)(const std::string_view & Path, LOC *Type);
    ERR (*_FreeResource)(MEMORYID ID);
    CLASSID (*_GetClassID)(OBJECTID Object);
    OBJECTID (*_GetOwnerID)(OBJECTID Object);
-   ERR (*_CompareFilePaths)(CSTRING PathA, CSTRING PathB);
+   ERR (*_CompareFilePaths)(const std::string_view & PathA, const std::string_view & PathB);
    const struct SystemState * (*_GetSystemState)(void);
    ERR (*_ListChildren)(OBJECTID Object, kt::vector<ChildEntry> *List);
    ERR (*_RegisterFD)(HOSTHANDLE FD, RFD Flags, void (*Routine)(HOSTHANDLE, APTR) , APTR Data);
@@ -2080,9 +2080,9 @@ struct CoreBase {
    ERR (*_MemoryPtrInfo)(APTR Address, struct MemInfo *MemInfo, int Size);
    ERR (*_NewObject)(CLASSID ClassID, NF Flags, OBJECTPTR *Object);
    void (*_NotifySubscribers)(OBJECTPTR Object, AC Action, APTR Args, ERR Error);
-   ERR (*_CopyFile)(CSTRING Source, CSTRING Dest, FUNCTION *Callback);
+   ERR (*_CopyFile)(const std::string_view & Source, const std::string_view & Dest, FUNCTION *Callback);
    ERR (*_ProcessMessages)(PMF Flags, int TimeOut);
-   ERR (*_IdentifyFile)(CSTRING Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass);
+   ERR (*_IdentifyFile)(const std::string_view & Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass);
    ERR (*_ReallocMemory)(APTR Memory, uint32_t Size, APTR *Address, MEMORYID *ID);
    ERR (*_ReleaseMemory)(MEMORYID MemoryID);
    CLASSID (*_ResolveClassName)(CSTRING Name);
@@ -2109,16 +2109,16 @@ struct CoreBase {
    ERR (*_ScanMessages)(int *Handle, MSGID Type, APTR Buffer, int Size);
    ERR (*_WaitForObjects)(PMF Flags, int TimeOut, struct ObjectSignal *ObjectSignals);
    void (*_UnloadFile)(struct CacheFile *Cache);
-   ERR (*_CreateFolder)(CSTRING Path, PERMIT Permissions);
-   ERR (*_LoadFile)(CSTRING Path, LDF Flags, struct CacheFile **Cache);
-   ERR (*_SetVolume)(CSTRING Name, CSTRING Path, CSTRING Icon, CSTRING Label, CSTRING Device, VOLUME Flags);
-   ERR (*_DeleteVolume)(CSTRING Name);
-   ERR (*_MoveFile)(CSTRING Source, CSTRING Dest, FUNCTION *Callback);
+   ERR (*_CreateFolder)(const std::string_view & Path, PERMIT Permissions);
+   ERR (*_LoadFile)(const std::string_view & Path, LDF Flags, struct CacheFile **Cache);
+   ERR (*_SetVolume)(const std::string_view & Name, const std::string_view & Path, const std::string_view & Icon, const std::string_view & Label, const std::string_view & Device, VOLUME Flags);
+   ERR (*_DeleteVolume)(const std::string_view & Name);
+   ERR (*_MoveFile)(const std::string_view & Source, const std::string_view & Dest, FUNCTION *Callback);
    ERR (*_UpdateMessage)(int Message, MSGID Type, APTR Data, int Size);
    ERR (*_AddMsgHandler)(MSGID MsgType, FUNCTION *Routine, struct MsgHandler **Handle);
    ERR (*_QueueAction)(AC Action, OBJECTID Object, APTR Args);
    int64_t (*_PreciseTime)(void);
-   ERR (*_OpenDir)(CSTRING Path, RDF Flags, struct DirInfo **Info);
+   ERR (*_OpenDir)(const std::string_view & Path, RDF Flags, struct DirInfo **Info);
    OBJECTPTR (*_GetObjectPtr)(OBJECTID Object);
    struct Field * (*_FindField)(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target);
    CSTRING (*_GetErrorMsg)(ERR Error);
@@ -2130,12 +2130,12 @@ struct CoreBase {
    ERR (*_AddInfoTag)(struct FileInfo *Info, const std::string_view & Name, const std::string_view & Value);
    void (*_SetDefaultPermissions)(int User, int Group, PERMIT Permissions);
    void (*_VLogF)(VLF Flags, const char *Header, const char *Message, va_list Args);
-   ERR (*_ReadInfoTag)(struct FileInfo *Info, CSTRING Name, CSTRING *Value);
+   ERR (*_ReadInfoTag)(struct FileInfo *Info, const std::string_view & Name, CSTRING *Value);
    ERR (*_SetResourcePath)(RP PathType, CSTRING Path);
    objTask * (*_CurrentTask)(void);
    CSTRING (*_ResolveGroupID)(int Group);
    CSTRING (*_ResolveUserID)(int User);
-   ERR (*_CreateLink)(CSTRING From, CSTRING To);
+   ERR (*_CreateLink)(const std::string_view & From, const std::string_view & To);
    OBJECTPTR (*_ParentContext)(void);
    void (*_SetResourceMgr)(APTR Address, struct ResourceManager *Manager);
    ERR (*_WakeThread)(int Thread, int Stop);
@@ -2151,7 +2151,7 @@ extern struct CoreBase *CoreBase;
 inline ERR AccessMemory(MEMORYID Memory, MEM Flags, int MilliSeconds, APTR *Result) { return CoreBase->_AccessMemory(Memory,Flags,MilliSeconds,Result); }
 inline ERR Action(AC Action, OBJECTPTR Object, APTR Parameters) { return CoreBase->_Action(Action,Object,Parameters); }
 inline void ActionList(struct ActionTable **Actions, int *Size) { return CoreBase->_ActionList(Actions,Size); }
-inline ERR DeleteFile(CSTRING Path, FUNCTION *Callback) { return CoreBase->_DeleteFile(Path,Callback); }
+inline ERR DeleteFile(const std::string_view & Path, FUNCTION *Callback) { return CoreBase->_DeleteFile(Path,Callback); }
 inline CSTRING ResolveClassID(CLASSID ID) { return CoreBase->_ResolveClassID(ID); }
 inline int AllocateID(IDTYPE Type) { return CoreBase->_AllocateID(Type); }
 inline ERR AllocMemory(int Size, MEM Flags, APTR *Address, MEMORYID *ID) { return CoreBase->_AllocMemory(Size,Flags,Address,ID); }
@@ -2160,18 +2160,18 @@ inline ERR CheckAction(OBJECTPTR Object, AC Action) { return CoreBase->_CheckAct
 inline ERR CheckMemoryExists(MEMORYID ID) { return CoreBase->_CheckMemoryExists(ID); }
 inline ERR CheckObjectExists(OBJECTID Object) { return CoreBase->_CheckObjectExists(Object); }
 inline ERR InitObject(OBJECTPTR Object) { return CoreBase->_InitObject(Object); }
-template<class... Args> ERR VirtualVolume(CSTRING Name, Args... Tags) { return CoreBase->_VirtualVolume(Name,Tags...); }
+template<class... Args> ERR VirtualVolume(const std::string_view & Name, Args... Tags) { return CoreBase->_VirtualVolume(Name,Tags...); }
 inline OBJECTPTR CurrentContext(void) { return CoreBase->_CurrentContext(); }
 inline void SetLogCallback(APTR Callback, int DepthLimit, int LogLimit) { return CoreBase->_SetLogCallback(Callback,DepthLimit,LogLimit); }
 inline int AdjustLogLevel(int Delta) { return CoreBase->_AdjustLogLevel(Delta); }
-inline ERR ReadFileToBuffer(CSTRING Path, APTR Buffer, int BufferSize, int *Result) { return CoreBase->_ReadFileToBuffer(Path,Buffer,BufferSize,Result); }
+inline ERR ReadFileToBuffer(const std::string_view & Path, APTR Buffer, int BufferSize, int *Result) { return CoreBase->_ReadFileToBuffer(Path,Buffer,BufferSize,Result); }
 inline ERR FindObject(CSTRING Name, CLASSID ClassID, FOF Flags, OBJECTID *ObjectID) { return CoreBase->_FindObject(Name,ClassID,Flags,ObjectID); }
 inline objMetaClass * FindClass(CLASSID ClassID) { return CoreBase->_FindClass(ClassID); }
-inline ERR AnalysePath(CSTRING Path, LOC *Type) { return CoreBase->_AnalysePath(Path,Type); }
+inline ERR AnalysePath(const std::string_view & Path, LOC *Type) { return CoreBase->_AnalysePath(Path,Type); }
 inline ERR FreeResource(MEMORYID ID) { return CoreBase->_FreeResource(ID); }
 inline CLASSID GetClassID(OBJECTID Object) { return CoreBase->_GetClassID(Object); }
 inline OBJECTID GetOwnerID(OBJECTID Object) { return CoreBase->_GetOwnerID(Object); }
-inline ERR CompareFilePaths(CSTRING PathA, CSTRING PathB) { return CoreBase->_CompareFilePaths(PathA,PathB); }
+inline ERR CompareFilePaths(const std::string_view & PathA, const std::string_view & PathB) { return CoreBase->_CompareFilePaths(PathA,PathB); }
 inline const struct SystemState * GetSystemState(void) { return CoreBase->_GetSystemState(); }
 inline ERR ListChildren(OBJECTID Object, kt::vector<ChildEntry> *List) { return CoreBase->_ListChildren(Object,List); }
 inline ERR RegisterFD(HOSTHANDLE FD, RFD Flags, void (*Routine)(HOSTHANDLE, APTR) , APTR Data) { return CoreBase->_RegisterFD(FD,Flags,Routine,Data); }
@@ -2180,9 +2180,9 @@ inline ERR MemoryIDInfo(MEMORYID ID, struct MemInfo *MemInfo, int Size) { return
 inline ERR MemoryPtrInfo(APTR Address, struct MemInfo *MemInfo, int Size) { return CoreBase->_MemoryPtrInfo(Address,MemInfo,Size); }
 inline ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object) { return CoreBase->_NewObject(ClassID,Flags,Object); }
 inline void NotifySubscribers(OBJECTPTR Object, AC Action, APTR Args, ERR Error) { return CoreBase->_NotifySubscribers(Object,Action,Args,Error); }
-inline ERR CopyFile(CSTRING Source, CSTRING Dest, FUNCTION *Callback) { return CoreBase->_CopyFile(Source,Dest,Callback); }
+inline ERR CopyFile(const std::string_view & Source, const std::string_view & Dest, FUNCTION *Callback) { return CoreBase->_CopyFile(Source,Dest,Callback); }
 inline ERR ProcessMessages(PMF Flags, int TimeOut) { return CoreBase->_ProcessMessages(Flags,TimeOut); }
-inline ERR IdentifyFile(CSTRING Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass) { return CoreBase->_IdentifyFile(Path,Filter,Class,SubClass); }
+inline ERR IdentifyFile(const std::string_view & Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass) { return CoreBase->_IdentifyFile(Path,Filter,Class,SubClass); }
 inline ERR ReallocMemory(APTR Memory, uint32_t Size, APTR *Address, MEMORYID *ID) { return CoreBase->_ReallocMemory(Memory,Size,Address,ID); }
 inline ERR ReleaseMemory(MEMORYID MemoryID) { return CoreBase->_ReleaseMemory(MemoryID); }
 inline CLASSID ResolveClassName(CSTRING Name) { return CoreBase->_ResolveClassName(Name); }
@@ -2209,16 +2209,16 @@ inline int64_t SetResource(RES Resource, int64_t Value) { return CoreBase->_SetR
 inline ERR ScanMessages(int *Handle, MSGID Type, APTR Buffer, int Size) { return CoreBase->_ScanMessages(Handle,Type,Buffer,Size); }
 inline ERR WaitForObjects(PMF Flags, int TimeOut, struct ObjectSignal *ObjectSignals) { return CoreBase->_WaitForObjects(Flags,TimeOut,ObjectSignals); }
 inline void UnloadFile(struct CacheFile *Cache) { return CoreBase->_UnloadFile(Cache); }
-inline ERR CreateFolder(CSTRING Path, PERMIT Permissions) { return CoreBase->_CreateFolder(Path,Permissions); }
-inline ERR LoadFile(CSTRING Path, LDF Flags, struct CacheFile **Cache) { return CoreBase->_LoadFile(Path,Flags,Cache); }
-inline ERR SetVolume(CSTRING Name, CSTRING Path, CSTRING Icon, CSTRING Label, CSTRING Device, VOLUME Flags) { return CoreBase->_SetVolume(Name,Path,Icon,Label,Device,Flags); }
-inline ERR DeleteVolume(CSTRING Name) { return CoreBase->_DeleteVolume(Name); }
-inline ERR MoveFile(CSTRING Source, CSTRING Dest, FUNCTION *Callback) { return CoreBase->_MoveFile(Source,Dest,Callback); }
+inline ERR CreateFolder(const std::string_view & Path, PERMIT Permissions) { return CoreBase->_CreateFolder(Path,Permissions); }
+inline ERR LoadFile(const std::string_view & Path, LDF Flags, struct CacheFile **Cache) { return CoreBase->_LoadFile(Path,Flags,Cache); }
+inline ERR SetVolume(const std::string_view & Name, const std::string_view & Path, const std::string_view & Icon, const std::string_view & Label, const std::string_view & Device, VOLUME Flags) { return CoreBase->_SetVolume(Name,Path,Icon,Label,Device,Flags); }
+inline ERR DeleteVolume(const std::string_view & Name) { return CoreBase->_DeleteVolume(Name); }
+inline ERR MoveFile(const std::string_view & Source, const std::string_view & Dest, FUNCTION *Callback) { return CoreBase->_MoveFile(Source,Dest,Callback); }
 inline ERR UpdateMessage(int Message, MSGID Type, APTR Data, int Size) { return CoreBase->_UpdateMessage(Message,Type,Data,Size); }
 inline ERR AddMsgHandler(MSGID MsgType, FUNCTION *Routine, struct MsgHandler **Handle) { return CoreBase->_AddMsgHandler(MsgType,Routine,Handle); }
 inline ERR QueueAction(AC Action, OBJECTID Object, APTR Args) { return CoreBase->_QueueAction(Action,Object,Args); }
 inline int64_t PreciseTime(void) { return CoreBase->_PreciseTime(); }
-inline ERR OpenDir(CSTRING Path, RDF Flags, struct DirInfo **Info) { return CoreBase->_OpenDir(Path,Flags,Info); }
+inline ERR OpenDir(const std::string_view & Path, RDF Flags, struct DirInfo **Info) { return CoreBase->_OpenDir(Path,Flags,Info); }
 inline OBJECTPTR GetObjectPtr(OBJECTID Object) { return CoreBase->_GetObjectPtr(Object); }
 inline struct Field * FindField(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target) { return CoreBase->_FindField(Object,FieldID,Target); }
 inline CSTRING GetErrorMsg(ERR Error) { return CoreBase->_GetErrorMsg(Error); }
@@ -2230,12 +2230,12 @@ inline ERR AsyncAction(AC Action, OBJECTPTR Object, APTR Args, FUNCTION *Callbac
 inline ERR AddInfoTag(struct FileInfo *Info, const std::string_view & Name, const std::string_view & Value) { return CoreBase->_AddInfoTag(Info,Name,Value); }
 inline void SetDefaultPermissions(int User, int Group, PERMIT Permissions) { return CoreBase->_SetDefaultPermissions(User,Group,Permissions); }
 inline void VLogF(VLF Flags, const char *Header, const char *Message, va_list Args) { return CoreBase->_VLogF(Flags,Header,Message,Args); }
-inline ERR ReadInfoTag(struct FileInfo *Info, CSTRING Name, CSTRING *Value) { return CoreBase->_ReadInfoTag(Info,Name,Value); }
+inline ERR ReadInfoTag(struct FileInfo *Info, const std::string_view & Name, CSTRING *Value) { return CoreBase->_ReadInfoTag(Info,Name,Value); }
 inline ERR SetResourcePath(RP PathType, CSTRING Path) { return CoreBase->_SetResourcePath(PathType,Path); }
 inline objTask * CurrentTask(void) { return CoreBase->_CurrentTask(); }
 inline CSTRING ResolveGroupID(int Group) { return CoreBase->_ResolveGroupID(Group); }
 inline CSTRING ResolveUserID(int User) { return CoreBase->_ResolveUserID(User); }
-inline ERR CreateLink(CSTRING From, CSTRING To) { return CoreBase->_CreateLink(From,To); }
+inline ERR CreateLink(const std::string_view & From, const std::string_view & To) { return CoreBase->_CreateLink(From,To); }
 inline OBJECTPTR ParentContext(void) { return CoreBase->_ParentContext(); }
 inline void SetResourceMgr(APTR Address, struct ResourceManager *Manager) { return CoreBase->_SetResourceMgr(Address,Manager); }
 inline ERR WakeThread(int Thread, int Stop) { return CoreBase->_WakeThread(Thread,Stop); }
@@ -2247,7 +2247,7 @@ inline ERR ClassDatabase(struct ClassRecord * **Classes) { return CoreBase->_Cla
 extern "C" ERR AccessMemory(MEMORYID Memory, MEM Flags, int MilliSeconds, APTR *Result);
 extern "C" ERR Action(AC Action, OBJECTPTR Object, APTR Parameters);
 extern "C" void ActionList(struct ActionTable **Actions, int *Size);
-extern "C" ERR DeleteFile(CSTRING Path, FUNCTION *Callback);
+extern "C" ERR DeleteFile(const std::string_view & Path, FUNCTION *Callback);
 extern "C" CSTRING ResolveClassID(CLASSID ID);
 extern "C" int AllocateID(IDTYPE Type);
 extern "C" ERR AllocMemory(int Size, MEM Flags, APTR *Address, MEMORYID *ID);
@@ -2259,14 +2259,14 @@ extern "C" ERR InitObject(OBJECTPTR Object);
 extern "C" OBJECTPTR CurrentContext(void);
 extern "C" void SetLogCallback(APTR Callback, int DepthLimit, int LogLimit);
 extern "C" int AdjustLogLevel(int Delta);
-extern "C" ERR ReadFileToBuffer(CSTRING Path, APTR Buffer, int BufferSize, int *Result);
+extern "C" ERR ReadFileToBuffer(const std::string_view & Path, APTR Buffer, int BufferSize, int *Result);
 extern "C" ERR FindObject(CSTRING Name, CLASSID ClassID, FOF Flags, OBJECTID *ObjectID);
 extern "C" objMetaClass * FindClass(CLASSID ClassID);
-extern "C" ERR AnalysePath(CSTRING Path, LOC *Type);
+extern "C" ERR AnalysePath(const std::string_view & Path, LOC *Type);
 extern "C" ERR FreeResource(MEMORYID ID);
 extern "C" CLASSID GetClassID(OBJECTID Object);
 extern "C" OBJECTID GetOwnerID(OBJECTID Object);
-extern "C" ERR CompareFilePaths(CSTRING PathA, CSTRING PathB);
+extern "C" ERR CompareFilePaths(const std::string_view & PathA, const std::string_view & PathB);
 extern "C" const struct SystemState * GetSystemState(void);
 extern "C" ERR ListChildren(OBJECTID Object, kt::vector<ChildEntry> *List);
 extern "C" ERR RegisterFD(HOSTHANDLE FD, RFD Flags, void (*Routine)(HOSTHANDLE, APTR) , APTR Data);
@@ -2275,9 +2275,9 @@ extern "C" ERR MemoryIDInfo(MEMORYID ID, struct MemInfo *MemInfo, int Size);
 extern "C" ERR MemoryPtrInfo(APTR Address, struct MemInfo *MemInfo, int Size);
 extern "C" ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object);
 extern "C" void NotifySubscribers(OBJECTPTR Object, AC Action, APTR Args, ERR Error);
-extern "C" ERR CopyFile(CSTRING Source, CSTRING Dest, FUNCTION *Callback);
+extern "C" ERR CopyFile(const std::string_view & Source, const std::string_view & Dest, FUNCTION *Callback);
 extern "C" ERR ProcessMessages(PMF Flags, int TimeOut);
-extern "C" ERR IdentifyFile(CSTRING Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass);
+extern "C" ERR IdentifyFile(const std::string_view & Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass);
 extern "C" ERR ReallocMemory(APTR Memory, uint32_t Size, APTR *Address, MEMORYID *ID);
 extern "C" ERR ReleaseMemory(MEMORYID MemoryID);
 extern "C" CLASSID ResolveClassName(CSTRING Name);
@@ -2304,16 +2304,16 @@ extern "C" int64_t SetResource(RES Resource, int64_t Value);
 extern "C" ERR ScanMessages(int *Handle, MSGID Type, APTR Buffer, int Size);
 extern "C" ERR WaitForObjects(PMF Flags, int TimeOut, struct ObjectSignal *ObjectSignals);
 extern "C" void UnloadFile(struct CacheFile *Cache);
-extern "C" ERR CreateFolder(CSTRING Path, PERMIT Permissions);
-extern "C" ERR LoadFile(CSTRING Path, LDF Flags, struct CacheFile **Cache);
-extern "C" ERR SetVolume(CSTRING Name, CSTRING Path, CSTRING Icon, CSTRING Label, CSTRING Device, VOLUME Flags);
-extern "C" ERR DeleteVolume(CSTRING Name);
-extern "C" ERR MoveFile(CSTRING Source, CSTRING Dest, FUNCTION *Callback);
+extern "C" ERR CreateFolder(const std::string_view & Path, PERMIT Permissions);
+extern "C" ERR LoadFile(const std::string_view & Path, LDF Flags, struct CacheFile **Cache);
+extern "C" ERR SetVolume(const std::string_view & Name, const std::string_view & Path, const std::string_view & Icon, const std::string_view & Label, const std::string_view & Device, VOLUME Flags);
+extern "C" ERR DeleteVolume(const std::string_view & Name);
+extern "C" ERR MoveFile(const std::string_view & Source, const std::string_view & Dest, FUNCTION *Callback);
 extern "C" ERR UpdateMessage(int Message, MSGID Type, APTR Data, int Size);
 extern "C" ERR AddMsgHandler(MSGID MsgType, FUNCTION *Routine, struct MsgHandler **Handle);
 extern "C" ERR QueueAction(AC Action, OBJECTID Object, APTR Args);
 extern "C" int64_t PreciseTime(void);
-extern "C" ERR OpenDir(CSTRING Path, RDF Flags, struct DirInfo **Info);
+extern "C" ERR OpenDir(const std::string_view & Path, RDF Flags, struct DirInfo **Info);
 extern "C" OBJECTPTR GetObjectPtr(OBJECTID Object);
 extern "C" struct Field * FindField(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target);
 extern "C" CSTRING GetErrorMsg(ERR Error);
@@ -2325,12 +2325,12 @@ extern "C" ERR AsyncAction(AC Action, OBJECTPTR Object, APTR Args, FUNCTION *Cal
 extern "C" ERR AddInfoTag(struct FileInfo *Info, const std::string_view & Name, const std::string_view & Value);
 extern "C" void SetDefaultPermissions(int User, int Group, PERMIT Permissions);
 extern "C" void VLogF(VLF Flags, const char *Header, const char *Message, va_list Args);
-extern "C" ERR ReadInfoTag(struct FileInfo *Info, CSTRING Name, CSTRING *Value);
+extern "C" ERR ReadInfoTag(struct FileInfo *Info, const std::string_view & Name, CSTRING *Value);
 extern "C" ERR SetResourcePath(RP PathType, CSTRING Path);
 extern "C" objTask * CurrentTask(void);
 extern "C" CSTRING ResolveGroupID(int Group);
 extern "C" CSTRING ResolveUserID(int User);
-extern "C" ERR CreateLink(CSTRING From, CSTRING To);
+extern "C" ERR CreateLink(const std::string_view & From, const std::string_view & To);
 extern "C" OBJECTPTR ParentContext(void);
 extern "C" void SetResourceMgr(APTR Address, struct ResourceManager *Manager);
 extern "C" ERR WakeThread(int Thread, int Stop);

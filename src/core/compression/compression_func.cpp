@@ -133,7 +133,7 @@ static ERR compress_folder(extCompression *Self, std::string Location, std::stri
    // Enter the directory and compress its contents
 
    DirInfo *dir;
-   if (OpenDir(Location.c_str(), RDF::FILE|RDF::FOLDER|RDF::QUALIFY, &dir) IS ERR::Okay) {
+   if (OpenDir(Location, RDF::FILE|RDF::FOLDER|RDF::QUALIFY, &dir) IS ERR::Okay) {
       while (ScanDir(dir) IS ERR::Okay) { // Recurse for each directory in the list
          FileInfo *scan = dir->Info;
          if (((scan->Flags & RDF::FOLDER) != RDF::NIL) and ((scan->Flags & RDF::LINK) IS RDF::NIL)) {

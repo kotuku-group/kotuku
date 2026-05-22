@@ -1081,7 +1081,7 @@ ERR    check_cache(OBJECTPTR, int64_t, int64_t);
 ERR    fs_copy(std::string_view, std::string_view, FUNCTION *, bool);
 ERR    fs_copydir(std::string &, std::string &, FileFeedback *, FUNCTION *, int8_t);
 PERMIT get_parent_permissions(std::string_view, int *, int *);
-ERR    RenameVolume(CSTRING, CSTRING);
+ERR    RenameVolume(const std::string_view &, const std::string_view &);
 ERR    findfile(std::string &);
 PERMIT convert_fs_permissions(int);
 int   convert_permissions(PERMIT);
@@ -1130,7 +1130,7 @@ void   scan_classes(void);
 #endif
 
 ERR  writeval_default(OBJECTPTR, Field *, int, const void *, int);
-ERR  check_paths(CSTRING, PERMIT);
+ERR  check_paths(std::string_view, PERMIT);
 void merge_groups(ConfigGroups &, ConfigGroups &);
 extern "C" ERR validate_process(int);
 

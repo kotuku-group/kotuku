@@ -492,7 +492,7 @@ static ERR COMPRESSION_CompressFile(extCompression *Self, struct cmp::CompressFi
       std::string srcfolder(src, pathlen); // Extract the path without the file name
 
       DirInfo *dir;
-      if (OpenDir(srcfolder.c_str(), RDF::FILE, &dir) IS ERR::Okay) {
+      if (OpenDir(srcfolder, RDF::FILE, &dir) IS ERR::Okay) {
          while (ScanDir(dir) IS ERR::Okay) {
             FileInfo *scan = dir->Info;
             if (wildcmp(filename, scan->Name)) {
@@ -1152,7 +1152,7 @@ static ERR COMPRESSION_DecompressFile(extCompression *Self, struct cmp::Decompre
 
          if (destpath.ends_with('/') or destpath.ends_with('\\')) {
             LOC result;
-            if ((AnalysePath(destpath.c_str(), &result) IS ERR::Okay) and (result IS LOC::DIRECTORY)) {
+            if ((AnalysePath(destpath, &result) IS ERR::Okay) and (result IS LOC::DIRECTORY)) {
                Self->FileIndex++;
                continue;
             }
@@ -1216,8 +1216,8 @@ static ERR COMPRESSION_DecompressFile(extCompression *Self, struct cmp::Decompre
                   struct acRead read = { .Buffer = Self->Input, .Length = SIZE_COMPRESSION_BUFFER-1 };
                   if ((error = Action(AC::Read, Self->FileIO, &read)) IS ERR::Okay) {
                      Self->Input[read.Result] = 0;
-                     DeleteFile(destpath.c_str(), nullptr);
-                     error = CreateLink(destpath.c_str(), (CSTRING)Self->Input);
+                     DeleteFile(destpath, nullptr);
+                     error = CreateLink(destpath, (CSTRING)Self->Input);
                      if (error IS ERR::NoSupport) error = ERR::Okay;
                   }
 
@@ -1251,8 +1251,8 @@ static ERR COMPRESSION_DecompressFile(extCompression *Self, struct cmp::Decompre
                   }
 
                   Self->Output[zf.OriginalSize] = 0; // !!! We should terminate according to the amount of data decompressed
-                  DeleteFile(destpath.c_str(), nullptr);
-                  error = CreateLink(destpath.c_str(), (CSTRING)Self->Output);
+                  DeleteFile(destpath, nullptr);
+                  error = CreateLink(destpath, (CSTRING)Self->Output);
                   if (error IS ERR::NoSupport) error = ERR::Okay;
 
                   inflateEnd(&Self->Zip);

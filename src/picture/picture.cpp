@@ -470,7 +470,7 @@ static ERR PICTURE_Init(extPicture *Self)
       if (ResolvePath(Self->prvPath, RSF::APPROXIMATE, &Self->prvPath) IS ERR::Okay) {
          int result;
 
-         if (ReadFileToBuffer(Self->prvPath.c_str(), Self->prvHeader, sizeof(Self->prvHeader)-1, &result) IS ERR::Okay) {
+         if (ReadFileToBuffer(Self->prvPath, Self->prvHeader, sizeof(Self->prvHeader)-1, &result) IS ERR::Okay) {
             Self->prvHeader[result] = 0;
 
             auto buffer = (uint8_t *)Self->prvHeader;

@@ -1387,7 +1387,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_compile_if()
          else check_path = std::string(string_value);
       }
 
-      condition_result = (AnalysePath(check_path.c_str(), nullptr) IS ERR::Okay);
+      condition_result = (AnalysePath(check_path, nullptr) IS ERR::Okay);
    }
    else return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, ident_token, "Unknown @if condition: " + std::string(condition_name));
 

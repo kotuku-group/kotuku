@@ -1979,7 +1979,7 @@ static bool has_kotuku_volume(const std::string &Path)
 
    // AnalysePath() confirms that the leading "<volume>:" prefix names a registered Kotuku volume.
    LOC type = LOC::NIL;
-   const bool is_volume = (AnalysePath(volume.c_str(), &type) IS ERR::Okay) and (type IS LOC::VOLUME);
+   const bool is_volume = (AnalysePath(volume, &type) IS ERR::Okay) and (type IS LOC::VOLUME);
 
    const std::lock_guard<std::mutex> lock(cache_lock);
    volume_cache[volume] = is_volume;

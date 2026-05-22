@@ -272,7 +272,7 @@ XPathVal XPathFunctionLibrary::function_doc_available(const std::vector<XPathVal
    // TODO: Testing validity of URI's needs to be supported by the File class.
 
    LOC file_type;
-   if (AnalysePath(resolved.c_str(), &file_type) IS ERR::Okay) {
+   if (AnalysePath(resolved, &file_type) IS ERR::Okay) {
       return XPathVal(true);
    }
 

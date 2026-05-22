@@ -324,7 +324,7 @@ static ERR load_doc(extDocument *Self, std::string Path, bool Unload, ULD Unload
    auto i = Path.find_first_of("&#?");
    if (i != std::string::npos) Path.erase(i);
 
-   if (AnalysePath(Path.c_str(), nullptr) IS ERR::Okay) {
+   if (AnalysePath(Path, nullptr) IS ERR::Okay) {
       auto task = CurrentTask();
       task->setPath(Path);
 
@@ -975,7 +975,7 @@ void ui_link::exec(extDocument *Self)
             if (end != std::string::npos) identify_path = identify_path.substr(0, end);
 
             auto identify_text = std::string(identify_path);
-            if (IdentifyFile(identify_text.c_str(), CLASSID::NIL, &class_id, &subclass_id) IS ERR::Okay) {
+            if (IdentifyFile(identify_text, CLASSID::NIL, &class_id, &subclass_id) IS ERR::Okay) {
                if (class_id IS CLASSID::DOCUMENT) {
                   Self->set(FID_Path, lk);
 

@@ -435,7 +435,7 @@ AllocMemory:
 
 static ERR FILE_Copy(extFile *Self, struct fl::Copy *Args)
 {
-   return CopyFile(Self->Path.c_str(), Args->Dest, Args->Callback);
+   return CopyFile(Self->Path, Args->Dest, Args->Callback);
 }
 
 /*********************************************************************************************************************
@@ -474,7 +474,7 @@ static ERR FILE_Delete(extFile *Self, struct fl::Delete *Args)
       // Check if the Path is a volume
 
       if (Self->Path.ends_with(':')) {
-         if (DeleteVolume(Self->Path.c_str()) IS ERR::Okay) {
+         if (DeleteVolume(Self->Path) IS ERR::Okay) {
             #ifdef __unix__
                closedir((DIR *)Self->Stream);
             #endif
@@ -819,7 +819,7 @@ retrydir:
 
       if ((Self->Flags & FL::NEW) != FL::NIL) {
          log.msg("Making dir \"%s\", Permissions: $%.8x", Self->prvResolvedPath.c_str(), int(Self->Permissions));
-         if (CreateFolder(Self->prvResolvedPath.c_str(), Self->Permissions) IS ERR::Okay) {
+         if (CreateFolder(Self->prvResolvedPath, Self->Permissions) IS ERR::Okay) {
             #ifdef __unix__
                if (not (Self->Stream = opendir(Self->prvResolvedPath.c_str()))) {
                   log.warning("Failed to open the folder after creating it.");
@@ -966,7 +966,7 @@ DirEmpty: The index has reached the end of the file list.
 
 *********************************************************************************************************************/
 
-static ERR FILE_NextFile(extFile* Self, struct fl::Next* Args) // Not to be confused with acNext()
+static ERR FILE_NextFile(extFile* Self, struct fl::Next *Args) // Not to be confused with acNext()
 {
    kt::Log log;
 
@@ -980,7 +980,7 @@ static ERR FILE_NextFile(extFile* Self, struct fl::Next* Args) // Not to be conf
       else if ((Self->Flags & FL::EXCLUDE_FILES) != FL::NIL) flags |= RDF::FOLDER;
       else flags |= RDF::FILE|RDF::FOLDER;
 
-      if (auto error = OpenDir(Self->Path.c_str(), flags, &Self->prvList); error != ERR::Okay) return error;
+      if (auto error = OpenDir(Self->Path, flags, &Self->prvList); error != ERR::Okay) return error;
    }
 
    ERR error;
@@ -2087,7 +2087,7 @@ static ERR GET_Icon(extFile *Self, CSTRING *Value)
       // Use IdentifyFile() to see if this file can be associated with a class
 
       CLASSID class_id, subclass_id;
-      if (IdentifyFile(Self->Path.c_str(), CLASSID::NIL, &class_id, &subclass_id) IS ERR::Okay) {
+      if (IdentifyFile(Self->Path, CLASSID::NIL, &class_id, &subclass_id) IS ERR::Okay) {
          if (glClassDB.contains(subclass_id)) {
             auto &record = glClassDB[subclass_id];
             if (not record.Icon.empty()) icon = record.Icon;

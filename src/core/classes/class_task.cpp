@@ -2277,7 +2277,7 @@ static ERR SET_Path(extTask *Self, CSTRING Value)
 
 #ifdef __unix__
          std::string path;
-         if (ResolvePath(new_path.c_str(), RSF::NO_FILE_CHECK, &path) IS ERR::Okay) {
+         if (ResolvePath(new_path, RSF::NO_FILE_CHECK, &path) IS ERR::Okay) {
             if (chdir(path.c_str())) {
                error = ERR::InvalidPath;
                log.msg("Failed to switch current path to: %s", path.c_str());

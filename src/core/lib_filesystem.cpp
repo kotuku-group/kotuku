@@ -271,8 +271,10 @@ ERR get_file_info(const std::string_view &Path, FileInfo &Info)
       else Info.Name = Path;
 
       if (auto lock = std::unique_lock{glmVolumes, 1s}) {
-         if (glVolumes.contains(Info.Name)) {
-            if (glVolumes[Info.Name]["Hidden"] IS "Yes") Info.Permissions |= PERMIT::HIDDEN;
+         if (auto volume = glVolumes.find(Info.Name); volume != glVolumes.end()) {
+            if (auto hidden = volume->second.find("Hidden"); (hidden != volume->second.end()) and (hidden->second IS "Yes")) {
+               Info.Permissions |= PERMIT::HIDDEN;
+            }
          }
       }
 
@@ -415,7 +417,7 @@ If the queried path does not exist, a fail code is returned.  This behaviour mak
 candidate for testing the validity of a path string.
 
 -INPUT-
-cstr Path: The path to analyse.
+cpp(strview) Path: The path to analyse.
 &int(LOC) Type: The result will be stored in the variable referred to by this parameter.  The return types are `DIRECTORY`, `FILE` and `VOLUME`.  Set this parameter to `NULL` if you are only interested in checking if the file exists.
 
 -ERRORS-
@@ -425,33 +427,33 @@ DoesNotExist:
 
 *********************************************************************************************************************/
 
-ERR AnalysePath(CSTRING Path, LOC *PathType)
+ERR AnalysePath(const std::string_view &Path, LOC *PathType)
 {
    kt::Log log(__FUNCTION__);
 
    if (PathType) *PathType = LOC::NIL;
-   if ((not Path) or (not Path[0])) return ERR::NullArgs;
+   if (Path.empty()) return ERR::NullArgs;
 
    // Special volumes 'string:' and 'memory:' are considered to be file paths.
 
-   if (startswith("string:", Path)) {
+   if (Path.starts_with("string:")) {
       if (PathType) *PathType = LOC::FILE;
       return ERR::Okay;
    }
 
-   log.traceBranch("%s", Path);
+   log.traceBranch("%.*s", int(Path.size()), Path.data());
 
    RSF flags = RSF::NIL;
-   if (Path[0] IS '~') {
+   auto path = Path;
+   if (path.starts_with('~')) {
       flags |= RSF::APPROXIMATE;
-      Path++;
+      path.remove_prefix(1);
    }
 
-   int len = strlen(Path);
-   if (Path[len-1] IS ':') {
-      if (auto lock = std::unique_lock{glmVolumes, 6s}) {
-         std::string path_vol(Path, len-1);
-         if (glVolumes.contains(path_vol)) {
+   if (path.ends_with(':')) {
+      if (auto lock = std::unique_lock{glmVolumes, 1s}) {
+         path.remove_suffix(1);
+         if (glVolumes.contains(path)) {
             if (PathType) *PathType = LOC::VOLUME;
             return ERR::Okay;
          }
@@ -460,7 +462,7 @@ ERR AnalysePath(CSTRING Path, LOC *PathType)
    }
 
    std::string test_path;
-   if (ResolvePath(Path, flags, &test_path) IS ERR::Okay) {
+   if (ResolvePath(path, flags, &test_path) IS ERR::Okay) {
       log.trace("Testing path type for '%s'", test_path.c_str());
 
       auto vd = get_fs(test_path);
@@ -472,7 +474,7 @@ ERR AnalysePath(CSTRING Path, LOC *PathType)
       else return ERR::NoSupport;
    }
    else {
-      log.trace("Path '%s' does not exist.", Path);
+      log.trace("Path '%.*s' does not exist.", int(path.size()), path.data());
       return ERR::DoesNotExist;
    }
 }
@@ -491,8 +493,8 @@ The targeted paths do not have to refer to an existing file or folder in order t
 comparison succeeds).
 
 -INPUT-
-cstr PathA: File location 1.
-cstr PathB: File location 2.
+cpp(strview) PathA: File location 1.
+cpp(strview) PathB: File location 2.
 
 -ERRORS-
 Okay: The file paths refer to the same file.
@@ -502,9 +504,9 @@ NullArgs
 
 *********************************************************************************************************************/
 
-ERR CompareFilePaths(CSTRING PathA, CSTRING PathB)
+ERR CompareFilePaths(const std::string_view &PathA, const std::string_view &PathB)
 {
-   if ((not PathA) or (not PathB)) return ERR::NullArgs;
+   if ((PathA.empty()) or (PathB.empty())) return ERR::NullArgs;
 
    std::string path1, path2;
    ERR error;
@@ -689,8 +691,8 @@ Valid values are `FFR::Okay` (copy the file), `FFR::Skip` (do not copy the file)
 completely and return `ERR::Cancelled` as an error code).
 
 -INPUT-
-cstr Source: The source location.
-cstr Dest:   The destination location.
+cpp(strview) Source: The source location.
+cpp(strview) Dest:   The destination location.
 ptr(func) Callback: Optional callback for receiving feedback during the operation.
 
 -ERRORS-
@@ -700,7 +702,7 @@ Failed: A failure occurred during the copy process.
 
 *********************************************************************************************************************/
 
-ERR CopyFile(CSTRING Source, CSTRING Dest, FUNCTION *Callback)
+ERR CopyFile(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback)
 {
    return fs_copy(Source, Dest, Callback, FALSE);
 }
@@ -724,8 +726,8 @@ file referenced at To does not exist, the link will be created without error, bu
 fail until the target file or folder exists.
 
 -INPUT-
-cstr From: The symbolic link will be created at the location specified here.
-cstr To:   The file that you are linking to is specified here.
+cpp(strview) From: The symbolic link will be created at the location specified here.
+cpp(strview) To:   The file that you are linking to is specified here.
 
 -ERRORS-
 Okay: The link was created successfully.
@@ -740,12 +742,13 @@ FileExists: The location referenced at From already exists.
 
 *********************************************************************************************************************/
 
-ERR CreateLink(CSTRING From, CSTRING To)
+ERR CreateLink(const std::string_view &From, const std::string_view &To)
 {
    kt::Log log(__FUNCTION__);
 
-   if ((not From) or (not To)) return ERR::NullArgs;
-   log.branch("From: %.40s, To: %s", From, To);
+   if ((From.empty()) or (To.empty())) return ERR::NullArgs;
+
+   log.branch("From: %.*s, To: %.*s", int(From.size()), From.data(), int(To.size()), To.data());
 
 #ifdef _WIN32
 
@@ -795,7 +798,7 @@ the file), `FFR::Skip` (do not delete the file) and `FFR::Abort` (abort the proc
 as an error code).
 
 -INPUT-
-cstr Path: String referring to the file or folder to be deleted.  Folders must be denoted with a trailing slash.
+cpp(strview) Path: String referring to the file or folder to be deleted.  Folders must be denoted with a trailing slash.
 ptr(func) Callback: Optional callback for receiving feedback during the operation.
 
 -ERRORS-
@@ -807,16 +810,15 @@ NoSupport: The filesystem driver does not support deletion.
 
 *********************************************************************************************************************/
 
-ERR DeleteFile(CSTRING Path, FUNCTION *Callback)
+ERR DeleteFile(const std::string_view &Path, FUNCTION *Callback)
 {
    kt::Log log(__FUNCTION__);
 
-   if (not Path) return ERR::NullArgs;
+   if (Path.empty()) return ERR::NullArgs;
 
-   log.branch("%s", Path);
+   log.branch("%.*s", int(Path.size()), Path.data());
 
-   auto len = strlen(Path);
-   if (Path[len-1] IS ':') return DeleteVolume(Path);
+   if (Path.ends_with(':')) return DeleteVolume(Path);
 
    std::string resolve;
    if (ResolvePath(Path, RSF::NIL, &resolve) IS ERR::Okay) {
@@ -881,7 +883,7 @@ Calls to LoadFile() must be matched with a call to ~UnloadFile() to decrement th
 returns to zero, the file can be unloaded from the cache during the next resource collection phase.
 
 -INPUT-
-cstr Path: The location of the file to be cached.
+cpp(strview) Path: The location of the file to be cached.
 int(LDF) Flags: Optional flags are specified here.
 &resource(CacheFile) Cache: A pointer to a !CacheFile structure is returned here if successful.
 
@@ -894,11 +896,11 @@ Search: If `CHECK_EXISTS` is specified, this failure indicates that the file is 
 
 *********************************************************************************************************************/
 
-ERR LoadFile(CSTRING Path, LDF Flags, CacheFile **Cache)
+ERR LoadFile(const std::string_view &Path, LDF Flags, CacheFile **Cache)
 {
    kt::Log log(__FUNCTION__);
 
-   if ((not Path) or (not Cache)) return ERR::NullArgs;
+   if ((Path.empty()) or (not Cache)) return ERR::NullArgs;
    *Cache = nullptr;
 
    // Check if the file is already cached.  If it is, check that the file hasn't been written since the last time it was cached.
@@ -958,21 +960,19 @@ ERR LoadFile(CSTRING Path, LDF Flags, CacheFile **Cache)
       }
 
       if (error IS ERR::Okay) {
-         {
-            const std::lock_guard<std::mutex> lock(glCacheLock);
-            auto result = glCache.emplace(index, std::move(loaded_cache));
-            auto cache = result.first;
-            *Cache = cache->second.get();
-            if (not result.second) cache->second->Locks++;
+         const std::lock_guard<std::mutex> lock(glCacheLock);
+         auto result = glCache.emplace(index, std::move(loaded_cache));
+         auto cache  = result.first;
+         *Cache = cache->second.get();
+         if (not result.second) cache->second->Locks++;
 
-            if (not glCacheTimer) {
-               kt::SwitchContext context(CurrentTask());
-               auto call = C_FUNCTION(check_cache);
-               SubscribeTimer(60, &call, &glCacheTimer);
-            }
-
-            glCacheLoading.erase(index);
+         if (not glCacheTimer) {
+            kt::SwitchContext context(CurrentTask());
+            auto call = C_FUNCTION(check_cache);
+            SubscribeTimer(60, &call, &glCacheTimer);
          }
+
+         glCacheLoading.erase(index);
       }
 
       if (error != ERR::Okay) {
@@ -1007,7 +1007,7 @@ On Unix systems you can define the owner and group ID's for the new folder by ca
 function prior to CreateFolder().
 
 -INPUT-
-cstr Path: The location of the folder.
+cpp(strview) Path: The location of the folder.
 int(PERMIT) Permissions: Security permissions to apply to the created Dir(s).  Set to `NULL` if only the current user should have access.
 
 -ERRORS-
@@ -1019,11 +1019,11 @@ Failed:
 
 *********************************************************************************************************************/
 
-ERR CreateFolder(CSTRING Path, PERMIT Permissions)
+ERR CreateFolder(const std::string_view &Path, PERMIT Permissions)
 {
    kt::Log log(__FUNCTION__);
 
-   if ((not Path) or (not *Path)) return log.warning(ERR::NullArgs);
+   if (Path.empty()) return log.warning(ERR::NullArgs);
 
    if (glDefaultPermissions != PERMIT::NIL) Permissions = glDefaultPermissions;
    else if ((Permissions IS PERMIT::NIL) or ((Permissions & PERMIT::INHERIT) != PERMIT::NIL)) {
@@ -1076,8 +1076,8 @@ Valid values are `FFR::Okay` (move the file), `FFR::Skip` (do not move the file)
 completely and return `ERR::Cancelled` as an error code).
 
 -INPUT-
-cstr Source: The source path.
-cstr Dest:   The destination path.
+cpp(strview) Source: The source path.
+cpp(strview) Dest:   The destination path.
 ptr(func) Callback: Optional callback for receiving feedback during the operation.
 
 -ERRORS-
@@ -1087,13 +1087,13 @@ Failed
 
 *********************************************************************************************************************/
 
-ERR MoveFile(CSTRING Source, CSTRING Dest, FUNCTION *Callback)
+ERR MoveFile(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback)
 {
    kt::Log log(__FUNCTION__);
 
-   if ((not Source) or (not Dest)) return ERR::NullArgs;
+   if ((Source.empty()) or (Dest.empty())) return ERR::NullArgs;
 
-   log.branch("%s to %s", Source, Dest);
+   log.branch("%.*s to %.*s", int(Source.size()), Source.data(), int(Dest.size()), Dest.data());
    return fs_copy(Source, Dest, Callback, TRUE);
 }
 
@@ -1109,7 +1109,7 @@ File path approximation is supported if the `Path` is prefixed with a `~` charac
 matched to `photo.jpg` in the same folder).
 
 -INPUT-
-cstr Path: The path of the file.
+cpp(strview) Path: The path of the file.
 ^buf(ptr) Buffer: Pointer to a buffer that will receive the file content.
 bufsize BufferSize: The byte size of the `Buffer`.
 &int Result: The total number of bytes read into the `Buffer` will be returned here (optional).
@@ -1126,18 +1126,19 @@ File
 
 *********************************************************************************************************************/
 
-ERR ReadFileToBuffer(CSTRING Path, APTR Buffer, int BufferSize, int *BytesRead)
+ERR ReadFileToBuffer(const std::string_view &Path, APTR Buffer, int BufferSize, int *BytesRead)
 {
    kt::Log log(__FUNCTION__);
 
-   log.traceBranch("Path: %s, Buffer Size: %d", Path, BufferSize);
+   log.traceBranch("Path: %.*s, Buffer Size: %d", int(Path.size()), Path.data(), BufferSize);
 
 #if defined(__unix__) || defined(_WIN32)
-   if ((not Path) or (BufferSize <= 0) or (not Buffer)) return ERR::Args;
+   if ((Path.empty()) or (BufferSize <= 0) or (not Buffer)) return ERR::Args;
 
    bool approx;
-   if (*Path IS '~') {
-      Path++;
+   auto path = Path;
+   if (path.starts_with('~')) {
+      path.remove_prefix(1);
       approx = true;
    }
    else approx = false;
@@ -1145,7 +1146,7 @@ ERR ReadFileToBuffer(CSTRING Path, APTR Buffer, int BufferSize, int *BytesRead)
    if (BytesRead) *BytesRead = 0;
 
    std::string res_path;
-   if (auto error = ResolvePath(Path, RSF::CHECK_VIRTUAL | (approx ? RSF::APPROXIMATE : RSF::NIL), &res_path); error IS ERR::Okay) {
+   if (auto error = ResolvePath(path, RSF::CHECK_VIRTUAL | (approx ? RSF::APPROXIMATE : RSF::NIL), &res_path); error IS ERR::Okay) {
       if (res_path.starts_with("/dev/")) return ERR::InvalidPath;
       else if (auto handle = open(res_path.c_str(), O_RDONLY|O_NONBLOCK|O_LARGEFILE|WIN32OPEN, nullptr); handle != -1) {
          if (auto result = read(handle, Buffer, BufferSize); result IS -1) {
@@ -1169,7 +1170,7 @@ ERR ReadFileToBuffer(CSTRING Path, APTR Buffer, int BufferSize, int *BytesRead)
 
 #else
 
-   extFile::create file = { fl::Path(Path), fl::Flags(FL::READ|FL::FILE|(approx ? FL::APPROXIMATE : FL::NIL)) };
+   extFile::create file = { fl::Path(path), fl::Flags(FL::READ|FL::FILE|(approx ? FL::APPROXIMATE : FL::NIL)) };
 
    if (file.ok()) {
       int result;
@@ -1194,7 +1195,7 @@ ReadInfoTag() will read the value of a named tag in a !FileInfo structure.  The 
 
 -INPUT-
 struct(FileInfo) Info: Pointer to a valid !FileInfo structure.
-cstr Name: The name of the tag, which must be declared in camel-case as tags are case-sensitive.
+cpp(strview) Name: The name of the tag, which must be declared in camel-case as tags are case-sensitive.
 &cstr Value: The discovered string value is returned here if found.
 
 -ERRORS-
@@ -1204,9 +1205,9 @@ NotFound:
 
 *********************************************************************************************************************/
 
-ERR ReadInfoTag(FileInfo *Info, CSTRING Name, CSTRING *Value)
+ERR ReadInfoTag(FileInfo *Info, const std::string_view &Name, CSTRING *Value)
 {
-   if ((not Info) or (not Name) or (not Value)) {
+   if ((not Info) or (Name.empty()) or (not Value)) {
       kt::Log log(__FUNCTION__);
       return ERR::NullArgs;
    }
@@ -1488,15 +1489,14 @@ PERMIT convert_fs_permissions(int Permissions)
 //********************************************************************************************************************
 // Strips the filename and calls CreateFolder() to create all paths leading up to the filename.
 
-ERR check_paths(CSTRING Path, PERMIT Permissions)
+ERR check_paths(std::string_view Path, PERMIT Permissions)
 {
    kt::Log log(__FUNCTION__);
-   log.traceBranch("%s", Path);
+   log.traceBranch("%.*s", int(Path.size()), Path.data());
 
-   std::string path(Path);
-   if (auto i = path.find_last_of(":/\\"); i != std::string::npos) {
-      path.resize(i);
-      return CreateFolder(path.c_str(), Permissions);
+   if (auto i = Path.find_last_of(":/\\"); i != std::string::npos) {
+      std::string path(Path, 0, i);
+      return CreateFolder(path, Permissions);
    }
    else return ERR::InvalidPath;
 }
@@ -1593,12 +1593,12 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
 
          // Create the destination folder, then copy the source folder across using a recursive routine.
 
-         if (glDefaultPermissions != PERMIT::NIL) CreateFolder(dest.c_str(), glDefaultPermissions);
-         else CreateFolder(dest.c_str(), PERMIT::USER|PERMIT::GROUP);
+         if (glDefaultPermissions != PERMIT::NIL) CreateFolder(dest, glDefaultPermissions);
+         else CreateFolder(dest, PERMIT::USER|PERMIT::GROUP);
 
          if ((error = fs_copydir(srcbuffer, dest, &feedback, Callback, Move)) IS ERR::Okay) {
             // Delete the source if we are moving folders
-            if (Move) return DeleteFile(srcbuffer.c_str(), nullptr);
+            if (Move) return DeleteFile(srcbuffer, nullptr);
          }
          else log.warning("Folder copy process failed, error %d.", int(error));
 
@@ -1726,7 +1726,7 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
       }
 
       if ((Move) and (error IS ERR::Okay)) { // Delete the source
-         return DeleteFile(src.c_str(), nullptr);
+         return DeleteFile(src, nullptr);
       }
 
       return error;
@@ -1801,18 +1801,18 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
 
       // Create the destination folder, then copy the source folder across using a recursive routine.
 
-      if (glDefaultPermissions != PERMIT::NIL) CreateFolder(dest.c_str(), glDefaultPermissions);
+      if (glDefaultPermissions != PERMIT::NIL) CreateFolder(dest, glDefaultPermissions);
       else {
 #ifdef _WIN32
-         CreateFolder(dest.c_str(), PERMIT::USER|PERMIT::GROUP);
+         CreateFolder(dest, PERMIT::USER|PERMIT::GROUP);
 #else
          if (stat64(src.c_str(), &stinfo) != -1) {
-            CreateFolder(dest.c_str(), convert_fs_permissions(stinfo.st_mode));
+            CreateFolder(dest, convert_fs_permissions(stinfo.st_mode));
             chown(dest.c_str(), (glForceUID != -1) ? glForceUID : stinfo.st_uid, (glForceGID != -1) ? glForceGID : stinfo.st_gid);
          }
          else {
             log.warning("stat64() failed for %s", src.c_str());
-            CreateFolder(dest.c_str(), PERMIT::USER|PERMIT::GROUP);
+            CreateFolder(dest, PERMIT::USER|PERMIT::GROUP);
          }
 #endif
       }
@@ -1820,7 +1820,7 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
       std::string srcbuffer(src);
       if ((error = fs_copydir(srcbuffer, dest, &feedback, Callback, Move)) IS ERR::Okay) {
          // Delete the source if we are moving folders
-         if (Move) return DeleteFile(srcbuffer.c_str(), nullptr);
+         if (Move) return DeleteFile(srcbuffer, nullptr);
       }
       else log.warning("Folder copy process failed, error %d.", int(error));
 
@@ -1876,7 +1876,7 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
       #if defined(__unix__) || defined(_WIN32)
       unlink(dest.c_str());
       #else
-      DeleteFile(dest.c_str(), nullptr);
+      DeleteFile(dest, nullptr);
       #endif
 
       // Check if there is enough room to copy this file to the destination
@@ -1958,7 +1958,7 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
    else return log.warning(ERR::FileNotFound);
 
    if ((Move) and (error IS ERR::Okay)) { // Delete the source
-      return DeleteFile(src.c_str(), nullptr);
+      return DeleteFile(src, nullptr);
    }
    else return error;
 }
@@ -1980,7 +1980,7 @@ ERR fs_copydir(std::string &Source, std::string &Dest, FileFeedback *Feedback, F
    if ((not Dest.ends_with('/')) and (not Dest.ends_with('\\')) and (not Dest.ends_with(':'))) Dest.append("/");
 
    DirInfo *dir;
-   if (auto error = OpenDir(Source.c_str(), RDF::FILE|RDF::FOLDER|RDF::PERMISSIONS, &dir); error IS ERR::Okay) {
+   if (auto error = OpenDir(Source, RDF::FILE|RDF::FOLDER|RDF::PERMISSIONS, &dir); error IS ERR::Okay) {
       while ((error = ScanDir(dir)) IS ERR::Okay) {
          FileInfo *file = dir->Info;
          if ((file->Flags & RDF::LINK) != RDF::NIL) {
@@ -1998,7 +1998,7 @@ ERR fs_copydir(std::string &Source, std::string &Dest, FileFeedback *Feedback, F
 
                STRING link;
                if ((error = vsrc.ReadLink(Source, &link)) IS ERR::Okay) {
-                  DeleteFile(Dest.c_str(), nullptr);
+                  DeleteFile(Dest, nullptr);
                   error = vdest.CreateLink(Dest, link);
                }
             }
@@ -2028,7 +2028,7 @@ ERR fs_copydir(std::string &Source, std::string &Dest, FileFeedback *Feedback, F
 
             AdjustLogLevel(1);
 
-               error = CreateFolder(Dest.c_str(), (glDefaultPermissions != PERMIT::NIL) ? glDefaultPermissions : file->Permissions);
+               error = CreateFolder(Dest, (glDefaultPermissions != PERMIT::NIL) ? glDefaultPermissions : file->Permissions);
 #ifdef __unix__
                if (vdest.is_default()) {
                   chown(Dest.c_str(), (glForceUID != -1) ? glForceUID : file->UserID, (glForceGID != -1) ? glForceGID : file->GroupID);
@@ -2517,16 +2517,17 @@ ERR fs_getdeviceinfo(std::string_view Path, objStorageDevice *Info)
    ERR error;
 
 restart:
-   auto path_end = Path.find(':');
-   std::string vol(Path, 0, path_end);
+   auto vol = Path.substr(0, Path.find(':'));
 
    if (auto lock = std::unique_lock{glmVolumes, 2s}) {
       // We keep this lock localised so that it doesn't impact ResolvePath()
-      if (glVolumes.contains(vol)) {
-         if (not glVolumes[vol]["Path"].compare(0, 6, "EXT:")) Info->DeviceFlags |= DEVICE::SOFTWARE; // Virtual device
+      if (auto volume = glVolumes.find(vol); volume != glVolumes.end()) {
+         auto &keys = volume->second;
 
-         if (glVolumes[vol].contains("Device")) {
-            auto &device = glVolumes[vol]["Device"];
+         if (not keys["Path"].compare(0, 6, "EXT:")) Info->DeviceFlags |= DEVICE::SOFTWARE; // Virtual device
+
+         if (keys.contains("Device")) {
+            auto &device = keys["Device"];
             if (not device.compare("disk"))       Info->DeviceFlags |= DEVICE::FLOPPY_DISK|DEVICE::REMOVABLE|DEVICE::READ|DEVICE::WRITE;
             else if (not device.compare("fixed")) Info->DeviceFlags |= DEVICE::HARD_DISK|DEVICE::READ|DEVICE::WRITE;
             else if (not device.compare("hd"))    Info->DeviceFlags |= DEVICE::HARD_DISK|DEVICE::READ|DEVICE::WRITE;

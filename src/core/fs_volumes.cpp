@@ -15,7 +15,7 @@ This function deletes volume names from the system.  Once a volume is deleted, a
 in errors unless the volume is recreated.
 
 -INPUT-
-cstr Name: The name of the volume.
+cpp(strview) Name: The name of the volume.
 
 -ERRORS-
 Okay: The volume was removed.
@@ -26,23 +26,22 @@ NoPermission: An attempt to delete a system volume was denied.
 
 *********************************************************************************************************************/
 
-ERR DeleteVolume(CSTRING Name)
+ERR DeleteVolume(const std::string_view &Name)
 {
    kt::Log log(__FUNCTION__);
 
-   if ((!Name) or (!Name[0])) return ERR::NullArgs;
+   if (Name.empty()) return ERR::NullArgs;
 
-   log.branch("Name: %s", Name);
+   log.branch("Name: %.*s", int(Name.size()), Name.data());
 
    if (auto lock = std::unique_lock{glmVolumes, 4s}) {
-      unsigned i;
-      for (i=0; (Name[i]) and (Name[i] != ':'); i++);
-      std::string vol(Name, i);
+      auto i = Name.find(':', 0);
+      auto vol = Name.substr(0, i);
 
-      if (glVolumes.contains(vol)) {
-         if (glVolumes[vol]["System"] == "Yes") return log.warning(ERR::NoPermission);
+      if (auto volume = glVolumes.find(vol); volume != glVolumes.end()) {
+         if (volume->second["System"] IS "Yes") return log.warning(ERR::NoPermission);
 
-         glVolumes.erase(vol);
+         glVolumes.erase(volume);
       }
 
       return ERR::Okay;
@@ -58,33 +57,34 @@ RenameVolume: Renames a volume.
 
 *********************************************************************************************************************/
 
-ERR RenameVolume(CSTRING Volume, CSTRING Name)
+ERR RenameVolume(const std::string_view &Volume, const std::string_view &Name)
 {
    kt::Log log(__FUNCTION__);
 
    if (auto lock = std::unique_lock{glmVolumes, 6s}) {
-      int i;
-      for (i=0; (Volume[i]) and (Volume[i] != ':'); i++);
+      auto vol = Volume.substr(0, Volume.find(':'));
+      auto name = Name.substr(0, Name.find(':'));
 
-      std::string vol;
-      vol.append(Volume, i);
-
-      if (glVolumes.contains(vol)) {
-         glVolumes[Name] = glVolumes[vol];
-         glVolumes.erase(vol);
+      if (auto volume = glVolumes.find(vol); volume != glVolumes.end()) {
+         auto node = glVolumes.extract(volume);
+         node.key() = std::string(name);
+         if (auto target = glVolumes.find(name); target != glVolumes.end()) glVolumes.erase(target);
+         glVolumes.insert(std::move(node));
 
          // Broadcast the change
 
          auto evdeleted = std::make_unique<uint8_t[]>(sizeof(EVENTID) + vol.size() + 1);
          ((EVENTID *)evdeleted.get())[0] = GetEventID(EVG::FILESYSTEM, "volume", "deleted");
-         copymem(vol.c_str(), evdeleted.get() + sizeof(EVENTID), vol.size() + 1);
+         copymem(vol.data(), evdeleted.get() + sizeof(EVENTID), vol.size());
+         evdeleted.get()[sizeof(EVENTID) + vol.size()] = 0;
          BroadcastEvent(evdeleted.get(), sizeof(EVENTID) + vol.size() + 1);
 
-         int namelen = strlen(Name) + 1;
-         auto evcreated = std::make_unique<uint8_t[]>(sizeof(EVENTID) + namelen);
+         auto name_len = name.size() + 1;
+         auto evcreated = std::make_unique<uint8_t[]>(sizeof(EVENTID) + name_len);
          ((EVENTID *)evcreated.get())[0] = EVID_FILESYSTEM_VOLUME_CREATED;
-         copymem(Name, evcreated.get() + sizeof(EVENTID), namelen);
-         BroadcastEvent(evcreated.get(), sizeof(EVENTID) + namelen);
+         copymem(name.data(), evcreated.get() + sizeof(EVENTID), name.size());
+         evcreated.get()[sizeof(EVENTID) + name.size()] = 0;
+         BroadcastEvent(evcreated.get(), sizeof(EVENTID) + name_len);
          return ERR::Okay;
       }
 
@@ -107,11 +107,11 @@ Flags that may be passed are as follows:
 <types lookup="VOLUME"/>
 
 -INPUT-
-cstr Name: Required.  The name of the volume.
-cstr Path: Required.  The path to be associated with the volume.  If setting multiple paths, separate each path with a semi-colon character.  Each path must terminate with a forward slash to denote a folder.
-cstr Icon: An icon can be associated with the volume so that it has graphical representation when viewed in the UI.  The required icon string format is `category/name`.
-cstr Label: An optional label or short comment may be applied to the volume.  This may be useful if the volume name has little meaning to the user (e.g. `drive1`, `drive2` ...).
-cstr Device: If the volume references the root of a device, specify a device name of `portable`, `fixed`, `cd`, `network` or `usb`.
+cpp(strview) Name: Required.  The name of the volume.
+cpp(strview) Path: Required.  The path to be associated with the volume.  If setting multiple paths, separate each path with a semi-colon character.  Each path must terminate with a forward slash to denote a folder.
+cpp(strview) Icon: An icon can be associated with the volume so that it has graphical representation when viewed in the UI.  The required icon string format is `category/name`.
+cpp(strview) Label: An optional label or short comment may be applied to the volume.  This may be useful if the volume name has little meaning to the user (e.g. `drive1`, `drive2` ...).
+cpp(strview) Device: If the volume references the root of a device, specify a device name of `portable`, `fixed`, `cd`, `network` or `usb`.
 int(VOLUME) Flags: Optional flags.
 
 -ERRORS-
@@ -122,30 +122,29 @@ LockFailed:
 
 *********************************************************************************************************************/
 
-ERR SetVolume(CSTRING Name, CSTRING Path, CSTRING Icon, CSTRING Label, CSTRING Device, VOLUME Flags)
+ERR SetVolume(const std::string_view &Name, const std::string_view &Path, const std::string_view &Icon,
+   const std::string_view &Label, const std::string_view &Device, VOLUME Flags)
 {
    kt::Log log(__FUNCTION__);
 
-   if ((!Name) or (!Path)) return log.warning(ERR::NullArgs);
+   if ((&Name IS nullptr) or (&Path IS nullptr)) return log.warning(ERR::NullArgs);
+   if ((Name.empty()) or (Path.empty())) return log.warning(ERR::NullArgs);
 
    std::string name;
+   name.append(Name, 0, Name.find(':'));
 
-   int i;
-   for (i=0; (Name[i]) and (Name[i] != ':'); i++);
-   name.append(Name, 0, i);
-
-   if (Label) log.branch("Name: %s (%s), Path: %s", Name, Label, Path);
-   else log.branch("Name: %s, Path: %s", Name, Path);
+   if ((&Label != nullptr) and (not Label.empty())) log.branch("Name: %.*s (%.*s), Path: %.*s", int(Name.size()), Name.data(), int(Label.size()), Label.data(), int(Path.size()), Path.data());
+   else log.branch("Name: %.*s, Path: %.*s", int(Name.size()), Name.data(), int(Path.size()), Path.data());
 
    if (auto lock = std::unique_lock{glmVolumes, 6s}) {
       // If we are not in replace mode, check if the volume already exists with configured path.  If so, add the path as a complement
       // to the existing volume.  In this mode nothing else besides the path is changed, even if other tags are specified.
 
       if ((Flags & VOLUME::REPLACE) IS VOLUME::NIL) {
-         if (glVolumes.contains(name)) {
-            auto &keys = glVolumes[name];
+         if (auto volume = glVolumes.find(name); volume != glVolumes.end()) {
+            auto &keys = volume->second;
             if ((Flags & VOLUME::PRIORITY) != VOLUME::NIL) keys["Path"] = std::string(Path) + "|" + keys["Path"];
-            else keys["Path"] = keys["Path"] + "|" + Path;
+            else keys["Path"] = keys["Path"] + "|" + std::string(Path);
             return ERR::Okay;
          }
       }
@@ -154,9 +153,9 @@ ERR SetVolume(CSTRING Name, CSTRING Path, CSTRING Icon, CSTRING Label, CSTRING D
 
       keys["Path"] = Path;
 
-      if (Icon)   keys["Icon"]   = Icon;
-      if (Label)  keys["Label"]  = Label;
-      if (Device) keys["Device"] = Device;
+      if ((&Icon != nullptr) and (not Icon.empty()))     keys["Icon"]   = Icon;
+      if ((&Label != nullptr) and (not Label.empty()))   keys["Label"]  = Label;
+      if ((&Device != nullptr) and (not Device.empty())) keys["Device"] = Device;
 
       if ((Flags & VOLUME::HIDDEN) != VOLUME::NIL) keys["Hidden"] = "Yes";
       if ((Flags & VOLUME::SYSTEM) != VOLUME::NIL) keys["System"] = "Yes";
@@ -179,7 +178,7 @@ Status: private
 Private
 
 -INPUT-
-cstr Name: The name of the volume.
+cpp(strview) Name: The name of the volume.
 tags Tags: Options to apply to the volume.
 
 -ERRORS-
@@ -205,13 +204,13 @@ using CALL_SCAN_DIR        = ERR (*)(DirInfo*);
 using CALL_TEST_PATH       = ERR (*)(std::string &, RSF, LOC *);
 using CALL_WATCH_PATH      = ERR (*)(extFile *);
 
-ERR VirtualVolume(CSTRING Name, ...)
+ERR VirtualVolume(const std::string_view &Name, ...)
 {
    kt::Log log(__FUNCTION__);
 
-   if ((!Name) or (!Name[0])) return log.warning(ERR::NullArgs);
+   if (Name.empty()) return log.warning(ERR::NullArgs);
 
-   log.branch("%s", Name);
+   log.branch("%.*s", int(Name.size()), Name.data());
 
    auto id = strihash(Name);
 
@@ -226,7 +225,7 @@ ERR VirtualVolume(CSTRING Name, ...)
    drive.CaseSensitive = false;
 
    va_list list;
-   va_start(list, Name);
+   va_start(list, &Name);
    int arg = 0;
    while (auto tagid = va_arg(list, int)) {
       switch (VAS(tagid)) {
