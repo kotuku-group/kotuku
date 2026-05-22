@@ -453,18 +453,16 @@
     <method>
       <name>SetClipRegion</name>
       <comment>Sets a clipping region for a bitmap object.</comment>
-      <prototype>ERR bmp::SetClipRegion(OBJECTPTR Object, INT Number, INT Left, INT Top, INT Right, INT Bottom, INT Terminate)</prototype>
-      <tiriPrototype>err = SetClipRegion(Number:num, Left:num, Top:num, Right:num, Bottom:num, Terminate:num)</tiriPrototype>
+      <prototype>ERR bmp::SetClipRegion(OBJECTPTR Object, INT Left, INT Top, INT Right, INT Bottom)</prototype>
+      <tiriPrototype>err = SetClipRegion(Left:num, Top:num, Right:num, Bottom:num)</tiriPrototype>
       <input>
-        <param type="INT" name="Number">The number of the clip region to set.</param>
         <param type="INT" name="Left">The horizontal start of the clip region.</param>
         <param type="INT" name="Top">The vertical start of the clip region.</param>
         <param type="INT" name="Right">The exclusive right edge of the clip region.</param>
         <param type="INT" name="Bottom">The exclusive bottom edge of the clip region.</param>
-        <param type="INT" name="Terminate">Set to <code>true</code> if this is the last clip region in the list, otherwise <code>false</code>.</param>
       </input>
       <description>
-<p>SetClipRegion() updates one entry in the bitmap's clipping region list.  Drawing operations are restricted to the combined region.</p>
+<p>SetClipRegion() updates the bitmap's clipping region.  Drawing operations are restricted to the combined region.</p>
 <p>This method is implemented by <function module="Display">SetClipRegion</function>.</p>
       </description>
       <result>

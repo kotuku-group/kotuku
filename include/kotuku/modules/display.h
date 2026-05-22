@@ -533,7 +533,7 @@ struct CopyArea { objBitmap * DestBitmap; BAF Flags; int X; int Y; int Width; in
 struct Compress { int Level; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Decompress { int RetainData; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct DrawRectangle { int X; int Y; int Width; int Height; uint32_t Colour; BAF Flags; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SetClipRegion { int Number; int Left; int Top; int Right; int Bottom; int Terminate; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SetClipRegion { int Left; int Top; int Right; int Bottom; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct GetColour { int Red; int Green; int Blue; int Alpha; uint32_t Colour; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Premultiply { static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Demultiply { static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
@@ -744,8 +744,8 @@ class objBitmap : public Object {
       struct bmp::DrawRectangle args = { X, Y, Width, Height, Colour, Flags };
       return(Action(AC(-4), this, &args));
    }
-   inline ERR setClipRegion(int Number, int Left, int Top, int Right, int Bottom, int Terminate) noexcept {
-      struct bmp::SetClipRegion args = { Number, Left, Top, Right, Bottom, Terminate };
+   inline ERR setClipRegion(int Left, int Top, int Right, int Bottom) noexcept {
+      struct bmp::SetClipRegion args = { Left, Top, Right, Bottom };
       return(Action(AC(-5), this, &args));
    }
    inline ERR getColour(int Red, int Green, int Blue, int Alpha, uint32_t * Colour) noexcept {
@@ -1747,7 +1747,7 @@ struct DisplayBase {
    ERR (*_RestoreCursor)(PTC Cursor, OBJECTID Owner);
    double (*_ScaleToDPI)(double Value);
    ERR (*_ScanDisplayModes)(CSTRING Filter, struct DisplayInfo *Info);
-   void (*_SetClipRegion)(objBitmap *Bitmap, int Number, int Left, int Top, int Right, int Bottom, int Terminate);
+   void (*_SetClipRegion)(objBitmap *Bitmap, int Left, int Top, int Right, int Bottom);
    ERR (*_SetCursor)(OBJECTID Surface, CRF Flags, PTC Cursor, CSTRING Name, OBJECTID Owner);
    ERR (*_SetCursorPos)(double X, double Y);
    ERR (*_SetCustomCursor)(OBJECTID Surface, CRF Flags, objBitmap *Bitmap, int HotX, int HotY, OBJECTID Owner);
@@ -1794,7 +1794,7 @@ inline ERR Resample(objBitmap *Bitmap, struct ColourFormat *ColourFormat) { retu
 inline ERR RestoreCursor(PTC Cursor, OBJECTID Owner) { return DisplayBase->_RestoreCursor(Cursor,Owner); }
 inline double ScaleToDPI(double Value) { return DisplayBase->_ScaleToDPI(Value); }
 inline ERR ScanDisplayModes(CSTRING Filter, struct DisplayInfo *Info) { return DisplayBase->_ScanDisplayModes(Filter,Info); }
-inline void SetClipRegion(objBitmap *Bitmap, int Number, int Left, int Top, int Right, int Bottom, int Terminate) { return DisplayBase->_SetClipRegion(Bitmap,Number,Left,Top,Right,Bottom,Terminate); }
+inline void SetClipRegion(objBitmap *Bitmap, int Left, int Top, int Right, int Bottom) { return DisplayBase->_SetClipRegion(Bitmap,Left,Top,Right,Bottom); }
 inline ERR SetCursor(OBJECTID Surface, CRF Flags, PTC Cursor, CSTRING Name, OBJECTID Owner) { return DisplayBase->_SetCursor(Surface,Flags,Cursor,Name,Owner); }
 inline ERR SetCursorPos(double X, double Y) { return DisplayBase->_SetCursorPos(X,Y); }
 inline ERR SetCustomCursor(OBJECTID Surface, CRF Flags, objBitmap *Bitmap, int HotX, int HotY, OBJECTID Owner) { return DisplayBase->_SetCustomCursor(Surface,Flags,Bitmap,HotX,HotY,Owner); }
@@ -1838,7 +1838,7 @@ extern ERR Resample(objBitmap *Bitmap, struct ColourFormat *ColourFormat);
 extern ERR RestoreCursor(PTC Cursor, OBJECTID Owner);
 extern double ScaleToDPI(double Value);
 extern ERR ScanDisplayModes(CSTRING Filter, struct DisplayInfo *Info);
-extern void SetClipRegion(objBitmap *Bitmap, int Number, int Left, int Top, int Right, int Bottom, int Terminate);
+extern void SetClipRegion(objBitmap *Bitmap, int Left, int Top, int Right, int Bottom);
 extern ERR SetCursor(OBJECTID Surface, CRF Flags, PTC Cursor, CSTRING Name, OBJECTID Owner);
 extern ERR SetCursorPos(double X, double Y);
 extern ERR SetCustomCursor(OBJECTID Surface, CRF Flags, objBitmap *Bitmap, int HotX, int HotY, OBJECTID Owner);

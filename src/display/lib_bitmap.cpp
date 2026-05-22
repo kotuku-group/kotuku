@@ -34,10 +34,10 @@ static ERR dither(extBitmap *Bitmap, extBitmap *Dest, ColourFormat *Format, int 
    // Do a straight copy if the bitmap is too small for dithering
 
    if ((Height < 2) or (Width < 2)) {
-      for (y=SrcY; y < SrcY+Height; y++) {
-         for (x=SrcX; x < SrcX+Width; x++) {
-            Bitmap->ReadUCRPixel(Bitmap, x, y, &brgb);
-            Dest->DrawUCRPixel(Dest, x, y, &brgb);
+      for (y=0; y < Height; y++) {
+         for (x=0; x < Width; x++) {
+            Bitmap->ReadUCRPixel(Bitmap, SrcX + x, SrcY + y, &brgb);
+            Dest->DrawUCRPixel(Dest, DestX + x, DestY + y, &brgb);
          }
       }
       return ERR::Okay;
@@ -63,15 +63,17 @@ static ERR dither(extBitmap *Bitmap, extBitmap *Dest, ColourFormat *Format, int 
       }
    };
 
-   std::vector<RGB16> calc_buffer(Width * sizeof(RGB16) * 2);
+   std::vector<RGB16> calc_buffer(Width * 2);
 
    buf1 = calc_buffer.data();
    buf2 = buf1 + Width;
 
-   // Prime buf2, which will be copied to buf1 at the start of the loop.  We work with six binary "decimal places" to reduce roundoff errors.
+   // Prime buf2, which will be copied to buf1 at the start of the loop.
+   // We work with six binary "decimal places" to reduce roundoff errors.
 
+   auto srcdata = Bitmap->Data + (SrcY * Bitmap->LineWidth);
    for (x=0,index=0; x < Width; x++,index+=Bitmap->BytesPerPixel) {
-      Bitmap->ReadUCRIndex(Bitmap, Bitmap->Data + index, &brgb);
+      Bitmap->ReadUCRIndex(Bitmap, srcdata + (SrcX * Bitmap->BytesPerPixel) + index, &brgb);
       buf2[x].Red   = brgb.Red<<6;
       buf2[x].Green = brgb.Green<<6;
       buf2[x].Blue  = brgb.Blue<<6;
@@ -80,7 +82,7 @@ static ERR dither(extBitmap *Bitmap, extBitmap *Dest, ColourFormat *Format, int 
 
    if (!Format) Format = &Dest->prvColourFormat;
 
-   auto srcdata = Bitmap->Data + ((SrcY+1) * Bitmap->LineWidth);
+   srcdata = Bitmap->Data + ((SrcY+1) * Bitmap->LineWidth);
    auto destdata = Dest->Data + (DestY * Dest->LineWidth);
    uint8_t rmask = Format->RedMask   << Format->RedShift;
    uint8_t gmask = Format->GreenMask << Format->GreenShift;
@@ -177,7 +179,7 @@ static ERR dither(extBitmap *Bitmap, extBitmap *Dest, ColourFormat *Format, int 
    if (Bitmap != Dest) {
       for (x=0,index=0; x < Width; x++,index+=Dest->BytesPerPixel) {
          brgb = { uint8_t(buf2[x].Red>>6), uint8_t(buf2[x].Green>>6), uint8_t(buf2[x].Blue>>6), uint8_t(buf2[x].Alpha) };
-         Dest->DrawUCRIndex(Dest, destdata+index, &brgb);
+         Dest->DrawUCRIndex(Dest, destdata + (DestX * Dest->BytesPerPixel) + index, &brgb);
       }
    }
 
@@ -1186,9 +1188,9 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
    // Check if the destination that we are copying to is within the drawable area.
 
    if ((XDest < Bitmap->Clip.Left)) {
-      Width = Width - (Bitmap->Clip.Left - X);
+      Width = Width - (Bitmap->Clip.Left - XDest);
       if (Width < 1) return ERR::Okay;
-      X = X + (Bitmap->Clip.Left - X);
+      X = X + (Bitmap->Clip.Left - XDest);
       XDest = Bitmap->Clip.Left;
    }
    else if (XDest >= Bitmap->Clip.Right) return ERR::Okay;
@@ -1926,32 +1928,20 @@ ERR Resample(objBitmap *Bitmap, ColourFormat *Format)
 -FUNCTION-
 SetClipRegion: Sets a clipping region for a bitmap object.
 
-The SetClipRegion() method is used to manage the clipping regions assigned to a bitmap object.  Each new bitmap that is
-created has at least one clip region assigned to it, but by using SetClipRegion() you can also define multiple clipping
-areas, which is useful for complex graphics management.
-
-Each clipping region that you set is assigned a Number, starting from zero which is the default.  Each time that you
-set a new clip region you must specify the number of the region that you wish to set.  If you attempt to 'skip'
-regions - for instance, if you set regions 0, 1, 2 and 3, then skip 4 and set 5, the routine will set region 4 instead.
-If you have specified multiple clip regions and want to lower the count or reset the list, set the number of the last
-region that you want in your list and set the `Terminate` parameter to `true` to kill the regions specified beyond it.
-
-The `ClipLeft`, `ClipTop`, `ClipRight` and `ClipBottom` fields in the target `Bitmap` will be updated to reflect
-the overall area that is covered by the clipping regions that have been set.
+The SetClipRegion() method is used to manage the clipping region assigned to a bitmap object.  The `ClipLeft`,
+`ClipTop`, `ClipRight` and `ClipBottom` fields in the target `Bitmap` will be updated to reflect
+the area covered by the provided parameter values.
 
 -INPUT-
 obj(Bitmap) Bitmap: The target bitmap.
-int Number:    The number of the clip region to set.
 int Left:      The horizontal start of the clip region.
 int Top:       The vertical start of the clip region.
 int Right:     The right-most edge of the clip region.
 int Bottom:    The bottom-most edge of the clip region.
-int Terminate: Set to `true` if this is the last clip region in the list, otherwise `false`.
 
 *********************************************************************************************************************/
 
-void SetClipRegion(objBitmap *Bitmap, int Number, int Left, int Top, int Right, int Bottom,
-   int Terminate)
+void SetClipRegion(objBitmap *Bitmap, int Left, int Top, int Right, int Bottom)
 {
    Bitmap->Clip.Left   = Left;
    Bitmap->Clip.Top    = Top;

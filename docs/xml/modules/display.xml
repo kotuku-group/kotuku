@@ -593,21 +593,17 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <name>SetClipRegion</name>
     <category>Bitmap</category>
     <comment>Sets a clipping region for a bitmap object.</comment>
-    <prototype>void gfx::SetClipRegion(objBitmap * Bitmap, INT Number, INT Left, INT Top, INT Right, INT Bottom, INT Terminate)</prototype>
-    <tiriPrototype>SetClipRegion(Bitmap:obj, Number:num, Left:num, Top:num, Right:num, Bottom:num, Terminate:num)</tiriPrototype>
+    <prototype>void gfx::SetClipRegion(objBitmap * Bitmap, INT Left, INT Top, INT Right, INT Bottom)</prototype>
+    <tiriPrototype>SetClipRegion(Bitmap:obj, Left:num, Top:num, Right:num, Bottom:num)</tiriPrototype>
     <input>
       <param type="objBitmap *" name="Bitmap">The target bitmap.</param>
-      <param type="INT" name="Number">The number of the clip region to set.</param>
       <param type="INT" name="Left">The horizontal start of the clip region.</param>
       <param type="INT" name="Top">The vertical start of the clip region.</param>
       <param type="INT" name="Right">The right-most edge of the clip region.</param>
       <param type="INT" name="Bottom">The bottom-most edge of the clip region.</param>
-      <param type="INT" name="Terminate">Set to <code>true</code> if this is the last clip region in the list, otherwise <code>false</code>.</param>
     </input>
     <description>
-<p>The SetClipRegion() method is used to manage the clipping regions assigned to a bitmap object.  Each new bitmap that is created has at least one clip region assigned to it, but by using SetClipRegion() you can also define multiple clipping areas, which is useful for complex graphics management.</p>
-<p>Each clipping region that you set is assigned a Number, starting from zero which is the default.  Each time that you set a new clip region you must specify the number of the region that you wish to set.  If you attempt to 'skip' regions - for instance, if you set regions 0, 1, 2 and 3, then skip 4 and set 5, the routine will set region 4 instead. If you have specified multiple clip regions and want to lower the count or reset the list, set the number of the last region that you want in your list and set the <code>Terminate</code> parameter to <code>true</code> to kill the regions specified beyond it.</p>
-<p>The <code>ClipLeft</code>, <code>ClipTop</code>, <code>ClipRight</code> and <code>ClipBottom</code> fields in the target <code>Bitmap</code> will be updated to reflect the overall area that is covered by the clipping regions that have been set.</p>
+<p>The SetClipRegion() method is used to manage the clipping region assigned to a bitmap object.  The <code>ClipLeft</code>, <code>ClipTop</code>, <code>ClipRight</code> and <code>ClipBottom</code> fields in the target <code>Bitmap</code> will be updated to reflect the area covered by the provided parameter values.</p>
     </description>
   </function>
 

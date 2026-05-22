@@ -467,19 +467,6 @@ static uint32_t RGBToValue(RGB8 *RGB, RGBPalette *Palette)
    return best;
 }
 
-//********************************************************************************************************************
-
-inline static uint8_t conv_l2r(double X) {
-   int ix;
-
-   if (X < 0.0031308) ix = int(((X * 12.92) * 255.0) + 0.5);
-   else ix = int(((std::pow(X, 1.0 / 2.4) * 1.055 - 0.055) * 255.0) + 0.5);
-
-   if (ix < 0) return 0;
-   else if (ix > 255) return 255;
-   else return ix;
-}
-
 /*********************************************************************************************************************
 
 -ACTION-
@@ -2100,14 +2087,13 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
             buffer[dp++] = lastpixel;
          }
          else { // Save as a true colour image with run-length encoding
-            for (p=0; p < 3; p++) {
-               Self->ReadUCRPixel(Self, Self->Clip.Left, i, &rgb);
+            auto read_pixel = [&](int X, int Y) {
+               Self->ReadUCRPixel(Self, X, Y, &rgb);
+               if (Self->ColourSpace IS CS::LINEAR_RGB) glLinearRGB.invert(rgb);
+            };
 
-               if (Self->ColourSpace IS CS::LINEAR_RGB) {
-                  rgb.Red   = conv_l2r(rgb.Red);
-                  rgb.Green = conv_l2r(rgb.Green);
-                  rgb.Blue  = conv_l2r(rgb.Blue);
-               }
+            for (p=0; p < 3; p++) {
+               read_pixel(Self->Clip.Left, i);
 
                switch(p) {
                   case 0:  lastpixel = rgb.Red;   break;
@@ -2117,7 +2103,7 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
                uint8_t counter = 1;
 
                for (j=Self->Clip.Left+1; j < Self->Clip.Right; j++) {
-                  Self->ReadUCRPixel(Self, j, i, &rgb);
+                  read_pixel(j, i);
                   switch(p) {
                      case 0:  newpixel = rgb.Red;   break;
                      case 1:  newpixel = rgb.Green; break;
@@ -2218,18 +2204,16 @@ static ERR BITMAP_Seek(extBitmap *Self, struct acSeek *Args)
 -METHOD-
 SetClipRegion: Sets a clipping region for a bitmap object.
 
-SetClipRegion() updates one entry in the bitmap's clipping region list.  Drawing operations are restricted to the
+SetClipRegion() updates the bitmap's clipping region.  Drawing operations are restricted to the
 combined region.
 
 This method is implemented by ~Display.SetClipRegion().
 
 -INPUT-
-int Number:    The number of the clip region to set.
 int Left:      The horizontal start of the clip region.
 int Top:       The vertical start of the clip region.
 int Right:     The exclusive right edge of the clip region.
 int Bottom:    The exclusive bottom edge of the clip region.
-int Terminate: Set to `true` if this is the last clip region in the list, otherwise `false`.
 
 -ERRORS-
 Okay
@@ -2241,7 +2225,7 @@ static ERR BITMAP_SetClipRegion(extBitmap *Self, struct bmp::SetClipRegion *Args
 {
    if (!Args) return ERR::NullArgs;
 
-   gfx::SetClipRegion(Self, Args->Number, Args->Left, Args->Top, Args->Right, Args->Bottom, Args->Terminate);
+   gfx::SetClipRegion(Self, Args->Left, Args->Top, Args->Right, Args->Bottom);
    return ERR::Okay;
 }
 

@@ -74,7 +74,7 @@ FDEF maCopyArea[] = { { "DestBitmap", FD_OBJECTPTR }, { "Flags", FD_INT }, { "X"
 FDEF maCompress[] = { { "Level", FD_INT }, { 0, 0 } };
 FDEF maDecompress[] = { { "RetainData", FD_INT }, { 0, 0 } };
 FDEF maDrawRectangle[] = { { "X", FD_INT }, { "Y", FD_INT }, { "Width", FD_INT }, { "Height", FD_INT }, { "Colour", FD_INT|FD_UNSIGNED }, { "Flags", FD_INT }, { 0, 0 } };
-FDEF maSetClipRegion[] = { { "Number", FD_INT }, { "Left", FD_INT }, { "Top", FD_INT }, { "Right", FD_INT }, { "Bottom", FD_INT }, { "Terminate", FD_INT }, { 0, 0 } };
+FDEF maSetClipRegion[] = { { "Left", FD_INT }, { "Top", FD_INT }, { "Right", FD_INT }, { "Bottom", FD_INT }, { 0, 0 } };
 FDEF maGetColour[] = { { "Red", FD_INT }, { "Green", FD_INT }, { "Blue", FD_INT }, { "Alpha", FD_INT }, { "Colour", FD_INT|FD_UNSIGNED|FD_RESULT }, { 0, 0 } };
 
 static const struct MethodEntry clBitmapMethods[] = {

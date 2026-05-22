@@ -30,7 +30,7 @@ extern ERR Resample(objBitmap * Bitmap, struct ColourFormat * ColourFormat);
 extern ERR RestoreCursor(PTC Cursor, OBJECTID Owner);
 extern double ScaleToDPI(double Value);
 extern ERR ScanDisplayModes(CSTRING Filter, struct DisplayInfo * Info);
-extern void SetClipRegion(objBitmap * Bitmap, int Number, int Left, int Top, int Right, int Bottom, int Terminate);
+extern void SetClipRegion(objBitmap * Bitmap, int Left, int Top, int Right, int Bottom);
 extern ERR SetCursor(OBJECTID Surface, CRF Flags, PTC Cursor, CSTRING Name, OBJECTID Owner);
 extern ERR SetCursorPos(double X, double Y);
 extern ERR SetCustomCursor(OBJECTID Surface, CRF Flags, objBitmap * Bitmap, int HotX, int HotY, OBJECTID Owner);
