@@ -2728,7 +2728,7 @@ static ResourceManager glNodeManager = {
 
     <constants lookup="MSF" comment="Message flags.">
       <const name="NO_DUPLICATE">If the <code>Type</code> parameter matches a message already inside the queue, the new message will not be added and the function will immediately return with <code>ERR::Okay</code>.</const>
-      <const name="UPDATE">If the <code>Type</code> parameter matches a message already inside the queue, the data for that message will be deleted, then the new message will be added to the end of the queue.</const>
+      <const name="UPDATE">If <code>Type</code> matches a queued message, update that message's data in place.</const>
     </constants>
 
     <constants lookup="MSGID" comment="Reserved message ID's that are handled internally.">

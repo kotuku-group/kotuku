@@ -156,6 +156,7 @@ flute_test (core_filesystem "tests/test_filesystem.tiri")
 flute_test (core_misc "tests/test_misc.tiri")
 flute_test (core_compression "tests/test_compression.tiri")
 flute_test (core_config "tests/test_config.tiri")
+flute_test (core_messages "tests/test_messages.tiri")
 flute_test (core_time "tests/test_time.tiri")
 
 if (INSTALL_TESTS)

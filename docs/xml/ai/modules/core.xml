@@ -1196,7 +1196,7 @@
     <ai:k n="ADD" c="The default behaviour - this will add the message to the end of the queue."/>
     <ai:k n="MESSAGE_ID" c="The Type parameter refers to a unique message ID rather than a message type for this call."/>
     <ai:k n="NO_DUPLICATE" c="If the Type parameter matches a message already inside the queue, the new message will not be added and the function will immediately return with ERR::Okay."/>
-    <ai:k n="UPDATE" c="If the Type parameter matches a message already inside the queue, the data for that message will be deleted, then the new message will be added to the end of the queue."/>
+    <ai:k n="UPDATE" c="If Type matches a queued message, update that message's data in place."/>
     <ai:k n="WAIT" c="Wait before inserting the message if the queue is at maximum capacity."/>
   </ai:c>
   <ai:c l="MSGID" c="Reserved message ID's that are handled internally.">

@@ -839,15 +839,15 @@ class TaskMessage {
    // Constructors
 
    public:
-   TaskMessage() : Size(0), ExtBuffer(nullptr) { }
+   TaskMessage() : Time(0), UID(0), Type(MSGID::NIL), Size(0), ExtBuffer(nullptr) { }
 
-   TaskMessage(MSGID pType, APTR pData = nullptr, int pSize = 0) {
+   TaskMessage(MSGID MsgType, APTR Data = nullptr, int DataSize = 0) {
       Time = PreciseTime();
       UID  = ++glUniqueMsgID;
-      Type = pType;
+      Type = MsgType;
       Size = 0;
       ExtBuffer = nullptr;
-      if ((pData) and (pSize)) setBuffer(pData, pSize);
+      if ((Data) and (DataSize)) setBuffer(Data, DataSize);
    }
 
    ~TaskMessage() {
@@ -855,32 +855,42 @@ class TaskMessage {
    }
 
    // Move constructor
-   TaskMessage(TaskMessage &&other) noexcept {
-      ExtBuffer = nullptr;
-      copy_from(other);
-      other.Size = 0;
-      other.ExtBuffer = nullptr; // Source loses its buffer
+   TaskMessage(TaskMessage &&Other) noexcept :
+      Time(Other.Time), UID(Other.UID), Type(Other.Type), Size(Other.Size), ExtBuffer(Other.ExtBuffer) {
+      if ((not ExtBuffer) and (Size)) copymem(Other.Buffer.data(), Buffer.data(), Size);
+      Other.Size = 0;
+      Other.ExtBuffer = nullptr;
    }
 
    // Copy constructor
-   TaskMessage(const TaskMessage &other) {
+   TaskMessage(const TaskMessage &Other) {
       ExtBuffer = nullptr;
-      copy_from(other);
+      copy_from(Other);
    }
 
    // Move assignment
-   TaskMessage& operator=(TaskMessage &&other) noexcept {
-      if (this == &other) return *this;
-      copy_from(other);
-      other.Size = 0;
-      other.ExtBuffer = nullptr; // Source loses its buffer
+   TaskMessage& operator=(TaskMessage &&Other) noexcept {
+      if (this IS &Other) return *this;
+
+      if (ExtBuffer) { delete[] ExtBuffer; ExtBuffer = nullptr; }
+
+      Time = Other.Time;
+      UID  = Other.UID;
+      Type = Other.Type;
+      Size = Other.Size;
+      ExtBuffer = Other.ExtBuffer;
+
+      if ((not ExtBuffer) and (Size)) copymem(Other.Buffer.data(), Buffer.data(), Size);
+
+      Other.Size = 0;
+      Other.ExtBuffer = nullptr;
       return *this;
    }
 
    // Copy assignment
-   TaskMessage& operator=(const TaskMessage& other) {
-      if (this == &other) return *this;
-      copy_from(other);
+   TaskMessage& operator=(const TaskMessage& Other) {
+      if (this IS &Other) return *this;
+      copy_from(Other);
       return *this;
    }
 
@@ -888,26 +898,29 @@ class TaskMessage {
 
    char * getBuffer() { return ExtBuffer ? ExtBuffer : Buffer.data(); }
 
-   void setBuffer(APTR pData, size_t pSize) {
+   void setBuffer(APTR Data, size_t Size) {
       if (ExtBuffer) { delete[] ExtBuffer; ExtBuffer = nullptr; }
 
-      if (pSize <= Buffer.size()) copymem(pData, Buffer.data(), pSize);
+      if (Size <= Buffer.size()) copymem(Data, Buffer.data(), Size);
       else {
-         ExtBuffer = new (std::nothrow) char[pSize];
-         if (ExtBuffer) copymem(pData, ExtBuffer, pSize);
+         ExtBuffer = new (std::nothrow) char[Size];
+         if (ExtBuffer) copymem(Data, ExtBuffer, Size);
       }
 
-      Size = pSize;
+      this->Size = Size;
    }
 
    private:
-   inline void copy_from(const TaskMessage &Source, bool Constructor = false) {
+   inline void copy_from(const TaskMessage &Source) {
       Time = Source.Time;
       UID  = Source.UID;
       Type = Source.Type;
       Size = Source.Size;
       if (Source.ExtBuffer) setBuffer(Source.ExtBuffer, Size);
-      else if (Size) copymem(Source.Buffer.data(), Buffer.data(), Size);
+      else {
+         if (ExtBuffer) { delete[] ExtBuffer; ExtBuffer = nullptr; }
+         if (Size) copymem(Source.Buffer.data(), Buffer.data(), Size);
+      }
    }
 };
 

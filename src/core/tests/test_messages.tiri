@@ -1,0 +1,138 @@
+-- Message queue tests.
+
+local function new_message_id()
+   local msg_id = mSys.AllocateID(IDTYPE_MESSAGE)
+   assert(msg_id > 0, 'AllocateID(IDTYPE_MESSAGE) did not return a valid message ID.')
+   return msg_id
+end
+
+local function free_handler(Handle)
+   if Handle then
+      mSys.FreeResource(Handle)
+   end
+end
+
+local function drain_messages()
+   check mSys.ProcessMessages(0, 0)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ScanMessagesAndDrain()
+   local msg_id = new_message_id()
+
+   check mSys.SendMessage(msg_id, 0, nil, 0)
+
+   local err, handle = mSys.ScanMessages(msg_id, nil, 0)
+   assert(err is ERR_Okay, 'ScanMessages() did not find the queued message: ' .. mSys.GetErrorMsg(err))
+   assert(handle is 1, 'ScanMessages() returned an unexpected handle: ' .. tostring(handle))
+
+   drain_messages()
+
+   err, handle = mSys.ScanMessages(msg_id, nil, 0)
+   assert((err is ERR_Search) or (err is ERR_OutOfRange), 'ProcessMessages() did not drain the queued message.')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function NoDuplicateSuppressesSecondMessage()
+   local msg_id = new_message_id()
+   local seen_count = 0
+   local seen_data = ''
+   local handler
+
+   local err
+   err, handler = mSys.AddMsgHandler(msg_id, function(UID, Type, Data, Size)
+      seen_count++
+      seen_data = Data ? ('' .. Data) :> ''
+      return ERR_Okay
+   end)
+   assert(err is ERR_Okay, 'AddMsgHandler() failed: ' .. mSys.GetErrorMsg(err))
+   defer free_handler(handler) end
+
+   check mSys.SendMessage(msg_id, 0, 'first', 5)
+   check mSys.SendMessage(msg_id, MSF_NO_DUPLICATE, 'second', 6)
+
+   drain_messages()
+
+   assert(seen_count is 1, 'MSF_NO_DUPLICATE allowed a duplicate message through.')
+   assert(seen_data is 'first', 'MSF_NO_DUPLICATE replaced the queued payload unexpectedly.')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function UpdateMessageRetargetsQueuedUID()
+   local calibrate_id = new_message_id()
+   local source_id = new_message_id()
+   local target_id = new_message_id()
+   local last_uid = 0
+   local target_count = 0
+   local calibrate_handler
+   local target_handler
+
+   local err
+   err, calibrate_handler = mSys.AddMsgHandler(calibrate_id, function(UID, Type, Data, Size)
+      last_uid = UID
+      return ERR_Okay
+   end)
+   assert(err is ERR_Okay, 'AddMsgHandler() for the calibration message failed: ' .. mSys.GetErrorMsg(err))
+   defer free_handler(calibrate_handler) end
+
+   err, target_handler = mSys.AddMsgHandler(target_id, function(UID, Type, Data, Size)
+      target_count++
+      return ERR_Okay
+   end)
+   assert(err is ERR_Okay, 'AddMsgHandler() for the retargeted message failed: ' .. mSys.GetErrorMsg(err))
+   defer free_handler(target_handler) end
+
+   check mSys.SendMessage(calibrate_id, 0, nil, 0)
+   drain_messages()
+   assert(last_uid > 0, 'Calibration message did not expose a message UID.')
+
+   check mSys.SendMessage(source_id, 0, nil, 0)
+   err = mSys.UpdateMessage(last_uid + 1, target_id, nil, 0)
+   assert(err is ERR_Okay, 'UpdateMessage() failed to retarget the queued message: ' .. mSys.GetErrorMsg(err))
+
+   drain_messages()
+
+   assert(target_count is 1, 'UpdateMessage() did not dispatch the retargeted message type.')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function UpdateMessageStaysInPlace()
+   local first_id = new_message_id()
+   local second_id = new_message_id()
+   local sequence = ''
+   local first_data = ''
+   local second_data = ''
+   local first_handler
+   local second_handler
+
+   local err
+   err, first_handler = mSys.AddMsgHandler(first_id, function(UID, Type, Data, Size)
+      sequence ..= 'A'
+      first_data = Data ? ('' .. Data) :> ''
+      return ERR_Okay
+   end)
+   assert(err is ERR_Okay, 'AddMsgHandler() for the first message failed: ' .. mSys.GetErrorMsg(err))
+   defer free_handler(first_handler) end
+
+   err, second_handler = mSys.AddMsgHandler(second_id, function(UID, Type, Data, Size)
+      sequence ..= 'B'
+      second_data = Data ? ('' .. Data) :> ''
+      return ERR_Okay
+   end)
+   assert(err is ERR_Okay, 'AddMsgHandler() for the second message failed: ' .. mSys.GetErrorMsg(err))
+   defer free_handler(second_handler) end
+
+   check mSys.SendMessage(first_id, 0, 'first', 5)
+   check mSys.SendMessage(second_id, 0, 'middle', 6)
+   check mSys.SendMessage(first_id, MSF_UPDATE, 'updated', 7)
+
+   drain_messages()
+
+   assert(sequence is 'AB', 'MSF_UPDATE changed the queued message order: ' .. sequence)
+   assert(first_data is 'updated', 'MSF_UPDATE did not update the first message payload in place.')
+   assert(second_data is 'middle', 'MSF_UPDATE affected an unrelated queued message.')
+end

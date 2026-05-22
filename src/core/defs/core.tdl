@@ -61,7 +61,7 @@ constexpr bool defined(T flags, T test_flag) noexcept {
      "MATCH_LEN: The strings must be of equal length to be matched.")
 
   flags("MSF", { comment="Message flags." },
-     "UPDATE: If the `Type` parameter matches a message already inside the queue, the data for that message will be deleted, then the new message will be added to the end of the queue.",
+     "UPDATE: If `Type` matches a queued message, update that message's data in place.",
      "NO_DUPLICATE: If the `Type` parameter matches a message already inside the queue, the new message will not be added and the function will immediately return with `ERR::Okay`.")
 
   flags("PMF", { comment="Flags for ProcessMessages" },

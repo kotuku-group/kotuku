@@ -44,8 +44,10 @@ ERR write_nonblock(int Handle, APTR Data, int Size, int64_t EndTime);
 
 static const int MAX_MSEC = 1000;
 
-static std::recursive_mutex glQueueLock;
+static constexpr size_t MESSAGE_BATCH_LIMIT = 30;
+static std::mutex glQueueLock;
 static std::deque<TaskMessage> glQueue; // Available to all threads, use glQueueLock
+static std::atomic_size_t glQueuedMessages = 0;
 
 template <class T> inline APTR ResolveAddress(T *Pointer, int Offset) {
    return APTR(((int8_t *)Pointer) + Offset);
@@ -248,6 +250,9 @@ ERR ProcessMessages(PMF Flags, int TimeOut)
       return log.warning(ERR::SystemLocked);
    }
 
+   std::vector<TaskMessage> local_batch;
+   local_batch.reserve(MESSAGE_BATCH_LIMIT);
+
    do { // Standard message handler for the core process.
       // Call all objects on the timer list (managed by SubscribeTimer()).  To manage timer locking cleanly, the loop
       // is restarted after each client call.  To prevent more than one call per cycle, the glTimerCycle is used to
@@ -333,17 +338,17 @@ timer_cycle:
       // Consume queued messages.  Drain a batch from the shared queue under the lock, then process
       // outside the lock to reduce contention with threads calling SendMessage().
 
-      std::vector<TaskMessage> local_batch;
+      local_batch.clear();
 
       {
-         const std::lock_guard<std::recursive_mutex> lock(glQueueLock);
-         auto count = std::min(glQueue.size(), size_t(30));
+         const std::lock_guard<std::mutex> lock(glQueueLock);
+         auto count = std::min(glQueue.size(), MESSAGE_BATCH_LIMIT);
          if (count > 0) {
-            local_batch.reserve(count);
             for (size_t n = 0; n < count; n++) {
-               local_batch.emplace_back(std::move(glQueue[n]));
+               local_batch.emplace_back(std::move(glQueue.front()));
+               glQueue.pop_front();
             }
-            glQueue.erase(glQueue.begin(), glQueue.begin() + count);
+            glQueuedMessages.fetch_sub(count, std::memory_order_release);
          }
       }
 
@@ -401,7 +406,8 @@ timer_cycle:
       #endif
 
       int64_t wait = 0;
-      if ((!glQueue.empty()) or (breaking) or ((glTaskState IS TSTATE::STOPPING) and ((Flags & PMF::SYSTEM_NO_BREAK) IS PMF::NIL)));
+      if ((glQueuedMessages.load(std::memory_order_acquire) > 0) or (breaking) or
+          ((glTaskState IS TSTATE::STOPPING) and ((Flags & PMF::SYSTEM_NO_BREAK) IS PMF::NIL)));
       else if (timeout_end > 0) {
          // Wait for someone to communicate with us, or stall until an interrupt is due.
 
@@ -436,7 +442,7 @@ timer_cycle:
 
       // Continue the loop?
 
-      if (!glQueue.empty()) continue; // There are messages left unprocessed
+      if (glQueuedMessages.load(std::memory_order_acquire) > 0) continue; // There are messages left unprocessed
       else if (((glTaskState IS TSTATE::STOPPING) and ((Flags & PMF::SYSTEM_NO_BREAK) IS PMF::NIL)) or (breaking)) {
          log.trace("Breaking message loop.");
          break;
@@ -504,7 +510,7 @@ ERR ScanMessages(int *Handle, MSGID Type, APTR Buffer, int BufferSize)
       return ERR::Search;
    }
 
-   const std::lock_guard<std::recursive_mutex> lock(glQueueLock);
+   const std::lock_guard<std::mutex> lock(glQueueLock);
 
    int index = *Handle;
    if (index >= int(glQueue.size())) return ERR::OutOfRange;
@@ -571,7 +577,7 @@ ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size)
    if ((Type IS MSGID::NIL) or (Size < 0)) return log.warning(ERR::Args);
 
    {
-      const std::lock_guard<std::recursive_mutex> lock(glQueueLock);
+      const std::lock_guard<std::mutex> lock(glQueueLock);
 
       if ((Flags & (MSF::NO_DUPLICATE|MSF::UPDATE)) != MSF::NIL) {
          for (auto it=glQueue.begin(); it != glQueue.end(); it++) {
@@ -586,6 +592,7 @@ ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size)
       }
 
       glQueue.emplace_back(Type, Data, Size); // Deque keeps message storage stable for re-entrant handlers.
+      glQueuedMessages.fetch_add(1, std::memory_order_release);
    }
 
    wake_task(); // Alert the process to indicate that there are messages available.
@@ -837,7 +844,7 @@ ERR UpdateMessage(int MessageID, MSGID Type, APTR Buffer, int BufferSize)
 {
    if (!MessageID) return ERR::NullArgs;
 
-   const std::lock_guard<std::recursive_mutex> lock(glQueueLock);
+   const std::lock_guard<std::mutex> lock(glQueueLock);
 
    for (auto it=glQueue.begin(); it != glQueue.end(); it++) {
       if (it->UID != MessageID) continue;
