@@ -168,51 +168,164 @@ static int glLockCount = 0;
 static OBJECTID glActiveDisplayID = 0;
 #endif
 
+#ifdef __xwindows__
+
 #ifdef XRANDR_ENABLED
 static XRRScreenSize glCustomSizes[] = { { 640,480,0,0 }, { 800,600,0,0 }, { 1024,768,0,0 }, { 1280,1024,0,0 } };
 static XRRScreenSize *glSizes = glCustomSizes;
 static int glSizeCount = std::ssize(glCustomSizes);
 static int glActualCount = 0;
 
-static bool get_default_xrandr_monitor_size(int *Width, int *Height)
+static bool get_xrandr_version(int *Major, int *Minor)
 {
-   if ((!XDisplay) or (!Width) or (!Height)) return false;
+   if ((!XDisplay) or (!Major) or (!Minor)) return false;
 
    int event_base = 0;
    int error_base = 0;
    if (!XRRQueryExtension(XDisplay, &event_base, &error_base)) return false;
 
-   int major_version = 0;
-   int minor_version = 0;
-   if (!XRRQueryVersion(XDisplay, &major_version, &minor_version)) return false;
-   if ((major_version < 1) or ((major_version IS 1) and (minor_version < 5))) return false;
+   *Major = 0;
+   *Minor = 0;
+   if (!XRRQueryVersion(XDisplay, Major, Minor)) return false;
 
-   int monitor_count = 0;
-   auto monitors = XRRGetMonitors(XDisplay, DefaultRootWindow(XDisplay), True, &monitor_count);
-   if (!monitors) return false;
-   if (!monitor_count) {
-      XRRFreeMonitors(monitors);
-      return false;
-   }
+   return true;
+}
 
-   int monitor_index = 0;
-   for (int i=0; i < monitor_count; i++) {
-      if (monitors[i].primary) {
-         monitor_index = i;
-         break;
-      }
-   }
+static bool get_xrandr_refresh_rate(RRCrtc Crtc, float *RefreshRate)
+{
+   if ((!XDisplay) or (!RefreshRate)) return false;
+
+   auto resources = XRRGetScreenResourcesCurrent(XDisplay, DefaultRootWindow(XDisplay));
+   if (!resources) return false;
 
    auto result = false;
-   if ((monitors[monitor_index].width > 0) and (monitors[monitor_index].height > 0)) {
-      *Width  = monitors[monitor_index].width;
-      *Height = monitors[monitor_index].height;
-      result = true;
+
+   for (int i=0; i < resources->ncrtc; i++) {
+      if ((Crtc) and (resources->crtcs[i] != Crtc)) continue;
+
+      if (auto crtc_info = XRRGetCrtcInfo(XDisplay, resources, resources->crtcs[i])) {
+         if ((crtc_info->mode) and (crtc_info->noutput > 0)) {
+            for (int m=0; m < resources->nmode; m++) {
+               if (resources->modes[m].id IS crtc_info->mode) {
+                  auto &mode = resources->modes[m];
+                  if ((mode.hTotal > 0) and (mode.vTotal > 0) and (mode.dotClock > 0)) {
+                     *RefreshRate = float((double)mode.dotClock / ((double)mode.hTotal * (double)mode.vTotal));
+                     result = true;
+                  }
+                  break;
+               }
+            }
+         }
+
+         XRRFreeCrtcInfo(crtc_info);
+      }
+
+      if (result) break;
    }
 
-   XRRFreeMonitors(monitors);
+   XRRFreeScreenResources(resources);
    return result;
 }
+
+static bool get_xrandr_output_refresh_rate(RROutput Output, float *RefreshRate)
+{
+   if ((!XDisplay) or (!Output) or (!RefreshRate)) return false;
+
+   auto resources = XRRGetScreenResourcesCurrent(XDisplay, DefaultRootWindow(XDisplay));
+   if (!resources) return false;
+
+   auto result = false;
+
+   if (auto output_info = XRRGetOutputInfo(XDisplay, resources, Output)) {
+      if (output_info->crtc) result = get_xrandr_refresh_rate(output_info->crtc, RefreshRate);
+      XRRFreeOutputInfo(output_info);
+   }
+
+   XRRFreeScreenResources(resources);
+   return result;
+}
+#endif
+
+static void get_x11_display_geometry(DisplayInfo *Info, int X, int Y, bool MatchPoint)
+{
+   if ((!Info) or (!XDisplay)) return;
+
+   Info->VirtualX      = 0;
+   Info->VirtualY      = 0;
+   Info->VirtualWidth  = glRootWindow.width;
+   Info->VirtualHeight = glRootWindow.height;
+   Info->MonitorX      = 0;
+   Info->MonitorY      = 0;
+   Info->MonitorWidth  = glRootWindow.width;
+   Info->MonitorHeight = glRootWindow.height;
+   Info->PhysicalWidth = DisplayWidthMM(XDisplay, DefaultScreen(XDisplay));
+   Info->PhysicalHeight = DisplayHeightMM(XDisplay, DefaultScreen(XDisplay));
+
+   #ifdef XRANDR_ENABLED
+      int major_version = 0;
+      int minor_version = 0;
+      if (not get_xrandr_version(&major_version, &minor_version)) return;
+
+      if ((major_version > 1) or ((major_version IS 1) and (minor_version >= 5))) {
+         int monitor_count = 0;
+         auto monitors = XRRGetMonitors(XDisplay, DefaultRootWindow(XDisplay), True, &monitor_count);
+         if ((monitors) and (monitor_count > 0)) {
+            int monitor_index = 0;
+            int primary_x = monitors[0].x;
+            int primary_y = monitors[0].y;
+
+            for (int i=0; i < monitor_count; i++) {
+               if (monitors[i].primary) {
+                  primary_x = monitors[i].x;
+                  primary_y = monitors[i].y;
+                  break;
+               }
+            }
+
+            for (int i=0; i < monitor_count; i++) {
+               if ((MatchPoint) and (X >= monitors[i].x) and (X < monitors[i].x + monitors[i].width) and
+                     (Y >= monitors[i].y) and (Y < monitors[i].y + monitors[i].height)) {
+                  monitor_index = i;
+                  break;
+               }
+               else if ((not MatchPoint) and (monitors[i].primary)) {
+                  monitor_index = i;
+                  break;
+               }
+            }
+
+            Info->MonitorX       = monitors[monitor_index].x - primary_x;
+            Info->MonitorY       = monitors[monitor_index].y - primary_y;
+            Info->MonitorWidth   = monitors[monitor_index].width;
+            Info->MonitorHeight  = monitors[monitor_index].height;
+            Info->PhysicalWidth  = monitors[monitor_index].mwidth;
+            Info->PhysicalHeight = monitors[monitor_index].mheight;
+
+            if (monitors[monitor_index].noutput > 0) {
+               float refresh_rate = 0;
+               if (get_xrandr_output_refresh_rate(monitors[monitor_index].outputs[0], &refresh_rate)) {
+                  Info->RefreshRate = refresh_rate;
+                  Info->MinRefresh  = refresh_rate;
+                  Info->MaxRefresh  = refresh_rate;
+               }
+            }
+
+            XRRFreeMonitors(monitors);
+            return;
+         }
+
+         if (monitors) XRRFreeMonitors(monitors);
+      }
+
+      float refresh_rate = 0;
+      if (get_xrandr_refresh_rate(0, &refresh_rate)) {
+         Info->RefreshRate = refresh_rate;
+         Info->MinRefresh  = refresh_rate;
+         Info->MaxRefresh  = refresh_rate;
+      }
+   #endif
+}
+
 #endif
 
 std::recursive_mutex glInputLock;
@@ -663,9 +776,13 @@ ERR get_display_info(OBJECTID DisplayID, DisplayInfo *Info)
          Info->HostedY       = display->Y;
 
          #ifdef __xwindows__
+            int monitor_x = Info->HostedX + (Info->Width / 2);
+            int monitor_y = Info->HostedY + (Info->Height / 2);
+            get_x11_display_geometry(Info, monitor_x, monitor_y, true);
             Info->AccelFlags = ACF(-1);
             if (glDGAAvailable IS TRUE) {
-               Info->AccelFlags &= ~ACF::VIDEO_BLIT; // Turn off video blitting when X11DGA is active (it does not provide blitter syncing)
+               // X11DGA does not provide blitter syncing.
+               Info->AccelFlags &= ~ACF::VIDEO_BLIT;
             }
          #elif _WIN32
             Info->AccelFlags = ACF(-1);
@@ -722,6 +839,10 @@ ERR get_display_info(OBJECTID DisplayID, DisplayInfo *Info)
          Info->HDensity      = 96;
          Info->BitsPerPixel  = 32;
          Info->BytesPerPixel = 4;
+         Info->MonitorWidth  = Info->Width;
+         Info->MonitorHeight = Info->Height;
+         Info->VirtualWidth  = Info->Width;
+         Info->VirtualHeight = Info->Height;
       }
       else {
          XPixmapFormatValues *list;
@@ -729,14 +850,11 @@ ERR get_display_info(OBJECTID DisplayID, DisplayInfo *Info)
 
          Info->Width  = glRootWindow.width;
          Info->Height = glRootWindow.height;
-         #ifdef XRANDR_ENABLED
-            int monitor_width = 0;
-            int monitor_height = 0;
-            if (get_default_xrandr_monitor_size(&monitor_width, &monitor_height)) {
-               Info->Width  = int16_t(monitor_width);
-               Info->Height = int16_t(monitor_height);
-            }
-         #endif
+         get_x11_display_geometry(Info, 0, 0, false);
+         if ((Info->MonitorWidth > 0) and (Info->MonitorHeight > 0)) {
+            Info->Width  = int16_t(Info->MonitorWidth);
+            Info->Height = int16_t(Info->MonitorHeight);
+         }
          Info->AccelFlags = ACF(-1);
          #warning TODO: Get display density
          Info->VDensity = 96;
