@@ -927,6 +927,7 @@ ERR UpdateTimer(APTR Subscription, double Interval)
          auto usInterval = -(int64_t(Interval * 1000000.0));
          if (usInterval <= timer->Interval) {
             timer->Interval = usInterval;
+            timer->PendingInterval = 0;
             auto next_call = PreciseTime() + usInterval;
             if (next_call < timer->NextCall) timer->NextCall = next_call;
          }
