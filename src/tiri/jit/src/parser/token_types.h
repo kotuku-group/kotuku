@@ -118,6 +118,26 @@ enum class TokenKind : uint16_t {
 
 [[nodiscard]] inline CSTRING token_kind_name(TokenKind kind, LexState &lex) { return lex.token2str((LexToken)kind); }
 
+[[nodiscard]] constexpr bool token_kind_has_flag(TokenKind Kind, uint32_t Flag) noexcept {
+   LexToken raw = (LexToken)Kind;
+   if (raw > TK_OFS) {
+      size_t index = size_t(raw - TK_OFS - 1);
+      if (index < TOKEN_DEFINITIONS.size()) return TOKEN_DEFINITIONS[index].has_flag(Flag);
+   }
+
+   switch (Kind) {
+      case TokenKind::RightParen:
+      case TokenKind::RightBracket:
+      case TokenKind::RightBrace:
+         return (Flag & TKF_CAN_END_RANGE_EXPRESSION) != 0;
+      case TokenKind::Dot:
+      case TokenKind::Colon:
+         return (Flag & TKF_MEMBER_NAME_CONTEXT) != 0;
+      default:
+         return false;
+   }
+}
+
 // Constexpr alternative for compile-time token name lookup
 // Returns a string_view without requiring a LexState reference.
 [[nodiscard]] constexpr std::string_view token_kind_name_constexpr(TokenKind kind) noexcept {
@@ -267,6 +287,9 @@ public:
    [[nodiscard]] inline LexToken raw() const { return this->raw_token; }
    [[nodiscard]] inline SourceSpan span() const { return this->source; }
    [[nodiscard]] inline bool is(TokenKind kind) const { return this->token_kind IS kind; }
+   [[nodiscard]] constexpr bool has_flag(uint32_t Flag) const noexcept {
+      return token_kind_has_flag(this->token_kind, Flag);
+   }
    [[nodiscard]] inline bool is_literal() const;
    [[nodiscard]] inline const TokenPayload & payload() const { return this->data; }
 

@@ -62,22 +62,6 @@ static std::unique_ptr<FunctionExprPayload> move_function_payload(ExprNodePtr &N
    return result;
 }
 
-// Checks if a token kind is a statement keyword that can be used in conditional shorthand syntax (e.g., value ?! return).
-
-static bool is_shorthand_statement_keyword(TokenKind Kind)
-{
-   switch (Kind) {
-      case TokenKind::ReturnToken:
-      case TokenKind::BreakToken:
-      case TokenKind::ContinueToken:
-      case TokenKind::RaiseToken:
-      case TokenKind::CheckToken:
-         return true;
-      default:
-         return false;
-   }
-}
-
 // Checks for contextual range separators.  The lexer intentionally leaves `to` and `into` as identifiers so these
 // words remain available outside range-literal separator positions.
 
@@ -110,26 +94,6 @@ static bool is_terminating_statement(const StmtNode *Stmt)
       case AstNodeKind::ReturnStmt:
       case AstNodeKind::BreakStmt:
       case AstNodeKind::ContinueStmt:
-         return true;
-      default:
-         return false;
-   }
-}
-
-// Checks if a token kind is a compound assignment operator (+=, -=, etc.).
-// These are statements, not expressions, which helps provide better error messages.
-
-static bool is_compound_assignment(TokenKind Kind)
-{
-   switch (Kind) {
-      case TokenKind::CompoundAdd:
-      case TokenKind::CompoundSub:
-      case TokenKind::CompoundMul:
-      case TokenKind::CompoundDiv:
-      case TokenKind::CompoundMod:
-      case TokenKind::CompoundConcat:
-      case TokenKind::CompoundIfEmpty:
-      case TokenKind::CompoundIfNil:
          return true;
       default:
          return false;
@@ -487,36 +451,9 @@ bool AstBuilder::at_end_of_block(std::span<const TokenKind> terminators) const
 
 // Checks if a token kind can begin a statement.
 
-bool AstBuilder::is_statement_start(TokenKind kind) const
+bool AstBuilder::is_statement_start(TokenKind Kind) const
 {
-   switch (kind) {
-      case TokenKind::Local:
-      case TokenKind::Global:
-      case TokenKind::Enum:
-      case TokenKind::Function:
-      case TokenKind::ThunkToken:
-      case TokenKind::Annotate:
-      case TokenKind::If:
-      case TokenKind::WhileToken:
-      case TokenKind::Repeat:
-      case TokenKind::For:
-      case TokenKind::DoToken:
-      case TokenKind::WithToken:
-      case TokenKind::DeferToken:
-      case TokenKind::ReturnToken:
-      case TokenKind::BreakToken:
-      case TokenKind::ContinueToken:
-      case TokenKind::Choose:
-      case TokenKind::TryToken:
-      case TokenKind::RaiseToken:
-      case TokenKind::CheckToken:
-      case TokenKind::ImportToken:
-      case TokenKind::NamespaceToken:
-      case TokenKind::CompileIf:
-         return true;
-      default:
-         return false;
-   }
+   return token_kind_has_flag(Kind, TKF_STATEMENT_START);
 }
 
 //********************************************************************************************************************

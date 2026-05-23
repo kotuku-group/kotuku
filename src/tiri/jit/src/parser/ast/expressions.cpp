@@ -49,7 +49,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_expression_stmt()
 
       this->ctx.tokens().advance();
       Token next = this->ctx.tokens().current();
-      if (not is_shorthand_statement_keyword(next.kind())) {
+      if (not next.has_flag(TKF_SHORTHAND_STATEMENT)) {
          return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, next,
             "expected return, break, continue, raise, or check after guard operator '?!'");
       }
@@ -798,7 +798,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
 
       default: {
          std::string msg;
-         if (is_compound_assignment(current.kind())) {
+         if (current.has_flag(TKF_COMPOUND_ASSIGNMENT)) {
             msg = std::format("'{}' is a statement, not an expression; use 'do ... end' for statements in arrow functions",
                this->ctx.lex().token2str(current.raw()));
          }
@@ -876,7 +876,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_arrow_function(ExprNodeList paramete
       // Check if a compound assignment follows - this indicates the user tried to use a statement
       // in an expression-body arrow function. Provide a helpful error message.
       Token next = this->ctx.tokens().current();
-      if (is_compound_assignment(next.kind())) {
+      if (next.has_flag(TKF_COMPOUND_ASSIGNMENT)) {
          return this->fail<ExprNodePtr>(ParserErrorCode::UnexpectedToken, next,
             std::format("'{}' is a statement, not an expression; use 'do ... end' for statement bodies in arrow functions",
                this->ctx.lex().token2str(next.raw())));
