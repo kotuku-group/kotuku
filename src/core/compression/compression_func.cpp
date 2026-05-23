@@ -1,9 +1,9 @@
 
 template<class T> void wrb(T Value, APTR Target) {
-   if constexpr (std::endian::native == std::endian::little) {
+   if constexpr (std::endian::native IS std::endian::little) {
       ((T *)Target)[0] = Value;
    }
-   else if constexpr (sizeof(T) == 2) {
+   else if constexpr (sizeof(T) IS 2) {
       ((T *)Target)[0] = __builtin_bswap16(Value);
    }
    else ((T *)Target)[0] = __builtin_bswap32(Value);

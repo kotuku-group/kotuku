@@ -149,7 +149,7 @@ Kōtuku maintains retained scene graphs that can be modified at runtime. This en
 - **NEVER use `static_cast`** - Use C-style casting instead, e.g. `int(variable)` NOT `static_cast<int>(variable)`
 - **NEVER use `&&`** - Use `and` instead of `&&`
 - **NEVER use `||`** - Use `or` instead of `||`
-- **NEVER use `==`** - Use the `IS` macro instead of `==` (exceptions made for operator overloading)
+- **NEVER use `==`** - Use the `IS` macro instead of `==` (exceptions made for operator overloading).  Use of `!=` is still permitted.
 - **NEVER use C++ exceptions** - Error management relies on checking function results
 
 ### 📋 MANDATORY CODING CHECKLIST

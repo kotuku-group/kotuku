@@ -2334,7 +2334,7 @@ void notify_resize(OBJECTPTR Object, ACTIONID Action, ERR Result, APTR Parameter
    auto Self = (objClassType *)CurrentContext();
 
    // Code here...
-   if ((Result == ERR::Okay) and (Parameters)) {
+   if ((Result IS ERR::Okay) and (Parameters)) {
       auto resize = (struct acRedimension *)Parameters;
    }
 }

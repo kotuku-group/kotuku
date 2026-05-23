@@ -33,6 +33,7 @@
 #endif
 #include <winioctl.h>
 #include <shlobj.h>
+#include <aclapi.h>
 
 #include <tchar.h>
 #include <imagehlp.h>
@@ -1281,7 +1282,7 @@ extern "C" size_t winGetPageSize(void)
 
 extern "C" int winProtectMemory(void *Address, size_t Size, bool Read, bool Write, bool Exec)
 {
-   if ((not Address) or (Size == 0)) return 0;
+   if ((not Address) or (Size IS 0)) return 0;
 
    DWORD protect = PAGE_NOACCESS;
    if (Write and Exec) protect = PAGE_EXECUTE_READWRITE;
@@ -2141,15 +2142,6 @@ extern "C" int winGetUserName(STRING Buffer, int Length)
 
 //********************************************************************************************************************
 
-static bool case_sensitive_name_match(CSTRING Location, int NameStart, int NameEnd, CSTRING ActualName)
-{
-   int index = 0;
-   while ((NameStart + index < NameEnd) and (Location[NameStart + index] IS ActualName[index]) and ActualName[index]) index++;
-   return (NameStart + index IS NameEnd) and (ActualName[index] IS 0);
-}
-
-//********************************************************************************************************************
-
 extern "C" int winGetUserFolder(STRING Buffer, int Size)
 {
    LPITEMIDLIST list;
@@ -2175,7 +2167,7 @@ extern "C" int winGetUserFolder(STRING Buffer, int Size)
 
 extern "C" int winMoveFile(STRING oldname, STRING newname)
 {
-   return MoveFile(oldname, newname);
+   return MoveFileExA(oldname, newname, MOVEFILE_REPLACE_EXISTING|MOVEFILE_COPY_ALLOWED);
 }
 
 //********************************************************************************************************************
@@ -2258,27 +2250,31 @@ extern ERR winGetVolumeInformation(STRING Volume, std::string &Label, std::strin
 
 //********************************************************************************************************************
 
-extern "C" int winTestLocation(STRING Location, int8_t CaseSensitive)
+extern "C" int winTestLocation(CSTRING Location, int8_t CaseSensitive)
 {
-   int len, result;
-   HANDLE handle;
-   WIN32_FIND_DATA find;
-   char save;
-   int i, savepos;
-   bool found = false;
+   if (not Location) return 0;
 
-   for (len=0; Location[len]; len++);
-   if (len < 1) return 0;
+   const std::string_view location(Location);
+   if (location.empty()) return 0;
 
-   if ((Location[len-1] IS '/') or (Location[len-1] IS '\\')) {
+   const auto is_path_separator = [](const char Value) {
+      return (Value IS '/') or (Value IS '\\');
+   };
 
-      if (len IS 3) {
+   const auto filename_start = [is_path_separator](std::string_view Path, size_t End) {
+      while ((End > 0) and (not is_path_separator(Path[End - 1]))) End--;
+      return End;
+   };
+
+   if (is_path_separator(location.back())) {
+      if (location.size() IS 3) {
          // Checking for the existence of a drive letter - does not necessarily mean that there is media in the device.
 
          char volname[60], fsname[40];
          DWORD volserial, maxcomp, fileflags;
 
-         if (GetVolumeInformation(Location, volname, sizeof(volname), &volserial, &maxcomp, &fileflags, fsname, sizeof(fsname))) {
+         if (GetVolumeInformation(Location, volname, sizeof(volname), &volserial, &maxcomp, &fileflags, fsname,
+            sizeof(fsname))) {
             return LOC_DIRECTORY;
          }
          else return 0;
@@ -2286,11 +2282,12 @@ extern "C" int winTestLocation(STRING Location, int8_t CaseSensitive)
       else {
          // We have been asked to check for the explicit existence of a folder.
 
-         result = 0;
-         savepos = len-1;
-         save = Location[savepos];
-         Location[savepos] = 0; // Remove the trailing slash
-         if ((handle = FindFirstFile(Location, &find)) != INVALID_HANDLE_VALUE) {
+         auto result = 0;
+         auto found = false;
+         WIN32_FIND_DATA find;
+         const std::string folder_path(location.data(), location.size() - 1);
+
+         if (auto handle = FindFirstFile(folder_path.c_str(), &find); handle != INVALID_HANDLE_VALUE) {
             found = true;
             if (find.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) result = LOC_DIRECTORY;
             else while (FindNextFile(handle, &find)) {
@@ -2306,19 +2303,21 @@ extern "C" int winTestLocation(STRING Location, int8_t CaseSensitive)
             // Check that the filename of the given location matches that of the actual name set on the file system.
 
             if (found and result) {
-               i = savepos;
-               while ((i > 0) and (Location[i-1] != '/') and (Location[i-1] != '\\')) i--;
-               if (not case_sensitive_name_match(Location, i, savepos, find.cFileName)) result = 0; // Not a case sensitive match
+               const auto name_start = filename_start(folder_path, folder_path.size());
+               if (not (folder_path.substr(name_start) IS std::string_view(find.cFileName))) {
+                  result = 0; // Not a case sensitive match
+               }
             }
             else result = 0;
          }
-
-         Location[savepos] = save;
+         return result;
       }
-
-      return result;
    }
-   else if ((handle = FindFirstFile(Location, &find)) != INVALID_HANDLE_VALUE) {
+
+   WIN32_FIND_DATA find;
+   if (auto handle = FindFirstFile(Location, &find); handle != INVALID_HANDLE_VALUE) {
+      int result;
+
       if (find.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
          result = LOC_DIRECTORY;
       }
@@ -2329,9 +2328,10 @@ extern "C" int winTestLocation(STRING Location, int8_t CaseSensitive)
       if (CaseSensitive) {
          // Check that the filename of the given location matches that of the actual name set on the file system.
 
-         i = len;
-         while ((i > 0) and (Location[i-1] != '/') and (Location[i-1] != '\\')) i--;
-         if (not case_sensitive_name_match(Location, i, len, find.cFileName)) return 0; /* Not a case sensitive match */
+         const auto name_start = filename_start(location, location.size());
+         if (not (location.substr(name_start) IS std::string_view(find.cFileName))) {
+            return 0; // Not a case sensitive match
+         }
       }
 
       return result;
@@ -2342,6 +2342,59 @@ extern "C" int winTestLocation(STRING Location, int8_t CaseSensitive)
 //********************************************************************************************************************
 // Helper function to remove read-only attribute and delete a file
 
+static ERR grant_delete_access(CSTRING Path, bool Folder)
+{
+   HANDLE token = nullptr;
+   if (not OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return ERR::NoPermission;
+
+   DWORD token_size = 0;
+   GetTokenInformation(token, TokenUser, nullptr, 0, &token_size);
+   if (not (GetLastError() IS ERROR_INSUFFICIENT_BUFFER)) {
+      CloseHandle(token);
+      return ERR::SystemCall;
+   }
+
+   std::vector<uint8_t> token_buffer(token_size);
+   if (not GetTokenInformation(token, TokenUser, token_buffer.data(), token_size, &token_size)) {
+      CloseHandle(token);
+      return ERR::SystemCall;
+   }
+   CloseHandle(token);
+
+   auto token_user = (TOKEN_USER *)token_buffer.data();
+
+   PACL old_dacl = nullptr;
+   PACL new_dacl = nullptr;
+   PSECURITY_DESCRIPTOR security = nullptr;
+
+   auto result = GetNamedSecurityInfoA((LPSTR)Path, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, nullptr, nullptr,
+      &old_dacl, nullptr, &security);
+   if (not (result IS ERROR_SUCCESS)) return ERR::NoPermission;
+
+   EXPLICIT_ACCESSA access;
+   memset(&access, 0, sizeof(access));
+   access.grfAccessPermissions = DELETE;
+   access.grfAccessMode        = GRANT_ACCESS;
+   access.grfInheritance       = Folder ? SUB_CONTAINERS_AND_OBJECTS_INHERIT : NO_INHERITANCE;
+   access.Trustee.TrusteeForm  = TRUSTEE_IS_SID;
+   access.Trustee.TrusteeType  = TRUSTEE_IS_USER;
+   access.Trustee.ptstrName    = (LPSTR)token_user->User.Sid;
+
+   result = SetEntriesInAclA(1, &access, old_dacl, &new_dacl);
+   if (result IS ERROR_SUCCESS) {
+      result = SetNamedSecurityInfoA((LPSTR)Path, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, nullptr, nullptr,
+         new_dacl, nullptr);
+   }
+
+   if (new_dacl) LocalFree(new_dacl);
+   if (security) LocalFree(security);
+
+   if (result IS ERROR_SUCCESS) return ERR::Okay;
+   else return ERR::NoPermission;
+}
+
+//********************************************************************************************************************
+
 static ERR delete_file_helper(const std::string &FilePath)
 {
    if (auto attrib = GetFileAttributes(FilePath.c_str()); attrib != INVALID_FILE_ATTRIBUTES) {
@@ -2351,8 +2404,22 @@ static ERR delete_file_helper(const std::string &FilePath)
       }
    }
 
-   if (unlink(FilePath.c_str()) IS 0) return ERR::Okay;
-   else return convert_errno(errno, ERR::SystemCall);
+   if (DeleteFileA(FilePath.c_str())) return ERR::Okay;
+
+   auto error = GetLastError();
+   if (error IS ERROR_ACCESS_DENIED) {
+      if (grant_delete_access(FilePath.c_str(), false) IS ERR::Okay) {
+         if (DeleteFileA(FilePath.c_str())) return ERR::Okay;
+         error = GetLastError();
+      }
+   }
+
+   switch (error) {
+      case ERROR_ACCESS_DENIED: return ERR::NoPermission;
+      case ERROR_FILE_NOT_FOUND:
+      case ERROR_PATH_NOT_FOUND: return ERR::FileNotFound;
+      default: return ERR::SystemCall;
+   }
 }
 
 //********************************************************************************************************************
@@ -2368,7 +2435,21 @@ static ERR delete_directory_helper(const std::string &DirPath)
    }
 
    if (RemoveDirectory(DirPath.c_str())) return ERR::Okay;
-   else return ERR::SystemCall;
+
+   auto error = GetLastError();
+   if (error IS ERROR_ACCESS_DENIED) {
+      if (grant_delete_access(DirPath.c_str(), true) IS ERR::Okay) {
+         if (RemoveDirectory(DirPath.c_str())) return ERR::Okay;
+         error = GetLastError();
+      }
+   }
+
+   switch (error) {
+      case ERROR_ACCESS_DENIED: return ERR::NoPermission;
+      case ERROR_FILE_NOT_FOUND:
+      case ERROR_PATH_NOT_FOUND: return ERR::FileNotFound;
+      default: return ERR::SystemCall;
+   }
 }
 
 //********************************************************************************************************************
@@ -2400,11 +2481,18 @@ extern ERR delete_tree(std::string &Path, FUNCTION *Callback, struct FileFeedbac
 
             if (find.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
                ERR result = delete_tree(Path, Callback, Feedback);
-               if (result != ERR::Okay and result != ERR::Cancelled) {
-                  // Continue with other files even if one fails
+               if (not (result IS ERR::Okay)) {
+                  FindClose(handle);
+                  return result;
                }
             }
-            else delete_file_helper(Path);
+            else {
+               ERR result = delete_file_helper(Path);
+               if (not (result IS ERR::Okay)) {
+                  FindClose(handle);
+                  return result;
+               }
+            }
          }
 
          cont = FindNextFile(handle, &find);

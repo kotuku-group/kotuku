@@ -1748,10 +1748,10 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
       }
 
 #ifdef _WIN32
-      if (rename(src.c_str(), dest.c_str())) {
+      if (winMoveFile(src.data(), dest.data())) return ERR::Okay;
+      else {
          // failed - drop through to file copy
       }
-      else return ERR::Okay;
 #else
       if (rename(src.c_str(), dest.c_str()) IS -1) {
          // failed - drop through to file copy

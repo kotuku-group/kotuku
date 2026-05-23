@@ -49,7 +49,7 @@ Example usage:
 
 <pre>
 APTR address;
-if (AllocMemory(1000, MEM::DATA, &address, nullptr) == ERR::Okay) {
+if (AllocMemory(1000, MEM::DATA, &address, nullptr) IS ERR::Okay) {
    // Use memory block...
    FreeResource(address);
 }
@@ -570,13 +570,13 @@ ERR ProtectMemory(APTR Address, MEM Flags)
    kt::Log log(__FUNCTION__);
 
    if (not Address) return ERR::NullArgs;
-   if ((Flags & (MEM::READ | MEM::WRITE)) == MEM::NIL) return ERR::Args;
+   if ((Flags & (MEM::READ | MEM::WRITE)) IS MEM::NIL) return ERR::Args;
 
    if (glShowPrivate) log.branch("ProtectMemory(%p, $%.8x)", Address, int(Flags));
 
    MemInfo meminfo;
    if (MemoryIDInfo(GetMemoryID(Address), &meminfo, sizeof(meminfo)) IS ERR::Okay) {
-      if ((meminfo.Flags & MEM::PROTECTED) == MEM::NIL) {
+      if ((meminfo.Flags & MEM::PROTECTED) IS MEM::NIL) {
          log.warning("Memory block at %p is not protected.", Address);
          return ERR::Args;
       }

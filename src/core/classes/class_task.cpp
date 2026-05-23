@@ -1350,7 +1350,7 @@ static ERR TASK_GetEnv(extTask *Self, struct task::GetEnv *Args)
 
             case REG_DWORD_BIG_ENDIAN:
                if (unsigned(Length) >= sizeof(int)) {
-                  if constexpr (std::endian::native == std::endian::little) {
+                  if constexpr (std::endian::native IS std::endian::little) {
                      Output = std::to_string(reverse_long(((int *)Buffer)[0]));
                   }
                   else Output = std::to_string(((int *)Buffer)[0]);
