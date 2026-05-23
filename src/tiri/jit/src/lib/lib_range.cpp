@@ -646,17 +646,6 @@ LJLIB_CF(range_new)
 }
 
 //********************************************************************************************************************
-// range.check(value)
-// Returns true if the value is a range object
-
-LJLIB_CF(range_check)
-{
-   auto r = check_range(L, 1);
-   lua_pushboolean(L, r != nullptr);
-   return 1;
-}
-
-//********************************************************************************************************************
 // __tostring metamethod
 // Returns "{start to stop}" or "{start into stop}" based on inclusivity
 
@@ -1364,7 +1353,6 @@ extern "C" int luaopen_range(lua_State *L)
 
    // Register prototypes for range methods (used for type inference)
 
-   reg_iface_prototype("range", "check", { TiriType::Bool }, { TiriType::Any });
    reg_iface_prototype("range", "new", { TiriType::Range }, { TiriType::Num, TiriType::Num });
    reg_iface_prototype("range", "each", { TiriType::Range }, { TiriType::Range, TiriType::Func });
    reg_iface_prototype("range", "filter", { TiriType::Array }, { TiriType::Range, TiriType::Func });

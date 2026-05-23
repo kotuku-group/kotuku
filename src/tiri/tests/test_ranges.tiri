@@ -273,17 +273,6 @@ end
    assert(t[5] is 0, "last element should be 0")
 end
 
-@Test function RangeCheckFunction()
-   -- Test range.check() type checking (named 'check' because 'is' is a Tiri keyword)
-   r = range(0, 5)
-
-   assert(range.check(r) is true, "range.check should return true for range")
-   assert(range.check(5) is false, "range.check should return false for number")
-   assert(range.check("hello") is false, "range.check should return false for string")
-   assert(range.check({1, 2, 3}) is false, "range.check should return false for table")
-   assert(range.check(nil) is false, "range.check should return false for nil")
-end
-
 @Test function RangeMetatableName()
    -- Test metatable __name field
    r = range(0, 5)
@@ -475,11 +464,11 @@ end
 end
 
 @Test function RangeLiteralTypeCheck()
-   -- Test that range literals are detected by range.check
+   -- Test that range literals report their type directly.
    r = {0 to 5}
-   assert(range.check(r) is true, "range.check should return true for literal")
    assert(type(r) is "range", "type of range literal should be range")
    assert(type(range(0, 5)) is "range", "type of constructed range should be range")
+   assert(range.check is nil, "range.check should not be present")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
