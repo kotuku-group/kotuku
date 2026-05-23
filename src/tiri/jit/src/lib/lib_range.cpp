@@ -1353,7 +1353,10 @@ extern "C" int luaopen_range(lua_State *L)
 
    // Register prototypes for range methods (used for type inference)
 
-   reg_iface_prototype("range", "new", { TiriType::Range }, { TiriType::Num, TiriType::Num });
+   reg_func_prototype("range", { TiriType::Range }, { TiriType::Num, TiriType::Num, TiriType::Bool, TiriType::Num });
+   reg_iface_prototype("range", "new", { TiriType::Range },
+      { TiriType::Num, TiriType::Num, TiriType::Bool, TiriType::Num });
+   reg_iface_prototype("range", "slice", { TiriType::Any }, { TiriType::Any, TiriType::Range });
    reg_iface_prototype("range", "each", { TiriType::Range }, { TiriType::Range, TiriType::Func });
    reg_iface_prototype("range", "filter", { TiriType::Array }, { TiriType::Range, TiriType::Func });
    reg_iface_prototype("range", "reduce", { TiriType::Any }, { TiriType::Range, TiriType::Any, TiriType::Func });
