@@ -59,8 +59,12 @@ ParserResult<ExprNodePtr> AstBuilder::parse_table_literal(bool AllowRange)
    Token token = this->ctx.tokens().current();
 
    if (AllowRange) {
-      auto range = this->parse_range_in_braces();
-      if (range.ok()) return range;
+      RangeLiteralScan scan;
+      if (scan_range_literal(this->ctx, scan)) {
+         auto range = this->parse_range_in_braces();
+         if (not range.ok()) return range;
+         return range;
+      }
    }
 
    // Standard table parsing path

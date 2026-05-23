@@ -551,6 +551,48 @@ end
    assert(inclusive_sum is 9, "member named to should not be treated as range separator, got " .. inclusive_sum)
 end
 
+@Test function ForInRangeWithNestedStringCallArgument()
+   script = obj.new('script', { statement=[[
+   function hello(Str)
+      return 4
+   end
+
+   sum = 0
+   for i in {hello('goodbye') to 10} do
+      sum += i
+   end
+   assert(sum is 39, "range should start from function result")
+   ]] })
+
+   err = script.acActivate()
+   assert(err is ERR_Okay, "range with nested string call argument should parse: " .. script.errorMessage)
+end
+
+@Test function ForInRangeRejectsBareStringOperandAtParseTime()
+   script = obj.new('script', { statement=[[
+   if false then
+      for i in {'fart' to 10} do
+      end
+   end
+   ]] })
+
+   err = script.acActivate()
+   assert(err != ERR_Okay, "bare string range operand should be rejected during parsing")
+end
+
+@Test function ForInNonRangeBareStringConcatToParses()
+   script = obj.new('script', { statement=[[
+   to = 'b'
+   if false then
+      for i in {'a' .. to} do
+      end
+   end
+   ]] })
+
+   err = script.acActivate()
+   assert(err is ERR_Okay, "non-range table expression with variable named to should parse: " .. script.errorMessage)
+end
+
 @Test function RangeLiteralNegativeValues()
    -- Test range literals with negative values
    r = {-5 to -1}

@@ -97,6 +97,7 @@ static bool token_is_range_step_separator(const Token &Token)
 struct RangeLiteralScan {
    bool inclusive = false;
    bool has_step = false;
+   bool has_bare_string_operand = false;
 };
 
 static bool range_word_matches(std::string_view Word)
@@ -119,7 +120,7 @@ static size_t skip_quoted_source(std::string_view Source, size_t Pos, char Quote
    return Pos;
 }
 
-static bool source_has_range_separator_on_opening_line(ParserContext &Context)
+static bool source_has_range_separator_on_opening_line(ParserContext &Context, RangeLiteralScan &Scan)
 {
    Token open_brace = Context.tokens().current();
    std::string_view source = Context.lex().source;
@@ -127,12 +128,14 @@ static bool source_has_range_separator_on_opening_line(ParserContext &Context)
    if (pos >= source.size()) return false;
    pos++;
 
+   bool has_range_separator = false;
    int depth = 0;
    while (pos < source.size()) {
       char c = source[pos];
       if (c IS '\r' or c IS '\n') return false;
 
       if (c IS '\'' or c IS '"') {
+         if (depth IS 0) Scan.has_bare_string_operand = true;
          pos = skip_quoted_source(source, pos, c);
          continue;
       }
@@ -146,7 +149,7 @@ static bool source_has_range_separator_on_opening_line(ParserContext &Context)
       }
 
       if (c IS ')' or c IS ']' or c IS '}') {
-         if (depth IS 0) return false;
+         if (depth IS 0) return has_range_separator;
          depth--;
          pos++;
          continue;
@@ -163,7 +166,7 @@ static bool source_has_range_separator_on_opening_line(ParserContext &Context)
                if (not (std::isalnum(uint8_t(word_char)) or word_char IS '_')) break;
                pos++;
             }
-            if (range_word_matches(source.substr(start, pos - start))) return true;
+            if (range_word_matches(source.substr(start, pos - start))) has_range_separator = true;
             continue;
          }
       }
@@ -176,13 +179,13 @@ static bool source_has_range_separator_on_opening_line(ParserContext &Context)
 
 // Scans a braced expression without consuming tokens.  A range literal is recognised only when a top-level `to` or
 // `into` separator appears after a start expression, with an optional top-level `by` after the stop expression.
+// Range literals are not allowed to contain bare string literals, and new-lines also cause rejection.
 
 static bool scan_range_literal(ParserContext &Context, RangeLiteralScan &Scan)
 {
    if (not Context.check(TokenKind::LeftBrace)) return false;
-   if (not source_has_range_separator_on_opening_line(Context)) return false;
-
    Scan = RangeLiteralScan{};
+   if (not source_has_range_separator_on_opening_line(Context, Scan)) return false;
 
    bool found_range_separator = false;
    bool found_step_separator = false;

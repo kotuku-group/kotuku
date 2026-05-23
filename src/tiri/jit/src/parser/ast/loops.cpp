@@ -22,6 +22,10 @@ ParserResult<ExprNodePtr> AstBuilder::parse_range_in_braces()
       return ParserResult<ExprNodePtr>::failure(
          ParserError(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(), "not a range expression"));
    }
+   if (scan.has_bare_string_operand) {
+      return this->fail<ExprNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+         "range literals do not support bare string operands");
+   }
 
    // Confirmed range pattern.  Consume '{' and parse the range.
 
@@ -139,8 +143,10 @@ ParserResult<StmtNodePtr> AstBuilder::parse_for()
 
    ExprNodeList iterator_nodes;
    if (this->ctx.check(TokenKind::LeftBrace)) {
-      auto range_result = this->parse_range_in_braces();
-      if (range_result.ok()) {
+      RangeLiteralScan scan;
+      if (scan_range_literal(this->ctx, scan)) {
+         auto range_result = this->parse_range_in_braces();
+         if (not range_result.ok()) return ParserResult<StmtNodePtr>::failure(range_result.error_ref());
          iterator_nodes.push_back(std::move(range_result.value_ref()));
       }
       else {
@@ -260,8 +266,10 @@ ParserResult<StmtNodePtr> AstBuilder::parse_anonymous_for(const Token& ForToken)
 
    ExprNodePtr iter_expr;
    if (this->ctx.check(TokenKind::LeftBrace)) {
-      auto range_result = this->parse_range_in_braces();
-      if (range_result.ok()) {
+      RangeLiteralScan scan;
+      if (scan_range_literal(this->ctx, scan)) {
+         auto range_result = this->parse_range_in_braces();
+         if (not range_result.ok()) return ParserResult<StmtNodePtr>::failure(range_result.error_ref());
          iter_expr = std::move(range_result.value_ref());
       }
       else {
