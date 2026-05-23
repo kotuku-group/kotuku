@@ -44,6 +44,8 @@ Examples:
    }
 })
 
+----------------------------------------------------------------------------------------------------------------------
+
 function clamp(Value, Min, Max)
    if Value < Min then return Min end
    if Value > Max then return Max end
@@ -121,6 +123,8 @@ function makePaletteEntry(RGB)
    }
 end
 
+----------------------------------------------------------------------------------------------------------------------
+
 function generatePalette(BaseRGB, Scheme, Count)
    local base_hsl = BaseRGB:toHSL()
    local palette = {}
@@ -162,6 +166,8 @@ function generatePalette(BaseRGB, Scheme, Count)
 
    return palette
 end
+
+----------------------------------------------------------------------------------------------------------------------
 
 function buildColourReport(Painter)
    nrgb  = Painter.Colour -- Normalised RGB
@@ -207,6 +213,8 @@ function buildColourReport(Painter)
    }
 end
 
+----------------------------------------------------------------------------------------------------------------------
+
 function outputText(Report, Format)
    if Format:find('rgb')   then print(f'RGB:     {Report.rgb}') end
    if Format:find('hex')   then print(f'RGB Hex: {Report.hex}') end
@@ -223,6 +231,8 @@ function outputText(Report, Format)
       print(string.format('Contrast:  %.2f:1 (black) / %.2f:1 (white)', Report.cr_black, Report.cr_white))
    end
 end
+
+----------------------------------------------------------------------------------------------------------------------
 
 function outputPalette(Palette, Scheme:str, Preview:bool)
    print('')
@@ -241,6 +251,8 @@ function outputPalette(Palette, Scheme:str, Preview:bool)
    end
 end
 
+----------------------------------------------------------------------------------------------------------------------
+
 function getSwatchEntries(Report, Palette)
    entries = {}
    idx = 0
@@ -254,6 +266,8 @@ function getSwatchEntries(Report, Palette)
    end
    return entries
 end
+
+----------------------------------------------------------------------------------------------------------------------
 
 function buildSwatchSVG(Entries)
    swatch_width = 84
@@ -278,6 +292,8 @@ function buildSwatchSVG(Entries)
    return table.concat(parts)
 end
 
+----------------------------------------------------------------------------------------------------------------------
+
 function emitSwatchPreview(Mode, Entries, PreviewFile, Format)
    if Mode is 'svg' then
       svg = buildSwatchSVG(Entries)
@@ -297,6 +313,8 @@ function emitSwatchPreview(Mode, Entries, PreviewFile, Format)
       end
    end
 end
+
+----------------------------------------------------------------------------------------------------------------------
 
 function outputJSON(Report, Format, Palette, Scheme)
    output = {}
@@ -325,6 +343,8 @@ function outputJSON(Report, Format, Palette, Scheme)
 
    print(json.encode(output))
 end
+
+----------------------------------------------------------------------------------------------------------------------
 
    self = obj.find('self')
    args = glParser.process()

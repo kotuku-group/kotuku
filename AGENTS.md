@@ -227,10 +227,13 @@ Lower snake-case is the preferred string format for new file names.
 
 ### Key Examples for Learning
 
+- **`apps/find.tiri`** - Commandline application that demonstrates how to effectively search for files and content with `io.search()`
+- **`apps/paintbox.tiri`** - Commandline application with colour manipulation features
+- **`apps/tuku.tiri`** - HTTP client application, mimics cURL functionality
+- **`apps/tuku_server.tiri`** - HTTP server implementation with NetSocket usage patterns
+- **`apps/vuepoint.tiri`** - File viewer supporting SVG, RIPL, JPEG, PNG - shows document and graphics integration
 - **`examples/widgets.tiri`** - Primary showcase of Kōtuku's GUI capabilities, demonstrates standard widgets and UI patterns
-- **`examples/vue.tiri`** - File viewer supporting SVG, RIPL, JPEG, PNG - shows document and graphics integration
 - **`examples/gradients.tiri`** - Interactive gradient editor demonstrating real-time vector graphics manipulation
-- **`tools/http_server.tiri`** - HTTP server implementation with NetSocket usage patterns
 - **`tools/idl/idl-c.tiri`** - Extensive file I/O and general API usage
 
 ## Agentic Behaviour
