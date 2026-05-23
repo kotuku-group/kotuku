@@ -92,7 +92,7 @@ enum class AstNodeKind : uint16_t {
    TableExpr,
    FunctionExpr,
    DeferredExpr,  // Deferred expression <{ expr }>
-   RangeExpr,     // Range literal {start..stop} or {start...stop}
+   RangeExpr,     // Range literal {start to stop} or {start into stop}
    ChooseExpr,    // Choose expression: choose value from pattern -> result ... end
    BlockStmt,
    AssignmentStmt,

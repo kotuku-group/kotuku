@@ -162,7 +162,7 @@ static void lex_number(LexState *State, TValue* tv)
    if (c IS '0' and (lex_savenext(State) | 0x20) IS 'x') exponent = 'p';
 
    // Scan all number characters.
-   // Special case: Stop before '..' to allow range literals like {1..5}
+   // Special case: Stop before '..' so concatenation after numeric literals remains tokenised correctly.
    // Special case: Stop before Unicode operators (e.g. ↑ for exponentiation)
    while (is_number_char(State->c, c)) {
       // If we see '.', check if next character is also '.' (range operator)

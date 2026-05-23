@@ -33,7 +33,7 @@ end
 
 @Test function ArrowWithEach()
    sum = 0
-   r = {1..6}
+   r = {1 to 6}
    r:each(i => do sum += i end)
    assert(sum is 15)
 end

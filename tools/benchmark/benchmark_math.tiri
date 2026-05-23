@@ -6,7 +6,7 @@
 
 @Test function MathIntegerArithmetic()
    local a, b, c, d, e = 1, 2, 3, 4, 5
-   for i in {0..100000} do
+   for i in {0 to 100000} do
       a = i + 17
       b = a - 13
       c = b * 7
@@ -33,7 +33,7 @@ end
    local e <const> = 2.71828182845905
    local phi <const> = 1.61803398874989
 
-   for i in {0..100000} do
+   for i in {0 to 100000} do
       a = i * pi
       b = a / e
       c = b + phi
@@ -58,7 +58,7 @@ end
 
 @Test function MathBitwiseOperations()
    local a, b, c, d = 0xFF, 0xAA, 0x55, 0x0F
-   for i in {0..100000} do
+   for i in {0 to 100000} do
       -- Basic bitwise operations
       a = i & 0xFF          -- AND
       b = i | 0xF0          -- OR
@@ -88,7 +88,7 @@ end
 
 @Test function MathTrigFunctions()
    local a, b, c, d = 0.0, 0.0, 0.0, 0.0
-   for i in {0..100000} do
+   for i in {0 to 100000} do
       local x = i * 0.001  -- Scale to reasonable range
 
       a = math.sin(x)
@@ -103,7 +103,7 @@ end
 
 @Test function MathExpLogFunctions()
    local a, b, c, d = 0.0, 0.0, 0.0, 0.0
-   for i in {0..100000} do
+   for i in {0 to 100000} do
       local x = i * 0.001  -- Scale to reasonable range
 
       d = math.exp(x % 10)   -- Limit to avoid overflow
@@ -116,7 +116,7 @@ end
 
 @Test function MathRoundingFunctions()
    local a, b, c, d = 0.0, 0.0, 0.0, 0.0
-   for i in {0..300000} do
+   for i in {0 to 300000} do
       local x = (i * 0.1) % 100.0  -- Scale to reasonable range
 
       -- Rounding functions
@@ -133,7 +133,7 @@ end
 
 @Test function MathCompoundOperators()
    local a, b, c, d, e = 1.0, 100.0, 1000.0, 10000.0, 50000.0
-   for i in {0..100000} do
+   for i in {0 to 100000} do
       -- Compound assignment operators
       a += 1.5
       b -= 0.7
@@ -176,7 +176,7 @@ end
 @Test function MathNumericComparisons()
    local a, b, c, d = 0, 0, 0, 0
    local result = false
-   for i in {0..100000} do
+   for i in {0 to 100000} do
       local x = i * 1.1
       local y = i * 1.2
       local z = i * 0.9

@@ -570,7 +570,7 @@ end
       route_path = 'routes/' .. routes[1] .. '.cpp'
 
       func_name = rx_func_name_chars.replace(route.method .. route.path, '_'):lower()
-      if func_name:endsWith('_') then func_name = func_name[{0..-1}] end
+      if func_name:endsWith('_') then func_name = func_name[{0 to -1}] end
       route.funcName = func_name
       route.source   = route_path
 

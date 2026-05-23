@@ -59,7 +59,7 @@ global glLogFile = 'user:benchmark.log'
       return x * 2
    end
 
-   for i in {0..10000} do
+   for i in {0 to 10000} do
       -- Try-except with no exception thrown
       try
          local result = alwaysSucceeds(i)
@@ -125,7 +125,7 @@ end
       return { id = id, value = id * 10 }
    end
 
-   for i in {0..30000} do
+   for i in {0 to 30000} do
       local result = 0
 
       -- Basic try-success pattern
@@ -192,7 +192,7 @@ end
 -- Goal: Measure overhead of defer statement for cleanup
 
 @Test function ExceptionDefer()
-   for i in {0..5000} do
+   for i in {0 to 5000} do
       local cleanup_count = 0
 
       -- Simple defer
@@ -268,7 +268,7 @@ end
 -- between different variable scoping mechanisms.
 
 @Test function ScopeLocal()
-   for i in {0..1000000} do
+   for i in {0 to 1000000} do
       -- Declare local variables
       local a = 10
       local b = 20
@@ -323,7 +323,7 @@ global glScopeD = 40
 global glScopeE = 50
 
 @Test function ScopeGlobal()
-   for i in {0..1000000} do
+   for i in {0 to 1000000} do
       -- Reset global variables
       glScopeA = 10
       glScopeB = 20
@@ -371,7 +371,7 @@ end
 -- Goal: Measure performance of const-annotated local variable access
 
 @Test function ScopeConstantAccess()
-   for i in {0..1000000} do
+   for i in {0 to 1000000} do
       -- Declare const local variables
       local a <const> = 10
       local b <const> = 20
@@ -470,7 +470,7 @@ end
       e %= 100
    end
 
-   for i in {0..1000000} do
+   for i in {0 to 1000000} do
       -- Reset upvalues
       a = 10
       b = 20
@@ -500,7 +500,7 @@ end
    local bool_false = false
    local nil_val = nil
 
-   for i in {0..500} do
+   for i in {0 to 500} do
       -- Check type of numbers
       local t1 = type(num_int)
       local t2 = type(num_float)
@@ -562,7 +562,7 @@ end
    local str_invalid = "not_a_number"
    local str_mixed = "123abc"
 
-   for i in {0..1000} do
+   for i in {0 to 1000} do
       -- Convert integer strings
       local n1 = tonumber(str_int)
       local n2 = tonumber(str_neg)

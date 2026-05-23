@@ -268,7 +268,7 @@ end
 function source_after_large_constant_pool(Tail)
    local lines = array<string> { 'local constant_pool = {}' }
 
-   for i in {0..256} do
+   for i in {0 to 256} do
       lines:push("constant_pool[" .. i .. "] = 'constant_" .. i .. "'")
    end
 

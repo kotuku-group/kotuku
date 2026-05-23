@@ -53,18 +53,21 @@ ParserResult<ExprNodePtr> AstBuilder::parse_function_literal(
 
 //********************************************************************************************************************
 // Checks if the token stream matches a range literal pattern using lookahead.
-// Valid patterns: {num..num}, {ident..ident}, {-num..num}, {ident..-num}, etc.
-// Returns true if the pattern matches, and sets is_inclusive for ... (three dots).
+// Valid patterns: {num to num}, {ident into ident}, {-num to num}, {ident into -num}, etc.
+// Returns true if the pattern matches, and sets is_inclusive for `into`.
 
 static bool check_range_pattern(ParserContext& ctx, bool& is_inclusive)
 {
    is_inclusive = false;
 
-   // Helper to get the token count for a simple range operand (number, identifier, or -number)
+   // Helper to get the token count for a simple range operand (literal, identifier, or -number)
    // Returns 0 if not a valid range operand
    auto operand_length = [&ctx](int start_offset) -> int {
       Token tok = ctx.tokens().peek(start_offset);
-      if (tok.kind() IS TokenKind::Number or tok.kind() IS TokenKind::Identifier) return 1;
+      if (tok.kind() IS TokenKind::Number or tok.kind() IS TokenKind::Identifier or tok.kind() IS TokenKind::Nil or
+          tok.kind() IS TokenKind::TrueToken or tok.kind() IS TokenKind::FalseToken) {
+         return 1;
+      }
 
       if (tok.kind() IS TokenKind::Minus) {
          Token next = ctx.tokens().peek(start_offset + 1);
@@ -78,12 +81,10 @@ static bool check_range_pattern(ParserContext& ctx, bool& is_inclusive)
    int first_len = operand_length(0);
    if (first_len IS 0) return false;
 
-   // Check for range operator at expected position
+   // Check for range separator at expected position
 
-   Token range_op = ctx.tokens().peek(first_len);
-   if (range_op.kind() IS TokenKind::Cat) is_inclusive = false;
-   else if (range_op.kind() IS TokenKind::Dots) is_inclusive = true;
-   else return false;
+   Token separator = ctx.tokens().peek(first_len);
+   if (not token_is_range_separator(separator, is_inclusive)) return false;
 
    // Check second operand
 
@@ -98,14 +99,14 @@ static bool check_range_pattern(ParserContext& ctx, bool& is_inclusive)
 
 //********************************************************************************************************************
 // Parses table constructor expressions with array and record fields.
-// Also handles range literals: {start..stop} (exclusive) and {start...stop} (inclusive)
+// Also handles range literals: {start to stop} (exclusive) and {start into stop} (inclusive)
 
 ParserResult<ExprNodePtr> AstBuilder::parse_table_literal()
 {
    Token token = this->ctx.tokens().current();
    this->ctx.tokens().advance();
 
-   // Check for range literal pattern using lookahead: {expr..expr} or {expr...expr}
+   // Check for range literal pattern using lookahead: {expr to expr} or {expr into expr}
    // This avoids ambiguity with string concatenation like {'str' .. func(), ...}
 
    if (not this->ctx.check(TokenKind::RightBrace)) {
@@ -116,7 +117,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_table_literal()
          auto first_expr = this->parse_unary();
          if (not first_expr.ok()) return ParserResult<ExprNodePtr>::failure(first_expr.error_ref());
 
-         // Consume the range operator (already verified by lookahead)
+         // Consume the range separator (already verified by lookahead)
          this->ctx.tokens().advance();
 
          // Parse stop expression

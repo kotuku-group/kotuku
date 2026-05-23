@@ -147,14 +147,14 @@ function generatePalette(BaseRGB, Scheme, Count)
       addHue(base_hsl.h + 210, base_hsl.s, base_hsl.l)
    elseif Scheme is 'analogous' then
       local count = clamp(Count, 2, 12)
-      for idx in {0..count - 1} do
+      for idx in {0 to count - 1} do
          ratio = (count is 1) ? 0 :> (idx / (count - 1))
          offset = -30 + (ratio * 60)
          addHue(base_hsl.h + offset, base_hsl.s, base_hsl.l)
       end
    elseif Scheme is 'monochrome' then
       local count = clamp(Count, 2, 12)
-      for idx in {0..count - 1} do
+      for idx in {0 to count - 1} do
          ratio = (count is 1) ? 0 :> (idx / (count - 1))
          lit = clamp(0.12 + (ratio * 0.76), 0, 1)
          sat = clamp(base_hsl.s * (0.7 + (0.6 * (1 - math.abs((ratio * 2) - 1)))), 0, 1)

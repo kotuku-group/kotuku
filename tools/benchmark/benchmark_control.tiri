@@ -10,19 +10,19 @@ function result_series()
 end
 
 @Test function NullificationRetain()
-   for i in {0..10000000} do
+   for i in {0 to 10000000} do
       local a, b, c = result_series()
    end
 end
 
 @Test function NullificationBlank()
-   for i in {0..10000000} do
+   for i in {0 to 10000000} do
       local _, _, c = result_series()
    end
 end
 
 @Test function NullificationMask()
-   for i in {0..10000000} do
+   for i in {0 to 10000000} do
       local c = [__*]result_series()
    end
 end
@@ -31,7 +31,7 @@ end
 -- Goal: Execute branching logic with if/elseif/else chains
 
 @Test function ControlIfElseChains()
-   for i in {0..1000000} do
+   for i in {0 to 1000000} do
       local result = 0
       local x = i % 100
 
@@ -95,7 +95,7 @@ end
 -- Goal: Use ternary conditional operator for inline branching
 
 @Test function ControlTernaryOperator()
-   for i in {0..100000} do
+   for i in {0 to 100000} do
       local x = i % 100
       local result = 0
 
@@ -127,7 +127,7 @@ end
 -- Goal: Use nil coalescing operators for default values
 
 @Test function ControlNilCoalescing()
-   for i in {0..100000} do
+   for i in {0 to 100000} do
       local result = 0
 
       -- Basic ?? operator (nil coalescing)
@@ -159,7 +159,7 @@ end
 -- Goal: Execute numeric for loops with start, end, step
 
 @Test function ControlForNumericLoop()
-   for i in {0..10000} do
+   for i in {0 to 10000} do
       local sum = 0
 
       -- Simple ascending loop
@@ -202,16 +202,16 @@ end
 -- Goal: Execute range-based for loops
 
 @Test function ControlForRangeLoop()
-   for i in {0..100} do
+   for i in {0 to 100} do
       local sum = 0
 
       -- Simple range loop (exclusive end)
-      for j in {0..100} do
+      for j in {0 to 100} do
          sum += j
       end
 
       -- Inclusive range loop
-      for j in {0...99} do
+      for j in {0 into 99} do
          sum += j
       end
 
@@ -222,19 +222,19 @@ end
       end
 
       -- Nested range loops
-      for x in {0..10} do
-         for y in {0..10} do
+      for x in {0 to 10} do
+         for y in {0 to 10} do
             sum += x + y
          end
       end
 
       -- Range with negative indices
-      for j in {-10..10} do
+      for j in {-10 to 10} do
          sum += j
       end
 
       -- Short ranges
-      for j in {0..5} do
+      for j in {0 to 5} do
          sum += j
       end
    end
@@ -244,7 +244,7 @@ end
 -- Goal: Execute while loops with varying conditions
 
 @Test function ControlWhileLoop()
-   for i in {0..10000} do
+   for i in {0 to 10000} do
       local sum = 0
       local count = 0
 
@@ -297,7 +297,7 @@ end
 -- Goal: Execute repeat-until loops
 
 @Test function ControlRepeatUntil()
-   for i in {0..10000} do
+   for i in {0 to 10000} do
       local sum = 0
       local count = 0
 
@@ -348,7 +348,7 @@ end
 -- Goal: Use break and continue statements in loops
 
 @Test function ControlBreakContinue()
-   for i in {0..1000} do
+   for i in {0 to 1000} do
       local sum = 0
       local count = 0
 
@@ -408,7 +408,7 @@ end
       end
 
       -- Break in range loop
-      for j in {0..1000} do
+      for j in {0 to 1000} do
          if j >= 50 then
             break
          end
@@ -416,7 +416,7 @@ end
       end
 
       -- Continue in range loop
-      for j in {0..100} do
+      for j in {0 to 100} do
          if j % 5 is 0 then
             continue
          end
@@ -432,7 +432,7 @@ end
    local obj = { name = "Alice", addr = { city = "London", geo = { lat = 51.5 } } }
    local arr = { 10, 20, 30, 40, 50 }
 
-   for i in {0..1000000} do
+   for i in {0 to 1000000} do
       local v1 = obj.name
       local v2 = obj.addr.city
       local v3 = obj.addr.geo.lat
@@ -446,7 +446,7 @@ end
    local arr = { 10, 20, 30, 40, 50 }
    local missing = nil
 
-   for i in {0..1000000} do
+   for i in {0 to 1000000} do
       -- Safe access on valid paths (should behave like direct access)
       local v1 = obj?.name
       local v2 = obj?.addr?.city

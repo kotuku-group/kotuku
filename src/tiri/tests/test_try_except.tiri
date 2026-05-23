@@ -368,7 +368,7 @@ end
 @Test(priority=19) function MultipleErrorsSequence()
    count = 0
 
-   for i in {0..30} do  -- Range is exclusive, so 0..3 gives 0, 1, 2
+   for i in {0 to 30} do  -- Range is exclusive, so 0..3 gives 0, 1, 2
       try
          error("Error " .. i)
       except e
@@ -386,7 +386,7 @@ end
    successful = 0
    failed = 0
 
-   for i in {0..5} do  -- Range is exclusive, so 0..5 gives 0, 1, 2, 3, 4
+   for i in {0 to 5} do  -- Range is exclusive, so 0..5 gives 0, 1, 2, 3, 4
       try
          if i % 2 is 0 then
             error("Even number")
@@ -589,7 +589,7 @@ end
 
 global function break_test()
    count = 0
-   for i in {0..9} do
+   for i in {0 to 9} do
       try
          count++
          if i is 3 then
@@ -604,7 +604,7 @@ global function break_test()
 end
 
 @Test(priority=27) function BreakFromTry()
-   for i in {0..20} do
+   for i in {0 to 20} do
       count = break_test()
       assert(count is 5, "Expected a count of 5, got " .. count)
    end
@@ -616,7 +616,7 @@ end
 @Test(priority=28) function ContinueFromTry()
    count = 0
    sum = 0
-   for i in {0..5} do
+   for i in {0 to 5} do
       try
          count++
          if i is 2 then
@@ -637,7 +637,7 @@ end
 @Test(priority=28) function BreakFromSuccess()
    count = 0
    success_count = 0
-   for i in {0..10} do
+   for i in {0 to 10} do
       try
          count++
       except e
@@ -904,7 +904,7 @@ end
       closed = 0
       mt = { __close = function(self, err) closed++ end }
       count = 0
-      for i in {0..5} do
+      for i in {0 to 5} do
          try
             local obj <close> = setmetatable({}, mt)
             count++
@@ -930,7 +930,7 @@ end
       closed = 0
       mt = { __close = function(self, err) closed++ end }
       count = 0
-      for i in {0..5} do
+      for i in {0 to 5} do
          try
             local obj <close> = setmetatable({}, mt)
             count++

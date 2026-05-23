@@ -658,13 +658,13 @@ LJLIB_CF(range_check)
 
 //********************************************************************************************************************
 // __tostring metamethod
-// Returns "{start..stop}" or "{start...stop}" based on inclusivity
+// Returns "{start to stop}" or "{start into stop}" based on inclusivity
 
 static int range_tostring(lua_State *L)
 {
    auto r = get_range(L, 1);
-   if (r->inclusive) lua_pushfstring(L, "{%d...%d}", r->start, r->stop);
-   else lua_pushfstring(L, "{%d..%d}", r->start, r->stop);
+   if (r->inclusive) lua_pushfstring(L, "{%d into %d}", r->start, r->stop);
+   else lua_pushfstring(L, "{%d to %d}", r->start, r->stop);
    return 1;
 }
 

@@ -8,28 +8,26 @@
 // - Range literal optimisation for JIT compilation
 
 //********************************************************************************************************************
-// Attempts to parse a range expression enclosed in braces: {expr..expr} or {expr...expr}
-// Used by for-in loops to always interpret {Y..Z} as a range, even when Y and Z are complex expressions.
+// Attempts to parse a range expression enclosed in braces: {expr to expr} or {expr into expr}
+// Used by for-in loops to always interpret {Y to Z} as a range, even when Y and Z are complex expressions.
 //
-// Uses a lookahead scan to confirm that '..' or '...' exists at brace/paren/bracket depth 0 inside the braces.
+// Uses a lookahead scan to confirm that `to` or `into` exists at brace/paren/bracket depth 0 inside the braces.
 // If confirmed, parses start and stop as full expressions and returns a RangeExpr node.
-// If the scan does not find a range operator, returns failure so the caller can fall through to normal parsing.
-//
-// The start expression is parsed with precedence 5 so that it stops before consuming '..' (Cat token,
-// left precedence 5).  The stop expression uses default precedence and naturally stops at '}'.
+// If the scan does not find a range separator, returns failure so the caller can fall through to normal parsing.
 
 ParserResult<ExprNodePtr> AstBuilder::parse_range_in_braces()
 {
    // Lookahead scan: starting from the token after '{', verify a strict
-   // {start_expr .. stop_expr} or {start_expr ... stop_expr} shape at depth 0.
-   // This avoids misclassifying table literals that merely contain '..'/'...'.
+   // {start_expr to stop_expr} or {start_expr into stop_expr} shape at depth 0.
+   // This avoids misclassifying table literals that merely contain unrelated identifiers.
 
-   bool found_range_operator = false;
+   bool found_range_separator = false;
    bool is_inclusive = false;
    bool has_start_expr_tokens = false;
    bool has_stop_expr_tokens = false;
    bool ended_on_right_brace = false;
    bool invalid_top_level_shape = false;
+   TokenKind previous_top_level_kind = TokenKind::Unknown;
    int depth = 0;
 
    for (size_t i = 1; ; i++) {
@@ -47,7 +45,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_range_in_braces()
 
       if (kind IS TokenKind::LeftParen or kind IS TokenKind::LeftBracket or kind IS TokenKind::LeftBrace) {
          if (depth IS 0) {
-            if (found_range_operator) has_stop_expr_tokens = true;
+            if (found_range_separator) has_stop_expr_tokens = true;
             else has_start_expr_tokens = true;
          }
          depth++;
@@ -72,25 +70,32 @@ ParserResult<ExprNodePtr> AstBuilder::parse_range_in_braces()
             break;
          }
 
-         if (kind IS TokenKind::Cat or kind IS TokenKind::Dots) {
-            // Exactly one top-level range operator is allowed, and it must
+         bool separator_is_inclusive = false;
+         bool member_name_context = previous_top_level_kind IS TokenKind::Dot or
+            previous_top_level_kind IS TokenKind::Colon or
+            previous_top_level_kind IS TokenKind::SafeField or
+            previous_top_level_kind IS TokenKind::SafeMethod;
+         if (has_start_expr_tokens and not member_name_context and token_is_range_separator(tok, separator_is_inclusive)) {
+            // Exactly one top-level range separator is allowed, and it must
             // appear after at least one token belonging to the start expression.
-            if (found_range_operator or not has_start_expr_tokens) {
+            if (found_range_separator) {
                invalid_top_level_shape = true;
                break;
             }
 
-            found_range_operator = true;
-            is_inclusive = (kind IS TokenKind::Dots);
+            found_range_separator = true;
+            is_inclusive = separator_is_inclusive;
          }
          else {
-            if (found_range_operator) has_stop_expr_tokens = true;
+            if (found_range_separator) has_stop_expr_tokens = true;
             else has_start_expr_tokens = true;
          }
+
+         previous_top_level_kind = kind;
       }
    }
 
-   if (invalid_top_level_shape or not ended_on_right_brace or not found_range_operator
+   if (invalid_top_level_shape or not ended_on_right_brace or not found_range_separator
       or not has_start_expr_tokens or not has_stop_expr_tokens) {
       return ParserResult<ExprNodePtr>::failure(
          ParserError(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(), "not a range expression"));
@@ -101,22 +106,16 @@ ParserResult<ExprNodePtr> AstBuilder::parse_range_in_braces()
    Token brace_token = this->ctx.tokens().current();
    this->ctx.tokens().advance();  // Consume '{'
 
-   // Parse start expression with precedence 5, which stops before '..' (Cat, left precedence 5)
-   auto start_expr = this->parse_expression(5);
+   // Parse start expression.  It naturally stops before contextual `to` or `into`, which are not binary operators.
+   auto start_expr = this->parse_expression();
    if (not start_expr.ok()) return ParserResult<ExprNodePtr>::failure(start_expr.error_ref());
 
-   // Consume the range operator
-   Token range_tok = this->ctx.tokens().current();
-   if (range_tok.kind() IS TokenKind::Cat) {
-      is_inclusive = false;
+   // Consume the range separator
+   Token separator = this->ctx.tokens().current();
+   if (not token_is_range_separator(separator, is_inclusive)) {
+      return this->fail<ExprNodePtr>(ParserErrorCode::ExpectedToken, separator, "expected 'to' or 'into' range separator");
    }
-   else if (range_tok.kind() IS TokenKind::Dots) {
-      is_inclusive = true;
-   }
-   else {
-      return this->fail<ExprNodePtr>(ParserErrorCode::ExpectedToken, range_tok, "expected '..' or '...' range operator");
-   }
-   this->ctx.tokens().advance();  // Consume '..' or '...'
+   this->ctx.tokens().advance();  // Consume `to` or `into`
 
    // Parse stop expression (stops naturally at '}')
    auto stop_expr = this->parse_expression();
@@ -180,8 +179,8 @@ ParserResult<StmtNodePtr> AstBuilder::parse_for()
 
    this->ctx.consume(TokenKind::InToken, ParserErrorCode::ExpectedToken);
 
-   // In for-in loops, always interpret {expr..expr} as a range expression, even when the operands
-   // are complex expressions like {0..total-1}.  This bypasses the restrictive lookahead in
+   // In for-in loops, always interpret {expr to expr} as a range expression, even when the operands
+   // are complex expressions like {0 to total-1}.  This bypasses the restrictive lookahead in
    // parse_table_literal() which only handles simple operands.
 
    ExprNodeList iterator_nodes;
@@ -203,11 +202,11 @@ ParserResult<StmtNodePtr> AstBuilder::parse_for()
    }
 
    // JIT Optimisation: Convert range literals with a single loop variable to numeric for loops.
-   // This allows the JIT to compile `for i in {1..10} do` into optimised BC_FORI/BC_FORL bytecode
+   // This allows the JIT to compile `for i in {1 to 10} do` into optimised BC_FORI/BC_FORL bytecode
    // instead of the slower generic iterator path (BC_ITERC/BC_ITERL).
    //
-   // Conversion: for i in {start..stop} do  =>  for i = start, stop-1, step do  (exclusive)
-   //             for i in {start...stop} do =>  for i = start, stop, step do    (inclusive)
+   // Conversion: for i in {start to stop} do   =>  for i = start, stop-1, step do  (exclusive)
+   //             for i in {start into stop} do =>  for i = start, stop, step do    (inclusive)
    //
    // Step is computed at runtime based on start/stop direction.
 
@@ -301,16 +300,16 @@ ParserResult<StmtNodePtr> AstBuilder::parse_for()
 // count matters but the index value is not needed.
 //
 // Examples:
-//    for {0..10} do print("hello") end     -- prints "hello" 10 times
-//    for {1...5} do total += 1 end         -- increments total 5 times
+//    for {0 to 10} do print("hello") end     -- prints "hello" 10 times
+//    for {1 into 5} do total += 1 end         -- increments total 5 times
 //
 // The implementation creates a blank identifier internally and leverages the existing for-loop
 // machinery, including JIT optimisation for constant ranges.
 
 ParserResult<StmtNodePtr> AstBuilder::parse_anonymous_for(const Token& ForToken)
 {
-   // Parse the iterator expression (expected to be a range like {0..10}).
-   // Try parse_range_in_braces() first to support complex expressions like {0..total-1}.
+   // Parse the iterator expression (expected to be a range like {0 to 10}).
+   // Try parse_range_in_braces() first to support complex expressions like {0 to total-1}.
 
    ExprNodePtr iter_expr;
    if (this->ctx.check(TokenKind::LeftBrace)) {
@@ -337,7 +336,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_anonymous_for(const Token& ForToken)
    blank_id.span = ForToken.span();
 
    // JIT Optimisation: Convert constant range literals to numeric for loops.
-   // This allows the JIT to compile `for {1..10} do` into optimised BC_FORI/BC_FORL bytecode.
+   // This allows the JIT to compile `for {1 to 10} do` into optimised BC_FORI/BC_FORL bytecode.
    if (iter_expr and iter_expr->kind IS AstNodeKind::RangeExpr) {
       auto* range_payload = std::get_if<RangeExprPayload>(&iter_expr->data);
       if (range_payload and range_payload->start and range_payload->stop) {

@@ -912,7 +912,7 @@ end
 @Test(hotpath=true) function RepeatedEvaluation()
    -- Ensure repeated use works correctly in a loop
    results = {}
-   for i in {0..10} do
+   for i in {0 to 10} do
       results[i] = choose i from
          0 -> 'zero'
          5 -> 'five'
@@ -1094,7 +1094,7 @@ end
 @Test(hotpath=true) function WithRanges()
    items = { [0] = 'a', [1] = 'b', [2] = 'c' }
    results = {}
-   for i in {0..3} do
+   for i in {0 to 3} do
       results[i] = choose items[i] from
          'a' -> 'first'
          'b' -> 'second'
@@ -1110,7 +1110,7 @@ end
 @Test(hotpath=true) function WithCompoundAssignment()
    count = 0
    values = { [0] = 1, [1] = 2, [2] = 3, [3] = 1, [4] = 2, [5] = 1 }
-   for i in {0..6} do
+   for i in {0 to 6} do
       count += choose values[i] from
          1 -> 1
          else -> 0

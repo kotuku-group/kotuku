@@ -505,7 +505,7 @@ end
 
 function day_of_year(Year:num, Month:num, Day:num):num
    local total = Day
-   for month in {1..Month} do
+   for month in {1 to Month} do
       total += days_in_month(Year, month)
    end
    return total

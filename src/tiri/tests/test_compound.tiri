@@ -466,7 +466,7 @@ end
 @Test function LocalIfEmptyInLoop()
    -- Test local ??= works correctly in loop scope
    results = {}
-   for i in {0..3} do
+   for i in {0 to 3} do
       local loopVar ??= i * 10
       results[i] = loopVar
    end

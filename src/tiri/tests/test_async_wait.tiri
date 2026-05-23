@@ -14,7 +14,7 @@ end
 @Test function WaitMultipleScripts()
    total = 5
    scripts = array<object>
-   for i in {1...total} do
+   for i in {1 into total} do
       scripts:push(obj.new('script', { statement = "msg('WaitMultipleScripts: thread " .. i .. " running.')" }))
    end
 

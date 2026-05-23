@@ -60,7 +60,7 @@ Recognise and use these Tiri extensions where they match local code style:
 - To-be-closed variables: `resource <close> = acquire_resource()`
 - Constants: `local name <const> = value`
 - Anonymous function expressions: `(value => print(value))`
-- Ranges: `for i in {0..10} do`
+- Ranges: `for i in {0 to 10} do`
 - String interpolation with expressions: `f"My {expression} here"`
 - Pipe operator: `value |> transform()` and limited multi-result forwarding with `|N>`
 - Result filter operator: `[_*]function_call()` to drop or keep selected return values
@@ -94,7 +94,7 @@ search tools, and mixed editor environments.
 
 ## Ranges And Collections
 
-- Range literals use `{Start..Stop}` for exclusive stop and `{Start...Stop}` for inclusive stop.
+- Range literals use `{Start to Stop}` for exclusive stop and `{Start into Stop}` for inclusive stop.
 - Range literals do not support step expressions; use `range(Start, Stop, Inclusive, Step)` for stepped ranges.
 - Range operands can be variables but not arbitrary expressions.
 - Negative indices in slicing count from the end and preserve `..` exclusive or `...` inclusive stop semantics.

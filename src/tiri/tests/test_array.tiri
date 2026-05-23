@@ -681,7 +681,7 @@ end
    assert(arr:find(obj_one) is 0, "find(object) should return 0")
    assert(arr:find(obj_two.id) is 1, "find(uid) should return 1")
    assert(arr:find(obj_one, 1) is nil, "find(object, 1) should return nil")
-   assert(arr:find(obj_two, {0...1}) is 1, "find(object, range) should return 1")
+   assert(arr:find(obj_two, {0 into 1}) is 1, "find(object, range) should return 1")
 
    obj_one.free()
    obj_two.free()
@@ -744,20 +744,20 @@ end
    end
 
    -- Slice middle portion using range (exclusive by default)
-   sliced = arr:slice({2..5})
-   assert(#sliced is 3, "slice({2..5}) should have length 3, got " .. tostring(#sliced))
+   sliced = arr:slice({2 to 5})
+   assert(#sliced is 3, "slice({2 to 5}) should have length 3, got " .. tostring(#sliced))
    assert(sliced[0] is 20, "slice[0] should be 20")
    assert(sliced[1] is 30, "slice[1] should be 30")
    assert(sliced[2] is 40, "slice[2] should be 40")
 
    -- Slice from start
-   sliced2 = arr:slice({0..3})
-   assert(#sliced2 is 3, "slice({0..3}) should have length 3")
+   sliced2 = arr:slice({0 to 3})
+   assert(#sliced2 is 3, "slice({0 to 3}) should have length 3")
    assert(sliced2[0] is 0, "slice2[0] should be 0")
 
    -- Slice to end using inclusive range
-   sliced3 = arr:slice({7...9})
-   assert(#sliced3 is 3, "slice({7...9}) should have length 3")
+   sliced3 = arr:slice({7 into 9})
+   assert(#sliced3 is 3, "slice({7 into 9}) should have length 3")
    assert(sliced3[0] is 70, "slice3[0] should be 70")
    assert(sliced3[2] is 90, "slice3[2] should be 90")
 end
@@ -769,23 +769,23 @@ end
    end
 
    -- Slice using negative end index with explicit inclusive/exclusive stop semantics
-   sliced_inclusive = arr:slice({0...-1})
-   assert(#sliced_inclusive is 5, "slice({0...-1}) should have length 5")
-   assert(sliced_inclusive[4] is 4, "slice({0...-1})[4] should be 4")
+   sliced_inclusive = arr:slice({0 into -1})
+   assert(#sliced_inclusive is 5, "slice({0 into -1}) should have length 5")
+   assert(sliced_inclusive[4] is 4, "slice({0 into -1})[4] should be 4")
 
-   sliced_exclusive = arr:slice({0..-1})
-   assert(#sliced_exclusive is 4, "slice({0..-1}) should have length 4")
-   assert(sliced_exclusive[3] is 3, "slice({0..-1})[3] should be 3")
+   sliced_exclusive = arr:slice({0 to -1})
+   assert(#sliced_exclusive is 4, "slice({0 to -1}) should have length 4")
+   assert(sliced_exclusive[3] is 3, "slice({0 to -1})[3] should be 3")
 
    -- Slice using negative start index
-   sliced_negative_inclusive = arr:slice({-2...-1})
-   assert(#sliced_negative_inclusive is 2, "slice({-2...-1}) should have length 2")
-   assert(sliced_negative_inclusive[0] is 3, "slice({-2...-1})[0] should be 3")
-   assert(sliced_negative_inclusive[1] is 4, "slice({-2...-1})[1] should be 4")
+   sliced_negative_inclusive = arr:slice({-2 into -1})
+   assert(#sliced_negative_inclusive is 2, "slice({-2 into -1}) should have length 2")
+   assert(sliced_negative_inclusive[0] is 3, "slice({-2 into -1})[0] should be 3")
+   assert(sliced_negative_inclusive[1] is 4, "slice({-2 into -1})[1] should be 4")
 
-   sliced_negative_exclusive = arr:slice({-2..-1})
-   assert(#sliced_negative_exclusive is 1, "slice({-2..-1}) should have length 1")
-   assert(sliced_negative_exclusive[0] is 3, "slice({-2..-1})[0] should be 3")
+   sliced_negative_exclusive = arr:slice({-2 to -1})
+   assert(#sliced_negative_exclusive is 1, "slice({-2 to -1}) should have length 1")
+   assert(sliced_negative_exclusive[0] is 3, "slice({-2 to -1})[0] should be 3")
 end
 
 @Test function ArraySliceEdgeCases()
@@ -795,16 +795,16 @@ end
    end
 
    -- Empty slice (exclusive range where start equals stop)
-   sliced = arr:slice({3..3})
-   assert(#sliced is 0, "slice({3..3}) should be empty")
+   sliced = arr:slice({3 to 3})
+   assert(#sliced is 0, "slice({3 to 3}) should be empty")
 
    -- Out of bounds (should clamp)
-   sliced2 = arr:slice({0..100})
-   assert(#sliced2 is 5, "slice({0..100}) should clamp to array length")
+   sliced2 = arr:slice({0 to 100})
+   assert(#sliced2 is 5, "slice({0 to 100}) should clamp to array length")
 
    -- Reverse slice using inclusive range (required for reverse)
-   sliced3 = arr:slice({4...2})
-   assert(#sliced3 is 3, "slice({4...2}) should have length 3 (reverse)")
+   sliced3 = arr:slice({4 into 2})
+   assert(#sliced3 is 3, "slice({4 into 2}) should have length 3 (reverse)")
    assert(sliced3[0] is 4, "reverse slice[0] should be 4")
    assert(sliced3[2] is 2, "reverse slice[2] should be 2")
 end
@@ -842,11 +842,11 @@ end
    end
 
    -- Find within a range (exclusive)
-   assert(arr:find(30, {0..5}) is 3, "find in range: should find 30 at index 3")
-   assert(arr:find(50, {0..5}) is nil, "find in range: 50 should not be found (outside range)")
-   assert(arr:find(70, {5..10}) is 7, "find in range: should find 70 at index 7")
-   assert(arr:find(30, {-20...3}) is 3, "find in clipped negative range should still find 30")
-   assert(arr:find(30, {20..30}) is nil, "find in empty clipped range should return nil")
+   assert(arr:find(30, {0 to 5}) is 3, "find in range: should find 30 at index 3")
+   assert(arr:find(50, {0 to 5}) is nil, "find in range: 50 should not be found (outside range)")
+   assert(arr:find(70, {5 to 10}) is 7, "find in range: should find 70 at index 7")
+   assert(arr:find(30, {-20 into 3}) is 3, "find in clipped negative range should still find 30")
+   assert(arr:find(30, {20 to 30}) is nil, "find in empty clipped range should return nil")
 end
 
 @Test function ArrayFindWithInclusiveRange()
@@ -856,8 +856,8 @@ end
    end
 
    -- Find within an inclusive range
-   assert(arr:find(50, {0...5}) is 5, "find inclusive: should find 50 at index 5")
-   assert(arr:find(50, {0..5}) is nil, "find exclusive: 50 should not be found at boundary")
+   assert(arr:find(50, {0 into 5}) is 5, "find inclusive: should find 50 at index 5")
+   assert(arr:find(50, {0 to 5}) is nil, "find exclusive: 50 should not be found at boundary")
 end
 
 @Test function ArrayFindWithNegativeRange()
@@ -869,8 +869,8 @@ end
    arr[4] = 40
 
    -- Find in last 3 elements using negative indices
-   assert(arr:find(20, {-3..-1}) is 3, "find negative: should find 20 at index 3")
-   assert(arr:find(10, {-3..-1}) is nil, "find negative: 10 should not be found in last 3")
+   assert(arr:find(20, {-3 to -1}) is 3, "find negative: should find 20 at index 3")
+   assert(arr:find(10, {-3 to -1}) is nil, "find negative: 10 should not be found in last 3")
 end
 
 @Test function ArrayFindWithReverseRange()
@@ -882,7 +882,7 @@ end
    arr[4] = 40
 
    -- Find searching backwards (should find the later occurrence first)
-   assert(arr:find(20, {4...0}) is 3, "find reverse: should find 20 at index 3 (searching from end)")
+   assert(arr:find(20, {4 into 0}) is 3, "find reverse: should find 20 at index 3 (searching from end)")
    assert(arr:find(10, range.new(4, 0, false, -1)) is nil, "exclusive reverse range should exclude the stop boundary")
 end
 
@@ -1388,7 +1388,7 @@ end
 @Test function ArrayOfSlice()
    arr = array<int> { 0, 10, 20, 30, 40, 50 }
 
-   sliced = arr:slice({1..4})
+   sliced = arr:slice({1 to 4})
    assert(#sliced is 3, "slice should have length 3")
    assert(sliced[0] is 10, "sliced[0] should be 10")
    assert(sliced[1] is 20, "sliced[1] should be 20")
@@ -1684,19 +1684,19 @@ end
 @Test function ArrayConcatRangeString()
    arr = array<string> { 'a', 'b', 'c', 'd' }
    result = arr:concat(',', nil, 1, 2)
-   assert(result is 'b,c', "concat with range 1..2 should return 'b,c', got '" .. result .. "'")
+   assert(result is 'b,c', "concat with indexes 1 to 2 should return 'b,c', got '" .. result .. "'")
 end
 
 @Test function ArrayConcatRangeIntFormat()
    arr = array<int> { 1, 2, 3, 4 }
    result = arr:concat('-', '%02d', 1, 3)
-   assert(result is '02-03-04', "formatted concat with range 1..3 should return '02-03-04', got '" .. result .. "'")
+   assert(result is '02-03-04', "formatted concat with indexes 1 to 3 should return '02-03-04', got '" .. result .. "'")
 end
 
 @Test function ArrayConcatRangeNilSeparator()
    arr = array<int> { 1, 2, 3, 4 }
    result = arr:concat(nil, '%d', 1, 3)
-   assert(result is '234', "concat with nil separator and range 1..3 should return '234', got '" .. result .. "'")
+   assert(result is '234', "concat with nil separator and indexes 1 to 3 should return '234', got '" .. result .. "'")
 end
 
 @Test function ArrayConcatRangeSingleElement()

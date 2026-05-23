@@ -94,7 +94,7 @@ end
 @Test function CollectReducesMemory()
    -- Allocate some memory
    t = {}
-   for i in {0..5000} do
+   for i in {0 to 5000} do
       t[i] = string.rep('x', 100)
    end
 

@@ -111,7 +111,7 @@ end
    -- Create a bunch of worker scripts that return a result
 
    scripts = array<object> { }
-   for i in {1...10} do
+   for i in {1 into 10} do
       scripts:push(obj.new('script', { statement = [[ print('Pipe worker ]] .. i .. [[ running.'); return ]] .. i }))
    end
 

@@ -129,7 +129,7 @@ function countDepth(Path:str, BasePath:str):num
       relative = Path:sub(BasePath:len())
    end
    depth = 0
-   for i in {0..relative:len()-1} do
+   for i in {0 to relative:len()-1} do
       if relative:sub(i, i+1) is '/' then depth++ end
    end
    return depth

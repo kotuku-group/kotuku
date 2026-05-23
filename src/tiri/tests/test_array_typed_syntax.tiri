@@ -44,7 +44,7 @@ end
    assert(#arr is 5, "Pre-allocated array should have length 5, got " .. #arr)
    assert(arr:type() is 'int', "Type should be 'int'")
    -- Can write to all slots (use ... for inclusive range)
-   for i in {0...4} do
+   for i in {0 into 4} do
       arr[i] = i * 10
    end
    assert(arr[0] is 0, "First slot should be 0")
@@ -56,7 +56,7 @@ end
    assert(#arr is 3, "Pre-allocated table array should have length 3")
    assert(arr:type() is 'table', "Type should be 'table'")
    -- All slots should be nil
-   for i in {0..2} do
+   for i in {0 to 2} do
       assert(arr[i] is nil, "Slot " .. i .. " should be nil")
    end
 end
@@ -231,7 +231,7 @@ end
 
    assert(#new_arr is #old_arr, "Lengths should match")
    assert(new_arr:type() is old_arr:type(), "Types should match")
-   for i in {0..2} do
+   for i in {0 to 2} do
       assert(new_arr[i] is old_arr[i], "Values at index " .. i .. " should match")
    end
 end
@@ -357,7 +357,7 @@ end
    -- Local array in function scope
    function createArray()
       local arr = array<int, 5>
-      for i in {0...4} do
+      for i in {0 into 4} do
          arr[i] = i * 2
       end
       return arr
@@ -439,7 +439,7 @@ end
    -- Range-based iteration with inclusive range
    arr = array<int> { 100, 200, 300 }
    sum = 0
-   for i in {0...2} do
+   for i in {0 into 2} do
       sum += arr[i]
    end
    assert(sum is 600, "Sum should be 600, got " .. sum)

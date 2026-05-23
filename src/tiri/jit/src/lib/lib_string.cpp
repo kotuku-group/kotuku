@@ -913,7 +913,7 @@ extern int luaopen_string(lua_State *L)
    setgcref(basemt_it(g, LJ_TSTR), obj2gco(mt));
 
    // Create a closure for string_index_handler with the string library table as upvalue.
-   // This allows str[idx], str[{0..5}], and str.method() syntax.
+   // This allows str[idx], str[{0 to 5}], and str.method() syntax.
    // Stack after LJ_LIB_REG: [..., string_lib_table] at position -1
 
    lua_pushvalue(L, -1);  // Push copy of string library table for upvalue

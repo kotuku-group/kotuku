@@ -78,6 +78,29 @@ static bool is_shorthand_statement_keyword(TokenKind Kind)
    }
 }
 
+// Checks for contextual range separators.  The lexer intentionally leaves `to` and `into` as identifiers so these
+// words remain available outside range-literal separator positions.
+
+static bool token_is_range_separator(const Token &Token, bool &IsInclusive)
+{
+   if (not Token.is_identifier()) return false;
+
+   GCstr *symbol = Token.identifier();
+   if (not symbol) return false;
+
+   std::string_view text(strdata(symbol), symbol->len);
+   if (text IS std::string_view("to")) {
+      IsInclusive = false;
+      return true;
+   }
+   if (text IS std::string_view("into")) {
+      IsInclusive = true;
+      return true;
+   }
+
+   return false;
+}
+
 // Checks if a statement unconditionally terminates control flow (return, break, continue).
 
 static bool is_terminating_statement(const StmtNode *Stmt)

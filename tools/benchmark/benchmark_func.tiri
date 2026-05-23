@@ -29,7 +29,7 @@
       return x, x * 2, x * 3
    end
 
-   for i in {0..1000000} do
+   for i in {0 to 1000000} do
       -- Call with no arguments
       local r0 = noArgs()
 
@@ -78,7 +78,7 @@ end
       return sumAll(...)
    end
 
-   for i in {0..1000} do
+   for i in {0 to 1000} do
       -- Call with varying argument counts
       local s1 = sumAll(1)
       local s2 = sumAll(1, 2)
@@ -99,7 +99,7 @@ end
 -- Goal: Create and call closures that capture upvalues
 
 @Test function FunctionClosures()
-   for i in {0..1000} do
+   for i in {0 to 1000} do
       -- Simple closure capturing one variable
       local x = i
       local getX = function()
@@ -160,7 +160,7 @@ end
 -- Goal: Use anonymous function expressions with arrow syntax
 
 @Test function FunctionAnonymous()
-   for i in {0..1000} do
+   for i in {0 to 1000} do
       -- Simple arrow function
       local double = (x => x * 2)
       local v1 = double(i)
@@ -243,7 +243,7 @@ end
       return isEven(n - 1)
    end
 
-   for i in {0..500} do
+   for i in {0 to 500} do
       -- Call recursive functions with safe depths
       local f1 = factorial(10)
       local f2 = factorial(12)
@@ -309,7 +309,7 @@ end
       end
    }
 
-   for i in {0..10000} do
+   for i in {0 to 10000} do
       -- Method calls with colon syntax
       Counter:reset()
       Counter:increment()

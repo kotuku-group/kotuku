@@ -511,7 +511,7 @@ struct DeferredExprPayload {
    ~DeferredExprPayload();
 };
 
-// Range expression payload: represents {start..stop} or {start...stop} literal syntax
+// Range expression payload: represents {start to stop} or {start into stop} literal syntax
 
 struct RangeExprPayload {
    RangeExprPayload() = default;
@@ -521,7 +521,7 @@ struct RangeExprPayload {
    RangeExprPayload& operator=(RangeExprPayload&&) noexcept = default;
    ExprNodePtr start;      // Start index expression
    ExprNodePtr stop;       // Stop index expression
-   bool inclusive = false; // True for ... (inclusive), false for .. (exclusive)
+   bool inclusive = false; // True for `into` (inclusive), false for `to` (exclusive)
    ~RangeExprPayload();
 };
 

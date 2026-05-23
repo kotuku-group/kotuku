@@ -4,7 +4,7 @@
 -- Goal: Create empty tables
 
 @Test function TableCreateEmpty()
-   for i in {0..1000} do
+   for i in {0 to 1000} do
       -- Create empty tables
       local t1 = {}
       local t2 = {}
@@ -22,7 +22,7 @@ end
 -- Goal: Create tables with initial key-value pairs
 
 @Test function TableCreateWithKeyValues()
-   for i in {0..100000} do
+   for i in {0 to 100000} do
       -- Create with string keys
       local person = { name = "Alice", age = 30, city = "London" }
 
@@ -46,7 +46,7 @@ end
 @Test function TableAccessByStringKey()
    local t = { alpha = 1, beta = 2, gamma = 3, delta = 4, epsilon = 5 }
 
-   for i in {0..1000000} do
+   for i in {0 to 1000000} do
       -- Read by string key
       local v1 = t.alpha
       local v2 = t["beta"]
@@ -82,7 +82,7 @@ end
       }
    }
 
-   for i in {0..100000} do
+   for i in {0 to 100000} do
       -- Deep property access
       local v1 = data.level1.level2.level3.value
       local v2 = data.level1.level2.level3.items.a
@@ -104,7 +104,7 @@ end
 -- Goal: Insert and remove elements from array-like tables
 
 @Test function TableInsertRemove()
-   for i in {0..1000} do
+   for i in {0 to 1000} do
       local t = { 1, 2, 3, 4, 5 }
 
       -- Insert at end
@@ -140,7 +140,7 @@ end
 -- Goal: Sort table elements with custom comparator
 
 @Test function TableSort()
-   for i in {0..1000} do
+   for i in {0 to 1000} do
       -- Sort numbers ascending (default)
       local nums = { 50, 30, 80, 10, 60, 40, 90, 20, 70, 100 }
       table.sort(nums)
@@ -176,7 +176,7 @@ end
    local arr1 = { 1, 2, 3 }
    local arr2 = { 4, 5, 6 }
 
-   for i in {0..10000} do
+   for i in {0 to 10000} do
       -- Merge key-value tables (manual)
       local merged = {}
       for k, v in pairs(t1) do

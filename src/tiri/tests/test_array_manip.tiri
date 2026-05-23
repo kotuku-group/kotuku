@@ -1355,7 +1355,7 @@ end
    arr:fill(0)  -- Zero-initialize first
 
    -- Fill with range (exclusive)
-   arr:fill(99, {2..5})
+   arr:fill(99, {2 to 5})
    assert(arr[0] is 0, "fill range: arr[0] should be 0")
    assert(arr[1] is 0, "fill range: arr[1] should be 0")
    assert(arr[2] is 99, "fill range: arr[2] should be 99")
@@ -1369,7 +1369,7 @@ end
    arr:fill(0)  -- Zero-initialize first
 
    -- Fill with inclusive range
-   arr:fill(77, {2...5})
+   arr:fill(77, {2 into 5})
    assert(arr[1] is 0, "fill inclusive: arr[1] should be 0")
    assert(arr[2] is 77, "fill inclusive: arr[2] should be 77")
    assert(arr[3] is 77, "fill inclusive: arr[3] should be 77")
@@ -1383,7 +1383,7 @@ end
    arr:fill(0)  -- Zero-initialize first
 
    -- Fill last 2 elements using negative indices
-   arr:fill(55, {-2..-1})
+   arr:fill(55, {-2 to -1})
    assert(arr[0] is 0, "fill negative: arr[0] should be 0")
    assert(arr[1] is 0, "fill negative: arr[1] should be 0")
    assert(arr[2] is 0, "fill negative: arr[2] should be 0")
@@ -1410,11 +1410,11 @@ end
    arr = array<int, 5>
    arr:fill(0)
 
-   arr:fill(11, {-20...1})
+   arr:fill(11, {-20 into 1})
    assert(arr[0] is 11 and arr[1] is 11, "fill should clip negative ranges to the array start")
    assert(arr[2] is 0, "fill should not extend past the clipped stop")
 
-   arr:fill(22, {20..30})
+   arr:fill(22, {20 to 30})
    assert(arr[0] is 11 and arr[1] is 11 and arr[2] is 0 and arr[3] is 0 and arr[4] is 0,
       "empty clipped fill ranges should leave the array unchanged")
 

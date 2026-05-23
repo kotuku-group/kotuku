@@ -2662,7 +2662,7 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_index_expr(const SafeIndexExprPayload
 }
 
 //********************************************************************************************************************
-// Emit bytecode for a range literal expression ({start..stop} or {start...stop}).
+// Emit bytecode for a range literal expression ({start to stop} or {start into stop}).
 // Emits a call to the global `range` function: range(start, stop, inclusive)
 
 ParserResult<ExpDesc> IrEmitter::emit_range_expr(const RangeExprPayload &Payload)

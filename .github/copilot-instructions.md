@@ -111,7 +111,7 @@ Kōtuku uses Interface Definition Language (IDL) files with `.tdl` extension to 
 - Zero-based indexing for tables and string functions.
 - Variables and functions are local by default.  Use `global` for defining global variables and `local` when controlling scope.
 - Anonymous function expressions with `=>`: `(i => print(i))`
-- Support for ranges: `for i in {0..10} do`
+- Support for ranges: `for i in {0 to 10} do`
 
 A complete breakdown of these features is located in `docs/wiki/Tiri-Reference-Manual.md`
 

@@ -496,7 +496,7 @@ end
    arr = array<int> { 10, 20, 30 }
    results = {}
 
-   for i in {0..5} do
+   for i in {0 to 5} do
       results[i] = arr?[i] ?? -1
    end
 
