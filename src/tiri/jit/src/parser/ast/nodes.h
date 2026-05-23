@@ -345,6 +345,17 @@ struct BinaryExprPayload {
    ~BinaryExprPayload();
 };
 
+struct ComparisonChainExprPayload {
+   ComparisonChainExprPayload() = default;
+   ComparisonChainExprPayload(const ComparisonChainExprPayload&) = delete;
+   ComparisonChainExprPayload& operator=(const ComparisonChainExprPayload&) = delete;
+   ComparisonChainExprPayload(ComparisonChainExprPayload&&) noexcept = default;
+   ComparisonChainExprPayload& operator=(ComparisonChainExprPayload&&) noexcept = default;
+   std::vector<AstBinaryOperator> operators;
+   ExprNodeList operands;
+   ~ComparisonChainExprPayload();
+};
+
 struct TernaryExprPayload {
    TernaryExprPayload() = default;
    TernaryExprPayload(const TernaryExprPayload&) = delete;
@@ -593,7 +604,7 @@ struct ExprNode {
    AstNodeKind kind = AstNodeKind::LiteralExpr;
    SourceSpan span{};
    std::variant<LiteralValue, NameRef, VarArgExprPayload, UnaryExprPayload,
-      UpdateExprPayload, BinaryExprPayload, TernaryExprPayload,
+      UpdateExprPayload, BinaryExprPayload, ComparisonChainExprPayload, TernaryExprPayload,
       PresenceExprPayload, PipeExprPayload, CallExprPayload, MemberExprPayload,
       IndexExprPayload, SafeMemberExprPayload, SafeIndexExprPayload,
       ResultFilterPayload, TableExprPayload, FunctionExprPayload, DeferredExprPayload,
@@ -988,6 +999,8 @@ ExprNodePtr make_vararg_expr(SourceSpan span);
 ExprNodePtr make_unary_expr(SourceSpan span, AstUnaryOperator op, ExprNodePtr operand);
 ExprNodePtr make_update_expr(SourceSpan span, AstUpdateOperator op, bool is_postfix, ExprNodePtr target);
 ExprNodePtr make_binary_expr(SourceSpan span, AstBinaryOperator op, ExprNodePtr left, ExprNodePtr right);
+ExprNodePtr make_comparison_chain_expr(SourceSpan span, std::vector<AstBinaryOperator> operators,
+   ExprNodeList operands);
 ExprNodePtr make_ternary_expr(SourceSpan span, TernaryConditionMode mode, ExprNodePtr condition, ExprNodePtr if_true,
    ExprNodePtr if_false);
 ExprNodePtr make_presence_expr(SourceSpan span, ExprNodePtr value);

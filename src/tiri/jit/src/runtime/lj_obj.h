@@ -78,6 +78,7 @@ enum class AstNodeKind : uint16_t {
    VarArgExpr,
    UnaryExpr,
    BinaryExpr,
+   ComparisonChainExpr,
    UpdateExpr,
    TernaryExpr,
    PresenceExpr,

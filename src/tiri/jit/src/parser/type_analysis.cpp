@@ -1101,6 +1101,15 @@ void TypeAnalyser::analyse_expression(const ExprNode &Expression)
          }
          break;
       }
+      case AstNodeKind::ComparisonChainExpr: {
+         auto *payload = std::get_if<ComparisonChainExprPayload>(&Expression.data);
+         if (payload) {
+            for (const auto &operand : payload->operands) {
+               if (operand) this->analyse_expression(*operand);
+            }
+         }
+         break;
+      }
       case AstNodeKind::TernaryExpr: {
          auto *payload = std::get_if<TernaryExprPayload>(&Expression.data);
          if (payload) {
@@ -1332,6 +1341,10 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
          result.primary = TiriType::Any;
          break;
       }
+      case AstNodeKind::ComparisonChainExpr:
+         result.primary = TiriType::Bool;
+         return result;
+
       case AstNodeKind::BinaryExpr: {
          // Infer type from binary expression operands and operator
          auto *payload = std::get_if<BinaryExprPayload>(&Expr.data);
@@ -1419,6 +1432,7 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
          result.primary = TiriType::Any;
          break;
       }
+
       case AstNodeKind::UnaryExpr: {
          auto *payload = std::get_if<UnaryExprPayload>(&Expr.data);
          if (payload) {
@@ -1957,6 +1971,15 @@ bool TypeAnalyser::expression_contains_call_to(const ExprNode& Expr, GCstr *Name
          if (payload) {
             if (payload->left and this->expression_contains_call_to(*payload->left, Name)) return true;
             if (payload->right and this->expression_contains_call_to(*payload->right, Name)) return true;
+         }
+         break;
+      }
+      case AstNodeKind::ComparisonChainExpr: {
+         auto *payload = std::get_if<ComparisonChainExprPayload>(&Expr.data);
+         if (payload) {
+            for (const auto &operand : payload->operands) {
+               if (operand and this->expression_contains_call_to(*operand, Name)) return true;
+            }
          }
          break;
       }

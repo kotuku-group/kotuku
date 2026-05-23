@@ -180,6 +180,7 @@ private:
    ParserResult<ExpDesc> emit_unary_expr(const UnaryExprPayload& payload);
    ParserResult<ExpDesc> emit_update_expr(const UpdateExprPayload& payload);
    ParserResult<ExpDesc> emit_binary_expr(const BinaryExprPayload& payload);
+   ParserResult<ExpDesc> emit_comparison_chain_expr(const ComparisonChainExprPayload& payload);
    ParserResult<ExpDesc> emit_ternary_expr(const TernaryExprPayload& payload);
    ParserResult<ExpDesc> emit_if_empty_expr(ExpDesc lhs, const ExprNode& rhs_ast);
    ParserResult<ExpDesc> emit_bitwise_expr(BinOpr opr, ExpDesc lhs, const ExprNode& rhs_ast);

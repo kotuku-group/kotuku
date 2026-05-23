@@ -110,6 +110,9 @@ TiriType infer_expression_type(const ExprNode &Expr)
          break;
       }
 
+      case AstNodeKind::ComparisonChainExpr:
+         return TiriType::Bool;
+
       // Binary operators: result type depends on operator
       case AstNodeKind::BinaryExpr: {
          const auto& payload = std::get<BinaryExprPayload>(Expr.data);
@@ -267,6 +270,10 @@ struct ExpressionChildCounter {
       size_t total = Payload.left ? 1 : 0;
       if (Payload.right) total++;
       return total;
+   }
+
+   [[nodiscard]] inline size_t operator()(const ComparisonChainExprPayload &Payload) const {
+      return Payload.operands.size();
    }
 
    [[nodiscard]] inline size_t operator()(const TernaryExprPayload &Payload) const {
@@ -494,6 +501,7 @@ SafeMethodCallTarget::~SafeMethodCallTarget() = default;
 UnaryExprPayload::~UnaryExprPayload() = default;
 UpdateExprPayload::~UpdateExprPayload() = default;
 BinaryExprPayload::~BinaryExprPayload() = default;
+ComparisonChainExprPayload::~ComparisonChainExprPayload() = default;
 TernaryExprPayload::~TernaryExprPayload() = default;
 PresenceExprPayload::~PresenceExprPayload() = default;
 PipeExprPayload::~PipeExprPayload() = default;
@@ -598,6 +606,20 @@ ExprNodePtr make_binary_expr(SourceSpan Span, AstBinaryOperator op, ExprNodePtr 
    payload.right = std::move(right);
    ExprNodePtr node = std::make_unique<ExprNode>();
    node->kind = AstNodeKind::BinaryExpr;
+   node->span = Span;
+   node->data = std::move(payload);
+   return node;
+}
+
+ExprNodePtr make_comparison_chain_expr(SourceSpan Span, std::vector<AstBinaryOperator> Operators, ExprNodeList Operands)
+{
+   assert_node(Operands.size() >= 2 and Operators.size() + 1 IS Operands.size(),
+      "comparison chain requires adjacent operators and operands");
+   ComparisonChainExprPayload payload;
+   payload.operators = std::move(Operators);
+   payload.operands = std::move(Operands);
+   ExprNodePtr node = std::make_unique<ExprNode>();
+   node->kind = AstNodeKind::ComparisonChainExpr;
    node->span = Span;
    node->data = std::move(payload);
    return node;

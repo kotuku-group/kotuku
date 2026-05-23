@@ -1,0 +1,73 @@
+-- Tests for chained ordering comparisons.
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+@Test function BasicRangeCheck()
+   x = 5
+   assert(0 <= x < 10, '0 <= x < 10 should be true for x=5')
+
+   x = 10
+   assert(not (0 <= x < 10), '0 <= x < 10 should be false for x=10')
+
+   x = -1
+   assert(not (0 <= x < 10), '0 <= x < 10 should be false for x=-1')
+end
+
+@Test function MixedDirections()
+   x = 5
+   assert(10 > x >= 0, '10 > x >= 0 should be true for x=5')
+
+   x = 10
+   assert(not (10 > x >= 0), '10 > x >= 0 should be false for x=10')
+
+   x = -1
+   assert(not (10 > x >= 0), '10 > x >= 0 should be false for x=-1')
+end
+
+@Test function LongerChains()
+   x = 5
+   y = 25
+   assert(0 <= x < y <= 100, 'longer chain should accept increasing values')
+
+   y = 5
+   assert(not (0 <= x < y <= 100), 'longer chain should reject equal middle values for <')
+end
+
+@Test function ChainAsValue()
+   result = 0 <= 5 < 10
+   assert(result is true, 'comparison chain should materialise true as a value')
+
+   result = 0 <= 10 < 10
+   assert(result is false, 'comparison chain should materialise false as a value')
+end
+
+@Test function MiddleOperandEvaluatesOnce()
+   calls = 0
+
+   function middle()
+      calls += 1
+      return 5
+   end
+
+   assert(0 < middle() < 10, 'middle function result should satisfy the chain')
+   assert(calls is 1, 'middle operand should be evaluated once, got ' .. calls)
+end
+
+@Test function ShortCircuitsAfterFailedComparison()
+   calls = 0
+
+   function should_not_run()
+      calls += 1
+      return 10
+   end
+
+   assert(not (10 < 0 < should_not_run()), 'chain should fail on the first comparison')
+   assert(calls is 0, 'later operand should not be evaluated after a failed comparison')
+end
+
+@Test function EqualityChainsKeepExistingSemantics()
+   assert(1 is 1 is true, 'equality chain should keep existing left-associative boolean comparison semantics')
+   assert(1 is 2 is false, 'failed equality followed by is false should stay valid')
+   assert(0 < 1 is true, 'mixed ordering/equality expression should still compare the ordering result to true')
+end

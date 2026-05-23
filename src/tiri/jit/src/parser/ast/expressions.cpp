@@ -9,6 +9,16 @@
 // - Arrow functions
 // - Operator matching
 
+namespace {
+
+[[nodiscard]] inline bool is_ordering_operator(AstBinaryOperator Operator)
+{
+   return Operator IS AstBinaryOperator::LessThan or Operator IS AstBinaryOperator::LessEqual or
+      Operator IS AstBinaryOperator::GreaterThan or Operator IS AstBinaryOperator::GreaterEqual;
+}
+
+} // namespace
+
 //********************************************************************************************************************
 // Parses expression statements, handling assignments, compound assignments, conditional shorthands, and standalone expressions.
 
@@ -308,6 +318,37 @@ ParserResult<ExprNodePtr> AstBuilder::parse_expression(uint8_t precedence)
       auto op_info = this->match_binary_operator(next);
       if (not op_info.has_value()) break;
       if (op_info->left <= precedence) break;
+
+      if (is_ordering_operator(op_info->op)) {
+         ExprNodeList operands;
+         std::vector<AstBinaryOperator> operators;
+         operands.push_back(std::move(left.value_ref()));
+
+         while (op_info.has_value() and is_ordering_operator(op_info->op) and op_info->left > precedence) {
+            this->ctx.tokens().advance();
+            auto right = this->parse_expression(op_info->right);
+            if (not right.ok()) return right;
+            operators.push_back(op_info->op);
+            operands.push_back(std::move(right.value_ref()));
+
+            next = this->ctx.tokens().current();
+            op_info = this->match_binary_operator(next);
+         }
+
+         SourceSpan span = combine_spans(operands.front()->span, operands.back()->span);
+         if (operators.size() IS 1) {
+            ExprNodePtr lhs = std::move(operands[0]);
+            ExprNodePtr rhs = std::move(operands[1]);
+            left = ParserResult<ExprNodePtr>::success(
+               make_binary_expr(span, operators[0], std::move(lhs), std::move(rhs)));
+         }
+         else {
+            left = ParserResult<ExprNodePtr>::success(
+               make_comparison_chain_expr(span, std::move(operators), std::move(operands)));
+         }
+         continue;
+      }
+
       this->ctx.tokens().advance();
       auto right = this->parse_expression(op_info->right);
       if (not right.ok()) return right;

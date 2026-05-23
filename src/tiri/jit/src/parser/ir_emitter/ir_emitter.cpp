@@ -408,6 +408,7 @@ static UnsupportedNodeRecorder glUnsupportedNodes;
       case AstNodeKind::VarArgExpr:     return "VarArgExpr";
       case AstNodeKind::UnaryExpr:      return "UnaryExpr";
       case AstNodeKind::BinaryExpr:     return "BinaryExpr";
+      case AstNodeKind::ComparisonChainExpr: return "ComparisonChainExpr";
       case AstNodeKind::UpdateExpr:     return "UpdateExpr";
       case AstNodeKind::TernaryExpr:    return "TernaryExpr";
       case AstNodeKind::PresenceExpr:   return "PresenceExpr";
@@ -1710,6 +1711,8 @@ ParserResult<ExpDesc> IrEmitter::emit_expression(const ExprNode& expr)
       case AstNodeKind::UnaryExpr:        return this->emit_unary_expr(std::get<UnaryExprPayload>(expr.data));
       case AstNodeKind::UpdateExpr:       return this->emit_update_expr(std::get<UpdateExprPayload>(expr.data));
       case AstNodeKind::BinaryExpr:       return this->emit_binary_expr(std::get<BinaryExprPayload>(expr.data));
+      case AstNodeKind::ComparisonChainExpr:
+         return this->emit_comparison_chain_expr(std::get<ComparisonChainExprPayload>(expr.data));
       case AstNodeKind::TernaryExpr:      return this->emit_ternary_expr(std::get<TernaryExprPayload>(expr.data));
       case AstNodeKind::PresenceExpr:     return this->emit_presence_expr(std::get<PresenceExprPayload>(expr.data));
       case AstNodeKind::PipeExpr:         return this->emit_pipe_expr(std::get<PipeExprPayload>(expr.data));
@@ -1963,6 +1966,78 @@ ParserResult<ExpDesc> IrEmitter::emit_binary_expr(const BinaryExprPayload &Paylo
    return ParserResult<ExpDesc>::success(lhs);
 }
 
+//********************************************************************************************************************
+// Emit bytecode for ordering comparison chains such as `0 <= x < 10`.
+
+ParserResult<ExpDesc> IrEmitter::emit_comparison_chain_expr(const ComparisonChainExprPayload &Payload)
+{
+   if (Payload.operands.size() < 2 or Payload.operators.size() + 1 != Payload.operands.size()) {
+      SourceSpan span = Payload.operands.empty() ? SourceSpan{} : Payload.operands.front()->span;
+      return this->unsupported_expr(AstNodeKind::ComparisonChainExpr, span);
+   }
+
+   auto lhs_result = this->emit_expression(*Payload.operands[0]);
+   if (not lhs_result.ok()) return lhs_result;
+
+   ExpDesc lhs = lhs_result.value_ref();
+   ExpDesc result;
+   std::vector<BCReg> preserved_regs;
+   bool has_result = false;
+
+   for (size_t index = 0; index < Payload.operators.size(); ++index) {
+      if (has_result) this->operator_emitter.prepare_logical_and(ExprValue(&result));
+
+      auto mapped = map_binary_operator(Payload.operators[index]);
+      if (not mapped.has_value()) {
+         SourceSpan span = Payload.operands[index] ? Payload.operands[index]->span : SourceSpan{};
+         return this->unsupported_expr(AstNodeKind::ComparisonChainExpr, span);
+      }
+
+      BinOpr opr = mapped.value();
+      this->operator_emitter.emit_binop_left(opr, ExprValue(&lhs));
+
+      auto rhs_result = this->emit_expression(*Payload.operands[index + 1]);
+      if (not rhs_result.ok()) return rhs_result;
+
+      ExpDesc rhs = rhs_result.value_ref();
+      bool preserve_rhs = index + 1 < Payload.operators.size();
+      BCReg preserved_reg = BCReg(NO_REG);
+      BCReg guard_reg = BCReg(NO_REG);
+      TiriType preserved_type = rhs.result_type;
+
+      if (preserve_rhs) {
+         this->register_allocator.discharge_to_next_register(rhs);
+         preserved_reg = BCReg(rhs.u.s.info);
+         preserved_regs.push_back(preserved_reg);
+
+         guard_reg = this->func_state.free_reg();
+         this->register_allocator.reserve(BCReg(1));
+      }
+
+      ExpDesc comparison = lhs;
+      this->operator_emitter.emit_comparison(opr, ExprValue(&comparison), rhs);
+
+      if (guard_reg.raw() != NO_REG) this->register_allocator.release_register(guard_reg);
+
+      if (has_result) this->operator_emitter.complete_logical_and(ExprValue(&result), comparison);
+      else {
+         result = comparison;
+         has_result = true;
+      }
+
+      if (preserve_rhs) {
+         lhs.init(ExpKind::NonReloc, preserved_reg.raw());
+         lhs.result_type = preserved_type;
+      }
+   }
+
+   for (auto reg = preserved_regs.rbegin(); reg != preserved_regs.rend(); ++reg) {
+      this->register_allocator.release_register(*reg);
+   }
+
+   result.result_type = TiriType::Bool;
+   return ParserResult<ExpDesc>::success(result);
+}
 //********************************************************************************************************************
 // IF_EMPTY (lhs ?? rhs) with conditional RHS emission for proper short-circuit semantics
 // Similar to ternary but with extended falsey checks (nil, false, 0, "")
