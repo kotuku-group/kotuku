@@ -444,19 +444,21 @@ static ERR scan_dir(DirInfo *Dir)
       }
 
       if ((Dir->prvFlags & RDF::FOLDER) != RDF::NIL) {
+         if (auto asset = AAssetManager_open(mgr, entry_path.c_str(), AASSET_MODE_UNKNOWN)) {
+            AAsset_close(asset);
+            continue;
+         }
+
          AAssetDir *dir;
          if ((dir = AAssetManager_openDir(mgr, entry_path.c_str()))) {
-            if (AAssetDir_getNextFileName(dir)) {
-               Dir->Info->Flags |= RDF::FOLDER;
-               AAssetDir_close(dir);
+            Dir->Info->Flags |= RDF::FOLDER;
+            AAssetDir_close(dir);
 
-               Dir->Info->Name = filename;
+            Dir->Info->Name = filename;
 
-               Dir->prvIndex++;
-               Dir->prvTotal++;
-               return ERR::Okay;
-            }
-            else AAssetDir_close(dir);
+            Dir->prvIndex++;
+            Dir->prvTotal++;
+            return ERR::Okay;
          }
       }
    }

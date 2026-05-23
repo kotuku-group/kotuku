@@ -1622,15 +1622,6 @@ static ERR FILE_Write(extFile *Self, struct acWrite *Args)
             Self->Position += len;
          }
 
-/*
-         writelen = Self->Position % Self->Size;
-         for (len=0; len < Args->Length; len++) {
-            Self->Buffer[writelen++] = ((BYTE *)Args->Buffer)[len];
-            if (writelen >= Self->Size) writelen = 0;
-         }
-         Self->Position += Args->Length;
-*/
-
          Args->Result = Args->Length;
          return ERR::Okay;
       }
