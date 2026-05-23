@@ -106,7 +106,6 @@ static ERR MODOpen(OBJECTPTR);
 #include "module_def.c"
 
 JUMPTABLE_CORE
-static OBJECTPTR glAudioModule = nullptr;
 static OBJECTPTR clAudio = 0;
 static ankerl::unordered_dense::map<OBJECTID, int> glSoundChannels;
 class extAudio;
@@ -156,7 +155,6 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    kt::Log log;
 
    CoreBase = argCoreBase;
-   glAudioModule = argModule;
 
 #ifdef _WIN32
    {

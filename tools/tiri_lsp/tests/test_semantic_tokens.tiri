@@ -29,6 +29,16 @@ function findToken(Tokens:array, Line:num, Char:num, Text:str):table
    end
 end
 
+function assertOperatorToken(Tokens:array, Line:num, Char:num, Text:str, Message:str)
+   token = findToken(Tokens, Line, Char, Text)
+   assert(token and token.type is 1, Message)
+end
+
+function assertNoToken(Tokens:array, Line:num, Char:num, Text:str, Message:str)
+   token = findToken(Tokens, Line, Char, Text)
+   assert(not token, Message)
+end
+
 @Test function ParserAnnotationsReceiveSemanticTokens()
    source = 'value = @SourceFile\n' ..
       'line = @SourceLine\n' ..
@@ -57,6 +67,65 @@ end
    assert((source_file.modifiers & 4) != 0, '@SourceFile should be marked readonly.')
    assert((source_line.modifiers & 4) != 0, '@SourceLine should be marked readonly.')
    assert((function_name.modifiers & 4) != 0, '@FunctionName should be marked readonly.')
+end
+
+@Test function RangeSeparatorsReceiveContextualSemanticTokens()
+   source = 'range_value = {0 to 5}\n' ..
+      'range_value = {0 into 5}\n' ..
+      'to = 1\n' ..
+      'into = 2\n' ..
+      'range_value = {to to into}\n' ..
+      'config = { into=1, to=2 }\n' ..
+      'range_value = {config.to into limit}\n'
+
+   tokens = tokenizeTiri(source)
+
+   assertOperatorToken(tokens, 0, 17, 'to', 'Exclusive range separator should be highlighted as an operator.')
+   assertOperatorToken(tokens, 1, 17, 'into', 'Inclusive range separator should be highlighted as an operator.')
+   assertNoToken(tokens, 2, 0, 'to', 'Variable named to should not be highlighted as a range separator.')
+   assertNoToken(tokens, 3, 0, 'into', 'Variable named into should not be highlighted as a range separator.')
+   assertNoToken(tokens, 4, 15, 'to', 'Range start variable named to should not be highlighted as a separator.')
+   assertOperatorToken(tokens, 4, 18, 'to', 'Second to in {to to into} should be the range separator.')
+   assertNoToken(tokens, 4, 21, 'into', 'Range stop variable named into should not be highlighted as a separator.')
+   assertNoToken(tokens, 5, 11, 'into', 'Table key named into should not be highlighted as a range separator.')
+   assertNoToken(tokens, 5, 19, 'to', 'Table key named to should not be highlighted as a range separator.')
+   assertNoToken(tokens, 6, 22, 'to', 'Member named to should not be highlighted as a range separator.')
+   assertOperatorToken(tokens, 6, 25, 'into', 'Range separator after a member access should be highlighted.')
+end
+
+@Test function RangeSyntaxDiagnosticsUseCurrentParser()
+   doc = makeDoc('sum = 0\nfor i in {0 to 5} do\n   sum += i\nend\nvalue = {0 into 5}\n')
+   result = computeDiagnostics(doc)
+
+   assert(#result.diagnostics is 0, 'LSP diagnostics should accept current to/into range syntax.')
+end
+
+@Test function TernaryModesReceiveSemanticTokens()
+   source = 'standard = value ? \'yes\' :> \'no\'\n' ..
+      'extended = value ?? \'yes\' :> \'no\'\n' ..
+      'comparison = options.scale is false ?? nil :> true\n' ..
+      'coalesce = value ?? \'fallback\'\n'
+
+   tokens = tokenizeTiri(source)
+
+   assertOperatorToken(tokens, 0, 17, '?', 'Standard ternary condition should be highlighted as an operator.')
+   assertOperatorToken(tokens, 0, 25, ':>', 'Standard ternary separator should be highlighted as an operator.')
+   assertOperatorToken(tokens, 1, 17, '??', 'Extended ternary condition should be highlighted as an operator.')
+   assertOperatorToken(tokens, 1, 26, ':>', 'Extended ternary separator should be highlighted as an operator.')
+   assertOperatorToken(tokens, 2, 27, 'is', 'Comparison before extended ternary should remain an operator.')
+   assertOperatorToken(tokens, 2, 36, '??', 'Extended ternary after comparison should be highlighted.')
+   assertOperatorToken(tokens, 2, 43, ':>', 'Extended ternary after comparison should keep its separator.')
+   assertOperatorToken(tokens, 3, 17, '??', 'Binary if-empty operator should remain highlighted.')
+end
+
+@Test function TernaryDiagnosticsUseCurrentParser()
+   doc = makeDoc('value = 0 ? \'truthy\' :> \'falsey\'\n' ..
+      'extended = 0 ?? \'truthy\' :> \'falsey\'\n' ..
+      'options = { scale=false }\n' ..
+      'value = options.scale is false ?? nil :> true\n')
+   result = computeDiagnostics(doc)
+
+   assert(#result.diagnostics is 0, 'LSP diagnostics should accept standard and extended ternary syntax.')
 end
 
 @Test function ParserAnnotationHoverDocumentation()

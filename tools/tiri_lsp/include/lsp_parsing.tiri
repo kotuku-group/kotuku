@@ -83,6 +83,72 @@ global function tokenizeTiri(Source:str):array
       return C >= '0' and C <= '9'
    end
 
+   function isRangeSeparator(StartPos, StopPos, Ident)
+      if Ident != 'to' and Ident != 'into' then return false end
+
+      before = StartPos - 1
+      while before >= 0 do
+         bc = Source:sub(before, before + 1)
+         if bc is ' ' or bc is '\t' then before -= 1 else break end
+      end
+
+      if before < 0 then return false end
+      prev = Source:sub(before, before + 1)
+      if prev is '{' or prev is ',' or prev is ';' or prev is '.' or prev is ':' then return false end
+
+      depth = 0
+      brace_pos = nil
+      scan = StartPos - 1
+      while scan >= 0 do
+         sc = Source:sub(scan, scan + 1)
+         if sc is '}' or sc is ']' or sc is ')' then
+            depth++
+         elseif sc is '{' then
+            if depth is 0 then
+               brace_pos = scan
+               break
+            end
+            depth -= 1
+         elseif sc is '[' or sc is '(' then
+            if depth > 0 then depth -= 1 end
+         elseif depth is 0 and (sc is ',' or sc is ';' or sc is '\n' or sc is '\r') then
+            return false
+         end
+         scan -= 1
+      end
+
+      if not brace_pos then return false end
+
+      after = StopPos
+      while after < len do
+         ac = Source:sub(after, after + 1)
+         if ac is ' ' or ac is '\t' then after++ else break end
+      end
+
+      if after >= len then return false end
+      next_c = Source:sub(after, after + 1)
+      if next_c is '}' or next_c is ',' or next_c is ';' or next_c is '.' or next_c is ':' then return false end
+
+      depth = 0
+      scan = after
+      while scan < len do
+         sc = Source:sub(scan, scan + 1)
+         if sc is '{' or sc is '[' or sc is '(' then
+            depth++
+         elseif sc is '}' then
+            if depth is 0 then return true end
+            depth -= 1
+         elseif sc is ']' or sc is ')' then
+            if depth > 0 then depth -= 1 end
+         elseif depth is 0 and (sc is ',' or sc is ';' or sc is '\n' or sc is '\r') then
+            return false
+         end
+         scan++
+      end
+
+      return false
+   end
+
    -- Main tokenization loop
    while pos < len do
       skipWhitespace()
@@ -244,7 +310,9 @@ global function tokenizeTiri(Source:str):array
          ident = Source:sub(start_pos, pos)
          ident_len = col - ident_start
 
-         if FLUID_KEYWORDS[ident] then
+         if isRangeSeparator(start_pos, pos, ident) then
+            addToken(line, ident_start, ident_len, 1, 0)  -- range separator operator
+         elseif FLUID_KEYWORDS[ident] then
             addToken(line, ident_start, ident_len, 0, 0)  -- keyword
          elseif FLUID_OPERATORS[ident] then
             addToken(line, ident_start, ident_len, 1, 0)  -- operator
@@ -311,7 +379,7 @@ global function tokenizeTiri(Source:str):array
             pos += 3
             col += 3
          elseif pos + 1 < len and Source:sub(pos + 1, pos + 2) is '?' then
-            -- ?? if-empty operator
+            -- ?? if-empty operator or extended ternary condition
             addToken(line, op_start, 2, 1, 0)
             pos += 2
             col += 2
@@ -331,7 +399,7 @@ global function tokenizeTiri(Source:str):array
             pos += 2
             col += 2
          else
-            -- ? ternary condition
+            -- ? standard ternary condition
             addToken(line, op_start, 1, 1, 0)
             pos++
             col++
@@ -381,12 +449,12 @@ global function tokenizeTiri(Source:str):array
             pos += 3
             col += 3
          elseif pos + 2 < len and Source:sub(pos + 1, pos + 3) is '..' then
-            -- ... varargs or inclusive range
+            -- ... varargs
             addToken(line, op_start, 3, 1, 0)
             pos += 3
             col += 3
          elseif pos + 1 < len and Source:sub(pos + 1, pos + 2) is '.' then
-            -- .. concatenation or exclusive range
+            -- .. concatenation
             addToken(line, op_start, 2, 1, 0)
             pos += 2
             col += 2

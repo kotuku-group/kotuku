@@ -240,7 +240,7 @@
                "match": "\\?\\."
             },
             {
-               "name": "keyword.operator.nullish.tiri",
+               "name": "keyword.operator.if-empty.tiri",
                "match": "\\?\\?"
             },
             {

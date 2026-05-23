@@ -33,12 +33,12 @@
 
 // Extracts the function payload from an expression node if it's a function expression, otherwise returns null.
 
-static void rollback_ast_builder_constants(void *UserData)
+inline void rollback_ast_builder_constants(void *UserData)
 {
    ((AstBuilder *)UserData)->rollback_registered_enum_hierarchy();
 }
 
-static FunctionExprPayload * function_payload_from(ExprNode &Node)
+inline FunctionExprPayload * function_payload_from(ExprNode &Node)
 {
    if (Node.kind != AstNodeKind::FunctionExpr) return nullptr;
    return std::get_if<FunctionExprPayload>(&Node.data);
@@ -62,43 +62,212 @@ static std::unique_ptr<FunctionExprPayload> move_function_payload(ExprNodePtr &N
    return result;
 }
 
-// Checks if a token kind is a statement keyword that can be used in conditional shorthand syntax (e.g., value ?! return).
-
-static bool is_shorthand_statement_keyword(TokenKind Kind)
-{
-   switch (Kind) {
-      case TokenKind::ReturnToken:
-      case TokenKind::BreakToken:
-      case TokenKind::ContinueToken:
-      case TokenKind::RaiseToken:
-      case TokenKind::CheckToken:
-         return true;
-      default:
-         return false;
-   }
-}
-
-// Checks for contextual range separators.  The lexer intentionally leaves `to` and `into` as identifiers so these
-// words remain available outside range-literal separator positions.
-
-static bool token_is_range_separator(const Token &Token, bool &IsInclusive)
+inline bool token_identifier_is(const Token &Token, std::string_view Text)
 {
    if (not Token.is_identifier()) return false;
 
    GCstr *symbol = Token.identifier();
    if (not symbol) return false;
 
-   std::string_view text(strdata(symbol), symbol->len);
-   if (text IS std::string_view("to")) {
+   return std::string_view(strdata(symbol), symbol->len) IS Text;
+}
+
+// Checks for contextual range separators.  The lexer intentionally leaves `to`, `into` and `by` as identifiers so
+// these words remain available outside range-literal separator positions.
+
+static bool token_is_range_separator(const Token &Token, bool &IsInclusive)
+{
+   if (token_identifier_is(Token, "to")) {
       IsInclusive = false;
       return true;
    }
-   if (text IS std::string_view("into")) {
+   if (token_identifier_is(Token, "into")) {
       IsInclusive = true;
       return true;
    }
 
    return false;
+}
+
+inline bool token_is_range_step_separator(const Token &Token)
+{
+   return token_identifier_is(Token, "by");
+}
+
+struct RangeLiteralScan {
+   bool has_step = false;
+   bool has_bare_string_operand = false;
+};
+
+inline bool range_word_matches(std::string_view Word)
+{
+   return Word IS "to" or Word IS "into";
+}
+
+static size_t skip_quoted_source(std::string_view Source, size_t Pos, char Quote)
+{
+   Pos++;
+   while (Pos < Source.size()) {
+      char c = Source[Pos];
+      if (c IS '\\') {
+         Pos += 2;
+         continue;
+      }
+      Pos++;
+      if (c IS Quote) break;
+   }
+   return Pos;
+}
+
+static bool source_has_range_separator_on_opening_line(ParserContext &Context, RangeLiteralScan &Scan)
+{
+   Token open_brace = Context.tokens().current();
+   std::string_view source = Context.lex().source;
+   size_t pos = open_brace.span().offset;
+   if (pos >= source.size()) return false;
+   pos++;
+
+   bool has_range_separator = false;
+   int depth = 0;
+   while (pos < source.size()) {
+      char c = source[pos];
+      if (c IS '\r' or c IS '\n') return false;
+
+      if (c IS '\'' or c IS '"') {
+         if (depth IS 0) Scan.has_bare_string_operand = true;
+         pos = skip_quoted_source(source, pos, c);
+         continue;
+      }
+
+      if (c IS '-' and pos + 1 < source.size() and source[pos + 1] IS '-') return false;
+
+      if (c IS '(' or c IS '[' or c IS '{') {
+         depth++;
+         pos++;
+         continue;
+      }
+
+      if (c IS ')' or c IS ']' or c IS '}') {
+         if (depth IS 0) return has_range_separator;
+         depth--;
+         pos++;
+         continue;
+      }
+
+      if (depth IS 0) {
+         if (c IS ',' or c IS ';' or c IS '=') return false;
+
+         if (std::isalpha(uint8_t(c)) or c IS '_') {
+            size_t start = pos;
+            pos++;
+            while (pos < source.size()) {
+               char word_char = source[pos];
+               if (not (std::isalnum(uint8_t(word_char)) or word_char IS '_')) break;
+               pos++;
+            }
+            if (range_word_matches(source.substr(start, pos - start))) has_range_separator = true;
+            continue;
+         }
+      }
+
+      pos++;
+   }
+
+   return false;
+}
+
+// Scans a braced expression without consuming tokens.  A range literal is recognised only when a top-level `to` or
+// `into` separator appears after a start expression, with an optional top-level `by` after the stop expression.
+// Range literals are not allowed to contain bare string literals, and new-lines also cause rejection.
+
+static bool scan_range_literal(ParserContext &Context, RangeLiteralScan &Scan)
+{
+   if (not Context.check(TokenKind::LeftBrace)) return false;
+   Scan = RangeLiteralScan{};
+   if (not source_has_range_separator_on_opening_line(Context, Scan)) return false;
+
+   bool found_range_separator = false;
+   bool found_step_separator = false;
+   bool has_start_expr_tokens = false;
+   bool has_stop_expr_tokens = false;
+   bool has_step_expr_tokens = false;
+   bool ended_on_right_brace = false;
+   bool invalid_top_level_shape = false;
+   TokenKind previous_top_level_kind = TokenKind::Unknown;
+   BCLine start_line = Context.tokens().current().span().line;
+   int depth = 0;
+
+   for (size_t i = 1; ; i++) {
+      Token tok = Context.tokens().peek(i);
+      auto kind = tok.kind();
+
+      if (kind IS TokenKind::EndOfFile) break;
+      if (tok.span().line != start_line) return false;
+
+      if (depth IS 0 and kind IS TokenKind::RightBrace) {
+         ended_on_right_brace = true;
+         break;
+      }
+
+      if (kind IS TokenKind::LeftParen or kind IS TokenKind::LeftBracket or kind IS TokenKind::LeftBrace) {
+         if (depth IS 0) {
+            if (found_step_separator) has_step_expr_tokens = true;
+            else if (found_range_separator) has_stop_expr_tokens = true;
+            else has_start_expr_tokens = true;
+         }
+         depth++;
+      }
+      else if (kind IS TokenKind::RightParen or kind IS TokenKind::RightBracket or kind IS TokenKind::RightBrace) {
+         depth--;
+         if (depth < 0) {
+            invalid_top_level_shape = true;
+            break;
+         }
+         if (depth IS 0) previous_top_level_kind = kind;
+      }
+      else if (depth IS 0) {
+         if (kind IS TokenKind::Comma or kind IS TokenKind::Semicolon or kind IS TokenKind::Equals) {
+            invalid_top_level_shape = true;
+            break;
+         }
+
+         bool member_name_context = token_kind_has_flag(previous_top_level_kind, TKF_MEMBER_NAME_CONTEXT);
+         bool previous_can_end_expression = token_kind_has_flag(previous_top_level_kind, TKF_CAN_END_RANGE_EXPRESSION);
+         bool separator_is_inclusive = false;
+         if (has_start_expr_tokens and not found_range_separator and not member_name_context and
+             previous_can_end_expression and
+             token_is_range_separator(tok, separator_is_inclusive)) {
+            found_range_separator = true;
+         }
+         else if (found_range_separator and has_stop_expr_tokens and not found_step_separator and
+                  not member_name_context and previous_can_end_expression and token_is_range_step_separator(tok)) {
+            found_step_separator = true;
+            Scan.has_step = true;
+         }
+         else if (found_range_separator and has_stop_expr_tokens and not found_step_separator and
+                  not member_name_context and previous_can_end_expression and
+                  token_is_range_separator(tok, separator_is_inclusive)) {
+            invalid_top_level_shape = true;
+            break;
+         }
+         else if (found_step_separator and has_step_expr_tokens and not member_name_context and
+                  previous_can_end_expression and
+                  (token_is_range_step_separator(tok) or token_is_range_separator(tok, separator_is_inclusive))) {
+            invalid_top_level_shape = true;
+            break;
+         }
+         else {
+            if (found_step_separator) has_step_expr_tokens = true;
+            else if (found_range_separator) has_stop_expr_tokens = true;
+            else has_start_expr_tokens = true;
+         }
+
+         previous_top_level_kind = kind;
+      }
+   }
+
+   return not invalid_top_level_shape and ended_on_right_brace and found_range_separator and has_start_expr_tokens and
+      has_stop_expr_tokens;
 }
 
 // Checks if a statement unconditionally terminates control flow (return, break, continue).
@@ -110,26 +279,6 @@ static bool is_terminating_statement(const StmtNode *Stmt)
       case AstNodeKind::ReturnStmt:
       case AstNodeKind::BreakStmt:
       case AstNodeKind::ContinueStmt:
-         return true;
-      default:
-         return false;
-   }
-}
-
-// Checks if a token kind is a compound assignment operator (+=, -=, etc.).
-// These are statements, not expressions, which helps provide better error messages.
-
-static bool is_compound_assignment(TokenKind Kind)
-{
-   switch (Kind) {
-      case TokenKind::CompoundAdd:
-      case TokenKind::CompoundSub:
-      case TokenKind::CompoundMul:
-      case TokenKind::CompoundDiv:
-      case TokenKind::CompoundMod:
-      case TokenKind::CompoundConcat:
-      case TokenKind::CompoundIfEmpty:
-      case TokenKind::CompoundIfNil:
          return true;
       default:
          return false;
@@ -487,36 +636,9 @@ bool AstBuilder::at_end_of_block(std::span<const TokenKind> terminators) const
 
 // Checks if a token kind can begin a statement.
 
-bool AstBuilder::is_statement_start(TokenKind kind) const
+bool AstBuilder::is_statement_start(TokenKind Kind) const
 {
-   switch (kind) {
-      case TokenKind::Local:
-      case TokenKind::Global:
-      case TokenKind::Enum:
-      case TokenKind::Function:
-      case TokenKind::ThunkToken:
-      case TokenKind::Annotate:
-      case TokenKind::If:
-      case TokenKind::WhileToken:
-      case TokenKind::Repeat:
-      case TokenKind::For:
-      case TokenKind::DoToken:
-      case TokenKind::WithToken:
-      case TokenKind::DeferToken:
-      case TokenKind::ReturnToken:
-      case TokenKind::BreakToken:
-      case TokenKind::ContinueToken:
-      case TokenKind::Choose:
-      case TokenKind::TryToken:
-      case TokenKind::RaiseToken:
-      case TokenKind::CheckToken:
-      case TokenKind::ImportToken:
-      case TokenKind::NamespaceToken:
-      case TokenKind::CompileIf:
-         return true;
-      default:
-         return false;
-   }
+   return token_kind_has_flag(Kind, TKF_STATEMENT_START);
 }
 
 //********************************************************************************************************************

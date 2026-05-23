@@ -49,7 +49,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_expression_stmt()
 
       this->ctx.tokens().advance();
       Token next = this->ctx.tokens().current();
-      if (not is_shorthand_statement_keyword(next.kind())) {
+      if (not next.has_flag(TKF_SHORTHAND_STATEMENT)) {
          return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, next,
             "expected return, break, continue, raise, or check after guard operator '?!'");
       }
@@ -227,6 +227,26 @@ ParserResult<ExprNodePtr> AstBuilder::parse_expression(uint8_t precedence)
          if (not false_branch.ok()) return false_branch;
          SourceSpan span = combine_spans(left.value_ref()->span, false_branch.value_ref()->span);
          ExprNodePtr ternary = make_ternary_expr(span,
+            TernaryConditionMode::Standard,
+            std::move(left.value_ref()), std::move(true_branch.value_ref()),
+            std::move(false_branch.value_ref()));
+         left = ParserResult<ExprNodePtr>::success(std::move(ternary));
+         continue;
+      }
+
+      if (next.kind() IS TokenKind::Presence and
+          not this->ctx.lex().should_emit_presence() and
+          this->is_extended_ternary_ahead()) {
+         if (1 <= precedence) break;
+         this->ctx.tokens().advance();
+         auto true_branch = this->parse_expression();
+         if (not true_branch.ok()) return true_branch;
+         this->ctx.consume(TokenKind::TernarySep, ParserErrorCode::ExpectedToken);
+         auto false_branch = this->parse_expression();
+         if (not false_branch.ok()) return false_branch;
+         SourceSpan span = combine_spans(left.value_ref()->span, false_branch.value_ref()->span);
+         ExprNodePtr ternary = make_ternary_expr(span,
+            TernaryConditionMode::Extended,
             std::move(left.value_ref()), std::move(true_branch.value_ref()),
             std::move(false_branch.value_ref()));
          left = ParserResult<ExprNodePtr>::success(std::move(ternary));
@@ -580,7 +600,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          if (this->ctx.check(TokenKind::LeftBrace)) {
             has_initialiser = true;
             // Parse the table literal to extract values
-            auto table_result = this->parse_table_literal();
+            auto table_result = this->parse_table_literal(false);
             if (not table_result.ok()) return table_result;
 
             // Extract array-style values from table literal
@@ -778,7 +798,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
 
       default: {
          std::string msg;
-         if (is_compound_assignment(current.kind())) {
+         if (current.has_flag(TKF_COMPOUND_ASSIGNMENT)) {
             msg = std::format("'{}' is a statement, not an expression; use 'do ... end' for statements in arrow functions",
                this->ctx.lex().token2str(current.raw()));
          }
@@ -856,7 +876,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_arrow_function(ExprNodeList paramete
       // Check if a compound assignment follows - this indicates the user tried to use a statement
       // in an expression-body arrow function. Provide a helpful error message.
       Token next = this->ctx.tokens().current();
-      if (is_compound_assignment(next.kind())) {
+      if (next.has_flag(TKF_COMPOUND_ASSIGNMENT)) {
          return this->fail<ExprNodePtr>(ParserErrorCode::UnexpectedToken, next,
             std::format("'{}' is a statement, not an expression; use 'do ... end' for statement bodies in arrow functions",
                this->ctx.lex().token2str(next.raw())));
@@ -1281,5 +1301,57 @@ bool AstBuilder::is_choose_relational_pattern(size_t StartPos) const
       }
       pos++;
    }
+   return false;
+}
+
+//********************************************************************************************************************
+// Checks whether the current `??` token starts an extended ternary expression by scanning ahead for a top-level `:>`.
+
+bool AstBuilder::is_extended_ternary_ahead() const
+{
+   BCLine start_line = this->ctx.tokens().current().span().line;
+   size_t pos = 1;
+   int paren_depth = 0;
+   int brace_depth = 0;
+   int bracket_depth = 0;
+
+   while (pos < 200) {
+      Token ahead = this->ctx.tokens().peek(pos);
+      TokenKind kind = ahead.kind();
+
+      if (kind IS TokenKind::LeftParen) paren_depth++;
+      else if (kind IS TokenKind::RightParen) {
+         if (paren_depth IS 0) return false;
+         paren_depth--;
+      }
+      else if (kind IS TokenKind::LeftBrace) brace_depth++;
+      else if (kind IS TokenKind::RightBrace) {
+         if (brace_depth IS 0) return false;
+         brace_depth--;
+      }
+      else if (kind IS TokenKind::LeftBracket) bracket_depth++;
+      else if (kind IS TokenKind::RightBracket) {
+         if (bracket_depth IS 0) return false;
+         bracket_depth--;
+      }
+      else if (paren_depth IS 0 and brace_depth IS 0 and bracket_depth IS 0) {
+         if (ahead.span().line.lineNumber() != start_line.lineNumber()) return false;
+         if (kind IS TokenKind::TernarySep) return true;
+         if (kind IS TokenKind::Question) return false;
+         if (kind IS TokenKind::EndToken or
+             kind IS TokenKind::EndOfFile or
+             kind IS TokenKind::Else or
+             kind IS TokenKind::When or
+             kind IS TokenKind::Comma or
+             kind IS TokenKind::Semicolon or
+             kind IS TokenKind::ThenToken or
+             kind IS TokenKind::DoToken) {
+            return false;
+         }
+      }
+
+      pos++;
+   }
+
    return false;
 }

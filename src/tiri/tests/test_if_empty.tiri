@@ -490,16 +490,22 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Ternary operator with arrays: empty arrays (len == 0) are considered falsey
+-- Standard ternary operator with arrays: empty arrays are truthy, matching if statements
 
 @Test function TernaryEmptyArray()
    empty = array<int>
    v = empty ? 'truthy' :> 'falsey'
-   assert(v is 'falsey', "Empty array in ternary should be falsey: expected 'falsey', got '" .. tostring(v) .. "'")
+   assert(v is 'truthy', "Empty array in ternary should be truthy: expected 'truthy', got '" .. tostring(v) .. "'")
 end
 
 @Test function TernaryNonEmptyArray()
    filled = array<int, 5>
    v = filled ? 'truthy' :> 'falsey'
    assert(v is 'truthy', "Non-empty array in ternary should be truthy: expected 'truthy', got '" .. tostring(v) .. "'")
+end
+
+@Test function ExtendedTernaryEmptyArray()
+   empty = array<int>
+   v = empty ?? 'truthy' :> 'falsey'
+   assert(v is 'falsey', "Empty array in extended ternary should be falsey: expected 'falsey', got '" .. tostring(v) .. "'")
 end

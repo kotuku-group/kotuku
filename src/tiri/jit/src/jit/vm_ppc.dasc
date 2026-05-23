@@ -1551,6 +1551,7 @@ static void build_subroutines(BuildCtx *ctx)
   |  subfe TMP2, CARG1, CARG1
   |  orc TMP1, TMP2, TMP0
   |  addi TMP1, TMP1, ~LJ_TISNUM+1
+  |  cmpwi TMP1, ~LJ_TUDATA; beq ->fff_fallback
   |  slwi TMP1, TMP1, 3
   |.if FPU
   |   la TMP2, CFUNC:RB->upvalue

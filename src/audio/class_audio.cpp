@@ -733,64 +733,70 @@ static ERR AUDIO_SaveToObject(extAudio *Self, struct acSaveToObject *Args)
       else config->write("AUDIO", "Device", "default");
 
       if ((!Self->Volumes.empty()) and ((Self->Flags & ADF::SYSTEM_WIDE) != ADF::NIL)) {
+#ifdef ALSA_ENABLED
+         snd_mixer_selem_id_t *sid;
+         snd_mixer_selem_id_alloca(&sid);
+         snd_mixer_selem_id_set_index(sid, 0);
+#endif
+
          for (int i=0; i < std::ssize(Self->Volumes); i++) {
+            auto channels = Self->Volumes[i].Channels;
+            auto flags = Self->Volumes[i].Flags;
+
+#ifdef ALSA_ENABLED
+            if (Self->MixHandle) {
+               snd_mixer_selem_id_set_name(sid, Self->Volumes[i].Name.c_str());
+               if (auto elem = snd_mixer_find_selem(Self->MixHandle, sid)) {
+                  long left = 0;
+                  long right = 0;
+                  long pmin = 0;
+                  long pmax = 0;
+                  int unmuted = 1;
+
+                  if (snd_mixer_selem_has_playback_volume(elem)) {
+                     snd_mixer_selem_get_playback_volume_range(elem, &pmin, &pmax);
+                     snd_mixer_selem_get_playback_volume(elem, SND_MIXER_SCHN_FRONT_LEFT, &left);
+                     snd_mixer_selem_get_playback_switch(elem, SND_MIXER_SCHN_FRONT_LEFT, &unmuted);
+                     if ((flags & VCF::MONO) != VCF::NIL) right = left;
+                     else snd_mixer_selem_get_playback_volume(elem, SND_MIXER_SCHN_FRONT_RIGHT, &right);
+                  }
+                  else if (snd_mixer_selem_has_capture_volume(elem)) {
+                     snd_mixer_selem_get_capture_volume_range(elem, &pmin, &pmax);
+                     snd_mixer_selem_get_capture_volume(elem, SND_MIXER_SCHN_FRONT_LEFT, &left);
+                     snd_mixer_selem_get_capture_switch(elem, SND_MIXER_SCHN_FRONT_LEFT, &unmuted);
+                     if ((flags & VCF::MONO) != VCF::NIL) right = left;
+                     else snd_mixer_selem_get_capture_volume(elem, SND_MIXER_SCHN_FRONT_RIGHT, &right);
+                  }
+
+                  if (pmin < pmax) {
+                     channels.resize(((flags & VCF::MONO) != VCF::NIL) ? 1 : 2);
+                     channels[0] = (float)((double)(left - pmin) / (double)(pmax - pmin));
+                     if ((flags & VCF::MONO) IS VCF::NIL) {
+                        channels[1] = (float)((double)(right - pmin) / (double)(pmax - pmin));
+                     }
+                     if (unmuted) flags &= ~VCF::MUTE;
+                     else flags |= VCF::MUTE;
+                  }
+               }
+            }
+#endif
+
             std::ostringstream out;
-            if ((Self->Volumes[i].Flags & VCF::MUTE) != VCF::NIL) out << "1,[";
+            if ((flags & VCF::MUTE) != VCF::NIL) out << "1,[";
             else out << "0,[";
 
-            if ((Self->Volumes[i].Flags & VCF::MONO) != VCF::NIL) {
-               out << Self->Volumes[i].Channels[0];
+            if ((flags & VCF::MONO) != VCF::NIL) {
+               out << channels[0];
             }
-            else for (int c=0; c < std::ssize(Self->Volumes[i].Channels); c++) {
+            else for (int c=0; c < std::ssize(channels); c++) {
                if (c > 0) out << ',';
-               out << Self->Volumes[i].Channels[c];
+               out << channels[c];
             }
             out << ']';
 
             config->write("MIXER", Self->Volumes[i].Name.c_str(), out.str());
          }
       }
-#if 0
-   // Commented out because it prevents savetoobject being used by other tasks.
-
-   snd_mixer_selem_id_t *sid;
-   snd_mixer_elem_t *elem;
-   int left, right;
-   int pmin, pmax;
-   int mute;
-   int i;
-
-   snd_mixer_selem_id_alloca(&sid);
-   snd_mixer_selem_id_set_index(sid, 0);
-   snd_mixer_selem_id_set_name(sid, Self->Volumes[i].Name);
-
-   if ((elem = snd_mixer_find_selem(Self->MixHandle, sid))) {
-      if (snd_mixer_selem_has_playback_volume(elem)) {
-         snd_mixer_selem_get_playback_volume_range(elem, &pmin, &pmax);
-         snd_mixer_selem_get_playback_volume(elem, 0, &left);
-         snd_mixer_selem_get_playback_switch(elem, 0, &mute);
-         if ((Self->Volumes[i].Flags & VCF::MONO) != VCF::NIL) right = left;
-         else snd_mixer_selem_get_playback_volume(elem, 1, &right);
-      }
-      else if (snd_mixer_selem_has_capture_volume(elem)) {
-         snd_mixer_selem_get_capture_volume_range(elem, &pmin, &pmax);
-         snd_mixer_selem_get_capture_volume(elem, 0, &left);
-         snd_mixer_selem_get_capture_switch(elem, 0, &mute);
-         if ((Self->Volumes[i].Flags & VCF::MONO) != VCF::NIL) right = left;
-         else snd_mixer_selem_get_capture_volume(elem, 1, &right);
-      }
-      else continue;
-
-      if (pmin >= pmax) continue;
-
-      std::ostringstream out;
-      auto fleft = (double)left / (double)(pmax - pmin);
-      auto fright = (double)right / (double)(pmax - pmin);
-      out << fleft << ',' << fright << ',' << mute ? 0 : 1;
-
-      config->write("MIXER", Self->Volumes[i].Name, out.str());
-   }
-#endif
 
 #else
       if (!Self->Volumes.empty()) {

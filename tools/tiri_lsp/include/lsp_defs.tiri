@@ -141,8 +141,9 @@ glBuiltins = {
 
    -- Range constructor
    ['range'] = {
-      comment = 'Creates an iterator over a numeric range.',
-      prototype = 'range(start, stop, [step])'
+      comment = 'Creates a numeric range.  Brace literals use {start to stop} for exclusive ranges and ' ..
+         '{start into stop} for inclusive ranges.',
+      prototype = 'range(start, stop, [inclusive], [step])'
    },
 
    -- Events

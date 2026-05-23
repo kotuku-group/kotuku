@@ -322,26 +322,8 @@ ParserResult<ExprNodePtr> AstBuilder::parse_choose_expr()
 
       // Check if this is an assignment statement
       Token maybe_assign = this->ctx.tokens().current();
-      bool is_assignment = false;
-      switch (maybe_assign.kind()) {
-         case TokenKind::Equals:
-         case TokenKind::CompoundAdd:
-         case TokenKind::CompoundSub:
-         case TokenKind::CompoundMul:
-         case TokenKind::CompoundDiv:
-         case TokenKind::CompoundMod:
-         case TokenKind::CompoundConcat:
-         case TokenKind::CompoundIfEmpty:
-         case TokenKind::CompoundIfNil:
-            is_assignment = true;
-            break;
-         case TokenKind::Comma:
-            // Multi-target assignment: a, b = ...
-            is_assignment = true;
-            break;
-         default:
-            break;
-      }
+      bool is_assignment = maybe_assign.kind() IS TokenKind::Equals or maybe_assign.kind() IS TokenKind::Comma or
+         maybe_assign.has_flag(TKF_COMPOUND_ASSIGNMENT);
 
       if (is_assignment) {
          // Parse as statement - build assignment AST

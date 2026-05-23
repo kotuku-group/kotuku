@@ -19,6 +19,42 @@ function enforce_hotpath() end
    assert(err is ERR_Okay, "Script parsing failed, error: " .. script.errorMessage)
 end
 
+@Test function NonRangeTableWithFStringBraces()
+   -- Verify range lookahead does not scan through table assignment fields and corrupt f-string token buffering.
+
+   script = obj.new('script', { statement=[[
+   port = 8080
+   request = {
+      src = f'http://127.0.0.1:{port}/upload/file',
+      payload = f'value:{port}'
+   }
+   assert(request.src is 'http://127.0.0.1:8080/upload/file')
+   assert(request.payload is 'value:8080')
+   ]] })
+
+   err = script.acActivate()
+   assert(err is ERR_Okay, "Table field f-string parsing failed: " .. script.errorMessage)
+end
+
+@Test function NonRangeTypedArrayWithFStringBraces()
+   -- Verify multiline typed array initialisers bypass range lookahead before f-string expansion.
+
+   script = obj.new('script', { statement=[[
+   port = 8080
+   args = array<string> {
+      f'url=http://127.0.0.1:{port}/echo',
+      'data=plain',
+      'json={}'
+   }
+   assert(args[0] is 'url=http://127.0.0.1:8080/echo')
+   assert(args[1] is 'data=plain')
+   assert(args[2] is 'json={}')
+   ]] })
+
+   err = script.acActivate()
+   assert(err is ERR_Okay, "Typed array f-string parsing failed: " .. script.errorMessage)
+end
+
 @Test function ForInNonRangeBraceWithConcatParses()
    -- Verify for-in does not misclassify {a, b .. c} as a range literal.
    -- Guard execution so this validates parser behaviour only.
@@ -223,6 +259,8 @@ end
    -- Literal membership without variables
    assert(5 in {0 to 10}, "5 should be in literal range 0 to 10")
    assert(not (10 in {0 to 10}), "10 should NOT be in literal exclusive range 0 to 10")
+   assert(4 in {0 to 10 by 2}, "4 should be in literal range 0 to 10 by 2")
+   assert(not (5 in {0 to 10 by 2}), "5 should NOT be in literal range 0 to 10 by 2")
 end
 
 @Test function RangeMembershipInIf()
@@ -271,17 +309,6 @@ end
    assert(#t is 6, "reverse toArray should return 6 elements")
    assert(t[0] is 5, "first element should be 5")
    assert(t[5] is 0, "last element should be 0")
-end
-
-@Test function RangeCheckFunction()
-   -- Test range.check() type checking (named 'check' because 'is' is a Tiri keyword)
-   r = range(0, 5)
-
-   assert(range.check(r) is true, "range.check should return true for range")
-   assert(range.check(5) is false, "range.check should return false for number")
-   assert(range.check("hello") is false, "range.check should return false for string")
-   assert(range.check({1, 2, 3}) is false, "range.check should return false for table")
-   assert(range.check(nil) is false, "range.check should return false for nil")
 end
 
 @Test function RangeMetatableName()
@@ -361,6 +388,33 @@ end
    assert(#r is 5, "{1 into 5} should have 5 elements (1,2,3,4,5)")
 end
 
+@Test function RangeLiteralWithStep()
+   -- Test range literal syntax with an explicit step
+   r = {0 to 10 by 2}
+   assert(r.start is 0, "literal start should be 0")
+   assert(r.stop is 10, "literal stop should be 10")
+   assert(r.step is 2, "literal step should be 2")
+   assert(r.inclusive is false, "{to} should be exclusive")
+   assert(#r is 5, "{0 to 10 by 2} should have 5 elements")
+
+   ri = {0 into 10 by 2}
+   assert(ri.inclusive is true, "{into} should be inclusive")
+   assert(#ri is 6, "{0 into 10 by 2} should have 6 elements")
+end
+
+@Test function RangeLiteralReverseWithStep()
+   -- Explicit steps are passed exactly, including their sign
+   r = {10 to 0 by -2}
+   assert(r.start is 10, "reverse start should be 10")
+   assert(r.stop is 0, "reverse stop should be 0")
+   assert(r.step is -2, "reverse explicit step should be -2")
+   assert(#r is 5, "{10 to 0 by -2} should have 5 elements")
+
+   empty = {10 to 0 by 2}
+   assert(empty.step is 2, "positive reverse step should be preserved")
+   assert(#empty is 0, "{10 to 0 by 2} should be empty")
+end
+
 @Test function RangeLiteralReverse()
    -- Test reverse range literal
    r = {10 to 1}
@@ -388,6 +442,10 @@ end
    lit2 = {0 into 5}
    con2 = range(0, 5, true)
    assert(lit2 is con2, "{0 into 5} should equal range(0, 5, true)")
+
+   stepped_lit = {0 to 10 by 2}
+   stepped_con = range(0, 10, false, 2)
+   assert(stepped_lit is stepped_con, "{0 to 10 by 2} should equal range(0, 10, false, 2)")
 end
 
 @Test function RangeLiteralToString()
@@ -397,6 +455,12 @@ end
 
    r2 = {0 into 5}
    assert(tostring(r2) is "{0 into 5}", "inclusive literal tostring should be {0 into 5}")
+
+   r3 = {0 to 10 by 2}
+   assert(tostring(r3) is "{0 to 10 by 2}", "stepped literal tostring should include by clause")
+
+   r4 = {10 into 0 by -2}
+   assert(tostring(r4) is "{10 into 0 by -2}", "reverse stepped literal tostring should include signed step")
 end
 
 @Test function RangeLiteralContains()
@@ -406,6 +470,10 @@ end
    assert(r:contains(5) is true, "5 should be in {0 to 10}")
    assert(r:contains(9) is true, "9 should be in {0 to 10}")
    assert(r:contains(10) is false, "10 should NOT be in {0 to 10} (exclusive)")
+
+   stepped = {0 to 10 by 2}
+   assert(stepped:contains(4) is true, "4 should be in {0 to 10 by 2}")
+   assert(stepped:contains(5) is false, "5 should NOT be in {0 to 10 by 2}")
 end
 
 @Test function RangeLiteralWithVariables()
@@ -418,6 +486,18 @@ end
    assert(#r is 5, "{3 to 8} should have 5 elements")
 end
 
+@Test function RangeLiteralWithExpressionsAndStep()
+   -- Test range literals with general expressions in all positions
+   start = 1
+   stop = 5
+   step = 2
+   r = {start + 1 to stop * 2 by step}
+   assert(r.start is 2, "expression start should be 2")
+   assert(r.stop is 10, "expression stop should be 10")
+   assert(r.step is 2, "expression step should be 2")
+   assert(#r is 4, "{2 to 10 by 2} should have 4 elements")
+end
+
 @Test function RangeLiteralContextualSeparatorNames()
    -- Verify `to` and `into` remain valid identifiers outside the separator position.
    to = 2
@@ -426,6 +506,23 @@ end
    assert(r.start is 2, "range start should come from variable named to")
    assert(r.stop is 6, "range stop should come from variable named into")
    assert(r.inclusive is false, "second to token should be the exclusive separator")
+
+   by = 2
+   stepped = {0 to 10 by by}
+   assert(stepped.step is 2, "range step should come from variable named by")
+
+   config = { by=3, into=9 }
+   member_step = {0 to config.into by config.by}
+   assert(member_step.stop is 9, "member named into should not be a range separator")
+   assert(member_step.step is 3, "member named by should not be a step separator")
+
+   stop_with_by = {0 to config.into + by}
+   assert(stop_with_by.stop is 11, "identifier named by should remain part of the stop expression")
+   assert(stop_with_by.step is 1, "range should not gain a step when by is used as a stop expression variable")
+
+   parenthesised_stop = {0 to (config.into + by) by 2}
+   assert(parenthesised_stop.stop is 11, "parenthesised stop expression should parse before by step")
+   assert(parenthesised_stop.step is 2, "by after parenthesised stop should be treated as the step separator")
 end
 
 @Test function ForInRangeWithComplexStopExpression()
@@ -454,6 +551,48 @@ end
    assert(inclusive_sum is 9, "member named to should not be treated as range separator, got " .. inclusive_sum)
 end
 
+@Test function ForInRangeWithNestedStringCallArgument()
+   script = obj.new('script', { statement=[[
+   function hello(Str)
+      return 4
+   end
+
+   sum = 0
+   for i in {hello('goodbye') to 10} do
+      sum += i
+   end
+   assert(sum is 39, "range should start from function result")
+   ]] })
+
+   err = script.acActivate()
+   assert(err is ERR_Okay, "range with nested string call argument should parse: " .. script.errorMessage)
+end
+
+@Test function ForInRangeRejectsBareStringOperandAtParseTime()
+   script = obj.new('script', { statement=[[
+   if false then
+      for i in {'fart' to 10} do
+      end
+   end
+   ]] })
+
+   err = script.acActivate()
+   assert(err != ERR_Okay, "bare string range operand should be rejected during parsing")
+end
+
+@Test function ForInNonRangeBareStringConcatToParses()
+   script = obj.new('script', { statement=[[
+   to = 'b'
+   if false then
+      for i in {'a' .. to} do
+      end
+   end
+   ]] })
+
+   err = script.acActivate()
+   assert(err is ERR_Okay, "non-range table expression with variable named to should parse: " .. script.errorMessage)
+end
+
 @Test function RangeLiteralNegativeValues()
    -- Test range literals with negative values
    r = {-5 to -1}
@@ -475,10 +614,11 @@ end
 end
 
 @Test function RangeLiteralTypeCheck()
-   -- Test that range literals are detected by range.check
+   -- Test that range literals report their type directly.
    r = {0 to 5}
-   assert(range.check(r) is true, "range.check should return true for literal")
-   assert(type(r) is "userdata", "type of range literal should be userdata")
+   assert(type(r) is "range", "type of range literal should be range")
+   assert(type(range(0, 5)) is "range", "type of constructed range should be range")
+   assert(range.check is nil, "range.check should not be present")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -489,6 +629,13 @@ end
    s = "Hello, World!"
    assert(s[{0 to 5}] is "Hello", "s[{0 to 5}] should be 'Hello', got '" .. s[{0 to 5}] .. "'")
    assert(s[{7 to 12}] is "World", "s[{7 to 12}] should be 'World', got '" .. s[{7 to 12}] .. "'")
+end
+
+@Test function StringSliceWithLiteralStep()
+   -- Test stepped range literal string slicing
+   s = "abcdef"
+   assert(s[{0 to 6 by 2}] is "ace", "s[{0 to 6 by 2}] should be 'ace', got '" .. s[{0 to 6 by 2}] .. "'")
+   assert(s[{5 into 0 by -2}] is "fdb", "s[{5 into 0 by -2}] should be 'fdb', got '" .. s[{5 into 0 by -2}] .. "'")
 end
 
 @Test function StringSliceInclusive()
@@ -659,6 +806,18 @@ end
    success
       error("range literal with nil stop should throw")
    end
+
+   try
+      result = {0 to 10 by 0}
+   success
+      error("range literal with zero step should throw")
+   end
+
+   try
+      result = {0 to 10 by 1.5}
+   success
+      error("range literal with non-integer step should throw")
+   end
 end
 
 @Test function StringIndexOutOfBounds()
@@ -731,6 +890,29 @@ end
    end
    assert(#result is 6, "range(0,10,true,2) should have 6 elements, got " .. #result)
    assert(result[5] is 10, "last element should be 10")
+end
+
+@Test function RangeIterationWithLiteralStep()
+   -- Test direct iteration over stepped range literals
+   result = {}
+   for i in {0 to 10 by 2} do
+      result[#result] = i
+   end
+   assert(#result is 5, "{0 to 10 by 2} should have 5 elements, got " .. #result)
+   assert(result[0] is 0, "first element should be 0")
+   assert(result[1] is 2, "second element should be 2")
+   assert(result[4] is 8, "last element should be 8")
+end
+
+@Test function RangeIterationWithReverseLiteralStep()
+   -- Test direct reverse iteration over stepped range literals
+   result = {}
+   for i in {10 into 0 by -2} do
+      result[#result] = i
+   end
+   assert(#result is 6, "{10 into 0 by -2} should have 6 elements, got " .. #result)
+   assert(result[0] is 10, "first element should be 10")
+   assert(result[5] is 0, "last element should be 0")
 end
 
 @Test function RangeIterationEmpty()

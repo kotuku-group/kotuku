@@ -646,24 +646,18 @@ LJLIB_CF(range_new)
 }
 
 //********************************************************************************************************************
-// range.check(value)
-// Returns true if the value is a range object
-
-LJLIB_CF(range_check)
-{
-   auto r = check_range(L, 1);
-   lua_pushboolean(L, r != nullptr);
-   return 1;
-}
-
-//********************************************************************************************************************
 // __tostring metamethod
-// Returns "{start to stop}" or "{start into stop}" based on inclusivity
+// Returns "{start to stop}" or "{start into stop}", including "by step" for non-default steps.
 
 static int range_tostring(lua_State *L)
 {
    auto r = get_range(L, 1);
-   if (r->inclusive) lua_pushfstring(L, "{%d into %d}", r->start, r->stop);
+   int32_t inferred_step = (r->start <= r->stop) ? 1 : -1;
+   if (r->step != inferred_step) {
+      if (r->inclusive) lua_pushfstring(L, "{%d into %d by %d}", r->start, r->stop, r->step);
+      else lua_pushfstring(L, "{%d to %d by %d}", r->start, r->stop, r->step);
+   }
+   else if (r->inclusive) lua_pushfstring(L, "{%d into %d}", r->start, r->stop);
    else lua_pushfstring(L, "{%d to %d}", r->start, r->stop);
    return 1;
 }
@@ -1364,8 +1358,10 @@ extern "C" int luaopen_range(lua_State *L)
 
    // Register prototypes for range methods (used for type inference)
 
-   reg_iface_prototype("range", "check", { TiriType::Bool }, { TiriType::Any });
-   reg_iface_prototype("range", "new", { TiriType::Range }, { TiriType::Num, TiriType::Num });
+   reg_func_prototype("range", { TiriType::Range }, { TiriType::Num, TiriType::Num, TiriType::Bool, TiriType::Num });
+   reg_iface_prototype("range", "new", { TiriType::Range },
+      { TiriType::Num, TiriType::Num, TiriType::Bool, TiriType::Num });
+   reg_iface_prototype("range", "slice", { TiriType::Any }, { TiriType::Any, TiriType::Range });
    reg_iface_prototype("range", "each", { TiriType::Range }, { TiriType::Range, TiriType::Func });
    reg_iface_prototype("range", "filter", { TiriType::Array }, { TiriType::Range, TiriType::Func });
    reg_iface_prototype("range", "reduce", { TiriType::Any }, { TiriType::Range, TiriType::Any, TiriType::Func });

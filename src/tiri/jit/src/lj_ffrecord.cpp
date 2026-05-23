@@ -44,6 +44,7 @@
 #include "lj_strscan.h"
 #include "lj_strfmt.h"
 #include "lj_serialize.h"
+#include "lib_range.h"
 
 // Some local macros to save typing. Undef'd at the end.
 #define IR(ref)         (&J->cur.ir[(ref)])
@@ -229,6 +230,19 @@ static void recff_assert(jit_State* J, RecordFFData* rd)
 
 //********************************************************************************************************************
 
+constexpr uint32_t TYPE_NAME_USERDATA = 3;
+constexpr uint32_t TYPE_NAME_RANGE = 15;
+constexpr uint8_t TIRI_TYPE_RANGE_TAG = uint8_t(~LJ_TUDATA);
+
+static bool recff_is_range_userdata(jit_State *J, GCudata *Userdata)
+{
+   GCtab *mt = tabref(Userdata->metatable);
+   if (not mt) return false;
+
+   cTValue *range_metatable = lj_tab_getstr(tabV(registry(J->L)), lj_str_newz(J->L, RANGE_METATABLE));
+   return range_metatable and tvistab(range_metatable) and tabV(range_metatable) IS mt;
+}
+
 static void recff_type(jit_State* J, RecordFFData* rd)
 {
    // Arguments already specialized. Result is a constant string. Neat, huh?
@@ -240,12 +254,19 @@ static void recff_type(jit_State* J, RecordFFData* rd)
 
    if (t IS ~LJ_TUDATA) {  // 12 = base value for userdata
       GCudata *ud = udataV(&rd->argv[0]);
-      if (ud->udtype IS UDTYPE_THUNK) {
+      if (recff_is_range_userdata(J, ud)) {
+         t = TYPE_NAME_RANGE;
+      }
+      else if (ud->udtype IS UDTYPE_THUNK) {
          ThunkPayload *payload = thunk_payload(ud);
          if (payload->expected_type != 0xFF) {
             // Use the declared type instead of userdata
             t = payload->expected_type;
+            if (t IS TIRI_TYPE_RANGE_TAG) t = TYPE_NAME_RANGE;
          }
+      }
+      else {
+         t = TYPE_NAME_USERDATA;
       }
    }
 

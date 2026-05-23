@@ -154,6 +154,11 @@ enum class AstBinaryOperator : uint8_t {
    HasFlag
 };
 
+enum class TernaryConditionMode : uint8_t {
+   Standard,
+   Extended
+};
+
 enum class NameResolution : uint8_t {
    Unresolved,
    Local,
@@ -346,6 +351,7 @@ struct TernaryExprPayload {
    TernaryExprPayload& operator=(const TernaryExprPayload&) = delete;
    TernaryExprPayload(TernaryExprPayload&&) noexcept = default;
    TernaryExprPayload& operator=(TernaryExprPayload&&) noexcept = default;
+   TernaryConditionMode condition_mode = TernaryConditionMode::Standard;
    ExprNodePtr condition;
    ExprNodePtr if_true;
    ExprNodePtr if_false;
@@ -521,6 +527,7 @@ struct RangeExprPayload {
    RangeExprPayload& operator=(RangeExprPayload&&) noexcept = default;
    ExprNodePtr start;      // Start index expression
    ExprNodePtr stop;       // Stop index expression
+   ExprNodePtr step;       // Optional step expression
    bool inclusive = false; // True for `into` (inclusive), false for `to` (exclusive)
    ~RangeExprPayload();
 };
@@ -981,7 +988,8 @@ ExprNodePtr make_vararg_expr(SourceSpan span);
 ExprNodePtr make_unary_expr(SourceSpan span, AstUnaryOperator op, ExprNodePtr operand);
 ExprNodePtr make_update_expr(SourceSpan span, AstUpdateOperator op, bool is_postfix, ExprNodePtr target);
 ExprNodePtr make_binary_expr(SourceSpan span, AstBinaryOperator op, ExprNodePtr left, ExprNodePtr right);
-ExprNodePtr make_ternary_expr(SourceSpan span, ExprNodePtr condition, ExprNodePtr if_true, ExprNodePtr if_false);
+ExprNodePtr make_ternary_expr(SourceSpan span, TernaryConditionMode mode, ExprNodePtr condition, ExprNodePtr if_true,
+   ExprNodePtr if_false);
 ExprNodePtr make_presence_expr(SourceSpan span, ExprNodePtr value);
 ExprNodePtr make_pipe_expr(SourceSpan span, ExprNodePtr lhs, ExprNodePtr rhs_call, uint32_t limit);
 ExprNodePtr make_call_expr(SourceSpan span, ExprNodePtr callee, ExprNodeList arguments, bool forwards_multret);
@@ -996,7 +1004,8 @@ ExprNodePtr make_result_filter_expr(SourceSpan span, ExprNodePtr expression, uin
 ExprNodePtr make_table_expr(SourceSpan span, std::vector<TableField> fields, bool has_array_part);
 ExprNodePtr make_function_expr(SourceSpan span, std::vector<FunctionParameter> parameters, bool is_vararg, std::unique_ptr<BlockStmt> body, bool is_thunk = false, TiriType thunk_return_type = TiriType::Any, FunctionReturnTypes return_types = {});
 ExprNodePtr make_deferred_expr(SourceSpan span, ExprNodePtr inner, TiriType type = TiriType::Unknown, bool type_explicit = false);
-ExprNodePtr make_range_expr(SourceSpan span, ExprNodePtr start, ExprNodePtr stop, bool inclusive);
+ExprNodePtr make_range_expr(SourceSpan span, ExprNodePtr start, ExprNodePtr stop, bool inclusive,
+   ExprNodePtr step = nullptr);
 ExprNodePtr make_choose_expr(SourceSpan span, ExprNodePtr scrutinee, std::vector<ChooseCase> cases, size_t inferred_arity = 0);
 ExprNodePtr make_choose_expr_tuple(SourceSpan span, ExprNodeList scrutinee_tuple, std::vector<ChooseCase> cases);
 std::unique_ptr<FunctionExprPayload> make_function_payload(std::vector<FunctionParameter> parameters, bool is_vararg, std::unique_ptr<BlockStmt> body, bool is_thunk = false, TiriType thunk_return_type = TiriType::Any, FunctionReturnTypes return_types = {});

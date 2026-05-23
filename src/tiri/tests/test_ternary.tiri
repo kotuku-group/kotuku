@@ -16,35 +16,61 @@ end
    assert(v2 is "B", "Failed basic false: expected 'B', got " .. tostring(v2))
 end
 
--- Extended falsey semantics tests for full ternary
-@Test function ExtendedFalseyNil()
+-- Standard falsey semantics tests for full ternary
+@Test function StandardFalseyNil()
    v = nil ? "A" :> "B"
    assert(v is "B", "Failed nil: expected 'B', got " .. tostring(v))
 end
 
-@Test function ExtendedFalseyZero()
+@Test function StandardTruthyZero()
    v = 0 ? "A" :> "B"
-   assert(v is "B", "Failed zero: expected 'B', got " .. tostring(v))
+   assert(v is "A", "Failed zero: expected 'A', got " .. tostring(v))
 end
 
-@Test function ExtendedFalseyEmptyString()
+@Test function StandardTruthyEmptyString()
    v = "" ? "A" :> "B"
-   assert(v is "B", "Failed empty string: expected 'B', got " .. tostring(v))
+   assert(v is "A", "Failed empty string: expected 'A', got " .. tostring(v))
 end
 
-@Test function ExtendedFalseyFalse()
+@Test function StandardFalseyFalse()
    v = false ? "A" :> "B"
    assert(v is "B", "Failed false: expected 'B', got " .. tostring(v))
 end
 
-@Test function ExtendedTruthyNonZero()
+@Test function StandardTruthyNonZero()
    v = 5 ? "A" :> "B"
    assert(v is "A", "Failed non-zero: expected 'A', got " .. tostring(v))
 end
 
-@Test function ExtendedTruthyNonEmptyString()
+@Test function StandardTruthyNonEmptyString()
    v = "hello" ? "A" :> "B"
    assert(v is "A", "Failed non-empty string: expected 'A', got " .. tostring(v))
+end
+
+-- Extended falsey semantics tests for ?? ternary
+@Test function ExtendedTernaryFalseyZero()
+   v = 0 ?? "A" :> "B"
+   assert(v is "B", "Failed extended zero: expected 'B', got " .. tostring(v))
+end
+
+@Test function ExtendedTernaryFalseyEmptyString()
+   v = "" ?? "A" :> "B"
+   assert(v is "B", "Failed extended empty string: expected 'B', got " .. tostring(v))
+end
+
+@Test function ExtendedTernaryFalseyNil()
+   v = nil ?? "A" :> "B"
+   assert(v is "B", "Failed extended nil: expected 'B', got " .. tostring(v))
+end
+
+@Test function ExtendedTernaryFalseyFalse()
+   v = false ?? "A" :> "B"
+   assert(v is "B", "Failed extended false: expected 'B', got " .. tostring(v))
+end
+
+@Test function ExtendedTernaryTruthyString()
+   v = "hello" ?? "A" :> "B"
+   assert(v is "A", "Failed extended string: expected 'A', got " .. tostring(v))
 end
 
 -- Short-circuit tests
@@ -166,13 +192,23 @@ end
 end
 
 @Test function ConstantZero()
-   v = 0 ? error("Should not be called") :> "B"
-   assert(v is "B", "Failed constant zero")
+   v = 0 ? "A" :> error("Should not be called")
+   assert(v is "A", "Failed constant zero")
 end
 
 @Test function ConstantEmptyString()
-   v = "" ? error("Should not be called") :> "B"
-   assert(v is "B", "Failed constant empty string")
+   v = "" ? "A" :> error("Should not be called")
+   assert(v is "A", "Failed constant empty string")
+end
+
+@Test function ExtendedConstantZero()
+   v = 0 ?? error("Should not be called") :> "B"
+   assert(v is "B", "Failed extended constant zero")
+end
+
+@Test function ExtendedConstantEmptyString()
+   v = "" ?? error("Should not be called") :> "B"
+   assert(v is "B", "Failed extended constant empty string")
 end
 
 @Test function ConstantNonZero()
@@ -467,18 +503,13 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-@Test function InvalidTernary()
-   try
-      exec([[
-         Options = { scale = false }
-         self = Options.scale is false ?? nil :> true
-         self = Options.missing is false ?? nil :> true
-      ]])
-   except ex
-      assert(string.find(ex.message, 'Unexpected Token') != nil, "Expected invalid token error, got: " .. ex.message)
-   success
-      error('Expected failure for invalid ternary usage')
-   end
+@Test function ExtendedTernaryAfterComparison()
+   Options = { scale = false }
+   value = Options.scale is false ?? nil :> true
+   assert(value is nil, "Expected nil when comparison is true, got " .. tostring(value))
+
+   value = Options.missing is false ?? nil :> true
+   assert(value is true, "Expected true when comparison is false, got " .. tostring(value))
 end
 
 @Test function ConditionsInTernary()

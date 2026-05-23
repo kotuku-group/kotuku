@@ -8,97 +8,14 @@
 // - Range literal optimisation for JIT compilation
 
 //********************************************************************************************************************
-// Attempts to parse a range expression enclosed in braces: {expr to expr} or {expr into expr}
-// Used by for-in loops to always interpret {Y to Z} as a range, even when Y and Z are complex expressions.
-//
-// Uses a lookahead scan to confirm that `to` or `into` exists at brace/paren/bracket depth 0 inside the braces.
-// If confirmed, parses start and stop as full expressions and returns a RangeExpr node.
-// If the scan does not find a range separator, returns failure so the caller can fall through to normal parsing.
+// Parses a range expression already confirmed by scan_range_literal(): {expr to expr} or {expr into expr}, with an
+// optional `by` step expression.
 
-ParserResult<ExprNodePtr> AstBuilder::parse_range_in_braces()
+ParserResult<ExprNodePtr> AstBuilder::parse_scanned_range_in_braces(bool HasStep, bool HasBareStringOperand)
 {
-   // Lookahead scan: starting from the token after '{', verify a strict
-   // {start_expr to stop_expr} or {start_expr into stop_expr} shape at depth 0.
-   // This avoids misclassifying table literals that merely contain unrelated identifiers.
-
-   bool found_range_separator = false;
-   bool is_inclusive = false;
-   bool has_start_expr_tokens = false;
-   bool has_stop_expr_tokens = false;
-   bool ended_on_right_brace = false;
-   bool invalid_top_level_shape = false;
-   TokenKind previous_top_level_kind = TokenKind::Unknown;
-   int depth = 0;
-
-   for (size_t i = 1; ; i++) {
-      Token tok = this->ctx.tokens().peek(i);
-      auto kind = tok.kind();
-
-      if (kind IS TokenKind::EndOfFile) {
-         break;
-      }
-
-      if (depth IS 0 and kind IS TokenKind::RightBrace) {
-         ended_on_right_brace = true;
-         break;
-      }
-
-      if (kind IS TokenKind::LeftParen or kind IS TokenKind::LeftBracket or kind IS TokenKind::LeftBrace) {
-         if (depth IS 0) {
-            if (found_range_separator) has_stop_expr_tokens = true;
-            else has_start_expr_tokens = true;
-         }
-         depth++;
-      }
-      else if (kind IS TokenKind::RightParen or kind IS TokenKind::RightBracket) {
-         depth--;
-         if (depth < 0) {
-            invalid_top_level_shape = true;
-            break;
-         }
-      }
-      else if (kind IS TokenKind::RightBrace) {
-         depth--;
-         if (depth < 0) {
-            invalid_top_level_shape = true;
-            break;
-         }
-      }
-      else if (depth IS 0) {
-         if (kind IS TokenKind::Comma) {
-            invalid_top_level_shape = true;
-            break;
-         }
-
-         bool separator_is_inclusive = false;
-         bool member_name_context = previous_top_level_kind IS TokenKind::Dot or
-            previous_top_level_kind IS TokenKind::Colon or
-            previous_top_level_kind IS TokenKind::SafeField or
-            previous_top_level_kind IS TokenKind::SafeMethod;
-         if (has_start_expr_tokens and not member_name_context and token_is_range_separator(tok, separator_is_inclusive)) {
-            // Exactly one top-level range separator is allowed, and it must
-            // appear after at least one token belonging to the start expression.
-            if (found_range_separator) {
-               invalid_top_level_shape = true;
-               break;
-            }
-
-            found_range_separator = true;
-            is_inclusive = separator_is_inclusive;
-         }
-         else {
-            if (found_range_separator) has_stop_expr_tokens = true;
-            else has_start_expr_tokens = true;
-         }
-
-         previous_top_level_kind = kind;
-      }
-   }
-
-   if (invalid_top_level_shape or not ended_on_right_brace or not found_range_separator
-      or not has_start_expr_tokens or not has_stop_expr_tokens) {
-      return ParserResult<ExprNodePtr>::failure(
-         ParserError(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(), "not a range expression"));
+   if (HasBareStringOperand) {
+      return this->fail<ExprNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+         "range literals do not support bare string operands");
    }
 
    // Confirmed range pattern.  Consume '{' and parse the range.
@@ -112,20 +29,52 @@ ParserResult<ExprNodePtr> AstBuilder::parse_range_in_braces()
 
    // Consume the range separator
    Token separator = this->ctx.tokens().current();
+   bool is_inclusive = false;
    if (not token_is_range_separator(separator, is_inclusive)) {
-      return this->fail<ExprNodePtr>(ParserErrorCode::ExpectedToken, separator, "expected 'to' or 'into' range separator");
+      return this->fail<ExprNodePtr>(ParserErrorCode::ExpectedToken, separator,
+         "expected 'to' or 'into' range separator");
    }
    this->ctx.tokens().advance();  // Consume `to` or `into`
 
-   // Parse stop expression (stops naturally at '}')
+   // Parse stop expression (stops naturally at `by` or `}`)
    auto stop_expr = this->parse_expression();
    if (not stop_expr.ok()) return ParserResult<ExprNodePtr>::failure(stop_expr.error_ref());
+
+   ExprNodePtr step_expr;
+   if (HasStep) {
+      Token by_token = this->ctx.tokens().current();
+      if (not token_is_range_step_separator(by_token)) {
+         return this->fail<ExprNodePtr>(ParserErrorCode::ExpectedToken, by_token, "expected 'by' range step separator");
+      }
+      this->ctx.tokens().advance();
+
+      auto step = this->parse_expression();
+      if (not step.ok()) return ParserResult<ExprNodePtr>::failure(step.error_ref());
+      step_expr = std::move(step.value_ref());
+   }
 
    this->ctx.consume(TokenKind::RightBrace, ParserErrorCode::ExpectedToken);
 
    ExprNodePtr node = make_range_expr(brace_token.span(), std::move(start_expr.value_ref()),
-      std::move(stop_expr.value_ref()), is_inclusive);
+      std::move(stop_expr.value_ref()), is_inclusive, std::move(step_expr));
    return ParserResult<ExprNodePtr>::success(std::move(node));
+}
+
+static bool range_literal_number(const ExprNodePtr &Expr, lua_Number &Value)
+{
+   if (not Expr or not (Expr->kind IS AstNodeKind::LiteralExpr)) return false;
+
+   auto *literal = std::get_if<LiteralValue>(&Expr->data);
+   if (not literal or not (literal->kind IS LiteralKind::Number)) return false;
+
+   Value = literal->number_value;
+   return true;
+}
+
+static bool range_literal_valid_step(lua_Number Value)
+{
+   auto int_value = int32_t(Value);
+   return Value != 0 and lua_Number(int_value) IS Value;
 }
 
 //********************************************************************************************************************
@@ -185,8 +134,10 @@ ParserResult<StmtNodePtr> AstBuilder::parse_for()
 
    ExprNodeList iterator_nodes;
    if (this->ctx.check(TokenKind::LeftBrace)) {
-      auto range_result = this->parse_range_in_braces();
-      if (range_result.ok()) {
+      RangeLiteralScan scan;
+      if (scan_range_literal(this->ctx, scan)) {
+         auto range_result = this->parse_scanned_range_in_braces(scan.has_step, scan.has_bare_string_operand);
+         if (not range_result.ok()) return ParserResult<StmtNodePtr>::failure(range_result.error_ref());
          iterator_nodes.push_back(std::move(range_result.value_ref()));
       }
       else {
@@ -208,7 +159,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_for()
    // Conversion: for i in {start to stop} do   =>  for i = start, stop-1, step do  (exclusive)
    //             for i in {start into stop} do =>  for i = start, stop, step do    (inclusive)
    //
-   // Step is computed at runtime based on start/stop direction.
+   // Step is inferred from start/stop direction unless an explicit literal step is supplied.
 
    if (names.size() IS 1 and iterator_nodes.size() IS 1) {
       ExprNodePtr &first = iterator_nodes[0];
@@ -217,33 +168,31 @@ ParserResult<StmtNodePtr> AstBuilder::parse_for()
          if (range_payload and range_payload->start and range_payload->stop) {
             SourceSpan span = first->span;
 
-            // Move the start and stop expressions from the range
-            ExprNodePtr start_expr = std::move(range_payload->start);
-            ExprNodePtr stop_expr = std::move(range_payload->stop);
-            bool inclusive = range_payload->inclusive;
-
             // Check if both start and stop are numeric literals for compile-time optimisation.
             // When both are constants, we can compute the step direction and exclusive adjustment
             // at compile time, producing optimal BC_FORI/BC_FORL bytecode.
 
-            bool start_is_num = start_expr->kind IS AstNodeKind::LiteralExpr and
-               std::get_if<LiteralValue>(&start_expr->data) and
-               std::get<LiteralValue>(start_expr->data).kind IS LiteralKind::Number;
+            lua_Number start_val = 0;
+            lua_Number stop_val = 0;
+            lua_Number step_val = 0;
+            bool start_is_num = range_literal_number(range_payload->start, start_val);
+            bool stop_is_num = range_literal_number(range_payload->stop, stop_val);
+            bool step_is_num = false;
+            if (range_payload->step) step_is_num = range_literal_number(range_payload->step, step_val) and
+               range_literal_valid_step(step_val);
+            else {
+               step_val = (start_val <= stop_val) ? 1.0 : -1.0;
+               step_is_num = true;
+            }
 
-            bool stop_is_num = stop_expr->kind IS AstNodeKind::LiteralExpr and
-               std::get_if<LiteralValue>(&stop_expr->data) and
-               std::get<LiteralValue>(stop_expr->data).kind IS LiteralKind::Number;
-
-            if (start_is_num and stop_is_num) {
-               lua_Number start_val = std::get<LiteralValue>(start_expr->data).number_value;
-               lua_Number stop_val = std::get<LiteralValue>(stop_expr->data).number_value;
-
-               // Determine step direction based on start/stop values
-               lua_Number step_val = (start_val <= stop_val) ? 1.0 : -1.0;
+            if (start_is_num and stop_is_num and step_is_num) {
+               ExprNodePtr start_expr = std::move(range_payload->start);
+               ExprNodePtr stop_expr = std::move(range_payload->stop);
+               range_payload->step = nullptr;
 
                // For exclusive ranges, adjust stop
                lua_Number final_stop = stop_val;
-               if (not inclusive) {
+               if (not range_payload->inclusive) {
                   final_stop = (step_val > 0) ? (stop_val - 1) : (stop_val + 1);
                }
 
@@ -262,11 +211,6 @@ ParserResult<StmtNodePtr> AstBuilder::parse_for()
                stmt->data = std::move(payload);
                return ParserResult<StmtNodePtr>::success(std::move(stmt));
             }
-
-            // Non-constant range: fall back to generic for loop with iterator
-            // Restore the range expression since we moved from it
-            range_payload->start = std::move(start_expr);
-            range_payload->stop = std::move(stop_expr);
          }
       }
    }
@@ -309,12 +253,14 @@ ParserResult<StmtNodePtr> AstBuilder::parse_for()
 ParserResult<StmtNodePtr> AstBuilder::parse_anonymous_for(const Token& ForToken)
 {
    // Parse the iterator expression (expected to be a range like {0 to 10}).
-   // Try parse_range_in_braces() first to support complex expressions like {0 to total-1}.
+   // Try the range scan first to support complex expressions like {0 to total-1}.
 
    ExprNodePtr iter_expr;
    if (this->ctx.check(TokenKind::LeftBrace)) {
-      auto range_result = this->parse_range_in_braces();
-      if (range_result.ok()) {
+      RangeLiteralScan scan;
+      if (scan_range_literal(this->ctx, scan)) {
+         auto range_result = this->parse_scanned_range_in_braces(scan.has_step, scan.has_bare_string_operand);
+         if (not range_result.ok()) return ParserResult<StmtNodePtr>::failure(range_result.error_ref());
          iter_expr = std::move(range_result.value_ref());
       }
       else {
@@ -344,30 +290,29 @@ ParserResult<StmtNodePtr> AstBuilder::parse_anonymous_for(const Token& ForToken)
 
          // Check if both start and stop are numeric literals for compile-time optimisation.
 
-         bool start_is_num = range_payload->start->kind IS AstNodeKind::LiteralExpr and
-            std::get_if<LiteralValue>(&range_payload->start->data) and
-            std::get<LiteralValue>(range_payload->start->data).kind IS LiteralKind::Number;
+         lua_Number start_val = 0;
+         lua_Number stop_val = 0;
+         lua_Number step_val = 0;
+         bool start_is_num = range_literal_number(range_payload->start, start_val);
+         bool stop_is_num = range_literal_number(range_payload->stop, stop_val);
+         bool step_is_num = false;
+         if (range_payload->step) step_is_num = range_literal_number(range_payload->step, step_val) and
+            range_literal_valid_step(step_val);
+         else {
+            step_val = (start_val <= stop_val) ? 1.0 : -1.0;
+            step_is_num = true;
+         }
 
-         bool stop_is_num = range_payload->stop->kind IS AstNodeKind::LiteralExpr and
-            std::get_if<LiteralValue>(&range_payload->stop->data) and
-            std::get<LiteralValue>(range_payload->stop->data).kind IS LiteralKind::Number;
-
-         if (start_is_num and stop_is_num) {
-            lua_Number start_val = std::get<LiteralValue>(range_payload->start->data).number_value;
-            lua_Number stop_val = std::get<LiteralValue>(range_payload->stop->data).number_value;
-            bool inclusive = range_payload->inclusive;
-
-            // Determine step direction based on start/stop values
-            lua_Number step_val = (start_val <= stop_val) ? 1.0 : -1.0;
-
+         if (start_is_num and stop_is_num and step_is_num) {
             // For exclusive ranges, adjust stop
             lua_Number final_stop = stop_val;
-            if (not inclusive) {
+            if (not range_payload->inclusive) {
                final_stop = (step_val > 0) ? (stop_val - 1) : (stop_val + 1);
             }
 
             // Move the start expression from the range
             ExprNodePtr start_expr = std::move(range_payload->start);
+            range_payload->step = nullptr;
 
             // Create literals for stop and step
             ExprNodePtr final_stop_expr = make_literal_expr(span, LiteralValue::number(final_stop));
@@ -379,8 +324,8 @@ ParserResult<StmtNodePtr> AstBuilder::parse_anonymous_for(const Token& ForToken)
             this->ctx.consume(TokenKind::EndToken, ParserErrorCode::ExpectedToken);
 
             StmtNodePtr stmt = std::make_unique<StmtNode>(AstNodeKind::NumericForStmt, ForToken.span());
-            stmt->data.emplace<NumericForStmtPayload>(std::move(blank_id), std::move(start_expr), std::move(final_stop_expr),
-               std::move(step_expr), std::move(body.value_ref()));
+            stmt->data.emplace<NumericForStmtPayload>(std::move(blank_id), std::move(start_expr),
+               std::move(final_stop_expr), std::move(step_expr), std::move(body.value_ref()));
             return ParserResult<StmtNodePtr>::success(std::move(stmt));
          }
       }

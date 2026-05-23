@@ -343,6 +343,7 @@ struct ExpressionChildCounter {
    {
       size_t total = Payload.start ? 1 : 0;
       if (Payload.stop) total++;
+      if (Payload.step) total++;
       return total;
    }
 
@@ -602,11 +603,13 @@ ExprNodePtr make_binary_expr(SourceSpan Span, AstBinaryOperator op, ExprNodePtr 
    return node;
 }
 
-ExprNodePtr make_ternary_expr(SourceSpan Span, ExprNodePtr condition, ExprNodePtr if_true, ExprNodePtr if_false)
+ExprNodePtr make_ternary_expr(SourceSpan Span, TernaryConditionMode Mode, ExprNodePtr condition, ExprNodePtr if_true,
+   ExprNodePtr if_false)
 {
    assert_node(ensure_operand(condition) and ensure_operand(if_true) and ensure_operand(if_false),
       "ternary expression requires three operands");
    TernaryExprPayload payload;
+   payload.condition_mode = Mode;
    payload.condition = std::move(condition);
    payload.if_true = std::move(if_true);
    payload.if_false = std::move(if_false);
@@ -873,13 +876,15 @@ ExprNodePtr make_deferred_expr(SourceSpan Span, ExprNodePtr inner, TiriType Type
    return node;
 }
 
-ExprNodePtr make_range_expr(SourceSpan Span, ExprNodePtr Start, ExprNodePtr Stop, bool Inclusive)
+ExprNodePtr make_range_expr(SourceSpan Span, ExprNodePtr Start, ExprNodePtr Stop, bool Inclusive, ExprNodePtr Step)
 {
    assert_node(ensure_operand(Start), "range expression requires start expression");
    assert_node(ensure_operand(Stop), "range expression requires stop expression");
+   if (Step) assert_node(ensure_operand(Step), "range expression requires valid step expression");
    RangeExprPayload payload;
    payload.start = std::move(Start);
    payload.stop = std::move(Stop);
+   payload.step = std::move(Step);
    payload.inclusive = Inclusive;
    ExprNodePtr node = std::make_unique<ExprNode>();
    node->kind = AstNodeKind::RangeExpr;

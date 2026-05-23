@@ -119,7 +119,7 @@ glIntroduction = [[
                else
                   save_ext = file_ext
                end
-               glOpenFilter:push({ name=c.description ? c.description :> c.name .. ' Image', ext=file_ext, icon=c.icon })
+               glOpenFilter:push({ name=c.description ?? c.name .. ' Image', ext=file_ext, icon=c.icon })
             else
                print('No file extension for class ' .. c.name)
             end

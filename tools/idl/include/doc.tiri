@@ -803,7 +803,7 @@ global function docClass(Class)
             filename = path
             dir = nil
          end
-         local xpath = dir ? (' path="' .. dir:escXML() .. '"') :> ''
+         local xpath = dir ?? (' path="' .. dir:escXML() .. '"') :> ''
          out ..= '      <file' .. xpath .. '>' .. filename:escXML() .. '</file>\n'
       end
       out ..= '    </source>\n'
@@ -1070,7 +1070,7 @@ end
 
 global function docFunctionPrototype(Function)
    local response = Function.doc_response ?? 'void'
-   local prefix = glFunctionPrefix ? (glFunctionPrefix .. '::') :> ''
+   local prefix = glFunctionPrefix ?? (glFunctionPrefix .. '::') :> ''
    local proto = ''
 
    if Function.input?? then

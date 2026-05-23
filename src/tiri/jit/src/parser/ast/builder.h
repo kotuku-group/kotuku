@@ -91,7 +91,8 @@ private:
    ParserResult<StmtNodePtr> parse_repeat();
    ParserResult<StmtNodePtr> parse_for();
    ParserResult<StmtNodePtr> parse_anonymous_for(const Token &);
-   ParserResult<ExprNodePtr> parse_range_in_braces();
+   ParserResult<ExprNodePtr> parse_scanned_range_in_braces(
+      bool HasStep, bool HasBareStringOperand);
    ParserResult<StmtNodePtr> parse_do();
    ParserResult<StmtNodePtr> parse_with();
    ParserResult<StmtNodePtr> parse_defer();
@@ -112,7 +113,7 @@ private:
    ParserResult<ExprNodePtr> parse_arrow_function(ExprNodeList parameters);
    ParserResult<ExprNodePtr> parse_function_literal(
       const Token &, bool IsThunk = false, GCstr *FunctionName = nullptr);
-   ParserResult<ExprNodePtr> parse_table_literal();
+   ParserResult<ExprNodePtr> parse_table_literal(bool AllowRange = true);
    ParserResult<ReturnStmtPayload> parse_return_payload(const Token &, bool same_line_only);
    ParserResult<FunctionReturnTypes> parse_return_type_annotation();
 
@@ -145,7 +146,7 @@ private:
    ParserResult<std::unique_ptr<BlockStmt>> parse_scoped_block(std::initializer_list<TokenKind>);
 
    [[nodiscard]] bool at_end_of_block(std::span<const TokenKind>) const;
-   [[nodiscard]] bool is_statement_start(TokenKind kind) const;
+   [[nodiscard]] bool is_statement_start(TokenKind Kind) const;
    [[nodiscard]] bool is_synchronisation_point(std::span<const TokenKind> terminators) const;
    [[nodiscard]] size_t skip_to_synchronisation_point(std::span<const TokenKind> terminators);
    [[nodiscard]] static Identifier make_identifier(const Token &);
@@ -157,6 +158,7 @@ private:
    [[nodiscard]] inline SourceSpan span_from(const Token &Start, const Token &End) const { return combine_spans(Start.span(), End.span()); }
    [[nodiscard]] std::optional<BinaryOpInfo> match_binary_operator(const Token &) const;
    [[nodiscard]] bool is_choose_relational_pattern(size_t) const;
+   [[nodiscard]] bool is_extended_ternary_ahead() const;
 
    // Helper to emit an error and return a failure result in one step.
    // Reduces boilerplate for the common pattern of emit_error + return failure.

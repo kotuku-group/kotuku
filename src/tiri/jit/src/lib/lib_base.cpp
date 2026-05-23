@@ -40,6 +40,7 @@
 #include "runtime/lj_object.h"
 #include "runtime/lj_proto_registry.h"
 #include "debug/error_guard.h"
+#include "lib_range.h"
 
 #define LJLIB_MODULE_base
 
@@ -127,6 +128,19 @@ LJLIB_ASM(assert)      LJLIB_REC(.)
 //********************************************************************************************************************
 // ORDER LJ_T
 
+constexpr uint32_t TYPE_NAME_USERDATA = 3;
+constexpr uint32_t TYPE_NAME_RANGE = 15;
+constexpr uint8_t TIRI_TYPE_RANGE_TAG = uint8_t(~LJ_TUDATA);
+
+static bool is_range_userdata(lua_State *L, GCudata *Userdata)
+{
+   GCtab *mt = tabref(Userdata->metatable);
+   if (not mt) return false;
+
+   cTValue *range_metatable = lj_tab_getstr(tabV(registry(L)), lj_str_newz(L, RANGE_METATABLE));
+   return range_metatable and tvistab(range_metatable) and tabV(range_metatable) IS mt;
+}
+
 LJLIB_PUSH("nil")
 LJLIB_PUSH("boolean")
 LJLIB_PUSH(top-1)  //  boolean
@@ -142,26 +156,32 @@ LJLIB_PUSH("table")
 LJLIB_PUSH(top-9)  //  userdata
 LJLIB_PUSH("array")
 LJLIB_PUSH("number")
+LJLIB_PUSH("range")
 LJLIB_ASM(type)      LJLIB_REC(.)
 {
    // C fallback for type() - handles thunks with declared types
    TValue *o = L->base;
+   GCfunc *fn = funcV(L->base - 1 - LJ_FR2);
    if (tvisudata(o)) {
       GCudata *ud = udataV(o);
-      if (ud->udtype IS UDTYPE_THUNK) {
+      if (is_range_userdata(L, ud)) {
+         setstrV(L, L->base - 1 - LJ_FR2, strV(&fn->c.upvalue[TYPE_NAME_RANGE]));
+         return FFH_RES(1);
+      }
+      else if (ud->udtype IS UDTYPE_THUNK) {
          ThunkPayload *payload = thunk_payload(ud);
          if (payload->expected_type != 0xFF) {
             // Use the declared type string from the upvalue array
-            GCfunc *fn = funcV(L->base - 1 - LJ_FR2);
-            GCstr *type_str = strV(&fn->c.upvalue[payload->expected_type]);
+            uint32_t type_index = payload->expected_type;
+            if (type_index IS TIRI_TYPE_RANGE_TAG) type_index = TYPE_NAME_RANGE;
+            GCstr *type_str = strV(&fn->c.upvalue[type_index]);
             setstrV(L, L->base - 1 - LJ_FR2, type_str);
             return FFH_RES(1);
          }
       }
    }
    // For non-thunk userdata, return "userdata" string (upvalue index 3)
-   GCfunc *fn = funcV(L->base - 1 - LJ_FR2);
-   setstrV(L, L->base - 1 - LJ_FR2, strV(&fn->c.upvalue[3]));
+   setstrV(L, L->base - 1 - LJ_FR2, strV(&fn->c.upvalue[TYPE_NAME_USERDATA]));
    return FFH_RES(1);
 }
 

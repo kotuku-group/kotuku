@@ -2245,7 +2245,7 @@ ParserResult<ExpDesc> IrEmitter::emit_has_flag_expr(ExpDesc lhs, const ExprNode&
 }
 
 //********************************************************************************************************************
-// Emit bytecode for a ternary expression (condition ? true_value : false_value), with falsey checks.
+// Emit bytecode for a ternary expression (condition ? true_value : false_value).
 
 ParserResult<ExpDesc> IrEmitter::emit_ternary_expr(const TernaryExprPayload &Payload)
 {
@@ -2260,36 +2260,49 @@ ParserResult<ExpDesc> IrEmitter::emit_ternary_expr(const TernaryExprPayload &Pay
 
    RegisterGuard register_guard(&this->func_state);
    RegisterAllocator allocator(&this->func_state);
-   ExpressionValue condition_value(&this->func_state, condition_result.value_ref());
-   auto cond_reg = condition_value.discharge_to_any_reg(allocator);
+   ControlFlowEdge false_edge = this->control_flow.make_false_edge();
+   BCReg condition_reg = BCReg(NO_REG);
 
-   ExpDesc nilv(ExpKind::Nil);
-   ExpDesc falsev(ExpKind::False);
-   ExpDesc zerov(0.0);
-   ExpDesc emptyv(this->lex_state.intern_empty_string());
+   if (Payload.condition_mode IS TernaryConditionMode::Extended) {
+      ExpressionValue condition_value(&this->func_state, condition_result.value_ref());
+      condition_reg = condition_value.discharge_to_any_reg(allocator);
 
-   bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQP, cond_reg, const_pri(&nilv)));
-   ControlFlowEdge check_nil = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
-   bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQP, cond_reg, const_pri(&falsev)));
-   ControlFlowEdge check_false = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
-   bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQN, cond_reg, const_num(&this->func_state, &zerov)));
-   ControlFlowEdge check_zero = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
-   bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQS, cond_reg, const_str(&this->func_state, &emptyv)));
-   ControlFlowEdge check_empty = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
+      ExpDesc nilv(ExpKind::Nil);
+      ExpDesc falsev(ExpKind::False);
+      ExpDesc zerov(0.0);
+      ExpDesc emptyv(this->lex_state.intern_empty_string());
 
-   // Empty array check (array with len IS 0)
-   bcemit_INS(&this->func_state, BCINS_AD(BC_ISEMPTYARR, cond_reg, 0));
-   ControlFlowEdge check_empty_array = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
+      bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQP, condition_reg, const_pri(&nilv)));
+      false_edge.append(BCPos(bcemit_jmp(&this->func_state)));
+      bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQP, condition_reg, const_pri(&falsev)));
+      false_edge.append(BCPos(bcemit_jmp(&this->func_state)));
+      bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQN, condition_reg, const_num(&this->func_state, &zerov)));
+      false_edge.append(BCPos(bcemit_jmp(&this->func_state)));
+      bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQS, condition_reg, const_str(&this->func_state, &emptyv)));
+      false_edge.append(BCPos(bcemit_jmp(&this->func_state)));
+
+      // Empty array check (array with len IS 0)
+      bcemit_INS(&this->func_state, BCINS_AD(BC_ISEMPTYARR, condition_reg, 0));
+      false_edge.append(BCPos(bcemit_jmp(&this->func_state)));
+   }
+   else {
+      ExpDesc condition = condition_result.value_ref();
+      if (condition.k IS ExpKind::Nil) condition.k = ExpKind::False;
+      bcemit_branch_t(&this->func_state, &condition);
+      false_edge.append(BCPos(condition.f));
+   }
 
    // Determine the result register. If cond_reg is a local variable, we must allocate a fresh register
    // to avoid corrupting it. Otherwise, we can reuse cond_reg (which is a temporary).
    BCReg result_reg;
-   if (this->func_state.is_local_register(cond_reg)) {
+   if (condition_reg.raw() != NO_REG and not this->func_state.is_local_register(condition_reg)) {
+      result_reg = condition_reg; // condition_reg is a temporary - safe to reuse
+   }
+   else {
       // cond_reg holds a local variable that may be referenced later - allocate fresh register
       result_reg = BCReg(this->func_state.freereg);
       bcreg_reserve(&this->func_state, 1);
    }
-   else result_reg = cond_reg; // cond_reg is a temporary - safe to reuse
 
    auto true_result = this->emit_expression(*Payload.if_true);
    if (not true_result.ok()) return true_result;
@@ -2302,11 +2315,7 @@ ParserResult<ExpDesc> IrEmitter::emit_ternary_expr(const TernaryExprPayload &Pay
    ControlFlowEdge skip_false = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
 
    BCPos false_start = BCPos(this->func_state.pc);
-   check_nil.patch_to(false_start);
-   check_false.patch_to(BCPos(false_start));
-   check_zero.patch_to(BCPos(false_start));
-   check_empty.patch_to(BCPos(false_start));
-   check_empty_array.patch_to(BCPos(false_start));
+   false_edge.patch_to(false_start);
 
    auto false_result = this->emit_expression(*Payload.if_false);
    if (not false_result.ok()) return false_result;
@@ -2663,7 +2672,7 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_index_expr(const SafeIndexExprPayload
 
 //********************************************************************************************************************
 // Emit bytecode for a range literal expression ({start to stop} or {start into stop}).
-// Emits a call to the global `range` function: range(start, stop, inclusive)
+// Emits a call to the global `range` function: range(start, stop, inclusive [, step])
 
 ParserResult<ExpDesc> IrEmitter::emit_range_expr(const RangeExprPayload &Payload)
 {
@@ -2701,9 +2710,18 @@ ParserResult<ExpDesc> IrEmitter::emit_range_expr(const RangeExprPayload &Payload
    ExpDesc inclusive_expr(Payload.inclusive);
    this->materialise_to_next_reg(inclusive_expr, "range inclusive");
 
-   // Emit CALL instruction: range(start, stop, inclusive)
-   // BC_CALL A=base, B=2 (expect 1 result), C=4 (3 args + 1)
-   BCIns ins = BCINS_ABC(BC_CALL, base, 2, 4);
+   uint8_t argument_count = 3;
+   if (Payload.step) {
+      auto step_result = this->emit_expression(*Payload.step);
+      if (not step_result.ok()) return step_result;
+      ExpDesc step_expr = step_result.value_ref();
+      this->materialise_to_next_reg(step_expr, "range step");
+      argument_count = 4;
+   }
+
+   // Emit CALL instruction: range(start, stop, inclusive [, step])
+   // BC_CALL A=base, B=2 (expect 1 result), C=args + 1
+   BCIns ins = BCINS_ABC(BC_CALL, base, 2, argument_count + 1);
 
    ExpDesc result;
    result.init(ExpKind::Call, bcemit_INS(fs, ins));

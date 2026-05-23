@@ -1096,6 +1096,8 @@ static void build_subroutines(BuildCtx *ctx)
   |  asr ITYPE, CARG1, #47
   |  cmn ITYPE, #~LJ_TISNUM
   |  csinv TMP1, TMP0, ITYPE, lo
+  |  cmp TMP1, #~LJ_TUDATA
+  |  beq ->fff_fallback
   |  add TMP1, TMP1, #offsetof(GCfuncC, upvalue)/8
   |  ldr CARG1, [CFUNC:CARG3, TMP1, lsl #3]
   |  b ->fff_restv

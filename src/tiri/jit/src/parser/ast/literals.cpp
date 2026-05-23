@@ -51,87 +51,24 @@ ParserResult<ExprNodePtr> AstBuilder::parse_function_literal(
    return ParserResult<ExprNodePtr>::success(std::move(node));
 }
 
-//********************************************************************************************************************
-// Checks if the token stream matches a range literal pattern using lookahead.
-// Valid patterns: {num to num}, {ident into ident}, {-num to num}, {ident into -num}, etc.
-// Returns true if the pattern matches, and sets is_inclusive for `into`.
-
-static bool check_range_pattern(ParserContext& ctx, bool& is_inclusive)
-{
-   is_inclusive = false;
-
-   // Helper to get the token count for a simple range operand (literal, identifier, or -number)
-   // Returns 0 if not a valid range operand
-   auto operand_length = [&ctx](int start_offset) -> int {
-      Token tok = ctx.tokens().peek(start_offset);
-      if (tok.kind() IS TokenKind::Number or tok.kind() IS TokenKind::Identifier or tok.kind() IS TokenKind::Nil or
-          tok.kind() IS TokenKind::TrueToken or tok.kind() IS TokenKind::FalseToken) {
-         return 1;
-      }
-
-      if (tok.kind() IS TokenKind::Minus) {
-         Token next = ctx.tokens().peek(start_offset + 1);
-         if (next.kind() IS TokenKind::Number) return 2;  // -num
-      }
-      return 0;
-   };
-
-   // Check first operand
-
-   int first_len = operand_length(0);
-   if (first_len IS 0) return false;
-
-   // Check for range separator at expected position
-
-   Token separator = ctx.tokens().peek(first_len);
-   if (not token_is_range_separator(separator, is_inclusive)) return false;
-
-   // Check second operand
-
-   int second_len = operand_length(first_len + 1);
-   if (second_len IS 0) return false;
-
-   // Verify the range is followed by closing brace (strict pattern match)
-
-   Token closing = ctx.tokens().peek(first_len + 1 + second_len);
-   return closing.kind() IS TokenKind::RightBrace;
-}
-
-//********************************************************************************************************************
 // Parses table constructor expressions with array and record fields.
-// Also handles range literals: {start to stop} (exclusive) and {start into stop} (inclusive)
+// Also handles range literals: {start to stop} (exclusive), {start into stop} (inclusive) and optional `by step`.
 
-ParserResult<ExprNodePtr> AstBuilder::parse_table_literal()
+ParserResult<ExprNodePtr> AstBuilder::parse_table_literal(bool AllowRange)
 {
    Token token = this->ctx.tokens().current();
-   this->ctx.tokens().advance();
 
-   // Check for range literal pattern using lookahead: {expr to expr} or {expr into expr}
-   // This avoids ambiguity with string concatenation like {'str' .. func(), ...}
-
-   if (not this->ctx.check(TokenKind::RightBrace)) {
-      bool is_inclusive = false;
-
-      if (check_range_pattern(this->ctx, is_inclusive)) {
-         // Confirmed range pattern - parse start expression
-         auto first_expr = this->parse_unary();
-         if (not first_expr.ok()) return ParserResult<ExprNodePtr>::failure(first_expr.error_ref());
-
-         // Consume the range separator (already verified by lookahead)
-         this->ctx.tokens().advance();
-
-         // Parse stop expression
-         auto stop_expr = this->parse_unary();
-         if (not stop_expr.ok()) return ParserResult<ExprNodePtr>::failure(stop_expr.error_ref());
-
-         this->ctx.consume(TokenKind::RightBrace, ParserErrorCode::ExpectedToken);
-         ExprNodePtr node = make_range_expr(token.span(), std::move(first_expr.value_ref()),
-            std::move(stop_expr.value_ref()), is_inclusive);
-         return ParserResult<ExprNodePtr>::success(std::move(node));
+   if (AllowRange) {
+      RangeLiteralScan scan;
+      if (scan_range_literal(this->ctx, scan)) {
+         auto range = this->parse_scanned_range_in_braces(scan.has_step, scan.has_bare_string_operand);
+         if (not range.ok()) return range;
+         return range;
       }
    }
 
    // Standard table parsing path
+   this->ctx.tokens().advance();
    bool has_array = false;
    auto fields = this->parse_table_fields(&has_array);
    if (not fields.ok()) return ParserResult<ExprNodePtr>::failure(fields.error_ref());

@@ -422,7 +422,7 @@ end
       assert(err is ERR_Okay, f'Failed to parse provided colour: {colour}')
 
       report = buildColourReport(painter)
-      palette = scheme ? generatePalette(report.rgb, scheme, palette_count) :> nil
+      palette = scheme ?? generatePalette(report.rgb, scheme, palette_count) :> nil
 
       if format is 'json' then
          if preview then
