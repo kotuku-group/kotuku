@@ -506,6 +506,18 @@ s[{0 to -1}]     -- 'Hello, World'   (exclusive)
 ----
 
 [discrete]
+==== Stepped Slicing
+
+Range literals with a `by` clause extract characters at step intervals:
+
+[source,tiri]
+----
+s = 'abcdef'
+s[{0 to 6 by 2}]       -- 'ace'
+s[{5 into 0 by -2}]    -- 'fdb'
+----
+
+[discrete]
 ==== Edge Cases
 
 - Ranges entirely beyond the string length return an empty string.

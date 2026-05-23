@@ -1,6 +1,7 @@
 // VERIFIED: 2026-02-12
 // UPDATED: 2026-05-18 - Updated negative index slicing to reflect corrected inclusive/exclusive stop semantics (commit 15d3bed4)
 // UPDATED: 2026-05-23 - Updated range literal syntax from {start..stop}/{start...stop} to {start to stop}/{start into stop} (commit 9e5ba300)
+// UPDATED: 2026-05-23 - Added stepped range literal support with `by` clause (commit 377df4dd)
 
 [[ch-ranges]]
 == Ranges
@@ -36,28 +37,36 @@ range(10, 0, true, -2)  -- reverse stepped: 10, 8, 6, 4, 2, 0
 
 ==== Literal Syntax
 
-Range literals use braces with the `to` and `into` keywords:
+Range literals use braces with the `to` and `into` keywords, and an optional `by` clause for explicit stepping:
 
 - `{Start to Stop}` -- exclusive range (stop not included).
 - `{Start into Stop}` -- inclusive range (stop included).
+- `{Start to Stop by Step}` -- exclusive range with explicit step.
+- `{Start into Stop by Step}` -- inclusive range with explicit step.
 
 [source,tiri]
 ----
-{0 to 5}    -- exclusive: 0, 1, 2, 3, 4
-{0 into 5}  -- inclusive: 0, 1, 2, 3, 4, 5
-{10 to 1}   -- reverse exclusive: 10, 9, 8, ..., 2
-{5 into 1}  -- reverse inclusive: 5, 4, 3, 2, 1
-{-5 to -1}  -- negative: -5, -4, -3, -2
+{0 to 5}            -- exclusive: 0, 1, 2, 3, 4
+{0 into 5}          -- inclusive: 0, 1, 2, 3, 4, 5
+{10 to 1}           -- reverse exclusive: 10, 9, 8, ..., 2
+{5 into 1}          -- reverse inclusive: 5, 4, 3, 2, 1
+{-5 to -1}          -- negative: -5, -4, -3, -2
+{0 to 10 by 2}      -- stepped exclusive: 0, 2, 4, 6, 8
+{10 into 0 by -2}   -- stepped reverse: 10, 8, 6, 4, 2, 0
 ----
 
-Reverse ranges (where `Start > Stop`) automatically infer a negative step.  Variables are supported as operands.  Expressions (e.g. `{x+1 to y*2}`) are not supported.
+Reverse ranges (where `Start > Stop`) automatically infer a negative step when no `by` clause is present.  Variables and expressions are supported in all positions.
 
 [source,tiri]
 ----
 a = 3
 b = 8
-r = {a to b}   -- equivalent to range(3, 8)
+r = {a to b}              -- equivalent to range(3, 8)
+r = {a + 1 to b * 2}      -- expressions supported
+r = {a to b by 2}         -- stepped with variables
 ----
+
+The `to`, `into` and `by` keywords are contextual separators -- they remain available as ordinary identifiers outside the separator position within a range literal.
 
 Literal ranges are fully equivalent to the constructor:
 
@@ -65,9 +74,10 @@ Literal ranges are fully equivalent to the constructor:
 ----
 assert({0 to 5} is range(0, 5))
 assert({0 into 5} is range(0, 5, true))
+assert({0 to 10 by 2} is range(0, 10, false, 2))
 ----
 
-Literal syntax does not support the step parameter.  Use the constructor when a custom step is required.
+The `by` clause enforces two constraints at runtime: the step must be a non-zero integer.  Violating either raises an error.
 
 Invalid literal operands (non-numeric or `nil`) raise an error at runtime.
 
@@ -119,13 +129,15 @@ range(0, 10, false, 2) is range(0, 10, false, 3) -- false
 
 ==== String Representation
 
-`tostring()` produces a brace-and-dot representation:
+`tostring()` produces a brace-delimited representation using the `to`/`into` keywords.  A `by` clause is included when the step differs from the inferred default:
 
 [source,tiri]
 ----
-tostring({0 to 5})    -- '{0 to 5}'
-tostring({0 into 5})  -- '{0 into 5}'
-tostring({10 to 0})   -- '{10 to 0}'
+tostring({0 to 5})           -- '{0 to 5}'
+tostring({0 into 5})         -- '{0 into 5}'
+tostring({10 to 0})          -- '{10 to 0}'
+tostring({0 to 10 by 2})     -- '{0 to 10 by 2}'
+tostring({10 into 0 by -2})  -- '{10 into 0 by -2}'
 ----
 
 ==== range.new()
@@ -141,7 +153,7 @@ Equivalent to the `range()` constructor function.  An error is raised if any of 
 
 [[sec-iteration-with-ranges]]
 === Iteration with Ranges
-indexterm:[ranges, iteration] Ranges integrate with Tiri's generic `for` loop.  When a range literal appears directly in the loop header, the parser optimises it to a numeric for loop.
+indexterm:[ranges, iteration] Ranges integrate with Tiri's generic `for` loop.  When a range literal appears directly in the loop header, the parser optimises it to a numeric for loop when all operands are constants.
 
 [source,tiri]
 ----
@@ -151,6 +163,14 @@ end
 
 for i in {5 into 1} do
    print(i)            -- 5, 4, 3, 2, 1
+end
+
+for i in {0 to 10 by 2} do
+   print(i)            -- 0, 2, 4, 6, 8
+end
+
+for i in {10 into 0 by -2} do
+   print(i)            -- 10, 8, 6, 4, 2, 0
 end
 ----
 
@@ -230,8 +250,8 @@ range.slice(s, {-6 into -1})  -- 'World!'
 t = {10, 20, 30, 40, 50}
 range.slice(t, {1 to 4})      -- {20, 30, 40}
 
--- Stepped slicing (requires constructor)
-range.slice(t, range(0, 5, true, 2)) -- {10, 30, 50}
+-- Stepped slicing
+range.slice(t, {0 into 4 by 2})   -- {10, 30, 50}
 
 -- Reverse slicing
 range.slice(t, {4 into 0})    -- {50, 40, 30, 20, 10}
@@ -301,16 +321,17 @@ t[{3 to 1}]       -- {40, 30}
 
 ==== Stepped Slicing
 
-Stepped ranges require the constructor, as literal syntax does not support a step parameter:
+Range literals support an optional `by` clause for stepped slicing:
 
 [source,tiri]
 ----
-s = 'abcdefghij'
-range.slice(s, range(0, 10, true, 2))    -- 'acegi'
-range.slice(s, range(9, 0, true, -2))    -- 'jhfdb'
+s = 'abcdef'
+s[{0 to 6 by 2}]       -- 'ace'
+s[{5 into 0 by -2}]    -- 'fdb'
 
 t = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
-range.slice(t, range(0, 9, true, 2))     -- {0, 2, 4, 6, 8}
+t[{0 into 9 by 2}]     -- {0, 2, 4, 6, 8}
+t[{9 into 0 by -2}]    -- {9, 7, 5, 3, 1}
 ----
 
 ==== Edge Cases
@@ -326,10 +347,12 @@ indexterm:[ranges, membership testing] The `in` operator tests whether a value b
 
 [source,tiri]
 ----
-5 in {0 to 10}      -- true
-10 in {0 to 10}     -- false (exclusive)
-10 in {0 into 10}   -- true  (inclusive)
--1 in {0 to 10}     -- false (below start)
+5 in {0 to 10}         -- true
+10 in {0 to 10}        -- false (exclusive)
+10 in {0 into 10}      -- true  (inclusive)
+-1 in {0 to 10}        -- false (below start)
+4 in {0 to 10 by 2}    -- true  (on step boundary)
+5 in {0 to 10 by 2}    -- false (not on step boundary)
 ----
 
 `in` can be used anywhere a boolean expression is expected:
