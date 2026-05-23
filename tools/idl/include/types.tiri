@@ -559,7 +559,7 @@ global function cType(Value:table, Origin:str):table
             Value.arraySize = 0
             Value = cType(Value, Origin)
             if Value.cpp then
-               Value.type = 'kt::vector<' .. (Value.struct ? Value.struct :> Value.type) .. '>'
+               Value.type = 'kt::vector<' .. (Value.struct ?? Value.type) .. '>'
             else
                Value.type ..= ' *'
             end
@@ -582,7 +582,7 @@ global function cType(Value:table, Origin:str):table
          Value.type    = array_type
          Value = cType(Value, Origin)
          if Value.cpp then
-            Value.type = 'kt::vector<' .. (Value.struct ? Value.struct :> Value.type) .. '>'
+            Value.type = 'kt::vector<' .. (Value.struct ?? Value.type) .. '>'
          else
             Value.type ..= ' *'
          end

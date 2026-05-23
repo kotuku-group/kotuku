@@ -111,7 +111,7 @@ function getFileIcon(Path:str):str
          _, ext = rxExtractIcon.extract(Path)
          return extToIcon(ext)
       end
-      return icon ? icon :> 'folders/folder'
+      return icon ?? 'folders/folder'
    except
       return 'items/question'
    end
@@ -1222,7 +1222,7 @@ gui.fileview = function(Options)
    -- Apply a private file filter using regex patterns.  E.g. '.*\.tiri$'
 
    self.filter = function(Filter)
-      lFilter = Filter ? regex.new(Filter) :> nil
+      lFilter = Filter ?? regex.new(Filter) :> nil
       self.refresh()
    end
 

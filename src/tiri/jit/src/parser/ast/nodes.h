@@ -154,6 +154,11 @@ enum class AstBinaryOperator : uint8_t {
    HasFlag
 };
 
+enum class TernaryConditionMode : uint8_t {
+   Standard,
+   Extended
+};
+
 enum class NameResolution : uint8_t {
    Unresolved,
    Local,
@@ -346,6 +351,7 @@ struct TernaryExprPayload {
    TernaryExprPayload& operator=(const TernaryExprPayload&) = delete;
    TernaryExprPayload(TernaryExprPayload&&) noexcept = default;
    TernaryExprPayload& operator=(TernaryExprPayload&&) noexcept = default;
+   TernaryConditionMode condition_mode = TernaryConditionMode::Standard;
    ExprNodePtr condition;
    ExprNodePtr if_true;
    ExprNodePtr if_false;
@@ -981,7 +987,8 @@ ExprNodePtr make_vararg_expr(SourceSpan span);
 ExprNodePtr make_unary_expr(SourceSpan span, AstUnaryOperator op, ExprNodePtr operand);
 ExprNodePtr make_update_expr(SourceSpan span, AstUpdateOperator op, bool is_postfix, ExprNodePtr target);
 ExprNodePtr make_binary_expr(SourceSpan span, AstBinaryOperator op, ExprNodePtr left, ExprNodePtr right);
-ExprNodePtr make_ternary_expr(SourceSpan span, ExprNodePtr condition, ExprNodePtr if_true, ExprNodePtr if_false);
+ExprNodePtr make_ternary_expr(SourceSpan span, TernaryConditionMode mode, ExprNodePtr condition, ExprNodePtr if_true,
+   ExprNodePtr if_false);
 ExprNodePtr make_presence_expr(SourceSpan span, ExprNodePtr value);
 ExprNodePtr make_pipe_expr(SourceSpan span, ExprNodePtr lhs, ExprNodePtr rhs_call, uint32_t limit);
 ExprNodePtr make_call_expr(SourceSpan span, ExprNodePtr callee, ExprNodeList arguments, bool forwards_multret);

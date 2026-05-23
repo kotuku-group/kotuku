@@ -602,11 +602,13 @@ ExprNodePtr make_binary_expr(SourceSpan Span, AstBinaryOperator op, ExprNodePtr 
    return node;
 }
 
-ExprNodePtr make_ternary_expr(SourceSpan Span, ExprNodePtr condition, ExprNodePtr if_true, ExprNodePtr if_false)
+ExprNodePtr make_ternary_expr(SourceSpan Span, TernaryConditionMode Mode, ExprNodePtr condition, ExprNodePtr if_true,
+   ExprNodePtr if_false)
 {
    assert_node(ensure_operand(condition) and ensure_operand(if_true) and ensure_operand(if_false),
       "ternary expression requires three operands");
    TernaryExprPayload payload;
+   payload.condition_mode = Mode;
    payload.condition = std::move(condition);
    payload.if_true = std::move(if_true);
    payload.if_false = std::move(if_false);
