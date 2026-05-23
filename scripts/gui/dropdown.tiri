@@ -17,7 +17,7 @@ ICON_SIZE    <const> = math.floor(ITEM_HEIGHT * 0.8)
 ITEM_SPACING <const> = 1.2
 
 gui.dropdown = function(Options)
-   local theme = Options.theme ? Options.theme :> gui.getTheme()
+   local theme = Options.theme ?? gui.getTheme()
 
    self = { -- Public variables
       surface  = nil,

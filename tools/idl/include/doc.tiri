@@ -803,7 +803,7 @@ global function docClass(Class)
             filename = path
             dir = nil
          end
-         local xpath = dir ? (' path="' .. dir:escXML() .. '"') :> ''
+         local xpath = dir ?? (' path="' .. dir:escXML() .. '"') :> ''
          out ..= '      <file' .. xpath .. '>' .. filename:escXML() .. '</file>\n'
       end
       out ..= '    </source>\n'

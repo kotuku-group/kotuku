@@ -403,14 +403,15 @@ AGETV   dest, arr, i     ; Load element at variable index i
 - `a or b`: evaluate `a`; emit compare + `JMP` that branches into `b` only when `a` is falsey. Truthy `a` falls through and becomes the result; `b` is untouched.
 - Registers are normalised so the resulting value lives in the LHS register; `freereg` collapses after RHS evaluation to avoid leaks.
 
-### 6.2 Ternary Operator (`cond ? true_val :> false_val`)
-- Only one branch executes. The condition is evaluated in place; compare + `JMP` sends control to the false branch when the condition is extended-falsey.
-- `IrEmitter::emit_ternary_expr` places both branches so the result lands in the condition register. Each branch frees temporaries before convergence, and `freereg` is patched back to the condition's base to guarantee a single-slot result.
+### 6.2 Ternary Operators (`cond ? true_val :> false_val`, `cond ?? true_val :> false_val`)
+- Only one branch executes. The standard `? :>` form matches `if` falsey semantics: only `nil` and `false` branch to the false value.
+- The extended `?? :>` form uses the same extended falsey set as `??`: `nil`, `false`, numeric zero, empty string, and empty array.
+- `IrEmitter::emit_ternary_expr` places both branches so the selected branch materialises into a single result register. Each branch frees temporaries before convergence, and `freereg` is patched back to guarantee a single-slot result.
 - Example sketch:
   ```
   <eval cond in RA>
-  ISEQP  RA, nil ; nil → branch to false
-  JMP    false   ; non-nil → fall through to true branch
+  ISFC   RA      ; standard form branches to false for nil/false
+  JMP    false
   ; true branch emits true_val into RA
   JMP    end
 false:

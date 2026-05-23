@@ -227,6 +227,26 @@ ParserResult<ExprNodePtr> AstBuilder::parse_expression(uint8_t precedence)
          if (not false_branch.ok()) return false_branch;
          SourceSpan span = combine_spans(left.value_ref()->span, false_branch.value_ref()->span);
          ExprNodePtr ternary = make_ternary_expr(span,
+            TernaryConditionMode::Standard,
+            std::move(left.value_ref()), std::move(true_branch.value_ref()),
+            std::move(false_branch.value_ref()));
+         left = ParserResult<ExprNodePtr>::success(std::move(ternary));
+         continue;
+      }
+
+      if (next.kind() IS TokenKind::Presence and
+          not this->ctx.lex().should_emit_presence() and
+          this->is_extended_ternary_ahead()) {
+         if (1 <= precedence) break;
+         this->ctx.tokens().advance();
+         auto true_branch = this->parse_expression();
+         if (not true_branch.ok()) return true_branch;
+         this->ctx.consume(TokenKind::TernarySep, ParserErrorCode::ExpectedToken);
+         auto false_branch = this->parse_expression();
+         if (not false_branch.ok()) return false_branch;
+         SourceSpan span = combine_spans(left.value_ref()->span, false_branch.value_ref()->span);
+         ExprNodePtr ternary = make_ternary_expr(span,
+            TernaryConditionMode::Extended,
             std::move(left.value_ref()), std::move(true_branch.value_ref()),
             std::move(false_branch.value_ref()));
          left = ParserResult<ExprNodePtr>::success(std::move(ternary));
@@ -1281,5 +1301,57 @@ bool AstBuilder::is_choose_relational_pattern(size_t StartPos) const
       }
       pos++;
    }
+   return false;
+}
+
+//********************************************************************************************************************
+// Checks whether the current `??` token starts an extended ternary expression by scanning ahead for a top-level `:>`.
+
+bool AstBuilder::is_extended_ternary_ahead() const
+{
+   BCLine start_line = this->ctx.tokens().current().span().line;
+   size_t pos = 1;
+   int paren_depth = 0;
+   int brace_depth = 0;
+   int bracket_depth = 0;
+
+   while (pos < 200) {
+      Token ahead = this->ctx.tokens().peek(pos);
+      TokenKind kind = ahead.kind();
+
+      if (kind IS TokenKind::LeftParen) paren_depth++;
+      else if (kind IS TokenKind::RightParen) {
+         if (paren_depth IS 0) return false;
+         paren_depth--;
+      }
+      else if (kind IS TokenKind::LeftBrace) brace_depth++;
+      else if (kind IS TokenKind::RightBrace) {
+         if (brace_depth IS 0) return false;
+         brace_depth--;
+      }
+      else if (kind IS TokenKind::LeftBracket) bracket_depth++;
+      else if (kind IS TokenKind::RightBracket) {
+         if (bracket_depth IS 0) return false;
+         bracket_depth--;
+      }
+      else if (paren_depth IS 0 and brace_depth IS 0 and bracket_depth IS 0) {
+         if (ahead.span().line.lineNumber() != start_line.lineNumber()) return false;
+         if (kind IS TokenKind::TernarySep) return true;
+         if (kind IS TokenKind::Question) return false;
+         if (kind IS TokenKind::EndToken or
+             kind IS TokenKind::EndOfFile or
+             kind IS TokenKind::Else or
+             kind IS TokenKind::When or
+             kind IS TokenKind::Comma or
+             kind IS TokenKind::Semicolon or
+             kind IS TokenKind::ThenToken or
+             kind IS TokenKind::DoToken) {
+            return false;
+         }
+      }
+
+      pos++;
+   }
+
    return false;
 }

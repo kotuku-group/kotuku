@@ -157,6 +157,7 @@ private:
    [[nodiscard]] inline SourceSpan span_from(const Token &Start, const Token &End) const { return combine_spans(Start.span(), End.span()); }
    [[nodiscard]] std::optional<BinaryOpInfo> match_binary_operator(const Token &) const;
    [[nodiscard]] bool is_choose_relational_pattern(size_t) const;
+   [[nodiscard]] bool is_extended_ternary_ahead() const;
 
    // Helper to emit an error and return a failure result in one step.
    // Reduces boilerplate for the common pattern of emit_error + return failure.

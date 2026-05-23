@@ -19,7 +19,7 @@ KB_HIGHLIGHT <const> = 'rgb(0 0 0 / .5)'
 ICON_STRIP   <const> = 'rgb(255 255 255 / .15)'
 
 gui.menu = function(Options)
-   local theme = Options.theme ? Options.theme :> gui.getTheme()
+   local theme = Options.theme ?? gui.getTheme()
 
    self = { -- Public variables
       surface  = nil,
