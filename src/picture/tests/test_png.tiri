@@ -268,34 +268,34 @@ end
    missing = array<string> { }
    mismatches = array<string> { }
 
-   for record in values(glValidPNG) do
+   for entry in values(glValidPNG) do
       local hash, bmp, pic
 
       try
-         pic = obj.new('picture', { path=glDataFolder .. record.src })
+         pic = obj.new('picture', { path=glDataFolder .. entry.src })
          bmp = pic.bitmap
          hash = mSys.GenCRC32(0, bmp.data, bmp.size)
       except ex
-         mismatches:push(record.src .. ': load failed: ' .. ex.message)
+         mismatches:push(entry.src .. ': load failed: ' .. ex.message)
          continue
       success
-         if not record.crc?? then
-            saveBitmap(bmp, record.src)
-            missing:push("   { src='" .. record.src .. "', crc=" .. formatHash(hash) .. ' },')
-         elseif record.crc != hash then
-            saveBitmap(bmp, record.src)
-            mismatches:push(record.src .. ': computed ' .. formatHash(hash) .. ', expected ' .. formatHash(record.crc))
+         if not entry.crc?? then
+            saveBitmap(bmp, entry.src)
+            missing:push("   { src='" .. entry.src .. "', crc=" .. formatHash(hash) .. ' },')
+         elseif entry.crc != hash then
+            saveBitmap(bmp, entry.src)
+            mismatches:push(entry.src .. ': computed ' .. formatHash(hash) .. ', expected ' .. formatHash(entry.crc))
          end
 
-         if record.mask_crc then
+         if entry.mask_crc then
             if not pic.mask then
-               mismatches:push(record.src .. ': expected alpha mask but none was loaded')
+               mismatches:push(entry.src .. ': expected alpha mask but none was loaded')
             else
-               local mask_hash = mSys.GenCRC32(0, pic.mask.data, pic.mask.size)
+               mask_hash = mSys.GenCRC32(0, pic.mask.data, pic.mask.size)
 
-               if record.mask_crc != mask_hash then
-                  mismatches:push(record.src .. ': mask computed ' .. formatHash(mask_hash) ..
-                     ', expected ' .. formatHash(record.mask_crc))
+               if entry.mask_crc != mask_hash then
+                  mismatches:push(entry.src .. ': mask computed ' .. formatHash(mask_hash) ..
+                     ', expected ' .. formatHash(entry.mask_crc))
                end
             end
          end
@@ -320,11 +320,11 @@ end
 @Test global function InvalidPNGsFailToLoad()
    failures = array<string> { }
 
-   for record in values(glInvalidPNG) do
+   for entry in values(glInvalidPNG) do
       try
-         obj.new('picture', { path=glDataFolder .. record })
+         obj.new('picture', { path=glDataFolder .. entry })
       success
-         failures:push(record .. ': loaded successfully but should be rejected')
+         failures:push(entry .. ': loaded successfully but should be rejected')
       end
    end
 

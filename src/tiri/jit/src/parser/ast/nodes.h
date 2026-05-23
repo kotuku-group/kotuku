@@ -203,6 +203,7 @@ struct Identifier {
    bool is_blank = false;
    bool has_close = false;
    bool has_const = false;  // Const attribute flag - variable cannot be reassigned
+   bool is_future_reserved = false;  // True when parsed from a keyword reserved for future syntax
    TiriType type = TiriType::Unknown;  // Explicit type annotation (Unknown = no annotation)
 
    // Default constructor
@@ -221,6 +222,7 @@ struct Identifier {
       id.is_blank = false;
       id.has_close = false;
       id.has_const = false;
+      id.is_future_reserved = false;
       return id;
    }
 };

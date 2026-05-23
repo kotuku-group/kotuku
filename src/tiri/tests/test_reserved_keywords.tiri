@@ -1,0 +1,60 @@
+-- Tests for keywords reserved for future Tiri syntax.
+
+@BeforeEach(hotpath=false)
+function enforce_hotpath() end
+
+reserved_keywords = array<string> {
+   'class',
+   'interface',
+   'record',
+   'extends',
+   'export',
+   'await',
+   'finally',
+   'yield',
+   'using',
+   'where',
+}
+
+assignment_operators = array<string> { '=', '?=', '??=' }
+
+@Test function FutureKeywordsRejectLocalDeclarations()
+   for _, keyword in reserved_keywords do
+      try
+         exec('local ' .. keyword .. ' = 1')
+      success
+         error(keyword .. ' should be reserved and rejected as a local declaration name')
+      end
+   end
+end
+
+@Test function FutureKeywordsRejectInferredLocalAssignments()
+   for _, keyword in reserved_keywords do
+      for _, op in assignment_operators do
+         try
+            exec(keyword .. ' ' .. op .. ' 1')
+         success
+            error(keyword .. ' should be reserved and rejected as an inferred local assignment with ' .. op)
+         end
+      end
+   end
+end
+
+@Test function FutureKeywordsRemainAvailableAsMemberNames()
+   for _, keyword in reserved_keywords do
+      result = exec("local object = { }; object." .. keyword .. " = '" .. keyword .. "'; return object." .. keyword)
+      assert(result is keyword, keyword .. ' should remain usable as a member name')
+   end
+end
+
+@Test function FutureKeywordsRemainAvailableAsTableFieldNames()
+   for _, keyword in reserved_keywords do
+      result = exec('local object = { ' .. keyword .. " = '" .. keyword .. "' }; return object." .. keyword)
+      assert(result is keyword, keyword .. ' should remain usable as a table field name')
+   end
+end
+
+@Test function ExistingTypeBuiltinRemainsCallable()
+   assert(type(1) is 'number', 'type() should remain callable while type is reserved for declarations')
+   assert(type({}) is 'table', 'type() should still return table for table values')
+end

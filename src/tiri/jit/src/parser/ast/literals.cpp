@@ -336,7 +336,8 @@ ParserResult<std::vector<TableField>> AstBuilder::parse_table_fields(bool *has_a
          field.key = std::move(key.value_ref());
          field.value = std::move(value.value_ref());
       }
-      else if (current.kind() IS TokenKind::Identifier and this->ctx.tokens().peek(1).kind() IS TokenKind::Equals) {
+      else if (current.is_identifier_or_future_reserved() and
+         this->ctx.tokens().peek(1).kind() IS TokenKind::Equals) {
          this->ctx.tokens().advance();
          this->ctx.tokens().advance();
          auto value = this->parse_expression();

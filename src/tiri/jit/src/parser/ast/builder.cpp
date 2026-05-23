@@ -294,6 +294,7 @@ static bool extract_arrow_parameter(const ExprNodePtr &Expr, FunctionParameter &
 
    auto *name_ref = std::get_if<NameRef>(&Expr->data);
    if (name_ref IS nullptr) return false;
+   if (name_ref->identifier.is_future_reserved) return false;
 
    Parameter.name = name_ref->identifier;
    return true;
@@ -313,6 +314,25 @@ static bool build_arrow_parameters(const ExprNodeList &Expressions, std::vector<
       Parameters.push_back(param);
    }
    return true;
+}
+
+static const Identifier * future_reserved_identifier_expr(const ExprNodePtr &Expression)
+{
+   if (not Expression) return nullptr;
+   if (not (Expression->kind IS AstNodeKind::IdentifierExpr)) return nullptr;
+
+   auto *name_ref = std::get_if<NameRef>(&Expression->data);
+   if (name_ref IS nullptr) return nullptr;
+   if (not name_ref->identifier.is_future_reserved) return nullptr;
+
+   return &name_ref->identifier;
+}
+
+static std::string future_reserved_variable_message(const Identifier &IdentifierValue)
+{
+   std::string_view name = "<keyword>";
+   if (IdentifierValue.symbol) name = std::string_view(strdata(IdentifierValue.symbol), IdentifierValue.symbol->len);
+   return std::format("'{}' is reserved for future syntax and cannot be used as a variable name", name);
 }
 
 static ParserResult<StmtNodePtr> make_control_stmt(ParserContext& Context, AstNodeKind Kind, const Token& Token)
@@ -683,6 +703,7 @@ Identifier AstBuilder::make_identifier(const Token &Token)
    Identifier id;
    id.symbol   = Token.identifier();
    id.span     = Token.span();
+   id.is_future_reserved = Token.is_future_reserved_keyword();
    // Check if the identifier is a blank placeholder (single underscore)
    id.is_blank = id.symbol and id.symbol->len IS 1 and strdata(id.symbol)[0] IS '_';
    return id;

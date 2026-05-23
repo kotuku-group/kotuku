@@ -92,6 +92,16 @@ enum class TokenKind : uint16_t {
    SuccessToken = TK_success,
    RaiseToken = TK_raise,
    CheckToken = TK_check,
+   ClassToken = TK_class,
+   InterfaceToken = TK_interface,
+   RecordToken = TK_record,
+   ExtendsToken = TK_extends,
+   ExportToken = TK_export,
+   AwaitToken = TK_await,
+   FinallyToken = TK_finally,
+   YieldToken = TK_yield,
+   UsingToken = TK_using,
+   WhereToken = TK_where,
    EndOfFile = TK_eof,
 #undef TOKEN_KIND_ENUM
 #undef TOKEN_KIND_ENUM_SYM
@@ -218,6 +228,16 @@ enum class TokenKind : uint16_t {
       case TokenKind::SuccessToken: return "success";
       case TokenKind::RaiseToken: return "raise";
       case TokenKind::CheckToken: return "check";
+      case TokenKind::ClassToken: return "class";
+      case TokenKind::InterfaceToken: return "interface";
+      case TokenKind::RecordToken: return "record";
+      case TokenKind::ExtendsToken: return "extends";
+      case TokenKind::ExportToken: return "export";
+      case TokenKind::AwaitToken: return "await";
+      case TokenKind::FinallyToken: return "finally";
+      case TokenKind::YieldToken: return "yield";
+      case TokenKind::UsingToken: return "using";
+      case TokenKind::WhereToken: return "where";
       case TokenKind::EndOfFile: return "<eof>";
       case TokenKind::LeftParen: return "(";
       case TokenKind::RightParen: return ")";
@@ -294,6 +314,26 @@ public:
    [[nodiscard]] inline const TokenPayload & payload() const { return this->data; }
 
    [[nodiscard]] constexpr bool is_identifier() const noexcept { return this->token_kind IS TokenKind::Identifier; }
+   [[nodiscard]] constexpr bool is_future_reserved_keyword() const noexcept {
+      switch (this->token_kind) {
+         case TokenKind::ClassToken:
+         case TokenKind::InterfaceToken:
+         case TokenKind::RecordToken:
+         case TokenKind::ExtendsToken:
+         case TokenKind::ExportToken:
+         case TokenKind::AwaitToken:
+         case TokenKind::FinallyToken:
+         case TokenKind::YieldToken:
+         case TokenKind::UsingToken:
+         case TokenKind::WhereToken:
+            return true;
+         default:
+            return false;
+      }
+   }
+   [[nodiscard]] constexpr bool is_identifier_or_future_reserved() const noexcept {
+      return this->is_identifier() or this->is_future_reserved_keyword();
+   }
    [[nodiscard]] constexpr bool is_eof() const noexcept { return this->token_kind IS TokenKind::EndOfFile; }
    [[nodiscard]] inline GCstr * identifier() const { return this->data.as_string(); }
 

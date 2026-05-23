@@ -39,6 +39,14 @@ ParserResult<StmtNodePtr> AstBuilder::parse_expression_stmt()
    auto assignment_result = token_to_assignment_op(op.kind());
 
    if (assignment_result.has_value()) {
+      for (const ExprNodePtr &target : targets) {
+         if (const Identifier *identifier = future_reserved_identifier_expr(target)) {
+            return this->fail<StmtNodePtr>(ParserErrorCode::InvalidAssignment,
+               Token::from_span(identifier->span, TokenKind::Identifier),
+               future_reserved_variable_message(*identifier));
+         }
+      }
+
       AssignmentOperator assignment = assignment_result.value();
       this->ctx.tokens().advance();
       auto values = this->parse_expression_list();
@@ -422,7 +430,17 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          this->ctx.tokens().advance();
          break;
 
-      case TokenKind::Identifier: {
+      case TokenKind::Identifier:
+      case TokenKind::ClassToken:
+      case TokenKind::InterfaceToken:
+      case TokenKind::RecordToken:
+      case TokenKind::ExtendsToken:
+      case TokenKind::ExportToken:
+      case TokenKind::AwaitToken:
+      case TokenKind::FinallyToken:
+      case TokenKind::YieldToken:
+      case TokenKind::UsingToken:
+      case TokenKind::WhereToken: {
          Identifier id = make_identifier(current);
          NameRef name;
          name.identifier = id;

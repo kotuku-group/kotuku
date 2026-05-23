@@ -211,20 +211,23 @@ end
 
 @Test function IfEmptyArgumentLeakCapture()
    Function = { status = 'Hello' }
-   record = { count = 0, first = nil, second = nil }
+   capture_record = { count = 0, first = nil, second = nil }
 
    function capture(...)
       local args = { ... }
-      record.count = #args
-      record.first = args[0]
-      record.second = args[1]
+      capture_record.count = #args
+      capture_record.first = args[0]
+      capture_record.second = args[1]
    end
 
    capture(Function.status ?? 'then')
 
-   assert(record.count is 1, "Expected a single argument after fixing the leak, got '" .. tostring(record.count) .. "'")
-   assert(record.first is 'Hello', "Expected first argument to remain 'Hello', got '" .. tostring(record.first) .. "'")
-   assert(record.second is nil, "Expected leaked slot to be cleared, got '" .. tostring(record.second) .. "'")
+   assert(capture_record.count is 1,
+      "Expected a single argument after fixing the leak, got '" .. tostring(capture_record.count) .. "'")
+   assert(capture_record.first is 'Hello',
+      "Expected first argument to remain 'Hello', got '" .. tostring(capture_record.first) .. "'")
+   assert(capture_record.second is nil,
+      "Expected leaked slot to be cleared, got '" .. tostring(capture_record.second) .. "'")
 end
 
 @Test function IfEmptyStringFindError()

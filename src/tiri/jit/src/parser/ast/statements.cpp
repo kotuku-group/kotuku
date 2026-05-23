@@ -87,6 +87,11 @@ ParserResult<StmtNodePtr> AstBuilder::parse_local()
          if (expr and expr->kind IS AstNodeKind::IdentifierExpr) {
             auto* name_ref = std::get_if<NameRef>(&expr->data);
             if (name_ref) { // Convert this identifier expression to a variable name
+               if (name_ref->identifier.is_future_reserved) {
+                  return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedIdentifier,
+                     Token::from_span(name_ref->identifier.span, TokenKind::Identifier),
+                     future_reserved_variable_message(name_ref->identifier));
+               }
                name_list.push_back(name_ref->identifier);
             }
          }
@@ -184,6 +189,11 @@ ParserResult<StmtNodePtr> AstBuilder::parse_global()
          if (expr and expr->kind IS AstNodeKind::IdentifierExpr) {
             if (auto *name_ref = std::get_if<NameRef>(&expr->data)) {
                // Convert this identifier expression to a variable name
+               if (name_ref->identifier.is_future_reserved) {
+                  return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedIdentifier,
+                     Token::from_span(name_ref->identifier.span, TokenKind::Identifier),
+                     future_reserved_variable_message(name_ref->identifier));
+               }
                name_list.push_back(name_ref->identifier);
             }
          }

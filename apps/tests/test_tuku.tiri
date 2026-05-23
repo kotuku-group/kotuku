@@ -12,7 +12,7 @@ glTask = mSys.CurrentTask()
 
 function resolveFirstPath(Candidates:array):str
    for candidate in values(Candidates) do
-      err, resolved = mSys.ResolvePath(candidate)
+      err, resolved = mSys.ResolvePath(candidate, RSF_APPROXIMATE)
       if err is ERR_Okay then return resolved end
    end
 
@@ -23,9 +23,7 @@ end
    global glOrigoPath = resolveFirstPath(array<string> {
       glTask.processPath .. 'origo',
       'sdk:build/agents-install/origo',
-      'sdk:build/agents-install/origo.exe',
-      'origo',
-      'origo.exe'
+      'origo'
    })
    global glTukuPath = resolveFirstPath(array<string> {
       'sdk:apps/tuku.tiri',
