@@ -18,6 +18,11 @@ reserved_keywords = array<string> {
 
 assignment_operators = array<string> { '=', '?=', '??=' }
 
+primary_forms = array<string> {
+   '',
+   '()',
+}
+
 @Test function FutureKeywordsRejectLocalDeclarations()
    for _, keyword in reserved_keywords do
       try
@@ -36,6 +41,28 @@ end
          success
             error(keyword .. ' should be reserved and rejected as an inferred local assignment with ' .. op)
          end
+      end
+   end
+end
+
+@Test function FutureKeywordsRejectBarePrimaryReferences()
+   for _, keyword in reserved_keywords do
+      for _, suffix in primary_forms do
+         try
+            exec(keyword .. suffix)
+         success
+            error(keyword .. suffix .. ' should be reserved and rejected as a bare primary expression')
+         end
+      end
+   end
+end
+
+@Test function FutureKeywordsRejectBarePrimaryConditions()
+   for _, keyword in reserved_keywords do
+      try
+         exec('if ' .. keyword .. ' then return 1 end')
+      success
+         error(keyword .. ' should be reserved and rejected as a bare condition expression')
       end
    end
 end

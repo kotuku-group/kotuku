@@ -449,17 +449,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          break;
       }
 
-      case TokenKind::Identifier:
-      case TokenKind::ClassToken:
-      case TokenKind::InterfaceToken:
-      case TokenKind::RecordToken:
-      case TokenKind::ExtendsToken:
-      case TokenKind::ExportToken:
-      case TokenKind::AwaitToken:
-      case TokenKind::FinallyToken:
-      case TokenKind::YieldToken:
-      case TokenKind::UsingToken:
-      case TokenKind::WhereToken: {
+      case TokenKind::Identifier: {
          Identifier id = make_identifier(current);
          NameRef name;
          name.identifier = id;
