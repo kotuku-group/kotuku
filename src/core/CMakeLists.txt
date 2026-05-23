@@ -141,12 +141,15 @@ target_link_libraries (core PRIVATE zlib)
 
 if (WIN32)
    target_sources (core PRIVATE microsoft/windows.cpp)
-   target_link_libraries (core PRIVATE wsock32 psapi)
+   target_link_libraries (core PRIVATE wsock32 psapi advapi32)
    if (KOTUKU_VLOG OR MSVC)
       # Header generation for libdbghelp: dlltool -k -d dbghelp.def -l libdbghelp.a
       # Copy libdbghelp.a to your MinGW libs folder.
       target_link_libraries (core PRIVATE dbghelp)
    endif ()
+elseif (ANDROID)
+   target_sources (core PRIVATE classes/class_assets.cpp)
+   target_link_libraries (core PRIVATE android)
 else ()
    target_link_libraries (core PRIVATE pthread dl)
 endif ()

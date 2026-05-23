@@ -252,7 +252,7 @@ struct FunctionField argsResize[] = {
 <p>AllocMemory() provides comprehensive memory allocation with automatic ownership tracking, resource management, and debugging features. The function allocates a new block of memory and associates it with the current execution context, allowing it to be automatically cleaned up when the context is destroyed.</p>
 <p>Example usage:</p>
 <pre>APTR address;
-if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) == ERR::Okay) {
+if (AllocMemory(1000, MEM::DATA, &amp;address, nullptr) IS ERR::Okay) {
    // Use memory block...
    FreeResource(address);
 }
@@ -1839,7 +1839,7 @@ static ResourceManager glNodeManager = {
    auto Self = (objClassType *)CurrentContext();
 
    // Code here...
-   if ((Result == ERR::Okay) and (Parameters)) {
+   if ((Result IS ERR::Okay) and (Parameters)) {
       auto resize = (struct acRedimension *)Parameters;
    }
 }

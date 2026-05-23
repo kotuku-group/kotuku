@@ -171,7 +171,7 @@ static ERR writeval_array(OBJECTPTR Object, Field *Field, int SrcType, CPTR Sour
 {
    std::size_t i = 0, j = 0;
    while (i < CamelFlag.size() and j < ClientFlag.size()) {
-      if (ClientFlag[j] == '_') {
+      if (ClientFlag[j] IS '_') {
           j++;
           continue;
       }
@@ -185,7 +185,7 @@ static ERR writeval_array(OBJECTPTR Object, Field *Field, int SrcType, CPTR Sour
       j++;
    }
 
-   return ((i == CamelFlag.size()) and (j == ClientFlag.size()));
+   return ((i IS CamelFlag.size()) and (j IS ClientFlag.size()));
 }
 
 static ERR writeval_flags(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
