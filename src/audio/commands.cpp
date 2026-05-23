@@ -1,18 +1,6 @@
 // Buffered command handling.  The execution of these commands is managed by process_commands()
 
-#include <type_traits>
-
-// Template helper to extract data parameter with type conversion
-template<typename T>
-inline double extract_data_parameter(T&& value) {
-   if constexpr (std::is_arithmetic_v<std::decay_t<T>>) {
-      return double(value);
-   }
-   else {
-      static_assert(std::is_arithmetic_v<std::decay_t<T>>, "Command data parameter must be numeric type");
-      return 0.0; // Unreachable, but needed for compilation
-   }
-}
+#include <utility>
 
 template<typename... tArgs>
 static ERR add_command(objAudio* Audio, CMD Command, int Handle, tArgs&&... pArgs) {
@@ -24,13 +12,13 @@ static ERR add_command(objAudio* Audio, CMD Command, int Handle, tArgs&&... pArg
    if (ea->Sets[index].Commands.capacity() == 0) return log.warning(ERR::OutOfRange);
    if (ea->Sets[index].Commands.size() > 1024) return log.warning(ERR::BufferOverflow);
 
-   double data = 0.0;
    if constexpr (sizeof...(pArgs) > 0) {
       static_assert(sizeof...(pArgs) == 1, "Command can only accept one data parameter");
-      data = extract_data_parameter(std::forward<tArgs>(pArgs)...);
+      ea->Sets[index].Commands.emplace_back(Command, Handle, std::forward<tArgs>(pArgs)...);
    }
-
-   ea->Sets[index].Commands.emplace_back(Command, Handle, data);
+   else {
+      ea->Sets[index].Commands.emplace_back(Command, Handle);
+   }
    return ERR::Okay;
 }
 
@@ -770,7 +758,7 @@ ERR MixVolume(objAudio *Audio, int Handle, double Volume)
    auto channel = ((extAudio *)Audio)->GetChannel(Handle);
 
    if (channel->Buffering) {
-      add_command(Audio, CMD::VOLUME, Volume);
+      add_command(Audio, CMD::VOLUME, Handle, Volume);
       return ERR::Okay;
    }
 

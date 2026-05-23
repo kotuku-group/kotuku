@@ -66,36 +66,6 @@ struct SampleFormatTraits<SFM::U8_BIT_MONO> {
    static constexpr bool is_stereo = false;
 };
 
-// Template-based loop type handler using constexpr if (C++17)
-template<LTYPE loop_type>
-constexpr int calculate_samples_until_end(
-   int position, int sample_length, int loop_start, int loop_end,
-   bool over_sampling, int *next_offset) {
-
-   *next_offset = 1;
-
-   if constexpr (loop_type IS LTYPE::UNIDIRECTIONAL) {
-      if (over_sampling) {
-         if ((position + 1) < loop_end) return (loop_end - 1) - position;
-         else {
-            *next_offset = loop_start - position;
-            return loop_end - position;
-         }
-      }
-      else return loop_end - position;
-   }
-   else { // Default/no loop
-      if (over_sampling) {
-         if ((position + 1) < sample_length) return (sample_length - 1) - position;
-         else {
-            *next_offset = 0;
-            return sample_length - position;
-         }
-      }
-      else return sample_length - position;
-   }
-}
-
 // Constexpr clamping functions for compile-time optimization
 
 template<typename T>

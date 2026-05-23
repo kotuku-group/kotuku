@@ -27,26 +27,3 @@ class AudioMixer {
 public:
    static int dispatch_mix(const AudioConfig& config, SFM sample_format, const MixingParams& params);
 };
-
-// Convenience functions for common mixing scenarios
-namespace mixer_helpers {
-   // Get sample type information at compile time
-   template<SFM format>
-   constexpr bool is_stereo_sample() {
-      return (format IS SFM::U8_BIT_STEREO) or (format IS SFM::S16_BIT_STEREO);
-   }
-
-   template<SFM format>
-   constexpr bool is_16bit_sample() {
-      return (format IS SFM::S16_BIT_MONO) or (format IS SFM::S16_BIT_STEREO);
-   }
-
-   // Runtime type information helpers
-   inline bool is_stereo_sample(SFM format) {
-      return (format IS SFM::U8_BIT_STEREO) or (format IS SFM::S16_BIT_STEREO);
-   }
-
-   inline bool is_16bit_sample(SFM format) {
-      return (format IS SFM::S16_BIT_MONO) or (format IS SFM::S16_BIT_STEREO);
-   }
-}

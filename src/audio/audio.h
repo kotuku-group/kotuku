@@ -67,27 +67,12 @@ typedef struct WAVEFormat {
    int16_t ExtraLength;
 } WAVEFORMATEX;
 
-typedef struct {
-  WAVEFORMATEX Format;
-  union {
-    int16_t wValidBitsPerSample;
-    int16_t wSamplesPerBlock;
-    int16_t wReserved;
-  } Samples;
-  int dwChannelMask;         // Set to 0x3 for the left and right speakers
-  GUID SubFormat;
-} WAVEFORMATEXTENSIBLE;
-
-typedef int (*MixRoutine)(APTR, int, int, int, float, float, float **);
-
 // Function to set mixing step for thread-safe operation
 void set_mix_step(int step);
 
 static const int16_t WAVE_RAW   = 0x0001;  // Uncompressed waveform data.
 static const int16_t WAVE_ADPCM = 0x0002;  // ADPCM compressed waveform data.
 static const int16_t WAVE_FLOAT = 0x0003;  // Uncompressed floating point waveform
-
-static const int16_t WAVE_FORMAT_EXTENSIBLE = int16_t(0xfffe);
 
 const int DEFAULT_BUFFER_SIZE = 8096; // Measured in samples, not bytes
 
@@ -142,7 +127,16 @@ struct AudioCommand {
    int Handle;       // Channel handle
    std::variant<double,int,bool> Data; // Special data related to the command ID
 
-   AudioCommand(CMD pCommandID, int pHandle, double pData = 0) :
+   AudioCommand(CMD pCommandID, int pHandle) :
+      CommandID(pCommandID), Handle(pHandle), Data(double(0)) { }
+
+   AudioCommand(CMD pCommandID, int pHandle, double pData) :
+      CommandID(pCommandID), Handle(pHandle), Data(pData) { }
+
+   AudioCommand(CMD pCommandID, int pHandle, int pData) :
+      CommandID(pCommandID), Handle(pHandle), Data(pData) { }
+
+   AudioCommand(CMD pCommandID, int pHandle, bool pData) :
       CommandID(pCommandID), Handle(pHandle), Data(pData) { }
 
    AudioCommand() = default;
@@ -292,9 +286,4 @@ class extSound : public objSound {
    int   Note;               // Note to play back (e.g. C, C#, G...)
    char   NoteString[4];
    bool   Active;             // True once the sound is registered with the audio driver or mixer.
-};
-
-struct BufferCommand {
-   CMD CommandID;
-   ERR (*Routine)(extAudio *Self, APTR);
 };

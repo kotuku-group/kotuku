@@ -8,10 +8,8 @@ extern "C" const char * sndCreateBuffer(Object *, void *, int, int, struct Platf
 void sndFree(struct PlatformData *);
 void sndFrequency(struct PlatformData *, int);
 void sndSetPosition(struct PlatformData *, int);
-const char * sndInitialiseAudio(void);
 void sndPan(struct PlatformData *, float);
 __declspec(no_sanitize_address) int sndPlay(struct PlatformData *, bool, int);
-void sndReleaseAudio(void);
 void sndStop(struct PlatformData *);
 extern "C" int sndStreamAudio(struct PlatformData *);
 void sndVolume(struct PlatformData *, float);

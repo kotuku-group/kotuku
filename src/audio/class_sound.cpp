@@ -845,7 +845,7 @@ static ERR SOUND_Init(extSound *Self)
       return ERR::InvalidData;
    }
 
-   // Look for the cue chunk for loop information
+   // TODO Look for the cue chunk for loop information
 
    pos = Self->File->get<int>(FID_Position);
 #if 0
@@ -862,6 +862,7 @@ static ERR SOUND_Init(extSound *Self)
       }
    }
 #endif
+
    Self->File->seekStart(pos);
 
    // Look for the "data" chunk
