@@ -600,7 +600,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          if (this->ctx.check(TokenKind::LeftBrace)) {
             has_initialiser = true;
             // Parse the table literal to extract values
-            auto table_result = this->parse_table_literal();
+            auto table_result = this->parse_table_literal(false);
             if (not table_result.ok()) return table_result;
 
             // Extract array-style values from table literal

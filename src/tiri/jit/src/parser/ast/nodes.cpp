@@ -343,6 +343,7 @@ struct ExpressionChildCounter {
    {
       size_t total = Payload.start ? 1 : 0;
       if (Payload.stop) total++;
+      if (Payload.step) total++;
       return total;
    }
 
@@ -875,13 +876,15 @@ ExprNodePtr make_deferred_expr(SourceSpan Span, ExprNodePtr inner, TiriType Type
    return node;
 }
 
-ExprNodePtr make_range_expr(SourceSpan Span, ExprNodePtr Start, ExprNodePtr Stop, bool Inclusive)
+ExprNodePtr make_range_expr(SourceSpan Span, ExprNodePtr Start, ExprNodePtr Stop, bool Inclusive, ExprNodePtr Step)
 {
    assert_node(ensure_operand(Start), "range expression requires start expression");
    assert_node(ensure_operand(Stop), "range expression requires stop expression");
+   if (Step) assert_node(ensure_operand(Step), "range expression requires valid step expression");
    RangeExprPayload payload;
    payload.start = std::move(Start);
    payload.stop = std::move(Stop);
+   payload.step = std::move(Step);
    payload.inclusive = Inclusive;
    ExprNodePtr node = std::make_unique<ExprNode>();
    node->kind = AstNodeKind::RangeExpr;

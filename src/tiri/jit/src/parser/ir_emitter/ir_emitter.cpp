@@ -2672,7 +2672,7 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_index_expr(const SafeIndexExprPayload
 
 //********************************************************************************************************************
 // Emit bytecode for a range literal expression ({start to stop} or {start into stop}).
-// Emits a call to the global `range` function: range(start, stop, inclusive)
+// Emits a call to the global `range` function: range(start, stop, inclusive [, step])
 
 ParserResult<ExpDesc> IrEmitter::emit_range_expr(const RangeExprPayload &Payload)
 {
@@ -2710,9 +2710,18 @@ ParserResult<ExpDesc> IrEmitter::emit_range_expr(const RangeExprPayload &Payload
    ExpDesc inclusive_expr(Payload.inclusive);
    this->materialise_to_next_reg(inclusive_expr, "range inclusive");
 
-   // Emit CALL instruction: range(start, stop, inclusive)
-   // BC_CALL A=base, B=2 (expect 1 result), C=4 (3 args + 1)
-   BCIns ins = BCINS_ABC(BC_CALL, base, 2, 4);
+   uint8_t argument_count = 3;
+   if (Payload.step) {
+      auto step_result = this->emit_expression(*Payload.step);
+      if (not step_result.ok()) return step_result;
+      ExpDesc step_expr = step_result.value_ref();
+      this->materialise_to_next_reg(step_expr, "range step");
+      argument_count = 4;
+   }
+
+   // Emit CALL instruction: range(start, stop, inclusive [, step])
+   // BC_CALL A=base, B=2 (expect 1 result), C=args + 1
+   BCIns ins = BCINS_ABC(BC_CALL, base, 2, argument_count + 1);
 
    ExpDesc result;
    result.init(ExpKind::Call, bcemit_INS(fs, ins));
