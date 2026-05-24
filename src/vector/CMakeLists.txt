@@ -74,4 +74,5 @@ if (NOT DISABLE_FONT)
 endif()
 
 flute_test(vector_readpainter "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_readpainter.tiri")
+flute_test(vector_parse_transform "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parse_transform.tiri")
 flute_test(vector_convolve_validation "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_convolve_validation.tiri")

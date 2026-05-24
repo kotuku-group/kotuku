@@ -19,6 +19,8 @@ functions for creating paths and rendering them to bitmaps.
 //#include "font.h"
 #include "colours.cpp"
 
+#include <charconv>
+
 // Resource management for the SimpleVector follows.  NB: This is a beta feature in the Core.
 
 static ERR simplevector_free(APTR Address) {
@@ -122,23 +124,6 @@ static ERR skew_matrix(VectorMatrix &Matrix, double X, double Y)
    else return ERR::OutOfRange;
 
    return ERR::Okay;
-}
-
-static bool read_transform_unit(CSTRING &Value, double &Result)
-{
-   bool percent;
-   CSTRING start = Value;
-   Result = read_unit(Value, percent);
-   if (Value != start) return true;
-
-   STRING next = nullptr;
-   Result = strtod(Value, &next);
-   if (next != Value) {
-      Value = next;
-      return true;
-   }
-
-   return false;
 }
 
 /*********************************************************************************************************************
@@ -442,24 +427,6 @@ ERR GenerateEllipse(double CX, double CY, double RX, double RY, int Vertices, AP
    auto vector = new_simplevector();
    if (not vector) return log.warning(ERR::CreateResource);
 
-#if 0
-   // Bezier curves can produce a reasonable approximation of an ellipse, but in practice there is
-   // both a noticeable loss of speed and path accuracy vs the point plotting method.
-
-   const double kappa = 0.5522848; // 4 * ((√(2) - 1) / 3)
-
-   const double ox = RX * kappa;  // control point offset horizontal
-   const double oy = RY * kappa;  // control point offset vertical
-   const double xe = CX + RX;
-   const double ye = CY + RY;
-
-   vector->mPath.move_to(CX - RX, CY);
-   vector->mPath.curve4(CX - RX, CY - oy, CX - ox, CY - RY, CX, CY - RY);
-   vector->mPath.curve4(CX + ox, CY - RY, xe, CY - oy, xe, CY);
-   vector->mPath.curve4(xe, CY + oy, CX + ox, ye, CX, ye);
-   vector->mPath.curve4(CX - ox, ye, CX - RX, CY + oy, CX - RX, CY);
-   vector->mPath.close_polygon();
-#else
    uint32_t steps;
 
    if (Vertices >= 3) steps = Vertices;
@@ -487,7 +454,6 @@ ERR GenerateEllipse(double CX, double CY, double RX, double RY, int Vertices, AP
       cos_angle = next_cos_angle;
    }
    vector->mPath.close_polygon();
-#endif
 
    *Path = vector;
    return ERR::Okay;
@@ -710,8 +676,6 @@ NullArgs:
 
 ERR TracePath(APTR Path, FUNCTION *Callback, double Scale)
 {
-   kt::Log log;
-
    if ((not Path) or (not Callback)) return ERR::NullArgs;
 
    auto vector = (SimpleVector *)Path;
@@ -832,10 +796,7 @@ NullArgs:
 ERR Multiply(VectorMatrix *Matrix, double ScaleX, double ShearY, double ShearX, double ScaleY,
    double TranslateX, double TranslateY)
 {
-   if (not Matrix) {
-      kt::Log log(__FUNCTION__);
-      return log.warning(ERR::NullArgs);
-   }
+   if (not Matrix) return kt::Log(__FUNCTION__).warning(ERR::NullArgs);
 
    multiply_values(*Matrix, ScaleX, ShearY, ShearX, ScaleY, TranslateX, TranslateY);
    mark_matrix_dirty(Matrix);
@@ -862,9 +823,7 @@ NullArgs:
 
 ERR MultiplyMatrix(VectorMatrix *Target, VectorMatrix *Source)
 {
-   if ((not Target) or (not Source)) {
-      return kt::Log(__FUNCTION__).warning(ERR::NullArgs);
-   }
+   if ((not Target) or (not Source)) return kt::Log(__FUNCTION__).warning(ERR::NullArgs);
 
    multiply_matrix(*Target, *Source);
    mark_matrix_dirty(Target);
@@ -886,7 +845,7 @@ If existing matrix values need to be retained, create a fresh matrix and use ~Mu
 
 -INPUT-
 struct(*VectorMatrix) Matrix: The target transformation matrix.
-cstr Transform: The transform to apply, expressed as a string instruction.
+cpp(strview) Transform: The transform to apply, expressed as a string instruction.
 
 -ERRORS-
 Okay:
@@ -895,11 +854,9 @@ NullArgs:
 
 *********************************************************************************************************************/
 
-ERR ParseTransform(VectorMatrix *Matrix, CSTRING Commands)
+ERR ParseTransform(VectorMatrix *Matrix, const std::string_view &Transform)
 {
-   if ((not Matrix) or (not Commands)) {
-      return kt::Log(__FUNCTION__).warning(ERR::NullArgs);
-   }
+   if (not Matrix) return kt::Log(__FUNCTION__).warning(ERR::NullArgs);
 
    enum { M_MUL, M_TRANSLATE, M_ROTATE, M_SCALE, M_SKEW };
    class cmd {
@@ -913,56 +870,56 @@ ERR ParseTransform(VectorMatrix *Matrix, CSTRING Commands)
    std::vector<cmd> list;
    list.reserve(4);
 
-   auto str = Commands;
-   while (*str) {
-      if ((*str >= 'a') and (*str <= 'z')) {
-         if (startswith("matrix", str)) {
+   std::string_view str(Transform);
+   while (not str.empty()) {
+      if ((str.front() >= 'a') and (str.front() <= 'z')) {
+         if (str.starts_with("matrix")) {
             cmd m(M_MUL);
-            str += 6;
+            str.remove_prefix(6);
             read_numseq(str, { &m.sx, &m.shy, &m.shx, &m.sy, &m.tx, &m.ty });
             list.push_back(std::move(m));
          }
-         else if (startswith("translate", str)) {
+         else if (str.starts_with("translate")) {
             cmd m(M_TRANSLATE);
-            str += 9;
+            str.remove_prefix(9);
             next_value(str);
             read_transform_unit(str, m.tx);
             next_value(str);
             read_transform_unit(str, m.ty);
             list.push_back(std::move(m));
          }
-         else if (startswith("rotate", str)) {
+         else if (str.starts_with("rotate")) {
             cmd m(M_ROTATE);
-            str += 6;
+            str.remove_prefix(6);
             read_numseq(str, { &m.angle, &m.tx, &m.ty });
             list.push_back(std::move(m));
          }
-         else if (startswith("scale", str)) {
+         else if (str.starts_with("scale")) {
             cmd m(M_SCALE);
             m.tx = 1.0;
             m.ty = DBL_EPSILON;
-            str += 5;
+            str.remove_prefix(5);
             read_numseq(str, { &m.tx, &m.ty });
             if (m.ty IS DBL_EPSILON) m.ty = m.tx;
             list.push_back(std::move(m));
          }
-         else if (startswith("skewX", str)) {
+         else if (str.starts_with("skewX")) {
             cmd m(M_SKEW);
             m.ty = 0;
-            str += 5;
+            str.remove_prefix(5);
             read_numseq(str, { &m.tx });
             list.push_back(std::move(m));
          }
-         else if (startswith("skewY", str)) {
+         else if (str.starts_with("skewY")) {
             cmd m(M_SKEW);
             m.tx = 0;
-            str += 5;
+            str.remove_prefix(5);
             read_numseq(str, { &m.ty });
             list.push_back(std::move(m));
          }
-         else str++;
+         else str.remove_prefix(1);
       }
-      else str++;
+      else str.remove_prefix(1);
    }
 
    Matrix->ScaleX = 1.0;
@@ -1020,10 +977,7 @@ NullArgs:
 
 ERR ResetMatrix(VectorMatrix *Matrix)
 {
-   if (not Matrix) {
-      kt::Log log(__FUNCTION__);
-      return log.warning(ERR::NullArgs);
-   }
+   if (not Matrix) return kt::Log(__FUNCTION__).warning(ERR::NullArgs);
 
    Matrix->ScaleX     = 1.0;
    Matrix->ScaleY     = 1.0;
@@ -1116,10 +1070,7 @@ NullArgs
 
 ERR Scale(VectorMatrix *Matrix, double X, double Y)
 {
-   if (not Matrix) {
-      kt::Log log(__FUNCTION__);
-      return log.warning(ERR::NullArgs);
-   }
+   if (not Matrix) return kt::Log(__FUNCTION__).warning(ERR::NullArgs);
 
    scale_matrix(*Matrix, X, Y);
    mark_matrix_dirty(Matrix);

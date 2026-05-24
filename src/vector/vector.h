@@ -1289,7 +1289,7 @@ extern ERR Skew(struct VectorMatrix * Matrix, double X, double Y);
 extern ERR Multiply(struct VectorMatrix * Matrix, double ScaleX, double ShearY, double ShearX, double ScaleY, double TranslateX, double TranslateY);
 extern ERR MultiplyMatrix(struct VectorMatrix * Target, struct VectorMatrix * Source);
 extern ERR Scale(struct VectorMatrix * Matrix, double X, double Y);
-extern ERR ParseTransform(struct VectorMatrix * Matrix, CSTRING Transform);
+extern ERR ParseTransform(struct VectorMatrix * Matrix, const std::string_view &Transform);
 extern ERR ResetMatrix(struct VectorMatrix * Matrix);
 extern ERR GetFontHandle(const std::string_view &Family, const std::string_view &Style, int Weight, int Size, APTR *Handle);
 extern ERR GetFontMetrics(APTR Handle, struct FontMetrics * Info);

@@ -406,11 +406,11 @@ Z: Close Path
   <function>
     <name>ParseTransform</name>
     <comment>Parse an SVG transformation string and apply the values to a matrix.</comment>
-    <prototype>ERR vec::ParseTransform(struct VectorMatrix * Matrix, CSTRING Transform)</prototype>
+    <prototype>ERR vec::ParseTransform(struct VectorMatrix * Matrix, const std::string_view &amp; Transform)</prototype>
     <tiriPrototype>err = ParseTransform(Matrix:any, Transform:str)</tiriPrototype>
     <input>
       <param type="struct VectorMatrix *" name="Matrix">The target transformation matrix.</param>
-      <param type="CSTRING" name="Transform">The transform to apply, expressed as a string instruction.</param>
+      <param type="const std::string_view &amp;" name="Transform">The transform to apply, expressed as a string instruction.</param>
     </input>
     <description>
 <p>This function parses a sequence of transform instructions and applies them to a matrix.</p>

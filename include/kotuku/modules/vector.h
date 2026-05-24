@@ -3468,7 +3468,7 @@ struct VectorBase {
    ERR (*_Multiply)(struct VectorMatrix *Matrix, double ScaleX, double ShearY, double ShearX, double ScaleY, double TranslateX, double TranslateY);
    ERR (*_MultiplyMatrix)(struct VectorMatrix *Target, struct VectorMatrix *Source);
    ERR (*_Scale)(struct VectorMatrix *Matrix, double X, double Y);
-   ERR (*_ParseTransform)(struct VectorMatrix *Matrix, CSTRING Transform);
+   ERR (*_ParseTransform)(struct VectorMatrix *Matrix, const std::string_view & Transform);
    ERR (*_ResetMatrix)(struct VectorMatrix *Matrix);
    ERR (*_GetFontHandle)(const std::string_view & Family, const std::string_view & Style, int Weight, int Size, APTR *Handle);
    ERR (*_GetFontMetrics)(APTR Handle, struct FontMetrics *Info);
@@ -3505,7 +3505,7 @@ inline ERR Skew(struct VectorMatrix *Matrix, double X, double Y) { return Vector
 inline ERR Multiply(struct VectorMatrix *Matrix, double ScaleX, double ShearY, double ShearX, double ScaleY, double TranslateX, double TranslateY) { return VectorBase->_Multiply(Matrix,ScaleX,ShearY,ShearX,ScaleY,TranslateX,TranslateY); }
 inline ERR MultiplyMatrix(struct VectorMatrix *Target, struct VectorMatrix *Source) { return VectorBase->_MultiplyMatrix(Target,Source); }
 inline ERR Scale(struct VectorMatrix *Matrix, double X, double Y) { return VectorBase->_Scale(Matrix,X,Y); }
-inline ERR ParseTransform(struct VectorMatrix *Matrix, CSTRING Transform) { return VectorBase->_ParseTransform(Matrix,Transform); }
+inline ERR ParseTransform(struct VectorMatrix *Matrix, const std::string_view & Transform) { return VectorBase->_ParseTransform(Matrix,Transform); }
 inline ERR ResetMatrix(struct VectorMatrix *Matrix) { return VectorBase->_ResetMatrix(Matrix); }
 inline ERR GetFontHandle(const std::string_view & Family, const std::string_view & Style, int Weight, int Size, APTR *Handle) { return VectorBase->_GetFontHandle(Family,Style,Weight,Size,Handle); }
 inline ERR GetFontMetrics(APTR Handle, struct FontMetrics *Info) { return VectorBase->_GetFontMetrics(Handle,Info); }
@@ -3539,7 +3539,7 @@ extern ERR Skew(struct VectorMatrix *Matrix, double X, double Y);
 extern ERR Multiply(struct VectorMatrix *Matrix, double ScaleX, double ShearY, double ShearX, double ScaleY, double TranslateX, double TranslateY);
 extern ERR MultiplyMatrix(struct VectorMatrix *Target, struct VectorMatrix *Source);
 extern ERR Scale(struct VectorMatrix *Matrix, double X, double Y);
-extern ERR ParseTransform(struct VectorMatrix *Matrix, CSTRING Transform);
+extern ERR ParseTransform(struct VectorMatrix *Matrix, const std::string_view & Transform);
 extern ERR ResetMatrix(struct VectorMatrix *Matrix);
 extern ERR GetFontHandle(const std::string_view & Family, const std::string_view & Style, int Weight, int Size, APTR *Handle);
 extern ERR GetFontMetrics(APTR Handle, struct FontMetrics *Info);

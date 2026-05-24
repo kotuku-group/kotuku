@@ -1,0 +1,117 @@
+
+   mVec ?= mod.load('vector')
+
+TOLERANCE <const> = 0.000001
+
+function near(A, B)
+   return math.abs(A - B) < TOLERANCE
+end
+
+function assertNear(Actual, Expected, Message)
+   assert(near(Actual, Expected), f'{Message}: expected {Expected}, got {Actual}')
+end
+
+function assertMatrix(Matrix, ScaleX, ShearY, ShearX, ScaleY, TranslateX, TranslateY, Message)
+   assertNear(Matrix.ScaleX, ScaleX, f'{Message} ScaleX')
+   assertNear(Matrix.ShearY, ShearY, f'{Message} ShearY')
+   assertNear(Matrix.ShearX, ShearX, f'{Message} ShearX')
+   assertNear(Matrix.ScaleY, ScaleY, f'{Message} ScaleY')
+   assertNear(Matrix.TranslateX, TranslateX, f'{Message} TranslateX')
+   assertNear(Matrix.TranslateY, TranslateY, f'{Message} TranslateY')
+end
+
+function setNonIdentity(Matrix)
+   Matrix.ScaleX = 2
+   Matrix.ShearY = 3
+   Matrix.ShearX = 4
+   Matrix.ScaleY = 5
+   Matrix.TranslateX = 6
+   Matrix.TranslateY = 7
+end
+
+function isIdentity(Matrix)
+   return near(Matrix.ScaleX, 1) and near(Matrix.ShearY, 0) and near(Matrix.ShearX, 0) and
+      near(Matrix.ScaleY, 1) and near(Matrix.TranslateX, 0) and near(Matrix.TranslateY, 0)
+end
+
+function parseTransform(Transform)
+   matrix = struct.new('VectorMatrix')
+   check mVec.ParseTransform(matrix, Transform)
+   return matrix
+end
+
+@Test function EmptyTransformResetsToIdentity()
+   matrix = struct.new('VectorMatrix')
+   setNonIdentity(matrix)
+
+   check mVec.ParseTransform(matrix, '')
+
+   assert(isIdentity(matrix), 'Empty transform should reset the matrix to identity')
+end
+
+@Test function WhitespaceTransformResetsToIdentity()
+   matrix = struct.new('VectorMatrix')
+   setNonIdentity(matrix)
+
+   check mVec.ParseTransform(matrix, '   ')
+
+   assert(isIdentity(matrix), 'Whitespace-only transform should reset the matrix to identity')
+end
+
+@Test function NullMatrixIsRejected()
+   err = mVec.ParseTransform(nil, '')
+   assert(err is ERR_NullArgs, 'Null matrix should be rejected')
+end
+
+@Test function MatrixTransform()
+   matrix = parseTransform('matrix(1,2,3,4,5,6)')
+   assertMatrix(matrix, 1, 2, 3, 4, 5, 6, 'matrix()')
+end
+
+@Test function TranslateTransform()
+   matrix = parseTransform('translate(10 20)')
+   assertMatrix(matrix, 1, 0, 0, 1, 10, 20, 'translate()')
+end
+
+@Test function TranslateMissingYDefaultsToZero()
+   matrix = parseTransform('translate(15)')
+   assertMatrix(matrix, 1, 0, 0, 1, 15, 0, 'translate() missing Y')
+end
+
+@Test function TranslateConsumesUnits()
+   matrix = parseTransform('translate(12px,25%)')
+   assertMatrix(matrix, 1, 0, 0, 1, 12, 0.25, 'translate() units')
+end
+
+@Test function ScaleUniformTransform()
+   matrix = parseTransform('scale(3)')
+   assertMatrix(matrix, 3, 0, 0, 3, 0, 0, 'uniform scale()')
+end
+
+@Test function ScaleNonUniformTransform()
+   matrix = parseTransform('scale(2 4)')
+   assertMatrix(matrix, 2, 0, 0, 4, 0, 0, 'non-uniform scale()')
+end
+
+@Test function RotateAroundOrigin()
+   matrix = parseTransform('rotate(90)')
+   assertMatrix(matrix, 0, 1, -1, 0, 0, 0, 'rotate() around origin')
+end
+
+@Test function RotateAroundCentre()
+   matrix = parseTransform('rotate(90 10 20)')
+   assertMatrix(matrix, 0, 1, -1, 0, 30, 10, 'rotate() around centre')
+end
+
+@Test function SkewTransforms()
+   matrix_x = parseTransform('skewX(45)')
+   assertMatrix(matrix_x, 1, 0, 1, 1, 0, 0, 'skewX()')
+
+   matrix_y = parseTransform('skewY(45)')
+   assertMatrix(matrix_y, 1, 1, 0, 1, 0, 0, 'skewY()')
+end
+
+@Test function TransformSequenceAppliesInReverse()
+   matrix = parseTransform('translate(10 20) scale(2 3)')
+   assertMatrix(matrix, 2, 0, 0, 3, 10, 20, 'transform sequence')
+end
