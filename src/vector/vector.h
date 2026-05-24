@@ -1216,6 +1216,11 @@ static int get_utf8(const std::string_view &Value, uint32_t &Unicode, std::size_
 {
    int len, code;
 
+   if (Index >= Value.size()) {
+      Unicode = 0;
+      return 1;
+   }
+
    if ((Value[Index] & 0x80) != 0x80) {
       Unicode = Value[Index];
       return 1;
@@ -1245,20 +1250,22 @@ static int get_utf8(const std::string_view &Value, uint32_t &Unicode, std::size_
       return 1;
    }
 
+   if (Value.size() - Index < std::size_t(len)) {
+      Unicode = 0;
+      return 1;
+   }
+
    for (int i=1; i < len; ++i) {
-      if ((Value[Index + i] & 0xc0) != 0x80) code = -1;
+      if ((Value[Index + i] & 0xc0) != 0x80) {
+         Unicode = 0;
+         return 1;
+      }
       code <<= 6;
       code |= Value[Index + i] & 0x3f;
    }
 
-   if (code IS -1) {
-      Unicode = 0;
-      return 1;
-   }
-   else {
-      Unicode = code;
-      return len;
-   }
+   Unicode = code;
+   return len;
 }
 
 //********************************************************************************************************************
@@ -1297,7 +1304,7 @@ extern ERR ResetMatrix(struct VectorMatrix * Matrix);
 extern ERR GetFontHandle(const std::string_view &Family, const std::string_view &Style, int Weight, int Size, APTR *Handle);
 extern ERR GetFontMetrics(APTR Handle, struct FontMetrics * Info);
 extern double CharWidth(APTR FontHandle, uint32_t Char, uint32_t KChar, double * Kerning);
-extern double StringWidth(APTR FontHandle, CSTRING String, int Chars);
+extern double StringWidth(APTR FontHandle, const std::string_view &String, int Chars);
 extern ERR FlushMatrix(struct VectorMatrix * Matrix);
 extern ERR TracePath(APTR Path, FUNCTION *Callback, double Scale);
 }

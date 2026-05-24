@@ -1173,7 +1173,7 @@ For scalable fonts, kerning is included when computing the distance between glyp
 
 -INPUT-
 ptr FontHandle: A font handle obtained from ~GetFontHandle().
-cstr String: Pointer to a null-terminated string.
+cpp(strview) String: Pointer to a null-terminated string.
 int Chars: Maximum number of bytes to process from `String`.  Set to `-1` for the full string.
 
 -RESULT-
@@ -1182,11 +1182,11 @@ double: The pixel width of the string, or `0` if `FontHandle` or `String` is `NU
 
 *********************************************************************************************************************/
 
-double StringWidth(APTR Handle, CSTRING String, int Chars)
+double StringWidth(APTR Handle, const std::string_view &String, int Chars)
 {
    kt::Log log(__FUNCTION__);
 
-   if ((not Handle) or (not String)) { log.warning(ERR::NullArgs); return 0; }
+   if ((not Handle) or (String.empty())) { log.warning(ERR::NullArgs); return 0; }
 
    const std::lock_guard lock(glFontMutex);
 
@@ -1201,15 +1201,17 @@ double StringWidth(APTR Handle, CSTRING String, int Chars)
       int prev_glyph = 0;
       int i = 0;
       const bool has_kerning = FT_HAS_KERNING(pt->ft_size->face);
-      while ((i < Chars) and (String[i])) {
-         if (String[i] IS '\n') {
+      const size_t end = std::min(size_t(Chars), String.size());
+      const auto limited_string = String.substr(0, end);
+      while (i < std::ssize(limited_string)) {
+         if (limited_string[i] IS '\n') {
             if (widest < len) widest = len;
             len = 0;
             i++;
          }
          else {
             uint32_t unicode;
-            auto charlen = get_utf8(String, unicode, i);
+            auto charlen = get_utf8(limited_string, unicode, i);
             auto &glyph  = pt->get_glyph(unicode);
             len += glyph.adv_x;
             if ((has_kerning) and (prev_glyph)) {

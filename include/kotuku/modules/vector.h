@@ -3473,7 +3473,7 @@ struct VectorBase {
    ERR (*_GetFontHandle)(const std::string_view & Family, const std::string_view & Style, int Weight, int Size, APTR *Handle);
    ERR (*_GetFontMetrics)(APTR Handle, struct FontMetrics *Info);
    double (*_CharWidth)(APTR FontHandle, uint32_t Char, uint32_t KChar, double *Kerning);
-   double (*_StringWidth)(APTR FontHandle, CSTRING String, int Chars);
+   double (*_StringWidth)(APTR FontHandle, const std::string_view & String, int Chars);
    ERR (*_FlushMatrix)(struct VectorMatrix *Matrix);
    ERR (*_TracePath)(APTR Path, FUNCTION *Callback, double Scale);
 #endif // KOTUKU_STATIC
@@ -3510,7 +3510,7 @@ inline ERR ResetMatrix(struct VectorMatrix *Matrix) { return VectorBase->_ResetM
 inline ERR GetFontHandle(const std::string_view & Family, const std::string_view & Style, int Weight, int Size, APTR *Handle) { return VectorBase->_GetFontHandle(Family,Style,Weight,Size,Handle); }
 inline ERR GetFontMetrics(APTR Handle, struct FontMetrics *Info) { return VectorBase->_GetFontMetrics(Handle,Info); }
 inline double CharWidth(APTR FontHandle, uint32_t Char, uint32_t KChar, double *Kerning) { return VectorBase->_CharWidth(FontHandle,Char,KChar,Kerning); }
-inline double StringWidth(APTR FontHandle, CSTRING String, int Chars) { return VectorBase->_StringWidth(FontHandle,String,Chars); }
+inline double StringWidth(APTR FontHandle, const std::string_view & String, int Chars) { return VectorBase->_StringWidth(FontHandle,String,Chars); }
 inline ERR FlushMatrix(struct VectorMatrix *Matrix) { return VectorBase->_FlushMatrix(Matrix); }
 inline ERR TracePath(APTR Path, FUNCTION *Callback, double Scale) { return VectorBase->_TracePath(Path,Callback,Scale); }
 } // namespace
@@ -3544,7 +3544,7 @@ extern ERR ResetMatrix(struct VectorMatrix *Matrix);
 extern ERR GetFontHandle(const std::string_view & Family, const std::string_view & Style, int Weight, int Size, APTR *Handle);
 extern ERR GetFontMetrics(APTR Handle, struct FontMetrics *Info);
 extern double CharWidth(APTR FontHandle, uint32_t Char, uint32_t KChar, double *Kerning);
-extern double StringWidth(APTR FontHandle, CSTRING String, int Chars);
+extern double StringWidth(APTR FontHandle, const std::string_view & String, int Chars);
 extern ERR FlushMatrix(struct VectorMatrix *Matrix);
 extern ERR TracePath(APTR Path, FUNCTION *Callback, double Scale);
 } // namespace

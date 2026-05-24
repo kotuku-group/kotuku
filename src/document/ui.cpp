@@ -1394,7 +1394,7 @@ static ERR resolve_fontx_by_index(extDocument *Self, stream_char Char, double &C
       auto i = Self->Segments[segment].start;
       while ((i <= Self->Segments[segment].stop) and (i < Char)) {
          if (Self->Stream[i.index].code IS SCODE::TEXT) {
-            CharX = vec::StringWidth(font->handle, Self->Stream.lookup<bc_text>(i).text.c_str(), -1);
+            CharX = vec::StringWidth(font->handle, Self->Stream.lookup<bc_text>(i).text, -1);
             return ERR::Okay;
          }
          i.next_code();

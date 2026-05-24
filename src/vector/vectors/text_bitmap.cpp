@@ -20,7 +20,7 @@ static void raster_text_to_bitmap(extVectorText *Vector)
    if ((!Vector->txInlineSize) and (!(Vector->txCursor.vector))) { // Fast calculation if no wrapping or active cursor
       for (auto &line : Vector->txLines) {
          line.chars.clear();
-         int line_width = fnt::StringWidth(Vector->txBitmapFont, line.c_str(), -1);
+         int line_width = fnt::StringWidth(Vector->txBitmapFont, line, -1);
          if (line_width > longest_line_width) longest_line_width = line_width;
          dy += Vector->txBitmapFont->LineSpacing;
       }
