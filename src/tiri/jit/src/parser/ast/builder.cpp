@@ -472,6 +472,10 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_block(std::span<const
          Token error_token = this->ctx.tokens().current();
          [[maybe_unused]] size_t skipped = this->skip_to_synchronisation_point(terminators);
 
+         if (skipped IS 0 and not this->at_end_of_block(terminators)) {
+            this->ctx.tokens().advance();
+         }
+
          #if 0 // Quite noisy, needs a control mechanism
          if (skipped > 0) {
             // Emit informational diagnostic about skipped tokens

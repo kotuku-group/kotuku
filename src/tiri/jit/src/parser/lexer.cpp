@@ -987,6 +987,11 @@ static void lex_skip_inline_ws(LexState *State) noexcept
    while (State->c IS ' ' or State->c IS '\t') lex_next(State);
 }
 
+static LexToken lex_current_char_token(const LexState *State) noexcept
+{
+   return (State->c IS LEX_EOF) ? TK_eof : State->c;
+}
+
 //********************************************************************************************************************
 // Scan array typed expression: array<type> or array<type, size>
 // Caller has already scanned "array" and confirmed c is '<'
@@ -998,7 +1003,9 @@ static LexToken lex_array_typed(LexState *State, TValue *tv)
    lex_skip_inline_ws(State);
 
    // Scan type name
-   if (not (isalpha(State->c) or State->c IS '_')) lj_lex_error(State, '<', ErrMsg::XTOKEN);
+   if (not (isalpha(State->c) or State->c IS '_')) {
+      lj_lex_error(State, lex_current_char_token(State), ErrMsg::XTOKEN, State->token2str(TK_name));
+   }
 
    lj_buf_reset(&State->sb);
    do {
@@ -1021,10 +1028,13 @@ static LexToken lex_array_typed(LexState *State, TValue *tv)
       while (depth > 0) {
          if (State->c IS '<') depth++;
          else if (State->c IS '>') depth--;
-         if (State->c IS LEX_EOF) lj_lex_error(State, '>', ErrMsg::XTOKEN);
+         if (State->c IS LEX_EOF) {
+            lj_lex_error(State, TK_eof, ErrMsg::XTOKEN, State->token2str('>'));
+            break;
+         }
          if (depth > 0) lex_next(State);
       }
-      lex_next(State);  // Move past the inner closing '>'
+      if (State->c IS '>') lex_next(State);  // Move past the inner closing '>'
       lex_skip_inline_ws(State);
    }
 
@@ -1045,7 +1055,9 @@ static LexToken lex_array_typed(LexState *State, TValue *tv)
          State->array_typed_size = size;
          lex_skip_inline_ws(State);
 
-         if (State->c != '>') lj_lex_error(State, '>', ErrMsg::XTOKEN);
+         if (State->c != '>') {
+            lj_lex_error(State, lex_current_char_token(State), ErrMsg::XTOKEN, State->token2str('>'));
+         }
          lex_next(State);  // Consume '>'
       }
       else {
@@ -1056,7 +1068,9 @@ static LexToken lex_array_typed(LexState *State, TValue *tv)
       }
    }
    else {
-      if (State->c != '>') lj_lex_error(State, '>', ErrMsg::XTOKEN);
+      if (State->c != '>') {
+         lj_lex_error(State, lex_current_char_token(State), ErrMsg::XTOKEN, State->token2str('>'));
+      }
       lex_next(State);  // Consume '>'
    }
 
