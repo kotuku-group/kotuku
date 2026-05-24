@@ -466,7 +466,7 @@ static ERR resolve_object_path(const std::string &Path, const std::string &Sourc
 
    if (!Path.empty()) {
       OBJECTID volume_id;
-      if (FindObject(Path.c_str(), CLASSID::NIL, FOF::NIL, &volume_id) IS ERR::Okay) {
+      if (FindObject(Path.c_str(), CLASSID::NIL, &volume_id) IS ERR::Okay) {
          OBJECTPTR object;
          if (AccessObject(volume_id, 5000, &object) IS ERR::Okay) {
             if ((object->get(FID_ResolvePath, resolve_virtual) IS ERR::Okay) and (resolve_virtual)) {

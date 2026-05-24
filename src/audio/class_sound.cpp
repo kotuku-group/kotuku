@@ -207,7 +207,7 @@ extern "C" void end_of_stream(OBJECTPTR Object, int BytesRemaining)
 {
    kt::Log log;
 
-   if (FindObject("SystemAudio", CLASSID::AUDIO, FOF::NIL, &Self->AudioID) IS ERR::Okay) return ERR::Okay;
+   if (FindObject("SystemAudio", CLASSID::AUDIO, &Self->AudioID) IS ERR::Okay) return ERR::Okay;
 
    extAudio *audio;
    ERR error;

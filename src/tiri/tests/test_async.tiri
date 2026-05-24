@@ -441,7 +441,7 @@ end
 
    async_statement = [[
       print(f'Thread {arg('Iteration')} is now in session.')
-      sig_a = obj.find(arg('A'))
+      sig_a = obj.find(tonumber(arg('A')))
       sig_a.acSignal()
    ]]
 

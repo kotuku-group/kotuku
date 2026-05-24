@@ -558,7 +558,7 @@ static ERR PTR_Init(extPointer *Self)
          Self->SurfaceID = GetOwnerID(Self->SurfaceID);
       }
 
-      if (!Self->SurfaceID) FindObject("SystemSurface", CLASSID::NIL, FOF::NIL, &Self->SurfaceID);
+      if (!Self->SurfaceID) FindObject("SystemSurface", CLASSID::NIL, &Self->SurfaceID);
    }
 
    // Allocate a custom cursor bitmap

@@ -618,7 +618,7 @@ LJLIB_CF(object_find)
          else return 0;
       }
 
-      if (FindObject(object_name, class_id, FOF::SMART_NAMES, &object_id) IS ERR::Okay) {
+      if (FindObject(object_name, class_id, &object_id) IS ERR::Okay) {
          return object_find_ptr(L, GetObjectPtr(object_id));
       }
       else log.detail("Unable to find object '%s'", object_name);
@@ -953,7 +953,7 @@ static int object_free(lua_State *Lua)
    if (FreeResource(def->uid) IS ERR::InUse) {
       // The object has been marked for termination, automatically freeing it once it has been unlocked and unpinned.
       // Clearing the definition would have adverse effects on any areas that have pinned the object in a thread or
-      // closure.  
+      // closure.
       return 0;
    }
 

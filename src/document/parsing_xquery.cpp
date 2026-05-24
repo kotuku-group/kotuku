@@ -494,7 +494,7 @@ static ERR xq_document_object_exists(objXQuery *, std::string_view, const std::v
    OBJECTID object_id = 0;
    bool exists = false;
    if ((not object_name.empty()) and
-      (FindObject(object_name.c_str(), CLASSID::NIL, FOF::NIL, &object_id) IS ERR::Okay)) {
+      (FindObject(object_name.c_str(), CLASSID::NIL, &object_id) IS ERR::Okay)) {
       exists = valid_objectid(Parser->Self, object_id) ? true : false;
    }
 
@@ -607,7 +607,7 @@ static ERR xq_resolve_document_object(const parser *Parser, std::string_view Obj
    }
    else {
       auto object_name = std::string(ObjectName);
-      if (FindObject(object_name.c_str(), CLASSID::NIL, FOF::SMART_NAMES, &ObjectID) != ERR::Okay) {
+      if (FindObject(object_name.c_str(), CLASSID::NIL, &ObjectID) != ERR::Okay) {
          return ERR::NoMatchingObject;
       }
    }

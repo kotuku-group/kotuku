@@ -158,7 +158,7 @@ ERR build_args(lua_State *Lua, const FunctionField *args, int ArgsSize, int8_t *
 
       if (not (args[i].Type & FD_BUFSIZE)) buffer_capacity_known = false;
 
-      if (args[i].Type & FD_RESULT) resultcount = resultcount + 1;
+      if (args[i].Type & FD_RESULT) resultcount++;
 
       //log.trace("Processing arg %s, type $%.8x", args[i].Name, args[i].Type);
 
@@ -379,7 +379,7 @@ ERR build_args(lua_State *Lua, const FunctionField *args, int ArgsSize, int8_t *
    // Finish counting the number of result types registered in the argument list
 
    for (; (args[i].Name); i++) {
-      if (args[i].Type & FD_RESULT) resultcount = resultcount + 1;
+      if (args[i].Type & FD_RESULT) resultcount++;
    }
 
    log.trace("Processed %d args (%d bytes), detected %d result parameters.", i, j, resultcount);

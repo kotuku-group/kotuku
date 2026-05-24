@@ -1117,7 +1117,7 @@ static ERR SURFACE_Init(extSurface *Self)
 
    if ((!Self->ParentID) and (gfx::GetDisplayType() IS DT::NATIVE)) {
       if ((Self->Flags & RNF::FULL_SCREEN) IS RNF::NIL) {
-         if (FindObject("desktop", CLASSID::SURFACE, FOF::NIL, &Self->ParentID) != ERR::Okay) {
+         if (FindObject("desktop", CLASSID::SURFACE, &Self->ParentID) != ERR::Okay) {
             if (!glSurfaces.empty()) Self->ParentID = glSurfaces[0].SurfaceID;
          }
       }
@@ -1316,7 +1316,7 @@ static ERR SURFACE_Init(extSurface *Self)
       if ((Self->Flags & RNF::COMPOSITE) != RNF::NIL) scrflags |= SCR::COMPOSITE;
 
       OBJECTID id, pop_display = 0;
-      CSTRING name = FindObject("SystemDisplay", CLASSID::NIL, FOF::NIL, &id) != ERR::Okay ? "SystemDisplay" : (CSTRING)nullptr;
+      CSTRING name = FindObject("SystemDisplay", CLASSID::NIL, &id) != ERR::Okay ? "SystemDisplay" : (CSTRING)nullptr;
 
       if (Self->PopOverID) {
          if (kt::ScopedObjectLock<extSurface> popsurface(Self->PopOverID, 2000); popsurface.granted()) {

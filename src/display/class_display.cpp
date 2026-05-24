@@ -898,7 +898,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
          }
          else {
             OBJECTID surface_id;
-            if (FindObject("SystemSurface", CLASSID::SURFACE, FOF::NIL, &surface_id) IS ERR::Okay) {
+            if (FindObject("SystemSurface", CLASSID::SURFACE, &surface_id) IS ERR::Okay) {
                if (surface_id IS Self->ownerID()) desktop = true;
             }
          }
@@ -1201,10 +1201,10 @@ static ERR DISPLAY_NewObject(extDisplay *Self)
    if (NewLocalObject(CLASSID::BITMAP, &Self->Bitmap) != ERR::Okay) return ERR::NewObject;
 
    OBJECTID id;
-   if (FindObject("SystemVideo", CLASSID::NIL, FOF::NIL, &id) != ERR::Okay) SetName(Self->Bitmap, "SystemVideo");
+   if (FindObject("SystemVideo", CLASSID::NIL, &id) != ERR::Okay) SetName(Self->Bitmap, "SystemVideo");
 
    if (not Self->Name[0]) {
-      if (FindObject("SystemDisplay", CLASSID::NIL, FOF::NIL, &id) != ERR::Okay) SetName(Self, "SystemDisplay");
+      if (FindObject("SystemDisplay", CLASSID::NIL, &id) != ERR::Okay) SetName(Self, "SystemDisplay");
    }
 
    #ifdef __xwindows__
@@ -2002,7 +2002,7 @@ ERR DISPLAY_Show(extDisplay *Self)
 
    objPointer *pointer;
    OBJECTID pointer_id;
-   if (FindObject("SystemPointer", CLASSID::POINTER, FOF::NIL, &pointer_id) != ERR::Okay) {
+   if (FindObject("SystemPointer", CLASSID::POINTER, &pointer_id) != ERR::Okay) {
       if (NewObject(CLASSID::POINTER, NF::UNTRACKED, (OBJECTPTR *)&pointer) IS ERR::Okay) {
          SetName(pointer, "SystemPointer");
          if ((Self->Owner) and (Self->Owner->classID() IS CLASSID::SURFACE)) pointer->setSurface(Self->Owner->UID);
@@ -2154,7 +2154,7 @@ ERR GET_HDensity(extDisplay *Self, int *Value)
    // If the user has overridden the DPI with a preferred value, we have to use it.
 
    OBJECTID style_id;
-   if (FindObject("glStyle", CLASSID::XML, FOF::NIL, &style_id) IS ERR::Okay) {
+   if (FindObject("glStyle", CLASSID::XML, &style_id) IS ERR::Okay) {
       kt::ScopedObjectLock<objXML> style(style_id, 3000);
       if (style.granted()) {
          char strdpi[32];
@@ -2224,7 +2224,7 @@ ERR GET_VDensity(extDisplay *Self, int *Value)
    // If the user has overridden the DPI with a preferred value, we have to use it.
 
    OBJECTID style_id;
-   if (FindObject("glStyle", CLASSID::XML, FOF::NIL, &style_id) IS ERR::Okay) {
+   if (FindObject("glStyle", CLASSID::XML, &style_id) IS ERR::Okay) {
       kt::ScopedObjectLock<objXML> style(style_id, 3000);
       if (style.granted()) {
          char strdpi[32];

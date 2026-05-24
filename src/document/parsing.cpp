@@ -1429,7 +1429,7 @@ void parser::tag_call(const tag_view &Tag)
             auto script_name_text = std::string(script_name);
 
             OBJECTID id;
-            if (FindObject(script_name_text.c_str(), CLASSID::NIL, FOF::NIL, &id) IS ERR::Okay) script = (objScript *)GetObjectPtr(id);
+            if (FindObject(script_name_text.c_str(), CLASSID::NIL, &id) IS ERR::Okay) script = (objScript *)GetObjectPtr(id);
 
             function.assign(function_ref.substr(i + 1));
          }
@@ -2621,7 +2621,7 @@ void parser::tag_script(const tag_view &Tag)
          // Reference an external script as the default for function calls
          if ((Self->Flags & DCF::UNRESTRICTED) != DCF::NIL) {
             OBJECTID id;
-            if (FindObject(Tag.Attribs[i].Value.c_str(), CLASSID::NIL, FOF::NIL, &id) IS ERR::Okay) {
+            if (FindObject(Tag.Attribs[i].Value.c_str(), CLASSID::NIL, &id) IS ERR::Okay) {
                Self->DefaultScript = (objScript *)GetObjectPtr(id);
                return;
             }

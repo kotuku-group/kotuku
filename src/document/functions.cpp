@@ -846,7 +846,7 @@ static ERR extract_script(extDocument *Self, std::string_view Link, objScript **
          auto script_name = Link.substr(0, dot);
          auto script_name_text = std::string(script_name);
          OBJECTID id;
-         if (FindObject(script_name_text.c_str(), CLASSID::SCRIPT, FOF::NIL, &id) IS ERR::Okay) {
+         if (FindObject(script_name_text.c_str(), CLASSID::SCRIPT, &id) IS ERR::Okay) {
             // Security checks
             *Script = (objScript *)GetObjectPtr(id);
             if ((Script[0]->Owner != Self) and ((Self->Flags & DCF::UNRESTRICTED) IS DCF::NIL)) {

@@ -1710,7 +1710,7 @@ static ERR BITMAP_Query(extBitmap *Self)
          Self->BitsPerPixel  = 32;
          Self->BytesPerPixel = 4;
 #if 1
-         if (FindObject("SystemDisplay", CLASSID::DISPLAY, FOF::NIL, &display_id) IS ERR::Okay) {
+         if (FindObject("SystemDisplay", CLASSID::DISPLAY, &display_id) IS ERR::Okay) {
             if (ScopedObjectLock<objDisplay> display(display_id, 3000); display.granted()) {
                Self->AmtColours    = display->Bitmap->AmtColours;
                Self->BytesPerPixel = display->Bitmap->BytesPerPixel;

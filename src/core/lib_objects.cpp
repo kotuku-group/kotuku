@@ -1361,16 +1361,15 @@ The following example illustrates typical usage, and finds the most recent objec
 
 <pre>
 OBJECTID id;
-FindObject("SystemPointer", CLASSID::POINTER, FOF::NIL, &id);
+FindObject("SystemPointer", CLASSID::POINTER, &id);
 </pre>
 
 If FindObject() cannot find any matching objects then it will return an error code.
 
 -INPUT-
-cstr Name:      The name of an object to search for.
-cid ClassID:    Optional.  Set to a class ID to filter the results down to a specific class type.
-int(FOF) Flags: Optional flags.
-&oid ObjectID:  An object id variable for storing the result.
+cpp(strview) Name: The name of an object to search for.
+cid ClassID:   Optional.  Set to a class ID to filter the results down to a specific class type.
+&oid ObjectID: An object id variable for storing the result.
 
 -ERRORS-
 Okay: At least one matching object was found and stored in the `ObjectID`.
@@ -1383,54 +1382,17 @@ DoesNotExist:
 
 *********************************************************************************************************************/
 
-ERR FindObject(CSTRING InitialName, CLASSID ClassID, FOF Flags, OBJECTID *Result)
+ERR FindObject(const std::string_view &InitialName, CLASSID ClassID, OBJECTID *Result)
 {
    kt::Log log(__FUNCTION__);
 
-   if ((not Result) or (not InitialName)) return ERR::NullArgs;
-   if (not InitialName[0]) return log.warning(ERR::EmptyString);
-
-   if ((Flags & FOF::SMART_NAMES) != FOF::NIL) {
-      // If an integer based name (defined by #num) is passed, we translate it to an ObjectID rather than searching for
-      // an object of name "#1234".
-
-      bool number = false;
-      if (InitialName[0] IS '#') number = true;
-      else {
-         // If the name consists entirely of numbers, it must be considered an object ID (we can make this check because
-         // it is illegal for a name to consist entirely of digits).
-
-         int i = (InitialName[0] IS '-') ? 1 : 0;
-         for (; InitialName[i]; i++) {
-            if (InitialName[i] < '0') break;
-            if (InitialName[i] > '9') break;
-         }
-         if (not InitialName[i]) number = true;
-      }
-
-      if (number) {
-         if (auto objectid = (OBJECTID)strtol(InitialName, nullptr, 0)) {
-            if (CheckObjectExists(objectid) IS ERR::Okay) {
-               *Result = objectid;
-               return ERR::Okay;
-            }
-            else return ERR::Search;
-         }
-         else return ERR::Search;
-      }
-
-      if (iequals("owner", InitialName)) {
-         if (tlContext.back().obj->Owner) {
-            *Result = tlContext.back().obj->Owner->UID;
-            return ERR::Okay;
-         }
-         else return ERR::DoesNotExist;
-      }
-   }
+   if ((not Result) or (&InitialName IS nullptr)) return ERR::NullArgs;
+   if (InitialName.empty()) return log.warning(ERR::EmptyString);
 
    if (auto lock = std::unique_lock{glmObjectLookup, 4s}) {
-      if (glObjectLookup.contains(InitialName)) {
-         auto &list = glObjectLookup[InitialName];
+      std::string iname(InitialName);
+      if (glObjectLookup.contains(iname)) {
+         auto &list = glObjectLookup[iname];
          if (ClassID IS CLASSID::NIL) {
             *Result = list.back()->UID;
             return ERR::Okay;

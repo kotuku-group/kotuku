@@ -742,19 +742,18 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <name>FindObject</name>
     <category>Objects</category>
     <comment>Searches for objects by name.</comment>
-    <prototype>ERR FindObject(CSTRING Name, CLASSID ClassID, FOF Flags, OBJECTID * ObjectID)</prototype>
-    <tiriPrototype>err, ObjectID:obj = FindObject(Name:str, ClassID:num, Flags:num)</tiriPrototype>
+    <prototype>ERR FindObject(const std::string_view &amp; Name, CLASSID ClassID, OBJECTID * ObjectID)</prototype>
+    <tiriPrototype>err, ObjectID:obj = FindObject(Name:str, ClassID:num)</tiriPrototype>
     <input>
-      <param type="CSTRING" name="Name">The name of an object to search for.</param>
+      <param type="const std::string_view &amp;" name="Name">The name of an object to search for.</param>
       <param type="CLASSID" name="ClassID">Optional.  Set to a class ID to filter the results down to a specific class type.</param>
-      <param type="FOF" name="Flags" lookup="FOF">Optional flags.</param>
       <param type="OBJECTID *" name="ObjectID">An object id variable for storing the result.</param>
     </input>
     <description>
 <p>The FindObject() function searches for all objects that match a given name and can filter by class.</p>
 <p>The following example illustrates typical usage, and finds the most recent object created with a given name:</p>
 <pre>OBJECTID id;
-FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, FOF::NIL, &amp;id);
+FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
 </pre>
 <p>If FindObject() cannot find any matching objects then it will return an error code.</p>
     </description>
@@ -2400,10 +2399,6 @@ static ResourceManager glNodeManager = {
       <const name="STREAM">File data is streamed (e.g. PIPE, FIFO, socket) and may be accessed locally or via a network.</const>
       <const name="VIRTUAL">Path is to a virtual device.</const>
       <const name="WRITE">Prepares a file for writing data, starting at byte position 0.  To start writing from the end of a file, use the Seek action after the file has been initialised.</const>
-    </constants>
-
-    <constants lookup="FOF" comment="Flags that can be passed to FindObject()">
-      <const name="SMART_NAMES">Parse numeric object names as ID references and support use of the 'Owner' reserved keyword.</const>
     </constants>
 
     <constants lookup="IDTYPE" comment="Types for AllocateID()">

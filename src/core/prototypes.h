@@ -17,7 +17,7 @@ extern "C" OBJECTPTR CurrentContext();
 extern "C" void SetLogCallback(APTR Callback, int DepthLimit, int LogLimit);
 extern "C" int AdjustLogLevel(int Delta);
 extern "C" ERR ReadFileToBuffer(const std::string_view & Path, APTR Buffer, int BufferSize, int * Result);
-extern "C" ERR FindObject(CSTRING Name, CLASSID ClassID, FOF Flags, OBJECTID * ObjectID);
+extern "C" ERR FindObject(const std::string_view & Name, CLASSID ClassID, OBJECTID * ObjectID);
 extern "C" objMetaClass * FindClass(CLASSID ClassID);
 extern "C" ERR AnalysePath(const std::string_view & Path, LOC * Type);
 extern "C" ERR FreeResource(MEMORYID ID);

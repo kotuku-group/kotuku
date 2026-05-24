@@ -126,7 +126,7 @@ extern "C" void program(void)
          }
          else if (iequals(Args[i], "--target")) {
             if (Args[i+1]) {
-               if (FindObject(Args[i+1], 0, FOF::SMART_NAMES, &TargetID) != ERR_Okay) {
+               if (FindObject(Args[i+1], 0, &TargetID) != ERR_Okay) {
                   printf("Warning - could not find target object \"%s\".\n", Args[i+1]);
                }
                else log.msg("Using target %d", TargetID);

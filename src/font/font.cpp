@@ -189,7 +189,7 @@ static double global_point_size(void)
    if (!glPointSet) {
       kt::Log log(__FUNCTION__);
       OBJECTID style_id;
-      if (FindObject("glStyle", CLASSID::XML, FOF::NIL, &style_id) IS ERR::Okay) {
+      if (FindObject("glStyle", CLASSID::XML, &style_id) IS ERR::Okay) {
          kt::ScopedObjectLock<objXML> style(style_id, 3000);
          if (style.granted()) {
             char pointsize[20];

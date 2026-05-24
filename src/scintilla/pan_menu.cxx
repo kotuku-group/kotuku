@@ -27,7 +27,7 @@ void Scintilla::Menu::CreatePopUp()
       return;
    }*/
 
-   FindObject((STRING)"SystemSurface", CLASSID::SURFACE, FOF::NIL, &display_id);
+   FindObject((STRING)"SystemSurface", CLASSID::SURFACE, &display_id);
 
    //id = *reinterpret_cast<MenuID *>(&surface_id);
 /*

@@ -69,7 +69,7 @@ void MsgMovement(OBJECTID SurfaceID, double AbsX, double AbsY, int WinX, int Win
 void MsgWheelMovement(OBJECTID SurfaceID, float Wheel)
 {
    if (!glPointerID) {
-      if (FindObject("SystemPointer", CLASSID::NIL, FOF::NIL, &glPointerID) != ERR::Okay) return;
+      if (FindObject("SystemPointer", CLASSID::NIL, &glPointerID) != ERR::Okay) return;
    }
 
    if (auto pointer = gfx::AccessPointer(); pointer) {

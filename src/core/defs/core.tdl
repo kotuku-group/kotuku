@@ -279,9 +279,6 @@ constexpr bool defined(T flags, T test_flag) noexcept {
     "ZLIB: The 'zlib' format",
     "DEFLATE: The 'deflate' format")
 
-  flags("FOF", { comment="Flags that can be passed to FindObject()" },
-    "SMART_NAMES: Parse numeric object names as ID references and support use of the 'Owner' reserved keyword.")
-
   flags("NF", { comment="Flags that can be passed to NewObject().  If a flag needs to be stored with the object, it must be specified in the lower word." },
     "UNTRACKED: An object created with this flag will not be tracked back to the object that created it.",
     "INITIALISED: Read-only indicator if the object has been initialised.",

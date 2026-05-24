@@ -149,10 +149,6 @@
       <const name="USER">User activity events (such as user login).</const>
     </constants>
 
-    <constants lookup="FOF" comment="Flags that can be passed to FindObject()">
-      <const name="SMART_NAMES">Parse numeric object names as ID references and support use of the 'Owner' reserved keyword.</const>
-    </constants>
-
     <constants lookup="IDTYPE" comment="Types for AllocateID()">
       <const name="FUNCTION">Function ID's are used to track <code>FUNCTION</code> types and are assigned to the function ID field.</const>
       <const name="GLOBAL">Global ID's have no specific association with anything.</const>

@@ -184,7 +184,7 @@ static ERR object_set_oid(lua_State *Lua, OBJECTPTR Object, Field *Field, int Va
 
       case LUA_TSTRING: {
          OBJECTID id;
-         if (FindObject(lua_tostring(Lua, ValueIndex), CLASSID::NIL, FOF::NIL, &id) IS ERR::Okay) {
+         if (FindObject(lua_tostring(Lua, ValueIndex), CLASSID::NIL, &id) IS ERR::Okay) {
             return Object->set(Field->FieldID, id);
          }
          else {
