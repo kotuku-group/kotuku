@@ -151,12 +151,12 @@ origo tools/tiri_lsp/server.tiri port=0
 |---------------|------------------------------------|------------------------------------- |
 | `port`        | 5007                               | TCP port to listen on, or `0` for stdio |
 | `verbose`     | false                              | Enable debug logging                 |
-| `config`      | `user:config/lsp_server_cfg.tiri`  | Path to configuration file           |
+| `config`      | `user:config/lsp_server_cfg.json`  | Path to JSON configuration file      |
 | `request-log` | (none)                             | Path for request/response logging    |
 
 Example with options:
 ```bash
-origo server.tiri port=5007 verbose=true request-log=debug.log
+origo server.tiri port=5007 verbose request-log=debug.log
 ```
 
 ## VSCode Extension
@@ -288,5 +288,5 @@ Content-Length: 110
 - Ensure `docs/xml/` contains the API documentation files
 
 **Verbose debugging**
-- Start server with `verbose=true` for detailed logging
+- Start server with `verbose` for detailed logging
 - Use `request-log=path.log` to capture all LSP messages

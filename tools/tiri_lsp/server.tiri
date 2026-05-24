@@ -1,61 +1,13 @@
+#!/usr/bin/env origo
 -- Tiri Language Server Protocol (LSP) Server
 --
 -- An LSP server for IDE integration with Tiri scripts.
 --
 -- Usage: origo server.tiri port=5007 [options...]
 --
--- See --help for full usage information.
+-- See help for full usage information.
 
-glHelp = [[
-Tiri Language Server Protocol (LSP) server for IDE integration.
-
-This server implements the Language Server Protocol over TCP or stdio, allowing IDEs
-and editors to provide features like autocompletion, hover information, and
-diagnostics for Tiri scripts.
-
-Usage: origo server.tiri [options...]
-
-Parameters:
-
-  port        - TCP port to listen on, or 0 for stdio mode (default: 5007)
-  verbose     - Enable verbose/debug logging (true/false, default: false)
-  config      - Path to config file (default: user:config/lsp_server_cfg.tiri)
-  request-log - Path to log file for request/response debugging
-  help        - Display this help message
-
-Examples:
-
-  origo server.tiri port=5007
-  origo server.tiri port=0
-  origo server.tiri port=5007 verbose=true
-  origo server.tiri port=5007 request-log=lsp_debug.log
-  origo server.tiri config=my_lsp_config.tiri
-
-Config File Format:
-
-  The config file should define a glOptions table:
-
-    glOptions = {
-       port = 5007,
-       verbose = false
-    }
-
-Testing with netcat/telnet:
-
-  1. Start the server: origo server.tiri port=5007
-  2. Connect: nc localhost 5007
-  3. Send initialize request:
-     Content-Length: 110
-
-     {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":1,"capabilities":{},"rootUri":null}}
-
-IDE Integration:
-
-  Configure your IDE's LSP client to connect to localhost on the specified port.
-  For stdio clients, launch the server with port=0.
-  The server supports the standard LSP lifecycle: initialize, initialized, shutdown, exit.
-]]
-
+   import 'options'
    import './include/lsp_lib'
 
 rx_sdk_path <const> = <{ regex.new([[(.+)CMakeLists\.txt]]) }>
@@ -97,35 +49,69 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-   glConfigFile = arg('config', 'user:config/lsp_server_cfg.tiri')
-   glDocPath = 'sdk:docs/xml/'
-   glOptions = { }
-   glSysState = mSys.GetSystemState()
-
-   if arg('help') then
-      print(glHelp)
-      return
+function validatePort(Parser:table, ArgName:str, Value:any, Param:table)
+   if Value < 0 or Value > 65535 then
+      error(f"Parameter '{ArgName}' must be between 0 and 65535.")
    end
+end
 
-   -- Load config file if available
-   loaded_config = false
-   if mSys.AnalysePath(glConfigFile) is ERR_Okay then
-      loadFile(glConfigFile, glOptions)
-      loaded_config = true
-   end
+----------------------------------------------------------------------------------------------------------------------
 
-   if arg('port') then
-      glOptions.port = tonumber(arg('port'))
-   end
+   glParser = options({
+      name        = 'Tiri LSP Server',
+      cmdName     = 'origo tools/tiri_lsp/server.tiri',
+      description = [[
+Tiri Language Server Protocol (LSP) server for IDE integration.
 
-   if arg('verbose') then
-      verbose = arg('verbose'):lower()
-      glOptions.verbose = (verbose is 'true' or verbose is '1')
-   end
+This server implements the Language Server Protocol over TCP or stdio, allowing IDEs and editors to provide features
+like autocompletion, hover information, and diagnostics for Tiri scripts.
+]],
+      epilog      = [[
+Config files use the JSON defaults format supported by the Tiri options library.  If a config file is stored at
+user:config/lsp_server_cfg.json then it will be loaded automatically.  Options can be overridden via the command-line,
+or you can refer to a different file via the config parameter.
 
-   if arg('docs') then
-      glDocPath = arg('docs')
-   end
+Examples:
+  origo tools/tiri_lsp/server.tiri port=5007
+  origo tools/tiri_lsp/server.tiri port=0
+  origo tools/tiri_lsp/server.tiri port=5007 verbose
+  origo tools/tiri_lsp/server.tiri port=5007 request-log=lsp_debug.log
+  origo tools/tiri_lsp/server.tiri config=my_lsp_config.json
+
+Testing with netcat/telnet:
+  1. Start the server: origo tools/tiri_lsp/server.tiri port=5007
+  2. Connect: nc localhost 5007
+  3. Send an initialize request with a Content-Length header and JSON-RPC body.
+
+IDE Integration:
+  Configure your IDE's LSP client to connect to localhost on the selected port.  For stdio clients, launch the server
+  with port=0.
+]],
+      autoHelp    = false,
+      userConfig  = 'user:config/lsp_server_cfg.json',
+      args        = array<table> {
+         { name = 'port', type = 'int', default = 5007, group = 'Server',
+           comment = 'TCP port to listen on, or 0 for stdio mode.',
+           exec = validatePort },
+         { name = 'verbose', kind = 'flag', default = false, group = 'Behaviour',
+           comment = 'Enable verbose/debug logging.' },
+         { name = 'docs', type = 'path', default = 'sdk:docs/xml/', group = 'Paths',
+           comment = 'Path to generated XML documentation for hover support.' },
+         { name = 'sdk', type = 'path', group = 'Paths',
+           comment = 'Path to the Kotuku SDK folder; otherwise searched from the current directory.' },
+         { names = array<string> { 'requestLog', 'request-log' }, type = 'path', group = 'Diagnostics',
+           comment = 'Path to a log file for request/response debugging.' },
+         { name = 'help', kind = 'flag', hidden = true,
+           exec = function(Parser:table)
+              print(Parser.getHelp())
+              raise ERR_Terminate
+           end
+         }
+      }
+   })
+
+   glOptions = glParser.process()
+   if not glOptions then return end
 
    -- In stdio mode, stdout is reserved for LSP frames.
    -- Note: print() in Tiri always writes to stderr, use io.output() for stdout
@@ -139,13 +125,16 @@ end
       print(Message)
    end
 
-   if loaded_config then
-      glOptions.logMessage('Loaded config from: ' .. glConfigFile)
+   if glOptions.config then
+      err, location = mSys.AnalysePath(glOptions.config)
+      if err is ERR_Okay and location is LOC_FILE then
+         glOptions.logMessage('Loaded config from: ' .. glOptions.config)
+      end
    end
 
    -- Set up request/response logging if requested
 
-   log_path = arg('request-log')
+   log_path = glOptions.requestLog
    if log_path?? then
       glReqLog = obj.new('file', { src=log_path, flags='NEW|WRITE' })
       glOptions.logMessage('Request logging enabled: ' .. log_path)
@@ -162,10 +151,9 @@ end
       end
    end
 
-   sdkPath = arg('sdk')
-   resolveSDKPath(sdkPath)
+   resolveSDKPath(glOptions.sdk)
 
-   lspInitDocs(glDocPath) -- Initialize documentation for hover support
+   lspInitDocs(glOptions.docs) -- Initialize documentation for hover support
 
    glServer = lspStart(glOptions)
 
