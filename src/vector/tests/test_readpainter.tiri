@@ -194,6 +194,22 @@ end
    assert(checkRGB(painter, 1.0, 0, 0, 0.5), 'Failed hsla() red with alpha')
 end
 
+@Test function ReadHSLPercentageResult()
+   painter = struct.new('VectorPainter')
+   local err, result = mVec.ReadPainter(nil, "hsl(0,100%,50%);blue", painter)
+   check err
+   assert(checkRGB(painter, 1.0, 0, 0, 1.0), 'Failed hsl() red with percentage suffixes')
+   assert(result is ";blue", f'hsl() result should point at next painter, got {result}')
+end
+
+@Test function ReadHSLAlphaPercentage()
+   painter = struct.new('VectorPainter')
+   local err, result = mVec.ReadPainter(nil, "hsla(0,100%,50%,50%);blue", painter)
+   check err
+   assert(checkRGB(painter, 1.0, 0, 0, 0.5), 'Failed hsla() percentage alpha')
+   assert(result is ";blue", f'hsla() result should point at next painter, got {result}')
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- hsv()
 -----------------------------------------------------------------------------------------------------------------------
@@ -208,6 +224,14 @@ end
    painter = struct.new('VectorPainter')
    check mVec.ReadPainter(nil, "hsv(0,100,100,0.3)", painter)
    assert(checkRGB(painter, 1.0, 0, 0, 0.3), 'Failed hsv() with alpha')
+end
+
+@Test function ReadHSVPercentageResult()
+   painter = struct.new('VectorPainter')
+   local err, result = mVec.ReadPainter(nil, "hsv(0,100%,100%);blue", painter)
+   check err
+   assert(checkRGB(painter, 1.0, 0, 0, 1.0), 'Failed hsv() red with percentage suffixes')
+   assert(result is ";blue", f'hsv() result should point at next painter, got {result}')
 end
 
 -----------------------------------------------------------------------------------------------------------------------

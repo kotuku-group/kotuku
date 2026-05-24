@@ -19,14 +19,6 @@ functions for creating paths and rendering them to bitmaps.
 //#include "font.h"
 #include "colours.cpp"
 
-inline char read_nibble(CSTRING Str)
-{
-   if (std::isdigit(*Str)) return (*Str - '0');
-   else if ((*Str >= 'A') and (*Str <= 'F')) return ((*Str - 'A')+10);
-   else if ((*Str >= 'a') and (*Str <= 'f')) return ((*Str - 'a')+10);
-   else return char(0xff);
-}
-
 // Resource management for the SimpleVector follows.  NB: This is a beta feature in the Core.
 
 static ERR simplevector_free(APTR Address) {
@@ -48,6 +40,106 @@ static SimpleVector * new_simplevector(void)
 }
 
 namespace vec {
+
+//********************************************************************************************************************
+
+inline void mark_matrix_dirty(VectorMatrix *Matrix)
+{
+   if (Matrix->Vector) mark_dirty(Matrix->Vector, RC::TRANSFORM);
+}
+
+static void multiply_values(VectorMatrix &Matrix, double ScaleX, double ShearY, double ShearX, double ScaleY,
+   double TranslateX, double TranslateY)
+{
+   double t0       = (Matrix.ScaleX * ScaleX) + (Matrix.ShearY * ShearX);
+   double t2       = (Matrix.ShearX * ScaleX) + (Matrix.ScaleY * ShearX);
+   double t4       = (Matrix.TranslateX * ScaleX) + (Matrix.TranslateY * ShearX) + TranslateX;
+   Matrix.ShearY     = (Matrix.ScaleX * ShearY) + (Matrix.ShearY * ScaleY);
+   Matrix.ScaleY     = (Matrix.ShearX * ShearY) + (Matrix.ScaleY * ScaleY);
+   Matrix.TranslateY = (Matrix.TranslateX * ShearY) + (Matrix.TranslateY * ScaleY) + TranslateY;
+   Matrix.ScaleX     = t0;
+   Matrix.ShearX     = t2;
+   Matrix.TranslateX = t4;
+}
+
+inline void multiply_matrix(VectorMatrix &Target, const VectorMatrix &Source)
+{
+   multiply_values(Target, Source.ScaleX, Source.ShearY, Source.ShearX, Source.ScaleY,
+      Source.TranslateX, Source.TranslateY);
+}
+
+inline void scale_matrix(VectorMatrix &Matrix, double X, double Y)
+{
+   Matrix.ScaleX     *= X;
+   Matrix.ShearX     *= X;
+   Matrix.TranslateX *= X;
+   Matrix.ShearY     *= Y;
+   Matrix.ScaleY     *= Y;
+   Matrix.TranslateY *= Y;
+}
+
+static void rotate_matrix(VectorMatrix &Matrix, double Angle, double CenterX, double CenterY)
+{
+   Matrix.TranslateX -= CenterX;
+   Matrix.TranslateY -= CenterY;
+
+   double ca = cos(Angle * DEG2RAD);
+   double sa = sin(Angle * DEG2RAD);
+   double t0 = (Matrix.ScaleX * ca) - (Matrix.ShearY * sa);
+   double t2 = (Matrix.ShearX * ca) - (Matrix.ScaleY * sa);
+   double t4 = (Matrix.TranslateX * ca) - (Matrix.TranslateY * sa);
+   Matrix.ShearY     = (Matrix.ScaleX * sa) + (Matrix.ShearY * ca);
+   Matrix.ScaleY     = (Matrix.ShearX * sa) + (Matrix.ScaleY * ca);
+   Matrix.TranslateY = (Matrix.TranslateX * sa) + (Matrix.TranslateY * ca);
+   Matrix.ScaleX     = t0;
+   Matrix.ShearX     = t2;
+   Matrix.TranslateX = t4;
+
+   Matrix.TranslateX += CenterX;
+   Matrix.TranslateY += CenterY;
+}
+
+static ERR skew_matrix(VectorMatrix &Matrix, double X, double Y)
+{
+   if ((X > -90) and (X < 90)) {
+      VectorMatrix skew = {
+         .ScaleX = 1.0, .ShearY = 0, .ShearX = tan(X * DEG2RAD),
+         .ScaleY = 1.0, .TranslateX = 0, .TranslateY = 0
+      };
+
+      multiply_matrix(Matrix, skew);
+   }
+   else return ERR::OutOfRange;
+
+   if ((Y > -90) and (Y < 90)) {
+      VectorMatrix skew = {
+         .ScaleX = 1.0, .ShearY = tan(Y * DEG2RAD), .ShearX = 0,
+         .ScaleY = 1.0, .TranslateX = 0, .TranslateY = 0
+      };
+
+      multiply_matrix(Matrix, skew);
+   }
+   else return ERR::OutOfRange;
+
+   return ERR::Okay;
+}
+
+static bool read_transform_unit(CSTRING &Value, double &Result)
+{
+   bool percent;
+   CSTRING start = Value;
+   Result = read_unit(Value, percent);
+   if (Value != start) return true;
+
+   STRING next = nullptr;
+   Result = strtod(Value, &next);
+   if (next != Value) {
+      Value = next;
+      return true;
+   }
+
+   return false;
+}
 
 /*********************************************************************************************************************
 
@@ -72,7 +164,7 @@ NullArgs
 
 ERR ApplyPath(APTR Vector, objVectorPath *VectorPath)
 {
-   if ((!Vector) or (!VectorPath)) return ERR::NullArgs;
+   if ((not Vector) or (not VectorPath)) return ERR::NullArgs;
    if (VectorPath->classID() != CLASSID::VECTORPATH) return ERR::Args;
 
    VectorPath->set(FID_Sequence, CSTRING(nullptr)); // Clear any pre-existing path information.
@@ -131,7 +223,7 @@ double: The pixel width of the character will be returned.
 
 double CharWidth(APTR Handle, uint32_t Char, uint32_t KChar, double *Kerning)
 {
-   if (!Handle) return 0;
+   if (not Handle) return 0;
 
    if (((common_font *)Handle)->type IS CF_FREETYPE) {
       auto pt = (freetype_font::ft_point *)Handle;
@@ -252,10 +344,10 @@ ERR DrawPath(objBitmap *Bitmap, APTR Path, double StrokeWidth, OBJECTPTR StrokeS
 {
    kt::Log log(__FUNCTION__);
 
-   if ((!Bitmap) or (!Path)) return log.warning(ERR::NullArgs);
+   if ((not Bitmap) or (not Path)) return log.warning(ERR::NullArgs);
    if (StrokeWidth < 0.001) StrokeStyle = nullptr;
 
-   if ((!StrokeStyle) and (!FillStyle)) {
+   if ((not StrokeStyle) and (not FillStyle)) {
       log.traceWarning("No Stroke or Fill parameter provided.");
       return ERR::Okay;
    }
@@ -286,7 +378,7 @@ NullArgs:
 
 ERR FlushMatrix(VectorMatrix *Matrix)
 {
-   if (!Matrix) {
+   if (not Matrix) {
       kt::Log log(__FUNCTION__);
       return log.warning(ERR::NullArgs);
    }
@@ -345,10 +437,10 @@ ERR GenerateEllipse(double CX, double CY, double RX, double RY, int Vertices, AP
 {
    kt::Log log(__FUNCTION__);
 
-   if (!Path) return log.warning(ERR::NullArgs);
+   if (not Path) return log.warning(ERR::NullArgs);
 
    auto vector = new_simplevector();
-   if (!vector) return log.warning(ERR::CreateResource);
+   if (not vector) return log.warning(ERR::CreateResource);
 
 #if 0
    // Bezier curves can produce a reasonable approximation of an ellipse, but in practice there is
@@ -378,12 +470,21 @@ ERR GenerateEllipse(double CX, double CY, double RX, double RY, int Vertices, AP
       if (steps < 3) steps = 3; // Because you need at least 3 vertices to create a shape.
    }
 
+   const double angle_step = 2.0 * agg::pi / double(steps);
+   const double cos_step = cos(angle_step);
+   const double sin_step = sin(angle_step);
+   double cos_angle = 1.0;
+   double sin_angle = 0;
+
    for (uint32_t step=0; step < steps; step++) {
-      const double angle = double(step) / double(steps) * 2.0 * agg::pi;
-      const double x = CX + cos(angle) * RX;
-      const double y = CY + sin(angle) * RY;
-      if (step == 0) vector->mPath.move_to(x, y);
+      const double x = CX + cos_angle * RX;
+      const double y = CY + sin_angle * RY;
+      if (step IS 0) vector->mPath.move_to(x, y);
       else vector->mPath.line_to(x, y);
+
+      const double next_cos_angle = (cos_angle * cos_step) - (sin_angle * sin_step);
+      sin_angle = (sin_angle * cos_step) + (cos_angle * sin_step);
+      cos_angle = next_cos_angle;
    }
    vector->mPath.close_polygon();
 #endif
@@ -418,10 +519,10 @@ ERR GenerateRectangle(double X, double Y, double Width, double Height, APTR *Pat
 {
    kt::Log log(__FUNCTION__);
 
-   if (!Path) return log.warning(ERR::NullArgs);
+   if (not Path) return log.warning(ERR::NullArgs);
 
    auto vector = new_simplevector();
-   if (!vector) return log.warning(ERR::CreateResource);
+   if (not vector) return log.warning(ERR::CreateResource);
 
    vector->mPath.move_to(X, Y);
    vector->mPath.line_to(X+Width, Y);
@@ -479,11 +580,11 @@ AllocMemory
 
 ERR GeneratePath(CSTRING Sequence, APTR *Path)
 {
-   if (!Path) return ERR::NullArgs;
+   if (not Path) return ERR::NullArgs;
 
    ERR error = ERR::Okay;
 
-   if (!Sequence) {
+   if (not Sequence) {
       auto vector = new_simplevector();
       if (vector) *Path = vector;
       else error = ERR::AllocMemory;
@@ -562,7 +663,7 @@ NullArgs:
 
 ERR GetFontMetrics(APTR Handle, struct FontMetrics *Metrics)
 {
-   if ((!Handle) or (!Metrics)) return ERR::NullArgs;
+   if ((not Handle) or (not Metrics)) return ERR::NullArgs;
 
    if (((common_font *)Handle)->type IS CF_FREETYPE) {
       auto pt = (freetype_font::ft_point *)Handle;
@@ -611,10 +712,12 @@ ERR TracePath(APTR Path, FUNCTION *Callback, double Scale)
 {
    kt::Log log;
 
-   if ((!Path) or (!Callback)) return ERR::NullArgs;
+   if ((not Path) or (not Callback)) return ERR::NullArgs;
 
-   ((SimpleVector *)Path)->mPath.rewind(0);
-   ((SimpleVector *)Path)->mPath.approximation_scale(Scale);
+   auto vector = (SimpleVector *)Path;
+   auto &path = vector->mPath;
+   path.rewind(0);
+   path.approximation_scale(Scale);
 
    double x, y;
    int cmd = -1;
@@ -626,9 +729,9 @@ ERR TracePath(APTR Path, FUNCTION *Callback, double Scale)
       kt::SwitchContext context(ParentContext());
 
       do {
-         cmd = ((SimpleVector *)Path)->mPath.vertex(&x, &y);
+         cmd = path.vertex(&x, &y);
          if (agg::is_vertex(cmd)) {
-            if (routine((SimpleVector *)Path, index++, cmd, x, y, Callback->Meta) IS ERR::Terminate) {
+            if (routine(vector, index++, cmd, x, y, Callback->Meta) IS ERR::Terminate) {
                return ERR::Okay;
             }
          }
@@ -646,7 +749,7 @@ ERR TracePath(APTR Path, FUNCTION *Callback, double Scale)
 
       ERR result;
       do {
-         cmd = ((SimpleVector *)Path)->mPath.vertex(&x, &y);
+         cmd = path.vertex(&x, &y);
          if (agg::is_vertex(cmd)) {
             args[1].Int = index++;
             args[2].Int = cmd;
@@ -726,26 +829,16 @@ NullArgs:
 
 *********************************************************************************************************************/
 
-ERR Multiply(VectorMatrix *Matrix, double ScaleX, double ShearY, double ShearX,
-   double ScaleY, double TranslateX, double TranslateY)
+ERR Multiply(VectorMatrix *Matrix, double ScaleX, double ShearY, double ShearX, double ScaleY,
+   double TranslateX, double TranslateY)
 {
-   if (!Matrix) {
+   if (not Matrix) {
       kt::Log log(__FUNCTION__);
       return log.warning(ERR::NullArgs);
    }
 
-   auto &d = *Matrix;
-   double t0    = (d.ScaleX * ScaleX) + (d.ShearY * ShearX);
-   double t2    = (d.ShearX * ScaleX) + (d.ScaleY * ShearX);
-   double t4    = (d.TranslateX * ScaleX) + (d.TranslateY * ShearX) + TranslateX;
-   d.ShearY     = (d.ScaleX * ShearY) + (d.ShearY * ScaleY);
-   d.ScaleY     = (d.ShearX * ShearY) + (d.ScaleY * ScaleY);
-   d.TranslateY = (d.TranslateX * ShearY) + (d.TranslateY * ScaleY) + TranslateY;
-   d.ScaleX     = t0;
-   d.ShearX     = t2;
-   d.TranslateX = t4;
-
-   if (Matrix->Vector) mark_dirty(Matrix->Vector, RC::TRANSFORM);
+   multiply_values(*Matrix, ScaleX, ShearY, ShearX, ScaleY, TranslateX, TranslateY);
+   mark_matrix_dirty(Matrix);
    return ERR::Okay;
 }
 
@@ -769,24 +862,12 @@ NullArgs:
 
 ERR MultiplyMatrix(VectorMatrix *Target, VectorMatrix *Source)
 {
-   if ((!Target) or (!Source)) {
-      kt::Log log(__FUNCTION__);
-      return log.warning(ERR::NullArgs);
+   if ((not Target) or (not Source)) {
+      return kt::Log(__FUNCTION__).warning(ERR::NullArgs);
    }
 
-   auto &d = *Target;
-   auto &s = *Source;
-   double t0  = (d.ScaleX * s.ScaleX) + (d.ShearY * s.ShearX);
-   double t2  = (d.ShearX * s.ScaleX) + (d.ScaleY * s.ShearX);
-   double t4  = (d.TranslateX * s.ScaleX) + (d.TranslateY * s.ShearX) + s.TranslateX;
-   d.ShearY     = (d.ScaleX * s.ShearY) + (d.ShearY * s.ScaleY);
-   d.ScaleY     = (d.ShearX * s.ShearY) + (d.ScaleY * s.ScaleY);
-   d.TranslateY = (d.TranslateX * s.ShearY) + (d.TranslateY * s.ScaleY) + s.TranslateY;
-   d.ScaleX     = t0;
-   d.ShearX     = t2;
-   d.TranslateX = t4;
-
-   if (Target->Vector) mark_dirty(Target->Vector, RC::TRANSFORM);
+   multiply_matrix(*Target, *Source);
+   mark_matrix_dirty(Target);
    return ERR::Okay;
 }
 
@@ -816,9 +897,8 @@ NullArgs:
 
 ERR ParseTransform(VectorMatrix *Matrix, CSTRING Commands)
 {
-   if ((!Matrix) or (!Commands)) {
-      kt::Log log(__FUNCTION__);
-      return log.warning(ERR::NullArgs);
+   if ((not Matrix) or (not Commands)) {
+      return kt::Log(__FUNCTION__).warning(ERR::NullArgs);
    }
 
    enum { M_MUL, M_TRANSLATE, M_ROTATE, M_SCALE, M_SKEW };
@@ -831,6 +911,7 @@ ERR ParseTransform(VectorMatrix *Matrix, CSTRING Commands)
    };
 
    std::vector<cmd> list;
+   list.reserve(4);
 
    auto str = Commands;
    while (*str) {
@@ -844,12 +925,10 @@ ERR ParseTransform(VectorMatrix *Matrix, CSTRING Commands)
          else if (startswith("translate", str)) {
             cmd m(M_TRANSLATE);
             str += 9;
-            bool scaled_x, scaled_y;
             next_value(str);
-            m.tx = read_unit(str, scaled_x);
+            read_transform_unit(str, m.tx);
             next_value(str);
-            m.ty = read_unit(str, scaled_y);
-            read_numseq(str, { &m.tx, &m.ty });
+            read_transform_unit(str, m.ty);
             list.push_back(std::move(m));
          }
          else if (startswith("rotate", str)) {
@@ -893,49 +972,33 @@ ERR ParseTransform(VectorMatrix *Matrix, CSTRING Commands)
    Matrix->TranslateX = 0;
    Matrix->TranslateY = 0;
 
-   std::for_each(list.rbegin(), list.rend(), [&](auto m) {
+   for (auto it = list.rbegin(); it != list.rend(); it++) {
+      const auto &m = *it;
       switch (m.type) {
-         case M_MUL: {
-            auto &d = *Matrix;
-            auto &s = m;
-            double t0    = (d.ScaleX * s.sx) + (d.ShearY * s.shx);
-            double t2    = (d.ShearX * s.sx) + (d.ScaleY * s.shx);
-            double t4    = (d.TranslateX * s.sx) + (d.TranslateY * s.shx) + s.tx;
-            d.ShearY     = (d.ScaleX * s.shy) + (d.ShearY * s.sy);
-            d.ScaleY     = (d.ShearX * s.shy) + (d.ScaleY * s.sy);
-            d.TranslateY = (d.TranslateX * s.shy) + (d.TranslateY * s.sy) + s.ty;
-            d.ScaleX     = t0;
-            d.ShearX     = t2;
-            d.TranslateX = t4;
+         case M_MUL:
+            multiply_values(*Matrix, m.sx, m.shy, m.shx, m.sy, m.tx, m.ty);
             break;
-         }
 
          case M_TRANSLATE:
             Matrix->TranslateX += m.tx;
             Matrix->TranslateY += m.ty;
             break;
 
-         case M_ROTATE: {
-            vec::Rotate(Matrix, m.angle, m.tx, m.ty);
+         case M_ROTATE:
+            rotate_matrix(*Matrix, m.angle, m.tx, m.ty);
             break;
-         }
 
          case M_SCALE:
-            Matrix->ScaleX     *= m.tx;
-            Matrix->ShearX     *= m.tx;
-            Matrix->TranslateX *= m.tx;
-            Matrix->ShearY     *= m.ty;
-            Matrix->ScaleY     *= m.ty;
-            Matrix->TranslateY *= m.ty;
+            scale_matrix(*Matrix, m.tx, m.ty);
             break;
 
          case M_SKEW:
-            vec::Skew(Matrix, m.tx, m.ty);
+            skew_matrix(*Matrix, m.tx, m.ty);
             break;
       }
-   });
+   }
 
-   if (Matrix->Vector) mark_dirty(Matrix->Vector, RC::TRANSFORM);
+   mark_matrix_dirty(Matrix);
    return ERR::Okay;
 }
 
@@ -957,7 +1020,7 @@ NullArgs:
 
 ERR ResetMatrix(VectorMatrix *Matrix)
 {
-   if (!Matrix) {
+   if (not Matrix) {
       kt::Log log(__FUNCTION__);
       return log.warning(ERR::NullArgs);
    }
@@ -1015,30 +1078,13 @@ NullArgs:
 
 ERR Rotate(VectorMatrix *Matrix, double Angle, double CenterX, double CenterY)
 {
-   if (!Matrix) {
+   if (not Matrix) {
       kt::Log log(__FUNCTION__);
       return log.warning(ERR::NullArgs);
    }
 
-   Matrix->TranslateX -= CenterX;
-   Matrix->TranslateY -= CenterY;
-
-   double ca = cos(Angle * DEG2RAD);
-   double sa = sin(Angle * DEG2RAD);
-   double t0 = (Matrix->ScaleX * ca) - (Matrix->ShearY * sa);
-   double t2 = (Matrix->ShearX * ca) - (Matrix->ScaleY * sa);
-   double t4 = (Matrix->TranslateX  * ca) - (Matrix->TranslateY * sa);
-   Matrix->ShearY     = (Matrix->ScaleX * sa) + (Matrix->ShearY * ca);
-   Matrix->ScaleY     = (Matrix->ShearX * sa) + (Matrix->ScaleY * ca);
-   Matrix->TranslateY = (Matrix->TranslateX * sa) + (Matrix->TranslateY * ca);
-   Matrix->ScaleX     = t0;
-   Matrix->ShearX     = t2;
-   Matrix->TranslateX = t4;
-
-   Matrix->TranslateX += CenterX;
-   Matrix->TranslateY += CenterY;
-
-   if (Matrix->Vector) mark_dirty(Matrix->Vector, RC::TRANSFORM);
+   rotate_matrix(*Matrix, Angle, CenterX, CenterY);
+   mark_matrix_dirty(Matrix);
    return ERR::Okay;
 }
 
@@ -1070,19 +1116,13 @@ NullArgs
 
 ERR Scale(VectorMatrix *Matrix, double X, double Y)
 {
-   if (!Matrix) {
+   if (not Matrix) {
       kt::Log log(__FUNCTION__);
       return log.warning(ERR::NullArgs);
    }
 
-   Matrix->ScaleX     *= X;
-   Matrix->ShearX     *= X;
-   Matrix->TranslateX *= X;
-   Matrix->ShearY     *= Y;
-   Matrix->ScaleY     *= Y;
-   Matrix->TranslateY *= Y;
-
-   if (Matrix->Vector) mark_dirty(Matrix->Vector, RC::TRANSFORM);
+   scale_matrix(*Matrix, X, Y);
+   mark_matrix_dirty(Matrix);
    return ERR::Okay;
 }
 
@@ -1111,29 +1151,16 @@ ERR Skew(VectorMatrix *Matrix, double X, double Y)
 {
    kt::Log log(__FUNCTION__);
 
-   if (!Matrix) return log.warning(ERR::NullArgs);
+   if (not Matrix) return log.warning(ERR::NullArgs);
 
-   if ((X > -90) and (X < 90)) {
-      VectorMatrix skew = {
-         .ScaleX = 1.0, .ShearY = 0, .ShearX = tan(X * DEG2RAD),
-         .ScaleY = 1.0, .TranslateX = 0, .TranslateY = 0
-      };
-
-      vec::MultiplyMatrix(Matrix, &skew);
+   if (auto error = skew_matrix(*Matrix, X, Y); error IS ERR::Okay) {
+      mark_matrix_dirty(Matrix);
+      return ERR::Okay;
    }
-   else return log.warning(ERR::OutOfRange);
-
-   if ((Y > -90) and (Y < 90)) {
-      VectorMatrix skew = {
-         .ScaleX = 1.0, .ShearY = tan(Y * DEG2RAD), .ShearX = 0,
-         .ScaleY = 1.0, .TranslateX = 0, .TranslateY = 0
-      };
-
-      vec::MultiplyMatrix(Matrix, &skew);
+   else {
+      if ((X > -90) and (X < 90)) mark_matrix_dirty(Matrix);
+      return log.warning(error);
    }
-   else return log.warning(ERR::OutOfRange);
-
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -1155,7 +1182,7 @@ double Y: The vertical end point for the smooth3 command.
 
 void Smooth3(APTR Vector, double X, double Y)
 {
-   if (!Vector) return;
+   if (not Vector) return;
    ((SimpleVector *)Vector)->mPath.curve3(X, Y);
 }
 
@@ -1181,7 +1208,7 @@ double Y: The vertical end point for the smooth4 instruction.
 
 void Smooth4(APTR Vector, double CtrlX, double CtrlY, double X, double Y)
 {
-   if (!Vector) return;
+   if (not Vector) return;
    ((SimpleVector *)Vector)->mPath.curve4(CtrlX, CtrlY, X, Y);
 }
 
@@ -1211,7 +1238,7 @@ double StringWidth(APTR Handle, CSTRING String, int Chars)
 {
    kt::Log log(__FUNCTION__);
 
-   if ((!Handle) or (!String)) { log.warning(ERR::NullArgs); return 0; }
+   if ((not Handle) or (not String)) { log.warning(ERR::NullArgs); return 0; }
 
    const std::lock_guard lock(glFontMutex);
 
@@ -1221,10 +1248,11 @@ double StringWidth(APTR Handle, CSTRING String, int Chars)
 
       if (Chars IS -1) Chars = 0x7fffffff;
 
-      int len        = 0;
-      int widest     = 0;
+      double len     = 0;
+      double widest  = 0;
       int prev_glyph = 0;
       int i = 0;
+      const bool has_kerning = FT_HAS_KERNING(pt->ft_size->face);
       while ((i < Chars) and (String[i])) {
          if (String[i] IS '\n') {
             if (widest < len) widest = len;
@@ -1236,7 +1264,7 @@ double StringWidth(APTR Handle, CSTRING String, int Chars)
             auto charlen = get_utf8(String, unicode, i);
             auto &glyph  = pt->get_glyph(unicode);
             len += glyph.adv_x;
-            if (prev_glyph) {;
+            if ((has_kerning) and (prev_glyph)) {
                FT_Vector delta;
                FT_Get_Kerning(pt->ft_size->face, prev_glyph, glyph.glyph_index, FT_KERNING_DEFAULT, &delta);
                len += int26p6_to_dbl(delta.x);
@@ -1273,7 +1301,7 @@ NullArgs:
 
 ERR Translate(VectorMatrix *Matrix, double X, double Y)
 {
-   if (!Matrix) {
+   if (not Matrix) {
       kt::Log log(__FUNCTION__);
       return log.warning(ERR::NullArgs);
    }
@@ -1303,7 +1331,7 @@ double Y: Translate the path vertically by the given value.
 
 void TranslatePath(APTR Vector, double X, double Y)
 {
-   if (!Vector) return;
+   if (not Vector) return;
    ((SimpleVector *)Vector)->mPath.translate_all_paths(X, Y);
 }
 

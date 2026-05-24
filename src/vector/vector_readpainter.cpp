@@ -10,6 +10,14 @@ static constexpr auto HASH_HSL   = kt::strhash("hsl");
 static constexpr auto HASH_HSLA  = kt::strhash("hsla");
 static constexpr auto HASH_HSV   = kt::strhash("hsv");
 
+inline char read_nibble(const char Alpha)
+{
+   if (std::isdigit(Alpha)) return (Alpha - '0');
+   else if ((Alpha >= 'A') and (Alpha <= 'F')) return ((Alpha - 'A')+10);
+   else if ((Alpha >= 'a') and (Alpha <= 'f')) return ((Alpha - 'a')+10);
+   else return char(0xff);
+}
+
 static double linear_to_srgb(double V)
 {
    if (V <= 0.0031308) return 12.92 * V;
@@ -53,6 +61,20 @@ static double parse_number(std::string_view &IRI)
 static void advance_result(std::string_view IRI, std::string_view &Result)
 {
    if (auto pos = IRI.find(';'); pos != std::string_view::npos) Result = IRI.substr(pos);
+   else Result = std::string_view();
+}
+
+// Advance a function-style colour parser past its closing bracket and expose the next painter token, if present.
+
+static void advance_function_result(std::string_view &IRI, std::string_view &Result)
+{
+   skip_whitespace(IRI);
+   if (IRI.starts_with(')')) {
+      IRI.remove_prefix(1);
+      skip_whitespace(IRI);
+   }
+
+   if (IRI.starts_with(';')) Result = IRI;
    else Result = std::string_view();
 }
 
@@ -154,27 +176,28 @@ static ERR parse_url(kt::Log &Log, objVectorScene *Scene, std::string_view IRI, 
 
    if (Scene->HostScene) Scene = Scene->HostScene;
 
-   if ((IRI.size() <= 4) or (IRI[4] != '#')) {
+   if (IRI.empty() or (IRI[0] != '#')) {
       Log.warning("Invalid IRI: %.*s", int(IRI.size()), IRI.data());
       return ERR::Syntax;
    }
 
    // Compute the hash identifier
    std::size_t i;
-   for (i = 5; (i < IRI.size()) and (IRI[i] != ')'); i++);
+   for (i = 1; (i < IRI.size()) and (IRI[i] != ')'); i++);
    std::string lookup;
-   lookup.assign(IRI.substr(5, i - 5));
+   lookup.assign(IRI.substr(1, i - 1));
 
    bool found = false;
-   if (((extVectorScene *)Scene)->Defs.contains(lookup)) {
-      auto def = ((extVectorScene *)Scene)->Defs[lookup];
+   auto ext_scene = (extVectorScene *)Scene;
+   if (auto def_lookup = ext_scene->Defs.find(lookup); def_lookup != ext_scene->Defs.end()) {
+      auto def = def_lookup->second;
       if (def->classID() IS CLASSID::VECTORGRADIENT) Painter->Gradient = (objVectorGradient *)def;
       else if (def->classID() IS CLASSID::VECTORIMAGE) Painter->Image = (objVectorImage *)def;
       else if (def->classID() IS CLASSID::VECTORPATTERN) Painter->Pattern = (objVectorPattern *)def;
       else Log.warning("Vector definition '%s' (class $%.8x) not supported.", lookup.c_str(), uint32_t(def->classID()));
       found = true;
    }
-   else if (glColourMaps.contains(lookup)) {
+   else if (auto map_lookup = glColourMaps.find(lookup); map_lookup != glColourMaps.end()) {
       // Referencing a pre-defined colour map results in it being added to the Scene's definitions as a linear gradient.
       // It is then accessible permanently under that name.
 
@@ -191,7 +214,7 @@ static ERR parse_url(kt::Log &Log, objVectorScene *Scene, std::string_view IRI, 
             fl::Y2(0.0));
 
          if (gradient->Colours) delete gradient->Colours;
-         gradient->Colours = new (std::nothrow) GradientColours(glColourMaps[lookup], 0);
+         gradient->Colours = new (std::nothrow) GradientColours(map_lookup->second, 0);
 
          if (InitObject(gradient) IS ERR::Okay) {
             Scene->addDef(lookup.c_str(), gradient);
@@ -226,7 +249,6 @@ static ERR parse_rgb(std::string_view IRI, VectorPainter *Painter, std::string_v
    // Component values are permitted to exceed the standard ranges of 0-255 or 0%-100% if representing colours
    // outside the sRGB gamut.
 
-   IRI.remove_prefix(IRI.find('(') + 1);
    skip_whitespace(IRI);
 
    rgb.Red = parse_number(IRI) * (1.0 / 255.0);
@@ -256,7 +278,7 @@ static ERR parse_rgb(std::string_view IRI, VectorPainter *Painter, std::string_v
    }
    else rgb.Alpha = parse_css_alpha(IRI);
 
-   advance_result(IRI, Result);
+   advance_function_result(IRI, Result);
    return ERR::Okay;
 }
 
@@ -268,16 +290,15 @@ static ERR parse_oklab(std::string_view IRI, VectorPainter *Painter, std::string
    // L: lightness 0-1 (or 0%-100%), a: ~-0.4 to 0.4 (or percentage), b: ~-0.4 to 0.4 (or percentage)
    // Values are space-separated; alpha is optional, preceded by '/'
 
-   IRI.remove_prefix(6);
    skip_whitespace(IRI);
 
    double l    = parse_css_value(IRI, 0.01);
    double ok_a = parse_css_value(IRI, 0.004); // 100% = 0.4
    double ok_b = parse_css_value(IRI, 0.004); // 100% = 0.4
-   float alpha  = parse_css_alpha(IRI);
+   float alpha = parse_css_alpha(IRI);
 
    oklab_to_painter(l, ok_a, ok_b, alpha, Painter);
-   advance_result(IRI, Result);
+   advance_function_result(IRI, Result);
    return ERR::Okay;
 }
 
@@ -289,13 +310,12 @@ static ERR parse_oklch(std::string_view IRI, VectorPainter *Painter, std::string
    // L: lightness 0-1 (or 0%-100%), C: chroma ~0-0.4 (or percentage), H: hue in degrees
    // Values are space-separated; alpha is optional, preceded by '/'
 
-   IRI.remove_prefix(6);
    skip_whitespace(IRI);
 
    double l     = parse_css_value(IRI, 0.01);
    double c     = parse_css_value(IRI, 0.004); // 100% = 0.4
    double h_deg = parse_number(IRI);
-   float alpha   = parse_css_alpha(IRI);
+   float alpha  = parse_css_alpha(IRI);
 
    c = std::max(c, 0.0);
 
@@ -305,7 +325,7 @@ static ERR parse_oklch(std::string_view IRI, VectorPainter *Painter, std::string
    const double ok_b = c * sin(h_rad);
 
    oklab_to_painter(l, ok_a, ok_b, alpha, Painter);
-   advance_result(IRI, Result);
+   advance_function_result(IRI, Result);
    return ERR::Okay;
 }
 
@@ -316,16 +336,15 @@ static ERR parse_oklch(std::string_view IRI, VectorPainter *Painter, std::string
 
 static ERR parse_lab(std::string_view IRI, VectorPainter *Painter, std::string_view &Result)
 {
-   IRI.remove_prefix(4);
    skip_whitespace(IRI);
 
    double l    = parse_css_value(IRI, 1.0);  // Percentage maps to 0-100
    double a    = parse_css_value(IRI, 1.25); // 100% = 125
    double b    = parse_css_value(IRI, 1.25); // 100% = 125
-   float alpha  = parse_css_alpha(IRI);
+   float alpha = parse_css_alpha(IRI);
 
    cielab_to_painter(l, a, b, alpha, Painter);
-   advance_result(IRI, Result);
+   advance_function_result(IRI, Result);
    return ERR::Okay;
 }
 
@@ -336,7 +355,6 @@ static ERR parse_lab(std::string_view IRI, VectorPainter *Painter, std::string_v
 
 static ERR parse_lch(std::string_view IRI, VectorPainter *Painter, std::string_view &Result)
 {
-   IRI.remove_prefix(4);
    skip_whitespace(IRI);
 
    double l     = parse_css_value(IRI, 1.0); // Percentage maps to 0-100
@@ -352,7 +370,7 @@ static ERR parse_lch(std::string_view IRI, VectorPainter *Painter, std::string_v
    const double b = c * sin(h_rad);
 
    cielab_to_painter(l, a, b, alpha, Painter);
-   advance_result(IRI, Result);
+   advance_function_result(IRI, Result);
    return ERR::Okay;
 }
 
@@ -360,22 +378,40 @@ static ERR parse_lch(std::string_view IRI, VectorPainter *Painter, std::string_v
 // Parse the common (H, S, X [, A]) format used by HSL and HSV.
 // Returns hue (0-1), saturation (0-1), third component (0-1), and alpha (0-1).
 
-static void parse_hsx(std::string_view IRI, double &Hue, double &Sat, double &Third, float &Alpha)
+static double parse_hsx_percent(std::string_view &IRI)
 {
-   IRI.remove_prefix(IRI.find('(') + 1);
+   double value = parse_number(IRI);
+   skip_whitespace(IRI);
+   if (IRI.starts_with('%')) IRI.remove_prefix(1);
+   return std::clamp(value * 0.01, 0.0, 1.0);
+}
+
+static float parse_hsx_alpha(std::string_view &IRI)
+{
+   float alpha = (float)parse_number(IRI);
+   skip_whitespace(IRI);
+   if (IRI.starts_with('%')) {
+      alpha *= 0.01f;
+      IRI.remove_prefix(1);
+   }
+   return std::clamp(alpha, 0.0f, 1.0f);
+}
+
+static void parse_hsx(std::string_view &IRI, double &Hue, double &Sat, double &Third, float &Alpha)
+{
    Hue = std::clamp(parse_number(IRI) * (1.0 / 360.0), 0.0, 1.0);
 
    if (auto comma = IRI.find(','); comma != std::string_view::npos) IRI.remove_prefix(comma + 1);
    else IRI = std::string_view();
-   Sat = std::clamp(parse_number(IRI) * 0.01, 0.0, 1.0);
+   Sat = parse_hsx_percent(IRI);
 
    if (auto comma = IRI.find(','); comma != std::string_view::npos) IRI.remove_prefix(comma + 1);
    else IRI = std::string_view();
-   Third = std::clamp(parse_number(IRI) * 0.01, 0.0, 1.0);
+   Third = parse_hsx_percent(IRI);
 
    if (auto comma = IRI.find(','); comma != std::string_view::npos) {
       IRI.remove_prefix(comma + 1);
-      Alpha = std::clamp((float)parse_number(IRI), 0.0f, 1.0f);
+      Alpha = parse_hsx_alpha(IRI);
    }
    else Alpha = 1.0f;
 }
@@ -410,7 +446,7 @@ static ERR parse_hsl(std::string_view IRI, VectorPainter *Painter, std::string_v
       rgb.Blue  = hueToRgb(p, q, hue - 1.0/3.0);
    }
 
-   advance_result(IRI, Result);
+   advance_function_result(IRI, Result);
    return ERR::Okay;
 }
 
@@ -442,7 +478,7 @@ static ERR parse_hsv(std::string_view IRI, VectorPainter *Painter, std::string_v
       default: rgb.Red = 0;   rgb.Green = 0;   rgb.Blue = 0; break;
    }
 
-   advance_result(IRI, Result);
+   advance_function_result(IRI, Result);
    return ERR::Okay;
 }
 
@@ -455,7 +491,7 @@ static ERR parse_hex(std::string_view IRI, VectorPainter *Painter, std::string_v
    char nibbles[8];
    uint8_t n = 0;
    while ((not IRI.empty()) and (n < std::ssize(nibbles))) {
-      auto nibble = read_nibble(IRI.data());
+      auto nibble = read_nibble(IRI[0]);
       if (nibble IS char(0xff)) break;
       nibbles[n++] = nibble;
       IRI.remove_prefix(1);
@@ -483,29 +519,29 @@ static ERR parse_hex(std::string_view IRI, VectorPainter *Painter, std::string_v
 
 //********************************************************************************************************************
 
-static ERR parse_named_colour(kt::Log &Log, std::string_view IRI, VectorPainter *Painter, std::string_view &Result)
+static ERR parse_named_colour(kt::Log &Log, std::string_view IRI, std::size_t Separator, VectorPainter *Painter,
+   std::string_view &Result)
 {
-   auto colour = IRI.substr(0, IRI.find(';'));
+   auto colour = (Separator != std::string_view::npos) ? IRI.substr(0, Separator) : IRI;
    while ((not colour.empty()) and (uint8_t(colour.back()) <= 0x20)) colour.remove_suffix(1);
 
    auto hash = strihash(colour);
 
-   const ankerl::unordered_dense::map<uint32_t, RGB8> *table = nullptr;
+   const RGB8 *src = nullptr;
 
    if (auto it = glNamedColours.find(hash); it != glNamedColours.end()) {
-      table = &glNamedColours;
+      src = &it->second;
    }
    else if (auto it = glAppColours.find(hash); it != glAppColours.end()) {
-      table = &glAppColours;
+      src = &it->second;
    }
 
-   if (table) {
-      auto &src = table->at(hash);
+   if (src) {
       auto &rgb = Painter->Colour;
-      rgb.Red   = (float)src.Red   * (1.0 / 255.0);
-      rgb.Green = (float)src.Green * (1.0 / 255.0);
-      rgb.Blue  = (float)src.Blue  * (1.0 / 255.0);
-      rgb.Alpha = (float)src.Alpha * (1.0 / 255.0);
+      rgb.Red   = (float)src->Red   * (1.0 / 255.0);
+      rgb.Green = (float)src->Green * (1.0 / 255.0);
+      rgb.Blue  = (float)src->Blue  * (1.0 / 255.0);
+      rgb.Alpha = (float)src->Alpha * (1.0 / 255.0);
       advance_result(IRI, Result);
       return ERR::Okay;
    }
@@ -606,21 +642,22 @@ ERR ReadPainter(objVectorScene *Scene, const std::string_view &IRI, VectorPainte
    else {
       auto sep = iri.find_first_of("(;");
       if ((sep != std::string_view::npos) and (iri[sep] IS '(')) {
+         auto body = iri.substr(sep + 1);
          switch (kt::strhash(iri.substr(0, sep))) {
-            case HASH_URL:   error = parse_url(log, Scene, iri, Painter, result); break;
+            case HASH_URL:   error = parse_url(log, Scene, body, Painter, result); break;
             case HASH_RGB:
-            case HASH_RGBA:  error = parse_rgb(iri, Painter, result); break;
-            case HASH_OKLAB: error = parse_oklab(iri, Painter, result); break;
-            case HASH_OKLCH: error = parse_oklch(iri, Painter, result); break;
-            case HASH_LAB:   error = parse_lab(iri, Painter, result); break;
-            case HASH_LCH:   error = parse_lch(iri, Painter, result); break;
+            case HASH_RGBA:  error = parse_rgb(body, Painter, result); break;
+            case HASH_OKLAB: error = parse_oklab(body, Painter, result); break;
+            case HASH_OKLCH: error = parse_oklch(body, Painter, result); break;
+            case HASH_LAB:   error = parse_lab(body, Painter, result); break;
+            case HASH_LCH:   error = parse_lch(body, Painter, result); break;
             case HASH_HSL:
-            case HASH_HSLA:  error = parse_hsl(iri, Painter, result); break;
-            case HASH_HSV:   error = parse_hsv(iri, Painter, result); break;
+            case HASH_HSLA:  error = parse_hsl(body, Painter, result); break;
+            case HASH_HSV:   error = parse_hsv(body, Painter, result); break;
             default:         error = ERR::Syntax;
          }
       }
-      else error = parse_named_colour(log, iri, Painter, result);
+      else error = parse_named_colour(log, iri, sep, Painter, result);
    }
 
    if (error IS ERR::Okay) {
