@@ -16,9 +16,9 @@ Name: Fields
 #include <stdlib.h>
 #include <cmath>
 
-#define OP_OR        0
-#define OP_AND       1
-#define OP_OVERWRITE 2
+constexpr int OP_OR        = 0;
+constexpr int OP_AND       = 1;
+constexpr int OP_OVERWRITE = 2;
 
 static ERR writeval_array(OBJECTPTR, Field *, int, CPTR , int);
 static ERR writeval_flags(OBJECTPTR, Field *, int, CPTR , int);

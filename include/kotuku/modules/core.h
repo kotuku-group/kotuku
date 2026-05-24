@@ -2093,7 +2093,7 @@ struct CoreBase {
    void (*_UnsubscribeEvent)(APTR Handle);
    ERR (*_BroadcastEvent)(APTR Event, int EventSize);
    ERR (*_WaitTime)(double Seconds);
-   int64_t (*_GetEventID)(EVG Group, CSTRING SubGroup, CSTRING Event);
+   int64_t (*_GetEventID)(EVG Group, const std::string_view & SubGroup, const std::string_view & Event);
    uint32_t (*_GenCRC32)(uint32_t CRC, APTR Data, uint32_t Length);
    int64_t (*_GetResource)(RES Resource);
    int64_t (*_SetResource)(RES Resource, int64_t Value);
@@ -2193,7 +2193,7 @@ inline ERR UnsubscribeAction(OBJECTPTR Object, AC Action) { return CoreBase->_Un
 inline void UnsubscribeEvent(APTR Handle) { return CoreBase->_UnsubscribeEvent(Handle); }
 inline ERR BroadcastEvent(APTR Event, int EventSize) { return CoreBase->_BroadcastEvent(Event,EventSize); }
 inline ERR WaitTime(double Seconds) { return CoreBase->_WaitTime(Seconds); }
-inline int64_t GetEventID(EVG Group, CSTRING SubGroup, CSTRING Event) { return CoreBase->_GetEventID(Group,SubGroup,Event); }
+inline int64_t GetEventID(EVG Group, const std::string_view & SubGroup, const std::string_view & Event) { return CoreBase->_GetEventID(Group,SubGroup,Event); }
 inline uint32_t GenCRC32(uint32_t CRC, APTR Data, uint32_t Length) { return CoreBase->_GenCRC32(CRC,Data,Length); }
 inline int64_t GetResource(RES Resource) { return CoreBase->_GetResource(Resource); }
 inline int64_t SetResource(RES Resource, int64_t Value) { return CoreBase->_SetResource(Resource,Value); }
@@ -2288,7 +2288,7 @@ extern "C" ERR UnsubscribeAction(OBJECTPTR Object, AC Action);
 extern "C" void UnsubscribeEvent(APTR Handle);
 extern "C" ERR BroadcastEvent(APTR Event, int EventSize);
 extern "C" ERR WaitTime(double Seconds);
-extern "C" int64_t GetEventID(EVG Group, CSTRING SubGroup, CSTRING Event);
+extern "C" int64_t GetEventID(EVG Group, const std::string_view & SubGroup, const std::string_view & Event);
 extern "C" uint32_t GenCRC32(uint32_t CRC, APTR Data, uint32_t Length);
 extern "C" int64_t GetResource(RES Resource);
 extern "C" int64_t SetResource(RES Resource, int64_t Value);

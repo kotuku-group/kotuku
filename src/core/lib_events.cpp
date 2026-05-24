@@ -133,37 +133,37 @@ group with `SubGroup` and `Event` set to `NULL` will allow for a subscription to
 
 -INPUT-
 int(EVG) Group: The group to which the event belongs.
-cstr SubGroup: The sub-group to which the event belongs (case-sensitive).
-cstr Event:    The name of the event (case-sensitive).
+cpp(strview) SubGroup: The sub-group to which the event belongs (case-sensitive).
+cpp(strview) Event:    The name of the event (case-sensitive).
 
 -RESULT-
 large: The event ID is returned as a 64-bit integer.
 
 *********************************************************************************************************************/
 
-int64_t GetEventID(EVG Group, CSTRING SubGroup, CSTRING Event)
+int64_t GetEventID(EVG Group, const std::string_view &SubGroup, const std::string_view &Event)
 {
    kt::Log log(__FUNCTION__);
 
    if (Group IS EVG::NIL) return 0;
 
    auto hash_subgroup = 0u;
-   auto hash_event = 0u;
+   auto hash_event    = 0u;
    auto subgroup_name = SubGroup;
-   auto event_name = Event;
+   auto event_name    = Event;
 
-   if (SubGroup) hash_subgroup = strhash(SubGroup) & 0x00ffffff;
+   if (not SubGroup.empty()) hash_subgroup = strhash(SubGroup) & 0x00ffffff;
    else subgroup_name = "*";
 
-   if (Event) hash_event = strhash(Event);
+   if (not Event.empty()) hash_event = strhash(Event);
    else event_name = "*";
 
    int64_t event_id = int64_t(uint8_t(Group))<<56;
-   if ((SubGroup) and (SubGroup[0] != '*')) event_id |= int64_t(hash_subgroup)<<32;
-   if ((Event) and (Event[0] != '*')) event_id |= hash_event;
+   if (not SubGroup.starts_with('*')) event_id |= int64_t(hash_subgroup)<<32;
+   if (not Event.starts_with('*')) event_id |= hash_event;
 
-   if (SubGroup) glEventNames[hash_subgroup] = SubGroup;
-   if (Event) glEventNames[hash_event] = Event;
+   if (not SubGroup.empty()) glEventNames[hash_subgroup] = SubGroup;
+   if (not Event.empty()) glEventNames[hash_event] = Event;
 
    log.traceBranch("Group: %d, SubGroup: %s, Event: %s, Result: $%.8x%.8x",
       int(Group), subgroup_name, event_name, uint32_t(event_id>>32), uint32_t(event_id));

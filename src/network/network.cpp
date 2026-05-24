@@ -814,8 +814,8 @@ be the return value if all other arguments are `NULL`.
 
 -INPUT-
 obj(NetSocket) NetSocket: The target NetSocket object.
-cstr Command: Name of a command or option to set (case-sensitive, camel-case).
-cstr Value: Value to set for the command or option.
+cpp(strview) Command: Name of a command or option to set (case-sensitive, camel-case).
+cpp(strview) Value: Value to set for the command or option.
 
 -ERRORS-
 Okay:
@@ -825,13 +825,13 @@ NoSecureSockets: SSL support is disabled in this build.
 
 *********************************************************************************************************************/
 
-ERR SetSSL(objNetSocket *Socket, CSTRING Command, CSTRING Value)
+ERR SetSSL(objNetSocket *Socket, const std::string_view &Command, const std::string_view &Value)
 {
 #ifndef DISABLE_SSL
    kt::Log log(__FUNCTION__);
-   log.traceBranch("Command: %s = %s", Command, Value ? Value : "NULL");
+   log.traceBranch("Command: %.*s = %.*s", int(Command.size()), Command.data(), int(Value.size()), Value.data());
 
-   if ((!Socket) or (!Command)) return ERR::NullArgs;
+   if ((!Socket) or (Command.empty())) return ERR::NullArgs;
    if (Socket->classID() != CLASSID::NETSOCKET) return ERR::WrongClass;
 
    auto hash = kt::strhash(Command);
@@ -858,7 +858,7 @@ ERR SetSSL(objNetSocket *Socket, CSTRING Command, CSTRING Value)
          break;
 
       default:
-         log.warning("Unknown SSL command: %s", Command);
+         log.warning("Unknown SSL command: %.*s", int(Command.size()), Command.data());
          break;
    }
 

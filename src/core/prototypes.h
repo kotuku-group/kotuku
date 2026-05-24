@@ -54,7 +54,7 @@ extern "C" ERR UnsubscribeAction(OBJECTPTR Object, AC Action);
 extern "C" void UnsubscribeEvent(APTR Handle);
 extern "C" ERR BroadcastEvent(APTR Event, int EventSize);
 extern "C" ERR WaitTime(double Seconds);
-extern "C" int64_t GetEventID(EVG Group, CSTRING SubGroup, CSTRING Event);
+extern "C" int64_t GetEventID(EVG Group, const std::string_view & SubGroup, const std::string_view & Event);
 extern "C" uint32_t GenCRC32(uint32_t CRC, APTR Data, uint32_t Length);
 extern "C" int64_t GetResource(RES Resource);
 extern "C" int64_t SetResource(RES Resource, int64_t Value);

@@ -857,12 +857,12 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     <name>GetEventID</name>
     <category>Events</category>
     <comment>Generates unique event ID's suitable for event broadcasting.</comment>
-    <prototype>INT64 GetEventID(EVG Group, CSTRING SubGroup, CSTRING Event)</prototype>
+    <prototype>INT64 GetEventID(EVG Group, const std::string_view &amp; SubGroup, const std::string_view &amp; Event)</prototype>
     <tiriPrototype>num = GetEventID(Group:num, SubGroup:str, Event:str)</tiriPrototype>
     <input>
       <param type="EVG" name="Group" lookup="EVG">The group to which the event belongs.</param>
-      <param type="CSTRING" name="SubGroup">The sub-group to which the event belongs (case-sensitive).</param>
-      <param type="CSTRING" name="Event">The name of the event (case-sensitive).</param>
+      <param type="const std::string_view &amp;" name="SubGroup">The sub-group to which the event belongs (case-sensitive).</param>
+      <param type="const std::string_view &amp;" name="Event">The name of the event (case-sensitive).</param>
     </input>
     <description>
 <p>Use GetEventID() to generate a 64-bit event identifier.  This identifier can be used for broadcasting and subscribing to events.  Events are described in three parts - <code>Group</code>, <code>SubGroup</code> and the <code>Event</code> name, or in string format <code>group.subgroup.event</code>.</p>

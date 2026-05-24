@@ -430,7 +430,7 @@ and flags.  The following example illustrates correct use of this function:
 
 <pre>
 MemInfo info;
-if (!MemoryIDInfo(memid, &info)) {
+if (MemoryIDInfo(memid, &info) IS ERR::Okay) {
    log.msg("Memory block #%d is %d bytes large.", info.MemoryID, info.Size);
 }
 </pre>
@@ -488,7 +488,7 @@ correct use of this function:
 
 <pre>
 MemInfo info;
-if (!MemoryPtrInfo(ptr, &info)) {
+if (MemoryPtrInfo(ptr, &info) IS ERR::Okay) {
    log.msg("Address %p is %d bytes large.", info.Start, info.Size);
 }
 </pre>
