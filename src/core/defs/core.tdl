@@ -1291,7 +1291,7 @@ typedef std::vector<obj_write> WRITE_TABLE;
     { id=1, name="FindField" }
   })
 
-  class("MetaClass", { src="../classes/class_metaclass.cpp" }, [[
+  klass("MetaClass", { src="../classes/class_metaclass.cpp" }, [[
     double ClassVersion    # Version of the class
     cstruct(*FieldArray) Fields  # Original field array supplied by the module
     array(struct(Field)) Dictionary # Field lookup by ID
@@ -1320,7 +1320,7 @@ inline CLASSID Object::classID() { return Class->ClassID; }
 inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
 ]])
 
-  class("StorageDevice", { src="../classes/class_storagedevice.cpp" }, [[
+  klass("StorageDevice", { src="../classes/class_storagedevice.cpp" }, [[
     large(DEVICE) DeviceFlags  # Flags identifying the type of media
     large DeviceSize           # Size of the device
     large BytesFree            # Bytes available to the user
@@ -1340,7 +1340,7 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
     { id=10, name="Watch" }
   })
 
-  class("File", { version=1.2, src="../classes/class_file.cpp", output="../classes/class_file_def.c" }, [[
+  klass("File", { version=1.2, src="../classes/class_file.cpp", output="../classes/class_file_def.c" }, [[
     large     Position  # The current read/write byte position in a file.
     int(FL)   Flags     # File flags and options.
     ptr(char) Buffer    # Points to the internal data buffer if the file content is held in memory.
@@ -1366,7 +1366,7 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
     { id=10, name="Merge" }
   })
 
-  class("Config", { src="../classes/class_config.cpp", output="../classes/class_config_def.c" }, [[
+  klass("Config", { src="../classes/class_config.cpp", output="../classes/class_config_def.c" }, [[
     str Path          # The location pointer
     str KeyFilter     # Enables key filtering, removing any unwanted keys on load.
     str GroupFilter   # Enables group filtering, removing any unwanted groups on load.
@@ -1438,7 +1438,7 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
     { id=5, name="DebugLog" }
   })
 
-  class("Script", { src={ "../classes/class_script.cpp" }, output="../classes/class_script_def.c" }, [[
+  klass("Script", { src={ "../classes/class_script.cpp" }, output="../classes/class_script_def.c" }, [[
     oid Target           # The object that script objects must be initialised to, e.g. for obj.new()
     int(SCF) Flags       # Optional flags
     error Error          # If an error occurred, this field will indicate the error number
@@ -1504,7 +1504,7 @@ inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
     { id=5, name="SetEnv" }
   })
 
-  class("Task", { src="../classes/class_task.cpp", output="../classes/class_task_def.c" }, [[
+  klass("Task", { src="../classes/class_task.cpp", output="../classes/class_task_def.c" }, [[
     double TimeOut
     int(TSF) Flags
     int ReturnCode
@@ -1515,7 +1515,7 @@ inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
     { id=1, name="SetData" }
   })
 
-  class("Thread", { src="../classes/class_thread.cpp", output="../classes/class_thread_def.c" }, [[
+  klass("Thread", { src="../classes/class_thread.cpp", output="../classes/class_thread_def.c" }, [[
    ptr   Data         # User data pointer.
    int   DataSize     # Size of user data.
    error Error        # Error code returned by the thread on completion.
@@ -1527,7 +1527,7 @@ inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
     { id=2, name="Test" }
   })
 
-  class("Module", { src="../classes/class_module.cpp" }, [[
+  klass("Module", { src="../classes/class_module.cpp" }, [[
     cstruct(*Function) FunctionList # Array of functions
     ptr ModBase                     # Ptr to function jump table
     class(*RootModule) Root         # Shared details on the module
@@ -1563,7 +1563,7 @@ inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
     { id=2, name="GetTimeZoneInfo" }
   })
 
-  class("Time", { src="../classes/class_time.cpp", output="../classes/class_time_def.c" }, [[
+  klass("Time", { src="../classes/class_time.cpp", output="../classes/class_time_def.c" }, [[
     large SystemTime  # Total number of microseconds passed since the system base time
     int Year          # Year   (-ve for BC, +ve for AD)
     int Month         # Month  (1 - 12)
@@ -1594,7 +1594,7 @@ inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
     { id=14, name="Find" }
   })
 
-  class("Compression", { src={ "../compression/class_compression.cpp", "../compression/compression_fields.cpp" }, output="../compression/class_compression_def.c" }, [[
+  klass("Compression", { src={ "../compression/class_compression.cpp", "../compression/compression_fields.cpp" }, output="../compression/class_compression_def.c" }, [[
     large TotalOutput       # Total number of bytes output (e.g. during compression of a stream)
     oid Output              # Reference to output object for user messages
     int CompressionLevel    # Compression level (percentage - 0% none, 100% high)
@@ -1605,7 +1605,7 @@ inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
     int WindowBits          # Window bits, currently applicable to the default (zlib) compression
   ]])
 
-  class("CompressedStream", { src="../compression/class_compressed_stream.cpp", output="../compression/class_compressed_stream_def.c" }, [[
+  klass("CompressedStream", { src="../compression/class_compressed_stream.cpp", output="../compression/class_compressed_stream_def.c" }, [[
     large TotalOutput  # Count of the total bytes that have been output.
     obj Input          # The object that is the source of the compressed data.
     obj Output         # The object that is the destination for the compressed data.

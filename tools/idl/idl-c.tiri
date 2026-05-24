@@ -257,33 +257,33 @@ global glActionStubs = {
 ----------------------------------------------------------------------------------------------------------------------
 -- Output the CPP compatible class definition
 
-global function outputClassHeader(class:table, Private:str, Custom:str)
+global function outputClassHeader(Class:table, Private:str, Custom:str)
    physicalFields = false
-   for f in values(class.fields) do
+   for f in values(Class.fields) do
       if not f.virtual then physicalFields = true end
    end
 
-   priority(f'class obj{class.name};') -- Forward declaration
-   output('class obj' .. class.name ..  ' : public ' .. (class.base ?? 'Object') .. ' {')
+   priority(f'class obj{Class.name};') -- Forward declaration
+   output('class obj' .. Class.name ..  ' : public ' .. (Class.base ?? 'Object') .. ' {')
    output('   public:')
-   output(f'   static constexpr CLASSID CLASS_ID = CLASSID::{class.name:upper()};')
-   output(f'   static constexpr CSTRING CLASS_NAME = "{class.name}";')
+   output(f'   static constexpr CLASSID CLASS_ID = CLASSID::{Class.name:upper()};')
+   output(f'   static constexpr CSTRING CLASS_NAME = "{Class.name}";')
    output('')
-   output('   using create = kt::Create<obj' .. class.name .. '>;')
+   output('   using create = kt::Create<obj' .. Class.name .. '>;')
 
    if physicalFields then
       output('')
 
-      max_len = 3 + class.longestFieldType + 1 + 2
+      max_len = 3 + Class.longestFieldType + 1 + 2
 
-      for f in values(class.fields) do
+      for f in values(Class.fields) do
          if not f.virtual then
             local left
             field_name = cName(f, true)
             if field_name?? then
-               left = string.format(f'   %-{class.longestType}s %s;', f.type, field_name)
+               left = string.format(f'   %-{Class.longestType}s %s;', f.type, field_name)
             else
-               left = string.format(f'   %-{class.longestType}s;', f.type)
+               left = string.format(f'   %-{Class.longestType}s;', f.type)
             end
 
             if f.comment?? then
@@ -297,7 +297,7 @@ global function outputClassHeader(class:table, Private:str, Custom:str)
 
       if Private?? then
          output()
-         output('#ifdef PRV_' .. class.name:upper())
+         output('#ifdef PRV_' .. Class.name:upper())
          output(Private)
          output('#endif')
       end
@@ -313,8 +313,8 @@ global function outputClassHeader(class:table, Private:str, Custom:str)
    output('')
    output('   // Action stubs\n')
 
-   if not table.empty(class.sortedActions) then
-      for action in values(class.sortedActions) do
+   if not table.empty(Class.sortedActions) then
+      for action in values(Class.sortedActions) do
          if glActionStubs[action.name] then
             if glActionStubs[action.name]:len() != 0 then
                stub = glActionStubs[action.name]
@@ -331,7 +331,7 @@ global function outputClassHeader(class:table, Private:str, Custom:str)
          end
       end
 
-      if not class.actions['Init'] then
+      if not Class.actions['Init'] then
          output(glActionStubs['Init'])
       end
    else
@@ -340,8 +340,8 @@ global function outputClassHeader(class:table, Private:str, Custom:str)
 
    -- Insert registered methods
 
-   if not table.empty(class.methods) then
-      for m in values(class.methods) do
+   if not table.empty(Class.methods) then
+      for m in values(Class.methods) do
          if m.nestedInline then output(m.nestedInline) end
       end
    end
@@ -353,7 +353,7 @@ global function outputClassHeader(class:table, Private:str, Custom:str)
    output('   // Customised field setting\n')
    indent = '      '
 
-   for f in values(class.fields) do
+   for f in values(Class.fields) do
       field_name = cName(f, true)
       if field_name?? and f.write then
          fid_name = field_name
@@ -409,13 +409,13 @@ global function outputClassHeader(class:table, Private:str, Custom:str)
             end
 
             fh = calcFieldHash(f.name)
-            err, fl, target = class.meta.mtFindField(fh)
+            err, fl, target = Class.meta.mtFindField(fh)
 
             if err != ERR_Okay then
-               print(f'Failed to find field {f.name} {string.format("%.8x",fh)} in class {class.name}')
+               print(f'Failed to find field {f.name} {string.format("%.8x",fh)} in class {Class.name}')
             end
 
-            if (err is ERR_Okay) and (target.id is class.meta.id) and glEnableDictionaryUse then
+            if (err is ERR_Okay) and (target.id is Class.meta.id) and glEnableDictionaryUse then
                output(indent .. 'auto target = this;')
                output(indent .. f'auto field = &this->Class->Dictionary[{fl.index}];')
             else

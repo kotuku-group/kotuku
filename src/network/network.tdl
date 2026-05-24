@@ -50,7 +50,7 @@ typedef int SOCKET_HANDLE;
     "MULTISTATE: A NetServer reports MULTISTATE because accepted ClientSocket objects track their own states."
   )
 
-  class("NetClient", {
+  klass("NetClient", {
       src="netclient/netclient.cpp",
       output="netclient/netclient_def.c",
       comment="Simple data storage class utilised by NetServer to represent a client machine/IP."
@@ -65,7 +65,7 @@ typedef int SOCKET_HANDLE;
     struct IPAddress IP; // IP address of the client.
   ]])
 
-  class("ClientSocket", {
+  klass("ClientSocket", {
       src="clientsocket/clientsocket.cpp",
       output="clientsocket/clientsocket_def.c",
       comment="Simple data storage class utilised by NetClient to represent a single client socket connection."
@@ -85,7 +85,7 @@ typedef int SOCKET_HANDLE;
     { id=3, name="FindNext" }
   })
 
-  class("Proxy", { src="class_proxy.cpp", output="class_proxy_def.c" }, [[
+  klass("Proxy", { src="class_proxy.cpp", output="class_proxy_def.c" }, [[
     str NetworkFilter
     str GatewayFilter
     str Username
@@ -106,7 +106,7 @@ typedef int SOCKET_HANDLE;
     { id=4, name="BlockingResolveAddress" }
   })
 
-  class("NetLookup", { src="class_netlookup.cpp", output="class_netlookup_def.c" }, [[
+  klass("NetLookup", { src="class_netlookup.cpp", output="class_netlookup_def.c" }, [[
     large ClientData # Optional user data storage
     int(NLF) Flags   # Optional flags
   ]])
@@ -125,7 +125,7 @@ typedef int SOCKET_HANDLE;
     { id=8, name="DisconnectSocket" }
   })
 
-  class("NetSocket", {
+  klass("NetSocket", {
       src={ "netsocket/netsocket.cpp", "netsocket/netsocket_fields.cpp" },
       output="netsocket/netsocket_def.c"
   }, [[
@@ -140,7 +140,7 @@ typedef int SOCKET_HANDLE;
     int MulticastTTL       # Time-to-live for multicast packets (UDP only)
   ]])
 
-  class("NetServer", {
+  klass("NetServer", {
       base='NetSocket',
       references={ 'NSF', 'NTC' },
       src="class_netserver.cpp",

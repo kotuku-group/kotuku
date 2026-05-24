@@ -71,7 +71,7 @@ module({ name="Scintilla", copyright="Paul Manias © 2005-2026", version=1.0, ti
     { id=12, name="ScrollToPoint" }
   })
 
-  class("Scintilla", { src={ "class_scintilla.cxx" }, output="class_scintilla_def.cxx" }, [[
+  klass("Scintilla", { src={ "class_scintilla.cxx" }, output="class_scintilla_def.cxx" }, [[
     obj(Font) Font             # Font to use for the text
     cstr Path                  # Source text file
     int(SEF) EventFlags        # SEF flags.  Indicates the events that will be reported.
@@ -99,7 +99,7 @@ module({ name="Scintilla", copyright="Paul Manias © 2005-2026", version=1.0, ti
     { id=3, name="Find" }
   })
 
-  class("ScintillaSearch", { comment="Simple search for Scintilla", src="class_scintilla_search.cxx" }, [[
+  klass("ScintillaSearch", { comment="Simple search for Scintilla", src="class_scintilla_search.cxx" }, [[
     obj(Scintilla) Scintilla  # The targeted Scintilla object.
     cstr Text       # The text being searched for.
     int(STF) Flags  # Optional flags affecting the search.

@@ -106,7 +106,7 @@ module({ name="XML", src="xml.cpp", copyright="Paul Manias © 2001-2026", versio
     { id=23, name="LoadSchema" }
   })
 
-  class("XML", { src="xml_class.cpp", output="xml_class_def.c" }, [[
+  klass("XML", { src="xml_class.cpp", output="xml_class_def.c" }, [[
     str Path         # Location of the XML data file
     str DocType      # Root element name from DOCTYPE declaration
     str PublicID     # Public identifier for external DTD

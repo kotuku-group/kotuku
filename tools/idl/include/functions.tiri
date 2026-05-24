@@ -751,7 +751,7 @@ end
 -- TDL Function
 -- Refer to outputClassHeader() for output of the class structure.
 
-global function class(Name, Options:table, Spec, Private, Custom)
+global function klass(Name, Options:table, Spec, Private, Custom)
    verbose('Processing class ' .. tostring(Name))
 
    Options ?= {}
@@ -761,44 +761,44 @@ global function class(Name, Options:table, Spec, Private, Custom)
    output(f'#define VER_{Name:upper()} ({string.format("%f", Options.version ?? 1.0)})')
    output()
 
-   local class = registerClass(Name)
-   class.name = Name -- The name defined by class() has priority over any name defined by method()
-   class.src = Options.src
+   local cl = registerClass(Name)
+   cl.name = Name -- The name defined by class() has priority over any name defined by method()
+   cl.src = Options.src
    if Options.base then
-      class.base = "obj" .. Options.base
+      cl.base = "obj" .. Options.base
    end
-   class.references = { }
+   cl.references = { }
 
-   global glActiveRefs = class.references
+   global glActiveRefs = cl.references
 
-   if type(class.src) is 'string' then class.src = { class.src } end -- Convert string to an array of strings
+   if type(cl.src) is 'string' then cl.src = { cl.src } end -- Convert string to an array of strings
 
    if mSys.GetSystemState().StaticBuild is 0 then
       -- Attempt to load the class into memory.  This introduces a circular reference when the module is not yet
       -- compiled, so the meta information may only be used for phase 2 output (i.e. documentation).
 
       if mSys.AnalysePath('~modules:' .. glModule.name) is ERR_Okay then
-         class.meta = mSys.FindClass(Name:hash(), 0)
+         cl.meta = mSys.FindClass(Name:hash(), 0)
       else
          if glFeedback is 'verbose' then
             print(f'Module {glModule.name} not compiled, class documentation will not be produced.')
          end
       end
    else
-      class.meta = mSys.FindClass(Name:hash(), 0)
+      cl.meta = mSys.FindClass(Name:hash(), 0)
    end
 
    -- Process methods and fields defined in the source code (if available)
 
-   cdef = parseClassFields(class, Spec)
+   cdef = parseClassFields(cl, Spec)
 
    if not table.empty(Options.references) then
       for v in values(Options.references) do
          if glCustomTypes[v]?? then
-            cdef = cdef .. outputLookup(class.name .. v, glCustomTypes[v].list)
+            cdef = cdef .. outputLookup(cl.name .. v, glCustomTypes[v].list)
             glCustomTypes[v].restrict = nil
          elseif glStructures[v]?? then
-            class.references['STRUCT:' .. v] = true
+            cl.references['STRUCT:' .. v] = true
             -- A manual reference to a structure will forcibly turn off any restriction
             glStructures[v].restrict = nil
          else
@@ -807,11 +807,11 @@ global function class(Name, Options:table, Spec, Private, Custom)
       end
    end
 
-   class.actions = { }
-   if class.src then
+   cl.actions = { }
+   if cl.src then
       -- Process -METHOD- and -FIELD- definitions
 
-      for path in values(class.src) do
+      for path in values(cl.src) do
          if glFeedback is 'verbose' then
             print()
             print(f'Class file: {glTDLFolder}{path}')
@@ -833,7 +833,7 @@ global function class(Name, Options:table, Spec, Private, Custom)
                local action_name = cap[0]
                if glActions[action_name] then
                   verbose('Discovered action ' .. action_name)
-                  class.actions[action_name] = { name=action_name }
+                  cl.actions[action_name] = { name=action_name }
                else
                   verbose('Ignoring declaration of ' .. action_name)
                end
@@ -854,11 +854,11 @@ global function class(Name, Options:table, Spec, Private, Custom)
             if line?? then
                line = rx_trailing_space.extract(line)
                if (line is '-CLASS-') or (line is '-METHOD-') or (line is '-ACTION-') or (line is '-FIELD-') then
-                  if current_entry then parseClassEntry(class, proc, current_entry) end
+                  if current_entry then parseClassEntry(cl, proc, current_entry) end
                   current_entry = ''
                   proc = line
                elseif line is '-END-' then
-                  if current_entry then parseClassEntry(class, proc, current_entry) end
+                  if current_entry then parseClassEntry(cl, proc, current_entry) end
                   current_entry = nil
                   proc = nil
                elseif line is '-INTERNAL-' then
@@ -872,21 +872,21 @@ global function class(Name, Options:table, Spec, Private, Custom)
             end
          end
 
-         if current_entry then parseClassEntry(class, proc, current_entry) end
+         if current_entry then parseClassEntry(cl, proc, current_entry) end
       end
    end
 
    -- Export method definitions for a class
 
-   if class.methods then
-      pfx  = class.methodPrefix
+   if cl.methods then
+      pfx  = cl.methodPrefix
       lpfx = pfx:lower()
 
       if glFeedback is 'verbose' then
-         print('Generating ' .. #class.methods .. ' methods.')
+         print('Generating ' .. #cl.methods .. ' methods.')
       end
 
-      for k, method in ipairs(class.methods) do
+      for k, method in ipairs(cl.methods) do
          if method.input?? then
             method.params = { }
             for _,v in ipairs(method.input:split(';')) do
@@ -948,9 +948,9 @@ global function class(Name, Options:table, Spec, Private, Custom)
 
          action_support = f'static const AC id = AC(-{method.id}); ERR call(OBJECTPTR Object) {{ return Action(id, Object, this); }}'
          if method.params and #method.params > 0 then
-            class.methods[k].struct = f'struct {method.name} {{ {struct_params:trim()} {action_support} }};'
+            cl.methods[k].struct = f'struct {method.name} {{ {struct_params:trim()} {action_support} }};'
          else
-            class.methods[k].struct = f'struct {method.name} {{ {action_support} }};'
+            cl.methods[k].struct = f'struct {method.name} {{ {action_support} }};'
          end
 
          name = method.name:decap()
@@ -977,7 +977,7 @@ global function class(Name, Options:table, Spec, Private, Custom)
          end
 
          inline ..= '   }'
-         class.methods[k].nestedInline = inline
+         cl.methods[k].nestedInline = inline
       end
 
       output('// ' .. Name:cap() .. ' methods')
@@ -987,7 +987,7 @@ global function class(Name, Options:table, Spec, Private, Custom)
          output('namespace ' .. lpfx .. ' {')
       end
 
-      for method in values(class.methods) do
+      for method in values(cl.methods) do
          if method.struct?? then
             output(method.struct)
          end
@@ -1001,23 +1001,23 @@ global function class(Name, Options:table, Spec, Private, Custom)
       output()
    end
 
-   class.sortedActions = { }
-   for a in values(class.actions) do
-      table.insert(class.sortedActions, a)
+   cl.sortedActions = { }
+   for a in values(cl.actions) do
+      table.insert(cl.sortedActions, a)
    end
 
-   if not table.empty(class.sortedActions) then
-      table.sort(class.sortedActions, function(a,b) return a.name < b.name end)
+   if not table.empty(cl.sortedActions) then
+      table.sort(cl.sortedActions, function(a,b) return a.name < b.name end)
    end
 
-   outputClassHeader(class, Private, Custom)
+   outputClassHeader(cl, Private, Custom)
 
    -- Output internal C definitions for class methods & actions, if an output file has been specified.
 
    if Options.output?? then
       mdef = ''
-      if not table.empty(class.methods) then
-         for m in values(class.methods) do
+      if not table.empty(cl.methods) then
+         for m in values(cl.methods) do
             if not table.empty(m.params) then
                mdef ..= f'FDEF ma{m.name}[] = {{ {buildInputParameters(m.params)} }};\n'
             end
@@ -1025,21 +1025,21 @@ global function class(Name, Options:table, Spec, Private, Custom)
          mdef ..= '\n'
 
          mdef ..= f'static const struct MethodEntry cl{Name}Methods[] = {{\n'
-         for m in values(class.methods) do
+         for m in values(cl.methods) do
             local structSize
             if table.empty(m.params) then
                mdef ..= f'   {{ AC(-{m.id}), (APTR){Name:upper()}_{m.funcName}, "{m.name}", 0, 0 }},\n'
             else
-               structSize = f'sizeof(struct {class.methodPrefix:lower()}::{m.name})'
+               structSize = f'sizeof(struct {cl.methodPrefix:lower()}::{m.name})'
                mdef ..= f'   {{ AC(-{m.id}), (APTR){Name:upper()}_{m.funcName}, "{m.name}", ma{m.name}, {structSize} }},\n'
             end
          end
          mdef ..= '   { AC::NIL, 0, 0, 0, 0 }\n};\n\n'
       end
 
-      if not table.empty(class.sortedActions) then
+      if not table.empty(cl.sortedActions) then
          mdef ..= "static const struct ActionArray cl" .. Name .. "Actions[] = {\n"
-         for action in values(class.sortedActions) do
+         for action in values(cl.sortedActions) do
             mdef ..= f"   {{ AC::{action.name}, {Name:upper()}_{action.name} }},\n"
          end
          mdef ..= "   { AC::NIL, nullptr }\n};\n\n"
@@ -1089,14 +1089,14 @@ end
 global function methods(ClassName:str, Prefix:str, Methods)
    verbose(<{ 'Processing ' .. #Methods .. ' methods for class ' .. tostring(ClassName) }>)
 
-   local class = registerClass(ClassName)
-   class.methodPrefix = Prefix
-   class.methods = Methods
+   local cl = registerClass(ClassName)
+   cl.methodPrefix = Prefix
+   cl.methods = Methods
 
    -- Generate a lookup table by method name
-   class.lookupMethods = { }
-   for m in values(class.methods) do
-      class.lookupMethods[m.name] = m
+   cl.lookupMethods = { }
+   for m in values(cl.methods) do
+      cl.lookupMethods[m.name] = m
    end
 end
 

@@ -96,7 +96,7 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     { id=8, name="SetVolume" }
   })
 
-  class("Audio", { src="class_audio.cpp", output="audio_def.c" }, [[
+  klass("Audio", { src="class_audio.cpp", output="audio_def.c" }, [[
     int OutputRate
     int InputRate
     int Quality
@@ -106,7 +106,7 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     int PeriodSize     # Period size for ALSA audio buffering
   ]])
 
-  class("Sound", { src="class_sound.cpp" }, [[
+  klass("Sound", { src="class_sound.cpp" }, [[
     double Volume      # Volume of sample (0 - 100%)
     double Pan         # Horizontal positioning for playback on stereo speakers (`-100` to `+100`)
     large Position     # Byte position to start playing from

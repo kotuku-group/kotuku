@@ -86,7 +86,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-global function parseField(class:table, Extract:str)
+global function parseField(Class:table, Extract:str)
    Extract = '-FIELD-\n' .. Extract:trim() .. '\n-END-\n'
 
    local lookup = rx_doc_lookup.extract(Extract)
@@ -99,13 +99,13 @@ global function parseField(class:table, Extract:str)
       return
    end
 
-   local f = findClassField(class, name)
+   local f = findClassField(Class, name)
    if f then
       if comment?? then f.comment = comment end
       if lookup?? then
          if glCustomTypes[lookup] then
             f.lookup = lookup
-            class.references['TYPE:' .. lookup] = 1
+            Class.references['TYPE:' .. lookup] = 1
          else
             print('Requested lookup "' .. lookup .. '" is not known.')
          end
@@ -115,8 +115,8 @@ global function parseField(class:table, Extract:str)
          f.access = 'Private'
       end
       f.description = description
-   elseif class.meta then
-      print("Field '" .. class.name .. "." .. tostring(name) .. "' is not defined in the TDL or compiled class spec.")
+   elseif Class.meta then
+      print("Field '" .. Class.name .. "." .. tostring(name) .. "' is not defined in the TDL or compiled class spec.")
    end
 end
 

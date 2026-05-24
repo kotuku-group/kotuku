@@ -71,7 +71,7 @@ module({ name="Document", copyright="Paul Manias © 2005-2026", version=1.0, tim
     { id=14, name="ReadContent" }
   })
 
-  class("Document", { src={ "../class/document_class.cpp", "../class/fields.cpp" }, output="../class/document_def.c" }, [[
+  klass("Document", { src={ "../class/document_class.cpp", "../class/fields.cpp" }, output="../class/document_def.c" }, [[
     str Description      # A description assigned by the author of the document
     str Title            # The title of the document
     str Author           # The author of the document
