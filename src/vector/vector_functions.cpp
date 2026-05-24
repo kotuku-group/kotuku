@@ -129,13 +129,14 @@ static ERR skew_matrix(VectorMatrix &Matrix, double X, double Y)
 /*********************************************************************************************************************
 
 -FUNCTION-
-ApplyPath: Copy a pre-generated or custom path to a VectorPath object.
+ApplyPath: Applies a generated path resource to a VectorPath object.
 
 Any path originating from ~GeneratePath(), ~GenerateEllipse() or ~GenerateRectangle() can be applied to a VectorPath
-object by calling ApplyPath().  The source Path can then be deallocated with ~Core.FreeResource() if it is no longer required.
+object by calling ApplyPath().  The source `Path` can then be deallocated with ~Core.FreeResource() if it is no longer
+required.
 
-This method is particularly useful when paths need to be generated or changed in real-time and the alternative of
-processing the path as a string is detrimental to performance.
+This function is intended for paths that are generated or changed at run-time, where converting the path back to a
+string would add unnecessary processing overhead.
 
 -INPUT-
 ptr Path: The source path to be copied.
@@ -144,6 +145,7 @@ obj(VectorPath) VectorPath: The target VectorPath object.
 -ERRORS-
 Okay
 NullArgs
+Args
 
 *********************************************************************************************************************/
 
@@ -162,10 +164,10 @@ ERR ApplyPath(APTR Vector, objVectorPath *VectorPath)
 /*********************************************************************************************************************
 
 -FUNCTION-
-ArcTo: Alter a path by setting an arc-to command at the current vertex position.
+ArcTo: Appends an arc command to a generated path.
 
-This function will set an arc-to command at the current vertex.  It then increments the vertex position for the next
-path command.
+This function appends an arc segment from the current point to `X`,`Y`.  The `LARGE` and `SWEEP` values in `Flags`
+control which of the possible arcs is selected.
 
 -INPUT-
 ptr Path: The vector path to modify.
@@ -186,12 +188,12 @@ void ArcTo(APTR Vector, double RX, double RY, double Angle, double X, double Y, 
 /*********************************************************************************************************************
 
 -FUNCTION-
-CharWidth: Returns the width of a character.
+CharWidth: Returns the rendered width of a single character.
 
-This function will return the pixel width of a font character.  The character is specified as a unicode value in the
-`Char` parameter. Kerning values can also be returned, which affect the position of the character along the horizontal.
-The previous character in the word is set in `KChar` and the kerning value will be returned in the `Kerning` parameter.
-If kerning information is not required, set the `KChar` and `Kerning` parameters to zero.
+This function returns the pixel width of a font character.  The character is specified as a Unicode value in the `Char`
+parameter.  Kerning can also be returned for positioning the character against a preceding character.  Pass the
+preceding character in `KChar` and a `Kerning` pointer to receive the horizontal adjustment.  If kerning information is
+not required, set `KChar` to zero and `Kerning` to `NULL`.
 
 The font's glyph spacing value is not used in calculating the character width.
 
@@ -202,7 +204,7 @@ uint KChar: A unicode character to use for calculating the font kerning (optiona
 &double Kerning: The resulting kerning value (optional).
 
 -RESULT-
-double: The pixel width of the character will be returned.
+double: The pixel width of the character, or `0` if `FontHandle` is `NULL`.
 
 *********************************************************************************************************************/
 
@@ -234,13 +236,12 @@ double CharWidth(APTR Handle, uint32_t Char, uint32_t KChar, double *Kerning)
 /*********************************************************************************************************************
 
 -FUNCTION-
-ClosePath: Close the path by connecting the beginning and end points.
+ClosePath: Closes the current sub-path.
 
-This function will set a close-path command at the current vertex.  It then increments the vertex position
-for the next path command.
+This function appends a close-path command that connects the current point to the beginning of the current sub-path.
 
-Note that closing a path does not necessarily terminate the vector.  Further paths can be added to the sequence and
-interesting effects can be created by taking advantage of fill rules.
+Closing a path does not terminate the path resource.  Further sub-paths can be added to the sequence, and fill rules
+can then be used to control how overlapping areas are rendered.
 
 -INPUT-
 ptr Path: The vector path to modify.
@@ -255,10 +256,10 @@ void ClosePath(APTR Vector)
 /*********************************************************************************************************************
 
 -FUNCTION-
-Curve3: Alter a path by inserting a quadratic bezier curve command at the current vertex position.
+Curve3: Appends a quadratic Bezier curve to a generated path.
 
-This function will set a quadratic bezier curve command at the current vertex.  It then increments the vertex position
-for the next path command.
+This function appends a quadratic Bezier segment from the current point to `X`,`Y` using `CtrlX`,`CtrlY` as the control
+point.
 
 -INPUT-
 ptr Path: The vector path to modify.
@@ -277,10 +278,9 @@ void Curve3(APTR Vector, double CtrlX, double CtrlY, double X, double Y)
 /*********************************************************************************************************************
 
 -FUNCTION-
-Curve4: Alter a path by inserting a curve4 command at the current vertex position.
+Curve4: Appends a cubic Bezier curve to a generated path.
 
-This function will set a cubic bezier curve command at the current vertex.  It then increments the vertex position
-for the next path command.
+This function appends a cubic Bezier segment from the current point to `X`,`Y` using two control points.
 
 -INPUT-
 ptr Path: The vector path to modify.
@@ -301,16 +301,17 @@ void Curve4(APTR Vector, double CtrlX1, double CtrlY1, double CtrlX2, double Ctr
 /*********************************************************************************************************************
 
 -FUNCTION-
-DrawPath: Draws a vector path to a target bitmap.
+DrawPath: Draws a generated vector path to a target bitmap.
 
 Use DrawPath() to draw a generated path to a @Bitmap, using customised fill and stroke definitions.  This
 functionality provides an effective alternative to configuring vector scenes for situations where only
 simple vector shapes are required.  However, it is limited in that advanced rendering options and effects are not
 available to the client.
 
-A `StrokeStyle` and/or `FillStyle` will be required to render the path.  Valid styles are allocated and configured using
-recognised vector style objects, specifically from the classes @VectorImage, @VectorPattern and @VectorGradient.  If a
-fill or stroke operation is not required, set the relevant parameter to `NULL`.
+At least one of `StrokeStyle` or `FillStyle` is required to render visible output.  Valid styles are allocated and
+configured using recognised vector style objects, specifically @VectorImage, @VectorPattern and @VectorGradient.  If a
+fill or stroke operation is not required, set the relevant parameter to `NULL`.  Stroke rendering is also disabled when
+`StrokeWidth` is less than `0.001`.
 
 -INPUT-
 obj(Bitmap) Bitmap: Pointer to a target @Bitmap object.
@@ -344,10 +345,10 @@ ERR DrawPath(objBitmap *Bitmap, APTR Path, double StrokeWidth, OBJECTPTR StrokeS
 /*********************************************************************************************************************
 
 -FUNCTION-
-FlushMatrix: Flushes matrix changes to a vector.
+FlushMatrix: Marks a vector transform as changed after direct matrix edits.
 
-If the matrices values of a vector have been directly modified by the client, the changes will need to be flushed in
-order to have those changes reflected on the display.  This needs to be done before the next draw cycle.
+If a vector's matrix values have been modified directly by the client, call FlushMatrix() before the next draw cycle so
+the owning vector is marked for transform recalculation.
 
 Note that if the client uses API functions to modify a !VectorMatrix, a call to FlushMatrix() is unnecessary as the
 vector will have already been marked for an update.
@@ -356,17 +357,14 @@ vector will have already been marked for an update.
 struct(*VectorMatrix) Matrix: The matrix to be flushed.
 
 -ERRORS-
-Okay:
-NullArgs:
+Okay
+NullArgs
 
 *********************************************************************************************************************/
 
 ERR FlushMatrix(VectorMatrix *Matrix)
 {
-   if (not Matrix) {
-      kt::Log log(__FUNCTION__);
-      return log.warning(ERR::NullArgs);
-   }
+   if (not Matrix) return kt::Log(__FUNCTION__).warning(ERR::NullArgs);
 
    if (Matrix->Vector) mark_dirty(Matrix->Vector, RC::TRANSFORM);
    return ERR::Okay;
@@ -375,10 +373,10 @@ ERR FlushMatrix(VectorMatrix *Matrix)
 /*********************************************************************************************************************
 
 -FUNCTION-
-GetVertex: Retrieve the coordinates of the current vertex.
+GetVertex: Retrieves the next vertex from a generated path.
 
-The coordinates of the current vertex are returned by this function in the `X` and `Y` parameters.  In addition, the
-internal command number for that vertex is the return value.
+The coordinates of the next vertex are returned in `X` and `Y`.  The return value is the internal command value for
+that vertex, or the path stop command when there are no more vertices to read.
 
 -INPUT-
 ptr Path: The vector path to query.
@@ -398,23 +396,23 @@ int GetVertex(APTR Vector, double *X, double *Y)
 /*********************************************************************************************************************
 
 -FUNCTION-
-GenerateEllipse: Generates an elliptical path.
+GenerateEllipse: Generates an elliptical path resource.
 
 Use GenerateEllipse() to create an elliptical path suitable for passing to vector functions that receive a Path
 parameter.  The path must be manually deallocated with ~Core.FreeResource() once it is no longer required.
 
 -INPUT-
-double CX: Horizontal center point of the ellipse.
-double CY: Vertical center point of the ellipse.
+double CX: Horizontal centre point of the ellipse.
+double CY: Vertical centre point of the ellipse.
 double RX: Horizontal radius of the ellipse.
 double RY: Vertical radius of the ellipse.
-int Vertices: Optional.  If `>= 3`, the total number of generated vertices will be limited to the specified value.
+int Vertices: Optional.  If this is `3` or greater, the ellipse will be generated with exactly this many vertices.
 &ptr Path: A pointer variable that will receive the resulting path.
 
 -ERRORS-
 Okay
 NullArgs
-AllocMemory
+CreateResource
 
 *********************************************************************************************************************/
 
@@ -462,7 +460,7 @@ ERR GenerateEllipse(double CX, double CY, double RX, double RY, int Vertices, AP
 /*********************************************************************************************************************
 
 -FUNCTION-
-GenerateRectangle: Generate a rectangular path at (x,y) with size (width,height).
+GenerateRectangle: Generates a rectangular path resource.
 
 Use GenerateRectangle() to create a rectangular path suitable for passing to vector functions that receive a Path
 parameter.  The path must be manually deallocated with ~Core.FreeResource() once it is no longer required.
@@ -477,7 +475,7 @@ double Height: The height of the rectangle.
 -ERRORS-
 Okay
 NullArgs
-AllocMemory
+CreateResource
 
 *********************************************************************************************************************/
 
@@ -502,15 +500,14 @@ ERR GenerateRectangle(double X, double Y, double Width, double Height, APTR *Pat
 /*********************************************************************************************************************
 
 -FUNCTION-
-GeneratePath: Generates a path from an SVG path command sequence, or an empty path for custom configuration.
+GeneratePath: Generates a path resource from an SVG path command sequence.
 
-This function will generate a vector path from a sequence of fixed point coordinates and curve instructions.  The
-resulting path can then be passed to vector functions that receive a Path parameter.  The path must be manually
+This function generates a vector path from a sequence of coordinates and path instructions.  The resulting path can
+then be passed to vector functions that receive a Path parameter.  The path must be manually
 deallocated with ~Core.FreeResource() once it is no longer required.
 
-The Sequence is a string of points and instructions that define the path.  It is based on the SVG standard for the path
-element `d` attribute, but also provides some additional features that are present in the vector engine.  Commands are
-case insensitive.
+The `Sequence` string is based on the SVG `path` element's `d` attribute.  Uppercase commands use absolute coordinates;
+lowercase commands use coordinates relative to the previous command.
 
 The following commands are supported:
 
@@ -527,11 +524,8 @@ A: Arc
 Z: Close Path
 </pre>
 
-The use of lower case characters will indicate that the provided coordinates are relative (based on the coordinate
-of the previous command).
-
-If the `Sequence` is `NULL` then an empty path resource will be generated.  This path will be suitable for passing
-to path modifying functions such as ~MoveTo() and ~LineTo() for custom path generation.
+If `Sequence` is `NULL`, an empty path resource will be generated.  This path can be populated with functions such as
+~MoveTo() and ~LineTo().
 
 -INPUT-
 cstr Sequence: The command sequence to process.  If no sequence is specified then the path will be empty.
@@ -541,6 +535,9 @@ cstr Sequence: The command sequence to process.  If no sequence is specified the
 Okay
 NullArgs
 AllocMemory
+InvalidValue
+InvalidData
+BufferOverflow
 
 *********************************************************************************************************************/
 
@@ -573,9 +570,10 @@ ERR GeneratePath(CSTRING Sequence, APTR *Path)
 /*********************************************************************************************************************
 
 -FUNCTION-
-GetFontHandle: Returns a handle for a given font family.
+GetFontHandle: Returns a cached handle for a font family, style and size.
 
-For a given font family and size, this function will return a `Handle` that can be passed to font querying functions.
+For a given font family, style and size, this function returns a `Handle` that can be passed to font querying
+functions.
 
 The handle is deterministic and permanent, remaining valid for the lifetime of the program.
 
@@ -587,9 +585,14 @@ int Size: The font-size, measured in pixels @ 72 DPI.
 &ptr Handle: The resulting font handle is returned here.
 
 -ERRORS-
-Okay:
-Args:
-NullArgs:
+Okay
+Args
+AccessObject
+CreateObject
+Failed
+File
+ResolvePath
+Search
 -END-
 
 *********************************************************************************************************************/
@@ -611,18 +614,17 @@ ERR GetFontHandle(const std::string_view &Family, const std::string_view &Style,
 /*********************************************************************************************************************
 
 -FUNCTION-
-GetFontMetrics: Returns a set of display metric values for a font.
+GetFontMetrics: Returns display metrics for a font handle.
 
-Call GetFontMetrics() to retrieve a basic set of display metrics measured in pixels (adjusted to the display's DPI)
-for a given font.
+Call GetFontMetrics() to retrieve the font height, line spacing, ascent and descent values for a font handle.
 
 -INPUT-
 ptr Handle: A font handle obtained from ~GetFontHandle().
 struct(*FontMetrics) Info: The font metrics for the `Handle` will be stored here.
 
 -ERRORS-
-Okay:
-NullArgs:
+Okay
+NullArgs
 -END-
 
 *********************************************************************************************************************/
@@ -652,16 +654,16 @@ ERR GetFontMetrics(APTR Handle, struct FontMetrics *Metrics)
 /*********************************************************************************************************************
 
 -FUNCTION-
-TracePath: Returns the coordinates for a vector path, using callbacks.
+TracePath: Calls a function for each traced coordinate in a generated path.
 
-Any vector that generates a path can be traced by calling this method.  Tracing allows the caller to follow the
-`Path` from point-to-point if the path were to be rendered with a stroke.  The prototype of the callback  function
-is `ERR Function(OBJECTPTR Vector, INT Index, INT Command, double X, double Y, APTR Meta)`.
+Any generated path can be traced by calling this function.  Tracing allows the caller to follow the `Path`
+point-by-point as it would be rendered with a stroke.  The `Callback` function signature is
+`ERR Function(*Path, INT Index, INT Command, DOUBLE X, DOUBLE Y, *Meta)`.
 
-The `Index` is an incrementing counter that reflects the currently plotted point.  The `X` and `Y` parameters reflect the
-coordinate of a point on the path.
+The `Index` is an incrementing counter for each plotted point.  The `Command` value identifies the internal path
+command, and `X`,`Y` are the traced coordinates.
 
-If the `Callback` returns `ERR::Terminate`, then no further coordinates will be processed.
+If the `Callback` returns `ERR::Terminate`, processing stops and the function returns immediately.
 
 -INPUT-
 ptr Path:      The vector path to trace.
@@ -669,8 +671,9 @@ ptr(func) Callback: A function to call with the path coordinates.
 double Scale:  Set to 1.0 (recommended) to trace the path at a scale of 1 to 1.
 
 -ERRORS-
-Okay:
-NullArgs:
+Okay
+NullArgs
+Function
 
 *********************************************************************************************************************/
 
@@ -731,10 +734,9 @@ ERR TracePath(APTR Path, FUNCTION *Callback, double Scale)
 /*********************************************************************************************************************
 
 -FUNCTION-
-LineTo: Alter a path by setting a line-to command at the current vertex position.
+LineTo: Appends a line segment to a generated path.
 
-This function alters a path by setting a line-to command at the current vertex position.  The index is then advanced by
-one to the next vertex position.
+This function appends a straight line from the current point to `X`,`Y`.
 
 -INPUT-
 ptr Path: The vector path to modify.
@@ -751,12 +753,9 @@ void LineTo(APTR Vector, double X, double Y)
 /*********************************************************************************************************************
 
 -FUNCTION-
-MoveTo: Alter a path by setting a move-to command at the current vertex position.
+MoveTo: Moves the current point in a generated path.
 
-This function will set a move-to command at the current vertex.  It then increments the vertex position for the next
-path command.
-
-The move-to command is used to move the pen to a new coordinate without drawing a line.
+This function appends a move command.  The current point is moved to `X`,`Y` without drawing a line.
 
 -INPUT-
 ptr Path: The vector path to modify.
@@ -773,9 +772,9 @@ void MoveTo(APTR Vector, double X, double Y)
 /*********************************************************************************************************************
 
 -FUNCTION-
-Multiply: Combines a matrix with a series of matrix values.
+Multiply: Multiplies a matrix by explicit affine transform values.
 
-This function uses matrix multiplication to combine a set of values with a !VectorMatrix structure.
+This function multiplies the target !VectorMatrix by the supplied affine transform values.
 
 -INPUT-
 struct(*VectorMatrix) Matrix: The target transformation matrix.
@@ -787,8 +786,8 @@ double TranslateX: Matrix value E.
 double TranslateY: Matrix value F.
 
 -ERRORS-
-Okay:
-NullArgs:
+Okay
+NullArgs
 -END-
 
 *********************************************************************************************************************/
@@ -806,17 +805,17 @@ ERR Multiply(VectorMatrix *Matrix, double ScaleX, double ShearY, double ShearX, 
 /*********************************************************************************************************************
 
 -FUNCTION-
-MultiplyMatrix: Combines a source matrix with a target.
+MultiplyMatrix: Multiplies a target matrix by a source matrix.
 
-This function uses matrix multiplication to combine a `Source` matrix with a `Target`.
+This function multiplies `Target` by `Source` and stores the result in `Target`.
 
 -INPUT-
 struct(*VectorMatrix) Target: The target transformation matrix.
 struct(*VectorMatrix) Source: The source transformation matrix.
 
 -ERRORS-
-Okay:
-NullArgs:
+Okay
+NullArgs
 -END-
 
 *********************************************************************************************************************/
@@ -833,23 +832,24 @@ ERR MultiplyMatrix(VectorMatrix *Target, VectorMatrix *Source)
 /*********************************************************************************************************************
 
 -FUNCTION-
-ParseTransform: Parse an SVG transformation string and apply the values to a matrix.
+ParseTransform: Parses an SVG transform string and applies it to a matrix.
 
-This function parses a sequence of transform instructions and applies them to a matrix.
+This function parses a sequence of SVG transform instructions and applies them to a matrix.
 
-The string must be written using SVG guidelines for the transform attribute.  For example,
-`skewX(20) rotate(45 50 50)` would be valid.  Transform instructions are applied in reverse, as per the standard.
+The string must be written using SVG transform attribute syntax.  For example, `skewX(20) rotate(45 50 50)` is valid.
+Transform instructions are applied in reverse order, as required by the SVG transform model.  Unsupported transform
+text is skipped.
 
-Note that any existing transforms applied to the matrix will be cancelled as a result of calling this function.
-If existing matrix values need to be retained, create a fresh matrix and use ~Multiply() to combine them.
+Any existing values in `Matrix` are reset before the parsed transforms are applied.  If existing matrix values need to
+be retained, parse into a separate matrix and use ~MultiplyMatrix() to combine the result.
 
 -INPUT-
 struct(*VectorMatrix) Matrix: The target transformation matrix.
 cpp(strview) Transform: The transform to apply, expressed as a string instruction.
 
 -ERRORS-
-Okay:
-NullArgs:
+Okay
+NullArgs
 -END-
 
 *********************************************************************************************************************/
@@ -962,16 +962,16 @@ ERR ParseTransform(VectorMatrix *Matrix, const std::string_view &Transform)
 /*********************************************************************************************************************
 
 -FUNCTION-
-ResetMatrix: Resets a transformation matrix to its default state.
+ResetMatrix: Resets a transformation matrix to the identity transform.
 
-Call ResetMatrix() to reset a transformation matrix to its default state, undoing all former transform operations.
+Call ResetMatrix() to clear all scaling, skewing, rotation and translation from a !VectorMatrix.
 
 -INPUT-
 struct(*VectorMatrix) Matrix: The target transformation matrix.
 
 -ERRORS-
-Okay:
-NullArgs:
+Okay
+NullArgs
 
 *********************************************************************************************************************/
 
@@ -993,10 +993,10 @@ ERR ResetMatrix(VectorMatrix *Matrix)
 /*********************************************************************************************************************
 
 -FUNCTION-
-RewindPath: Resets the vertex seek position to zero.
+RewindPath: Resets path iteration to the first vertex.
 
-Rewinding a path will reset the current vertex index to zero.  The next call to a vertex modification function such as
-~LineTo() would result in the first vertex being modified.
+Rewinding a path resets its internal vertex iterator to the first vertex.  The next call to ~GetVertex() will read from
+the start of the path.
 
 If the referenced `Path` is empty, this function does nothing.
 
@@ -1013,20 +1013,20 @@ void RewindPath(APTR Vector)
 /*********************************************************************************************************************
 
 -FUNCTION-
-Rotate: Applies a rotation transformation to a matrix.
+Rotate: Applies a rotation transform to a matrix.
 
-This function will apply a rotation transformation to a matrix.  By default, rotation will occur around point `(0, 0)`
-unless `CenterX` and `CenterY` values are specified.
+This function rotates a matrix by `Angle` degrees.  Rotation occurs around `(0, 0)` unless `CenterX` and `CenterY`
+specify another centre point.
 
 -INPUT-
 struct(*VectorMatrix) Matrix: The target transformation matrix.
 double Angle: Angle of rotation, in degrees.
-double CenterX: Center of rotation on the horizontal axis.
-double CenterY: Center of rotation on the vertical axis.
+double CenterX: Centre of rotation on the horizontal axis.
+double CenterY: Centre of rotation on the vertical axis.
 
 -ERRORS-
-Okay:
-NullArgs:
+Okay
+NullArgs
 
 *********************************************************************************************************************/
 
@@ -1045,17 +1045,17 @@ ERR Rotate(VectorMatrix *Matrix, double Angle, double CenterX, double CenterY)
 /*********************************************************************************************************************
 
 -FUNCTION-
-Scale: Scale the size of the vector by (x,y)
+Scale: Applies a scale transform to a matrix.
 
-This function will perform a scale operation on a matrix.  Values of less than `1.0` will shrink the affected vector
-path, while values greater than `1.0` will enlarge it.
+This function scales a matrix on the x and y axes.  Values less than `1.0` shrink the affected vector path, while
+values greater than `1.0` enlarge it.
 
 Scaling is relative to position `(0, 0)`.  If the width and height of the vector path needs to be transformed without
-affecting its top-left position, the client must translate the path to `(0, 0)` around its center point.  The path
+affecting its top-left position, the client must translate the path to `(0, 0)` around its centre point.  The path
 should then be scaled before being transformed back to its original top-left coordinate.
 
 The scale operation can also be used to flip a vector path if negative values are used.  For instance, a value of
-`-1.0` on the x axis would result in a `1:1` flip across the horizontal.
+`-1.0` on the x axis results in a `1:1` horizontal flip.
 
 -INPUT-
 struct(*VectorMatrix) Matrix: The target transformation matrix.
@@ -1080,10 +1080,13 @@ ERR Scale(VectorMatrix *Matrix, double X, double Y)
 /*********************************************************************************************************************
 
 -FUNCTION-
-Skew: Skews the matrix along the horizontal and/or vertical axis.
+Skew: Applies a skew transform to a matrix.
 
-The Skew function applies a skew transformation to the horizontal and/or vertical axis of the matrix.
-Valid X and Y values are in the range of `-90 < Angle < 90`.
+The Skew function applies a skew transformation to the horizontal and/or vertical axis of the matrix.  Valid `X` and
+`Y` values are in the range `-90 < Angle < 90`.
+
+If `X` is valid and `Y` is outside the valid range, the horizontal skew is applied before `ERR::OutOfRange` is
+returned.
 
 -INPUT-
 struct(*VectorMatrix) Matrix: The target transformation matrix.
@@ -1091,8 +1094,8 @@ double X: The angle to skew along the horizontal.
 double Y: The angle to skew along the vertical.
 
 -ERRORS-
-Okay:
-NullArgs:
+Okay
+NullArgs
 OutOfRange: At least one of the angles is out of the allowable range.
 -END-
 
@@ -1117,12 +1120,10 @@ ERR Skew(VectorMatrix *Matrix, double X, double Y)
 /*********************************************************************************************************************
 
 -FUNCTION-
-Smooth3: Alter a path by setting a smooth3 command at the current vertex position.
+Smooth3: Appends a smooth quadratic Bezier curve to a generated path.
 
-This function will set a quadratic bezier curve command at the current vertex.  It then increments the vertex position
-for the next path command.
-
-The control point from the previous curve is used as the control point for the new curve, hence the 'smooth'.
+This function appends a quadratic Bezier segment from the current point to `X`,`Y`.  The control point is reflected
+from the previous curve command.
 
 -INPUT-
 ptr Path: The vector path to modify.
@@ -1140,13 +1141,10 @@ void Smooth3(APTR Vector, double X, double Y)
 /*********************************************************************************************************************
 
 -FUNCTION-
-Smooth4: Alter a path by setting a smooth4 command at the current vertex position.
+Smooth4: Appends a smooth cubic Bezier curve to a generated path.
 
-This function will set a cubic bezier curve command at the current vertex.  It then increments the vertex position
-for the next path command.
-
-The control point from the previous curve will be used in addition to the CtrlX and CtrlY points, hence the
-name 'smoothed curve'.
+This function appends a cubic Bezier segment from the current point to `X`,`Y`.  The previous curve command supplies
+the reflected first control point, and `CtrlX`,`CtrlY` supply the second control point.
 
 -INPUT-
 ptr Path: The vector path to modify.
@@ -1166,21 +1164,20 @@ void Smooth4(APTR Vector, double CtrlX, double CtrlY, double X, double Y)
 /*********************************************************************************************************************
 
 -FUNCTION-
-StringWidth: Calculate the pixel width of a UTF-8 string, for a given font.
+StringWidth: Calculates the rendered width of a UTF-8 string.
 
-This function calculates the pixel width of a string, in relation to a known font.  The function takes into account
-any line-feeds that are encountered, so if the `String` contains multiple lines, then the width of the longest line will
-be returned.
+This function calculates the pixel width of `String` for a known font.  Line-feeds are treated as line breaks, so for
+multi-line strings the width of the longest line is returned.
 
-The font's kerning specifications will be taken into account when computing the distance between glyphs.
+For scalable fonts, kerning is included when computing the distance between glyphs.
 
 -INPUT-
 ptr FontHandle: A font handle obtained from ~GetFontHandle().
 cstr String: Pointer to a null-terminated string.
-int Chars: The maximum number of unicode characters to process in calculating the string width.  Set to `-1` for all chars.
+int Chars: Maximum number of bytes to process from `String`.  Set to `-1` for the full string.
 
 -RESULT-
-double: The pixel width of the string is returned.
+double: The pixel width of the string, or `0` if `FontHandle` or `String` is `NULL`.
 -END-
 
 *********************************************************************************************************************/
@@ -1234,9 +1231,9 @@ double StringWidth(APTR Handle, CSTRING String, int Chars)
 /*********************************************************************************************************************
 
 -FUNCTION-
-Translate: Translates the vector by (X,Y).
+Translate: Applies a translation transform to a matrix.
 
-This function will translate the matrix in the direction of the provided (X,Y) values.
+This function adds the supplied x and y offsets to the matrix translation values.
 
 -INPUT-
 struct(*VectorMatrix) Matrix: The target transformation matrix.
@@ -1244,8 +1241,8 @@ double X: Translation along the x-axis.
 double Y: Translation along the y-axis.
 
 -ERRORS-
-Okay:
-NullArgs:
+Okay
+NullArgs
 -END-
 
 *********************************************************************************************************************/
@@ -1267,14 +1264,14 @@ ERR Translate(VectorMatrix *Matrix, double X, double Y)
 /*********************************************************************************************************************
 
 -FUNCTION-
-TranslatePath: Translates a path by (x,y)
+TranslatePath: Translates every vertex in a generated path.
 
-This function will translate all vertices of a path by (X,Y).
+This function offsets all vertices in `Path` by `X`,`Y`.  If `Path` is `NULL`, the call is ignored.
 
 -INPUT-
 ptr Path: Pointer to a generated path.
-double X: Translate the path horizontally by the given value.
-double Y: Translate the path vertically by the given value.
+double X: Horizontal offset.
+double Y: Vertical offset.
 
 -END-
 
