@@ -71,17 +71,17 @@ const std::vector<GradientStop> svgState::process_gradient_stops(const XTag &Tag
             else if (iequals("stop-color", name)) {
                if (iequals("inherit", value)) {
                   VectorPainter painter;
-                  vec::ReadPainter(Self->Scene, m_stop_color.c_str(), &painter, nullptr);
+                  vec::ReadPainter(Self->Scene, m_stop_color, &painter, nullptr);
                   stop.RGB = painter.Colour;
                }
                else if (iequals("currentColor", value)) {
                   VectorPainter painter;
-                  vec::ReadPainter(Self->Scene, m_color.c_str(), &painter, nullptr);
+                  vec::ReadPainter(Self->Scene, m_color, &painter, nullptr);
                   stop.RGB = painter.Colour;
                }
                else {
                   VectorPainter painter;
-                  vec::ReadPainter(Self->Scene, value.c_str(), &painter, nullptr);
+                  vec::ReadPainter(Self->Scene, value, &painter, nullptr);
                   stop.RGB = painter.Colour;
                }
             }

@@ -218,7 +218,7 @@ extern ERR init_search(void);
 
 //********************************************************************************************************************
 
-static bool read_rgb8(CSTRING Value, RGB8 *RGB)
+static bool read_rgb8(std::string_view Value, RGB8 *RGB)
 {
    VectorPainter painter;
    if (vec::ReadPainter(nullptr, Value, &painter, nullptr) IS ERR::Okay) {

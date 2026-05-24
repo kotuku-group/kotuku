@@ -879,7 +879,7 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
                FRGB rgb;
                if (current_colour(Self->Scene->Viewport, rgb) IS ERR::Okay) fx->set(FID_Colour, rgb);
             }
-            else if (vec::ReadPainter(nullptr, val.c_str(), &painter, nullptr) IS ERR::Okay) fx->set(FID_Colour, painter.Colour);
+            else if (vec::ReadPainter(nullptr, val, &painter, nullptr) IS ERR::Okay) fx->set(FID_Colour, painter.Colour);
             break;
          }
 
@@ -1294,7 +1294,7 @@ ERR svgState::parse_fe_flood(objVectorFilter *Filter, XTag &Tag) noexcept
             if (iequals("currentColor", val)) {
                if (current_colour(Self->Scene->Viewport, painter.Colour) IS ERR::Okay) error = fx->set(FID_Colour, painter.Colour);
             }
-            else if (vec::ReadPainter(nullptr, val.c_str(), &painter, nullptr) IS ERR::Okay) error = fx->set(FID_Colour, painter.Colour);
+            else if (vec::ReadPainter(nullptr, val, &painter, nullptr) IS ERR::Okay) error = fx->set(FID_Colour, painter.Colour);
             break;
          }
 

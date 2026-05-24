@@ -2465,7 +2465,7 @@ font_entry * bc_font::layout_font(layout &Layout)
    }
 
    APTR new_handle = nullptr;
-   if (vec::GetFontHandle(face.c_str(), style.c_str(), 400, pixel_size, &new_handle) IS ERR::Okay) {
+   if (vec::GetFontHandle(face, style, 400, pixel_size, &new_handle) IS ERR::Okay) {
       std::lock_guard lk(glFontsMutex);
 
       if (auto it = glFontIndexCache.find(cache_key); it != glFontIndexCache.end()) {

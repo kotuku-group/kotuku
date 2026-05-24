@@ -102,7 +102,7 @@ ERR svgState::current_colour(objVector *Vector, FRGB &RGB) noexcept
 {
    if (!m_color.empty()) {
       VectorPainter painter;
-      if (vec::ReadPainter(nullptr, m_color.c_str(), &painter, nullptr) IS ERR::Okay) {
+      if (vec::ReadPainter(nullptr, m_color, &painter, nullptr) IS ERR::Okay) {
          RGB = painter.Colour;
          return ERR::Okay;
       }
