@@ -623,7 +623,7 @@ AccessObject: Failed to access the internally maintained image object.
 ERR SetCustomCursor(OBJECTID ObjectID, CRF Flags, objBitmap *Bitmap, int HotX, int HotY, OBJECTID OwnerID)
 {
    // If the driver doesn't support custom cursors then divert to gfx::SetCursor()
-   return gfx::SetCursor(ObjectID, Flags, PTC::DEFAULT, nullptr, OwnerID);
+   return gfx::SetCursor(ObjectID, Flags, PTC::DEFAULT, "", OwnerID);
 }
 
 /*********************************************************************************************************************

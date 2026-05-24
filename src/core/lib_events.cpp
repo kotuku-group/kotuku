@@ -143,8 +143,6 @@ large: The event ID is returned as a 64-bit integer.
 
 int64_t GetEventID(EVG Group, const std::string_view &SubGroup, const std::string_view &Event)
 {
-   kt::Log log(__FUNCTION__);
-
    if (Group IS EVG::NIL) return 0;
 
    auto hash_subgroup = 0u;
@@ -165,8 +163,9 @@ int64_t GetEventID(EVG Group, const std::string_view &SubGroup, const std::strin
    if (not SubGroup.empty()) glEventNames[hash_subgroup] = SubGroup;
    if (not Event.empty()) glEventNames[hash_event] = Event;
 
-   log.traceBranch("Group: %d, SubGroup: %s, Event: %s, Result: $%.8x%.8x",
-      int(Group), subgroup_name, event_name, uint32_t(event_id>>32), uint32_t(event_id));
+   kt::Log(__FUNCTION__).trace("Group: %d, SubGroup: %.*s, Event: %.*s, Result: $%.8x%.8x",
+      int(Group), int(subgroup_name.size()), subgroup_name.data(), int(event_name.size()), event_name.data(),
+      uint32_t(event_id>>32), uint32_t(event_id));
 
    return event_id;
 }
