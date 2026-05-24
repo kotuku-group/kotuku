@@ -83,7 +83,7 @@ extern "C" ERR AddInfoTag(struct FileInfo * Info, const std::string_view & Name,
 extern "C" void SetDefaultPermissions(int User, int Group, PERMIT Permissions);
 extern "C" void VLogF(VLF Flags, CSTRING Header, CSTRING Message, va_list Args);
 extern "C" ERR ReadInfoTag(struct FileInfo * Info, const std::string_view & Name, CSTRING * Value);
-extern "C" ERR SetResourcePath(RP PathType, CSTRING Path);
+extern "C" ERR SetResourcePath(RP PathType, const std::string_view & Path);
 extern "C" objTask * CurrentTask();
 extern "C" CSTRING ResolveGroupID(int Group);
 extern "C" CSTRING ResolveUserID(int User);

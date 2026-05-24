@@ -1774,11 +1774,11 @@ static ResourceManager glNodeManager = {
     <name>SetResourcePath</name>
     <category>System</category>
     <comment>Redefines the location of a system resource path.</comment>
-    <prototype>ERR SetResourcePath(RP PathType, CSTRING Path)</prototype>
+    <prototype>ERR SetResourcePath(RP PathType, const std::string_view &amp; Path)</prototype>
     <tiriPrototype>err = SetResourcePath(PathType:num, Path:str)</tiriPrototype>
     <input>
       <param type="RP" name="PathType" lookup="RP">The ID of the resource path to set.</param>
-      <param type="CSTRING" name="Path">The new location to set for the resource path.</param>
+      <param type="const std::string_view &amp;" name="Path">The new location to set for the resource path.</param>
     </input>
     <description>
 <p>The SetResourcePath() function changes the default locations of the Core's resource paths.</p>

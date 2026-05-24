@@ -661,7 +661,7 @@ To read a resource path, use the ~GetSystemState() function.
 
 -INPUT-
 int(RP) PathType: The ID of the resource path to set.
-cstr Path: The new location to set for the resource path.
+cpp(strview) Path: The new location to set for the resource path.
 
 -ERRORS-
 Okay:
@@ -669,49 +669,45 @@ NullArgs:
 
 *********************************************************************************************************************/
 
-ERR SetResourcePath(RP PathType, CSTRING Path)
+ERR SetResourcePath(RP PathType, const std::string_view &Path)
 {
    kt::Log log(__FUNCTION__);
 
-   log.function("Type: %d, Path: %s", int(PathType), Path);
+   if ((&Path IS nullptr) or (Path.empty())) return ERR::NullArgs;
+
+   log.function("Type: %d, Path: %.*s", int(PathType), int(Path.size()), Path.data());
 
    switch(PathType) {
       case RP::ROOT_PATH:
-         if (Path) {
-            glRootPath = Path;
-            if ((!glRootPath.empty()) and (glRootPath.back() != '/') and (glRootPath.back() != '\\')) {
-               #ifdef _WIN32
-                  glRootPath.push_back('\\');
-               #else
-                  glRootPath.push_back('/');
-               #endif
-            }
+         glRootPath = Path;
+         if ((!glRootPath.empty()) and (glRootPath.back() != '/') and (glRootPath.back() != '\\')) {
+            #ifdef _WIN32
+               glRootPath.push_back('\\');
+            #else
+               glRootPath.push_back('/');
+            #endif
          }
          return ERR::Okay;
 
       case RP::SYSTEM_PATH:
-         if (Path) {
-            glSystemPath = Path;
-            if ((!glSystemPath.empty()) and (glSystemPath.back() != '/') and (glSystemPath.back() != '\\')) {
-               #ifdef _WIN32
-                  glSystemPath.push_back('\\');
-               #else
-                  glSystemPath.push_back('/');
-               #endif
-            }
+         glSystemPath = Path;
+         if ((!glSystemPath.empty()) and (glSystemPath.back() != '/') and (glSystemPath.back() != '\\')) {
+            #ifdef _WIN32
+               glSystemPath.push_back('\\');
+            #else
+               glSystemPath.push_back('/');
+            #endif
          }
          return ERR::Okay;
 
       case RP::MODULE_PATH: // An alternative path to the system modules.  This was introduced for Android, which holds the module binaries in the assets folders.
-         if (Path) {
-            glModulePath = Path;
-            if ((!glModulePath.empty()) and (glModulePath.back() != '/') and (glModulePath.back() != '\\')) {
-               #ifdef _WIN32
-                  glModulePath += '\\';
-               #else
-                  glModulePath += '/';
-               #endif
-            }
+         glModulePath = Path;
+         if ((!glModulePath.empty()) and (glModulePath.back() != '/') and (glModulePath.back() != '\\')) {
+            #ifdef _WIN32
+               glModulePath += '\\';
+            #else
+               glModulePath += '/';
+            #endif
          }
          return ERR::Okay;
 
