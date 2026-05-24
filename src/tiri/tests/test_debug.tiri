@@ -379,26 +379,6 @@ end
    assert(type(result.diagnostics) is 'table', "Should have diagnostics array")
 end
 
-@Test function ValidateInvalidCode()
-   result = debug.validate("if then end end")
-   assert(type(result) is 'table', "validate should return a table")
-   assert(result.success is false, "Invalid code should fail")
-   assert(#result.diagnostics > 0, "Should have diagnostic entries for invalid code")
-end
-
-@Test function ValidateDiagnosticFields()
-   result = debug.validate("if then")
-   assert(result.success is false, "Should fail")
-   assert(#result.diagnostics > 0, "Should have diagnostics")
-
-   diag = result.diagnostics[0]
-   assert(diag.line != nil, "Diagnostic should have line")
-   assert(diag.column != nil, "Diagnostic should have column")
-   assert(diag.severity != nil, "Diagnostic should have severity")
-   assert(diag.code != nil, "Diagnostic should have code")
-   assert(diag.message != nil, "Diagnostic should have message")
-end
-
 @Test function ValidateEmptyCode()
    result = debug.validate("")
    assert(type(result) is 'table', "validate should return a table for empty input")

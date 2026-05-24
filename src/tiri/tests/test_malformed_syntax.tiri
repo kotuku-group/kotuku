@@ -1,0 +1,376 @@
+-- Malformed parser input tests for debug.validate()
+
+function assertInvalid(Source, Context)
+   result = debug.validate(Source)
+   assert(type(result) is 'table', Context .. ': debug.validate() should return a table')
+   assert(result.success is false, Context .. ': malformed source should fail validation')
+   assert(type(result.diagnostics) is 'table', Context .. ': diagnostics should be returned')
+   assert(#result.diagnostics > 0, Context .. ': at least one diagnostic should be reported')
+end
+
+function assertInvalidCases(GroupName, Cases)
+   for case in values(Cases) do
+      assertInvalid(case.source, GroupName .. ' - ' .. case.name)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Diagnostic contract
+
+@Test function ValidateDiagnosticFields()
+   result = debug.validate("if then")
+   assert(result.success is false, "Should fail")
+   assert(#result.diagnostics > 0, "Should have diagnostics")
+
+   diag = result.diagnostics[0]
+   assert(diag.line != nil, "Diagnostic should have line")
+   assert(diag.column != nil, "Diagnostic should have column")
+   assert(diag.severity != nil, "Diagnostic should have severity")
+   assert(diag.code != nil, "Diagnostic should have code")
+   assert(diag.message != nil, "Diagnostic should have message")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Malformed type declarations and annotations
+
+@Test function ValidateMalformedTypeDeclarations()
+   assertInvalidCases('type declarations', {
+      {
+         name = 'parameter type without name',
+         source = "function bad(:num) end"
+      },
+      {
+         name = 'parameter name without type separator',
+         source = "function bad(Value num) end"
+      },
+      {
+         name = 'missing parameter type name',
+         source = "function bad(Value:) end"
+      },
+      {
+         name = 'missing single return type',
+         source = "function bad(): return 1 end"
+      },
+      {
+         name = 'missing multi-return type entry',
+         source = "function bad():<str,> return 'x' end"
+      },
+      {
+         name = 'unterminated multi-return type list',
+         source = "function bad():<str, num return 'x', 1 end"
+      },
+      {
+         name = 'malformed const attribute',
+         source = "local value <const = 1"
+      },
+      {
+         name = 'malformed close attribute',
+         source = "local handle <close = open()"
+      }
+   })
+end
+
+@Test function ValidateMalformedTypedArrays()
+   assertInvalidCases('typed arrays', {
+      {
+         name = 'missing closing type bracket',
+         source = "local values = array<int { 1 }"
+      },
+      {
+         name = 'missing element type',
+         source = "local values = array< { 1 }"
+      },
+      {
+         name = 'missing nested closing type bracket',
+         source = "local values = array<array<int { array<int> { 1 } }"
+      },
+      {
+         name = 'missing size expression',
+         source = "local values = array<int,> { 1 }"
+      },
+      {
+         name = 'missing type bracket before initializer',
+         source = "local values = array<int, 2 { 1 }"
+      },
+      {
+         name = 'empty type declaration',
+         source = "local values = array<>"
+      },
+      {
+         name = 'missing comma between type and size',
+         source = "local values = array<int 4>"
+      }
+   })
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Malformed functions, calls, and annotations
+
+@Test function ValidateMalformedFunctionsAndCalls()
+   assertInvalidCases('functions and calls', {
+      {
+         name = 'function statement without name',
+         source = "function (Value) return Value end"
+      },
+      {
+         name = 'trailing comma in parameter list',
+         source = "function bad(Value,) return Value end"
+      },
+      {
+         name = 'missing function body terminator',
+         source = "function bad(Value) return Value"
+      },
+      {
+         name = 'anonymous function expression missing terminator',
+         source = "callback = function(Value) return Value"
+      },
+      {
+         name = 'missing call argument expression',
+         source = "print(1, )"
+      },
+      {
+         name = 'unterminated call argument list',
+         source = "print('hello'"
+      },
+      {
+         name = 'malformed method call separator',
+         source = "object:('name')"
+      },
+      {
+         name = 'annotation without target',
+         source = "@Test"
+      },
+      {
+         name = 'annotation missing argument value',
+         source = "@Doc(text=) function bad() end"
+      }
+   })
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Malformed conditionals and pattern selection
+
+@Test function ValidateMalformedConditionals()
+   assertInvalidCases('conditionals', {
+      {
+         name = 'missing if condition',
+         source = "if then print('x') end"
+      },
+      {
+         name = 'missing then keyword',
+         source = "if true print('x') end"
+      },
+      {
+         name = 'missing if terminator',
+         source = "if true then print('x')"
+      },
+      {
+         name = 'elseif without condition',
+         source = "if true then print('x') elseif then print('y') end"
+      },
+      {
+         name = 'duplicate else branch',
+         source = "if true then print('x') else print('y') else print('z') end"
+      },
+      {
+         name = 'else before elseif',
+         source = "if true then print('x') else print('y') elseif false then print('z') end"
+      },
+      {
+         name = 'choose without from',
+         source = "result = choose value 1 -> 'one' end"
+      },
+      {
+         name = 'choose branch without arrow',
+         source = "result = choose value from 1 'one' end"
+      },
+      {
+         name = 'choose else branch not last',
+         source = "result = choose value from else -> 'default' 1 -> 'one' end"
+      }
+   })
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Malformed loops and ranges
+
+@Test function ValidateMalformedLoopsAndRanges()
+   assertInvalidCases('loops and ranges', {
+      {
+         name = 'while without condition',
+         source = "while do print('x') end"
+      },
+      {
+         name = 'while without do',
+         source = "while true print('x') end"
+      },
+      {
+         name = 'unterminated while',
+         source = "while true do print('x')"
+      },
+      {
+         name = 'repeat without until',
+         source = "repeat print('x')"
+      },
+      {
+         name = 'repeat until without condition',
+         source = "repeat print('x') until"
+      },
+      {
+         name = 'numeric for missing limit',
+         source = "for i = 1 do print(i) end"
+      },
+      {
+         name = 'numeric for missing expression after comma',
+         source = "for i = 1, do print(i) end"
+      },
+      {
+         name = 'generic for missing variable',
+         source = "for in values({1, 2}) do print(i) end"
+      },
+      {
+         name = 'generic for missing iterator',
+         source = "for i in do print(i) end"
+      },
+      {
+         name = 'range missing closing brace before loop body',
+         source = "for i in {0 to 10"
+      },
+      {
+         name = 'range missing closing brace',
+         source = "for i in {0 to 10 do print(i) end"
+      }
+   })
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Malformed exception handling, deferred blocks, and scoped object access
+
+@Test function ValidateMalformedExceptionHandlingAndBlocks()
+   assertInvalidCases('exception handling and blocks', {
+      {
+         name = 'try without end',
+         source = "try print('x')"
+      },
+      {
+         name = 'except outside try',
+         source = "except e print(e) end"
+      },
+      {
+         name = 'except when without filter',
+         source = "try print('x') except e when print(e) end"
+      },
+      {
+         name = 'success before except',
+         source = "try print('x') success print('ok') except e print(e) end"
+      },
+      {
+         name = 'defer without end',
+         source = "defer print('later')"
+      },
+      {
+         name = 'defer expression missing right operand',
+         source = "defer 1 + end"
+      },
+      {
+         name = 'with without object expression',
+         source = "with do print('x') end"
+      },
+      {
+         name = 'with without do',
+         source = "with target print(target.name) end"
+      }
+   })
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Malformed expressions and operators
+
+@Test function ValidateMalformedExpressionsAndOperators()
+   assertInvalidCases('expressions and operators', {
+      {
+         name = 'binary operator missing right operand',
+         source = "value = 1 +"
+      },
+      {
+         name = 'unclosed parenthesised expression',
+         source = "value = (1 + 2"
+      },
+      {
+         name = 'ternary missing false branch',
+         source = "value = enabled ? 'yes' :>"
+      },
+      {
+         name = 'ternary missing separator',
+         source = "value = enabled ? 'yes' 'no'"
+      },
+      {
+         name = 'nil coalescing assignment missing right operand',
+         source = "value ??="
+      },
+      {
+         name = 'compound assignment missing right operand',
+         source = "total +="
+      },
+      {
+         name = 'pipeline missing right call',
+         source = "result = data |>"
+      },
+      {
+         name = 'limited pipeline missing call',
+         source = "result = data |2>"
+      },
+      {
+         name = 'result filter missing function call',
+         source = "[_*]"
+      },
+      {
+         name = 'safe navigation missing member',
+         source = "value = object?."
+      }
+   })
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Malformed table, string, and compile-time syntax
+
+@Test function ValidateMalformedLiteralsAndCompileTimeSyntax()
+   assertInvalidCases('literals and compile-time syntax', {
+      {
+         name = 'unterminated table literal',
+         source = "value = { name = 'kotuku'"
+      },
+      {
+         name = 'table field without value',
+         source = "value = { name = }"
+      },
+      {
+         name = 'table indexed field without key expression',
+         source = "value = { [] = 'missing' }"
+      },
+      {
+         name = 'f-string interpolation missing closing brace',
+         source = "value = f'Hello {name'"
+      },
+      {
+         name = 'f-string interpolation missing expression',
+         source = "value = f'Hello {}'"
+      },
+      {
+         name = 'invalid include declaration',
+         source = "include"
+      },
+      {
+         name = 'invalid import declaration',
+         source = "import"
+      },
+      {
+         name = 'compile-time if without end',
+         source = "@if(imported=true) value = 1"
+      },
+      {
+         name = 'compile-time if missing condition value',
+         source = "@if(imported=) value = 1 @end"
+      }
+   })
+end
