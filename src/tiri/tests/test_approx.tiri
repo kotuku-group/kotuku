@@ -1,0 +1,83 @@
+-- Tests for the approximate equality operator.
+-- `a ≈ b` is equivalent to `(a - b) <= 1e-5 and (a - b) >= -1e-5`.
+
+@Test function BasicApprox()
+   assert(0.33333 ≈ 1 / 3, '0.33333 should be approximately 1/3')
+   assert(0.1 + 0.2 ≈ 0.3, 'floating point sum should be approximately 0.3')
+   assert(not (0.1 + 0.2 is 0.3), 'exact equality should still expose precision')
+end
+
+@Test function ToleranceRange()
+   assert(1.0 ≈ 1.000009, 'difference inside tolerance should pass')
+   assert(not (1.0 ≈ 1.00002), 'difference beyond tolerance should fail')
+end
+
+@Test function NegativeValues()
+   assert(-2.0 ≈ -2.000001, 'negative values should compare by absolute difference')
+   assert(not (-2.0 ≈ -2.1), 'large negative difference should fail')
+end
+
+@Test function WhitespaceFreeTokenisation()
+   assert(0.33333≈1/3, 'approx should tokenise without whitespace')
+end
+
+@Test function LogicalAndValueContexts()
+   ok = 0.1 + 0.2 ≈ 0.3
+   assert(ok is true, 'approx result should materialise as boolean')
+   assert((0.1 + 0.2 ≈ 0.3) and true, 'approx should work in logical expressions')
+   assert(false or 0.1 + 0.2 ≈ 0.3, 'logical operators should bind after approx')
+   assert(not (0.1 + 0.2 ≈ 0.31), 'unary not should work with approx')
+end
+
+@Test function FunctionCallsAndMultiReturn()
+   function numberPair()
+      return 0.333333, 99
+   end
+
+   function oneThirdPair()
+      return 1 / 3, 88
+   end
+
+   assert(numberPair() ≈ oneThirdPair(), 'approx should use the first return value from each operand')
+end
+
+@Test function OperandSideEffectsOnce()
+   left_count = 0
+   right_count = 0
+
+   function nextLeft()
+      left_count++
+      return 1.0
+   end
+
+   function nextRight()
+      right_count++
+      return 1.000001
+   end
+
+   assert(nextLeft() ≈ nextRight(), 'side-effecting operands should compare correctly')
+   assert(left_count is 1, 'left operand should be evaluated once')
+   assert(right_count is 1, 'right operand should be evaluated once')
+end
+
+@Test function SpecialNumbers()
+   nan = 0 / 0
+   assert(not (nan ≈ nan), 'NaN should not be approximately equal to itself')
+
+   inf = 1 / 0
+   assert(not (inf ≈ inf), 'infinity follows the subtraction rule and should not match itself')
+end
+
+@Test function NonNumericOperandsFail()
+   try
+      local fail = 'hello' ≈ 1
+   success
+      error('Expected failure when using approx with a string left operand')
+   end
+
+   try
+      local fail = 1 ≈ 'hello'
+   success
+      error('Expected failure when using approx with a string right operand')
+   end
+end
