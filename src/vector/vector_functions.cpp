@@ -694,11 +694,11 @@ A: Arc
 Z: Close Path
 </pre>
 
-If `Sequence` is `NULL`, an empty path resource will be generated.  This path can be populated with functions such as
+If `Sequence` is empty, an empty path resource will be generated.  This path can be populated with functions such as
 ~MoveTo() and ~LineTo().
 
 -INPUT-
-cstr Sequence: The command sequence to process.  If no sequence is specified then the path will be empty.
+cpp(strview) Sequence: The command sequence to process.  If no sequence is specified then the path will be empty.
 &ptr Path: A pointer variable that will receive the resulting path.
 
 -ERRORS-
@@ -711,13 +711,13 @@ BufferOverflow
 
 *********************************************************************************************************************/
 
-ERR GeneratePath(CSTRING Sequence, APTR *Path)
+ERR GeneratePath(const std::string_view &Sequence, APTR *Path)
 {
    if (not Path) return ERR::NullArgs;
 
    ERR error = ERR::Okay;
 
-   if (not Sequence) {
+   if (Sequence.empty()) {
       auto vector = new_simplevector();
       if (vector) *Path = vector;
       else error = ERR::AllocMemory;

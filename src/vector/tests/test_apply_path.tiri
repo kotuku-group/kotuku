@@ -2,14 +2,8 @@
 
    mVec ?= mod.load('vector')
 
-TOLERANCE <const> = 0.000001
-
-function near(A, B)
-   return math.abs(A - B) < TOLERANCE
-end
-
 function assertNear(Actual, Expected, Message)
-   assert(near(Actual, Expected), f'{Message}: expected {Expected}, got {Actual}')
+   assert(Actual ≈ Expected, f'{Message}: expected {Expected}, got {Actual}')
 end
 
 function newTargetPath()

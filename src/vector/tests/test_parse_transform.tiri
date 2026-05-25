@@ -1,17 +1,17 @@
 
    mVec ?= mod.load('vector')
 
-function assertNear(Actual, Expected, Message)
-   assert(Actual ≈ Expected, f'{Message}: expected {Expected}, got {Actual}')
-end
-
 function assertMatrix(Matrix, ScaleX, ShearY, ShearX, ScaleY, TranslateX, TranslateY, Message)
-   assertNear(Matrix.ScaleX, ScaleX, f'{Message} ScaleX')
-   assertNear(Matrix.ShearY, ShearY, f'{Message} ShearY')
-   assertNear(Matrix.ShearX, ShearX, f'{Message} ShearX')
-   assertNear(Matrix.ScaleY, ScaleY, f'{Message} ScaleY')
-   assertNear(Matrix.TranslateX, TranslateX, f'{Message} TranslateX')
-   assertNear(Matrix.TranslateY, TranslateY, f'{Message} TranslateY')
+   function near(Actual, Expected, Message)
+      assert(Actual ≈ Expected, f'{Message}: expected {Expected}, got {Actual}')
+   end
+
+   near(Matrix.ScaleX, ScaleX, f'{Message} ScaleX')
+   near(Matrix.ShearY, ShearY, f'{Message} ShearY')
+   near(Matrix.ShearX, ShearX, f'{Message} ShearX')
+   near(Matrix.ScaleY, ScaleY, f'{Message} ScaleY')
+   near(Matrix.TranslateX, TranslateX, f'{Message} TranslateX')
+   near(Matrix.TranslateY, TranslateY, f'{Message} TranslateY')
 end
 
 function setNonIdentity(Matrix)
