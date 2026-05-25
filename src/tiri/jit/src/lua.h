@@ -239,6 +239,12 @@ inline const char *lua_tostring(lua_State *L, int I) {
    return lua_tolstring(L, I, nullptr);
 }
 
+inline std::string_view lua_tostringview(lua_State *L, int I) {
+   size_t len = 0;
+   if (auto s = lua_tolstring(L, I, &len)) return std::string_view{s, len};
+   else return std::string_view{};
+}
+
 // compatibility macros and inline functions
 
 #define lua_open()   luaL_newstate()

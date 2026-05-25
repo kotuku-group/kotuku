@@ -100,6 +100,7 @@ static constexpr uint32_t OJH_unsubscribe = simple_hash("unsubscribe");
 [[nodiscard]] static ERR object_set_function(lua_State *, OBJECTPTR, Field *, int);
 [[nodiscard]] static ERR object_set_object(lua_State *, OBJECTPTR, Field *, int);
 [[nodiscard]] static ERR object_set_ptr(lua_State *, OBJECTPTR, Field *, int);
+[[nodiscard]] static ERR object_set_cppstring(lua_State *, OBJECTPTR, Field *, int);
 [[nodiscard]] static ERR object_set_double(lua_State *, OBJECTPTR, Field *, int);
 [[nodiscard]] static ERR object_set_lookup(lua_State *, OBJECTPTR, Field *, int);
 [[nodiscard]] static ERR object_set_oid(lua_State *, OBJECTPTR, Field *, int);
@@ -383,6 +384,9 @@ WRITE_TABLE * get_write_table(objMetaClass *Class)
          }
          else if (field.Flags & FD_FUNCTION) {
             jmp.push_back(obj_write(hash, object_set_function, &field));
+         }
+         else if (field.Flags & FD_STRING) {
+            jmp.push_back(obj_write(hash, object_set_cppstring, &field));
          }
          else if (field.Flags & FD_POINTER) {
             if (field.Flags & (FD_OBJECT|FD_LOCAL)) {

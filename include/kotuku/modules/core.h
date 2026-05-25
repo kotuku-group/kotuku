@@ -2827,10 +2827,10 @@ class objFile : public Object {
       return field->WriteValue(target, field, 0x08000310, Value, 1);
    }
 
-   template <class T> inline ERR setPath(T && Value) noexcept {
+   inline ERR setPath(std::string_view Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804500, &Value, 1);
    }
 
    inline ERR setPermissions(const int Value) noexcept {
@@ -2845,10 +2845,10 @@ class objFile : public Object {
       return field->WriteValue(target, field, FD_INT64, &Value, 1);
    }
 
-   template <class T> inline ERR setLink(T && Value) noexcept {
+   inline ERR setLink(std::string_view Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[15];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setUser(const int Value) noexcept {

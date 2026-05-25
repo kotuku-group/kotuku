@@ -677,7 +677,7 @@ static ERR HTTP_Activate(extHTTP *Self)
                   log.trace("Multiple input files detected.");
                   Self->InputPos = 0;
                   parse_file(Self, cmd);
-                  Self->flInput = objFile::create::local(fl::Path(cmd.str().c_str()), fl::Flags(FL::READ));
+                  Self->flInput = objFile::create::local(fl::Path(cmd.str()), fl::Flags(FL::READ));
                }
                else Self->flInput = objFile::create::local(fl::Path(Self->InputFile), fl::Flags(FL::READ));
 
