@@ -784,12 +784,11 @@ static ERR draw_bitmap_font(extFont *Self)
 
    // Validate settings for fixed font type
 
-   if (!(bitmap = Self->Bitmap)) { log.warning("The Bitmap field is not set."); return ERR::FieldNotSet; }
-   if (!Self->String) return ERR::FieldNotSet;
-   if (!Self->String[0]) return ERR::Okay;
+   if (not (bitmap = Self->Bitmap)) return log.warning(ERR::FieldNotSet);
+   if (Self->prvBuffer.empty()) return ERR::Okay;
 
    ERR error = ERR::Okay;
-   STRING str = Self->String;
+   auto str = std::string_view(Self->prvBuffer);
    int dxcoord = Self->X;
    int dycoord = Self->Y;
 
@@ -804,7 +803,7 @@ static ERR draw_bitmap_font(extFont *Self)
    }
 
    string_size(Self, str, FSS_LINE, (Self->WrapEdge > 0) ? (Self->WrapEdge - Self->X) : 0, &linewidth, &wrapindex);
-   CSTRING wrapstr = str + wrapindex;
+   const char *wrapstr = str.data() + wrapindex;
 
    // If horizontal centering is required, calculate the correct horizontal starting coordinate.
 
@@ -831,17 +830,28 @@ static ERR draw_bitmap_font(extFont *Self)
    int16_t dx = 0, dy = 0;
    startx = dxcoord;
    CHECK_LINE_CLIP(Self, dycoord, bitmap);
-   while (*str) {
-      if (*str IS '\n') { // Reset the font to a new line
+   while (not str.empty()) {
+      if (str.front() IS '\n') { // Reset the font to a new line
          if (Self->Underline.Alpha > 0) {
             gfx::DrawRectangle(bitmap, startx, dycoord + Self->Height + 1, dxcoord-startx, ((Self->Flags & FTF::HEAVY_LINE) != FTF::NIL) ? 2 : 1, ucolour, BAF::FILL);
          }
 
-         str++;
+         str.remove_prefix(1);
 
-         while ((*str) and (*str <= 0x20)) { if (*str IS '\n') dycoord += Self->LineSpacing; str++; }
-         string_size(Self, str, FSS_LINE, (Self->WrapEdge > 0) ? (Self->WrapEdge - Self->X) : 0, &linewidth, &wrapindex);
-         wrapstr = str + wrapindex;
+         while ((not str.empty()) and (uint8_t(str.front()) <= 0x20)) {
+            if (str.front() IS '\n') dycoord += Self->LineSpacing;
+            str.remove_prefix(1);
+         }
+
+         if (str.empty()) {
+            linewidth = 0;
+            wrapindex = 0;
+         }
+         else {
+            string_size(Self, str, FSS_LINE, (Self->WrapEdge > 0) ? (Self->WrapEdge - Self->X) : 0,
+               &linewidth, &wrapindex);
+         }
+         wrapstr = str.data() + wrapindex;
 
          if ((Self->Align & (ALIGN::HORIZONTAL|ALIGN::RIGHT)) != ALIGN::NIL) {
             if ((Self->Align & ALIGN::HORIZONTAL) != ALIGN::NIL) dxcoord = Self->X + ((Self->AlignWidth - linewidth)>>1);
@@ -853,13 +863,14 @@ static ERR draw_bitmap_font(extFont *Self)
          dycoord += Self->LineSpacing;
          CHECK_LINE_CLIP(Self, dycoord, bitmap);
       }
-      else if (*str IS '\t') {
+      else if (str.front() IS '\t') {
          int16_t tabwidth = (Self->prvChar['o'].Advance * Self->GlyphSpacing) * Self->TabSize;
          if (tabwidth) dxcoord = Self->X + tab_advance<int>(dxcoord - Self->X, tabwidth);
-         str++;
+         str.remove_prefix(1);
       }
       else {
          charlen = getutf8(str, &unicode);
+         if (charlen <= 0) break;
 
          if ((unicode > 255) or (!Self->prvChar) or (!Self->prvChar[unicode].Advance)) {
             unicode = Self->prvDefaultChar;
@@ -870,13 +881,18 @@ static ERR draw_bitmap_font(extFont *Self)
 
          // Wordwrap management
 
-         if (str >= wrapstr) {
+         if (str.data() >= wrapstr) {
             dxcoord = Self->X;
             dycoord += Self->LineSpacing;
 
-            while ((*str) and (*str <= 0x20)) { if (*str IS '\n') dycoord += Self->LineSpacing; str++; }
+            while ((not str.empty()) and (uint8_t(str.front()) <= 0x20)) {
+               if (str.front() IS '\n') dycoord += Self->LineSpacing;
+               str.remove_prefix(1);
+            }
+            if (str.empty()) break;
+
             string_size(Self, str, FSS_LINE, Self->WrapEdge - dxcoord, &linewidth, &wrapindex);
-            wrapstr = str + wrapindex;
+            wrapstr = str.data() + wrapindex;
 
             if ((Self->Align & (ALIGN::HORIZONTAL|ALIGN::RIGHT)) != ALIGN::NIL) {
                if ((Self->Align & ALIGN::HORIZONTAL) != ALIGN::NIL) dxcoord = Self->X + ((Self->AlignWidth - linewidth)>>1);
@@ -885,7 +901,7 @@ static ERR draw_bitmap_font(extFont *Self)
             CHECK_LINE_CLIP(Self, dycoord, bitmap);
          }
 
-         str += charlen;
+         str.remove_prefix(size_t(charlen));
 
          if ((unicode > 0x20) and (draw_line)) {
             if (Self->Outline.Alpha > 0) { // Outline support
@@ -1065,7 +1081,7 @@ static ERR draw_bitmap_font(extFont *Self)
 
          dxcoord += charwidth * Self->GlyphSpacing;
       }
-   } // while (*str)
+   } // while (not str.empty())
 
    // Draw an underline for the current line if underlining is turned on
 

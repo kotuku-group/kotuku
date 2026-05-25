@@ -458,7 +458,7 @@ ERR get_font(kt::Log &Log, std::string_view Family, std::string_view Style, int 
    const int point_size = std::round(Size * (72.0 / DISPLAY_DPI));
    CSTRING location = nullptr;
    FMETA meta = FMETA::NIL;
-   if (auto error = fnt::SelectFont(family.c_str(), style.c_str(), &location, &meta); error IS ERR::Okay) {
+   if (auto error = fnt::SelectFont(family, style, &location, &meta); error IS ERR::Okay) {
       LocalResource loc(location);
 
       if ((meta & FMETA::SCALED) IS FMETA::NIL) { // Bitmap font

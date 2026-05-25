@@ -29,7 +29,7 @@ extern void ReadRGBPixel(objBitmap * Bitmap, int X, int Y, struct RGB8 ** RGB);
 extern ERR Resample(objBitmap * Bitmap, struct ColourFormat * ColourFormat);
 extern ERR RestoreCursor(PTC Cursor, OBJECTID Owner);
 extern double ScaleToDPI(double Value);
-extern ERR ScanDisplayModes(CSTRING Filter, struct DisplayInfo * Info);
+extern ERR ScanDisplayModes(const std::string_view & Filter, struct DisplayInfo * Info);
 extern void SetClipRegion(objBitmap * Bitmap, int Left, int Top, int Right, int Bottom);
 extern ERR SetCursor(OBJECTID Surface, CRF Flags, PTC Cursor, const std::string_view & Name, OBJECTID Owner);
 extern ERR SetCursorPos(double X, double Y);

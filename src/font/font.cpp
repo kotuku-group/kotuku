@@ -116,6 +116,8 @@ static void string_size(extFont *, std::string_view, int, int, int *, int *);
 //********************************************************************************************************************
 // Return the first unicode value from a given string address.
 
+static int getutf8(CSTRING Value, uint32_t *Unicode) = delete;
+
 static int getutf8(std::string_view Value, uint32_t *Unicode)
 {
    int i, len, code;
