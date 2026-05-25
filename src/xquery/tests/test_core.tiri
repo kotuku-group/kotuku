@@ -2,7 +2,7 @@
 
    include 'xml'
    include 'xquery'
-   
+
 function contains(table, element)
    for value in values(table) do
       if value is element then return true end
@@ -416,7 +416,7 @@ end
 
    err = xq.mtEvaluate(empty_xml)
    assert(err is ERR_Okay, 'Second evaluation should succeed: ' .. mSys.GetErrorMsg(err))
-   assert(xq.resultString is '', 'Empty re-evaluation must clear the previous string result')
+   assert(xq.resultString is nil, 'Empty re-evaluation must clear the previous string result')
 end
 
 -----------------------------------------------------------------------------------------------------------------------

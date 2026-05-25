@@ -21,8 +21,7 @@ end
 end
 
 @Test function FontFieldSetters()
-   local font = obj.new('font')
-   defer font.free() end
+   font <close> = obj.new('font')
 
    font.face = 'Noto Sans:12:Bold Italic:#ff0000'
    assert(font.face is 'Noto Sans', 'Face parsing did not isolate the family name')

@@ -485,85 +485,64 @@ class objNetClient;
 namespace fl {
    using namespace kt;
 
-[[nodiscard]] constexpr FieldValue Path(CSTRING Value) { return FieldValue(FID_Path, Value); }
-inline FieldValue Path(const std::string &Value) { return FieldValue(FID_Path, Value.c_str()); }
+[[nodiscard]] inline FieldValue Path(std::string_view Value) { return FieldValue(FID_Path, Value); }
+[[nodiscard]] inline FieldValue Location(std::string_view Value) { return FieldValue(FID_Location, Value); }
+[[nodiscard]] inline FieldValue Args(std::string_view Value) { return FieldValue(FID_Args, Value); }
+[[nodiscard]] inline FieldValue Fill(std::string_view Value) { return FieldValue(FID_Fill, Value); }
+[[nodiscard]] inline FieldValue Statement(std::string_view Value) { return FieldValue(FID_Statement, Value); }
+[[nodiscard]] inline FieldValue Stroke(std::string_view Value) { return FieldValue(FID_Stroke, Value); }
+[[nodiscard]] inline FieldValue String(std::string_view Value) { return FieldValue(FID_String, Value); }
+[[nodiscard]] inline FieldValue Name(std::string_view Value) { return FieldValue(FID_Name, Value); }
+[[nodiscard]] inline FieldValue Allow(std::string_view Value) { return FieldValue(FID_Allow, Value); }
+[[nodiscard]] inline FieldValue Style(std::string_view Value) { return FieldValue(FID_Style, Value); }
+[[nodiscard]] inline FieldValue Face(std::string_view Value) { return FieldValue(FID_Face, Value); }
+[[nodiscard]] inline FieldValue FileExtension(std::string_view Value) { return FieldValue(FID_FileExtension, Value); }
+[[nodiscard]] inline FieldValue FileDescription(std::string_view Value) { return FieldValue(FID_FileDescription, Value); }
+[[nodiscard]] inline FieldValue FileHeader(std::string_view Value) { return FieldValue(FID_FileHeader, Value); }
+[[nodiscard]] inline FieldValue ArchiveName(std::string_view Value) { return FieldValue(FID_ArchiveName, Value); }
+[[nodiscard]] inline FieldValue Volume(std::string_view Value) { return FieldValue(FID_Volume, Value); }
+[[nodiscard]] inline FieldValue DPMS(std::string_view Value) { return FieldValue(FID_DPMS, Value); }
+[[nodiscard]] inline FieldValue Icon(std::string_view Value) { return FieldValue(FID_Icon, Value); }
+[[nodiscard]] inline FieldValue Procedure(std::string_view Value) { return FieldValue(FID_Procedure, Value); }
+[[nodiscard]] inline FieldValue ButtonOrder(std::string_view Value) { return FieldValue(FID_ButtonOrder, Value); }
+[[nodiscard]] inline FieldValue Points(std::string_view Value) { return FieldValue(FID_Points, Value); }
+[[nodiscard]] inline FieldValue Pretext(std::string_view Value) { return FieldValue(FID_Pretext, Value); }
+[[nodiscard]] inline FieldValue Point(std::string_view Value) { return FieldValue(FID_Point, Value); }
 
-[[nodiscard]] constexpr FieldValue Location(CSTRING Value) { return FieldValue(FID_Location, Value); }
-inline FieldValue Location(const std::string &Value) { return FieldValue(FID_Location, Value.c_str()); }
-
-[[nodiscard]] constexpr FieldValue Args(CSTRING Value) { return FieldValue(FID_Args, Value); }
-inline FieldValue Args(const std::string &Value) { return FieldValue(FID_Args, Value.c_str()); }
-
-[[nodiscard]] constexpr FieldValue Fill(CSTRING Value) { return FieldValue(FID_Fill, Value); }
-inline FieldValue Fill(const std::string &Value) { return FieldValue(FID_Fill, Value.c_str()); }
-
-[[nodiscard]] constexpr FieldValue Statement(CSTRING Value) { return FieldValue(FID_Statement, Value); }
-inline FieldValue Statement(const std::string &Value) { return FieldValue(FID_Statement, Value.c_str()); }
-
-[[nodiscard]] constexpr FieldValue Stroke(CSTRING Value) { return FieldValue(FID_Stroke, Value); }
-inline FieldValue Stroke(const std::string &Value) { return FieldValue(FID_Stroke, Value.c_str()); }
-
-[[nodiscard]] constexpr FieldValue String(CSTRING Value) { return FieldValue(FID_String, Value); }
-inline FieldValue String(const std::string &Value) { return FieldValue(FID_String, Value.c_str()); }
-
-[[nodiscard]] constexpr FieldValue Name(CSTRING Value) { return FieldValue(FID_Name, Value); }
-inline FieldValue Name(const std::string &Value) { return FieldValue(FID_Name, Value.c_str()); }
-
-[[nodiscard]] constexpr FieldValue Allow(CSTRING Value) { return FieldValue(FID_Allow, Value); }
-inline FieldValue Allow(const std::string &Value) { return FieldValue(FID_Allow, Value.c_str()); }
-
-[[nodiscard]] constexpr FieldValue Style(CSTRING Value) { return FieldValue(FID_Style, Value); }
-inline FieldValue Style(const std::string &Value) { return FieldValue(FID_Style, Value.c_str()); }
-
-[[nodiscard]] constexpr FieldValue Face(CSTRING Value) { return FieldValue(FID_Face, Value); }
-inline FieldValue Face(const std::string &Value) { return FieldValue(FID_Face, Value.c_str()); }
-
-[[nodiscard]] constexpr FieldValue FileExtension(CSTRING Value) { return FieldValue(FID_FileExtension, Value); }
-inline FieldValue FileExtension(const std::string &Value) { return FieldValue(FID_FileExtension, Value.c_str()); }
-
-[[nodiscard]] constexpr FieldValue FileDescription(CSTRING Value) { return FieldValue(FID_FileDescription, Value); }
-inline FieldValue FileDescription(const std::string &Value) { return FieldValue(FID_FileDescription, Value.c_str()); }
-
-[[nodiscard]] constexpr FieldValue FileHeader(CSTRING Value) { return FieldValue(FID_FileHeader, Value); }
-inline FieldValue FileHeader(const std::string &Value) { return FieldValue(FID_FileHeader, Value.c_str()); }
+// Handlers to prevent failure on receipt of a nullptr value
+[[nodiscard]] inline FieldValue Path(CSTRING Value) { return FieldValue(FID_Path, Value ? std::string_view(Value) : std::string_view()); }
+[[nodiscard]] inline FieldValue Location(CSTRING Value) { return FieldValue(FID_Location, Value ? std::string_view(Value) : std::string_view()); }
+[[nodiscard]] inline FieldValue Args(CSTRING Value) { return FieldValue(FID_Args, Value ? std::string_view(Value) : std::string_view()); }
+[[nodiscard]] inline FieldValue Fill(CSTRING Value) { return FieldValue(FID_Fill, Value ? std::string_view(Value) : std::string_view()); }
+[[nodiscard]] inline FieldValue Statement(CSTRING Value) { return FieldValue(FID_Statement, Value ? std::string_view(Value) : std::string_view()); }
+[[nodiscard]] inline FieldValue Stroke(CSTRING Value) { return FieldValue(FID_Stroke, Value ? std::string_view(Value) : std::string_view()); }
+[[nodiscard]] inline FieldValue String(CSTRING Value) { return FieldValue(FID_String, Value ? std::string_view(Value) : std::string_view()); }
+[[nodiscard]] inline FieldValue Name(CSTRING Value) { return FieldValue(FID_Name, Value ? std::string_view(Value) : std::string_view()); }
+[[nodiscard]] inline FieldValue Allow(CSTRING Value) { return FieldValue(FID_Allow, Value ? std::string_view(Value) : std::string_view()); }
+[[nodiscard]] inline FieldValue Style(CSTRING Value) { return FieldValue(FID_Style, Value ? std::string_view(Value) : std::string_view()); }
+[[nodiscard]] inline FieldValue Face(CSTRING Value) { return FieldValue(FID_Face, Value ? std::string_view(Value) : std::string_view()); }
+[[nodiscard]] inline FieldValue FileExtension(CSTRING Value) { return FieldValue(FID_FileExtension, Value ? std::string_view(Value) : std::string_view()); }
+[[nodiscard]] inline FieldValue FileDescription(CSTRING Value) { return FieldValue(FID_FileDescription, Value ? std::string_view(Value) : std::string_view()); }
+[[nodiscard]] inline FieldValue FileHeader(CSTRING Value) { return FieldValue(FID_FileHeader, Value ? std::string_view(Value) : std::string_view()); }
+[[nodiscard]] inline FieldValue ArchiveName(CSTRING Value) { return FieldValue(FID_ArchiveName, Value ? std::string_view(Value) : std::string_view()); }
+[[nodiscard]] inline FieldValue Volume(CSTRING Value) { return FieldValue(FID_Volume, Value ? std::string_view(Value) : std::string_view()); }
+[[nodiscard]] inline FieldValue DPMS(CSTRING Value) { return FieldValue(FID_DPMS, Value ? std::string_view(Value) : std::string_view()); }
+[[nodiscard]] inline FieldValue Icon(CSTRING Value) { return FieldValue(FID_Icon, Value ? std::string_view(Value) : std::string_view()); }
+[[nodiscard]] inline FieldValue Procedure(CSTRING Value) { return FieldValue(FID_Procedure, Value ? std::string_view(Value) : std::string_view()); }
+[[nodiscard]] inline FieldValue ButtonOrder(CSTRING Value) { return FieldValue(FID_ButtonOrder, Value ? std::string_view(Value) : std::string_view()); }
+[[nodiscard]] inline FieldValue Points(CSTRING Value) { return FieldValue(FID_Points, Value ? std::string_view(Value) : std::string_view()); }
+[[nodiscard]] inline FieldValue Pretext(CSTRING Value) { return FieldValue(FID_Pretext, Value ? std::string_view(Value) : std::string_view()); }
+[[nodiscard]] inline FieldValue Point(CSTRING Value) { return FieldValue(FID_Point, Value ? std::string_view(Value) : std::string_view()); }
 
 [[nodiscard]] constexpr FieldValue FontSize(double Value) { return FieldValue(FID_FontSize, Value); }
 [[nodiscard]] constexpr FieldValue FontSize(int Value) { return FieldValue(FID_FontSize, Value); }
-[[nodiscard]] constexpr FieldValue FontSize(CSTRING Value) { return FieldValue(FID_FontSize, Value); }
-inline FieldValue FontSize(const std::string &Value) { return FieldValue(FID_FontSize, Value.c_str()); }
-
-[[nodiscard]] constexpr FieldValue ArchiveName(CSTRING Value) { return FieldValue(FID_ArchiveName, Value); }
-inline FieldValue ArchiveName(const std::string &Value) { return FieldValue(FID_ArchiveName, Value.c_str()); }
-
-[[nodiscard]] constexpr FieldValue Volume(CSTRING Value) { return FieldValue(FID_Volume, Value); }
-inline FieldValue Volume(const std::string &Value) { return FieldValue(FID_Volume, Value.c_str()); }
-
-[[nodiscard]] constexpr FieldValue DPMS(CSTRING Value) { return FieldValue(FID_DPMS, Value); }
-inline FieldValue DPMS(const std::string &Value) { return FieldValue(FID_DPMS, Value.c_str()); }
-
-[[nodiscard]] constexpr FieldValue Icon(CSTRING Value) { return FieldValue(FID_Icon, Value); }
-inline FieldValue Icon(const std::string &Value) { return FieldValue(FID_Icon, Value.c_str()); }
-
-[[nodiscard]] constexpr FieldValue Procedure(CSTRING Value) { return FieldValue(FID_Procedure, Value); }
-inline FieldValue Procedure(const std::string &Value) { return FieldValue(FID_Procedure, Value.c_str()); }
+inline FieldValue FontSize(std::string_view Value) { return FieldValue(FID_FontSize, Value); }
 
 [[nodiscard]] constexpr FieldValue ReadOnly(int Value) { return FieldValue(FID_ReadOnly, Value); }
 [[nodiscard]] constexpr FieldValue ReadOnly(bool Value) { return FieldValue(FID_ReadOnly, (Value ? 1 : 0)); }
 
-[[nodiscard]] constexpr FieldValue ButtonOrder(CSTRING Value) { return FieldValue(FID_ButtonOrder, Value); }
-inline FieldValue ButtonOrder(const std::string &Value) { return FieldValue(FID_ButtonOrder, Value.c_str()); }
-
 [[nodiscard]] constexpr FieldValue Point(double Value) { return FieldValue(FID_Point, Value); }
 [[nodiscard]] constexpr FieldValue Point(int Value) { return FieldValue(FID_Point, Value); }
-[[nodiscard]] constexpr FieldValue Point(CSTRING Value) { return FieldValue(FID_Point, Value); }
-inline FieldValue Point(const std::string &Value) { return FieldValue(FID_Point, Value.c_str()); }
-
-[[nodiscard]] constexpr FieldValue Points(CSTRING Value) { return FieldValue(FID_Points, Value); }
-inline FieldValue Points(const std::string &Value) { return FieldValue(FID_Points, Value.c_str()); }
-
-[[nodiscard]] constexpr FieldValue Pretext(CSTRING Value) { return FieldValue(FID_Pretext, Value); }
-inline FieldValue Pretext(const std::string &Value) { return FieldValue(FID_Pretext, Value.c_str()); }
-
 [[nodiscard]] constexpr FieldValue Acceleration(double Value) { return FieldValue(FID_Acceleration, Value); }
 [[nodiscard]] constexpr FieldValue Actions(CPTR Value) { return FieldValue(FID_Actions, Value); }
 [[nodiscard]] constexpr FieldValue AmtColours(int Value) { return FieldValue(FID_AmtColours, Value); }

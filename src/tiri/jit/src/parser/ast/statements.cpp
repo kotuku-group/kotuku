@@ -1147,7 +1147,7 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::st
    this->ctx.push_import(Path);
 
    // Read the file contents using Kotuku File API
-   objFile::create file = { fl::Path(Path.c_str()), fl::Flags(FL::READ) };
+   objFile::create file = { fl::Path(Path), fl::Flags(FL::READ) };
    if (not file.ok()) {
       this->ctx.pop_import();
       return this->fail<std::unique_ptr<BlockStmt>>(ParserErrorCode::UnexpectedToken, ImportToken,

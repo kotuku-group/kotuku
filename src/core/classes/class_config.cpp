@@ -175,8 +175,7 @@ static ERR parse_file(extConfig *Self, CSTRING Path)
       auto current_path = (sep != std::string_view::npos) ? paths.substr(0, sep) : paths;
 
       // Create a null-terminated copy for fl::Path
-      std::string path_str(current_path);
-      objFile::create file = { fl::Path(path_str), fl::Flags(FL::READ|FL::APPROXIMATE) };
+      objFile::create file = { fl::Path(current_path), fl::Flags(FL::READ|FL::APPROXIMATE) };
 
       if (file.ok()) {
          auto filesize = file->get<int>(FID_Size);

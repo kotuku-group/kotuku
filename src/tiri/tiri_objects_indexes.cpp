@@ -144,6 +144,22 @@ static ERR object_set_ptr(lua_State *Lua, OBJECTPTR Object, Field *Field, int Va
    else return ERR::SetValueNotPointer;
 }
 
+static ERR object_set_cppstring(lua_State *Lua, OBJECTPTR Object, Field *Field, int ValueIndex)
+{
+   auto type = lua_type(Lua, ValueIndex);
+
+   if (type IS LUA_TSTRING) {
+      return Object->set(Field->FieldID, lua_tostringview(Lua, ValueIndex));
+   }
+   else if (type IS LUA_TNUMBER) {
+      return Object->set(Field->FieldID, lua_tonumber(Lua, ValueIndex));
+   }
+   else if (type IS LUA_TNIL) {
+      return Object->set(Field->FieldID, std::string_view());
+   }
+   else return ERR::SetValueNotString;
+}
+
 static ERR object_set_double(lua_State *Lua, OBJECTPTR Object, Field *Field, int ValueIndex)
 {
    switch(lua_type(Lua, ValueIndex)) {
@@ -339,7 +355,12 @@ static int object_set(lua_State *Lua)
 
       ERR error;
       if (type IS LUA_TNUMBER) error = obj->set(fh, luaL_checknumber(Lua, 2));
-      else error = obj->set(fh, luaL_optstring(Lua, 2, nullptr));
+      else {
+         size_t len;
+         auto str = luaL_optlstring(Lua, 2, nullptr, &len);
+         std::string_view sv(str ? str : "", len);
+         error = obj->set(fh, sv);
+      }
 
       release_object(def);
       lua_pushinteger(Lua, int(error));
@@ -387,6 +408,9 @@ static ERR set_object_field(lua_State *Lua, OBJECTPTR Object, uint32_t FieldHash
             return object_set_object(Lua, target, field, ValueIndex);
          }
          else return object_set_ptr(Lua, target, field, ValueIndex);
+      }
+      else if ((field->Flags & FD_STRING) and (field->Flags & FD_CPP)) { // std::string target
+         return object_set_cppstring(Lua, target, field, ValueIndex);
       }
       else if (field->Flags & (FD_DOUBLE|FD_FLOAT)) {
          return object_set_double(Lua, target, field, ValueIndex);
@@ -510,10 +534,11 @@ static int object_get_string(lua_State *Lua, const obj_read &Handle, GCobject *D
    ERR error;
    if (auto obj = access_object(Def)) {
       auto field = (Field *)(Handle.Data);
-      CSTRING result;
+      std::string_view result;
       if ((error = obj->get(field->FieldID, result)) IS ERR::Okay) {
-         lua_pushstring(Lua, result);
-         if (field->Flags & FD_ALLOC) FreeResource(result);
+         if (result.empty()) lua_pushnil(Lua);
+         else lua_pushlstring(Lua, result.data(), result.size());
+         if (field->Flags & FD_ALLOC) FreeResource(result.data());
       }
       release_object(Def);
    }

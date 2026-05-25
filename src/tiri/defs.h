@@ -140,15 +140,6 @@ static inline std::string_view lua_checkstringview(lua_State *L, int idx)
    else return std::string_view{};
 }
 
-// This version doesn't raise an error if the argument is not a string.
-
-static inline std::string_view lua_tostringview(lua_State *L, int idx)
-{
-   size_t len = 0;
-   if (auto s = lua_tolstring(L, idx, &len)) return std::string_view{s, len};
-   else return std::string_view{};
-}
-
 //********************************************************************************************************************
 // Standard hash computation, but stops when it encounters a character outside of A-Za-z0-9 range
 // Note that struct name hashes are case sensitive.
