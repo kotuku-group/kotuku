@@ -64,7 +64,7 @@ static ERR CONFIG_SaveSettings(extConfig *);
 
 static bool check_for_key(std::string_view);
 static ERR parse_config(extConfig *, std::string_view);
-static ConfigKeys * find_group_wild(extConfig *Self, std::string_view Group);
+static ConfigGroup * find_group_wild(extConfig *Self, std::string_view Group);
 static void merge_groups(ConfigGroups &, ConfigGroups &);
 static std::string_view sort_key_value(const ConfigGroup &, CSTRING);
 static void apply_filters(extConfig *);
@@ -147,8 +147,7 @@ static uint32_t calc_crc(extConfig *Self)
 }
 
 //********************************************************************************************************************
-// Open a file with read only and exclusive flags, then read all of the data into a buffer.  Terminate the buffer,
-// then free the file.
+// Parse source file(s) into the Config object.
 //
 // Note that multiple files can be specified by separating each file path with a pipe.  This allows you to merge
 // many configuration files into one object.
@@ -159,11 +158,9 @@ static ERR parse_file(extConfig *Self, std::string_view Path)
    std::string_view paths(Path);
 
    while ((not paths.empty()) and (error IS ERR::Okay)) {
-      // Find the next separator
-      auto sep = paths.find_first_of(";|");
+      auto sep = paths.find_first_of(";|"); // Find the next separator
       auto current_path = (sep != std::string_view::npos) ? paths.substr(0, sep) : paths;
 
-      // Create a null-terminated copy for fl::Path
       objFile::create file = { fl::Path(current_path), fl::Flags(FL::READ|FL::APPROXIMATE) };
 
       if (file.ok()) {
@@ -548,7 +545,7 @@ static ERR CONFIG_SaveToObject(extConfig *Self, struct acSaveToObject *Args)
 {
    kt::Log log;
 
-   if (not Args) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Dest)) return log.warning(ERR::NullArgs);
 
    log.branch("Saving %d groups to object #%d.", (int)Self->Groups.size(), Args->Dest->UID);
 
@@ -599,7 +596,10 @@ static ERR CONFIG_Set(extConfig *Self, struct cfg::Set *Args)
    if ((not Args->Key) or (not Args->Key[0])) return ERR::NullArgs;
 
    auto group = find_group_wild(Self, Args->Group);
-   if (group) return Self->writeValue(Args->Group, Args->Key, Args->Data);
+   if (group) {
+      group->second[Args->Key] = Args->Data;
+      return ERR::Okay;
+   }
    else return ERR::Search;
 }
 
@@ -680,19 +680,7 @@ static ERR CONFIG_WriteValue(extConfig *Self, struct cfg::WriteValue *Args)
 
    log.trace("%s.%s = %s", Args->Group, Args->Key, Args->Data);
 
-   // Check if the named group already exists
-
-   for (auto & [group, keys] : Self->Groups) {
-      if (group IS Args->Group) {
-         keys[Args->Key] = Args->Data;
-         return ERR::Okay;
-      }
-   }
-
-   auto &new_group = Self->Groups.emplace_back();
-   new_group.first.assign(Args->Group);
-   new_group.second[Args->Key].assign(Args->Data);
-   return ERR::Okay;
+   return Self->write(Args->Group, Args->Key, Args->Data);
 }
 
 /*********************************************************************************************************************
@@ -1094,12 +1082,12 @@ static void apply_group_filter(extConfig *Self, std::string_view Filter)
 //********************************************************************************************************************
 // Returns the key-values for a group, given a group name.  Supports wild-cards.
 
-static ConfigKeys * find_group_wild(extConfig *Self, std::string_view Group)
+static ConfigGroup * find_group_wild(extConfig *Self, std::string_view Group)
 {
    if (Group.empty()) return nullptr;
 
-   for (auto & [group, keys] : Self->Groups) {
-      if (wildcmp(Group, group)) return &keys;
+   for (auto &group : Self->Groups) {
+      if (wildcmp(Group, group.first)) return &group;
    }
 
    return nullptr;

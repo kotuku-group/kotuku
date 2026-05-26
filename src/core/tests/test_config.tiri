@@ -30,6 +30,9 @@ glMerge = 'Ignore this\r\n[MergedGroup]\r\nHello=World\r\n'
 
 @AfterAll function cleanup()
    mSys.DeleteFile('temp:test-write.cfg')
+   mSys.DeleteFile('temp:test-source.cfg')
+   mSys.DeleteFile('temp:test-merge-file.cfg')
+   mSys.DeleteFile('temp:test-save-settings.cfg')
 end
 
 function new_config()
@@ -37,6 +40,15 @@ function new_config()
    err = cfg.acDataFeed(nil, DATA_TEXT, glLegalData, 0)
    assert(err is ERR_Okay, 'DataFeed() returned ' .. mSys.GetErrorMsg(err))
    return cfg
+end
+
+function write_temp_file(Path, Content)
+   file = obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE })
+   err, written = file.acWrite(Content, #Content)
+   assert(err is ERR_Okay, 'Write() returned ' .. mSys.GetErrorMsg(err))
+   assert(written is #Content, 'Wrote ' .. tostring(written) .. ' bytes, expected ' .. tostring(#Content))
+   file = nil
+   processing.collect()
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -75,6 +87,20 @@ end
    success
       error('ReadValue() returned successfully with: ' .. mSys.GetErrorMsg(err) .. ', ' .. tostring(value))
    end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ClearAndTotals()
+   cfg = new_config()
+
+   assert(cfg.totalGroups is 3, 'Expected 3 groups, got ' .. tostring(cfg.totalGroups))
+   assert(cfg.totalKeys is 14, 'Expected 14 keys, got ' .. tostring(cfg.totalKeys))
+
+   err = cfg.acClear()
+   assert(err is ERR_Okay, 'Clear() returned ' .. mSys.GetErrorMsg(err))
+   assert(cfg.totalGroups is 0, 'Expected Clear() to remove all groups')
+   assert(cfg.totalKeys is 0, 'Expected Clear() to remove all keys')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -120,6 +146,21 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+@Test function MergeFile()
+   cfg = new_config()
+
+   write_temp_file('temp:test-merge-file.cfg', glMerge)
+
+   err = cfg.mtMergeFile('temp:test-merge-file.cfg')
+   assert(err is ERR_Okay, 'MergeFile() returned ' .. mSys.GetErrorMsg(err))
+
+   err, value = cfg.mtReadValue('MergedGroup', 'Hello')
+   assert(err is ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+   assert(value is 'World', 'Expected World, received ' .. tostring(value))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Test function WriteValues()
    cfg = new_config()
 
@@ -139,6 +180,84 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+
+@Test function SetExactGroup()
+   cfg = new_config()
+   before_count = cfg.totalGroups
+
+   err = cfg.mtSet('Clean', 'Name', 'Clean Updated')
+   assert(err is ERR_Okay, 'Set() returned ' .. mSys.GetErrorMsg(err))
+
+   err, value = cfg.mtReadValue('Clean', 'Name')
+   assert(err is ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+   assert(value is 'Clean Updated', 'Expected Set() to update Clean.Name, received ' .. tostring(value))
+
+   err = cfg.mtSet('Missing', 'Name', 'Nope')
+   assert(err is ERR_Search, 'Expected Set() to return ERR_Search for a missing group')
+   assert(cfg.totalGroups is before_count, 'Set() created a missing group')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function SetWildcardUpdatesMatchedGroup()
+   cfg = new_config()
+   before_count = cfg.totalGroups
+
+   err = cfg.mtSet('Courier*', 'New', 'Value')
+   assert(err is ERR_Okay, 'Set() returned ' .. mSys.GetErrorMsg(err))
+   assert(cfg.totalGroups is before_count, 'Set() created a literal wildcard group')
+
+   err, value = cfg.mtReadValue('Courier Sans', 'New')
+   assert(err is ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+   assert(value is 'Value', 'Expected wildcard Set() to update Courier Sans, received ' .. tostring(value))
+
+   err = cfg.mtSet('Missing*', 'New', 'Value')
+   assert(err is ERR_Search, 'Expected Set() to return ERR_Search for a missing wildcard group')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function FileLoadFlags()
+   write_temp_file('temp:test-source.cfg', [[
+[Quoted]
+Name = "Visible"
+Plain = Value
+]])
+
+   cfg = obj.new('config', { path='temp:test-source.cfg', flags=CNF_STRIP_QUOTES })
+   err, value = cfg.mtReadValue('Quoted', 'Name')
+   assert(err is ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+   assert(value is 'Visible', 'Expected STRIP_QUOTES to remove quotes, received ' .. tostring(value))
+
+   cfg = obj.new('config', { path='temp:test-source.cfg', flags=CNF_NEW })
+   assert(cfg.totalGroups is 0, 'Expected CNF_NEW to skip loading file data')
+
+   cfg = obj.new('config', { path='temp:missing-config-file.cfg', flags=CNF_OPTIONAL_FILES })
+   assert(cfg.totalGroups is 0, 'Expected optional missing file to produce an empty config')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function FlushSavesSettings()
+   cfg = obj.new('config', { path='temp:test-save-settings.cfg', flags=CNF_NEW })
+
+   err = cfg.mtWriteValue('Saved', 'Name', 'Persisted')
+   assert(err is ERR_Okay, 'WriteValue() returned ' .. mSys.GetErrorMsg(err))
+
+   err = cfg.acFlush()
+   assert(err is ERR_Okay, 'Flush() returned ' .. mSys.GetErrorMsg(err))
+
+   cfg = nil
+   processing.collect()
+
+   cfg = obj.new('config', { path='temp:test-save-settings.cfg' })
+   err, value = cfg.mtReadValue('Saved', 'Name')
+   assert(err is ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+   assert(value is 'Persisted', 'Expected saved value, received ' .. tostring(value))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 -- Test case sensitivity
 
 @Test function ReadValues()

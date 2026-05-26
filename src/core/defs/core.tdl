@@ -1367,7 +1367,7 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
     cpp(str) Path          # The location pointer
     cpp(str) KeyFilter     # Enables key filtering, removing any unwanted keys on load.
     cpp(str) GroupFilter   # Enables group filtering, removing any unwanted groups on load.
-    int(CNF) Flags         # Not currently in use
+    int(CNF) Flags         # Optional flags
   ]],
   nil,
   [[
