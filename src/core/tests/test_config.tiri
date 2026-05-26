@@ -104,7 +104,8 @@ end
    cfg = new_config()
 
    cfgMerge = obj.new('config', { })
-   err = cfg.acDataFeed(nil, DATA_TEXT, glMerge, 0)
+   err = cfgMerge.acDataFeed(nil, DATA_TEXT, glMerge, 0)
+   assert(err is ERR_Okay, 'DataFeed() returned ' .. mSys.GetErrorMsg(err))
 
    err = cfg.mtMerge(cfgMerge);
    assert(err is ERR_Okay, 'Merge() returned ' .. mSys.GetErrorMsg(err))
@@ -164,6 +165,17 @@ end
    assert(groupName is 'Courier Sans', 'Second group is incorrect, returned ' .. groupName)
    err, groupName = cfg.mtGetGroupFromIndex(2)
    assert(groupName is 'Alpha', 'Third group is incorrect, returned ' .. groupName)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function SortingMissingKeyDoesNotAddKeys()
+   cfg = new_config()
+
+   before_count = cfg.totalKeys
+   err = cfg.mtSortByKey('Missing', false)
+   assert(err is ERR_Okay, 'SortByKey() returned ' .. mSys.GetErrorMsg(err))
+   assert(cfg.totalKeys is before_count, 'SortByKey() inserted missing key entries')
 end
 
 ----------------------------------------------------------------------------------------------------------------------

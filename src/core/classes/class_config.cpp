@@ -57,28 +57,17 @@ class FilterConfig {
    std::vector<std::string> values;
 };
 
-static ERR GET_KeyFilter(extConfig *, std::string_view &);
-static ERR GET_GroupFilter(extConfig *, std::string_view &);
-static ERR GET_TotalGroups(extConfig *, int *);
 
 static ERR CONFIG_SaveSettings(extConfig *);
-
-static const FieldDef clFlags[] = {
-   { "AutoSave",    CNF::AUTO_SAVE },
-   { "StripQuotes", CNF::STRIP_QUOTES },
-   { "New",         CNF::NEW },
-   { nullptr, 0 }
-};
-
-constexpr int CF_MATCHED  = 1;
-constexpr int CF_FAILED   = 0;
-constexpr int CF_KEY_FAIL = -1;
 
 //********************************************************************************************************************
 
 static bool check_for_key(std::string_view);
 static ERR parse_config(extConfig *, std::string_view);
 static ConfigKeys * find_group_wild(extConfig *Self, std::string_view Group);
+static void merge_groups(ConfigGroups &, ConfigGroups &);
+static std::string_view sort_key_value(const ConfigGroup &, CSTRING);
+static void apply_filters(extConfig *);
 static void apply_key_filter(extConfig *, std::string_view);
 static void apply_group_filter(extConfig *, std::string_view);
 static class FilterConfig parse_filter(std::string_view, bool);
@@ -229,8 +218,7 @@ static ERR CONFIG_DataFeed(extConfig *Self, struct acDataFeed *Args)
    if (Args->Datatype IS DATA::TEXT) {
       auto buf = (Args->Size > 0) ? std::string_view((CSTRING)Args->Buffer, Args->Size) : std::string_view((CSTRING)Args->Buffer);
       if (auto error = parse_config(Self, buf); error IS ERR::Okay) {
-         if (not Self->GroupFilter.empty()) apply_group_filter(Self, Self->GroupFilter);
-         if (not Self->KeyFilter.empty()) apply_key_filter(Self, Self->KeyFilter);
+         apply_filters(Self);
       }
       else return error;
    }
@@ -384,8 +372,7 @@ static ERR CONFIG_Init(extConfig *Self)
    if (not Self->Path.empty()) {
       error = parse_file(Self, Self->Path);
       if (error IS ERR::Okay) {
-         if (not Self->GroupFilter.empty()) apply_group_filter(Self, Self->GroupFilter);
-         if (not Self->KeyFilter.empty()) apply_key_filter(Self, Self->KeyFilter);
+         apply_filters(Self);
       }
    }
 
@@ -534,7 +521,7 @@ static ERR CONFIG_SaveSettings(extConfig *Self)
    kt::Log log;
    log.branch();
 
-   uint32_t crc = calc_crc(Self);
+   auto crc = calc_crc(Self);
    if (((Self->Flags & CNF::AUTO_SAVE) != CNF::NIL) and (crc IS Self->CRC)) return ERR::Okay;
 
    if (not Self->Path.empty()) {
@@ -561,7 +548,9 @@ static ERR CONFIG_SaveToObject(extConfig *Self, struct acSaveToObject *Args)
 {
    kt::Log log;
 
-   log.msg("Saving %d groups to object #%d.", (int)Self->Groups.size(), Args->Dest->UID);
+   if (not Args) return log.warning(ERR::NullArgs);
+
+   log.branch("Saving %d groups to object #%d.", (int)Self->Groups.size(), Args->Dest->UID);
 
    std::string buffer;
    buffer.reserve(256);
@@ -648,18 +637,13 @@ static ERR CONFIG_SortByKey(extConfig *Self, struct cfg::SortByKey *Args)
 
    log.branch("Key: %s, Descending: %d", Args->Key, Args->Descending);
 
-   if (Args->Descending) {
-      std::sort(Self->Groups.begin(), Self->Groups.end(),
-         [Args](ConfigGroup &a, ConfigGroup &b) {
-         return a.second[Args->Key] > b.second[Args->Key];
-      });
-   }
-   else {
-      std::sort(Self->Groups.begin(), Self->Groups.end(),
-         [Args](ConfigGroup &a, ConfigGroup &b) {
-         return a.second[Args->Key] < b.second[Args->Key];
-      });
-   }
+   auto descending = Args->Descending;
+   std::sort(Self->Groups.begin(), Self->Groups.end(),
+      [Args, descending](const ConfigGroup &A, const ConfigGroup &B) {
+      auto a_value = sort_key_value(A, Args->Key);
+      auto b_value = sort_key_value(B, Args->Key);
+      return descending ? (a_value > b_value) : (a_value < b_value);
+   });
 
    return ERR::Okay;
 }
@@ -672,8 +656,6 @@ WriteValue: Adds new entries to config objects.
 Use the WriteValue() method to add or update information in a config object.  A `Group` name, `Key` name, and `Data`
 value are required.  If the `Group` and `Key` arguments match an existing entry in the config object, the data of
 that entry will be replaced with the new Data value.
-
-The `Group` string may refer to an index if the hash `#` character is used to precede a target index number.
 
 -INPUT-
 cstr Group: The name of the group.
@@ -865,7 +847,7 @@ static bool check_for_key(std::string_view Data)
 
 //********************************************************************************************************************
 
-void merge_groups(ConfigGroups &Dest, ConfigGroups &Source)
+static void merge_groups(ConfigGroups &Dest, ConfigGroups &Source)
 {
    for (auto & [src_group, src_keys] : Source) {
       bool processed = false;
@@ -887,6 +869,22 @@ void merge_groups(ConfigGroups &Dest, ConfigGroups &Source)
          new_group.second = src_keys;
       }
    }
+}
+
+//********************************************************************************************************************
+
+static std::string_view sort_key_value(const ConfigGroup &Group, CSTRING Key)
+{
+   if (auto it = Group.second.find(Key); it != Group.second.end()) return it->second;
+   else return {};
+}
+
+//********************************************************************************************************************
+
+static void apply_filters(extConfig *Self)
+{
+   if (not Self->GroupFilter.empty()) apply_group_filter(Self, Self->GroupFilter);
+   if (not Self->KeyFilter.empty()) apply_key_filter(Self, Self->KeyFilter);
 }
 
 //********************************************************************************************************************
@@ -1115,7 +1113,7 @@ static const FieldArray clFields[] = {
    { "Path",        FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
    { "KeyFilter",   FDF_CPPSTRING|FDF_RW, GET_KeyFilter, SET_KeyFilter },
    { "GroupFilter", FDF_CPPSTRING|FDF_RW, GET_GroupFilter, SET_GroupFilter },
-   { "Flags",       FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clFlags },
+   { "Flags",       FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clConfigFlags },
    // Virtual fields
    { "Data",        FDF_POINTER|FDF_R, GET_Data },
    { "TotalGroups", FDF_INT|FDF_R, GET_TotalGroups },

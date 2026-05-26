@@ -259,7 +259,6 @@ print('The Action class is located at ' .. str)
       </input>
       <description>
 <p>Use the WriteValue() method to add or update information in a config object.  A <code>Group</code> name, <code>Key</code> name, and <code>Data</code> value are required.  If the <code>Group</code> and <code>Key</code> arguments match an existing entry in the config object, the data of that entry will be replaced with the new Data value.</p>
-<p>The <code>Group</code> string may refer to an index if the hash <code>#</code> character is used to precede a target index number.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>

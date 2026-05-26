@@ -1135,7 +1135,6 @@ void   scan_classes(void);
 
 ERR  writeval_default(OBJECTPTR, Field *, int, const void *, int);
 ERR  check_paths(std::string_view, PERMIT);
-void merge_groups(ConfigGroups &, ConfigGroups &);
 extern "C" ERR validate_process(int);
 
 #ifdef _WIN32
