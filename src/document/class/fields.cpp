@@ -411,11 +411,11 @@ static ERR GET_WorkingPath(extDocument *Self, std::string_view &Value)
    bool path = false;
    if (Self->Path.starts_with('/')) path = true;
    else {
-      int j = Self->Path.find_first_of(":/\\");
+      auto j = Self->Path.find_first_of(":/\\");
       if ((j != std::string::npos) and (Self->Path[j] IS ':')) path = true;
    }
 
-   int last_sep = Self->Path.find_last_of(":/\\");
+   auto last_sep = Self->Path.find_last_of(":/\\");
    if (last_sep != std::string::npos) last_sep++;
 
    kt::SwitchContext context(Self);
