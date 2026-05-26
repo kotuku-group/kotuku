@@ -1312,18 +1312,20 @@ and the lowest is 0.  Use either the `S` character or the `#` character for refe
 
 static ERR SOUND_GET_Note(extSound *Self, std::string_view &Value)
 {
+   bool sharp = false;
+
    switch(Self->Note) {
       case NOTE_C:  Self->NoteString = "C"; break;
-      case NOTE_CS: Self->NoteString = "C#"; break;
+      case NOTE_CS: Self->NoteString = "C"; sharp = true; break;
       case NOTE_D:  Self->NoteString = "D"; break;
-      case NOTE_DS: Self->NoteString = "D#"; break;
+      case NOTE_DS: Self->NoteString = "D"; sharp = true; break;
       case NOTE_E:  Self->NoteString = "E"; break;
       case NOTE_F:  Self->NoteString = "F"; break;
-      case NOTE_FS: Self->NoteString = "F#"; break;
+      case NOTE_FS: Self->NoteString = "F"; sharp = true; break;
       case NOTE_G:  Self->NoteString = "G"; break;
-      case NOTE_GS: Self->NoteString = "G#"; break;
+      case NOTE_GS: Self->NoteString = "G"; sharp = true; break;
       case NOTE_A:  Self->NoteString = "A"; break;
-      case NOTE_AS: Self->NoteString = "A#"; break;
+      case NOTE_AS: Self->NoteString = "A"; sharp = true; break;
       case NOTE_B:  Self->NoteString = "B"; break;
       default:      Self->NoteString.clear();
                     Value = Self->NoteString;
@@ -1331,6 +1333,8 @@ static ERR SOUND_GET_Note(extSound *Self, std::string_view &Value)
    }
 
    Self->NoteString += char('5' + Self->Octave);
+   if (sharp) Self->NoteString += '#';
+
    Value = Self->NoteString;
    return ERR::Okay;
 }
