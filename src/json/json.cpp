@@ -176,7 +176,7 @@ static ERR JSON_Init(objXML *Self)
    // TODO: A back-door to get the Statement string directly from the XML object would be useful
 
    std::string_view statement;
-   if ((Self->get(FID_Statement, statement) IS ERR::Okay) and (not statement.empty())) {
+   if (Self->get(FID_Statement, statement) IS ERR::Okay) {
       if ((Self->ParseError = txt_to_json(Self, statement)) != ERR::Okay) {
          log.warning("JSON Parsing Error: %s", GetErrorMsg(Self->ParseError));
       }
@@ -216,6 +216,7 @@ static ERR JSON_SaveToObject(objXML *Self, struct acSaveToObject *Args)
 }
 
 //********************************************************************************************************************
+// Parse Text string to JSON.  Assumes that the incoming string is null terminated.
 
 static ERR txt_to_json(objXML *Self, std::string_view Text)
 {
@@ -251,8 +252,6 @@ static ERR txt_to_json(objXML *Self, std::string_view Text)
       log.warning("Missing expected '}' terminator at line %d.", Self->LineNo);
       return ERR::Syntax;
    }
-
-   log.trace("JSON parsing complete.");
 
    return ERR::Okay;
 }
