@@ -307,7 +307,7 @@ class extPointer : public objPointer {
    OBJECTID BufferObject;
    char     DragData[8];          // Data preferences for current drag & drop item
    char     Device[32];
-   char     ButtonOrder[12];      // The order of the first 11 buttons can be changed here
+   std::string ButtonOrder;       // The order of the first 11 buttons can be changed here
    int16_t     ButtonOrderFlags[12]; // Button order represented as JD flags
    int8_t     PostComposite;        // Enable post-composite drawing (default)
    uint8_t    prvOverCursorID;
