@@ -279,7 +279,8 @@ flags("FD", { weak=true, comment="Field descriptors.", module="Core" },
   { I             = "INIT" },
   { PTR_INTRESULT   = "INT|PTR|RESULT: Use for pointer-based value results only." },
   { PTR_INT64RESULT  = "INT64|PTR|RESULT: Use for pointer-based value results only." },
-  { PTR_DOUBLERESULT = "DOUBLE|PTR|RESULT: Use for pointer-based value results only." }
+  { PTR_DOUBLERESULT = "DOUBLE|PTR|RESULT: Use for pointer-based value results only." },
+  { CLASS_TYPES   = "DOUBLE|FLOAT|POINTER|INT|INT64|STRING|FUNCTION|UNIT|OBJECT|BYTE|WORD|CPP|ARRAY: All types that directly contribute to the core definition of a C/C++ type" }
 )
 
   struct("InputEvent", { module="Core" }, [[

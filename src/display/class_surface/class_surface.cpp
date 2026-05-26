@@ -1597,14 +1597,13 @@ static ERR SURFACE_Move(extSurface *Self, struct acMove *Args)
 {
    kt::Log log;
    struct acMove move;
-   int i;
 
    if (!Args) return log.warning(ERR::NullArgs)|ERR::Notified;
 
    // Check if other move messages are queued for this object - if so, do not do anything until the final message is
    // reached.
    //
-   // NOTE: This has a downside if the surface object is being fed a sequence of move messages for the purposes of
+   // NOTE: This has a downside if the surface object is being fed a series of move messages for the purposes of
    // scrolling from one point to another.  Potentially the user may not see the intended effect or witness erratic
    // response times.
 
@@ -1631,14 +1630,11 @@ static ERR SURFACE_Move(extSurface *Self, struct acMove *Args)
 
    if ((Self->Flags & RNF::STICKY) != RNF::NIL) return ERR::Failed|ERR::Notified;
 
-   int xchange = Args->DeltaX;
-   int ychange = Args->DeltaY;
-
    if ((Self->Flags & RNF::NO_HORIZONTAL) != RNF::NIL) move.DeltaX = 0;
-   else move.DeltaX = xchange;
+   else move.DeltaX = Args->DeltaX;
 
    if ((Self->Flags & RNF::NO_VERTICAL) != RNF::NIL) move.DeltaY = 0;
-   else move.DeltaY = ychange;
+   else move.DeltaY = Args->DeltaY;
 
    move.DeltaZ = 0;
 
@@ -1647,8 +1643,6 @@ static ERR SURFACE_Move(extSurface *Self, struct acMove *Args)
    if ((move.DeltaX < 1) and (move.DeltaX > -1) and (move.DeltaY < 1) and (move.DeltaY > -1)) {
       return ERR::Failed|ERR::Notified;
    }
-
-   log.traceBranch("X,Y: %d,%d", xchange, ychange);
 
    move_layer(Self, Self->X + move.DeltaX, Self->Y + move.DeltaY);
 

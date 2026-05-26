@@ -225,6 +225,8 @@ Plain = Value
 ]])
 
    cfg = obj.new('config', { path='temp:test-source.cfg', flags=CNF_STRIP_QUOTES })
+   assert(cfg.path is 'temp:test-source.cfg', 'Config path field did not return the original string value')
+
    err, value = cfg.mtReadValue('Quoted', 'Name')
    assert(err is ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
    assert(value is 'Visible', 'Expected STRIP_QUOTES to remove quotes, received ' .. tostring(value))

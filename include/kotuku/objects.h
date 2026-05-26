@@ -721,7 +721,13 @@ struct Object { // Must be 64-bit aligned
             return ERR::Okay;
          }
          else if (field->Flags & (FD_POINTER|FD_STRING)) {
-            Value = *((CSTRING *)fv.second);
+            if (field->Flags & FD_CPP) {
+               if (field->GetValue) { // Virtual std::string_view
+                  Value = ((std::string_view *)fv.second)->data();
+               }
+               else Value = ((std::string *)fv.second)->c_str();
+            }
+            else Value = *((CSTRING *)fv.second);
             return ERR::Okay;
          }
          else return ERR::FieldTypeMismatch;
@@ -737,14 +743,14 @@ struct Object { // Must be 64-bit aligned
 
          if (field->Flags & FD_STRING) {
             if (field->Flags & FD_CPP) {
-               if (field->GetValue) {
+               if (field->GetValue) { // Virtual std::string_view
                   SetObjectContext(target, field, AC::NIL);
                   auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
                   auto error = get_field(target, Value);
                   RestoreObjectContext();
                   return error;
                }
-               else Value = *((std::string *)(((int8_t *)target) + field->Offset));
+               else Value = *((std::string *)(((int8_t *)target) + field->Offset)); // Direct std::string
             }
             else {
                int8_t field_value[sizeof(std::string_view)];
@@ -792,7 +798,26 @@ struct Object { // Must be 64-bit aligned
          auto fv = get_field_value(target, *field, field_value, array_size);
          if (fv.first != ERR::Okay) return fv.first;
 
-         if (field->Flags & (FD_POINTER|FD_STRING)) {
+         if ((field->Flags & FD_CLASS_TYPES) IS (FDF_CPPSTRING)) {
+            using pointee = std::remove_pointer_t<T>;
+            using plain_pointee = std::remove_cv_t<pointee>;
+
+            if constexpr (std::is_same_v<plain_pointee, char>) {
+               if (field->GetValue) { // Virtual std::string_view
+                  auto str = (std::string_view *)fv.second;
+                  Value = (T)str->data();
+               }
+               else { // Direct std::string
+                  auto str = (std::string *)fv.second;
+                  if constexpr (std::is_const_v<pointee>) Value = (T)str->c_str();
+                  else Value = (T)str->data();
+               }
+            }
+            else return ERR::FieldTypeMismatch;
+
+            return ERR::Okay;
+         }
+         else if (field->Flags & FD_POINTER) {
             Value = *((T *)fv.second);
             return ERR::Okay;
          }
