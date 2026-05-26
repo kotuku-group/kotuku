@@ -278,12 +278,12 @@ class extSound : public objSound {
    #endif
    ankerl::unordered_dense::map<std::string, std::string> Tags;
    objFile *File;
-   STRING Path;
+   std::string Path;
    TIMER  StreamTimer;        // Timer to regularly trigger for provisioning streaming data.
    TIMER  PlaybackTimer;      // Timer to trigger when playback ends.
    int   Format;             // The format of the sound data
    int   DataOffset;         // Start of raw audio data within the source file
    int   Note;               // Note to play back (e.g. C, C#, G...)
-   char   NoteString[4];
+   std::string NoteString;
    bool   Active;             // True once the sound is registered with the audio driver or mixer.
 };

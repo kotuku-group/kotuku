@@ -23,10 +23,10 @@ this shared object, usually via ~Display.AccessPointer(), when reading pointer s
 using namespace display;
 #endif
 
-static ERR GET_ButtonOrder(extPointer *, CSTRING *);
+static ERR GET_ButtonOrder(extPointer *, std::string_view &);
 static ERR GET_ButtonState(extPointer *, int *);
 
-static ERR SET_ButtonOrder(extPointer *, CSTRING);
+static ERR SET_ButtonOrder(extPointer *, std::string_view &);
 static ERR SET_MaxSpeed(extPointer *, int);
 static ERR PTR_SET_X(extPointer *, double);
 static ERR PTR_SET_Y(extPointer *, double);
@@ -825,52 +825,52 @@ Changes to this field will have an immediate impact on the pointing device's beh
 
 *********************************************************************************************************************/
 
-static ERR GET_ButtonOrder(extPointer *Self, CSTRING *Value)
+static ERR GET_ButtonOrder(extPointer *Self, std::string_view &Value)
 {
-   *Value = Self->ButtonOrder;
+   if (Self->ButtonOrder.empty()) return ERR::FieldNotSet;
+   Value = Self->ButtonOrder;
    return ERR::Okay;
 }
 
-static ERR SET_ButtonOrder(extPointer *Self, CSTRING Value)
+static ERR SET_ButtonOrder(extPointer *Self, std::string_view &Value)
 {
    kt::Log log;
 
-   log.msg("%s", Value);
+   log.msg("%.*s", int(Value.size()), Value.data());
 
-   if (!Value) return ERR::Okay;
+   // Assign the buttons.
+   Self->ButtonOrder.assign(Value);
 
-   // Assign the buttons
+   // Eliminate any invalid buttons.
 
-   for (int i=0; (Value[i]) and ((size_t)i < sizeof(Self->ButtonOrder)-1); i++) Self->ButtonOrder[i] = Value[i];
-   Self->ButtonOrder[sizeof(Self->ButtonOrder)-1] = 0;
-
-   // Eliminate any invalid buttons
-
-   for (int i=0; Self->ButtonOrder[i]; i++) {
+   for (size_t i=0; i < Self->ButtonOrder.size(); i++) {
       if (((Self->ButtonOrder[i] >= '1') and (Self->ButtonOrder[i] <= '9')) or
           ((Self->ButtonOrder[i] >= 'A') and (Self->ButtonOrder[i] <= 'Z'))) {
       }
       else Self->ButtonOrder[i] = ' ';
    }
 
-   // Reduce the length of the button list if there are gaps
+   // Reduce the length of the button list if there are gaps.
 
-   int j = 0;
-   for (int i=0; Self->ButtonOrder[i]; i++) {
+   size_t j = 0;
+   for (size_t i=0; i < Self->ButtonOrder.size(); i++) {
       if (Self->ButtonOrder[i] != ' ') {
          Self->ButtonOrder[j++] = Self->ButtonOrder[i];
       }
    }
 
-   while ((size_t)j < sizeof(Self->ButtonOrder)) Self->ButtonOrder[j++] = 0; // Clear any left-over bytes
+   Self->ButtonOrder.resize(j);
 
-   // Convert the button indexes into their relevant flags
+   // Convert the button indexes into their relevant flags.
 
-   for (int i=0; (size_t)i < sizeof(Self->ButtonOrder); i++) {
-      if ((Self->ButtonOrder[i] >= '1') and (Self->ButtonOrder[i] <= '9')) j = Self->ButtonOrder[i] - '1';
-      else if ((Self->ButtonOrder[i] >= 'A') and (Self->ButtonOrder[i] <= 'Z')) j = Self->ButtonOrder[i] - 'A' + 9;
-      else j = 0;
-      Self->ButtonOrderFlags[i] = 1<<j;
+   int button_index = 0;
+   for (size_t i=0; i < std::size(Self->ButtonOrderFlags); i++) {
+      char button = (i < Self->ButtonOrder.size()) ? Self->ButtonOrder[i] : 0;
+
+      if ((button >= '1') and (button <= '9')) button_index = button - '1';
+      else if ((button >= 'A') and (button <= 'Z')) button_index = button - 'A' + 9;
+      else button_index = 0;
+      Self->ButtonOrderFlags[i] = 1<<button_index;
    }
 
    return ERR::Okay;
@@ -1333,7 +1333,7 @@ static const FieldArray clPointerFields[] = {
    { "ClickSlop",    FDF_INT|FDF_RW },
    // Virtual Fields
    { "ButtonState",  FDF_INT|FDF_R, GET_ButtonState },
-   { "ButtonOrder",  FDF_STRING|FDF_RW, GET_ButtonOrder, SET_ButtonOrder },
+   { "ButtonOrder",  FDF_CPPSTRING|FDF_RW, GET_ButtonOrder, SET_ButtonOrder },
    END_FIELD
 };
 

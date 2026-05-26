@@ -56,7 +56,7 @@ constexpr int SIZE_RIFF_CHUNK = 12;
 
 static ERR SOUND_GET_Active(extSound *, int *);
 
-static ERR SOUND_SET_Note(extSound *, CSTRING);
+static ERR SOUND_SET_Note(extSound *, std::string_view &);
 
 static const std::array<double, 12> glScale = {
    1.0,         // C
@@ -620,7 +620,7 @@ static ERR SOUND_Free(extSound *Self)
       }
    }
 
-   if (Self->Path) { FreeResource(Self->Path); Self->Path = nullptr; }
+   Self->Path.clear();
    if (Self->File) { FreeResource(Self->File); Self->File = nullptr; }
 
    Self->~extSound();
@@ -693,8 +693,8 @@ static ERR SOUND_Init(extSound *Self)
       else return log.warning(ERR::AccessObject);
    }
 
-   CSTRING path;
-   if (((Self->Flags & SDF::NEW) != SDF::NIL) or (Self->get(FID_Path, path) != ERR::Okay) or (!path)) {
+   auto path = Self->get<std::string_view>(FID_Path);
+   if (((Self->Flags & SDF::NEW) != SDF::NIL) or (path.empty())) {
       // If the sample is new or no path has been specified, create an audio sample from scratch (e.g. to record
       // audio to disk).
 
@@ -797,9 +797,9 @@ static ERR SOUND_Init(extSound *Self)
       else return log.warning(ERR::AccessObject);
    }
 
-   auto path = Self->get<STRING>(FID_Path);
+   auto path = Self->get<std::string_view>(FID_Path);
 
-   if (((Self->Flags & SDF::NEW) != SDF::NIL) or (!path)) {
+   if (((Self->Flags & SDF::NEW) != SDF::NIL) or (path.empty())) {
       log.msg("Sample created as new (without sample data).");
 
       // If the sample is new or no path has been specified, create an audio sample from scratch (e.g. to
@@ -1310,82 +1310,47 @@ and the lowest is 0.  Use either the `S` character or the `#` character for refe
 
 *********************************************************************************************************************/
 
-static ERR SOUND_GET_Note(extSound *Self, CSTRING *Value)
+static ERR SOUND_GET_Note(extSound *Self, std::string_view &Value)
 {
-   switch(Self->Note) {
-      case NOTE_C:  Self->NoteString[0] = 'C';
-                    Self->NoteString[1] = '5' + Self->Octave;
-                    Self->NoteString[2] = 0;
-                    break;
-      case NOTE_CS: Self->NoteString[0] = 'C';
-                    Self->NoteString[1] = '5' + Self->Octave;
-                    Self->NoteString[2] = '#';
-                    Self->NoteString[3] = 0;
-                    break;
-      case NOTE_D:  Self->NoteString[0] = 'D';
-                    Self->NoteString[1] = '5' + Self->Octave;
-                    Self->NoteString[2] = 0;
-                    break;
-      case NOTE_DS: Self->NoteString[0] = 'D';
-                    Self->NoteString[1] = '5' + Self->Octave;
-                    Self->NoteString[2] = '#';
-                    Self->NoteString[3] = 0;
-                    break;
-      case NOTE_E:  Self->NoteString[0] = 'E';
-                    Self->NoteString[1] = '5' + Self->Octave;
-                    Self->NoteString[2] = 0;
-                    break;
-      case NOTE_F:  Self->NoteString[0] = 'F';
-                    Self->NoteString[1] = '5' + Self->Octave;
-                    Self->NoteString[2] = 0;
-                    break;
-      case NOTE_FS: Self->NoteString[0] = 'F';
-                    Self->NoteString[1] = '5' + Self->Octave;
-                    Self->NoteString[2] = '#';
-                    Self->NoteString[3] = 0;
-                    break;
-      case NOTE_G:  Self->NoteString[0] = 'G';
-                    Self->NoteString[1] = '5' + Self->Octave;
-                    Self->NoteString[2] = 0;
-                    break;
-      case NOTE_GS: Self->NoteString[0] = 'G';
-                    Self->NoteString[1] = '5' + Self->Octave;
-                    Self->NoteString[2] = '#';
-                    Self->NoteString[3] = 0;
-                    break;
-      case NOTE_A:  Self->NoteString[0] = 'A';
-                    Self->NoteString[1] = '5' + Self->Octave;
-                    Self->NoteString[2] = 0;
-                    break;
-      case NOTE_AS: Self->NoteString[0] = 'A';
-                    Self->NoteString[1] = '5' + Self->Octave;
-                    Self->NoteString[2] = '#';
-                    Self->NoteString[3] = 0;
-                    break;
-      case NOTE_B:  Self->NoteString[0] = 'B';
-                    Self->NoteString[1] = '5' + Self->Octave;
-                    Self->NoteString[2] = 0;
-                    break;
-      default:      Self->NoteString[0] = 0;
-   }
-   *Value = Self->NoteString;
+   bool sharp = false;
 
+   switch(Self->Note) {
+      case NOTE_C:  Self->NoteString = "C"; break;
+      case NOTE_CS: Self->NoteString = "C"; sharp = true; break;
+      case NOTE_D:  Self->NoteString = "D"; break;
+      case NOTE_DS: Self->NoteString = "D"; sharp = true; break;
+      case NOTE_E:  Self->NoteString = "E"; break;
+      case NOTE_F:  Self->NoteString = "F"; break;
+      case NOTE_FS: Self->NoteString = "F"; sharp = true; break;
+      case NOTE_G:  Self->NoteString = "G"; break;
+      case NOTE_GS: Self->NoteString = "G"; sharp = true; break;
+      case NOTE_A:  Self->NoteString = "A"; break;
+      case NOTE_AS: Self->NoteString = "A"; sharp = true; break;
+      case NOTE_B:  Self->NoteString = "B"; break;
+      default:      Self->NoteString.clear();
+                    Value = Self->NoteString;
+                    return ERR::FieldNotSet;
+   }
+
+   Self->NoteString += char('5' + Self->Octave);
+   if (sharp) Self->NoteString += '#';
+
+   Value = Self->NoteString;
    return ERR::Okay;
 }
 
-static ERR SOUND_SET_Note(extSound *Self, CSTRING Value)
+static ERR SOUND_SET_Note(extSound *Self, std::string_view &Value)
 {
    kt::Log log;
 
-   if (!*Value) return ERR::Okay;
+   if (Value.empty()) return ERR::Okay;
 
    int i, note;
-   for (i=0; (Value[i]) and (i < 3); i++) Self->NoteString[i] = Value[i];
-   Self->NoteString[i] = 0;
+   Self->NoteString.assign(Value);
 
-   CSTRING str = Value;
-   if (((*Value >= '0') and (*Value <= '9')) or (*Value IS '-')) {
-      note = strtol(Value, nullptr, 0);
+   const char *str = Value.data();
+   if (((*str >= '0') and (*str <= '9')) or (*str IS '-')) {
+      note = strtol(str, nullptr, 0);
    }
    else {
       note = 0;
@@ -1560,26 +1525,16 @@ with the `SDF::NEW` flag, it is not necessary to define a file source.
 
 *********************************************************************************************************************/
 
-static ERR SOUND_GET_Path(extSound *Self, STRING *Value)
+static ERR SOUND_GET_Path(extSound *Self, std::string_view &Value)
 {
-   if ((*Value = Self->Path)) return ERR::Okay;
-   else return ERR::FieldNotSet;
+   Value = Self->Path;
+   if (not Self->Path.empty()) return ERR::Okay;
+   return ERR::FieldNotSet;
 }
 
-static ERR SOUND_SET_Path(extSound *Self, CSTRING Value)
+static ERR SOUND_SET_Path(extSound *Self, std::string_view &Value)
 {
-   kt::Log log;
-
-   if (Self->Path) { FreeResource(Self->Path); Self->Path = nullptr; }
-
-   if ((Value) and (*Value)) {
-      int i = strlen(Value);
-      if (AllocMemory(i+1, MEM::STRING|MEM::NO_CLEAR, (void **)&Self->Path) IS ERR::Okay) {
-         for (i=0; Value[i]; i++) Self->Path[i] = Value[i];
-         Self->Path[i] = 0;
-      }
-      else return log.warning(ERR::AllocMemory);
-   }
+   Self->Path.assign(Value);
    return ERR::Okay;
 }
 
@@ -1798,9 +1753,9 @@ static const FieldArray clFields[] = {
    { "Duration", FDF_DOUBLE|FDF_R,         SOUND_GET_Duration },
    { "Header",   FDF_BYTE|FDF_ARRAY|FDF_R, SOUND_GET_Header },
    { "OnStop",   FDF_FUNCTIONPTR|FDF_RW,   SOUND_GET_OnStop, SOUND_SET_OnStop },
-   { "Path",     FDF_STRING|FDF_RI,        SOUND_GET_Path, SOUND_SET_Path },
-   { "Src",      FDF_SYNONYM|FDF_STRING|FDF_RI, SOUND_GET_Path, SOUND_SET_Path },
-   { "Note",     FDF_STRING|FDF_RW, SOUND_GET_Note, SOUND_SET_Note },
+   { "Path",     FDF_CPPSTRING|FDF_RI,        SOUND_GET_Path, SOUND_SET_Path },
+   { "Src",      FDF_SYNONYM|FDF_CPPSTRING|FDF_RI, SOUND_GET_Path, SOUND_SET_Path },
+   { "Note",     FDF_CPPSTRING|FDF_RW, SOUND_GET_Note, SOUND_SET_Note },
    END_FIELD
 };
 
