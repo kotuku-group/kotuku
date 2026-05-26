@@ -2649,10 +2649,10 @@ class objStorageDevice : public Object {
 
    // Customised field setting
 
-   template <class T> inline ERR setVolume(T && Value) noexcept {
+   inline ERR setVolume(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804500, &Value, 1);
    }
 
 };

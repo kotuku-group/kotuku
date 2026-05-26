@@ -432,8 +432,8 @@ class extConfig : public objConfig {
 class extStorageDevice : public objStorageDevice {
    public:
    using create = kt::Create<extStorageDevice>;
-   STRING DeviceID;   // Unique ID for the filesystem, if available
-   STRING Volume;
+   std::string DeviceID;   // Unique ID for the filesystem, if available
+   std::string Volume;
 };
 
 class extThread : public objThread {
