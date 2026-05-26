@@ -313,7 +313,7 @@ static ERR CONFIG_Free(extConfig *Self)
          auto crc = calc_crc(Self);
 
          if ((not crc) or (crc != Self->CRC)) {
-            log.msg("Auto-saving changes to \"%s\" (CRC: %d : %d)", Self->Path, Self->CRC, crc);
+            log.msg("Auto-saving changes to \"%s\" (CRC: %d : %d)", Self->Path.c_str(), Self->CRC, crc);
 
             objFile::create file = { fl::Path(Self->Path), fl::Flags(FL::WRITE|FL::NEW), fl::Permissions(PERMIT::NIL) };
             Self->saveToObject(*file);

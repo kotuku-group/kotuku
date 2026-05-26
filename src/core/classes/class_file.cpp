@@ -2262,7 +2262,7 @@ static ERR GET_Permissions(extFile *Self, PERMIT *Value)
 
    std::string_view path;
    if (GET_ResolvedPath(Self, path) IS ERR::Okay) {
-      int i = path.find_last_of(":/\\");
+      auto i = path.find_last_of(":/\\");
       if ((i != std::string::npos) and (i < path.length()-1) and (path[i+1] IS '.')) Self->Permissions = PERMIT::HIDDEN;
       else Self->Permissions = PERMIT::NIL;
 

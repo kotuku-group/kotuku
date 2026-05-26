@@ -161,7 +161,6 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
 
    log.branch("Compressing file \"%s\" to \"%s\"", Location.c_str(), Path.c_str());
 
-   CSTRING symlink = nullptr;
    bool deflateend = false;
    uint32_t dataoffset = 0;
    std::string filename;
@@ -279,9 +278,10 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
 
    entry.Offset = dataoffset;
 
+   std::string_view symlink;
    if (((Self->Flags & CMF::NO_LINKS) IS CMF::NIL) and ((file->Flags & FL::LINK) != FL::NIL)) {
       if (file->get(FID_Link, symlink) IS ERR::Okay) {
-         log.msg("Note: File \"%s\" is a symbolic link to \"%s\"", filename.c_str(), symlink);
+         log.msg("Note: File \"%s\" is a symbolic link to \"%.*s\"", filename.c_str(), int(symlink.size()), symlink.data());
          entry.Flags |= ZIP_LINK;
       }
    }
@@ -320,16 +320,15 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
 
    if (entry.Flags & ZIP_LINK) {
       // Compress the symbolic link to the zip file, rather than the data
-      len = strlen(symlink);
-      Self->Zip.next_in   = (Bytef *)symlink;
-      Self->Zip.avail_in  = len;
+      Self->Zip.next_in   = (Bytef *)symlink.data();
+      Self->Zip.avail_in  = symlink.size();
       Self->Zip.next_out  = Self->Output;
       Self->Zip.avail_out = SIZE_COMPRESSION_BUFFER;
       if (deflate(&Self->Zip, Z_NO_FLUSH) != Z_OK) {
          log.warning("Failure during data compression.");
          return ERR::Compression;
       }
-      entry.CRC = GenCRC32(entry.CRC, (APTR)symlink, len);
+      entry.CRC = GenCRC32(entry.CRC, (APTR)symlink.data(), symlink.size());
    }
    else {
       struct acRead read = { .Buffer = Self->Input, .Length = SIZE_COMPRESSION_BUFFER };
@@ -808,4 +807,3 @@ void zipfile_to_item(ZipFile &ZF, CompressedItem &Item)
       Item.Permissions = permissions;
    }
 }
-

@@ -798,23 +798,20 @@ static ERR GET_WorkingPath(objScript *Self, std::string_view &Value)
          }
       }
 
-      int k;
-      int j = 0;
-      for (k=0; k < int(Self->Path.size()); k++) {
-         if ((Self->Path[k] IS ':') or (Self->Path[k] IS '/') or (Self->Path[k] IS '\\')) j = k+1;
-      }
+      auto j = Self->Path.find_last_of(":/\\");
+      if (j != std::string::npos) j++;
 
       if (path) { // Extract absolute path
          kt::SwitchContext ctx(Self);
          Self->WorkingPath.assign(Self->Path, 0, j);
       }
       else {
-         CSTRING working_path;
-         if ((CurrentTask()->get(FID_Path, working_path) IS ERR::Okay) and (working_path)) {
+         std::string_view working_path;
+         if ((CurrentTask()->get(FID_Path, working_path) IS ERR::Okay) and (not working_path.empty())) {
             // Using ResolvePath() can help to determine relative paths such as "../path/file"
 
-            std::string buf = working_path;
-            if (j > 0) buf.append(Self->Path, 0, j);
+            std::string buf(working_path);
+            if (j != std::string::npos) buf.append(Self->Path, 0, j);
 
             kt::SwitchContext ctx(Self);
             std::string rpath;

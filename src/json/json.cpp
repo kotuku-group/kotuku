@@ -71,7 +71,7 @@ static ActionArray clActions[] = {
 };
 
 static ERR extract_item(int &, CSTRING *, objXML::TAGS &, int &);
-static ERR txt_to_json(objXML *, CSTRING);
+static ERR txt_to_json(objXML *, std::string_view);
 
 //********************************************************************************************************************
 
@@ -140,12 +140,12 @@ static void debug_tree(objXML *Self)
 
 //********************************************************************************************************************
 
-static ERR load_file(objXML *Self, CSTRING Path)
+static ERR load_file(objXML *Self, std::string_view Path)
 {
    CacheFile *filecache;
 
-   if ((Self->ParseError = LoadFile(Self->Path, LDF::NIL, &filecache)) IS ERR::Okay) {
-      Self->ParseError = txt_to_json(Self, (CSTRING)filecache->Data);
+   if ((Self->ParseError = LoadFile(Path, LDF::NIL, &filecache)) IS ERR::Okay) { // loaded content is null terminated
+      Self->ParseError = txt_to_json(Self, std::string_view((CSTRING)filecache->Data, size_t(filecache->Size)));
       UnloadFile(filecache);
       return Self->ParseError;
    }
@@ -170,12 +170,13 @@ static ERR next_item(int &Line, CSTRING &Input)
 static ERR JSON_Init(objXML *Self)
 {
    kt::Log log;
-   CSTRING location = nullptr, statement = nullptr;
 
    log.trace("Attempting JSON interpretation of source data.");
 
    // TODO: A back-door to get the Statement string directly from the XML object would be useful
-   if ((Self->get(FID_Statement, statement) IS ERR::Okay) and (statement)) {
+
+   std::string_view statement;
+   if ((Self->get(FID_Statement, statement) IS ERR::Okay) and (not statement.empty())) {
       if ((Self->ParseError = txt_to_json(Self, statement)) != ERR::Okay) {
          log.warning("JSON Parsing Error: %s", GetErrorMsg(Self->ParseError));
       }
@@ -184,24 +185,23 @@ static ERR JSON_Init(objXML *Self)
       debug_tree(Self);
       #endif
 
-      FreeResource(statement);
+      FreeResource(statement.data());
       return Self->ParseError;
    }
 
+   std::string_view location;
    Self->get(FID_Path, location);
-   if ((!location) or ((Self->Flags & XMF::NEW) != XMF::NIL)) {
+   if (location.empty() or ((Self->Flags & XMF::NEW) != XMF::NIL)) {
       // If no location has been specified, assume that the JSON source is being
       // created from scratch (e.g. to save to disk).
 
       return ERR::Okay;
    }
-   else {
-      if ((Self->ParseError = load_file(Self, location)) != ERR::Okay) {
-         log.warning("Parsing Error: %s [File: %s]", GetErrorMsg(Self->ParseError), location);
-         return Self->ParseError;
-      }
-      else return ERR::Okay;
+   else if ((Self->ParseError = load_file(Self, location)) != ERR::Okay) {
+      log.warning("Parsing Error: %s [File: %.*s]", GetErrorMsg(Self->ParseError), int(location.size()), location.data());
+      return Self->ParseError;
    }
+   else return ERR::Okay;
 
    return ERR::NoSupport;
 }
@@ -217,23 +217,21 @@ static ERR JSON_SaveToObject(objXML *Self, struct acSaveToObject *Args)
 
 //********************************************************************************************************************
 
-static ERR txt_to_json(objXML *Self, CSTRING Text)
+static ERR txt_to_json(objXML *Self, std::string_view Text)
 {
    kt::Log log;
 
-   if ((!Self) or (!Text)) return ERR::NullArgs;
+   if ((!Self) or (Text.empty())) return ERR::NullArgs;
 
    log.traceBranch();
 
-   CSTRING str;
+   CSTRING str = Text.data();
    Self->Tags.clear();
    Self->LineNo = 1;
-   for (str=Text; (*str) and (*str != '{'); str++) if (*str IS '\n') Self->LineNo++;
-   if (str[0] != '{') return log.warning(ERR::NoData);
+   for (; (*str) and (*str != '{'); str++) if (*str IS '\n') Self->LineNo++;
+   if (*str != '{') return log.warning(ERR::NoData);
 
    log.trace("Extracting tag information with extract_tag()");
-
-   for (str=Text; (*str) and (*str != '{'); str++) if (*str IS '\n') Self->LineNo++;
    if (*str IS '{') {
       // XML requires the root tag to be numbered with ID 0
       auto &root = Self->Tags.emplace_back(XTag(0, Self->LineNo, { { "item", "" }, { "type", "object" } }));

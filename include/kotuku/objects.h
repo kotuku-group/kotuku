@@ -698,7 +698,7 @@ struct Object { // Must be 64-bit aligned
 
    // Retrieve a direct pointer to a string field, no-copy operation.  Result will require deallocation by the client if the field is marked with ALLOC.
 
-   [[deprecated]] inline ERR get(FIELD FieldID, CSTRING &Value) {
+   inline ERR get(FIELD FieldID, CSTRING &Value) { // deprecated
       Object *target;
       Value = nullptr;
       if (auto field = FindField(this, FieldID, &target)) {

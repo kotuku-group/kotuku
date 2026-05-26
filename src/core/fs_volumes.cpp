@@ -127,7 +127,6 @@ ERR SetVolume(const std::string_view &Name, const std::string_view &Path, const 
 {
    kt::Log log(__FUNCTION__);
 
-   if ((&Name IS nullptr) or (&Path IS nullptr)) return log.warning(ERR::NullArgs);
    if ((Name.empty()) or (Path.empty())) return log.warning(ERR::NullArgs);
 
    std::string name;
@@ -153,9 +152,9 @@ ERR SetVolume(const std::string_view &Name, const std::string_view &Path, const 
 
       keys["Path"] = Path;
 
-      if ((&Icon != nullptr) and (not Icon.empty()))     keys["Icon"]   = Icon;
-      if ((&Label != nullptr) and (not Label.empty()))   keys["Label"]  = Label;
-      if ((&Device != nullptr) and (not Device.empty())) keys["Device"] = Device;
+      if (not Icon.empty())   keys["Icon"]   = Icon;
+      if (not Label.empty())  keys["Label"]  = Label;
+      if (not Device.empty()) keys["Device"] = Device;
 
       if ((Flags & VOLUME::HIDDEN) != VOLUME::NIL) keys["Hidden"] = "Yes";
       if ((Flags & VOLUME::SYSTEM) != VOLUME::NIL) keys["System"] = "Yes";

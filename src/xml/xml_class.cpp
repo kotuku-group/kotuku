@@ -2028,8 +2028,11 @@ static ERR GET_Statement(extXML *Self, std::string_view &Value)
    kt::Log log;
 
    if (not Self->initialised()) {
-      Value = kt::strclone(Self->Statement);
-      return ERR::Okay;
+      if (CSTRING str = kt::strclone(Self->Statement)) {
+         Value = str;
+         return ERR::Okay;
+      }
+      else return ERR::AllocMemory;
    }
 
    if (Self->Tags.empty()) return ERR::FieldNotSet;
