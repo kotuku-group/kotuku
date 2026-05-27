@@ -1790,11 +1790,13 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
       // the object context not yet being established.  Such allocations must be deferred to the NewObject hook.
 
       ERR error = ERR::Okay;
-      if ((mc->Base) and (mc->Base->ActionTable[int(AC::NewPlacement)].PerformAction)) {
-         error = mc->Base->ActionTable[int(AC::NewPlacement)].PerformAction(head, nullptr);
-      }
-      else if (mc->ActionTable[int(AC::NewPlacement)].PerformAction) {
+      if (mc->ActionTable[int(AC::NewPlacement)].PerformAction) {
+         // Derived classes have priority over base for NewPlacement.  Base classes that need NewPlacement should either specify
+         // initialisers in the class definition (where the derived class can also see them) or defer to the NewObject hook.
          error = mc->ActionTable[int(AC::NewPlacement)].PerformAction(head, nullptr);
+      }
+      else if ((mc->Base) and (mc->Base->ActionTable[int(AC::NewPlacement)].PerformAction)) {
+         error = mc->Base->ActionTable[int(AC::NewPlacement)].PerformAction(head, nullptr);
       }
 
       if (error != ERR::Okay) {
