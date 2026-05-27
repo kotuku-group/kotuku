@@ -904,7 +904,7 @@ GCproto * LexState::fs_finish(BCLine Line)
 
    // Capture variable declarations if JOF::DIAGNOSE is enabled.
 
-   auto prv = (prvTiri *)this->L->script->ChildPrivate;
+   auto prv = (prvTiri *)this->L->script->DerivedPtr;
    if (((prv->JitOptions & JOF::DIAGNOSE) != JOF::NIL)) {
       std::string scope = build_scope_name(this, fs);
 

@@ -675,7 +675,7 @@ ERR push_object_id(lua_State *Lua, OBJECTID ObjectID)
 static int object_state(lua_State *Lua)
 {
    auto def = object_context(Lua);
-   auto prv = (prvTiri *)Lua->script->ChildPrivate;
+   auto prv = (prvTiri *)Lua->script->DerivedPtr;
 
    kt::Log log(__FUNCTION__);
    if (auto it = prv->StateMap.find(def->uid); it != prv->StateMap.end()) {
@@ -884,7 +884,7 @@ static int object_subscribe(lua_State *Lua)
    auto callback = C_FUNCTION(notify_action);
    callback.Context = Lua->script;
    if (auto error = SubscribeAction(obj, action_id, &callback); error IS ERR::Okay) {
-      auto prv = (prvTiri *)Lua->script->ChildPrivate;
+      auto prv = (prvTiri *)Lua->script->DerivedPtr;
       auto &acsub = prv->ActionList.emplace_back();
 
       if (not lua_isnil(Lua, 3)) {
@@ -933,7 +933,7 @@ static int object_unsubscribe(lua_State *Lua)
 
    log.trace("Object: %d, Action: %s", def->uid, action);
 
-   auto prv = (prvTiri *)Lua->script->ChildPrivate;
+   auto prv = (prvTiri *)Lua->script->DerivedPtr;
    std::erase_if(prv->ActionList, [&](auto& item) {
       bool should_remove = (item.ObjectID IS def->uid) and ((action_id IS AC::NIL) or (item.ActionID IS action_id));
       if (should_remove) {

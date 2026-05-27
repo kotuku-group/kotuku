@@ -13,7 +13,7 @@ The Picture class provides a standard API for programs to load picture files of 
 proof in that future data formats can be supported by installing class drivers on the user's system.
 
 The default file format for loading and saving pictures is PNG.  Other formats such as JPEG are supported via
-sub-classes, which can be loaded into the system at boot time or on demand.  Some rare formats such as TIFF are
+derived classes, which can be loaded into the system at boot time or on demand.  Some rare formats such as TIFF are
 also supported, but user preference may dictate whether or not the necessary driver is installed.
 
 <header>Technical Notes</>
@@ -454,7 +454,7 @@ static ERR PICTURE_Init(extPicture *Self)
                else return log.warning(ERR::Init);
             }
 
-            if (Self->isSubClass()) return ERR::Okay; // Break here to let the sub-class continue initialisation
+            if (Self->isDerived()) return ERR::Okay; // Break here to let the derived class continue initialisation
 
             return ERR::Okay;
          }
@@ -463,7 +463,7 @@ static ERR PICTURE_Init(extPicture *Self)
       else return log.warning(ERR::InvalidDimension);
    }
    else {
-      if (Self->isSubClass()) return ERR::Okay; // Break here to let the sub-class continue initialisation
+      if (Self->isDerived()) return ERR::Okay; // Break here to let the derived class continue initialisation
 
       // Test the given path to see if it matches our supported file format.
 

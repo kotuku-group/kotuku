@@ -56,7 +56,7 @@ static void key_event(evKey *, int, struct finput *);
    kt::Log log(__FUNCTION__);
 
    auto Self = (objScript *)CurrentContext();
-   auto prv = (prvTiri *)Self->ChildPrivate;
+   auto prv = (prvTiri *)Self->DerivedPtr;
 
    auto list = prv->InputList;
    for (; (list) and (list->InputHandle != Handle); list=list->Next);
@@ -128,7 +128,7 @@ static void key_event(evKey *, int, struct finput *);
 [[nodiscard]] static int input_keyboard(lua_State *Lua)
 {
    kt::Log log("input.keyboard");
-   auto prv = (prvTiri *)Lua->script->ChildPrivate;
+   auto prv = (prvTiri *)Lua->script->DerivedPtr;
 
    OBJECTID object_id;
    GCobject *obj;
@@ -203,7 +203,7 @@ static void key_event(evKey *, int, struct finput *);
 
 [[nodiscard]] static int input_request_item(lua_State *Lua)
 {
-   auto prv = (prvTiri *)Lua->script->ChildPrivate;
+   auto prv = (prvTiri *)Lua->script->DerivedPtr;
 
    if (not lua_isfunction(Lua, 4)) {
       luaL_argerror(Lua, 4, "Function expected.");
@@ -285,7 +285,7 @@ static void key_event(evKey *, int, struct finput *);
 [[nodiscard]] static int input_subscribe(lua_State *Lua)
 {
    kt::Log log("input.subscribe");
-   auto prv = (prvTiri *)Lua->script->ChildPrivate;
+   auto prv = (prvTiri *)Lua->script->DerivedPtr;
 
    auto mask = JTYPE(lua_tointeger(Lua, 1)); // Optional
 
@@ -393,7 +393,7 @@ static void key_event(evKey *, int, struct finput *);
       if (input->KeyEvent)    { UnsubscribeEvent(input->KeyEvent); input->KeyEvent = nullptr; }
 
       if (Lua->script) { // Remove from the chain.
-         auto prv = (prvTiri *)Lua->script->ChildPrivate;
+         auto prv = (prvTiri *)Lua->script->DerivedPtr;
          if (prv->InputList IS input) prv->InputList = input->Next;
          else {
             auto list = prv->InputList;
@@ -418,7 +418,7 @@ static void key_event(evKey *Event, int Size, struct finput *Input)
 {
    kt::Log log("input.key_event");
    objScript *script = Input->Script;
-   auto prv = (prvTiri *)script->ChildPrivate;
+   auto prv = (prvTiri *)script->DerivedPtr;
 
    if ((not script) or (not prv)) {
       log.trace("Input->Script undefined.");
@@ -455,7 +455,7 @@ static void key_event(evKey *Event, int Size, struct finput *Input)
 static void focus_event(evFocus *Event, int Size, lua_State *Lua)
 {
    kt::Log log(__FUNCTION__);
-   auto prv = (prvTiri *)Lua->script->ChildPrivate;
+   auto prv = (prvTiri *)Lua->script->DerivedPtr;
    objScript *script = Lua->script;
 
    if ((not script) or (not prv)) {

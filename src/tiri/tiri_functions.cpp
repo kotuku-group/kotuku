@@ -63,7 +63,7 @@ static int lua_load(lua_State *Lua, class objFile *File, CSTRING SourceName)
 static void receive_event(kt::Event *Info, int InfoSize, APTR CallbackMeta)
 {
    auto Script = (objScript *)CurrentContext();
-   auto prv = (prvTiri *)Script->ChildPrivate;
+   auto prv = (prvTiri *)Script->DerivedPtr;
    if (not prv) return;
 
    kt::Log log(__FUNCTION__);
@@ -88,7 +88,7 @@ static void receive_event(kt::Event *Info, int InfoSize, APTR CallbackMeta)
 
 int fcmd_unsubscribe_event(lua_State *Lua)
 {
-   auto prv = (prvTiri *)Lua->script->ChildPrivate;
+   auto prv = (prvTiri *)Lua->script->DerivedPtr;
    if (not prv) return 0;
 
    if (auto handle = lua_touserdata(Lua, 1)) {
@@ -193,7 +193,7 @@ int fcmd_subscribe_event(lua_State *Lua)
       lua_settop(Lua, 2);
       auto client_function = luaL_ref(Lua, LUA_REGISTRYINDEX);
       if (auto error = SubscribeEvent(event_id, C_FUNCTION(receive_event, client_function), &handle); error IS ERR::Okay) {
-         auto prv = (prvTiri *)Lua->script->ChildPrivate;
+         auto prv = (prvTiri *)Lua->script->DerivedPtr;
          prv->EventList.emplace_back(client_function, event_id, handle);
          lua_pushinteger(Lua, int(error)); // 1: Error code
          lua_pushlightuserdata(Lua, handle); // 2: Handle

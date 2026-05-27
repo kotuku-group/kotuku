@@ -12,7 +12,7 @@ Vector is an abstract class that is used as a blueprint for other vector classes
 for a vector scene.  At this time the classes are @VectorClip, @VectorEllipse, @VectorGroup, @VectorPath,
 @VectorPolygon, @VectorRectangle, @VectorSpiral, @VectorText, @VectorViewport and @VectorWave.
 
-The majority of sub-classes support all of the functionality provided by Vector.  The general exception is that
+The majority of derived classes support all of the functionality provided by Vector.  The general exception is that
 graphics functions will not be supported by non-graphical classes, for instance @VectorGroup and @VectorViewport do not
 produce a vector path and therefore cannot be rendered.
 
@@ -494,8 +494,8 @@ static ERR VECTOR_Init(extVector *Self)
    kt::Log log;
 
    if (Self->classID() IS CLASSID::VECTOR) {
-      log.warning("Vector cannot be instantiated directly (use a sub-class).");
-      return ERR::UseSubClass;
+      log.warning("Vector cannot be instantiated directly (use a derived class).");
+      return ERR::UseDerived;
    }
 
    if (!Self->Parent) {

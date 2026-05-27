@@ -184,7 +184,7 @@ static ERR NETSOCKET_Connect(extNetSocket *Self, struct ns::Connect *Args)
 
    if ((!Args) or (!Args->Address) or (Args->Port <= 0) or (Args->Port >= 65536)) return log.warning(ERR::Args);
 
-   if (Self->isSubClass()) return ERR::InvalidState; // Server cannot use Connect()
+   if (Self->isDerived()) return ERR::InvalidState; // Server cannot use Connect()
 
    if ((Self->Flags & NSF::UDP) != NSF::NIL) return log.warning(ERR::NoSupport); // UDP is connectionless
 
@@ -540,7 +540,7 @@ static ERR NETSOCKET_Init(extNetSocket *Self)
    if (Self->Handle.is_invalid()) return ERR::SystemCall;
    Self->IPV6 = is_ipv6;
 
-   if ((!Self->isSubClass()) and (!is_udp) and ((Self->Flags & NSF::KEEP_ALIVE) != NSF::NIL)) {
+   if ((!Self->isDerived()) and (!is_udp) and ((Self->Flags & NSF::KEEP_ALIVE) != NSF::NIL)) {
       if (auto error = network_platform().enable_keep_alive(Self->Handle); error != ERR::Okay) {
          free_socket(Self);
          return error;
@@ -563,7 +563,7 @@ static ERR NETSOCKET_Init(extNetSocket *Self)
       }
    }
 
-   if (Self->isSubClass()) return ERR::Okay; // Will hand-off to the sub-class
+   if (Self->isDerived()) return ERR::Okay; // Will hand-off to the derived class
 
    if ((Self->Address) and (Self->Port > 0)) {
       if ((error = Self->connect(Self->Address, Self->Port, 0)) != ERR::Okay) {

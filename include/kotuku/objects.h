@@ -236,7 +236,7 @@ struct Object { // Must be 64-bit aligned
       objMetaClass *Class;          // [Public] Class pointer
       class extMetaClass *ExtClass; // [Private] Internal version of the class pointer
    };
-   APTR     ChildPrivate;        // Address for the ChildPrivate structure, if allocated
+   APTR     DerivedPtr;          // Private allocation area for derived classes only
    APTR     CreatorMeta;         // The creator of the object is permitted to store a custom data pointer here.
    struct Object *Owner;         // The owner of this object
    std::atomic_uint64_t NotifyFlags; // Action subscription flags - space for 64 actions max
@@ -251,12 +251,12 @@ struct Object { // Must be 64-bit aligned
 
    // NB: This constructor is called by NewObject(), no need to call it manually from client code.
 
-   Object() : Class(nullptr), ChildPrivate(nullptr), CreatorMeta(nullptr), Owner(nullptr), NotifyFlags(0),
+   Object() : Class(nullptr), DerivedPtr(nullptr), CreatorMeta(nullptr), Owner(nullptr), NotifyFlags(0),
       ActionDepth(0), Queue(0), SleepQueue(0), RefCount(0), UID(0), Flags(0), ThreadID(0), Name("") { }
 
    [[nodiscard]] inline bool initialised() { return Flags.load() & uint32_t(NF::INITIALISED); }
    [[nodiscard]] inline bool defined(NF pFlags) { return Flags.load() & uint32_t(pFlags); }
-   [[nodiscard]] inline bool isSubClass();
+   [[nodiscard]] inline bool isDerived();
    [[nodiscard]] inline OBJECTID ownerID() { return Owner ? Owner->UID : 0; }
    [[nodiscard]] inline CLASSID classID();
    [[nodiscard]] inline CLASSID baseClassID();

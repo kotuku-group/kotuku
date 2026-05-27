@@ -20,7 +20,7 @@ The `ERR::Search` code is returned if a suitable class does not match the target
 cpp(strview) Path: The location of the object data.
 cid Filter:    Restrict the search to classes in this subset, or use `CLASSID::NIL` to search all classes.
 &cid Class:    Must refer to a `CLASSID` variable that will store the resulting class ID.
-&cid SubClass: Optional argument that can refer to a variable that will store the resulting sub-class ID (if the result is a base-class, this variable will receive a value of zero).
+&cid SubClass: Optional argument that can refer to a variable that will store the resulting derived class ID (if the result is a base-class, this variable will receive a value of zero).
 
 -ERRORS-
 Okay
@@ -89,7 +89,7 @@ ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *ClassID,
       }
    }
 
-   // Check against the class registry to identify what class and sub-class that this data source belongs to.
+   // Check against the class registry to identify what class and derived class that this data source belongs to.
 
    if (not glClassDB.empty()) {
       // Check extension
@@ -100,7 +100,7 @@ ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *ClassID,
             if (auto ext_class_id = lookup_class_by_ext(Filter, ext); ext_class_id != CLASSID::NIL) {
                auto &rec = glClassDB[ext_class_id];
 
-               if (rec.ParentID != CLASSID::NIL) { // Confirm if ext_class_id is a sub-class
+               if (rec.ParentID != CLASSID::NIL) { // Confirm if ext_class_id is a derived class
                   *ClassID = rec.ParentID;
                   if (SubClassID) *SubClassID = rec.ClassID;
                }

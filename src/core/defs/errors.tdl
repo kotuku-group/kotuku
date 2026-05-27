@@ -173,7 +173,7 @@ function declareErrors()
     "ThreadAlreadyActive",     -- Cannot execute a thread that is already running
     "OpenGL",                  -- Failure has been reported from OpenGL
     "OutsideMainThread",       -- An operation has been attempted that is only possible from within the main thread
-    "UseSubClass",             -- Requested to use a registered sub-class (not an error)
+    "UseDerived",              -- Requested to use a registered derived class (not an error)
     "WrongType",               -- The expected type was not provided
     "ThreadNotLocked",         -- Thread objects must be locked prior to activation
     "MessageOperation",        -- A message queue operation has failed

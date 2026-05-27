@@ -13,7 +13,7 @@ detail with our existing vector API.  Consequently, document formatting is close
 and seamlessly inherits SVG functionality such as filling and stroking commands.
 
 The native document format for Kōtuku is RIPL.  Documentation for RIPL is available in the Kotuku Wiki.  Other
-document formats may be supported as sub-classes, but bear in mind that document parsing is a one-way trip and
+document formats may be supported as derived classes, but bear in mind that document parsing is a one-way trip and
 stateful information such as the HTML DOM is not supported.
 
 The Document class does not include a security barrier in its current form.  Documents that include scripted code

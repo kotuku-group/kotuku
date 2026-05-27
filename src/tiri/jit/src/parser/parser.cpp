@@ -119,7 +119,7 @@ static void trace_ast_boundary(ParserContext &Context, const BlockStmt &Chunk, C
 {
    kt::Log log("AST-Boundary");
 
-   auto prv = (prvTiri *)Context.lua().script->ChildPrivate;
+   auto prv = (prvTiri *)Context.lua().script->DerivedPtr;
    if ((prv->JitOptions & JOF::TRACE_BOUNDARY) IS JOF::NIL) return;
 
    StatementListView statements = Chunk.view();
@@ -225,7 +225,7 @@ static ParserConfig make_parser_config(lua_State &State)
 {
    ParserConfig config;
 
-   auto prv = (prvTiri *)State.script->ChildPrivate;
+   auto prv = (prvTiri *)State.script->DerivedPtr;
 
    if ((prv->JitOptions & JOF::DIAGNOSE) != JOF::NIL) {
       // Cancel aborting on error and enable deeper log tracing.
@@ -246,7 +246,7 @@ extern GCproto * lj_parse(LexState *State)
    GCproto   *pt;
    lua_State *L = State->L;
 
-   auto prv = (prvTiri *)L->script->ChildPrivate;
+   auto prv = (prvTiri *)L->script->DerivedPtr;
 
 #ifdef LUAJIT_DISABLE_DEBUGINFO
    State->chunk_name = lj_str_newlit(L, "=");

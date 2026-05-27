@@ -383,11 +383,11 @@ enum {
 class extMetaClass : public objMetaClass {
    public:
    using create = kt::Create<extMetaClass>;
-   class extMetaClass *Base;            // Reference to the base class if this is a sub-class
+   class extMetaClass *Base;            // Reference to the base class if this is a derived class
    std::vector<Field> FieldLookup;      // Field dictionary for base-class fields
    std::vector<MethodEntry> Methods;    // Original method array supplied by the module.
-   std::vector<extMetaClass *> SubClasses; // List of all associated sub-classes
-   const struct FieldArray *SubFields;  // Extra fields defined by the sub-class
+   std::vector<extMetaClass *> SubClasses; // List of all associated derived classes
+   const struct FieldArray *SubFields;  // Extra fields defined by the derived class
    class RootModule *Root;              // Root module that owns this class, if any.
    uint8_t Local[8];                    // Local object references (by field indexes), in order
    STRING Location;                     // Location of the class binary, this field exists purely for caching the location string if the client reads it

@@ -11,7 +11,7 @@ Script: The Script class defines a common interface for script execution.
 The Script class defines a common interface for the purpose of executing scripts, such as Tiri.  The base class does
 not include a default parser or execution process of any kind.
 
-To execute a script file, choose a sub-class that matches the language and create the script object.  Set the #Path
+To execute a script file, choose a derived class that matches the language and create the script object.  Set the #Path
 field and then #Activate() the script.  Global input parameters for the script can be defined via the #SetKey()
 action.
 
@@ -155,7 +155,7 @@ NullArgs:
 
 static ERR SCRIPT_DebugLog(objScript *Self, struct sc::DebugLog *Args)
 {
-   // It is the responsibility of the sub-class to override this method with something appropriate.
+   // It is the responsibility of the derived class to override this method with something appropriate.
    return ERR::Okay;
 }
 
@@ -182,7 +182,7 @@ NullArgs:
 
 static ERR SCRIPT_DerefProcedure(objScript *Self, struct sc::DerefProcedure *Args)
 {
-   // It is the responsibility of the sub-class to override this method with something appropriate.
+   // It is the responsibility of the derived class to override this method with something appropriate.
    return ERR::Okay;
 }
 
@@ -347,7 +347,7 @@ static ERR SCRIPT_Init(objScript *Self)
       Self->TargetID = Self->ownerID();
    }
 
-   if (Self->isSubClass()) return ERR::Okay; // Break here to let the sub-class continue initialisation
+   if (Self->isDerived()) return ERR::Okay; // Break here to let the derived class continue initialisation
 
    return ERR::NoSupport;
 }

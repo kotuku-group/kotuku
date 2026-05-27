@@ -357,7 +357,7 @@ setAction('SaveToObject', {
    tiriPrototype = 'err = Object.acSaveToObject(Dest:obj, ClassID:num)',
    params    = {
       { name='Dest', type='OBJECTID', comment='Refers to an object that will receive the encoded data.' },
-      { name='ClassID', type='CLASSID', comment='Can refer to a sub-class that should be used when encoding the data.' }
+      { name='ClassID', type='CLASSID', comment='Can refer to a derived class that should be used when encoding the data.' }
    }
 })
 

@@ -243,9 +243,9 @@ ERR CLASS_Free(extMetaClass *Self)
    if (Self->Location) { FreeResource(Self->Location); Self->Location = nullptr; }
 
    if (not Self->SubClasses.empty()) {
-      // Sanity check - if a base has sub-classes present then there is an issue that requires resolution.
+      // Sanity check - if a base has derived classes present then there is an issue that requires resolution.
       // Note that for static builds there is no way to control termination order, so these controls are disabled.
-      kt::Log().warning("Out-of-order termination: Base-class %s has %d active sub-classes.", Self->ClassName, int(Self->SubClasses.size()));
+      kt::Log().warning("Out-of-order termination: Base-class %s has %d active derived classes.", Self->ClassName, int(Self->SubClasses.size()));
    }
 
    if (Self->Base) {
@@ -282,7 +282,7 @@ ERR CLASS_Init(extMetaClass *Self)
       }
    }
    else {
-      // If this is a sub-class, find the base class.  Note that FindClass() will automatically initialise the base if
+      // If this is a derived class, find the base class.  Note that FindClass() will automatically initialise the base if
       // there is a reference for it, so if it returns NULL then it is obvious that the base class is not installed on the
       // user's system.
 
@@ -292,7 +292,7 @@ ERR CLASS_Init(extMetaClass *Self)
          if (!Self->FileExtension)   Self->FileExtension   = base->FileExtension;
          if (!Self->ClassVersion)    Self->ClassVersion    = base->ClassVersion;
 
-         // If over-riding field definitions have been specified by the sub-class, move them to the SubFields pointer.
+         // If over-riding field definitions have been specified by the derived class, move them to the SubFields pointer.
 
          if (Self->Fields) Self->SubFields = Self->Fields;
          Self->Fields = base->Fields;
@@ -300,7 +300,7 @@ ERR CLASS_Init(extMetaClass *Self)
 
          Self->Flags |= base->Flags;
 
-         // In tightly controlled configurations, a sub-class can define a structure that is larger than the base
+         // In tightly controlled configurations, a derived class can define a structure that is larger than the base
          // class.  Vector filter effects are one example.
 
          if (!Self->Size) Self->Size = base->Size;
@@ -310,7 +310,7 @@ ERR CLASS_Init(extMetaClass *Self)
 
          if (Self->Methods.size() < base->Methods.size()) Self->Methods.resize(base->Methods.size());
 
-         // Copy method info from the base-class, but leave the sub-class' function pointers if defined.
+         // Copy method info from the base-class, but leave the derived class' function pointers if defined.
 
          for (unsigned i=0; i < base->Methods.size(); i++) {
             Self->Methods[i].MethodID = base->Methods[i].MethodID;
@@ -479,13 +479,13 @@ The BaseClassID must always be set prior to the initialisation of a new MetaClas
 considered sufficient.  If the BaseClassID is zero then the hash of #ClassName is computed and set as the
 value of BaseClassID.
 
-When defining a sub-class, it is required that the BaseClassID refers to the class that is being supported.
+When defining a derived class, it is required that the BaseClassID refers to the class that is being supported.
 
 -FIELD-
 ClassID: Specifies the ID of a class object.
 
 The ClassID uniquely identifies a class.  If this value differs from the BaseClassID, then the class is determined
-to be a sub-class.  The ClassID value always reflects the `strihash()` computation of the #ClassName, and is
+to be a derived class.  The ClassID value always reflects the `strihash()` computation of the #ClassName, and is
 automatically set on initialisation if not already set by the client.
 
 -FIELD-
@@ -508,13 +508,13 @@ ClassVersion: The version number of the class.
 This field value must reflect the version of the class structure.  Legal version numbers start from 1.0 and ascend.
 Revision numbers can be used to indicate bug-fixes or very minor changes.
 
-If declaring a sub-class then this value can be `0`, but base classes must set a value here.
+If declaring a derived class then this value can be `0`, but base classes must set a value here.
 
 -FIELD-
 Dictionary: Returns a field lookup table sorted by field IDs.
 
 Following initialisation of the MetaClass, the Dictionary can be read to retrieve the internal field lookup table.
-For base-classes, the client can use the binary search technique to find fields by their ID.  For sub-classes, use
+For base-classes, the client can use the binary search technique to find fields by their ID.  For derived classes, use
 linear scanning.
 
 *********************************************************************************************************************/
@@ -689,7 +689,7 @@ static ERR SET_Methods(extMetaClass *Self, const MethodEntry *Methods, int Eleme
          Self->Methods[lk].Args     = Methods[i].Args;
       }
 
-      // NOTE: If this is a sub-class, the initialisation process will add the base-class methods to the list.
+      // NOTE: If this is a derived class, the initialisation process will add the base-class methods to the list.
    }
 
    return ERR::Okay;
@@ -795,9 +795,9 @@ static ERR GET_RootModule(extMetaClass *Self, class RootModule **Value)
 /*********************************************************************************************************************
 
 -FIELD-
-SubClasses: Returns a list of all sub-classes of the class.
+SubClasses: Returns a list of all derived classes of the class.
 
-This field returns an array listing all active sub-classes of the class (classes that have not been loaded are not
+This field returns an array listing all active derived classes of the class (classes that have not been loaded are not
 included).  This feature applies to base-classes only.
 
 *********************************************************************************************************************/
@@ -841,15 +841,15 @@ static ERR GET_SubFields(extMetaClass *Self, const FieldArray **Fields, int *Ele
 //********************************************************************************************************************
 // Build the FieldLookup table, which is sorted by FieldID.  For base-classes this is straight-forward.
 //
-// For sub-classes the FieldLookup table is inherited from the base, then it may be modified by the sub-class
-// blueprint.  Furthermore if the sub-class defines additional fields, these are appended to the FieldLookup table so
+// For derived classes the FieldLookup table is inherited from the base, then it may be modified by the derived class
+// blueprint.  Furthermore if the derived class defines additional fields, these are appended to the FieldLookup table so
 // that there is no interference with the order of fields at the base-class level.  This arrangement is important
-// because some optimisations rely on the field order being consistent between base-class and sub-class
+// because some optimisations rely on the field order being consistent between base-class and derived class
 // implementations.
 
 static void field_setup(extMetaClass *Class)
 {
-   if (Class->Base) { // This is a sub-class.
+   if (Class->Base) { // This is a derived class.
       Class->FieldLookup = Class->Base->FieldLookup;
       Class->BaseCeiling = Class->FieldLookup.size();
 

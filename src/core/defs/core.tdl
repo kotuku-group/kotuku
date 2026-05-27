@@ -288,7 +288,7 @@ constexpr bool defined(T flags, T test_flag) noexcept {
     "TIMER_SUB: The object is subscribed to a timer interval.",
     "SUPPRESS_LOG: Private.  Turns off the initial log message.",
     "COLLECT: Marked for garbage collection.",
-    "RECLASSED: The object switched from the base-class to a sub-class during initialisation.",
+    "RECLASSED: The object switched from the base-class to a derived class during initialisation.",
     "MESSAGE: Action has been called against the object through the message system (managed by ~Core.ProcessMessages()).",
     "SIGNALLED: The object has been signalled and is awaiting processing.",
     "PERMIT_TERMINATE: Private.  Permits termination when a lock is held on the object.",
@@ -1007,7 +1007,7 @@ using ModTest    = void (*)(CSTRING, int *, int *);
 
   struct("ClassRecord", { comment="Meta information for a class, as recorded in the class database." }, [[
     cid ClassID          # Unique class identifier (hash of Name)
-    cid ParentID         # Parent class ID if this is a sub-class
+    cid ParentID         # Parent class ID if this is a derived class
     int(CCF) Category    # Assigned category
     cpp(str) Name        # Name of the class
     cpp(str) Path        # Path to the class file
@@ -1312,7 +1312,7 @@ typedef std::vector<obj_write> WRITE_TABLE;
   ]])
 
 c_insert([[
-inline bool Object::isSubClass() { return Class->ClassID != Class->BaseClassID; }
+inline bool Object::isDerived() { return Class->ClassID != Class->BaseClassID; }
 inline CLASSID Object::classID() { return Class->ClassID; }
 inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
 ]])

@@ -744,7 +744,7 @@ static ERR XML_Init(extXML *Self)
 {
    kt::Log log;
 
-   if (Self->isSubClass()) return ERR::Okay; // Break here for sub-classes to perform initialisation
+   if (Self->isDerived()) return ERR::Okay; // Break here for derived classes to perform initialisation
 
    // Statement has precedence over the Path because it's sometimes used in conjunction with the Statement when
    // a base path is required for relative URI resolution.

@@ -21,7 +21,7 @@ handling of both standard (.svg) and compressed (.svgz) SVG files.
 static ERR RSVG_Activate(extPicture *Self)
 {
    prvSVG *prv;
-   if (!(prv = (prvSVG *)Self->ChildPrivate)) return ERR::NotInitialised;
+   if (!(prv = (prvSVG *)Self->DerivedPtr)) return ERR::NotInitialised;
 
    ERR error;
    if ((error = acQuery(Self)) != ERR::Okay) return error;
@@ -40,7 +40,7 @@ static ERR RSVG_Activate(extPicture *Self)
 
 static ERR RSVG_Free(extPicture *Self)
 {
-   if (auto prv = (prvSVG *)Self->ChildPrivate) {
+   if (auto prv = (prvSVG *)Self->DerivedPtr) {
       if (prv->SVG) { FreeResource(prv->SVG); prv->SVG = nullptr; }
    }
    return ERR::Okay;
@@ -73,7 +73,7 @@ static ERR RSVG_Init(extPicture *Self)
 
    Self->Flags |= PCF::SCALABLE;
 
-   if (AllocMemory(sizeof(prvSVG), MEM::DATA, &Self->ChildPrivate) IS ERR::Okay) {
+   if (AllocMemory(sizeof(prvSVG), MEM::DATA, &Self->DerivedPtr) IS ERR::Okay) {
       if ((Self->Flags & PCF::LAZY) != PCF::NIL) return ERR::Okay;
       return acActivate(Self);
    }
@@ -88,7 +88,7 @@ static ERR RSVG_Query(extPicture *Self)
    prvSVG *prv;
    objBitmap *bmp;
 
-   if (!(prv = (prvSVG *)Self->ChildPrivate)) return ERR::NotInitialised;
+   if (!(prv = (prvSVG *)Self->DerivedPtr)) return ERR::NotInitialised;
    if (!(bmp = Self->Bitmap)) return log.warning(ERR::ObjectCorrupt);
 
    if (Self->Queried) return ERR::Okay;
@@ -171,7 +171,7 @@ static ERR RSVG_Query(extPicture *Self)
 static ERR RSVG_Resize(extPicture *Self, struct acResize *Args)
 {
    prvSVG *prv;
-   if (!(prv = (prvSVG *)Self->ChildPrivate)) return ERR::NotInitialised;
+   if (!(prv = (prvSVG *)Self->DerivedPtr)) return ERR::NotInitialised;
 
    if (!Args) return ERR::NullArgs;
 

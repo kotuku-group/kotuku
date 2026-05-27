@@ -58,7 +58,7 @@ extern int lua_load(lua_State *Lua, std::string_view Source, CSTRING SourceName)
 
    // Set diagnose mode if enabled - this allows lexer to collect errors instead of throwing
 
-   auto *prv = (prvTiri *)Lua->script->ChildPrivate;
+   auto *prv = (prvTiri *)Lua->script->DerivedPtr;
    if ((prv->JitOptions & JOF::DIAGNOSE) != JOF::NIL) ls->diagnose_mode = true;
    prv->CapturedVariables.clear();  // Clear previous captures before new parse
 

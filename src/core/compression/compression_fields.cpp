@@ -89,7 +89,7 @@ Flags: Optional flags.
 -FIELD-
 Header: Private.  The first 32 bytes of a compression object's file header.
 
-This field is only of use to sub-classes that need to examine the first 32 bytes of a compressed file's header.
+This field is only of use to derived classes that need to examine the first 32 bytes of a compressed file's header.
 
 *********************************************************************************************************************/
 

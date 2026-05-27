@@ -710,7 +710,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
 <p>This function will find a specific class by ID and return its <class name="MetaClass">MetaClass</class>.  If the class is not already loaded, the internal dictionary is checked to discover a module binary registered with that ID.  If this succeeds, the module is loaded into memory and the correct MetaClass will be returned.</p>
 <p>In any event of failure, <code>NULL</code> is returned.</p>
 <p>If the ID of a named class is not known, call <function>ResolveClassName</function> first and pass the resulting ID to this function.</p>
-<p>NOTE: To retrieve a list of all sub-classes associated with a base-class, read the SubClasses field of the <class name="MetaClass">MetaClass</class>.</p>
+<p>NOTE: To retrieve a list of all derived classes associated with a base-class, read the SubClasses field of the <class name="MetaClass">MetaClass</class>.</p>
     </description>
     <result type="objMetaClass *">Returns a pointer to the <class name="MetaClass">MetaClass</class> structure that has been found as a result of the search, or <code>NULL</code> if no matching class was found.</result>
   </function>
@@ -943,7 +943,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
       <param type="const std::string_view &amp;" name="Path">The location of the object data.</param>
       <param type="CLASSID" name="Filter">Restrict the search to classes in this subset, or use <code>CLASSID::NIL</code> to search all classes.</param>
       <param type="CLASSID *" name="Class">Must refer to a <code>CLASSID</code> variable that will store the resulting class ID.</param>
-      <param type="CLASSID *" name="SubClass">Optional argument that can refer to a variable that will store the resulting sub-class ID (if the result is a base-class, this variable will receive a value of zero).</param>
+      <param type="CLASSID *" name="SubClass">Optional argument that can refer to a variable that will store the resulting derived class ID (if the result is a base-class, this variable will receive a value of zero).</param>
     </input>
     <description>
 <p>This function examines the relationship between file data and Kōtuku classes.  For instance, a JPEG file would be identified as a datatype of the <class name="Picture">Picture</class> class.  An MP3 file would be identified as a datatype of the <class name="Sound">Sound</class> class.</p>
@@ -970,7 +970,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     </input>
     <description>
 <p>This function initialises objects so that they can be used for their intended purpose. Initialisation is compulsory, and a client may not call any actions or methods on an object until it has been initialised.  Exceptions to this rule only apply to the <code>GetKey()</code> and <code>SetKey()</code> actions.</p>
-<p>If the initialisation of an object fails due to a support problem (for example, if a PNG <class name="Picture">Picture</class> object attempts to load a JPEG file), the initialiser will search for a sub-class that can handle the data.  If a sub-class that can support the object's configuration is available, the object's interface will be shared between both the base-class and the sub-class.</p>
+<p>If the initialisation of an object fails due to a support problem (for example, if a PNG <class name="Picture">Picture</class> object attempts to load a JPEG file), the initialiser will search for a derived class that can handle the data.  If a derived class that can support the object's configuration is available, the object's interface will be shared between both the base-class and the derived class.</p>
 <p>If an object does not support the data or its configuration, an error code of <code>ERR::NoSupport</code> will be returned. Other appropriate error codes can be returned if initialisation fails.</p>
     </description>
     <result type="ERR">
@@ -2761,7 +2761,7 @@ static ResourceManager glNodeManager = {
       <const name="MESSAGE">Action has been called against the object through the message system (managed by <function module="Core">ProcessMessages</function>).</const>
       <const name="NAME">Use the Name parameter to name the created object.  This flag is not required if using <code>UNIQUE</code>.</const>
       <const name="PRIVATE"/>
-      <const name="RECLASSED">The object switched from the base-class to a sub-class during initialisation.</const>
+      <const name="RECLASSED">The object switched from the base-class to a derived class during initialisation.</const>
       <const name="SIGNALLED">The object has been signalled and is awaiting processing.</const>
       <const name="TIMER_SUB">The object is subscribed to a timer interval.</const>
       <const name="UNIQUE">Use to allocate an object that has a guaranteed unique name.  This will prevent code from shadowing any object that exists with the same name, which can be imperative when creating shared objects.  If it is discovered that an identically named object exists, <function module="Core">NewObject</function> will return <code>ERR::ObjectExists</code>.  This flag works in conjunction with the <code>Name</code> parameter.</const>
@@ -3046,7 +3046,7 @@ static ResourceManager glNodeManager = {
 
     <struct name="ClassRecord" comment="Meta information for a class, as recorded in the class database.">
       <field name="ClassID" type="CLASSID">Unique class identifier (hash of Name)</field>
-      <field name="ParentID" type="CLASSID">Parent class ID if this is a sub-class</field>
+      <field name="ParentID" type="CLASSID">Parent class ID if this is a derived class</field>
       <field name="Category" type="CCF" lookup="CCF">Assigned category</field>
       <field name="Name" type="std::string">Name of the class</field>
       <field name="Path" type="std::string">Path to the class file</field>

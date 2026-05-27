@@ -85,7 +85,7 @@
       <type>CLASSID</type>
       <description>
 <p>The BaseClassID must always be set prior to the initialisation of a new MetaClass object unless <fl>ClassName</fl> is considered sufficient.  If the BaseClassID is zero then the hash of <fl>ClassName</fl> is computed and set as the value of BaseClassID.</p>
-<p>When defining a sub-class, it is required that the BaseClassID refers to the class that is being supported.</p>
+<p>When defining a derived class, it is required that the BaseClassID refers to the class that is being supported.</p>
       </description>
     </field>
 
@@ -106,7 +106,7 @@
       <access read="R" write="I">Read/Init</access>
       <type>CLASSID</type>
       <description>
-<p>The ClassID uniquely identifies a class.  If this value differs from the BaseClassID, then the class is determined to be a sub-class.  The ClassID value always reflects the <code>strihash()</code> computation of the <fl>ClassName</fl>, and is automatically set on initialisation if not already set by the client.</p>
+<p>The ClassID uniquely identifies a class.  If this value differs from the BaseClassID, then the class is determined to be a derived class.  The ClassID value always reflects the <code>strihash()</code> computation of the <fl>ClassName</fl>, and is automatically set on initialisation if not already set by the client.</p>
       </description>
     </field>
 
@@ -127,7 +127,7 @@
       <type>DOUBLE</type>
       <description>
 <p>This field value must reflect the version of the class structure.  Legal version numbers start from 1.0 and ascend. Revision numbers can be used to indicate bug-fixes or very minor changes.</p>
-<p>If declaring a sub-class then this value can be <code>0</code>, but base classes must set a value here.</p>
+<p>If declaring a derived class then this value can be <code>0</code>, but base classes must set a value here.</p>
       </description>
     </field>
 
@@ -137,7 +137,7 @@
       <access read="G">Get</access>
       <type>struct Field *</type>
       <description>
-<p>Following initialisation of the MetaClass, the Dictionary can be read to retrieve the internal field lookup table. For base-classes, the client can use the binary search technique to find fields by their ID.  For sub-classes, use linear scanning.</p>
+<p>Following initialisation of the MetaClass, the Dictionary can be read to retrieve the internal field lookup table. For base-classes, the client can use the binary search technique to find fields by their ID.  For derived classes, use linear scanning.</p>
       </description>
     </field>
 
@@ -286,11 +286,11 @@
 
     <field>
       <name>SubClasses</name>
-      <comment>Returns a list of all sub-classes of the class.</comment>
+      <comment>Returns a list of all derived classes of the class.</comment>
       <access read="G">Get</access>
       <type>ARRAY</type>
       <description>
-<p>This field returns an array listing all active sub-classes of the class (classes that have not been loaded are not included).  This feature applies to base-classes only.</p>
+<p>This field returns an array listing all active derived classes of the class (classes that have not been loaded are not included).  This feature applies to base-classes only.</p>
       </description>
     </field>
 

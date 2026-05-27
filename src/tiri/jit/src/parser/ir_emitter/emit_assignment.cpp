@@ -516,7 +516,7 @@ ParserResult<std::vector<PreparedAssignment>> IrEmitter::prepare_assignment_targ
    lhs.reserve(Targets.size());
    RegisterAllocator allocator(&this->func_state);
 
-   auto prv = (prvTiri *)this->func_state.ls->L->script->ChildPrivate;
+   auto prv = (prvTiri *)this->func_state.ls->L->script->DerivedPtr;
    bool trace_assignments = (prv->JitOptions & JOF::TRACE_ASSIGNMENTS) != JOF::NIL;
 
    for (const ExprNodePtr &node : Targets) {

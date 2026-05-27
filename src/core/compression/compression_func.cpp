@@ -707,7 +707,7 @@ static ERR send_feedback(extCompression *Self, CompressionFeedback *Feedback)
 
 static void write_eof(extCompression *Self)
 {
-   if ((Self->FileIO) and (!Self->isSubClass()) and (Self->CompressionCount > 0)) {
+   if ((Self->FileIO) and (!Self->isDerived()) and (Self->CompressionCount > 0)) {
       if (!Self->Files.empty()) {
          // Calculate the start of the list offset
 

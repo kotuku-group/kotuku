@@ -19,12 +19,12 @@ end
    mSys.FindClass('JPEG':hash())
    picmeta = mSys.FindClass('Picture':hash())
    pic_classes = picmeta.subClasses
-   assert(pic_classes, 'Picture has no sub-classes')
+   assert(pic_classes, 'Picture has no derived classes')
    jpeg_found = false
    for pic in values(pic_classes) do
       if pic.name is 'JPEG' then jpeg_found = true end
    end
-   assert(jpeg_found, 'Picture has no JPEG sub-class')
+   assert(jpeg_found, 'Picture has no JPEG derived class')
 end
 
 @Test function ClassDatabase()

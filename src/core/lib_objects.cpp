@@ -214,7 +214,7 @@ static ERR object_free(Object *Object)
       }
    }
 
-   if (mc->Base) { // Sub-class detected, so call the base class
+   if (mc->Base) { // Derived class detected, so call the base class
       if (mc->Base->ActionTable[int(AC::FreeWarning)].PerformAction) {
          if (mc->Base->ActionTable[int(AC::FreeWarning)].PerformAction(Object, nullptr) IS ERR::InUse) {
             if (Object->collecting()) {
@@ -242,11 +242,11 @@ static ERR object_free(Object *Object)
 
    NotifySubscribers(Object, AC::Free, nullptr, ERR::Okay);
 
-   if (mc->ActionTable[int(AC::Free)].PerformAction) {  // Could be sub-class or base-class
+   if (mc->ActionTable[int(AC::Free)].PerformAction) {  // Could be derived class or base-class
       mc->ActionTable[int(AC::Free)].PerformAction(Object, nullptr);
    }
 
-   if (mc->Base) { // Sub-class detected, so call the base class
+   if (mc->Base) { // Derived class detected, so call the base class
       if (mc->Base->ActionTable[int(AC::Free)].PerformAction) {
          mc->Base->ActionTable[int(AC::Free)].PerformAction(Object, nullptr);
       }
@@ -257,11 +257,9 @@ static ERR object_free(Object *Object)
       glSubscriptions.erase(Object->UID);
    }
 
-   // If a private child structure is present, remove it
-
-   if (Object->ChildPrivate) {
-      if (FreeResource(Object->ChildPrivate) != ERR::Okay) log.warning("Invalid ChildPrivate address %p.", Object->ChildPrivate);
-      Object->ChildPrivate = nullptr;
+   if (Object->DerivedPtr) {
+      if (FreeResource(Object->DerivedPtr) != ERR::Okay) log.warning("Invalid DerivedPtr address %p.", Object->DerivedPtr);
+      Object->DerivedPtr = nullptr;
    }
 
    free_children(Object);
@@ -281,7 +279,7 @@ static ERR object_free(Object *Object)
       }
    }
 
-   if ((mc->Base) and (mc->Base->OpenCount > 0)) mc->Base->OpenCount--; // Child detected
+   if ((mc->Base) and (mc->Base->OpenCount > 0)) mc->Base->OpenCount--; // Derived class detected
    if (mc->OpenCount > 0) mc->OpenCount--;
 
    if (Object->Name[0]) { // Remove the object from the name lookup list
@@ -687,27 +685,27 @@ ERR Action(ACTIONID ActionID, OBJECTPTR Object, APTR Parameters)
 
    ERR error;
    if (ActionID >= AC::NIL) {
-      if (cl->ActionTable[int(ActionID)].PerformAction) { // Can be a base-class or sub-class call
+      if (cl->ActionTable[int(ActionID)].PerformAction) { // Can be a base-class or derived class call
          error = cl->ActionTable[int(ActionID)].PerformAction(Object, Parameters);
 
          if (error IS ERR::NoAction) {
-            if ((cl->Base) and (cl->Base->ActionTable[int(ActionID)].PerformAction)) { // Base is set only if this is a sub-class
+            if ((cl->Base) and (cl->Base->ActionTable[int(ActionID)].PerformAction)) { // Base is set only if this is a derived class
                error = cl->Base->ActionTable[int(ActionID)].PerformAction(Object, Parameters);
             }
          }
       }
-      else if ((cl->Base) and (cl->Base->ActionTable[int(ActionID)].PerformAction)) { // Base is set only if this is a sub-class
+      else if ((cl->Base) and (cl->Base->ActionTable[int(ActionID)].PerformAction)) { // Base is set only if this is a derived class
          error = cl->Base->ActionTable[int(ActionID)].PerformAction(Object, Parameters);
       }
       else error = ERR::NoAction;
    }
    else { // Method call
-      // Note that sub-classes may return ERR::NoAction if propagation to the base class is desirable.
+      // Note that derived classes may return ERR::NoAction if propagation to the base class is desirable.
       auto routine = (ERR (*)(OBJECTPTR, APTR))cl->Methods[-int(ActionID)].Routine;
       if (routine) error = routine(Object, Parameters);
       else error = ERR::NoAction;
 
-      if ((error IS ERR::NoAction) and (cl->Base)) {  // If this is a child, check the base class
+      if ((error IS ERR::NoAction) and (cl->Base)) {  // If this is a derived class, check the base class
          auto routine = (ERR (*)(OBJECTPTR, APTR))cl->Base->Methods[-int(ActionID)].Routine;
          if (routine) error = routine(Object, Parameters);
       }
@@ -1304,7 +1302,7 @@ In any event of failure, `NULL` is returned.
 
 If the ID of a named class is not known, call ~ResolveClassName() first and pass the resulting ID to this function.
 
-NOTE: To retrieve a list of all sub-classes associated with a base-class, read the SubClasses field of the @MetaClass.
+NOTE: To retrieve a list of all derived classes associated with a base-class, read the SubClasses field of the @MetaClass.
 
 -INPUT-
 cid ClassID: A class ID such as one retrieved from ~ResolveClassName().
@@ -1324,7 +1322,7 @@ objMetaClass * FindClass(CLASSID ClassID)
    // Class is not loaded.  Try and find the class in the dictionary.  If we find one, we can
    // initialise the module and then find the new Class.
    //
-   // Note: Children of the class are not automatically loaded into memory if they are unavailable at the time.  Doing so
+   // Note: Derived classes are not automatically loaded into memory if they are unavailable at the time.  Doing so
    // would result in lost CPU and memory resources due to loading code that may not be needed.
 
    kt::Log log(__FUNCTION__);
@@ -1527,9 +1525,9 @@ and a client may not call any actions or methods on an object until it has been 
 this rule only apply to the `GetKey()` and `SetKey()` actions.
 
 If the initialisation of an object fails due to a support problem (for example, if a PNG @Picture object attempts to
-load a JPEG file), the initialiser will search for a sub-class that can handle the data.  If a sub-class that can
+load a JPEG file), the initialiser will search for a derived class that can handle the data.  If a derived class that can
 support the object's configuration is available, the object's interface will be shared between both the base-class
-and the sub-class.
+and the derived class.
 
 If an object does not support the data or its configuration, an error code of `ERR::NoSupport` will be returned.
 Other appropriate error codes can be returned if initialisation fails.
@@ -1563,11 +1561,11 @@ ERR InitObject(OBJECTPTR Object)
 
    extObjectContext new_context(Object, AC::Init);
 
-   bool use_subclass = false;
+   bool use_derived = false;
    ERR error = ERR::Okay;
-   if (Object->isSubClass()) {
-      // For sub-classes, the base-class gets called first.  It should verify that
-      // the object is sub-classed so as to prevent it from doing 'too much' initialisation.
+   if (Object->isDerived()) {
+      // For derived classes, the base-class gets called first.  It should verify that
+      // the object is derived classed so as to prevent it from doing 'too much' initialisation.
 
       if (cl->Base->ActionTable[int(AC::Init)].PerformAction) {
          error = cl->Base->ActionTable[int(AC::Init)].PerformAction(Object, nullptr);
@@ -1586,12 +1584,12 @@ ERR InitObject(OBJECTPTR Object)
    else {
       // Meaning of special error codes:
       //
-      // ERR::NoSupport: The source data is not recognised.  Search for a sub-class that might have better luck.  Note
+      // ERR::NoSupport: The source data is not recognised.  Search for a derived class that might have better luck.  Note
       //   that in the first case we can only support classes that are already in memory.  The second part of this
-      //   routine supports checking of sub-classes that aren't loaded yet.
+      //   routine supports checking of derived classes that aren't loaded yet.
       //
-      // ERR::UseSubClass: Can be returned by the base-class.  Similar to ERR::NoSupport, but avoids scanning of
-      // sub-classes that aren't loaded in memory.
+      // ERR::UseDerived: Can be returned by the base-class.  Similar to ERR::NoSupport, but avoids scanning of
+      // derived classes that aren't loaded in memory.
 
       auto &subclasses = Object->ExtClass->SubClasses;
       auto subindex = subclasses.begin();
@@ -1606,11 +1604,11 @@ ERR InitObject(OBJECTPTR Object)
          if (error IS ERR::Okay) {
             Object->setFlag(NF::INITIALISED);
 
-            if (Object->isSubClass()) {
-               // Increase the open count of the sub-class (see NewObject() for details on object
+            if (Object->isDerived()) {
+               // Increase the open count of the derived class (see NewObject() for details on object
                // reference counting).
 
-               log.msg("Object class switched to sub-class \"%s\".", Object->className());
+               log.msg("Object class switched to derived class \"%s\".", Object->className());
 
                Object->ExtClass->OpenCount++;
                Object->setFlag(NF::RECLASSED); // This flag indicates that the object originally belonged to the base-class
@@ -1618,13 +1616,13 @@ ERR InitObject(OBJECTPTR Object)
 
             return ERR::Okay;
          }
-         else if (error IS ERR::UseSubClass) {
-            log.trace("Requested to use registered sub-class.");
-            use_subclass = true;
+         else if (error IS ERR::UseDerived) {
+            log.trace("Requested to use registered derived class.");
+            use_derived = true;
          }
          else if (error != ERR::NoSupport) break;
 
-         // Attempt to initialise with the next known sub-class.
+         // Attempt to initialise with the next known derived class.
 
          if (subindex != subclasses.end()) {
             Object->ExtClass = *subindex;
@@ -1636,25 +1634,25 @@ ERR InitObject(OBJECTPTR Object)
 
    Object->Class = cl;  // Put back the original to retain integrity
 
-   // If the base class and its loaded sub-classes failed, check the object for a Path field and check the data
-   // against sub-classes that are not currently in memory.
+   // If the base class and its loaded derived classes failed, check the object for a Path field and check the data
+   // against derived classes that are not currently in memory.
    //
-   // This is the only way we can support the automatic loading of sub-classes without causing undue load on CPU and
-   // memory resources (loading each sub-class into memory just to check whether or not the data is supported is overkill).
+   // This is the only way we can support the automatic loading of derived classes without causing undue load on CPU and
+   // memory resources (loading each derived class into memory just to check whether or not the data is supported is overkill).
 
    std::string_view path;
-   if (use_subclass) { // If ERR::UseSubClass was set and the sub-class was not registered, do not call IdentifyFile()
-      log.warning("ERR::UseSubClass was used but no suitable sub-class was registered.");
+   if (use_derived) { // If ERR::UseDerived was set and the derived class was not registered, do not call IdentifyFile()
+      log.warning("ERR::UseDerived was used but no suitable derived class was registered.");
    }
    else if ((error IS ERR::NoSupport) and (Object->get(FID_Path, path) IS ERR::Okay) and (not path.empty())) {
-      CLASSID class_id, subclass_id;
-      if (IdentifyFile(path, cl->BaseClassID, &class_id, &subclass_id) IS ERR::Okay) {
-         if ((class_id IS Object->classID()) and (subclass_id != CLASSID::NIL)) {
-            log.msg("Searching for subclass $%.8x", uint32_t(subclass_id));
-            if ((Object->ExtClass = (extMetaClass *)FindClass(subclass_id))) {
+      CLASSID class_id, derived_id;
+      if (IdentifyFile(path, cl->BaseClassID, &class_id, &derived_id) IS ERR::Okay) {
+         if ((class_id IS Object->classID()) and (derived_id != CLASSID::NIL)) {
+            log.msg("Searching for derived class $%.8x", uint32_t(derived_id));
+            if ((Object->ExtClass = (extMetaClass *)FindClass(derived_id))) {
                if (Object->ExtClass->ActionTable[int(AC::Init)].PerformAction) {
                   if ((error = Object->ExtClass->ActionTable[int(AC::Init)].PerformAction(Object, nullptr)) IS ERR::Okay) {
-                     log.msg("Object class switched to sub-class \"%s\".", Object->className());
+                     log.msg("Object class switched to derived class \"%s\".", Object->className());
                      Object->setFlag(NF::INITIALISED);
                      Object->ExtClass->OpenCount++;
                      return ERR::Okay;
@@ -1662,7 +1660,7 @@ ERR InitObject(OBJECTPTR Object)
                }
                else return ERR::Okay;
             }
-            else log.warning("Failed to load module for class #%d.", uint32_t(subclass_id));
+            else log.warning("Failed to load module for class #%d.", uint32_t(derived_id));
          }
       }
       else log.warning("File '%.*s' does not belong to class '%s', got $%.8x.",
@@ -1835,10 +1833,10 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
       }
 
       // After the header has been created we can set the context, then call the base class's NewObject() support.  If this
-      // object belongs to a sub-class, we will also call its supporting NewObject() action if it has specified one.
+      // object belongs to a derived class, we will also call its supporting NewObject() action if it has specified one.
       //
-      // Note: Hooking into NewObject gives sub-classes an opportunity to detect that they have been targeted by the client
-      // on creation, as opposed to during initialisation.  This can allow ChildPrivate to be configured early on in the
+      // Note: Hooking into NewObject gives derived classes an opportunity to detect that they have been targeted by the client
+      // on creation, as opposed to during initialisation.  This can allow DerivedPtr to be configured early on in the
       // process, making it possible to set custom fields that would depend on it.
 
       kt::SwitchContext context(head);

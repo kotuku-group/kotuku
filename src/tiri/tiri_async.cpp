@@ -48,7 +48,7 @@ static void msg_thread_complete(ACTIONID ActionID, OBJECTPTR Object, ERR Error, 
 {
    kt::Log log("thread_callback");
 
-   auto prv = (prvTiri *)Msg->Owner->ChildPrivate;
+   auto prv = (prvTiri *)Msg->Owner->DerivedPtr;
 
    if (Msg->Callback != LUA_NOREF) {
       if ((Object) and (Object->baseClassID() IS CLASSID::SCRIPT)) {
@@ -103,8 +103,8 @@ static int async_script(lua_State *Lua)
 
    // Share the parent's pool with the child script so that async.pool accesses the same data.
    {
-      auto parent_prv = (prvTiri *)Lua->script->ChildPrivate;
-      auto child_prv  = (prvTiri *)gc_script->ptr->ChildPrivate;
+      auto parent_prv = (prvTiri *)Lua->script->DerivedPtr;
+      auto child_prv  = (prvTiri *)gc_script->ptr->DerivedPtr;
       if (parent_prv and child_prv) {
          if (not parent_prv->Pool) parent_prv->Pool = std::make_shared<SharedPool>();
          child_prv->Pool = parent_prv->Pool;
@@ -474,7 +474,7 @@ static const luaL_Reg asynclib_methods[] = {
 
 static SharedPool * get_pool(lua_State *Lua)
 {
-   auto prv = (prvTiri *)Lua->script->ChildPrivate;
+   auto prv = (prvTiri *)Lua->script->DerivedPtr;
    if (not prv->Pool) prv->Pool = std::make_shared<SharedPool>();
    return prv->Pool.get();
 }

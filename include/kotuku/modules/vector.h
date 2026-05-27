@@ -2589,10 +2589,10 @@ class objVectorText : public objVector {
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
-   template <class T> inline ERR setString(T && Value) noexcept {
+   inline ERR setString(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(target, field, 0x08800308, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804308, &Value, 1);
    }
 
    inline ERR setAlign(const int Value) noexcept {
@@ -2601,28 +2601,28 @@ class objVectorText : public objVector {
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
-   template <class T> inline ERR setFace(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[21];
-      return field->WriteValue(target, field, 0x08800308, to_cstring(Value), 1);
-   }
-
    inline ERR setFill(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[9];
       return field->WriteValue(target, field, 0x00804308, &Value, 1);
    }
 
-   template <class T> inline ERR setFontSize(T && Value) noexcept {
+   inline ERR setFace(const std::string_view &Value) noexcept {
       auto target = this;
-      auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(target, field, 0x08800328, to_cstring(Value), 1);
+      auto field = &this->Class->Dictionary[21];
+      return field->WriteValue(target, field, 0x00804308, &Value, 1);
    }
 
-   template <class T> inline ERR setFontStyle(T && Value) noexcept {
+   inline ERR setFontSize(const std::string_view &Value) noexcept {
+      auto target = this;
+      auto field = &this->Class->Dictionary[7];
+      return field->WriteValue(target, field, 0x00804308, &Value, 1);
+   }
+
+   inline ERR setFontStyle(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(target, field, 0x08800508, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804508, &Value, 1);
    }
 
    inline ERR setDX(const double * Value, int Elements) noexcept {

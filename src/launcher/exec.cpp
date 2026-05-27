@@ -11,14 +11,14 @@ ERR exec_source(std::string TargetFile, int ShowTime, const std::string Procedur
 
    FindClass(CLASSID::TIRI);
 
-   CLASSID class_id, subclass;
+   CLASSID class_id, derived_id;
    if (kt::startswith("STRING:", TargetFile)) {
-      subclass = CLASSID::SCRIPT;
+      derived_id = CLASSID::SCRIPT;
       class_id = CLASSID::SCRIPT;
    }
-   else if ((error = IdentifyFile(TargetFile, CLASSID::NIL, &class_id, &subclass)) != ERR::Okay) {
+   else if ((error = IdentifyFile(TargetFile, CLASSID::NIL, &class_id, &derived_id)) != ERR::Okay) {
       printf("Failed to identify the type of file for path '%s', error: %s.  Assuming CLASSID::SCRIPT.\n", TargetFile.c_str(), GetErrorMsg(error));
-      subclass = CLASSID::SCRIPT;
+      derived_id = CLASSID::SCRIPT;
       class_id = CLASSID::SCRIPT;
    }
 
@@ -116,7 +116,7 @@ ERR exec_source(std::string TargetFile, int ShowTime, const std::string Procedur
       return error;
    }
 #endif
-   if (NewObject(subclass != CLASSID::NIL ? subclass : class_id, &glScript) IS ERR::Okay) {
+   if (NewObject(derived_id != CLASSID::NIL ? derived_id : class_id, &glScript) IS ERR::Okay) {
       glScript->setTarget(glTarget ? glTarget->UID : CurrentTaskID());
       glScript->setPath(TargetFile);
 

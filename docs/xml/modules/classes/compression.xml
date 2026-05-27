@@ -15,7 +15,7 @@
     <category>Data</category>
     <copyright>Paul Manias 1996-2026</copyright>
     <description>
-<p>The Compression class provides an interface to compress and decompress data.  It provides support for file based compression as well as memory based compression routines.  The base class uses zip algorithms to support pkzip files, while other forms of compressed data can be supported by installing additional compression sub-classes.</p>
+<p>The Compression class provides an interface to compress and decompress data.  It provides support for file based compression as well as memory based compression routines.  The base class uses zip algorithms to support pkzip files, while other forms of compressed data can be supported by installing additional compression derived classes.</p>
 <p>The following examples demonstrate basic usage of compression objects in Tiri:</p>
 <pre>// Create a new zip archive and compress two files.
 
@@ -94,7 +94,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
         <error code="Okay">The file was added to the compression object.</error>
         <error code="File">An error was encountered when trying to open the source file.</error>
         <error code="Args">Invalid arguments passed to function</error>
-        <error code="NoSupport">The sub-class does not support this method.</error>
+        <error code="NoSupport">The derived class does not support this method.</error>
         <error code="NoPermission">The <code>READ_ONLY</code> flag has been set on the compression object.</error>
       </result>
     </method>
@@ -114,7 +114,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <description>
 <p>Use the CompressStream method to compress incoming streams of data whilst using a minimal amount of memory.  The compression process is handled in three phases of Start, Compress and End.  The methods provided for each phase are <method>CompressStreamStart</method>, <method>CompressStream</method> and <method>CompressStreamEnd</method>.</p>
 <p>A compression object can manage only one compression stream at any given time.  If it is necessary to compress multiple streams at once, create a compression object for each individual stream.</p>
-<p>No meta-information is written to the stream, so the client will need a way to record the total number of bytes that have been output during the compression process. This value must be stored somewhere in order to decompress the stream correctly.  There is also no header information recorded to identify the type of algorithm used to compress the stream.  We recommend that the compression object's sub-class ID is stored for future reference.</p>
+<p>No meta-information is written to the stream, so the client will need a way to record the total number of bytes that have been output during the compression process. This value must be stored somewhere in order to decompress the stream correctly.  There is also no header information recorded to identify the type of algorithm used to compress the stream.  We recommend that the compression object's derived class ID is stored for future reference.</p>
 <p>The following C code illustrates a simple means of compressing a file to another file using a stream:</p>
 <pre>if (auto error = mtCompressStreamStart(compress); error IS ERR::Okay) {
    LONG len;

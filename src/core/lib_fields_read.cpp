@@ -30,7 +30,7 @@ Field * lookup_id(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target)
       else return &field[i];
    }
 
-   // Sub-class fields (located in the upper register of FieldLookup)
+   // Derived class fields (located in the upper register of FieldLookup)
 
    if (mc->BaseCeiling < mc->FieldLookup.size()) {
       unsigned floor = mc->BaseCeiling;

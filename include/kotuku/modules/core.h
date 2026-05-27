@@ -2001,7 +2001,7 @@ struct Field {
 
 struct ClassRecord {
    CLASSID ClassID;          // Unique class identifier (hash of Name)
-   CLASSID ParentID;         // Parent class ID if this is a sub-class
+   CLASSID ParentID;         // Parent class ID if this is a derived class
    CCF     Category;         // Assigned category
    std::string Name;         // Name of the class
    std::string Path;         // Path to the class file
@@ -2623,7 +2623,7 @@ class objMetaClass : public Object {
 
 };
 
-inline bool Object::isSubClass() { return Class->ClassID != Class->BaseClassID; }
+inline bool Object::isDerived() { return Class->ClassID != Class->BaseClassID; }
 inline CLASSID Object::classID() { return Class->ClassID; }
 inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
 

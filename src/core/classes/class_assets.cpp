@@ -6,7 +6,7 @@ that is distributed with this package.  Please refer to it for further informati
 **********************************************************************************************************************
 
 -CLASS-
-FileAssets: For Android systems only.  The FileAssets sub-class provides access to the assets folder in the currently running Android project.
+FileAssets: For Android systems only.  The FileAssets derived class provides access to the assets folder in the currently running Android project.
 -END-
 
 *********************************************************************************************************************/
@@ -238,7 +238,7 @@ static ERR ASSET_Init(objFile *Self)
 
    // Allocate private structure
 
-   if (!AllocMemory(sizeof(prvFileAsset), Self->memflags(), &Self->ChildPrivate, nullptr)) {
+   if (!AllocMemory(sizeof(prvFileAsset), Self->memflags(), &Self->DerivedPtr, nullptr)) {
       int len;
       for (len=0; Self->Path[len]; len++);
 
@@ -259,13 +259,13 @@ static ERR ASSET_Init(objFile *Self)
             return ERR::Okay;
          }
          else {
-            FreeResource(Self->ChildPrivate);
-            Self->ChildPrivate = nullptr;
+            FreeResource(Self->DerivedPtr);
+            Self->DerivedPtr = nullptr;
             return ERR::DoesNotExist;
          }
       }
       else {
-         prv = Self->ChildPrivate;
+         prv = Self->DerivedPtr;
 
          // Check that the location exists / open the file.
 
@@ -277,8 +277,8 @@ static ERR ASSET_Init(objFile *Self)
             else log.warning("Failed to open asset file \"%s\"", Self->Path+LEN_ASSETS);
          }
 
-         FreeResource(Self->ChildPrivate);
-         Self->ChildPrivate = nullptr;
+         FreeResource(Self->DerivedPtr);
+         Self->DerivedPtr = nullptr;
          return ERR::InvalidState;
       }
    }
@@ -299,7 +299,7 @@ static ERR ASSET_Read(objFile *Self, struct acRead *Args)
    kt::Log log(__FUNCTION__);
    prvFileAsset *prv;
 
-   if (!(prv = Self->ChildPrivate)) return log.warning(ERR::ObjectCorrupt);
+   if (!(prv = Self->DerivedPtr)) return log.warning(ERR::ObjectCorrupt);
    if (!(Self->Flags & FL::READ)) return log.warning(ERR::FileReadFlag);
 
    Args->Result = AAsset_read(prv->Asset, Args->Buffer, Args->Length);
@@ -337,7 +337,7 @@ static ERR ASSET_Seek(objFile *Self, struct acSeek *Args)
    prvFileAsset *prv;
    int method;
 
-   if (!(prv = Self->ChildPrivate)) return log.warning(ERR::ObjectCorrupt);
+   if (!(prv = Self->DerivedPtr)) return log.warning(ERR::ObjectCorrupt);
 
    if (Args->Position IS POS_START) method = SEEK::SET;
    else if (Args->Position IS POS_END) method = SEEK::END;
@@ -379,7 +379,7 @@ static ERR GET_Size(objFile *Self, int64_t *Value)
 {
    prvFileAsset *prv;
 
-   if (!(prv = Self->ChildPrivate)) return log.warning(ERR::ObjectCorrupt);
+   if (!(prv = Self->DerivedPtr)) return log.warning(ERR::ObjectCorrupt);
 
    if (prv->Asset) {
       *Value = AAsset_getLength(prv->Asset);

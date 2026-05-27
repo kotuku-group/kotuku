@@ -190,7 +190,7 @@
 #define ERR_ThreadAlreadyActive 164
 #define ERR_OpenGL 165
 #define ERR_OutsideMainThread 166
-#define ERR_UseSubClass 167
+#define ERR_UseDerived 167
 #define ERR_WrongType 168
 #define ERR_ThreadNotLocked 169
 #define ERR_LockMutex 170

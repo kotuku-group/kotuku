@@ -429,7 +429,7 @@ static int module_call(lua_State *Lua)
       }
    };
 
-   auto prv = (prvTiri *)Self->ChildPrivate;
+   auto prv = (prvTiri *)Self->DerivedPtr;
    if (not prv) {
       log.warning(ERR::ObjectCorrupt);
       return 0;

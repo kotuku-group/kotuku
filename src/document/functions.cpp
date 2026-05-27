@@ -884,7 +884,7 @@ static ERR extract_script(extDocument *Self, std::string_view Link, objScript **
 void ui_link::exec(extDocument *Self)
 {
    objScript *script;
-   CLASSID class_id, subclass_id;
+   CLASSID class_id, derived_id;
 
    kt::Log log(__FUNCTION__);
 
@@ -975,7 +975,7 @@ void ui_link::exec(extDocument *Self)
             if (end != std::string::npos) identify_path = identify_path.substr(0, end);
 
             auto identify_text = std::string(identify_path);
-            if (IdentifyFile(identify_text, CLASSID::NIL, &class_id, &subclass_id) IS ERR::Okay) {
+            if (IdentifyFile(identify_text, CLASSID::NIL, &class_id, &derived_id) IS ERR::Okay) {
                if (class_id IS CLASSID::DOCUMENT) {
                   Self->set(FID_Path, lk);
 

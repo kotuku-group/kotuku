@@ -364,7 +364,7 @@ __export void Expunge(int16_t Force)
                      }
 
                      if (ext_count > 0) {
-                        log.msg("Module %s manages a class with active sub-classes - Class: %s, Count: %d.", mod_master->Name.c_str(), mc->ClassName, ext_count);
+                        log.msg("Module %s manages a class with active derived classes - Class: %s, Count: %d.", mod_master->Name.c_str(), mc->ClassName, ext_count);
                         class_in_use = true;
                      }
                   }

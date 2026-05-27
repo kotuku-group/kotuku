@@ -960,7 +960,7 @@ static ERR SOUND_SaveToObject(extSound *Self, struct acSaveToObject *Args)
 {
    kt::Log log;
 
-   // Divert this call if the developer is trying to save the sound data as a specific subclass type.
+   // Divert this call if the developer is trying to save the sound data as a specific derived type.
 
    if ((Args->ClassID != CLASSID::NIL) and (Args->ClassID != CLASSID::SOUND)) {
       auto mclass = (objMetaClass *)FindClass(Args->ClassID);
@@ -1041,7 +1041,7 @@ static ERR SOUND_Seek(extSound *Self, struct acSeek *Args)
 {
    kt::Log log;
 
-   // NB: Sub-classes may divert their functionality to this routine if the sample is fully buffered.
+   // NB: Derived -classes may divert their functionality to this routine if the sample is fully buffered.
 
    if (!Args) return log.warning(ERR::NullArgs);
    if (!Self->initialised()) return log.warning(ERR::NotInitialised);
@@ -1063,7 +1063,7 @@ static ERR SOUND_Seek(extSound *Self, struct acSeek *Args)
 
    kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 2000);
    if (audio.granted()) {
-      if ((Self->File) and (!Self->isSubClass())) {
+      if ((Self->File) and (!Self->isDerived())) {
          Self->File->seekStart(Self->DataOffset + Self->Position);
       }
 

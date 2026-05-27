@@ -405,7 +405,7 @@ ERR SetVariable(objScript *Script, const std::string_view &Name, int Type, ...)
 
    log.branch("Script: %d, Name: %.*s, Type: $%.8x", Script->UID, int(Name.size()), Name.data(), Type);
 
-   if (not (prv = (prvTiri *)Script->ChildPrivate)) return log.warning(ERR::ObjectCorrupt);
+   if (not (prv = (prvTiri *)Script->DerivedPtr)) return log.warning(ERR::ObjectCorrupt);
    if (not prv->Lua) return log.warning(ERR::InvalidState);
 
    va_start(list, Type);
