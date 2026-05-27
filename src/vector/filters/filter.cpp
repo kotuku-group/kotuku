@@ -721,7 +721,7 @@ is allocated and must be freed once no longer in use.
 
 *********************************************************************************************************************/
 
-static ERR VECTORFILTER_GET_EffectXML(extVectorFilter *Self, CSTRING *Value)
+static ERR VECTORFILTER_GET_EffectXML(extVectorFilter *Self, std::string_view &Value)
 {
    std::stringstream ss;
 
@@ -735,7 +735,11 @@ static ERR VECTORFILTER_GET_EffectXML(extVectorFilter *Self, CSTRING *Value)
       ss << "/>";
    }
 
-   if ((*Value = strclone(ss.str()))) return ERR::Okay;
+   auto cppstr = ss.str();
+   if (auto str = strclone(cppstr)) {
+      Value = std::string_view{str, cppstr.size()};
+      return ERR::Okay;
+   }
    else return ERR::AllocMemory;
 }
 
@@ -954,7 +958,7 @@ static const FieldArray clFilterFields[] = {
    { "ColourSpace",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clVectorFilterColourSpace },
    { "AspectRatio",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clVectorFilterAspectRatio },
    // Virtual fields
-   { "EffectXML",      FDF_VIRTUAL|FDF_STRING|FDF_ALLOC|FDF_R, VECTORFILTER_GET_EffectXML },
+   { "EffectXML",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, VECTORFILTER_GET_EffectXML },
    END_FIELD
 };
 

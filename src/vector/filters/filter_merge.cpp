@@ -145,10 +145,14 @@ XMLDef: Returns an SVG compliant XML string that describes the filter.
 
 *********************************************************************************************************************/
 
-static ERR MERGEFX_GET_XMLDef(extMergeFX *Self, STRING *Value)
+static ERR MERGEFX_GET_XMLDef(extMergeFX *Self, std::string_view &Value)
 {
-   *Value = strclone("feMerge");
-   return ERR::Okay;
+   auto cppstr = std::string("feMerge");
+   if (auto str = strclone(cppstr)) {
+      Value = std::string_view{str, cppstr.size()};
+      return ERR::Okay;
+   }
+   else return ERR::AllocMemory;
 }
 
 //********************************************************************************************************************
@@ -157,7 +161,7 @@ static ERR MERGEFX_GET_XMLDef(extMergeFX *Self, STRING *Value)
 
 static const FieldArray clMergeFXFields[] = {
    { "SourceList", FDF_VIRTUAL|FDF_STRUCT|FDF_ARRAY|FDF_RW, NULL, MERGEFX_SET_SourceList, "MergeSource" },
-   { "XMLDef",     FDF_VIRTUAL|FDF_STRING|FDF_ALLOC|FDF_R, MERGEFX_GET_XMLDef },
+   { "XMLDef",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, MERGEFX_GET_XMLDef },
    END_FIELD
 };
 

@@ -456,12 +456,16 @@ XMLDef: Returns an SVG compliant XML string that describes the effect.
 
 *********************************************************************************************************************/
 
-static ERR BLURFX_GET_XMLDef(extBlurFX *Self, STRING *Value)
+static ERR BLURFX_GET_XMLDef(extBlurFX *Self, std::string_view &Value)
 {
    std::stringstream stream;
    stream << "feGaussianBlur stdDeviation=\"" << Self->SX << " " << Self->SY << "\"";
-   *Value = strclone(stream.str());
-   return ERR::Okay;
+   auto cppstr = stream.str();
+   if (auto str = strclone(stream.str())) {
+      Value = std::string_view{str, cppstr.size()};
+      return ERR::Okay;
+   }
+   else return ERR::AllocMemory;
 }
 
 //********************************************************************************************************************
@@ -471,7 +475,7 @@ static ERR BLURFX_GET_XMLDef(extBlurFX *Self, STRING *Value)
 static const FieldArray clBlurFXFields[] = {
    { "SX",     FDF_VIRTUAL|FDF_DOUBLE|FDF_RW, BLURFX_GET_SX, BLURFX_SET_SX },
    { "SY",     FDF_VIRTUAL|FDF_DOUBLE|FDF_RW, BLURFX_GET_SY, BLURFX_SET_SY },
-   { "XMLDef", FDF_VIRTUAL|FDF_STRING|FDF_ALLOC|FDF_R, BLURFX_GET_XMLDef, nullptr },
+   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, BLURFX_GET_XMLDef, nullptr },
    END_FIELD
 };
 

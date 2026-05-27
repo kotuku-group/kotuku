@@ -266,11 +266,11 @@ Vectors are registered via the @VectorScene.AddDef() method.
 
 *********************************************************************************************************************/
 
-static ERR SOURCEFX_SET_SourceName(extSourceFX *Self, CSTRING Value)
+static ERR SOURCEFX_SET_SourceName(extSourceFX *Self, const std::string_view &Value)
 {
    kt::Log log;
 
-   if ((!Self->Filter) or (!Self->Filter->Scene)) return log.warning(ERR::UndefinedField);
+   if ((not Self->Filter) or (not Self->Filter->Scene)) return log.warning(ERR::UndefinedField);
 
    if (Self->Source) {
       UnsubscribeAction(Self->Source, AC::Free);
@@ -278,7 +278,7 @@ static ERR SOURCEFX_SET_SourceName(extSourceFX *Self, CSTRING Value)
    }
 
    objVector *src;
-   if (Self->Filter->Scene->findDef(Value, (OBJECTPTR *)&src) IS ERR::Okay) {
+   if (Self->Filter->Scene->findDef(Value.data(), (OBJECTPTR *)&src) IS ERR::Okay) {
       if (src->Class->BaseClassID != CLASSID::VECTOR) return log.warning(ERR::WrongClass);
       Self->Source = src;
       SubscribeAction(src, AC::Free, C_FUNCTION(notify_free_source));
@@ -296,10 +296,14 @@ XMLDef: Returns an SVG compliant XML string that describes the filter.
 
 *********************************************************************************************************************/
 
-static ERR SOURCEFX_GET_XMLDef(extSourceFX *Self, STRING *Value)
+static ERR SOURCEFX_GET_XMLDef(extSourceFX *Self, std::string_view &Value)
 {
-   *Value = strclone("feImage");
-   return ERR::Okay;
+   auto cppstr = std::string("feImage");
+   if (auto str = strclone(cppstr)) {
+      Value = std::string_view{str, cppstr.size()};
+      return ERR::Okay;
+   }
+   else return ERR::AllocMemory;
 }
 
 //********************************************************************************************************************
@@ -308,9 +312,9 @@ static ERR SOURCEFX_GET_XMLDef(extSourceFX *Self, STRING *Value)
 
 static const FieldArray clSourceFXFields[] = {
    { "AspectRatio", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW, SOURCEFX_GET_AspectRatio, SOURCEFX_SET_AspectRatio, &clAspectRatio },
-   { "SourceName",  FDF_VIRTUAL|FDF_STRING|FDF_I, nullptr, SOURCEFX_SET_SourceName },
+   { "SourceName",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_I, nullptr, SOURCEFX_SET_SourceName },
    { "Source",      FDF_VIRTUAL|FDF_OBJECT|FDF_R, nullptr, SOURCEFX_SET_Source, CLASSID::VECTOR },
-   { "XMLDef",      FDF_VIRTUAL|FDF_STRING|FDF_ALLOC|FDF_R, SOURCEFX_GET_XMLDef },
+   { "XMLDef",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, SOURCEFX_GET_XMLDef },
    END_FIELD
 };
 

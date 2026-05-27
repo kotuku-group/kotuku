@@ -10,6 +10,7 @@ template<class... Args> void DBG_TRANSFORM(Args...) {
 #include <unordered_set>
 #include <sstream>
 #include <set>
+#include <string_view>
 #include <unordered_map>
 #include <mutex>
 #include <stack>
@@ -80,7 +81,26 @@ class extFilterEffect;
 class extVectorViewport;
 class extVectorClip;
 
-extern ankerl::unordered_dense::map<std::string, std::array<FRGB, 256>> glColourMaps;
+struct ColourMapHash {
+   using is_avalanching = void;
+   using is_transparent = void;
+
+   [[nodiscard]] uint64_t operator()(std::string_view Value) const noexcept {
+      return ankerl::unordered_dense::hash<std::string_view>{}(Value);
+   }
+
+   [[nodiscard]] uint64_t operator()(const std::string &Value) const noexcept {
+      return (*this)(std::string_view(Value));
+   }
+
+   [[nodiscard]] uint64_t operator()(CSTRING Value) const noexcept {
+      return (*this)(std::string_view(Value));
+   }
+};
+
+using ColourMapTable = ankerl::unordered_dense::map<std::string, std::array<FRGB, 256>, ColourMapHash, std::equal_to<>>;
+
+extern ColourMapTable glColourMaps;
 extern objConfig *glFontConfig;
 
 class PIXEL_ORDER {
@@ -338,7 +358,7 @@ class extVectorGradient : public objVectorGradient, public SceneDef {
    std::string ColourMap;
    FRGB   Colour;
    RGB8   ColourRGB; // A cached conversion of the FRGB value
-   STRING ID;
+   std::string ID;
    int   NumericID;
    double Angle;
    double Length;
@@ -405,8 +425,8 @@ class extVector : public objVector {
    double StrokeWidth;
    agg::path_storage BasePath;
    agg::trans_affine Transform;   // Final transform.  Accumulated from the Matrix list during path generation.
-   CSTRING FilterString, StrokeString, FillString;
-   STRING SID;
+   std::string FilterString, StrokeString, FillString;
+   std::string SID;
    void   (*GeneratePath)(extVector *, agg::path_storage &);
    agg::rasterizer_scanline_aa<>     *StrokeRaster;
    agg::rasterizer_scanline_aa<>     *FillRaster;

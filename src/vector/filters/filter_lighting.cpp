@@ -994,16 +994,20 @@ XMLDef: Returns an SVG compliant XML string that describes the filter.
 
 *********************************************************************************************************************/
 
-static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, STRING *Value)
+static ERR LIGHTINGFX_GET_XMLDef(extLightingFX *Self, std::string_view &Value)
 {
    std::stringstream stream;
    std::string type(Self->Type IS LT::DIFFUSE ? "feDiffuseLighting" : "feSpecularLighting");
 
    // TODO
-   stream << "<" << type << ">";
-   stream << "</" << type << ">";
-   *Value = strclone(stream.str());
-   return ERR::Okay;
+   stream << type;
+
+   auto cppstr = stream.str();
+   if (auto str = strclone(stream.str())) {
+      Value = std::string_view{str, cppstr.size()};
+      return ERR::Okay;
+   }
+   else return ERR::AllocMemory;
 }
 
 //********************************************************************************************************************
@@ -1024,7 +1028,7 @@ static const FieldArray clLightingFXFields[] = {
    { "Type",     FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW,  LIGHTINGFX_GET_Type, LIGHTINGFX_SET_Type, &clLightingType },
    { "UnitX",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW,          LIGHTINGFX_GET_UnitX, LIGHTINGFX_SET_UnitX },
    { "UnitY",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW,          LIGHTINGFX_GET_UnitY, LIGHTINGFX_SET_UnitY },
-   { "XMLDef",   FDF_VIRTUAL|FDF_STRING|FDF_ALLOC|FDF_R, LIGHTINGFX_GET_XMLDef },
+   { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, LIGHTINGFX_GET_XMLDef },
    END_FIELD
 };
 

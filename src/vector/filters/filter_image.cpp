@@ -141,14 +141,14 @@ Path: Path to an image file supported by the @Picture class.
 
 *********************************************************************************************************************/
 
-static ERR IMAGEFX_GET_Path(extImageFX *Self, CSTRING *Value)
+static ERR IMAGEFX_GET_Path(extImageFX *Self, std::string_view &Value)
 {
-   if (Self->Picture) return Self->Picture->get(FID_Path, *Value);
-   else *Value = nullptr;
+   if (Self->Picture) return Self->Picture->get(FID_Path, Value);
+   else Value = std::string_view{};
    return ERR::Okay;
 }
 
-static ERR IMAGEFX_SET_Path(extImageFX *Self, CSTRING Value)
+static ERR IMAGEFX_SET_Path(extImageFX *Self, const std::string_view &Value)
 {
    if ((Self->Bitmap) or (Self->Picture)) return ERR::Immutable;
 
@@ -188,10 +188,18 @@ XMLDef: Returns an SVG compliant XML string that describes the filter.
 
 *********************************************************************************************************************/
 
-static ERR IMAGEFX_GET_XMLDef(extImageFX *Self, STRING *Value)
+static ERR IMAGEFX_GET_XMLDef(extImageFX *Self, std::string_view &Value)
 {
-   *Value = strclone("feImage");
-   return ERR::Okay;
+   std::stringstream stream;
+
+   stream << "feImage";
+
+   auto cppstr = stream.str();
+   if (auto str = strclone(stream.str())) {
+      Value = std::string_view{str, cppstr.size()};
+      return ERR::Okay;
+   }
+   else return ERR::AllocMemory;
 }
 
 //********************************************************************************************************************
@@ -217,8 +225,8 @@ static const FieldDef clResampleMethod[] = {
 
 static const FieldArray clImageFXFields[] = {
    { "Bitmap",         FDF_VIRTUAL|FDF_OBJECT|FDF_R, IMAGEFX_GET_Bitmap, nullptr, CLASSID::BITMAP },
-   { "Path",           FDF_VIRTUAL|FDF_STRING|FDF_RI, IMAGEFX_GET_Path, IMAGEFX_SET_Path },
-   { "XMLDef",         FDF_VIRTUAL|FDF_STRING|FDF_ALLOC|FDF_R, IMAGEFX_GET_XMLDef },
+   { "Path",           FDF_VIRTUAL|FDF_CPPSTRING|FDF_RI, IMAGEFX_GET_Path, IMAGEFX_SET_Path },
+   { "XMLDef",         FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, IMAGEFX_GET_XMLDef },
    { "AspectRatio",    FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW, IMAGEFX_GET_AspectRatio, IMAGEFX_SET_AspectRatio, &clAspectRatio },
    { "ResampleMethod", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW, IMAGEFX_GET_ResampleMethod, IMAGEFX_SET_ResampleMethod, &clResampleMethod },
    END_FIELD

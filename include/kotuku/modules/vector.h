@@ -943,10 +943,10 @@ class objVectorPattern : public Object {
       return field->WriteValue(target, field, 0x08000318, Value, 1);
    }
 
-   template <class T> inline ERR setTransform(T && Value) noexcept {
+   inline ERR setTransform(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[18];
-      return field->WriteValue(target, field, 0x08800208, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804200, &Value, 1);
    }
 
 };
@@ -2376,10 +2376,10 @@ class objVector : public Object {
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
-   template <class T> inline ERR setSID(T && Value) noexcept {
+   inline ERR setSID(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[21];
-      return field->WriteValue(target, field, 0x08800308, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setResizeEvent(const FUNCTION Value) noexcept {
@@ -2388,10 +2388,10 @@ class objVector : public Object {
       return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
    }
 
-   template <class T> inline ERR setStroke(T && Value) noexcept {
+   inline ERR setStroke(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[14];
-      return field->WriteValue(target, field, 0x08800308, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setStrokeColour(const float * Value, int Elements) noexcept {
@@ -2413,10 +2413,10 @@ class objVector : public Object {
       return field->WriteValue(target, field, 0x08000309, Value, 1);
    }
 
-   template <class T> inline ERR setFill(T && Value) noexcept {
+   inline ERR setFill(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(target, field, 0x08800308, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setFillColour(const float * Value, int Elements) noexcept {
@@ -2431,10 +2431,10 @@ class objVector : public Object {
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
-   template <class T> inline ERR setFilter(T && Value) noexcept {
+   inline ERR setFilter(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(target, field, 0x08800308, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setLineJoin(const int Value) noexcept {
@@ -2589,10 +2589,10 @@ class objVectorText : public objVector {
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
-   template <class T> inline ERR setString(T && Value) noexcept {
+   inline ERR setString(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(target, field, 0x08800308, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setAlign(const int Value) noexcept {
@@ -2601,28 +2601,28 @@ class objVectorText : public objVector {
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
-   template <class T> inline ERR setFace(T && Value) noexcept {
+   inline ERR setFace(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[21];
-      return field->WriteValue(target, field, 0x08800308, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
-   template <class T> inline ERR setFill(T && Value) noexcept {
+   inline ERR setFill(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(target, field, 0x08800308, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
-   template <class T> inline ERR setFontSize(T && Value) noexcept {
+   inline ERR setFontSize(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(target, field, 0x08800328, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
-   template <class T> inline ERR setFontStyle(T && Value) noexcept {
+   inline ERR setFontStyle(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(target, field, 0x08800508, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804500, &Value, 1);
    }
 
    inline ERR setDX(const double * Value, int Elements) noexcept {
@@ -2971,10 +2971,10 @@ class objVectorPolygon : public objVector {
       return field->WriteValue(target, field, 0x08001308, Value, Elements);
    }
 
-   template <class T> inline ERR setPoints(T && Value) noexcept {
+   inline ERR setPoints(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(target, field, 0x08800208, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804200, &Value, 1);
    }
 
    inline ERR setX1(const double Value) noexcept {

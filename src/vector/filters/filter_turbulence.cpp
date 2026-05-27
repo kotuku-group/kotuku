@@ -499,14 +499,18 @@ XMLDef: Returns an SVG compliant XML string that describes the effect.
 
 *********************************************************************************************************************/
 
-static ERR TURBULENCEFX_GET_XMLDef(extTurbulenceFX *Self, STRING *Value)
+static ERR TURBULENCEFX_GET_XMLDef(extTurbulenceFX *Self, std::string_view &Value)
 {
    std::stringstream stream;
 
    stream << "feTurbulence";
 
-   *Value = strclone(stream.str());
-   return ERR::Okay;
+   auto cppstr = stream.str();
+   if (auto str = strclone(stream.str())) {
+      Value = std::string_view{str, cppstr.size()};
+      return ERR::Okay;
+   }
+   else return ERR::AllocMemory;
 }
 
 //********************************************************************************************************************
@@ -525,7 +529,7 @@ static const FieldArray clTurbulenceFXFields[] = {
    { "Seed",    FDF_VIRTUAL|FDF_INT|FDF_RI,             TURBULENCEFX_GET_Seed,    TURBULENCEFX_SET_Seed },
    { "Stitch",  FDF_VIRTUAL|FDF_INT|FDF_RI,             TURBULENCEFX_GET_Stitch,  TURBULENCEFX_SET_Stitch },
    { "Type",    FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RI,  TURBULENCEFX_GET_Type,    TURBULENCEFX_SET_Type, &clTurbulenceType },
-   { "XMLDef",  FDF_VIRTUAL|FDF_STRING|FDF_ALLOC|FDF_R, TURBULENCEFX_GET_XMLDef,  nullptr },
+   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, TURBULENCEFX_GET_XMLDef },
    END_FIELD
 };
 

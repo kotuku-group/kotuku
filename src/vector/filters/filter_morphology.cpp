@@ -285,7 +285,7 @@ XMLDef: Returns an SVG compliant XML string that describes the effect.
 
 *********************************************************************************************************************/
 
-static ERR MORPHOLOGYFX_GET_XMLDef(extMorphologyFX *Self, STRING *Value)
+static ERR MORPHOLOGYFX_GET_XMLDef(extMorphologyFX *Self, std::string_view &Value)
 {
    std::stringstream stream;
 
@@ -296,8 +296,12 @@ static ERR MORPHOLOGYFX_GET_XMLDef(extMorphologyFX *Self, STRING *Value)
 
    stream << "radius=\"" << Self->RadiusX << " " << Self->RadiusY << "\"";
 
-   *Value = strclone(stream.str());
-   return ERR::Okay;
+   auto cppstr = stream.str();
+   if (auto str = strclone(stream.str())) {
+      Value = std::string_view{str, cppstr.size()};
+      return ERR::Okay;
+   }
+   else return ERR::AllocMemory;
 }
 
 //********************************************************************************************************************
@@ -314,7 +318,7 @@ static const FieldArray clMorphologyFXFields[] = {
    { "Operator", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW, MORPHOLOGYFX_GET_Operator, MORPHOLOGYFX_SET_Operator, &clMorphologyFXOperator },
    { "RadiusX",  FDF_VIRTUAL|FDF_INT|FDF_RW, MORPHOLOGYFX_GET_RadiusX, MORPHOLOGYFX_SET_RadiusX },
    { "RadiusY",  FDF_VIRTUAL|FDF_INT|FDF_RW, MORPHOLOGYFX_GET_RadiusY, MORPHOLOGYFX_SET_RadiusY },
-   { "XMLDef",   FDF_VIRTUAL|FDF_STRING|FDF_ALLOC|FDF_R, MORPHOLOGYFX_GET_XMLDef },
+   { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, MORPHOLOGYFX_GET_XMLDef },
    END_FIELD
 };
 
