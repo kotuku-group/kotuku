@@ -191,6 +191,7 @@ struct ssl_context {
    PCCERT_CHAIN_CONTEXT certificate_chain;     // Certificate chain context for validation
    NCRYPT_KEY_HANDLE imported_private_key;     // Private key handle attached to server_certificate
    bool imported_private_key_owned;            // True when imported_private_key must be freed directly
+   bool imported_private_key_persistent;       // True when imported_private_key must be deleted from storage
 
    // Connection information cache
    std::string protocol_version_str;
@@ -223,6 +224,7 @@ struct ssl_context {
       , certificate_chain(nullptr)
       , imported_private_key(0)
       , imported_private_key_owned(false)
+      , imported_private_key_persistent(false)
       , key_size_bits(0)
       , certificate_chain_valid(false)
       , certificate_chain_length(0)
@@ -253,9 +255,14 @@ struct ssl_context {
          server_certificate_store = nullptr;
       }
       if (imported_private_key) {
-         if (imported_private_key_owned) NCryptFreeObject(imported_private_key);
+         if (imported_private_key_persistent) {
+            auto status = NCryptDeleteKey(imported_private_key, NCRYPT_SILENT_FLAG);
+            if ((status != ERROR_SUCCESS) and imported_private_key_owned) NCryptFreeObject(imported_private_key);
+         }
+         else if (imported_private_key_owned) NCryptFreeObject(imported_private_key);
          imported_private_key = 0;
          imported_private_key_owned = false;
+         imported_private_key_persistent = false;
       }
       if (peer_certificate) {
          CertFreeCertificateContext(peer_certificate);

@@ -1151,7 +1151,16 @@ if (KOTUKU_INSTALL)
    endif ()
 
    if (NOT DISABLE_SSL)
-      install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/ssl/" DESTINATION "${CONFIG_TARGET}/ssl")
+      if (WIN32)
+         install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/ssl/" DESTINATION "${CONFIG_TARGET}/ssl"
+            FILES_MATCHING
+               PATTERN "ca-bundle.crt"
+               PATTERN "localhost.pem"
+               PATTERN "localhost.p12"
+               PATTERN "localhost-password.p12")
+      else ()
+         install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/ssl/" DESTINATION "${CONFIG_TARGET}/ssl")
+      endif ()
    endif ()
    if (NOT DISABLE_FONT)
       install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/fonts/" DESTINATION "${CONFIG_TARGET}/fonts")

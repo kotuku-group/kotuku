@@ -14,9 +14,14 @@ static void clear_server_certificate(SSL_HANDLE SSL)
    }
 
    if (SSL->imported_private_key) {
-      if (SSL->imported_private_key_owned) NCryptFreeObject(SSL->imported_private_key);
+      if (SSL->imported_private_key_persistent) {
+         auto status = NCryptDeleteKey(SSL->imported_private_key, NCRYPT_SILENT_FLAG);
+         if ((status != ERROR_SUCCESS) and SSL->imported_private_key_owned) NCryptFreeObject(SSL->imported_private_key);
+      }
+      else if (SSL->imported_private_key_owned) NCryptFreeObject(SSL->imported_private_key);
       SSL->imported_private_key = 0;
       SSL->imported_private_key_owned = false;
+      SSL->imported_private_key_persistent = false;
    }
 }
 
@@ -789,7 +794,7 @@ static bool acquire_certificate_private_key(PCCERT_CONTEXT Cert, NCRYPT_KEY_HAND
    HCRYPTPROV_OR_NCRYPT_KEY_HANDLE key_handle = 0;
    DWORD key_spec = 0;
    BOOL free_key = false;
-   DWORD flags = CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG | CRYPT_ACQUIRE_SILENT_FLAG | CRYPT_ACQUIRE_CACHE_FLAG;
+   DWORD flags = CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG | CRYPT_ACQUIRE_SILENT_FLAG;
 
    if (!CryptAcquireCertificatePrivateKey(Cert, flags, nullptr, &key_handle, &key_spec, &free_key)) {
       return false;
@@ -872,9 +877,6 @@ bool load_pkcs12_certificate(SSL_HANDLE SSL, const std::string &Path, std::optio
    auto wide_password = password_to_wide(Password);
    DWORD import_flags = CRYPT_EXPORTABLE | CRYPT_USER_KEYSET;
    import_flags |= PKCS12_PREFER_CNG_KSP;
-   #ifdef PKCS12_NO_PERSIST_KEY
-      import_flags |= PKCS12_NO_PERSIST_KEY;
-   #endif
 
    HCERTSTORE pfx_store = PFXImportCertStore(&pfx_blob, wide_password.c_str(), import_flags);
    if (!pfx_store) return false;
@@ -898,6 +900,7 @@ bool load_pkcs12_certificate(SSL_HANDLE SSL, const std::string &Path, std::optio
    SSL->server_certificate = selected_cert;
    SSL->imported_private_key = selected_key;
    SSL->imported_private_key_owned = selected_key_owned;
+   SSL->imported_private_key_persistent = true;
    return true;
 }
 
@@ -966,6 +969,7 @@ bool load_pem_certificate(SSL_HANDLE SSL, const std::string &Path, std::optional
    SSL->server_certificate = store_cert_context;
    SSL->imported_private_key = key_handle;
    SSL->imported_private_key_owned = true;
+   SSL->imported_private_key_persistent = false;
    return true;
 }
 

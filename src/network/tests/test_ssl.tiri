@@ -648,6 +648,9 @@ end
 
 @Test(priority=43); @Requires(ssl=true)
 function PEMCustomCertificate()
+   -- Windows installs only the PKCS#12 localhost certificates because Schannel currently cannot acquire the
+   -- private keys imported through this PEM path.  The missing key skips this test there; OpenSSL platforms still
+   -- install the PEM key and exercise this path.
    cert_path = 'config:ssl/localhost.pem'
    key_path = 'config:ssl/localhost-key.pem'
    if not customCertificateFilesAvailable(cert_path, key_path) then return end
@@ -657,6 +660,8 @@ end
 
 @Test(priority=44); @Requires(ssl=true)
 function TraditionalRSAPEMCustomCertificate()
+   -- Windows intentionally omits this generated RSA PEM key for now.  The Schannel private-key import path needs
+   -- follow-up work before this certificate form can be validated on Windows.
    cert_path = 'config:ssl/localhost.pem'
    key_path = 'config:ssl/localhost-rsa-key.pem'
    if not customCertificateFilesAvailable(cert_path, key_path) then return end
@@ -666,6 +671,8 @@ end
 
 @Test(priority=45); @Requires(ssl=true)
 function TraditionalECPEMCustomCertificate()
+   -- Windows intentionally omits this generated EC PEM certificate/key pair for now.  PKCS#12 coverage remains
+   -- active there while Schannel PEM private-key acquisition is unresolved.
    cert_path = 'config:ssl/localhost-ec.pem'
    key_path = 'config:ssl/localhost-ec-key.pem'
    if not customCertificateFilesAvailable(cert_path, key_path) then return end
