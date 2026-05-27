@@ -193,6 +193,7 @@ class extVectorText : public extVector {
    common_font *txHandle;
    TextCursor txCursor;
    std::string txFamily; // Family name(s) as requested by the client
+   std::string txFontStyle;
    APTR    txKeyEvent;
    OBJECTID txFocusID;
    OBJECTID txShapeInsideID;   // Enable word-wrapping within this shape
@@ -203,7 +204,6 @@ class extVectorText : public extVector {
    int  txWeight; // 100 - 300 (Light), 400 (Normal), 700 (Bold), 900 (Boldest)
    ALIGN txAlignFlags;
    VTXF  txFlags;
-   char  txFontStyle[30];
    bool txScaledFontSize;
    bool txXScaled:1;
    bool txYScaled:1;
@@ -350,6 +350,7 @@ static ERR VECTORTEXT_Free(extVectorText *Self)
    Self->txLines.~vector<TextLine>();
    Self->txCursor.~TextCursor();
    Self->txFamily.~basic_string();
+   Self->txFontStyle.~basic_string();
 
    if (Self->txHandle) {
       // TODO: This would be a good opportunity to garbage-collect stale glyphs
@@ -416,8 +417,9 @@ static ERR VECTORTEXT_NewObject(extVectorText *Self)
    new (&Self->txLines) std::vector<TextLine>;
    new (&Self->txCursor) TextCursor;
    new (&Self->txFamily) std::string;
+   new (&Self->txFontStyle) std::string;
 
-   strcopy("Regular", Self->txFontStyle, sizeof(Self->txFontStyle));
+   Self->txFontStyle = "Regular";
    Self->GeneratePath = (void (*)(extVector *, agg::path_storage &))&generate_text;
    Self->StrokeWidth  = 0.0;
    Self->txWeight     = DEFAULT_WEIGHT;
@@ -774,7 +776,7 @@ static ERR TEXT_SET_Font(extVectorText *Self, OBJECTPTR Value)
       Self->txFamily = other->Face ? other->Face : "Noto Sans";
       Self->txFontSize = std::trunc(other->Point * (96.0 / 72.0));
       Self->txScaledFontSize = false;
-      strcopy(other->Style, Self->txFontStyle);
+      Self->txFontStyle = other->Style ? other->Style : "Regular";
 
       if (Self->initialised()) return reset_font(Self);
       else return ERR::Okay;
@@ -785,7 +787,7 @@ static ERR TEXT_SET_Font(extVectorText *Self, OBJECTPTR Value)
       Self->txFamily = other->txFamily;
       Self->txFontSize = other->txFontSize;
       Self->txScaledFontSize = false;
-      strcopy(other->txFontStyle, Self->txFontStyle);
+      Self->txFontStyle = other->txFontStyle;
 
       if (Self->initialised()) return reset_font(Self);
       else return ERR::Okay;
@@ -902,16 +904,16 @@ Errors are not returned if the style name is invalid or unavailable.
 
 *********************************************************************************************************************/
 
-static ERR TEXT_GET_FontStyle(extVectorText *Self, CSTRING *Value)
+static ERR TEXT_GET_FontStyle(extVectorText *Self, std::string_view &Value)
 {
-   *Value = Self->txFontStyle;
+   Value = Self->txFontStyle;
    return ERR::Okay;
 }
 
-static ERR TEXT_SET_FontStyle(extVectorText *Self, CSTRING Value)
+static ERR TEXT_SET_FontStyle(extVectorText *Self, const std::string_view &Value)
 {
-   if ((not Value) or (not Value[0])) strcopy("Regular", Self->txFontStyle, sizeof(Self->txFontStyle));
-   else strcopy(Value, Self->txFontStyle, sizeof(Self->txFontStyle));
+   if (Value.empty()) Self->txFontStyle = "Regular";
+   else Self->txFontStyle = Value;
    return ERR::Okay;
 }
 
@@ -2054,8 +2056,8 @@ static const FieldArray clTextFields[] = {
    { "Align",         FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW, TEXT_GET_Align, TEXT_SET_Align, &clTextAlign },
    { "Fill",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW, TEXT_GET_Fill, TEXT_SET_Fill }, // Override
    { "FontSize",      FDF_VIRTUAL|FDF_ALLOC|FDF_STRING|FDF_RW, TEXT_GET_FontSize, TEXT_SET_FontSize },
-   { "FontStyle",     FDF_VIRTUAL|FDF_STRING|FDF_RI, TEXT_GET_FontStyle, TEXT_SET_FontStyle },
    { "Face",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW, TEXT_GET_Face, TEXT_SET_Face },
+   { "FontStyle",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_RI, TEXT_GET_FontStyle, TEXT_SET_FontStyle },
    { "Descent",       FDF_VIRTUAL|FDF_INT|FDF_R, TEXT_GET_Descent },
    { "DisplayHeight", FDF_VIRTUAL|FDF_INT|FDF_R, TEXT_GET_DisplayHeight },
    { "DisplaySize",   FDF_VIRTUAL|FDF_INT|FDF_R, TEXT_GET_DisplaySize },
