@@ -689,13 +689,19 @@ static ERR setval_strview(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, 
       }
    }
    else if (Flags & FD_INT) {
-      return ((ERR (*)(APTR, std::string_view))(Field->SetValue))(Object, std::to_string(*((int *)Data)));
+      auto string = std::to_string(*((int *)Data));
+      std::string_view view(string);
+      return ((ERR (*)(APTR, std::string_view &))(Field->SetValue))(Object, view);
    }
    else if (Flags & FD_INT64) {
-      return ((ERR (*)(APTR, std::string_view))(Field->SetValue))(Object, std::to_string(*((int64_t *)Data)));
+      auto string = std::to_string(*((int64_t *)Data));
+      std::string_view view(string);
+      return ((ERR (*)(APTR, std::string_view &))(Field->SetValue))(Object, view);
    }
    else if (Flags & (FD_DOUBLE|FD_FLOAT)) {
-      return ((ERR (*)(APTR, std::string_view))(Field->SetValue))(Object, std::to_string(*((double *)Data)));
+      auto string = std::to_string(*((double *)Data));
+      std::string_view view(string);
+      return ((ERR (*)(APTR, std::string_view &))(Field->SetValue))(Object, view);
    }
    else return ERR::SetValueNotPointer;
 }
