@@ -539,12 +539,12 @@ To terminate a path without joining it to the first coordinate, omit the `Z` fro
 
 *********************************************************************************************************************/
 
-static ERR VECTORPATH_SET_Sequence(extVectorPath *Self, CSTRING Value)
+static ERR VECTORPATH_SET_Sequence(extVectorPath *Self, const std::string_view &Value)
 {
    Self->Commands.clear();
 
    ERR error = ERR::Okay;
-   if (Value) error = read_path(Self->Commands, Value);
+   if (not Value.empty()) error = read_path(Self->Commands, Value);
    reset_path(Self);
    Self->modified();
    return error;
@@ -577,7 +577,7 @@ static ERR VECTORPATH_SET_TotalCommands(extVectorPath *Self, int Value)
 //********************************************************************************************************************
 
 static const FieldArray clPathFields[] = {
-   { "Sequence",      FDF_VIRTUAL|FDF_STRING|FDF_RW, VECTOR_GET_Sequence, VECTORPATH_SET_Sequence },
+   { "Sequence",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW, VECTOR_GET_Sequence, VECTORPATH_SET_Sequence },
    { "TotalCommands", FDF_VIRTUAL|FDF_INT|FDF_RW,   VECTORPATH_GET_TotalCommands, VECTORPATH_SET_TotalCommands },
    { "PathLength",    FDF_VIRTUAL|FDF_INT|FDF_RW,   VECTORPATH_GET_PathLength, VECTORPATH_SET_PathLength },
    { "Commands",      FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW, VECTORPATH_GET_Commands, VECTORPATH_SET_Commands, "PathCommand" },

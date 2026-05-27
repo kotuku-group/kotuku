@@ -817,19 +817,19 @@ feature is intended for programmed use-cases and is not SVG compliant.
 // Override the existing Vector Fill field - this is required for bitmap fonts as they need a path reset to be
 // triggered when decorative changes occur.
 
-static ERR TEXT_GET_Fill(extVectorText *Self, CSTRING *Value)
+static ERR TEXT_GET_Fill(extVectorText *Self, std::string_view &Value)
 {
-   *Value = Self->FillString;
+   Value = Self->FillString;
    return ERR::Okay;
 }
 
-static ERR TEXT_SET_Fill(extVectorText *Self, CSTRING Value)
+static ERR TEXT_SET_Fill(extVectorText *Self, const std::string_view &Value)
 {
-   if (Self->FillString) { FreeResource(Self->FillString); Self->FillString = nullptr; }
+   Self->FillString.clear();
 
    CSTRING next;
    if (auto error = vec::ReadPainter(Self->Scene, Value, &Self->Fill[0], &next); error IS ERR::Okay) {
-      Self->FillString = strclone(Value);
+      Self->FillString = Value;
 
       if (next) {
          vec::ReadPainter(Self->Scene, next, &Self->Fill[1], nullptr);
@@ -843,7 +843,6 @@ static ERR TEXT_SET_Fill(extVectorText *Self, CSTRING Value)
       return ERR::Okay;
    }
    else return error;
-
 }
 
 /*********************************************************************************************************************
@@ -2060,7 +2059,7 @@ static const FieldArray clTextFields[] = {
    { "String",        FDF_VIRTUAL|FDF_STRING|FDF_RW, TEXT_GET_String, TEXT_SET_String },
    { "Align",         FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW, TEXT_GET_Align, TEXT_SET_Align, &clTextAlign },
    { "Face",          FDF_VIRTUAL|FDF_STRING|FDF_RW, TEXT_GET_Face, TEXT_SET_Face },
-   { "Fill",          FDF_VIRTUAL|FDF_STRING|FDF_RW, TEXT_GET_Fill, TEXT_SET_Fill },
+   { "Fill",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW, TEXT_GET_Fill, TEXT_SET_Fill }, // Override
    { "FontSize",      FDF_VIRTUAL|FDF_ALLOC|FDF_STRING|FDF_RW, TEXT_GET_FontSize, TEXT_SET_FontSize },
    { "FontStyle",     FDF_VIRTUAL|FDF_STRING|FDF_RI, TEXT_GET_FontStyle, TEXT_SET_FontStyle },
    { "Descent",       FDF_VIRTUAL|FDF_INT|FDF_R, TEXT_GET_Descent },

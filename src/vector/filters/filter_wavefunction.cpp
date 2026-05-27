@@ -213,21 +213,21 @@ The use of colourmaps and custom stops are mutually exclusive.
 
 *********************************************************************************************************************/
 
-static ERR WAVEFUNCTIONFX_GET_ColourMap(extWaveFunctionFX *Self, CSTRING *Value)
+static ERR WAVEFUNCTIONFX_GET_ColourMap(extWaveFunctionFX *Self, std::string_view &Value)
 {
-   if (Self->ColourMap.empty()) *Value = nullptr;
-   else *Value = Self->ColourMap.c_str();
+   if (Self->ColourMap.empty()) Value = std::string_view{};
+   else Value = Self->ColourMap;
    return ERR::Okay;
 }
 
-static ERR WAVEFUNCTIONFX_SET_ColourMap(extWaveFunctionFX *Self, CSTRING Value)
+static ERR WAVEFUNCTIONFX_SET_ColourMap(extWaveFunctionFX *Self, const std::string_view &Value)
 {
-   if (!Value) return ERR::NoData;
+   if (Value.empty()) return ERR::NoData;
 
-   if (glColourMaps.contains(Value)) {
+   if (auto it = glColourMaps.find(Value); it != glColourMaps.end()) {
       if (Self->Colours) delete Self->Colours;
-      Self->Colours = new (std::nothrow) GradientColours(glColourMaps[Value], 1);
-      if (!Self->Colours) return ERR::AllocMemory;
+      Self->Colours = new (std::nothrow) GradientColours(it->second, 1);
+      if (not Self->Colours) return ERR::AllocMemory;
       Self->ColourMap = Value;
       return ERR::Okay;
    }
@@ -404,14 +404,18 @@ XMLDef: Returns an SVG compliant XML string that describes the effect.
 
 *********************************************************************************************************************/
 
-static ERR WAVEFUNCTIONFX_GET_XMLDef(extWaveFunctionFX *Self, STRING *Value)
+static ERR WAVEFUNCTIONFX_GET_XMLDef(extWaveFunctionFX *Self, std::string_view &Value)
 {
    std::stringstream stream;
 
    stream << "feWaveFunction";
 
-   *Value = strclone(stream.str());
-   return ERR::Okay;
+   auto cppstr = stream.str();
+   if (auto str = strclone(stream.str())) {
+      Value = std::string_view{str, cppstr.size()};
+      return ERR::Okay;
+   }
+   else return ERR::AllocMemory;
 }
 
 //********************************************************************************************************************
@@ -420,14 +424,14 @@ static ERR WAVEFUNCTIONFX_GET_XMLDef(extWaveFunctionFX *Self, STRING *Value)
 
 static const FieldArray clWaveFunctionFXFields[] = {
    { "AspectRatio", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW,   WAVEFUNCTIONFX_GET_AspectRatio, WAVEFUNCTIONFX_SET_AspectRatio, &clAspectRatio },
-   { "ColourMap",   FDF_VIRTUAL|FDF_STRING|FDF_RW,           WAVEFUNCTIONFX_GET_ColourMap,   WAVEFUNCTIONFX_SET_ColourMap },
+   { "ColourMap",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW,        WAVEFUNCTIONFX_GET_ColourMap,   WAVEFUNCTIONFX_SET_ColourMap },
    { "N",           FDF_VIRTUAL|FDF_INT|FDF_RW,              WAVEFUNCTIONFX_GET_N,           WAVEFUNCTIONFX_SET_N },
    { "L",           FDF_VIRTUAL|FDF_INT|FDF_RW,              WAVEFUNCTIONFX_GET_L,           WAVEFUNCTIONFX_SET_L },
    { "M",           FDF_VIRTUAL|FDF_INT|FDF_RW,              WAVEFUNCTIONFX_GET_M,           WAVEFUNCTIONFX_SET_M },
    { "Resolution",  FDF_VIRTUAL|FDF_INT|FDF_RW,              WAVEFUNCTIONFX_GET_Resolution,  WAVEFUNCTIONFX_SET_Resolution },
    { "Scale",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW,           WAVEFUNCTIONFX_GET_Scale,       WAVEFUNCTIONFX_SET_Scale },
    { "Stops",       FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW, WAVEFUNCTIONFX_GET_Stops,       WAVEFUNCTIONFX_SET_Stops, "GradientStop" },
-   { "XMLDef",      FDF_VIRTUAL|FDF_STRING|FDF_ALLOC|FDF_R,  WAVEFUNCTIONFX_GET_XMLDef,      nullptr },
+   { "XMLDef",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, WAVEFUNCTIONFX_GET_XMLDef },
    END_FIELD
 };
 

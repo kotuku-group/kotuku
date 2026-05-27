@@ -282,15 +282,15 @@ A transform can be applied to the pattern by setting this field with an SVG comp
 
 *********************************************************************************************************************/
 
-static ERR PATTERN_SET_Transform(extVectorPattern *Self, CSTRING Commands)
+static ERR PATTERN_SET_Transform(extVectorPattern *Self, const std::string_view &Commands)
 {
    kt::Log log;
 
-   if (!Commands) return log.warning(ERR::InvalidValue);
+   if (Commands.empty()) return log.warning(ERR::InvalidValue);
 
    Self->modified();
 
-   if (!Self->Matrices) {
+   if (not Self->Matrices) {
       VectorMatrix *matrix;
       if (AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, &matrix) IS ERR::Okay) {
          matrix->Vector = nullptr;
@@ -454,7 +454,7 @@ static const FieldArray clPatternFields[] = {
    //{ "AspectRatio", FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW, PATTERN_GET_AspectRatio, PATTERN_SET_AspectRatio, &clAspectRatio },
    // Virtual fields
    { "Matrices",     FDF_VIRTUAL|FDF_POINTER|FDF_STRUCT|FDF_RW, VECTORPATTERN_GET_Matrices, VECTORPATTERN_SET_Matrices, "VectorMatrix" },
-   { "Transform",    FDF_VIRTUAL|FDF_STRING|FDF_W, nullptr, PATTERN_SET_Transform },
+   { "Transform",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_W, nullptr, PATTERN_SET_Transform },
    END_FIELD
 };
 
@@ -474,4 +474,3 @@ ERR init_pattern(void) // The pattern is a definition type for creating patterns
 
    return clVectorPattern ? ERR::Okay : ERR::AddClass;
 }
-

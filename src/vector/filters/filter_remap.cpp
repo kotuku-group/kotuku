@@ -484,7 +484,7 @@ XMLDef: Returns an SVG compliant XML string that describes the filter.
 
 *********************************************************************************************************************/
 
-static ERR REMAPFX_GET_XMLDef(extRemapFX *Self, STRING *Value)
+static ERR REMAPFX_GET_XMLDef(extRemapFX *Self, std::string_view &Value)
 {
    std::stringstream stream;
 
@@ -495,8 +495,13 @@ static ERR REMAPFX_GET_XMLDef(extRemapFX *Self, STRING *Value)
    stream << "<feFuncB/>";
    stream << "<feFuncA/>";
    stream << "</feComponentTransfer>";
-   *Value = strclone(stream.str());
-   return ERR::Okay;
+
+   auto cppstr = stream.str();
+   if (auto str = strclone(stream.str())) {
+      Value = std::string_view{str, cppstr.size()};
+      return ERR::Okay;
+   }
+   else return ERR::AllocMemory;
 }
 
 //********************************************************************************************************************
@@ -504,7 +509,7 @@ static ERR REMAPFX_GET_XMLDef(extRemapFX *Self, STRING *Value)
 #include "filter_remap_def.c"
 
 static const FieldArray clRemapFXFields[] = {
-   { "XMLDef", FDF_VIRTUAL|FDF_STRING|FDF_ALLOC|FDF_R, REMAPFX_GET_XMLDef },
+   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, REMAPFX_GET_XMLDef },
    END_FIELD
 };
 

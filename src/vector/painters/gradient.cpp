@@ -152,10 +152,7 @@ GradientColours::GradientColours(const std::array<FRGB, 256> &Map, double Resolu
 
 static ERR VECTORGRADIENT_Free(extVectorGradient *Self)
 {
-   if (Self->ID) { FreeResource(Self->ID); Self->ID = nullptr; }
    if (Self->Colours) { delete Self->Colours; Self->Colours = nullptr; }
-   Self->Stops.~vector<GradientStop>();
-   Self->ColourMap.~basic_string();
 
    VectorMatrix *next;
    for (auto node=Self->Matrices; node; node=next) {
@@ -164,6 +161,7 @@ static ERR VECTORGRADIENT_Free(extVectorGradient *Self)
    }
    Self->Matrices = nullptr;
 
+   Self->~extVectorGradient();
    return ERR::Okay;
 }
 
@@ -195,8 +193,6 @@ static ERR VECTORGRADIENT_Init(extVectorGradient *Self)
 
 static ERR VECTORGRADIENT_NewObject(extVectorGradient *Self)
 {
-   new (&Self->Stops) std::vector<GradientStop>;
-   new (&Self->ColourMap) std::string;
    Self->SpreadMethod = VSPREAD::PAD;
    Self->Type    = VGT::LINEAR;
    Self->Units   = VUNIT::BOUNDING_BOX;
@@ -208,6 +204,12 @@ static ERR VECTORGRADIENT_NewObject(extVectorGradient *Self)
    Self->X2      = 1.0; // Set for contoured gradients.
    Self->Flags  |= VGF::SCALED_CX|VGF::SCALED_CY|VGF::SCALED_RADIUS;
    Self->Resolution = 1;
+   return ERR::Okay;
+}
+
+static ERR VECTORGRADIENT_NewPlacement(extVectorGradient *Self)
+{
+   new (Self) extVectorGradient;
    return ERR::Okay;
 }
 
@@ -321,21 +323,21 @@ The use of colourmaps and custom stops are mutually exclusive.
 
 *********************************************************************************************************************/
 
-static ERR VECTORGRADIENT_GET_ColourMap(extVectorGradient *Self, CSTRING *Value)
+static ERR VECTORGRADIENT_GET_ColourMap(extVectorGradient *Self, std::string_view &Value)
 {
-   if (!Self->ColourMap.empty()) *Value = Self->ColourMap.c_str();
-   else *Value = nullptr;
+   if (not Self->ColourMap.empty()) Value = Self->ColourMap;
+   else Value = std::string_view{};
    return ERR::Okay;
 }
 
-static ERR VECTORGRADIENT_SET_ColourMap(extVectorGradient *Self, CSTRING Value)
+static ERR VECTORGRADIENT_SET_ColourMap(extVectorGradient *Self, const std::string_view &Value)
 {
-   if (!Value) return ERR::NoData;
+   if (Value.empty()) return ERR::NoData;
 
-   if (glColourMaps.contains(Value)) {
+   if (auto it = glColourMaps.find(Value); it != glColourMaps.end()) {
       if (Self->Colours) delete Self->Colours;
-      Self->Colours = new (std::nothrow) GradientColours(glColourMaps[Value], Self->Resolution);
-      if (!Self->Colours) return ERR::AllocMemory;
+      Self->Colours = new (std::nothrow) GradientColours(it->second, Self->Resolution);
+      if (not Self->Colours) return ERR::AllocMemory;
       Self->ColourMap = Value;
       Self->modified();
       return ERR::Okay;
@@ -449,22 +451,20 @@ existing object name and automatically assigned ID's for identifiers.
 
 *********************************************************************************************************************/
 
-static ERR VECTORGRADIENT_GET_ID(extVectorGradient *Self, STRING *Value)
+static ERR VECTORGRADIENT_GET_ID(extVectorGradient *Self, std::string_view &Value)
 {
-   *Value = Self->ID;
+   Value = Self->ID;
    return ERR::Okay;
 }
 
-static ERR VECTORGRADIENT_SET_ID(extVectorGradient *Self, CSTRING Value)
+static ERR VECTORGRADIENT_SET_ID(extVectorGradient *Self, const std::string_view &Value)
 {
-   if (Self->ID) FreeResource(Self->ID);
-
-   if (Value) {
-      Self->ID = strclone(Value);
+   if (not Value.empty()) {
+      Self->ID = Value;
       Self->NumericID = strhash(Value);
    }
    else {
-      Self->ID = nullptr;
+      Self->ID.clear();
       Self->NumericID = 0;
    }
    return ERR::Okay;
@@ -544,7 +544,7 @@ static ERR VECTORGRADIENT_GET_NumericID(extVectorGradient *Self, int *Value)
 static ERR VECTORGRADIENT_SET_NumericID(extVectorGradient *Self, int Value)
 {
    Self->NumericID = Value;
-   if (Self->ID) { FreeResource(Self->ID); Self->ID = nullptr; }
+   Self->ID.clear();
    return ERR::Okay;
 }
 
@@ -690,15 +690,15 @@ A transform can be applied to the gradient by setting this field with an SVG com
 
 *********************************************************************************************************************/
 
-static ERR VECTORGRADIENT_SET_Transform(extVectorGradient *Self, CSTRING Commands)
+static ERR VECTORGRADIENT_SET_Transform(extVectorGradient *Self, const std::string_view &Commands)
 {
    kt::Log log;
 
-   if (!Commands) return log.warning(ERR::InvalidValue);
+   if (Commands.empty()) return log.warning(ERR::InvalidValue);
 
    Self->modified();
 
-   if (!Self->Matrices) {
+   if (not Self->Matrices) {
       VectorMatrix *matrix;
       if (AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, &matrix) IS ERR::Okay) {
          matrix->Vector = nullptr;
@@ -711,13 +711,13 @@ static ERR VECTORGRADIENT_SET_Transform(extVectorGradient *Self, CSTRING Command
          matrix->TranslateY = 0;
 
          Self->Matrices = matrix;
-         return vec::ParseTransform(Self->Matrices, Commands);
+         return vec::ParseTransform(Self->Matrices, Commands.data());
       }
       else return ERR::AllocMemory;
    }
    else {
       vec::ResetMatrix(Self->Matrices);
-      return vec::ParseTransform(Self->Matrices, Commands);
+      return vec::ParseTransform(Self->Matrices, Commands.data());
    }
 }
 
@@ -880,17 +880,17 @@ static const FieldArray clGradientFields[] = {
    { "ColourSpace",  FDF_INT|FDF_RI, nullptr, nullptr, &clVectorGradientColourSpace },
    // Virtual fields
    { "Colour",       FDF_VIRTUAL|FD_FLOAT|FDF_ARRAY|FD_RW, VECTORGRADIENT_GET_Colour, VECTORGRADIENT_SET_Colour },
-   { "ColourMap",    FDF_VIRTUAL|FDF_STRING|FDF_W, VECTORGRADIENT_GET_ColourMap, VECTORGRADIENT_SET_ColourMap },
+   { "ColourMap",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_W, VECTORGRADIENT_GET_ColourMap, VECTORGRADIENT_SET_ColourMap },
    { "CX",           FDF_VIRTUAL|FDF_SYNONYM|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW, VECTORGRADIENT_GET_CenterX, VECTORGRADIENT_SET_CenterX },
    { "CY",           FDF_VIRTUAL|FDF_SYNONYM|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW, VECTORGRADIENT_GET_CenterY, VECTORGRADIENT_SET_CenterY },
    { "FX",           FDF_VIRTUAL|FDF_SYNONYM|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW, VECTORGRADIENT_GET_FocalX, VECTORGRADIENT_SET_FocalX },
    { "FY",           FDF_VIRTUAL|FDF_SYNONYM|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW, VECTORGRADIENT_GET_FocalY, VECTORGRADIENT_SET_FocalY },
    { "Matrices",     FDF_VIRTUAL|FDF_POINTER|FDF_STRUCT|FDF_RW, VECTORGRADIENT_GET_Matrices, VECTORGRADIENT_SET_Matrices, "VectorMatrix" },
    { "NumericID",    FDF_VIRTUAL|FDF_INT|FDF_RW, VECTORGRADIENT_GET_NumericID, VECTORGRADIENT_SET_NumericID },
-   { "ID",           FDF_VIRTUAL|FDF_STRING|FDF_RW, VECTORGRADIENT_GET_ID, VECTORGRADIENT_SET_ID },
+   { "ID",           FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW, VECTORGRADIENT_GET_ID, VECTORGRADIENT_SET_ID },
    { "Stops",        FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW, VECTORGRADIENT_GET_Stops, VECTORGRADIENT_SET_Stops, "GradientStop" },
    { "TotalStops",   FDF_INT|FDF_R, VECTORGRADIENT_GET_TotalStops },
-   { "Transform",    FDF_VIRTUAL|FDF_STRING|FDF_W, nullptr, VECTORGRADIENT_SET_Transform },
+   { "Transform",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_W, nullptr, VECTORGRADIENT_SET_Transform },
    END_FIELD
 };
 
