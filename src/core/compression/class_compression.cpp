@@ -184,9 +184,9 @@ class extCompression : public objCompression {
    public:
    OBJECTPTR FileIO;             // File input/output
    STRING *  FileList;           // List of all files held in the compression object
-   STRING    Path;               // Location of the compressed data
+   std::string Path;             // Location of the compressed data
    uint8_t     Header[32];         // The first 32 bytes of data from the compressed file (for sub-classes only)
-   char      Password[128];      // Password for the compressed object
+   std::string Password;         // Password for the compressed object
    FUNCTION  Feedback;           // Set a function here to get de/compression feedack
    uint32_t     ArchiveHash;        // Archive reference, used for the 'archive:' volume
 
@@ -1659,7 +1659,6 @@ static ERR COMPRESSION_Free(extCompression *Self)
    if (Self->Input)        { FreeResource(Self->Input); Self->Input = nullptr; }
    if (Self->Output)       { FreeResource(Self->Output); Self->Output = nullptr; }
    if (Self->FileIO)       { FreeResource(Self->FileIO); Self->FileIO = nullptr; }
-   if (Self->Path)         { FreeResource(Self->Path); Self->Path = nullptr; }
 
    Self->~extCompression();
 
@@ -1671,9 +1670,9 @@ static ERR COMPRESSION_Free(extCompression *Self)
 static ERR COMPRESSION_Init(extCompression *Self)
 {
    kt::Log log;
-   auto path = Self->get<STRING>(FID_Path);
+   const auto &path = Self->Path;
 
-   if (!path) {
+   if (path.empty()) {
       // If no location has been set, assume that the developer only wants to use the buffer or stream compression routines.
 
       return ERR::Okay;
@@ -1769,8 +1768,6 @@ static ERR COMPRESSION_Init(extCompression *Self)
 
 static ERR COMPRESSION_NewObject(extCompression *Self)
 {
-   kt::Log log;
-
    if (AllocMemory(SIZE_COMPRESSION_BUFFER, MEM::DATA, (APTR *)&Self->Output, nullptr) IS ERR::Okay) {
       if (AllocMemory(SIZE_COMPRESSION_BUFFER, MEM::DATA, (APTR *)&Self->Input, nullptr) IS ERR::Okay) {
          Self->CompressionLevel = 60; // 60% compression by default
@@ -1779,9 +1776,9 @@ static ERR COMPRESSION_NewObject(extCompression *Self)
          Self->WindowBits = MAX_WBITS; // If negative then you get raw compression when dealing with buffers and stream data, i.e. no header information
          return ERR::Okay;
       }
-      else return log.warning(ERR::AllocMemory);
+      else return ERR::AllocMemory;
    }
-   else return log.warning(ERR::AllocMemory);
+   else return ERR::AllocMemory;
 }
 
 static ERR COMPRESSION_NewPlacement(extCompression *Self)
@@ -1986,13 +1983,13 @@ static const FieldArray clFields[] = {
    { "MinOutputSize",    FDF_INT|FDF_R },
    { "WindowBits",       FDF_INT|FDF_RW, nullptr, SET_WindowBits },
    // Virtual fields
-   { "ArchiveName",      FDF_STRING|FDF_W,       nullptr, SET_ArchiveName },
-   { "Path",             FDF_STRING|FDF_RW,      GET_Path, SET_Path },
+   { "ArchiveName",      FDF_CPPSTRING|FDF_W,    nullptr, SET_ArchiveName },
+   { "Path",             FDF_CPPSTRING|FDF_RW,   GET_Path, SET_Path },
    { "Feedback",         FDF_FUNCTIONPTR|FDF_RW, GET_Feedback, SET_Feedback },
    { "Header",           FDF_POINTER|FDF_R,      GET_Header },
-   { "Password",         FDF_STRING|FDF_RW,      GET_Password, SET_Password },
+   { "Password",         FDF_CPPSTRING|FDF_RW,   GET_Password, SET_Password },
    { "Size",             FDF_INT64|FDF_R,        GET_Size },
-   { "Src",              FDF_SYNONYM|FDF_STRING|FDF_RW, GET_Path, SET_Path },
+   { "Src",              FDF_SYNONYM|FDF_CPPSTRING|FDF_RW, GET_Path, SET_Path },
    { "UncompressedSize", FDF_INT64|FDF_R,        GET_UncompressedSize },
    END_FIELD
 };

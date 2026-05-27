@@ -223,10 +223,10 @@
   <function>
     <name>GeneratePath</name>
     <comment>Generates a path resource from an SVG path command sequence.</comment>
-    <prototype>ERR vec::GeneratePath(CSTRING Sequence, APTR * Path)</prototype>
+    <prototype>ERR vec::GeneratePath(const std::string_view &amp; Sequence, APTR * Path)</prototype>
     <tiriPrototype>err, Path:any = GeneratePath(Sequence:str)</tiriPrototype>
     <input>
-      <param type="CSTRING" name="Sequence">The command sequence to process.  If no sequence is specified then the path will be empty.</param>
+      <param type="const std::string_view &amp;" name="Sequence">The command sequence to process.  If no sequence is specified then the path will be empty.</param>
       <param type="APTR *" name="Path">A pointer variable that will receive the resulting path.</param>
     </input>
     <description>
@@ -244,7 +244,7 @@ S: Smooth Curve To
 A: Arc
 Z: Close Path
 </pre>
-<p>If <code>Sequence</code> is <code>NULL</code>, an empty path resource will be generated.  This path can be populated with functions such as <function>MoveTo</function> and <function>LineTo</function>.</p>
+<p>If <code>Sequence</code> is empty, an empty path resource will be generated.  This path can be populated with functions such as <function>MoveTo</function> and <function>LineTo</function>.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>

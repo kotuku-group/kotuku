@@ -151,6 +151,7 @@ public:
    size_t capacity() const { return data_.size(); }
    bool empty() const { return used_ == 0; }
    size_t available() const { return data_.size() - used_; }
+   bool can_append(size_t Bytes) const { return Bytes <= SSL_IO_BUFFER_SIZE - used_; }
 
    void reserve(size_t new_cap) {
       if (new_cap <= SSL_IO_BUFFER_SIZE and new_cap > data_.size()) {
@@ -190,6 +191,7 @@ struct ssl_context {
    PCCERT_CHAIN_CONTEXT certificate_chain;     // Certificate chain context for validation
    NCRYPT_KEY_HANDLE imported_private_key;     // Private key handle attached to server_certificate
    bool imported_private_key_owned;            // True when imported_private_key must be freed directly
+   bool imported_private_key_persistent;       // True when imported_private_key must be deleted from storage
 
    // Connection information cache
    std::string protocol_version_str;
@@ -222,6 +224,7 @@ struct ssl_context {
       , certificate_chain(nullptr)
       , imported_private_key(0)
       , imported_private_key_owned(false)
+      , imported_private_key_persistent(false)
       , key_size_bits(0)
       , certificate_chain_valid(false)
       , certificate_chain_length(0)
@@ -252,9 +255,14 @@ struct ssl_context {
          server_certificate_store = nullptr;
       }
       if (imported_private_key) {
-         if (imported_private_key_owned) NCryptFreeObject(imported_private_key);
+         if (imported_private_key_persistent) {
+            auto status = NCryptDeleteKey(imported_private_key, NCRYPT_SILENT_FLAG);
+            if ((status != ERROR_SUCCESS) and imported_private_key_owned) NCryptFreeObject(imported_private_key);
+         }
+         else if (imported_private_key_owned) NCryptFreeObject(imported_private_key);
          imported_private_key = 0;
          imported_private_key_owned = false;
+         imported_private_key_persistent = false;
       }
       if (peer_certificate) {
          CertFreeCertificateContext(peer_certificate);
@@ -535,6 +543,7 @@ void ssl_consume_pending_output(SSL_HANDLE SSL, size_t Bytes)
 SSL_ERROR_CODE ssl_queue_encrypted_input(SSL_HANDLE SSL, const void *Buffer, int Length)
 {
    if ((!SSL) or (!Buffer) or (Length <= 0)) return SSL_ERROR_ARGS;
+   if (!SSL->recv_buffer.can_append(size_t(Length))) return SSL_ERROR_BUFFER_OVERFLOW;
 
    std::span<const unsigned char> buffer_span((const unsigned char *)Buffer, size_t(Length));
    return SSL->recv_buffer.append(buffer_span) ? SSL_OK : SSL_ERROR_MEMORY;
@@ -553,6 +562,13 @@ int ssl_last_security_status(SSL_HANDLE SSL)
 size_t ssl_encrypted_input_size(SSL_HANDLE SSL)
 {
    return SSL ? SSL->recv_buffer.size() : 0;
+}
+
+//********************************************************************************************************************
+
+size_t ssl_encrypted_input_limit(SSL_HANDLE SSL)
+{
+   return SSL ? SSL_IO_BUFFER_SIZE : 0;
 }
 
 //********************************************************************************************************************

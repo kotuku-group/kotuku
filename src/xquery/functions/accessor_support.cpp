@@ -255,8 +255,8 @@ std::optional<std::string> build_base_uri_chain(const XPathContext &Context, XTa
 
    if (not Node) {
       std::string_view path;
-      if ((document) and (document->Path)) path = document->Path;
-      else if ((Context.xml) and (Context.xml->Path)) path = Context.xml->Path;
+      if ((document) and (not document->Path.empty())) path = std::string_view(document->Path);
+      else if ((Context.xml) and (not Context.xml->Path.empty())) path = Context.xml->Path;
       auto base = resolve_document_base_directory(path);
       if (base.has_value()) return xml::uri::normalise_uri_separators(*base);
       return std::nullopt;
@@ -270,8 +270,8 @@ std::optional<std::string> build_base_uri_chain(const XPathContext &Context, XTa
 
    if ((Node->ParentID IS 0) and (!AttributeNode)) { // Root-level node with no attribute
       std::string_view path;
-      if ((document) and (document->Path)) path = document->Path;
-      else if ((Context.xml) and (Context.xml->Path)) path = Context.xml->Path;
+      if ((document) and (not document->Path.empty())) path = std::string_view(document->Path);
+      else if ((Context.xml) and (not Context.xml->Path.empty())) path = Context.xml->Path;
       auto base = resolve_document_base_directory(path);
       if (base.has_value()) return xml::uri::normalise_uri_separators(*base);
    }
@@ -298,7 +298,7 @@ std::optional<std::string> build_base_uri_chain(const XPathContext &Context, XTa
       current = parent;
    }
 
-   std::optional<std::string> base = resolve_document_base_directory((document and document->Path) ? document->Path : std::string_view{});
+   std::optional<std::string> base = resolve_document_base_directory((document and (not document->Path.empty())) ? document->Path : std::string_view{});
 
    for (auto iterator = chain.rbegin(); iterator != chain.rend(); ++iterator) {
       if (base.has_value()) base = xml::uri::resolve_relative_uri(*iterator, *base);
@@ -318,9 +318,7 @@ std::optional<std::string> resolve_document_uri(const XPathContext &Context, XTa
 
    extXML *document = locate_node_document(Context, Node);
    if (not document) return std::nullopt;
-   if (document->Path and document->Path[0]) {
-      return xml::uri::normalise_uri_separators(std::string(document->Path));
-   }
+   if (not document->Path.empty()) return xml::uri::normalise_uri_separators(document->Path);
 
    // Perform a reverse lookup in the XML cache to find the document URI.
 

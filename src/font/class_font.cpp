@@ -102,7 +102,6 @@ static ERR FONT_Init(extFont *Self)
    kt::Log log;
    int diff;
    FTF style;
-   ERR error;
    FMETA meta = FMETA::NIL;
 
    if ((!Self->prvFace[0]) and (!Self->Path)) return log.warning(ERR::FieldNotSet);
@@ -123,10 +122,7 @@ static ERR FONT_Init(extFont *Self)
 
    // Check the bitmap cache to see if we have already loaded this font
 
-   if (iequals("Bold", Self->prvStyle)) style = FTF::BOLD;
-   else if (iequals("Italic", Self->prvStyle)) style = FTF::ITALIC;
-   else if (iequals("Bold Italic", Self->prvStyle)) style = FTF::BOLD|FTF::ITALIC;
-   else style = FTF::NIL;
+   style = font_style_flags(Self->prvStyle);
 
    CACHE_LOCK lock(glCacheMutex);
 
@@ -137,107 +133,52 @@ static ERR FONT_Init(extFont *Self)
    else {
       objFile::create file = { fl::Path(Self->Path), fl::Flags(FL::READ|FL::APPROXIMATE) };
       if (file.ok()) {
-         // Check if the file is a Windows Bitmap Font
+         std::vector<winFont> fonts;
+         if (auto error = read_winfont_entries(*file, fonts); error IS ERR::NoData) return log.warning(error);
+         else if (error != ERR::Okay) return error;
 
-         winmz_header_fields mz_header;
-         file->read(&mz_header, sizeof(mz_header));
+         // Scan the list of available fonts to find the closest point size for our font
 
-         if (mz_header.magic IS ID_WINMZ) {
-            file->seek(mz_header.lfanew, SEEK::START);
+         int abs = 0x7fff;
+         int wfi = 0;
+         winfnt_header_fields face;
+         for (int i=0; i < int(fonts.size()); i++) {
+            file->seekStart(fonts[i].Offset);
 
-            winne_header_fields ne_header;
-            if ((file->read(&ne_header, sizeof(ne_header)) IS ERR::Okay) and (ne_header.magic IS ID_WINNE)) {
-               uint32_t res_offset = mz_header.lfanew + ne_header.resource_tab_offset;
-               file->seek(res_offset, SEEK::START);
-
-               // Count the number of fonts in the file
-
-               int16_t size_shift = 0;
-               uint16_t font_count = 0;
-               int font_offset = 0;
-               fl::ReadLE(*file, &size_shift);
-
-               int16_t type_id;
-               for ((error = fl::ReadLE(*file, &type_id)); (error IS ERR::Okay) and (type_id); error = fl::ReadLE(*file, &type_id)) {
-                  int16_t count = 0;
-                  fl::ReadLE(*file, &count);
-
-                  if ((uint16_t)type_id IS 0x8008) {
-                     font_count  = count;
-                     file->get(FID_Position, font_offset);
-                     font_offset += 4;
-                     break;
-                  }
-
-                  file->seek(4 + (count * 12), SEEK::CURRENT);
+            winfnt_header_fields header;
+            if (file->read(&header, sizeof(header)) IS ERR::Okay) {
+               if (auto error = validate_winfnt_header(header, nullptr); error != ERR::Okay) {
+                  return log.warning(error);
                }
 
-               if ((!font_count) or (!font_offset)) { // There are no fonts in the file
-                  return log.warning(ERR::NoData);
+               if (header.pixel_width <= 0) header.pixel_width = header.pixel_height;
+
+               if ((diff = Self->Point - header.nominal_point_size) < 0) diff = -diff;
+
+               if (diff < abs) {
+                  face = header;
+                  abs  = diff;
+                  wfi  = i;
                }
+            }
+            else return log.warning(ERR::Read);
+         }
 
-               file->seek(font_offset, SEEK::START);
+         // Check the bitmap cache again to ensure that the discovered font is not already loaded.  This is important
+         // if the cached font wasn't originally found due to variation in point size.
 
-               // Scan the list of available fonts to find the closest point size for our font
+         Self->Point = face.nominal_point_size;
+         cache = check_bitmap_cache(Self, style);
+         if (!cache) { // Load the font into the cache
+            auto it = glBitmapCache.emplace(glBitmapCache.end(), face, Self->prvStyle, Self->Path, *file, fonts[wfi]);
 
-               auto fonts = std::make_unique<winFont[]>(font_count);
-
-               for (int i=0; i < font_count; i++) {
-                  uint16_t offset, size;
-                  fl::ReadLE(*file, &offset);
-                  fl::ReadLE(*file, &size);
-                  fonts[i].Offset = offset<<size_shift;
-                  fonts[i].Size   = size<<size_shift;
-                  file->seek(8, SEEK::CURRENT);
-               }
-
-               int abs = 0x7fff;
-               int wfi = 0;
-               winfnt_header_fields face;
-               for (int i=0; i < font_count; i++) {
-                  file->seek((double)fonts[i].Offset, SEEK::START);
-
-                  winfnt_header_fields header;
-                  if (file->read(&header, sizeof(header)) IS ERR::Okay) {
-                     if ((header.version != 0x200) and (header.version != 0x300)) {
-                        // Font is written in an unsupported version
-                        return log.warning(ERR::NoSupport);
-                     }
-
-                     if (header.file_type & 1) { // Font is in the non-supported vector font format."
-                        return log.warning(ERR::NoSupport);
-                     }
-
-                     if (header.pixel_width <= 0) header.pixel_width = header.pixel_height;
-
-                     if ((diff = Self->Point - header.nominal_point_size) < 0) diff = -diff;
-
-                     if (diff < abs) {
-                        face = header;
-                        abs  = diff;
-                        wfi  = i;
-                     }
-                  }
-                  else return log.warning(ERR::Read);
-               }
-
-               // Check the bitmap cache again to ensure that the discovered font is not already loaded.  This is important
-               // if the cached font wasn't originally found due to variation in point size.
-
-               Self->Point = face.nominal_point_size;
-               cache = check_bitmap_cache(Self, style);
-               if (!cache) { // Load the font into the cache
-                  auto it = glBitmapCache.emplace(glBitmapCache.end(), face, Self->prvStyle, Self->Path, *file, fonts[wfi]);
-
-                  if (it->Result IS ERR::Okay) cache = &(*it);
-                  else {
-                     ERR error = it->Result;
-                     glBitmapCache.erase(it);
-                     return error;
-                  }
-               }
-            } // File is not a windows fixed font
-         } // File is not a windows fixed font
+            if (it->Result IS ERR::Okay) cache = &(*it);
+            else {
+               ERR error = it->Result;
+               glBitmapCache.erase(it);
+               return error;
+            }
+         }
       }
       else return log.warning(ERR::OpenFile);
    }
@@ -342,14 +283,13 @@ static ERR GET_Bold(extFont *Self, int *Value)
 
 static ERR SET_Bold(extFont *Self, int Value)
 {
-   if (Self->initialised()) {
-      // If the font is initialised, setting the bold style is implicit
-      return SET_Style(Self, "Bold");
-   }
-   else if ((Self->Flags & FTF::ITALIC) != FTF::NIL) {
-      return SET_Style(Self, "Bold Italic");
-   }
-   else return SET_Style(Self, "Bold");
+   const bool bold = Value != FALSE;
+   const bool italic = ((Self->Flags & FTF::ITALIC) != FTF::NIL) or (kt::strisearch("italic", Self->prvStyle) != -1);
+
+   if (bold and italic) return SET_Style(Self, "Bold Italic");
+   else if (bold) return SET_Style(Self, "Bold");
+   else if (italic) return SET_Style(Self, "Italic");
+   else return SET_Style(Self, "Regular");
 }
 
 /*********************************************************************************************************************
@@ -397,36 +337,40 @@ static ERR SET_Face(extFont *Self, STRING Value)
 {
    if ((Value) and (Value[0])) {
       CSTRING final_name;
-      if (fnt::ResolveFamilyName(Value, &final_name) IS ERR::Okay) {
+      int i;
+      for (i=0; Value[i] and Value[i] != ':'; i++);
+
+      std::string face(Value, i);
+      if (fnt::ResolveFamilyName(face, &final_name) IS ERR::Okay) {
          strcopy(final_name, Self->prvFace, std::ssize(Self->prvFace));
       }
 
-      int i, j;
-      for (i=0; Value[i] and Value[i] != ':'; i++);
       if (!Value[i]) return ERR::Okay;
 
       // Extract the point size
 
-      Value += i;
-      double pt = strtod(Value, &Value);
-      SET_Point(Self, pt);
+      Value += i + 1;
+      if ((*Value) and (*Value != ':')) {
+         double pt = strtod(Value, &Value);
+         SET_Point(Self, pt);
+      }
 
-      i = 0;
       while ((*Value) and (*Value != ':')) Value++;
       if (!*Value) return ERR::Okay;
 
       // Extract the style string
 
-      i++;
-      for (j=0; (Value[i]) and (Value[i] != ':') and (j < std::ssize(Self->prvStyle)-1); j++) Self->prvStyle[j] = Value[i++];
-      Self->prvStyle[j] = 0;
+      Value++;
+      char style[sizeof(Self->prvStyle)];
+      for (i=0; (Value[i]) and (Value[i] != ':') and (i < int(sizeof(style))-1); i++) style[i] = Value[i];
+      style[i] = 0;
+      SET_Style(Self, style);
 
       if (Value[i] != ':') return ERR::Okay;
 
       // Extract the colour string
 
-      i++;
-      Self->set(FID_Colour, Value + i);
+      Self->set(FID_Colour, Value + i + 1);
    }
    else Self->prvFace[0] = 0;
 
@@ -493,14 +437,13 @@ static ERR GET_Italic(extFont *Self, int *Value)
 
 static ERR SET_Italic(extFont *Self, int Value)
 {
-   if (Self->initialised()) {
-      // If the font is initialised, setting the italic style is implicit
-      return SET_Style(Self, "Italic");
-   }
-   else if ((Self->Flags & FTF::BOLD) != FTF::NIL) {
-      return SET_Style(Self, "Bold Italic");
-   }
-   else return SET_Style(Self, "Italic");
+   const bool italic = Value != FALSE;
+   const bool bold = ((Self->Flags & FTF::BOLD) != FTF::NIL) or (kt::strisearch("bold", Self->prvStyle) != -1);
+
+   if (bold and italic) return SET_Style(Self, "Bold Italic");
+   else if (bold) return SET_Style(Self, "Bold");
+   else if (italic) return SET_Style(Self, "Italic");
+   else return SET_Style(Self, "Regular");
 }
 
 /*********************************************************************************************************************
@@ -651,6 +594,10 @@ static ERR SET_String(extFont *Self, CSTRING Value)
       Self->prvBuffer.assign(Value);
       Self->String = (STRING)Self->prvBuffer.c_str();
    }
+   else {
+      Self->prvBuffer.clear();
+      Self->String = nullptr;
+   }
 
    return ERR::Okay;
 }
@@ -768,6 +715,31 @@ static ERR GET_YOffset(extFont *Self, int *Value)
 
 //********************************************************************************************************************
 
+static const char * calc_line_layout(extFont *Self, std::string_view String, int *LineWidth, int *WrapIndex,
+   int *XCoord)
+{
+   if (String.empty()) {
+      *LineWidth = 0;
+      *WrapIndex = 0;
+   }
+   else {
+      int wrap = (Self->WrapEdge > 0) ? (Self->WrapEdge - Self->X) : 0;
+      string_size(Self, String, FSS_LINE, wrap, LineWidth, WrapIndex);
+   }
+
+   if ((Self->Align & (ALIGN::HORIZONTAL|ALIGN::RIGHT)) != ALIGN::NIL) {
+      if ((Self->Align & ALIGN::HORIZONTAL) != ALIGN::NIL) {
+         *XCoord = Self->X + ((Self->AlignWidth - *LineWidth)>>1);
+      }
+      else *XCoord = Self->X + Self->AlignWidth - *LineWidth;
+   }
+   else *XCoord = Self->X;
+
+   return String.data() + *WrapIndex;
+}
+
+//********************************************************************************************************************
+
 static ERR draw_bitmap_font(extFont *Self)
 {
    kt::Log log(__FUNCTION__);
@@ -775,7 +747,7 @@ static ERR draw_bitmap_font(extFont *Self)
    RGB8 rgb;
    static const uint8_t table[] = { 0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01 };
    uint8_t *xdata, *data;
-   int linewidth, offset, charclip, wrapindex, charlen;
+   int linewidth, offset, wrapindex, charlen;
    uint32_t unicode, ocolour;
    int16_t startx, xpos, ex, ey, sx, sy, xinc;
    int16_t bytewidth, alpha, charwidth;
@@ -784,12 +756,11 @@ static ERR draw_bitmap_font(extFont *Self)
 
    // Validate settings for fixed font type
 
-   if (!(bitmap = Self->Bitmap)) { log.warning("The Bitmap field is not set."); return ERR::FieldNotSet; }
-   if (!Self->String) return ERR::FieldNotSet;
-   if (!Self->String[0]) return ERR::Okay;
+   if (not (bitmap = Self->Bitmap)) return log.warning(ERR::FieldNotSet);
+   if (Self->prvBuffer.empty()) return ERR::Okay;
 
    ERR error = ERR::Okay;
-   STRING str = Self->String;
+   auto str = std::string_view(Self->prvBuffer);
    int dxcoord = Self->X;
    int dycoord = Self->Y;
 
@@ -803,17 +774,7 @@ static ERR draw_bitmap_font(extFont *Self)
       dycoord -= (Self->Ascent - Self->Leading); // - 1;
    }
 
-   string_size(Self, str, FSS_LINE, (Self->WrapEdge > 0) ? (Self->WrapEdge - Self->X) : 0, &linewidth, &wrapindex);
-   CSTRING wrapstr = str + wrapindex;
-
-   // If horizontal centering is required, calculate the correct horizontal starting coordinate.
-
-   if ((Self->Align & (ALIGN::HORIZONTAL|ALIGN::RIGHT)) != ALIGN::NIL) {
-      if ((Self->Align & ALIGN::HORIZONTAL) != ALIGN::NIL) {
-         dxcoord = Self->X + ((Self->AlignWidth - linewidth)>>1);
-      }
-      else dxcoord = Self->X + Self->AlignWidth - linewidth;
-   }
+   const char *wrapstr = calc_line_layout(Self, str, &linewidth, &wrapindex, &dxcoord);
 
    uint32_t colour  = bitmap->getColour(Self->Colour);
    uint32_t ucolour = bitmap->getColour(Self->Underline);
@@ -824,42 +785,37 @@ static ERR draw_bitmap_font(extFont *Self)
    }
    else ocolour = 0;
 
-   charclip = Self->WrapEdge - 8; //(Self->prvChar['.'].Advance<<2); //8
-
    if (acLock(bitmap) != ERR::Okay) return log.warning(ERR::Lock);
 
    int16_t dx = 0, dy = 0;
    startx = dxcoord;
    CHECK_LINE_CLIP(Self, dycoord, bitmap);
-   while (*str) {
-      if (*str IS '\n') { // Reset the font to a new line
+   while (not str.empty()) {
+      if (str.front() IS '\n') { // Reset the font to a new line
          if (Self->Underline.Alpha > 0) {
             gfx::DrawRectangle(bitmap, startx, dycoord + Self->Height + 1, dxcoord-startx, ((Self->Flags & FTF::HEAVY_LINE) != FTF::NIL) ? 2 : 1, ucolour, BAF::FILL);
          }
 
-         str++;
+         str.remove_prefix(1);
 
-         while ((*str) and (*str <= 0x20)) { if (*str IS '\n') dycoord += Self->LineSpacing; str++; }
-         string_size(Self, str, FSS_LINE, (Self->WrapEdge > 0) ? (Self->WrapEdge - Self->X) : 0, &linewidth, &wrapindex);
-         wrapstr = str + wrapindex;
-
-         if ((Self->Align & (ALIGN::HORIZONTAL|ALIGN::RIGHT)) != ALIGN::NIL) {
-            if ((Self->Align & ALIGN::HORIZONTAL) != ALIGN::NIL) dxcoord = Self->X + ((Self->AlignWidth - linewidth)>>1);
-            else dxcoord = Self->X + Self->AlignWidth - linewidth;
+         while ((not str.empty()) and (uint8_t(str.front()) <= 0x20)) {
+            if (str.front() IS '\n') dycoord += Self->LineSpacing;
+            str.remove_prefix(1);
          }
-         else dxcoord = Self->X;
 
+         wrapstr = calc_line_layout(Self, str, &linewidth, &wrapindex, &dxcoord);
          startx = dxcoord;
          dycoord += Self->LineSpacing;
          CHECK_LINE_CLIP(Self, dycoord, bitmap);
       }
-      else if (*str IS '\t') {
+      else if (str.front() IS '\t') {
          int16_t tabwidth = (Self->prvChar['o'].Advance * Self->GlyphSpacing) * Self->TabSize;
          if (tabwidth) dxcoord = Self->X + tab_advance<int>(dxcoord - Self->X, tabwidth);
-         str++;
+         str.remove_prefix(1);
       }
       else {
          charlen = getutf8(str, &unicode);
+         if (charlen <= 0) break;
 
          if ((unicode > 255) or (!Self->prvChar) or (!Self->prvChar[unicode].Advance)) {
             unicode = Self->prvDefaultChar;
@@ -870,22 +826,21 @@ static ERR draw_bitmap_font(extFont *Self)
 
          // Wordwrap management
 
-         if (str >= wrapstr) {
+         if (str.data() >= wrapstr) {
             dxcoord = Self->X;
             dycoord += Self->LineSpacing;
 
-            while ((*str) and (*str <= 0x20)) { if (*str IS '\n') dycoord += Self->LineSpacing; str++; }
-            string_size(Self, str, FSS_LINE, Self->WrapEdge - dxcoord, &linewidth, &wrapindex);
-            wrapstr = str + wrapindex;
-
-            if ((Self->Align & (ALIGN::HORIZONTAL|ALIGN::RIGHT)) != ALIGN::NIL) {
-               if ((Self->Align & ALIGN::HORIZONTAL) != ALIGN::NIL) dxcoord = Self->X + ((Self->AlignWidth - linewidth)>>1);
-               else dxcoord = Self->X + Self->AlignWidth - linewidth;
+            while ((not str.empty()) and (uint8_t(str.front()) <= 0x20)) {
+               if (str.front() IS '\n') dycoord += Self->LineSpacing;
+               str.remove_prefix(1);
             }
+            if (str.empty()) break;
+
+            wrapstr = calc_line_layout(Self, str, &linewidth, &wrapindex, &dxcoord);
             CHECK_LINE_CLIP(Self, dycoord, bitmap);
          }
 
-         str += charlen;
+         str.remove_prefix(size_t(charlen));
 
          if ((unicode > 0x20) and (draw_line)) {
             if (Self->Outline.Alpha > 0) { // Outline support
@@ -1065,7 +1020,7 @@ static ERR draw_bitmap_font(extFont *Self)
 
          dxcoord += charwidth * Self->GlyphSpacing;
       }
-   } // while (*str)
+   } // while (not str.empty())
 
    // Draw an underline for the current line if underlining is turned on
 
@@ -1086,14 +1041,6 @@ static ERR draw_bitmap_font(extFont *Self)
 //********************************************************************************************************************
 
 #include "class_font_def.c"
-
-static const FieldDef AlignFlags[] = {
-   { "Right",      ALIGN::RIGHT      }, { "Left",     ALIGN::LEFT },
-   { "Bottom",     ALIGN::BOTTOM     }, { "Top",      ALIGN::TOP },
-   { "Horizontal", ALIGN::HORIZONTAL }, { "Vertical", ALIGN::VERTICAL },
-   { "Center",     ALIGN::CENTER     }, { "Middle",   ALIGN::MIDDLE },
-   { nullptr, 0 }
-};
 
 static const FieldArray clFontFields[] = {
    { "Point",        FDF_DOUBLE|FDF_RW, GET_Point, SET_Point },
@@ -1117,7 +1064,7 @@ static const FieldArray clFontFields[] = {
    { "Height",       FDF_INT|FDF_RI },
    { "Leading",      FDF_INT|FDF_R },
    { "MaxHeight",    FDF_INT|FDF_RI },
-   { "Align",        FDF_INTFLAGS|FDF_RW, nullptr, nullptr, AlignFlags },
+   { "Align",        FDF_INTFLAGS|FDF_RW, nullptr, nullptr, clFontAlign },
    { "AlignWidth",   FDF_INT|FDF_RW },
    { "AlignHeight",  FDF_INT|FDF_RW },
    { "Ascent",       FDF_INT|FDF_R },

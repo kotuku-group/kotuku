@@ -166,7 +166,7 @@ static ERR  unload_doc(extDocument *, ULD = ULD::NIL);
 static bool valid_objectid(extDocument *, OBJECTID);
 static bool view_area(extDocument *, double, double, double, double);
 
-static ERR GET_WorkingPath(extDocument *, CSTRING *);
+static ERR GET_WorkingPath(extDocument *, std::string_view &);
 
 #ifdef DBG_STREAM
 static void print_stream(RSTREAM &);
@@ -259,7 +259,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    // Set the first entry of glFonts with the default font face.
 
    CSTRING resolved_face;
-   if (fnt::ResolveFamilyName(DEFAULT_FONTFACE.c_str(), &resolved_face) IS ERR::Okay) {
+   if (fnt::ResolveFamilyName(DEFAULT_FONTFACE, &resolved_face) IS ERR::Okay) {
       APTR new_handle = nullptr;
       if (vec::GetFontHandle(resolved_face, DEFAULT_FONTSTYLE, 400, DEFAULT_FONTSIZE, &new_handle) IS ERR::Okay) {
          glFonts.emplace_back(new_handle, resolved_face, DEFAULT_FONTSTYLE, DEFAULT_FONTSIZE);

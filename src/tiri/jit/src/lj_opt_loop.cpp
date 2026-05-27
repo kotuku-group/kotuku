@@ -75,12 +75,16 @@
 #define lj_opt_loop_c
 #define LUA_CORE
 
+#include <kotuku/main.h>
+
 #include "lj_obj.h"
 #include "lj_err.h"
 #include "lj_buf.h"
+#include "lj_frame.h"
 #include "lj_ir.h"
 #include "lj_jit.h"
 #include "lj_iropt.h"
+#include "lj_state.h"
 #include "lj_trace.h"
 #include "lj_snap.h"
 #include "lj_vm.h"
@@ -409,19 +413,22 @@ static TValue* cploop_opt(lua_State* L, lua_CFunction dummy, void* ud)
 // Loop optimization.
 int lj_opt_loop(jit_State* J)
 {
+   lua_State* L = J->L;
    IRRef nins = J->cur.nins;
    SnapNo nsnap = J->cur.nsnap;
    MSize nsnapmap = J->cur.nsnapmap;
    LoopState lps;
+   ptrdiff_t base_before = savestack(L, L->base);
+   ptrdiff_t top_before = savestack(L, L->top);
+   int32_t cframe_nres_before = L->cframe ? cframe_nres(cframe_raw(L->cframe)) : 0;
    int errcode;
    lps.J = J;
    lps.subst = nullptr;
    lps.sizesubst = 0;
-   errcode = lj_vm_cpcall(J->L, nullptr, &lps, cploop_opt);
+   errcode = lj_vm_cpcall(L, nullptr, &lps, cploop_opt);
    lj_mem_freevec(J2G(J), lps.subst, lps.sizesubst, IRRef1);
    if (LJ_UNLIKELY(errcode)) {
-      lua_State* L = J->L;
-      if (errcode == LUA_ERRRUN and tvisnumber(L->top - 1)) {  // Trace error?
+      if (errcode IS LUA_ERRRUN and tvisnumber(L->top - 1)) {  // Trace error?
          int32_t e = numberVint(L->top - 1);
          switch ((TraceError)e) {
          case LJ_TRERR_TYPEINS:  //  Type instability.
@@ -429,7 +436,28 @@ int lj_opt_loop(jit_State* J)
             // Unrolling via recording fixes many cases, e.g. a flipped boolean.
             if (--J->instunroll < 0)  //  But do not unroll forever.
                break;
-            L->top--;  //  Remove error object.
+            {
+               TValue* expected_base = restorestack(L, base_before);
+               TValue* expected_top = restorestack(L, top_before);
+#ifdef LUA_USE_ASSERT
+               if (not (L->base IS expected_base)) {
+                  kt::Log(__FUNCTION__).msg(
+                     "Recoverable loop optimisation trace error changed stack base.  Error: %d, Base: %p -> %p",
+                     e, expected_base, L->base);
+                  lj_assertJ(L->base IS expected_base, "recoverable loop optimisation trace error changed stack base");
+               }
+#endif
+               L->top--;  //  Remove error object.
+               if (not (L->top IS expected_top)) {
+#ifdef LUA_USE_ASSERT
+                  kt::Log(__FUNCTION__).msg(
+                     "Recoverable loop optimisation trace error changed stack top.  Error: %d, Top: %p -> %p",
+                     e, expected_top, L->top);
+#endif
+                  L->top = expected_top;
+               }
+               if (L->cframe) cframe_nres(cframe_raw(L->cframe)) = cframe_nres_before;
+            }
             loop_undo(J, nins, nsnap, nsnapmap);
             return 1;  //  Loop optimization failed, continue recording.
          default:

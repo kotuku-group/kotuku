@@ -39,25 +39,25 @@
 <p>Setting the Operator will determine the algorithm that is used for compositing.  The default is <code>OVER</code>.</p>
 <table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th class="col-md-1">OP::ARITHMETIC</th><td>The SVG 'arithmetic' blending algorithm.</td></tr>
 <tr><th class="col-md-1">OP::ATOP</th><td>The Porter-Duff 'atop' operator; the mix alpha channel has priority and the input channel does not occlude.</td></tr>
-<tr><th class="col-md-1">OP::BURN</th><td></td></tr>
-<tr><th class="col-md-1">OP::CONTRAST</th><td></td></tr>
+<tr><th class="col-md-1">OP::BURN</th><td>Gives a darker result than <code>MULTIPLY</code> by increasing the contrast between the input and mix colours.</td></tr>
+<tr><th class="col-md-1">OP::CONTRAST</th><td>Adjust the mix contrast using the input colour values as the contrast strength.</td></tr>
 <tr><th class="col-md-1">OP::DARKEN</th><td>Use the darker colour components of the mix and input values.</td></tr>
 <tr><th class="col-md-1">OP::DIFFERENCE</th><td>Output the difference between the input and mix colours.</td></tr>
 <tr><th class="col-md-1">OP::DODGE</th><td>Gives a brighter result than <code>SCREEN</code> by decreasing the contrast between the input and mix colours.</td></tr>
 <tr><th class="col-md-1">OP::EXCLUSION</th><td>Produce the difference between the mix and input values around a reference point of mid-grey.</td></tr>
-<tr><th class="col-md-1">OP::HARD_LIGHT</th><td></td></tr>
+<tr><th class="col-md-1">OP::HARD_LIGHT</th><td>Apply <code>MULTIPLY</code> or <code>SCREEN</code> according to the input colour, producing a high-contrast result.</td></tr>
 <tr><th class="col-md-1">OP::IN</th><td>The Porter-Duff 'in' operator; the input alpha channel has priority and the mix channel is secondary.</td></tr>
-<tr><th class="col-md-1">OP::INVERT</th><td></td></tr>
-<tr><th class="col-md-1">OP::INVERT_RGB</th><td></td></tr>
+<tr><th class="col-md-1">OP::INVERT</th><td>Invert the mix colour components using the input alpha channel as the strength.</td></tr>
+<tr><th class="col-md-1">OP::INVERT_RGB</th><td>Invert the mix colour components using the input colour channels as the per-channel strength.</td></tr>
 <tr><th class="col-md-1">OP::LIGHTEN</th><td>Use the lighter colour components of the mix and input values.</td></tr>
 <tr><th class="col-md-1">OP::MINUS</th><td>The input colour value is subtracted from the mix.</td></tr>
-<tr><th class="col-md-1">OP::MULTIPLY</th><td></td></tr>
+<tr><th class="col-md-1">OP::MULTIPLY</th><td>Multiplies the input and mix colour components, producing a darker result unless one source is white.</td></tr>
 <tr><th class="col-md-1">OP::OUT</th><td>The Porter-Duff 'out' operator; the mix alpha channel is inversed with the input channel.</td></tr>
 <tr><th class="col-md-1">OP::OVER</th><td>The Porter-Duff 'over' operator, this is the default operation for standard alpha blending.</td></tr>
 <tr><th class="col-md-1">OP::OVERLAY</th><td>Combines the multiply and screen blend modes, with the mix determining tonal strength.</td></tr>
 <tr><th class="col-md-1">OP::PLUS</th><td>Add the input and mix colour values together.</td></tr>
 <tr><th class="col-md-1">OP::SCREEN</th><td>Produces a result brighter than the input.</td></tr>
-<tr><th class="col-md-1">OP::SOFT_LIGHT</th><td></td></tr>
+<tr><th class="col-md-1">OP::SOFT_LIGHT</th><td>Apply a softer variant of <code>HARD_LIGHT</code>, subtly darkening or lightening the mix from the input colour.</td></tr>
 <tr><th class="col-md-1">OP::XOR</th><td>The Porter-Duff 'xor' operator; blend as normal but occlusion occurs when input and mix alpha channels interact.</td></tr>
 </tbody></table>
       
@@ -72,25 +72,25 @@
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;"></div></div></td></tr>
 </tbody></table><div class="footer copyright text-right">CompositeFX class documentation © Paul Manias © 2010-2026</div></div><div class="docs-content" style="display:none;" id="OP"><h1>OP Type</h1><p class="lead">Operators for CompositionFX.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>OP::ARITHMETIC</th><td>The SVG 'arithmetic' blending algorithm.</td></tr>
 <tr><th>OP::ATOP</th><td>The Porter-Duff 'atop' operator; the mix alpha channel has priority and the input channel does not occlude.</td></tr>
-<tr><th>OP::BURN</th><td></td></tr>
-<tr><th>OP::CONTRAST</th><td></td></tr>
+<tr><th>OP::BURN</th><td>Gives a darker result than <code>MULTIPLY</code> by increasing the contrast between the input and mix colours.</td></tr>
+<tr><th>OP::CONTRAST</th><td>Adjust the mix contrast using the input colour values as the contrast strength.</td></tr>
 <tr><th>OP::DARKEN</th><td>Use the darker colour components of the mix and input values.</td></tr>
 <tr><th>OP::DIFFERENCE</th><td>Output the difference between the input and mix colours.</td></tr>
 <tr><th>OP::DODGE</th><td>Gives a brighter result than <code>SCREEN</code> by decreasing the contrast between the input and mix colours.</td></tr>
 <tr><th>OP::EXCLUSION</th><td>Produce the difference between the mix and input values around a reference point of mid-grey.</td></tr>
-<tr><th>OP::HARD_LIGHT</th><td></td></tr>
+<tr><th>OP::HARD_LIGHT</th><td>Apply <code>MULTIPLY</code> or <code>SCREEN</code> according to the input colour, producing a high-contrast result.</td></tr>
 <tr><th>OP::IN</th><td>The Porter-Duff 'in' operator; the input alpha channel has priority and the mix channel is secondary.</td></tr>
-<tr><th>OP::INVERT</th><td></td></tr>
-<tr><th>OP::INVERT_RGB</th><td></td></tr>
+<tr><th>OP::INVERT</th><td>Invert the mix colour components using the input alpha channel as the strength.</td></tr>
+<tr><th>OP::INVERT_RGB</th><td>Invert the mix colour components using the input colour channels as the per-channel strength.</td></tr>
 <tr><th>OP::LIGHTEN</th><td>Use the lighter colour components of the mix and input values.</td></tr>
 <tr><th>OP::MINUS</th><td>The input colour value is subtracted from the mix.</td></tr>
-<tr><th>OP::MULTIPLY</th><td></td></tr>
+<tr><th>OP::MULTIPLY</th><td>Multiplies the input and mix colour components, producing a darker result unless one source is white.</td></tr>
 <tr><th>OP::OUT</th><td>The Porter-Duff 'out' operator; the mix alpha channel is inversed with the input channel.</td></tr>
 <tr><th>OP::OVER</th><td>The Porter-Duff 'over' operator, this is the default operation for standard alpha blending.</td></tr>
 <tr><th>OP::OVERLAY</th><td>Combines the multiply and screen blend modes, with the mix determining tonal strength.</td></tr>
 <tr><th>OP::PLUS</th><td>Add the input and mix colour values together.</td></tr>
 <tr><th>OP::SCREEN</th><td>Produces a result brighter than the input.</td></tr>
-<tr><th>OP::SOFT_LIGHT</th><td></td></tr>
+<tr><th>OP::SOFT_LIGHT</th><td>Apply a softer variant of <code>HARD_LIGHT</code>, subtly darkening or lightening the mix from the input colour.</td></tr>
 <tr><th>OP::XOR</th><td>The Porter-Duff 'xor' operator; blend as normal but occlusion occurs when input and mix alpha channels interact.</td></tr>
 </tbody></table><div class="footer copyright text-right">CompositeFX module documentation © Paul Manias © 2010-2026</div></div>
 </div></div></div><script type="text/javascript" src="../../js/bootstrap.bundle.min.js"></script><script type="text/javascript" src="../../js/base.js"></script><script type="text/javascript">

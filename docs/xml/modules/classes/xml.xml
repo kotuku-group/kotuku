@@ -646,7 +646,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>DocType</name>
       <comment>Root element name from DOCTYPE declaration</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>STRING</type>
+      <type>std::string</type>
     </field>
 
     <field>
@@ -683,7 +683,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>Path</name>
       <comment>Set this field if the XML document originates from a file source.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>STRING</type>
+      <type>std::string</type>
       <description>
 <p>XML documents can be loaded from the file system by specifying a file path in this field.  If set post-initialisation, all currently loaded data will be cleared and the file will be parsed automatically.</p>
 <p>The XML class supports <function module="Core">LoadFile</function>, so an XML file can be pre-cached by the program if it is frequently used during a program's life cycle.</p>
@@ -695,7 +695,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>PublicID</name>
       <comment>Public identifier for external DTD</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>STRING</type>
+      <type>std::string</type>
     </field>
 
     <field>
@@ -736,7 +736,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <name>SystemID</name>
       <comment>System identifier for external DTD</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>STRING</type>
+      <type>std::string</type>
     </field>
 
     <field>

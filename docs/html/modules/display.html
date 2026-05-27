@@ -106,7 +106,7 @@
 <tr><th class="col-md-1">InvalidState</th><td>The <code>LINEAR</code> flag was used when at least one bitmap is using a linear colourspace.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>The <code>Dest</code> parameter was not specified.</td></tr>
 </tbody></table><div class="footer copyright text-right">Display module documentation © Paul Manias © 2003-2026</div></div>
-<div class="docs-content" style="display:none;" id="CopyRawBitmap"><h2>CopyRawBitmap()</h2><p class="lead">Copies graphics data from an arbitrary surface to a bitmap.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR gfx::CopyRawBitmap(struct BitmapSurfaceV2 * Surface, objBitmap * Dest, CSRF Flags, INT X, INT Y, INT Width, INT Height, INT XDest, INT YDest)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Surface</td><td>Description of the surface source.</td></tr>
+<div class="docs-content" style="display:none;" id="CopyRawBitmap"><h2>CopyRawBitmap()</h2><p class="lead">Copies graphics data from an arbitrary surface to a bitmap.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR gfx::CopyRawBitmap(struct BitmapSurface * Surface, objBitmap * Dest, CSRF Flags, INT X, INT Y, INT Width, INT Height, INT XDest, INT YDest)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Surface</td><td>Description of the surface source.</td></tr>
 <tr><td>Dest</td><td>Destination bitmap.</td></tr>
 <tr><td><a onclick="showPage('CSRF');">Flags</a></td><td>Optional flags.</td></tr>
 <tr><td>X</td><td>Horizontal source coordinate.</td></tr>
@@ -209,7 +209,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">AccessObject</th><td>Failed to access the SystemPointer object.</td></tr>
 </tbody></table><div class="footer copyright text-right">Display module documentation © Paul Manias © 2003-2026</div></div>
-<div class="docs-content" style="display:none;" id="GetDisplayInfo"><h2>GetDisplayInfo()</h2><p class="lead">Retrieves display information.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR gfx::GetDisplayInfo(OBJECTID Display, struct DisplayInfoV3 ** Info)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Display</td><td>Object ID of the display to be analysed.</td></tr>
+<div class="docs-content" style="display:none;" id="GetDisplayInfo"><h2>GetDisplayInfo()</h2><p class="lead">Retrieves display information.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR gfx::GetDisplayInfo(OBJECTID Display, struct DisplayInfo ** Info)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Display</td><td>Object ID of the display to be analysed.</td></tr>
 <tr><td>Info</td><td>This reference will receive a pointer to a <a data-toggle="tooltip" title="" href="?page=struct-DisplayInfo">DisplayInfo</a> structure.</td></tr>
 </tbody></table></div></div>
 <p>The GetDisplayInfo() function returns information about a display, which includes information such as its size and bit depth.  If the system is running on a hosted display (e.g. Windows or X11) then GetDisplayInfo() can also be used to retrieve information about the default monitor by using a Display of zero.</p>
@@ -263,7 +263,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
 <tr><th class="col-md-1">AccessMemory</th><td>Access to a memory block was denied</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Display module documentation © Paul Manias © 2003-2026</div></div>
-<div class="docs-content" style="display:none;" id="GetSurfaceInfo"><h2>GetSurfaceInfo()</h2><p class="lead">Retrieves display information for any surface object without having to access it directly.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR gfx::GetSurfaceInfo(OBJECTID Surface, struct SurfaceInfoV2 ** Info)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Surface</td><td>The unique ID of a <a href="classes/surface.html">Surface</a> to query.  If zero, the root surface is returned.</td></tr>
+<div class="docs-content" style="display:none;" id="GetSurfaceInfo"><h2>GetSurfaceInfo()</h2><p class="lead">Retrieves display information for any surface object, whilst avoiding direct access.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR gfx::GetSurfaceInfo(OBJECTID Surface, struct SurfaceInfo ** Info)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Surface</td><td>The unique ID of a <a href="classes/surface.html">Surface</a> to query.  If zero, the root surface is returned.</td></tr>
 <tr><td>Info</td><td>This parameter will receive a <a data-toggle="tooltip" title="" href="?page=struct-SurfaceInfo">SurfaceInfo</a> pointer that describes the surface object.</td></tr>
 </tbody></table></div></div>
 <p>GetSurfaceInfo() is used for quickly retrieving basic information from surfaces, allowing the client to bypass the <a href="core.html?page=AccessObject">AccessObject()</a> function.  The resulting structure values are good only up until the next call to this function, at which point those values will be overwritten.</p>
@@ -331,19 +331,15 @@ Alpha  = CFUnpackAlpha(Format,Colour)
 <p>ScaleToDPI() is a convenience function for scaling a value to the display's current DPI setting.  The provided value must be relative to the system wide default of 96 DPI.  If the display's DPI is not equal to 96, the value will be scaled to match.  For instance, an 8 point font at 96 DPI would be scaled to 20 points if the display was 240 DPI.</p>
 <p>If the DPI of the display is unknown, the value will be returned unscaled.</p>
     <h3>Result</h3><p>The scaled value is returned.</p><div class="footer copyright text-right">Display module documentation © Paul Manias © 2003-2026</div></div>
-<div class="docs-content" style="display:none;" id="SetClipRegion"><h2>SetClipRegion()</h2><p class="lead">Sets a clipping region for a bitmap object.</p><div class="card card-info mb-3"><div class="card-header"><samp>void gfx::SetClipRegion(objBitmap * Bitmap, INT Number, INT Left, INT Top, INT Right, INT Bottom, INT Terminate)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Bitmap</td><td>The target bitmap.</td></tr>
-<tr><td>Number</td><td>The number of the clip region to set.</td></tr>
+<div class="docs-content" style="display:none;" id="SetClipRegion"><h2>SetClipRegion()</h2><p class="lead">Sets a clipping region for a bitmap object.</p><div class="card card-info mb-3"><div class="card-header"><samp>void gfx::SetClipRegion(objBitmap * Bitmap, INT Left, INT Top, INT Right, INT Bottom)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Bitmap</td><td>The target bitmap.</td></tr>
 <tr><td>Left</td><td>The horizontal start of the clip region.</td></tr>
 <tr><td>Top</td><td>The vertical start of the clip region.</td></tr>
 <tr><td>Right</td><td>The right-most edge of the clip region.</td></tr>
 <tr><td>Bottom</td><td>The bottom-most edge of the clip region.</td></tr>
-<tr><td>Terminate</td><td>Set to <code>true</code> if this is the last clip region in the list, otherwise <code>false</code>.</td></tr>
 </tbody></table></div></div>
-<p>The SetClipRegion() method is used to manage the clipping regions assigned to a bitmap object.  Each new bitmap that is created has at least one clip region assigned to it, but by using SetClipRegion() you can also define multiple clipping areas, which is useful for complex graphics management.</p>
-<p>Each clipping region that you set is assigned a Number, starting from zero which is the default.  Each time that you set a new clip region you must specify the number of the region that you wish to set.  If you attempt to 'skip' regions - for instance, if you set regions 0, 1, 2 and 3, then skip 4 and set 5, the routine will set region 4 instead. If you have specified multiple clip regions and want to lower the count or reset the list, set the number of the last region that you want in your list and set the <code>Terminate</code> parameter to <code>true</code> to kill the regions specified beyond it.</p>
-<p>The <code>ClipLeft</code>, <code>ClipTop</code>, <code>ClipRight</code> and <code>ClipBottom</code> fields in the target <code>Bitmap</code> will be updated to reflect the overall area that is covered by the clipping regions that have been set.</p>
+<p>The SetClipRegion() method is used to manage the clipping region assigned to a bitmap object.  The <code>ClipLeft</code>, <code>ClipTop</code>, <code>ClipRight</code> and <code>ClipBottom</code> fields in the target <code>Bitmap</code> will be updated to reflect the area covered by the provided parameter values.</p>
     <div class="footer copyright text-right">Display module documentation © Paul Manias © 2003-2026</div></div>
-<div class="docs-content" style="display:none;" id="SetCursor"><h2>SetCursor()</h2><p class="lead">Sets the cursor image and can anchor the pointer to any surface.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR gfx::SetCursor(OBJECTID Surface, CRF Flags, PTC Cursor, CSTRING Name, OBJECTID Owner)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Surface</td><td>Refers to the surface object that the pointer should anchor itself to, if the <code>RESTRICT</code> flag is used.  Otherwise, this parameter can be set to a surface that the new cursor image should be limited to.  The object referred to here must be publicly accessible to all tasks.</td></tr>
+<div class="docs-content" style="display:none;" id="SetCursor"><h2>SetCursor()</h2><p class="lead">Sets the cursor image and can anchor the pointer to any surface.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR gfx::SetCursor(OBJECTID Surface, CRF Flags, PTC Cursor, const std::string_view &amp; Name, OBJECTID Owner)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Surface</td><td>Refers to the surface object that the pointer should anchor itself to, if the <code>RESTRICT</code> flag is used.  Otherwise, this parameter can be set to a surface that the new cursor image should be limited to.  The object referred to here must be publicly accessible to all tasks.</td></tr>
 <tr><td><a onclick="showPage('CRF');">Flags</a></td><td>Optional flags that affect the cursor.</td></tr>
 <tr><td><a onclick="showPage('PTC');">Cursor</a></td><td>The ID of the cursor image that is to be set.</td></tr>
 <tr><td>Name</td><td>The name of the cursor image that is to be set (if <code>Cursor</code> is zero).</td></tr>
@@ -418,14 +414,14 @@ Alpha  = CFUnpackAlpha(Format,Colour)
 <p>A task can switch off the current modal surface by calling this function with a <code>Surface</code> parameter of zero.</p>
 <p>If a surface is modal at the time that this function is called, it is not possible to switch to a new modal surface until the current modal state is dropped.</p>
     <h3>Result</h3><p>The object ID of the previous modal surface is returned (zero if there was no currently modal surface).</p><div class="footer copyright text-right">Display module documentation © Paul Manias © 2003-2026</div></div>
-<div class="docs-content" style="display:none;" id="StartCursorDrag"><h2>StartCursorDrag()</h2><p class="lead">Attaches an item to the cursor for the purpose of drag and drop.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR gfx::StartCursorDrag(OBJECTID Source, INT Item, CSTRING Datatypes, OBJECTID Surface)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Source</td><td>Refers to an object that is managing the source data.</td></tr>
+<div class="docs-content" style="display:none;" id="StartCursorDrag"><h2>StartCursorDrag()</h2><p class="lead">Attaches an item to the cursor for the purpose of drag and drop.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR gfx::StartCursorDrag(OBJECTID Source, INT Item, const std::string_view &amp; Datatypes, OBJECTID Surface)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Source</td><td>Refers to an object that is managing the source data.</td></tr>
 <tr><td>Item</td><td>A custom number that represents the item being dragged from the source.</td></tr>
-<tr><td>Datatypes</td><td>A null terminated byte array that lists the datatypes supported by the source item, in order of conversion preference.</td></tr>
+<tr><td>Datatypes</td><td>A character array that lists the datatypes supported by the source item, in order of conversion preference.</td></tr>
 <tr><td>Surface</td><td>A 32-bit composite surface that represents the item being dragged.</td></tr>
 </tbody></table></div></div>
 <p>This function starts a drag and drop operation with the mouse cursor.  The user must be holding the primary mouse button to initiate the drag and drop operation.</p>
 <p>A <code>Source</code> object ID is required that indicates the origin of the item being dragged and will be used to retrieve the data on completion of the drag and drop operation. An <code>Item</code> number, which is optional, identifies the item being dragged from the <code>Source</code> object.</p>
-<p>The type of data represented by the source item and all other supportable data types are specified in the <code>Datatypes</code> parameter as a null terminated array.  The array is arranged in order of preference, starting with the item's native data type.  Acceptable data type values are listed in the documentation for the DataFeed action.</p>
+<p>The type of data represented by the source item and all other supportable data types are specified in the <code>Datatypes</code> parameter as a character array.  The array is arranged in order of preference, starting with the item's native data type.  Acceptable data type values are listed in the documentation for the DataFeed action.</p>
 <p>The <code>Surface</code> parameter allows for a composite surface to be dragged by the mouse cursor as a graphical representation of the source <code>Item</code>.  It is recommended that the graphic be 32x32 pixels in size and no bigger than 64x64 pixels.  The <code>Surface</code> will be hidden on completion of the drag and drop operation.</p>
 <p>If the call to StartCursorDrag() is successful, the mouse cursor will operate in drag and drop mode.  The UserMovement and UserClickRelease actions normally reported from the SystemPointer will now include the <code>JD_DRAGITEM</code> flag in the <code>ButtonFlags</code> parameter.  When the user releases the primary mouse button, the drag and drop operation will stop and the DragDrop action will be passed to the surface immediately underneath the mouse cursor.  Objects that are monitoring for the DragDrop action on that surface can then contact the Source object with a DataFeed DragDropRequest.  The resulting data is then passed to the requesting object with a DragDropResult on the DataFeed.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
@@ -794,7 +790,8 @@ Alpha  = CFUnpackAlpha(Format,Colour)
 </tbody></table><div class="footer copyright text-right">Display module documentation © Paul Manias © 2003-2026</div></div>
 <div class="docs-content" style="display:none;" id="RT"><h1>RT Type</h1><p class="lead"></p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>RT::ROOT</th><td>Can be used by window surfaces to identify themselves as a root layer.</td></tr>
 </tbody></table><div class="footer copyright text-right">Display module documentation © Paul Manias © 2003-2026</div></div>
-<div class="docs-content" style="display:none;" id="SCR"><h1>SCR Type</h1><p class="lead">Display flags.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>SCR::ALPHA_BLEND</th><td>Enables alpha channel blending (if display is hosted and 32-bit).</td></tr>
+<div class="docs-content" style="display:none;" id="SCR"><h1>SCR Type</h1><p class="lead">Display flags.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>SCR::ACTIVE</th><td>The display is participating in the desktop view - this does not guarantee it is visible.</td></tr>
+<tr><th>SCR::ALPHA_BLEND</th><td>Enables alpha channel blending (if display is hosted and 32-bit).</td></tr>
 <tr><th>SCR::AUTO_SAVE</th><td>Saves settings to the global display state when the object is freed.</td></tr>
 <tr><th>SCR::BIT_6</th><td>Display is limited to 6-bit output per colour gun.</td></tr>
 <tr><th>SCR::BORDERLESS</th><td>If display is hosted, create it as a popup / borderless window.</td></tr>
@@ -808,10 +805,14 @@ Alpha  = CFUnpackAlpha(Format,Colour)
 <tr><th>SCR::HOSTED</th><td>The display is a desktop hosted window.</td></tr>
 <tr><th>SCR::MAXIMISE</th><td>Special win32 flag.</td></tr>
 <tr><th>SCR::MAXSIZE</th><td>For <a href="display.html?page=GetDisplayInfo">GetDisplayInfo()</a> only, indicates that the width and height values indicate the display's maximum size.</td></tr>
+<tr><th>SCR::MIRRORED</th><td>The display is a mirrored copy.</td></tr>
 <tr><th>SCR::NO_ACCELERATION</th><td>2D graphics card acceleration is not available.</td></tr>
 <tr><th>SCR::POWERSAVE</th><td>Power saving is active (read-only).</td></tr>
+<tr><th>SCR::PRIMARY</th><td>The display is flagged as being the primary.</td></tr>
 <tr><th>SCR::READ_ONLY</th><td>Synonym for <code>MAXIMISE | CUSTOM_WINDOW | FLIPPABLE | GTF_ENABLED | DPMS_ENABLED | POWERSAVE | HOSTED | MAXSIZE | REFRESH | BIT_6 | VISIBLE | NO_ACCELERATION</code></td></tr>
 <tr><th>SCR::REFRESH</th><td>For <a href="display.html?page=GetDisplayInfo">GetDisplayInfo()</a> only, used to indicate that a display change has recently occurred and cache refresh is required.</td></tr>
+<tr><th>SCR::ROTATED</th><td>True if the display is rotated.</td></tr>
+<tr><th>SCR::VIRTUAL</th><td>The display is virtual or not visible (device not switched on).</td></tr>
 <tr><th>SCR::VISIBLE</th><td>Set if the screen is on display.</td></tr>
 </tbody></table><div class="footer copyright text-right">Display module documentation © Paul Manias © 2003-2026</div></div>
 <div class="docs-content" style="display:none;" id="SWIN"><h1>SWIN Type</h1><p class="lead">Options for the Surface WindowType field.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>SWIN::HOST</th><td>Default to the standard hosted window mode with full titlebar, borders and taskbar representation.</td></tr>
@@ -854,21 +855,33 @@ Alpha  = CFUnpackAlpha(Format,Colour)
 <tr><th>Flags</th><td><span class="text-nowrap">INT</span></td><td>Currently unused</td></tr>
 <tr><th>BitsPerPixel</th><td><span class="text-nowrap">INT16</span></td><td>Preferred bits-per-pixel setting for custom cursors</td></tr>
 </tbody></table><div class="footer copyright text-right">Display module documentation © Paul Manias © 2003-2026</div></div>
-<div class="docs-content" style="display:none;" id="struct-DisplayInfo"><h1>DisplayInfo Structure</h1><p class="lead"></p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Display</th><td><span class="text-nowrap">OBJECTID</span></td><td>Object ID related to the display</td></tr>
-<tr><th>Flags</th><td><span class="text-nowrap">SCR</span></td><td>Display flags</td></tr>
-<tr><th>Width</th><td><span class="text-nowrap">INT16</span></td><td>Pixel width of the display</td></tr>
-<tr><th>Height</th><td><span class="text-nowrap">INT16</span></td><td>Pixel height of the display</td></tr>
-<tr><th>BitsPerPixel</th><td><span class="text-nowrap">INT16</span></td><td>Bits per pixel</td></tr>
-<tr><th>BytesPerPixel</th><td><span class="text-nowrap">INT16</span></td><td>Bytes per pixel</td></tr>
-<tr><th>AccelFlags</th><td><span class="text-nowrap">ACF</span></td><td>Flags describing supported hardware features.</td></tr>
-<tr><th>AmtColours</th><td><span class="text-nowrap">INT</span></td><td>Total number of supported colours.</td></tr>
-<tr><th>PixelFormat</th><td><span class="text-nowrap">struct PixelFormat</span></td><td>The colour format to use for each pixel.</td></tr>
+<div class="docs-content" style="display:none;" id="struct-DisplayInfo"><h1>DisplayInfo Structure</h1><p class="lead"></p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>PixelFormat</th><td><span class="text-nowrap">struct PixelFormat</span></td><td>The colour format to use for each pixel.</td></tr>
 <tr><th>MinRefresh</th><td><span class="text-nowrap">FLOAT</span></td><td>Minimum refresh rate</td></tr>
 <tr><th>MaxRefresh</th><td><span class="text-nowrap">FLOAT</span></td><td>Maximum refresh rate</td></tr>
 <tr><th>RefreshRate</th><td><span class="text-nowrap">FLOAT</span></td><td>Recommended refresh rate</td></tr>
+<tr><th>Display</th><td><span class="text-nowrap">OBJECTID</span></td><td>Object ID related to the display</td></tr>
+<tr><th>AccelFlags</th><td><span class="text-nowrap">ACF</span></td><td>Flags describing supported hardware features.</td></tr>
+<tr><th>Flags</th><td><span class="text-nowrap">SCR</span></td><td>Display flags</td></tr>
+<tr><th>AmtColours</th><td><span class="text-nowrap">INT</span></td><td>Total number of supported colours.</td></tr>
 <tr><th>Index</th><td><span class="text-nowrap">INT</span></td><td>Display mode ID (internal)</td></tr>
 <tr><th>HDensity</th><td><span class="text-nowrap">INT</span></td><td>Horizontal pixel density per inch.</td></tr>
 <tr><th>VDensity</th><td><span class="text-nowrap">INT</span></td><td>Vertical pixel density per inch.</td></tr>
+<tr><th>HostedX</th><td><span class="text-nowrap">INT</span></td><td>Horizontal display position in virtual desktop coordinates</td></tr>
+<tr><th>HostedY</th><td><span class="text-nowrap">INT</span></td><td>Vertical display position in virtual desktop coordinates</td></tr>
+<tr><th>MonitorX</th><td><span class="text-nowrap">INT</span></td><td>Horizontal position of the monitor, relative to the primary monitor</td></tr>
+<tr><th>MonitorY</th><td><span class="text-nowrap">INT</span></td><td>Vertical position of the monitor, relative to the primary monitor</td></tr>
+<tr><th>MonitorWidth</th><td><span class="text-nowrap">INT</span></td><td>Pixel width of the monitor</td></tr>
+<tr><th>MonitorHeight</th><td><span class="text-nowrap">INT</span></td><td>Pixel height of the monitor</td></tr>
+<tr><th>VirtualX</th><td><span class="text-nowrap">INT</span></td><td>Horizontal position of the complete desktop spanning all monitors</td></tr>
+<tr><th>VirtualY</th><td><span class="text-nowrap">INT</span></td><td>Vertical position of the complete desktop spanning all monitors</td></tr>
+<tr><th>VirtualWidth</th><td><span class="text-nowrap">INT</span></td><td>Width of the complete desktop spanning all monitors</td></tr>
+<tr><th>VirtualHeight</th><td><span class="text-nowrap">INT</span></td><td>Height of the complete desktop spanning all monitors</td></tr>
+<tr><th>PhysicalWidth</th><td><span class="text-nowrap">INT</span></td><td>Width in millimeters, 0 if unknown</td></tr>
+<tr><th>PhysicalHeight</th><td><span class="text-nowrap">INT</span></td><td>Height in millimeters, 0 if unknown</td></tr>
+<tr><th>Width</th><td><span class="text-nowrap">INT16</span></td><td>Pixel width of the display bitmap</td></tr>
+<tr><th>Height</th><td><span class="text-nowrap">INT16</span></td><td>Pixel height of the display bitmap</td></tr>
+<tr><th>BitsPerPixel</th><td><span class="text-nowrap">INT16</span></td><td>Bits per pixel</td></tr>
+<tr><th>BytesPerPixel</th><td><span class="text-nowrap">INT16</span></td><td>Bytes per pixel</td></tr>
 </tbody></table><div class="footer copyright text-right">Display module documentation © Paul Manias © 2003-2026</div></div>
 <div class="docs-content" style="display:none;" id="struct-InputEvent"><h1>InputEvent Structure</h1><p class="lead"></p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Next</th><td><span class="text-nowrap">const struct InputEvent *</span></td><td>Next event in the chain</td></tr>
 <tr><th>Value</th><td><span class="text-nowrap">DOUBLE</span></td><td>The value associated with the Type</td></tr>
@@ -896,6 +909,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
 <tr><th>GreenPos</th><td><span class="text-nowrap">UINT8</span></td><td>Left shift/positional value for green</td></tr>
 <tr><th>BluePos</th><td><span class="text-nowrap">UINT8</span></td><td>Left shift/positional value for blue</td></tr>
 <tr><th>AlphaPos</th><td><span class="text-nowrap">UINT8</span></td><td>Left shift/positional value for alpha</td></tr>
+<tr><th>Pad</th><td><span class="text-nowrap">UINT</span></td><td>Padding</td></tr>
 </tbody></table><div class="footer copyright text-right">Display module documentation © Paul Manias © 2003-2026</div></div>
 <div class="docs-content" style="display:none;" id="struct-SurfaceCoords"><h1>SurfaceCoords Structure</h1><p class="lead"></p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>X</th><td><span class="text-nowrap">INT</span></td><td>Horizontal coordinate</td></tr>
 <tr><th>Y</th><td><span class="text-nowrap">INT</span></td><td>Vertical coordinate</td></tr>

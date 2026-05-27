@@ -5,8 +5,8 @@ extern ERR GetList(struct FontList ** Result);
 extern int StringWidth(objFont * Font, const std::string_view & String, int Chars);
 extern int CharWidth(objFont * Font, uint32_t Char);
 extern ERR RefreshFonts();
-extern ERR SelectFont(CSTRING Name, CSTRING Style, CSTRING * Path, FMETA * Meta);
-extern ERR ResolveFamilyName(CSTRING String, CSTRING * Result);
+extern ERR SelectFont(const std::string_view & Name, const std::string_view & Style, CSTRING * Path, FMETA * Meta);
+extern ERR ResolveFamilyName(const std::string_view & String, CSTRING * Result);
 
 } // namespace
 #ifndef FDEF
@@ -16,8 +16,8 @@ extern ERR ResolveFamilyName(CSTRING String, CSTRING * Result);
 FDEF argsCharWidth[] = { { "Result", FD_INT }, { "Font", FD_OBJECTPTR }, { "Char", FD_INT|FD_UNSIGNED }, { 0, 0 } };
 FDEF argsGetList[] = { { "Error", FD_INT|FD_ERROR }, { "FontList:Result", FD_PTR|FD_STRUCT|FD_ALLOC|FD_RESULT }, { 0, 0 } };
 FDEF argsRefreshFonts[] = { { "Error", FD_INT|FD_ERROR }, { 0, 0 } };
-FDEF argsResolveFamilyName[] = { { "Error", FD_INT|FD_ERROR }, { "String", FD_STR }, { "Result", FD_STR|FD_RESULT }, { 0, 0 } };
-FDEF argsSelectFont[] = { { "Error", FD_INT|FD_ERROR }, { "Name", FD_STR }, { "Style", FD_STR }, { "Path", FD_STR|FD_ALLOC|FD_RESULT }, { "Meta", FD_INT|FD_RESULT }, { 0, 0 } };
+FDEF argsResolveFamilyName[] = { { "Error", FD_INT|FD_ERROR }, { "String", FD_CPP|FD_STR }, { "Result", FD_STR|FD_RESULT }, { 0, 0 } };
+FDEF argsSelectFont[] = { { "Error", FD_INT|FD_ERROR }, { "Name", FD_CPP|FD_STR }, { "Style", FD_CPP|FD_STR }, { "Path", FD_STR|FD_ALLOC|FD_RESULT }, { "Meta", FD_INT|FD_RESULT }, { 0, 0 } };
 FDEF argsStringWidth[] = { { "Result", FD_INT }, { "Font", FD_OBJECTPTR }, { "String", FD_CPP|FD_STR }, { "Chars", FD_INT }, { 0, 0 } };
 
 const struct Function glFunctions[] = {

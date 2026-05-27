@@ -69,10 +69,10 @@
   <function>
     <name>ResolveFamilyName</name>
     <comment>Convert a CSV family string to a single family name.</comment>
-    <prototype>ERR fnt::ResolveFamilyName(CSTRING String, CSTRING * Result)</prototype>
+    <prototype>ERR fnt::ResolveFamilyName(const std::string_view &amp; String, CSTRING * Result)</prototype>
     <tiriPrototype>err, Result:str = ResolveFamilyName(String:str)</tiriPrototype>
     <input>
-      <param type="CSTRING" name="String">A CSV family string to resolve.</param>
+      <param type="const std::string_view &amp;" name="String">A CSV family string to resolve.</param>
       <param type="CSTRING *" name="Result">The nominated family name is returned in this parameter.</param>
     </input>
     <description>
@@ -91,11 +91,11 @@
   <function>
     <name>SelectFont</name>
     <comment>Searches for a 'best fitting' font file, based on family name and style.</comment>
-    <prototype>ERR fnt::SelectFont(CSTRING Name, CSTRING Style, CSTRING * Path, FMETA * Meta)</prototype>
+    <prototype>ERR fnt::SelectFont(const std::string_view &amp; Name, const std::string_view &amp; Style, CSTRING * Path, FMETA * Meta)</prototype>
     <tiriPrototype>err, Path:str, Meta:num = SelectFont(Name:str, Style:str)</tiriPrototype>
     <input>
-      <param type="CSTRING" name="Name">The name of a font face to search for (case insensitive).</param>
-      <param type="CSTRING" name="Style">The required style, e.g. Bold or Italic.  Using camel-case for each word is compulsory.</param>
+      <param type="const std::string_view &amp;" name="Name">The name of a font face to search for (case insensitive).</param>
+      <param type="const std::string_view &amp;" name="Style">The required style, e.g. Bold or Italic.  Using camel-case for each word is compulsory.</param>
       <param type="CSTRING *" name="Path">The location of the best-matching font file is returned in this parameter.</param>
       <param type="FMETA *" name="Meta" lookup="FMETA">Optional, returns additional meta information about the font file.</param>
     </input>

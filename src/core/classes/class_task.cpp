@@ -112,7 +112,7 @@ extern "C" DLLCALL int WINAPI RegEnumKeyExA(APTR hKey, int dwIndex, STRING lpNam
 static MSGID glProcessBreak = MSGID::NIL;
 #endif
 
-static ERR GET_LaunchPath(extTask *, CSTRING *);
+static ERR GET_LaunchPath(extTask *, std::string_view &);
 
 static ERR TASK_Activate(extTask *);
 static ERR TASK_Free(extTask *);
@@ -909,25 +909,24 @@ static ERR TASK_Activate(extTask *Self)
       return quoted;
    };
 
-   CSTRING path = nullptr;
-   GET_LaunchPath(Self, &path);
-   if ((path) and (not *path)) path = nullptr;
+   std::string_view path;
+   GET_LaunchPath(Self, path);
    requested_shell = ((Self->Flags & TSF::SHELL) != TSF::NIL) ? 1 : 0;
 
    std::ostringstream buffer;
    std::string fallback_path;
 
    i = 0;
-   if (((Self->Flags & TSF::RESET_PATH) != TSF::NIL) or (path)) {
+   if (((Self->Flags & TSF::RESET_PATH) != TSF::NIL) or (not path.empty())) {
       Self->Flags |= TSF::SHELL;
 
       buffer << "cd ";
 
-      if (not path) {
+      if (path.empty()) {
          fallback_path.assign(Self->Location);
          if (auto i = fallback_path.find_last_of("/\\:"); i != std::string::npos) fallback_path.resize(i+1);
          else fallback_path.clear();
-         path = fallback_path.c_str();
+         path = fallback_path;
       }
       std::string rpath;
       if (ResolvePath(path, RSF::APPROXIMATE|RSF::PATH, &rpath) IS ERR::Okay) {
@@ -935,7 +934,7 @@ static ERR TASK_Activate(extTask *Self)
          buffer << shell_quote(rpath);
       }
       else {
-         auto p = std::string_view(path);
+         auto p = path;
          while (p.ends_with('/')) p.remove_suffix(1);
          buffer << shell_quote(p);
       }
@@ -1926,36 +1925,39 @@ Security Limits: To prevent buffer overflow attacks, the following limits are en
 
 *********************************************************************************************************************/
 
-static ERR SET_Args(extTask *Self, CSTRING Value)
+static ERR SET_Args(extTask *Self, const std::string_view &Value)
 {
-   if ((!Value) or (!*Value)) return ERR::Okay;
+   if (Value.empty()) return ERR::Okay;
 
    const size_t MAX_INPUT_LEN = 65536;
-   size_t input_len = strlen(Value);
+   size_t input_len = Value.size();
    if (input_len > MAX_INPUT_LEN) return ERR::BufferOverflow;
 
-   while (*Value) {
-      while (*Value <= 0x20) Value++; // Skip whitespace
+   auto cursor = Value.data();
+   auto end = cursor + Value.size();
 
-      if (*Value) { // Extract the argument
+   while (cursor < end) {
+      while ((cursor < end) and (*cursor <= 0x20)) cursor++; // Skip whitespace
+
+      if (cursor < end) { // Extract the argument
          std::string buffer;
          buffer.reserve(512); // Pre-allocate reasonable size
 
          bool in_quotes = false;
-         while (*Value and (in_quotes or (*Value > 0x20))) {
-            if (*Value IS '"') {
+         while ((cursor < end) and (in_quotes or (*cursor > 0x20))) {
+            if (*cursor IS '"') {
                in_quotes = !in_quotes;
-               Value++;
+               cursor++;
             }
             else {
-               buffer += *Value++;
+               buffer += *cursor++;
                // Prevent buffer overflow from malicious input
                if (buffer.size() > 8192) return ERR::BufferOverflow; // 8KB max per argument
             }
          }
 
          if (in_quotes) return kt::Log().warning(ERR::Syntax);
-         if (*Value) while (*Value > 0x20) Value++;
+         if (cursor < end) while ((cursor < end) and (*cursor > 0x20)) cursor++;
          Self->addArgument(buffer.c_str());
       }
    }
@@ -2118,16 +2120,15 @@ activated.  This will override all other path options, such as the `RESET_PATH` 
 
 *********************************************************************************************************************/
 
-static ERR GET_LaunchPath(extTask *Self, CSTRING *Value)
+static ERR GET_LaunchPath(extTask *Self, std::string_view &Value)
 {
-   *Value = Self->LaunchPath.c_str();
+   Value = Self->LaunchPath;
    return ERR::Okay;
 }
 
-static ERR SET_LaunchPath(extTask *Self, CSTRING Value)
+static ERR SET_LaunchPath(extTask *Self, const std::string_view &Value)
 {
-   if ((Value) and (*Value)) Self->LaunchPath.assign(Value);
-   else Self->LaunchPath.clear();
+   Self->LaunchPath.assign(Value);
    return ERR::Okay;
 }
 
@@ -2145,23 +2146,25 @@ only the quoted portion of the string will be used as the source path.
 
 *********************************************************************************************************************/
 
-static ERR GET_Location(extTask *Self, CSTRING *Value)
+static ERR GET_Location(extTask *Self, std::string_view &Value)
 {
-   *Value = Self->Location.c_str();
+   Value = Self->Location;
    return ERR::Okay;
 }
 
-static ERR SET_Location(extTask *Self, CSTRING Value)
+static ERR SET_Location(extTask *Self, const std::string_view &Value)
 {
-   if ((Value) and (*Value)) {
-      while ((*Value) and (*Value <= 0x20)) Value++;
-      if (*Value IS '"') {
-         Value++;
-         const char* start = Value;
-         while (*Value && *Value != '"') ++Value;
-         Self->Location.assign(start, Value - start);
+   if (not Value.empty()) {
+      auto cursor = Value.data();
+      auto end = cursor + Value.size();
+      while ((cursor < end) and (*cursor <= 0x20)) cursor++;
+      if ((cursor < end) and (*cursor IS '"')) {
+         cursor++;
+         auto start = cursor;
+         while ((cursor < end) and (*cursor != '"')) cursor++;
+         Self->Location.assign(start, cursor - start);
       }
-      else Self->Location.assign(Value);
+      else Self->Location.assign(cursor, end - cursor);
    }
    else Self->Location.clear();
    return ERR::Okay;
@@ -2178,15 +2181,15 @@ assign a randomly generated name.
 
 *********************************************************************************************************************/
 
-static ERR GET_Name(extTask *Self, STRING *Value)
+static ERR GET_Name(extTask *Self, std::string_view &Value)
 {
-   *Value = Self->Name;
+   Value = Self->Name;
    return ERR::Okay;
 }
 
-static ERR SET_Name(extTask *Self, CSTRING Value)
+static ERR SET_Name(extTask *Self, const std::string_view &Value)
 {
-   strcopy(Value, Self->Name, sizeof(Self->Name));
+   Self->Name.assign(Value);
    return ERR::Okay;
 }
 
@@ -2253,27 +2256,30 @@ process, such as that of a terminal shell.
 The working folder can be changed at any time by updating the Path with a new folder location.  If changing to the
 new folder fails for any reason, the working folder will remain unchanged and the path value will not be updated.
 
+The path string must be fully qualified with a slash or colon at the end of the string.  Non-viable characters are
+truncated.
+
 *********************************************************************************************************************/
 
-static ERR GET_Path(extTask *Self, CSTRING *Value)
+static ERR GET_Path(extTask *Self, std::string_view &Value)
 {
-   *Value = Self->Path.c_str();
+   Value = Self->Path;
    return ERR::Okay;
 }
 
-static ERR SET_Path(extTask *Self, CSTRING Value)
+static ERR SET_Path(extTask *Self, const std::string_view &Value)
 {
    std::string new_path;
 
    kt::Log log;
 
-   log.trace("ChDir: %s", Value);
+   log.trace("ChDir: %.*s", int(Value.size()), Value.data());
 
    ERR error = ERR::Okay;
-   if ((Value) and (*Value)) {
-      int len = strlen(Value);
-      while ((len > 1) and (Value[len-1] != '/') and (Value[len-1] != '\\') and (Value[len-1] != ':')) len--;
-      new_path.assign(Value, len);
+   if (not Value.empty()) {
+      auto len = Value.find_last_of(":/\\");
+      if (len IS std::string::npos) return ERR::InvalidPath;
+      new_path.assign(Value, 0, len + 1);
 
 #ifdef __unix__
          std::string path;
@@ -2317,9 +2323,9 @@ ProcessPath is set to the working folder in use at the time the process was laun
 
 *********************************************************************************************************************/
 
-static ERR GET_ProcessPath(extTask *Self, CSTRING *Value)
+static ERR GET_ProcessPath(extTask *Self, std::string_view &Value)
 {
-   *Value = Self->ProcessPath.c_str();
+   Value = Self->ProcessPath;
    return ERR::Okay;
 }
 
@@ -2472,20 +2478,20 @@ static const FieldArray clFields[] = {
    // Virtual fields
    { "Actions",        FDF_POINTER|FDF_R,  GET_Actions },
    { "AffinityMask",   FDF_INT64|FDF_RW,   GET_AffinityMask, SET_AffinityMask },
-   { "Args",           FDF_STRING|FDF_W,   nullptr, SET_Args },
+   { "Args",           FDF_CPPSTRING|FDF_W, nullptr, SET_Args },
    { "Parameters",     FDF_CPP|FDF_ARRAY|FDF_STRING|FDF_RW, GET_Parameters, SET_Parameters },
    { "ErrorCallback",  FDF_FUNCTIONPTR|FDF_RI, GET_ErrorCallback,   SET_ErrorCallback }, // STDERR
    { "ExitCallback",   FDF_FUNCTIONPTR|FDF_RW, GET_ExitCallback,    SET_ExitCallback },
    { "InputCallback",  FDF_FUNCTIONPTR|FDF_RW, GET_InputCallback,   SET_InputCallback }, // STDIN
-   { "LaunchPath",     FDF_STRING|FDF_RW,      GET_LaunchPath,      SET_LaunchPath },
-   { "Location",       FDF_STRING|FDF_RW,      GET_Location,        SET_Location },
-   { "Name",           FDF_STRING|FDF_RW,      GET_Name,            SET_Name },
+   { "LaunchPath",     FDF_CPPSTRING|FDF_RW,   GET_LaunchPath,      SET_LaunchPath },
+   { "Location",       FDF_CPPSTRING|FDF_RW,   GET_Location,        SET_Location },
+   { "Name",           FDF_CPPSTRING|FDF_RW,   GET_Name,            SET_Name },
    { "OutputCallback", FDF_FUNCTIONPTR|FDF_RI, GET_OutputCallback,  SET_OutputCallback }, // STDOUT
-   { "Path",           FDF_STRING|FDF_RW,      GET_Path,            SET_Path },
-   { "ProcessPath",    FDF_STRING|FDF_R,       GET_ProcessPath },
+   { "Path",           FDF_CPPSTRING|FDF_RW,   GET_Path,            SET_Path },
+   { "ProcessPath",    FDF_CPPSTRING|FDF_R,    GET_ProcessPath },
    { "Priority",       FDF_INT|FDF_RW,         GET_Priority, SET_Priority },
    // Synonyms
-   { "Src",            FDF_SYNONYM|FDF_STRING|FDF_RW, GET_Location, SET_Location },
+   { "Src",            FDF_SYNONYM|FDF_CPPSTRING|FDF_RW, GET_Location, SET_Location },
    END_FIELD
 };
 

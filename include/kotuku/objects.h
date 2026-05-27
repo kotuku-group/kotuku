@@ -28,6 +28,8 @@
 #define FDF_UNIT       FD_UNIT
 #define FDF_SYNONYM    FD_SYNONYM
 
+#define FDF_CPPSTRING   (FD_CPP|FD_STRING)
+#define FDF_STRVIEW     (FD_CPP|FD_STRING)
 #define FDF_UNSIGNED    FD_UNSIGNED
 #define FDF_FUNCTION    FD_FUNCTION           // sizeof(FUNCTION) - use FDF_FUNCTIONPTR for sizeof(APTR)
 #define FDF_FUNCTIONPTR (FD_FUNCTION|FD_POINTER)
@@ -81,6 +83,7 @@ struct FieldValue {
    uint32_t FieldID;
    int Type;
    union {
+      std::string_view CPPString;
       CSTRING String;
       APTR    Pointer;
       CPTR    CPointer;
@@ -91,7 +94,7 @@ struct FieldValue {
    };
 
    //std::string not included as not compatible with constexpr
-   constexpr FieldValue(uint32_t pFID, CSTRING pValue)  : FieldID(pFID), Type(FD_STRING), String(pValue) { };
+   constexpr FieldValue(uint32_t pFID, std::string_view pValue)  : FieldID(pFID), Type(FD_STRING|FD_CPP), CPPString(pValue) { };
    constexpr FieldValue(uint32_t pFID, int pValue)      : FieldID(pFID), Type(FD_INT), Int(pValue) { };
    constexpr FieldValue(uint32_t pFID, int64_t pValue)  : FieldID(pFID), Type(FD_INT64), Int64(pValue) { };
    constexpr FieldValue(uint32_t pFID, size_t pValue)   : FieldID(pFID), Type(FD_INT64), Int64(pValue) { };
@@ -368,8 +371,8 @@ struct Object { // Must be 64-bit aligned
    template <class T> ERR set(FIELD FieldID, const T *Data, size_t Elements, int Type = FIELD_TYPECHECK<T>()) {
       Object *target;
       if (auto field = FindField(this, FieldID, &target)) {
-         if (!(field->Flags & FD_ARRAY)) return ERR::FieldTypeMismatch;
-         if ((!field->writeable()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
+         if (not (field->Flags & FD_ARRAY)) return ERR::FieldTypeMismatch;
+         if ((not field->writeable()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
          if ((field->Flags & FD_INIT) and (target->initialised()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
          return field->WriteValue(target, field, FD_ARRAY|Type, Data, Elements);
       }
@@ -379,8 +382,8 @@ struct Object { // Must be 64-bit aligned
    template <class T, std::size_t SIZE> ERR set(FIELD FieldID, const std::array<T, SIZE> &Value, int Type = FIELD_TYPECHECK<T>()) {
       Object *target;
       if (auto field = FindField(this, FieldID, &target)) {
-         if (!(field->Flags & FD_ARRAY)) return ERR::FieldTypeMismatch;
-         if ((!field->writeable()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
+         if (not (field->Flags & FD_ARRAY)) return ERR::FieldTypeMismatch;
+         if ((not field->writeable()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
          if ((field->Flags & FD_INIT) and (target->initialised()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
 
          return field->WriteValue(target, field, FD_ARRAY|Type, Value.data(), SIZE);
@@ -391,8 +394,8 @@ struct Object { // Must be 64-bit aligned
    template <class T> ERR set(FIELD FieldID, const std::vector<T> &Value, int Type = FIELD_TYPECHECK<T>()) {
       Object *target;
       if (auto field = FindField(this, FieldID, &target)) {
-         if (!(field->Flags & FD_ARRAY)) return ERR::FieldTypeMismatch;
-         if ((!field->writeable()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
+         if (not (field->Flags & FD_ARRAY)) return ERR::FieldTypeMismatch;
+         if ((not field->writeable()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
          if ((field->Flags & FD_INIT) and (target->initialised()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
 
          return field->WriteValue(target, field, FD_ARRAY|Type, const_cast<T *>(Value.data()), std::ssize(Value));
@@ -403,8 +406,8 @@ struct Object { // Must be 64-bit aligned
    template <class T> ERR set(FIELD FieldID, const kt::vector<T> &Value, int Type = FIELD_TYPECHECK<T>()) {
       Object *target;
       if (auto field = FindField(this, FieldID, &target)) {
-         if (!(field->Flags & FD_ARRAY)) return ERR::FieldTypeMismatch;
-         if ((!field->writeable()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
+         if (not (field->Flags & FD_ARRAY)) return ERR::FieldTypeMismatch;
+         if ((not field->writeable()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
          if ((field->Flags & FD_INIT) and (target->initialised()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
 
          if (field->Flags & FD_CPP) return field->WriteValue(target, field, FD_ARRAY|Type, &Value, std::ssize(Value));
@@ -416,8 +419,8 @@ struct Object { // Must be 64-bit aligned
    inline ERR set(FIELD FieldID, const FRGB &Value) {
       Object *target;
       if (auto field = FindField(this, FieldID, &target)) {
-         if (!(field->Flags & FD_ARRAY)) return ERR::FieldTypeMismatch;
-         if ((!field->writeable()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
+         if (not (field->Flags & FD_ARRAY)) return ERR::FieldTypeMismatch;
+         if ((not field->writeable()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
          if ((field->Flags & FD_INIT) and (target->initialised()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
          return field->WriteValue(target, field, FD_ARRAY|FD_FLOAT, &Value, 4);
       }
@@ -431,10 +434,10 @@ struct Object { // Must be 64-bit aligned
       return set(FieldID, int(Value));
    }
 
-   template <class T> ERR set(FIELD FieldID, const T Value) requires std::integral<T> || std::floating_point<T> {
+   template <class T> ERR set(FIELD FieldID, const T Value) requires std::integral<T> or std::floating_point<T> {
       Object *target;
       if (auto field = FindField(this, FieldID, &target)) {
-         if ((!field->writeable()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
+         if ((not field->writeable()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
          if ((field->Flags & FD_INIT) and (target->initialised()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
          return field->WriteValue(target, field, FIELD_TYPECHECK<T>(), &Value, 1);
       }
@@ -444,7 +447,7 @@ struct Object { // Must be 64-bit aligned
    inline ERR set(FIELD FieldID, const FUNCTION *Value) {
       Object *target;
       if (auto field = FindField(this, FieldID, &target)) {
-         if ((!field->writeable()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
+         if ((not field->writeable()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
          if ((field->Flags & FD_INIT) and (target->initialised()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
          return field->WriteValue(target, field, FD_FUNCTION, Value, 1);
       }
@@ -454,7 +457,7 @@ struct Object { // Must be 64-bit aligned
    inline ERR set(FIELD FieldID, const char *Value) {
       Object *target;
       if (auto field = FindField(this, FieldID, &target)) {
-         if ((!field->writeable()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
+         if ((not field->writeable()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
          if ((field->Flags & FD_INIT) and (target->initialised()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
          return field->WriteValue(target, field, FD_STRING, Value, 1);
       }
@@ -464,9 +467,19 @@ struct Object { // Must be 64-bit aligned
    inline ERR set(FIELD FieldID, const unsigned char *Value) {
       Object *target;
       if (auto field = FindField(this, FieldID, &target)) {
-         if ((!field->writeable()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
+         if ((not field->writeable()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
          if ((field->Flags & FD_INIT) and (target->initialised()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
          return field->WriteValue(target, field, FD_STRING, Value, 1);
+      }
+      else return ERR::UnsupportedField;
+   }
+
+   inline ERR set(FIELD FieldID, std::string_view Value) {
+      Object *target;
+      if (auto field = FindField(this, FieldID, &target)) {
+         if ((not field->writeable()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
+         if ((field->Flags & FD_INIT) and (target->initialised()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
+         return field->WriteValue(target, field, FD_CPP|FD_STRING, &Value, 1);
       }
       else return ERR::UnsupportedField;
    }
@@ -474,9 +487,10 @@ struct Object { // Must be 64-bit aligned
    inline ERR set(FIELD FieldID, const std::string &Value) {
       Object *target;
       if (auto field = FindField(this, FieldID, &target)) {
-         if ((!field->writeable()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
+         if ((not field->writeable()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
          if ((field->Flags & FD_INIT) and (target->initialised()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
-         return field->WriteValue(target, field, FD_STRING, Value.c_str(), 1);
+         auto sv = std::string_view(Value);
+         return field->WriteValue(target, field, FD_CPP|FD_STRING, &sv, 1);
       }
       else return ERR::UnsupportedField;
    }
@@ -484,7 +498,7 @@ struct Object { // Must be 64-bit aligned
    inline ERR set(FIELD FieldID, const Unit *Value) {
       Object *target;
       if (auto field = FindField(this, FieldID, &target)) {
-         if ((!field->writeable()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
+         if ((not field->writeable()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
          if ((field->Flags & FD_INIT) and (target->initialised()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
          return field->WriteValue(target, field, FD_UNIT, Value, 1);
       }
@@ -500,7 +514,7 @@ struct Object { // Must be 64-bit aligned
    inline ERR set(FIELD FieldID, const void *Value) {
       Object *target;
       if (auto field = FindField(this, FieldID, &target)) {
-         if ((!field->writeable()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
+         if ((not field->writeable()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
          if ((field->Flags & FD_INIT) and (target->initialised()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
          return field->WriteValue(target, field, FD_POINTER, Value, 1);
       }
@@ -539,11 +553,11 @@ struct Object { // Must be 64-bit aligned
 
    public:
 
-   template <class T> ERR get(FIELD FieldID, T &Value) requires std::integral<T> || std::floating_point<T> {
+   template <class T> ERR get(FIELD FieldID, T &Value) requires std::integral<T> or std::floating_point<T> {
       Value = 0;
       Object *target;
       if (auto field = FindField(this, FieldID, &target)) {
-         if (!field->readable()) return ERR::NoFieldAccess;
+         if (not field->readable()) return ERR::NoFieldAccess;
 
          ScopedObjectAccess objlock(target);
 
@@ -551,7 +565,7 @@ struct Object { // Must be 64-bit aligned
 
          if (flags & FD_UNIT) return get_unit<T>(target, *field, Value);
 
-         int8_t field_value[8];
+         int8_t field_value[sizeof(std::string_view)];
          int array_size;
          auto fv = get_field_value(target, *field, field_value, array_size);
 
@@ -570,7 +584,7 @@ struct Object { // Must be 64-bit aligned
    inline ERR get(FIELD FieldID, std::string &Value) { // Retrieve field as a string, supports type conversion.
       Object *target;
       if (auto field = FindField(this, FieldID, &target)) {
-         if (!field->readable()) return ERR::NoFieldAccess;
+         if (not field->readable()) return ERR::NoFieldAccess;
 
          auto flags = field->Flags;
          if (flags & FD_UNIT) {
@@ -584,7 +598,7 @@ struct Object { // Must be 64-bit aligned
             else return error;
          }
 
-         int8_t field_value[8];
+         int8_t field_value[sizeof(std::string_view)];
          int array_size = -1;
          auto fv = get_field_value(target, *field, field_value, array_size);
          APTR data = fv.second;
@@ -597,24 +611,23 @@ struct Object { // Must be 64-bit aligned
                data = ((kt::vector<int> *)data)->data();
             }
 
-            std::stringstream buffer;
             if (array_size IS -1) return ERR::Failed; // Array sizing not supported by this field.
 
+            Value.clear();
             if (flags & FD_INT) {
                auto array = (int *)data;
-               for (int i=0; i < array_size; i++) buffer << *array++ << ',';
+               for (int i=0; i < array_size; i++) Value.append(std::to_string(*array++)).push_back(',');
             }
             else if (flags & FD_BYTE) {
                auto array = (uint8_t *)data;
-               for (int i=0; i < array_size; i++) buffer << *array++ << ',';
+               for (int i=0; i < array_size; i++) Value.append(std::to_string(*array++)).push_back(',');
             }
             else if (flags & FD_DOUBLE) {
                auto array = (double *)data;
-               for (int i=0; i < array_size; i++) buffer << *array++ << ',';
+               for (int i=0; i < array_size; i++) Value.append(std::to_string(*array++)).push_back(',');
             }
 
-            Value = buffer.str();
-            if (!Value.empty()) Value.pop_back(); // Remove trailing comma
+            if (not Value.empty()) Value.pop_back(); // Remove trailing comma
             return ERR::Okay;
          }
 
@@ -635,14 +648,16 @@ struct Object { // Must be 64-bit aligned
             }
             else if (flags & FD_FLAGS) {
                if (auto lookup = (FieldDef *)field->Arg) {
-                  std::stringstream buffer;
+                  Value.clear();
                   int v = ((int *)data)[0];
                   while (lookup->Name) {
-                     if (v & lookup->Value) buffer << lookup->Name << '|';
+                     if (v & lookup->Value) {
+                        Value.append(lookup->Name);
+                        Value.push_back('|');
+                     }
                      lookup++;
                   }
-                  Value = buffer.str();
-                  if (!Value.empty()) Value.pop_back(); // Remove trailing pipe
+                  if (not Value.empty()) Value.pop_back(); // Remove trailing pipe
                   return ERR::Okay;
                }
             }
@@ -656,9 +671,23 @@ struct Object { // Must be 64-bit aligned
             auto written = snprintf(buffer, sizeof(buffer), "%f", *((double *)data));
             Value.assign(buffer, written);
          }
-         else if (flags & (FD_POINTER|FD_STRING)) {
-            Value.assign(*((CSTRING *)data));
-            if (flags & FD_ALLOC) FreeResource(GetMemoryID(*((CSTRING *)data)));
+         else if (flags & FD_STRING) {
+            if (flags & FD_CPP) {
+               if (field->GetValue) {
+                  Value.assign(*((std::string_view *)data));
+                  if (flags & FD_ALLOC) FreeResource(GetMemoryID(((std::string_view *)data)->data()));
+               }
+               else Value.assign(*((std::string *)data));
+            }
+            else {
+               if (auto str = *((CSTRING *)data)) Value.assign(str);
+               else Value.clear();
+               if (flags & FD_ALLOC) FreeResource(GetMemoryID(*((CSTRING *)data)));
+            }
+         }
+         else if (flags & FD_POINTER) {
+            if (auto str = *((CSTRING *)data)) Value.assign(str);
+            else Value.clear();
          }
          else return ERR::UnrecognisedFieldType;
 
@@ -669,13 +698,13 @@ struct Object { // Must be 64-bit aligned
 
    // Retrieve a direct pointer to a string field, no-copy operation.  Result will require deallocation by the client if the field is marked with ALLOC.
 
-   inline ERR get(FIELD FieldID, CSTRING &Value) {
+   inline ERR get(FIELD FieldID, CSTRING &Value) { // deprecated
       Object *target;
       Value = nullptr;
       if (auto field = FindField(this, FieldID, &target)) {
-         if (!field->readable()) return ERR::NoFieldAccess;
+         if (not field->readable()) return ERR::NoFieldAccess;
 
-         int8_t field_value[8];
+         int8_t field_value[sizeof(std::string_view)];
          int array_size;
          auto fv = get_field_value(target, *field, field_value, array_size);
          if (fv.first != ERR::Okay) return fv.first;
@@ -695,7 +724,65 @@ struct Object { // Must be 64-bit aligned
             return ERR::Okay;
          }
          else if (field->Flags & (FD_POINTER|FD_STRING)) {
-            Value = *((CSTRING *)fv.second);
+            if (field->Flags & FD_CPP) {
+               if (field->GetValue) { // Virtual std::string_view
+                  Value = ((std::string_view *)fv.second)->data();
+               }
+               else Value = ((std::string *)fv.second)->c_str();
+            }
+            else Value = *((CSTRING *)fv.second);
+            return ERR::Okay;
+         }
+         else return ERR::FieldTypeMismatch;
+      }
+      else return ERR::UnsupportedField;
+   }
+
+   inline ERR get(FIELD FieldID, std::string_view &Value) {
+      Object *target;
+      Value = std::string_view();
+      if (auto field = FindField(this, FieldID, &target)) {
+         if (not field->readable()) return ERR::NoFieldAccess;
+
+         if (field->Flags & FD_STRING) {
+            if (field->Flags & FD_CPP) {
+               if (field->GetValue) { // Virtual std::string_view
+                  SetObjectContext(target, field, AC::NIL);
+                  auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+                  auto error = get_field(target, Value);
+                  RestoreObjectContext();
+                  return error;
+               }
+               else Value = *((std::string *)(((int8_t *)target) + field->Offset)); // Direct std::string
+            }
+            else {
+               int8_t field_value[sizeof(std::string_view)];
+               int array_size;
+               auto fv = get_field_value(target, *field, field_value, array_size);
+               if (fv.first != ERR::Okay) return fv.first;
+
+               CSTRING val = *((CSTRING *)fv.second);
+               Value = val ? std::string_view(val) : std::string_view{};
+            }
+            return ERR::Okay;
+         }
+         else if ((field->Flags & FD_INT) and (field->Flags & FD_LOOKUP)) {
+            int8_t field_value[sizeof(std::string_view)];
+            int array_size;
+            auto fv = get_field_value(target, *field, field_value, array_size);
+            if (fv.first != ERR::Okay) return fv.first;
+
+            // Reading a lookup field as a string is permissible, we just return the string registered in the lookup table
+            if (auto lookup = (FieldDef *)field->Arg) {
+               int value = ((int *)fv.second)[0];
+               while (lookup->Name) {
+                  if (value IS lookup->Value) {
+                     Value = std::string_view(lookup->Name);
+                     return ERR::Okay;
+                  }
+                  lookup++;
+               }
+            }
             return ERR::Okay;
          }
          else return ERR::FieldTypeMismatch;
@@ -707,14 +794,33 @@ struct Object { // Must be 64-bit aligned
       Object *target;
       Value = nullptr;
       if (auto field = FindField(this, FieldID, &target)) {
-         if (!field->readable()) return ERR::NoFieldAccess;
+         if (not field->readable()) return ERR::NoFieldAccess;
 
-         int8_t field_value[8];
+         int8_t field_value[sizeof(std::string_view)];
          int array_size;
          auto fv = get_field_value(target, *field, field_value, array_size);
          if (fv.first != ERR::Okay) return fv.first;
 
-         if (field->Flags & (FD_POINTER|FD_STRING)) {
+         if ((field->Flags & FD_CLASS_TYPES) IS (FDF_CPPSTRING)) {
+            using pointee = std::remove_pointer_t<T>;
+            using plain_pointee = std::remove_cv_t<pointee>;
+
+            if constexpr (std::is_same_v<plain_pointee, char>) {
+               if (field->GetValue) { // Virtual std::string_view
+                  auto str = (std::string_view *)fv.second;
+                  Value = (T)str->data();
+               }
+               else { // Direct std::string
+                  auto str = (std::string *)fv.second;
+                  if constexpr (std::is_const_v<pointee>) Value = (T)str->c_str();
+                  else Value = (T)str->data();
+               }
+            }
+            else return ERR::FieldTypeMismatch;
+
+            return ERR::Okay;
+         }
+         else if (field->Flags & FD_POINTER) {
             Value = *((T *)fv.second);
             return ERR::Okay;
          }
@@ -726,7 +832,7 @@ struct Object { // Must be 64-bit aligned
    inline ERR get(FIELD FieldID, Unit &Value) {
       Object *target;
       if (auto field = FindField(this, FieldID, &target)) {
-         if (!field->readable()) return ERR::NoFieldAccess;
+         if (not field->readable()) return ERR::NoFieldAccess;
 
          if (field->Flags & FD_UNIT) {
             SetObjectContext(target, field, AC::NIL);
@@ -741,10 +847,22 @@ struct Object { // Must be 64-bit aligned
    }
 
    template <class T> T get(FIELD FieldID)
-   requires pcPointer<T> || std::integral<T> || std::floating_point<T> {
+   requires pcPointer<T> or std::integral<T> or std::floating_point<T> {
       T result(0);
       get(FieldID, result);
       return result;
+   };
+
+   template <class T> T get(FIELD FieldID) requires std::is_same_v<T, std::string_view> {
+      T result;
+      get(FieldID, result);
+      return result;
+   };
+
+   template <class T> T get(FIELD FieldID) requires std::is_same_v<T, std::string> {
+      std::string_view result;
+      get(FieldID, result);
+      return std::string(result);
    };
 
    template <class T> T get(FIELD FieldID) requires std::is_enum_v<T> {
@@ -759,9 +877,9 @@ struct Object { // Must be 64-bit aligned
       Object *target;
       Result = nullptr;
       if (auto field = FindField(this, FieldID, &target)) {
-         if ((!field->readable()) or (!(field->Flags & FD_ARRAY))) return ERR::NoFieldAccess;
+         if ((not field->readable()) or (not (field->Flags & FD_ARRAY))) return ERR::NoFieldAccess;
 
-         if ((TypeCheck) and (!(field->Flags & FIELD_TYPECHECK<T>()))) return ERR::FieldTypeMismatch;
+         if ((TypeCheck) and (not (field->Flags & FIELD_TYPECHECK<T>()))) return ERR::FieldTypeMismatch;
 
          ScopedObjectAccess objlock(target);
 
@@ -805,7 +923,7 @@ struct Object { // Must be 64-bit aligned
       for (auto &f : Fields) {
          OBJECTPTR target;
          if (auto field = FindField(this, f.FieldID, &target)) {
-            if ((!(field->Flags & (FD_INIT|FD_WRITE))) and (ctx != target)) {
+            if ((not (field->Flags & (FD_INIT|FD_WRITE))) and (ctx != target)) {
                log.warning("%s.%s is immutable.", className(), field->Name);
             }
             else if ((field->Flags & FD_INIT) and (target->initialised()) and (ctx != target)) {
@@ -815,7 +933,10 @@ struct Object { // Must be 64-bit aligned
                if (target != this) target->lock();
 
                ERR error;
-               if (f.Type & (FD_POINTER|FD_STRING|FD_ARRAY|FD_FUNCTION|FD_UNIT)) {
+               if ((f.Type & FD_STRING) and (f.Type & FD_CPP)) {
+                  error = field->WriteValue(target, field, f.Type, &f.CPPString, 0);
+               }
+               else if (f.Type & (FD_POINTER|FD_STRING|FD_ARRAY|FD_FUNCTION|FD_UNIT)) {
                   error = field->WriteValue(target, field, f.Type, f.Pointer, 0);
                }
                else if (f.Type & (FD_DOUBLE|FD_FLOAT)) {
@@ -928,14 +1049,17 @@ class Create {
             for (auto &f : Fields) {
                OBJECTPTR target;
                if (auto field = FindField(obj, f.FieldID, &target)) {
-                  if (!(field->Flags & (FD_WRITE|FD_INIT))) {
+                  if (not (field->Flags & (FD_WRITE|FD_INIT))) {
                      error = log.warning(ERR::NoFieldAccess);
                      return;
                   }
                   else {
                      target->lock();
 
-                     if (f.Type & (FD_POINTER|FD_STRING|FD_ARRAY|FD_FUNCTION|FD_UNIT)) {
+                     if ((f.Type & FD_STRING) and (f.Type & FD_CPP)) {
+                        error = field->WriteValue(target, field, f.Type, &f.CPPString, 0);
+                     }
+                     else if (f.Type & (FD_POINTER|FD_STRING|FD_ARRAY|FD_FUNCTION|FD_UNIT)) {
                         error = field->WriteValue(target, field, f.Type, f.Pointer, 0);
                      }
                      else if (f.Type & (FD_DOUBLE|FD_FLOAT)) {
@@ -1208,9 +1332,17 @@ inline int acWriteResult(OBJECTPTR Object, CPTR Buffer, int Bytes) {
    else return 0;
 }
 
-#define acSeekStart(a,b)    acSeek((a),(b),SEEK::START)
-#define acSeekEnd(a,b)      acSeek((a),(b),SEEK::END)
-#define acSeekCurrent(a,b)  acSeek((a),(b),SEEK::CURRENT)
+template <class T> inline ERR acSeekStart(OBJECTPTR Object, T Offset) {
+   return acSeek(Object, Offset, SEEK::START);
+}
+
+template <class T> inline ERR acSeekEnd(OBJECTPTR Object, T Offset) {
+   return acSeek(Object, Offset, SEEK::END);
+}
+
+template <class T> inline ERR acSeekCurrent(OBJECTPTR Object, T Offset) {
+   return acSeek(Object, Offset, SEEK::CURRENT);
+}
 
 inline ERR acSetKey(OBJECTPTR Object, CSTRING Key, CSTRING Value) {
    struct acSetKey args = { Key, Value };

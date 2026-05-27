@@ -556,14 +556,12 @@ unpackAlpha(Colour)
 <tr><th class="col-md-1">InvalidDimension</th><td>The clipping region is invalid.</td></tr>
 <tr><th class="col-md-1">InvalidState</th><td>The Bitmap is not in the expected state (32-bit with an alpha channel)</td></tr>
 </tbody></table></div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#tmx-SetClipRegion" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">SetClipRegion</th><td id="tm-SetClipRegion">Sets a clipping region for a bitmap object.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-SetClipRegion" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR bmp::SetClipRegion(OBJECTPTR Object, INT Number, INT Left, INT Top, INT Right, INT Bottom, INT Terminate)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Number</td><td>The number of the clip region to set.</td></tr>
-<tr><td>Left</td><td>The horizontal start of the clip region.</td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tmx-SetClipRegion" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">SetClipRegion</th><td id="tm-SetClipRegion">Sets a clipping region for a bitmap object.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-SetClipRegion" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR bmp::SetClipRegion(OBJECTPTR Object, INT Left, INT Top, INT Right, INT Bottom)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Left</td><td>The horizontal start of the clip region.</td></tr>
 <tr><td>Top</td><td>The vertical start of the clip region.</td></tr>
 <tr><td>Right</td><td>The exclusive right edge of the clip region.</td></tr>
 <tr><td>Bottom</td><td>The exclusive bottom edge of the clip region.</td></tr>
-<tr><td>Terminate</td><td>Set to <code>true</code> if this is the last clip region in the list, otherwise <code>false</code>.</td></tr>
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
-<p>SetClipRegion() updates one entry in the bitmap's clipping region list.  Drawing operations are restricted to the combined region.</p>
+<p>SetClipRegion() updates the bitmap's clipping region.  Drawing operations are restricted to the combined region.</p>
 <p>This method is implemented by <a href="display.html?page=SetClipRegion">SetClipRegion()</a>.</p>
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>

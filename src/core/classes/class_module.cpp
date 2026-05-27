@@ -93,11 +93,11 @@ static void free_module(MODHANDLE handle);
 
 //********************************************************************************************************************
 
-static ERR GET_Defs(extModule *, CSTRING *);
-static ERR GET_Name(extModule *, CSTRING *);
+static ERR GET_Defs(extModule *, std::string_view &);
+static ERR GET_Name(extModule *, std::string_view &);
 
 static ERR SET_Header(extModule *, struct ModHeader *);
-static ERR SET_Name(extModule *, CSTRING);
+static ERR SET_Name(extModule *, const std::string_view &);
 
 static const FieldDef clFlags[] = {
    { "LinkLibrary", MOF::LINK_LIBRARY },
@@ -112,8 +112,8 @@ static const FieldArray glModuleFields[] = {
    { "Header",       FDF_POINTER|FDF_STRUCT|FDF_RI, nullptr, SET_Header, "ModHeader" }, // For creating virtual modules only
    { "Flags",        FDF_INT|FDF_RI, nullptr, nullptr, &clFlags },
    // Virtual fields
-   { "Defs",         FDF_STRING|FDF_R, GET_Defs },
-   { "Name",         FDF_STRING|FDF_RI, GET_Name, SET_Name },
+   { "Defs",         FDF_CPPSTRING|FDF_R, GET_Defs },
+   { "Name",         FDF_CPPSTRING|FDF_RI, GET_Name, SET_Name },
    END_FIELD
 };
 
@@ -590,10 +590,10 @@ Returns the IDL definition string that was compiled from the module's TDL file. 
 
 **********************************************************************************************************************/
 
-static ERR GET_Defs(extModule *Self, CSTRING *Value)
+static ERR GET_Defs(extModule *Self, std::string_view &Value)
 {
-   if ((Self->Root) and (Self->Root->Header)) *Value = Self->Root->Header->Definitions;
-   else *Value = nullptr;
+   if ((Self->Root) and (Self->Root->Header)) Value = Self->Root->Header->Definitions;
+   else Value = std::string_view{};
    return ERR::Okay;
 }
 
@@ -657,15 +657,15 @@ may use a `.dll` extension.
 
 **********************************************************************************************************************/
 
-static ERR GET_Name(extModule *Self, CSTRING *Value)
+static ERR GET_Name(extModule *Self, std::string_view &Value)
 {
-   *Value = Self->Name.c_str();
+   Value = Self->Name;
    return ERR::Okay;
 }
 
-static ERR SET_Name(extModule *Self, CSTRING Name)
+static ERR SET_Name(extModule *Self, const std::string_view &Name)
 {
-   if (!Name) return ERR::Okay;
+   if (Name.empty()) return ERR::Okay;
 
    Self->Name.assign(Name);
    std::transform(Self->Name.begin(), Self->Name.end(), Self->Name.begin(),

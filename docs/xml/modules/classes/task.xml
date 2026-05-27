@@ -352,6 +352,7 @@ end
       <description>
 <p>The Path specifies the 'working folder' that determines where files are loaded from when an absolute path is not otherwise specified for file access.  Initially the working folder is usually set to the folder of the parent process, such as that of a terminal shell.</p>
 <p>The working folder can be changed at any time by updating the Path with a new folder location.  If changing to the new folder fails for any reason, the working folder will remain unchanged and the path value will not be updated.</p>
+<p>The path string must be fully qualified with a slash or colon at the end of the string.  Non-viable characters are truncated.</p>
       </description>
     </field>
 

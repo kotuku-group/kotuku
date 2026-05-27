@@ -4,12 +4,14 @@
 set (MOD "audio")
 set (INC_MOD_AUDIO TRUE PARENT_SCOPE)
 
+if (NOT WIN32)
    CHECK_C_SOURCE_COMPILES ("
 #include <alsa/asoundlib.h>
 int main() {
    return 0;
 }"
    ALSA_INSTALLED)
+endif ()
 
 idl_gen ("${MOD}.tdl" NAME ${MOD}_defs
    OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.h"

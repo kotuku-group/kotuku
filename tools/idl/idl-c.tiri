@@ -398,6 +398,8 @@ global function outputClassHeader(Class:table, Private:str, Custom:str)
                else
                   output(f'   inline ERR set{fid_name}({field_type} Value, int Elements) noexcept {{')
                end
+            elseif f.flags has FD_STRING and f.flags has FD_CPP then
+                  output(f'   inline ERR set{fid_name}(const std::string_view &Value) noexcept {{')
             elseif field_type is 'T &&' then
                output(f'   template <class T> inline ERR set{fid_name}({field_type} Value) noexcept {{')
             else
@@ -442,8 +444,13 @@ global function outputClassHeader(Class:table, Private:str, Custom:str)
             elseif f.flags has FD_FUNCTION then
                output(indent .. 'return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);')
             elseif f.flags has FD_STRING then
-               flags = string.format('%08x', f.flags):sub(-8)
-               output(indent .. f'return field->WriteValue(target, field, 0x{flags}, to_cstring(Value), 1);')
+               if f.flags has FD_CPP then // Embedded std::string, or std::string_view set-value
+                  flags = string.format('%08x', f.flags):sub(-8)
+                  output(indent .. f'return field->WriteValue(target, field, 0x{flags}, &Value, 1);')
+               else
+                  flags = string.format('%08x', f.flags):sub(-8)
+                  output(indent .. f'return field->WriteValue(target, field, 0x{flags}, to_cstring(Value), 1);')
+               end
             elseif f.flags has FD_POINTER then
                flags = string.format('%08x', f.flags):sub(-8)
                output(indent .. f'return field->WriteValue(target, field, 0x{flags}, Value, 1);')
@@ -457,6 +464,8 @@ global function outputClassHeader(Class:table, Private:str, Custom:str)
          else
             if field_type is 'T &&' then
                output(f'   template <class T> inline ERR set{fid_name}({field_type} Value) noexcept {{')
+            elseif f.flags has FD_STRING and f.flags has FD_CPP then
+               output(f'   inline ERR set{fid_name}(const std::string_view &Value) noexcept {{')
             else
                output(f'   inline ERR set{fid_name}({field_type} Value) noexcept {{')
             end

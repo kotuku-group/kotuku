@@ -22,12 +22,13 @@ Following initialisation, all meta fields describing the volume are readable for
 
 static ERR STORAGE_Free(extStorageDevice *);
 static ERR STORAGE_Init(extStorageDevice *);
+static ERR STORAGE_NewPlacement(extStorageDevice *);
 
 //********************************************************************************************************************
 
 static ERR STORAGE_Free(extStorageDevice *Self)
 {
-   if (Self->Volume) { FreeResource(Self->Volume); Self->Volume = nullptr; }
+   Self->~extStorageDevice();
    return ERR::Okay;
 }
 
@@ -37,7 +38,7 @@ static ERR STORAGE_Init(extStorageDevice *Self)
 {
    kt::Log log;
 
-   if (!Self->Volume) return log.warning(ERR::FieldNotSet);
+   if (Self->Volume.empty()) return log.warning(ERR::FieldNotSet);
 
    auto vd = get_fs(Self->Volume);
 
@@ -49,6 +50,14 @@ static ERR STORAGE_Init(extStorageDevice *Self)
 
    if (vd.GetDeviceInfo) return vd.GetDeviceInfo(Self->Volume, Self);
    else return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR STORAGE_NewPlacement(extStorageDevice *Self)
+{
+   new (Self) extStorageDevice;
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -71,16 +80,10 @@ If a volume expresses a unique device identifier such as a factory serial number
 
 *********************************************************************************************************************/
 
-static ERR GET_DeviceID(extStorageDevice *Self, STRING *Value)
+static ERR GET_DeviceID(extStorageDevice *Self, std::string_view &Value)
 {
-   if (Self->DeviceID) {
-      *Value = Self->DeviceID;
-      return ERR::Okay;
-   }
-   else {
-      *Value = nullptr;
-      return ERR::FieldNotSet;
-   }
+   Value = Self->DeviceID;
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -104,39 +107,27 @@ acceptable.  Any characters following a colon will be stripped automatically wit
 
 *********************************************************************************************************************/
 
-static ERR GET_Volume(extStorageDevice *Self, STRING *Value)
+static ERR GET_Volume(extStorageDevice *Self, std::string_view &Value)
 {
-   if (Self->Volume) {
-      *Value = Self->Volume;
-      return ERR::Okay;
-   }
-   else {
-      *Value = nullptr;
-      return ERR::FieldNotSet;
-   }
+   Value = Self->Volume;
+   return ERR::Okay;
 }
 
-static ERR SET_Volume(extStorageDevice *Self, CSTRING Value)
+static ERR SET_Volume(extStorageDevice *Self, const std::string_view &Value)
 {
    kt::Log log;
 
    if (Self->initialised()) return log.warning(ERR::Immutable);
 
-   if ((Value) and (*Value)) {
-      int len;
-      for (len=0; (Value[len]) and (Value[len] != ':'); len++);
+   if (not Value.empty()) {
+      auto len = Value.find(':');
+      if (len IS std::string_view::npos) len = Value.size();
 
-      if (Self->Volume) FreeResource(Self->Volume);
-
-      if (AllocMemory(len+2, MEM::STRING|MEM::NO_CLEAR, (APTR *)&Self->Volume, nullptr) IS ERR::Okay) {
-         copymem(Value, Self->Volume, len);
-         Self->Volume[len] = ':';
-         Self->Volume[len+1] = 0;
-         return ERR::Okay;
-      }
-      else return log.warning(ERR::AllocMemory);
+      Self->Volume.assign(Value.substr(0, len));
+      Self->Volume.push_back(':');
    }
-   else return ERR::Okay;
+
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -166,14 +157,15 @@ static const FieldArray clFields[] = {
    { "BytesFree",   FDF_INT64|FDF_R },
    { "BytesUsed",   FDF_INT64|FDF_R },
    // Virtual fields
-   { "DeviceID",    FDF_STRING|FDF_R, GET_DeviceID },
-   { "Volume",      FDF_STRING|FDF_RI, GET_Volume, SET_Volume },
+   { "DeviceID",    FDF_CPPSTRING|FDF_R, GET_DeviceID },
+   { "Volume",      FDF_CPPSTRING|FDF_RI, GET_Volume, SET_Volume },
     END_FIELD
 };
 
 static const ActionArray clActions[] = {
    { AC::Free, STORAGE_Free },
    { AC::Init, STORAGE_Init },
+   { AC::NewPlacement, STORAGE_NewPlacement },
    { AC::NIL, nullptr }
 };
 

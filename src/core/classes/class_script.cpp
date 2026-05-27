@@ -27,16 +27,21 @@ Terminating the script will not remove objects that are outside its resource hie
 
 static ERR GET_Results(objScript *, STRING **, int *);
 
-static ERR SET_Procedure(objScript *, CSTRING);
+static ERR SET_Procedure(objScript *, std::string_view &);
 static ERR SET_Results(objScript *, CSTRING *, int);
-static ERR SET_String(objScript *, CSTRING);
+static ERR SET_String(objScript *, std::string_view &);
 
-inline CSTRING check_bom(const unsigned char *Value)
+inline std::string_view check_bom(std::string_view Value)
 {
-   if ((Value[0] IS 0xef) and (Value[1] IS 0xbb) and (Value[2] IS 0xbf)) Value += 3; // UTF-8 BOM
-   else if ((Value[0] IS 0xfe) and (Value[1] IS 0xff)) Value += 2; // UTF-16 BOM big endian
-   else if ((Value[0] IS 0xff) and (Value[1] IS 0xfe)) Value += 2; // UTF-16 BOM little endian
-   return (CSTRING)Value;
+   if ((Value.size() >= 3) and (uint8_t(Value[0]) IS 0xef) and (uint8_t(Value[1]) IS 0xbb) and
+       (uint8_t(Value[2]) IS 0xbf)) return Value.substr(3); // UTF-8 BOM
+   else if ((Value.size() >= 2) and (uint8_t(Value[0]) IS 0xfe) and (uint8_t(Value[1]) IS 0xff)) {
+      return Value.substr(2); // UTF-16 BOM big endian
+   }
+   else if ((Value.size() >= 2) and (uint8_t(Value[0]) IS 0xff) and (uint8_t(Value[1]) IS 0xfe)) {
+      return Value.substr(2); // UTF-16 BOM little endian
+   }
+   return Value;
 }
 
 /*********************************************************************************************************************
@@ -99,9 +104,9 @@ static ERR SCRIPT_Callback(objScript *Self, struct sc::Callback *Args)
    if ((Args->TotalArgs < 0) or (Args->TotalArgs > 1024)) return log.warning(ERR::Args);
 
    auto save_id      = Self->ProcedureID;
-   auto save_name    = Self->Procedure;
+   auto save_name    = std::move(Self->Procedure);
    Self->ProcedureID = Args->ProcedureID;
-   Self->Procedure   = nullptr;
+   Self->Procedure.clear();
 
    const ScriptArg *save_args = Self->ProcArgs;
    Self->ProcArgs  = Args->Args;
@@ -109,8 +114,8 @@ static ERR SCRIPT_Callback(objScript *Self, struct sc::Callback *Args)
    auto save_total  = Self->TotalArgs;
    Self->TotalArgs  = Args->TotalArgs;
    auto saved_error = Self->Error;
-   auto saved_error_msg = Self->ErrorMessage;
-   Self->ErrorMessage = nullptr;
+   auto saved_error_msg = std::move(Self->ErrorMessage);
+   Self->ErrorMessage.clear();
    Self->Error       = ERR::Okay;
 
    ERR error = acActivate(Self);
@@ -118,11 +123,10 @@ static ERR SCRIPT_Callback(objScript *Self, struct sc::Callback *Args)
    Args->Error = Self->Error;
    Self->Error = saved_error;
    Self->ProcedureID = save_id;
-   Self->Procedure   = save_name;
+   Self->Procedure   = std::move(save_name);
    Self->ProcArgs    = save_args;
    Self->TotalArgs   = save_total;
-   if (Self->ErrorMessage) FreeResource(Self->ErrorMessage);
-   Self->ErrorMessage = saved_error_msg;
+   Self->ErrorMessage = std::move(saved_error_msg);
 
    return error;
 }
@@ -244,9 +248,10 @@ static ERR SCRIPT_Exec(objScript *Self, struct sc::Exec *Args)
    if ((Args->TotalArgs < 0) or (Args->TotalArgs > 32)) return log.warning(ERR::Args);
 
    auto save_id = Self->ProcedureID;
-   auto save_name = Self->Procedure;
+   auto save_name = std::move(Self->Procedure);
    Self->ProcedureID = 0;
-   Self->Procedure = Args->Procedure;
+   if (Args->Procedure) Self->Procedure = Args->Procedure;
+   else Self->Procedure.clear();
 
    const ScriptArg *save_args = Self->ProcArgs;
    Self->ProcArgs  = Args->Args;
@@ -257,7 +262,7 @@ static ERR SCRIPT_Exec(objScript *Self, struct sc::Exec *Args)
    ERR error = acActivate(Self);
 
    Self->ProcedureID = save_id;
-   Self->Procedure   = save_name;
+   Self->Procedure   = std::move(save_name);
    Self->ProcArgs    = save_args;
    Self->TotalArgs   = save_total;
 
@@ -268,12 +273,6 @@ static ERR SCRIPT_Exec(objScript *Self, struct sc::Exec *Args)
 
 static ERR SCRIPT_Free(objScript *Self)
 {
-   if (Self->CacheFile)   { FreeResource(Self->CacheFile);   Self->CacheFile = nullptr; }
-   if (Self->Path)        { FreeResource(Self->Path);        Self->Path = nullptr; }
-   if (Self->String)      { FreeResource(Self->String);      Self->String = nullptr; }
-   if (Self->WorkingPath) { FreeResource(Self->WorkingPath); Self->WorkingPath = nullptr; }
-   if (Self->Procedure)   { FreeResource(Self->Procedure);   Self->Procedure = nullptr; }
-   if (Self->ErrorMessage) { FreeResource(Self->ErrorMessage); Self->ErrorMessage = nullptr; }
    if (Self->Results)     { FreeResource(Self->Results);     Self->Results = nullptr; }
    Self->~objScript();
    return ERR::Okay;
@@ -416,16 +415,15 @@ date stamps on the original and cache files.
 
 *********************************************************************************************************************/
 
-static ERR GET_CacheFile(objScript *Self, STRING *Value)
+static ERR GET_CacheFile(objScript *Self, std::string_view &Value)
 {
-   *Value = Self->CacheFile;
-   return ERR::Okay;
+   Value = Self->CacheFile;
+   return Self->CacheFile.empty() ? ERR::FieldNotSet : ERR::Okay;
 }
 
-static ERR SET_CacheFile(objScript *Self, CSTRING Value)
+static ERR SET_CacheFile(objScript *Self, std::string_view &Value)
 {
-   if (Self->CacheFile) { FreeResource(Self->CacheFile); Self->CacheFile = nullptr; }
-   if (Value) Self->CacheFile = strclone(Value);
+   Self->CacheFile.assign(Value);
    return ERR::Okay;
 }
 
@@ -452,16 +450,15 @@ ErrorMessage: A human readable error string may be declared here following a scr
 
 *********************************************************************************************************************/
 
-static ERR GET_ErrorMessage(objScript *Self, STRING *Value)
+static ERR GET_ErrorMessage(objScript *Self, std::string_view &Value)
 {
-   *Value = Self->ErrorMessage;
-   return ERR::Okay;
+   Value = Self->ErrorMessage;
+   return Self->ErrorMessage.empty() ? ERR::FieldNotSet : ERR::Okay;
 }
 
-static ERR SET_ErrorMessage(objScript *Self, CSTRING Value)
+static ERR SET_ErrorMessage(objScript *Self, std::string_view &Value)
 {
-   if (Self->ErrorMessage) { FreeResource(Self->ErrorMessage); Self->ErrorMessage = nullptr; }
-   if (Value) Self->ErrorMessage = strclone(Value);
+   Self->ErrorMessage.assign(Value);
    return ERR::Okay;
 }
 
@@ -509,86 +506,92 @@ valid existing object).
 
 *********************************************************************************************************************/
 
-static ERR GET_Path(objScript *Self, STRING *Value)
+static ERR GET_Path(objScript *Self, std::string_view &Value)
 {
-   *Value = Self->Path;
-   return ERR::Okay;
+   Value = Self->Path;
+   return Self->Path.empty() ? ERR::FieldNotSet : ERR::Okay;
 }
 
-static ERR SET_Path(objScript *Self, CSTRING Value)
+static ERR SET_Path(objScript *Self, std::string_view &Value)
 {
-   if (Self->Path) {
+   if (not Self->Path.empty()) {
       // If the location has already been set, throw the value to SetKey instead.
 
-      if ((Value) and (*Value)) {
-         return acSetKey(Self, "Path", Value);
-      }
+      if (not Value.empty()) return acSetKey(Self, "Path", std::string(Value).c_str());
    }
    else {
-      if (Self->Path)        { FreeResource(Self->Path); Self->Path = nullptr; }
-      if (Self->String)      { FreeResource(Self->String); Self->String = nullptr; }
-      if (Self->WorkingPath) { FreeResource(Self->WorkingPath); Self->WorkingPath = nullptr; }
+      Self->Path.clear();
+      Self->String.clear();
+      Self->WorkingPath.clear();
 
       int i, len;
-      if ((Value) and (*Value)) {
-         for (len=0; (Value[len]) and (Value[len] != ';'); len++);
+      if (not Value.empty()) {
+         for (len=0; (len < int(Value.size())) and (Value[len] != ';'); len++);
 
-         if (std::string_view(Value, len).starts_with("STRING:")) {
-            return SET_String(Self, Value + 7);
+         if (Value.substr(0, len).starts_with("STRING:")) {
+            auto statement = Value.substr(7);
+            return SET_String(Self, statement);
          }
 
-         if (AllocMemory(len+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&Self->Path, nullptr) IS ERR::Okay) {
-            for (i=0; i < len; i++) Self->Path[i] = Value[i];
-            Self->Path[i] = 0;
+         Self->Path.assign(Value, 0, len);
+         {
+            auto value = Value.data();
+            auto value_size = int(Value.size());
+            i = len;
 
             // If a semi-colon has been used, this indicates that a procedure follows the filename.
 
-            if (Value[i] IS ';') {
+            if ((i < value_size) and (value[i] IS ';')) {
                i++;
-               while ((Value[i]) and (unsigned(Value[i]) <= 0x20)) i++;
+               while ((i < value_size) and (unsigned(value[i]) <= 0x20)) i++;
                auto start = i, end = i;
-               while ((Value[end]) and (unsigned(Value[end]) > 0x20) and (Value[end] != ';')) end++;
+               while ((end < value_size) and (unsigned(value[end]) > 0x20) and (value[end] != ';')) end++;
                if (end > start) {
                   std::string buffer;
-                  buffer.append(Value, start, end - start);
-                  SET_Procedure(Self, buffer.c_str());
+                  buffer.append(value, start, end - start);
+                  std::string_view procedure(buffer);
+                  SET_Procedure(Self, procedure);
                }
 
                // Process optional parameters
 
-               if (Value[end] IS ';') {
+               if ((end < value_size) and (value[end] IS ';')) {
                   char arg[100];
 
                   i = end + 1;
-                  while (Value[i]) {
-                     while ((Value[i]) and (unsigned(Value[i]) <= 0x20)) i++;
-                     while (Value[i] IS ',') {
+                  while (i < value_size) {
+                     while ((i < value_size) and (unsigned(value[i]) <= 0x20)) i++;
+                     while ((i < value_size) and (value[i] IS ',')) {
                         i++;
-                        while ((Value[i]) and (unsigned(Value[i]) <= 0x20)) i++;
+                        while ((i < value_size) and (unsigned(value[i]) <= 0x20)) i++;
                      }
 
                      // Extract arg name
 
                      int j;
-                     for (j=0; (Value[i] != ',') and (Value[i] != '=') and (unsigned(Value[i]) > 0x20); j++) arg[j] = Value[i++];
+                     for (j=0; (i < value_size) and (value[i] != ',') and (value[i] != '=') and
+                          (unsigned(value[i]) > 0x20) and (j < int(sizeof(arg)) - 1); j++) arg[j] = value[i++];
                      arg[j] = 0;
 
-                     while ((Value[i]) and (Value[i] <= 0x20)) i++;
+                     while ((i < value_size) and (value[i] <= 0x20)) i++;
 
                      // Extract arg value
 
                      std::string argval("1");
-                     if (Value[i] IS '=') {
+                     if ((i < value_size) and (value[i] IS '=')) {
                         i++;
-                        while ((Value[i]) and (unsigned(Value[i]) <= 0x20)) i++;
-                        if (Value[i] IS '"') {
+                        while ((i < value_size) and (unsigned(value[i]) <= 0x20)) i++;
+                        if ((i < value_size) and (value[i] IS '"')) {
                            i++;
-                           for (j=0; (Value[i+j]) and (Value[i+j] != '"'); j++);
-                           argval.assign(Value, i, j);
+                           for (j=0; (i+j < value_size) and (value[i+j] != '"'); j++);
+                           argval.assign(value, i, j);
+                           i += j;
+                           if ((i < value_size) and (value[i] IS '"')) i++;
                         }
                         else {
-                           for (j=0; (Value[i+j]) and (Value[i+j] != ','); j++);
-                           argval.assign(Value, i, j);
+                           for (j=0; (i+j < value_size) and (value[i+j] != ','); j++);
+                           argval.assign(value, i, j);
+                           i += j;
                         }
                      }
 
@@ -598,7 +601,6 @@ static ERR SET_Path(objScript *Self, CSTRING Value)
                }
             }
          }
-         else return ERR::AllocMemory;
       }
    }
 
@@ -631,16 +633,15 @@ executed by default.
 
 *********************************************************************************************************************/
 
-static ERR GET_Procedure(objScript *Self, CSTRING *Value)
+static ERR GET_Procedure(objScript *Self, std::string_view &Value)
 {
-   *Value = Self->Procedure;
-   return ERR::Okay;
+   Value = Self->Procedure;
+   return Self->Procedure.empty() ? ERR::FieldNotSet : ERR::Okay;
 }
 
-static ERR SET_Procedure(objScript *Self, CSTRING Value)
+static ERR SET_Procedure(objScript *Self, std::string_view &Value)
 {
-   if (Self->Procedure) { FreeResource(Self->Procedure); Self->Procedure = nullptr; }
-   if (Value) Self->Procedure = strclone(Value);
+   Self->Procedure.assign(Value);
    return ERR::Okay;
 }
 
@@ -712,18 +713,17 @@ It is also commonly used for executing scripts that have been embedded into prog
 
 *********************************************************************************************************************/
 
-static ERR GET_String(objScript *Self, CSTRING *Value)
+static ERR GET_String(objScript *Self, std::string_view &Value)
 {
-   *Value = Self->String;
-   return ERR::Okay;
+   Value = Self->String;
+   return Self->String.empty() ? ERR::FieldNotSet : ERR::Okay;
 }
 
-static ERR SET_String(objScript *Self, CSTRING Value)
+static ERR SET_String(objScript *Self, std::string_view &Value)
 {
-   if (Self->Path) { FreeResource(Self->Path); Self->Path = nullptr; } // Path removed when a statement string is being set
-   if (Self->String) { FreeResource(Self->String); Self->String = nullptr; }
+   Self->Path.clear(); // Path removed when a statement string is being set
+   Self->String.assign(check_bom(Value));
 
-   if (Value) Self->String = strclone(check_bom((const unsigned char *)Value));
    return ERR::Okay;
 }
 
@@ -775,12 +775,12 @@ A client can manually change the working path by setting this field with a custo
 
 *********************************************************************************************************************/
 
-static ERR GET_WorkingPath(objScript *Self, STRING *Value)
+static ERR GET_WorkingPath(objScript *Self, std::string_view &Value)
 {
    kt::Log log;
 
-   if (!Self->WorkingPath) {
-      if (!Self->Path) {
+   if (Self->WorkingPath.empty()) {
+      if (Self->Path.empty()) {
          log.warning("Script has no defined Path.");
          return ERR::MissingPath;
       }
@@ -790,7 +790,7 @@ static ERR GET_WorkingPath(objScript *Self, STRING *Value)
       bool path = false;
       if (Self->Path[0] IS '/') path = true;
       else {
-        for (int j=0; (Self->Path[j]) and (Self->Path[j] != '/') and (Self->Path[j] != '\\'); j++) {
+        for (int j=0; (j < int(Self->Path.size())) and (Self->Path[j] != '/') and (Self->Path[j] != '\\'); j++) {
             if (Self->Path[j] IS ':') {
                path = true;
                break;
@@ -798,46 +798,39 @@ static ERR GET_WorkingPath(objScript *Self, STRING *Value)
          }
       }
 
-      int k;
-      int j = 0;
-      for (k=0; Self->Path[k]; k++) {
-         if ((Self->Path[k] IS ':') or (Self->Path[k] IS '/') or (Self->Path[k] IS '\\')) j = k+1;
-      }
+      auto j = Self->Path.find_last_of(":/\\");
+      if (j != std::string::npos) j++;
 
       if (path) { // Extract absolute path
          kt::SwitchContext ctx(Self);
-         char save = Self->Path[j];
-         Self->Path[j] = 0;
-         Self->WorkingPath = strclone(Self->Path);
-         Self->Path[j] = save;
+         Self->WorkingPath.assign(Self->Path, 0, j);
       }
       else {
-         CSTRING working_path;
-         if ((CurrentTask()->get(FID_Path, working_path) IS ERR::Okay) and (working_path)) {
+         std::string_view working_path;
+         if ((CurrentTask()->get(FID_Path, working_path) IS ERR::Okay) and (not working_path.empty())) {
             // Using ResolvePath() can help to determine relative paths such as "../path/file"
 
-            std::string buf = working_path;
-            if (j > 0) buf.append(Self->Path, 0, j);
+            std::string buf(working_path);
+            if (j != std::string::npos) buf.append(Self->Path, 0, j);
 
             kt::SwitchContext ctx(Self);
             std::string rpath;
             if (ResolvePath(buf, RSF::APPROXIMATE, &rpath) IS ERR::Okay) {
-               Self->WorkingPath = strclone(rpath);
+               Self->WorkingPath = rpath;
             }
-            else Self->WorkingPath = strclone(working_path);
+            else Self->WorkingPath = working_path;
          }
          else log.warning("No working path.");
       }
    }
 
-   *Value = Self->WorkingPath;
-   return ERR::Okay;
+   Value = Self->WorkingPath;
+   return Self->WorkingPath.empty() ? ERR::FieldNotSet : ERR::Okay;
 }
 
-static ERR SET_WorkingPath(objScript *Self, STRING Value)
+static ERR SET_WorkingPath(objScript *Self, std::string_view &Value)
 {
-   if (Self->WorkingPath) { FreeResource(Self->WorkingPath); Self->WorkingPath = nullptr; }
-   if (Value) Self->WorkingPath = strclone(Value);
+   Self->WorkingPath.assign(Value);
    return ERR::Okay;
 }
 
@@ -852,18 +845,18 @@ static const FieldArray clScriptFields[] = {
    { "CurrentLine", FDF_INT|FDF_R },
    { "LineOffset",  FDF_INT|FDF_RW },
    // Virtual Fields
-   { "CacheFile",    FDF_STRING|FDF_RW,              GET_CacheFile, SET_CacheFile },
-   { "ErrorMessage", FDF_STRING|FDF_RW,              GET_ErrorMessage, SET_ErrorMessage },
-   { "WorkingPath",  FDF_STRING|FDF_RW,              GET_WorkingPath, SET_WorkingPath },
+   { "CacheFile",    FDF_CPPSTRING|FDF_RW,           GET_CacheFile, SET_CacheFile },
+   { "ErrorMessage", FDF_CPPSTRING|FDF_RW,           GET_ErrorMessage, SET_ErrorMessage },
+   { "WorkingPath",  FDF_CPPSTRING|FDF_RW,           GET_WorkingPath, SET_WorkingPath },
    { "Language",     FDF_STRING|FDF_R,               GET_Language, nullptr },
-   { "Location",     FDF_SYNONYM|FDF_STRING|FDF_RI,  GET_Path, SET_Path },
-   { "Procedure",    FDF_STRING|FDF_RW,              GET_Procedure, SET_Procedure },
+   { "Location",     FDF_SYNONYM|FDF_CPPSTRING|FDF_RI, GET_Path, SET_Path },
+   { "Procedure",    FDF_CPPSTRING|FDF_RW,           GET_Procedure, SET_Procedure },
    { "Name",         FDF_STRING|FDF_SYSTEM|FDF_RW,   nullptr, SET_Name },
-   { "Path",         FDF_STRING|FDF_RI,              GET_Path, SET_Path },
+   { "Path",         FDF_CPPSTRING|FDF_RI,           GET_Path, SET_Path },
    { "Results",      FDF_ARRAY|FDF_POINTER|FDF_STRING|FDF_RW, GET_Results, SET_Results },
-   { "Src",          FDF_SYNONYM|FDF_STRING|FDF_RI,  GET_Path, SET_Path },
-   { "Statement",    FDF_STRING|FDF_RW,              GET_String, SET_String },
-   { "String",       FDF_SYNONYM|FDF_STRING|FDF_RW,  GET_String, SET_String },
+   { "Src",          FDF_SYNONYM|FDF_CPPSTRING|FDF_RI, GET_Path, SET_Path },
+   { "Statement",    FDF_CPPSTRING|FDF_RW,           GET_String, SET_String },
+   { "String",       FDF_SYNONYM|FDF_CPPSTRING|FDF_RW, GET_String, SET_String },
    { "TotalArgs",    FDF_INT|FDF_R,                  GET_TotalArgs, nullptr },
    { "Variables",    FDF_POINTER|FDF_SYSTEM|FDF_R,   GET_Variables, nullptr },
    END_FIELD

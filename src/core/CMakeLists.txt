@@ -19,6 +19,18 @@ set (FUNCTIONS  # Full paths are required for add_custom_command() dependencies 
    "${CMAKE_CURRENT_SOURCE_DIR}/fs_resolution.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/fs_volumes.cpp")
 
+set (CORE_CLASSES
+   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_config.cpp"
+   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_file.cpp"
+   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_metaclass.cpp"
+   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_module.cpp"
+   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_script.cpp"
+   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_storagedevice.cpp"
+   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_task.cpp"
+   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_thread.cpp"
+   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_time.cpp"
+   "${CMAKE_CURRENT_SOURCE_DIR}/compression/class_compression.cpp")
+
 SET (CORE_DEFS
    "${CMAKE_CURRENT_SOURCE_DIR}/compression/class_compressed_stream_def.c"
    "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_config_def.c"
@@ -68,6 +80,7 @@ if (BUILD_DEFS)
          "${CMAKE_CURRENT_SOURCE_DIR}/defs/fields.tdl"
          "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/idl/common.tdl"
          ${FUNCTIONS}
+         ${CORE_CLASSES}
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       COMMENT "Producing definition files for the Core library"
       VERBATIM)

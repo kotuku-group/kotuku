@@ -28,7 +28,7 @@
 </tbody></table></div></div>
 <p>Converts a 32 bit (unsigned) long from network to host byte order.</p>
     <h3>Result</h3><p>The Value in host byte order.</p><div class="footer copyright text-right">Network module documentation © Paul Manias © 2005-2026</div></div>
-<div class="docs-content" style="display:none;" id="SetSSL"><h2>SetSSL()</h2><p class="lead">Alters SSL settings on an initialised NetSocket client object.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR net::SetSSL(objNetSocket * NetSocket, CSTRING Command, CSTRING Value)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>NetSocket</td><td>The target NetSocket object.</td></tr>
+<div class="docs-content" style="display:none;" id="SetSSL"><h2>SetSSL()</h2><p class="lead">Alters SSL settings on an initialised NetSocket client object.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR net::SetSSL(objNetSocket * NetSocket, const std::string_view &amp; Command, const std::string_view &amp; Value)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>NetSocket</td><td>The target NetSocket object.</td></tr>
 <tr><td>Command</td><td>Name of a command or option to set (case-sensitive, camel-case).</td></tr>
 <tr><td>Value</td><td>Value to set for the command or option.</td></tr>
 </tbody></table></div></div>

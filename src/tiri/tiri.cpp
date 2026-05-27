@@ -382,7 +382,7 @@ script.  If the script is cached, the variable settings will be available on the
 
 -INPUT-
 obj(Script) Script: Pointer to a Tiri script.
-cstr Name: The name of the variable to set.
+cpp(strview) Name: The name of the variable to set.
 int Type: A valid field type must be indicated, e.g. `FD_STRING`, `FD_POINTER`, `FD_INT`, `FD_DOUBLE`, `FD_INT64`.
 tags Variable: A variable that matches the indicated `Type`.
 
@@ -395,15 +395,15 @@ ObjectCorrupt: Privately maintained memory has become inaccessible.
 
 *********************************************************************************************************************/
 namespace fl {
-ERR SetVariable(objScript *Script, CSTRING Name, int Type, ...)
+ERR SetVariable(objScript *Script, const std::string_view &Name, int Type, ...)
 {
    kt::Log log(__FUNCTION__);
    prvTiri *prv;
    va_list list;
 
-   if ((not Script) or (Script->classID() != CLASSID::TIRI) or (not Name) or (not *Name)) return log.warning(ERR::Args);
+   if ((not Script) or (Script->classID() != CLASSID::TIRI) or Name.empty()) return log.warning(ERR::Args);
 
-   log.branch("Script: %d, Name: %s, Type: $%.8x", Script->UID, Name, Type);
+   log.branch("Script: %d, Name: %.*s, Type: $%.8x", Script->UID, int(Name.size()), Name.data(), Type);
 
    if (not (prv = (prvTiri *)Script->ChildPrivate)) return log.warning(ERR::ObjectCorrupt);
    if (not prv->Lua) return log.warning(ERR::InvalidState);
@@ -420,7 +420,7 @@ ERR SetVariable(objScript *Script, CSTRING Name, int Type, ...)
       return log.warning(ERR::FieldTypeMismatch);
    }
 
-   lua_setglobal(prv->Lua, Name);
+   lua_setglobal(prv->Lua, Name.data());
 
    va_end(list);
    return ERR::Okay;
@@ -638,20 +638,23 @@ void make_any_array(lua_State *Lua, int Flags, std::string_view TypeName, int El
 
 void get_line(objScript *Self, int Line, STRING Buffer, int Size)
 {
-   if (CSTRING str = Self->String) {
+   if (not Self->String.empty()) {
+      auto str = std::string_view(Self->String);
       int i;
       for (i=0; i < Line; i++) {
-         if (not (str = next_line(str))) {
+         str = next_line(str);
+         if (str.empty()) {
             Buffer[0] = 0;
             return;
          }
       }
 
-      while ((*str IS ' ') or (*str IS '\t')) str++;
+      while ((not str.empty()) and ((str.front() IS ' ') or (str.front() IS '\t'))) str.remove_prefix(1);
 
       for (i=0; i < Size-1; i++) {
-         if ((*str IS '\n') or (*str IS '\r') or (not *str)) break;
-         Buffer[i] = *str++;
+         if ((str.empty()) or (str.front() IS '\n') or (str.front() IS '\r')) break;
+         Buffer[i] = str.front();
+         str.remove_prefix(1);
       }
       Buffer[i] = 0;
    }

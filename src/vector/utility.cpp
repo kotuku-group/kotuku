@@ -4,7 +4,7 @@ double glDisplayHDPI = 96, glDisplayVDPI = 96, glDisplayDPI = 96;
 
 [[maybe_unused]] static HSV rgb_to_hsl(FRGB Colour);
 [[maybe_unused]] static FRGB hsl_to_rgb(HSV Colour);
-static void read_numseq_zero(CSTRING &, std::initializer_list<double *>);
+static void read_numseq_zero(std::string_view &, std::initializer_list<double *>);
 static bool read_transform_number(std::string_view &Value, double &Result);
 
 //********************************************************************************************************************
@@ -133,7 +133,7 @@ static void update_dpi(void)
 // data specification. This will provide a visual clue to the user or developer about where the error might be in the
 // path data specification.
 
-ERR read_path(std::vector<PathCommand> &Path, CSTRING Value)
+ERR read_path(std::vector<PathCommand> &Path, std::string_view Value)
 {
    kt::Log log(__FUNCTION__);
 
@@ -141,11 +141,19 @@ ERR read_path(std::vector<PathCommand> &Path, CSTRING Value)
 
    int max_cmds = 8192; // Maximum commands per path - this acts as a safety net in case the parser gets stuck.
    uint8_t cmd = 0;
-   while (*Value) {
-      if (std::isalpha(*Value)) cmd = *Value++;
-      else if (std::isdigit(*Value) or (*Value IS '-') or (*Value IS '+') or (*Value IS '.')); // Use the previous command
-      else if ((*Value <= 0x20) or (*Value IS ',')) { Value++; continue; }
-      else break;
+   while (not Value.empty()) {
+      const auto current = Value.front();
+      const bool use_previous_cmd = std::isdigit((uint8_t)current) or (current IS '-') or (current IS '+') or
+         (current IS '.');
+      if (std::isalpha((uint8_t)current)) {
+         cmd = current;
+         Value.remove_prefix(1);
+      }
+      else if ((current <= 0x20) or (current IS ',')) {
+         Value.remove_prefix(1);
+         continue;
+      }
+      else if (not use_previous_cmd) break;
 
       switch (cmd) {
          case 'M': case 'm': // MoveTo
@@ -230,7 +238,7 @@ ERR read_path(std::vector<PathCommand> &Path, CSTRING Value)
          }
 
          default: {
-            log.warning("Invalid path command '%c'", *Value);
+            log.warning("Invalid path command '%c'", cmd ? cmd : current);
             return ERR::InvalidValue;
          }
       }
@@ -438,7 +446,7 @@ ERR get_font(kt::Log &Log, std::string_view Family, std::string_view Style, int 
    std::string family(Family.empty() ? "*" : Family);
    if (not family.ends_with("*")) family.append(",*");
    CSTRING final_name;
-   if (fnt::ResolveFamilyName(family.c_str(), &final_name) IS ERR::Okay) family.assign(final_name);
+   if (fnt::ResolveFamilyName(family, &final_name) IS ERR::Okay) family.assign(final_name);
 
    std::string style(Style);
    if ((Weight) and (Weight != 400)) {
@@ -450,7 +458,7 @@ ERR get_font(kt::Log &Log, std::string_view Family, std::string_view Style, int 
    const int point_size = std::round(Size * (72.0 / DISPLAY_DPI));
    CSTRING location = nullptr;
    FMETA meta = FMETA::NIL;
-   if (auto error = fnt::SelectFont(family.c_str(), style.c_str(), &location, &meta); error IS ERR::Okay) {
+   if (auto error = fnt::SelectFont(family, style, &location, &meta); error IS ERR::Okay) {
       LocalResource loc(location);
 
       if ((meta & FMETA::SCALED) IS FMETA::NIL) { // Bitmap font
@@ -607,13 +615,12 @@ ERR read_numseq(std::string_view &String, std::initializer_list<double *> Value)
    return ERR::Okay;
 }
 
-void read_numseq_zero(CSTRING &String, std::initializer_list<double *> Value)
+void read_numseq_zero(std::string_view &String, std::initializer_list<double *> Value)
 {
    for (double *v : Value) {
-      auto next = (STRING)String;
-      next_value(String);
-      *v = strtod(String, &next);
-      String = next;
+      double result = 0;
+      if (read_transform_number(String, result)) *v = result;
+      else *v = 0;
    }
 }
 

@@ -65,10 +65,11 @@ endif()
 
 # To switch on a custom option use -D, e.g. -DKOTUKU_VLOG=ON
 
-option (KOTUKU_STATIC   "Build as a set of static libraries instead of the default modular build." OFF)
-option (KOTUKU_INSTALL  "Create installation targets" ON)
-option (KOTUKU_VLOG     "Enable verbose log messages in the generated binaries" OFF)
-option (ORIGO_CONSOLE   "Build Origo as a Windows console application rather than a GUI application (Windows only)" OFF)
+option (KOTUKU_STATIC            "Build as a set of static libraries instead of the default modular build." OFF)
+option (KOTUKU_INSTALL           "Create installation targets" ON)
+option (KOTUKU_VLOG              "Enable verbose log messages in the generated binaries" OFF)
+option (KOTUKU_ICON_DEPENDENCIES "Track icon source files as dependencies for rebuilding the icon package." ON)
+option (ORIGO_CONSOLE            "Build Origo as a Windows console application rather than a GUI application (Windows only)" OFF)
 if (UNIX)
    option (RUN_ANYWHERE  "Create a build that can run directly from the main folder.  Typically used if redefining CMAKE_INSTALL_PREFIX" OFF)
 else ()
@@ -1084,7 +1085,9 @@ configure_file ("src/config.h.in" "kotuku/config.h" NEWLINE_STYLE UNIX)
 # --------------------------------------------------------------------------------------------------------------------
 # Icons are installed as a zip file
 
-file(GLOB_RECURSE icon_files CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/data/icons/Default/*.svg")
+if (KOTUKU_ICON_DEPENDENCIES)
+   file(GLOB_RECURSE icon_files CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/data/icons/Default/*.svg")
+endif ()
 
 add_custom_command (
    OUTPUT  "${CMAKE_CURRENT_BINARY_DIR}/icons/Default.zip"
@@ -1148,7 +1151,16 @@ if (KOTUKU_INSTALL)
    endif ()
 
    if (NOT DISABLE_SSL)
-      install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/ssl/" DESTINATION "${CONFIG_TARGET}/ssl")
+      if (WIN32)
+         install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/ssl/" DESTINATION "${CONFIG_TARGET}/ssl"
+            FILES_MATCHING
+               PATTERN "ca-bundle.crt"
+               PATTERN "localhost.pem"
+               PATTERN "localhost.p12"
+               PATTERN "localhost-password.p12")
+      else ()
+         install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/ssl/" DESTINATION "${CONFIG_TARGET}/ssl")
+      endif ()
    endif ()
    if (NOT DISABLE_FONT)
       install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/fonts/" DESTINATION "${CONFIG_TARGET}/fonts")

@@ -80,7 +80,8 @@
                            
                           <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Flags</th><td class="col-md-1"><span class="text-nowrap">SCR</span></td><td>Optional flag settings.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Flags" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>Display flags configure hosted-window behaviour, buffering, visibility, controller grabbing and driver-reported capabilities.  After initialisation, only a limited subset can be changed and support for changing window style is platform dependent.</p>
-<table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th class="col-md-1">SCR::ALPHA_BLEND</th><td>Enables alpha channel blending (if display is hosted and 32-bit).</td></tr>
+<table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th class="col-md-1">SCR::ACTIVE</th><td>The display is participating in the desktop view - this does not guarantee it is visible.</td></tr>
+<tr><th class="col-md-1">SCR::ALPHA_BLEND</th><td>Enables alpha channel blending (if display is hosted and 32-bit).</td></tr>
 <tr><th class="col-md-1">SCR::AUTO_SAVE</th><td>Saves settings to the global display state when the object is freed.</td></tr>
 <tr><th class="col-md-1">SCR::BIT_6</th><td>Display is limited to 6-bit output per colour gun.</td></tr>
 <tr><th class="col-md-1">SCR::BORDERLESS</th><td>If display is hosted, create it as a popup / borderless window.</td></tr>
@@ -94,10 +95,14 @@
 <tr><th class="col-md-1">SCR::HOSTED</th><td>The display is a desktop hosted window.</td></tr>
 <tr><th class="col-md-1">SCR::MAXIMISE</th><td>Special win32 flag.</td></tr>
 <tr><th class="col-md-1">SCR::MAXSIZE</th><td>For <a href="display.html?page=GetDisplayInfo">GetDisplayInfo()</a> only, indicates that the width and height values indicate the display's maximum size.</td></tr>
+<tr><th class="col-md-1">SCR::MIRRORED</th><td>The display is a mirrored copy.</td></tr>
 <tr><th class="col-md-1">SCR::NO_ACCELERATION</th><td>2D graphics card acceleration is not available.</td></tr>
 <tr><th class="col-md-1">SCR::POWERSAVE</th><td>Power saving is active (read-only).</td></tr>
+<tr><th class="col-md-1">SCR::PRIMARY</th><td>The display is flagged as being the primary.</td></tr>
 <tr><th class="col-md-1">SCR::READ_ONLY</th><td>Synonym for <code>MAXIMISE | CUSTOM_WINDOW | FLIPPABLE | GTF_ENABLED | DPMS_ENABLED | POWERSAVE | HOSTED | MAXSIZE | REFRESH | BIT_6 | VISIBLE | NO_ACCELERATION</code></td></tr>
 <tr><th class="col-md-1">SCR::REFRESH</th><td>For <a href="display.html?page=GetDisplayInfo">GetDisplayInfo()</a> only, used to indicate that a display change has recently occurred and cache refresh is required.</td></tr>
+<tr><th class="col-md-1">SCR::ROTATED</th><td>True if the display is rotated.</td></tr>
+<tr><th class="col-md-1">SCR::VIRTUAL</th><td>The display is virtual or not visible (device not switched on).</td></tr>
 <tr><th class="col-md-1">SCR::VISIBLE</th><td>Set if the screen is on display.</td></tr>
 </tbody></table>
       
@@ -282,19 +287,6 @@
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#tac-Focus" style="scroll-margin:3em;" id="ta-Focus"><td style="width:1%; border-top-style: none; border-bottom-style: none;"></td><th class="col-md-1 text-primary">Focus</th><td>Focus on this object in the user interface.</td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#tac-GetKey" style="scroll-margin:3em;" id="ta-GetKey" role="button"><td style="width:1%; border-top-style: none; border-bottom-style: none;"><i class="bi bi-chevron-double-right text-secondary"></i></td><th class="col-md-1 text-primary">GetKey</th><td>Retrieves formatted display information.</td></tr><tr><td class="hiddenRow" style="width:1%; border-top-style: none; border-bottom-style: none;"></td><td colspan="2" class="hiddenRow"><div id="tac-GetKey" class="collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Key</td><td>The name of a key value.</td></tr>
-<tr><td>Value</td><td>Pointer to a buffer space large enough to hold the retrieved value.</td></tr>
-<tr><td>Size</td><td>Indicates the byte size of the Buffer.</td></tr>
-</tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
-<p>GetKey currently supports the <code>resolution(Index, Format)</code> key.  <code>Index</code> selects a display resolution and <code>Format</code> is a string containing replacement tokens.  Supported tokens are <code>%w</code> for width, <code>%h</code> for height, <code>%d</code> for bit depth, <code>%c</code> for colour count and <code>%%</code> for a literal percent sign.</p>
-      
-<div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
-<tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
-<tr><th class="col-md-1">NoData</th><td>No data is available for use</td></tr>
-<tr><th class="col-md-1">NoSupport</th><td>Operation not supported</td></tr>
-<tr><th class="col-md-1">OutOfRange</th><td>A value is outside of the valid range</td></tr>
-<tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
-</tbody></table></div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#tac-Hide" style="scroll-margin:3em;" id="ta-Hide" role="button"><td style="width:1%; border-top-style: none; border-bottom-style: none;"><i class="bi bi-chevron-double-right text-secondary"></i></td><th class="col-md-1 text-primary">Hide</th><td>Hides a display from the user's view.</td></tr><tr><td class="hiddenRow" style="width:1%; border-top-style: none; border-bottom-style: none;"></td><td colspan="2" class="hiddenRow"><div id="tac-Hide" class="collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR acHide(*Object)</samp></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
 <p>Hide removes a hosted display window from view, or releases the visible presentation resources used by native and OpenGL ES drivers.  The display remains valid and can be shown again with <a data-bs-toggle="tooltip" title="Presents a display object to the user." href="#ta-Show">Show()</a>.</p>
 <p>The <code>SCR::VISIBLE</code> flag is cleared after the hide request is processed.</p>
@@ -372,7 +364,19 @@
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">NoSupport</th><td>Operation not supported</td></tr>
 </tbody></table></div></div></td></tr>
-</tbody></table><h3>Methods</h3><p>The following methods are currently supported:</p><table class="table"><tbody><tr data-bs-toggle="collapse" data-bs-target="#tmx-Minimise" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">Minimise</th><td id="tm-Minimise">Minimise the desktop window hosting the display.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-Minimise" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR gfx::Minimise(OBJECTPTR Object)</samp></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
+</tbody></table><h3>Methods</h3><p>The following methods are currently supported:</p><table class="table"><tbody><tr data-bs-toggle="collapse" data-bs-target="#tmx-GetFrame" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">GetFrame</th><td id="tm-GetFrame">Returns window frame size information for hosted displays.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-GetFrame" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR gfx::GetFrame(OBJECTPTR Object, INT * Left, INT * Top, INT * Right, INT * Bottom)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Left</td><td>Returns the width of the left side of the window frame, in pixels.</td></tr>
+<tr><td>Top</td><td>Returns the height of the top of the window frame, in pixels.</td></tr>
+<tr><td>Right</td><td>Returns the width of the right side of the window frame, in pixels.</td></tr>
+<tr><td>Bottom</td><td>Returns the height of the bottom of the window frame, in pixels.</td></tr>
+</tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
+<p>On hosted displays, GetFrame() returns the thickness of the host window frame around the client display area.</p>
+      
+<div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
+<tr><th class="col-md-1">NoSupport</th><td>Operation not supported</td></tr>
+<tr><th class="col-md-1">SystemCall</th><td>A call to the host system has failed</td></tr>
+<tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
+</tbody></table></div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tmx-Minimise" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">Minimise</th><td id="tm-Minimise">Minimise the desktop window hosting the display.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-Minimise" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR gfx::Minimise(OBJECTPTR Object)</samp></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
 <p>If a display is hosted in a desktop window, Minimise() performs the platform's default minimise action for that window. On Microsoft Windows this normally minimises the window to the taskbar.  On X11 the current implementation unmaps the window.</p>
 <p>Calling Minimise() on a display that is already minimised may restore the host window on some platforms.  Treat that behaviour as platform dependent.</p>
       
@@ -481,7 +485,8 @@
 <div class="docs-content" style="display:none;" id="MON"><h1>MON Type</h1><p class="lead">Flags for the Display class SetMonitor() method.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>MON::AUTO_DETECT</th><td>Monitor settings to be auto-detected on startup.</td></tr>
 <tr><th>MON::BIT_6</th><td>The device is limited to 6-bit colour production in real terms.</td></tr>
 </tbody></table><div class="footer copyright text-right">Display module documentation © Paul Manias © 2003-2026</div></div>
-<div class="docs-content" style="display:none;" id="SCR"><h1>SCR Type</h1><p class="lead">Display flags.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>SCR::ALPHA_BLEND</th><td>Enables alpha channel blending (if display is hosted and 32-bit).</td></tr>
+<div class="docs-content" style="display:none;" id="SCR"><h1>SCR Type</h1><p class="lead">Display flags.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>SCR::ACTIVE</th><td>The display is participating in the desktop view - this does not guarantee it is visible.</td></tr>
+<tr><th>SCR::ALPHA_BLEND</th><td>Enables alpha channel blending (if display is hosted and 32-bit).</td></tr>
 <tr><th>SCR::AUTO_SAVE</th><td>Saves settings to the global display state when the object is freed.</td></tr>
 <tr><th>SCR::BIT_6</th><td>Display is limited to 6-bit output per colour gun.</td></tr>
 <tr><th>SCR::BORDERLESS</th><td>If display is hosted, create it as a popup / borderless window.</td></tr>
@@ -495,10 +500,14 @@
 <tr><th>SCR::HOSTED</th><td>The display is a desktop hosted window.</td></tr>
 <tr><th>SCR::MAXIMISE</th><td>Special win32 flag.</td></tr>
 <tr><th>SCR::MAXSIZE</th><td>For <a href="display.html?page=GetDisplayInfo">GetDisplayInfo()</a> only, indicates that the width and height values indicate the display's maximum size.</td></tr>
+<tr><th>SCR::MIRRORED</th><td>The display is a mirrored copy.</td></tr>
 <tr><th>SCR::NO_ACCELERATION</th><td>2D graphics card acceleration is not available.</td></tr>
 <tr><th>SCR::POWERSAVE</th><td>Power saving is active (read-only).</td></tr>
+<tr><th>SCR::PRIMARY</th><td>The display is flagged as being the primary.</td></tr>
 <tr><th>SCR::READ_ONLY</th><td>Synonym for <code>MAXIMISE | CUSTOM_WINDOW | FLIPPABLE | GTF_ENABLED | DPMS_ENABLED | POWERSAVE | HOSTED | MAXSIZE | REFRESH | BIT_6 | VISIBLE | NO_ACCELERATION</code></td></tr>
 <tr><th>SCR::REFRESH</th><td>For <a href="display.html?page=GetDisplayInfo">GetDisplayInfo()</a> only, used to indicate that a display change has recently occurred and cache refresh is required.</td></tr>
+<tr><th>SCR::ROTATED</th><td>True if the display is rotated.</td></tr>
+<tr><th>SCR::VIRTUAL</th><td>The display is virtual or not visible (device not switched on).</td></tr>
 <tr><th>SCR::VISIBLE</th><td>Set if the screen is on display.</td></tr>
 </tbody></table><div class="footer copyright text-right">Display module documentation © Paul Manias © 2003-2026</div></div>
 </div></div></div><script type="text/javascript" src="../../js/bootstrap.bundle.min.js"></script><script type="text/javascript" src="../../js/base.js"></script><script type="text/javascript">

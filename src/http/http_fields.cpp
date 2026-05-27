@@ -76,16 +76,15 @@ The ContentType should be set prior to sending a `PUT` or `POST` request.  If `N
 
 *********************************************************************************************************************/
 
-static ERR GET_ContentType(extHTTP *Self, STRING *Value)
+static ERR GET_ContentType(extHTTP *Self, std::string_view &Value)
 {
-   *Value = Self->ContentType.data();
+   Value = Self->ContentType;
    return ERR::Okay;
 }
 
-static ERR SET_ContentType(extHTTP *Self, CSTRING Value)
+static ERR SET_ContentType(extHTTP *Self, const std::string_view &Value)
 {
-   if (Value) Self->ContentType.assign(Value);
-   else Self->ContentType.clear();
+   Self->ContentType.assign(Value);
    return ERR::Okay;
 }
 
@@ -192,10 +191,9 @@ The HTTP server to target for HTTP requests is defined here.  To change the host
 
 *********************************************************************************************************************/
 
-static ERR SET_Host(extHTTP *Self, CSTRING Value)
+static ERR SET_Host(extHTTP *Self, const std::string_view &Value)
 {
-   if (Self->Host) { FreeResource(Self->Host); Self->Host = nullptr; }
-   Self->Host = kt::strclone(Value);
+   Self->Host.assign(Value);
    return ERR::Okay;
 }
 
@@ -259,18 +257,17 @@ Multiple files can be specified in the InputFile field by separating each file p
 
 *********************************************************************************************************************/
 
-static ERR SET_InputFile(extHTTP *Self, CSTRING Value)
+static ERR SET_InputFile(extHTTP *Self, const std::string_view &Value)
 {
    kt::Log log;
 
-   log.trace("InputFile: %.80s", Value);
+   log.trace("InputFile: %.*s", int(std::min<size_t>(Value.size(), 80)), Value.data());
 
-   if (Self->InputFile) { FreeResource(Self->InputFile);  Self->InputFile = nullptr; }
-
+   Self->InputFile.clear();
    Self->MultipleInput = false;
    Self->InputPos = 0;
-   if ((Value) and (*Value)) {
-      Self->InputFile = kt::strclone(Value);
+   if (not Value.empty()) {
+      Self->InputFile.assign(Value);
 
       // Check if the path contains multiple inputs, separated by the pipe symbol.
 
@@ -312,7 +309,7 @@ An alternative to setting the Location is to set the #Host, #Path and #Port sepa
 
 *********************************************************************************************************************/
 
-static ERR GET_Location(extHTTP *Self, STRING *Value)
+static ERR GET_Location(extHTTP *Self, std::string_view &Value)
 {
    Self->AuthRetries = 0; // Reset the retry counter
 
@@ -327,49 +324,54 @@ static ERR GET_Location(extHTTP *Self, STRING *Value)
    else str << "http://" << Self->Host << ':' << Self->Port << '/' << Self->Path;
 
    Self->URI = str.str();
-   *Value = Self->URI.data();
+   Value = Self->URI;
    return ERR::Okay;
 }
 
-static ERR SET_Location(extHTTP *Self, CSTRING Value)
+static ERR SET_Location(extHTTP *Self, const std::string_view &Value)
 {
    kt::Log log;
 
-   if ((!Value) or (!*Value)) return ERR::InvalidValue;
+   if (Value.empty()) return ERR::InvalidValue;
 
-   CSTRING str = Value;
+   auto uri = Value;
    int new_port = 80;
    bool new_ssl = false;
 
-   if (kt::startswith("http://", str)) str += 7;
-   else if (kt::startswith("https://", str)) {
-      str += 8;
+   if (uri.starts_with("http://")) uri.remove_prefix(7);
+   else if (uri.starts_with("https://")) {
+      uri.remove_prefix(8);
       new_port = 443;
       new_ssl = true;
    }
    else return ERR::InvalidValue;
 
-   CSTRING host = str;
-   int len;
-   for (len=0; (str[len]) and (str[len] != ':') and (str[len] != '/'); len++);
-   if (!len) return ERR::InvalidValue;
+   auto host_len = uri.find_first_of(":/");
+   if (host_len IS std::string_view::npos) host_len = uri.size();
+   if (!host_len) return ERR::InvalidValue;
 
-   str += len;
+   auto host = uri.substr(0, host_len);
+   auto path = uri.substr(host_len);
 
-   if (*str IS ':') {
-      str++;
+   if ((!path.empty()) and (path.front() IS ':')) {
+      path.remove_prefix(1);
 
-      char *port_end = nullptr;
-      long port_long = strtol(str, &port_end, 10);
-      if ((port_end IS str) or (port_long <= 0) or (port_long > MAX_PORT_NUMBER)) return ERR::InvalidValue;
-      if ((*port_end) and (*port_end != '/')) return ERR::InvalidValue;
+      auto port_end = path.find('/');
+      auto port_text = path.substr(0, port_end);
+      if (port_text.empty()) return ERR::InvalidValue;
 
-      new_port = int(port_long);
+      int port_value = 0;
+      auto [ ptr, error ] = std::from_chars(port_text.data(), port_text.data() + port_text.size(), port_value);
+      if ((error != std::errc()) or (ptr != port_text.data() + port_text.size()) or
+            (port_value <= 0) or (port_value > MAX_PORT_NUMBER)) {
+         return ERR::InvalidValue;
+      }
+
+      new_port = port_value;
       if (new_port IS 443) new_ssl = true;
-      str = port_end;
-   }
 
-   while ((*str) and (*str != '/')) str++;
+      path = (port_end IS std::string_view::npos) ? std::string_view() : path.substr(port_end);
+   }
 
    if (Self->initialised()) {
       if (Self->TimeoutManager) { UpdateTimer(Self->TimeoutManager, 0); Self->TimeoutManager = 0; }
@@ -382,25 +384,19 @@ static ERR SET_Location(extHTTP *Self, CSTRING Value)
          Self->Socket = nullptr;
       }
 
-      log.msg("%s", Value);
+      log.msg("%.*s", int(Value.size()), Value.data());
    }
 
    Self->Port = new_port;
    if (new_ssl) Self->Flags |= HTF::SSL;
    else Self->Flags &= ~HTF::SSL;
 
-   if (Self->Host) { FreeResource(Self->Host); Self->Host = nullptr; }
-   if (Self->Path) { FreeResource(Self->Path); Self->Path = nullptr; }
+   Self->Host.assign(host);
+   Self->Path.clear();
 
-   if (AllocMemory(len+1, MEM::STRING|MEM::NO_CLEAR, &Self->Host) != ERR::Okay) {
-      return ERR::AllocMemory;
-   }
-
-   kt::copymem(host, Self->Host, len);
-   Self->Host[len] = 0;
-
-   if (*str) { // Parse absolute path
-      return SET_Path(Self, str+1);
+   if (not path.empty()) { // Parse absolute path
+      path.remove_prefix(1);
+      return SET_Path(Self, path);
    }
 
    return ERR::Okay;
@@ -480,10 +476,9 @@ been set in the #Flags field.
 
 *********************************************************************************************************************/
 
-static ERR SET_OutputFile(extHTTP *Self, CSTRING Value)
+static ERR SET_OutputFile(extHTTP *Self, const std::string_view &Value)
 {
-   if (Self->OutputFile) { FreeResource(Self->OutputFile); Self->OutputFile = nullptr; }
-   Self->OutputFile = kt::strclone(Value);
+   Self->OutputFile.assign(Value);
    return ERR::Okay;
 }
 
@@ -509,10 +504,8 @@ A `401` status code is returned in the event of an authorisation failure.
 
 *********************************************************************************************************************/
 
-static ERR SET_Password(extHTTP *Self, CSTRING Value)
+static ERR SET_Password(extHTTP *Self, const std::string_view &Value)
 {
-   if (!Value) return ERR::InvalidValue;
-
    Self->Password.assign(Value);
    Self->PasswordPreset = true;
    return ERR::Okay;
@@ -531,42 +524,40 @@ automatic conversions are operated when setting the Path field.
 
 *********************************************************************************************************************/
 
-static ERR SET_Path(extHTTP *Self, CSTRING Value)
+static ERR SET_Path(extHTTP *Self, const std::string_view &Value)
 {
    Self->AuthRetries = 0; // Reset the retry counter
 
-   if (Self->Path) { FreeResource(Self->Path); Self->Path = nullptr; }
+   Self->Path.clear();
 
-   if (!Value) return ERR::Okay;
+   if (Value.empty()) return ERR::Okay;
 
-   while (*Value IS '/') Value++; // Skip '/' prefix
+   auto path = Value;
+   while ((not path.empty()) and (path.front() IS '/')) path.remove_prefix(1); // Skip '/' prefix
 
-   std::string encoded_path = encode_url_path(Value);
+   std::string encoded_path = encode_url_path(path);
 
-   if (AllocMemory(encoded_path.length() + 1, MEM::STRING|MEM::NO_CLEAR, &Self->Path) IS ERR::Okay) {
-      kt::strcopy(encoded_path, Self->Path, encoded_path.length() + 1);
+   Self->Path.assign(encoded_path);
 
-      // Check if this path has been authenticated against the server yet by comparing it to AuthPath.  We need to
-      // do this if a PUT instruction is executed against the path and we're not authenticated yet.
+   // Check if this path has been authenticated against the server yet by comparing it to AuthPath.  We need to
+   // do this if a PUT instruction is executed against the path and we're not authenticated yet.
 
-      auto pview = std::string_view(Self->Path, encoded_path.length());
-      auto folder_len = pview.find_last_of('/');
-      if (folder_len IS std::string::npos) folder_len = 0;
+   auto pview = std::string_view(Self->Path.data(), Self->Path.size());
+   auto folder_len = pview.find_last_of('/');
+   if (folder_len IS std::string::npos) folder_len = 0;
 
-      Self->SecurePath = true;
-      if (!Self->AuthPath.empty()) {
-         if (Self->AuthPath.size() IS folder_len) {
-            pview.remove_suffix(pview.size() - folder_len);
-            if (pview IS Self->AuthPath) { // No change to the current path
-               Self->SecurePath = false;
-            }
+   Self->SecurePath = true;
+   if (!Self->AuthPath.empty()) {
+      if (Self->AuthPath.size() IS folder_len) {
+         pview.remove_suffix(pview.size() - folder_len);
+         if (pview IS Self->AuthPath) { // No change to the current path
+            Self->SecurePath = false;
          }
       }
-
-      Self->AuthPath.assign(Self->Path, folder_len);
-      return ERR::Okay;
    }
-   else return ERR::AllocMemory;
+
+   Self->AuthPath.assign(Self->Path, 0, folder_len);
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -590,10 +581,9 @@ that the proxy server uses to receive requests, see the #ProxyPort field.
 
 *********************************************************************************************************************/
 
-static ERR SET_ProxyServer(extHTTP *Self, CSTRING Value)
+static ERR SET_ProxyServer(extHTTP *Self, const std::string_view &Value)
 {
-   if (Self->ProxyServer) { FreeResource(Self->ProxyServer); Self->ProxyServer = nullptr; }
-   if ((Value) and (Value[0])) Self->ProxyServer = kt::strclone(Value);
+   Self->ProxyServer.assign(Value);
    Self->ProxyDefined = true;
    return ERR::Okay;
 }
@@ -608,17 +598,15 @@ here.
 
 *********************************************************************************************************************/
 
-static ERR GET_Realm(extHTTP *Self, CSTRING *Value)
+static ERR GET_Realm(extHTTP *Self, std::string_view &Value)
 {
-   if (Self->Realm.empty()) *Value = nullptr;
-   else *Value = Self->Realm.c_str();
+   Value = Self->Realm;
    return ERR::Okay;
 }
 
-static ERR SET_Realm(extHTTP *Self, CSTRING Value)
+static ERR SET_Realm(extHTTP *Self,  const std::string_view &Value)
 {
-   if (Value) Self->Realm.assign(Value);
-   else Self->Realm.clear();
+   Self->Realm.assign(Value);
    return ERR::Okay;
 }
 
@@ -740,17 +728,16 @@ This field describes the `user-agent` value that will be sent in HTTP requests. 
 
 *********************************************************************************************************************/
 
-static ERR GET_UserAgent(extHTTP *Self, CSTRING *Value)
+static ERR GET_UserAgent(extHTTP *Self, std::string_view &Value)
 {
-   if (Self->UserAgent) *Value = Self->UserAgent;
-   else *Value = "Kotuku Client";
+   if (Self->UserAgent.empty()) Value = "Kotuku Client";
+   else Value = std::string_view(Self->UserAgent.data(), Self->UserAgent.size());
    return ERR::Okay;
 }
 
-static ERR SET_UserAgent(extHTTP *Self, CSTRING Value)
+static ERR SET_UserAgent(extHTTP *Self,  const std::string_view &Value)
 {
-   if (Self->UserAgent) { FreeResource(Self->UserAgent); Self->UserAgent = nullptr; }
-   Self->UserAgent = kt::strclone(Value);
+   Self->UserAgent.assign(Value);
    return ERR::Okay;
 }
 
@@ -769,10 +756,8 @@ presented with a dialog box and asked to enter the correct username and password
 
 *********************************************************************************************************************/
 
-static ERR SET_Username(extHTTP *Self, CSTRING Value)
+static ERR SET_Username(extHTTP *Self, const std::string_view &Value)
 {
-   if (!Value) return ERR::InvalidValue;
-
    Self->Username.assign(Value);
    return ERR::Okay;
 }

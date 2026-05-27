@@ -140,15 +140,6 @@ static inline std::string_view lua_checkstringview(lua_State *L, int idx)
    else return std::string_view{};
 }
 
-// This version doesn't raise an error if the argument is not a string.
-
-static inline std::string_view lua_tostringview(lua_State *L, int idx)
-{
-   size_t len = 0;
-   if (auto s = lua_tolstring(L, idx, &len)) return std::string_view{s, len};
-   else return std::string_view{};
-}
-
 //********************************************************************************************************************
 // Standard hash computation, but stops when it encounters a character outside of A-Za-z0-9 range
 // Note that struct name hashes are case sensitive.
@@ -292,7 +283,6 @@ struct prvTiri {
    DateTime CacheDate;
    PERMIT   CachePermissions;
    JOF      JitOptions;
-   int      LoadedSize;
    int      MainChunkRef;              // Registry reference to the main chunk for post-execution analysis
    uint8_t  Recurse;
    uint8_t  SaveCompiled;
@@ -374,6 +364,18 @@ constexpr uint32_t simple_hash(CSTRING String, uint32_t Hash = 0) {
    while (*String IS '\r') String++;
    if (*String) return String;
    else return nullptr;
+}
+
+[[maybe_unused]] [[nodiscard]] constexpr std::string_view next_line(std::string_view String) noexcept
+{
+   size_t pos = 0;
+
+   while ((pos < String.size()) and (String[pos] != '\n') and (String[pos] != '\r')) pos++;
+   while ((pos < String.size()) and (String[pos] IS '\r')) pos++;
+   if ((pos < String.size()) and (String[pos] IS '\n')) pos++;
+   while ((pos < String.size()) and (String[pos] IS '\r')) pos++;
+   if (pos < String.size()) return String.substr(pos);
+   else return {};
 }
 
 //********************************************************************************************************************

@@ -12,6 +12,7 @@
 #include <cctype>
 #include <format>
 #include <iomanip>
+#include <limits>
 #include <ranges>
 #include <sstream>
 #include <string>
@@ -42,6 +43,51 @@ static ERR save_binary(objScript *, OBJECTPTR);
    if ((Value.size() >= 2) and (Value[0] IS '\xff') and (Value[1] IS '\xfe'))
       return Value.substr(2); // UTF-16 BOM little endian
    return Value;
+}
+
+static std::string make_chunk_name(const objScript *Self)
+{
+   if (Self->Path.empty()) return "=script";
+
+   std::string chunk_name;
+   chunk_name.reserve(Self->Path.size() + 1);
+   chunk_name.push_back('@');
+   chunk_name.append(Self->Path);
+   return chunk_name;
+}
+
+static ERR read_file_to_string(const std::string_view &Path, int64_t Size, std::string &Buffer, int *BytesRead)
+{
+   if ((Size < 0) or (Size > int64_t(std::numeric_limits<int>::max()))) return ERR::OutOfRange;
+
+   if (Size IS 0) {
+      Buffer.clear();
+      if (BytesRead) *BytesRead = 0;
+      return ERR::Okay;
+   }
+
+   int read_size = int(Size);
+   int bytes_read = 0;
+   Buffer.resize(read_size);
+
+   auto error = ReadFileToBuffer(Path, Buffer.data(), read_size, &bytes_read);
+   if (error IS ERR::Okay) {
+      Buffer.resize(bytes_read);
+      if (BytesRead) *BytesRead = bytes_read;
+   }
+   else Buffer.clear();
+
+   return error;
+}
+
+static ERR compiled_payload(std::string_view Source, std::string_view &Payload)
+{
+   auto header_len = std::string_view(LUA_COMPILED).size();
+   auto payload_offset = Source.find('\0', header_len);
+   if (payload_offset IS std::string_view::npos) return ERR::InvalidData;
+
+   Payload = Source.substr(payload_offset + 1);
+   return ERR::Okay;
 }
 
 [[maybe_unused]] static ERR register_interfaces(objScript *);
@@ -136,16 +182,19 @@ void process_error(objScript *Self, CSTRING Procedure)
    else Self->Error = ERR::Exception; // Unspecified exception, e.g. an error() or assert().  The result string will indicate detail.
 
    kt::Log log;
-   auto str = lua_tostring(prv->Lua, -1);
-   lua_pop(prv->Lua, 1);  // pop returned value
+   auto str = lua_tostringview(prv->Lua, -1);
    Self->setErrorMessage(str);
 
-   if (auto file = Self->Path) {
-      int i;
-      for (i=strlen(file); (i > 0) and (file[i-1] != '/') and (file[i-1] != '\\'); i--);
-      log.msg(flags, "%s: %s", file+i, str);
+   auto error_msg = str.empty() ? "" : str.data();
+   if (not Self->Path.empty()) {
+      auto file = std::string_view(Self->Path);
+      auto i = file.find_last_of("/\\");
+      if (i != std::string_view::npos) file.remove_prefix(i + 1);
+      log.msg(flags, "%.*s: %.*s", int(file.size()), file.data(), int(str.size()), error_msg);
    }
-   else log.msg(flags, "%s: Error: %s", Procedure, str);
+   else log.msg(flags, "%s: Error: %.*s", Procedure, int(str.size()), error_msg);
+
+   lua_pop(prv->Lua, 1);  // pop returned value
 
    // NB: CurrentLine is set by hook_debug(), so if debugging isn't active, you don't know what line we're on.
 
@@ -296,14 +345,15 @@ static ERR TIRI_Activate(objScript *Self)
 {
    kt::Log log;
 
-   if ((not Self->String) or (not Self->String[0])) return log.warning(ERR::FieldNotSet);
+   if (Self->String.empty()) return log.warning(ERR::FieldNotSet);
 
-   log.trace("Target: %d, Procedure: %s / ID #%" PRId64, Self->TargetID, Self->Procedure ? Self->Procedure : (STRING)".", (long long)Self->ProcedureID);
+   log.trace("Target: %d, Procedure: %s / ID #%" PRId64, Self->TargetID,
+      Self->Procedure.empty() ? "." : Self->Procedure.c_str(), (long long)Self->ProcedureID);
 
    auto prv = (prvTiri *)Self->ChildPrivate;
    if (not prv) return log.warning(ERR::ObjectCorrupt);
 
-   if ((prv->Recurse) and (not Self->Procedure) and (not Self->ProcedureID)) {
+   if ((prv->Recurse) and (Self->Procedure.empty()) and (not Self->ProcedureID)) {
       return ERR::Okay; // Do nothing, script is running.
    }
 
@@ -316,7 +366,7 @@ static ERR TIRI_Activate(objScript *Self)
          luaJIT_setmode(prv->Lua, 0, LUAJIT_MODE_ENGINE | LUAJIT_MODE_OFF);
       }
 
-      if ((Self->Procedure) or (Self->ProcedureID)) {
+      if ((not Self->Procedure.empty()) or (Self->ProcedureID)) {
          // The Lua script needs to have been executed at least once in order for the procedures to be initialised and recognised.
 
          if (Self->ActivationCount IS 0) {
@@ -454,23 +504,23 @@ static ERR TIRI_Init(objScript *Self)
 {
    kt::Log log;
 
-   if (Self->Path) {
+   if (not Self->Path.empty()) {
       if (not wildcmp("*.tiri|*.tbc", Self->Path)) {
-         log.warning("No support for path '%s'", Self->Path);
+         log.warning("No support for path '%s'", Self->Path.c_str());
          return ERR::NoSupport;
       }
    }
 
-   if ((Self->defined(NF::RECLASSED)) and (not Self->String)) {
+   if ((Self->defined(NF::RECLASSED)) and (Self->String.empty())) {
       log.trace("No support for reclassed Script with no String field value.");
       return ERR::NoSupport;
    }
 
    ERR error;
    bool compile = false;
-   int loaded_size = 0;
+   bool loaded = false;
    objFile *src_file = nullptr;
-   if ((not Self->String) and (Self->Path)) {
+   if ((Self->String.empty()) and (not Self->Path.empty())) {
       int64_t src_ts = 0, src_size = 0;
 
       if ((src_file = objFile::create::local(fl::Path(Self->Path)))) {
@@ -479,61 +529,47 @@ static ERR TIRI_Init(objScript *Self)
       }
       else error = ERR::File;
 
-      if (Self->CacheFile) {
+      if (not Self->CacheFile.empty()) {
          // Compare the cache file date to the original source.  If they match, or if there was a problem
          // analysing the original location (i.e. the original location does not exist) then the cache file is loaded
          // instead of the original source code.
 
-         int64_t cache_ts = -1, cache_size;
+         int64_t cache_ts = -1, cache_size = 0;
 
          {
             objFile::create cache_file = { fl::Path(Self->CacheFile) };
             if (cache_file.ok()) {
-               cache_file->get(FID_Timestamp, cache_ts);
-               cache_file->get(FID_Size, cache_size);
+               auto cache_error = cache_file->get(FID_Timestamp, cache_ts);
+               if (cache_error IS ERR::Okay) cache_error = cache_file->get(FID_Size, cache_size);
+               if (cache_error != ERR::Okay) cache_ts = -1;
             }
          }
 
          if (cache_ts != -1) {
             if ((cache_ts IS src_ts) or (error != ERR::Okay)) {
-               log.msg("Using cache '%s'", Self->CacheFile);
-               if (AllocMemory(cache_size, MEM::STRING|MEM::NO_CLEAR, &Self->String) IS ERR::Okay) {
-                  int len;
-                  error = ReadFileToBuffer(Self->CacheFile, Self->String, cache_size, &len);
-                  loaded_size = cache_size;
-               }
-               else error = ERR::AllocMemory;
+               log.msg("Using cache '%s'", Self->CacheFile.c_str());
+               int len = 0;
+               error = read_file_to_string(Self->CacheFile, cache_size, Self->String, &len);
+               if (error IS ERR::Okay) loaded = len > 0;
             }
          }
       }
 
-      if ((error IS ERR::Okay) and (not loaded_size)) {
-         if (AllocMemory(src_size+1, MEM::STRING|MEM::NO_CLEAR, &Self->String) IS ERR::Okay) {
-            int len;
-            if (ReadFileToBuffer(Self->Path, Self->String, src_size, &len) IS ERR::Okay) {
-               Self->String[len] = 0;
+      if ((error IS ERR::Okay) and (not loaded)) {
+         int len = 0;
+         error = read_file_to_string(Self->Path, src_size, Self->String, &len);
+         if (error IS ERR::Okay) {
+            // Unicode BOM handler - in case the file starts with a BOM header.
+            auto content = check_bom(Self->String);
+            if (content.data() != Self->String.data()) Self->String.assign(content);
 
-               // Unicode BOM handler - in case the file starts with a BOM header.
-               auto content = check_bom(std::string_view(Self->String, len));
-               if (content.data() != Self->String) {
-                  // Use memmove for overlapping memory regions (content.data() points into Self->String)
-                  std::memmove(Self->String, content.data(), content.size());
-                  Self->String[content.size()] = '\0';
-                  len = content.size();
-               }
-
-               loaded_size = len;
-
-               if (Self->CacheFile) compile = true; // Saving a compilation of the source is desired
-            }
-            else {
-               log.trace("Failed to read %" PRId64 " bytes from '%s'", (long long)src_size, Self->Path);
-               FreeResource(Self->String);
-               Self->String = nullptr;
-               error = ERR::ReadFileToBuffer;
-            }
+            if (not Self->CacheFile.empty()) compile = true; // Saving a compilation of the source is desired
          }
-         else error = ERR::AllocMemory;
+         else {
+            log.trace("Failed to read %" PRId64 " bytes from '%s'", (int64_t)src_size, Self->Path.c_str());
+            Self->String.clear();
+            if (error != ERR::OutOfRange) error = ERR::ReadFileToBuffer;
+         }
       }
    }
    else error = ERR::Okay;
@@ -553,7 +589,6 @@ static ERR TIRI_Init(objScript *Self)
       DateTime *dt;
       if (src_file->get(FID_Date, dt) IS ERR::Okay) prv->CacheDate = *dt;
       src_file->get(FID_Permissions, (int &)prv->CachePermissions);
-      prv->LoadedSize = loaded_size;
    }
 
    if (error != ERR::Okay) {
@@ -622,14 +657,15 @@ static ERR TIRI_Query(objScript *Self)
 {
    kt::Log log;
 
-   if ((not Self->String) or (not Self->String[0])) return log.warning(ERR::FieldNotSet);
+   if (Self->String.empty()) return log.warning(ERR::FieldNotSet);
 
    auto prv = (prvTiri *)Self->ChildPrivate;
    if (not prv) return log.warning(ERR::ObjectCorrupt);
    if (prv->Recurse) return ERR::NothingDone; // Do nothing, script is running.
 
    if (not prv->MainChunkRef) {
-      log.branch("Target: %d, Procedure: %s / ID #%" PRId64, Self->TargetID, Self->Procedure ? Self->Procedure : (STRING)".", Self->ProcedureID);
+      log.branch("Target: %d, Procedure: %s / ID #%" PRId64, Self->TargetID,
+         Self->Procedure.empty() ? "." : Self->Procedure.c_str(), Self->ProcedureID);
 
       auto cleanup = kt::Defer([&]() {
          if (prv->Lua) {
@@ -673,19 +709,20 @@ static ERR TIRI_Query(objScript *Self)
       // Prefix with '@' to indicate file-based chunk (Lua convention), otherwise use '=' for special sources.
       // This ensures debug output shows the actual filename instead of "[string]".
 
-      std::string chunk_name;
-      if (Self->Path) chunk_name = std::string("@") + Self->Path;
-      else chunk_name = "=script";
+      auto chunk_name = make_chunk_name(Self);
 
       int result;
-      if (startswith(LUA_COMPILED, Self->String)) { // The source is compiled
+      std::string_view source(Self->String);
+      if (source.starts_with(LUA_COMPILED)) { // The source is compiled
          log.trace("Loading pre-compiled Lua script.");
-         int headerlen = strlen(Self->String) + 1;
-         result = lua_load(prv->Lua, std::string_view(Self->String + headerlen, prv->LoadedSize - headerlen), chunk_name.c_str());
+         if (auto payload_error = compiled_payload(source, source); payload_error != ERR::Okay) {
+            return log.warning(payload_error);
+         }
+         result = lua_load(prv->Lua, source, chunk_name.c_str());
       }
       else {
          log.trace("Compiling Lua script.");
-         result = lua_load(prv->Lua, std::string_view(Self->String), chunk_name.c_str());
+         result = lua_load(prv->Lua, source, chunk_name.c_str());
       }
 
       if (result) { // Error reported from parser
@@ -700,7 +737,7 @@ static ERR TIRI_Query(objScript *Self)
             }
             else Self->setErrorMessage(errorstr);
 
-            log.warning("%s", Self->ErrorMessage);
+            log.warning("%s", Self->ErrorMessage.c_str());
          }
 
          lua_pop(prv->Lua, 1);  // Pop error string
@@ -752,25 +789,24 @@ static ERR TIRI_SaveToObject(objScript *Self, struct acSaveToObject *Args)
 
    if ((not Args) or (not Args->Dest)) return log.warning(ERR::NullArgs);
 
-   if (not Self->String) return log.warning(ERR::FieldNotSet);
+   if (Self->String.empty()) return log.warning(ERR::FieldNotSet);
 
    log.branch("Compiling the statement...");
 
    auto prv = (prvTiri *)Self->ChildPrivate;
    if (not prv) return log.warning(ERR::ObjectCorrupt);
 
-   std::string chunk_name;
-   if (Self->Path) chunk_name = std::string("@") + Self->Path;
-   else chunk_name = "=script";
+   auto chunk_name = make_chunk_name(Self);
 
-   if (not lua_load(prv->Lua, std::string_view(Self->String, strlen(Self->String)), chunk_name.c_str())) {
+   if (not lua_load(prv->Lua, std::string_view(Self->String), chunk_name.c_str())) {
       ERR error = save_binary(Self, Args->Dest);
       return error;
    }
    else {
-      auto str = lua_tostring(prv->Lua,-1);
+      auto str = lua_tostringview(prv->Lua,-1);
+      auto error_msg = str.empty() ? "" : str.data();
+      log.warning("Compile Failure: %.*s", int(str.size()), error_msg);
       lua_pop(prv->Lua, 1);
-      log.warning("Compile Failure: %s", str);
       return ERR::InvalidData;
    }
 }
@@ -826,7 +862,9 @@ static ERR GET_Procedures(objScript *Self, kt::vector<std::string> **Value, int 
       lua_pushnil(prv->Lua);
       while (lua_next(prv->Lua, LUA_GLOBALSINDEX)) {
          if (lua_type(prv->Lua, -1) IS LUA_TFUNCTION) {
-            prv->Procedures.push_back(lua_tostring(prv->Lua, -2));
+            if (auto name = lua_tostringview(prv->Lua, -2); not name.empty()) {
+               prv->Procedures.emplace_back(name);
+            }
          }
          lua_pop(prv->Lua, 1);
       }
@@ -856,19 +894,21 @@ static ERR run_script(objScript *Self)
 
    auto prv = (prvTiri *)Self->ChildPrivate;
 
-   log.traceBranch("Procedure: %s, Top: %d", Self->Procedure, lua_gettop(prv->Lua));
+   log.traceBranch("Procedure: %s, Top: %d", Self->Procedure.c_str(), lua_gettop(prv->Lua));
 
    prv->Lua->CaughtError = ERR::Okay;
    std::array<GCobject*, 8> release_list;
    size_t r = 0;
    int top;
    bool pcall_failed = false;
-   if ((Self->Procedure) or (Self->ProcedureID)) {
-      if (Self->Procedure) lua_getglobal(prv->Lua, Self->Procedure);
+   if ((not Self->Procedure.empty()) or (Self->ProcedureID)) {
+      if (not Self->Procedure.empty()) lua_getglobal(prv->Lua, Self->Procedure.c_str());
       else lua_rawgeti(prv->Lua, LUA_REGISTRYINDEX, Self->ProcedureID);
 
       if (lua_isfunction(prv->Lua, -1)) {
-         if ((Self->Flags & SCF::LOG_ALL) != SCF::NIL) log.branch("Executing procedure: %s, Args: %d", Self->Procedure, Self->TotalArgs);
+         if ((Self->Flags & SCF::LOG_ALL) != SCF::NIL) {
+            log.branch("Executing procedure: %s, Args: %d", Self->Procedure.c_str(), Self->TotalArgs);
+         }
 
          top = lua_gettop(prv->Lua);
 
@@ -967,7 +1007,7 @@ static ERR run_script(objScript *Self)
       }
       else {
          auto str = std::format("Procedure '{}' / #{} does not exist in the script.",
-            Self->Procedure ? Self->Procedure : "NULL", Self->ProcedureID);
+            Self->Procedure.empty() ? "NULL" : Self->Procedure.c_str(), Self->ProcedureID);
          Self->setErrorMessage(str.c_str());
          log.warning("%s", str.c_str());
 
@@ -1038,7 +1078,7 @@ static ERR run_script(objScript *Self)
          ProcessMessages(PMF::NIL, 0);
       }
 
-      process_error(Self, Self->Procedure ? Self->Procedure : "run_script");
+      process_error(Self, Self->Procedure.empty() ? "run_script" : Self->Procedure.c_str());
       return Self->Error;
    }
 }

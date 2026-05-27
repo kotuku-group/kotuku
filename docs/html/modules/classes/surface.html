@@ -64,13 +64,6 @@
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Bottom" style="scroll-margin:3em;"><td class="col-md-1" id="tf-Bottom"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i>
                            
                           <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">Bottom</th><td class="col-md-1"><span class="text-nowrap">INT</span></td><td>Returns the bottom-most coordinate of a surface object, <code>Y + Height</code>.</td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#fl-BottomLimit" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-BottomLimit"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
-                           
-                          <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">BottomLimit</th><td class="col-md-1"><span class="text-nowrap">INT</span></td><td>Prevents a surface object from moving beyond a given point at the bottom of its container.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-BottomLimit" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
-<p>Set <code>BottomLimit</code> to reserve a margin at the bottom of the parent container.  For example, a value of <code>5</code> prevents <a data-bs-toggle="tooltip" title="Moves a surface object to a new display position." href="#ta-Move">Move()</a> from placing the surface inside the bottom-most five coordinate units.</p>
-<p>Movement limits apply only to <a data-bs-toggle="tooltip" title="Moves a surface object to a new display position." href="#ta-Move">Move()</a>.  Direct writes to coordinate fields bypass them.</p>
-      
-</div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Buffer" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Buffer"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
                           <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">Buffer</th><td class="col-md-1"><span class="text-nowrap">OBJECTID</span></td><td>Refers to the <a href="bitmap.html">Bitmap</a> that stores the surface's graphics.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Buffer" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
@@ -225,13 +218,6 @@
 <p>Before initialisation, setting <code>Height</code> to zero or less clears the height dimension so that <a data-bs-toggle="tooltip" title="Determines the vertical position of a surface object." href="#tf-Y">Y</a> and <a data-bs-toggle="tooltip" title="Determines the vertical offset of a surface object." href="#tf-YOffset">YOffset</a> can define the height dynamically.  After initialisation, values of zero or less are invalid.</p>
       
 </div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#fl-LeftLimit" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-LeftLimit"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
-                           
-                          <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">LeftLimit</th><td class="col-md-1"><span class="text-nowrap">INT</span></td><td>Prevents a surface object from moving beyond a given point on the left-hand side.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-LeftLimit" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
-<p>Set <code>LeftLimit</code> to reserve a margin at the left-hand side of the parent container.  For example, a value of <code>3</code> prevents <a data-bs-toggle="tooltip" title="Moves a surface object to a new display position." href="#ta-Move">Move()</a> from placing the surface inside the left-most three coordinate units.</p>
-<p>Movement limits apply only to <a data-bs-toggle="tooltip" title="Moves a surface object to a new display position." href="#ta-Move">Move()</a>.  Direct writes to coordinate fields bypass them.</p>
-      
-</div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-MaxHeight" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-MaxHeight"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
                           <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">MaxHeight</th><td class="col-md-1"><span class="text-nowrap">INT</span></td><td>Prevents the height of a surface object from exceeding a certain value.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-MaxHeight" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
@@ -302,23 +288,9 @@
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Right" style="scroll-margin:3em;"><td class="col-md-1" id="tf-Right"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i>
                            
                           <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">Right</th><td class="col-md-1"><span class="text-nowrap">INT</span></td><td>Returns the right-most coordinate of a surface object, <code>X + Width</code>.</td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#fl-RightLimit" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-RightLimit"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
-                           
-                          <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">RightLimit</th><td class="col-md-1"><span class="text-nowrap">INT</span></td><td>Prevents a surface object from moving beyond a given point on the right-hand side.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-RightLimit" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
-<p>Set <code>RightLimit</code> to reserve a margin at the right-hand side of the parent container.  For example, a value of <code>8</code> prevents <a data-bs-toggle="tooltip" title="Moves a surface object to a new display position." href="#ta-Move">Move()</a> from placing the surface inside the right-most eight coordinate units.</p>
-<p>Movement limits apply only to <a data-bs-toggle="tooltip" title="Moves a surface object to a new display position." href="#ta-Move">Move()</a>.  Direct writes to coordinate fields bypass them.</p>
-      
-</div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Root" style="scroll-margin:3em;"><td class="col-md-1" id="tf-Root"><i class="bi bi-dash-circle text-secondary" data-bs-toggle="tooltip" title="Not readable"></i>
                            
                           <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">Root</th><td class="col-md-1"><span class="text-nowrap">OBJECTID</span></td><td>Surface that is acting as a root for many surface children (useful when applying translucency)</td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#fl-TopLimit" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-TopLimit"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
-                           
-                          <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">TopLimit</th><td class="col-md-1"><span class="text-nowrap">INT</span></td><td>Prevents a surface object from moving beyond a given point at the top of its container.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-TopLimit" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
-<p>Set <code>TopLimit</code> to reserve a margin at the top of the parent container.  For example, a value of <code>10</code> prevents <a data-bs-toggle="tooltip" title="Moves a surface object to a new display position." href="#ta-Move">Move()</a> from placing the surface inside the top-most ten coordinate units.</p>
-<p>Movement limits apply only to <a data-bs-toggle="tooltip" title="Moves a surface object to a new display position." href="#ta-Move">Move()</a>.  Direct writes to coordinate fields bypass them.</p>
-      
-</div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-UserFocus" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-UserFocus"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i>
                            
                           <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">UserFocus</th><td class="col-md-1"><span class="text-nowrap">INT</span></td><td>Refers to the surface object that has the current user focus.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-UserFocus" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
@@ -592,10 +564,12 @@ the surface area first).</li>
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table></div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#tmx-ScheduleRedraw" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">ScheduleRedraw</th><td id="tm-ScheduleRedraw">Schedules a redraw operation for the next frame.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-ScheduleRedraw" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR drw::ScheduleRedraw(OBJECTPTR Object)</samp></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
-<p>Use ScheduleRedraw() to mark a surface for redraw on the next frame cycle.  The surface and its child surfaces are redrawn together, typically on the next 1/60th of a second timer tick.  Direct redraw requests for the target surface are coalesced until the scheduled redraw is processed.</p>
-<p>Scheduling is ideal in situations where a cluster of redraw events may occur within a tight time period, and it would be inefficient to draw those changes to the display individually.</p>
-<p>Redraw schedules do not merge across the hierarchy.  If both a surface and one of its children are scheduled, two redraw operations may be triggered where one would otherwise suffice.  Schedule the highest relevant surface when a single redraw should cover a group of changes.</p>
+<tr data-bs-toggle="collapse" data-bs-target="#tmx-ScheduleRedraw" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">ScheduleRedraw</th><td id="tm-ScheduleRedraw">Schedules a redraw operation for the next frame.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-ScheduleRedraw" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR drw::ScheduleRedraw(OBJECTPTR Object, INT RefreshRate)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>RefreshRate</td><td>Optional refresh rate in frames per second.  If not specified, the refresh rate from the display is used.</td></tr>
+</tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
+<p>Use ScheduleRedraw() to mark a surface for redraw on the next frame cycle.  The delay is governed by the chosen RefreshRate, which is measured in frames per second.  If a RefreshRate is not specified, the frame rate is derived from the display.</p>
+<p>Specifying a custom RefreshRate is recommended when processing an animation at a lower frame rate than that of the display would be acceptable.</p>
+<p>Scheduling with this method over <a data-bs-toggle="tooltip" title="Redraws the contents of a surface object." href="#ta-Draw">Draw()</a> (immediate mode) is recommended when a cluster of redraw events may occur within a tight time period, and it would be inefficient to draw those changes to the display individually.  Repeated redraw requests made to the target surface are coalesced until the scheduled redraw is processed.</p>
+<p>Redraw schedules do not collapse in nested surfaces.  If both a surface and one of its children are scheduled, two redraw operations may be triggered where one would otherwise suffice.  Target the top-level surface only in such instances.</p>
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">Failed</th><td>General failure</td></tr>
@@ -841,21 +815,33 @@ the surface area first).</li>
 <tr><th>Flags</th><td><span class="text-nowrap">INT</span></td><td>Currently unused</td></tr>
 <tr><th>BitsPerPixel</th><td><span class="text-nowrap">INT16</span></td><td>Preferred bits-per-pixel setting for custom cursors</td></tr>
 </tbody></table><div class="footer copyright text-right">Surface class documentation © Paul Manias © 2003-2026</div></div>
-<div class="docs-content" style="display:none;" id="struct-DisplayInfo"><h1>DisplayInfo Structure</h1><p class="lead"></p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Display</th><td><span class="text-nowrap">OBJECTID</span></td><td>Object ID related to the display</td></tr>
-<tr><th>Flags</th><td><span class="text-nowrap">SCR</span></td><td>Display flags</td></tr>
-<tr><th>Width</th><td><span class="text-nowrap">INT16</span></td><td>Pixel width of the display</td></tr>
-<tr><th>Height</th><td><span class="text-nowrap">INT16</span></td><td>Pixel height of the display</td></tr>
-<tr><th>BitsPerPixel</th><td><span class="text-nowrap">INT16</span></td><td>Bits per pixel</td></tr>
-<tr><th>BytesPerPixel</th><td><span class="text-nowrap">INT16</span></td><td>Bytes per pixel</td></tr>
-<tr><th>AccelFlags</th><td><span class="text-nowrap">ACF</span></td><td>Flags describing supported hardware features.</td></tr>
-<tr><th>AmtColours</th><td><span class="text-nowrap">INT</span></td><td>Total number of supported colours.</td></tr>
-<tr><th>PixelFormat</th><td><span class="text-nowrap">struct PixelFormat</span></td><td>The colour format to use for each pixel.</td></tr>
+<div class="docs-content" style="display:none;" id="struct-DisplayInfo"><h1>DisplayInfo Structure</h1><p class="lead"></p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>PixelFormat</th><td><span class="text-nowrap">struct PixelFormat</span></td><td>The colour format to use for each pixel.</td></tr>
 <tr><th>MinRefresh</th><td><span class="text-nowrap">FLOAT</span></td><td>Minimum refresh rate</td></tr>
 <tr><th>MaxRefresh</th><td><span class="text-nowrap">FLOAT</span></td><td>Maximum refresh rate</td></tr>
 <tr><th>RefreshRate</th><td><span class="text-nowrap">FLOAT</span></td><td>Recommended refresh rate</td></tr>
+<tr><th>Display</th><td><span class="text-nowrap">OBJECTID</span></td><td>Object ID related to the display</td></tr>
+<tr><th>AccelFlags</th><td><span class="text-nowrap">ACF</span></td><td>Flags describing supported hardware features.</td></tr>
+<tr><th>Flags</th><td><span class="text-nowrap">SCR</span></td><td>Display flags</td></tr>
+<tr><th>AmtColours</th><td><span class="text-nowrap">INT</span></td><td>Total number of supported colours.</td></tr>
 <tr><th>Index</th><td><span class="text-nowrap">INT</span></td><td>Display mode ID (internal)</td></tr>
 <tr><th>HDensity</th><td><span class="text-nowrap">INT</span></td><td>Horizontal pixel density per inch.</td></tr>
 <tr><th>VDensity</th><td><span class="text-nowrap">INT</span></td><td>Vertical pixel density per inch.</td></tr>
+<tr><th>HostedX</th><td><span class="text-nowrap">INT</span></td><td>Horizontal display position in virtual desktop coordinates</td></tr>
+<tr><th>HostedY</th><td><span class="text-nowrap">INT</span></td><td>Vertical display position in virtual desktop coordinates</td></tr>
+<tr><th>MonitorX</th><td><span class="text-nowrap">INT</span></td><td>Horizontal position of the monitor, relative to the primary monitor</td></tr>
+<tr><th>MonitorY</th><td><span class="text-nowrap">INT</span></td><td>Vertical position of the monitor, relative to the primary monitor</td></tr>
+<tr><th>MonitorWidth</th><td><span class="text-nowrap">INT</span></td><td>Pixel width of the monitor</td></tr>
+<tr><th>MonitorHeight</th><td><span class="text-nowrap">INT</span></td><td>Pixel height of the monitor</td></tr>
+<tr><th>VirtualX</th><td><span class="text-nowrap">INT</span></td><td>Horizontal position of the complete desktop spanning all monitors</td></tr>
+<tr><th>VirtualY</th><td><span class="text-nowrap">INT</span></td><td>Vertical position of the complete desktop spanning all monitors</td></tr>
+<tr><th>VirtualWidth</th><td><span class="text-nowrap">INT</span></td><td>Width of the complete desktop spanning all monitors</td></tr>
+<tr><th>VirtualHeight</th><td><span class="text-nowrap">INT</span></td><td>Height of the complete desktop spanning all monitors</td></tr>
+<tr><th>PhysicalWidth</th><td><span class="text-nowrap">INT</span></td><td>Width in millimeters, 0 if unknown</td></tr>
+<tr><th>PhysicalHeight</th><td><span class="text-nowrap">INT</span></td><td>Height in millimeters, 0 if unknown</td></tr>
+<tr><th>Width</th><td><span class="text-nowrap">INT16</span></td><td>Pixel width of the display bitmap</td></tr>
+<tr><th>Height</th><td><span class="text-nowrap">INT16</span></td><td>Pixel height of the display bitmap</td></tr>
+<tr><th>BitsPerPixel</th><td><span class="text-nowrap">INT16</span></td><td>Bits per pixel</td></tr>
+<tr><th>BytesPerPixel</th><td><span class="text-nowrap">INT16</span></td><td>Bytes per pixel</td></tr>
 </tbody></table><div class="footer copyright text-right">Surface class documentation © Paul Manias © 2003-2026</div></div>
 <div class="docs-content" style="display:none;" id="struct-InputEvent"><h1>InputEvent Structure</h1><p class="lead"></p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Next</th><td><span class="text-nowrap">const struct InputEvent *</span></td><td>Next event in the chain</td></tr>
 <tr><th>Value</th><td><span class="text-nowrap">DOUBLE</span></td><td>The value associated with the Type</td></tr>

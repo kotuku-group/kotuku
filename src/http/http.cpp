@@ -195,29 +195,27 @@ static bool is_valid_url_char(char Char, bool AllowReserved = false) {
 //********************************************************************************************************************
 // Enhanced URL encoding with validation
 
-static std::string encode_url_path(const char* Input)
+static std::string encode_url_path(std::string_view Input)
 {
-   if (!Input) return std::string();
-
    std::string result;
-   result.reserve(strlen(Input) * 3); // Worst case: every char becomes %XX
+   result.reserve(Input.size() * 3); // Worst case: every char becomes %XX
 
-   for (const char* p = Input; *p; p++) {
-      if (is_valid_url_char(*p, true)) {
-         result += *p;
+   for (const char ch : Input) {
+      if (is_valid_url_char(ch, true)) {
+         result += ch;
       }
-      else if (*p IS ' ') {
+      else if (ch IS ' ') {
          result += "%20";
       }
-      else if ((unsigned char)(*p) < 32 or (unsigned char)(*p) > 126) {
+      else if ((unsigned char)(ch) < 32 or (unsigned char)(ch) > 126) {
          // Encode control characters and non-ASCII
          char encoded[4];
-         snprintf(encoded, sizeof(encoded), "%%%02X", (unsigned char)(*p));
+         snprintf(encoded, sizeof(encoded), "%%%02X", (unsigned char)(ch));
          result += encoded;
       }
       else { // Other characters that need encoding
          char encoded[4];
-         snprintf(encoded, sizeof(encoded), "%%%02X", (unsigned char)(*p));
+         snprintf(encoded, sizeof(encoded), "%%%02X", (unsigned char)(ch));
          result += encoded;
       }
    }
@@ -417,8 +415,8 @@ static void writehex(HASH, HASHHEX);
 static void digest_calc_ha1(extHTTP *, HASHHEX);
 static void digest_calc_response(extHTTP *, std::string, CSTRING, HASHHEX, HASHHEX, HASHHEX);
 static void set_http_method(extHTTP *, CSTRING, std::ostringstream &);
-static ERR  SET_Path(extHTTP *, CSTRING);
-static ERR  SET_Location(extHTTP *, CSTRING);
+static ERR  SET_Path(extHTTP *, const std::string_view &);
+static ERR  SET_Location(extHTTP *, const std::string_view &);
 static ERR  http_timeout(extHTTP *, int64_t, int64_t);
 static void socket_feedback(objNetSocket *, NTC, APTR);
 static ERR  socket_incoming(objNetSocket *);
@@ -536,7 +534,8 @@ static ERR HTTP_Activate(extHTTP *Self)
 
    if (!Self->initialised()) return log.warning(ERR::NotInitialised);
 
-   log.branch("Host: %s, Port: %d, Path: %s, Proxy: %s, SSL: %d", Self->Host, Self->Port, Self->Path, Self->ProxyServer, ((Self->Flags & HTF::SSL) != HTF::NIL) ? 1 : 0);
+   log.branch("Host: %s, Port: %d, Path: %s, Proxy: %s, SSL: %d", Self->Host.c_str(), Self->Port,
+      Self->Path.c_str(), Self->ProxyServer.c_str(), ((Self->Flags & HTF::SSL) != HTF::NIL) ? 1 : 0);
 
    if (Self->TimeoutManager) { UpdateTimer(Self->TimeoutManager, 0); Self->TimeoutManager = 0; }
 
@@ -575,7 +574,7 @@ static ERR HTTP_Activate(extHTTP *Self)
 
    std::ostringstream cmd;
 
-   if ((Self->ProxyServer) and ((Self->Flags & HTF::SSL) != HTF::NIL) and (!Self->Socket)) {
+   if ((not Self->ProxyServer.empty()) and ((Self->Flags & HTF::SSL) != HTF::NIL) and (!Self->Socket)) {
       // SSL tunnelling is required.  Send a CONNECT request to the proxy and
       // then we will follow this up with the actual HTTP requests.
 
@@ -583,7 +582,7 @@ static ERR HTTP_Activate(extHTTP *Self)
 
       cmd << "CONNECT " << Self->Host << ":" << Self->Port << " HTTP/1.1" << CRLF;
       cmd << "Host: " << Self->Host << CRLF;
-      cmd << "User-Agent: " << (Self->UserAgent ? Self->UserAgent : "Kotuku Client") << CRLF;
+      cmd << "User-Agent: " << (Self->UserAgent.empty() ? "Kotuku Client" : Self->UserAgent.c_str()) << CRLF;
       cmd << "Proxy-Connection: keep-alive" << CRLF;
       cmd << "Connection: keep-alive" << CRLF;
 
@@ -641,10 +640,10 @@ static ERR HTTP_Activate(extHTTP *Self)
          }
       }
       else if (Self->Method IS HTM::OPTIONS) {
-         if ((!Self->Path) or ((Self->Path[0] IS '*') and (!Self->Path[1]))) {
+         if (Self->Path.empty() or (Self->Path IS "*")) {
             cmd << "OPTIONS * HTTP/1.1" << CRLF;
             cmd << "Host: " << Self->Host << CRLF;
-            cmd << "User-Agent: " << (Self->UserAgent ? Self->UserAgent : "Kotuku Client") << CRLF;
+            cmd << "User-Agent: " << (Self->UserAgent.empty() ? "Kotuku Client" : Self->UserAgent.c_str()) << CRLF;
          }
          else set_http_method(Self, "OPTIONS", cmd);
       }
@@ -672,12 +671,12 @@ static ERR HTTP_Activate(extHTTP *Self)
                // the developer should set ContentLength to -1.
 
             }
-            else if (Self->InputFile) {
+            else if (not Self->InputFile.empty()) {
                if (Self->MultipleInput) {
                   log.trace("Multiple input files detected.");
                   Self->InputPos = 0;
                   parse_file(Self, cmd);
-                  Self->flInput = objFile::create::local(fl::Path(cmd.str().c_str()), fl::Flags(FL::READ));
+                  Self->flInput = objFile::create::local(fl::Path(cmd.str()), fl::Flags(FL::READ));
                }
                else Self->flInput = objFile::create::local(fl::Path(Self->InputFile), fl::Flags(FL::READ));
 
@@ -867,7 +866,9 @@ static ERR HTTP_Activate(extHTTP *Self)
 
    if (acWrite(Self->Socket, cstr.c_str(), cstr.length()) IS ERR::Okay) {
       if (Self->Socket->State IS NTC::DISCONNECTED) {
-         if (auto result = Self->Socket->connect(Self->ProxyServer ? Self->ProxyServer : Self->Host, Self->ProxyServer ? Self->ProxyPort : Self->Port, 5.0); result IS ERR::Okay) {
+         CSTRING server_host = Self->ProxyServer.empty() ? Self->Host.c_str() : Self->ProxyServer.c_str();
+         const int server_port = Self->ProxyServer.empty() ? Self->Port : Self->ProxyPort;
+         if (auto result = Self->Socket->connect(server_host, server_port, 5.0); result IS ERR::Okay) {
             Self->Connecting = true;
 
             if (Self->TimeoutManager) UpdateTimer(Self->TimeoutManager, Self->ConnectTimeout);
@@ -964,13 +965,6 @@ static ERR HTTP_Free(extHTTP *Self)
 
    if (Self->flInput)     { FreeResource(Self->flInput);     Self->flInput = nullptr; }
    if (Self->flOutput)    { FreeResource(Self->flOutput);    Self->flOutput = nullptr; }
-   if (Self->Path)        { FreeResource(Self->Path);        Self->Path = nullptr; }
-   if (Self->InputFile)   { FreeResource(Self->InputFile);   Self->InputFile = nullptr; }
-   if (Self->OutputFile)  { FreeResource(Self->OutputFile);  Self->OutputFile = nullptr; }
-   if (Self->Host)        { FreeResource(Self->Host);        Self->Host = nullptr; }
-   if (Self->UserAgent)   { FreeResource(Self->UserAgent);   Self->UserAgent = nullptr; }
-   if (Self->ProxyServer) { FreeResource(Self->ProxyServer); Self->ProxyServer = nullptr; }
-
    if (!Self->Password.empty()) {
       secure_clear_memory(const_cast<char*>(Self->Password.data()), Self->Password.size());
    }
@@ -1011,11 +1005,11 @@ static ERR HTTP_Init(extHTTP *Self)
    if (!Self->ProxyDefined) {
       std::lock_guard<std::mutex> proxy_lock(glProxyMutex);
       if ((glProxy) and (glProxy->find(Self->Port, true) IS ERR::Okay)) {
-         if (Self->ProxyServer) FreeResource(Self->ProxyServer);
-         Self->ProxyServer = kt::strclone(glProxy->Server);
+         if (glProxy->Server) Self->ProxyServer.assign(glProxy->Server);
+         else Self->ProxyServer.clear();
          Self->ProxyPort   = glProxy->ServerPort; // NB: Default is usually 8080
 
-         log.msg("Using preset proxy server '%s:%d'", Self->ProxyServer, Self->ProxyPort);
+         log.msg("Using preset proxy server '%s:%d'", Self->ProxyServer.c_str(), Self->ProxyPort);
       }
    }
    else log.msg("Proxy pre-defined by user.");
@@ -1089,11 +1083,11 @@ static const FieldArray clFields[] = {
    { "Index",          FDF_INT64|FDF_RW }, // Writeable only because we update it using SetField()
    { "ContentLength",  FDF_INT64|FDF_RW },
    { "Size",           FDF_INT64|FDF_RW },
-   { "Host",           FDF_STRING|FDF_RI, nullptr, SET_Host },
-   { "Path",           FDF_STRING|FDF_RW, nullptr, SET_Path },
-   { "OutputFile",     FDF_STRING|FDF_RW, nullptr, SET_OutputFile },
-   { "InputFile",      FDF_STRING|FDF_RW, nullptr, SET_InputFile },
-   { "UserAgent",      FDF_STRING|FDF_RW, GET_UserAgent, SET_UserAgent },
+   { "Host",           FDF_CPPSTRING|FDF_RI, nullptr, SET_Host },
+   { "Path",           FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
+   { "OutputFile",     FDF_CPPSTRING|FDF_RW, nullptr, SET_OutputFile },
+   { "InputFile",      FDF_CPPSTRING|FDF_RW, nullptr, SET_InputFile },
+   { "UserAgent",      FDF_CPPSTRING|FDF_RW, GET_UserAgent, SET_UserAgent },
    { "InputObject",    FDF_OBJECTID|FDF_RW },
    { "OutputObject",   FDF_OBJECTID|FDF_RW },
    { "Method",         FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, SET_Method, &clHTTPMethod },
@@ -1104,23 +1098,23 @@ static const FieldArray clFields[] = {
    { "Error",          FDF_ERROR|FDF_RW },
    { "Datatype",       FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clHTTPDatatype },
    { "CurrentState",   FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, SET_CurrentState, &clHTTPCurrentState },
-   { "ProxyServer",    FDF_STRING|FDF_RW, nullptr, SET_ProxyServer },
+   { "ProxyServer",    FDF_CPPSTRING|FDF_RW, nullptr, SET_ProxyServer },
    { "ProxyPort",      FDF_INT|FDF_RW },
    { "BufferSize",     FDF_INT|FDF_RW, nullptr, SET_BufferSize },
    // Virtual fields
    { "AuthCallback",   FDF_VIRTUAL|FDF_FUNCTIONPTR|FDF_RW,   GET_AuthCallback, SET_AuthCallback },
-   { "ContentType",    FDF_VIRTUAL|FDF_STRING|FDF_RW,        GET_ContentType, SET_ContentType },
+   { "ContentType",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW,     GET_ContentType, SET_ContentType },
    { "Incoming",       FDF_VIRTUAL|FDF_FUNCTIONPTR|FDF_RW,   GET_Incoming, SET_Incoming },
-   { "Location",       FDF_VIRTUAL|FDF_STRING|FDF_RW,        GET_Location, SET_Location },
+   { "Location",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW,     GET_Location, SET_Location },
    { "Outgoing",       FDF_VIRTUAL|FDF_FUNCTIONPTR|FDF_RW,   GET_Outgoing, SET_Outgoing },
-   { "Realm",          FDF_VIRTUAL|FDF_STRING|FDF_RW,        GET_Realm, SET_Realm },
+   { "Realm",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW,     GET_Realm, SET_Realm },
    { "RecvBuffer",     FDF_VIRTUAL|FDF_ARRAY|FDF_BYTE|FDF_R, GET_RecvBuffer },
    { "ResponseKeys",   FDF_VIRTUAL|FDF_ARRAY|FDF_STRING|FDF_ALLOC|FDF_R, GET_ResponseKeys },
-   { "Src",            FDF_VIRTUAL|FDF_STRING|FDF_SYNONYM|FD_PRIVATE|FDF_RW, GET_Location, SET_Location }, // Deprecated by URL
-   { "URL",            FDF_VIRTUAL|FDF_STRING|FDF_SYNONYM|FDF_RW, GET_Location, SET_Location },
+   { "Src",            FDF_VIRTUAL|FDF_CPPSTRING|FDF_SYNONYM|FD_PRIVATE|FDF_RW, GET_Location, SET_Location }, // Deprecated by URL
+   { "URL",            FDF_VIRTUAL|FDF_CPPSTRING|FDF_SYNONYM|FDF_RW, GET_Location, SET_Location },
    { "StateChanged",   FDF_VIRTUAL|FDF_FUNCTIONPTR|FDF_RW,   GET_StateChanged, SET_StateChanged },
-   { "Username",       FDF_VIRTUAL|FDF_STRING|FDF_W,         nullptr, SET_Username },
-   { "Password",       FDF_VIRTUAL|FDF_STRING|FDF_W,         nullptr, SET_Password },
+   { "Username",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_W,      nullptr, SET_Username },
+   { "Password",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_W,      nullptr, SET_Password },
    END_FIELD
 };
 

@@ -117,11 +117,11 @@ class objDocument : public Object {
 
    using create = kt::Create<objDocument>;
 
-   STRING   Description;            // A description of the document, provided by its author.
-   STRING   Title;                  // The title of the document.
-   STRING   Author;                 // The author(s) of the document.
-   STRING   Copyright;              // Copyright information for the document.
-   STRING   Keywords;               // Includes keywords declared by the source document.
+   std::string Description;         // A description of the document, provided by its author.
+   std::string Title;               // The title of the document.
+   std::string Author;              // The author(s) of the document.
+   std::string Copyright;           // Copyright information for the document.
+   std::string Keywords;            // Includes keywords declared by the source document.
    objVectorViewport * Viewport;    // A client-specific viewport that will host the document graphics.
    objVectorViewport * Focus;       // Refers to the object that will be monitored for user focusing.
    objVectorViewport * View;        // The viewing area of the document.
@@ -268,16 +268,16 @@ class objDocument : public Object {
       return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
    }
 
-   template <class T> inline ERR setPath(T && Value) noexcept {
+   inline ERR setPath(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
-   template <class T> inline ERR setOrigin(T && Value) noexcept {
+   inline ERR setOrigin(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setPageWidth(const int Value) noexcept {

@@ -11,14 +11,15 @@ typedef struct ssl_context * SSL_HANDLE;
 
 // Error codes
 typedef enum {
-    SSL_OK = 0,
-    SSL_ERROR_ARGS = -1,
-    SSL_ERROR_FAILED = -2,
-    SSL_ERROR_MEMORY = -3,
-    SSL_ERROR_WOULD_BLOCK = -4,
-    SSL_ERROR_DISCONNECTED = -5,
-    SSL_NEED_DATA = -6, // Indicates more data needed to complete operation
-    SSL_ERROR_CONNECTING = -7
+   SSL_OK = 0,
+   SSL_ERROR_ARGS = -1,
+   SSL_ERROR_FAILED = -2,
+   SSL_ERROR_MEMORY = -3,
+   SSL_ERROR_WOULD_BLOCK = -4,
+   SSL_ERROR_DISCONNECTED = -5,
+   SSL_NEED_DATA = -6, // Indicates more data needed to complete operation
+   SSL_ERROR_CONNECTING = -7,
+   SSL_ERROR_BUFFER_OVERFLOW = -8
 } SSL_ERROR_CODE;
 
 void ssl_cleanup();
@@ -43,6 +44,7 @@ SSL_ERROR_CODE ssl_write(SSL_HANDLE, const void* buffer, size_t buffer_size, siz
 uint32_t ssl_last_win32_error(SSL_HANDLE);
 int ssl_last_security_status(SSL_HANDLE);
 size_t ssl_encrypted_input_size(SSL_HANDLE);
+size_t ssl_encrypted_input_limit(SSL_HANDLE);
 bool ssl_get_verify_result(SSL_HANDLE);
 SSL_ERROR_CODE ssl_load_server_certificate(SSL_HANDLE, const std::string &, std::optional<const std::string> &,
    std::optional<const std::string> &);

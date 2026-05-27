@@ -426,8 +426,8 @@
     <field>
       <name>Author</name>
       <comment>The author(s) of the document.</comment>
-      <access read="R">Read</access>
-      <type>STRING</type>
+      <access read="G">Get</access>
+      <type>std::string</type>
       <description>
 <p>If a document declares the names of its author(s) under a head tag, the author string will be readable from this field. This field is always <code>NULL</code> if a document does not declare an author string.</p>
       </description>
@@ -447,8 +447,8 @@
     <field>
       <name>Copyright</name>
       <comment>Copyright information for the document.</comment>
-      <access read="R">Read</access>
-      <type>STRING</type>
+      <access read="G">Get</access>
+      <type>std::string</type>
       <description>
 <p>If a document declares copyright information under a head tag, the copyright string will be readable from this field. This field is always <code>NULL</code> if a document does not declare a copyright string.</p>
       </description>
@@ -457,8 +457,8 @@
     <field>
       <name>Description</name>
       <comment>A description of the document, provided by its author.</comment>
-      <access read="R">Read</access>
-      <type>STRING</type>
+      <access read="G">Get</access>
+      <type>std::string</type>
       <description>
 <p>If the source document includes a description, it will be copied to this field.</p>
       </description>
@@ -521,8 +521,8 @@
     <field>
       <name>Keywords</name>
       <comment>Includes keywords declared by the source document.</comment>
-      <access read="R">Read</access>
-      <type>STRING</type>
+      <access read="G">Get</access>
+      <type>std::string</type>
       <description>
 <p>If a document declares keywords under a head tag, the keywords string will be readable from this field.   This field is always <code>NULL</code> if a document does not declare any keywords.  It is recommended that keywords are separated with spaces or commas.  It should not be assumed that the author of the document has adhered to the accepted standard for keyword separation.</p>
       </description>
@@ -609,8 +609,8 @@
     <field>
       <name>Title</name>
       <comment>The title of the document.</comment>
-      <access read="R">Read</access>
-      <type>STRING</type>
+      <access read="G">Get</access>
+      <type>std::string</type>
       <description>
 <p>If a document declares a title under a head tag, the title string will be readable from this field.   This field is always <code>NULL</code> if a document does not declare a title.</p>
       </description>

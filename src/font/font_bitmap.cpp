@@ -4,7 +4,7 @@
 */
 
 struct winFont {
-   int Offset, Size, Point;
+   int Offset, Size;
 };
 
 struct winmz_header_fields {
@@ -63,6 +63,102 @@ PACK(struct winfnt_header_fields {
 #define ID_WINNE  0x454E
 
 //*****************************************************************************
+
+static ERR validate_winfnt_header(const winfnt_header_fields &Header, CSTRING Path)
+{
+   kt::Log log(__FUNCTION__);
+
+   // NOTE: 0x100 indicates the Microsoft vector font format, which we do not support.
+
+   if ((Header.version != 0x200) and (Header.version != 0x300)) {
+      if (Path) {
+         log.warning("Font \"%s\" is written in unsupported version %d / $%x.", Path, Header.version, Header.version);
+      }
+      return ERR::NoSupport;
+   }
+
+   if (Header.file_type & 1) {
+      if (Path) log.warning("Font \"%s\" is in the non-supported vector font format.", Path);
+      return ERR::NoSupport;
+   }
+
+   return ERR::Okay;
+}
+
+//*****************************************************************************
+// Reads the Windows .fon resource table and returns each embedded bitmap font entry.
+
+static ERR read_winfont_entries(objFile *File, std::vector<winFont> &Fonts)
+{
+   if (not File) return ERR::NullArgs;
+
+   Fonts.clear();
+
+   winmz_header_fields mz_header;
+   if (File->read(&mz_header, sizeof(mz_header)) != ERR::Okay) return ERR::Read;
+   if (mz_header.magic != ID_WINMZ) return ERR::NoSupport;
+
+   File->seekStart(mz_header.lfanew);
+
+   winne_header_fields ne_header;
+   if ((File->read(&ne_header, sizeof(ne_header)) != ERR::Okay) or (ne_header.magic != ID_WINNE)) {
+      return ERR::NoSupport;
+   }
+
+   File->seekStart(mz_header.lfanew + ne_header.resource_tab_offset);
+
+   uint16_t size_shift = 0;
+   if (fl::ReadLE(File, &size_shift) != ERR::Okay) return ERR::Read;
+
+   uint16_t font_count = 0;
+   int font_offset = 0;
+   uint16_t type_id = 0;
+   ERR error = fl::ReadLE(File, &type_id);
+
+   while ((error IS ERR::Okay) and (type_id)) {
+      uint16_t count = 0;
+      if (fl::ReadLE(File, &count) != ERR::Okay) return ERR::Read;
+
+      if (type_id IS 0x8008) {
+         font_count = count;
+         File->get(FID_Position, font_offset);
+         font_offset += 4;
+         break;
+      }
+
+      File->seekCurrent(4 + count * 12);
+      error = fl::ReadLE(File, &type_id);
+   }
+
+   if (error != ERR::Okay) return error;
+   if ((not font_count) or (not font_offset)) return ERR::NoData;
+
+   File->seekStart(font_offset);
+   Fonts.resize(font_count);
+
+   for (int i=0; i < int(font_count); i++) {
+      uint16_t offset = 0, size = 0;
+      if (fl::ReadLE(File, &offset) != ERR::Okay) return ERR::Read;
+      if (fl::ReadLE(File, &size) != ERR::Okay) return ERR::Read;
+      Fonts[i].Offset = offset<<size_shift;
+      Fonts[i].Size   = size<<size_shift;
+      File->seekCurrent(8);
+   }
+
+   return ERR::Okay;
+}
+
+//*****************************************************************************
+
+static FTF font_style_flags(CSTRING Style)
+{
+   if (iequals("Bold", Style)) return FTF::BOLD;
+   else if (iequals("Italic", Style)) return FTF::ITALIC;
+   else if (iequals("Bold Italic", Style)) return FTF::BOLD|FTF::ITALIC;
+   else return FTF::NIL;
+}
+
+//*****************************************************************************
 // Structure definition for cached bitmap fonts.
 
 class BitmapCache {
@@ -89,10 +185,7 @@ public:
       Result    = ERR::Okay;
       Header    = pFace;
 
-      if (iequals("Bold", pStyle)) StyleFlags = FTF::BOLD;
-      else if (iequals("Italic", pStyle)) StyleFlags = FTF::ITALIC;
-      else if (iequals("Bold Italic", pStyle)) StyleFlags = FTF::BOLD|FTF::ITALIC;
-      else StyleFlags = FTF::NIL;
+      StyleFlags = font_style_flags(pStyle);
 
       Path = pPath;
 

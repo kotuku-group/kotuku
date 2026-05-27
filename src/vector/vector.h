@@ -646,7 +646,7 @@ extern void gen_vector_tree(extVector *);
 extern GRADIENT_TABLE * get_fill_gradient_table(extPainter &, double);
 extern GRADIENT_TABLE * get_stroke_gradient_table(extVector &);
 extern objBitmap * get_source_graphic(extVectorFilter *);
-extern ERR read_path(std::vector<PathCommand> &, CSTRING);
+extern ERR read_path(std::vector<PathCommand> &, std::string_view);
 extern ERR render_filter(extVectorFilter *, extVectorViewport *, extVector *, objBitmap *, objBitmap **);
 extern ERR scene_input_events(const InputEvent *, int);
 extern void send_feedback(extVector *, FM, OBJECTPTR = nullptr);
@@ -1278,7 +1278,7 @@ extern void set_text_final_xy(extVectorText *);
 namespace vec {
 extern ERR DrawPath(objBitmap * Bitmap, APTR Path, double StrokeWidth, OBJECTPTR StrokeStyle, OBJECTPTR FillStyle);
 extern ERR GenerateEllipse(double CX, double CY, double RX, double RY, int Vertices, APTR *Path);
-extern ERR GeneratePath(CSTRING Sequence, APTR *Path);
+extern ERR GeneratePath(const std::string_view &Sequence, APTR *Path);
 extern ERR GenerateRectangle(double X, double Y, double Width, double Height, APTR *Path);
 extern ERR ReadPainter(objVectorScene * Scene, const std::string_view &IRI, struct VectorPainter * Painter, CSTRING * Result);
 extern void TranslatePath(APTR Path, double X, double Y);

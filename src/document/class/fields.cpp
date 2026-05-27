@@ -155,23 +155,23 @@ Other means of opening a document include loading the data manually and passing 
 
 *********************************************************************************************************************/
 
-static ERR GET_Path(extDocument *Self, CSTRING *Value)
+static ERR GET_Path(extDocument *Self, std::string_view &Value)
 {
-   *Value = Self->Path.c_str();
+   Value = Self->Path;
    return ERR::Okay;
 }
 
-static ERR SET_Path(extDocument *Self, CSTRING Value)
+static ERR SET_Path(extDocument *Self, const std::string_view &Value)
 {
    kt::Log log;
 
-   if ((!Value) or (!*Value)) return ERR::NoData;
+   if (Value.empty()) return ERR::NoData;
    if (Self->PathGuard) return log.warning(ERR::Recursion);
 
    Self->PathGuard = true;
 
    Self->Error = ERR::Okay;
-   auto value = std::string_view(Value);
+   auto value = Value;
 
    std::string newpath;
    if ((value[0] IS '#') or (value[0] IS '?')) {
@@ -243,10 +243,9 @@ changed without causing a load operation.
 
 *********************************************************************************************************************/
 
-static ERR SET_Origin(extDocument *Self, CSTRING Value)
+static ERR SET_Origin(extDocument *Self, const std::string_view &Value)
 {
-   Self->Path.clear();
-   if ((Value) and (*Value)) Self->Path.assign(Value);
+   Self->Path.assign(Value);
    return ERR::Okay;
 }
 
@@ -396,7 +395,7 @@ The client can manually change the working path by setting the #Origin field wit
 
 *********************************************************************************************************************/
 
-static ERR GET_WorkingPath(extDocument *Self, CSTRING *Value)
+static ERR GET_WorkingPath(extDocument *Self, std::string_view &Value)
 {
    kt::Log log;
 
@@ -410,38 +409,30 @@ static ERR GET_WorkingPath(extDocument *Self, CSTRING *Value)
    // Determine if an absolute path has been indicated
 
    bool path = false;
-   if (Self->Path[0] IS '/') path = true;
+   if (Self->Path.starts_with('/')) path = true;
    else {
-     for (int j=0; (Self->Path[j]) and (Self->Path[j] != '/') and (Self->Path[j] != '\\'); j++) {
-         if (Self->Path[j] IS ':') {
-            path = true;
-            break;
-         }
-      }
+      auto j = Self->Path.find_first_of(":/\\");
+      if ((j != std::string::npos) and (Self->Path[j] IS ':')) path = true;
    }
 
-   int j = 0;
-   for (int k=0; Self->Path[k]; k++) {
-      if ((Self->Path[k] IS ':') or (Self->Path[k] IS '/') or (Self->Path[k] IS '\\')) j = k+1;
-   }
+   auto last_sep = Self->Path.find_last_of(":/\\");
+   if (last_sep != std::string::npos) last_sep++;
 
    kt::SwitchContext context(Self);
 
-   CSTRING task_path;
+   std::string_view task_path;
    if (path) { // Extract absolute path
-      Self->WorkingPath.assign(Self->Path, 0, j);
+      Self->WorkingPath.assign(Self->Path, 0, last_sep);
    }
-   else if ((CurrentTask()->get(FID_Path, task_path) IS ERR::Okay) and (task_path)) {
-      std::string buf(task_path);
-
+   else if (CurrentTask()->get(FID_Path, task_path); not task_path.empty()) {
       // Using ResolvePath() can help to determine relative paths such as "../path/file"
 
-      if (j > 0) buf += Self->Path.substr(0, j);
-
+      std::string buf(task_path);
+      if (last_sep > 0) buf += Self->Path.substr(0, last_sep);
       ResolvePath(buf, RSF::APPROXIMATE, &Self->WorkingPath);
    }
-   else { *Value = nullptr; return ERR::NoData; }
+   else return ERR::NoData;
 
-   *Value = Self->WorkingPath.c_str();
+   Value = Self->WorkingPath;
    return ERR::Okay;
 }

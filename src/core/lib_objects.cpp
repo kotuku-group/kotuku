@@ -1386,7 +1386,7 @@ ERR FindObject(const std::string_view &InitialName, CLASSID ClassID, OBJECTID *R
 {
    kt::Log log(__FUNCTION__);
 
-   if ((not Result) or (&InitialName IS nullptr)) return ERR::NullArgs;
+   if (not Result) return ERR::NullArgs;
    if (InitialName.empty()) return log.warning(ERR::EmptyString);
 
    if (auto lock = std::shared_lock{glmObjectLookup, 4s}) {
@@ -1642,11 +1642,11 @@ ERR InitObject(OBJECTPTR Object)
    // This is the only way we can support the automatic loading of sub-classes without causing undue load on CPU and
    // memory resources (loading each sub-class into memory just to check whether or not the data is supported is overkill).
 
-   CSTRING path;
+   std::string_view path;
    if (use_subclass) { // If ERR::UseSubClass was set and the sub-class was not registered, do not call IdentifyFile()
       log.warning("ERR::UseSubClass was used but no suitable sub-class was registered.");
    }
-   else if ((error IS ERR::NoSupport) and (Object->get(FID_Path, path) IS ERR::Okay) and (path)) {
+   else if ((error IS ERR::NoSupport) and (Object->get(FID_Path, path) IS ERR::Okay) and (not path.empty())) {
       CLASSID class_id, subclass_id;
       if (IdentifyFile(path, cl->BaseClassID, &class_id, &subclass_id) IS ERR::Okay) {
          if ((class_id IS Object->classID()) and (subclass_id != CLASSID::NIL)) {
@@ -1665,7 +1665,8 @@ ERR InitObject(OBJECTPTR Object)
             else log.warning("Failed to load module for class #%d.", uint32_t(subclass_id));
          }
       }
-      else log.warning("File '%s' does not belong to class '%s', got $%.8x.", path, Object->className(), uint32_t(class_id));
+      else log.warning("File '%.*s' does not belong to class '%s', got $%.8x.",
+         int(path.size()), path.data(), Object->className(), uint32_t(class_id));
 
       Object->Class = cl;  // Put back the original to retain object integrity
    }
@@ -2052,7 +2053,7 @@ cid: Returns the class ID identified from the class name, or `NULL` if the class
 
 CLASSID ResolveClassName(const std::string_view &ClassName)
 {
-   if ((&ClassName IS nullptr) or (ClassName.empty())) {
+   if (ClassName.empty()) {
       kt::Log log(__FUNCTION__);
       log.warning(ERR::NullArgs);
       return CLASSID::NIL;
@@ -2250,7 +2251,7 @@ ERR SetName(OBJECTPTR Object, const std::string_view &NewName)
 {
    kt::Log log(__FUNCTION__);
 
-   if ((not Object) or (&NewName IS nullptr)) return log.warning(ERR::NullArgs);
+   if (not Object) return log.warning(ERR::NullArgs);
 
    ScopedObjectAccess objlock(Object);
 

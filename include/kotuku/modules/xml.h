@@ -214,15 +214,15 @@ class objXML : public Object {
 
    using create = kt::Create<objXML>;
 
-   STRING    Path;    // Set this field if the XML document originates from a file source.
-   STRING    DocType; // Root element name from DOCTYPE declaration
-   STRING    PublicID; // Public identifier for external DTD
-   STRING    SystemID; // System identifier for external DTD
-   OBJECTPTR Source;  // Set this field if the XML data is to be sourced from another object.
-   XMF       Flags;   // Controls XML parsing behaviour and processing options.
-   int       Modified; // A timestamp of when the XML data was last modified.
-   ERR       ParseError; // Private
-   int       LineNo;  // Private
+   std::string Path;       // Set this field if the XML document originates from a file source.
+   std::string DocType;    // Root element name from DOCTYPE declaration
+   std::string PublicID;   // Public identifier for external DTD
+   std::string SystemID;   // System identifier for external DTD
+   OBJECTPTR Source;       // Set this field if the XML data is to be sourced from another object.
+   XMF       Flags;        // Controls XML parsing behaviour and processing options.
+   int       Modified;     // A timestamp of when the XML data was last modified.
+   ERR       ParseError;   // Private
+   int       LineNo;       // Private
    public:
    typedef kt::vector<XTag> TAGS;
    TAGS Tags;
@@ -393,28 +393,28 @@ class objXML : public Object {
 
    // Customised field setting
 
-   template <class T> inline ERR setPath(T && Value) noexcept {
+   inline ERR setPath(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
-   template <class T> inline ERR setDocType(T && Value) noexcept {
+   inline ERR setDocType(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
-   template <class T> inline ERR setPublic(T && Value) noexcept {
+   inline ERR setPublic(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
-   template <class T> inline ERR setSystem(T && Value) noexcept {
+   inline ERR setSystem(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setSource(OBJECTPTR Value) noexcept {
@@ -434,10 +434,10 @@ class objXML : public Object {
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
-   template <class T> inline ERR setStatement(T && Value) noexcept {
+   inline ERR setStatement(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[11];
-      return field->WriteValue(target, field, 0x08800320, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804320, &Value, 1);
    }
 
 };

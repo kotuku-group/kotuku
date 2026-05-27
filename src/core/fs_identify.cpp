@@ -35,7 +35,7 @@ Read
 ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *ClassID, CLASSID *SubClassID)
 {
    kt::Log log(__FUNCTION__);
-   int i, bytes_read;
+   int bytes_read;
    constexpr int HEADER_SIZE = 80;
 
    if ((Path.empty()) or (not ClassID)) return log.warning(ERR::NullArgs);

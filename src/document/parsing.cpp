@@ -2055,37 +2055,21 @@ void parser::tag_head(const tag_view &Tag)
    // The head contains information about the document
 
    for (auto &scan : Tag.Children) {
-      // Anything allocated here needs to be freed in unload_doc()
       std::string_view name = scan.name();
       if ("title" IS name) {
-         if (scan.hasContent()) {
-            if (Self->Title) FreeResource(Self->Title);
-            Self->Title = kt::strclone(scan.Children[0].Attribs[0].Value);
-         }
+         if (scan.hasContent()) Self->Title.assign(scan.Children[0].Attribs[0].Value);
       }
       else if ("author" IS name) {
-         if (scan.hasContent()) {
-            if (Self->Author) FreeResource(Self->Author);
-            Self->Author = kt::strclone(scan.Children[0].Attribs[0].Value);
-         }
+         if (scan.hasContent()) Self->Author.assign(scan.Children[0].Attribs[0].Value);
       }
       else if ("copyright" IS name) {
-         if (scan.hasContent()) {
-            if (Self->Copyright) FreeResource(Self->Copyright);
-            Self->Copyright = kt::strclone(scan.Children[0].Attribs[0].Value);
-         }
+         if (scan.hasContent()) Self->Copyright.assign(scan.Children[0].Attribs[0].Value);
       }
       else if ("keywords" IS name) {
-         if (scan.hasContent()) {
-            if (Self->Keywords) FreeResource(Self->Keywords);
-            Self->Keywords = kt::strclone(scan.Children[0].Attribs[0].Value);
-         }
+         if (scan.hasContent()) Self->Keywords.assign(scan.Children[0].Attribs[0].Value);
       }
       else if ("description" IS name) {
-         if (scan.hasContent()) {
-            if (Self->Description) FreeResource(Self->Description);
-            Self->Description = kt::strclone(scan.Children[0].Attribs[0].Value);
-         }
+         if (scan.hasContent()) Self->Description.assign(scan.Children[0].Attribs[0].Value);
       }
       else log_hint(&scan, "doc.unknown-head-tag", "Unknown head tag '{}'.", name);
    }

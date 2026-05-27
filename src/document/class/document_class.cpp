@@ -2074,11 +2074,11 @@ static ERR DOCUMENT_ShowIndex(extDocument *Self, doc::ShowIndex *Args)
 #include "document_def.c"
 
 static const FieldArray clFields[] = {
-   { "Description",  FDF_STRING|FDF_R },
-   { "Title",        FDF_STRING|FDF_R },
-   { "Author",       FDF_STRING|FDF_R },
-   { "Copyright",    FDF_STRING|FDF_R },
-   { "Keywords",     FDF_STRING|FDF_R },
+   { "Description",  FDF_CPPSTRING|FDF_R },
+   { "Title",        FDF_CPPSTRING|FDF_R },
+   { "Author",       FDF_CPPSTRING|FDF_R },
+   { "Copyright",    FDF_CPPSTRING|FDF_R },
+   { "Keywords",     FDF_CPPSTRING|FDF_R },
    { "Viewport",     FDF_OBJECT|FDF_RW, nullptr, SET_Viewport, CLASSID::VECTORVIEWPORT },
    { "Focus",        FDF_OBJECT|FDF_RI, nullptr, nullptr, CLASSID::VECTORVIEWPORT },
    { "View",         FDF_OBJECT|FDF_R, nullptr, nullptr, CLASSID::VECTORVIEWPORT },
@@ -2091,11 +2091,11 @@ static const FieldArray clFields[] = {
    // Virtual fields
    { "ClientScript",  FDF_OBJECT|FDF_I,        nullptr, SET_ClientScript },
    { "EventCallback", FDF_FUNCTIONPTR|FDF_RW,  GET_EventCallback, SET_EventCallback },
-   { "Path",          FDF_STRING|FDF_RW,       GET_Path, SET_Path },
-   { "Origin",        FDF_STRING|FDF_RW,       GET_Path, SET_Origin },
+   { "Path",          FDF_CPPSTRING|FDF_RW,    GET_Path, SET_Path },
+   { "Origin",        FDF_CPPSTRING|FDF_RW,    GET_Path, SET_Origin },
    { "PageWidth",     FDF_UNIT|FDF_INT|FDF_SCALED|FDF_RW, GET_PageWidth, SET_PageWidth },
    { "Pretext",       FDF_STRING|FDF_W,        nullptr, SET_Pretext },
-   { "Src",           FDF_SYNONYM|FDF_STRING|FDF_RW, GET_Path, SET_Path },
-   { "WorkingPath",   FDF_STRING|FDF_R,        GET_WorkingPath, nullptr },
+   { "Src",           FDF_SYNONYM|FDF_CPPSTRING|FDF_RW, GET_Path, SET_Path },
+   { "WorkingPath",   FDF_CPPSTRING|FDF_R,     GET_WorkingPath, nullptr },
    END_FIELD
 };

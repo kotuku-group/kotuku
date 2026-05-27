@@ -621,6 +621,201 @@ An optional long description can be written here.
 <p>Prefix a type with <code>&amp;</code> when the parameter is a pointer that receives a result, for example <code>&amp;int</code> for <code>int *</code>. Prefix
 the type with <code>!</code> when the result is an allocated resource pointer that can be released with <code>FreeResource()</code>; this lets
 Tiri manage the resource safely. Prefix the type with <code>^</code> when a buffer is modified by the function.</p>
+<h2 id="behaviour-tags">Behaviour Tags</h2>
+<p>Use <code>-TAGS-</code> to record behavioural information that is useful to documentation generators, language bindings and static
+analysis tools, but cannot be inferred reliably from the EDF type alone. Tags are supplied as a comma-separated value
+list. Whitespace around commas is ignored.</p>
+<pre class="text"><code>-FIELD-
+Path: Location of the file.
+
+Returns the resolved path associated with the file object.
+
+-TAGS-
+null-terminated-result, borrowed-result, valid-until-object-change
+-END-</code></pre>
+<p>Tags should describe concrete API contracts, not implementation details. Do not use tags to repeat information already
+expressed by the EDF type, field access flags or <code>-ERRORS-</code> section.</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Category</th>
+<th style="text-align: left;">Tag</th>
+<th style="text-align: left;">Comment</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Result lifetime</td>
+<td style="text-align: left;"><code>borrowed-result</code></td>
+<td style="text-align: left;">The returned pointer or view references storage owned elsewhere and must not be freed by the caller (this is the default position).</td>
+</tr>
+<tr>
+<td style="text-align: left;">Result lifetime</td>
+<td style="text-align: left;"><code>caller-owns-result</code></td>
+<td style="text-align: left;">The caller is responsible for releasing the returned value with the documented release mechanism.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Result lifetime</td>
+<td style="text-align: left;"><code>object-owns-result</code></td>
+<td style="text-align: left;">The returned pointer or view references storage owned by the object that supplied it.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Result lifetime</td>
+<td style="text-align: left;"><code>static-result</code></td>
+<td style="text-align: left;">The returned pointer or view references static storage that remains valid for the process lifetime.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Result lifetime</td>
+<td style="text-align: left;"><code>volatile</code></td>
+<td style="text-align: left;">The returned pointer or view is short-lived and must be consumed immediately.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Result lifetime</td>
+<td style="text-align: left;"><code>temp-access</code></td>
+<td style="text-align: left;">The returned pointer or view remains valid only until the next call to the same API or subsystem, or the owning object is modified or destroyed.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Result shape</td>
+<td style="text-align: left;"><code>null-terminated-result</code></td>
+<td style="text-align: left;">The returned string view or pointer references storage that includes a terminating <code>NUL</code> byte.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Nullability</td>
+<td style="text-align: left;"><code>non-null-result</code></td>
+<td style="text-align: left;">A successful call always returns a non-<code>NULL</code> result pointer or view.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Nullability</td>
+<td style="text-align: left;"><code>nullable-result</code></td>
+<td style="text-align: left;">A successful call may return <code>NULL</code> or an empty view as a meaningful result.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Input lifetime</td>
+<td style="text-align: left;"><code>copies-input</code></td>
+<td style="text-align: left;">The callee copies the supplied input before returning and does not retain the caller&#39;s buffer.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Input lifetime</td>
+<td style="text-align: left;"><code>retains-input</code></td>
+<td style="text-align: left;">The callee may retain a reference to the supplied input after returning.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Ownership</td>
+<td style="text-align: left;"><code>does-not-take-ownership</code></td>
+<td style="text-align: left;">The callee observes the supplied pointer or handle without assuming responsibility for releasing it.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Ownership</td>
+<td style="text-align: left;"><code>takes-ownership</code></td>
+<td style="text-align: left;">The callee assumes responsibility for releasing the supplied pointer, handle or resource.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Mutation</td>
+<td style="text-align: left;"><code>consumes-input</code></td>
+<td style="text-align: left;">The callee reads from the supplied input and advances, drains or otherwise consumes it.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Mutation</td>
+<td style="text-align: left;"><code>mutates-input</code></td>
+<td style="text-align: left;">The callee may modify a supplied pointer, buffer, structure or object parameter.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Mutation</td>
+<td style="text-align: left;"><code>mutates-object</code></td>
+<td style="text-align: left;">The call changes the receiving object even if the result type appears query-like.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Mutation</td>
+<td style="text-align: left;"><code>updates-file-position</code></td>
+<td style="text-align: left;">The call changes the current file or stream position as a side effect.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Resource effects</td>
+<td style="text-align: left;"><code>closes-handle</code></td>
+<td style="text-align: left;">The call closes or invalidates an existing host handle or framework handle.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Resource effects</td>
+<td style="text-align: left;"><code>creates-resource</code></td>
+<td style="text-align: left;">The call creates a resource that must be tracked or released according to the documented contract.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Resource effects</td>
+<td style="text-align: left;"><code>opens-handle</code></td>
+<td style="text-align: left;">The call opens a host handle or framework handle.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Execution</td>
+<td style="text-align: left;"><code>blocking</code></td>
+<td style="text-align: left;">The call may block on I/O, synchronisation, process execution or another external dependency.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Execution</td>
+<td style="text-align: left;"><code>non-blocking</code></td>
+<td style="text-align: left;">The call is expected to return without waiting for external completion.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Threading</td>
+<td style="text-align: left;"><code>main-thread-only</code></td>
+<td style="text-align: left;">The call must be made from the main thread.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Threading</td>
+<td style="text-align: left;"><code>not-reentrant</code></td>
+<td style="text-align: left;">The call must not be re-entered for the same object or subsystem while an earlier call is active.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Threading</td>
+<td style="text-align: left;"><code>reentrant</code></td>
+<td style="text-align: left;">The call can be entered again while an earlier call is active, subject to documented object ownership rules.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Threading</td>
+<td style="text-align: left;"><code>thread-safe</code></td>
+<td style="text-align: left;">The call may be used concurrently from multiple threads under the documented object lifetime rules.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Callback behaviour</td>
+<td style="text-align: left;"><code>callback-may-run-async</code></td>
+<td style="text-align: left;">A callback supplied to the API may run after the initiating call returns.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Callback behaviour</td>
+<td style="text-align: left;"><code>callback-may-run-inline</code></td>
+<td style="text-align: left;">A callback supplied to the API may run before the initiating call returns.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Path behaviour</td>
+<td style="text-align: left;"><code>case-insensitive</code></td>
+<td style="text-align: left;">Name or path matching performed by the API is case-insensitive.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Path behaviour</td>
+<td style="text-align: left;"><code>case-sensitive</code></td>
+<td style="text-align: left;">Name or path matching performed by the API is case-sensitive.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Path behaviour</td>
+<td style="text-align: left;"><code>path-normalised</code></td>
+<td style="text-align: left;">Path text returned or stored by the API is normalised to the framework&#39;s canonical format.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Path behaviour</td>
+<td style="text-align: left;"><code>path-preserved</code></td>
+<td style="text-align: left;">Path text returned or stored by the API preserves the caller-supplied spelling where possible.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Semantic contract</td>
+<td style="text-align: left;"><code>idempotent</code></td>
+<td style="text-align: left;">Repeating the call with the same state and parameters has no additional effect after the first successful call.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Semantic contract</td>
+<td style="text-align: left;"><code>pure-query</code></td>
+<td style="text-align: left;">The call reads state only and has no observable side effects.</td>
+</tr>
+</tbody>
+</table>
 <h2 id="markup">Markup</h2>
 <p>Long descriptions support a small XML-like markup set. Use these features inside EDF comments rather than Markdown.</p>
 <table>
@@ -654,13 +849,13 @@ Tiri manage the resource safely. Prefix the type with <code>^</code> when a buff
 </tr>
 <tr>
 <td style="text-align: left;">Local function</td>
-<td style="text-align: left;"><code>~AllocMemory()</code></td>
-<td style="text-align: left;">Links to a function in the current module.</td>
+<td style="text-align: left;"><code>~FunctionName()</code></td>
+<td style="text-align: left;">References a local module function (valid in <code>-FUNCTION-</code> documentation only).</td>
 </tr>
 <tr>
 <td style="text-align: left;">External function</td>
-<td style="text-align: left;"><code>~Core.AllocMemory()</code></td>
-<td style="text-align: left;">Links to a function in another module.</td>
+<td style="text-align: left;"><code>~ModuleName.Function()</code></td>
+<td style="text-align: left;">References a module function, e.g. <code>~Core.AllocMemory()</code>.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Lookup or struct reference</td>

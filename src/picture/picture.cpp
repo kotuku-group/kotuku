@@ -997,22 +997,18 @@ Author: The name of the person or company that created the image.
 
 *********************************************************************************************************************/
 
-static ERR GET_Author(extPicture *Self, STRING *Value)
+static ERR GET_Author(extPicture *Self, std::string_view &Value)
 {
-   if (!Self->prvAuthor.empty()) {
-      *Value = Self->prvAuthor.data();
+   if (not Self->prvAuthor.empty()) {
+      Value = Self->prvAuthor;
       return ERR::Okay;
    }
-   else {
-      *Value = NULL;
-      return ERR::FieldNotSet;
-   }
+   else return ERR::FieldNotSet;
 }
 
-static ERR SET_Author(extPicture *Self, CSTRING Value)
+static ERR SET_Author(extPicture *Self, std::string_view &Value)
 {
-   if ((Value) and (*Value)) Self->prvAuthor.assign(Value);
-   else Self->prvAuthor.clear();
+   Self->prvAuthor.assign(Value);
    return ERR::Okay;
 }
 
@@ -1035,22 +1031,18 @@ example `Copyright J. Bloggs (c) 1992.`
 
 *********************************************************************************************************************/
 
-static ERR GET_Copyright(extPicture *Self, STRING *Value)
+static ERR GET_Copyright(extPicture *Self, std::string_view &Value)
 {
-   if (!Self->prvCopyright.empty()) {
-      *Value = Self->prvCopyright.data();
+   if (not Self->prvCopyright.empty()) {
+      Value = Self->prvCopyright;
       return ERR::Okay;
    }
-   else {
-      *Value = NULL;
-      return ERR::FieldNotSet;
-   }
+   else return ERR::FieldNotSet;
 }
 
-static ERR SET_Copyright(extPicture *Self, CSTRING Value)
+static ERR SET_Copyright(extPicture *Self, std::string_view &Value)
 {
-   if ((Value) and (*Value)) Self->prvCopyright.assign(Value);
-   else Self->prvCopyright.clear();
+   Self->prvCopyright.assign(Value);
    return ERR::Okay;
 }
 
@@ -1063,22 +1055,18 @@ description.
 
 *********************************************************************************************************************/
 
-static ERR GET_Description(extPicture *Self, STRING *Value)
+static ERR GET_Description(extPicture *Self, std::string_view &Value)
 {
-   if (!Self->prvDescription.empty()) {
-      *Value = Self->prvDescription.data();
+   if (not Self->prvDescription.empty()) {
+      Value = Self->prvDescription;
       return ERR::Okay;
    }
-   else {
-      *Value = NULL;
-      return ERR::FieldNotSet;
-   }
+   else return ERR::FieldNotSet;
 }
 
-static ERR SET_Description(extPicture *Self, CSTRING Value)
+static ERR SET_Description(extPicture *Self, std::string_view &Value)
 {
-   if ((Value) and (*Value)) Self->prvDescription.assign(Value);
-   else Self->prvDescription.clear();
+   Self->prvDescription.assign(Value);
    return ERR::Okay;
 }
 
@@ -1090,22 +1078,18 @@ If it is necessary to associate a disclaimer with an image, the legal text may b
 
 *********************************************************************************************************************/
 
-static ERR GET_Disclaimer(extPicture *Self, STRING *Value)
+static ERR GET_Disclaimer(extPicture *Self, std::string_view &Value)
 {
-   if (!Self->prvDisclaimer.empty()) {
-      *Value = Self->prvDisclaimer.data();
+   if (not Self->prvDisclaimer.empty()) {
+      Value = Self->prvDisclaimer;
       return ERR::Okay;
    }
-   else {
-      *Value = NULL;
-      return ERR::FieldNotSet;
-   }
+   else return ERR::FieldNotSet;
 }
 
-static ERR SET_Disclaimer(extPicture *Self, CSTRING Value)
+static ERR SET_Disclaimer(extPicture *Self, std::string_view &Value)
 {
-   if ((Value) and (*Value)) Self->prvDisclaimer.assign(Value);
-   else Self->prvDisclaimer.clear();
+   Self->prvDisclaimer.assign(Value);
    return ERR::Okay;
 }
 
@@ -1159,22 +1143,18 @@ Path: The location of source image data.
 
 *********************************************************************************************************************/
 
-static ERR GET_Path(extPicture *Self, STRING *Value)
+static ERR GET_Path(extPicture *Self, std::string_view &Value)
 {
-   if (!Self->prvPath.empty()) {
-      *Value = Self->prvPath.data();
+   if (not Self->prvPath.empty()) {
+      Value = Self->prvPath;
       return ERR::Okay;
    }
-   else {
-      *Value = NULL;
-      return ERR::FieldNotSet;
-   }
+   else return ERR::FieldNotSet;
 }
 
-static ERR SET_Path(extPicture *Self, CSTRING Value)
+static ERR SET_Path(extPicture *Self, std::string_view &Value)
 {
-   if ((Value) and (*Value)) Self->prvPath.assign(Value);
-   else Self->prvPath.clear();
+   Self->prvPath.assign(Value);
    return ERR::Okay;
 }
 
@@ -1204,22 +1184,18 @@ Software: The name of the application that was used to draw the image.
 
 *********************************************************************************************************************/
 
-static ERR GET_Software(extPicture *Self, STRING *Value)
+static ERR GET_Software(extPicture *Self, std::string_view &Value)
 {
-   if (!Self->prvSoftware.empty()) {
-      *Value = Self->prvSoftware.data();
+   if (not Self->prvSoftware.empty()) {
+      Value = Self->prvSoftware;
       return ERR::Okay;
    }
-   else {
-      *Value = NULL;
-      return ERR::FieldNotSet;
-   }
+   else return ERR::FieldNotSet;
 }
 
-static ERR SET_Software(extPicture *Self, CSTRING Value)
+static ERR SET_Software(extPicture *Self, std::string_view &Value)
 {
-   if ((Value) and (*Value)) Self->prvSoftware.assign(Value);
-   else Self->prvSoftware.clear();
+   Self->prvSoftware.assign(Value);
    return ERR::Okay;
 }
 
@@ -1229,22 +1205,18 @@ Title: The title of the image.
 -END-
 *********************************************************************************************************************/
 
-static ERR GET_Title(extPicture *Self, STRING *Value)
+static ERR GET_Title(extPicture *Self, std::string_view &Value)
 {
-   if (!Self->prvTitle.empty()) {
-      *Value = Self->prvTitle.data();
+   if (not Self->prvTitle.empty()) {
+      Value = Self->prvTitle;
       return ERR::Okay;
    }
-   else {
-      *Value = NULL;
-      return ERR::FieldNotSet;
-   }
+   else return ERR::FieldNotSet;
 }
 
-static ERR SET_Title(extPicture *Self, CSTRING Value)
+static ERR SET_Title(extPicture *Self, std::string_view &Value)
 {
-   if ((Value) and (*Value)) Self->prvTitle.assign(Value);
-   else Self->prvTitle.clear();
+   Self->prvTitle.assign(Value);
    return ERR::Okay;
 }
 
@@ -1550,16 +1522,16 @@ static const FieldArray clFields[] = {
    { "Quality",       FDF_INT|FDF_RW },
    { "FrameRate",     FDF_SYSTEM|FDF_INT|FDF_R },
    // Virtual fields
-   { "Author",        FDF_STRING|FDF_RW,  GET_Author, SET_Author },
-   { "Copyright",     FDF_STRING|FDF_RW,  GET_Copyright, SET_Copyright },
-   { "Description",   FDF_STRING|FDF_RW,  GET_Description, SET_Description },
-   { "Disclaimer",    FDF_STRING|FDF_RW,  GET_Disclaimer, SET_Disclaimer },
+   { "Author",        FDF_CPPSTRING|FDF_RW,  GET_Author, SET_Author },
+   { "Copyright",     FDF_CPPSTRING|FDF_RW,  GET_Copyright, SET_Copyright },
+   { "Description",   FDF_CPPSTRING|FDF_RW,  GET_Description, SET_Description },
+   { "Disclaimer",    FDF_CPPSTRING|FDF_RW,  GET_Disclaimer, SET_Disclaimer },
    { "Header",        FDF_POINTER|FDF_RI, GET_Header },
-   { "Path",          FDF_STRING|FDF_RI,  GET_Path, SET_Path },
-   { "Location",      FDF_SYNONYM|FDF_STRING|FDF_RI, GET_Path, SET_Path },
-   { "Src",           FDF_SYNONYM|FDF_STRING|FDF_RI, GET_Path, SET_Path },
-   { "Software",      FDF_STRING|FDF_RW,  GET_Software, SET_Software },
-   { "Title",         FDF_STRING|FDF_RW,  GET_Title, SET_Title },
+   { "Path",          FDF_CPPSTRING|FDF_RI,  GET_Path, SET_Path },
+   { "Location",      FDF_SYNONYM|FDF_CPPSTRING|FDF_RI, GET_Path, SET_Path },
+   { "Src",           FDF_SYNONYM|FDF_CPPSTRING|FDF_RI, GET_Path, SET_Path },
+   { "Software",      FDF_CPPSTRING|FDF_RW,  GET_Software, SET_Software },
+   { "Title",         FDF_CPPSTRING|FDF_RW,  GET_Title, SET_Title },
    END_FIELD
 };
 

@@ -281,8 +281,8 @@ struct FontBase {
    int (*_StringWidth)(objFont *Font, const std::string_view & String, int Chars);
    int (*_CharWidth)(objFont *Font, uint32_t Char);
    ERR (*_RefreshFonts)(void);
-   ERR (*_SelectFont)(CSTRING Name, CSTRING Style, CSTRING *Path, FMETA *Meta);
-   ERR (*_ResolveFamilyName)(CSTRING String, CSTRING *Result);
+   ERR (*_SelectFont)(const std::string_view & Name, const std::string_view & Style, CSTRING *Path, FMETA *Meta);
+   ERR (*_ResolveFamilyName)(const std::string_view & String, CSTRING *Result);
 #endif // KOTUKU_STATIC
 };
 
@@ -293,8 +293,8 @@ inline ERR GetList(struct FontList **Result) { return FontBase->_GetList(Result)
 inline int StringWidth(objFont *Font, const std::string_view & String, int Chars) { return FontBase->_StringWidth(Font,String,Chars); }
 inline int CharWidth(objFont *Font, uint32_t Char) { return FontBase->_CharWidth(Font,Char); }
 inline ERR RefreshFonts(void) { return FontBase->_RefreshFonts(); }
-inline ERR SelectFont(CSTRING Name, CSTRING Style, CSTRING *Path, FMETA *Meta) { return FontBase->_SelectFont(Name,Style,Path,Meta); }
-inline ERR ResolveFamilyName(CSTRING String, CSTRING *Result) { return FontBase->_ResolveFamilyName(String,Result); }
+inline ERR SelectFont(const std::string_view & Name, const std::string_view & Style, CSTRING *Path, FMETA *Meta) { return FontBase->_SelectFont(Name,Style,Path,Meta); }
+inline ERR ResolveFamilyName(const std::string_view & String, CSTRING *Result) { return FontBase->_ResolveFamilyName(String,Result); }
 } // namespace
 #else
 namespace fnt {
@@ -302,8 +302,8 @@ extern ERR GetList(struct FontList **Result);
 extern int StringWidth(objFont *Font, const std::string_view & String, int Chars);
 extern int CharWidth(objFont *Font, uint32_t Char);
 extern ERR RefreshFonts(void);
-extern ERR SelectFont(CSTRING Name, CSTRING Style, CSTRING *Path, FMETA *Meta);
-extern ERR ResolveFamilyName(CSTRING String, CSTRING *Result);
+extern ERR SelectFont(const std::string_view & Name, const std::string_view & Style, CSTRING *Path, FMETA *Meta);
+extern ERR ResolveFamilyName(const std::string_view & String, CSTRING *Result);
 } // namespace
 #endif // KOTUKU_STATIC
 

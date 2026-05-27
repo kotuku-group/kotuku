@@ -272,11 +272,11 @@ static XPathValue xq_meta_to_map(const extDocument *Self)
    XPathValue result(XPVT::Map);
    result.map_storage = std::make_shared<XPathMapStorage>();
 
-   if (Self->Title)       xq_map_append_string(result.map_storage, "title", Self->Title);
-   if (Self->Author)      xq_map_append_string(result.map_storage, "author", Self->Author);
-   if (Self->Description) xq_map_append_string(result.map_storage, "description", Self->Description);
-   if (Self->Copyright)   xq_map_append_string(result.map_storage, "copyright", Self->Copyright);
-   if (Self->Keywords)    xq_map_append_string(result.map_storage, "keywords", Self->Keywords);
+   if (not Self->Title.empty())       xq_map_append_string(result.map_storage, "title", Self->Title);
+   if (not Self->Author.empty())      xq_map_append_string(result.map_storage, "author", Self->Author);
+   if (not Self->Description.empty()) xq_map_append_string(result.map_storage, "description", Self->Description);
+   if (not Self->Copyright.empty())   xq_map_append_string(result.map_storage, "copyright", Self->Copyright);
+   if (not Self->Keywords.empty())    xq_map_append_string(result.map_storage, "keywords", Self->Keywords);
    if (not Self->Path.empty()) xq_map_append_string(result.map_storage, "path", Self->Path);
    xq_map_append_number(result.map_storage, "line-no", double(Self->Segments.size()));
 

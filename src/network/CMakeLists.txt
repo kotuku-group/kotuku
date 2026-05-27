@@ -86,6 +86,18 @@ target_compile_definitions (${MOD} PRIVATE "MAX_ALIASES=64" "MAX_ADDRESSES=32" "
 find_program(MKCERT_EXECUTABLE mkcert PATHS ${CMAKE_SOURCE_DIR}/tools ENV PATH)
 find_program(OPENSSL_EXECUTABLE openssl)
 
+set(OPENSSL_RSA_TRADITIONAL_FLAG)
+if(OPENSSL_EXECUTABLE)
+   execute_process(
+      COMMAND "${OPENSSL_EXECUTABLE}" rsa -help
+      OUTPUT_VARIABLE OPENSSL_RSA_HELP
+      ERROR_VARIABLE OPENSSL_RSA_HELP
+      RESULT_VARIABLE OPENSSL_RSA_HELP_RESULT)
+   if(OPENSSL_RSA_HELP MATCHES "(^|[ \\r\\n])-traditional([ \\r\\n]|$)")
+      set(OPENSSL_RSA_TRADITIONAL_FLAG -traditional)
+   endif()
+endif()
+
 set(SSL_DATA_DIR "${CMAKE_SOURCE_DIR}/data/ssl")
 set(LOCALHOST_PEM "${SSL_DATA_DIR}/localhost.pem")
 set(LOCALHOST_KEY_PEM "${SSL_DATA_DIR}/localhost-key.pem")
@@ -109,7 +121,7 @@ if(MKCERT_EXECUTABLE AND OPENSSL_EXECUTABLE)
       COMMAND ${CMAKE_COMMAND} -E chdir "${SSL_DATA_DIR}" "${MKCERT_EXECUTABLE}" localhost 127.0.0.1 ::1
       COMMAND ${CMAKE_COMMAND} -E rename "${MKCERT_PEM}" "${LOCALHOST_PEM}"
       COMMAND ${CMAKE_COMMAND} -E rename "${MKCERT_KEY_PEM}" "${LOCALHOST_KEY_PEM}"
-      COMMAND "${OPENSSL_EXECUTABLE}" rsa -in "${LOCALHOST_KEY_PEM}" -traditional -out "${LOCALHOST_RSA_KEY_PEM}"
+      COMMAND "${OPENSSL_EXECUTABLE}" rsa -in "${LOCALHOST_KEY_PEM}" ${OPENSSL_RSA_TRADITIONAL_FLAG} -out "${LOCALHOST_RSA_KEY_PEM}"
       COMMAND "${OPENSSL_EXECUTABLE}" ecparam -name prime256v1 -genkey -noout -out "${LOCALHOST_EC_KEY_PEM}"
       COMMAND "${OPENSSL_EXECUTABLE}" req -new -x509 -key "${LOCALHOST_EC_KEY_PEM}" -out "${LOCALHOST_EC_PEM}"
               -days 3650 -subj "/CN=localhost"

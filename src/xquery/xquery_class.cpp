@@ -360,7 +360,7 @@ static ERR XQUERY_Evaluate(extXQuery *Self, struct xq::Evaluate *Args)
       kt::ScopedObjectLock lock(xml);
       XTag *root_tag = nullptr;
 
-      if (Self->Path.empty() and (xml->Path)) Self->Path = xml->Path;
+      if (Self->Path.empty() and (not xml->Path.empty())) Self->Path = xml->Path;
       if (Args->Index != 0) {
          root_tag = xml->getTag(Args->Index);
          if (not root_tag) {
@@ -715,7 +715,7 @@ static ERR XQUERY_Search(extXQuery *Self, struct xq::Search *Args)
       kt::ScopedObjectLock lock(xml);
       XTag *root_tag = nullptr;
 
-      if (Self->Path.empty() and (xml->Path)) Self->Path = xml->Path;
+      if (Self->Path.empty() and (not xml->Path.empty())) Self->Path = xml->Path;
       if (Args->Index != 0) {
          root_tag = xml->getTag(Args->Index);
          if (not root_tag) {

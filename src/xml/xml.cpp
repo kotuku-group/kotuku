@@ -81,7 +81,7 @@ static std::atomic<uint32_t> glTagID = 1;
 
 [[nodiscard]] static std::string document_base(extXML *Document)
 {
-   if ((!Document) or (!Document->Path) or (!*Document->Path)) return std::string();
+   if ((!Document) or (Document->Path.empty())) return std::string();
    return xml::uri::normalise_uri_separators(std::string(Document->Path));
 }
 
@@ -143,7 +143,7 @@ static void refresh_base_uris_for_insert(extXML *Document, TAGS &Inserted, XTag 
 }
 
 static ERR add_xml_class(void);
-static ERR SET_Statement(extXML *, CSTRING);
+static ERR SET_Statement(extXML *, const std::string_view &);
 static ERR SET_Source(extXML *, OBJECTPTR);
 
 //********************************************************************************************************************

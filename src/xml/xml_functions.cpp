@@ -41,34 +41,28 @@ static void output_attribvalue(std::string_view String, std::ostringstream &Outp
    }
 }
 
-inline void assign_string(STRING &Target, const std::string_view Value)
+static bool ci_keyword(std::string_view &View, std::string_view Keyword) noexcept
 {
-   if (Target) { FreeResource(Target); Target = nullptr; }
-   if (not Value.empty()) Target = kt::strclone(Value);
-}
+   if (Keyword.empty() or View.size() < Keyword.size()) return false;
 
-static bool ci_keyword(std::string_view &view, std::string_view keyword) noexcept
-{
-   if (keyword.empty() or view.size() < keyword.size()) return false;
-
-   for (size_t i = 0; i < keyword.size(); ++i) {
-      if (to_lower(view[i]) != to_lower(keyword[i])) return false;
+   for (size_t i = 0; i < Keyword.size(); ++i) {
+      if (to_lower(View[i]) != to_lower(Keyword[i])) return false;
    }
 
    // Check that we're not matching a partial name
-   if ((view.size() > keyword.size()) and
-       is_name_char(view[keyword.size()]) and
-       (view[keyword.size()] != '[')) return false;
+   if ((View.size() > Keyword.size()) and
+       is_name_char(View[Keyword.size()]) and
+       (View[Keyword.size()] != '[')) return false;
 
-   view.remove_prefix(keyword.size());
+   View.remove_prefix(Keyword.size());
    return true;
 }
 
-static bool ci_keyword(ParseState &State, std::string_view keyword) noexcept
+static bool ci_keyword(ParseState &State, std::string_view Keyword) noexcept
 {
    auto view = State.cursor;
-   if (ci_keyword(view, keyword)) {
-      State.next(keyword.size());
+   if (ci_keyword(view, Keyword)) {
+      State.next(Keyword.size());
       return true;
    }
    return false;
@@ -285,9 +279,9 @@ static void parse_doctype(extXML *Self, ParseState &State)
    auto type_view = read_name(view);
    if (type_view.empty()) return;
 
-   assign_string(Self->DocType, type_view);
-   if (Self->PublicID) { FreeResource(Self->PublicID); Self->PublicID = nullptr; }
-   if (Self->SystemID) { FreeResource(Self->SystemID); Self->SystemID = nullptr; }
+   Self->DocType = type_view;
+   Self->PublicID.clear();
+   Self->SystemID.clear();
    Self->Entities.clear();
    Self->ParameterEntities.clear();
    Self->Notations.clear();
@@ -304,19 +298,19 @@ static void parse_doctype(extXML *Self, ParseState &State)
       State.skipWhitespace(Self->LineNo);
       std::string public_id;
       if (read_quoted(Self, State, public_id, entity_stack, parameter_stack)) {
-         if (not standalone) assign_string(Self->PublicID, public_id);
+         if (not standalone) Self->PublicID = public_id;
       }
       State.skipWhitespace(Self->LineNo);
       std::string system_id;
       if (read_quoted(Self, State, system_id, entity_stack, parameter_stack)) {
-         if (not standalone) assign_string(Self->SystemID, system_id);
+         if (not standalone) Self->SystemID = system_id;
       }
    }
    else if (ci_keyword(State, "SYSTEM")) {
       State.skipWhitespace(Self->LineNo);
       std::string system_id;
       if (read_quoted(Self, State, system_id, entity_stack, parameter_stack)) {
-         if (not standalone) assign_string(Self->SystemID, system_id);
+         if (not standalone) Self->SystemID = system_id;
       }
    }
 
@@ -883,9 +877,9 @@ static ERR txt_to_xml(extXML *Self, TAGS &Tags, std::string_view Text)
    kt::Log log(__FUNCTION__);
 
    if (&Tags IS &Self->Tags) {
-      if (Self->DocType)  { FreeResource(Self->DocType); Self->DocType = nullptr; }
-      if (Self->PublicID) { FreeResource(Self->PublicID); Self->PublicID = nullptr; }
-      if (Self->SystemID) { FreeResource(Self->SystemID); Self->SystemID = nullptr; }
+      Self->DocType.clear();
+      Self->PublicID.clear();
+      Self->SystemID.clear();
       Self->Entities.clear();
       Self->ParameterEntities.clear();
       Self->Notations.clear();
@@ -903,7 +897,7 @@ static ERR txt_to_xml(extXML *Self, TAGS &Tags, std::string_view Text)
 
    ParseState state(Text);
 
-   if (Self->Path) state.CurrentBase = xml::uri::normalise_uri_separators(std::string(Self->Path));
+   if (not Self->Path.empty()) state.CurrentBase = xml::uri::normalise_uri_separators(Self->Path);
    else state.CurrentBase.clear();
 
    state.skipTo('<', Self->LineNo); // Skip any leading whitespace or content

@@ -28,18 +28,18 @@
 <b>Validation and Error Handling:</b> Comprehensive file validation prevents playback of corrupted or unsupported audio data</li>
 </list>
 <p>The following demonstrates advanced Sound class usage including pitch control and event handling:</p>
-<pre>local snd = obj.new('sound', {
+<pre>snd = obj.new('sound', {
    path = 'audio:samples/piano_c4.wav',
    note = 'C6',    -- Play two octaves higher
    volume = 0.8,   -- Reduce volume to 80%
    onStop = function(Sound)
       print('Playback completed')
-      proc.signal()
+      processing.signal()
    end
 })
 
 snd.acActivate()
-proc.sleep()  -- Wait for completion
+processing.sleep()  -- Wait for completion
 </pre></description>
     <source>
       <file>class_sound.cpp</file>

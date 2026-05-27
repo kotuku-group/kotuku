@@ -66,6 +66,7 @@ if (BUILD_DEFS) # Customised idl_c() equivalent, this is for defining the output
    register_generated_header_target (display_defs)
 endif ()
 
+if (NOT WIN32)
    CHECK_C_SOURCE_COMPILES ("
 #include <X11/Xlib.h>
 #include <X11/extensions/Xxf86dga.h>
@@ -73,6 +74,7 @@ int main() {
    return 0;
 }"
    XDGA_INSTALLED)
+endif ()
 
 add_library (${MOD})
 

@@ -127,13 +127,12 @@ ERR SetVolume(const std::string_view &Name, const std::string_view &Path, const 
 {
    kt::Log log(__FUNCTION__);
 
-   if ((&Name IS nullptr) or (&Path IS nullptr)) return log.warning(ERR::NullArgs);
    if ((Name.empty()) or (Path.empty())) return log.warning(ERR::NullArgs);
 
    std::string name;
    name.append(Name, 0, Name.find(':'));
 
-   if ((&Label != nullptr) and (not Label.empty())) log.branch("Name: %.*s (%.*s), Path: %.*s", int(Name.size()), Name.data(), int(Label.size()), Label.data(), int(Path.size()), Path.data());
+   if ((not Label.empty())) log.branch("Name: %.*s (%.*s), Path: %.*s", int(Name.size()), Name.data(), int(Label.size()), Label.data(), int(Path.size()), Path.data());
    else log.branch("Name: %.*s, Path: %.*s", int(Name.size()), Name.data(), int(Path.size()), Path.data());
 
    if (auto lock = std::unique_lock{glmVolumes, 6s}) {
@@ -153,9 +152,9 @@ ERR SetVolume(const std::string_view &Name, const std::string_view &Path, const 
 
       keys["Path"] = Path;
 
-      if ((&Icon != nullptr) and (not Icon.empty()))     keys["Icon"]   = Icon;
-      if ((&Label != nullptr) and (not Label.empty()))   keys["Label"]  = Label;
-      if ((&Device != nullptr) and (not Device.empty())) keys["Device"] = Device;
+      if (not Icon.empty())   keys["Icon"]   = Icon;
+      if (not Label.empty())  keys["Label"]  = Label;
+      if (not Device.empty()) keys["Device"] = Device;
 
       if ((Flags & VOLUME::HIDDEN) != VOLUME::NIL) keys["Hidden"] = "Yes";
       if ((Flags & VOLUME::SYSTEM) != VOLUME::NIL) keys["System"] = "Yes";

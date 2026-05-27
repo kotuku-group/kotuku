@@ -150,11 +150,11 @@ class objHTTP : public Object {
    int64_t  Index;           // Indicates the total bytes received during content transfer.
    int64_t  ContentLength;   // The byte length of incoming or outgoing content.
    int64_t  Size;            // Set this field to define the length of a data transfer when issuing a POST command.
-   STRING   Host;            // The targeted HTTP server is specified here, either by name or IP address.
-   STRING   Path;            // The HTTP path targeted at the host server.
-   STRING   OutputFile;      // To download HTTP content to a file, set a file path here.
-   STRING   InputFile;       // To upload HTTP content from a file, set a file path here.
-   STRING   UserAgent;       // Specifies the name of the user-agent string that is sent in HTTP requests.
+   std::string Host;         // The targeted HTTP server is specified here, either by name or IP address.
+   std::string Path;         // The HTTP path targeted at the host server.
+   std::string OutputFile;   // To download HTTP content to a file, set a file path here.
+   std::string InputFile;    // To upload HTTP content from a file, set a file path here.
+   std::string UserAgent;    // Specifies the name of the user-agent string that is sent in HTTP requests.
    OBJECTID InputObjectID;   // Allows data to be sent from an object on execution of a POST command.
    OBJECTID OutputObjectID;  // Incoming data can be sent to the object referenced in this field.
    HTM      Method;          // The HTTP instruction to execute (defaults to GET).
@@ -165,7 +165,7 @@ class objHTTP : public Object {
    ERR      Error;           // The error code received for the most recently executed HTTP command.
    DATA     Datatype;        // The default datatype format to use when passing data to a target object.
    HGS      CurrentState;    // Indicates the current state of an HTTP object during its interaction with an HTTP server.
-   STRING   ProxyServer;     // Route the HTTP request through the proxy server defined here.
+   std::string ProxyServer;  // Route the HTTP request through the proxy server defined here.
    int      ProxyPort;       // The port to use when communicating with a proxy server.
    int      BufferSize;      // Indicates the preferred buffer size for data operations.
 
@@ -239,34 +239,34 @@ class objHTTP : public Object {
       return ERR::Okay;
    }
 
-   template <class T> inline ERR setHost(T && Value) noexcept {
+   inline ERR setHost(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[25];
-      return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804500, &Value, 1);
    }
 
-   template <class T> inline ERR setPath(T && Value) noexcept {
+   inline ERR setPath(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
-   template <class T> inline ERR setOutputFile(T && Value) noexcept {
+   inline ERR setOutputFile(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[15];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
-   template <class T> inline ERR setInputFile(T && Value) noexcept {
+   inline ERR setInputFile(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[16];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
-   template <class T> inline ERR setUserAgent(T && Value) noexcept {
+   inline ERR setUserAgent(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setInputObject(OBJECTID Value) noexcept {
@@ -321,10 +321,10 @@ class objHTTP : public Object {
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
-   template <class T> inline ERR setProxyServer(T && Value) noexcept {
+   inline ERR setProxyServer(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setProxyPort(const int Value) noexcept {
@@ -344,10 +344,10 @@ class objHTTP : public Object {
       return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
    }
 
-   template <class T> inline ERR setContentType(T && Value) noexcept {
+   inline ERR setContentType(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[21];
-      return field->WriteValue(target, field, 0x08800308, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804308, &Value, 1);
    }
 
    inline ERR setIncoming(FUNCTION Value) noexcept {
@@ -356,10 +356,10 @@ class objHTTP : public Object {
       return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
    }
 
-   template <class T> inline ERR setLocation(T && Value) noexcept {
+   inline ERR setLocation(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[34];
-      return field->WriteValue(target, field, 0x08800308, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804308, &Value, 1);
    }
 
    inline ERR setOutgoing(FUNCTION Value) noexcept {
@@ -368,10 +368,10 @@ class objHTTP : public Object {
       return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
    }
 
-   template <class T> inline ERR setRealm(T && Value) noexcept {
+   inline ERR setRealm(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(target, field, 0x08800308, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804308, &Value, 1);
    }
 
    inline ERR setStateChanged(FUNCTION Value) noexcept {
@@ -380,17 +380,16 @@ class objHTTP : public Object {
       return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
    }
 
-   template <class T> inline ERR setUsername(T && Value) noexcept {
+   inline ERR setUsername(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[37];
-      return field->WriteValue(target, field, 0x08800208, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804208, &Value, 1);
    }
 
-   template <class T> inline ERR setPassword(T && Value) noexcept {
+   inline ERR setPassword(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[17];
-      return field->WriteValue(target, field, 0x08800208, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804208, &Value, 1);
    }
 
 };
-

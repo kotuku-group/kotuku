@@ -59,7 +59,7 @@ print('The Action class is located at ' .. str)
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-GroupFilter" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-GroupFilter"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i>
                            
-                          <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">GroupFilter</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>Set this field to enable group filtering.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-GroupFilter" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+                          <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">GroupFilter</th><td class="col-md-1"><span class="text-nowrap">std::string</span></td><td>Set this field to enable group filtering.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-GroupFilter" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>When dealing with large configuration files, filtering out unrelated data may be useful.  By setting the GroupFilter field, it is possible to filter out entire groups that don't match the criteria.</p>
 <p>Group filters are created in CSV format, i.e. <code>GroupA, GroupB, GroupC, ...</code>.</p>
 <p>The filter can be reversed so that only the groups matching your criteria are filtered out.  To do this, prefix the CSV list with the <code>!</code> character.</p>
@@ -68,7 +68,7 @@ print('The Action class is located at ' .. str)
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-KeyFilter" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-KeyFilter"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i>
                            
-                          <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">KeyFilter</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>Set this field to enable key filtering.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-KeyFilter" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+                          <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">KeyFilter</th><td class="col-md-1"><span class="text-nowrap">std::string</span></td><td>Set this field to enable key filtering.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-KeyFilter" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>When dealing with large configuration files it may be useful to filter out groups of key-values that are not needed. The KeyFilter field allows simple filters to be defined that will perform this task for you.  It is recommended that it is set prior to parsing new data for best performance, but can be set or changed at any time to apply a new filter.</p>
 <p>Key filters are created in the format <code>[Key] = [Data1], [Data2], ...</code>.  For example:</p>
 <pre>Group = Sun, Light
@@ -81,7 +81,7 @@ Name = Kōtuku
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Path" style="scroll-margin:3em;"><td class="col-md-1" id="tf-Path"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i>
                            
-                          <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Path</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>Set this field to the location of the source configuration file.</td></tr>
+                          <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Path</th><td class="col-md-1"><span class="text-nowrap">std::string</span></td><td>Set this field to the location of the source configuration file.</td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-TotalGroups" style="scroll-margin:3em;"><td class="col-md-1" id="tf-TotalGroups"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i>
                            
                           <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">TotalGroups</th><td class="col-md-1"><span class="text-nowrap">INT</span></td><td>Returns the total number of groups in a config object.</td></tr>
@@ -181,7 +181,6 @@ Name = Kōtuku
 <tr><td>Data</td><td>The data that will be added to the given group/key.</td></tr>
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
 <p>Use the WriteValue() method to add or update information in a config object.  A <code>Group</code> name, <code>Key</code> name, and <code>Data</code> value are required.  If the <code>Group</code> and <code>Key</code> arguments match an existing entry in the config object, the data of that entry will be replaced with the new Data value.</p>
-<p>The <code>Group</code> string may refer to an index if the hash <code>#</code> character is used to precede a target index number.</p>
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>

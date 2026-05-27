@@ -175,14 +175,28 @@ template <class T> ERR tls_receive_encrypted(T *Self)
    if ((error IS ERR::Okay) and (bytes_received > 0)) {
       if (auto ssl_error = ssl_queue_encrypted_input(Self->TLS.Handle, buffer.data(), int(bytes_received));
           ssl_error != SSL_OK) {
-         kt::Log(__FUNCTION__).warning("Failed to queue encrypted SSL input: %d", ssl_error);
+         if (ssl_error IS SSL_ERROR_BUFFER_OVERFLOW) {
+            kt::Log(__FUNCTION__).warning(
+               "Encrypted SSL input buffer full while receiving %d bytes: queued=%d, limit=%d",
+               int(bytes_received), int(ssl_encrypted_input_size(Self->TLS.Handle)),
+               int(ssl_encrypted_input_limit(Self->TLS.Handle)));
+            return ERR::BufferOverflow;
+         }
+
+         kt::Log(__FUNCTION__).warning(
+            "Failed to queue encrypted SSL input: %d (incoming=%d, queued=%d, limit=%d)",
+            ssl_error, int(bytes_received), int(ssl_encrypted_input_size(Self->TLS.Handle)),
+            int(ssl_encrypted_input_limit(Self->TLS.Handle)));
          return ERR::Failed;
       }
 
       auto prepare_error = ssl_prepare_read(Self->TLS.Handle);
       if ((prepare_error != SSL_OK) and (prepare_error != SSL_ERROR_WOULD_BLOCK)) {
          if (prepare_error IS SSL_ERROR_DISCONNECTED) return ERR::Disconnected;
-         kt::Log(__FUNCTION__).warning("Failed to decrypt SSL input: %d", prepare_error);
+         kt::Log(__FUNCTION__).warning(
+            "Failed to decrypt SSL input: %d (queued=%d, security-status=0x%08x)",
+            prepare_error, int(ssl_encrypted_input_size(Self->TLS.Handle)),
+            unsigned(ssl_last_security_status(Self->TLS.Handle)));
          return ERR::Failed;
       }
    }

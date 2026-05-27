@@ -530,22 +530,22 @@ static ERR check_incoming_end(extHTTP *Self)
 
 static void set_http_method(extHTTP *Self, CSTRING Method, std::ostringstream &Cmd)
 {
-   if ((Self->ProxyServer) and ((Self->Flags & HTF::SSL) IS HTF::NIL)) {
+   if ((not Self->ProxyServer.empty()) and ((Self->Flags & HTF::SSL) IS HTF::NIL)) {
       // Normal proxy request without SSL tunneling
       Cmd << Method << " " << ((Self->Port IS 443) ? "https" : "http") << "://" << Self->Host << ":" <<
-         Self->Port << "/" << (Self->Path ? Self->Path : "") << " HTTP/1.1" << CRLF;
+         Self->Port << "/" << Self->Path << " HTTP/1.1" << CRLF;
    }
-   else Cmd << Method << " /" << (Self->Path ? Self->Path : (STRING)"") << " HTTP/1.1" << CRLF;
+   else Cmd << Method << " /" << Self->Path << " HTTP/1.1" << CRLF;
 
    Cmd << "Host: " << Self->Host << CRLF;
-   Cmd << "User-Agent: " << (Self->UserAgent ? Self->UserAgent : "Kotuku Client") << CRLF;
+   Cmd << "User-Agent: " << (Self->UserAgent.empty() ? "Kotuku Client" : Self->UserAgent.c_str()) << CRLF;
 }
 
 //********************************************************************************************************************
 
   static ERR parse_file(extHTTP *Self, std::string &Buffer)
   {
-     const char *file = Self->InputFile;
+     auto file = Self->InputFile.c_str();
      auto pos = Self->InputPos;
      while (char ch = file[pos]) {
         if (ch IS '"') {

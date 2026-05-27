@@ -41,7 +41,7 @@ namespace fs = std::filesystem;
 
 static std::optional<std::string> get_context_directory(const XPathContext &Context)
 {
-   if ((Context.xml) and (Context.xml->Path) and (*Context.xml->Path)) {
+   if ((Context.xml) and (not Context.xml->Path.empty())) {
       std::string resolved;
       if (ResolvePath(Context.xml->Path, RSF::NO_FILE_CHECK, &resolved) IS ERR::Okay) {
          fs::path base_path(resolved);
@@ -49,7 +49,7 @@ static std::optional<std::string> get_context_directory(const XPathContext &Cont
          return base_path.string();
       }
 
-      std::string raw = Context.xml->Path;
+      const std::string &raw = Context.xml->Path;
       size_t slash = raw.find_last_of("/\\");
       if (slash != std::string::npos) return raw.substr(0, slash + 1u);
    }

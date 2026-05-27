@@ -9,9 +9,9 @@ This is achieved through use of the `archive:` volume, which is a virtual filesy
 
 *********************************************************************************************************************/
 
-static ERR SET_ArchiveName(extCompression *Self, CSTRING Value)
+static ERR SET_ArchiveName(extCompression *Self, std::string_view &Value)
 {
-   if ((Value) and (*Value)) Self->ArchiveHash = strihash(Value);
+   if (not Value.empty()) Self->ArchiveHash = strihash(Value);
    else Self->ArchiveHash = 0;
 
    if (Self->ArchiveHash) add_archive(Self);
@@ -108,21 +108,18 @@ To load or create a new file archive, set the Path field to the path of that fil
 
 *********************************************************************************************************************/
 
-static ERR GET_Path(extCompression *Self, CSTRING *Value)
+static ERR GET_Path(extCompression *Self, std::string_view &Value)
 {
-   if (Self->Path) { *Value = Self->Path; return ERR::Okay; }
+   if (not Self->Path.empty()) {
+      Value = Self->Path;
+      return ERR::Okay;
+   }
    else return ERR::FieldNotSet;
 }
 
-static ERR SET_Path(extCompression *Self, CSTRING Value)
+static ERR SET_Path(extCompression *Self, std::string_view &Value)
 {
-   kt::Log log;
-
-   if (Self->Path) { FreeResource(Self->Path); Self->Path = nullptr; }
-
-   if ((Value) and (*Value)) {
-      if (!(Self->Path = strclone(Value))) return log.warning(ERR::AllocMemory);
-   }
+   Self->Path = Value;
    return ERR::Okay;
 }
 
@@ -155,19 +152,19 @@ across to it.
 
 *********************************************************************************************************************/
 
-static ERR GET_Password(extCompression *Self, CSTRING *Value)
+static ERR GET_Password(extCompression *Self, std::string_view &Value)
 {
-   *Value = Self->Password;
+   Value = Self->Password;
    return ERR::Okay;
 }
 
-static ERR SET_Password(extCompression *Self, CSTRING Value)
+static ERR SET_Password(extCompression *Self, std::string_view &Value)
 {
-   if ((Value) and (*Value)) {
-      strcopy(Value, Self->Password, sizeof(Self->Password));
+   if (not Value.empty()) {
+      Self->Password.assign(Value.substr(0, 127));
       Self->Flags |= CMF::PASSWORD;
    }
-   else Self->Password[0] = 0;
+   else Self->Password.clear();
 
    return ERR::Okay;
 }

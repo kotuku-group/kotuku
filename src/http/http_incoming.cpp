@@ -726,7 +726,7 @@ static ERR parse_response(extHTTP *Self, std::string_view Response)
    if (error IS std::errc()) Self->Status = HTS(code);
    else Self->Status = HTS::NIL;
 
-   if (Self->ProxyServer) Self->ContentLength = -1; // Some proxy servers (Squid) strip out information like 'transfer-encoding' yet pass all the requested content anyway :-/
+   if (not Self->ProxyServer.empty()) Self->ContentLength = -1; // Some proxy servers (Squid) strip out information like 'transfer-encoding' yet pass all the requested content anyway :-/
    else Self->ContentLength = 0;
    Self->Chunked = false;
 
@@ -812,7 +812,7 @@ static ERR output_incoming_data(extHTTP *Self, APTR Buffer, int Length)
 
    Self->setIndex(Self->Index + Length); // Use Set() so that field subscribers can track progress with field monitoring
 
-   if ((!Self->flOutput) and (Self->OutputFile)) {
+   if ((!Self->flOutput) and (not Self->OutputFile.empty())) {
       FL flags;
       LOC type;
 

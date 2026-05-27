@@ -296,7 +296,7 @@ static ERR set_anim_property(anim_base &Anim, XTag &Tag, uint32_t Hash, const st
             // Convert the splines into bezier paths and generate a point-based path in advance.
             for (auto &sp : Anim.splines) {
                APTR path;
-               if (vec::GeneratePath(nullptr, &path) IS ERR::Okay) {
+               if (vec::GeneratePath("", &path) IS ERR::Okay) {
                   anim_base::SPLINE_POINTS lookup;
                   vec::MoveTo(path, 0, 0);
                   vec::Curve4(path, sp.first.x, sp.first.y, sp.second.x, sp.second.y, 1.0, 1.0);

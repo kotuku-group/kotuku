@@ -19,3 +19,24 @@ end
    assert(err is ERR_Okay, "ResolveFamilyName() returned error " .. mSys.GetErrorMsg(err))
    assert(name is "Noto Sans", "Expected ResolveFamilyName() to return 'Noto Sans' as the default font")
 end
+
+@Test function FontFieldSetters()
+   font <close> = obj.new('font')
+
+   font.face = 'Noto Sans:12:Bold Italic:#ff0000'
+   assert(font.face is 'Noto Sans', 'Face parsing did not isolate the family name')
+   assert(font.point is 12, 'Face parsing did not isolate the point size')
+   assert(font.style is 'Bold Italic', 'Face parsing did not isolate the style')
+
+   font.bold = false
+   assert(font.style is 'Italic', 'Clearing Bold should preserve Italic')
+
+   font.italic = false
+   assert(font.style is 'Regular', 'Clearing Italic should restore Regular')
+
+   font.string = 'abc'
+   assert(font.string is 'abc', 'String field did not store the assigned value')
+
+   font.string = nil
+   assert(font.string is nil, 'Clearing String should remove the previous value')
+end

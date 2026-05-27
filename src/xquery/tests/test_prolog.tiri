@@ -53,7 +53,7 @@ end
 @Test function BoundarySpaceStripRemoval()
    xq = obj.new('xquery', { statement = 'string(<a>   </a>)' })
    assert(xq.acActivate() is ERR_Okay, f'Query execution failed: {xq.errorMsg}')
-   assert(xq.resultString is '', f'Boundary-space strip should remove whitespace-only text, got {tostring(xq.resultString)}')
+   assert(xq.resultString is nil, f'Boundary-space strip should remove whitespace-only text, got {tostring(xq.resultString)}')
 end
 
 @Test function BoundarySpaceStripComputedText()
@@ -65,7 +65,7 @@ end
 @Test function ConstructionStripComputedWhitespace()
    xq = obj.new('xquery', { statement = [[declare construction strip; string(<a>{"   "}</a>)]] })
    assert(xq.acActivate() is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
-   assert(xq.resultString is '', 'Construction strip should remove whitespace-only computed text nodes, got ' .. tostring(xq.resultString))
+   assert(xq.resultString is nil, 'Construction strip should remove whitespace-only computed text nodes, got ' .. tostring(xq.resultString))
 end
 
 @Test function ConstructionPreserveComputedWhitespace()

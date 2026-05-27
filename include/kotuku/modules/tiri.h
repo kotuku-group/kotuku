@@ -41,18 +41,18 @@ DEFINE_ENUM_FLAG_OPERATORS(JOF)
 
 struct TiriBase {
 #ifndef KOTUKU_STATIC
-   ERR (*_SetVariable)(objScript *Script, CSTRING Name, int Type, ...);
+   ERR (*_SetVariable)(objScript *Script, const std::string_view & Name, int Type, ...);
 #endif // KOTUKU_STATIC
 };
 
 #if !defined(KOTUKU_STATIC) and !defined(PRV_TIRI_MODULE)
 extern struct TiriBase *TiriBase;
 namespace fl {
-template<class... Args> ERR SetVariable(objScript *Script, CSTRING Name, int Type, Args... Tags) { return TiriBase->_SetVariable(Script,Name,Type,Tags...); }
+template<class... Args> ERR SetVariable(objScript *Script, const std::string_view & Name, int Type, Args... Tags) { return TiriBase->_SetVariable(Script,Name,Type,Tags...); }
 } // namespace
 #else
 namespace fl {
-extern ERR SetVariable(objScript *Script, CSTRING Name, int Type, ...);
+extern ERR SetVariable(objScript *Script, const std::string_view & Name, int Type, ...);
 } // namespace
 #endif // KOTUKU_STATIC
 

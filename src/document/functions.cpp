@@ -449,12 +449,12 @@ static ERR unload_doc(extDocument *Self, ULD Flags)
 
    if (Self->terminating()) Self->Vars.clear();
 
-   if (Self->SVG)         { FreeResource(Self->SVG);         Self->SVG = nullptr; }
-   if (Self->Keywords)    { FreeResource(Self->Keywords);    Self->Keywords = nullptr; }
-   if (Self->Author)      { FreeResource(Self->Author);      Self->Author = nullptr; }
-   if (Self->Copyright)   { FreeResource(Self->Copyright);   Self->Copyright = nullptr; }
-   if (Self->Description) { FreeResource(Self->Description); Self->Description = nullptr; }
-   if (Self->Title)       { FreeResource(Self->Title);       Self->Title = nullptr; }
+   if (Self->SVG) { FreeResource(Self->SVG); Self->SVG = nullptr; }
+   Self->Keywords.clear();
+   Self->Author.clear();
+   Self->Copyright.clear();
+   Self->Description.clear();
+   Self->Title.clear();
 
    // Free templates only if they have been modified (no longer at the default settings)
    // or if the document is being destroyed.

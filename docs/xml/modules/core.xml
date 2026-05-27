@@ -2303,6 +2303,7 @@ static ResourceManager glNodeManager = {
       <const name="BUFFER">FUNCDEF Overrides <code>WRITE</code>.  Indicates a buffer that can be filled with data by the function if paired with <code>RESULT</code>; must be paired with <code>BUFSIZE</code> in second argument.</const>
       <const name="BUFSIZE">FUNCDEF Overrides <code>LOOKUP</code>.  Pair with <code>BUFFER</code> to indicate the byte size of the buffer memory.</const>
       <const name="BYTE">8 bit integer.</const>
+      <const name="CLASS_TYPES">All types that directly contribute to the core definition of a C/C++ type</const>
       <const name="CPP">Use the C++ variant of the indicated type, e.g. <code>ARRAY</code> is a <code>std::vector</code>.</const>
       <const name="CUSTOM"/>
       <const name="DOUBLE">64 bit float.</const>

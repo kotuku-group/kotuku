@@ -1372,10 +1372,10 @@ class objPointer : public Object {
       return ERR::Okay;
    }
 
-   template <class T> inline ERR setButtonOrder(T && Value) noexcept {
+   inline ERR setButtonOrder(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
 };
@@ -1746,7 +1746,7 @@ struct DisplayBase {
    ERR (*_Resample)(objBitmap *Bitmap, struct ColourFormat *ColourFormat);
    ERR (*_RestoreCursor)(PTC Cursor, OBJECTID Owner);
    double (*_ScaleToDPI)(double Value);
-   ERR (*_ScanDisplayModes)(CSTRING Filter, struct DisplayInfo *Info);
+   ERR (*_ScanDisplayModes)(const std::string_view & Filter, struct DisplayInfo *Info);
    void (*_SetClipRegion)(objBitmap *Bitmap, int Left, int Top, int Right, int Bottom);
    ERR (*_SetCursor)(OBJECTID Surface, CRF Flags, PTC Cursor, const std::string_view & Name, OBJECTID Owner);
    ERR (*_SetCursorPos)(double X, double Y);
@@ -1793,7 +1793,7 @@ inline void ReadRGBPixel(objBitmap *Bitmap, int X, int Y, struct RGB8 **RGB) { r
 inline ERR Resample(objBitmap *Bitmap, struct ColourFormat *ColourFormat) { return DisplayBase->_Resample(Bitmap,ColourFormat); }
 inline ERR RestoreCursor(PTC Cursor, OBJECTID Owner) { return DisplayBase->_RestoreCursor(Cursor,Owner); }
 inline double ScaleToDPI(double Value) { return DisplayBase->_ScaleToDPI(Value); }
-inline ERR ScanDisplayModes(CSTRING Filter, struct DisplayInfo *Info) { return DisplayBase->_ScanDisplayModes(Filter,Info); }
+inline ERR ScanDisplayModes(const std::string_view & Filter, struct DisplayInfo *Info) { return DisplayBase->_ScanDisplayModes(Filter,Info); }
 inline void SetClipRegion(objBitmap *Bitmap, int Left, int Top, int Right, int Bottom) { return DisplayBase->_SetClipRegion(Bitmap,Left,Top,Right,Bottom); }
 inline ERR SetCursor(OBJECTID Surface, CRF Flags, PTC Cursor, const std::string_view & Name, OBJECTID Owner) { return DisplayBase->_SetCursor(Surface,Flags,Cursor,Name,Owner); }
 inline ERR SetCursorPos(double X, double Y) { return DisplayBase->_SetCursorPos(X,Y); }
@@ -1837,7 +1837,7 @@ extern void ReadRGBPixel(objBitmap *Bitmap, int X, int Y, struct RGB8 **RGB);
 extern ERR Resample(objBitmap *Bitmap, struct ColourFormat *ColourFormat);
 extern ERR RestoreCursor(PTC Cursor, OBJECTID Owner);
 extern double ScaleToDPI(double Value);
-extern ERR ScanDisplayModes(CSTRING Filter, struct DisplayInfo *Info);
+extern ERR ScanDisplayModes(const std::string_view & Filter, struct DisplayInfo *Info);
 extern void SetClipRegion(objBitmap *Bitmap, int Left, int Top, int Right, int Bottom);
 extern ERR SetCursor(OBJECTID Surface, CRF Flags, PTC Cursor, const std::string_view & Name, OBJECTID Owner);
 extern ERR SetCursorPos(double X, double Y);

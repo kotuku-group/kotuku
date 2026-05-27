@@ -113,11 +113,11 @@ module({ name="HTTP", copyright="Paul Manias © 2005-2026", version=1.0, timesta
    large Index            # Current read/write index, relative to content length so always starts from zero
    large ContentLength    # Content length as reported in the content length response field, -1 if streamed or unknown
    large Size             # Content size to use when sending data
-   str Host               # Host / Domain
-   str Path               # Path for file retrieval
-   str OutputFile         # Target file for downloaded content
-   str InputFile          # Source file for uploads
-   str UserAgent          # User agent to pass in the HTTP headers
+   cpp(str) Host          # Host / Domain
+   cpp(str) Path          # Path for file retrieval
+   cpp(str) OutputFile    # Target file for downloaded content
+   cpp(str) InputFile     # Source file for uploads
+   cpp(str) UserAgent     # User agent to pass in the HTTP headers
    oid InputObject        # An object to send HTTP content
    oid OutputObject       # An object to receive HTTP content
    int(HTM) Method        # HTTP Request: GET, HEAD, POST, PUT..
@@ -128,7 +128,7 @@ module({ name="HTTP", copyright="Paul Manias © 2005-2026", version=1.0, timesta
    error Error            # Result of the operation
    int(DATA) Datatype     # Datatype to use when sending HTTP data to a target object
    int(HGS) CurrentState  # Current state of the http get operation
-   str ProxyServer        # If using a proxy server, this is the name or IP address of the server
+   cpp(str) ProxyServer   # If using a proxy server, this is the name or IP address of the server
    int ProxyPort          # The port of the proxy server
    int BufferSize         # Preferred buffer size for things like outgoing operations (sending data)
   ]])

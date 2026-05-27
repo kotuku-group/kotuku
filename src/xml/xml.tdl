@@ -107,15 +107,15 @@ module({ name="XML", src="xml.cpp", copyright="Paul Manias © 2001-2026", versio
   })
 
   klass("XML", { src="xml_class.cpp", output="xml_class_def.c" }, [[
-    str Path         # Location of the XML data file
-    str DocType      # Root element name from DOCTYPE declaration
-    str PublicID     # Public identifier for external DTD
-    str SystemID     # System identifier for external DTD
-    obj Source       # Alternative data source to specifying a `Path`
-    int(XMF) Flags   # Optional user flags
-    int Modified     # Modification timestamp
-    error ParseError # Private
-    int LineNo       # Private
+    cpp(str) Path     # Location of the XML data file
+    cpp(str) DocType  # Root element name from DOCTYPE declaration
+    cpp(str) PublicID # Public identifier for external DTD
+    cpp(str) SystemID # System identifier for external DTD
+    obj Source        # Alternative data source to specifying a `Path`
+    int(XMF) Flags    # Optional user flags
+    int Modified      # Modification timestamp
+    error ParseError  # Private
+    int LineNo        # Private
   ]],
   nil,
   [[

@@ -1022,9 +1022,32 @@ static void register_fields(std::vector<Field> &Fields)
 
 //********************************************************************************************************************
 
+static bool direct_field_access(const Field &Field)
+{
+   return ((Field.Flags & FDF_R) and (!Field.GetValue)) or ((Field.Flags & FDF_W) and (!Field.SetValue));
+}
+
+//********************************************************************************************************************
+
+static uint16_t align_field_offset(uint16_t Offset, size_t Alignment)
+{
+   if (Alignment <= 1) return Offset;
+
+   const auto remainder = Offset % Alignment;
+   if (not remainder) return Offset;
+
+   return uint16_t(Offset + Alignment - remainder);
+}
+
+//********************************************************************************************************************
+
 static void add_field(extMetaClass *Class, std::vector<Field> &Fields, const FieldArray &Source, uint16_t &Offset)
 {
    kt::Log log(__FUNCTION__);
+
+   size_t field_size = 0;
+   size_t field_alignment = 1;
+   CSTRING field_type = nullptr;
 
    auto &field = Fields.emplace_back(
       Source.Arg,
@@ -1039,32 +1062,60 @@ static void add_field(extMetaClass *Class, std::vector<Field> &Fields, const Fie
    );
 
    if (field.Flags & FD_VIRTUAL); // No offset will be added for virtual fields
-   else if (field.Flags & FD_RGB) Offset += sizeof(int8_t) * 4;
-   else if (field.Flags & (FD_POINTER|FD_ARRAY)) {
-      #ifdef _LP64
-         if (Offset & 0x7) { // Check for mis-alignment
-            Offset = (Offset + 7) & (~0x7);
-            if (((field.Flags & FDF_R) and (!field.GetValue)) or
-                ((field.Flags & FDF_W) and (!field.SetValue))) {
-               log.warning("Misaligned 64-bit pointer '%s' in class '%s'.", field.Name, Class->ClassName);
-            }
-         }
-      #endif
-      Offset += sizeof(APTR);
+   else if (field.Flags & FD_RGB) {
+      field_size = sizeof(int8_t) * 4;
+      field_alignment = alignof(int8_t);
+      field_type = "RGB";
    }
-   else if (field.Flags & FD_INT) Offset += sizeof(int);
-   else if (field.Flags & FD_BYTE) Offset += sizeof(int8_t);
-   else if (field.Flags & FD_FUNCTION) Offset += sizeof(FUNCTION);
-   else if (field.Flags & (FD_DOUBLE|FD_INT64)) {
-      if (Offset & 0x7) {
-         if (((field.Flags & FDF_R) and (!field.GetValue)) or
-             ((field.Flags & FDF_W) and (!field.SetValue))) {
-            log.warning("Misaligned 64-bit field '%s' in class '%s'.", field.Name, Class->ClassName);
-         }
-      }
-      Offset += 8;
+   else if ((field.Flags & FD_STRING) and (field.Flags & FD_CPP)) {
+      field_size = sizeof(std::string);
+      field_alignment = alignof(std::string);
+      field_type = "std::string";
+   }
+   else if (field.Flags & (FD_POINTER|FD_ARRAY)) {
+      field_size = sizeof(APTR);
+      field_alignment = alignof(APTR);
+      field_type = "pointer";
+   }
+   else if (field.Flags & FD_INT) {
+      field_size = sizeof(int);
+      field_alignment = alignof(int);
+      field_type = "integer";
+   }
+   else if (field.Flags & FD_BYTE) {
+      field_size = sizeof(int8_t);
+      field_alignment = alignof(int8_t);
+      field_type = "byte";
+   }
+   else if (field.Flags & FD_FUNCTION) {
+      field_size = sizeof(FUNCTION);
+      field_alignment = alignof(FUNCTION);
+      field_type = "function";
+   }
+   else if (field.Flags & FD_DOUBLE) {
+      field_size = sizeof(double);
+      field_alignment = alignof(double);
+      field_type = "double";
+   }
+   else if (field.Flags & FD_INT64) {
+      field_size = sizeof(int64_t);
+      field_alignment = alignof(int64_t);
+      field_type = "64-bit integer";
    }
    else log.warning("%s field \"%s\"/%d has an invalid flag setting.", Class->ClassName, field.Name, field.FieldID);
+
+   if (field_size) {
+      const auto aligned_offset = align_field_offset(Offset, field_alignment);
+      if (aligned_offset != Offset) {
+         if (direct_field_access(field)) {
+            log.warning("Misaligned %s field '%s' in class '%s'.", field_type, field.Name, Class->ClassName);
+         }
+         Offset = aligned_offset;
+      }
+
+      field.Offset = Offset;
+      Offset = uint16_t(Offset + field_size);
+   }
 
    optimise_write_field(field);
 }

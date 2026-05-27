@@ -416,16 +416,10 @@ static void windows_print_stacktrace(CONTEXT* context)
 
    STACKFRAME frame = { {0} };
 
-   // setup initial stack frame
-   #ifdef _LP64
-      frame.AddrPC.Offset    = context->Rip;
-      frame.AddrStack.Offset = context->Rsp;
-      frame.AddrFrame.Offset = context->Rbp;
-   #else
-      frame.AddrPC.Offset    = context->Eip;
-      frame.AddrStack.Offset = context->Esp;
-      frame.AddrFrame.Offset = context->Ebp;
-   #endif
+   // setup initial stack frame (64-bit)
+   frame.AddrPC.Offset    = context->Rip;
+   frame.AddrStack.Offset = context->Rsp;
+   frame.AddrFrame.Offset = context->Rbp;
    frame.AddrPC.Mode    = AddrModeFlat;
    frame.AddrStack.Mode = AddrModeFlat;
    frame.AddrFrame.Mode = AddrModeFlat;
@@ -440,11 +434,7 @@ static void windows_print_stacktrace(CONTEXT* context)
       symbol->SizeOfStruct  = sizeof(IMAGEHLP_SYMBOL) + 255;
       symbol->MaxNameLength = 254;
 
-      #ifdef _LP64
-         DWORD64 displacement = 0;
-      #else
-         DWORD displacement = 0;
-      #endif
+      DWORD64 displacement = 0;
       if (SymGetSymFromAddr(GetCurrentProcess(), frame.AddrPC.Offset, &displacement, symbol)) {
          fprintf(stderr, "0x%p %s\n", (APTR)frame.AddrPC.Offset, symbol->Name);
 

@@ -432,8 +432,8 @@ class extConfig : public objConfig {
 class extStorageDevice : public objStorageDevice {
    public:
    using create = kt::Create<extStorageDevice>;
-   STRING DeviceID;   // Unique ID for the filesystem, if available
-   STRING Volume;
+   std::string DeviceID;   // Unique ID for the filesystem, if available
+   std::string Volume;
 };
 
 class extThread : public objThread {
@@ -460,7 +460,7 @@ class extTask : public objTask {
    std::string Path;
    std::string ProcessPath;
    std::string Location;      // Where to load the task from (string)
-   char     Name[32];         // Name of the task, if specified (string)
+   std::string Name;          // Name of the task, if specified (string)
    bool     ReturnCodeSet;    // TRUE if the ReturnCode has been set
    bool     QuitCalled;       // TRUE if TASK_Quit has been called before
    FUNCTION ErrorCallback;
@@ -1135,7 +1135,6 @@ void   scan_classes(void);
 
 ERR  writeval_default(OBJECTPTR, Field *, int, const void *, int);
 ERR  check_paths(std::string_view, PERMIT);
-void merge_groups(ConfigGroups &, ConfigGroups &);
 extern "C" ERR validate_process(int);
 
 #ifdef _WIN32

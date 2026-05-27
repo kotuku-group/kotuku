@@ -37,7 +37,7 @@ static const struct ActionArray clConfigActions[] = {
    { AC::Flush, CONFIG_Flush },
    { AC::Free, CONFIG_Free },
    { AC::Init, CONFIG_Init },
-   { AC::NewObject, CONFIG_NewObject },
+   { AC::NewPlacement, CONFIG_NewPlacement },
    { AC::SaveSettings, CONFIG_SaveSettings },
    { AC::SaveToObject, CONFIG_SaveToObject },
    { AC::NIL, nullptr }

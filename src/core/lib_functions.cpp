@@ -673,7 +673,7 @@ ERR SetResourcePath(RP PathType, const std::string_view &Path)
 {
    kt::Log log(__FUNCTION__);
 
-   if ((&Path IS nullptr) or (Path.empty())) return ERR::NullArgs;
+   if (Path.empty()) return ERR::NullArgs;
 
    log.function("Type: %d, Path: %.*s", int(PathType), int(Path.size()), Path.data());
 

@@ -1,4 +1,6 @@
 // Trace management.
+//
+// Copyright © 2025-2026 Paul Manias
 // Copyright (C) 2005-2022 Mike Pall. See Copyright Notice in luajit.h
 
 #define lj_trace_c
@@ -31,6 +33,85 @@
 #include "lj_prng.h"
 #include "../../defs.h"
 
+struct TraceAbortStackState {
+   jit_State *jit;
+   ptrdiff_t base_before;
+   ptrdiff_t top_before;
+   ptrdiff_t top_after;
+   int32_t cframe_nres_before;
+   int32_t error;
+   bool cframe_saved;
+   bool top_changed;
+};
+
+static thread_local TraceAbortStackState glTraceAbortStack;
+
+//********************************************************************************************************************
+// Trace aborts normalise L->top to curr_top() before pushing the trace error object.  Retry paths that continue
+// recording must restore the pre-abort logical top, otherwise lj_trace_ins() sees a stack mutation after retry.
+
+static void trace_abort_stack_snapshot(jit_State *J, TraceError Error, TValue *SafeTop)
+{
+   lua_State *L = J->L;
+
+   // Store stack positions as offsets because error unwinding and VM events may resize the stack before retry.
+   glTraceAbortStack.jit = J;
+   glTraceAbortStack.base_before = savestack(L, L->base);
+   glTraceAbortStack.top_before = savestack(L, L->top);
+   glTraceAbortStack.top_after = savestack(L, SafeTop);
+   glTraceAbortStack.cframe_nres_before = L->cframe ? cframe_nres(cframe_raw(L->cframe)) : 0;
+   glTraceAbortStack.error = int32_t(Error);
+   glTraceAbortStack.cframe_saved = L->cframe != nullptr;
+   glTraceAbortStack.top_changed = not (L->top IS SafeTop);
+
+#ifdef LUA_USE_ASSERT
+   if (glTraceAbortStack.top_changed) {
+      kt::Log(__FUNCTION__).msg("Trace abort normalised stack top.  Error: %d, State: %d, Base: %p, Top: %p -> %p",
+         glTraceAbortStack.error, int32_t(J->state), restorestack(L, glTraceAbortStack.base_before),
+         restorestack(L, glTraceAbortStack.top_before), restorestack(L, glTraceAbortStack.top_after));
+   }
+#endif
+}
+
+//********************************************************************************************************************
+// Restore the logical stack state that existed before lj_trace_err() normalised L->top.  This is only used when
+// trace_abort() is about to retry recording or assembly; non-retry aborts leave normal unwinding to own the stack.
+
+static void trace_abort_restore_retry_stack(jit_State *J, CSTRING Path)
+{
+#ifndef LUA_USE_ASSERT
+   UNUSED(Path);
+#endif
+
+   if (glTraceAbortStack.jit IS J) {
+      lua_State *L = J->L;
+      TValue *base_before = restorestack(L, glTraceAbortStack.base_before);
+      TValue *top_before = restorestack(L, glTraceAbortStack.top_before);
+
+#ifdef LUA_USE_ASSERT
+      if (not (L->base IS base_before)) {
+         kt::Log(__FUNCTION__).msg(
+            "Trace abort retry with changed stack base.  Path: %s, Error: %d, Base: %p -> %p",
+            Path, glTraceAbortStack.error, base_before, L->base);
+         lj_assertJ(L->base IS base_before, "trace abort retry changed stack base");
+      }
+
+      if (not (L->top IS top_before)) {
+         kt::Log(__FUNCTION__).msg(
+            "Trace abort retry restored stack top.  Path: %s, Error: %d, Top: %p -> %p",
+            Path, glTraceAbortStack.error, L->top, top_before);
+      }
+#endif
+
+      L->top = top_before;
+      // lj_trace_err() writes cframe_nres to match the normalised top.  Put it back before retrying the recorder.
+      if (L->cframe and glTraceAbortStack.cframe_saved) {
+         cframe_nres(cframe_raw(L->cframe)) = glTraceAbortStack.cframe_nres_before;
+      }
+      glTraceAbortStack.jit = nullptr;
+   }
+}
+
 //********************************************************************************************************************
 // Synchronous abort of the JIT tracing process, with error message.
 
@@ -52,6 +133,7 @@ void lj_trace_err(jit_State *J, TraceError e)
    // Prefer the interpreter's view of the current frame to avoid clobbering live locals.
    TValue *safe_top = curr_top(J->L);
    if (safe_top < J->L->base) safe_top = J->L->base;
+   trace_abort_stack_snapshot(J, e, safe_top);
    J->L->top = safe_top;
    if (J->L->cframe) cframe_nres(cframe_raw(J->L->cframe)) = -int32_t(savestack(J->L, safe_top));
 
@@ -75,6 +157,7 @@ void lj_trace_err_info(jit_State *J, TraceError e)
    // Prefer the interpreter's view of the current frame to avoid clobbering live locals.
    TValue *safe_top = curr_top(J->L);
    if (safe_top < J->L->base) safe_top = J->L->base;
+   trace_abort_stack_snapshot(J, e, safe_top);
    J->L->top = safe_top;
    if (J->L->cframe) cframe_nres(cframe_raw(J->L->cframe)) = -int32_t(savestack(J->L, safe_top));
 
@@ -622,6 +705,7 @@ static int trace_abort(jit_State *J)
 
    if (e IS LJ_TRERR_MCODELM) {
       L->top--;  //  Remove error object
+      trace_abort_restore_retry_stack(J, "mcode-limit");
       J->state = TraceState::ASM;
       return 1;  //  Retry ASM with new MCode area.
    }
@@ -669,7 +753,10 @@ static int trace_abort(jit_State *J)
    }
 
    L->top--;  //  Remove error object
-   if (e IS LJ_TRERR_DOWNREC) return trace_downrec(J);
+   if (e IS LJ_TRERR_DOWNREC) {
+      trace_abort_restore_retry_stack(J, "down-recursion");
+      return trace_downrec(J);
+   }
    else if (e IS LJ_TRERR_MCODEAL) lj_trace_flushall(L);
    return 0;
 }

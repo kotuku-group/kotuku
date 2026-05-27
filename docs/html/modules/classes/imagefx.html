@@ -53,16 +53,16 @@
                            
                           <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">ResampleMethod</th><td class="col-md-1"><span class="text-nowrap">INT</span></td><td>The resample algorithm to use for transforming the source image.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-ResampleMethod" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th class="col-md-1">VSM::AUTO</th><td>The default option is chosen by the system.  This will typically be <code>BILINEAR</code>, but slow machines may switch to nearest neighbour and high speed machines could use more advanced methods.</td></tr>
-<tr><th class="col-md-1">VSM::BESSEL</th><td></td></tr>
+<tr><th class="col-md-1">VSM::BESSEL</th><td>Uses a broad Bessel filter that can preserve detail during resampling, but is slower than the smaller-kernel methods.</td></tr>
 <tr><th class="col-md-1">VSM::BICUBIC</th><td>Produces a similar result to <code>BILINEAR</code> at a slightly higher CPU cost and a marginally sharper after-effect.</td></tr>
 <tr><th class="col-md-1">VSM::BILINEAR</th><td>Bilinear is a common algorithm that produces a reasonable quality image quickly.</td></tr>
 <tr><th class="col-md-1">VSM::BLACKMAN</th><td>Five times slower than <code>BILINEAR</code>, the final result will be less sharp than SINC.</td></tr>
-<tr><th class="col-md-1">VSM::GAUSSIAN</th><td></td></tr>
-<tr><th class="col-md-1">VSM::KAISER</th><td></td></tr>
+<tr><th class="col-md-1">VSM::GAUSSIAN</th><td>Uses a Gaussian filter that softens the result, reducing aliasing at the cost of sharp edge detail.</td></tr>
+<tr><th class="col-md-1">VSM::KAISER</th><td>Uses a Kaiser-windowed filter, giving smooth interpolation with low ringing and a cost close to <code>BILINEAR</code>.</td></tr>
 <tr><th class="col-md-1">VSM::LANCZOS</th><td>This well known algorithm may serve as a point of comparison for evaluating the results of other methods.  It shares characteristics with <code>SINC</code> and <code>BLACKMAN</code>.</td></tr>
-<tr><th class="col-md-1">VSM::MITCHELL</th><td></td></tr>
+<tr><th class="col-md-1">VSM::MITCHELL</th><td>Uses a Mitchell-Netravali filter, balancing sharpness and smoothness at a cost similar to <code>BICUBIC</code>.</td></tr>
 <tr><th class="col-md-1">VSM::NEIGHBOUR</th><td>Nearest neighbour is the fastest sampler at the cost of poor quality.</td></tr>
-<tr><th class="col-md-1">VSM::QUADRIC</th><td></td></tr>
+<tr><th class="col-md-1">VSM::QUADRIC</th><td>Uses a quadratic filter with a modest kernel, giving smoother results than <code>BILINEAR</code> with limited extra cost.</td></tr>
 <tr><th class="col-md-1">VSM::SINC</th><td>Five times slower than <code>BILINEAR</code>, the final result is of very good quality.</td></tr>
 <tr><th class="col-md-1">VSM::SPLINE16</th><td>About twice as slow as <code>BILINEAR</code>, this method produces a considerably better result, and is a good choice for enlarging images without producing artifacts when contrasting colours are present.</td></tr>
 </tbody></table>
@@ -87,16 +87,16 @@
 <tr><th>ARF::Y_MIN</th><td>Align to the top.</td></tr>
 </tbody></table><div class="footer copyright text-right">ImageFX module documentation © Paul Manias © 2010-2026</div></div>
 <div class="docs-content" style="display:none;" id="VSM"><h1>VSM Type</h1><p class="lead"></p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>VSM::AUTO</th><td>The default option is chosen by the system.  This will typically be <code>BILINEAR</code>, but slow machines may switch to nearest neighbour and high speed machines could use more advanced methods.</td></tr>
-<tr><th>VSM::BESSEL</th><td></td></tr>
+<tr><th>VSM::BESSEL</th><td>Uses a broad Bessel filter that can preserve detail during resampling, but is slower than the smaller-kernel methods.</td></tr>
 <tr><th>VSM::BICUBIC</th><td>Produces a similar result to <code>BILINEAR</code> at a slightly higher CPU cost and a marginally sharper after-effect.</td></tr>
 <tr><th>VSM::BILINEAR</th><td>Bilinear is a common algorithm that produces a reasonable quality image quickly.</td></tr>
 <tr><th>VSM::BLACKMAN</th><td>Five times slower than <code>BILINEAR</code>, the final result will be less sharp than SINC.</td></tr>
-<tr><th>VSM::GAUSSIAN</th><td></td></tr>
-<tr><th>VSM::KAISER</th><td></td></tr>
+<tr><th>VSM::GAUSSIAN</th><td>Uses a Gaussian filter that softens the result, reducing aliasing at the cost of sharp edge detail.</td></tr>
+<tr><th>VSM::KAISER</th><td>Uses a Kaiser-windowed filter, giving smooth interpolation with low ringing and a cost close to <code>BILINEAR</code>.</td></tr>
 <tr><th>VSM::LANCZOS</th><td>This well known algorithm may serve as a point of comparison for evaluating the results of other methods.  It shares characteristics with <code>SINC</code> and <code>BLACKMAN</code>.</td></tr>
-<tr><th>VSM::MITCHELL</th><td></td></tr>
+<tr><th>VSM::MITCHELL</th><td>Uses a Mitchell-Netravali filter, balancing sharpness and smoothness at a cost similar to <code>BICUBIC</code>.</td></tr>
 <tr><th>VSM::NEIGHBOUR</th><td>Nearest neighbour is the fastest sampler at the cost of poor quality.</td></tr>
-<tr><th>VSM::QUADRIC</th><td></td></tr>
+<tr><th>VSM::QUADRIC</th><td>Uses a quadratic filter with a modest kernel, giving smoother results than <code>BILINEAR</code> with limited extra cost.</td></tr>
 <tr><th>VSM::SINC</th><td>Five times slower than <code>BILINEAR</code>, the final result is of very good quality.</td></tr>
 <tr><th>VSM::SPLINE16</th><td>About twice as slow as <code>BILINEAR</code>, this method produces a considerably better result, and is a good choice for enlarging images without producing artifacts when contrasting colours are present.</td></tr>
 </tbody></table><div class="footer copyright text-right">ImageFX module documentation © Paul Manias © 2010-2026</div></div>

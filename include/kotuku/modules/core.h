@@ -401,11 +401,12 @@ enum class JET : int {
 
 #define FD_DOUBLERESULT 0x80000100
 #define FD_PTR_DOUBLERESULT 0x88000100
+#define FD_CLASS_TYPES 0xffc05001
 #define FD_VOID 0x00000000
 #define FD_OBJECT 0x00000001
 #define FD_LOCAL 0x00000002
-#define FD_VIRTUAL 0x00000008
 #define FD_MUTABLE 0x00000008
+#define FD_VIRTUAL 0x00000008
 #define FD_STRUCT 0x00000010
 #define FD_ALLOC 0x00000020
 #define FD_FLAGS 0x00000040
@@ -414,24 +415,24 @@ enum class JET : int {
 #define FD_PTRSIZE 0x00000080
 #define FD_BUFSIZE 0x00000080
 #define FD_ARRAYSIZE 0x00000080
-#define FD_R 0x00000100
 #define FD_READ 0x00000100
+#define FD_R 0x00000100
 #define FD_RESULT 0x00000100
 #define FD_BUFFER 0x00000200
-#define FD_W 0x00000200
 #define FD_WRITE 0x00000200
+#define FD_W 0x00000200
 #define FD_RW 0x00000300
 #define FD_INIT 0x00000400
-#define FD_I 0x00000400
 #define FD_TAGS 0x00000400
+#define FD_I 0x00000400
 #define FD_RI 0x00000500
 #define FD_ERROR 0x00000800
 #define FD_ARRAY 0x00001000
 #define FD_RESOURCE 0x00002000
 #define FD_CPP 0x00004000
 #define FD_CUSTOM 0x00008000
-#define FD_SYSTEM 0x00010000
 #define FD_PRIVATE 0x00010000
+#define FD_SYSTEM 0x00010000
 #define FD_SYNONYM 0x00020000
 #define FD_UNSIGNED 0x00040000
 #define FD_RGB 0x00080000
@@ -444,8 +445,8 @@ enum class JET : int {
 #define FD_FUNCTION 0x02000000
 #define FD_INT64 0x04000000
 #define FD_INT64RESULT 0x04000100
-#define FD_POINTER 0x08000000
 #define FD_PTR 0x08000000
+#define FD_POINTER 0x08000000
 #define FD_OBJECTPTR 0x08000001
 #define FD_PTRRESULT 0x08000100
 #define FD_PTRBUFFER 0x08000200
@@ -2648,10 +2649,10 @@ class objStorageDevice : public Object {
 
    // Customised field setting
 
-   template <class T> inline ERR setVolume(T && Value) noexcept {
+   inline ERR setVolume(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804500, &Value, 1);
    }
 
 };
@@ -2827,10 +2828,10 @@ class objFile : public Object {
       return field->WriteValue(target, field, 0x08000310, Value, 1);
    }
 
-   template <class T> inline ERR setPath(T && Value) noexcept {
+   inline ERR setPath(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804500, &Value, 1);
    }
 
    inline ERR setPermissions(const int Value) noexcept {
@@ -2845,10 +2846,10 @@ class objFile : public Object {
       return field->WriteValue(target, field, FD_INT64, &Value, 1);
    }
 
-   template <class T> inline ERR setLink(T && Value) noexcept {
+   inline ERR setLink(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[15];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setUser(const int Value) noexcept {
@@ -2891,17 +2892,17 @@ class objConfig : public Object {
 
    using create = kt::Create<objConfig>;
 
-   STRING Path;         // Set this field to the location of the source configuration file.
-   STRING KeyFilter;    // Set this field to enable key filtering.
-   STRING GroupFilter;  // Set this field to enable group filtering.
-   CNF    Flags;        // Optional flags may be set here.
+   std::string Path;         // Set this field to the location of the source configuration file.
+   std::string KeyFilter;    // Set this field to enable key filtering.
+   std::string GroupFilter;  // Set this field to enable group filtering.
+   CNF Flags;                // Optional flags may be set here.
    public:
-   ConfigGroups *Groups;
+   ConfigGroups Groups;
 
    // For C++ only, these read variants avoid method calls for speed, but apply identical logic.
 
    inline ERR read(std::string_view pGroup, std::string_view pKey, double &pValue) {
-      for (auto& [group, keys] : Groups[0]) {
+      for (auto& [group, keys] : Groups) {
          if ((!pGroup.empty()) and (group.compare(pGroup))) continue;
          if (pKey.empty()) pValue = strtod(keys.cbegin()->second.c_str(), nullptr);
          else if (auto it = keys.find(pKey); it != keys.end()) pValue = strtod(it->second.c_str(), nullptr);
@@ -2912,7 +2913,7 @@ class objConfig : public Object {
    }
 
    inline ERR read(std::string_view pGroup, std::string_view pKey, int &pValue) {
-      for (auto& [group, keys] : Groups[0]) {
+      for (auto& [group, keys] : Groups) {
          if ((!pGroup.empty()) and (group.compare(pGroup))) continue;
          if (pKey.empty()) pValue = strtol(keys.cbegin()->second.c_str(), nullptr, 0);
          else if (auto it = keys.find(pKey); it != keys.end()) pValue = strtol(it->second.c_str(), nullptr, 0);
@@ -2923,7 +2924,7 @@ class objConfig : public Object {
    }
 
    inline ERR read(std::string_view pGroup, std::string_view pKey, std::string &pValue) {
-      for (auto & [group, keys] : Groups[0]) {
+      for (auto & [group, keys] : Groups) {
          if ((!pGroup.empty()) and (group.compare(pGroup))) continue;
          if (pKey.empty()) pValue = keys.cbegin()->second;
          else if (auto it = keys.find(pKey); it != keys.end()) pValue = it->second;
@@ -2934,8 +2935,7 @@ class objConfig : public Object {
    }
 
    inline ERR write(std::string_view Group, std::string_view Key, std::string_view Value) {
-      ConfigGroups &groups = *Groups;
-      for (auto& [group, keys] : groups) {
+      for (auto& [group, keys] : Groups) {
          if (!group.compare(Group)) {
             if (auto it = keys.find(Key); it != keys.end()) {
                it->second.assign(Value);
@@ -2945,7 +2945,7 @@ class objConfig : public Object {
          }
       }
 
-      auto &new_group = Groups->emplace_back();
+      auto &new_group = Groups.emplace_back();
       new_group.first.assign(Group);
       new_group.second.emplace(Key, Value);
       return ERR::Okay;
@@ -3008,22 +3008,22 @@ class objConfig : public Object {
 
    // Customised field setting
 
-   template <class T> inline ERR setPath(T && Value) noexcept {
+   inline ERR setPath(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
-   template <class T> inline ERR setKeyFilter(T && Value) noexcept {
+   inline ERR setKeyFilter(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
-   template <class T> inline ERR setGroupFilter(T && Value) noexcept {
+   inline ERR setGroupFilter(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setFlags(const CNF Value) noexcept {
@@ -3067,12 +3067,12 @@ class objScript : public Object {
    STRING   *Results;
    char     Language[4];          // 3-character language code, null-terminated
    const ScriptArg *ProcArgs;     // Procedure args - applies during Exec
-   STRING   Path;                 // File location of the script
-   STRING   String;
-   STRING   WorkingPath;
-   STRING   ErrorMessage;
-   CSTRING  Procedure;
-   STRING   CacheFile;
+   std::string Path;              // File location of the script
+   std::string String;
+   std::string WorkingPath;
+   std::string ErrorMessage;
+   std::string Procedure;
+   std::string CacheFile;
    int      ActivationCount;      // Incremented every time the script is activated.
    int      ResultsTotal;
    int      TotalArgs;            // Total number of ProcArgs
@@ -3144,28 +3144,28 @@ class objScript : public Object {
       return ERR::Okay;
    }
 
-   template <class T> inline ERR setCacheFile(T && Value) noexcept {
+   inline ERR setCacheFile(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[22];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
-   template <class T> inline ERR setErrorMessage(T && Value) noexcept {
+   inline ERR setErrorMessage(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
-   template <class T> inline ERR setWorkingPath(T && Value) noexcept {
+   inline ERR setWorkingPath(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
-   template <class T> inline ERR setProcedure(T && Value) noexcept {
+   inline ERR setProcedure(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
    template <class T> inline ERR setName(T && Value) noexcept {
@@ -3174,10 +3174,10 @@ class objScript : public Object {
       return field->WriteValue(target, field, 0x08810300, to_cstring(Value), 1);
    }
 
-   template <class T> inline ERR setPath(T && Value) noexcept {
+   inline ERR setPath(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804500, &Value, 1);
    }
 
    inline ERR setResults(STRING * Value, int Elements) noexcept {
@@ -3186,10 +3186,10 @@ class objScript : public Object {
       return field->WriteValue(target, field, 0x08801300, Value, Elements);
    }
 
-   template <class T> inline ERR setStatement(T && Value) noexcept {
+   inline ERR setStatement(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[13];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
 };
@@ -3343,10 +3343,10 @@ class objTask : public Object {
       return field->WriteValue(target, field, FD_INT64, &Value, 1);
    }
 
-   template <class T> inline ERR setArgs(T && Value) noexcept {
+   inline ERR setArgs(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[13];
-      return field->WriteValue(target, field, 0x08800200, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804200, &Value, 1);
    }
 
    inline ERR setParameters(kt::vector<std::string> *Value) noexcept {
@@ -3373,22 +3373,22 @@ class objTask : public Object {
       return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
    }
 
-   template <class T> inline ERR setLaunchPath(T && Value) noexcept {
+   inline ERR setLaunchPath(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[12];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
-   template <class T> inline ERR setLocation(T && Value) noexcept {
+   inline ERR setLocation(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[17];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
-   template <class T> inline ERR setName(T && Value) noexcept {
+   inline ERR setName(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[15];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setOutputCallback(FUNCTION Value) noexcept {
@@ -3397,10 +3397,10 @@ class objTask : public Object {
       return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
    }
 
-   template <class T> inline ERR setPath(T && Value) noexcept {
+   inline ERR setPath(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setPriority(const int Value) noexcept {
@@ -3546,10 +3546,10 @@ class objModule : public Object {
       return ERR::Okay;
    }
 
-   template <class T> inline ERR setName(T && Value) noexcept {
+   inline ERR setName(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804500, &Value, 1);
    }
 
 };
@@ -3799,16 +3799,16 @@ class objCompression : public Object {
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
-   template <class T> inline ERR setArchiveName(T && Value) noexcept {
+   inline ERR setArchiveName(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[0];
-      return field->WriteValue(target, field, 0x08800200, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804200, &Value, 1);
    }
 
-   template <class T> inline ERR setPath(T && Value) noexcept {
+   inline ERR setPath(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setFeedback(FUNCTION Value) noexcept {
@@ -3817,10 +3817,10 @@ class objCompression : public Object {
       return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
    }
 
-   template <class T> inline ERR setPassword(T && Value) noexcept {
+   inline ERR setPassword(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[12];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
 };
