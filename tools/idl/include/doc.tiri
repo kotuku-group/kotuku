@@ -588,174 +588,146 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+function substituteReferenceMatches(Input:str, Pattern, Handler:func):str
+   local result = ''
+   local last_end = 0
+
+   for start, stop, cap in Pattern.findAll(Input) do
+      if start > last_end then result ..= Input:sub(last_end, start) end
+      result ..= Handler(cap, Input:sub(start, stop))
+      last_end = stop
+   end
+
+   return result .. Input:sub(last_end)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 global function substituteReferences(String:str, Class:table):str
    -- Substitute !Struct and !LOOKUP references, which allow injecting struct and lookup tables into documentation
 
-   result = ''
-   last_end = 0
-   for start, stop, cap in rx_struct_insert.findAll(String) do
-      if start > last_end then result ..= String:sub(last_end, start) end
-      lookup = cap[0]
-      whitespace = cap[1]
+   String = substituteReferenceMatches(String, rx_struct_insert, function(Cap, Match)
+      local lookup = Cap[0]
+      local whitespace = Cap[1]
       if glStructures[lookup] then
          if glStructures[lookup].restrict is 'c' then
-            result ..= lookup .. whitespace
+            return lookup .. whitespace
          else
             Class?.references['STRUCT:' .. lookup] = 1
-            result ..= f'<st>{lookup}</st>{whitespace}'
+            return f'<st>{lookup}</st>{whitespace}'
          end
       elseif glCustomTypes[lookup] then
          Class?.references['TYPE:' .. lookup] = 1
-         result ..= f'<lk>{lookup}</lk>{whitespace}'
+         return f'<lk>{lookup}</lk>{whitespace}'
       else
          print('Unrecognised struct or constant "!' .. lookup .. '"')
-         result ..= String:sub(start, stop)
+         return Match
       end
-      last_end = stop
-   end
-   String = result .. String:sub(last_end)
+   end)
 
    -- Substitute action and method references, identified as #MethodName()
 
-   result = ''
-   last_end = 0
-   for start, stop, cap in rx_action_method.findAll(String) do
-      if start > last_end then result ..= String:sub(last_end, start) end
-      call_name = cap[0]
+   String = substituteReferenceMatches(String, rx_action_method, function(Cap, Match)
+      local call_name = Cap[0]
       if not Class then
-         result ..= f'<action>{call_name}</action>'
+         return f'<action>{call_name}</action>'
       elseif Class.lookupMethods?[call_name] then
-         result ..= f'<method>{call_name}</method>'
+         return f'<method>{call_name}</method>'
       elseif glActions[call_name] then
-         result ..= f'<action>{call_name}</action>'
+         return f'<action>{call_name}</action>'
       else
          print('Unrecognised class action or method "' .. call_name .. '"')
-         result ..= String:sub(start, stop)
+         return Match
       end
-      last_end = stop
-   end
-   String = result .. String:sub(last_end)
+   end)
 
    -- Substitute field references, identified as #Field.
 
-   result = ''
-   last_end = 0
-   for start, stop, cap in rx_field_ref.findAll(String) do
-      if start > last_end then result ..= String:sub(last_end, start) end
-      local field = cap[0]
+   String = substituteReferenceMatches(String, rx_field_ref, function(Cap, Match)
+      local field = Cap[0]
       if not Class then -- Localised field lookup
          if rx_rgb.test(field) then -- Ignore RGB values
-            result ..= String:sub(start, stop)
+            return Match
          else -- Localised field reference
-            result ..= f'<fl>{field}</fl>'
+            return f'<fl>{field}</fl>'
          end
       elseif Class.lookupFields?[field] then
-         result ..= f'<fl>{field}</fl>'
+         return f'<fl>{field}</fl>'
       else -- Failed to lookup external field reference
          if rx_rgb.test(field) then -- Ignore RGB values
-            result ..= String:sub(start, stop)
+            return Match
          else
             print(f'Unrecognised {Class.name} field "{field}"')
-            result ..= String:sub(start, stop)
+            return Match
          end
       end
-      last_end = stop
-   end
-   String = result .. String:sub(last_end)
+   end)
 
    -- Substitute external function references, identified as ~Module.Function()
 
-   result = ''
-   last_end = 0
-   for start, stop, cap in rx_ext_func_ref.findAll(String) do
+   String = substituteReferenceMatches(String, rx_ext_func_ref, function(Cap, Match)
       -- TODO: Validate that the module and function actually exist.  Easiest way is with mod.load()
-      if start > last_end then
-         result ..= String:sub(last_end, start)
-      end
-      result ..= f'<function module="{cap[0]}">{cap[1]}</function>'
-      last_end = stop
-   end
-   String = result .. String:sub(last_end)
+      return f'<function module="{Cap[0]}">{Cap[1]}</function>'
+   end)
 
    -- Substitute local function references, identified as ~Function()
 
-   result = ''
-   last_end = 0
-   for start, stop, cap in rx_local_func_ref.findAll(String) do
-      func_name = cap[0]
+   String = substituteReferenceMatches(String, rx_local_func_ref, function(Cap, Match)
+      local func_name = Cap[0]
       if glFunctionLookup[func_name] then
-         if start > last_end then
-            result ..= String:sub(last_end, start)
-         end
-         result ..= f'<function>{func_name}</function>'
+         return f'<function>{func_name}</function>'
       else
          print(f'Unrecognised function reference ~{func_name}()')
-         result ..= String:sub(start, stop)
+         return Match
       end
-      last_end = stop
-   end
-   String = result .. String:sub(last_end)
+   end)
 
    -- Substitute external method/action references, identified as @File.Init()
 
-   result = ''
-   last_end = 0
-   for start, stop, cap in rx_ext_method_ref.findAll(String) do
-      if start > last_end then result ..= String:sub(last_end, start) end
-      class_name = cap[0]
-      method_name = cap[1]
+   String = substituteReferenceMatches(String, rx_ext_method_ref, function(Cap, Match)
+      local class_name = Cap[0]
+      local method_name = Cap[1]
       if mSys.FindClass(class_name:hash(), 0) then
          -- TODO: Check that the method name is valid according to the class spec
-         result ..= f'<class name="{class_name}" method="{method_name}">{class_name}.{method_name}()</class>'
+         return f'<class name="{class_name}" method="{method_name}">{class_name}.{method_name}()</class>'
       else
          print(f'Unrecognised method/action reference @{class_name}.{method_name}()')
-         result ..= String:sub(start, stop)
+         return Match
       end
-      last_end = stop
-   end
-   String = result .. String:sub(last_end)
+   end)
 
    -- Substitute external field references, identified as @File.Size or #File.Size
 
-   result = ''
-   last_end = 0
-   for start, stop, cap in rx_ext_field_ref.findAll(String) do
-      if start > last_end then result ..= String:sub(last_end, start) end
-      class_name = cap[0]
-      field_name = cap[1]
-      meta = mSys.FindClass(class_name:hash(), 0)
+   String = substituteReferenceMatches(String, rx_ext_field_ref, function(Cap, Match)
+      local class_name = Cap[0]
+      local field_name = Cap[1]
+      local meta = mSys.FindClass(class_name:hash(), 0)
       if meta then
          local err, field, src = meta.mtFindField(calcFieldHash(field_name))
          if field then
-            result ..= f'<class name="{class_name}" field="{field_name}">{class_name}.{field_name}</class>'
+            return f'<class name="{class_name}" field="{field_name}">{class_name}.{field_name}</class>'
          else
             print(f'Failed to find field {class_name}.{field_name}')
-            result ..= f'<class name="{class_name}" field="{field_name}">_{class_name}.{field_name}_</class>'
+            return f'<class name="{class_name}" field="{field_name}">_{class_name}.{field_name}_</class>'
          end
       else
          print(f'Unrecognised field reference @{class_name}.{field_name}')
-         result ..= String:sub(start, stop)
+         return Match
       end
-      last_end = stop
-   end
-   String = result .. String:sub(last_end)
+   end)
 
    -- Substitute class references, identified as @File
 
-   result = ''
-   last_end = 0
-   for start, stop, cap in rx_class_ref.findAll(String) do
-      if start > last_end then result ..= String:sub(last_end, start) end
-      class_name = cap[0]
+   String = substituteReferenceMatches(String, rx_class_ref, function(Cap, Match)
+      local class_name = Cap[0]
       if mSys.FindClass(class_name:hash(), 0) then
-         result ..= f'<class name="{class_name}">{class_name}</class>'
+         return f'<class name="{class_name}">{class_name}</class>'
       else
          print(f'Unrecognised class name reference @{class_name}')
-         result ..= String:sub(start, stop)
+         return Match
       end
-      last_end = stop
-   end
-   String = result .. String:sub(last_end)
+   end)
+
    String = rx_inline_code.replace(String, '<code>$1</code>')
    return String
 end
@@ -1012,32 +984,35 @@ global function docModuleHeader()
    out ..= '<?xml-stylesheet type="text/xsl" href="module.xsl"?>\n\n'
    out ..= '<book>\n'
    out ..= '  <info>\n'
-   if glModule.name??         then out ..= '    <name>' .. glModule.name .. '</name>\n' end
+   if glModule.name??         then out ..= f'    <name>{glModule.name}</name>\n' end
    out ..= '    <type>module</type>\n'
-   if glModule.author??       then out ..= '    <author>' .. glModule.author:escXML() .. '</author>\n' end
-   if glModule.comment??      then out ..= '    <comment>' .. glModule.comment:escXML() .. '</comment>\n' end
-   if glModule.keywords??     then out ..= '    <keywords>' .. glModule.keywords:escXML() .. '</keywords>\n' end
-   if glModule.version??      then out ..= '    <version>' .. glModule.version .. '</version>\n' end
-   if glModule.id??           then out ..= '    <id>' .. string.format('%x',glModule.id) .. '</id>\n' end
-   if glModule.idstring??     then out ..= '    <idstring>' .. glModule.idstring .. '</idstring>\n' end
-   if glModule.status??       then out ..= '    <status>' .. glModule.status .. '</status>\n' end
-   if glModule.prefix??       then out ..= '    <prefix>' .. glModule.prefix .. '</prefix>\n' end
-   if glModule.category??     then out ..= '    <category>' .. glModule.category .. '</category>\n' end
-   if glModule.include??      then out ..= '    <include>modules/' .. glModule.name:lower() .. '.h</include>\n' end
-   if glModule.date??         then out ..= '    <date>' .. glModule.date .. '</date>\n' end
-   if glModule.copyright??    then out ..= '    <copyright>' .. glModule.copyright:escXML() .. '</copyright>\n' end
-   if glModule.description??  then out ..= '    <description>\n' .. extractParagraph(glModule.description, nil, nil) .. '</description>\n' end
-   if glModule.notes??        then out ..= '    <notes>\n' .. glModule.notes .. '</notes>\n' end
-   if glModule.technical??    then out ..= '    <technical>\n' .. glModule.technical .. '</technical>\n' end
+   if glModule.author??       then out ..= f'    <author>{glModule.author:escXML()}</author>\n' end
+   if glModule.comment??      then out ..= f'    <comment>{glModule.comment:escXML()}</comment>\n' end
+   if glModule.keywords??     then out ..= f'    <keywords>{glModule.keywords:escXML()}</keywords>\n' end
+   if glModule.version??      then out ..= f'    <version>{glModule.version}</version>\n' end
+   if glModule.id??           then out ..= f'    <id>{string.format("%x",glModule.id)}</id>\n' end
+   if glModule.idstring??     then out ..= f'    <idstring>{glModule.idstring}</idstring>\n' end
+   if glModule.status??       then out ..= f'    <status>{glModule.status}</status>\n' end
+   if glModule.prefix??       then out ..= f'    <prefix>{glModule.prefix}</prefix>\n' end
+   if glModule.category??     then out ..= f'    <category>{glModule.category}</category>\n' end
+   if glModule.include??      then out ..= f'    <include>modules/{glModule.name:lower()}.h</include>\n' end
+   if glModule.date??         then out ..= f'    <date>{glModule.date}</date>\n' end
+   if glModule.copyright??    then out ..= f'    <copyright>{glModule.copyright:escXML()}</copyright>\n' end
+   if glModule.description??  then out ..= f'    <description>\n{extractParagraph(glModule.description, nil, nil)}</description>\n' end
+   if glModule.notes??        then out ..= f'    <notes>\n{glModule.notes}</notes>\n' end
+   if glModule.technical??    then out ..= f'    <technical>\n{glModule.technical}</technical>\n' end
 
-   if not table.empty(srcFiles) then
+   if glModule.src?? then
       out ..= '    <source>\n'
-      for path in values(srcFiles) do
+      for path in values(glModule.src) do
          local dir, filename = rx_path.extract(path)
          if not filename then
             filename = path
             dir = nil
+         else
+            dir = r'.*(src[\/\\].*)'.extract(dir) ?? '' -- Convert normalised path to a relative reference
          end
+         dir = dir:replace('\\', '/')
          out ..= f"      <file path=\"{(dir ?? ''):escXML()}\">{filename:escXML()}</file>\n"
       end
       out ..= '    </source>\n'
@@ -1223,10 +1198,10 @@ global function docTypes(References)
                if (v.comment:startsWith('Internal')) or (v.comment:startsWith('Private')) then
                   -- Ignore internal/private types
                else
-                  out ..= "      <const name=\"" .. v.name .. "\">" .. substituteReferences(v.comment:escXML()) .. "</const>\n"
+                  out ..= f"      <const name=\"{v.name}\">{substituteReferences(v.comment:escXML())}</const>\n"
                end
             else
-               out ..= "      <const name=\"" .. v.name .. "\"/>\n"
+               out ..= f"      <const name=\"{v.name}\"/>\n"
             end
          end
          out ..= '    </constants>\n\n'
@@ -1234,7 +1209,7 @@ global function docTypes(References)
    end
 
    if out?? then
-      out = '  <types>\n' .. out .. '  </types>\n'
+      out = f'  <types>\n{out}  </types>\n'
    end
 
    return out

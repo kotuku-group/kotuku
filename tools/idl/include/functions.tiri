@@ -138,22 +138,15 @@ global function module(Options:table, Function:func)
       end
    end
 
-   -- Module files used to be taken from the command-line; the src option is now preferred
-
-   if not glModule.src then
-      glModule.src = array<string>
-
-      for i=0, arg('files:size', 0)-1 do
-         glModule.src:push(arg('files(' .. i .. ')'))
-      end
-   end
-
    -- Look for the MODULE header and process it.
+   if glModule.src?? then
+      local content = ''
+      for i, src in ipairs(glModule.src) do
+         err, glModule.src[i] = mSys.ResolvePath(src)
+         check err
+      end
 
-   if glModule.src then
-      local content
-      content = ''
-      for src in values(glModule.src) do
+      for i, src in ipairs(glModule.src) do
          content = io.readAll(src)
          if content:find('-MODULE-') then break end
       end
@@ -260,7 +253,6 @@ global function flags(Prefix, Options:table, ...)
    local flags = {...}
    f = 0
    for a=0, #flags - 1 do
-      local flag_name
       if type(flags[a]) is 'string' then
          local key, comment = rx_key_comment.extract(flags[a])
          key ??= flags[a]

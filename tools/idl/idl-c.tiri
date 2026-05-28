@@ -1,11 +1,12 @@
 -- This program produces C++ headers, auto-generated values and documentation from Kotuku TDL files.
 --
 -- Usage: origo sdk:tools/idl/idl-c.tiri src=source.tdl
--- Example: origo sdk:tools/idl/idl-c.tiri src=sdk:core/modules/core/core.tdl
+-- Example: origo sdk:tools/idl/idl-c.tiri src=sdk:src/core/defs/core.tdl
 
    include 'core'
    include 'xml'
    import 'json'
+   import 'options'
 
    global glHeader = array<string>
    global glOutput = array<string>
@@ -19,25 +20,53 @@
 
    global glFunctions      = { }
    global glFunctionLookup = { }
-   global glMethods        = { }
-   global glFields         = { }
-   global glPaths          = { }
    global glCustomTypes    = { }
    global glStructures     = { }
-   global glDocuments      = { }
    global glModule         = { }
    global glTotalWarnings  = 0
    global glCategory       = nil
    global glCategories     = { }
    global glPrivateNames   = { }
 
+   global glParser = options({
+      name        = 'idl-c',
+      description = 'Generate C++ headers, value definitions, prototypes, and documentation from Kotuku TDL files.',
+      epilog      = [[
+Examples:
+  origo sdk:tools/idl/idl-c.tiri src=source.tdl
+  origo sdk:tools/idl/idl-c.tiri src=sdk:src/core/defs/core.tdl output=core.h sdk=/path/to/kotuku
+]],
+      args = array<table> {
+         { name = 'src', type = 'file', required = true, group = 'Input',
+           comment = 'Source TDL file.' },
+         { name = 'sdk', type = 'path', group = 'Input',
+           comment = 'Kotuku SDK root path. If omitted, parent folders are searched for CMakeLists.txt.' },
+
+         { name = 'output', type = 'file', group = 'Output',
+           comment = 'Target file for generated C++ headers.' },
+         { name = 'output-defs', type = 'file', group = 'Output',
+           comment = 'Target file for generated C++ value definitions.' },
+         { name = 'output-proto', type = 'file', group = 'Output',
+           comment = 'Target file for generated C++ function prototypes.' },
+
+         { name = 'feedback', type = 'enum', choices = array<string> { 'verbose' }, group = 'Diagnostics',
+           comment = 'Set to verbose to print debug messages.' },
+         { name = 'prototypes', type = 'enum', choices = array<string> { 'static' }, group = 'Generation',
+           comment = 'Set to static to output static prototype functions.' }
+      }
+   })
+
+   global glArgs = glParser.process()
+   if not glArgs then return end
+
    global glProgram     = 'idl-c' -- TDL's can read this
-   global glSource      = arg('src')
-   global glOutputPath  = arg('output')
-   global glFeedback    = arg('feedback')
-   global glOutputDefs  = arg('output-defs')
-   global glOutputProto = arg('output-proto')
-   global glPrototypes  = arg('prototypes')
+   global glSource      = glArgs.src
+   global glOutputPath  = glArgs.output
+   global glFeedback    = glArgs.feedback
+   global glOutputDefs  = glArgs['output-defs']
+   global glOutputProto = glArgs['output-proto']
+   global glPrototypes  = glArgs.prototypes
+   global glSDK         = glArgs.sdk
    global glEnableDictionaryUse = true -- Allow dictionary use for fast field access
 
    import './include/utils'
@@ -810,7 +839,7 @@ function tiriTypeName(Field:table):str
       'array' -> 'array'
       'func'  -> 'func'
       'table' -> 'table'
-      'thread' -> 'thread'
+      'thread'-> 'thread'
       'range' -> 'range'
       nil     -> nil
       else    -> 'any'
@@ -994,21 +1023,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-   if not glSource then
-      print("This command is used to compile self-documenting source files.  Provide a reference to a")
-      print("source '.tdl' file in the src parameter.  The resulting data will be saved to the file")
-      print("referenced in the output parameter.")
-      print("")
-      print("  src          Source TDL file.")
-      print("  output       Target file for generated C++ headers.")
-      print("  feedback     Set to 'verbose' to print debug messages.")
-      print("  output-defs  Target file for generated C++ value definitions.")
-      print("  output-proto Target file for generated C++ function prototypes.")
-      print("  prototypes   Set to 'static' to output static prototype functions.")
-      return
-   end
-
-   resolveSDKPath(arg('sdk'))
+   resolveSDKPath(glSDK)
 
    loadActions()
 

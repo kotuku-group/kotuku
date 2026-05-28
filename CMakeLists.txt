@@ -436,7 +436,7 @@ endfunction ()
 # Always provide a full path for OUTPUT
 
 function (idl_compile)
-   cmake_parse_arguments (PARSE_ARGV 0 IDLC "" "OUTPUT;NAME" "ARGS;FILES")
+   cmake_parse_arguments (PARSE_ARGV 0 IDLC "" "OUTPUT;NAME" "ARGS")
 
    if (BUILD_DEFS)
       if (DEFINED IDLC_NAME)
