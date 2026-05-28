@@ -1,0 +1,880 @@
+// VERIFIED: 2026-02-15
+
+[[ch-file-io]]
+== File I/O
+indexterm:[file system] Tiri provides file system access through two complementary interfaces.  The `io` standard library offers a high-level API for common file operations: reading, writing, path manipulation, and convenience functions.  For advanced file management -- folder enumeration, file watching, date stamps, permissions -- the Kōtuku File object (<<sec-the-kotuku-file-object>>) exposes the full capabilities of the underlying framework.
+
+All file paths in Tiri use the virtual volume system (<<sec-virtual-volumes>>).  Paths take the form `volume:folder/file`, for example `temp:output.txt` or `config:settings.tiri`.  The volume prefix is resolved at runtime to a platform-native location.
+
+Filesystem failures in the `io` library throw exceptions.  This differs from standard Lua, which returns `nil` plus an error string.  Use `try-except` blocks (<<ch-error-handling>>) to handle errors.
+
+[[sec-the-io-standard-library]]
+=== The io Standard Library
+indexterm:[library, io] The `io` namespace provides built-in functions for file operations and standard I/O management.  No `import` statement is required to use these functions.
+
+==== io.open()
+
+[.api]`file = io.open(Path, [Mode])`
+
+Opens the file at `Path`, requesting access permissions specified by `Mode`.  If `Mode` is not set, the file is opened in read-only mode.  Throws an exception if the file cannot be opened.
+
+[source,tiri]
+----
+file = io.open('temp:myfile.txt', 'w')
+file:write('Hello, world!\n')
+file:close()
+----
+
+Available options for `Mode` are as follows:
+
+[cols="1,3a",options="header"]
+|===
+|Option |Description
+
+|`r`
+|Read only.
+
+|`w`
+|Create new file in read/write mode.  Overwrites any existing file at the path.
+
+|`a`
+|Append to existing file in read/write mode.  Creates the file if it does not exist.  The write position starts at the end of the file.
+
+|`+`
+|Open existing file in read/write mode.
+|===
+
+==== io.close()
+
+[.api]`io.close([File])`
+
+Closes the given file handle.  If no `File` is provided, the default output file is closed.  Returns `true` on success.
+
+==== io.read()
+
+[.api]`data1, data2, pass:[...] = io.read([Format, pass:[...]])`
+
+Reads from the default input file according to the given format strings.  If no format is provided, a single line is read.  The default input file is initially `stdin` but can be changed with `io.input()`.
+
+See <<sec-file-read>> for a full description of format strings.
+
+[source,tiri]
+----
+line = io.read()       -- Read one line
+num  = io.read('*n')   -- Read a number
+all  = io.read('*a')   -- Read entire file
+----
+
+==== io.write()
+
+[.api]`io.write(Data, pass:[...])`
+
+Writes each argument to the default output file.  The default output file is initially `stdout` but can be changed with `io.output()`.  Arguments must be strings or numbers.  Throws an exception if a write error occurs.
+
+==== io.flush()
+
+[.api]`io.flush()`
+
+Flushes the default output file, ensuring that any buffered data is written to disk.
+
+==== io.input()
+
+[.api]`file = io.input([Source])`
+
+When called with no arguments, returns the current default input file handle.  When called with a string, opens the named file in read mode and sets it as the default input.  When called with a file handle, sets that handle as the default input.
+
+The default input is initially `stdin`.
+
+[source,tiri]
+----
+io.input('temp:data.txt')    -- Set default input to a file
+line = io.read()             -- Read a line from that file
+original = io.input()        -- Retrieve current default input
+----
+
+==== io.output()
+
+[.api]`file = io.output([Source])`
+
+When called with no arguments, returns the current default output file handle.  When called with a string, opens the named file in write mode and sets it as the default output.  When called with a file handle, sets that handle as the default output.
+
+The default output is initially `stdout`.
+
+[source,tiri]
+----
+io.output('temp:results.txt')   -- Set default output to a file
+io.write('Result: 42\n')        -- Write to that file
+----
+
+==== io.lines()
+
+[.api]`iterator = io.lines([Source])`
+
+Returns an iterator function that reads lines from a file.  When called with a filename, opens the file and closes it automatically when iteration completes or the iterator is garbage collected.  When called with a file handle, iterates lines without closing the handle.  When called with no arguments, iterates lines from the default input.
+
+[source,tiri]
+----
+for line in io.lines('temp:data.txt') do
+   print(line)
+end
+----
+
+==== io.type()
+
+[.api]`result = io.type(Value)`
+
+Tests whether `Value` is a valid file handle.  Returns `'file'` if `Value` is an open file handle, `'closed file'` if it is a closed file handle, or `nil` if it is not a file handle.
+
+[source,tiri]
+----
+file = io.open('temp:test.txt', 'w')
+print(io.type(file))      -- 'file'
+file:close()
+print(io.type(file))      -- 'closed file'
+print(io.type('hello'))   -- nil
+----
+
+==== io.tempFile()
+
+[.api]`file = io.tempFile()`
+
+Creates a temporary in-memory buffer file opened for both reading and writing.  The buffer is backed by system memory, allowing the OS to use swap space for large files.  The file is automatically freed when the handle is garbage collected or explicitly closed.
+
+[source,tiri]
+----
+tmp = io.tempFile()
+tmp:write('temporary data')
+tmp:seek('set', 0)
+print(tmp:read('*a'))   -- 'temporary data'
+tmp:close()
+----
+
+==== io.readAll()
+
+[.api]`content = io.readAll(Path)`
+
+Reads the entire contents of the file at `Path` and returns it as a string.  Throws an exception if the file cannot be opened or read.  Returns an empty string if the file is empty.
+
+==== io.writeAll()
+
+[.api]`io.writeAll(Path, Content)`
+
+Writes `Content` to the file at `Path`, creating the file if it does not exist or overwriting it if it does.  Throws an exception if the file cannot be created or written to.
+
+==== io.isFolder()
+
+[.api]`bool = io.isFolder(Path)`
+
+Returns `true` if `Path` ends with a folder separator character (`/`, `\` or `:`), indicating that the path refers to a directory rather than a file.  This is a string-based check and does not query the file system.
+
+[source,tiri]
+----
+print(io.isFolder('system:users/'))    -- true
+print(io.isFolder('temp:file.txt'))    -- false
+----
+
+==== io.splitPath()
+
+[.api]`dir, file = io.splitPath(Path)`
+
+Splits `Path` into its directory and filename components.  The directory portion includes the trailing separator.  Returns `nil, nil` if `Path` is `nil` or empty.  Returns `nil, Path` if no separator is found.
+
+[source,tiri]
+----
+dir, file = io.splitPath('system:users/readme.txt')
+-- dir  = 'system:users/'
+-- file = 'readme.txt'
+
+dir, file = io.splitPath('readme.txt')
+-- dir  = nil
+-- file = 'readme.txt'
+----
+
+==== io.sanitisePath()
+
+[.api]`cleaned = io.sanitisePath(Path)`
+
+Removes repeated consecutive path separator characters (`/`, `\`, `:`) from `Path`.  Useful for cleaning up paths constructed by concatenation.
+
+[source,tiri]
+----
+print(io.sanitisePath('system://users///file.txt'))
+-- 'system:/users/file.txt'
+----
+
+[[sec-file-handle-methods]]
+=== File Handle Methods
+indexterm:[file system, handles] File handles returned by `io.open()` and related functions support the following methods, called with the colon syntax (e.g. `file:read()`).  Operating on a closed file handle throws an exception.
+
+[[sec-file-read]]
+==== file:read()
+
+[.api]`data1, data2, pass:[...] = file:read([Format, pass:[...]])`
+
+Reads from the file according to the given format strings.  Multiple formats can be provided and each returns a separate value.  If no format is provided, a single line is read.
+
+[cols="1,3a",options="header"]
+|===
+|Format |Description
+
+|`*l`
+|Read a single line, stripping the newline character.  This is the default.
+
+|`*a`
+|Read the entire remaining contents of the file.
+
+|`*n`
+|Read a line and convert it to a number.
+
+|_(number)_
+|Read the specified number of bytes.
+|===
+
+Returns `nil` for each format that fails to read data (e.g. at end of file).
+
+[source,tiri]
+----
+file = io.open('temp:data.txt', 'r')
+line = file:read()          -- Read one line
+file:seek('set', 0)
+all  = file:read('*a')      -- Read entire file
+file:close()
+----
+
+==== file:write()
+
+[.api]`file = file:write(Data, pass:[...])`
+
+Writes each argument to the file.  Arguments must be strings or numbers.  Returns the file handle to allow chained calls.  Throws an exception if a write error occurs.
+
+==== file:close()
+
+[.api]`file:close()`
+
+Closes the file handle and releases the underlying file object.  Returns `true` on success.
+
+==== file:flush()
+
+[.api]`file:flush()`
+
+Flushes any buffered output data to disk, ensuring all writes are committed.  Returns `true` on success.
+
+==== file:seek()
+
+[.api]`position = file:seek([Whence, [Offset]])`
+
+Sets the file position for reading and writing.  Returns the resulting absolute file position in bytes.
+
+[cols="1,3a",options="header"]
+|===
+|Whence |Description
+
+|`set`
+|Position relative to the beginning of the file.
+
+|`cur`
+|Position relative to the current location.  This is the default.
+
+|`end`
+|Position relative to the end of the file.
+|===
+
+`Offset` defaults to `0`.
+
+[source,tiri]
+----
+file = io.open('temp:data.txt', 'r')
+file:seek('set', 10)     -- Move to byte 10
+pos = file:seek('cur')   -- Get current position
+file:seek('end', 0)      -- Move to end of file
+file:close()
+----
+
+==== file:lines()
+
+[.api]`iterator = file:lines()`
+
+Returns an iterator function that reads lines from the file.  The file handle is not closed when iteration completes, unlike `io.lines()` with a filename argument.
+
+[source,tiri]
+----
+file = io.open('temp:data.txt', 'r')
+for line in file:lines() do
+   print(line)
+end
+file:close()
+----
+
+[[sec-the-kotuku-file-object]]
+=== The Kōtuku File Object
+indexterm:[file system, object] The `io` standard library covers common file operations, but the Kōtuku File object provides the full range of file system capabilities: folder enumeration, file watching, permissions, timestamps, symbolic links, copying, moving, and deletion.
+
+File objects are created with `obj.new('file', Options)`.  Refer to <<ch-the-object-system>> for general object creation patterns.
+
+[discrete]
+==== Creating File Objects
+
+[source,tiri]
+----
+-- Open a file for reading
+fl = obj.new('file', { path='temp:data.txt', flags=FL_READ })
+
+-- Create a new file for writing
+fl = obj.new('file', { path='temp:output.txt', flags=FL_NEW|FL_WRITE })
+
+-- Open a folder for enumeration
+folder = obj.new('file', { src='system:scripts/' })
+----
+
+When the `path` field is set with `FL_READ`, `FL_WRITE`, or `FL_NEW` flags, the file is opened automatically on creation.  Without these flags, the object is initialised in a query-only state where metadata (size, dates, permissions) is accessible but the file is not opened for I/O.
+
+[discrete]
+==== Fields
+
+The File object exposes the following fields:
+
+[cols="1,1,3a",options="header"]
+|===
+|Field |Access |Description
+
+|`path`
+|R/W
+|The full path of the file (e.g. `temp:output.txt`).
+
+|`resolvedPath`
+|R
+|The resolved platform-native path.
+
+|`size`
+|R/W
+|File size in bytes.  Setting this value truncates or extends the file.  Returns `0` for folders.
+
+|`position`
+|R/W
+|Current read/write byte position.  Setting this value performs a seek from the start of the file.
+
+|`flags`
+|R/W
+|File flags (see below).
+
+|`permissions`
+|R/W
+|File permission bits.
+
+|`date`
+|R/W
+|Last modification date as a `DateTime` structure.
+
+|`created`
+|R
+|Creation date as a `DateTime` structure.
+
+|`timeStamp`
+|R
+|Last modification time as a 64-bit integer, for comparison purposes.
+
+|`icon`
+|R
+|A UI icon reference string suitable for representing this file type (e.g. `'icons:filetypes/text'`).
+
+|`link`
+|R/W
+|The target path for symbolic links.
+|===
+
+[discrete]
+==== File Flags
+
+The following flags control file behaviour when passed in the `flags` field at creation:
+
+[cols="1,3a",options="header"]
+|===
+|Flag |Description
+
+|`FL_READ`
+|Open the file for reading.
+
+|`FL_WRITE`
+|Open the file for writing.
+
+|`FL_NEW`
+|Create a new file.  Overwrites any existing file at the path.
+
+|`FL_BUFFER`
+|Activate in-memory buffer mode.  Set `size` to configure the initial buffer size.
+
+|`FL_FOLDER`
+|Indicates the object represents a folder.
+
+|`FL_LINK`
+|Read-only.  Indicates the file is a symbolic link.
+
+|`FL_FILE`
+|Explicitly declares the object as a file entity.
+
+|`FL_EXCLUDE_FILES`
+|Exclude files when enumerating a folder.
+
+|`FL_EXCLUDE_FOLDERS`
+|Exclude folders when enumerating a folder.
+
+|`FL_LOOP`
+|Enable loop mode, where read/write positions wrap around the file size.
+
+|`FL_STREAM`
+|Indicates the file data is streamed (e.g. a pipe or socket).
+|===
+
+[discrete]
+==== Actions
+
+File objects respond to the standard Kōtuku action interface:
+
+[source,tiri]
+----
+fl = obj.new('file', { path='temp:data.txt', flags=FL_READ })
+buf = string.alloc(1024)
+err, bytes = fl.acRead(buf)
+fl.acSeek(0, SEEK_START)
+----
+
+[cols="1,3a",options="header"]
+|===
+|Action |Description
+
+|`acRead(Buffer)`
+|Reads data into `Buffer`.  Returns an error code and the number of bytes read.
+
+|`acWrite(Data)`
+|Writes `Data` to the file.  Returns an error code and the number of bytes written.
+
+|`acSeek(Offset, Position)`
+|Seeks to an absolute or relative position.  `Position` is one of `SEEK_START`, `SEEK_CURRENT`, or `SEEK_END`.
+
+|`acSignal()`
+|Raises the signal flag on the file object, for use with `processing.sleep()` signal monitoring.
+
+|`acActivate()`
+|Opens the file if it was created without `READ`, `WRITE`, or `NEW` flags.
+
+|`acQuery()`
+|Refreshes the file's metadata from the filesystem.
+
+|`acFlush()`
+|Flushes buffered data to disk.
+|===
+
+[discrete]
+==== Methods
+
+[cols="1,3a",options="header"]
+|===
+|Method |Description
+
+|`mtNext()`
+|When the object represents a folder, returns the next file in the folder index as a new File object.  Returns `err, file` where `err` is `ERR_DirEmpty` when no more entries remain.
+
+|`mtCopy(Dest)`
+|Copies the file or folder to `Dest`.  Recursively copies folder contents.
+
+|`mtMove(Dest)`
+|Moves the file or folder to `Dest`.
+
+|`mtDelete()`
+|Deletes the file or folder and all of its contents.
+
+|`mtSetDate(Year, Month, Day, Hour, Minute, Second, Type)`
+|Sets the file's date stamp.  `Type` is `FDT_MODIFIED`, `FDT_CREATED`, or `FDT_ACCESSED`.
+
+|`mtWatch(Callback, Custom, Flags)`
+|Monitors the file or folder for filesystem events.  `Flags` controls which events trigger the callback (e.g. `MFF_CREATE`, `MFF_DELETE`, `MFF_MODIFY`).
+|===
+
+==== Folder Enumeration
+
+To enumerate the contents of a directory, create a File object pointing to the folder path and call `mtNext()` repeatedly:
+
+[source,tiri]
+----
+folder = obj.new('file', { src='system:scripts/' })
+
+err, fl = folder.mtNext()
+while err is ERR_Okay do
+   print(f'{fl.path}, Size: {fl.size}')
+   err, fl = folder.mtNext()
+end
+----
+
+Each call to `mtNext()` returns a partially initialised File object containing metadata (path, size, dates, permissions) but the file is not opened for I/O.
+
+To filter the enumeration, pass `FL_EXCLUDE_FILES` or `FL_EXCLUDE_FOLDERS` in the `flags` field:
+
+[source,tiri]
+----
+-- List only subdirectories
+folder = obj.new('file', {
+   src   = 'system:scripts/',
+   flags = FL_EXCLUDE_FILES
+})
+----
+
+==== File Watching
+
+The `mtWatch()` method monitors a file or folder for filesystem events.  Callbacks are dispatched in the event loop.
+
+[source,tiri]
+----
+fl = obj.new('file', { path='temp:' })
+fl.mtWatch(function(File, Path, Custom, Flags)
+   print(f'Event on {Path}: {Flags}')
+end, 0, MFF_CREATE | MFF_DELETE | MFF_MODIFY)
+
+processing.sleep()
+----
+
+Calling `raise ERR_Terminate` in the callback function will cancel the watch.
+
+[[sec-file-search]]
+=== File Search
+indexterm:[file system, search] The FileSearch extension simplifies recursive file and folder searching with support for name filters, content searching, and size/date constraints.  Load it with:
+
+[source,tiri]
+----
+import 'io/filesearch'
+----
+
+==== io.search()
+
+[.api]`io.search(Path, Options)`
+
+Searches for files and folders starting from `Path`.  `Path` is a string referencing a folder or file, or an array of path strings to search multiple locations.  `Options` is a table controlling the search behaviour.
+
+[source,tiri]
+----
+import 'io/filesearch'
+
+io.search('documents:', {
+   nameFilter    = regex.new('\\.txt$'),
+   contentFilter = 'tennis',
+   maxDepth      = 2,
+   matchFeedback = function(Path, FileName, File)
+      print(Path, ' ', FileName)
+   end
+})
+----
+
+[cols="1,1,3a",options="header"]
+|===
+|Option |Type |Description
+
+|`nameFilter`
+|string / regex
+|Include file/folder names that match this value.  A string performs an exact match.  A compiled regex object performs pattern matching.
+
+|`contentFilter`
+|string
+|Include files that contain this content.
+
+|`caseSensitive`
+|boolean
+|Controls how `nameFilter` is applied.  When omitted or `false`, the candidate file name is converted to lowercase before matching.  String filters and regex patterns must therefore be written for lowercase input.  When `true`, the original file name is used.
+
+|`matchFeedback`
+|function
+|Called each time a matching file is discovered.  Synopsis: `function(Path, FileName, File)`.  Return `ERR_Terminate` to stop the search.
+
+|`ignoreFeedback`
+|function
+|Called each time a file fails to pass filter matches.  Synopsis: `function(Path, FileName, File)`.  Return `ERR_Terminate` to stop the search.
+
+|`minSize`
+|number
+|Exclude files smaller than this byte size.
+
+|`maxSize`
+|number
+|Exclude files larger than this byte size.
+
+|`minDate`
+|DateTime
+|Exclude files with a modification time earlier than this `DateTime` structure.
+
+|`maxDate`
+|DateTime
+|Exclude files with a modification time later than this `DateTime` structure.
+
+|`scanLinks`
+|boolean
+|Allow symbolically linked files to be opened for content matching.  Symbolically linked directories are not recursed.
+
+|`matchFolders`
+|boolean
+|Include matching folder names in search results.
+
+|`ignoreFiles`
+|boolean
+|Do not scan files.  Use in conjunction with `matchFolders` to search for directories only.
+
+|`maxDepth`
+|number
+|Maximum depth to recurse into subdirectories.  `0` searches the current directory only, `1` searches one level deep, and so on.  If omitted, recursion is unlimited.
+|===
+
+When searching files for content, apply a `nameFilter` or size limit so that only a controlled number of files are opened for reading.
+
+Symbolic links to directories are not followed to avoid infinite recursion.
+
+[[sec-file-manager]]
+=== File Manager
+indexterm:[file system, manager] The File Manager extension provides file management operations with integrated UI feedback.  Progress dialogs appear automatically for long-running operations, and the user is prompted before overwriting existing files.
+
+Load it with:
+
+[source,tiri]
+----
+import 'io/filemgr'
+----
+
+==== io.ui.copy()
+
+[.api]`error = io.ui.copy(Source, Dest, [Move])`
+
+Copies the file or files specified by `Source` to the folder specified by `Dest`.  `Source` is a file path string or an array of path strings.  If `Move` is `true`, each source file is deleted after a successful copy.
+
+Returns an `ERR` code.  If the user cancels the operation, `ERR_Cancelled` is returned.  Errors are presented to the user with a dialog box and are not thrown as exceptions.
+
+==== io.ui.paste()
+
+[.api]`io.ui.paste(Dest)`
+
+Pastes files from the system clipboard to the destination path `Dest`.  Files marked for deletion by the clipboard are moved instead of copied.  The function delegates the file transfer to `io.ui.copy()` and does not return its status code.
+
+==== io.ui.delete()
+
+[.api]`io.ui.delete(Paths)`
+
+Deletes the file or folder identified by `Paths`, which is a string or array of strings.  A progress dialog appears if the operation takes longer than expected.
+
+[[sec-virtual-volumes]]
+=== Virtual Volumes
+indexterm:[file system, volumes] Kōtuku uses a virtual volume system that maps logical volume names to physical file system locations.  All file paths in Tiri use the format `volume:path/to/file`.  The volume prefix is resolved at runtime to a platform-native path, providing location independence across operating systems.
+
+Volume names are case-insensitive.  A colon (`:`) terminates the volume name and separates it from the remainder of the path.
+
+[discrete]
+==== Standard Volumes
+
+The following volumes are available on all platforms:
+
+[cols="1,3a",options="header"]
+|===
+|Volume |Description
+
+|`kotuku:`
+|Root installation path of the Kōtuku framework.
+
+|`system:`
+|System-wide shared resources (configuration, scripts, fonts).
+
+|`user:`
+|User-specific configuration and data.  Supports fallback paths: if a file is not found in the primary user directory, a default configuration directory is searched.
+
+|`temp:`
+|Temporary files.  Resolves to `user:temp/`.
+
+|`config:`
+|Configuration files.  Resolves to `system:config/`.
+
+|`scripts:`
+|Tiri script library.  Resolves to `system:scripts/`.
+
+|`fonts:`
+|Font files.  Resolves to `system:config/fonts/`.
+
+|`styles:`
+|UI style definitions.  Resolves to `system:config/styles/`.
+
+|`modules:`
+|Dynamically loaded modules (modular builds only).
+
+|`bin:`
+|Executable binaries.
+
+|`templates:`
+|Document and project templates.
+
+|`clipboard:`
+|Clipboard storage.  Resolves to `temp:clipboard/`.
+
+|`home:`
+|User's home directory (Linux/macOS).
+
+|`drive1:`
+|Root filesystem (`/` or `C:\`).
+
+|`driveN:`
+|Additional mounted filesystems (`drive2:`, `drive3:`, pass:[...]).
+
+|`cdN:`
+|CD-ROM drives (`cd1:`, `cd2:`, pass:[...]).
+|===
+
+[discrete]
+==== Platform-Specific Volumes
+
+**Linux:**
+
+[cols="1,3a",options="header"]
+|===
+|Volume |Description
+
+|`etc:`
+|System configuration (`/etc`).
+
+|`usr:`
+|Unix system resources (`/usr`).
+|===
+
+**Windows:**
+
+Additional device volumes are enumerated at startup: `usbN:` for USB drives, `portN:` for removable media, and `netN:` for network drives.
+
+[discrete]
+==== Standard I/O Volumes
+
+The `std:` volume provides access to the standard process I/O streams:
+
+[cols="1,3a",options="header"]
+|===
+|Path |Description
+
+|`std:in`
+|Standard input (stdin).
+
+|`std:out`
+|Standard output (stdout).
+
+|`std:err`
+|Standard error (stderr).
+|===
+
+These paths are used internally by `io.input()` and `io.output()` to initialise the default input and output file handles.
+
+[discrete]
+==== Volume Chaining
+
+Volumes can reference other volumes.  The system recursively resolves volume references until the root filesystem is reached:
+
+[source,tiri]
+----
+-- scripts: resolves to system:scripts/
+-- system:  resolves to /usr/local/share/kotuku (on Linux)
+-- Result:  /usr/local/share/kotuku/scripts/
+----
+
+[discrete]
+==== Fallback Paths
+
+A volume definition can include multiple paths separated by `|`.  When reading, the system tries each path in order until a match is found.  When creating new files, the first path is used:
+
+[source,tiri]
+----
+-- The user: volume is defined with a fallback:
+--   ~/.kotuku/ | config:users/default/
+-- Opening "user:settings.tiri" checks "~/.kotuku/settings.tiri" first,
+-- then falls back to "config:users/default/settings.tiri"
+----
+
+[discrete]
+==== Command-Line Volume Override
+
+The `--set-volume` command-line option redefines a volume at startup.  This is useful during development for testing modified scripts before installation:
+
+[source,bash]
+----
+origo --set-volume scripts=/custom/path/to/scripts myscript.tiri
+----
+
+[discrete]
+==== Resolving Paths
+
+The `mSys.ResolvePath()` function converts a virtual volume path to the platform-native absolute path:
+
+[source,tiri]
+----
+err, resolved = mSys.ResolvePath('temp:output.txt', 0)
+if err is ERR_Okay then
+   print(resolved)   -- e.g. '/home/user/.kotuku/temp/output.txt'
+end
+----
+
+[discrete]
+==== Scanning Volumes
+
+All registered volumes can be enumerated by opening the special path `':'`:
+
+[source,tiri]
+----
+err, dir = mSys.OpenDir(':', RDF_FILES | RDF_FOLDERS | RDF_TAGS)
+if err is ERR_Okay then
+   err = mSys.ScanDir(dir)
+   while err is ERR_Okay do
+      print(dir.info.name)
+      err = mSys.ScanDir(dir)
+   end
+end
+----
+
+[discrete]
+==== File Path Testing
+
+The `mSys.AnalysePath()` function checks whether a path exists and identifies what it refers to — a file, folder, or volume.  It returns an error code and a location type:
+
+[source,tiri]
+----
+err, type = mSys.AnalysePath('user:')
+if err is ERR_Okay then
+   if type is LOC_VOLUME then
+      print('Path is a registered volume')
+   elseif type is LOC_FOLDER then
+      print('Path is a folder')
+   elseif type is LOC_FILE then
+      print('Path is a file')
+   end
+else
+   print('Path does not exist')
+end
+----
+
+The `type` result is one of the following constants:
+
+[cols="1,3a",options="header"]
+|===
+|Constant |Description
+
+|`LOC_FILE`
+|The path refers to a file.
+
+|`LOC_FOLDER`
+|The path refers to a folder (directory).
+
+|`LOC_VOLUME`
+|The path refers to a registered volume name.
+|===
+
+If the path does not exist, `AnalysePath()` returns `ERR_DoesNotExist`.  This makes it straightforward to test for the presence of a resource before attempting an operation:
+
+[source,tiri]
+----
+if mSys.AnalysePath('temp:output.txt') is ERR_Okay then
+   print('File already exists')
+end
+----
+
+When only the existence of the path matters and the type is not needed, the second return value can be ignored as shown above.
+
+=== Further Information
+
+Core Module API (FileSystem functions):: https://kotuku.dev/modules/core.html
+
+File Class:: https://kotuku.dev/modules/classes/file.html

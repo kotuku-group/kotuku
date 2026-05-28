@@ -1,0 +1,6 @@
+[[ch-fluid-lsp]]
+== Tiri LSP
+[[sec-fluid-language-server]]
+=== Tiri Language Server
+
+indexterm:[Tiri LSP] indexterm:[language server] The Tiri language server provides editor-facing support for Tiri source files.

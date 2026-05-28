@@ -1,0 +1,468 @@
+// UPDATED: Added async.wait(), async.pending(), async.cancel() documentation; fixed thread.script typo.
+
+[[ch-threading]]
+== Threading
+indexterm:[threading] Tiri provides a threading model designed for safety over flexibility, without compromising performance.  Rather than launching raw threads, the programmer submits asynchronous work against a Kōtuku object.  The runtime manages thread creation, queueing, and exclusive locking automatically.  This _barrier model_ eliminates data races by ensuring that no two workers can access the same object concurrently — while the worker has exclusive access, it can safely operate on the object's data without additional synchronisation.
+
+The threading system consists of three interfaces:
+
+* The `async` interface submits async work to objects and manages worker threads.
+* The `async.pool` interface (<<sec-shared-pool>>) provides a thread-safe key-value store for exchanging data between threads.
+* The `processing` interface (<<ch-processing-and-events>>) provides synchronisation through signals and the processing loop.
+
+[[sec-threading-model]]
+=== The Barrier Model
+indexterm:[threading, barrier model] Every asynchronous activity targets a Kōtuku object that will represent the working state.  When the worker thread starts, it acquires an exclusive lock on that object that lasts until the thread completes.  Execution proceeds in two phases:
+
+. **Worker phase** — the worker thread owns the object lock and executes the action.  No other thread may access the object.
+. **Callback phase** — on completion, ownership transfers directly to the main thread for callback execution.  The object remains unavailable to other worker threads throughout.
+
+At no point between thread completion and callback return is the object eligible for execution by another worker thread.  The object transitions directly from worker ownership to main-thread ownership.  Only after the callback returns (or immediately after thread completion if no callback was provided) does the object become available for the next queued action.
+
+Each object has an associated FIFO queue of pending work, created on demand when the first activity is queued and destroyed when the object is freed.  The queue does not outlive the object — if an object is freed while work is still queued, the remaining entries are drained and their callbacks receive an `ERR_DoesNotExist` error (see <<sec-thread-safety>>).
+
+Consequences of this design:
+
+* An object cannot serve as the target for two concurrent threads.  If an asynchronous workload is already in-flight for a given object, subsequent requests are placed in a per-object FIFO queue and dispatched sequentially after each callback completes.  Activities targeting _different_ objects execute in parallel.
+* The threaded code cannot share Tiri variables with the calling scope.  Communication between the thread and the caller must use `async.pool` (<<sec-shared-pool>>), `setKey()` / `arg()`, or Kōtuku objects (e.g. via `obj.find()`).
+* Callbacks execute after the thread finishes and the object lock returns to the main thread.  The callback runs in the caller's scope with full access to local variables.  The next queued action for the same object is dispatched only after the callback returns.
+
+NOTE: Thread callbacks always execute during the event processing loop, which requires a call to `processing.sleep()`.
+
+[[sec-thread-creation]]
+=== Thread Creation
+==== async.script()
+
+[.api]`async.script(Script, [Callback])`
+
+indexterm:[threading, creation] Executes a Script object in a separate thread, or enqueues it for later execution if busy.  `Script` must be a Kōtuku Script object (created with `obj.new('script', { pass:[...] })`).  The script's code runs in its own isolated state — it cannot see local variables from the calling scope.
+
+If `Callback` is provided, it executes on the main thread after the threaded script completes.  The callback receives a reference to the `Script` object as its first parameter.
+
+To check if the script failed during execution, check the `error` property on the Script object for `ERR_Okay` and read `errorMessage` to report details.
+
+[source,tiri]
+----
+script = obj.new('script', {
+   statement=[[ msg('Thread is now in session.') ]]
+})
+
+async.script(script, function(Object)
+   check Object.error -- Throws an exception if the script failed
+   print('Thread has completed.')
+end)
+----
+
+The Script object is automatically pinned in the runtime registry for the duration of the thread, preventing the garbage collector from reclaiming it.
+
+[discrete]
+===== Passing Data to the Thread
+
+Because the threaded script runs in a separate state, it cannot access the caller's variables directly.  Use `setKey()` on the Script object to pass data, and `arg()` inside the thread to retrieve it:
+
+[source,tiri]
+----
+signal_obj = obj.new('time', { })
+
+script = obj.new('script', {
+   statement=[[
+      sig = obj.find(arg('SignalID'))
+      -- Perform work...
+      sig.acSignal()
+   ]]
+})
+script.setKey('SignalID', signal_obj.id)
+async.script(script)
+----
+
+[discrete]
+===== Reuse of Script Objects
+
+A Script object can be reused for multiple sequential thread invocations, but not in parallel.  The barrier lock prevents a second `async.script()` call on the same object until the previous thread completes.  If multiple calls to `async.script()` are executed in series, the work will be enqueued and dispatched in order.
+
+[source,tiri]
+----
+script = obj.new('script', {
+   statement=[[ msg('Thread is now in session.') ]]
+})
+
+for i in {1 into 10} do
+   async.script(script, function(Object)
+      print(f'Iteration {i} complete.')
+   end)
+end
+processing.sleep(10.0)
+----
+
+[discrete]
+===== Garbage Collection Safety
+
+The garbage collector cannot reclaim a Script object while its thread is running, even if all Tiri references to it are released.  The following pattern is safe:
+
+[source,tiri]
+----
+do
+   script = obj.new('script', {
+      statement=[[ msg('Working...') ]]
+   })
+   async.script(script, callback)
+end
+processing.collect() <1>
+----
+<1> The script object remains pinned despite leaving scope and an explicit collection.
+
+[[sec-threaded-actions-and-methods]]
+[%breakable]
+=== Async Actions & Methods
+==== async.action(), async.method()
+
+[.api]`async.action(Object, Name, [Callback], [Key], [Argspass:[...]])` +
+[.api]`async.method(Object, Name, [Callback], [Key], [Argspass:[...]])`
+
+indexterm:[async methods] indexterm:[async actions] Submits an action or method for asynchronous execution against `Object`.  `Name` is the action or method as represented by its string name or numeric `AC` or `MT` ID.  The runtime allocates a worker thread to execute the action; the caller does not manage threads directly.  The optional `Callback` executes on the main thread when the action completes.  `Callback` accepts a function value or a string that names a global function.
+
+Multiple calls targeting the same object are queued automatically and executed in FIFO order — only one worker thread runs per object at any time.  Calls targeting different objects execute in parallel.
+
+The callback receives four arguments:
+
+[cols="1,1,3a",options="header"]
+|===
+|Parameter |Type |Description
+
+|`ActionID`
+|integer
+|The numeric ID of the action that was executed.
+
+|`Object`
+|object
+|The target object.
+
+|`Error`
+|integer
+|The `ERR` code returned by the action.
+
+|`Key`
+|integer
+|The `Key` value passed to `async.action()`.
+|===
+
+`Key` is an optional integer forwarded to the callback.  Use it to identify which thread completed when multiple threads share a callback.  Alternatively, declaring a closure with references to external variables is a viable data referencing strategy.
+
+`Args` is a series of optional action-specific parameters, marshalled according to the action's parameter specification.
+
+An exception is raised if:
+
+* The first argument is not a valid Kōtuku object.
+* The action/method name is not recognised.
+* The asynchronous action fails to launch.  In this case, the callback is not executed.
+
+In this example, `pictures` is an `array<object>` of pre-configured `Picture` objects that are processed in parallel by firing `Activate` actions in their own threads:
+
+[source,tiri]
+----
+function picProcessed(ActionID, Pic, Error, Key)
+   if Error != ERR_Okay then
+      print('Failed to process picture: ' .. mSys.GetErrorMsg(Error))
+   end
+   glProcessed++
+   if glProcessed >= glTotal then
+      proc.signal()
+   end
+end
+
+for v in values(pictures) do
+   async.action(v.pic, 'Activate', picProcessed, v.id)
+end
+
+proc = processing.new({ timeout = 5.0 })
+proc.sleep()
+----
+
+[discrete]
+===== Callback Execution
+
+Callbacks for `async.action()` and `async.method()` are delivered via the message system.  They execute on the main thread during the event processing loop — this requires an active `processing.sleep()` call to dispatch.
+
+After each callback returns, the next queued action for the same object is dispatched.  This means that a long-running callback will delay the start of subsequent queued actions.  If no callback was provided, the next queued action is dispatched immediately upon completion of the current one.  If thread preparation fails (before the thread starts), an exception is raised immediately and no callback occurs.
+
+Any async actions submitted during callback execution — including actions targeting the same object — are appended to the tail of the object's queue and do not preempt previously queued actions.  This guarantees strict FIFO ordering and prevents starvation.
+
+[[sec-async-queue-management]]
+[%breakable]
+=== Queue Management
+==== async.wait()
+
+[.api]`error = async.wait(Objects, [Timeout])`
+
+indexterm:[threading, queue management] Blocks the main thread until all queued and in-flight asynchronous actions for the listed objects have completed.  Messages continue to be processed while waiting, so async completion callbacks fire normally.
+
+`Objects` is a single Kōtuku object or `array<object>` list.  `Timeout` is an optional number of seconds to wait before returning `ERR_Timeout`.  If omitted, the wait is indefinite.
+
+Returns `ERR_Okay` when all async actions have completed, or `ERR_Timeout` if the timeout elapses first.  Inside a `try` block, error codes are promoted to exceptions.
+
+Only one `async.wait()` call may be active at any time.  A second concurrent call returns `ERR_InUse`.
+
+[%unbreakable]
+[source,tiri]
+----
+script = obj.new('script', { statement=[[ mSys.WaitTime(1.0) ]] })
+async.script(script)
+check async.wait(script, 5.0) -- Block until complete (5 second timeout)
+----
+
+.Waiting on multiple objects
+[%unbreakable]
+[source,tiri]
+----
+scripts = array<object> { script_a, script_b, script_c }
+scripts |> (s) => async.script(s)
+check async.wait(scripts, 10.0) -- Block until all three complete
+----
+
+==== async.pending()
+
+[.api]`count = async.pending(Object)`
+
+Returns the number of queued and in-flight asynchronous actions for `Object`.  The count includes the currently executing action (if any) plus all queued actions that have not yet been dispatched.
+
+A return value of zero indicates that no async activity is associated with the object.
+
+An exception is raised if `Object` is not a valid Kōtuku object.
+
+[source,tiri]
+----
+script = obj.new('script', { statement=[[ mSys.WaitTime(0.5) ]] })
+async.script(script)
+print(async.pending(script)) -- 1 (in-flight)
+check async.wait(script, 5.0)
+print(async.pending(script)) -- 0 (complete)
+----
+
+==== async.cancel()
+
+[.api]`error = async.cancel(Objects)`
+
+Cancels all pending asynchronous actions for the listed objects.  The in-flight thread (if any) is interrupted and the remaining action queue is drained without execution.  Callbacks for cancelled actions receive `ERR_DoesNotExist`.
+
+`Objects` can be a single Kōtuku object or `array<object>` list.  Returns `ERR_Okay` on success.  Inside a `try` block, a non-zero error raises an exception.
+
+Cancelling an object with no pending actions succeeds without error.
+
+[source,tiri]
+----
+script = obj.new('script', { statement=[[ mSys.WaitTime(10.0) ]] })
+
+for i in {0 into 4} do
+   async.script(script)
+end
+
+check async.cancel(script) -- Interrupt in-flight action and drain the queue
+check async.wait(script, 5.0)
+----
+
+.Cancelling multiple objects
+[source,tiri]
+----
+check async.cancel(array<object> { script_a, script_b })
+----
+
+[[sec-thread-synchronisation]]
+=== Thread Synchronisation
+indexterm:[threading, synchronisation] Thread synchronisation in Tiri relies on the signal mechanism defined in <<sec-signals>>.  The pattern is:
+
+1. Create one or more objects to act as signal targets.
+2. Create a processing object with `processing.new()` that monitors those targets.
+3. Launch threads that signal the targets upon completion.
+4. Call `proc.sleep()` to block until all signals fire or the timeout elapses.
+
+[discrete]
+==== Simple Synchronisation
+
+When threads share a single callback, use `processing.signal()` to wake the main thread once all work is complete:
+
+[source,tiri]
+----
+proc = processing.new({ timeout = 5.0 })
+completed = 0
+total = #tasks
+
+for v in values(tasks) do
+   async.action(v.obj, 'Activate', function(ActionID, Obj, Error, Key)
+      completed++
+      if completed >= total then
+         proc.signal()
+      end
+   end)
+end
+
+proc.sleep()
+----
+
+[discrete]
+==== Multiple Signal Synchronisation
+
+For finer-grained coordination, create worker objects in an array and pass them to `processing.new()`.  Using this pattern, the `sleep()` call returns only when _all_ objects have been signalled:
+
+[source,tiri]
+----
+file_a = obj.new('file', { ... })
+file_b = obj.new('file', { ... })
+work_list = array<object> { file_a, file_b }
+
+async.script(obj.new('script', { statement=[[ msg('Task A') ]] }),
+   function(Object)
+      file_a.acSignal()
+   end)
+
+async.script(obj.new('script', { statement=[[ msg('Task B') ]] }),
+   function(Object)
+      file_b.acSignal()
+   end)
+
+proc = processing.new({ timeout = 5.0, signals = work_list })
+err = proc.sleep()
+----
+
+NOTE: When using a custom `signals` list, `proc.signal()` has no effect because the script object is not in the monitored set.  Signal the listed objects directly with `acSignal()`.
+
+[discrete]
+===== Array Pipe Dispatch
+
+The pipe iteration operator (see <<sec-pipe-iteration>>) can be combined with `async.script()` to fan out work across an array of objects without an explicit loop.  The pipe iterates the array and calls the function for each element:
+
+[source,tiri]
+----
+   scripts = array<object> { } <1>
+   for i in {1 into 10} do
+      scripts:push(obj.new('script', { statement = [[
+         print('Pipe worker ]] .. i .. [[ running.'); return ]] .. i <2>
+      }))
+   end
+
+   scripts |> function(script) <3>
+      async.script(script, function(Object)
+         Object.acSignal()
+         print('Received result: ', Object?.results?[0])
+         check Object.error
+      end)
+   end
+
+   proc = processing.new({ timeout=5.0, signals = scripts }) <4>
+   check proc.sleep()
+----
+<1> Storing all objects that need to be processed in an array is the recommended processing pattern.
+<2> Scripts can return values that are accessible to the main thread as strings.
+<3> All workers are rapidly dispatched in one go.
+<4> The processing object is configured to wait for all scripts to send a signal.
+
+[[sec-shared-pool]]
+[%breakable]
+=== Shared Data Pool
+==== async.pool
+
+indexterm:[threading, shared data pool] The `async.pool` table provides a thread-safe key-value store for exchanging data between the main thread and worker scripts launched with `async.script()`.  All reads and writes are protected by an internal shared mutex — reads execute concurrently with other reads, and writes acquire exclusive access.
+
+The pool is created lazily on first access and is shared automatically with all child scripts launched via `async.script()`.  No explicit setup is required.
+
+[source,tiri]
+----
+async.pool.status = 'ready'
+async.pool.count  = 0
+
+script = obj.new('script', { statement=[[
+   val = async.pool.status
+   async.pool.result = 'processed: ' .. val
+   async.pool.count  = async.pool.count + 1
+]] })
+
+async.script(script, function(Object)
+   check Object.error
+   processing.signal()
+end)
+
+check processing.sleep(3.0)
+print(async.pool.result) -- 'processed: ready'
+----
+
+[discrete]
+===== Supported Value Types
+
+The pool accepts values of the following types:
+
+[cols="1,3a",options="header"]
+|===
+|Type |Behaviour
+
+|number
+|Stored and retrieved as a double-precision floating-point value.
+
+|string
+|The standard string type is viable for both string and binary data storage.
+
+|boolean
+|Stored and retrieved as `true` or `false`.
+
+|object
+|The object ID is stored.  On retrieval, the runtime resolves the ID back to a live object reference.
+
+|nil
+|Assigning `nil` to a key deletes it from the pool.
+|===
+
+An exception is raised if the value is a table, function, or any other unsupported type.  The pool remains operational after a rejected write.
+
+[discrete]
+===== Reading Keys
+
+Reading a key that does not exist returns `nil`.  Reading a key that was previously deleted also returns `nil`.
+
+[discrete]
+===== async.pool.clear()
+
+[.api]`async.pool.clear()`
+
+Removes all entries from the pool.  Acquires an exclusive lock for the duration of the operation.
+
+[discrete]
+===== Thread Safety
+
+All pool operations are safe to call from any thread.  The internal mutex ensures that concurrent reads do not block each other, and writes are serialised.  If a write raises an error (e.g. due to an unsupported value type), the mutex is not held — subsequent pool operations from any thread proceed normally.
+
+Keys are strings and are binary-safe (embedded NUL bytes are preserved).
+
+[discrete]
+===== Limitations
+
+* The pool is a flat key-value store.  It is the client's responsibility to ensure that structured data is serialised to a string buffer before storage.
+* The pool does not support change notifications or event callbacks.  Worker threads must use signals (<<sec-signals>>) to notify the main thread that new data is available.
+* Object values store only the object ID and the object will not be pinned.  If the object is freed before the ID is read back, the retrieval will fail.
+
+[[sec-thread-safety]]
+[%breakable]
+=== Thread Safety
+[discrete]
+==== Guarantees
+
+* indexterm:[thread safety] All Tiri thread callbacks execute on the main thread.  No Tiri code ever runs concurrently with callback code.
+* The barrier model prevents concurrent access to the same object from multiple threads.
+* Multiple async actions on the same object are queued and dispatched in submission order, guaranteeing deterministic sequential execution per object.
+* Garbage collection cannot reclaim objects that are actively participating in a thread.
+* All threads are automatically joined when the owning script is destroyed.
+
+[discrete]
+==== Restrictions
+
+* A threaded script (`async.script()`) cannot access local variables from the calling scope.  Use `setKey()` / `arg()`, `obj.find()`, or `async.pool` (<<sec-shared-pool>>) to exchange data.
+* An object targeted by `async.action()` or `async.method()` must not be freed while actions are queued.  If an object is freed while actions remain in the queue, the remaining callbacks will receive an error code of `ERR_DoesNotExist` and a `nil` object reference.  The object reference must remain valid until all callbacks have fired.
+* `processing.sleep()` must be called on the main thread.  Calling it from within a threaded script is not supported.
+
+[discrete]
+==== Notes
+
+* An object targeted by a thread must not be freed before all queued callbacks have fired.  Releasing it in the final callback guarantees safe ordering.
+* A `processing.new()` call without a `timeout` blocks indefinitely if a thread fails to signal.  An explicit timeout converts this scenario into a recoverable `ERR_Timeout`.
+
+=== See Also
+
+* <<ch-processing-and-events>> — Processing loop, signals, and event handling.
+* <<sec-signals>> — Signal mechanism used for thread synchronisation.

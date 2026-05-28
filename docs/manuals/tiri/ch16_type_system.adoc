@@ -1,0 +1,410 @@
+// VERIFIED: 2026-02-12
+
+[[ch-type-system]]
+== Type System
+indexterm:[type system] Tiri is dynamically typed: every value carries its type at runtime.  However, Tiri enforces type consistency through a lazy inference mechanism called _sticky types_.  Once a variable commits to a type, all subsequent non-nil assignments must match that type.  This chapter defines the rules governing type commitment, explicit annotations, the `any` escape hatch, and the interaction between `nil` and typed variables.
+
+Type checking operates at two levels.  The compiler performs static analysis during parsing, catching mismatches that are visible in the source (literal assignments, annotated function returns).  When the compiler cannot determine the type statically -- function calls without return type declarations, table field lookups, array indexing -- it emits runtime type checks that validate values at the point of assignment.
+
+[[sec-sticky-types]]
+=== Sticky Types (Type Inference)
+indexterm:[sticky types] indexterm:[type inference] Sticky types are Tiri's core type inference mechanism.  When a local, global, or upvalue variable receives its first non-nil value, the variable's type becomes _fixed_ to that value's type.  All subsequent non-nil assignments must match the fixed type.  Assigning a value of a different type produces a compile-time or runtime error.
+
+[source,tiri]
+----
+count = 0           -- count is fixed to 'number'
+count = 10          -- valid: same type
+count = 'ten'       -- error: cannot assign 'string' to variable of type 'number'
+----
+
+This mechanism is automatic and requires no additional syntax.  The compiler infers the type from the first assignment and enforces consistency thereafter.
+
+[discrete]
+==== Benefits
+
+Error detection:: Type mismatches are reported as compile-time diagnostics, catching bugs before execution.
+
+Code clarity:: Variables maintain consistent types throughout their scope, making code easier to reason about.
+
+Optimisation potential:: The JIT compiler generates more efficient code when variable types are known to be stable.
+
+[discrete]
+==== Scope of Type Fixing
+
+Type fixing applies to all variable kinds:
+
+[source,tiri]
+----
+name = 'Alice'             -- local: fixed to 'string'
+global glItems = {}        -- global: fixed to 'table'
+
+function make_counter()
+   count = 0               -- captured as upvalue: fixed to 'number'
+   return () => do
+      count += 1
+      return count
+   end
+end
+----
+
+Each variable in a multiple declaration is fixed independently based on its own initialiser:
+
+[source,tiri]
+----
+local a, b, c = 1, 'two', true
+-- a is fixed to 'number'
+-- b is fixed to 'string'
+-- c is fixed to 'boolean'
+----
+
+[discrete]
+==== Compound Operators
+
+Compound assignment operators (`pass:[+]=`, `-=`, `*=`, `/=`, `%=`, `..=`, `++`) preserve the fixed type.  The result type of the operation must match the variable's fixed type:
+
+[source,tiri]
+----
+count = 10
+count += 5      -- valid: result is 'number'
+count++         -- valid: result is 'number'
+
+text = 'hello'
+text ..= ' world'  -- valid: result is 'string'
+----
+
+[discrete]
+==== Table Shape Independence
+
+Type fixing tracks the _type_ of a value, not its structure.  A variable fixed to `table` accepts any table value regardless of its fields:
+
+[source,tiri]
+----
+config = { host = 'localhost', port = 8080 }
+config = { completely = 'different', structure = true }  -- valid
+config = {}                                              -- valid
+config = 'not a table'                                   -- error
+----
+
+[[sec-implicit-type-fixing]]
+=== Implicit Type Fixing
+indexterm:[implicit type fixing] Implicit type fixing occurs when a variable is assigned a non-nil value without an explicit type annotation.  The compiler determines the type from the value expression and locks the variable to that type.
+
+[discrete]
+==== Rules
+
+1. The first non-nil assignment to a variable fixes its type.
+2. Subsequent assignments of the same type are permitted.
+3. Assigning a different non-nil type produces an error.
+4. Assigning `nil` is always permitted (see <<sec-nil-semantics-in-typed-code>>).
+
+[source,tiri]
+----
+name = 'Alice'       -- fixed to 'string'
+name = 'Bob'         -- valid
+name = 42            -- error: cannot assign 'number' to variable of type 'string'
+
+global glItems = {}  -- fixed to 'table'
+glItems = { a = 1 }  -- valid
+glItems = 'list'     -- error: cannot assign 'string' to variable of type 'table'
+----
+
+[discrete]
+==== Deferred Fixing
+
+Variables declared without an initial value start as `nil` with no type commitment.  The type remains unfixed until the first non-nil assignment:
+
+[source,tiri]
+----
+local result      -- nil, type uncommitted
+result = nil      -- still uncommitted
+result = 42       -- fixed to 'number'
+result = 100      -- valid: same type
+result = 'text'   -- error: cannot assign 'string' to variable of type 'number'
+----
+
+Repeated `nil` assignments before the first non-nil value do not commit the type.
+
+[discrete]
+==== Static and Runtime Checking
+
+When the compiler can determine the type of the assigned value at parse time (literals, variables with known types, annotated function returns), the check is static and produces a compile-time diagnostic.  When the type is unknown at compile time (untyped function calls, table lookups, array indexing), the compiler emits a runtime type check instruction:
+
+[source,tiri]
+----
+local x: num = 0
+x = 42           -- static check: literal is 'number'
+x = get_value()  -- runtime check: return type unknown
+x = data.field   -- runtime check: table field type unknown
+x = items[0]     -- runtime check: array element type unknown
+----
+
+Runtime type checks raise an exception if the value's type does not match the variable's fixed type.
+
+[[sec-explicit-type-annotations]]
+=== Explicit Type Annotations
+indexterm:[type annotations, explicit] The `:type` syntax after a variable name pre-declares the type constraint.  The variable is immediately fixed to the declared type, even if its initial value is `nil`.
+
+[discrete]
+==== Syntax
+
+[source,ebnf]
+----
+local_declaration = "local" identifier ":" type_name [ "=" expression ] ;
+type_name         = "any" | "nil" | "bool" | "boolean"
+                  | "num" | "number" | "str" | "string"
+                  | "table" | "array" | "func" | "function"
+                  | "obj" | "object" | "range" ;
+----
+
+[discrete]
+==== Semantics
+
+An explicit annotation fixes the variable's type at the point of declaration.  If an initialiser is present, its type must match the annotation:
+
+[source,tiri]
+----
+local limit: num   -- fixed to 'number', starts as nil
+limit = 100        -- valid
+limit = 'high'     -- error: cannot assign 'string' to variable of type 'number'
+
+local msg: str = '' -- fixed to 'string' with initial value
+msg = 'hello'       -- valid
+msg = 42            -- error: cannot assign 'number' to variable of type 'string'
+----
+
+A mismatched initialiser produces a compile-time error:
+
+[source,tiri]
+----
+local count: num = 'text'  -- error: cannot assign 'string' to 'number'
+----
+
+[discrete]
+==== Supported Type Names
+
+[cols="1,1a",options="header"]
+|===
+|Annotation |Type
+
+|`any`          |Any (see <<sec-the-any-type>>)
+|`nil`          |Nil
+|`bool`, `boolean` |Boolean
+|`num`, `number`   |Number
+|`str`, `string`   |String
+|`table`        |Table
+|`array`        |Array
+|`func`, `function` |Function
+|`obj`, `object`   |Object
+|`range`        |Range
+|===
+
+Short and long forms are interchangeable.  An unrecognised type name raises a parse-time diagnostic.
+
+[discrete]
+==== Interaction with Attributes
+
+The type annotation can appear before or after a `<const>` or `<close>` attribute:
+
+[source,tiri]
+----
+local x <const>:num = 42      -- attribute before type
+local y:num <const> = 42      -- type before attribute
+----
+
+Both forms are equivalent.
+
+[discrete]
+==== Multiple Declarations
+
+Each variable in a multiple declaration carries its own independent annotation:
+
+[source,tiri]
+----
+local x: num, y: str = 10, 'hello'
+----
+
+Annotated and unannotated variables can be mixed.  Unannotated variables use implicit type fixing:
+
+[source,tiri]
+----
+local typed: num, untyped = 10, 'hello'
+-- typed is fixed to 'number' by annotation
+-- untyped is fixed to 'string' by implicit inference
+----
+
+[discrete]
+==== Function Parameters
+
+Type annotations on function parameters serve as guards that validate incoming arguments at call time.  Unlike local variable type fixing (which is deferred until the first non-nil assignment), parameter annotations are checked immediately when the function is called:
+
+[source,tiri]
+----
+function greet(Name: str, Times: num)
+   for i in {1 to Times} do
+      print('Hello, ' .. Name)
+   end
+end
+
+greet('World', 3)       -- valid
+greet(42, 3)            -- error: expected 'string' for parameter 'Name'
+----
+
+Untyped parameters remain fully dynamic and accept any value:
+
+[source,tiri]
+----
+function process(Data, Count: num, Validate: bool)
+   -- Data accepts any type (no annotation)
+   -- Count must be a number
+   -- Validate must be a boolean
+end
+----
+
+[discrete]
+==== Function Return Types
+
+Return type declarations appear after the parameter list.  A single return type uses `:type`; multiple return types use `:<type1, type2, ...>`:
+
+[source,tiri]
+----
+function calculate_area(Radius: num): num
+   return math.pi * Radius * Radius
+end
+
+function divide(A: num, B: num):<num, num>
+   return math.floor(A / B), A % B
+end
+----
+
+When no explicit return type is declared, the compiler infers the return type from the function's `return` statements using a first-wins rule:
+
+1. The first `return` statement with a non-nil value establishes the expected type(s).
+2. Subsequent `return` statements must be consistent with the established types.
+3. Returning `nil` is always permitted and does not establish a type.
+
+[source,tiri]
+----
+function get_status(Code: num)
+   if Code < 0 then return nil end    -- nil does not establish a type
+   if Code is 0 then return 'OK' end  -- establishes type as 'string'
+   return 'Error'                      -- must also be 'string'
+end
+----
+
+Inconsistent return types produce a compile-time error:
+
+[source,tiri]
+----
+function broken()
+   if condition then
+      return 'text'    -- establishes type as 'string'
+   end
+   return 42           -- error: inconsistent return type
+end
+----
+
+Recursive functions require explicit return type declarations because the compiler cannot infer the return type before analysing the body:
+
+[source,tiri]
+----
+function factorial(N: num): num
+   if N <= 1 then return 1 end
+   return N * factorial(N - 1)
+end
+----
+
+[discrete]
+==== Call-Site Type Propagation
+
+When a function has declared or inferred return types, the compiler uses this information at call sites.  If the return type matches the target variable's type, no runtime check is emitted.  If the return type is `any` or unknown, a runtime check is generated:
+
+[source,tiri]
+----
+function get_number(): num
+   return 42
+end
+
+local x: num = get_number()   -- compile-time match: no runtime check
+
+function get_any(): any
+   return 42
+end
+
+local y: num = get_any()      -- runtime check: return type is 'any'
+----
+
+[[sec-the-any-type]]
+=== The Any Type
+indexterm:[any type] The `any` type annotation opts a variable out of type fixing entirely.  A variable declared with `:any` accepts values of any type at any time.
+
+[source,tiri]
+----
+variant: any = 0
+variant = 'now a string'    -- valid
+variant = { key = true }    -- valid
+variant = nil               -- valid
+variant = load_json()       -- valid regardless of return type
+----
+
+[discrete]
+==== Semantics
+
+A variable annotated with `:any` is marked as fixed with type `any` at the point of declaration.  The `any` type matches every other type in both directions: assigning any value to an `any` variable is permitted, and assigning an `any` value to a typed variable requires a runtime check.
+
+[discrete]
+==== Trade-offs
+
+The `any` type disables two guarantees:
+
+1. Type safety for the annotated variable is not enforced.  Misuse of the variable's value (e.g. arithmetic on a string) is not caught until runtime.
+2. The JIT compiler has fewer optimisation opportunities when dealing with variant types.
+
+TIP: Prefer sticky types by default.  Reserve `:any` for variables that genuinely need to hold values of different types, such as deserialised data, configuration stores, or polymorphic return values.
+
+[[sec-nil-semantics-in-typed-code]]
+=== Nil Semantics in Typed Code
+indexterm:[nil, typed code] The value `nil` has special status in the type system.  It acts as a universal "clear" value that is always permitted for any variable, regardless of the variable's fixed type.
+
+[discrete]
+==== Uninitialised Variables
+
+A variable declared without an initial value holds `nil` with no type commitment.  Assigning `nil` to an uncommitted variable has no effect on its type state:
+
+[source,tiri]
+----
+local result           -- nil, type uncommitted
+result = nil           -- still uncommitted
+result = calculate()   -- fixed to whatever calculate() returns
+result = 'fallback'    -- error if calculate() returned a non-string type
+----
+
+[discrete]
+==== Typed Variables Starting as Nil
+
+A variable with an explicit type annotation starts as `nil` but is immediately fixed to the declared type.  The next non-nil assignment must match:
+
+[source,tiri]
+----
+local count: num   -- nil, fixed to 'number'
+count = 10         -- valid
+count = nil        -- valid: clears the value
+count = 'text'     -- error: cannot assign 'string' to variable of type 'number'
+----
+
+[discrete]
+==== Nil as a Clear Operation
+
+Once a variable has a fixed type (whether by implicit inference or explicit annotation), assigning `nil` clears the variable's value but preserves the type constraint.  The next non-nil assignment must still match the fixed type:
+
+[source,tiri]
+----
+name = 'Alice'   -- fixed to 'string'
+name = nil       -- clears the value, type remains 'string'
+name = 'Bob'     -- valid
+name = 42        -- error: cannot assign 'number' to variable of type 'string'
+----
+
+[discrete]
+==== Design Rationale
+
+This design allows variables to represent optional or nullable values naturally without requiring a separate nullable type annotation.  A typed variable can alternate between `nil` and valid values of its declared type, providing the equivalent of "optional" semantics while still enforcing type consistency for non-nil values.

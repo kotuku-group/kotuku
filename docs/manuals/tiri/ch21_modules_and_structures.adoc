@@ -1,0 +1,335 @@
+// VERIFIED: 2026-02-13
+
+[[ch-modules-and-structures]]
+== Modules & Structures
+indexterm:[modules] indexterm:[structures] Tiri provides direct access to Kōtuku's compiled modules through the `mod` namespace.  This chapter defines the interfaces for loading modules, calling module functions, working with C/C++ structures, and interpreting error codes.
+
+The Core module (`mSys`) is loaded automatically and is always available.  All other modules are loaded on demand with `mod.load()` or `mod.new()`.  The `include` directive (<<sec-the-include-directive>>) provides a lightweight alternative that loads only definitions (constants, structures, and class metadata) without opening the module's function table.
+
+[[sec-loading-modules]]
+=== Loading Modules
+==== mod.load()
+
+[.api]`module = mod.load(Name)`
+
+indexterm:[modules, loading] Loads the Kōtuku module identified by `Name` and returns a module interface object.  `Name` is a case-insensitive alphanumeric string with a maximum length of 32 characters.  Passing an invalid name raises an exception with `ERR_Syntax`.
+
+If the module cannot be loaded (e.g. the binary is missing or initialisation fails), an exception is raised with `ERR_LoadModule`.
+
+Loading a module automatically processes its IDL definitions, making all constants and structure definitions available.  A separate `include` call for the same module is unnecessary.
+
+[source,tiri]
+----
+mGfx = mod.load('display')
+err, x, y = mGfx.getCursorPos()
+----
+
+[discrete]
+==== Module Protection
+
+Each module is loaded at most once per process.  Subsequent calls to `mod.load()` with the same name return the existing module interface without reloading.  Use the `?=` operator to guard against redundant calls:
+
+[source,tiri]
+----
+mGfx ?= mod.load('display')
+----
+
+[discrete]
+==== Naming Conventions
+
+Module interfaces should always be stored in consistently named variables at the top-level scope.  The following table lists the standard naming conventions for the default set of modules:
+
+[cols="1,1a",options="header"]
+|===
+|Module |Global Name
+|audio
+|`mAudio`
+|core
+|`mSys` 💡
+|display
+|`mGfx`
+|font
+|`mFont`
+|network
+|`mNet`
+|vector
+|`mVec`
+|xml
+|`mXML`
+|===
+
+💡The Core module (`mSys`) is an essential API that is always loaded by default.
+
+[discrete]
+==== Calling Module Functions
+
+Module functions are accessed through dot notation on the module interface.  Function lookup is case-insensitive.
+
+[source,tiri]
+----
+mGfx = mod.load('display')
+err, x, y = mGfx.getCursorPos()
+----
+
+Most module functions return an `ERR` code as their first result, followed by any additional return values.  See <<sec-error-codes>> for the full error code reference and <<ch-error-handling>> for general advice.
+
+Error codes at or above `ERR_ExceptionThreshold` are automatically promoted to exceptions when the call is enclosed in a `try` statement.
+
+[discrete]
+==== Multiple Return Values
+
+Some module functions return multiple results.  In C/C++, result parameters are written to pointers.  In Tiri, these pointer parameters are removed from the call signature and their values are appended to the result set:
+
+[source,tiri]
+----
+-- C prototype: ERR ListMemory(INT Flags, ListMemory **Memory)
+-- Tiri call:
+err, list = mSys.ListMemory(0)
+----
+
+Functions that return allocated resources are automatically covered by the garbage collector.  Use `local` scoping to ensure timely cleanup.
+
+[discrete]
+==== Buffer Handling
+
+When calling functions that copy results to a user-supplied buffer, pass an array or allocated string type.  Tiri automatically provides the buffer size to the function if the corresponding size parameter is omitted:
+
+[source,tiri]
+----
+buffer = array<byte, file.size>
+err, result = file.acRead(buffer)
+print(tostring(buffer))
+
+buffer = string.alloc(file.size)
+err, result = file.acRead(buffer)
+print(buffer)
+----
+
+[[sec-the-include-directive]]
+=== The include Directive
+[.api]`include 'ModuleName', pass:[...]`
+
+indexterm:[include directive] The `include` directive loads the interface definitions (constants, structures, and class definitions) for one or more Kōtuku modules.  It accepts a comma-separated list of module names as string arguments:
+
+[source,tiri]
+----
+include 'xml', 'display'
+----
+
+Each module name must be alphanumeric (only `[a-zA-Z0-9]` characters are permitted).  Passing invalid names raises an error.
+
+[discrete]
+==== Semantics
+
+* Definitions are loaded from the module's IDL (Interface Definition Language) registry.
+* Each module is loaded at most once per session.  Repeated `include` calls for the same module are silently ignored.
+* Calling `mod.load()` automatically loads the corresponding module definitions, making an explicit `include` unnecessary in many cases.
+
+[discrete]
+==== When to Use include
+
+Use `include` when access to a module's constants, structures, or class definitions is needed without loading the module's function table.  If the function table is also required, prefer `mod.load()` (see <<ch-modules-and-structures>>), which loads definitions implicitly.
+
+[source,tiri]
+----
+-- Access display constants without loading the function table
+include 'display'
+flags = DPMS_OFF -- The DPMS_OFF constant originates from the display module
+
+-- Equivalent: mod.load() loads definitions and also returns the interface
+mGfx = mod.load('display')
+----
+
+[[sec-type-conversion]]
+=== Type Conversion
+indexterm:[type conversion] When calling a module function, Tiri performs automatic type conversion to match the types declared in the function definition.  For example, a string value passed to an integer parameter is converted to an integer.  A boolean passed to a string parameter is converted to its string representation.
+
+If the conversion is not possible (e.g. an abstract pointer cannot be converted to a number), an exception is raised with `ERR_WrongType`.
+
+While automatic conversion is convenient, prefer passing correctly typed values for efficiency.  Automatic conversion imposes a small overhead on every mismatched call, and may not be supported by the JIT optimiser.
+
+[cols="1,1,2a",options="header"]
+|===
+|From |To |Behaviour
+
+|string
+|integer / double
+|Parsed as a numeric literal.  Raises an exception if the string is not a valid number.
+
+|number / boolean
+|string
+|Converted to its string representation.
+
+|object
+|integer
+|The object's unique ID is used.
+|===
+
+[[sec-structures]]
+=== Structures
+indexterm:[structures] The structure interface allows Tiri scripts to create and manipulate C/C++ structures declared in the Kōtuku API.  Many class and module functions use structures for returning condensed information.  All structure functions are accessed through the `struct` namespace.
+
+==== struct.new()
+
+[.api]`instance = struct.new(StructName, [Fields])` +
+[.api]`instance = struct.new(StructName, Address)`
+
+Creates a new structure instance from a registered definition identified by `StructName`.  The definition must have been registered through an `include` directive, a `mod.load()` call, or a prior call to `MAKESTRUCT()`.  Raises an exception if the definition is not found.
+
+If `Fields` is a table, the key-value pairs are applied to the corresponding structure fields during creation.  String fields are not supported for initial assignment.
+
+If `Address` is provided as a pointer value, the structure references existing memory at that address instead of allocating new memory.
+
+[source,tiri]
+----
+include 'vector'
+
+-- Create with default (zeroed) values
+stop = struct.new('GradientStop')
+stop.offset    = 0.5
+stop.rgb.red   = 1.0
+stop.rgb.green = 0.0
+stop.rgb.blue  = 0.0
+stop.rgb.alpha = 1.0
+
+-- Create with initial field values
+stop = struct.new('GradientStop', { offset = 0.5 })
+
+-- Create from an existing memory address
+tag = struct.new('XMLTag', address)
+----
+
+==== struct.size()
+
+[.api]`bytes = struct.size(StructName)`
+
+Returns the byte size of the structure definition identified by `StructName`.  Does not create a structure instance.  Raises an exception if the definition is not found.
+
+==== structSize() Method
+
+[.api]`bytes = inst.structSize()`
+
+Returns the byte size of the structure instance.  Be wary of confusing this method with `size()`, which does not exist in this context (`size` is a common field name).
+
+==== ptr() Method
+
+[.api]`address = inst.ptr()` +
+[.api]`old_address = inst.ptr(NewAddress)`
+
+Retrieves or replaces the memory address backing the structure.  Returns `nil` if the current address is zero.
+
+Changing the address avoids allocating a new structure instance for each pointer to be processed.  This is useful when iterating over arrays of structures in memory:
+
+[source,tiri]
+----
+tag = struct.new('XMLTag', first_address)
+-- Process tag...
+tag.ptr(next_address)
+-- Process next tag using the same instance...
+----
+
+WARNING: Modifying the pointer referenced by the struct is dangerous.  Alternative usage patterns are usually available so that this anti-pattern can be avoided.
+
+==== Length Operator
+
+The `#` operator returns the total number of fields in the structure.
+
+==== Custom Structures
+
+===== MAKESTRUCT()
+
+[.api]`MAKESTRUCT(Name, Definition)` 🧪
+
+Registers a custom structure definition.  `Name` is the identifier used in subsequent `struct.new()` and `struct.size()` calls.  `Definition` is a comma-separated string of field specifications in declaration order.
+
+Each field specification consists of an optional unsigned prefix (`u`), a type character, and the field name in camel-case.  Pointer fields may include a `:StructName` suffix to reference another registered structure.
+
+[source,tiri]
+----
+MAKESTRUCT('XMLTag', 'lIndex,lID,pChild:XMLTag,pPrev:XMLTag,pNext:XMLTag,pPrivate,pAttrib,wTotalAttrib,uwNest')
+
+tag = struct.new('XMLTag')
+tag.index = 42
+----
+
+===== Field Type Characters
+
+[cols="1,2a,1",options="header"]
+|===
+|Character |Type |Size (bytes)
+
+|`l`
+|Integer (signed 32-bit)
+|4
+
+|`d`
+|Double (64-bit float)
+|8
+
+|`x`
+|Large integer (signed 64-bit)
+|8
+
+|`f`
+|Float (32-bit)
+|4
+
+|`w`
+|Word (signed 16-bit)
+|2
+
+|`b`
+|Byte (unsigned 8-bit)
+|1
+
+|`c`
+|Char (8-bit).  Arrays of `c` are interpreted as strings.
+|1
+
+|`p`
+|Pointer.  Use `:StructName` suffix to reference another structure.
+|8
+
+|`s`
+|String (C string pointer)
+|8
+
+|`m`
+|MaxInt (platform-dependent: 4 or 8 bytes)
+|4 or 8
+
+|`o`
+|Object pointer
+|8
+
+|`r`
+|Embedded function reference
+|8
+
+|`e`
+|Embedded structure, e.g. `eColour:RGB`
+|Variable
+|===
+
+===== Variant Prefixes
+
+[cols="1,3a",options="header"]
+|===
+|Prefix |Description
+
+|`u`
+|Unsigned variant of the following type, e.g. `uw` for unsigned 16-bit word.
+
+|`z`
+|C++ variant, e.g. `zs` for `std::string`.
+|===
+
+===== Fixed Arrays
+
+Append `[N]` to a field name to declare a fixed-size array of `N` elements.  Use `[0]` for a pointer to a null-terminated array:
+
+[source,tiri]
+----
+MAKESTRUCT('Buffer', 'bData[256]')
+MAKESTRUCT('StringList', 'pStrings[0]')
+----

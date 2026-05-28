@@ -30,12 +30,23 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install Asciidoctor
+        run: gem install asciidoctor asciidoctor-pdf rouge
+
+      - name: Build Fluid Manual (HTML)
+        run: >
+          asciidoctor -b html5 -a source-highlighter=rouge -r docs/manuals/tiri/tiri_lexer.rb -o docs/html/manuals/tiri-manual.html docs/manuals/tiri/book.adoc
+
+      - name: Build Fluid Manual (PDF)
+        run: >
+          asciidoctor-pdf -a source-highlighter=rouge -r docs/manuals/tiri/tiri_lexer.rb -o docs/html/manuals/tiri-manual.pdf docs/manuals/tiri/book.adoc
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # Upload entire repository
           path: 'docs/html'
       - name: Deploy to GitHub Pages
         id: deployment

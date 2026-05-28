@@ -1,0 +1,441 @@
+// VERIFIED: 2026-02-12
+
+[[ch-mathematics]]
+== Mathematics
+indexterm:[mathematics] The `math` library provides standard mathematical functions and constants.  All functions operate on double-precision floating-point numbers.  The library is always available and requires no explicit import.  All `math` functions raise an error if a required argument is missing or not a number.
+
+[[sec-arithmetic-functions]]
+=== Arithmetic Functions
+[discrete]
+==== math.abs()
+
+[.api]`result = math.abs(X)`
+
+indexterm:[mathematics, arithmetic] Returns the absolute value of `X`.
+
+[source,tiri]
+----
+math.abs(-5)    -- 5
+math.abs(3.7)   -- 3.7
+----
+
+[discrete]
+==== math.floor()
+
+[.api]`result = math.floor(X)`
+
+Returns the largest integer less than or equal to `X`.
+
+[source,tiri]
+----
+math.floor(3.7)    -- 3
+math.floor(-3.7)   -- -4
+----
+
+[discrete]
+==== math.ceil()
+
+[.api]`result = math.ceil(X)`
+
+Returns the smallest integer greater than or equal to `X`.
+
+[source,tiri]
+----
+math.ceil(3.2)    -- 4
+math.ceil(-3.2)   -- -3
+----
+
+[discrete]
+==== math.round()
+
+[.api]`result = math.round(X, [DecimalPlaces])`
+
+Rounds `X` to the nearest integer.  If `DecimalPlaces` is specified, rounds to that number of decimal places.  Negative values for `DecimalPlaces` round to the corresponding power of ten (tens, hundreds, etc.).
+
+Rounding uses the round-half-up strategy: values at the midpoint (e.g. `0.5`) round towards positive infinity.
+
+[source,tiri]
+----
+math.round(3.7)          -- 4
+math.round(3.2)          -- 3
+math.round(3.5)          -- 4
+math.round(-3.5)         -- -3
+math.round(3.14159, 2)   -- 3.14
+math.round(3.14159, 3)   -- 3.142
+math.round(1234.5, -1)   -- 1230
+math.round(1234.5, -2)   -- 1200
+----
+
+[discrete]
+==== math.fmod()
+
+[.api]`result = math.fmod(X, Y)`
+
+Returns the floating-point remainder of `X / Y`.  The result has the same sign as `X`.
+
+[source,tiri]
+----
+math.fmod(7.5, 2)    -- 1.5
+math.fmod(-7.5, 2)   -- -1.5
+----
+
+[discrete]
+==== math.modf()
+
+[.api]`integer, fraction = math.modf(X)`
+
+Splits `X` into its integer and fractional parts.  Both values have the same sign as `X`.
+
+[source,tiri]
+----
+math.modf(3.75)    -- 3, 0.75
+math.modf(-3.75)   -- -3, -0.75
+math.modf(5)       -- 5, 0.0
+----
+
+<<<
+[[sec-trigonometry]]
+=== Trigonometry
+indexterm:[mathematics, trigonometry] All trigonometric functions operate in radians.  Use `math.rad()` and `math.deg()` to convert between degrees and radians.
+
+[discrete]
+==== math.sin()
+
+[.api]`result = math.sin(X)`
+
+Returns the sine of `X` (in radians).
+
+[discrete]
+==== math.cos()
+
+[.api]`result = math.cos(X)`
+
+Returns the cosine of `X` (in radians).
+
+[discrete]
+==== math.tan()
+
+[.api]`result = math.tan(X)`
+
+Returns the tangent of `X` (in radians).
+
+[source,tiri]
+----
+math.sin(0)             -- 0.0
+math.cos(0)             -- 1.0
+math.sin(math.pi / 2)   -- 1.0
+math.cos(math.pi)       -- -1.0
+----
+
+[discrete]
+==== math.asin()
+
+[.api]`result = math.asin(X)`
+
+Returns the arc sine of `X` in radians.  `X` must be in the range [-1, 1]; values outside this range produce `NaN`.  The result is in the range [-pi/2, pi/2].
+
+[discrete]
+==== math.acos()
+
+[.api]`result = math.acos(X)`
+
+Returns the arc cosine of `X` in radians.  `X` must be in the range [-1, 1]; values outside this range produce `NaN`.  The result is in the range [0, pi].
+
+[discrete]
+==== math.atan()
+
+[.api]`result = math.atan(X)`
+
+Returns the arc tangent of `X` in radians.  The result is in the range [-pi/2, pi/2].
+
+[discrete]
+==== math.atan2()
+
+[.api]`result = math.atan2(Y, X)`
+
+Returns the arc tangent of `Y / X` in radians, using the signs of both arguments to determine the quadrant.  The result is in the range [-pi, pi].  Unlike `math.atan()`, this function handles all quadrants correctly and accepts zero values for `X`.
+
+[source,tiri]
+----
+math.atan2(1, 1)    -- pi/4   (approx. 0.7854)
+math.atan2(1, 0)    -- pi/2   (approx. 1.5708)
+math.atan2(0, -1)   -- pi     (approx. 3.1416)
+math.atan2(-1, 0)   -- -pi/2  (approx. -1.5708)
+----
+
+[discrete]
+==== math.sinh()
+
+[.api]`result = math.sinh(X)`
+
+Returns the hyperbolic sine of `X`.
+
+[discrete]
+==== math.cosh()
+
+[.api]`result = math.cosh(X)`
+
+Returns the hyperbolic cosine of `X`.
+
+[discrete]
+==== math.tanh()
+
+[.api]`result = math.tanh(X)`
+
+Returns the hyperbolic tangent of `X`.
+
+[source,tiri]
+----
+math.sinh(1)   -- 1.1752...
+math.cosh(0)   -- 1.0
+math.tanh(0)   -- 0.0
+----
+
+[[sec-exponentials-and-logarithms]]
+=== Exponentials & Logarithms
+[discrete]
+==== math.exp()
+
+[.api]`result = math.exp(X)`
+
+indexterm:[mathematics, logarithms] indexterm:[mathematics, exponentials] Returns _e_ raised to the power `X`, where _e_ is Euler's number (approximately 2.71828).
+
+[source,tiri]
+----
+math.exp(0)   -- 1.0
+math.exp(1)   -- 2.71828...
+----
+
+[discrete]
+==== math.log()
+
+[.api]`result = math.log(X, [Base])`
+
+Returns the logarithm of `X`.  If `Base` is omitted, returns the natural logarithm (base _e_).  If `Base` is provided, returns the logarithm in that base.
+
+[source,tiri]
+----
+math.log(1)        -- 0.0
+math.log(math.exp(1))   -- 1.0
+math.log(8, 2)     -- 3.0
+math.log(1000, 10) -- 3.0
+----
+
+[discrete]
+==== math.log10()
+
+[.api]`result = math.log10(X)`
+
+Returns the base-10 logarithm of `X`.  Equivalent to `math.log(X, 10)`.
+
+[source,tiri]
+----
+math.log10(100)    -- 2.0
+math.log10(1000)   -- 3.0
+----
+
+[discrete]
+==== math.pow()
+
+[.api]`result = math.pow(X, Y)`
+
+Returns `X` raised to the power `Y`.
+
+[source,tiri]
+----
+math.pow(2, 10)   -- 1024
+math.pow(4, 0.5)  -- 2.0
+math.pow(2, -1)   -- 0.5
+----
+
+[discrete]
+==== math.sqrt()
+
+[.api]`result = math.sqrt(X)`
+
+Returns the square root of `X`.  Negative values produce `NaN`.
+
+[source,tiri]
+----
+math.sqrt(16)   -- 4.0
+math.sqrt(2)    -- 1.4142...
+----
+
+[discrete]
+==== math.ldexp()
+
+[.api]`result = math.ldexp(Mantissa, Exponent)`
+
+Returns `Mantissa` multiplied by 2 raised to the power `Exponent`.  This is the inverse of `math.frexp()`.
+
+[source,tiri]
+----
+math.ldexp(1.5, 3)   -- 12.0   (1.5 * 2^3)
+math.ldexp(0.5, 10)  -- 512.0  (0.5 * 2^10)
+----
+
+[discrete]
+==== math.frexp()
+
+[.api]`mantissa, exponent = math.frexp(X)`
+
+Decomposes `X` into a normalised mantissa in the range [0.5, 1) and an integer exponent such that `X` equals `mantissa * 2^exponent`.  This is the inverse of `math.ldexp()`.
+
+[source,tiri]
+----
+m, e = math.frexp(12.0)
+-- m is 0.75, e is 4 (0.75 * 2^4 = 12.0)
+----
+
+[[sec-conversion]]
+=== Conversion
+[discrete]
+==== math.deg()
+
+[.api]`result = math.deg(X)`
+
+indexterm:[mathematics, conversion] Converts `X` from radians to degrees.
+
+[source,tiri]
+----
+math.deg(math.pi)       -- 180.0
+math.deg(math.pi / 2)   -- 90.0
+----
+
+[discrete]
+==== math.rad()
+
+[.api]`result = math.rad(X)`
+
+Converts `X` from degrees to radians.
+
+[source,tiri]
+----
+math.rad(180)   -- 3.14159... (pi)
+math.rad(90)    -- 1.5708...  (pi/2)
+----
+
+[[sec-comparison-and-clamping]]
+=== Comparison & Clamping
+[discrete]
+==== math.min()
+
+[.api]`result = math.min(X, ...)`
+
+indexterm:[mathematics, clamping] Returns the smallest value among all arguments.  Accepts one or more numeric arguments.
+
+[source,tiri]
+----
+math.min(5, 2, 8, 1)   -- 1
+math.min(3.5, 3.2)     -- 3.2
+math.min(7)             -- 7
+----
+
+[discrete]
+==== math.max()
+
+[.api]`result = math.max(X, ...)`
+
+Returns the largest value among all arguments.  Accepts one or more numeric arguments.
+
+[source,tiri]
+----
+math.max(5, 2, 8, 1)   -- 8
+math.max(3.5, 3.2)     -- 3.5
+math.max(7)             -- 7
+----
+
+[[sec-random-numbers]]
+=== Random Numbers
+indexterm:[random numbers] The pseudo-random number generator uses a Tausworthe algorithm with a period of 2^223.  The generator is seeded with a fixed seed at startup; call `math.randomSeed()` to set a specific seed for reproducible sequences.
+
+[discrete]
+==== math.random()
+
+[.api]`result = math.random([Low], [High])`
+
+Generates a pseudo-random number.  Behaviour depends on the number of arguments:
+
+[cols="1,3a",options="header"]
+|===
+|Arguments |Result
+
+|None
+|Returns a floating-point number in the range [0, 1).
+
+|One (`High`)
+|Returns an integer in the range [1, `High`].
+
+|Two (`Low`, `High`)
+|Returns an integer in the range [`Low`, `High`].
+|===
+
+[source,tiri]
+----
+math.random()        -- e.g. 0.523 (float in [0, 1))
+math.random(10)      -- e.g. 7     (integer in [1, 10])
+math.random(5, 15)   -- e.g. 11    (integer in [5, 15])
+----
+
+[discrete]
+==== math.randomSeed()
+
+[.api]`math.randomSeed(Seed)`
+
+Sets the seed for the pseudo-random number generator.  Calling this function with the same `Seed` value produces an identical sequence of random numbers from subsequent `math.random()` calls.
+
+[source,tiri]
+----
+math.randomSeed(42)
+a = math.random()
+math.randomSeed(42)
+b = math.random()
+-- a is b
+----
+
+[[sec-math-constants]]
+=== Constants
+[cols="1,3a",options="header"]
+|===
+|indexterm:[mathematics, constants] Constant |Description
+
+|`math.pi`
+|The ratio of a circle's circumference to its diameter (approximately 3.14159265358979).
+
+|`math.huge`
+|A value representing positive infinity.  Greater than any finite number.
+|===
+
+[source,tiri]
+----
+math.pi          -- 3.14159265358979...
+math.huge        -- inf
+math.huge > 1e308   -- true
+-math.huge       -- negative infinity
+----
+
+[[sec-special-values]]
+=== Special Values
+indexterm:[NaN] indexterm:[infinity] Mathematical operations can produce the following special floating-point values:
+
+[cols="1,3a",options="header"]
+|===
+|Value |Produced By
+
+|`NaN` (Not a Number)
+|Undefined operations such as `math.sqrt(-1)`, `math.asin(2)`, or `0/0`.
+
+|Infinity
+|Overflow or division by zero, e.g. `1/0`.  Represented by `math.huge`.
+
+|`-0`
+|Negative zero.  Compares equal to `0` in all arithmetic and comparison operations.
+|===
+
+`NaN` is not equal to any value, including itself.  This property provides a reliable test:
+
+[source,tiri]
+----
+x = math.sqrt(-1)
+x is x   -- false (NaN is never equal to itself)
+----

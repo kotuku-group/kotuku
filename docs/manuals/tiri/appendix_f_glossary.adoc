@@ -1,0 +1,213 @@
+[[appendix-glossary]]
+[appendix]
+== Glossary
+[glossary]
+Action::
+A contractual operation defined by the Kōtuku framework, prefixed with `ac`.  Actions are invoked on objects and dispatch to the underlying C++ implementation.  See <<sec-actions-and-methods>>.
+
+Annotation::
+A compile-time directive attached to a declaration using `@name` syntax.  Annotations influence parser behaviour, enable testing hooks, and support preprocessing.  See <<ch-annotations-and-preprocessing>>.
+
+Anonymous function::
+A function expression that produces a callable value without binding it to a name.  Created with the `function` keyword or arrow syntax (`pass:[=>]`).  See <<sec-arrow-functions>>.
+
+Array::
+A mutable, typed, contiguous sequence of single-type elements with zero-based indexing.  Arrays enforce a declared element type and provide functional methods such as `map`, `filter`, and `reduce`.  Unlike other reference types, the `is` operator compares arrays by content rather than identity.  See <<ch-arrays>>.
+
+Array part::
+The sequential integer-keyed portion of a table, stored contiguously in memory.  Integer keys from 0 up to the first `nil` gap form the array part.  See <<sec-table-fundamentals>>.
+
+Arrow function::
+A concise function syntax using the `pass:[=>]` operator.  Single-parameter arrow functions omit parentheses; the body is a single expression whose value is returned implicitly.  See <<sec-arrow-functions>>.
+
+Blank identifier::
+The single underscore (`pass:[_]`) used to explicitly discard values.  Assigning to `pass:[_]` suppresses unused-variable warnings without allocating storage.  See <<sec-blank-identifier>>.
+
+Block::
+A sequence of statements forming the body of a control structure, function, or explicit `do`/`end` scope.  Each block introduces a new scope for local variables.  See <<sec-statements-and-blocks>>.
+
+Check statement::
+A conditional exception mechanism.  `check` evaluates an error code and raises an exception if the code is at or above the exception threshold.  See <<sec-the-check-statement>>.
+
+Choose expression::
+A pattern-matching construct that evaluates a scrutinee against a series of `from` clauses.  Each clause specifies a pattern with optional guard conditions.  Produces a value when used in expression context.  See <<ch-pattern-matching>>.
+
+Close variable::
+A local variable declared with the `<close>` attribute.  The `local` keyword is optional; the attribute implicitly creates a local.  Its `pass:[__]close` metamethod executes automatically when the variable goes out of scope, enabling deterministic resource cleanup.  See <<sec-close-variables>>.
+
+Closure::
+A function value combined with its captured upvalues from enclosing scopes.  The upvalues remain accessible for the lifetime of the closure, even after the enclosing scope exits.  See <<sec-closures>>.
+
+Compound assignment::
+An operator that combines an arithmetic, string, or conditional operation with assignment.  Includes `+=`, `-=`, `*=`, `/=`, `%=`, `..=`, `?=`, and `??=`.  Compound assignments are statements, not expressions.  See <<sec-compound-assignment>>.
+
+Const variable::
+A variable declared with the `<const>` attribute.  Prevents reassignment after initialisation; the value itself remains mutable if it is a reference type.  See <<sec-constant-variables>>.
+
+Defer statement::
+Registers a code block for execution when the enclosing scope exits via normal completion, `return`, `break`, or `continue`.  Does not execute during error unwinding; use `<close>` for error-safe cleanup.  Multiple defers execute in LIFO order.  See <<sec-defer-statement>>.
+
+Error code::
+A 16-bit integer constant (prefixed with `ERR_`) indicating the result of an operation.  Codes below the exception threshold are safe codes; codes at or above the threshold are exception codes.  See <<sec-the-exception-model>>.
+
+Exception::
+A runtime error that interrupts normal control flow.  Exceptions are raised by `raise`, `check`, or internal operations, and caught by `try`/`except` blocks.  Each exception carries an error code, message, source line, and stack trace.  See <<ch-error-handling>>.
+
+Exception table::
+A table value passed to `except` handlers, containing the fields `code`, `message`, `line`, and `trace` describing the caught exception.  See <<sec-try-except-statements>>.
+
+Exception threshold::
+The error code value that divides safe codes from exception codes.  Error codes at or above this threshold trigger exceptions when evaluated by `check`.  See <<sec-exception-threshold>>.
+
+Extended falsiness::
+The broader falsiness rules used by the `??` and `??=` operators.  Under extended falsiness, `nil`, `false`, `0`, `""`, and empty arrays evaluate as falsey.  See <<sec-conditional-operators>>.
+
+Field::
+A named property of an object or a string-keyed entry in a table.  Object fields are accessed as lower snake_case names via dot notation.  See <<sec-field-access>>.
+
+Flute::
+The Tiri test framework.  Test files use annotations to declare test functions and are executed by the Flute test runner (`tools/flute.tiri`).
+
+Guard::
+A boolean expression following `if` in a `from` clause of a `choose` expression.  The guard must evaluate to `true` for the pattern to match.  See <<sec-guards>>.
+
+Hash part::
+The non-sequential and string-keyed portion of a table.  Iteration order over the hash part is unspecified.  See <<sec-table-fundamentals>>.
+
+Identifier::
+A name used to refer to a variable, function, or label.  Identifiers begin with a letter or underscore, followed by letters, digits, or underscores.  Identifiers are case-sensitive.  See <<sec-identifiers>>.
+
+Import::
+A directive that loads and executes a Tiri script, making its exported namespace available to the importing script.  See <<sec-the-import-directive>>.
+
+JIT compilation::
+Just-in-time compilation performed by the LuaJIT engine underlying Tiri.  Frequently executed code paths (traces) are compiled to native machine code at runtime.  See <<ch-performance-and-the-jit>>.
+
+Kōtuku::
+The application framework that Tiri is integrated with.  Provides the object system, vector graphics engine, display management, and module architecture.
+
+Local-by-default::
+Tiri's scoping model in which undeclared variable names create local variables in the current scope.  The `global` keyword is required to create or access global variables.  See <<sec-local-by-default>>.
+
+LuaJIT::
+The high-performance Lua virtual machine and JIT compiler that serves as the foundation for the Tiri runtime.
+
+Metamethod::
+A function stored in a metatable under a reserved key (e.g. `__add`, `__index`, `__tostring`).  Metamethods intercept and customise operations on the value associated with the metatable.  See <<ch-metatables-and-metamethods>>.
+
+Metatable::
+A table that customises the behaviour of another table or userdata value.  Operations on the value dispatch to metamethods defined in its metatable.  See <<sec-metatable-basics>>.
+
+Method::
+A class-specific operation on a Kōtuku object, prefixed with `mt`.  Methods are invoked using colon syntax and receive an implicit `self` parameter.  See <<sec-actions-and-methods>>.
+
+Module::
+A separately loadable component of the Kōtuku framework providing domain-specific functionality (e.g. network, vector, display).  Modules are loaded dynamically or linked statically depending on the build configuration.  See <<ch-modules-and-structures>>.
+
+Namespace::
+An organisational scope declared with the `namespace` keyword.  Groups related functions and variables under a named prefix.  See <<ch-script-management>>.
+
+Nil::
+A type with a single value representing the absence of a useful value.  `nil` is falsey under both standard and extended falsiness rules.  See <<sec-nil>>.
+
+Number::
+A dual-representation numeric type supporting both 32-bit integers and 64-bit IEEE 754 double-precision floating-point values.  Arithmetic operations preserve integer representation where possible.  See <<sec-numbers>>.
+
+Object::
+A specialised userdata value representing a Kōtuku C++ class instance.  Objects expose fields, actions, and methods through the Tiri interface.  Every object has exactly one owner (parent).  See <<ch-the-object-system>>.
+
+Origo::
+The Tiri interpreter and application launcher executable.  Executes Tiri scripts from the command line with configurable options for logging, graphics drivers, and script arguments.  See <<ch-origo>>.
+
+Pipe operator::
+The `|>` operator, which passes the left operand as the first argument to the function on the right.  When the left operand is a range or array and the right operand is a bare function reference, the pipe becomes an iteration operator that calls the function for each element.  See <<sec-pipe-operator>>.
+
+Range::
+An immutable sequence of numeric values defined by start, stop, and optional step values.  Exclusive ranges (`{a to b}`) exclude the stop value; inclusive ranges (`{a into b}`) include it.  See <<ch-ranges>>.
+
+Raw access::
+Bypassing metamethods on a table using the `rawget`, `rawset`, `rawlen`, and `rawequal` functions.  See <<sec-raw-access>>.
+
+Reference type::
+A value whose variable holds a reference to the underlying data rather than a copy.  Tables, arrays, functions, userdata, and objects are reference types.  Assignment copies the reference, not the data.  See <<ch-types-and-values>>.
+
+Regular expression::
+A pattern-matching facility provided by the `regex` library.  Replaces the deprecated Lua pattern system.  See <<ch-regular-expressions>>.
+
+Result filter operator::
+The `=>` operator used in assignment context to filter error codes from function results, separating successful values from error indicators.  See <<sec-result-filter-operator>>.
+
+Safe navigation::
+A family of nil-safe operators (`?.`, `?:`, `?[]`) that return `nil` instead of raising an error when the receiver is `nil`.  See <<sec-safe-navigation>>.
+
+Scope::
+A lexical region in which local variables are visible.  Scopes are introduced by blocks, functions, and control structures.  Variables declared in a scope are inaccessible outside it.  See <<ch-variables-and-scoping>>.
+
+Scrutinee::
+The value being matched against patterns in a `choose` expression.  Specified after the `choose` keyword.  See <<sec-choose-expressions>>.
+
+Short-circuit evaluation::
+Evaluation strategy where the second operand of `and`, `or`, or `??` is evaluated only if the first operand does not determine the result.  See <<sec-logical-operators>>.
+
+Signal::
+A named notification broadcast by an object to registered subscribers.  Signals enable decoupled communication between components.  See <<sec-signals>>.
+
+Standard falsiness::
+The conservative falsiness rules used by `and`, `or`, `not`, and `if` conditions.  Under standard falsiness, only `nil` and `false` are falsey; all other values (including `0` and `""`) are truthy.  See <<sec-truthiness>>.
+
+Sticky type::
+Tiri's type inference mechanism in which a variable commits to the type of its first non-`nil` assignment.  Subsequent non-`nil` assignments of a different type raise an error.  Assigning `nil` is always permitted, acting as a "clear" operation that preserves the type constraint.  See <<sec-sticky-types>>.
+
+String::
+An immutable sequence of bytes.  Strings with identical content share the same internal object (interning).  Zero-based indexing.  See <<ch-strings>>.
+
+String interpolation::
+Embedding expressions within string literals using `f"{pass:[...]}"` syntax.  Expressions enclosed in `{pass:[...]}` are evaluated and their string representations inserted.  See <<sec-string-interpolation>>.
+
+Structure::
+A named table template declared with struct-like syntax, providing named fields with optional default values and type constraints.  See <<sec-structures>>.
+
+Subscription::
+A registration mechanism by which a Tiri function receives callbacks when an object's state changes or events occur.  See <<sec-subscriptions>>.
+
+Table::
+A mutable associative data structure that maps keys to values.  Tables have an array part (integer keys) and a hash part (all other keys).  The fundamental compound data type in Tiri.  See <<ch-tables>>.
+
+Tail call::
+A function call that is the last action performed by a function before returning.  The runtime reuses the current stack frame, preventing stack growth in recursive patterns.  See <<sec-tail-calls>>.
+
+Ternary operator::
+The conditional expression `condition ? true_expr :> false_expr`.  Evaluates and returns one of two expressions based on the truthiness of the condition.  See <<sec-ternary-operator>>.
+
+Thread::
+An independent execution context with its own Tiri state and stack.  Threads communicate through action queues and shared data pools, not shared mutable state.  See <<ch-threading>>.
+
+Thunk::
+A deferred expression declared with the `thunk` keyword.  The expression is not evaluated until the thunk value is first accessed, at which point the result is cached.  See <<sec-deferred-expressions>>.
+
+Trace::
+A recorded sequence of operations compiled to native code by the JIT compiler.  Traces represent hot code paths, primarily loop iterations and function calls.  See <<sec-how-the-jit-works>>.
+
+Truthiness::
+The evaluation of a value in boolean context.  Under standard falsiness rules, only `nil` and `false` are falsey; all other values are truthy.  See <<sec-truthiness>>.
+
+Type annotation::
+An optional declaration constraining a variable's type, written as `:type` after the variable name.  Enables both static (parse-time) and runtime type checking.  See <<sec-explicit-type-annotations>>.
+
+Upvalue::
+A local variable from an enclosing scope that is captured by a nested function.  The upvalue persists as long as any closure referencing it remains alive.  See <<sec-upvalues-and-closures>>.
+
+Userdata::
+An opaque C data value managed outside the Tiri runtime.  Objects and ranges are specialised forms of userdata, though they report distinct types via `type()`.  See <<sec-userdata>>.
+
+Value type::
+A value whose variable holds the data directly rather than a reference.  Nil, booleans, numbers, and strings are value types.  Assignment copies the value.  See <<ch-types-and-values>>.
+
+Variadic function::
+A function that accepts a variable number of arguments via the `pass:[...]` parameter.  Extra arguments beyond declared parameters are collected into the variadic list.  See <<sec-variadic-functions>>.
+
+Virtual volume::
+A named file-system mount point that maps a logical path prefix to a physical directory.  Configured with `--set-volume` or through the Kōtuku file manager.  See <<sec-virtual-volumes>>.
+
+Zero-based indexing::
+Tiri's indexing convention in which the first element of a sequence (string, array, or table array part) is at index 0.  This differs from standard Lua's one-based indexing.  See <<ch-arrays>>.

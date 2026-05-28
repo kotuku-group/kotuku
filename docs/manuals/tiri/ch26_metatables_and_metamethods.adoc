@@ -1,0 +1,372 @@
+// VERIFIED: 2026-03-03
+// UPDATED: 2026-04-03 -- Added `is not` alongside `!=` in equality semantics.
+
+[[ch-metatables-and-metamethods]]
+== Metatables & Metamethods
+indexterm:[metatables] indexterm:[metamethods] A metatable is a regular table that the runtime attaches to another table or userdata to customise its behaviour.  When an operation has no native implementation for a given operand -- for example, adding two tables -- the runtime looks up a specially named field in the operand's metatable.  If the field exists and holds a callable value, the runtime invokes it.  That callable value is called a _metamethod_.
+
+Every table and full userdata can carry exactly one metatable.  Strings share a single metatable provided by the string library.  Numbers, booleans, and `nil` do not carry per-value metatables, but the runtime can attach shared base metatables to non-table values via `debug.setMetatable`.
+
+[[sec-metatable-basics]]
+=== Metatable Basics
+==== Setting and Querying
+
+[.api]`table = setmetatable(Table, Metatable)`
+
+indexterm:[metatables, basics] Sets the metatable of `Table` to `Metatable` and returns `Table`.  Pass `nil` as the second argument to remove the metatable entirely.  Raises an error if `Table` already carries a metatable that defines a `pass:[__]metatable` field.
+
+[source,tiri]
+----
+mt = { __index = function(self, key) return 0 end }
+t = setmetatable({}, mt)
+----
+
+[.api]`mt = getmetatable(Table)`
+
+Returns the metatable of `Table`, or `nil` if none is set.  If the metatable defines a `pass:[__]metatable` field, returns the value of that field instead of the actual metatable.
+
+A metatable can be replaced at any time by calling `setmetatable` again, provided the current metatable does not define `pass:[__]metatable`.
+
+==== Metatable Protection
+
+Setting a `pass:[__]metatable` field on a metatable achieves two effects:
+
+- `getmetatable` returns the value of the `pass:[__]metatable` field rather than the real metatable.
+- `setmetatable` raises an error, preventing replacement or removal of the metatable.
+
+[source,tiri]
+----
+mt = { __metatable = 'locked' }
+t = setmetatable({}, mt)
+print(getmetatable(t))    -- 'locked'
+-- setmetatable(t, nil)   -- raises error: cannot change a protected metatable
+----
+
+To bypass metatable protection for debugging purposes, use `debug.getMetatable` and `debug.setMetatable` (see <<ch-the-debug-library>>).
+
+==== Raw Access
+
+The following functions bypass all metamethods and operate directly on the underlying table data.  See <<sec-raw-access>> for full documentation.
+
+[cols="2,4a",options="header"]
+|===
+|Function |Effect
+
+|`rawget(Table, Key)`      |Returns the value at `Key` without invoking `pass:[__]index`.
+|`rawset(Table, Key, Value)` |Sets `Key` to `Value` without invoking `pass:[__]newindex`.  Returns `Table`.
+|`rawlen(Table)`           |Returns the raw length of the array part without invoking `pass:[__]len`.
+|`rawequal(A, B)`          |Compares `A` and `B` by identity without invoking `pass:[__]eq`.
+|===
+
+[[sec-arithmetic-metamethods]]
+=== Arithmetic Metamethods
+indexterm:[metamethods, arithmetic] When an arithmetic operator encounters a non-numeric operand that cannot be coerced from a string, the runtime searches for the corresponding metamethod.  It checks the left operand's metatable first; if no metamethod is found there, it checks the right operand's metatable.  If neither operand provides the metamethod, the runtime raises an error.
+
+[cols="2,2,3a",options="header"]
+|===
+|Operator |Syntax |Metamethod
+
+|Addition       |`a + b`  |`pass:[__]add(a, b)`
+|Subtraction    |`a - b`  |`pass:[__]sub(a, b)`
+|Multiplication |`a * b`  |`pass:[__]mul(a, b)`
+|Division       |`a / b`  |`pass:[__]div(a, b)`
+|Modulo         |`a % b`  |`pass:[__]mod(a, b)`
+|Exponentiation |`a ** b` |`pass:[__]pow(a, b)`
+|Unary negation |`-a`     |`pass:[__]unm(a)`
+|===
+
+The runtime attempts string-to-number coercion before metamethod lookup.  If a string operand represents a valid number, the operation proceeds as a numeric computation and no metamethod is invoked.
+
+See <<sec-arithmetic-operators>> for full operator semantics.
+
+[source,tiri]
+----
+Vec2 = {}
+Vec2.__index = Vec2
+
+function Vec2.new(X, Y)
+   return setmetatable({ x = X, y = Y }, Vec2)
+end
+
+Vec2.__add = function(A, B) return Vec2.new(A.x + B.x, A.y + B.y) end
+Vec2.__sub = function(A, B) return Vec2.new(A.x - B.x, A.y - B.y) end
+Vec2.__mul = function(A, B)
+   if type(B) is 'number' then return Vec2.new(A.x * B, A.y * B) end
+   return Vec2.new(A.x * B.x, A.y * B.y)
+end
+Vec2.__unm = function(A) return Vec2.new(-A.x, -A.y) end
+
+v = Vec2.new(1, 2) + Vec2.new(3, 4)   -- Vec2(4, 6)
+----
+
+[[sec-comparison-and-equality]]
+=== Comparison & Equality
+==== Equality
+
+indexterm:[metamethods, comparison] The `is` operator compares tables and userdata by identity.  Two distinct objects are never equal unless a `pass:[__]eq` metamethod overrides the comparison.
+
+The runtime invokes `pass:[__]eq` only when both operands share the same metatable, or when both metatables define the same function object as their `pass:[__]eq` field.  If neither condition holds, the operator falls back to identity comparison.
+
+The `is not` and `!=` operators negate the result of the `is` comparison, including any `pass:[__]eq` metamethod invocation.
+
+`rawequal(A, B)` bypasses `pass:[__]eq` entirely and always compares by identity.
+
+==== Ordering
+
+[cols="2,2,3a",options="header"]
+|===
+|Operator |Syntax |Metamethod
+
+|Less than          |`a < b`  |`pass:[__]lt(a, b)`
+|Less than or equal |`a <= b` |`pass:[__]le(a, b)`
+|Greater than       |`a > b`  |`pass:[__]lt(b, a)` (swapped operands)
+|Greater than or equal |`a >= b` |`pass:[__]le(b, a)` (swapped operands)
+|===
+
+If `pass:[__]le` is absent but `pass:[__]lt` is defined, the runtime evaluates `a <= b` as `not (b < a)`.
+
+For two string operands, the runtime performs a direct lexicographic comparison without consulting metamethods.  See <<sec-comparison-operators>> for full details.
+
+[[sec-string-and-length]]
+=== String & Length
+
+==== __tostring
+
+[.api]`pass:[__]tostring(Self)`
+
+The `tostring` function and string interpolation invoke the `pass:[__]tostring` metamethod when one is present.  The return value becomes the string representation of the object.
+
+[source,tiri]
+----
+mt = {
+   __tostring = function(Self)
+      return f'Point({Self.x}, {Self.y})'
+   end
+}
+p = setmetatable({ x = 10, y = 20 }, mt)
+print(tostring(p))   -- 'Point(10, 20)'
+----
+
+==== __concat
+
+[.api]`pass:[__]concat(A, B)`
+
+The `..` operator invokes `pass:[__]concat` when either operand is neither a string nor a number.  The runtime checks the left operand's metatable first, then the right operand's metatable.  See <<sec-string-concatenation>>.
+
+==== __len
+
+[.api]`pass:[__]len(Self)`
+
+The `#` operator invokes `pass:[__]len` when present on the operand's metatable, overriding the default table length.  The metamethod receives the table as its sole argument and returns the custom length.
+
+[source,tiri]
+----
+mt = { __len = function(Self) return Self.size end }
+t = setmetatable({ size = 42 }, mt)
+print(#t)   -- 42
+----
+
+See <<sec-length-operator>> for full operator semantics.
+
+[%unbreakable]
+[[sec-indexing]]
+=== Indexing
+==== __index
+
+indexterm:[metamethods, indexing] The runtime invokes `pass:[__]index` when a table lookup finds no value for the given key.  Direct entries in the table always take precedence; the metamethod is consulted only for absent keys.
+
+**Function form**.  When `pass:[__]index` is a function, the runtime calls it with the table and the key as arguments.  The return value becomes the result of the lookup.
+
+[source,tiri]
+----
+mt = {
+   __index = function(Self, Key)
+      return f'default({Key})'
+   end
+}
+t = setmetatable({ x = 1 }, mt)
+print(t.x)   -- 1
+print(t.y)   -- 'default(y)'
+----
+
+**Table form**.  When `pass:[__]index` is a table, the runtime repeats the lookup in that table.  This chaining continues through successive metatables, forming an inheritance hierarchy.  The chain is limited to a fixed depth to prevent infinite loops.
+
+[source,tiri]
+----
+defaults = { colour = 'red', size = 10 }
+mt = { __index = defaults }
+t = setmetatable({}, mt)
+print(t.colour)   -- 'red'
+----
+
+==== __newindex
+
+The runtime invokes `pass:[__]newindex` when assigning to a key that does not already exist in the table.  Assignments to existing keys bypass the metamethod and modify the table directly.
+
+**Function form**.  When `pass:[__]newindex` is a function, the runtime calls it with the table, the key, and the value.  The function is responsible for storing the value if desired.
+
+[source,tiri]
+----
+mt = {
+   __newindex = function(Self, Key, Value)
+      error(f'read-only table: cannot set {Key}')
+   end
+}
+t = setmetatable({ x = 1 }, mt)
+t.x = 2   -- succeeds: existing key bypasses __newindex
+t.y = 3   -- raises error: 'read-only table: cannot set y'
+----
+
+**Table form**.  When `pass:[__]newindex` is a table, the runtime redirects the assignment to that table instead.
+
+Use `rawset` inside a `pass:[__]newindex` function to store values directly in the table without triggering recursion.
+
+==== Proxy Pattern
+
+A proxy table uses an empty table as the public interface and stores all data in a hidden backing table.  Both `pass:[__]index` and `pass:[__]newindex` redirect operations to the backing table, allowing the proxy to intercept every access and assignment.
+
+[source,tiri]
+----
+function create_proxy(Backing)
+   proxy = {}
+   mt = {
+      __index = Backing,
+      __newindex = Backing
+   }
+   return setmetatable(proxy, mt)
+end
+----
+
+==== Class Pattern
+
+The `pass:[__]index` metamethod enables a simple class/inheritance pattern.  Setting a table's `pass:[__]index` to a class table causes method lookups on instances to fall through to the class.
+
+[source,tiri]
+----
+Animal = {}
+Animal.__index = Animal
+
+function Animal.new(Name)
+   return setmetatable({ name = Name }, Animal)
+end
+
+function Animal:speak()
+   return f'{self.name} speaks'
+end
+----
+
+[[sec-callable-tables]]
+=== Callable Tables
+[.api]`pass:[__]call(Self, ...)`
+
+indexterm:[callable tables] The runtime invokes `pass:[__]call` when a table is used in a function-call expression.  The table itself is passed as the first argument, followed by the call arguments.  The metamethod may return any number of values.
+
+[source,tiri]
+----
+Counter = {}
+Counter.__index = Counter
+
+function Counter.new(Start)
+   return setmetatable({ count = Start ?? 0 }, Counter)
+end
+
+Counter.__call = function(Self)
+   Self.count++
+   return Self.count
+end
+
+c = Counter.new(0)
+print(c())   -- 1
+print(c())   -- 2
+----
+
+The `pass:[__]call` metamethod enables factory and constructor patterns where a table acts as both a namespace and a callable constructor.
+
+[[sec-garbage-collection]]
+=== Garbage Collection
+==== __gc
+
+indexterm:[metamethods, garbage collection] The `pass:[__]gc` metamethod serves as a finaliser for full userdata.  The garbage collector invokes it during the finalisation phase when the userdata is about to be collected.  The execution order of finalisers across different objects is unspecified.
+
+Plain tables do not support `pass:[__]gc`.  For deterministic cleanup of table-based resources, use `<close>` variables with the `pass:[__]close` metamethod (see <<sec-to-be-closed-variables>>).
+
+==== __mode
+
+The `pass:[__]mode` field (not a callable metamethod) controls weak-reference behaviour for a table.  The value is a string containing one or both of the characters `k` and `v`:
+
+[cols="1,4a",options="header"]
+|===
+|Mode |Effect
+
+|`'k'`  |Weak keys.  An entry is removed when its key is collected by the garbage collector.
+|`'v'`  |Weak values.  An entry is removed when its value is collected by the garbage collector.
+|`'kv'` |Both keys and values are weak.
+|===
+
+The garbage collector reads `pass:[__]mode` from the metatable; it is not invoked as a function.
+
+[source,tiri]
+----
+cache_mt = { __mode = 'v' }
+cache = setmetatable({}, cache_mt)
+----
+
+==== newproxy
+
+[.api]`proxy = newproxy([Arg])`
+
+Creates a lightweight full userdata.  Unlike tables, full userdata supports `pass:[__]gc` finalisers.
+
+[cols="2,4a",options="header"]
+|===
+|Call |Effect
+
+|`newproxy()`       |Returns a userdata with no metatable.
+|`newproxy(true)`   |Returns a userdata with a fresh empty metatable.
+|`newproxy(Proxy)`  |Returns a userdata that shares the metatable of the given proxy.
+|===
+
+[source,tiri]
+----
+p = newproxy(true)
+mt = getmetatable(p)
+mt.__gc = function(Self)
+   print('collected')
+end
+----
+
+==== Iteration Metamethods
+
+The `pass:[__]pairs` and `pass:[__]ipairs` metamethods customise the behaviour of `pairs` and `ipairs` respectively.  When present on a table's metatable, the runtime calls the metamethod instead of the default iterator.  See <<sec-iteration>> for full details.
+
+[[sec-metamethod-reference]]
+=== Metamethod Reference
+indexterm:[metamethods, reference] The following table lists every metamethod recognised by the runtime, ordered by dispatch priority.
+
+[cols="3,4a,4a",options="header"]
+|===
+|Metamethod |Trigger |Signature
+
+|`pass:[__]index`      |Read of absent key           |`pass:[__]index(self, key)` or table
+|`pass:[__]newindex`   |Write to absent key          |`pass:[__]newindex(self, key, value)` or table
+|`pass:[__]gc`         |Userdata finalisation        |`pass:[__]gc(self)`
+|`pass:[__]mode`       |Weak table mode (string)     |Not callable; value is `'k'`, `'v'`, or `'kv'`
+|`pass:[__]eq`         |`is` / `is not` / `!=` comparison       |`pass:[__]eq(a, b)` pass:[->]boolean
+|`pass:[__]len`        |`#` operator                 |`pass:[__]len(self)` pass:[->]number
+|`pass:[__]lt`         |`<` and `>` comparison       |`pass:[__]lt(a, b)` pass:[->]boolean
+|`pass:[__]le`         |`\<=` and `>=` comparison |`pass:[__]le(a, b)` pass:[->]boolean
+|`pass:[__]concat`     |`..` operator                |`pass:[__]concat(a, b)`
+|`pass:[__]call`       |Function call on table       |`pass:[__]call(self, ...)`
+|`pass:[__]add`        |`+` operator                 |`pass:[__]add(a, b)`
+|`pass:[__]sub`        |`-` operator                 |`pass:[__]sub(a, b)`
+|`pass:[__]mul`        |`*` operator                 |`pass:[__]mul(a, b)`
+|`pass:[__]div`        |`/` operator                 |`pass:[__]div(a, b)`
+|`pass:[__]mod`        |`%` operator                 |`pass:[__]mod(a, b)`
+|`pass:[__]pow`        |`**` operator                |`pass:[__]pow(a, b)`
+|`pass:[__]unm`        |Unary `-` operator           |`pass:[__]unm(a)`
+|`pass:[__]metatable`  |Metatable protection (value) |Not callable; value returned by `getmetatable`
+|`pass:[__]tostring`   |`tostring()` conversion      |`pass:[__]tostring(self)` pass:[->]string
+|`pass:[__]close`      |`<close>` scope exit         |`pass:[__]close(self, err)`
+|`pass:[__]pairs`      |`pairs()` iteration          |`pass:[__]pairs(self)` pass:[->]iterator, state, initial
+|`pass:[__]ipairs`     |`ipairs()` iteration         |`pass:[__]ipairs(self)` pass:[->]iterator, state, initial
+|===
