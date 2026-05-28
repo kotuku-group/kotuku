@@ -10,10 +10,10 @@ rx_key_comment     = <{ regex.new([[^([^:]*):\s+(.+)$]]) }>
 rx_hex_number      = <{ regex.new([[^0x[0-9a-fA-F]+$]]) }>
 rx_signed_int      = <{ regex.new([[^[+\-]?\d+$]]) }>
 rx_trailing_space  = <{ regex.new([[^(.*\S)]], regex.DOT_ALL) }>
-rx_type_name       = <{ regex.new([[^(.+)\s(\S+)$]]) }>
-rx_non_word        = <{ regex.new('\\W') }>
-rx_path_chars      = <{ regex.new('[\\/\\.]') }>
-rx_comment_chars   = <{ regex.new('[`!@#]') }>
+rx_type_name       = <{ r'^(.+)\s(\S+)$' }>
+rx_non_word        = <{ r'\W' }>
+rx_path_chars      = <{ r'[\/\.]' }>
+rx_comment_chars   = <{ r'[`!@#]' }>
 
 ----------------------------------------------------------------------------------------------------------------------
 -- TDL function
