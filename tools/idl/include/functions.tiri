@@ -871,6 +871,16 @@ global function klass(Name, Options:table, Spec, Private, Custom)
       end
    end
 
+   for field in values(cl.fields) do -- Process tags from compiled fields
+      field.tags = getTagsFromField(field, field.tags)
+   end
+
+   for action in values(cl.actions) do -- User defined tags for actions
+      if glActions[action.name] then
+         action.tags = getTagsFromCollection(action.tags, glActions[action.name].params)
+      end
+   end
+
    -- Export method definitions for a class
 
    if cl.methods then
@@ -894,6 +904,8 @@ global function klass(Name, Options:table, Spec, Private, Custom)
                end
             end
          end
+
+         method.tags = getTagsFromCollection(method.tags, method.params)
 
          -- Generate a modified C method name for the function declaration if the method shares a name with an existing
          -- action.  E.g. 'XML_Sort' will become 'XML_SortXML'
@@ -1082,7 +1094,7 @@ end
 -- Register methods for a class.  This must be declared prior to the corresponding class() function call.
 
 global function methods(ClassName:str, Prefix:str, Methods)
-   verbose(<{ 'Processing ' .. #Methods .. ' methods for class ' .. tostring(ClassName) }>)
+   verbose(<{ f'Processing {#Methods} methods for class {ClassName}' }>)
 
    local cl = registerClass(ClassName)
    cl.methodPrefix = Prefix

@@ -629,9 +629,9 @@ global function idlFunction(Name:str, Category:str, Comment:str, Status:str, Des
       response = { type='void' }
    end
 
-   if Def.tags then
-      func.tags = Def.tags
-   end
+   func.tags = Def.tags ? Def.tags :> array<string>
+   func.tags = getTagsFromField(func.result, func.tags) -- User defined tags
+   func.tags = getTagsFromCollection(func.tags, func.input) -- IDL defined tags
 
    if Def.ext_proto then
       jumpArgs = Def.ext_proto
@@ -862,7 +862,7 @@ function buildTiriPrototype(Name:str, Params:table, Result:table):str
    end
 end
 
---@Doc(text=[[@desc Generate function prototypes for the module.]])
+@Doc(text=[[@desc Generate function prototypes for the module.]])
 global function buildPrototypes()
    if glClasses then
       for className, cl in pairs(glClasses) do

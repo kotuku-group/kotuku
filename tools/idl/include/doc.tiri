@@ -443,7 +443,7 @@ global function saveDocuments()
 
    if glClasses then
       for className, cl in pairs(glClasses) do
-         verbose('Processing documentation for class ' .. tostring(className))
+         verbose(f'Processing documentation for class {className}')
 
          if cl.meta then
             try
