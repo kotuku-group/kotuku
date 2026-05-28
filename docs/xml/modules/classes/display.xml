@@ -504,7 +504,7 @@
     </field>
 
     <field>
-      <name>DisplayManufacturer</name>
+      <name>DisplayMfr</name>
       <comment>String describing the display manufacturer.</comment>
       <access read="G">Get</access>
       <type>STRING</type>

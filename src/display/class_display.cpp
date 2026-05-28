@@ -1209,31 +1209,31 @@ static ERR DISPLAY_NewObject(extDisplay *Self)
 
    #ifdef __xwindows__
 
-      strcopy("X11", Self->Chipset, sizeof(Self->Chipset));
-      strcopy("X Windows", Self->Display, sizeof(Self->Display));
-      strcopy("N/A", Self->DisplayManufacturer, sizeof(Self->DisplayManufacturer));
-      strcopy("N/A", Self->Manufacturer, sizeof(Self->Manufacturer));
+      Self->Chipset      = "X11";
+      Self->Display      = "X Windows";
+      Self->DisplayMfr   = "N/A";
+      Self->Manufacturer = "N/A";
 
    #elif _WIN32
 
-      strcopy("Windows", Self->Chipset, sizeof(Self->Chipset));
-      strcopy("Windows", Self->Display, sizeof(Self->Display));
-      strcopy("N/A", Self->DisplayManufacturer, sizeof(Self->DisplayManufacturer));
-      strcopy("N/A", Self->Manufacturer, sizeof(Self->Manufacturer));
+      Self->Chipset      = "Windows";
+      Self->Display      = "Windows";
+      Self->DisplayMfr   = "N/A";
+      Self->Manufacturer = "N/A";
 
    #elif _GLES_
 
-      strcopy("OpenGLES", Self->Chipset, sizeof(Self->Chipset));
-      strcopy("OpenGL", Self->Display, sizeof(Self->Display));
-      strcopy("N/A", Self->DisplayManufacturer, sizeof(Self->DisplayManufacturer));
-      strcopy("N/A", Self->Manufacturer, sizeof(Self->Manufacturer));
+      Self->Chipset      = "OpenGLES";
+      Self->Display      = "OpenGL";
+      Self->DisplayMfr   = "N/A";
+      Self->Manufacturer = "N/A";
 
    #else
 
-      strcopy("Unknown", Self->Chipset, sizeof(Self->Chipset));
-      strcopy("Unknown", Self->Display, sizeof(Self->Display));
-      strcopy("Unknown", Self->DisplayManufacturer, sizeof(Self->DisplayManufacturer));
-      strcopy("Unknown", Self->Manufacturer, sizeof(Self->Manufacturer));
+      Self->Chipset      = "Unknown";
+      Self->Display      = "Unknown";
+      Self->DisplayMfr   = "Unknown";
+      Self->Manufacturer = "Unknown";
 
    #endif
 
@@ -2117,9 +2117,9 @@ This string describes the graphic card's chipset, if known.
 
 *********************************************************************************************************************/
 
-static ERR GET_Chipset(extDisplay *Self, STRING *Value)
+static ERR GET_Chipset(extDisplay *Self, std::string_view &Value)
 {
-   *Value = Self->Chipset;
+   Value = Self->Chipset;
    return ERR::Okay;
 }
 
@@ -2271,26 +2271,24 @@ This string describes the display device that is connected to the user's graphic
 
 *********************************************************************************************************************/
 
-static ERR GET_Display(extDisplay *Self, CSTRING *Value)
+static ERR GET_Display(extDisplay *Self, std::string_view &Value)
 {
-   if (Self->Display[0]) *Value = Self->Display;
-   else *Value = nullptr;
+   Value = Self->Display;
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 
 -FIELD-
-DisplayManufacturer: String describing the display manufacturer.
+DisplayMfr: String describing the display manufacturer.
 
 This string names the manufacturer of the user's display device.
 
 *********************************************************************************************************************/
 
-static ERR GET_DisplayManufacturer(extDisplay *Self, CSTRING *Value)
+static ERR GET_DisplayMfr(extDisplay *Self, std::string_view &Value)
 {
-   if (Self->DisplayManufacturer[0]) *Value = Self->DisplayManufacturer;
-   else *Value = nullptr;
+   Value = Self->DisplayMfr;
    return ERR::Okay;
 }
 
@@ -2572,10 +2570,9 @@ information is not detectable, a `NULL` pointer is returned.
 
 *********************************************************************************************************************/
 
-static ERR GET_Manufacturer(extDisplay *Self, STRING *Value)
+static ERR GET_Manufacturer(extDisplay *Self, std::string_view &Value)
 {
-   if (Self->Manufacturer[0]) *Value = Self->Manufacturer;
-   else *Value = nullptr;
+   Value = Self->Manufacturer;
    return ERR::Okay;
 }
 
@@ -2835,39 +2832,32 @@ Title: Sets the window title (hosted environments only).
 *********************************************************************************************************************/
 
 #if defined(_WIN32)
-static STRING glWindowTitle = nullptr;
+static std::string glWindowTitle;
 #endif
 
-static ERR GET_Title(extDisplay *Self, CSTRING *Value)
+static ERR GET_Title(extDisplay *Self, std::string_view &Value)
 {
 #ifdef __xwindows__
    return ERR::NoSupport;
 #elif _WIN32
    char buffer[128];
-   STRING str;
-
    buffer[0] = 0;
    winGetWindowTitle(Self->WindowHandle, buffer, sizeof(buffer));
-   if (AllocMemory(strlen(buffer) + 1, MEM::STRING|MEM::UNTRACKED, &str) IS ERR::Okay) {
-      strcopy(buffer, str);
-      if (glWindowTitle) FreeResource(glWindowTitle);
-      glWindowTitle = str;
-      *Value = glWindowTitle;
-      return ERR::Okay;
-   }
-   else return ERR::AllocMemory;
+   glWindowTitle = buffer;
+   Value = glWindowTitle;
+   return ERR::Okay;
 #else
    return ERR::NoSupport;
 #endif
 }
 
-static ERR SET_Title(extDisplay *Self, CSTRING Value)
+static ERR SET_Title(extDisplay *Self, const std::string_view &Value)
 {
 #ifdef __xwindows__
-   XStoreName(XDisplay, Self->XWindowHandle, Value);
+   XStoreName(XDisplay, Self->XWindowHandle, Value.data());
    return ERR::Okay;
 #elif _WIN32
-   winSetWindowTitle(Self->WindowHandle, Value);
+   winSetWindowTitle(Self->WindowHandle, Value.data());
    return ERR::Okay;
 #else
    return ERR::NoSupport;
@@ -2980,20 +2970,20 @@ static const FieldArray DisplayFields[] = {
    { "TopMargin",      FDF_INT|FDF_R },
    { "BottomMargin",   FDF_INT|FDF_R },
    // Virtual fields
-   { "Chipset",             FDF_VIRTUAL|FDF_STRING|FDF_R,    GET_Chipset },
+   { "Chipset",             FDF_VIRTUAL|FDF_CPPSTRING|FDF_R,  GET_Chipset },
    { "Gamma",               FDF_VIRTUAL|FDF_DOUBLE|FDF_ARRAY|FDF_RI, GET_Gamma, SET_Gamma },
-   { "HDensity",            FDF_VIRTUAL|FDF_INT|FDF_RW,      GET_HDensity, SET_HDensity },
-   { "VDensity",            FDF_VIRTUAL|FDF_INT|FDF_RW,      GET_VDensity, SET_VDensity },
-   { "Display",             FDF_VIRTUAL|FDF_STRING|FDF_R,    GET_Display },
-   { "DisplayManufacturer", FDF_VIRTUAL|FDF_STRING|FDF_R,    GET_DisplayManufacturer },
-   { "InsideWidth",         FDF_VIRTUAL|FDF_INT|FDF_R,       GET_InsideWidth },
-   { "InsideHeight",        FDF_VIRTUAL|FDF_INT|FDF_R,       GET_InsideHeight },
-   { "Manufacturer",        FDF_VIRTUAL|FDF_STRING|FDF_R,    GET_Manufacturer },
-   { "Opacity",             FDF_VIRTUAL|FDF_DOUBLE|FDF_RW,   GET_Opacity, SET_Opacity },
-   { "ResizeFeedback",      FDF_VIRTUAL|FDF_FUNCTION|FDF_RW, GET_ResizeFeedback, SET_ResizeFeedback },
-   { "WindowHandle",        FDF_VIRTUAL|FDF_POINTER|FDF_RW,  GET_WindowHandle, SET_WindowHandle },
-   { "Title",               FDF_VIRTUAL|FDF_STRING|FDF_RW,   GET_Title, SET_Title },
-   { "TotalResolutions",    FDF_VIRTUAL|FDF_INT|FDF_R,       GET_TotalResolutions },
+   { "HDensity",            FDF_VIRTUAL|FDF_INT|FDF_RW,       GET_HDensity, SET_HDensity },
+   { "VDensity",            FDF_VIRTUAL|FDF_INT|FDF_RW,       GET_VDensity, SET_VDensity },
+   { "Display",             FDF_VIRTUAL|FDF_CPPSTRING|FDF_R,  GET_Display },
+   { "DisplayMfr",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_R,  GET_DisplayMfr },
+   { "InsideWidth",         FDF_VIRTUAL|FDF_INT|FDF_R,        GET_InsideWidth },
+   { "InsideHeight",        FDF_VIRTUAL|FDF_INT|FDF_R,        GET_InsideHeight },
+   { "Manufacturer",        FDF_VIRTUAL|FDF_CPPSTRING|FDF_R,  GET_Manufacturer },
+   { "Opacity",             FDF_VIRTUAL|FDF_DOUBLE|FDF_RW,    GET_Opacity, SET_Opacity },
+   { "ResizeFeedback",      FDF_VIRTUAL|FDF_FUNCTION|FDF_RW,  GET_ResizeFeedback, SET_ResizeFeedback },
+   { "WindowHandle",        FDF_VIRTUAL|FDF_POINTER|FDF_RW,   GET_WindowHandle, SET_WindowHandle },
+   { "Title",               FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW, GET_Title, SET_Title },
+   { "TotalResolutions",    FDF_VIRTUAL|FDF_INT|FDF_R,        GET_TotalResolutions },
    END_FIELD
 };
 

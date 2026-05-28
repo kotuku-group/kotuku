@@ -1074,13 +1074,13 @@ class objDisplay : public Object {
 
    inline ERR setX(const int Value) noexcept {
       auto target = this;
-      auto field = &this->Class->Dictionary[23];
+      auto field = &this->Class->Dictionary[24];
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setY(const int Value) noexcept {
       auto target = this;
-      auto field = &this->Class->Dictionary[14];
+      auto field = &this->Class->Dictionary[15];
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
@@ -1107,7 +1107,7 @@ class objDisplay : public Object {
 
    inline ERR setGamma(const double * Value, int Elements) noexcept {
       auto target = this;
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[22];
       return field->WriteValue(target, field, 0x80001508, Value, Elements);
    }
 
@@ -1119,13 +1119,13 @@ class objDisplay : public Object {
 
    inline ERR setVDensity(const int Value) noexcept {
       auto target = this;
-      auto field = &this->Class->Dictionary[15];
+      auto field = &this->Class->Dictionary[16];
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
    inline ERR setOpacity(const double Value) noexcept {
       auto target = this;
-      auto field = &this->Class->Dictionary[24];
+      auto field = &this->Class->Dictionary[25];
       return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
    }
 
@@ -1141,10 +1141,10 @@ class objDisplay : public Object {
       return field->WriteValue(target, field, 0x08000308, Value, 1);
    }
 
-   template <class T> inline ERR setTitle(T && Value) noexcept {
+   inline ERR setTitle(const std::string_view &Value) noexcept {
       auto target = this;
-      auto field = &this->Class->Dictionary[22];
-      return field->WriteValue(target, field, 0x08800308, to_cstring(Value), 1);
+      auto field = &this->Class->Dictionary[23];
+      return field->WriteValue(target, field, 0x00804308, &Value, 1);
    }
 
 };

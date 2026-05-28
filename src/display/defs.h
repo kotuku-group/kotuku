@@ -375,10 +375,10 @@ class extDisplay : public objDisplay {
       APTR   WindowHandle;
    #endif
    float Opacity;
-   char  Manufacturer[60];
-   char  Chipset[40];
-   char  Display[32];
-   char  DisplayManufacturer[60];
+   std::string Manufacturer;
+   std::string Chipset;
+   std::string Display;
+   std::string DisplayMfr;
 };
 
 extern void clean_clipboard(void);
