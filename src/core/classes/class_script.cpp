@@ -789,13 +789,8 @@ static ERR GET_WorkingPath(objScript *Self, std::string_view &Value)
 
       bool path = false;
       if (Self->Path[0] IS '/') path = true;
-      else {
-        for (int j=0; (j < int(Self->Path.size())) and (Self->Path[j] != '/') and (Self->Path[j] != '\\'); j++) {
-            if (Self->Path[j] IS ':') {
-               path = true;
-               break;
-            }
-         }
+      else if (auto j = Self->Path.find_first_of(":/\\"); (j != std::string::npos) and (Self->Path[j] IS ':')) {
+         path = true;
       }
 
       auto j = Self->Path.find_last_of(":/\\");
