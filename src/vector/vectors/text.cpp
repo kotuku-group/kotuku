@@ -776,10 +776,10 @@ static ERR TEXT_SET_Font(extVectorText *Self, OBJECTPTR Value)
    if (Value->baseClassID() IS CLASSID::FONT) {
       auto other = (objFont *)Value;
 
-      Self->txFamily = other->Face ? other->Face : "Noto Sans";
-      Self->txFontSize = std::trunc(other->Point * (96.0 / 72.0));
+      Self->txFamily         = other->Face.empty() ? "Noto Sans" : other->Face;
+      Self->txFontSize       = std::trunc(other->Point * (96.0 / 72.0));
       Self->txScaledFontSize = false;
-      Self->txFontStyle = other->Style ? other->Style : "Regular";
+      Self->txFontStyle      = other->Style.empty() ? "Regular" : other->Style;
 
       if (Self->initialised()) return reset_font(Self);
       else return ERR::Okay;
@@ -787,10 +787,10 @@ static ERR TEXT_SET_Font(extVectorText *Self, OBJECTPTR Value)
    else if (Value->classID() IS CLASSID::VECTORTEXT) {
       auto other = (extVectorText *)Value;
 
-      Self->txFamily = other->txFamily;
-      Self->txFontSize = other->txFontSize;
+      Self->txFamily         = other->txFamily;
+      Self->txFontSize       = other->txFontSize;
       Self->txScaledFontSize = false;
-      Self->txFontStyle = other->txFontStyle;
+      Self->txFontStyle      = other->txFontStyle;
 
       if (Self->initialised()) return reset_font(Self);
       else return ERR::Okay;

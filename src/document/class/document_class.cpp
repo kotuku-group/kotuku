@@ -2094,7 +2094,7 @@ static const FieldArray clFields[] = {
    { "Path",          FDF_CPPSTRING|FDF_RW,    GET_Path, SET_Path },
    { "Origin",        FDF_CPPSTRING|FDF_RW,    GET_Path, SET_Origin },
    { "PageWidth",     FDF_UNIT|FDF_INT|FDF_SCALED|FDF_RW, GET_PageWidth, SET_PageWidth },
-   { "Pretext",       FDF_STRING|FDF_W,        nullptr, SET_Pretext },
+   { "Pretext",       FDF_CPPSTRING|FDF_W,     nullptr, SET_Pretext },
    { "Src",           FDF_SYNONYM|FDF_CPPSTRING|FDF_RW, GET_Path, SET_Path },
    { "WorkingPath",   FDF_CPPSTRING|FDF_R,     GET_WorkingPath, nullptr },
    END_FIELD

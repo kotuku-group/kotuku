@@ -63,6 +63,8 @@
     <result type="ERR">
       <error code="Okay">Fonts were successfully refreshed.</error>
       <error code="AccessObject">Access to the font database was denied, or the object does not exist.</error>
+      <error code="GetField">Failed to read font database entries after scanning.</error>
+      <error code="OpenFile">Failed to open <code>fonts:fonts.cfg</code> for writing.</error>
     </result>
   </function>
 

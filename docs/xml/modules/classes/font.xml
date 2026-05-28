@@ -147,7 +147,7 @@
       <name>Face</name>
       <comment>The name of a font face that is to be loaded on initialisation.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>STRING</type>
+      <type>std::string</type>
       <description>
 <p>The name of an installed font face must be specified here for initialisation.  If this field is undefined then the initialisation process will use the user's preferred face.  A list of available faces can be obtained from the <function module="Font">GetList</function> function.</p>
 <p>For convenience, the face string can also be extended with extra parameters so that the point size and style are defined at the same time.  Extra parameters are delimited with the colon character and must follow a set order defined as <code>face:pointsize:style:colour</code>.</p>
@@ -285,7 +285,7 @@ Charter:120%::255,128,255
       <name>Path</name>
       <comment>The path to a font file.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>STRING</type>
+      <type>std::string</type>
       <description>
 <p>This field can be defined prior to initialisation.  It can be used to refer to the exact location of a font data file, in opposition to the normal practice of loading fonts that are installed on the host system.</p>
 <p>This feature is ideal for use when distributing custom fonts with an application.</p>
@@ -307,7 +307,7 @@ Charter:120%::255,128,255
       <name>String</name>
       <comment>The string to use when drawing a Font.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>STRING</type>
+      <type>std::string</type>
       <description>
 <p>The String field must be defined in order to draw text with a font object.  A string must consist of a valid sequence of UTF-8 characters.  Line feeds are allowed (whenever a line feed is reached, the Draw() action will start printing on the next line).  Drawing will stop when the null termination character is reached.</p>
 <p>If a string contains characters that are not supported by a font, those characters will be printed using a default character from the font.</p>
@@ -318,7 +318,7 @@ Charter:120%::255,128,255
       <name>Style</name>
       <comment>Determines font styling.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>STRING</type>
+      <type>std::string</type>
       <description>
 <p>The style of a font can be selected by setting the Style field.  This comes into effect only if the font actually supports the specified style as part of its graphics set.  If the style is unsupported, the regular styling of the face will be used on initialisation.</p>
 <p>Bitmap fonts are a special case if a bold or italic style is selected.  In this situation the system can automatically convert the font to that style even if the correct graphics set does not exist.</p>

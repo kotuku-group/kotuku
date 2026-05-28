@@ -313,9 +313,9 @@ A Pretext will always survive document unloading and resets.  It can be removed 
 
 *********************************************************************************************************************/
 
-static ERR SET_Pretext(extDocument *Self, CSTRING Value)
+static ERR SET_Pretext(extDocument *Self, const std::string_view &Value)
 {
-   if (!Value) {
+   if (Value.empty()) {
       if (Self->PretextXML) { FreeResource(Self->PretextXML); Self->PretextXML = nullptr; }
       return ERR::Okay;
    }

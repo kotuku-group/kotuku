@@ -79,10 +79,10 @@ class objFont : public Object {
    double Point;           // The point size of a font.
    double GlyphSpacing;    // Adjusts the amount of spacing between each character.
    objBitmap * Bitmap;     // The destination Bitmap to use when drawing a font.
-   STRING String;          // The string to use when drawing a Font.
-   STRING Path;            // The path to a font file.
-   STRING Style;           // Determines font styling.
-   STRING Face;            // The name of a font face that is to be loaded on initialisation.
+   std::string String;     // The string to use when drawing a Font.
+   std::string Path;       // The path to a font file.
+   std::string Style;      // Determines font styling.
+   std::string Face;       // The name of a font face that is to be loaded on initialisation.
    struct RGB8 Outline;    // Defines the outline colour around a font.
    struct RGB8 Underline;  // Enables font underlining when set.
    struct RGB8 Colour;     // The font colour in RGB8 format.
@@ -131,28 +131,28 @@ class objFont : public Object {
       return ERR::Okay;
    }
 
-   template <class T> inline ERR setString(T && Value) noexcept {
+   inline ERR setString(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
-   template <class T> inline ERR setPath(T && Value) noexcept {
+   inline ERR setPath(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[11];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
-   template <class T> inline ERR setStyle(T && Value) noexcept {
+   inline ERR setStyle(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[22];
-      return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804500, &Value, 1);
    }
 
-   template <class T> inline ERR setFace(T && Value) noexcept {
+   inline ERR setFace(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[25];
-      return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804500, &Value, 1);
    }
 
    inline ERR setOutline(const struct RGB8 Value) noexcept {

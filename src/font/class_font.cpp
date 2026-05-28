@@ -8,41 +8,40 @@ that is distributed with this package.  Please refer to it for further informati
 -CLASS-
 Font: Draws bitmap fonts and manages font meta information.
 
-The Font class is provided for the purpose of bitmap font rendering and querying font meta information.  It supports
-styles such as bold, italic and underlined text, along with extra features such as adjustable spacing and word
-alignment. Fixed-point bitmap fonts are supported through the Windows .fon file format.  Truetype fonts are
-not supported (refer to the @VectorText class for this feature).
+The Font class renders fixed-size bitmap fonts to a @Bitmap and exposes metrics for the selected font face.  It
+supports bold, italic and underlined text, as well as adjustable glyph spacing, line spacing, tab width and alignment.
+Bitmap fonts are loaded from Windows `.fon` files.  Scalable TrueType rendering is provided by @VectorText instead.
 
-Bitmap fonts must be stored in the `fonts:fixed/` directory in order to be recognised.  The process of font
-installation and file management is managed by functions supplied in the Font module.
+Bitmap fonts must be stored in the `fonts:fixed/` directory to be recognised during font database refreshes.  Use the
+Font module's query and refresh functions to inspect or rebuild the installed font list.
 
-The Font class includes full support for the unicode character set through its support for UTF-8.  This gives you the
-added benefit of being able to support international character sets with ease, but you must be careful not to use
-character codes above #127 without being sure that they follow UTF-8 guidelines.  Find out more about UTF-8 at
-this <a href="http://www.cl.cam.ac.uk/~mgk25/unicode.html">web page</a>.
+Font strings are interpreted as UTF-8, allowing Unicode text to be supplied through the #String field.  Do not insert
+arbitrary byte values above `127` unless they are valid UTF-8 sequences.  Invalid or unsupported glyphs fall back to
+the font's default character.
 
-Initialisation of a new font object can be as simple as declaring its #Point size and #Face name.  Font objects can
-be difficult to alter post-initialisation, so all style and graphical selections must be defined on creation.  For
-example, it is not possible to change styling from regular to bold format dynamically.  To support multiple styles
-of the same font, create a font object for every style that requires support.  Basic settings such as colour, the
-font string and text positioning are not affected by these limitations.
+Initialisation of a new Font object can be as simple as declaring its #Point size and #Face name.  Font face, size and
+style selections should be set before initialisation because the loaded bitmap data is cached for that combination.
+To use multiple styles of the same face, create one Font object for each required style.  Runtime drawing properties
+such as colour, #String, #X, #Y and alignment can still be changed between draw operations.
 
-To draw a font string to a Bitmap object, start by setting the #Bitmap and #String fields.  The #X and #Y fields
-determine string positioning and you can also use the #Align field to position a string to the right or center of the
-surface area.
+To draw a string, set #Bitmap and #String, then call #Draw().  The #X and #Y fields set the starting position.  Use
+#Align together with #AlignWidth and #AlignHeight when text needs to be positioned within a larger surface area.
 
-To clarify the terminology used in this documentation, please note the definitions for the following terms:
+This documentation uses the following font terminology:
 
 <list type="bullet">
-<li>'Point' determines the size of a font.  The value is relative only to other point sizes of the same font face, i.e. two faces at the same point size are not necessarily the same height.</li>
-<li>'Height' represents the 'vertical bearing' or point of the font, expressed as a pixel value.  The height does not cover any leading at the top of the font, or the gutter space used for the tails on characters like 'g' and 'y'.</li>
-<li>'Gutter' is the amount of space that a character can descend below the base line.  Characters like 'g' and 'y' are examples of characters that utilise the gutter space.  The gutter is also sometimes known as the 'external leading' or 'descent' of a character.</li>
-<li>'LineSpacing' is the recommended pixel distance between each line that is printed with the font.</li>
-<li>'Glyph' refers to a single font character.</li>
-</>
+<li>`Point` is the requested size of the font.  It is relative to other point sizes of the same face; two faces at the
+same point size are not necessarily the same pixel height.</li>
+<li>`Height` is the vertical bearing of the font expressed in pixels.  It excludes top leading and the gutter used by
+descending glyphs.</li>
+<li>`Gutter` is the space below the baseline used by descending glyphs such as `g` and `y`.  It is also known as the
+external leading or descent.</li>
+<li>`LineSpacing` is the recommended pixel distance from one baseline to the next.</li>
+<li>`Glyph` is a single rendered character image.</li>
+</list>
 
-Please note that in the majority of cases the @VectorText class should be used for drawing strings because the Font
-class is not integrated with the display's vector scene graph.
+Use @VectorText for most display text.  The Font class draws directly to a @Bitmap and is not integrated with the
+display vector scene graph.
 
 -END-
 
@@ -50,18 +49,19 @@ class is not integrated with the display's vector scene graph.
 
 static BitmapCache * check_bitmap_cache(extFont *, FTF);
 static ERR SET_Point(extFont *Self, double);
-static ERR SET_Style(extFont *, CSTRING);
+static ERR SET_Style(extFont *, const std::string_view &);
 
 /*********************************************************************************************************************
 
 -ACTION-
 Draw: Draws a font to a Bitmap.
 
-Draws a font to a target Bitmap, starting at the coordinates of #X and #Y, using the characters in the font #String.
+Draws #String to the target #Bitmap, starting at #X and #Y after any configured alignment and baseline adjustments have
+been applied.
 
 -ERRORS-
 Okay
-FieldNotSet: The Bitmap and/or String field has not been set.
+FieldNotSet: The #Bitmap field has not been set.
 -END-
 
 *********************************************************************************************************************/
@@ -90,7 +90,6 @@ static ERR FONT_Free(extFont *Self)
       }
    }
 
-   if (Self->Path) { FreeResource(Self->Path); Self->Path = nullptr; }
    Self->~extFont();
    return ERR::Okay;
 }
@@ -104,25 +103,28 @@ static ERR FONT_Init(extFont *Self)
    FTF style;
    FMETA meta = FMETA::NIL;
 
-   if ((!Self->prvFace[0]) and (!Self->Path)) return log.warning(ERR::FieldNotSet);
+   if ((Self->Face.empty()) and (Self->Path.empty())) return log.warning(ERR::FieldNotSet);
 
    if (!Self->Point) Self->Point = global_point_size();
 
-   if (!Self->Path) {
+   if (Self->Path.empty()) {
       CSTRING path = nullptr;
-      if (fnt::SelectFont(Self->prvFace, Self->prvStyle, &path, &meta) IS ERR::Okay) {
-         Self->set(FID_Path, path);
+      auto error = fnt::SelectFont(Self->Face, Self->Style, &path, &meta);
+      if (error IS ERR::Okay) {
+         error = Self->set(FID_Path, path);
          FreeResource(path);
+         if (error != ERR::Okay) return error;
       }
       else {
-         log.warning("Font \"%s\" (point %.2f, style %s) is not recognised.", Self->prvFace, Self->Point, Self->prvStyle);
-         return ERR::Failed;
+         log.warning("Font \"%s\" (point %.2f, style %s) is not recognised.", Self->Face.c_str(), Self->Point,
+            Self->Style.c_str());
+         return error;
       }
    }
 
    // Check the bitmap cache to see if we have already loaded this font
 
-   style = font_style_flags(Self->prvStyle);
+   style = font_style_flags(Self->Style);
 
    CACHE_LOCK lock(glCacheMutex);
 
@@ -147,7 +149,7 @@ static ERR FONT_Init(extFont *Self)
 
             winfnt_header_fields header;
             if (file->read(&header, sizeof(header)) IS ERR::Okay) {
-               if (auto error = validate_winfnt_header(header, nullptr); error != ERR::Okay) {
+               if (auto error = validate_winfnt_header(header, ""); error != ERR::Okay) {
                   return log.warning(error);
                }
 
@@ -170,7 +172,7 @@ static ERR FONT_Init(extFont *Self)
          Self->Point = face.nominal_point_size;
          cache = check_bitmap_cache(Self, style);
          if (!cache) { // Load the font into the cache
-            auto it = glBitmapCache.emplace(glBitmapCache.end(), face, Self->prvStyle, Self->Path, *file, fonts[wfi]);
+            auto it = glBitmapCache.emplace(glBitmapCache.end(), face, Self->Style, Self->Path, *file, fonts[wfi]);
 
             if (it->Result IS ERR::Okay) cache = &(*it);
             else {
@@ -184,7 +186,7 @@ static ERR FONT_Init(extFont *Self)
    }
 
    if (cache) {
-      Self->prvData     = cache->mData;
+      Self->prvData     = cache->mData.data();
       Self->Ascent      = cache->Header.ascent;
       Self->Point       = cache->Header.nominal_point_size;
       Self->Height      = cache->Header.ascent - cache->Header.internal_leading + cache->Header.external_leading;
@@ -213,9 +215,10 @@ static ERR FONT_Init(extFont *Self)
 
    // Remove the location string to reduce resource usage
 
-   if (Self->Path) { FreeResource(Self->Path); Self->Path = nullptr; }
+   Self->Path.clear();
 
-   log.detail("Family: %s, Style: %s, Point: %.2f, Height: %d", Self->prvFace, Self->prvStyle, Self->Point, Self->Height);
+   log.detail("Family: %s, Style: %s, Point: %.2f, Height: %d", Self->Face.c_str(), Self->Style.c_str(),
+      Self->Point, Self->Height);
    return ERR::Okay;
 }
 
@@ -227,11 +230,9 @@ static ERR FONT_NewPlacement(extFont *Self)
    Self->TabSize         = 8;
    Self->prvDefaultChar  = '.';
    Self->prvLineCountCR  = 1;
-   Self->Style           = Self->prvStyle;
-   Self->Face            = Self->prvFace;
    Self->Colour.Alpha    = 255;
    Self->GlyphSpacing    = 1.0;
-   strcopy("Regular", Self->prvStyle, sizeof(Self->prvStyle));
+   Self->Style           = "Regular";
    return ERR::Okay;
 }
 
@@ -240,27 +241,23 @@ static ERR FONT_NewPlacement(extFont *Self)
 -FIELD-
 Align: Sets the position of a font string to an abstract alignment.
 
-Use this field to set the alignment of a font string within its surface area.  This is an abstract means of positioning
-in comparison to setting the #X and #Y fields directly.
+Sets the alignment of the font string within the #AlignWidth and #AlignHeight area.  This is used in addition to the
+#X and #Y drawing coordinates.
 
 -FIELD-
 AlignHeight: The height to use when aligning the font string.
 
-If the `VERTICAL` or `TOP` alignment options are used in the #Align field, the AlignHeight should be set so
-that the alignment of the font string can be correctly calculated.  If the AlignHeight is not defined, the target
-#Bitmap's height will be used when computing alignment.
+Defines the height of the area used for vertical alignment.  If this field is `0`, the target #Bitmap height is used.
 
 -FIELD-
 AlignWidth: The width to use when aligning the font string.
 
-If the `HORIZONTAL` or `RIGHT` alignment options are used in the #Align field, the AlignWidth should be set so
-that the alignment of the font string can be correctly calculated.  If the AlignWidth is not defined, the target
-#Bitmap's width will be used when computing alignment.
+Defines the width of the area used for horizontal alignment.  If this field is `0`, the target #Bitmap width is used.
 
 -FIELD-
 Ascent: The total number of pixels above the baseline.
 
-The Ascent value reflects the total number of pixels above the baseline, including the #Leading value.
+Reflects the total number of pixels above the baseline, including #Leading.
 
 -FIELD-
 Bitmap: The destination Bitmap to use when drawing a font.
@@ -268,15 +265,15 @@ Bitmap: The destination Bitmap to use when drawing a font.
 -FIELD-
 Bold: Set to `true` to enable bold styling.
 
-Setting the Bold field to `true` prior to initialisation will enable bold styling.  This field is provided only for
-convenience - we recommend that you set the Style field for determining font styling where possible.
+Setting this field before initialisation selects the `Bold` style, or `Bold Italic` if #Italic is also set.  Prefer
+#Style when setting an exact style name.
 
 *********************************************************************************************************************/
 
 static ERR GET_Bold(extFont *Self, int *Value)
 {
    if ((Self->Flags & FTF::BOLD) != FTF::NIL) *Value = TRUE;
-   else if (kt::strisearch("bold", Self->prvStyle) != -1) *Value = TRUE;
+   else if (kt::strisearch("bold", Self->Style) != -1) *Value = TRUE;
    else *Value = FALSE;
    return ERR::Okay;
 }
@@ -284,7 +281,7 @@ static ERR GET_Bold(extFont *Self, int *Value)
 static ERR SET_Bold(extFont *Self, int Value)
 {
    const bool bold = Value != FALSE;
-   const bool italic = ((Self->Flags & FTF::ITALIC) != FTF::NIL) or (kt::strisearch("italic", Self->prvStyle) != -1);
+   const bool italic = ((Self->Flags & FTF::ITALIC) != FTF::NIL) or (kt::strisearch("italic", Self->Style) != -1);
 
    if (bold and italic) return SET_Style(Self, "Bold Italic");
    else if (bold) return SET_Style(Self, "Bold");
@@ -300,25 +297,21 @@ Colour: The font colour in !RGB8 format.
 -FIELD-
 EndX: Indicates the final horizontal coordinate after completing a draw operation.
 
-The EndX and #EndY fields reflect the final coordinate of the font #String, following the most recent call to
-the #Draw() action.
+Reflects the final horizontal coordinate reached by the most recent #Draw() operation.
 
 -FIELD-
 EndY: Indicates the final vertical coordinate after completing a draw operation.
 
-The #EndX and EndY fields reflect the final coordinate of the font #String, following the most recent call to
-the #Draw() action.
+Reflects the final vertical coordinate reached by the most recent #Draw() operation.
 
 -FIELD-
 Face: The name of a font face that is to be loaded on initialisation.
 
-The name of an installed font face must be specified here for initialisation.  If this field is undefined then the
-initialisation process will use the user's preferred face.  A list of available faces can be obtained from the
-~Font.GetList() function.
+The name of an installed font face must be specified before initialisation unless #Path is set directly.  A list of
+available faces can be obtained from ~Font.GetList().
 
-For convenience, the face string can also be extended with extra parameters so that the point size and style are
-defined at the same time.  Extra parameters are delimited with the colon character and must follow a set order
-defined as `face:pointsize:style:colour`.
+The face string can include optional point size, style and colour values in the form `face:pointsize:style:colour`.
+Omitted middle values may be left empty.
 
 Here are some examples:
 
@@ -328,51 +321,51 @@ Courier:10.6
 Charter:120%::255,128,255
 </pre>
 
-Multiple font faces can be specified in CSV format, e.g. `Sans Serif,Noto Sans`, which allows the closest matching
-font to be selected if the first face is unavailable or unable to match the requested point size.
+Multiple font faces can be specified in CSV format, e.g. `Sans Serif,Noto Sans`.  Names are resolved from left to
+right.
 
 *********************************************************************************************************************/
 
-static ERR SET_Face(extFont *Self, STRING Value)
+static ERR SET_Face(extFont *Self, const std::string_view &Value)
 {
-   if ((Value) and (Value[0])) {
+   if (not Value.empty()) {
       CSTRING final_name;
-      int i;
-      for (i=0; Value[i] and Value[i] != ':'; i++);
-
-      std::string face(Value, i);
-      if (fnt::ResolveFamilyName(face, &final_name) IS ERR::Okay) {
-         strcopy(final_name, Self->prvFace, std::ssize(Self->prvFace));
+      auto i = Value.find(':');
+      auto face = Value.substr(0, i);
+      if (auto error = fnt::ResolveFamilyName(face, &final_name); error IS ERR::Okay) {
+         Self->Face.assign(final_name);
       }
+      else return error;
 
-      if (!Value[i]) return ERR::Okay;
+      if (i IS std::string::npos) return ERR::Okay;
 
       // Extract the point size
 
-      Value += i + 1;
-      if ((*Value) and (*Value != ':')) {
-         double pt = strtod(Value, &Value);
-         SET_Point(Self, pt);
+      auto point = Value.substr(i + 1);
+      i = point.find(':');
+      auto point_value = point.substr(0, i);
+      if (not point_value.empty()) {
+         double pt = 0;
+         auto result = std::from_chars(point_value.data(), point_value.data() + point_value.size(), pt);
+         if (result.ec IS std::errc()) SET_Point(Self, pt);
       }
 
-      while ((*Value) and (*Value != ':')) Value++;
-      if (!*Value) return ERR::Okay;
+      if (i IS std::string::npos) return ERR::Okay;
 
       // Extract the style string
 
-      Value++;
-      char style[sizeof(Self->prvStyle)];
-      for (i=0; (Value[i]) and (Value[i] != ':') and (i < int(sizeof(style))-1); i++) style[i] = Value[i];
-      style[i] = 0;
-      SET_Style(Self, style);
+      auto style = point.substr(i + 1);
+      i = style.find(':');
 
-      if (Value[i] != ':') return ERR::Okay;
+      SET_Style(Self, style.substr(0, i));
+
+      if (i IS std::string::npos) return ERR::Okay;
 
       // Extract the colour string
 
-      Self->set(FID_Colour, Value + i + 1);
+      Self->set(FID_Colour, style.substr(i + 1));
    }
-   else Self->prvFace[0] = 0;
+   else Self->Face.clear();
 
    return ERR::Okay;
 }
@@ -382,8 +375,8 @@ static ERR SET_Face(extFont *Self, STRING Value)
 -FIELD-
 FixedWidth: Forces a fixed pixel width to use for all glyphs.
 
-The FixedWidth value imposes a preset pixel width for all glyphs in the font.  It is important to note that if the
-fixed width value is less than the widest glyph, the glyphs will overlap each other.
+Forces all glyphs to advance by the specified pixel width.  If the value is less than the widest glyph, rendered glyphs
+can overlap.
 
 -FIELD-
 Flags:  Optional flags.
@@ -401,36 +394,35 @@ static ERR SET_Flags(extFont *Self, FTF Value)
 -FIELD-
 Gutter: The 'external leading' value, measured in pixels.  Applies to fixed fonts only.
 
-This field reflects the 'external leading' value (also known as the 'gutter'), measured in pixels.
+Reflects the external leading, or descent area, below the baseline.
 
 -FIELD-
 Height: The point size of the font, expressed in pixels.
 
-The point size of the font is expressed in this field as a pixel measurement.  It does not not include the leading value
-(refer to #Ascent if leading is required).
+Reflects the initialised font height in pixels.  It does not include #Leading; use #Ascent when the leading-inclusive
+distance above the baseline is required.
 
 The height is calculated on initialisation and can be read at any time.
 
 -FIELD-
 GlyphSpacing: Adjusts the amount of spacing between each character.
 
-This field adjusts the horizontal spacing between each glyph, technically known as kerning between each font
-character.  The value is expressed as a multiplier of the width of each character, and defaults to `1.0`.
+Adjusts horizontal glyph advance as a multiplier of each glyph's normal width.  The default value is `1.0`.
 
 Using negative values is valid, and can lead to text being printed backwards.
 
 -FIELD-
 Italic: Set to `true` to enable italic styling.
 
-Setting the Italic field to `true` prior to initialisation will enable italic styling.  This field is provided for
-convenience only - we recommend that you set the #Style field for determining font styling where possible.
+Setting this field before initialisation selects the `Italic` style, or `Bold Italic` if #Bold is also set.  Prefer
+#Style when setting an exact style name.
 
 *********************************************************************************************************************/
 
 static ERR GET_Italic(extFont *Self, int *Value)
 {
    if ((Self->Flags & FTF::ITALIC) != FTF::NIL) *Value = TRUE;
-   else if (kt::strisearch("italic", Self->prvStyle) != -1) *Value = TRUE;
+   else if (kt::strisearch("italic", Self->Style) != -1) *Value = TRUE;
    else *Value = FALSE;
    return ERR::Okay;
 }
@@ -438,7 +430,7 @@ static ERR GET_Italic(extFont *Self, int *Value)
 static ERR SET_Italic(extFont *Self, int Value)
 {
    const bool italic = Value != FALSE;
-   const bool bold = ((Self->Flags & FTF::BOLD) != FTF::NIL) or (kt::strisearch("bold", Self->prvStyle) != -1);
+   const bool bold = ((Self->Flags & FTF::BOLD) != FTF::NIL) or (kt::strisearch("bold", Self->Style) != -1);
 
    if (bold and italic) return SET_Style(Self, "Bold Italic");
    else if (bold) return SET_Style(Self, "Bold");
@@ -454,8 +446,7 @@ Leading: 'Internal leading' measured in pixels.  Applies to fixed fonts only.
 -FIELD-
 LineCount: The total number of lines in a font string.
 
-This field indicates the number of lines that are present in a #font's String field.  If word wrapping is enabled,
-this will be taken into account in the resulting figure.
+Returns the number of lines in #String.  If #WrapEdge is set, wrapped lines are included in the count.
 
 *********************************************************************************************************************/
 
@@ -471,29 +462,26 @@ static ERR GET_LineCount(extFont *Self, int *Value)
 -FIELD-
 LineSpacing: The amount of spacing between each line.
 
-This field defines the amount of space between each line that is printed with a font object.  It is set automatically
-during initialisation to reflect the recommended distance between each line.   The client can increase or decrease
-this value to make finer adjustments to the line spacing.  If negative, the text will be printed in a reverse vertical
-direction with each new line.
+Defines the vertical distance from one line baseline to the next.  It is initialised from the selected font and can be
+increased or decreased to adjust line spacing.  If negative, later lines are drawn upward.
 
-If set prior to initialisation, the value will be added to the font's normal line-spacing instead of over-riding it.
+If set before initialisation, the value is added to the font's normal line spacing instead of replacing it.
 For instance, setting the LineSpacing to 2 will result in an extra 2 pixels being added to the font's spacing.
 
 -FIELD-
 Path: The path to a font file.
 
-This field can be defined prior to initialisation.  It can be used to refer to the exact location of a font data file,
-in opposition to the normal practice of loading fonts that are installed on the host system.
+Defines the exact font file to load before initialisation.  This bypasses normal face-name resolution through the font
+database.
 
 This feature is ideal for use when distributing custom fonts with an application.
 
 *********************************************************************************************************************/
 
-static ERR SET_Path(extFont *Self, CSTRING Value)
+static ERR SET_Path(extFont *Self, const std::string_view &Value)
 {
    if (!Self->initialised()) {
-      if (Self->Path) { FreeResource(Self->Path); Self->Path = nullptr; }
-      if (Value) Self->Path = strclone(Value);
+      Self->Path.assign(Value);
       return ERR::Okay;
    }
    else return ERR::Failed;
@@ -504,15 +492,13 @@ static ERR SET_Path(extFont *Self, CSTRING Value)
 -FIELD-
 MaxHeight: The maximum possible pixel height per character.
 
-This field reflects the maximum possible pixel height per character, covering the entire character set at the current
-point size.
+Reflects the maximum bitmap height for the selected font at the current point size.
 
 -FIELD-
 Opacity: Determines the level of translucency applied to a font.
 
-This field determines the translucency level of a font graphic.  The default setting is 100%, which means that the font
-will not be translucent.  Any other value set here will alter the impact of a font's graphic over the destination
-#Bitmap.  High values will retain the boldness of the font, while low values can render it close to invisible.
+Determines the translucency level of the font fill colour.  The default setting is `100`, meaning fully opaque.
+Lower values blend the glyphs with the destination #Bitmap.
 
 Please note that the use of translucency will always have an impact on the time it normally takes to draw a font.
 
@@ -537,14 +523,13 @@ static ERR SET_Opacity(extFont *Self, double Value)
 -FIELD-
 Outline: Defines the outline colour around a font.
 
-An outline can be drawn around a font by setting the Outline field to an !RGB8 colour.  The outline can be turned off by
-writing this field with a `NULL` value or setting the alpha component to zero.  Outlining is currently supported for
-bitmap fonts only.
+Draws a one-pixel outline around bitmap glyphs when set to an !RGB8 colour with a non-zero alpha component.  Set the
+field to `NULL` or use an alpha value of zero to disable outlining.
 
 -FIELD-
 Point: The point size of a font.
 
-The point size defines the size of a font in point units, at a ratio of 1:72 DPI.
+Defines the requested font size in points.
 
 When setting the point size of a bitmap font, the system will try and find the closest matching value for the requested
 point size.  For instance, if you request a fixed font at point 11 and the closest size is point 8, the system will
@@ -570,34 +555,32 @@ static ERR SET_Point(extFont *Self, double Value)
 -FIELD-
 String: The string to use when drawing a Font.
 
-The String field must be defined in order to draw text with a font object.  A string must consist of a valid sequence
-of UTF-8 characters.  Line feeds are allowed (whenever a line feed is reached, the Draw() action will start printing on
-the next line).  Drawing will stop when the null termination character is reached.
+The String field must be defined to draw text with a Font object.  It must contain valid UTF-8.  Line feed characters
+start a new line during #Draw().
 
 If a string contains characters that are not supported by a font, those characters will be printed using a default
 character from the font.
 
 *********************************************************************************************************************/
 
-static ERR SET_String(extFont *Self, CSTRING Value)
+static ERR SET_String(extFont *Self, const std::string_view &Value)
 {
-   if ((Value) and (Self->String) and (std::string_view(Value) IS Self->String)) return ERR::Okay;
+   if (Self->String.size() IS Value.size()) {
+      if (std::string_view(Self->String) IS Value) return ERR::Okay;
+   }
 
-   Self->prvLineCount = 0;
-   Self->prvStrWidth  = 0; // Reset the string width for GET_Width
+   Self->prvLineCount   = 0;
+   Self->prvStrWidth    = 0; // Reset the string width for GET_Width
    Self->prvLineCountCR = 1; // Line count (carriage returns only)
 
-   if ((Value) and (*Value)) {
-      int i;
-      for (i=0; Value[i]; i++) if (Value[i] IS '\n') Self->prvLineCountCR++;
+   if (not Value.empty()) {
+      for (auto ch : Value) {
+         if (ch IS '\n') Self->prvLineCountCR++;
+      }
 
-      Self->prvBuffer.assign(Value);
-      Self->String = (STRING)Self->prvBuffer.c_str();
+      Self->String.assign(Value);
    }
-   else {
-      Self->prvBuffer.clear();
-      Self->String = nullptr;
-   }
+   else Self->String.clear();
 
    return ERR::Okay;
 }
@@ -607,9 +590,8 @@ static ERR SET_String(extFont *Self, CSTRING Value)
 -FIELD-
 Style: Determines font styling.
 
-The style of a font can be selected by setting the Style field.  This comes into effect only if the font actually
-supports the specified style as part of its graphics set.  If the style is unsupported, the regular styling of the
-face will be used on initialisation.
+Selects the preferred style for initialisation.  If the selected face does not provide that style, regular styling or
+the first registered style is used.
 
 Bitmap fonts are a special case if a bold or italic style is selected.  In this situation the system can automatically
 convert the font to that style even if the correct graphics set does not exist.
@@ -618,10 +600,10 @@ Conventional font styles are `Bold`, `Bold Italic`, `Italic` and `Regular` (the 
 
 *********************************************************************************************************************/
 
-static ERR SET_Style(extFont *Self, CSTRING Value)
+static ERR SET_Style(extFont *Self, const std::string_view &Value)
 {
-   if ((!Value) or (!Value[0])) strcopy("Regular", Self->prvStyle, sizeof(Self->prvStyle));
-   else strcopy(Value, Self->prvStyle, sizeof(Self->prvStyle));
+   if (Value.empty()) Self->Style = "Regular";
+   else Self->Style.assign(Value);
    return ERR::Okay;
 }
 
@@ -630,27 +612,27 @@ static ERR SET_Style(extFont *Self, CSTRING Value)
 -FIELD-
 TabSize: Defines the tab size to use when drawing and manipulating a font string.
 
-The TabSize value controls the interval between tabs, measured in characters.
+Controls the tab interval, measured in character columns.
 
-The default tab size is 8 and the TabSize only comes into effect when tab characters are used in the font #String.
+The default tab size is `8`.  This field only affects tab characters in #String.
 
 -FIELD-
 Underline: Enables font underlining when set.
 
-To underline a font string, set the Underline field to the colour that should be used to draw the underline.
-Underlining can be turned off by writing this field with a `NULL` value or setting the alpha component to zero.
+Draws an underline using the supplied !RGB8 colour.  Set the field to `NULL` or use an alpha value of zero to disable
+underlining.
 
 -FIELD-
 Width: Returns the pixel width of a string.
 
-Read this virtual field to obtain the pixel width of a font string.  You must have already set a string in the font for
-this to work, or a width of zero will be returned.
+Returns the pixel width of #String using the current font metrics and wrapping settings.  If #String is empty, the
+result is `0`.
 
 *********************************************************************************************************************/
 
 static ERR GET_Width(extFont *Self, int *Value)
 {
-   if (!Self->String) {
+   if (Self->String.empty()) {
       *Value = 0;
       return ERR::Okay;
    }
@@ -671,27 +653,24 @@ static ERR GET_Width(extFont *Self, int *Value)
 -FIELD-
 WrapEdge: Enables word wrapping at a given boundary.
 
-Word wrapping is enabled by setting the WrapEdge field to a value greater than zero.  Wrapping occurs whenever the
-right-most edge of any word in the font string extends past the coordinate indicated by the WrapEdge.
+Enables word wrapping when set to a value greater than zero.  Wrapping occurs when a word extends beyond this X
+coordinate.
 
 -FIELD-
 X: The starting horizontal position when drawing the font string.
 
-When drawing font strings, the X and #Y fields define the position that the string will be drawn to in the target
-surface.  The default coordinates are `(0, 0)`.
+Defines the starting horizontal coordinate for #Draw().  The default coordinate is `0`.
 
 -FIELD-
 Y: The starting vertical position when drawing the font string.
 
-When drawing font strings, the #X and Y fields define the position that the string will be drawn to in the target
-surface.  The default coordinates are `(0, 0)`.
+Defines the starting vertical coordinate for #Draw().  The default coordinate is `0`.
 
 -FIELD-
 YOffset: Additional offset value that is added to vertically aligned fonts.
 
-Fonts that are aligned vertically (either in the center or bottom edge of the drawing area) will have a vertical offset
-value.  Reading that value from this field and adding it to the Y field will give you an accurate reading of where
-the string will be drawn.
+Returns the vertical offset applied by `VERTICAL` or `BOTTOM` alignment.  Add this value to #Y to determine the
+aligned drawing baseline.
 -END-
 
 *********************************************************************************************************************/
@@ -749,18 +728,18 @@ static ERR draw_bitmap_font(extFont *Self)
    uint8_t *xdata, *data;
    int linewidth, offset, wrapindex, charlen;
    uint32_t unicode, ocolour;
-   int16_t startx, xpos, ex, ey, sx, sy, xinc;
-   int16_t bytewidth, alpha, charwidth;
+   int startx, xpos, ex, ey, sx, sy, xinc;
+   int bytewidth, alpha, charwidth;
    bool draw_line;
    #define CHECK_LINE_CLIP(font,y,bmp) if (((y)-1 < (bmp)->Clip.Bottom) and ((y) + (font)->prvBitmapHeight + 1 > (bmp)->Clip.Top)) draw_line = true; else draw_line = false;
 
    // Validate settings for fixed font type
 
    if (not (bitmap = Self->Bitmap)) return log.warning(ERR::FieldNotSet);
-   if (Self->prvBuffer.empty()) return ERR::Okay;
+   if (Self->String.empty()) return ERR::Okay;
 
    ERR error = ERR::Okay;
-   auto str = std::string_view(Self->prvBuffer);
+   auto str = std::string_view(Self->String);
    int dxcoord = Self->X;
    int dycoord = Self->Y;
 
@@ -775,6 +754,7 @@ static ERR draw_bitmap_font(extFont *Self)
    }
 
    const char *wrapstr = calc_line_layout(Self, str, &linewidth, &wrapindex, &dxcoord);
+   const char *line_start = str.data();
 
    uint32_t colour  = bitmap->getColour(Self->Colour);
    uint32_t ucolour = bitmap->getColour(Self->Underline);
@@ -787,7 +767,7 @@ static ERR draw_bitmap_font(extFont *Self)
 
    if (acLock(bitmap) != ERR::Okay) return log.warning(ERR::Lock);
 
-   int16_t dx = 0, dy = 0;
+   int dx = 0, dy = 0;
    startx = dxcoord;
    CHECK_LINE_CLIP(Self, dycoord, bitmap);
    while (not str.empty()) {
@@ -804,6 +784,7 @@ static ERR draw_bitmap_font(extFont *Self)
          }
 
          wrapstr = calc_line_layout(Self, str, &linewidth, &wrapindex, &dxcoord);
+         line_start = str.data();
          startx = dxcoord;
          dycoord += Self->LineSpacing;
          CHECK_LINE_CLIP(Self, dycoord, bitmap);
@@ -826,7 +807,7 @@ static ERR draw_bitmap_font(extFont *Self)
 
          // Wordwrap management
 
-         if (str.data() >= wrapstr) {
+         if ((str.data() >= wrapstr) and (str.data() > line_start)) {
             dxcoord = Self->X;
             dycoord += Self->LineSpacing;
 
@@ -837,6 +818,7 @@ static ERR draw_bitmap_font(extFont *Self)
             if (str.empty()) break;
 
             wrapstr = calc_line_layout(Self, str, &linewidth, &wrapindex, &dxcoord);
+            line_start = str.data();
             CHECK_LINE_CLIP(Self, dycoord, bitmap);
          }
 
@@ -1046,10 +1028,10 @@ static const FieldArray clFontFields[] = {
    { "Point",        FDF_DOUBLE|FDF_RW, GET_Point, SET_Point },
    { "GlyphSpacing", FDF_DOUBLE|FDF_RW },
    { "Bitmap",       FDF_OBJECT|FDF_RW, nullptr, nullptr, CLASSID::BITMAP },
-   { "String",       FDF_STRING|FDF_RW, nullptr, SET_String },
-   { "Path",         FDF_STRING|FDF_RW, nullptr, SET_Path },
-   { "Style",        FDF_STRING|FDF_RI, nullptr, SET_Style },
-   { "Face",         FDF_STRING|FDF_RI, nullptr, SET_Face },
+   { "String",       FDF_CPPSTRING|FDF_RW, nullptr, SET_String },
+   { "Path",         FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
+   { "Style",        FDF_CPPSTRING|FDF_RI, nullptr, SET_Style },
+   { "Face",         FDF_CPPSTRING|FDF_RI, nullptr, SET_Face },
    { "Outline",      FDF_RGB|FDF_RW },
    { "Underline",    FDF_RGB|FDF_RW },
    { "Colour",       FDF_RGB|FDF_RW },
@@ -1074,7 +1056,7 @@ static const FieldArray clFontFields[] = {
    { "Bold",         FDF_VIRTUAL|FDF_INT|FDF_RW, GET_Bold, SET_Bold },
    { "Italic",       FDF_VIRTUAL|FDF_INT|FDF_RW, GET_Italic, SET_Italic },
    { "LineCount",    FDF_VIRTUAL|FDF_INT|FDF_R, GET_LineCount },
-   { "Location",     FDF_VIRTUAL|FDF_STRING|FDF_SYNONYM|FDF_RW, nullptr, SET_Path },
+   { "Location",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_SYNONYM|FDF_RW, nullptr, SET_Path },
    { "Opacity",      FDF_VIRTUAL|FDF_DOUBLE|FDF_RW, GET_Opacity, SET_Opacity },
    { "Width",        FDF_VIRTUAL|FDF_INT|FDF_R, GET_Width },
    { "YOffset",      FDF_VIRTUAL|FDF_INT|FDF_R, GET_YOffset },
