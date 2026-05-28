@@ -83,6 +83,7 @@ global function parseDocTags(Tags:str, Context:str)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Apply automatic documentation tags to a tag list based on a field definition.
 
 global function addDocTag(Tags, Tag:str)
    Tags ?= array<string> { }
@@ -98,12 +99,16 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 
+----------------------------------------------------------------------------------------------------------------------
+-- Convert a documentation tag list to the comma-separated form used by generated output.
+
 global function serialiseDocTags(Tags)
    Tags ?! return
    if #Tags > 0 then return Tags:concat(', ') end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Route a class documentation entry to the parser for its recognised section type.
 
 global function parseClassEntry(Class, Type, Extract)
    choose Type from
@@ -170,7 +175,7 @@ global function parseAction(Class:table, Extract:str)
 
    local tags = rx_tags_section.extract(Extract)
    if tags?? then
-      action.tags = parseDocTags(tags, f"action '{Class.name}.{name}'")
+      action.tags = parseTags(tags, f"action '{Class.name}.{name}'")
    end
 end
 
@@ -209,7 +214,7 @@ global function parseField(Class:table, Extract:str)
 
       local tags = rx_tags_section.extract(Extract)
       if tags?? then
-         f.tags = parseDocTags(tags, f"field '{Class.name}.{name}'")
+         f.tags = parseTags(tags, f"field '{Class.name}.{name}'")
       end
    elseif Class.meta then
       print("Field '" .. Class.name .. "." .. tostring(name) .. "' is not defined in the TDL or compiled class spec.")
@@ -307,7 +312,7 @@ global function parseMethod(Class:table, Extract:str)
 
    local tags = rx_tags_section.extract(Extract)
    if tags?? then
-      method.tags = parseDocTags(tags, f"method '{Class.name}.{name}'")
+      method.tags = parseTags(tags, f"method '{Class.name}.{name}'")
    end
 end
 
@@ -552,7 +557,7 @@ global function parseFunction(Extract:str)
 
    local tags = rx_tags_section.extract(Extract)
    if tags?? then
-      def.tags = parseDocTags(tags, f"function '{name}'")
+      def.tags = parseTags(tags, f"function '{name}'")
    end
 
    idlFunction(name, (category ?? glCategory), comment, status, description, def)
