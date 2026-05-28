@@ -857,8 +857,9 @@ global function docClass(Class)
                end
             end
 
-            if a.tags?? then
-               out ..= f'    <tags>{a.tags:escXML()}</tags>\n'
+            local tags = serialiseDocTags(a.tags)
+            if tags?? then
+               out ..= f'      <tags>{tags:escXML()}</tags>\n'
             end
 
             out ..= '    </action>\n\n'
@@ -912,8 +913,9 @@ global function docClass(Class)
                end
             end
 
-            if method.tags?? then
-               out ..= f'    <tags>{method.tags:escXML()}</tags>\n'
+            local tags = serialiseDocTags(method.tags)
+            if tags?? then
+               out ..= f'      <tags>{tags:escXML()}</tags>\n'
             end
 
             out ..= '    </method>\n\n'
@@ -988,8 +990,9 @@ global function docClass(Class)
                out ..= f'      <description>\n{description}\n      </description>\n'
             end
 
-            if f.tags?? then
-               out ..= f'    <tags>{f.tags:escXML()}</tags>\n'
+            local tags = serialiseDocTags(f.tags)
+            if tags?? then
+               out ..= f'      <tags>{tags:escXML()}</tags>\n'
             end
 
             out ..= '    </field>\n\n'
@@ -1117,7 +1120,8 @@ global function docFunction(Function)
    if Function.prototype?? then out ..= '    <prototype>' .. docFunctionPrototype(Function):escXML() .. '</prototype>\n' end
    if Function.tiriPrototype?? then out ..= '    <tiriPrototype>' .. Function.tiriPrototype:escXML() .. '</tiriPrototype>\n' end
    if Function.id??        then out ..= '    <id>' .. Function.id .. '</id>\n' end
-   if Function.tags??      then out ..= f'    <tags>{Function.tags:escXML()}</tags>\n' end
+   local tags = serialiseDocTags(Function.tags)
+   if tags??              then out ..= f'    <tags>{tags:escXML()}</tags>\n' end
 
    -- Function arguments
 

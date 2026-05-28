@@ -1,25 +1,105 @@
 
-rx_doc_name        = <{ regex.new("^[Nn]ame:\\s+(.+?)\\n", regex.MULTILINE) }>
-rx_doc_combo       = <{ regex.new("^(\\w+):\\s+(.+)\\n", regex.MULTILINE) }>
-rx_doc_comment     = <{ regex.new("^[Cc]omment:\\s+(.+?)\\n", regex.MULTILINE) }>
-rx_doc_category    = <{ regex.new("^[Cc]ategory:\\s+(.+?)\\n", regex.MULTILINE) }>
-rx_doc_extproto    = <{ regex.new("^[Ee]xtPrototype:\\s+(.+?)\\n", regex.MULTILINE) }>
-rx_doc_attrib      = <{ regex.new("^[Aa]ttribute:\\s+(.+?)\\n", regex.MULTILINE) }>
-rx_doc_status      = <{ regex.new("^[Ss]tatus:\\s+(.+?)\\n", regex.MULTILINE) }>
-rx_doc_lookup      = <{ regex.new("^[Ll]ookup:\\s+(.+?)\\n", regex.MULTILINE) }>
-rx_doc_desc        = <{ regex.new("\\n\\n(.+?)\\n-[A-Z]+-\\n", regex.DOT_ALL) }>
-rx_strip_ws        = <{ regex.new("^(.*\\S)") }>
-rx_errors_section  = <{ regex.new("^-ERRORS-\\n+(.+?)\\n+-(?:TAGS|END)-", regex.DOT_ALL|regex.MULTILINE) }>
-rx_input_section   = <{ regex.new("^-INPUT-\\n+(.+?)\\n+-[A-Z]+-\\n", regex.DOT_ALL|regex.MULTILINE) }>
-rx_result_section  = <{ regex.new("^-RESULT-\\n+(.+?)\\n+-(?:TAGS|END)-", regex.DOT_ALL|regex.MULTILINE) }>
-rx_tags_section    = <{ regex.new("^-TAGS-\\n+(.+?)\\n+-END-", regex.DOT_ALL|regex.MULTILINE) }>
-rx_ecode_comment   = <{ regex.new("^([A-Za-z]+):\\s+(.+)") }>
-rx_ecode_only      = <{ regex.new("^([A-Za-z]+):?") }>
-rx_private         = <{ regex.new("^[Pp]rivate") }>
-rx_param           = <{ regex.new("^\\s*(.+)\\s+(\\S+)\\s*:\\s*(.+)$") }>
-rx_result_type     = <{ regex.new("^(.+?):\\s+(.+)$") }>
-rx_idl_section     = <{ regex.new("--IDL_BEGIN--(.+?)--IDL_END--", regex.DOT_ALL) }>
+rx_doc_name        = <{ regex.new([[^[Nn]ame:\s+(.+?)\n]], regex.MULTILINE) }>
+rx_doc_combo       = <{ regex.new([[^(\w+):\s+(.+)\n]], regex.MULTILINE) }>
+rx_doc_comment     = <{ regex.new([[^[Cc]omment:\s+(.+?)\n]], regex.MULTILINE) }>
+rx_doc_category    = <{ regex.new([[^[Cc]ategory:\s+(.+?)\n]], regex.MULTILINE) }>
+rx_doc_extproto    = <{ regex.new([[^[Ee]xtPrototype:\s+(.+?)\n]], regex.MULTILINE) }>
+rx_doc_attrib      = <{ regex.new([[^[Aa]ttribute:\s+(.+?)\n]], regex.MULTILINE) }>
+rx_doc_status      = <{ regex.new([[^[Ss]tatus:\s+(.+?)\n]], regex.MULTILINE) }>
+rx_doc_lookup      = <{ regex.new([[^[Ll]ookup:\s+(.+?)\n]], regex.MULTILINE) }>
+rx_doc_desc        = <{ regex.new([[\n\n(.+?)\n-[A-Z]+-\n]], regex.DOT_ALL) }>
+rx_strip_ws        = <{ regex.new([[^(.*\S)]]) }>
+rx_errors_section  = <{ regex.new([[^-ERRORS-\n+(.+?)\n+-(?:TAGS|END)-]], regex.DOT_ALL|regex.MULTILINE) }>
+rx_input_section   = <{ regex.new([[^-INPUT-\n+(.+?)\n+-[A-Z]+-\n]], regex.DOT_ALL|regex.MULTILINE) }>
+rx_result_section  = <{ regex.new([[^-RESULT-\n+(.+?)\n+-(?:TAGS|END)-]], regex.DOT_ALL|regex.MULTILINE) }>
+rx_tags_section    = <{ regex.new([[^-TAGS-\n+(.+?)\n+-END-]], regex.DOT_ALL|regex.MULTILINE) }>
+rx_ecode_comment   = <{ regex.new([[^([A-Za-z]+):\s+(.+)]]) }>
+rx_ecode_only      = <{ regex.new([[^([A-Za-z]+):?]]) }>
+rx_private         = <{ regex.new([[^[Pp]rivate]]) }>
+rx_param           = <{ regex.new([[^\s*(.+)\s+(\S+)\s*:\s*(.+)$]]) }>
+rx_result_type     = <{ regex.new([[^(.+?):\s+(.+)$]]) }>
+rx_idl_section     = <{ regex.new([[--IDL_BEGIN--(.+?)--IDL_END--]], regex.DOT_ALL) }>
 rx_extract_comment = <{ regex.new([[^\/\*+(.*?)\*+\/]], regex.MULTILINE|regex.DOT_ALL) }>
+
+global glTotalWarnings ?= 0
+
+global glRecognisedDocTags = {
+   ['caller-owns-result'] = true,
+   ['object-owns-result'] = true,
+   ['static-result'] = true,
+   ['volatile-result'] = true,
+   ['api-owns-result'] = true,
+   ['null-terminated-result'] = true,
+   ['non-null-result'] = true,
+   ['nullable-result'] = true,
+   ['copies-input'] = true,
+   ['retains-input'] = true,
+   ['does-not-take-ownership'] = true,
+   ['takes-ownership'] = true,
+   ['consumes-input'] = true,
+   ['mutates-input'] = true,
+   ['mutates-object'] = true,
+   ['updates-seek-index'] = true,
+   ['closes-handle'] = true,
+   ['creates-resource'] = true,
+   ['opens-handle'] = true,
+   ['blocking'] = true,
+   ['non-blocking'] = true,
+   ['main-thread-only'] = true,
+   ['not-reentrant'] = true,
+   ['reentrant'] = true,
+   ['thread-safe'] = true,
+   ['callback-held'] = true,
+   ['callback-inlines'] = true,
+   ['case-insensitive'] = true,
+   ['case-sensitive'] = true,
+   ['path-resolved'] = true,
+   ['path-preserved'] = true,
+   ['idempotent'] = true,
+   ['pure-query'] = true
+}
+
+----------------------------------------------------------------------------------------------------------------------
+
+global function parseDocTags(Tags:str, Context:str)
+   result = array<string> { }
+   Tags ?! return result
+
+   for item in values(Tags:replace('\n', ','):split(',')) do
+      local tag = item:trim()
+      if tag?? then
+         if glRecognisedDocTags[tag] then
+            result = addDocTag(result, tag)
+         else
+            glTotalWarnings++
+            print(f"Warning: Unrecognised documentation tag '{tag}' in {Context}; tag removed.")
+         end
+      end
+   end
+
+   return result
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+global function addDocTag(Tags, Tag:str)
+   Tags ?= array<string> { }
+
+   for existing_tag in values(Tags) do
+      if existing_tag is Tag then return Tags end
+   end
+
+   Tags:push(Tag)
+   return Tags
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+
+global function serialiseDocTags(Tags)
+   Tags ?! return
+   if #Tags > 0 then return Tags:concat(', ') end
+end
 
 ----------------------------------------------------------------------------------------------------------------------
 
@@ -86,7 +166,7 @@ global function parseAction(Class:table, Extract:str)
 
    local tags = rx_tags_section.extract(Extract)
    if tags?? then
-      action.tags = tags
+      action.tags = parseDocTags(tags, f"action '{Class.name}.{name}'")
    end
 end
 
@@ -124,7 +204,7 @@ global function parseField(Class:table, Extract:str)
 
       local tags = rx_tags_section.extract(Extract)
       if tags?? then
-         f.tags = tags
+         f.tags = parseDocTags(tags, f"field '{Class.name}.{name}'")
       end
    elseif Class.meta then
       print("Field '" .. Class.name .. "." .. tostring(name) .. "' is not defined in the TDL or compiled class spec.")
@@ -221,7 +301,7 @@ global function parseMethod(Class:table, Extract:str)
 
    local tags = rx_tags_section.extract(Extract)
    if tags?? then
-      method.tags = tags
+      method.tags = parseDocTags(tags, f"method '{Class.name}.{name}'")
    end
 end
 
@@ -465,7 +545,7 @@ global function parseFunction(Extract:str)
 
    local tags = rx_tags_section.extract(Extract)
    if tags?? then
-      def.tags = tags
+      def.tags = parseDocTags(tags, f"function '{name}'")
    end
 
    idlFunction(name, (category ?? glCategory), comment, status, description, def)
