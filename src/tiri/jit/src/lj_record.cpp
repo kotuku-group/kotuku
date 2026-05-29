@@ -3179,7 +3179,7 @@ void lj_record_ins(jit_State *J)
          // If array was empty when recorded, guard that it stays empty
          // If array was non-empty when recorded, guard that it stays non-empty
          emitir(IRTG(is_empty ? IR_EQ : IR_NE, IRT_INT), arrlen, zero);
-         rec_comp_fixup(J, J->pc, is_empty);
+         rec_comp_fixup(J, J->pc, !is_empty);
       }
       // For non-arrays, no additional guard needed - type specialisation handles it
       break;
