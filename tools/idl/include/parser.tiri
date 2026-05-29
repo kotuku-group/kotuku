@@ -65,7 +65,7 @@ global glOfficialTags = {
 -- Parse and validate comma or newline-separated documentation tags for the supplied context.
 
 function parseTags(Tags:str, Context:str):array
-   result = array<string> { }
+   result = array<string>
    Tags ?! return result
 
    for item in values(Tags:replace('\n', ','):split(',')) do
@@ -126,14 +126,6 @@ global function getTagsFromCollection(Tags:array, Fields:any):array
    end
 
    return Tags
-end
-
-----------------------------------------------------------------------------------------------------------------------
--- Convert a documentation tag list to the comma-separated form used by generated output.
-
-global function serialiseDocTags(Tags)
-   Tags ?! return
-   if #Tags > 0 then return Tags:concat(', ') end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
