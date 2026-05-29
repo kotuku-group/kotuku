@@ -38,7 +38,7 @@ static objConfig *glProxyConfig = nullptr;
 static objConfig * get_proxy_config(void)
 {
    std::lock_guard lock(glProxyMutex);
-   if (!glProxyFileChecked) {
+   if (not glProxyFileChecked) {
       kt::SwitchContext ctx(glNetworkModule);
       glProxyConfig = objConfig::create::global({ fl::Path("user:config/network/proxies.cfg") });
       glProxyFileChecked = true;
@@ -64,11 +64,6 @@ public:
    std::string FindPort;
    int FindEnabled = -1;
    bool Find = false;
-
-   void setString(STRING& field, std::string_view value) {
-      if (field) { FreeResource(field); field = nullptr; }
-      if (!value.empty()) { field = kt::strclone(value); }
-   }
 };
 
 static ERR find_proxy(extProxy *);
@@ -114,12 +109,12 @@ static ERR PROXY_DeleteRecord(extProxy *Self)
 {
    kt::Log log;
 
-   if ((Self->GroupName.empty()) or (!Self->Record)) return log.error(ERR::Failed);
+   if ((Self->GroupName.empty()) or (not Self->Record)) return log.error(ERR::Failed);
 
    log.branch();
 
    auto cfg = objConfig::create {fl::Path("user:config/network/proxies.cfg") };
-   if (!cfg.ok()) return log.error(ERR::CreateObject);
+   if (not cfg.ok()) return log.error(ERR::CreateObject);
 
    if (auto error = cfg->deleteGroup(Self->GroupName.c_str()); error != ERR::Okay) return log.warning(error);
    if (auto error = cfg->saveSettings(); error != ERR::Okay) return log.warning(error);
@@ -234,7 +229,7 @@ NoSearchResult: No matching proxy was discovered.
 
 static ERR PROXY_FindNext(extProxy *Self)
 {
-   if (!Self->Find) return ERR::NoSearchResult; // Ensure that Find() was used to initiate a search
+   if (not Self->Find) return ERR::NoSearchResult; // Ensure that Find() was used to initiate a search
 
    return find_proxy(Self);
 }
@@ -257,18 +252,18 @@ static bool matchesPortFilter(const KeysType& keys, const std::string& findPort)
 // Check if proxy matches enabled filter
 
 template<typename KeysType>
-static bool matchesEnabledFilter(const KeysType& keys, int findEnabled) {
+static bool matchesEnabledFilter(const KeysType &Keys, int findEnabled) {
    if (findEnabled IS -1) return true;
 
-   if (keys.contains("Enabled")) {
+   if (Keys.contains("Enabled")) {
       int enabled;
-      return parse_record_id(keys.at("Enabled"), enabled) and (enabled IS findEnabled);
+      return parse_record_id(Keys.at("Enabled"), enabled) and (enabled IS findEnabled);
    }
    return false;
 }
 
 template<typename KeysType>
-static bool matchesDeferredFilter(const KeysType &Keys, CSTRING FieldName)
+static bool matchesDeferredFilter(const KeysType &Keys, std::string_view FieldName)
 {
    auto filter = Keys.find(FieldName);
    return (filter IS Keys.end()) or filter->second.empty();
@@ -283,7 +278,7 @@ static ERR find_proxy(extProxy *Self)
    const std::lock_guard<std::recursive_mutex> lock(glProxyMutex);
 
    if (auto config = get_proxy_config()) {
-      if (!Self->Find) Self->Find = true; // Start of search
+      if (not Self->Find) Self->Find = true; // Start of search
 
       ConfigGroups *groups;
       if (config->get(FID_Data, groups) != ERR::Okay) return ERR::NoData;
@@ -291,7 +286,7 @@ static ERR find_proxy(extProxy *Self)
       auto group = groups->begin();
 
       // If continuing search, find next record
-      if (!Self->GroupName.empty()) {
+      if (not Self->GroupName.empty()) {
          group = std::find_if(groups->begin(), groups->end(),
             [&](const auto& g) { return g.first IS Self->GroupName; });
          if (group != groups->end()) ++group;
@@ -305,14 +300,14 @@ static ERR find_proxy(extProxy *Self)
 
          const auto& keys = group->second;
          int record;
-         if (!parse_record_id(group->first, record)) continue;
+         if (not parse_record_id(group->first, record)) continue;
 
          // Apply filters
-         if (!matchesPortFilter(keys, Self->FindPort)) continue;
-         if (!matchesEnabledFilter(keys, Self->FindEnabled)) continue;
+         if (not matchesPortFilter(keys, Self->FindPort)) continue;
+         if (not matchesEnabledFilter(keys, Self->FindEnabled)) continue;
 
-         if (!matchesDeferredFilter(keys, "NetworkFilter")) continue;
-         if (!matchesDeferredFilter(keys, "GatewayFilter")) continue;
+         if (not matchesDeferredFilter(keys, "NetworkFilter")) continue;
+         if (not matchesDeferredFilter(keys, "GatewayFilter")) continue;
 
          log.trace("Found matching proxy.");
          Self->GroupName = group->first;
@@ -371,18 +366,18 @@ static ERR PROXY_SaveSettings(extProxy *Self)
 {
    kt::Log log;
 
-   if ((!Self->Server) or (!Self->ServerPort)) return log.error(ERR::FieldNotSet);
+   if ((Self->Server.empty()) or (not Self->ServerPort)) return log.error(ERR::FieldNotSet);
 
    log.branch("Host: %d", Self->Host);
 
    if (Self->Host) {
-      return network_platform().save_host_proxy(Self->Server, Self->ServerPort, Self->Port, Self->Enabled);
+      return network_platform().save_host_proxy(Self->Server.c_str(), Self->ServerPort, Self->Port, Self->Enabled);
    }
 
    const std::lock_guard<std::recursive_mutex> lock(glProxyMutex);
 
    if (auto config = get_proxy_config()) {
-      if (!Self->GroupName.empty()) config->deleteGroup(Self->GroupName.c_str());
+      if (not Self->GroupName.empty()) config->deleteGroup(Self->GroupName.c_str());
       else { // This is a new proxy
          int id = 0;
          config->read("ID", "Value", id);
@@ -425,16 +420,6 @@ results of searches performed by the #Find() method.
 
 Gateway matching is not currently implemented.  Records that define this field are skipped by #Find().
 
-*********************************************************************************************************************/
-
-static ERR SET_GatewayFilter(extProxy *Self, CSTRING Value)
-{
-   Self->setString(Self->GatewayFilter, Value ? Value : "");
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 Host: If `true`, the proxy settings are derived from the host operating system's default settings.
 
@@ -470,32 +455,12 @@ This filter must not be set if the proxy needs to work on an unnamed network.
 
 Network matching is not currently implemented.  Records that define this field are skipped by #Find().
 
-*********************************************************************************************************************/
-
-static ERR SET_NetworkFilter(extProxy *Self, CSTRING Value)
-{
-   Self->setString(Self->NetworkFilter, Value ? Value : "");
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 Username: The username to use when authenticating against the proxy server.
 
 If the proxy requires authentication, the user name may be set here to enable an automated authentication process. If
 the username is not set, a dialog will be required to prompt the user for the user name before communicating with the
 proxy server.
-
-*********************************************************************************************************************/
-
-static ERR SET_Username(extProxy *Self, CSTRING Value)
-{
-   Self->setString(Self->Username, Value ? Value : "");
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 Password: The password to use when authenticating against the proxy server.
@@ -504,45 +469,15 @@ If the proxy requires authentication, the user password may be set here to enabl
 If the password is not set, a dialog will need to be used to prompt the user for the password before communicating with
 the proxy.
 
-*********************************************************************************************************************/
-
-static ERR SET_Password(extProxy *Self, CSTRING Value)
-{
-   Self->setString(Self->Password, Value ? Value : "");
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 ProxyName: A human readable name for the proxy server entry.
 
 A proxy can be given a human readable name by setting this field.
 
-*********************************************************************************************************************/
-
-static ERR SET_ProxyName(extProxy *Self, CSTRING Value)
-{
-   Self->setString(Self->ProxyName, Value ? Value : "");
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 Server: The destination address of the proxy server - may be an IP address or resolvable domain name.
 
 The domain name or IP address of the proxy server must be defined here.
-
-*********************************************************************************************************************/
-
-static ERR SET_Server(extProxy *Self, CSTRING Value)
-{
-   Self->setString(Self->Server, Value ? Value : "");
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 ServerPort: The port that is used for proxy server communication.
@@ -557,8 +492,8 @@ static ERR SET_ServerPort(extProxy *Self, int Value)
       Self->ServerPort = Value;
       return ERR::Okay;
    }
-   kt::Log log;
-   return log.error(ERR::OutOfRange);
+
+   return kt::Log().error(ERR::OutOfRange);
 }
 
 /*********************************************************************************************************************
@@ -609,31 +544,17 @@ static ERR get_record(extProxy *Self)
 
    log.traceBranch("Group: %s", Self->GroupName.c_str());
 
-   if (!parse_record_id(Self->GroupName, Self->Record)) return ERR::Search;
+   if (not parse_record_id(Self->GroupName, Self->Record)) return ERR::Search;
 
    const std::lock_guard<std::recursive_mutex> lock(glProxyMutex);
 
    if (auto config = get_proxy_config()) {
-      std::string str;
-      if (config->read(Self->GroupName, "Server", str) IS ERR::Okay) {
-         Self->setString(Self->Server, str);
-
-         if (config->read(Self->GroupName, "NetworkFilter", str) IS ERR::Okay) {
-            Self->setString(Self->NetworkFilter, str);
-         }
-         if (config->read(Self->GroupName, "GatewayFilter", str) IS ERR::Okay) {
-            Self->setString(Self->GatewayFilter, str);
-         }
-         if (config->read(Self->GroupName, "Username", str) IS ERR::Okay) {
-            Self->setString(Self->Username, str);
-         }
-         if (config->read(Self->GroupName, "Password", str) IS ERR::Okay) {
-            Self->setString(Self->Password, str);
-         }
-         if (config->read(Self->GroupName, "Name", str) IS ERR::Okay) {
-            Self->setString(Self->ProxyName, str);
-         }
-
+      if (config->read(Self->GroupName, "Server", Self->Server) IS ERR::Okay) {
+         config->read(Self->GroupName, "NetworkFilter", Self->NetworkFilter);
+         config->read(Self->GroupName, "GatewayFilter", Self->GatewayFilter);
+         config->read(Self->GroupName, "Username", Self->Username);
+         config->read(Self->GroupName, "Password", Self->Password);
+         config->read(Self->GroupName, "Name", Self->ProxyName);
          config->read(Self->GroupName, "Port", Self->Port);
          config->read(Self->GroupName, "ServerPort", Self->ServerPort);
          config->read(Self->GroupName, "Enabled", Self->Enabled);
@@ -658,12 +579,12 @@ static void clear_values(extProxy *Self)
    Self->Enabled    = 0;
    Self->ServerPort = 0;
    Self->Host       = 0;
-   Self->setString(Self->NetworkFilter, "");
-   Self->setString(Self->GatewayFilter, "");
-   Self->setString(Self->Username, "");
-   Self->setString(Self->Password, "");
-   Self->setString(Self->ProxyName, "");
-   Self->setString(Self->Server, "");
+   Self->NetworkFilter.clear();
+   Self->GatewayFilter.clear();
+   Self->Username.clear();
+   Self->Password.clear();
+   Self->ProxyName.clear();
+   Self->Server.clear();
 }
 
 //********************************************************************************************************************
@@ -688,12 +609,12 @@ static const FieldDef clPorts[] = {
 };
 
 static const FieldArray clProxyFields[] = {
-   { "NetworkFilter", FDF_STRING|FDF_RW, nullptr, SET_NetworkFilter },
-   { "GatewayFilter", FDF_STRING|FDF_RW, nullptr, SET_GatewayFilter },
-   { "Username",      FDF_STRING|FDF_RW, nullptr, SET_Username },
-   { "Password",      FDF_STRING|FDF_RW, nullptr, SET_Password },
-   { "ProxyName",     FDF_STRING|FDF_RW, nullptr, SET_ProxyName },
-   { "Server",        FDF_STRING|FDF_RW, nullptr, SET_Server },
+   { "NetworkFilter", FDF_CPPSTRING|FDF_RW },
+   { "GatewayFilter", FDF_CPPSTRING|FDF_RW },
+   { "Username",      FDF_CPPSTRING|FDF_RW },
+   { "Password",      FDF_CPPSTRING|FDF_RW },
+   { "ProxyName",     FDF_CPPSTRING|FDF_RW },
+   { "Server",        FDF_CPPSTRING|FDF_RW },
    { "Port",          FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, SET_Port, &clPorts },
    { "ServerPort",    FDF_INT|FDF_RW, nullptr, SET_ServerPort },
    { "Enabled",       FDF_INT|FDF_RW, nullptr, SET_Enabled },

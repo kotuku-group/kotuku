@@ -243,17 +243,17 @@ class objProxy : public Object {
 
    using create = kt::Create<objProxy>;
 
-   STRING NetworkFilter;    // The name of the network that the proxy is limited to.
-   STRING GatewayFilter;    // The IP address of the gateway that the proxy is limited to.
-   STRING Username;         // The username to use when authenticating against the proxy server.
-   STRING Password;         // The password to use when authenticating against the proxy server.
-   STRING ProxyName;        // A human readable name for the proxy server entry.
-   STRING Server;           // The destination address of the proxy server - may be an IP address or resolvable domain name.
-   int    Port;             // Defines the ports supported by this proxy.
-   int    ServerPort;       // The port that is used for proxy server communication.
-   int    Enabled;          // All proxies are enabled by default until this field is set to false.
-   int    Record;           // The unique ID of the current proxy record.
-   int    Host;             // If true, the proxy settings are derived from the host operating system's default settings.
+   std::string NetworkFilter;    // The name of the network that the proxy is limited to.
+   std::string GatewayFilter;    // The IP address of the gateway that the proxy is limited to.
+   std::string Username;         // The username to use when authenticating against the proxy server.
+   std::string Password;         // The password to use when authenticating against the proxy server.
+   std::string ProxyName;        // A human readable name for the proxy server entry.
+   std::string Server;           // The destination address of the proxy server - may be an IP address or resolvable domain name.
+   int Port;                     // Defines the ports supported by this proxy.
+   int ServerPort;               // The port that is used for proxy server communication.
+   int Enabled;                  // All proxies are enabled by default until this field is set to false.
+   int Record;                   // The unique ID of the current proxy record.
+   int Host;                     // If true, the proxy settings are derived from the host operating system's default settings.
 
    // Action stubs
 
@@ -274,40 +274,34 @@ class objProxy : public Object {
 
    // Customised field setting
 
-   template <class T> inline ERR setNetworkFilter(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+   inline ERR setNetworkFilter(const std::string_view &Value) noexcept {
+      this->NetworkFilter = Value;
+      return ERR::Okay;
    }
 
-   template <class T> inline ERR setGatewayFilter(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+   inline ERR setGatewayFilter(const std::string_view &Value) noexcept {
+      this->GatewayFilter = Value;
+      return ERR::Okay;
    }
 
-   template <class T> inline ERR setUsername(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[14];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+   inline ERR setUsername(const std::string_view &Value) noexcept {
+      this->Username = Value;
+      return ERR::Okay;
    }
 
-   template <class T> inline ERR setPassword(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+   inline ERR setPassword(const std::string_view &Value) noexcept {
+      this->Password = Value;
+      return ERR::Okay;
    }
 
-   template <class T> inline ERR setProxyName(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+   inline ERR setProxyName(const std::string_view &Value) noexcept {
+      this->ProxyName = Value;
+      return ERR::Okay;
    }
 
-   template <class T> inline ERR setServer(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+   inline ERR setServer(const std::string_view &Value) noexcept {
+      this->Server = Value;
+      return ERR::Okay;
    }
 
    inline ERR setPort(const int Value) noexcept {
@@ -521,10 +515,10 @@ class objNetSocket : public Object {
       return ERR::Okay;
    }
 
-   inline ERR setAddress(const std::string Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[17];
-      return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
+   inline ERR setAddress(const std::string_view &Value) noexcept {
+      if (this->initialised()) return ERR::NoFieldAccess;
+      this->Address = Value;
+      return ERR::Okay;
    }
 
    inline ERR setState(const NTC Value) noexcept {

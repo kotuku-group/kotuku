@@ -86,12 +86,12 @@ typedef int SOCKET_HANDLE;
   })
 
   klass("Proxy", { src="class_proxy.cpp", output="class_proxy_def.c" }, [[
-    str NetworkFilter
-    str GatewayFilter
-    str Username
-    str Password
-    str ProxyName
-    str Server
+    cpp(str) NetworkFilter
+    cpp(str) GatewayFilter
+    cpp(str) Username
+    cpp(str) Password
+    cpp(str) ProxyName
+    cpp(str) Server
     int Port
     int ServerPort
     int Enabled
