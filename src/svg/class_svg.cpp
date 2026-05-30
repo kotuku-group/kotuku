@@ -134,9 +134,6 @@ static ERR SVG_Free(extSVG *Self)
       Self->Target = nullptr;
    }
 
-   if (Self->Path)      { FreeResource(Self->Path);      Self->Path = nullptr; }
-   if (Self->Title)     { FreeResource(Self->Title);     Self->Title = nullptr; }
-   if (Self->Statement) { FreeResource(Self->Statement); Self->Statement = nullptr; }
    if (Self->XML)       { FreeResource(Self->XML);       Self->XML = nullptr; }
 
    if (!Self->Resources.empty()) {
@@ -179,9 +176,22 @@ static ERR SVG_Init(extSVG *Self)
       else return ERR::NewObject;
    }
 
-   if (Self->Path) return parse_svg(Self, Self->Path, nullptr);
-   else if (Self->Statement) return parse_svg(Self, nullptr, Self->Statement);
+   if (not Self->Path.empty()) return parse_svg(Self, Self->Path.c_str(), nullptr);
+   else if (not Self->Statement.empty()) return parse_svg(Self, nullptr, Self->Statement.c_str());
 
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR SVG_NewObject(extSVG *Self)
+{
+   #ifdef __ANDROID__
+      Self->FrameRate = 30; // Choose a lower frame rate for Android devices, so as to minimise power consumption.
+   #else
+      Self->FrameRate = 60;
+   #endif
+   Self->Colour = "rgb(0,0,0)"; // Default colour, used for 'currentColor' references
    return ERR::Okay;
 }
 
@@ -190,11 +200,6 @@ static ERR SVG_Init(extSVG *Self)
 static ERR SVG_NewPlacement(extSVG *Self)
 {
    new (Self) extSVG;
-   #ifdef __ANDROID__
-      Self->FrameRate = 30; // Choose a lower frame rate for Android devices, so as to minimise power consumption.
-   #else
-      Self->FrameRate = 60;
-   #endif
    return ERR::Okay;
 }
 
@@ -455,23 +460,6 @@ registered in the top-level @VectorScene object.
 <li>Named colours: Standard SVG colour names</li>
 <li>URL references: `url(#gradientId)` for complex paint definitions</li>
 </list>
-*********************************************************************************************************************/
-
-static ERR GET_Colour(extSVG *Self, CSTRING *Value)
-{
-   *Value = Self->Colour.c_str();
-   return ERR::Okay;
-}
-
-static ERR SET_Colour(extSVG *Self, CSTRING Value)
-{
-   if ((Value) and (*Value)) {
-      Self->Colour.assign(Value);
-   }
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 Flags: Configuration flags that modify SVG processing behaviour.
@@ -578,20 +566,16 @@ When both #Path and #Statement are specified, the Path field takes precedence an
 
 *********************************************************************************************************************/
 
-static ERR GET_Path(extSVG *Self, STRING *Value)
+static ERR GET_Path(extSVG *Self, std::string_view &Value)
 {
-   *Value = Self->Path;
+   Value = Self->Path;
    return ERR::Okay;
 }
 
-static ERR SET_Path(extSVG *Self, CSTRING Value)
+static ERR SET_Path(extSVG *Self, const std::string_view &Value)
 {
-   if (Self->Path)   { FreeResource(Self->Path); Self->Path = nullptr; }
    Self->Folder.clear();
-
-   if ((Value) and (*Value)) {
-      if (!(Self->Path = strclone(Value))) return ERR::AllocMemory;
-   }
+   Self->Path = Value;
    return ERR::Okay;
 }
 
@@ -624,20 +608,6 @@ defined, it will take precedent and the Statement is ignored.
 
 For incremental data parsing after initialisation, consider using the #DataFeed() action instead, which supports
 progressive document construction from data streams.
-
-*********************************************************************************************************************/
-
-static ERR SET_Statement(extSVG *Self, CSTRING Value)
-{
-   if (Self->Statement) { FreeResource(Self->Statement); Self->Statement = nullptr; }
-
-   if ((Value) and (*Value)) {
-      if (!(Self->Statement = strclone(Value))) return ERR::AllocMemory;
-   }
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 Target: Destination container for the generated SVG scene graph elements.
@@ -693,19 +663,7 @@ static ERR SET_Target(extSVG *Self, OBJECTPTR Value)
 Title: The title of the SVG document.
 
 The title of an SVG document is declared with a title element that can embedded anywhere in the document.  In cases
-where a title has been specified, it will be possible to read it from this field.  If no title is in the document then
-`NULL` will be returned.
-
-*********************************************************************************************************************/
-
-static ERR SET_Title(extSVG *Self, CSTRING Value)
-{
-   if (Self->Title) { FreeResource(Self->Title); Self->Title = nullptr; }
-   if (Value) Self->Title = strclone(Value);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
+where a title has been specified, it will be possible to read it from this field.
 
 -FIELD-
 Viewport: Reference to the primary @VectorViewport containing the SVG document content.
@@ -741,16 +699,16 @@ static ERR GET_Viewport(extSVG *Self, OBJECTPTR *Value)
 
 static const FieldArray clSVGFields[] = {
    { "Target",    FDF_OBJECT|FDF_RI, nullptr, SET_Target },
-   { "Path",      FDF_STRING|FDF_RW, nullptr, SET_Path },
-   { "Title",     FDF_STRING|FDF_RW, nullptr, SET_Title },
-   { "Statement", FDF_STRING|FDF_RW, nullptr, SET_Statement },
+   { "Path",      FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
+   { "Title",     FDF_CPPSTRING|FDF_RW },
+   { "Statement", FDF_CPPSTRING|FDF_RW },
+   { "Colour",    FDF_CPPSTRING|FDF_RW },
    { "Frame",     FDF_INT|FDF_RW, nullptr, nullptr },
    { "Flags",     FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clSVGFlags },
    { "FrameRate", FDF_INT|FDF_RW, nullptr, SET_FrameRate },
    // Virtual Fields
-   { "Colour",        FDF_VIRTUAL|FDF_STRING|FDF_RW, GET_Colour, SET_Colour },
    { "FrameCallback", FDF_VIRTUAL|FDF_FUNCTION|FDF_RW, GET_FrameCallback, SET_FrameCallback },
-   { "Src",           FDF_VIRTUAL|FDF_SYNONYM|FDF_STRING|FDF_RW, GET_Path, SET_Path },
+   { "Src",           FDF_VIRTUAL|FDF_SYNONYM|FDF_CPPSTRING|FDF_RW, GET_Path, SET_Path },
    { "Scene",         FDF_VIRTUAL|FDF_OBJECT|FDF_R, GET_Scene, nullptr },
    { "Viewport",      FDF_VIRTUAL|FDF_OBJECT|FDF_R, GET_Viewport, nullptr },
    END_FIELD

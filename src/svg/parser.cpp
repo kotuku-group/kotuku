@@ -1897,11 +1897,11 @@ ERR svgState::process_tag(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent, objVecto
       case SVF_pattern:          proc_pattern(Tag); break;
 
       case SVF_title:
-         if (Self->Title) { FreeResource(Self->Title); Self->Title = nullptr; }
+         Self->Title.clear();
          if (!Tag.Children.empty()) {
             if (auto buffer = Tag.getContent(); !buffer.empty()) {
                kt::ltrim(buffer);
-               Self->Title = strclone(buffer);
+               Self->Title.assign(buffer);
             }
          }
          break;

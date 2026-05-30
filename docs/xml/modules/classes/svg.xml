@@ -172,8 +172,8 @@
     <field>
       <name>Colour</name>
       <comment>Defines the default fill to use for <code>currentColor</code> references.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>STRING</type>
+      <access read="R" write="W">Read/Write</access>
+      <type>std::string</type>
       <description>
 <p>Set the Colour value to alter the default fill that is used for <code>currentColor</code> references.  Typically a standard RGB painter fill reference should be used for this purpose, e.g. <code>rgb(255,255,255)</code>.  It is however, also acceptable to use URL references to named definitions such as gradients and images.  This will work as long as the named definition is registered in the top-level <class name="VectorScene">VectorScene</class> object.</p>
 <p>
@@ -282,7 +282,7 @@
     <field>
       <name>Statement</name>
       <comment>String containing complete SVG document markup.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>std::string</type>
       <description>
 <p>SVG data can be loaded from a string by specifying it here prior to initialisation.  If the <fl>Path</fl> field has been defined, it will take precedent and the Statement is ignored.</p>
@@ -311,10 +311,10 @@
     <field>
       <name>Title</name>
       <comment>The title of the SVG document.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>std::string</type>
       <description>
-<p>The title of an SVG document is declared with a title element that can embedded anywhere in the document.  In cases where a title has been specified, it will be possible to read it from this field.  If no title is in the document then <code>NULL</code> will be returned.</p>
+<p>The title of an SVG document is declared with a title element that can embedded anywhere in the document.  In cases where a title has been specified, it will be possible to read it from this field.</p>
       </description>
     </field>
 

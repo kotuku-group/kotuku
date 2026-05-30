@@ -205,13 +205,12 @@ static std::vector<Transition> process_transition_stops(extSVG *Self, const objX
 static CSTRING folder(extSVG *Self)
 {
    if (!Self->Folder.empty()) return Self->Folder.c_str();
-   if (!Self->Path) return nullptr;
+   if (Self->Path.empty()) return nullptr;
 
    // Setting a path of "my/house/is/red.svg" results in "my/house/is/"
 
    if (ResolvePath(Self->Path, RSF::NO_FILE_CHECK, &Self->Folder) IS ERR::Okay) {
-      auto last = Self->Folder.find_last_of("/\\");
-      if (last != std::string::npos) {
+      if (auto last = Self->Folder.find_last_of("/\\"); last != std::string::npos) {
          Self->Folder.resize(last + 1);
          return Self->Folder.c_str();
       }
