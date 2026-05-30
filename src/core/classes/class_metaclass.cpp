@@ -1098,15 +1098,15 @@ static void add_field(extMetaClass *Class, std::vector<Field> &Fields, const Fie
    if (field.Flags & FD_VIRTUAL) { // No offset will be added for fields marked exclusively as virtual
       field.Offset = 0;
    }
-   else if (field.Flags & FD_ARRAY) {
-      field_size = sizeof(APTR);
-      field_alignment = alignof(APTR);
-      field_type = "pointer";
-   }
    else if (field.Flags & FD_RGB) {
       field_size = sizeof(int8_t) * 4;
       field_alignment = alignof(int8_t);
       field_type = "RGB";
+   }
+   else if (field.Flags & FD_ARRAY) {
+      field_size = sizeof(APTR);
+      field_alignment = alignof(APTR);
+      field_type = "pointer";
    }
    else if (field.Flags & FD_STRING) {
       if (field.Flags & FD_CPP) {
@@ -1131,16 +1131,6 @@ static void add_field(extMetaClass *Class, std::vector<Field> &Fields, const Fie
       field_alignment = alignof(int);
       field_type = "integer";
    }
-   else if (field.Flags & FD_BYTE) {
-      field_size = sizeof(int8_t);
-      field_alignment = alignof(int8_t);
-      field_type = "byte";
-   }
-   else if (field.Flags & FD_FUNCTION) {
-      field_size = sizeof(FUNCTION);
-      field_alignment = alignof(FUNCTION);
-      field_type = "function";
-   }
    else if (field.Flags & FD_DOUBLE) {
       field_size = sizeof(double);
       field_alignment = alignof(double);
@@ -1150,6 +1140,16 @@ static void add_field(extMetaClass *Class, std::vector<Field> &Fields, const Fie
       field_size = sizeof(int64_t);
       field_alignment = alignof(int64_t);
       field_type = "64-bit integer";
+   }
+   else if (field.Flags & FD_FUNCTION) {
+      field_size = sizeof(FUNCTION);
+      field_alignment = alignof(FUNCTION);
+      field_type = "function";
+   }
+   else if (field.Flags & FD_BYTE) {
+      field_size = sizeof(int8_t);
+      field_alignment = alignof(int8_t);
+      field_type = "byte";
    }
    else log.warning("%s field \"%s\"/%d has an invalid flag setting.", Class->ClassName.c_str(), field.Name, field.FieldID);
 
