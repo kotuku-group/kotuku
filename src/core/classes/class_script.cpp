@@ -542,6 +542,7 @@ static ERR SET_Path(objScript *Self, std::string_view &Value)
       int i;
       if (not Value.empty()) {
          auto len = Value.find(';');
+         if (len IS std::string_view::npos) len = Value.size();
 
          if (Value.substr(0, len).starts_with("STRING:")) {
             auto statement = Value.substr(7);
