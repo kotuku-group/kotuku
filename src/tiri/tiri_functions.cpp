@@ -334,8 +334,9 @@ int fcmd_include(lua_State *Lua)
 // Loads a Tiri language file from any location and executes it.  Any return values from the script will be returned
 // as-is.  Any error that occurs will be thrown with a descriptive string.
 //
-// If the Path is preceded by "./" then the path of the script that called this function is prepended to the location.
-// If a path is not available for the running script, the current working directory will be prepended as a fallback.
+// If the Path is preceded by "./" or "../" then the path of the script that called this function is prepended to
+// the location.  If a path is not available for the running script, the current working directory will be prepended
+// as a fallback.
 
 int fcmd_loadfile(lua_State *Lua)
 {
@@ -352,6 +353,10 @@ int fcmd_loadfile(lua_State *Lua)
       bool inject_working_path = false;
       if (path.starts_with("./")) {
          path.remove_prefix(2);
+         inject_working_path = true;
+      }
+      else if (path.starts_with("../")) {
+         // Maintain the prefix to access the parent folder - ResolvePath() takes care of it.
          inject_working_path = true;
       }
       std::string src(path);

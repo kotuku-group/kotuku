@@ -30,11 +30,11 @@ Further discussion on classes and their technical aspects can be found in the Ko
 
 static ERR OBJECT_GetClass(OBJECTPTR, extMetaClass **);
 static ERR OBJECT_GetClassID(OBJECTPTR, CLASSID *);
-static ERR OBJECT_GetName(OBJECTPTR, STRING *);
+static ERR OBJECT_GetName(OBJECTPTR, std::string_view &);
 static ERR OBJECT_GetOwner(OBJECTPTR, OBJECTID *);
 static ERR OBJECT_GetID(OBJECTPTR, OBJECTID *);
 static ERR OBJECT_SetOwner(OBJECTPTR, OBJECTID);
-static ERR OBJECT_SetName(OBJECTPTR, CSTRING);
+static ERR OBJECT_SetName(OBJECTPTR, const std::string_view &);
 
 static void field_setup(extMetaClass *);
 static void sort_class_fields(extMetaClass *, std::vector<Field> &);
@@ -947,7 +947,7 @@ static void field_setup(extMetaClass *Class)
             .FieldID    = FID_Name,
             .Offset     = 0,
             .Index      = 0,
-            .Flags      = FDF_STRING|FDF_RW|FDF_SYSTEM
+            .Flags      = FDF_CPPSTRING|FDF_RW|FDF_SYSTEM
          });
       }
 
@@ -1098,17 +1098,30 @@ static void add_field(extMetaClass *Class, std::vector<Field> &Fields, const Fie
    if (field.Flags & FD_VIRTUAL) { // No offset will be added for fields marked exclusively as virtual
       field.Offset = 0;
    }
+   else if (field.Flags & FD_ARRAY) {
+      field_size = sizeof(APTR);
+      field_alignment = alignof(APTR);
+      field_type = "pointer";
+   }
    else if (field.Flags & FD_RGB) {
       field_size = sizeof(int8_t) * 4;
       field_alignment = alignof(int8_t);
       field_type = "RGB";
    }
-   else if ((field.Flags & FD_STRING) and (field.Flags & FD_CPP)) {
-      field_size = sizeof(std::string);
-      field_alignment = alignof(std::string);
-      field_type = "std::string";
+   else if (field.Flags & FD_STRING) {
+      if (field.Flags & FD_CPP) {
+         field_size = sizeof(std::string);
+         field_alignment = alignof(std::string);
+         field_type = "std::string";
+      }
+      else {
+         log.warning("C-style string fields are deprecated");
+         field_size = sizeof(APTR);
+         field_alignment = alignof(APTR);
+         field_type = "pointer";
+      }
    }
-   else if (field.Flags & (FD_POINTER|FD_ARRAY)) {
+   else if (field.Flags & FD_POINTER) {
       field_size = sizeof(APTR);
       field_alignment = alignof(APTR);
       field_type = "pointer";
@@ -1210,16 +1223,15 @@ static ERR OBJECT_SetOwner(OBJECTPTR Self, OBJECTID OwnerID)
    else return log.warning(ERR::NullArgs);
 }
 
-static ERR OBJECT_GetName(OBJECTPTR Self, STRING *Name)
+static ERR OBJECT_GetName(OBJECTPTR Self, std::string_view &Name)
 {
-   *Name = Self->Name;
+   Name = Self->Name;
    return ERR::Okay;
 }
 
-static ERR OBJECT_SetName(OBJECTPTR Self, CSTRING Name)
+static ERR OBJECT_SetName(OBJECTPTR Self, const std::string_view &Name)
 {
-   if (!Name) return SetName(Self, "");
-   else return SetName(Self, Name);
+   return SetName(Self, Name);
 }
 
 //********************************************************************************************************************

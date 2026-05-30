@@ -245,7 +245,7 @@ struct Object { // Must be 64-bit aligned
    std::atomic_char SleepQueue;  // For the use of LockObject() only
    std::atomic_uint8_t RefCount; // Reference counting - object cannot be freed until this reaches 0.  NB: This is not a locking mechanism!
    OBJECTID UID;                 // Unique object identifier
-   std::atomic<uint32_t> Flags;  // Object flags
+   std::atomic<uint32_t> Flags;  // Object NF flags
    std::atomic_int ThreadID;     // Managed by locking functions.  Atomic due to volatility.
    char Name[MAX_NAME_LEN];      // The name of the object.  NOTE: This value can be adjusted to ensure that the struct is always 8-bit aligned.
 

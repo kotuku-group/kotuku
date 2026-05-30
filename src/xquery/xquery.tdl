@@ -5,7 +5,7 @@ module({ name='XQuery', src='xquery.cpp', copyright='Paul Manias © 2025-2026', 
   cpp_include('<functional>', '<optional>', '<sstream>', '<kotuku/strings.hpp>', '<string_view>', '<vector>')
 
   restrict(function()
-    loadFile('./../xml/constants.tdl')
+    loadFile('../xml/constants.tdl')
   end)
 
   -- Shared enumerations for parser and evaluator state, including map/array node kinds.
