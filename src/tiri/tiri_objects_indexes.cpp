@@ -518,7 +518,7 @@ static int object_get_struct(lua_State *Lua, const obj_read &Handle, GCobject *D
          }
       }
       else {
-         kt::Log(__FUNCTION__).warning("No struct name reference for field %s in class %s.", field->Name, obj->Class->ClassName);
+         kt::Log(__FUNCTION__).warning("No struct name reference for field %s in class %s.", field->Name, obj->Class->ClassName.c_str());
          error = ERR::Failed;
       }
       release_object(Def);

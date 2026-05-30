@@ -43,7 +43,7 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
             if ((error = XML->insertXML(Parent, XMI::CHILD_END, "<defs/>", &def_index)) != ERR::Okay) return error;
          }
 
-         log.msg("Processing definition %s (%x)", def->Class->ClassName, uint32_t(def->classID()));
+         log.msg("Processing definition %s (%x)", def->Class->ClassName.c_str(), uint32_t(def->classID()));
 
          if (def->classID() IS CLASSID::VECTORGRADIENT) {
             auto gradient = (objVectorGradient *)def;
@@ -192,7 +192,7 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
             log.warning("VectorClip not supported.");
          }
          else if (def->Class->BaseClassID IS CLASSID::VECTOR) {
-            log.warning("%s not supported.", def->Class->ClassName);
+            log.warning("%s not supported.", def->Class->ClassName.c_str());
          }
          else log.warning("Unrecognised definition class %x", uint32_t(def->classID()));
       }
@@ -391,7 +391,7 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
 
    int new_index = -1;
 
-   log.branch("%s", Vector->Class->ClassName);
+   log.branch("%s", Vector->Class->ClassName.c_str());
 
    ERR error = ERR::Okay;
    if (Vector->classID() IS CLASSID::VECTORRECTANGLE) {
@@ -679,7 +679,7 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       }
    }
    else {
-      log.msg("Unrecognised class \"%s\"", Vector->Class->ClassName);
+      log.msg("Unrecognised class \"%s\"", Vector->Class->ClassName.c_str());
       return ERR::Okay; // Skip objects in the scene graph that we don't recognise
    }
 

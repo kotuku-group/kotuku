@@ -390,7 +390,7 @@ class extMetaClass : public objMetaClass {
    const struct FieldArray *SubFields;  // Extra fields defined by the derived class
    class RootModule *Root;              // Root module that owns this class, if any.
    uint8_t Local[8];                    // Local object references (by field indexes), in order
-   STRING Location;                     // Location of the class binary, this field exists purely for caching the location string if the client reads it
+   std::string Location;                // Location of the class binary, this field exists purely for caching the location string if the client reads it
    ActionEntry ActionTable[int(AC::END)];
    int16_t OriginalFieldTotal;
    uint16_t BaseCeiling;                   // FieldLookup ceiling value for the base-class fields
@@ -537,12 +537,12 @@ struct extClassRecord : public ClassRecord {
       Name.assign(pClass->ClassName);
 
       if (pPath.has_value()) Path.assign(pPath.value());
-      else if (pClass->Path) Path.assign(pClass->Path);
+      else if (not pClass->Path.empty()) Path.assign(pClass->Path);
 
-      if (pClass->FileExtension) Extension.assign(pClass->FileExtension);
-      if (pClass->FileHeader) Header.assign(pClass->FileHeader);
-      if (pClass->Icon) Icon.assign(pClass->Icon);
-      if (pClass->FileDescription) Description.assign(pClass->FileDescription);
+      if (not pClass->FileExtension.empty()) Extension.assign(pClass->FileExtension);
+      if (not pClass->FileHeader.empty()) Header.assign(pClass->FileHeader);
+      if (not pClass->Icon.empty()) Icon.assign(pClass->Icon);
+      if (not pClass->FileDescription.empty()) Description.assign(pClass->FileDescription);
    }
 
    inline extClassRecord(CLASSID pClassID, std::string pName, CSTRING pExtension = nullptr, CSTRING pHeader = nullptr, CSTRING pIcon = nullptr, CSTRING pDescription = nullptr) {

@@ -51,10 +51,10 @@ void debug_tree(extVector *Vector, int &Level)
 
       if ((v->Class->BaseClassID IS CLASSID::VECTOR) and (v->Child)) {
          kt::Log blog(__FUNCTION__);
-         blog.branch(" #%d%s %s %s %s", v->UID, indent.get(), v->Class->ClassName, v->Name, dim.c_str());
+         blog.branch(" #%d%s %s %s %s", v->UID, indent.get(), v->Class->ClassName.c_str(), v->Name, dim.c_str());
          debug_tree((extVector *)v->Child, Level);
       }
-      else log.msg(" #%d%s %s %s %s", v->UID, indent.get(), v->Class->ClassName, v->Name, dim.c_str());
+      else log.msg(" #%d%s %s %s %s", v->UID, indent.get(), v->Class->ClassName.c_str(), v->Name, dim.c_str());
    }
 
    Level--;

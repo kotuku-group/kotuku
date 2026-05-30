@@ -115,7 +115,7 @@
       <name>ClassName</name>
       <comment>The name of the represented class.</comment>
       <access read="R" write="I">Read/Init</access>
-      <type>CSTRING</type>
+      <type>std::string</type>
       <description>
 <p>This field specifies the name of the represented class.  Characters should be limited to those in the range of A-Z and written in camel case, e.g. <code>KeyValue</code> and not <code>Keyvalue</code> or <code>KEYVALUE</code>.  Setting this field value is compulsory prior to initialisation.</p>
       </description>
@@ -157,7 +157,7 @@
       <name>FileDescription</name>
       <comment>Describes the file type represented by the class.</comment>
       <access read="R" write="I">Read/Init</access>
-      <type>CSTRING</type>
+      <type>std::string</type>
       <description>
 <p>This field allows you to specify a description of the class' file type, if the class is designed to be file related. This setting can be important, as it helps to distinguish your class from the other file based classes.  Always make sure that your file description is short, descriptive and unique.  A file description such as <code>JPEG</code> is not acceptable, but <code>JPEG Picture</code> would be appropriate.</p>
       </description>
@@ -167,7 +167,7 @@
       <name>FileExtension</name>
       <comment>Describes the file extension represented by the class.</comment>
       <access read="R" write="I">Read/Init</access>
-      <type>CSTRING</type>
+      <type>std::string</type>
       <description>
 <p>This field describes the file extension/s that the class will recognise.  For example: <code>*.wav|*.wave|*.snd</code>.</p>
 <p>Use of the vertical bar allows more than one file extension to be supported by the class. The file extension that is preferred for saving data must come first.</p>
@@ -178,7 +178,7 @@
       <name>FileHeader</name>
       <comment>Defines a string expression that will allow relevant file data to be matched to the class.</comment>
       <access read="R" write="I">Read/Init</access>
-      <type>CSTRING</type>
+      <type>std::string</type>
       <description>
 <p>If a class supports file data, then the FileHeader field is used to identify the types of data that the class supports. This feature is used by routines that need to analyse files and determine which classes support them.</p>
 <p>For example, the JPEG class supports files that start with a 32-bit token to identify them as JPEG.  Declaring a FileHeader expression to match these tokens will allow the FileView feature to detect JPEG files and display an appropriate icon for each JPEG entry in the file list.</p>
@@ -201,8 +201,8 @@
     <field>
       <name>Icon</name>
       <comment>Associates an icon with the file data for this class.</comment>
-      <access>-/-</access>
-      <type>CSTRING</type>
+      <access read="R" write="I">Read/Init</access>
+      <type>std::string</type>
       <description>
 <p>Files that belong to a class can be associated with an icon that is declared in this field.  The icon string format is <code>folder/icon</code>.  Valid icons are available in the icon database.</p>
       </description>
@@ -211,7 +211,7 @@
     <field>
       <name>Location</name>
       <comment>Returns the path from which the class binary is loaded.</comment>
-      <access read="R">Read</access>
+      <access read="G">Get</access>
       <type>STRING</type>
       <description>
 <p>The path from which the class binary was loaded is readable from this field.  The path may not necessarily include the file extension of the source binary.</p>
@@ -262,7 +262,7 @@
       <name>Path</name>
       <comment>The path to the module binary that represents the class.</comment>
       <access read="R" write="I">Read/Init</access>
-      <type>CSTRING</type>
+      <type>std::string</type>
       <description>
 <p>The Path field must be set on initialisation and refers to the default location of the class' module binary, for example <code>modules:display</code>. For reasons of platform portability, the file extension must not be specified at the end of the file name.</p>
       </description>

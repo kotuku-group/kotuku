@@ -62,7 +62,8 @@ void gen_vector_path(extVector *Vector)
 
    kt::SwitchContext context(Vector);
 
-   log.traceBranch("%s: #%d, Dirty: $%.2x, ParentView: #%d", Vector->Class->ClassName, Vector->UID, int(Vector->Dirty), Vector->ParentView ? Vector->ParentView->UID : 0);
+   log.traceBranch("%s: #%d, Dirty: $%.2x, ParentView: #%d", Vector->Class->ClassName.c_str(),
+      Vector->UID, int(Vector->Dirty), Vector->ParentView ? Vector->ParentView->UID : 0);
 
    auto parent_view = get_parent_view(Vector);
 

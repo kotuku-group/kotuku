@@ -49,9 +49,9 @@ static Field * lookup_id_byclass(extMetaClass *, uint32_t, extMetaClass **);
 
 static ERR GET_ActionTable(extMetaClass *, ActionEntry **, int *);
 static ERR GET_Fields(extMetaClass *, const FieldArray **, int *);
-static ERR GET_Location(extMetaClass *, CSTRING *);
+static ERR GET_Location(extMetaClass *, std::string_view &);
 static ERR GET_Methods(extMetaClass *, const MethodEntry **, int *);
-static ERR GET_Module(extMetaClass *, CSTRING *);
+static ERR GET_Module(extMetaClass *, std::string_view &);
 static ERR GET_Objects(extMetaClass *, OBJECTID **, int *);
 static ERR GET_RootModule(extMetaClass *, class RootModule **);
 static ERR GET_Dictionary(extMetaClass *, struct Field **, int *);
@@ -62,21 +62,46 @@ static ERR SET_Actions(extMetaClass *, const ActionArray *);
 static ERR SET_Fields(extMetaClass *, const FieldArray *, int);
 static ERR SET_Methods(extMetaClass *, const MethodEntry *, int);
 
-static ERR GET_ClassName(extMetaClass *Self, CSTRING *Value)
+static constexpr uint16_t meta_align_offset(size_t Offset, size_t Alignment)
 {
-   *Value = Self->ClassName;
+   if (Alignment <= 1) return uint16_t(Offset);
+
+   const auto remainder = Offset % Alignment;
+   if (not remainder) return uint16_t(Offset);
+
+   return uint16_t(Offset + Alignment - remainder);
+}
+
+static constexpr uint16_t glMetaClassVersionOffset = meta_align_offset(sizeof(Object), alignof(double));
+static constexpr uint16_t glMetaFieldsOffset = meta_align_offset(glMetaClassVersionOffset + sizeof(double), alignof(APTR));
+static constexpr uint16_t glMetaDictionaryOffset = meta_align_offset(glMetaFieldsOffset + sizeof(APTR), alignof(APTR));
+static constexpr uint16_t glMetaClassNameOffset = meta_align_offset(glMetaDictionaryOffset + sizeof(APTR), alignof(std::string));
+static constexpr uint16_t glMetaFileExtensionOffset = meta_align_offset(glMetaClassNameOffset + sizeof(std::string), alignof(std::string));
+static constexpr uint16_t glMetaFileDescriptionOffset = meta_align_offset(glMetaFileExtensionOffset + sizeof(std::string), alignof(std::string));
+static constexpr uint16_t glMetaFileHeaderOffset = meta_align_offset(glMetaFileDescriptionOffset + sizeof(std::string), alignof(std::string));
+static constexpr uint16_t glMetaPathOffset = meta_align_offset(glMetaFileHeaderOffset + sizeof(std::string), alignof(std::string));
+static constexpr uint16_t glMetaIconOffset = meta_align_offset(glMetaPathOffset + sizeof(std::string), alignof(std::string));
+static constexpr uint16_t glMetaSizeOffset = meta_align_offset(glMetaIconOffset + sizeof(std::string), alignof(int));
+static constexpr uint16_t glMetaFlagsOffset = meta_align_offset(glMetaSizeOffset + sizeof(int), alignof(CLF));
+static constexpr uint16_t glMetaClassIDOffset = meta_align_offset(glMetaFlagsOffset + sizeof(CLF), alignof(CLASSID));
+static constexpr uint16_t glMetaBaseClassIDOffset = meta_align_offset(glMetaClassIDOffset + sizeof(CLASSID), alignof(CLASSID));
+static constexpr uint16_t glMetaOpenCountOffset = meta_align_offset(glMetaBaseClassIDOffset + sizeof(CLASSID), alignof(int));
+static constexpr uint16_t glMetaCategoryOffset = meta_align_offset(glMetaOpenCountOffset + sizeof(int), alignof(CCF));
+
+static ERR GET_ClassName(extMetaClass *Self, std::string_view &Value)
+{
+   Value = Self->ClassName;
    return ERR::Okay;
 }
 
-static ERR SET_ClassName(extMetaClass *Self, CSTRING Value)
+static ERR SET_ClassName(extMetaClass *Self, const std::string_view &Value)
 {
    Self->ClassName = Value;
    return ERR::Okay;
 }
 
 static const FieldDef CategoryTable[] = {
-   { "Command",  CCF::COMMAND },
-   { "Filesystem", CCF::FILESYSTEM },
+   { "Command",  CCF::COMMAND },  { "Filesystem", CCF::FILESYSTEM },
    { "Graphics", CCF::GRAPHICS }, { "GUI",        CCF::GUI },
    { "IO",       CCF::IO },       { "System",     CCF::SYSTEM },
    { "Tool",     CCF::TOOL },     { "Data",       CCF::DATA },
@@ -87,28 +112,28 @@ static const FieldDef CategoryTable[] = {
 
 static const std::vector<Field> glMetaFieldsPreset = {
    // If you adjust this table, remember to adjust the index numbers and the byte offsets into the structure.
-   { 0, nullptr, nullptr, writeval_default, "ClassVersion",    FID_ClassVersion, sizeof(Object), 0, FDF_DOUBLE|FDF_RI },
-   { MAXINT("FieldArray"), (ERR (*)(APTR, APTR))GET_Fields, (APTR)SET_Fields, writeval_default, "Fields", FID_Fields, sizeof(Object)+8, 1, FDF_ARRAY|FD_STRUCT|FDF_RI },
-   { MAXINT("Field"),      (ERR (*)(APTR, APTR))GET_Dictionary, nullptr, writeval_default, "Dictionary", FID_Dictionary, sizeof(Object)+8+(sizeof(APTR)*1), 2, FDF_ARRAY|FD_STRUCT|FDF_R },
-   { 0, nullptr, nullptr, writeval_default, "ClassName",       FID_ClassName,       sizeof(Object)+8+(sizeof(APTR)*2),  3,  FDF_STRING|FDF_RI },
-   { 0, nullptr, nullptr, writeval_default, "FileExtension",   FID_FileExtension,   sizeof(Object)+8+(sizeof(APTR)*3),  4,  FDF_STRING|FDF_RI },
-   { 0, nullptr, nullptr, writeval_default, "FileDescription", FID_FileDescription, sizeof(Object)+8+(sizeof(APTR)*4),  5,  FDF_STRING|FDF_RI },
-   { 0, nullptr, nullptr, writeval_default, "FileHeader",      FID_FileHeader,      sizeof(Object)+8+(sizeof(APTR)*5),  6,  FDF_STRING|FDF_RI },
-   { 0, nullptr, nullptr, writeval_default, "Path",            FID_Path,            sizeof(Object)+8+(sizeof(APTR)*6),  7,  FDF_STRING|FDF_RI },
-   { 0, nullptr, nullptr, writeval_default, "Icon",            FID_Icon,            sizeof(Object)+8+(sizeof(APTR)*7),  8,  FDF_STRING|FDF_RI },
-   { 0, nullptr, nullptr, writeval_default, "Size",            FID_Size,            sizeof(Object)+8+(sizeof(APTR)*8),  9,  FDF_INT|FDF_RI },
-   { 0, nullptr, nullptr, writeval_default, "Flags",           FID_Flags,           sizeof(Object)+12+(sizeof(APTR)*8), 10, FDF_INT|FDF_RI },
-   { 0, nullptr, nullptr, writeval_default, "ClassID",         FID_ClassID,         sizeof(Object)+16+(sizeof(APTR)*8), 11, FDF_INT|FDF_UNSIGNED|FDF_RI },
-   { 0, nullptr, nullptr, writeval_default, "BaseClassID",     FID_BaseClassID,     sizeof(Object)+20+(sizeof(APTR)*8), 12, FDF_INT|FDF_UNSIGNED|FDF_RI },
-   { 0, nullptr, nullptr, writeval_default, "OpenCount",       FID_OpenCount,       sizeof(Object)+24+(sizeof(APTR)*8), 13, FDF_INT|FDF_R },
-   { MAXINT(&CategoryTable), nullptr, nullptr, writeval_default, "Category",  FID_Category,        sizeof(Object)+28+(sizeof(APTR)*8), 14, FDF_INT|FDF_LOOKUP|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "ClassVersion",    FID_ClassVersion, glMetaClassVersionOffset, 0, FDF_DOUBLE|FDF_RI },
+   { MAXINT("FieldArray"), (ERR (*)(APTR, APTR))GET_Fields, (APTR)SET_Fields, writeval_default, "Fields", FID_Fields, glMetaFieldsOffset, 1, FDF_ARRAY|FD_STRUCT|FDF_RI },
+   { MAXINT("Field"),      (ERR (*)(APTR, APTR))GET_Dictionary, nullptr, writeval_default, "Dictionary", FID_Dictionary, glMetaDictionaryOffset, 2, FDF_ARRAY|FD_STRUCT|FDF_R },
+   { 0, nullptr, nullptr, writeval_default, "ClassName",       FID_ClassName,       glMetaClassNameOffset,        3,  FDF_CPPSTRING|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "FileExtension",   FID_FileExtension,   glMetaFileExtensionOffset,    4,  FDF_CPPSTRING|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "FileDescription", FID_FileDescription, glMetaFileDescriptionOffset,  5,  FDF_CPPSTRING|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "FileHeader",      FID_FileHeader,      glMetaFileHeaderOffset,       6,  FDF_CPPSTRING|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "Path",            FID_Path,            glMetaPathOffset,             7,  FDF_CPPSTRING|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "Icon",            FID_Icon,            glMetaIconOffset,             8,  FDF_CPPSTRING|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "Size",            FID_Size,            glMetaSizeOffset,             9,  FDF_INT|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "Flags",           FID_Flags,           glMetaFlagsOffset,            10, FDF_INT|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "ClassID",         FID_ClassID,         glMetaClassIDOffset,          11, FDF_INT|FDF_UNSIGNED|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "BaseClassID",     FID_BaseClassID,     glMetaBaseClassIDOffset,      12, FDF_INT|FDF_UNSIGNED|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "OpenCount",       FID_OpenCount,       glMetaOpenCountOffset,        13, FDF_INT|FDF_R },
+   { MAXINT(&CategoryTable), nullptr, nullptr, writeval_default, "Category",  FID_Category, glMetaCategoryOffset, 14, FDF_INT|FDF_LOOKUP|FDF_RI },
    // Virtual fields
    { MAXINT("MethodEntry"), (ERR (*)(APTR, APTR))GET_Methods, (APTR)SET_Methods, writeval_default, "Methods", FID_Methods, sizeof(Object), 15, FDF_ARRAY|FD_STRUCT|FDF_RI },
    { 0, nullptr, (APTR)SET_Actions,               writeval_default,   "Actions",           FID_Actions,         sizeof(Object), 16, FDF_POINTER|FDF_I },
    { 0, (ERR (*)(APTR, APTR))GET_ActionTable, 0,  writeval_default,   "ActionTable",       FID_ActionTable,     sizeof(Object), 17, FDF_ARRAY|FDF_POINTER|FDF_R },
-   { 0, (ERR (*)(APTR, APTR))GET_Location, 0,     writeval_default,   "Location",          FID_Location,        sizeof(Object), 18, FDF_STRING|FDF_R },
-   { 0, (ERR (*)(APTR, APTR))GET_ClassName, (APTR)SET_ClassName, writeval_default, "Name", FID_Name,            sizeof(Object), 19, FDF_STRING|FDF_SYSTEM|FDF_RI },
-   { 0, (ERR (*)(APTR, APTR))GET_Module, 0,       writeval_default,   "Module",            FID_Module,          sizeof(Object), 20, FDF_STRING|FDF_R },
+   { 0, (ERR (*)(APTR, APTR))GET_Location, 0,     writeval_default,   "Location",          FID_Location,        sizeof(Object), 18, FDF_CPPSTRING|FDF_R },
+   { 0, (ERR (*)(APTR, APTR))GET_ClassName, (APTR)SET_ClassName, writeval_default, "Name", FID_Name,            sizeof(Object), 19, FDF_CPPSTRING|FDF_SYSTEM|FDF_RI },
+   { 0, (ERR (*)(APTR, APTR))GET_Module, 0,       writeval_default,   "Module",            FID_Module,          sizeof(Object), 20, FDF_CPPSTRING|FDF_R },
    { 0, (ERR (*)(APTR, APTR))GET_Objects, 0,      writeval_default,   "Objects",           FID_Objects,         sizeof(Object), 21, FDF_ARRAY|FDF_INT|FDF_ALLOC|FDF_R },
    { MAXINT(CLASSID::METACLASS), (ERR (*)(APTR, APTR))GET_SubClasses, nullptr, writeval_default, "SubClasses", FID_SubClasses, sizeof(Object), 22, FDF_ARRAY|FD_OBJECT|FDF_R },
    { MAXINT("FieldArray"), (ERR (*)(APTR, APTR))GET_SubFields, 0, writeval_default, "SubFields", FID_SubFields, sizeof(Object), 23, FDF_ARRAY|FD_STRUCT|FDF_SYSTEM|FDF_R },
@@ -121,11 +146,12 @@ static const FieldArray glMetaFields[] = {
    { "ClassVersion",    FDF_DOUBLE|FDF_RI },
    { "Fields",          FDF_ARRAY|FD_STRUCT|FDF_RI, GET_Fields, SET_Fields, "FieldArray" },
    { "Dictionary",      FDF_ARRAY|FD_STRUCT|FDF_R, GET_Dictionary, nullptr, "Field" },
-   { "ClassName",       FDF_STRING|FDF_RI },
-   { "FileExtension",   FDF_STRING|FDF_RI },
-   { "FileDescription", FDF_STRING|FDF_RI },
-   { "FileHeader",      FDF_STRING|FDF_RI },
-   { "Path",            FDF_STRING|FDF_RI },
+   { "ClassName",       FDF_CPPSTRING|FDF_RI },
+   { "FileExtension",   FDF_CPPSTRING|FDF_RI },
+   { "FileDescription", FDF_CPPSTRING|FDF_RI },
+   { "FileHeader",      FDF_CPPSTRING|FDF_RI },
+   { "Path",            FDF_CPPSTRING|FDF_RI },
+   { "Icon",            FDF_CPPSTRING|FDF_RI },
    { "Size",            FDF_INT|FDF_RI },
    { "Flags",           FDF_INT|FDF_RI },
    { "ClassID",         FDF_INT|FDF_UNSIGNED|FDF_RI },
@@ -136,9 +162,9 @@ static const FieldArray glMetaFields[] = {
    { "Methods",         FDF_ARRAY|FD_STRUCT|FDF_RI, GET_Methods, SET_Methods, "MethodEntry" },
    { "Actions",         FDF_POINTER|FDF_I },
    { "ActionTable",     FDF_ARRAY|FDF_POINTER|FDF_R, GET_ActionTable },
-   { "Location",        FDF_STRING|FDF_R },
-   { "Name",            FDF_STRING|FDF_SYSTEM|FDF_RI, GET_ClassName, SET_ClassName },
-   { "Module",          FDF_STRING|FDF_R, GET_Module },
+   { "Location",        FDF_CPPSTRING|FDF_R, GET_Location },
+   { "Name",            FDF_CPPSTRING|FDF_SYSTEM|FDF_RI, GET_ClassName, SET_ClassName },
+   { "Module",          FDF_CPPSTRING|FDF_R, GET_Module },
    { "Objects",         FDF_ARRAY|FDF_INT|FDF_ALLOC|FDF_R, GET_Objects },
    { "SubClasses",      FDF_ARRAY|FD_OBJECT|FDF_R, GET_SubClasses, nullptr, CLASSID::METACLASS },
    { "SubFields",       FDF_ARRAY|FD_STRUCT|FDF_SYSTEM|FDF_R, GET_SubFields, nullptr, "FieldArray" },
@@ -243,12 +269,12 @@ ERR CLASS_FindField(extMetaClass *Self, struct mc::FindField *Args)
 ERR CLASS_Free(extMetaClass *Self)
 {
    if (Self->ClassID != CLASSID::NIL) glClassMap.erase(Self->ClassID);
-   if (Self->Location) { FreeResource(Self->Location); Self->Location = nullptr; }
 
    if (not Self->SubClasses.empty()) {
       // Sanity check - if a base has derived classes present then there is an issue that requires resolution.
       // Note that for static builds there is no way to control termination order, so these controls are disabled.
-      kt::Log().warning("Out-of-order termination: Base-class %s has %d active derived classes.", Self->ClassName, int(Self->SubClasses.size()));
+      kt::Log().warning("Out-of-order termination: Base-class %s has %d active derived classes.",
+         Self->ClassName.c_str(), int(Self->SubClasses.size()));
    }
 
    if (Self->Base) {
@@ -265,7 +291,7 @@ ERR CLASS_Init(extMetaClass *Self)
 {
    kt::Log log;
 
-   if (!Self->ClassName) return log.warning(ERR::MissingClassName);
+   if (Self->ClassName.empty()) return log.warning(ERR::MissingClassName);
 
    auto class_hash = CLASSID(strihash(Self->ClassName));
 
@@ -290,9 +316,10 @@ ERR CLASS_Init(extMetaClass *Self)
       // user's system.
 
       if (auto base = (extMetaClass *)FindClass(Self->BaseClassID)) {
-         log.trace("Using base class $%.8x (%s) for %s", Self->BaseClassID, base->ClassName, Self->ClassName);
-         if (!Self->FileDescription) Self->FileDescription = base->FileDescription;
-         if (!Self->FileExtension)   Self->FileExtension   = base->FileExtension;
+         log.trace("Using base class $%.8x (%s) for %s", Self->BaseClassID, base->ClassName.c_str(),
+            Self->ClassName.c_str());
+         if (Self->FileDescription.empty()) Self->FileDescription = base->FileDescription;
+         if (Self->FileExtension.empty())   Self->FileExtension   = base->FileExtension;
          if (!Self->ClassVersion)    Self->ClassVersion    = base->ClassVersion;
 
          // If over-riding field definitions have been specified by the derived class, move them to the SubFields pointer.
@@ -350,8 +377,8 @@ ERR CLASS_Init(extMetaClass *Self)
             // On Android, all libraries are stored in the libs/ folder with no sub-folder hierarchy.  Because of this,
             // we rewrite the path to fit the Android system.
 
-            if (Self->Path) {
-               int i = StrLength(Self->Path);
+            if (not Self->Path.empty()) {
+               int i = int(Self->Path.size());
                while ((i > 0) and (Self->Path[i] != '/') and (Self->Path[i] != '\\') and (Self->Path[i] != ':')) i--;
                if (i > 0) i++; // Skip folder separator.
 
@@ -626,21 +653,24 @@ file extension of the source binary.
 
 *********************************************************************************************************************/
 
-static ERR GET_Location(extMetaClass *Self, CSTRING *Value)
+static ERR GET_Location(extMetaClass *Self, std::string_view &Value)
 {
-   if (Self->Path) { *Value = Self->Path; return ERR::Okay; }
-   if (Self->Location) { *Value = Self->Location; return ERR::Okay; }
+   if (not Self->Path.empty()) { Value = Self->Path; return ERR::Okay; }
+   if (not Self->Location.empty()) { Value = Self->Location; return ERR::Okay; }
 
    if (Self->ClassID != CLASSID::NIL) {
       if (glClassDB.contains(Self->ClassID)) {
-         Self->Location = strclone(glClassDB[Self->ClassID].Path);
+         Self->Location = glClassDB[Self->ClassID].Path;
       }
    }
    else if (glClassDB.contains(Self->BaseClassID)) {
-      Self->Location = strclone(glClassDB[Self->BaseClassID].Path);
+      Self->Location = glClassDB[Self->BaseClassID].Path;
    }
 
-   if ((*Value = Self->Location)) return ERR::Okay;
+   if (not Self->Location.empty()) {
+      Value = Self->Location;
+      return ERR::Okay;
+   }
    else return ERR::MissingPath;
 }
 
@@ -681,7 +711,8 @@ static ERR SET_Methods(extMetaClass *Self, const MethodEntry *Methods, int Eleme
    // be NULL because methods start at -1, not zero.
 
    if (lowest < 0) {
-      log.msg("Detected %d methods in class %s.", -lowest, Self->ClassName ? Self->ClassName : (STRING)"Unnamed");
+      log.msg("Detected %d methods in class %s.", -lowest,
+         Self->ClassName.empty() ? "Unnamed" : Self->ClassName.c_str());
       Self->Methods.resize((-lowest) + 1);
       for (unsigned i=0; Methods[i].MethodID != AC::NIL; i++) {
          const int lk = -int(Methods[i].MethodID);
@@ -705,16 +736,16 @@ Module: The name of the module binary that initialised the class.
 
 *********************************************************************************************************************/
 
-static ERR GET_Module(extMetaClass *Self, CSTRING *Value)
+static ERR GET_Module(extMetaClass *Self, std::string_view &Value)
 {
    if (!Self->initialised()) return ERR::NotInitialised;
 
    if (Self->Root) {
-      *Value = Self->Root->LibraryName.c_str();
+      Value = Self->Root->LibraryName;
       return ERR::Okay;
    }
    else {
-      *Value = "core";
+      Value = "core";
       return ERR::Okay;
    }
 }
@@ -1107,13 +1138,13 @@ static void add_field(extMetaClass *Class, std::vector<Field> &Fields, const Fie
       field_alignment = alignof(int64_t);
       field_type = "64-bit integer";
    }
-   else log.warning("%s field \"%s\"/%d has an invalid flag setting.", Class->ClassName, field.Name, field.FieldID);
+   else log.warning("%s field \"%s\"/%d has an invalid flag setting.", Class->ClassName.c_str(), field.Name, field.FieldID);
 
    if (field_size) {
       const auto aligned_offset = align_field_offset(Offset, field_alignment);
       if (aligned_offset != Offset) {
          if (direct_field_access(field)) {
-            log.warning("Misaligned %s field '%s' in class '%s'.", field_type, field.Name, Class->ClassName);
+            log.warning("Misaligned %s field '%s' in class '%s'.", field_type, field.Name, Class->ClassName.c_str());
          }
          Offset = aligned_offset;
       }

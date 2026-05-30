@@ -45,7 +45,7 @@ static ERR FILTEREFFECT_Init(extFilterEffect *Self)
          Self->SourceType = VSF::REFERENCE;
          Self->Input = Self->Prev;
          ((extFilterEffect *)Self->Input)->UsageCount++;
-         log.msg("Using effect %s #%d as an input.", Self->Input->Class->ClassName, Self->Input->UID);
+         log.msg("Using effect %s #%d as an input.", Self->Input->Class->ClassName.c_str(), Self->Input->UID);
       }
       else {
          Self->SourceType = VSF::GRAPHIC;

@@ -1292,12 +1292,12 @@ typedef std::vector<obj_write> WRITE_TABLE;
     double ClassVersion    # Version of the class
     cstruct(*FieldArray) Fields  # Original field array supplied by the module
     array(struct(Field)) Dictionary # Field lookup by ID
-    cstr ClassName         # Name of the class
-    cstr FileExtension     # File extension(s) supported by this class
-    cstr FileDescription   # File description
-    cstr FileHeader        # Internal file header for identifying the file
-    cstr Path              # Module path to the class
-    cstr Icon              # An icon that can be used to represent class data
+    cpp(str) ClassName         # Name of the class
+    cpp(str) FileExtension     # File extension(s) supported by this class
+    cpp(str) FileDescription   # File description
+    cpp(str) FileHeader        # Internal file header for identifying the file
+    cpp(str) Path              # Module path to the class
+    cpp(str) Icon              # An icon that can be used to represent class data
     int Size               # Byte-size of the class when produced as an object
     int(CLF) Flags         # Special flags
     cid ClassID            # ID of this class
@@ -1797,7 +1797,7 @@ template <class T, class X = APTR> FUNCTION C_FUNCTION(T *pRoutine, X pMeta = 0)
    return func;
 };
 
-inline CSTRING Object::className() { return Class->ClassName; }
+inline CSTRING Object::className() { return Class->ClassName.c_str(); }
   ]==])
 
   if (glProgram is "idl-compile") then

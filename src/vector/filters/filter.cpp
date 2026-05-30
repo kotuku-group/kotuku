@@ -239,7 +239,8 @@ static ERR get_source_bitmap(extVectorFilter *Self, objBitmap **BitmapResult, VS
 
    kt::SwitchContext ctx(Self);
 
-   log.branch("%s #%d <- ID: #%u, Type: %d", Self->ActiveEffect->Class->ClassName, Self->ActiveEffect->UID, Effect ? Effect->UID : 0, int(SourceType));
+   log.branch("%s #%d <- ID: #%u, Type: %d", Self->ActiveEffect->Class->ClassName.c_str(),
+      Self->ActiveEffect->UID, Effect ? Effect->UID : 0, int(SourceType));
 
    objBitmap *bmp = nullptr;
    if (SourceType IS VSF::GRAPHIC) { // SourceGraphic: Render the source vector without transformations (transforms will be applied in the final steps).
@@ -305,12 +306,13 @@ static ERR get_source_bitmap(extVectorFilter *Self, objBitmap **BitmapResult, VS
          }
 
          if (!bmp) {
-            log.warning("%s has dependency on %s effect #%u and does not output a bitmap.", Self->ActiveEffect->Class->ClassName, Effect->Class->ClassName, Effect->UID);
+            log.warning("%s has dependency on %s effect #%u and does not output a bitmap.",
+               Self->ActiveEffect->Class->ClassName.c_str(), Effect->Class->ClassName.c_str(), Effect->UID);
             return ERR::NoData;
          }
       }
       else {
-         log.warning("%s source reference has not provided an effect.", Self->ActiveEffect->Class->ClassName);
+         log.warning("%s source reference has not provided an effect.", Self->ActiveEffect->Class->ClassName.c_str());
          return ERR::NoData;
       }
   }
@@ -346,7 +348,7 @@ objBitmap * get_source_graphic(extVectorFilter *Self)
    kt::Log log(__FUNCTION__);
 
    if (!Self->ClientVector) {
-      log.warning("%s No ClientVector defined.", Self->ActiveEffect->Class->ClassName);
+      log.warning("%s No ClientVector defined.", Self->ActiveEffect->Class->ClassName.c_str());
       return nullptr;
    }
 
@@ -524,7 +526,8 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
    if ((!filter_name) or (!filter_name[0])) filter_name = "Unnamed";
    CSTRING vector_name = Vector->Name;
    if ((!vector_name) or (!vector_name[0])) vector_name = "Unnamed";
-   log.branch("Rendering '%s' filter content for %s #%d '%s'.", filter_name, Vector->Class->ClassName, Vector->UID, vector_name);
+   log.branch("Rendering '%s' filter content for %s #%d '%s'.", filter_name,
+      Vector->Class->ClassName.c_str(), Vector->UID, vector_name);
 
    Self->ClientViewport = Viewport;
    Self->ClientVector   = Vector;
@@ -549,7 +552,8 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
 
    objBitmap *out = nullptr;
    for (auto e = Self->Effects; e; e = (extFilterEffect *)e->Next) {
-      log.detail("Effect: %s #%u, Pipelined: %c; Use Count: %d", e->Class->ClassName, e->UID, e->UsageCount > 0 ? 'Y' : 'N', e->UsageCount);
+      log.detail("Effect: %s #%u, Pipelined: %c; Use Count: %d", e->Class->ClassName.c_str(), e->UID,
+         e->UsageCount > 0 ? 'Y' : 'N', e->UsageCount);
 
       Self->ActiveEffect = e;
 

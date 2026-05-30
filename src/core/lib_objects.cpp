@@ -268,7 +268,8 @@ static ERR object_free(Object *Object)
       if (auto lock = std::unique_lock{glmTimer, 1000ms}) {
          for (auto it=glTimers.begin(); it != glTimers.end(); ) {
             if (it->SubscriberID IS Object->UID) {
-               log.warning("%s object #%d has an unfreed timer subscription, routine %p, interval %" PF64, mc->ClassName, Object->UID, &it->Routine, (long long)it->Interval);
+               log.warning("%s object #%d has an unfreed timer subscription, routine %p, interval %" PF64,
+                  mc->ClassName.c_str(), Object->UID, &it->Routine, (long long)it->Interval);
                if (it->Routine.isScript()) {
                   ((objScript *)it->Routine.Context)->derefProcedure(it->Routine);
                }
@@ -1614,8 +1615,8 @@ ERR InitObject(OBJECTPTR Object)
       return ERR::Okay;
    }
 
-   if (Object->Name[0]) log.branch("%s #%d, Name: %s, Owner: %d", cl->ClassName, Object->UID, Object->Name, Object->ownerID());
-   else log.branch("%s #%d, Owner: %d", cl->ClassName, Object->UID, Object->ownerID());
+   if (Object->Name[0]) log.branch("%s #%d, Name: %s, Owner: %d", cl->ClassName.c_str(), Object->UID, Object->Name, Object->ownerID());
+   else log.branch("%s #%d, Owner: %d", cl->ClassName.c_str(), Object->UID, Object->ownerID());
 
    extObjectContext new_context(Object, AC::Init);
 
@@ -1838,7 +1839,10 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
 
    if ((mc->Flags & CLF::NO_OWNERSHIP) != CLF::NIL) Flags |= NF::UNTRACKED;
 
-   if ((Flags & NF::SUPPRESS_LOG) IS NF::NIL) log.branch("%s #%d, Flags: $%x", mc->ClassName, glPrivateIDCounter.load(std::memory_order_relaxed), int(Flags));
+   if ((Flags & NF::SUPPRESS_LOG) IS NF::NIL) {
+      log.branch("%s #%d, Flags: $%x", mc->ClassName.c_str(),
+         glPrivateIDCounter.load(std::memory_order_relaxed), int(Flags));
+   }
 
    OBJECTPTR head = nullptr;
    MEMORYID head_id;

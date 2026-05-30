@@ -337,8 +337,8 @@ static int async_method(lua_State *Lua)
       }
    }
 
-   if (method) luaL_error(Lua, "No '%s' method for class %s.", method, gc_obj->classptr->ClassName);
-   else luaL_error(Lua, "No method %d for class %s.", int(method_id), gc_obj->classptr->ClassName);
+   if (method) luaL_error(Lua, "No '%s' method for class %s.", method, gc_obj->classptr->ClassName.c_str());
+   else luaL_error(Lua, "No method %d for class %s.", int(method_id), gc_obj->classptr->ClassName.c_str());
    return 0;
 }
 

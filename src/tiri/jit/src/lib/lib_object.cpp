@@ -438,7 +438,7 @@ extern int object_newindex(lua_State *Lua)
             release_object(def);
 
             if (error >= ERR::ExceptionThreshold) {
-               luaL_error(Lua, error, "Write failure: %s.%s: %s", def->classptr->ClassName, luaL_checkstring(Lua, 2), GetErrorMsg(error));
+               luaL_error(Lua, error, "Write failure: %s.%s: %s", def->classptr->ClassName.c_str(), luaL_checkstring(Lua, 2), GetErrorMsg(error));
             }
          }
       }
@@ -465,12 +465,12 @@ extern int object_newindex(lua_State *Lua)
    auto func = std::lower_bound(read_table->begin(), read_table->end(), hash_key, read_hash);
    if ((func != read_table->end()) and (func->Hash IS keystr->hash)) {
       auto result = func->Call(Lua, *func, def); // On error, result is 0 and CaughtError is defined.
-      if ((not result) and (Lua->CaughtError > ERR::ExceptionThreshold)) luaL_error(Lua, Lua->CaughtError, "Read failure: %s.%s: %s", def->classptr->ClassName, luaL_checkstring(Lua, 2), GetErrorMsg(Lua->CaughtError));
+      if ((not result) and (Lua->CaughtError > ERR::ExceptionThreshold)) luaL_error(Lua, Lua->CaughtError, "Read failure: %s.%s: %s", def->classptr->ClassName.c_str(), luaL_checkstring(Lua, 2), GetErrorMsg(Lua->CaughtError));
       return result;
    }
 
    luaL_error(Lua, ERR::NoFieldAccess, "Field does not exist or is unreadable: %s.%s",
-      def->classptr ? def->classptr->ClassName: "?", strdata(keystr));
+      def->classptr ? def->classptr->ClassName.c_str() : "?", strdata(keystr));
 
    return 0; // Not reached
 }
@@ -504,7 +504,7 @@ extern int object_newindex(lua_State *Lua)
             }
          }
       }
-      else log.warning("No methods declared for class %s, cannot call %s()", mc->ClassName, action);
+      else log.warning("No methods declared for class %s, cannot call %s()", mc->ClassName.c_str(), action);
    }
    else luaL_error(Lua, ERR::Search);
 

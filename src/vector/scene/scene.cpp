@@ -276,7 +276,7 @@ static ERR VECTORSCENE_AddDef(extVectorScene *Self, struct sc::AddDef *Args)
    // If the resource does not belong to the Scene object, this can lead to invalid pointer references
 
    if (!def->hasOwner(Self->UID)) {
-      log.warning("The %s must belong to VectorScene #%d, but is owned by object #%d.", def->Class->ClassName, Self->UID, def->ownerID());
+      log.warning("The %s must belong to VectorScene #%d, but is owned by object #%d.", def->Class->ClassName.c_str(), Self->UID, def->ownerID());
       return ERR::UnsupportedOwner;
    }
 
@@ -285,7 +285,7 @@ static ERR VECTORSCENE_AddDef(extVectorScene *Self, struct sc::AddDef *Args)
       return ERR::ResourceExists;
    }
 
-   log.detail("Adding definition '%s' referencing %s #%d", Args->Name, def->Class->ClassName, def->UID);
+   log.detail("Adding definition '%s' referencing %s #%d", Args->Name, def->Class->ClassName.c_str(), def->UID);
 
    SubscribeAction(def, AC::Free, C_FUNCTION(notify_def_free));
 
@@ -318,7 +318,7 @@ static ERR VECTORSCENE_Debug(extVectorScene *Self)
       for (auto &rec : list) {
          auto obj = GetObjectPtr(rec.ObjectID);
          if (obj IS Self->Viewport) continue;
-         log.msg(" #%d %s %s", rec.ObjectID, obj->Class->ClassName, obj->Name);
+         log.msg(" #%d %s %s", rec.ObjectID, obj->Class->ClassName.c_str(), obj->Name);
       }
    }
 

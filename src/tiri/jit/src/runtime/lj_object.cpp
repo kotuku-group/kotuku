@@ -219,7 +219,7 @@ extern "C" void bc_object_getfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
       else { // Cache miss - binary search and cache
          auto found = std::lower_bound(rt_data, rt_data + rt_size, obj_read(Key->hash), read_hash);
          if ((found IS rt_data + rt_size) or (found->Hash != Key->hash)) {
-            luaL_error(L, ERR::NoFieldAccess, "Field does not exist or is init-only: %s.%s", cl->ClassName, strdata(Key));
+            luaL_error(L, ERR::NoFieldAccess, "Field does not exist or is init-only: %s.%s", cl->ClassName.c_str(), strdata(Key));
          }
          setbc_p32(Ins, uint32_t(found - rt_data));
          func = found;
@@ -228,7 +228,7 @@ extern "C" void bc_object_getfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
    else { // JIT path - no caching
       auto found = std::lower_bound(rt_data, rt_data + rt_size, obj_read(Key->hash), read_hash);
       if ((found IS rt_data + rt_size) or (found->Hash != Key->hash)) {
-         luaL_error(L, ERR::NoFieldAccess, "Field does not exist or is init-only: %s.%s", cl->ClassName, strdata(Key));
+         luaL_error(L, ERR::NoFieldAccess, "Field does not exist or is init-only: %s.%s", cl->ClassName.c_str(), strdata(Key));
       }
       func = found;
    }
@@ -237,7 +237,7 @@ extern "C" void bc_object_getfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
    if (func->Call(L, *func, Obj) > 0) copyTV(L, Dest, L->top - 1);
    else { // An error occurred and is stored in L->CaughtError
       if (L->CaughtError > ERR::ExceptionThreshold) {
-         luaL_error(L, L->CaughtError, "Read failure: %s.%s: %s", cl->ClassName, luaL_checkstring(L, 2), GetErrorMsg(L->CaughtError));
+         luaL_error(L, L->CaughtError, "Read failure: %s.%s: %s", cl->ClassName.c_str(), luaL_checkstring(L, 2), GetErrorMsg(L->CaughtError));
       }
 
       setnilV(Dest);
@@ -296,7 +296,7 @@ extern "C" void bc_object_setfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
          auto found = std::lower_bound(wt_data, wt_data + wt_size, obj_write(Key->hash), write_hash);
          if ((found IS wt_data + wt_size) or (found->Hash != Key->hash)) {
             luaL_error(L, ERR::UndefinedField, "Field does not exist or is read-only: %s.%s",
-               Obj->classptr ? Obj->classptr->ClassName : "?", strdata(Key));
+               Obj->classptr ? Obj->classptr->ClassName.c_str() : "?", strdata(Key));
          }
          setbc_p32(Ins, uint32_t(found - wt_data));
          func = found;
@@ -306,7 +306,7 @@ extern "C" void bc_object_setfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
       auto found = std::lower_bound(wt_data, wt_data + wt_size, obj_write(Key->hash), write_hash);
       if ((found IS wt_data + wt_size) or (found->Hash != Key->hash)) {
          luaL_error(L, ERR::UndefinedField, "Field does not exist or is read-only: %s.%s",
-            Obj->classptr ? Obj->classptr->ClassName : "?", strdata(Key));
+            Obj->classptr ? Obj->classptr->ClassName.c_str() : "?", strdata(Key));
       }
       func = found;
    }

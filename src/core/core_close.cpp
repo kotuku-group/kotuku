@@ -354,7 +354,8 @@ __export void Expunge(int16_t Force)
 
                if (auto mc = (extMetaClass *)mem->second.Address; (mc) and (mc->classID() IS CLASSID::METACLASS)) {
                   if (mc->OpenCount > 0) {
-                     log.msg("Module %s manages a class that is in use - Class: %s, Count: %d.", mod_master->Name.c_str(), mc->ClassName, mc->OpenCount);
+                     log.msg("Module %s manages a class that is in use - Class: %s, Count: %d.",
+                        mod_master->Name.c_str(), mc->ClassName.c_str(), mc->OpenCount);
                      class_in_use = true;
                   }
                   else if (not mc->SubClasses.empty()) {
@@ -364,7 +365,8 @@ __export void Expunge(int16_t Force)
                      }
 
                      if (ext_count > 0) {
-                        log.msg("Module %s manages a class with active derived classes - Class: %s, Count: %d.", mod_master->Name.c_str(), mc->ClassName, ext_count);
+                        log.msg("Module %s manages a class with active derived classes - Class: %s, Count: %d.",
+                           mod_master->Name.c_str(), mc->ClassName.c_str(), ext_count);
                         class_in_use = true;
                      }
                   }
@@ -427,12 +429,15 @@ __export void Expunge(int16_t Force)
 
                   auto mc = (extMetaClass *)mem->second.Address;
                   if ((mc) and (mc->classID() IS CLASSID::METACLASS) and (mc->OpenCount > 0)) {
-                     log.warning("Warning: The %s module holds a class with existing objects (Class: %s, Objects: %d)", mod_master->Name.c_str(), mc->ClassName, mc->OpenCount);
+                     log.warning("Warning: The %s module holds a class with existing objects (Class: %s, Objects: %d)",
+                        mod_master->Name.c_str(), mc->ClassName.c_str(), mc->OpenCount);
 
                      for (auto & [ id, mem ] : glPrivateMemory) {
                         if (((mem.Flags & MEM::OBJECT) != MEM::NIL) and (mem.Object)) {
                            if (mem.Object->classID() IS mc->ClassID) {
-                              log.warning("   Unfreed %s #%d, Owner #%d, RefCount: %d, Queue: %d", mc->ClassName, mem.Object->UID, mem.Object->ownerID(), mem.Object->RefCount.load(), mem.Object->Queue.load());
+                              log.warning("   Unfreed %s #%d, Owner #%d, RefCount: %d, Queue: %d",
+                                 mc->ClassName.c_str(), mem.Object->UID, mem.Object->ownerID(),
+                                 mem.Object->RefCount.load(), mem.Object->Queue.load());
                            }
                         }
                      }

@@ -2483,7 +2483,7 @@ ParserResult<ExpDesc> IrEmitter::emit_member_expr(const MemberExprPayload &Paylo
          else if (not Payload.is_call_target) {
             // Field not found in dictionary and not being called as a function - raise parse error
             auto *meta_class = FindClass(class_id);
-            CSTRING class_name = meta_class ? meta_class->ClassName : "Unknown";
+            CSTRING class_name = meta_class ? meta_class->ClassName.c_str() : "Unknown";
             lj_lex_error(this->func_state.ls, 0, ErrMsg::BADFIELD, strdata(Payload.member.symbol), class_name);
             return this->unsupported_expr(AstNodeKind::MemberExpr, Payload.member.span);
          }
@@ -2657,7 +2657,7 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_member_expr(const SafeMemberExprPaylo
          }
          else if (not Payload.is_call_target) {
             auto *meta_class = FindClass(Payload.class_id);
-            const char *class_name = meta_class ? meta_class->ClassName : "Unknown";
+            const char *class_name = meta_class ? meta_class->ClassName.c_str() : "Unknown";
             lj_lex_error(this->func_state.ls, 0, ErrMsg::BADFIELD, strdata(Payload.member.symbol), class_name);
             return this->unsupported_expr(AstNodeKind::SafeMemberExpr, Payload.member.span);
          }

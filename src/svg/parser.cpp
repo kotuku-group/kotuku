@@ -135,7 +135,7 @@ void svgState::applyStateToVector(objVector *Vector) const noexcept
    kt::Log log(__FUNCTION__);
 
    log.traceBranch("%s: Fill: %s, Stroke: %s, Opacity: %.2f, Font: %s %s",
-      Vector->Class->ClassName, m_fill.c_str(), m_stroke.c_str(), m_opacity, m_font_family.c_str(), m_font_size.c_str());
+      Vector->Class->ClassName.c_str(), m_fill.c_str(), m_stroke.c_str(), m_opacity, m_font_family.c_str(), m_font_size.c_str());
 
    if (!m_fill.empty())   Vector->setFill(m_fill);
    if (!m_stroke.empty()) Vector->setStroke(m_stroke);
@@ -3225,7 +3225,7 @@ void svgState::process_attrib(XTag &Tag, objVector *Vector) noexcept
       if (auto error = set_property(Vector, strhash(name), Tag, value); error != ERR::Okay) {
          if (Vector->classID() != CLASSID::VECTORGROUP) {
             log.warning("Failed to set field '%s' with '%s' in %s; Error %s",
-               name.c_str(), value.c_str(), Vector->Class->ClassName, GetErrorMsg(error));
+               name.c_str(), value.c_str(), Vector->Class->ClassName.c_str(), GetErrorMsg(error));
          }
       }
    }

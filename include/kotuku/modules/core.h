@@ -2499,12 +2499,12 @@ class objMetaClass : public Object {
    double  ClassVersion;                // The version number of the class.
    const struct FieldArray * Fields;    // Points to a FieldArray that describes the class' object structure.
    struct Field * Dictionary;           // Returns a field lookup table sorted by field IDs.
-   CSTRING ClassName;                   // The name of the represented class.
-   CSTRING FileExtension;               // Describes the file extension represented by the class.
-   CSTRING FileDescription;             // Describes the file type represented by the class.
-   CSTRING FileHeader;                  // Defines a string expression that will allow relevant file data to be matched to the class.
-   CSTRING Path;                        // The path to the module binary that represents the class.
-   CSTRING Icon;                        // Associates an icon with the file data for this class.
+   std::string ClassName;               // The name of the represented class.
+   std::string FileExtension;           // Describes the file extension represented by the class.
+   std::string FileDescription;         // Describes the file type represented by the class.
+   std::string FileHeader;              // Defines a string expression that will allow relevant file data to be matched to the class.
+   std::string Path;                    // The path to the module binary that represents the class.
+   std::string Icon;                    // Associates an icon with the file data for this class.
    int     Size;                        // The total size of the object structure represented by the MetaClass.
    CLF     Flags;                       // Optional flag settings.
    CLASSID ClassID;                     // Specifies the ID of a class object.
@@ -2543,33 +2543,39 @@ class objMetaClass : public Object {
       return field->WriteValue(target, field, 0x00001510, Value, Elements);
    }
 
-   template <class T> inline ERR setClassName(T && Value) noexcept {
+   inline ERR setClassName(const std::string_view &Value) noexcept {
       if (this->initialised()) return ERR::NoFieldAccess;
       this->ClassName = Value;
       return ERR::Okay;
    }
 
-   template <class T> inline ERR setFileExtension(T && Value) noexcept {
+   inline ERR setFileExtension(const std::string_view &Value) noexcept {
       if (this->initialised()) return ERR::NoFieldAccess;
       this->FileExtension = Value;
       return ERR::Okay;
    }
 
-   template <class T> inline ERR setFileDescription(T && Value) noexcept {
+   inline ERR setFileDescription(const std::string_view &Value) noexcept {
       if (this->initialised()) return ERR::NoFieldAccess;
       this->FileDescription = Value;
       return ERR::Okay;
    }
 
-   template <class T> inline ERR setFileHeader(T && Value) noexcept {
+   inline ERR setFileHeader(const std::string_view &Value) noexcept {
       if (this->initialised()) return ERR::NoFieldAccess;
       this->FileHeader = Value;
       return ERR::Okay;
    }
 
-   template <class T> inline ERR setPath(T && Value) noexcept {
+   inline ERR setPath(const std::string_view &Value) noexcept {
       if (this->initialised()) return ERR::NoFieldAccess;
       this->Path = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setIcon(const std::string_view &Value) noexcept {
+      if (this->initialised()) return ERR::NoFieldAccess;
+      this->Icon = Value;
       return ERR::Okay;
    }
 
@@ -2616,10 +2622,10 @@ class objMetaClass : public Object {
       return field->WriteValue(target, field, 0x08000400, Value, 1);
    }
 
-   template <class T> inline ERR setName(T && Value) noexcept {
+   inline ERR setName(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[16];
-      return field->WriteValue(target, field, 0x08810500, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00814500, &Value, 1);
    }
 
 };
@@ -4050,4 +4056,4 @@ template <class T, class X = APTR> FUNCTION C_FUNCTION(T *pRoutine, X pMeta = 0)
    return func;
 };
 
-inline CSTRING Object::className() { return Class->ClassName; }
+inline CSTRING Object::className() { return Class->ClassName.c_str(); }
