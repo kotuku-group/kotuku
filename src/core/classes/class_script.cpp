@@ -491,9 +491,9 @@ code for international English.
 
 *********************************************************************************************************************/
 
-static ERR GET_Language(objScript *Self, STRING *Value)
+static ERR GET_Language(objScript *Self, std::string_view &Value)
 {
-   *Value = Self->Language;
+   Value = std::string_view((const char *)&Self->Language, 3);
    return ERR::Okay;
 }
 
@@ -539,9 +539,9 @@ static ERR SET_Path(objScript *Self, std::string_view &Value)
       Self->String.clear();
       Self->WorkingPath.clear();
 
-      int i, len;
+      int i;
       if (not Value.empty()) {
-         for (len=0; (len < int(Value.size())) and (Value[len] != ';'); len++);
+         auto len = Value.find(';');
 
          if (Value.substr(0, len).starts_with("STRING:")) {
             auto statement = Value.substr(7);
@@ -620,18 +620,6 @@ static ERR SET_Path(objScript *Self, std::string_view &Value)
    }
 
    return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR SET_Name(objScript *Self, CSTRING Name)
-{
-   if (Name) {
-      SetName(Self, Name);
-      struct acSetKey args("Name", Name);
-      return SCRIPT_SetKey(Self, &args);
-   }
-   else return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -858,10 +846,9 @@ static const FieldArray clScriptFields[] = {
    { "CacheFile",    FDF_CPPSTRING|FDF_RW,           GET_CacheFile, SET_CacheFile },
    { "ErrorMessage", FDF_CPPSTRING|FDF_RW,           GET_ErrorMessage, SET_ErrorMessage },
    { "WorkingPath",  FDF_CPPSTRING|FDF_RW,           GET_WorkingPath, SET_WorkingPath },
-   { "Language",     FDF_STRING|FDF_R,               GET_Language, nullptr },
+   { "Language",     FDF_CPPSTRING|FDF_R,            GET_Language },
    { "Location",     FDF_SYNONYM|FDF_CPPSTRING|FDF_RI, GET_Path, SET_Path },
    { "Procedure",    FDF_CPPSTRING|FDF_RW,           GET_Procedure, SET_Procedure },
-   { "Name",         FDF_STRING|FDF_SYSTEM|FDF_RW,   nullptr, SET_Name },
    { "Path",         FDF_CPPSTRING|FDF_RI,           GET_Path, SET_Path },
    { "Results",      FDF_ARRAY|FDF_POINTER|FDF_STRING|FDF_RW, GET_Results, SET_Results },
    { "Src",          FDF_SYNONYM|FDF_CPPSTRING|FDF_RI, GET_Path, SET_Path },
