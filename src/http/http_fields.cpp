@@ -640,21 +640,21 @@ if no keys are found.
 
 static ERR GET_ResponseKeys(extHTTP *Self, STRING **Value, int *Elements)
 {
-   if (Self->ResponseKeys.empty()) {
+   if (Self->ResponseHeaders.empty()) {
       *Value = nullptr;
       *Elements = 0;
       return ERR::Okay;
    }
 
-   const int total_keys = int(Self->ResponseKeys.size());
+   const int total_keys = int(Self->ResponseHeaders.size());
    int buffer_size = sizeof(CSTRING) * (total_keys + 1);
-   for (const auto &response_key : Self->ResponseKeys) buffer_size += int(response_key.first.length()) + 1;
+   for (const auto &response_key : Self->ResponseHeaders) buffer_size += int(response_key.first.length()) + 1;
 
    STRING *array;
    if (AllocMemory(buffer_size, MEM::STRING|MEM::NO_CLEAR, (APTR *)&array, nullptr) IS ERR::Okay) {
       STRING buffer = (STRING)(array + total_keys + 1);
       int i = 0;
-      for (const auto &response_key : Self->ResponseKeys) {
+      for (const auto &response_key : Self->ResponseHeaders) {
          array[i++] = buffer;
          buffer += kt::strcopy(response_key.first, buffer, int(response_key.first.length()) + 1) + 1;
       }

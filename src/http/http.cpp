@@ -302,7 +302,7 @@ class extHTTP : public objHTTP {
    FUNCTION Outgoing;
    FUNCTION AuthCallback;
    FUNCTION StateChanged;
-   ankerl::unordered_dense::map<std::string, std::string> ResponseKeys;
+   ankerl::unordered_dense::map<std::string, std::string> ResponseHeaders;
    ankerl::unordered_dense::map<std::string, std::string> Headers;
    std::string Response;   // Response header buffer
    std::string URI;        // Temporary string, used only when the user reads the URI
@@ -983,8 +983,8 @@ static ERR HTTP_GetKey(extHTTP *Self, struct acGetKey *Args)
 {
    if (!Args) return ERR::NullArgs;
 
-   if (Self->ResponseKeys.contains(Args->Key)) {
-      kt::strcopy(Self->ResponseKeys[Args->Key], Args->Value, Args->Size);
+   if (Self->ResponseHeaders.contains(Args->Key)) {
+      kt::strcopy(Self->ResponseHeaders[Args->Key], Args->Value, Args->Size);
       return ERR::Okay;
    }
 
