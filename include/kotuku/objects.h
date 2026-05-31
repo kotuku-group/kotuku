@@ -408,15 +408,6 @@ struct Object { // Must be 64-bit aligned
       std::string_view sv(Value ? Value : "");
       return field->WriteValue(target, field, FD_STRING|FD_CPP, &sv, 1);
    }
-
-   [[deprecated]] inline ERR set(FIELD FieldID, const unsigned char *Value) {
-      Object *target;
-      struct Field *field;
-      if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
-      std::string_view sv(Value ? (CSTRING)Value : "");
-      return field->WriteValue(target, field, FD_STRING|FD_CPP, &sv, 1);
-   }
-
    inline ERR set(FIELD FieldID, std::string_view Value) {
       Object *target;
       struct Field *field;
@@ -623,48 +614,6 @@ struct Object { // Must be 64-bit aligned
          else return ERR::UnrecognisedFieldType;
 
          return ERR::Okay;
-      }
-      else return ERR::UnsupportedField;
-   }
-
-   // Retrieve a direct pointer to a string field, no-copy operation.  Result will require deallocation by the client if the field is marked with ALLOC.
-
-   [[deprecated("Use string_view instead")]] inline ERR get(FIELD FieldID, CSTRING &Value) { // deprecated
-      Object *target;
-      Value = nullptr;
-      if (auto field = FindField(this, FieldID, &target)) {
-         if (not field->readable()) return ERR::NoFieldAccess;
-
-         int8_t field_value[sizeof(std::string_view)];
-         int array_size;
-         auto fv = get_field_value(target, *field, field_value, array_size);
-         if (fv.first != ERR::Okay) return fv.first;
-
-         if ((field->Flags & FD_INT) and (field->Flags & FD_LOOKUP)) {
-            // Reading a lookup field as a string is permissible, we just return the string registered in the lookup table
-            if (auto lookup = (FieldDef *)field->Arg) {
-               int value = ((int *)fv.second)[0];
-               while (lookup->Name) {
-                  if (value IS lookup->Value) {
-                     Value = lookup->Name;
-                     return ERR::Okay;
-                  }
-                  lookup++;
-               }
-            }
-            return ERR::Okay;
-         }
-         else if (field->Flags & (FD_POINTER|FD_STRING)) {
-            if (field->Flags & FD_CPP) {
-               if (field->GetValue) { // Virtual std::string_view
-                  Value = ((std::string_view *)fv.second)->data();
-               }
-               else Value = ((std::string *)fv.second)->c_str();
-            }
-            else Value = *((CSTRING *)fv.second);
-            return ERR::Okay;
-         }
-         else return ERR::FieldTypeMismatch;
       }
       else return ERR::UnsupportedField;
    }
