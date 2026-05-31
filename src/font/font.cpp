@@ -35,8 +35,6 @@ Google Fonts Knowledge page: https://fonts.google.com/knowledge
 #include FT_MULTIPLE_MASTERS_H
 #include FT_SFNT_NAMES_H
 
-#undef FT_INT64  // Avoid Freetype clash
-
 #include <kotuku/main.h>
 #include <kotuku/modules/xml.h>
 #include <kotuku/modules/font.h>
@@ -1103,7 +1101,6 @@ static void scan_fixed_folder(objConfig *Config)
       while (ScanDir(dir) IS ERR::Okay) {
          std::string location("fonts:fixed/");
          location.append(dir->Info->Name);
-         auto src = location.c_str();
 
          winfnt_header_fields header;
          std::vector<uint16_t> points;

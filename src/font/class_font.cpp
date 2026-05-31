@@ -111,7 +111,7 @@ static ERR FONT_Init(extFont *Self)
       CSTRING path = nullptr;
       auto error = fnt::SelectFont(Self->Face, Self->Style, &path, &meta);
       if (error IS ERR::Okay) {
-         error = Self->set(FID_Path, path);
+         error = Self->set(FID_Path, std::string_view(path));
          FreeResource(path);
          if (error != ERR::Okay) return error;
       }
