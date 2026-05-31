@@ -3,17 +3,6 @@
 // Field flags for classes.  These are intended to simplify field definitions, e.g. using FDF_BYTEARRAY combines
 // FD_ARRAY with FD_BYTE.  DO NOT use these for function definitions, they are not intended to be compatible.
 
-// Sizes/Types
-
-#define FT_POINTER  FD_POINTER
-#define FT_FLOAT    FD_FLOAT
-#define FT_INT      FD_INT
-#define FT_DOUBLE   FD_DOUBLE
-#define FT_INT64    FD_INT64
-#define FT_STRING   (FD_POINTER|FD_STRING)
-#define FT_UNLISTED FD_UNLISTED
-#define FT_UNIT     FD_UNIT
-
 // Class field definitions.  See core.h for all FD definitions.
 
 #define FDF_BYTE       FD_BYTE
@@ -35,9 +24,9 @@
 #define FDF_FUNCTIONPTR (FD_FUNCTION|FD_POINTER)
 #define FDF_STRUCT      FD_STRUCT
 #define FDF_RESOURCE    FD_RESOURCE
-#define FDF_OBJECT      (FD_POINTER|FD_OBJECT)   // Field refers to another object
+#define FDF_OBJECT      (FD_POINTER|FD_OBJECT)  // Field refers to another object
 #define FDF_OBJECTID    (FD_INT|FD_OBJECT)      // Field refers to another object by ID
-#define FDF_LOCAL       (FD_POINTER|FD_LOCAL)    // Field refers to a local object
+#define FDF_LOCAL       (FD_POINTER|FD_LOCAL)   // Field refers to a local object
 #define FDF_SCALED      FD_SCALED
 #define FDF_FLAGS       FD_FLAGS                // Field contains flags
 #define FDF_ALLOC       FD_ALLOC                // Field is a dynamic allocation - either a memory block or object
@@ -77,11 +66,10 @@ namespace kt {
 // FieldValue is used to simplify the initialisation of new objects.
 
 struct FieldValue {
-   uint32_t FieldID;
-   int Type;
+   uint32_t FieldID; // Unique field hash
+   int Type; // FD flags
    union {
       std::string_view CPPString;
-      CSTRING String;
       APTR    Pointer;
       CPTR    CPointer;
       double  Double;
@@ -91,7 +79,7 @@ struct FieldValue {
    };
 
    //std::string not included as not compatible with constexpr
-   constexpr FieldValue(uint32_t pFID, const std::string_view pValue)  : FieldID(pFID), Type(FD_STRING|FD_CPP), CPPString(pValue) { };
+   constexpr FieldValue(uint32_t pFID, const std::string_view pValue) : FieldID(pFID), Type(FD_STRING|FD_CPP), CPPString(pValue) { };
    constexpr FieldValue(uint32_t pFID, int pValue)      : FieldID(pFID), Type(FD_INT), Int(pValue) { };
    constexpr FieldValue(uint32_t pFID, int64_t pValue)  : FieldID(pFID), Type(FD_INT64), Int64(pValue) { };
    constexpr FieldValue(uint32_t pFID, size_t pValue)   : FieldID(pFID), Type(FD_INT64), Int64(pValue) { };
@@ -100,7 +88,7 @@ struct FieldValue {
    constexpr FieldValue(uint32_t pFID, const FUNCTION &pValue) : FieldID(pFID), Type(FDF_FUNCTIONPTR), CPointer(&pValue) { };
    constexpr FieldValue(uint32_t pFID, const FUNCTION *pValue) : FieldID(pFID), Type(FDF_FUNCTIONPTR), CPointer(pValue) { };
    constexpr FieldValue(uint32_t pFID, APTR pValue)     : FieldID(pFID), Type(FD_POINTER), Pointer(pValue) { };
-   constexpr FieldValue(uint32_t pFID, CSTRING pValue)  : FieldID(pFID), Type(FD_STRING|FD_CPP), CPPString(pValue) { };
+   [[deprecated("use string_view")]] constexpr FieldValue(uint32_t pFID, CSTRING pValue)  : FieldID(pFID), Type(FD_STRING|FD_CPP), CPPString(pValue) { };
    constexpr FieldValue(uint32_t pFID, CPTR pValue)     : FieldID(pFID), Type(FD_POINTER), CPointer(pValue) { };
    constexpr FieldValue(uint32_t pFID, CPTR pValue, int pCustom) : FieldID(pFID), Type(pCustom), CPointer(pValue) { };
 };
@@ -163,9 +151,9 @@ class ScopedObjectAccess {
 };
 
 //********************************************************************************************************************
-// Lightweight shared access for when you only need to read stable/immutable object fields and prevent
-// the object from being freed.  Does not acquire an exclusive lock, so it never blocks.  Suitable
-// when the caller does not modify object state (or protects mutations with a separate mutex).
+// Lightweight shared access for when you only need to read stable/immutable object fields and prevent the object
+// from being freed.  Does not acquire an exclusive lock, so it never blocks.  Suitable when the caller does not
+// modify object state (or protects mutations with a separate mutex).
 //
 // NOTE: Can terminate the object on release if it is marked for termination.
 
@@ -183,21 +171,6 @@ class SharedObjectAccess {
 };
 
 //********************************************************************************************************************
-// Refer to Object->get() to see what this is about...
-
-template <class T> inline int64_t FIELD_TAG()     { return 0; }
-template <> inline int64_t FIELD_TAG<double>()    { return TDOUBLE; }
-template <> inline int64_t FIELD_TAG<bool>()      { return TINT; }
-template <> inline int64_t FIELD_TAG<int>()       { return TINT; }
-template <> inline int64_t FIELD_TAG<int64_t>()   { return TINT64; }
-template <> inline int64_t FIELD_TAG<uint64_t>()  { return TINT64; }
-template <> inline int64_t FIELD_TAG<float>()     { return TFLOAT; }
-template <> inline int64_t FIELD_TAG<OBJECTPTR>() { return TPTR; }
-template <> inline int64_t FIELD_TAG<APTR>()      { return TPTR; }
-template <> inline int64_t FIELD_TAG<CSTRING>()   { return TSTRING; }
-template <> inline int64_t FIELD_TAG<STRING>()    { return TSTRING; }
-template <> inline int64_t FIELD_TAG<SCALE>()     { return TDOUBLE|TSCALE; }
-
 // For testing if type T can be matched to an FD flag.
 
 template <class T> inline int FIELD_TYPECHECK()     { return FD_PTR|FD_STRUCT|FD_STRING; }
@@ -452,22 +425,24 @@ struct Object { // Must be 64-bit aligned
       else return ERR::UnsupportedField;
    }
 
-   inline ERR set(FIELD FieldID, const char *Value) {
+   [[deprecated]] inline ERR set(FIELD FieldID, const char *Value) {
       Object *target;
       if (auto field = FindField(this, FieldID, &target)) {
          if ((not field->writeable()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
          if ((field->Flags & FD_INIT) and (target->initialised()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
-         return field->WriteValue(target, field, FD_STRING, Value, 1);
+         std::string_view sv(Value);
+         return field->WriteValue(target, field, FD_STRING|FD_CPP, &sv, 1);
       }
       else return ERR::UnsupportedField;
    }
 
-   inline ERR set(FIELD FieldID, const unsigned char *Value) {
+   [[deprecated]] inline ERR set(FIELD FieldID, const unsigned char *Value) {
       Object *target;
       if (auto field = FindField(this, FieldID, &target)) {
          if ((not field->writeable()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
          if ((field->Flags & FD_INIT) and (target->initialised()) and (CurrentContext() != target)) return ERR::NoFieldAccess;
-         return field->WriteValue(target, field, FD_STRING, Value, 1);
+         std::string_view sv((CSTRING)Value);
+         return field->WriteValue(target, field, FD_STRING|FD_CPP, &sv, 1);
       }
       else return ERR::UnsupportedField;
    }

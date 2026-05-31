@@ -2,6 +2,25 @@
 
 //********************************************************************************************************************
 
+static ERR lua_string_view(lua_State *Lua, int ValueIndex, std::string_view &Value)
+{
+   size_t size = 0;
+   if (auto cstr = lua_tolstring(Lua, ValueIndex, &size)) {
+      Value = std::string_view{cstr, size};
+      return ERR::Okay;
+   }
+   else return ERR::AllocMemory;
+}
+
+static ERR object_set_string(lua_State *Lua, OBJECTPTR Object, Field *Field, int ValueIndex)
+{
+   std::string_view value;
+   if (auto error = lua_string_view(Lua, ValueIndex, value); error != ERR::Okay) return error;
+   return Object->set(Field->FieldID, value);
+}
+
+//********************************************************************************************************************
+
 static ERR set_array(lua_State *Lua, OBJECTPTR Object, Field *Field, int Values, int total)
 {
    if (Field->Flags & FD_INT) {
@@ -66,7 +85,7 @@ static ERR object_set_array(lua_State *Lua, OBJECTPTR Object, Field *Field, int 
    auto type = lua_type(Lua, ValueIndex);
 
    if (type IS LUA_TSTRING) { // Treat the source as a CSV field
-      return Object->set(Field->FieldID, lua_tostring(Lua, ValueIndex));
+      return object_set_string(Lua, Object, Field, ValueIndex);
    }
    else if (type IS LUA_TTABLE) {
       lua_settop(Lua, ValueIndex);
@@ -119,11 +138,11 @@ static ERR object_set_ptr(lua_State *Lua, OBJECTPTR Object, Field *Field, int Va
    auto type = lua_type(Lua, ValueIndex);
 
    if (type IS LUA_TSTRING) {
-      return Object->set(Field->FieldID, lua_tostring(Lua, ValueIndex));
+      return object_set_string(Lua, Object, Field, ValueIndex);
    }
    else if (type IS LUA_TNUMBER) {
       if (Field->Flags & FD_STRING) {
-         return Object->set(Field->FieldID, lua_tostring(Lua, ValueIndex));
+         return object_set_string(Lua, Object, Field, ValueIndex);
       }
       else if (lua_tointeger(Lua, ValueIndex) IS 0) {
          // Setting pointer fields with numbers is only allowed if that number evaluates to zero (NULL)
@@ -149,7 +168,7 @@ static ERR object_set_cppstring(lua_State *Lua, OBJECTPTR Object, Field *Field, 
    auto type = lua_type(Lua, ValueIndex);
 
    if (type IS LUA_TSTRING) {
-      return Object->set(Field->FieldID, lua_tostringview(Lua, ValueIndex));
+      return object_set_string(Lua, Object, Field, ValueIndex);
    }
    else if (type IS LUA_TNUMBER) {
       return Object->set(Field->FieldID, lua_tonumber(Lua, ValueIndex));
@@ -167,7 +186,7 @@ static ERR object_set_double(lua_State *Lua, OBJECTPTR Object, Field *Field, int
          return Object->set(Field->FieldID, lua_tonumber(Lua, ValueIndex));
 
       case LUA_TSTRING: // Allow internal string parsing to do its thing - important if the field is variable
-         return Object->set(Field->FieldID, lua_tostring(Lua, ValueIndex));
+         return object_set_string(Lua, Object, Field, ValueIndex);
 
       case LUA_TNIL: // Setting a numeric with nil does nothing.  Use zero to be explicit.
          return ERR::Okay;
@@ -181,7 +200,7 @@ static ERR object_set_lookup(lua_State *Lua, OBJECTPTR Object, Field *Field, int
 {
    switch(lua_type(Lua, ValueIndex)) {
       case LUA_TNUMBER: return Object->set(Field->FieldID, (int)lua_tointeger(Lua, ValueIndex));
-      case LUA_TSTRING: return Object->set(Field->FieldID, lua_tostring(Lua, ValueIndex));
+      case LUA_TSTRING: return object_set_string(Lua, Object, Field, ValueIndex);
       default: return ERR::SetValueNotLookup;
    }
 }
@@ -200,12 +219,13 @@ static ERR object_set_oid(lua_State *Lua, OBJECTPTR Object, Field *Field, int Va
 
       case LUA_TSTRING: {
          OBJECTID id;
-         if (FindObject(lua_tostring(Lua, ValueIndex), CLASSID::NIL, &id) IS ERR::Okay) {
+         std::string_view name;
+         if (auto error = lua_string_view(Lua, ValueIndex, name); error != ERR::Okay) return error;
+         if (FindObject(name, CLASSID::NIL, &id) IS ERR::Okay) {
             return Object->set(Field->FieldID, id);
          }
          else {
-            kt::Log log;
-            log.warning("Object \"%s\" could not be found.", lua_tostring(Lua, ValueIndex));
+            kt::Log().warning("Object \"%.*s\" could not be found.", int(name.size()), name.data());
             return ERR::Search;
          }
       }
@@ -224,7 +244,7 @@ static ERR object_set_number(lua_State *Lua, OBJECTPTR Object, Field *Field, int
          return Object->set(Field->FieldID, (int64_t)lua_tointeger(Lua, ValueIndex));
 
       case LUA_TSTRING: // Allow internal string parsing to do its thing - important if the field is variable
-         return Object->set(Field->FieldID, lua_tostring(Lua, ValueIndex));
+         return object_set_string(Lua, Object, Field, ValueIndex);
 
       case LUA_TNIL: // Setting a numeric with nil does nothing.  Use zero to be explicit.
          return ERR::Okay;

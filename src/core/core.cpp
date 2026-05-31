@@ -665,7 +665,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
       kt::Log log("Core");
       log.branch("Initialising %d static modules.", int(std::ssize(glStaticModules)));
       for (auto & [ name, hdr ] : glStaticModules) {
-         objModule::create mod = { kt::FieldValue(FID_Name, name.c_str()) };
+         objModule::create mod = { kt::FieldValue(FID_Name, std::string_view(name)) };
       }
    }
 #endif
