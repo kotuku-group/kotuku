@@ -407,7 +407,7 @@ static ERR writeval_ptr(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, in
 
 static ERR writeval_cppstr(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
 {
-   if (Flags & (FD_POINTER|FD_STRING)) {
+   if (Flags & FD_STRING) {
       auto offset = (std::string *)((int8_t *)Object + Field->Offset);
       if (Flags & FD_CPP) offset->assign(*((std::string_view *)Data));
       else if (Data) offset->assign(CSTRING(Data));
@@ -454,7 +454,7 @@ static ERR setval_unit(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int
       auto unit = Unit(*((double *)Data), Flags & (~(FD_INT|FD_INT64|FD_DOUBLE|FD_POINTER|FD_STRING)));
       return ((ERR (*)(APTR, Unit *))(Field->SetValue))(Object, &unit);
    }
-   else if (Flags & (FD_POINTER|FD_STRING)) {
+   else if (Flags & FD_STRING) {
       Unit unit;
       auto str = field_string_view(Flags, Data);
       if (Field->Flags & FD_SCALED) {
@@ -622,7 +622,7 @@ static ERR setval_strview(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, 
 {
    FieldContext ctx(Object, Field);
 
-   if (Flags & (FD_POINTER|FD_STRING)) {
+   if (Flags & FD_STRING) {
       if (Flags & FD_CPP) return ((ERR (*)(APTR, std::string_view &))(Field->SetValue))(Object, *((std::string_view *)Data));
       else {
          std::string_view sv = Data ? std::string_view(CSTRING(Data)) : std::string_view{};

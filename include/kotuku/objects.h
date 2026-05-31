@@ -91,7 +91,7 @@ struct FieldValue {
    };
 
    //std::string not included as not compatible with constexpr
-   constexpr FieldValue(uint32_t pFID, std::string_view pValue)  : FieldID(pFID), Type(FD_STRING|FD_CPP), CPPString(pValue) { };
+   constexpr FieldValue(uint32_t pFID, const std::string_view pValue)  : FieldID(pFID), Type(FD_STRING|FD_CPP), CPPString(pValue) { };
    constexpr FieldValue(uint32_t pFID, int pValue)      : FieldID(pFID), Type(FD_INT), Int(pValue) { };
    constexpr FieldValue(uint32_t pFID, int64_t pValue)  : FieldID(pFID), Type(FD_INT64), Int64(pValue) { };
    constexpr FieldValue(uint32_t pFID, size_t pValue)   : FieldID(pFID), Type(FD_INT64), Int64(pValue) { };
@@ -100,6 +100,7 @@ struct FieldValue {
    constexpr FieldValue(uint32_t pFID, const FUNCTION &pValue) : FieldID(pFID), Type(FDF_FUNCTIONPTR), CPointer(&pValue) { };
    constexpr FieldValue(uint32_t pFID, const FUNCTION *pValue) : FieldID(pFID), Type(FDF_FUNCTIONPTR), CPointer(pValue) { };
    constexpr FieldValue(uint32_t pFID, APTR pValue)     : FieldID(pFID), Type(FD_POINTER), Pointer(pValue) { };
+   constexpr FieldValue(uint32_t pFID, CSTRING pValue)  : FieldID(pFID), Type(FD_STRING|FD_CPP), CPPString(pValue) { };
    constexpr FieldValue(uint32_t pFID, CPTR pValue)     : FieldID(pFID), Type(FD_POINTER), CPointer(pValue) { };
    constexpr FieldValue(uint32_t pFID, CPTR pValue, int pCustom) : FieldID(pFID), Type(pCustom), CPointer(pValue) { };
 };
