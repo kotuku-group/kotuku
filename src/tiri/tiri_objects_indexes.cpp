@@ -504,21 +504,6 @@ static int object_get_array(lua_State *Lua, const obj_read &Handle, GCobject *De
    return error != ERR::Okay ? 0 : 1;
 }
 
-static int object_get_rgb(lua_State *Lua, const obj_read &Handle, GCobject *Def)
-{
-   ERR error;
-   if (auto obj = access_object(Def)) {
-      auto field = (Field *)(Handle.Data);
-      CSTRING rgb;
-      if (((error = obj->get(field->FieldID, rgb)) IS ERR::Okay) and (rgb)) lua_pushstring(Lua, rgb);
-      release_object(Def);
-   }
-   else error = ERR::AccessObject;
-
-   Lua->CaughtError = error;
-   return error != ERR::Okay ? 0 : 1;
-}
-
 static int object_get_struct(lua_State *Lua, const obj_read &Handle, GCobject *Def)
 {
    ERR error;

@@ -317,11 +317,11 @@ flags("FD", { weak=true, comment="Field descriptors.", module="Core" },
   ]])
 
   struct("dcDeviceInput", { module="Core" }, [[
-    double(2) Values  # The value(s) associated with the Type
-    large  Timestamp  # ~Core.PreciseTime() of the recorded input
-    oid    DeviceID   # The hardware device that this event originated from (note: This ID can be to a private/inaccessible object, the point is that the ID is unique)
-    int(JTYPE) Flags  # Broad descriptors for the given `Type`.  Automatically defined when delivered to the pointer object
-    int(JET) Type     # `JET` constant
+    double(2)  Values    # The value(s) associated with the Type
+    large      Timestamp # ~Core.PreciseTime() of the recorded input
+    oid        DeviceID  # The hardware device that this event originated from (note: This ID can be to a private/inaccessible object, the point is that the ID is unique)
+    int(JTYPE) Flags     # Broad descriptors for the given `Type`.  Automatically defined when delivered to the pointer object
+    int(JET)   Type      # `JET` constant
   ]])
 
   struct("DateTime", { comment="Generic structure for date-time management.", module="Core" }, [[

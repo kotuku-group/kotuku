@@ -222,7 +222,7 @@ static ERR XML_Evaluate(extXML *Self, struct xml::Evaluate *Args)
 
    objXQuery *xq;
    if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
-      xq->set(FID_Statement, Args->Statement);
+      xq->set(FID_Statement, std::string_view(Args->Statement));
       if (auto error = xq->init(); error IS ERR::Okay) {
          if (error = xq->evaluate(Self, 0, XEF::NIL); error IS ERR::Okay) {
             CSTRING result;
@@ -633,7 +633,7 @@ static ERR XML_GetKey(extXML *Self, struct acGetKey *Args)
 
    objXQuery *xq;
    if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
-      xq->set(FID_Statement, Args->Key);
+      xq->set(FID_Statement, std::string_view(Args->Key));
       if (auto error = xq->init(); error IS ERR::Okay) {
          if (error = xq->evaluate(Self, 0, XEF::NIL); error IS ERR::Okay) {
             auto result = xq->get<CSTRING>(FID_ResultString);
@@ -1623,7 +1623,7 @@ static ERR XML_SetKey(extXML *Self, struct acSetKey *Args)
 
    objXQuery *xq;
    if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
-      xq->set(FID_Statement, Args->Key);
+      xq->set(FID_Statement, std::string_view(Args->Key));
       if (auto error = xq->init(); error IS ERR::Okay) {
          matching_tag_opt opt;
          auto callback = C_FUNCTION(save_matching_tag, &opt);
@@ -1767,7 +1767,7 @@ static ERR XML_Sort(extXML *Self, struct xml::Sort *Args)
    else {
       objXQuery *xq;
       if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
-         xq->set(FID_Statement, Args->XPath);
+         xq->set(FID_Statement, std::string_view(Args->XPath));
          if (auto error = xq->init(); error IS ERR::Okay) {
             matching_tag_opt opt;
             auto callback = C_FUNCTION(save_matching_tag, &opt.tag_id);
