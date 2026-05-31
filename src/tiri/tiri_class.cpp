@@ -1041,11 +1041,15 @@ static ERR run_script(objScript *Self)
    if (not pcall_failed) { // If the procedure returned results, copy them to the Results field of the Script.
       int results = lua_gettop(prv->Lua) - top + 1;
 
+      ERR error = ERR::Okay;
       if (results > 0) {
          kt::vector<std::string> array;
          array.resize(results);
          for (int i=0; i < results; i++) {
-            array[i] = lua_tostringview(prv->Lua, -results+i);
+            size_t size;
+            auto str = lua_tolstring(prv->Lua, -results+i, &size);
+            if (str) array[i] = std::string_view(str, size);
+            else Self->Error = error = ERR::LimitedSuccess;
          }
          Self->set(FID_Results, array);
          lua_pop(prv->Lua, results);  // pop returned values
@@ -1058,7 +1062,7 @@ static ERR run_script(objScript *Self)
          ProcessMessages(PMF::NIL, 0);
       }
 
-      return ERR::Okay;
+      return error;
    }
    else {
       // LuaJIT catches C++ exceptions, but we would prefer that crashes occur normally so that they can be traced in
