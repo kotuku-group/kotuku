@@ -219,8 +219,8 @@ extern "C" int main(int argc, char **argv)
          result = int(exec_source(std::string("STRING:") + glStatement, glTime, glProcedure));
       }
       else if (not glTargetFile.empty()) {
-         CSTRING path;
-         if (glTask->get(FID_Path, path) IS ERR::Okay) log.msg("Path: %s", path);
+         std::string_view path;
+         if (glTask->get(FID_Path, path) IS ERR::Okay) log.msg("Path: %.*s", int(path.size()), path.empty() ? "" : path.data());
          else log.error("No working path.");
 
          LOC type;
@@ -233,8 +233,8 @@ extern "C" int main(int argc, char **argv)
          // Engage default behaviour if no parameters have been specified
          // Check for the presence of package.zip or main.tiri files in the working directory
 
-         auto path = glTask->get<CSTRING>(FID_ProcessPath);
-         if ((not path) or (not path[0])) path = ".";
+         auto path = glTask->get<std::string_view>(FID_ProcessPath);
+         if (path.empty()) path = ".";
          std::string exe_path(path);
          if (not ((exe_path.ends_with("/")) or (exe_path.ends_with("\\")))) {
             exe_path.append("/");

@@ -9,7 +9,7 @@ static void set_dimension(XTag *Tag, const std::string Attrib, double Value, boo
 
 static ERR save_vectorpath(extSVG *Self, objXML *XML, objVector *Vector, int Parent)
 {
-   CSTRING path;
+   std::string path;
    ERR error;
 
    if ((error = Vector->get(FID_Sequence, path)) IS ERR::Okay) {
@@ -20,8 +20,6 @@ static ERR save_vectorpath(extSVG *Self, objXML *XML, objVector *Vector, int Par
          error = XML->getTag(new_index, &tag);
          if (error IS ERR::Okay) xml::NewAttrib(tag, "d", path);
       }
-      FreeResource(path);
-
       if (error IS ERR::Okay) error = save_svg_scan_std(Self, XML, Vector, new_index);
    }
 
@@ -179,10 +177,9 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
                }
             }
 
-            CSTRING effect_xml;
+            std::string effect_xml;
             if ((error IS ERR::Okay) and (filter->get(FID_EffectXML, effect_xml) IS ERR::Okay)) {
-               error = XML->insertStatement(tag->ID, XMI::CHILD, effect_xml, nullptr);
-               FreeResource(effect_xml);
+               error = XML->insertStatement(tag->ID, XMI::CHILD, effect_xml.c_str(), nullptr);
             }
          }
          else if (def->classID() IS CLASSID::VECTORTRANSITION) {
@@ -227,7 +224,7 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
 {
    kt::Log log(__FUNCTION__);
    char buffer[160];
-   CSTRING str;
+   std::string str;
    float *colour;
    int array_size;
    ERR error = ERR::Okay;
@@ -239,7 +236,7 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
    if (Vector->FillOpacity != 1.0) xml::NewAttrib(tag, "fill-opacity", std::to_string(Vector->FillOpacity));
    if (Vector->StrokeOpacity != 1.0) xml::NewAttrib(tag, "stroke-opacity", std::to_string(Vector->StrokeOpacity));
 
-   if ((Vector->get(FID_Stroke, str) IS ERR::Okay) and (str)) {
+   if ((Vector->get(FID_Stroke, str) IS ERR::Okay) and not str.empty()) {
       xml::NewAttrib(tag, "stroke", str);
    }
    else if ((Vector->get(FID_StrokeColour, colour, array_size) IS ERR::Okay) and (colour[3] != 0)) {
@@ -304,15 +301,15 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
    else if (Vector->Visibility IS VIS::COLLAPSE) xml::NewAttrib(tag, "visibility", "collapse");
    else if (Vector->Visibility IS VIS::INHERIT)  xml::NewAttrib(tag, "visibility", "inherit");
 
-   CSTRING stroke_width;
+   std::string stroke_width;
    if ((error IS ERR::Okay) and (Vector->get(FID_StrokeWidth, stroke_width) IS ERR::Okay)) {
-      if (!stroke_width) stroke_width = "0";
+      if (stroke_width.empty()) stroke_width = "0";
       if ((stroke_width[0] != '1') and (stroke_width[1] != 0)) {
          xml::NewAttrib(tag, "stroke-width", stroke_width);
       }
    }
 
-   if ((error IS ERR::Okay) and (Vector->get(FID_Fill, str) IS ERR::Okay) and (str)) {
+   if ((error IS ERR::Okay) and (Vector->get(FID_Fill, str) IS ERR::Okay) and not str.empty()) {
       if (!iequals("rgb(0,0,0)", str)) xml::NewAttrib(tag, "fill", str);
    }
    else if ((error IS ERR::Okay) and (Vector->get(FID_FillColour, colour, array_size) IS ERR::Okay) and (colour[3] != 0)) {
@@ -325,9 +322,9 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
       if (fill_rule IS VFR::EVEN_ODD) xml::NewAttrib(tag, "fill-rule", "evenodd");
    }
 
-   if ((error IS ERR::Okay) and ((error = Vector->get(FID_ID, str)) IS ERR::Okay) and (str)) xml::NewAttrib(tag, "id", str);
+   if ((error IS ERR::Okay) and ((error = Vector->get(FID_ID, str)) IS ERR::Okay) and not str.empty()) xml::NewAttrib(tag, "id", str);
 
-   if ((error IS ERR::Okay) and (Vector->get(FID_Filter, str) IS ERR::Okay) and (str)) xml::NewAttrib(tag, "filter", str);
+   if ((error IS ERR::Okay) and (Vector->get(FID_Filter, str) IS ERR::Okay) and not str.empty()) xml::NewAttrib(tag, "filter", str);
 
    VectorMatrix *transform;
    if ((error IS ERR::Okay) and (Vector->get(FID_Transforms, transform) IS ERR::Okay) and (transform)) {
@@ -343,11 +340,11 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
       XTag *morph_tag;
       error = XML->insertStatement(TagID, XMI::CHILD_END, "<kotuku:morph/>", &morph_tag);
 
-      CSTRING shape_id;
-      if ((error IS ERR::Okay) and (shape->get(FID_ID, shape_id) IS ERR::Okay) and (shape_id)) {
+      std::string shape_id;
+      if ((error IS ERR::Okay) and (shape->get(FID_ID, shape_id) IS ERR::Okay) and not shape_id.empty()) {
          // NB: It is required that the shape has previously been registered as a definition, otherwise the url will refer to a dud tag.
          char shape_ref[120];
-         snprintf(shape_ref, sizeof(shape_ref), "url(#%s)", shape_id);
+         snprintf(shape_ref, sizeof(shape_ref), "url(#%s)", shape_id.c_str());
          xml::NewAttrib(morph_tag, "xlink:href", shape_ref);
       }
 
@@ -487,7 +484,7 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
       XTag *tag;
       double x, y, *dx, *dy, *rotate, text_length;
       int total, i, weight;
-      CSTRING str;
+      std::string str;
       char buffer[1024];
 
       error = XML->insertStatement(Parent, XMI::CHILD_END, "<text/>", &tag);
@@ -517,7 +514,6 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
 
       if ((error IS ERR::Okay) and ((error = Vector->get(FID_FontSize, str)) IS ERR::Okay)) {
          xml::NewAttrib(tag, "font-size", str);
-         FreeResource(str);
       }
 
       if ((error IS ERR::Okay) and ((error = Vector->get(FID_Rotate, rotate, total)) IS ERR::Okay) and (total > 0)) {
@@ -541,7 +537,7 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
          xml::NewAttrib(tag, "font-weight", std::to_string(weight));
 
       if ((error IS ERR::Okay) and ((error = Vector->get(FID_String, str)) IS ERR::Okay))
-         error = XML->insertContent(tag->ID, XMI::CHILD, str, nullptr);
+         error = XML->insertContent(tag->ID, XMI::CHILD, str.c_str(), nullptr);
 
       // TODO: lengthAdjust, font, font-size-adjust, font-stretch, font-style, font-variant, text-anchor, kerning, letter-spacing, path-length, word-spacing, text-decoration
 
@@ -554,8 +550,8 @@ static ERR save_svg_scan(extSVG *Self, objXML *XML, objVector *Vector, int Paren
    }
    else if (Vector->classID() IS CLASSID::VECTORCLIP) {
       XTag *tag;
-      CSTRING str;
-      if (((error = Vector->get(FID_ID, str)) IS ERR::Okay) and (str)) { // The id is an essential requirement
+      std::string str;
+      if (((error = Vector->get(FID_ID, str)) IS ERR::Okay) and not str.empty()) { // The id is an essential requirement
          error = XML->insertStatement(Parent, XMI::CHILD_END, "<clipPath/>", &tag);
 
          VUNIT units;

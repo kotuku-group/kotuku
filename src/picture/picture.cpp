@@ -142,7 +142,7 @@ static ERR PICTURE_Activate(extPicture *Self)
    volatile bool mask_created = false;
 
    if (!Self->prvFile) {
-      CSTRING path;
+      std::string_view path;
       if (Self->get(FID_Path, path) != ERR::Okay) return log.warning(ERR::GetField);
 
       if (!(Self->prvFile = objFile::create::local(fl::Path(path), fl::Flags(FL::READ|FL::APPROXIMATE)))) goto exit;
@@ -516,7 +516,7 @@ static ERR PICTURE_NewPlacement(extPicture *Self)
 static ERR PICTURE_Query(extPicture *Self)
 {
    kt::Log log;
-   CSTRING path;
+   std::string_view path;
    png_uint_32 width, height;
    int bit_depth, color_type;
 
@@ -622,7 +622,7 @@ If no destination is specified then the image will be saved as a new file target
 static ERR PICTURE_SaveImage(extPicture *Self, struct acSaveImage *Args)
 {
    kt::Log log;
-   CSTRING path;
+   std::string_view path;
    png_bytep row_pointers;
    uint8_t *row_buffer = nullptr;
    png_color palette[256];

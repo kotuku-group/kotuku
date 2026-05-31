@@ -362,9 +362,9 @@ static int module_destruct(lua_State *Lua)
 static int module_tostring(lua_State *Lua)
 {
    if (auto mod = (struct module *)luaL_checkudata(Lua, 1, "Tiri.mod")) {
-      CSTRING name;
+      std::string_view name;
       if (mod->Module->get(FID_Name, name) IS ERR::Okay) {
-         lua_pushstring(Lua, name);
+         lua_pushlstring(Lua, name.data(), name.size());
       }
       else lua_pushnil(Lua);
    }

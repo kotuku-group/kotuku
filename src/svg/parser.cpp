@@ -1923,12 +1923,12 @@ ERR svgState::process_tag(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent, objVecto
       case SVF_text: {
          if (proc_shape(CLASSID::VECTORTEXT, Tag, Parent, Vector) IS ERR::Okay) {
             if (!Tag.Children.empty()) {
-               CSTRING existing_str = nullptr;
+               std::string_view existing_str;
                Vector->get(FID_String, existing_str);
 
                if (auto buffer = Tag.getContent(); !buffer.empty()) {
                   kt::ltrim(buffer);
-                  if (existing_str) buffer.insert(0, existing_str);
+                  if (not existing_str.empty()) buffer.insert(0, existing_str.data(), existing_str.size());
                   Vector->set(FID_String, buffer);
                }
                else log.msg("Failed to retrieve content for <text> @ line %d", Tag.LineNo);

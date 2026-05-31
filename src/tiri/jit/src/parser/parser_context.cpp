@@ -460,13 +460,13 @@ std::string ParserContext::resolve_lib_to_path(std::string_view &Library) const
             result = dir + result;
          }
          else { // Use script's working path as fallback
-            auto working_path = this->lua_state->script->get<CSTRING>(FID_WorkingPath);
-            if (working_path) result.insert(0, working_path);
+            auto working_path = this->lua_state->script->get<std::string_view>(FID_WorkingPath);
+            if (not working_path.empty()) result.insert(0, working_path.data(), working_path.size());
          }
       }
       else { // Use script's working path as fallback
-         auto working_path = this->lua_state->script->get<CSTRING>(FID_WorkingPath);
-         if (working_path) result.insert(0, working_path);
+         auto working_path = this->lua_state->script->get<std::string_view>(FID_WorkingPath);
+         if (not working_path.empty()) result.insert(0, working_path.data(), working_path.size());
       }
    }
    else result.insert(0, "scripts:");

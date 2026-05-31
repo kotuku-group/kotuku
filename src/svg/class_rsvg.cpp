@@ -51,11 +51,11 @@ static ERR RSVG_Free(extPicture *Self)
 static ERR RSVG_Init(extPicture *Self)
 {
    kt::Log log;
-   CSTRING path = nullptr;
+   std::string_view path;
 
    Self->get(FID_Path, path);
 
-   if ((!path) or ((Self->Flags & PCF::NEW) != PCF::NIL)) {
+   if (path.empty() or ((Self->Flags & PCF::NEW) != PCF::NIL)) {
       return ERR::NoSupport; // Creating new SVG's is not supported in this module.
    }
 
@@ -95,7 +95,7 @@ static ERR RSVG_Query(extPicture *Self)
    Self->Queried = TRUE;
 
    if (!prv->SVG) {
-      CSTRING path;
+      std::string_view path;
       if (Self->get(FID_Path, path) IS ERR::Okay) {
          if ((prv->SVG = objSVG::create::local(fl::Path(path)))) {
          }

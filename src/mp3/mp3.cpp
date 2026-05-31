@@ -314,10 +314,10 @@ static ERR MP3_Init(objSound *Self)
 {
    kt::Log log;
 
-   CSTRING location = nullptr;
+   std::string_view location;
    Self->get(FID_Path, location);
 
-   if ((!location) or ((Self->Flags & SDF::NEW) != SDF::NIL)) {
+   if (location.empty() or ((Self->Flags & SDF::NEW) != SDF::NIL)) {
       // If no location has been specified, assume that the sound is being
       // created from scratch (e.g. to record an mp3 file to disk).
 

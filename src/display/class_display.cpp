@@ -822,9 +822,9 @@ static ERR DISPLAY_Init(extDisplay *Self)
             bmp->x11.drawable = Self->XPixmap;
          }
 
-         CSTRING name;
-         if ((CurrentTask()->get(FID_Name, name) IS ERR::Okay) and (name)) {
-            XStoreName(XDisplay, Self->XWindowHandle, name);
+         std::string name;
+         if ((CurrentTask()->get(FID_Name, name) IS ERR::Okay) and not name.empty()) {
+            XStoreName(XDisplay, Self->XWindowHandle, name.c_str());
          }
          else XStoreName(XDisplay, Self->XWindowHandle, "Kotuku");
 
@@ -909,7 +909,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
             }
          }
 
-         CSTRING name = nullptr;
+         std::string name;
          CurrentTask()->get(FID_Name, name);
          HWND popover = 0;
          if (Self->PopOverID) {
@@ -920,7 +920,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
          }
 
          if (not (Self->WindowHandle = (APTR)winCreateScreen(popover, &Self->X, &Self->Y, &Self->Width, &Self->Height,
-               ((Self->Flags & SCR::MAXIMISE) != SCR::NIL) ? 1 : 0, ((Self->Flags & SCR::BORDERLESS) != SCR::NIL) ? 1 : 0, name,
+               ((Self->Flags & SCR::MAXIMISE) != SCR::NIL) ? 1 : 0, ((Self->Flags & SCR::BORDERLESS) != SCR::NIL) ? 1 : 0, name.c_str(),
                ((Self->Flags & SCR::COMPOSITE) != SCR::NIL) ? 1 : 0, Self->Opacity, desktop))) {
             return log.warning(ERR::SystemCall);
          }

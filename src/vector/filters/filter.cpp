@@ -731,10 +731,9 @@ static ERR VECTORFILTER_GET_EffectXML(extVectorFilter *Self, std::string_view &V
 
    for (auto e = Self->Effects; e; e = (extFilterEffect *)e->Next) {
       ss << "<";
-      CSTRING def;
+      std::string def;
       if (e->get(FID_XMLDef, def) IS ERR::Okay) {
          ss << def;
-         FreeResource(def);
       }
       ss << "/>";
    }

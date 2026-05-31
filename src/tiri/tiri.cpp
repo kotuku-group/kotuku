@@ -189,10 +189,10 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
       }
    }
 
-   CSTRING module_name;
+   std::string module_name;
    if (auto error = MetaClass->get(FID_Module, module_name); error IS ERR::Okay) {
-      if (auto error = load_include(Lua->script, module_name); error != ERR::Okay) {
-         luaL_error(Lua, error, "Failed to process module '%s' for class '%s'", module_name, MetaClass->ClassName.c_str());
+      if (auto error = load_include(Lua->script, module_name.c_str()); error != ERR::Okay) {
+         luaL_error(Lua, error, "Failed to process module '%s' for class '%s'", module_name.c_str(), MetaClass->ClassName.c_str());
       }
    }
    else kt::Log(__FUNCTION__).traceWarning("Failed to get module name from class '%s', \"%s\"", MetaClass->ClassName.c_str(), GetErrorMsg(error));

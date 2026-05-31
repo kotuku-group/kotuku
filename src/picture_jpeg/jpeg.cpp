@@ -193,11 +193,11 @@ static ERR JPEG_Activate(extPicture *Self)
    if (Self->Bitmap->initialised()) return ERR::Okay;
 
    if (!Self->prvFile) {
-      CSTRING path;
+      std::string_view path;
       if (Self->get(FID_Location, path) != ERR::Okay) return log.warning(ERR::GetField);
 
       if (!(Self->prvFile = objFile::create::local(fl::Path(path), fl::Flags(FL::READ|FL::APPROXIMATE)))) {
-         log.warning("Failed to open file \"%s\".", path);
+         log.warning("Failed to open file \"%.*s\".", int(path.size()), path.empty() ? "" : path.data());
          return ERR::File;
       }
    }
@@ -308,11 +308,11 @@ static ERR JPEG_Init(extPicture *Self)
 {
    kt::Log log;
    uint8_t *buffer;
-   CSTRING path = nullptr;
+   std::string_view path;
 
    Self->get(FID_Location, path);
 
-   if ((!path) or ((Self->Flags & PCF::NEW) != PCF::NIL)) {
+   if (path.empty() or ((Self->Flags & PCF::NEW) != PCF::NIL)) {
       // If no location has been specified, assume that the picture is being created from scratch (e.g. to save an image to disk).  The
       // programmer is required to specify the dimensions and colours of the Bitmap so that we can initialise it.
 
@@ -334,7 +334,7 @@ static ERR JPEG_Init(extPicture *Self)
          if ((Self->Flags & PCF::LAZY) IS PCF::NIL) acActivate(Self);
          return ERR::Okay;
       }
-      else log.msg("The \"%s\" file is not a JPEG picture.", path);
+      else log.msg("The \"%.*s\" file is not a JPEG picture.", int(path.size()), path.empty() ? "" : path.data());
    }
 
    return ERR::NoSupport;
@@ -351,7 +351,7 @@ static ERR JPEG_Query(extPicture *Self)
    log.branch();
 
    if (!Self->prvFile) {
-      CSTRING path;
+      std::string_view path;
       if (Self->get(FID_Location, path) != ERR::Okay) return log.warning(ERR::GetField);
 
       if (!(Self->prvFile = objFile::create::local(fl::Path(path), fl::Flags(FL::READ|FL::APPROXIMATE)))) {
@@ -396,7 +396,7 @@ static ERR JPEG_SaveImage(extPicture *Self, struct acSaveImage *Args)
 
    if ((Args) and (Args->Dest)) file = Args->Dest;
    else {
-      CSTRING path;
+      std::string_view path;
       if (Self->get(FID_Location, path) != ERR::Okay) return log.warning(ERR::MissingPath);
 
       if (!(file = objFile::create::local(fl::Path(path), fl::Flags(FL::NEW|FL::WRITE)))) {

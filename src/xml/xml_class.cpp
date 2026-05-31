@@ -225,7 +225,7 @@ static ERR XML_Evaluate(extXML *Self, struct xml::Evaluate *Args)
       xq->set(FID_Statement, std::string_view(Args->Statement));
       if (auto error = xq->init(); error IS ERR::Okay) {
          if (error = xq->evaluate(Self, 0, XEF::NIL); error IS ERR::Okay) {
-            CSTRING result;
+            std::string_view result;
             if (xq->get(FID_ResultString, result) IS ERR::Okay) Args->Result = kt::strclone(result);
             FreeResource(xq);
             if (!Args->Result) return log.warning(ERR::AllocMemory);
@@ -282,7 +282,7 @@ static ERR XML_Filter(extXML *Self, struct xml::Filter *Args)
 
    objXQuery *xq;
    if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
-      xq->set(FID_Statement, Args->XPath);
+      xq->set(FID_Statement, std::string_view(Args->XPath));
       if (auto error = xq->init(); error IS ERR::Okay) {
          matching_tag_opt opt;
          auto callback = C_FUNCTION(save_matching_tag, &opt);
@@ -302,7 +302,7 @@ static ERR XML_Filter(extXML *Self, struct xml::Filter *Args)
                Self->ErrorMsg = "No matching tag found";
             }
             else {
-               CSTRING str;
+               std::string_view str;
                if (xq->get(FID_ErrorMsg, str) IS ERR::Okay) Self->ErrorMsg = str;
             }
             FreeResource(xq);
@@ -370,7 +370,7 @@ static ERR XML_Search(extXML *Self, struct xml::Search *Args)
 
    objXQuery *xq;
    if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
-      xq->set(FID_Statement, Args->Expression);
+      xq->set(FID_Statement, std::string_view(Args->Expression));
 
       if (auto error = xq->init(); error IS ERR::Okay) {
          matching_tag_opt opt;
@@ -636,8 +636,8 @@ static ERR XML_GetKey(extXML *Self, struct acGetKey *Args)
       xq->set(FID_Statement, std::string_view(Args->Key));
       if (auto error = xq->init(); error IS ERR::Okay) {
          if (error = xq->evaluate(Self, 0, XEF::NIL); error IS ERR::Okay) {
-            auto result = xq->get<CSTRING>(FID_ResultString);
-            if (result) kt::strcopy(result, Args->Value, Args->Size);
+            std::string_view result;
+            if (xq->get(FID_ResultString, result) IS ERR::Okay) kt::strcopy(std::string(result), Args->Value, Args->Size);
             FreeResource(xq);
             return ERR::Okay;
          }
@@ -1003,7 +1003,7 @@ ERR XML_InsertXPath(extXML *Self, struct xml::InsertXPath *Args)
 
    objXQuery *xq;
    if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
-      xq->set(FID_Statement, Args->XPath);
+      xq->set(FID_Statement, std::string_view(Args->XPath));
       if (auto error = xq->init(); error IS ERR::Okay) {
          matching_tag_opt opt;
          auto callback = C_FUNCTION(save_matching_tag, &opt);
@@ -1305,7 +1305,7 @@ static ERR XML_RemoveXPath(extXML *Self, struct xml::RemoveXPath *Args)
 
    objXQuery *xq;
    if (NewObject(CLASSID::XQUERY, NF::NIL, (OBJECTPTR *)&xq) IS ERR::Okay) {
-      xq->set(FID_Statement, Args->XPath);
+      xq->set(FID_Statement, std::string_view(Args->XPath));
       if (auto error = xq->init(); error IS ERR::Okay) {
          while (limit > 0) {
             matching_tag_opt opt;
