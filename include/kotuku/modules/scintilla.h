@@ -214,10 +214,10 @@ class objScintilla : public Object {
 
    // Customised field setting
 
-   template <class T> inline ERR setPath(T && Value) noexcept {
+   inline ERR setPath(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[22];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setEventFlags(const SEF Value) noexcept {
@@ -349,10 +349,10 @@ class objScintilla : public Object {
       return field->WriteValue(target, field, FD_INT, &Value, 1);
    }
 
-   template <class T> inline ERR setOrigin(T && Value) noexcept {
+   inline ERR setOrigin(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setShowWhitespace(const int Value) noexcept {
@@ -367,10 +367,10 @@ class objScintilla : public Object {
       return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
    }
 
-   template <class T> inline ERR setString(T && Value) noexcept {
+   inline ERR setString(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setSymbols(const int Value) noexcept {
@@ -449,10 +449,10 @@ class objScintillaSearch : public Object {
       return ERR::Okay;
    }
 
-   template <class T> inline ERR setText(T && Value) noexcept {
+   inline ERR setText(const std::string_view &Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(target, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setFlags(const STF Value) noexcept {
@@ -461,4 +461,3 @@ class objScintillaSearch : public Object {
    }
 
 };
-

@@ -43,8 +43,7 @@ static ERR setval_unit(OBJECTPTR, Field *, int Flags, CPTR , int);
 [[nodiscard]] static std::string_view field_string_view(int Flags, CPTR Data) noexcept
 {
    if (not Data) return {};
-   else if (Flags & FD_CPP) return *((std::string_view *)Data);
-   else return std::string_view(CSTRING(Data));
+   else return *((std::string_view *)Data);
 }
 
 [[nodiscard]] static bool decimal_digits(std::string_view String) noexcept
@@ -251,55 +250,53 @@ static ERR writeval_flags(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, 
       int64_t int64 = 0;
       auto str = field_string_view(Flags, Data);
 
-      if ((Data) or (Flags & FD_CPP)) {
-         // Check if the string is a number
-         if (decimal_digits(str)) {
-            int64 = parse_integer<int64_t>(str);
-         }
-         else if (Field->Arg) {
-            bool reverse = false;
-            int16_t op   = OP_OVERWRITE;
-            while (not str.empty()) {
-               if (str.front() IS '&')      { op = OP_AND;       str.remove_prefix(1); }
-               else if (str.front() IS '!') { op = OP_OR;        str.remove_prefix(1); }
-               else if (str.front() IS '^') { op = OP_OVERWRITE; str.remove_prefix(1); }
-               else if (str.front() IS '~') { reverse = true;    str.remove_prefix(1); }
-               else {
-                  const auto sep = str.find('|');
-                  const auto sv  = (sep IS std::string_view::npos) ? str : str.substr(0, sep);
+      // Check if the string is a number
+      if (decimal_digits(str)) {
+         int64 = parse_integer<int64_t>(str);
+      }
+      else if (Field->Arg) {
+         bool reverse = false;
+         int16_t op   = OP_OVERWRITE;
+         while (not str.empty()) {
+            if (str.front() IS '&')      { op = OP_AND;       str.remove_prefix(1); }
+            else if (str.front() IS '!') { op = OP_OR;        str.remove_prefix(1); }
+            else if (str.front() IS '^') { op = OP_OVERWRITE; str.remove_prefix(1); }
+            else if (str.front() IS '~') { reverse = true;    str.remove_prefix(1); }
+            else {
+               const auto sep = str.find('|');
+               const auto sv  = (sep IS std::string_view::npos) ? str : str.substr(0, sep);
 
-                  if (not sv.empty()) {
-                     for (auto lk = (FieldDef *)Field->Arg; lk->Name; lk++) {
-                        if (flag_match(lk->Name, sv)) {
-                           int64 |= lk->Value;
-                           break;
-                        }
+               if (not sv.empty()) {
+                  for (auto lk = (FieldDef *)Field->Arg; lk->Name; lk++) {
+                     if (flag_match(lk->Name, sv)) {
+                        int64 |= lk->Value;
+                        break;
                      }
                   }
-
-                  if (sep IS std::string_view::npos) str = {};
-                  else {
-                     str.remove_prefix(sep);
-                     while (str.starts_with('|')) str.remove_prefix(1);
-                  }
                }
-            }
 
-            if (reverse) int64 = ~int64;
-
-            // Get the current flag values from the field if special ops are requested
-
-            if (op != OP_OVERWRITE) {
-               int current_flags;
-               if (auto error = Object->get<int>(Field->FieldID, current_flags); error IS ERR::Okay) {
-                  if (op IS OP_OR) int64 = current_flags | int64;
-                  else if (op IS OP_AND) int64 = current_flags & int64;
+               if (sep IS std::string_view::npos) str = {};
+               else {
+                  str.remove_prefix(sep);
+                  while (str.starts_with('|')) str.remove_prefix(1);
                }
-               else return error;
             }
          }
-         else log.warning("Missing flag definitions for field \"%s\"", Field->Name);
+
+         if (reverse) int64 = ~int64;
+
+         // Get the current flag values from the field if special ops are requested
+
+         if (op != OP_OVERWRITE) {
+            int current_flags;
+            if (auto error = Object->get<int>(Field->FieldID, current_flags); error IS ERR::Okay) {
+               if (op IS OP_OR) int64 = current_flags | int64;
+               else if (op IS OP_AND) int64 = current_flags & int64;
+            }
+            else return error;
+         }
       }
+      else log.warning("Missing flag definitions for field \"%s\"", Field->Name);
 
       if (Field->Flags & FD_INT) {
          int32 = int64;
@@ -324,21 +321,18 @@ static ERR writeval_lookup(OBJECTPTR Object, Field *Field, int Flags, CPTR Data,
    if (Flags & FD_STRING) {
       auto str = field_string_view(Flags, Data);
 
-      if ((Data) or (Flags & FD_CPP)) {
-         FieldDef *lookup;
-         int32 = parse_integer<int>(str); // If the string is a number rather than a lookup, this will extract it
-         if ((lookup = (FieldDef *)Field->Arg)) {
-            while (lookup->Name) {
-               if (iequals(str, lookup->Name)) {
-                  int32 = lookup->Value;
-                  break;
-               }
-               lookup++;
+      FieldDef *lookup;
+      int32 = parse_integer<int>(str); // If the string is a number rather than a lookup, this will extract it
+      if ((lookup = (FieldDef *)Field->Arg)) {
+         while (lookup->Name) {
+            if (iequals(str, lookup->Name)) {
+               int32 = lookup->Value;
+               break;
             }
+            lookup++;
          }
-         else log.warning("Missing lookup table definitions for field \"%s\"", Field->Name);
       }
-      else int32 = 0;
+      else log.warning("Missing lookup table definitions for field \"%s\"", Field->Name);
 
       Flags = FD_INT;
       Data  = &int32;
@@ -400,21 +394,19 @@ static ERR writeval_ptr(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, in
    if (Flags & FD_POINTER) {
       auto offset = (APTR *)((int8_t *)Object + Field->Offset);
       *offset = (APTR)Data;
+      return ERR::Okay;
    }
    else return ERR::SetValueNotPointer;
-   return ERR::Okay;
 }
 
 static ERR writeval_cppstr(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
 {
    if (Flags & FD_STRING) {
       auto offset = (std::string *)((int8_t *)Object + Field->Offset);
-      if (Flags & FD_CPP) offset->assign(*((std::string_view *)Data));
-      else if (Data) offset->assign(CSTRING(Data));
-      else offset->clear();
+      offset->assign(*((std::string_view *)Data));
+      return ERR::Okay;
    }
    else return ERR::SetValueNotPointer;
-   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -510,16 +502,12 @@ static ERR set_or_write_array(OBJECTPTR Object, Field *Field, int Flags, CPTR Da
    else if (Flags & FD_STRING) { // Incoming CSV string
       std::string_view source;
       if (not Data) source = {};
-      else if (Flags & FD_CPP) source = *((std::string_view *)Data);
-      else source = std::string_view(CSTRING(Data));
+      else source = *((std::string_view *)Data);
 
       APTR arraybuffer;
       auto buffer_size = source.empty() ? 1 : source.size() * 8;
       if ((arraybuffer = malloc(buffer_size))) {
-         if ((not Data) and (not (Flags & FD_CPP))) {
-            Elements = 0;
-         }
-         else Elements = write_array(source, Field->Flags, 0, arraybuffer);
+         Elements = write_array(source, Field->Flags, 0, arraybuffer);
 
          ERR error;
          if (Field->SetValue) error = ((ERR (*)(APTR, APTR, int))(Field->SetValue))(Object, arraybuffer, Elements);
@@ -623,11 +611,7 @@ static ERR setval_strview(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, 
    FieldContext ctx(Object, Field);
 
    if (Flags & FD_STRING) {
-      if (Flags & FD_CPP) return ((ERR (*)(APTR, std::string_view &))(Field->SetValue))(Object, *((std::string_view *)Data));
-      else {
-         std::string_view sv = Data ? std::string_view(CSTRING(Data)) : std::string_view{};
-         return ((ERR (*)(APTR, std::string_view &))(Field->SetValue))(Object, sv);
-      }
+      return ((ERR (*)(APTR, std::string_view &))(Field->SetValue))(Object, *((std::string_view *)Data));
    }
    else if (Flags & FD_INT) {
       auto string = std::to_string(*((int *)Data));
@@ -653,10 +637,7 @@ static ERR setval_large(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, in
 
    if (Flags & FD_INT)        int64 = *((int *)Data);
    else if (Flags & (FD_DOUBLE|FD_FLOAT)) int64 = std::llround(*((double *)Data));
-   else if (Flags & FD_STRING) {
-      if (Flags & FD_CPP) int64 = kt::svtonum<int64_t>(*((std::string_view *)Data));
-      else int64 = strtoll((CSTRING)Data, nullptr, 0);
-   }
+   else if (Flags & FD_STRING) int64 = kt::svtonum<int64_t>(*((std::string_view *)Data));
    else if (Flags & FD_INT64)  int64 = *((int64_t*)Data);
    else if (Flags & FD_UNIT)   int64 = std::llround(((Unit*)Data)->Value);
    else return ERR::SetValueNotNumeric;

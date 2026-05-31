@@ -72,7 +72,7 @@ struct FieldValue {
    constexpr FieldValue(uint32_t pFID, const FUNCTION &pValue) : FieldID(pFID), Type(FDF_FUNCTIONPTR), CPointer(&pValue) { };
    constexpr FieldValue(uint32_t pFID, const FUNCTION *pValue) : FieldID(pFID), Type(FDF_FUNCTIONPTR), CPointer(pValue) { };
    constexpr FieldValue(uint32_t pFID, APTR pValue)     : FieldID(pFID), Type(FD_POINTER), Pointer(pValue) { };
-   [[deprecated("use string_view")]] constexpr FieldValue(uint32_t pFID, CSTRING pValue)  : FieldID(pFID), Type(FD_STRING|FD_CPP), CPPString(pValue) { };
+   constexpr FieldValue(uint32_t pFID, CSTRING pValue)  : FieldID(pFID), Type(FD_STRING|FD_CPP), CPPString(pValue) { };
    constexpr FieldValue(uint32_t pFID, CPTR pValue)     : FieldID(pFID), Type(FD_POINTER), CPointer(pValue) { };
    constexpr FieldValue(uint32_t pFID, CPTR pValue, int pCustom) : FieldID(pFID), Type(pCustom), CPointer(pValue) { };
 };
@@ -401,13 +401,14 @@ struct Object { // Must be 64-bit aligned
       return field->WriteValue(target, field, FD_FUNCTION, Value, 1);
    }
 
-   [[deprecated]] inline ERR set(FIELD FieldID, const char *Value) {
+   inline ERR set(FIELD FieldID, const char *Value) {
       Object *target;
       struct Field *field;
       if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
       std::string_view sv(Value ? Value : "");
       return field->WriteValue(target, field, FD_STRING|FD_CPP, &sv, 1);
    }
+
    inline ERR set(FIELD FieldID, std::string_view Value) {
       Object *target;
       struct Field *field;
@@ -594,22 +595,11 @@ struct Object { // Must be 64-bit aligned
             Value.assign(buffer, written);
          }
          else if (flags & FD_STRING) {
-            if (flags & FD_CPP) {
-               if (field->GetValue) {
-                  Value.assign(*((std::string_view *)data));
-                  if (flags & FD_ALLOC) FreeResource(GetMemoryID(((std::string_view *)data)->data()));
-               }
-               else Value.assign(*((std::string *)data));
+            if (field->GetValue) {
+               Value.assign(*((std::string_view *)data));
+               if (flags & FD_ALLOC) FreeResource(GetMemoryID(((std::string_view *)data)->data()));
             }
-            else {
-               if (auto str = *((CSTRING *)data)) Value.assign(str);
-               else Value.clear();
-               if (flags & FD_ALLOC) FreeResource(GetMemoryID(*((CSTRING *)data)));
-            }
-         }
-         else if (flags & FD_POINTER) {
-            if (auto str = *((CSTRING *)data)) Value.assign(str);
-            else Value.clear();
+            else Value.assign(*((std::string *)data));
          }
          else return ERR::UnrecognisedFieldType;
 
@@ -625,25 +615,15 @@ struct Object { // Must be 64-bit aligned
          if (not field->readable()) return ERR::NoFieldAccess;
 
          if (field->Flags & FD_STRING) {
-            if (field->Flags & FD_CPP) {
-               if (field->GetValue) { // Virtual std::string_view
-                  SetObjectContext(target, field, AC::NIL);
-                  auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-                  auto error = get_field(target, Value);
-                  RestoreObjectContext();
-                  return error;
-               }
-               else Value = *((std::string *)(((int8_t *)target) + field->Offset)); // Direct std::string
+            if (field->GetValue) { // Virtual std::string_view
+               SetObjectContext(target, field, AC::NIL);
+               auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+               auto error = get_field(target, Value);
+               RestoreObjectContext();
+               return error;
             }
-            else {
-               int8_t field_value[sizeof(std::string_view)];
-               int array_size;
-               auto fv = get_field_value(target, *field, field_value, array_size);
-               if (fv.first != ERR::Okay) return fv.first;
+            else Value = *((std::string *)(((int8_t *)target) + field->Offset)); // Direct std::string
 
-               CSTRING val = *((CSTRING *)fv.second);
-               Value = val ? std::string_view(val) : std::string_view{};
-            }
             return ERR::Okay;
          }
          else if ((field->Flags & FD_INT) and (field->Flags & FD_LOOKUP)) {
@@ -681,7 +661,11 @@ struct Object { // Must be 64-bit aligned
          auto fv = get_field_value(target, *field, field_value, array_size);
          if (fv.first != ERR::Okay) return fv.first;
 
-         if ((field->Flags & FD_CLASS_TYPES) IS (FDF_CPPSTRING)) {
+         if (field->Flags & (FD_POINTER|FD_ARRAY)) {
+            Value = *((T *)fv.second);
+            return ERR::Okay;
+         }
+         else if (field->Flags & FD_STRING) {
             using pointee = std::remove_pointer_t<T>;
             using plain_pointee = std::remove_cv_t<pointee>;
 
@@ -698,10 +682,6 @@ struct Object { // Must be 64-bit aligned
             }
             else return ERR::FieldTypeMismatch;
 
-            return ERR::Okay;
-         }
-         else if (field->Flags & (FD_POINTER|FD_ARRAY)) {
-            Value = *((T *)fv.second);
             return ERR::Okay;
          }
          return ERR::FieldTypeMismatch;
