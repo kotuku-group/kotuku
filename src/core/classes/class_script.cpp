@@ -24,12 +24,7 @@ Terminating the script will not remove objects that are outside its resource hie
 #define PRV_SCRIPT
 #include "../defs.h"
 #include <kotuku/main.h>
-
-static ERR GET_Results(objScript *, STRING **, int *);
-
-static ERR SET_Procedure(objScript *, std::string_view &);
-static ERR SET_Results(objScript *, CSTRING *, int);
-static ERR SET_String(objScript *, std::string_view &);
+#include <kotuku/vector.hpp>
 
 inline std::string_view check_bom(std::string_view Value)
 {
@@ -285,7 +280,6 @@ static ERR SCRIPT_Exec(objScript *Self, struct sc::Exec *Args)
 
 static ERR SCRIPT_Free(objScript *Self)
 {
-   if (Self->Results)     { FreeResource(Self->Results);     Self->Results = nullptr; }
    Self->~objScript();
    return ERR::Okay;
 }
@@ -545,8 +539,8 @@ static ERR SET_Path(objScript *Self, std::string_view &Value)
          if (len IS std::string_view::npos) len = Value.size();
 
          if (Value.substr(0, len).starts_with("STRING:")) {
-            auto statement = Value.substr(7);
-            return SET_String(Self, statement);
+            Self->String.assign(check_bom(Value.substr(7)));
+            return ERR::Okay;
          }
 
          Self->Path.assign(Value, 0, len);
@@ -566,7 +560,7 @@ static ERR SET_Path(objScript *Self, std::string_view &Value)
                   std::string buffer;
                   buffer.append(value, start, end - start);
                   std::string_view procedure(buffer);
-                  SET_Procedure(Self, procedure);
+                  Self->Procedure.assign(procedure);
                }
 
                // Process optional parameters
@@ -661,49 +655,18 @@ For maximum compatibility in type conversion, the results are stored as an array
 
 *********************************************************************************************************************/
 
-static ERR GET_Results(objScript *Self, STRING **Value, int *Elements)
+static ERR GET_Results(objScript *Self, kt::vector<std::string> **Value, int *Elements)
 {
-   if (Self->Results) {
-      *Value = Self->Results;
-      *Elements = Self->ResultsTotal;
-      return ERR::Okay;
-   }
-   else {
-      *Value = nullptr;
-      *Elements = 0;
-      return ERR::FieldNotSet;
-   }
+   *Value = &Self->Results;
+   *Elements = Self->Results.size();
+   return ERR::Okay;
 }
 
-static ERR SET_Results(objScript *Self, CSTRING *Value, int Elements)
+static ERR SET_Results(objScript *Self, const kt::vector<std::string> *Value, int Elements)
 {
-   kt::Log log;
-
-   if (Self->Results) { FreeResource(Self->Results); Self->Results = 0; }
-
-   Self->ResultsTotal = 0;
-
-   if (Value) {
-      int len = 0;
-      for (int i=0; i < Elements; i++) {
-         if (!Value[i]) return log.warning(ERR::SetValueNotString);
-         len += strlen(Value[i]) + 1;
-      }
-      Self->ResultsTotal = Elements;
-
-      if (AllocMemory((sizeof(CSTRING) * (Elements+1)) + len, MEM::STRING|MEM::NO_CLEAR, (APTR *)&Self->Results, nullptr) IS ERR::Okay) {
-         STRING str = (STRING)(Self->Results + Elements + 1);
-         int i;
-         for (i=0; Value[i]; i++) {
-            Self->Results[i] = str;
-            str += strcopy(Value[i], str) + 1;
-         }
-         Self->Results[i] = nullptr;
-         return ERR::Okay;
-      }
-      else return ERR::AllocMemory;
-   }
-   else return ERR::Okay;
+   if (Value) Self->Results = *Value;
+   else Self->Results.clear();
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -844,19 +807,19 @@ static const FieldArray clScriptFields[] = {
    { "CurrentLine", FDF_INT|FDF_R },
    { "LineOffset",  FDF_INT|FDF_RW },
    // Virtual Fields
-   { "CacheFile",    FDF_CPPSTRING|FDF_RW,           GET_CacheFile, SET_CacheFile },
-   { "ErrorMessage", FDF_CPPSTRING|FDF_RW,           GET_ErrorMessage, SET_ErrorMessage },
-   { "WorkingPath",  FDF_CPPSTRING|FDF_RW,           GET_WorkingPath, SET_WorkingPath },
-   { "Language",     FDF_CPPSTRING|FDF_R,            GET_Language },
+   { "CacheFile",    FDF_CPPSTRING|FDF_RW,             GET_CacheFile, SET_CacheFile },
+   { "ErrorMessage", FDF_CPPSTRING|FDF_RW,             GET_ErrorMessage, SET_ErrorMessage },
+   { "WorkingPath",  FDF_CPPSTRING|FDF_RW,             GET_WorkingPath, SET_WorkingPath },
+   { "Language",     FDF_CPPSTRING|FDF_R,              GET_Language },
    { "Location",     FDF_SYNONYM|FDF_CPPSTRING|FDF_RI, GET_Path, SET_Path },
-   { "Procedure",    FDF_CPPSTRING|FDF_RW,           GET_Procedure, SET_Procedure },
-   { "Path",         FDF_CPPSTRING|FDF_RI,           GET_Path, SET_Path },
-   { "Results",      FDF_ARRAY|FDF_POINTER|FDF_STRING|FDF_RW, GET_Results, SET_Results },
+   { "Procedure",    FDF_CPPSTRING|FDF_RW,             GET_Procedure, SET_Procedure },
+   { "Path",         FDF_CPPSTRING|FDF_RI,             GET_Path, SET_Path },
+   { "Results",      FDF_ARRAY|FDF_CPPSTRING|FDF_RW,   GET_Results, SET_Results },
    { "Src",          FDF_SYNONYM|FDF_CPPSTRING|FDF_RI, GET_Path, SET_Path },
-   { "Statement",    FDF_CPPSTRING|FDF_RW,           GET_String, SET_String },
+   { "Statement",    FDF_CPPSTRING|FDF_RW,             GET_String, SET_String },
    { "String",       FDF_SYNONYM|FDF_CPPSTRING|FDF_RW, GET_String, SET_String },
-   { "TotalArgs",    FDF_INT|FDF_R,                  GET_TotalArgs, nullptr },
-   { "Variables",    FDF_POINTER|FDF_SYSTEM|FDF_R,   GET_Variables, nullptr },
+   { "TotalArgs",    FDF_INT|FDF_R,                    GET_TotalArgs, nullptr },
+   { "Variables",    FDF_POINTER|FDF_SYSTEM|FDF_R,     GET_Variables, nullptr },
    END_FIELD
 };
 

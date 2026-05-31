@@ -1444,7 +1444,7 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
   [[
    int64_t  ProcedureID;          // For callbacks
    KEYVALUE Vars; // Global parameters
-   STRING   *Results;
+   kt::vector<std::string> Results;
    char     Language[4];          // 3-character language code, null-terminated
    const ScriptArg *ProcArgs;     // Procedure args - applies during Exec
    std::string Path;              // File location of the script
@@ -1454,7 +1454,6 @@ inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
    std::string Procedure;
    std::string CacheFile;
    int      ActivationCount;      // Incremented every time the script is activated.
-   int      ResultsTotal;
    int      TotalArgs;            // Total number of ProcArgs
    char     LanguageDir[32];      // Directory to use for language files
    OBJECTID ScriptOwnerID;

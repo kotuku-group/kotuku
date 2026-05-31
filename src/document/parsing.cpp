@@ -1472,10 +1472,10 @@ void parser::tag_call(const tag_view &Tag)
 
    // Check for a result and print it
 
-   CSTRING *results;
-   int size;
-   if ((script->get(FID_Results, results, size) IS ERR::Okay) and (size > 0)) {
-      auto xmlinc = objXML::create::global(fl::Statement(results[0]), fl::Flags(XMF::PARSE_HTML|XMF::STRIP_HEADERS));
+   kt::vector<std::string> *results;
+   if ((script->get(FID_Results, results) IS ERR::Okay) and (results->size() > 0)) {
+      auto xmlinc = objXML::create::global(fl::Statement((*results)[0].c_str()),
+         fl::Flags(XMF::PARSE_HTML|XMF::STRIP_HEADERS));
       if (xmlinc) {
          auto old_xml = change_xml(xmlinc);
          parse_tags(xmlinc->Tags);
@@ -1487,7 +1487,6 @@ void parser::tag_call(const tag_view &Tag)
       }
       else log_error(&Tag, ERR::Syntax, "doc.call-result-xml-parse-failed",
          "<call/> returned content that could not be parsed as XML/RIPL.");
-      FreeResource(results);
    }
 }
 
@@ -2713,10 +2712,11 @@ void parser::tag_script(const tag_view &Tag)
 
    // Any results returned from the script are processed as XML
 
-   CSTRING *results;
+   kt::vector<std::string> *results;
    int size;
    if ((script->get(FID_Results, results, size) IS ERR::Okay) and (size > 0)) {
-      auto xmlinc = objXML::create::global(fl::Statement(results[0]), fl::Flags(XMF::PARSE_HTML|XMF::STRIP_HEADERS));
+      auto xmlinc = objXML::create::global(fl::Statement((*results)[0].c_str()),
+         fl::Flags(XMF::PARSE_HTML|XMF::STRIP_HEADERS));
       if (xmlinc) {
          auto old_xml = change_xml(xmlinc);
          parse_tags(xmlinc->Tags);

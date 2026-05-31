@@ -209,10 +209,10 @@ extern "C" FFR CALL_FEEDBACK(FUNCTION *Callback, FileFeedback *Feedback)
       }), error) != ERR::Okay) error = ERR::Function;
 
       if (error IS ERR::Okay) {
-         CSTRING *results;
+         kt::vector<std::string> *results;
          int size;
          if ((Callback->Context->get(FID_Results, results, size) IS ERR::Okay) and (size > 0)) {
-            return FFR(strtol(results[0], nullptr, 0));
+            return FFR(strtol((*results)[0].c_str(), nullptr, 0));
          }
          else return FFR::OKAY;
       }

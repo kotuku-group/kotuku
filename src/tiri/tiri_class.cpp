@@ -1042,19 +1042,12 @@ static ERR run_script(objScript *Self)
       int results = lua_gettop(prv->Lua) - top + 1;
 
       if (results > 0) {
-         std::vector<CSTRING> array;
-         array.resize(results+1);
-
-         // NB: The Results field will take a clone of the Lua strings, so this sub-routine is safe to pass
-         // on Lua's temporary string results.
-
-         int i;
-         for (i=0; i < results; i++) {
-            array[i] = lua_tostring(prv->Lua, -results+i);
-            log.trace("Result: %d/%d: %s", i, results, array[i]);
+         kt::vector<std::string> array;
+         array.resize(results);
+         for (int i=0; i < results; i++) {
+            array[i] = lua_tostringview(prv->Lua, -results+i);
          }
-         array[i] = nullptr;
-         Self->set(FID_Results, array.data(), i);
+         Self->set(FID_Results, array);
          lua_pop(prv->Lua, results);  // pop returned values
       }
 

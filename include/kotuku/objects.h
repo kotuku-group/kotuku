@@ -38,8 +38,6 @@
 #define FDF_OBJECT      (FD_POINTER|FD_OBJECT)   // Field refers to another object
 #define FDF_OBJECTID    (FD_INT|FD_OBJECT)      // Field refers to another object by ID
 #define FDF_LOCAL       (FD_POINTER|FD_LOCAL)    // Field refers to a local object
-#define FDF_STRING      (FD_POINTER|FD_STRING)   // Field points to a string.  NB: Ideally want to remove the FD_POINTER as it should be redundant
-#define FDF_STR         FDF_STRING
 #define FDF_SCALED      FD_SCALED
 #define FDF_FLAGS       FD_FLAGS                // Field contains flags
 #define FDF_ALLOC       FD_ALLOC                // Field is a dynamic allocation - either a memory block or object

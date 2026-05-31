@@ -3070,7 +3070,7 @@ class objScript : public Object {
 #ifdef PRV_SCRIPT
    int64_t  ProcedureID;          // For callbacks
    KEYVALUE Vars; // Global parameters
-   STRING   *Results;
+   kt::vector<std::string> Results;
    char     Language[4];          // 3-character language code, null-terminated
    const ScriptArg *ProcArgs;     // Procedure args - applies during Exec
    std::string Path;              // File location of the script
@@ -3080,7 +3080,6 @@ class objScript : public Object {
    std::string Procedure;
    std::string CacheFile;
    int      ActivationCount;      // Incremented every time the script is activated.
-   int      ResultsTotal;
    int      TotalArgs;            // Total number of ProcArgs
    char     LanguageDir[32];      // Directory to use for language files
    OBJECTID ScriptOwnerID;
@@ -3180,10 +3179,10 @@ class objScript : public Object {
       return field->WriteValue(target, field, 0x00804500, &Value, 1);
    }
 
-   inline ERR setResults(STRING * Value, int Elements) noexcept {
+   inline ERR setResults(const kt::vector<std::string> *Value) noexcept {
       auto target = this;
       auto field = &this->Class->Dictionary[16];
-      return field->WriteValue(target, field, 0x08801300, Value, Elements);
+      return field->WriteValue(target, field, 0x00805300, Value, int(Value->size()));
    }
 
    inline ERR setStatement(const std::string_view &Value) noexcept {
