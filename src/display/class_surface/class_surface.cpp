@@ -757,7 +757,7 @@ static ERR SURFACE_Focus(extSurface *Self)
 
    if (Self->disabled()) return ERR::Okay|ERR::Notified;
 
-   if (auto msg = GetActionMsg()) {
+   if (auto msg = GetActionMsg(AC::Focus)) {
       // This is a message - in which case it could have been delayed and thus superseded by a more recent message.
 
       if (msg->Time < glLastFocusTime) {
@@ -1077,7 +1077,7 @@ mutates-object, private
 
 static ERR SURFACE_InheritedFocus(extSurface *Self, struct drw::InheritedFocus *Args)
 {
-   if (auto msg = GetActionMsg()) {
+   if (auto msg = GetActionMsg(drw::InheritedFocus::id)) {
       // This is a message - in which case it could have been delayed and thus superseded by a more recent message.
 
       if (msg->Time < glLastFocusTime) {

@@ -74,7 +74,7 @@ extern "C" ERR OpenDir(const std::string_view & Path, RDF Flags, struct DirInfo 
 extern "C" OBJECTPTR GetObjectPtr(OBJECTID Object);
 extern "C" struct Field * FindField(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR * Target);
 extern "C" CSTRING GetErrorMsg(ERR Error);
-extern "C" struct Message * GetActionMsg();
+extern "C" struct Message * GetActionMsg(AC Action);
 extern "C" ERR FuncError(CSTRING Header, ERR Error);
 extern "C" ERR LockObject(OBJECTPTR Object, int MilliSeconds);
 extern "C" void ReleaseObject(OBJECTPTR Object);

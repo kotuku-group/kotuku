@@ -1017,10 +1017,9 @@ enum class NF : uint32_t {
    SUPPRESS_LOG = 0x00000040,
    COLLECT = 0x00000080,
    RECLASSED = 0x00000100,
-   MESSAGE = 0x00000200,
-   SIGNALLED = 0x00000400,
-   PERMIT_TERMINATE = 0x00000800,
-   ASYNC_ACTIVE = 0x00001000,
+   SIGNALLED = 0x00000200,
+   PERMIT_TERMINATE = 0x00000400,
+   ASYNC_ACTIVE = 0x00000800,
    UNIQUE = 0x40000000,
    NAME = 0x80000000,
 };
@@ -2115,7 +2114,7 @@ struct CoreBase {
    OBJECTPTR (*_GetObjectPtr)(OBJECTID Object);
    struct Field * (*_FindField)(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target);
    CSTRING (*_GetErrorMsg)(ERR Error);
-   struct Message * (*_GetActionMsg)(void);
+   struct Message * (*_GetActionMsg)(AC Action);
    ERR (*_FuncError)(CSTRING Header, ERR Error);
    ERR (*_LockObject)(OBJECTPTR Object, int MilliSeconds);
    void (*_ReleaseObject)(OBJECTPTR Object);
@@ -2215,7 +2214,7 @@ inline ERR OpenDir(const std::string_view & Path, RDF Flags, struct DirInfo **In
 inline OBJECTPTR GetObjectPtr(OBJECTID Object) { return CoreBase->_GetObjectPtr(Object); }
 inline struct Field * FindField(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target) { return CoreBase->_FindField(Object,FieldID,Target); }
 inline CSTRING GetErrorMsg(ERR Error) { return CoreBase->_GetErrorMsg(Error); }
-inline struct Message * GetActionMsg(void) { return CoreBase->_GetActionMsg(); }
+inline struct Message * GetActionMsg(AC Action) { return CoreBase->_GetActionMsg(Action); }
 inline ERR FuncError(CSTRING Header, ERR Error) { return CoreBase->_FuncError(Header,Error); }
 inline ERR LockObject(OBJECTPTR Object, int MilliSeconds) { return CoreBase->_LockObject(Object,MilliSeconds); }
 inline void ReleaseObject(OBJECTPTR Object) { return CoreBase->_ReleaseObject(Object); }
@@ -2310,7 +2309,7 @@ extern "C" ERR OpenDir(const std::string_view & Path, RDF Flags, struct DirInfo 
 extern "C" OBJECTPTR GetObjectPtr(OBJECTID Object);
 extern "C" struct Field * FindField(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target);
 extern "C" CSTRING GetErrorMsg(ERR Error);
-extern "C" struct Message * GetActionMsg(void);
+extern "C" struct Message * GetActionMsg(AC Action);
 extern "C" ERR FuncError(CSTRING Header, ERR Error);
 extern "C" ERR LockObject(OBJECTPTR Object, int MilliSeconds);
 extern "C" void ReleaseObject(OBJECTPTR Object);

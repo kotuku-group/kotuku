@@ -215,7 +215,6 @@
       <const name="FREE_ON_UNLOCK">Read-only indicator for when the object is marked for deletion.</const>
       <const name="INITIALISED">Read-only indicator if the object has been initialised.</const>
       <const name="LOCAL">Classes can allocate local objects to stop them from being associated with the client.</const>
-      <const name="MESSAGE">Action has been called against the object through the message system (managed by <function module="Core">ProcessMessages</function>).</const>
       <const name="NAME">Use the Name parameter to name the created object.  This flag is not required if using <code>UNIQUE</code>.</const>
       <const name="PRIVATE"/>
       <const name="RECLASSED">The object switched from the base-class to a derived class during initialisation.</const>

@@ -875,11 +875,15 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     <name>GetActionMsg</name>
     <category>Objects</category>
     <comment>Returns a message structure if called from an action that was executed by the message system.</comment>
-    <prototype>struct Message * GetActionMsg()</prototype>
-    <tiriPrototype>any = GetActionMsg()</tiriPrototype>
+    <prototype>struct Message * GetActionMsg(AC Action)</prototype>
+    <tiriPrototype>any = GetActionMsg(Action:num)</tiriPrototype>
     <tags>volatile-result, nullable-result</tags>
+    <input>
+      <param type="AC" name="Action" lookup="AC">Action identifier represented by the caller.</param>
+    </input>
     <description>
 <p>This function is for use by action and method support routines only.  It will return a <st>Message</st> structure if the action currently under execution has been called directly from the <function>ProcessMessages</function> function.  In all other cases a <code>NULL</code> pointer is returned.</p>
+<p>Only works when called from the main thread, which acts as the message dispatcher.</p>
     </description>
     <result type="struct Message *">A <st>Message</st> structure is returned if the function is called in valid circumstances, otherwise <code>NULL</code>.</result>
   </function>
@@ -2887,7 +2891,6 @@ static ResourceManager glNodeManager = {
       <const name="FREE_ON_UNLOCK">Read-only indicator for when the object is marked for deletion.</const>
       <const name="INITIALISED">Read-only indicator if the object has been initialised.</const>
       <const name="LOCAL">Classes can allocate local objects to stop them from being associated with the client.</const>
-      <const name="MESSAGE">Action has been called against the object through the message system (managed by <function module="Core">ProcessMessages</function>).</const>
       <const name="NAME">Use the Name parameter to name the created object.  This flag is not required if using <code>UNIQUE</code>.</const>
       <const name="PRIVATE"/>
       <const name="RECLASSED">The object switched from the base-class to a derived class during initialisation.</const>

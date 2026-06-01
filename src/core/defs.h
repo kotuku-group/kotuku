@@ -252,6 +252,8 @@ extern std::mutex glmThreadRegistry;
 extern std::unordered_map<int, std::shared_ptr<ThreadRecord>> glThreadRegistry;
 extern thread_local std::shared_ptr<ThreadRecord> tlThreadRecord;
 
+extern ActionMessage *glCurrentActionMsg;
+
 //********************************************************************************************************************
 
 inline std::string_view get_volume(std::string_view Path)

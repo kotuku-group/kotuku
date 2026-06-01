@@ -1461,6 +1461,11 @@ This function is for use by action and method support routines only.  It will re
 action currently under execution has been called directly from the ~ProcessMessages() function.  In all other
 cases a `NULL` pointer is returned.
 
+Only works when called from the main thread, which acts as the message dispatcher.
+
+-INPUT-
+int(AC) Action: Action identifier represented by the caller.
+
 -RESULT-
 resource(Message): A !Message structure is returned if the function is called in valid circumstances, otherwise `NULL`.
 
@@ -1469,11 +1474,15 @@ volatile-result, nullable-result
 
 *********************************************************************************************************************/
 
-Message * GetActionMsg(void)
+Message * GetActionMsg(ACTIONID ActionID)
 {
-   if (auto obj = current_action()) {
-      if (obj->defined(NF::MESSAGE) and (obj->ActionDepth IS 1)) {
-         return (Message *)tlCurrentMsg;
+   // Ref: msg_action()
+   if ((tlMainThread) and (glCurrentActionMsg)) {
+      if (OBJECTPTR obj = current_action()) {
+         if ((glCurrentActionMsg->ObjectID IS obj->UID) and (glCurrentActionMsg->ActionID IS ActionID)) {
+            glCurrentActionMsg = nullptr; // Calling GetActionMsg() is a one-shot operation
+            return (Message *)tlCurrentMsg;
+         }
       }
    }
    return nullptr;

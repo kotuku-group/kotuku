@@ -289,7 +289,6 @@ constexpr bool defined(T flags, T test_flag) noexcept {
     "SUPPRESS_LOG: Private.  Turns off the initial log message.",
     "COLLECT: Marked for garbage collection.",
     "RECLASSED: The object switched from the base-class to a derived class during initialisation.",
-    "MESSAGE: Action has been called against the object through the message system (managed by ~Core.ProcessMessages()).",
     "SIGNALLED: The object has been signalled and is awaiting processing.",
     "PERMIT_TERMINATE: Private.  Permits termination when a lock is held on the object.",
     "ASYNC_ACTIVE: Read-only indicator that asynchronous actions are queued or executing against this object.",

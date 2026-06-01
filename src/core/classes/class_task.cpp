@@ -476,9 +476,9 @@ static ERR msg_action(APTR Custom, int MsgID, int MsgType, APTR Message, int Msg
       OBJECTPTR obj;
       if (auto error = AccessObject(action->ObjectID, 5000, &obj); error IS ERR::Okay) {
          if (action->SendArgs IS false) {
-            obj->setFlag(NF::MESSAGE);
+            glCurrentActionMsg = action;
             Action(action->ActionID, obj, nullptr);
-            obj->clearFlag(NF::MESSAGE);
+            glCurrentActionMsg = nullptr;
             ReleaseObject(obj);
          }
          else {
@@ -491,9 +491,9 @@ static ERR msg_action(APTR Custom, int MsgID, int MsgType, APTR Message, int Msg
             }
 
             if (fields) {
-               obj->setFlag(NF::MESSAGE);
+               glCurrentActionMsg = action;
                Action(action->ActionID, obj, action+1);
-               obj->clearFlag(NF::MESSAGE);
+               glCurrentActionMsg = nullptr;
                ReleaseObject(obj);
             }
          }
