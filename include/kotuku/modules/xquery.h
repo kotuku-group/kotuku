@@ -273,15 +273,13 @@ class objXQuery : public Object {
    }
 
    inline ERR setStatement(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setResolveVariable(const FUNCTION Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[14];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
    }
 
 };

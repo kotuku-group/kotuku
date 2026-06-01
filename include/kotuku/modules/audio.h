@@ -318,9 +318,8 @@ class objAudio : public Object {
    // Customised field setting
 
    inline ERR setOutputRate(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setInputRate(const int Value) noexcept {
@@ -330,9 +329,8 @@ class objAudio : public Object {
    }
 
    inline ERR setQuality(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[13];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setFlags(const ADF Value) noexcept {
@@ -342,45 +340,38 @@ class objAudio : public Object {
    }
 
    inline ERR setBitDepth(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[15];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setPeriods(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[16];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setPeriodSize(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[4];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setDevice(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setMasterVolume(const double Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[2];
-      return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
+      return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setMute(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[11];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setStereo(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
 };
@@ -604,45 +595,38 @@ class objSound : public Object {
    // Customised field setting
 
    inline ERR setVolume(const double Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[24];
-      return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
+      return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setPan(const double Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[14];
-      return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
+      return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setPosition(const int64_t Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[13];
-      return field->WriteValue(target, field, FD_INT64, &Value, 1);
+      return field->WriteValue(this, field, FD_INT64, &Value, 1);
    }
 
    inline ERR setPriority(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setLength(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[29];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setOctave(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[21];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setFlags(const SDF Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[2];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setFrequency(const int Value) noexcept {
@@ -652,9 +636,8 @@ class objSound : public Object {
    }
 
    inline ERR setPlayback(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[18];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setCompression(const int Value) noexcept {
@@ -694,21 +677,18 @@ class objSound : public Object {
    }
 
    inline ERR setOnStop(const FUNCTION Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[25];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
    }
 
    inline ERR setPath(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(target, field, 0x00804500, &Value, 1);
+      return field->WriteValue(this, field, 0x00804500, &Value, 1);
    }
 
    inline ERR setNote(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[26];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
 };

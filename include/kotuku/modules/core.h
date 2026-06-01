@@ -2686,9 +2686,8 @@ class objMetaClass : public Object {
    }
 
    inline ERR setFields(const struct FieldArray * Value, int Elements) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[17];
-      return field->WriteValue(target, field, 0x00001510, Value, Elements);
+      return field->WriteValue(this, field, 0x00001510, Value, Elements);
    }
 
    inline ERR setClassName(const std::string_view &Value) noexcept {
@@ -2758,22 +2757,19 @@ class objMetaClass : public Object {
    }
 
    inline ERR setMethods(APTR Value, int Elements) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[19];
-      return field->WriteValue(target, field, 0x00001510, Value, Elements);
+      return field->WriteValue(this, field, 0x00001510, Value, Elements);
    }
 
    inline ERR setActions(APTR Value) noexcept {
       if (this->initialised()) return ERR::NoFieldAccess;
-      auto target = this;
       auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(target, field, 0x08000400, Value, 1);
+      return field->WriteValue(this, field, 0x08000400, Value, 1);
    }
 
    inline ERR setName(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[16];
-      return field->WriteValue(target, field, 0x00814500, &Value, 1);
+      return field->WriteValue(this, field, 0x00814500, &Value, 1);
    }
 
 };
@@ -2846,9 +2842,8 @@ class objStorageDevice : public Object {
    // Customised field setting
 
    inline ERR setVolume(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(target, field, 0x00804500, &Value, 1);
+      return field->WriteValue(this, field, 0x00804500, &Value, 1);
    }
 
 };
@@ -3123,63 +3118,53 @@ class objFile : public Object {
    // Customised field setting
 
    inline ERR setPosition(const int64_t Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(target, field, FD_INT64, &Value, 1);
+      return field->WriteValue(this, field, FD_INT64, &Value, 1);
    }
 
    inline ERR setFlags(const FL Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[2];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setDate(APTR Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(target, field, 0x08000310, Value, 1);
+      return field->WriteValue(this, field, 0x08000310, Value, 1);
    }
 
    inline ERR setCreated(APTR Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(target, field, 0x08000310, Value, 1);
+      return field->WriteValue(this, field, 0x08000310, Value, 1);
    }
 
    inline ERR setPath(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(target, field, 0x00804500, &Value, 1);
+      return field->WriteValue(this, field, 0x00804500, &Value, 1);
    }
 
    inline ERR setPermissions(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[19];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setSize(const int64_t Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(target, field, FD_INT64, &Value, 1);
+      return field->WriteValue(this, field, FD_INT64, &Value, 1);
    }
 
    inline ERR setLink(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[15];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setUser(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[14];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setGroup(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
 };
@@ -3382,21 +3367,18 @@ class objConfig : public Object {
    // Customised field setting
 
    inline ERR setPath(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setKeyFilter(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setGroupFilter(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setFlags(const CNF Value) noexcept {
@@ -3625,45 +3607,38 @@ class objScript : public Object {
    }
 
    inline ERR setCacheFile(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[22];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setErrorMessage(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setWorkingPath(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setProcedure(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setPath(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(target, field, 0x00804500, &Value, 1);
+      return field->WriteValue(this, field, 0x00804500, &Value, 1);
    }
 
    inline ERR setResults(const kt::vector<std::string> *Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[16];
-      return field->WriteValue(target, field, 0x00805300, Value, int(Value->size()));
+      return field->WriteValue(this, field, 0x00805300, Value, int(Value->size()));
    }
 
    inline ERR setStatement(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[13];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
 };
@@ -3940,9 +3915,8 @@ class objTask : public Object {
    }
 
    inline ERR setReturnCode(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[19];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setProcess(const int Value) noexcept {
@@ -3952,75 +3926,63 @@ class objTask : public Object {
    }
 
    inline ERR setAffinityMask(const int64_t Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(target, field, FD_INT64, &Value, 1);
+      return field->WriteValue(this, field, FD_INT64, &Value, 1);
    }
 
    inline ERR setArgs(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[13];
-      return field->WriteValue(target, field, 0x00804200, &Value, 1);
+      return field->WriteValue(this, field, 0x00804200, &Value, 1);
    }
 
    inline ERR setParameters(const kt::vector<std::string> *Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[21];
-      return field->WriteValue(target, field, 0x00805300, Value, int(Value->size()));
+      return field->WriteValue(this, field, 0x00805300, Value, int(Value->size()));
    }
 
    inline ERR setErrorCallback(const FUNCTION Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
    }
 
    inline ERR setExitCallback(const FUNCTION Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
    }
 
    inline ERR setInputCallback(const FUNCTION Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[14];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
    }
 
    inline ERR setLaunchPath(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[12];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setLocation(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[17];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setName(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[15];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setOutputCallback(const FUNCTION Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
    }
 
    inline ERR setPath(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setPriority(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
 };
@@ -4112,15 +4074,13 @@ class objThread : public Object {
    }
 
    inline ERR setCallback(const FUNCTION Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[2];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
    }
 
    inline ERR setRoutine(const FUNCTION Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
    }
 
 };
@@ -4230,9 +4190,8 @@ class objModule : public Object {
    }
 
    inline ERR setHeader(struct ModHeader * Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[2];
-      return field->WriteValue(target, field, 0x08000510, Value, 1);
+      return field->WriteValue(this, field, 0x08000510, Value, 1);
    }
 
    inline ERR setFlags(const MOF Value) noexcept {
@@ -4242,9 +4201,8 @@ class objModule : public Object {
    }
 
    inline ERR setName(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(target, field, 0x00804500, &Value, 1);
+      return field->WriteValue(this, field, 0x00804500, &Value, 1);
    }
 
 };
@@ -4610,9 +4568,8 @@ class objCompression : public Object {
    }
 
    inline ERR setCompressionLevel(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[13];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setFlags(const CMF Value) noexcept {
@@ -4631,33 +4588,28 @@ class objCompression : public Object {
    }
 
    inline ERR setWindowBits(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setArchiveName(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[0];
-      return field->WriteValue(target, field, 0x00804200, &Value, 1);
+      return field->WriteValue(this, field, 0x00804200, &Value, 1);
    }
 
    inline ERR setPath(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setFeedback(const FUNCTION Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[17];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
    }
 
    inline ERR setPassword(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[12];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
 };

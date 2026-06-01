@@ -308,9 +308,8 @@ class objFont : public Object {
    // Customised field setting
 
    inline ERR setPoint(const double Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
+      return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);
    }
 
    inline ERR setGlyphSpacing(const double Value) noexcept {
@@ -324,27 +323,23 @@ class objFont : public Object {
    }
 
    inline ERR setString(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setPath(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[11];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setStyle(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[22];
-      return field->WriteValue(target, field, 0x00804500, &Value, 1);
+      return field->WriteValue(this, field, 0x00804500, &Value, 1);
    }
 
    inline ERR setFace(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[25];
-      return field->WriteValue(target, field, 0x00804500, &Value, 1);
+      return field->WriteValue(this, field, 0x00804500, &Value, 1);
    }
 
    inline ERR setOutline(const struct RGB8 Value) noexcept {
@@ -363,9 +358,8 @@ class objFont : public Object {
    }
 
    inline ERR setFlags(const FTF Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[2];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setGutter(const int Value) noexcept {
@@ -442,21 +436,18 @@ class objFont : public Object {
    }
 
    inline ERR setBold(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[4];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setItalic(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[14];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setOpacity(const double Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[29];
-      return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
+      return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);
    }
 
 };

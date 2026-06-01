@@ -383,50 +383,6 @@ function outputInitialisedCheck(Field:table, Indent:str)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Emit the fastest available field lookup for a WriteValue()-based setter.
-
-function outputFieldWriteTarget(Class:table, Field:table, FidName:str, Indent:str)
-   output(Indent .. 'auto target = this;')
-   output(Indent .. f'auto field = &this->Class->Dictionary[{Field.index}];')
-end
-
-----------------------------------------------------------------------------------------------------------------------
--- Emit the WriteValue() call appropriate to the field's definition flags.
-
-function outputFieldWriteValue(Field:table, Indent:str)
-   if Field.flags has FD_UNIT then
-      if Field.flags has (FD_INT|FD_INT64|FD_DOUBLE|FD_FLOAT) then
-         output(Indent .. 'Unit var(Value);')
-         output(Indent .. 'return field->WriteValue(target, field, FD_UNIT, &var, 1);')
-      else
-         -- Pass through as pointer; requires further analysis to determine viability.
-         output(Indent .. 'return field->WriteValue(target, field, FD_POINTER, Value, 1);')
-      end
-   elseif Field.flags has FD_ARRAY then
-      local flags = fieldFlagsHex(Field.flags)
-      if Field.flags has FD_CPP then -- kt::vector
-         output(Indent .. 'return field->WriteValue(target, field, 0x' .. flags .. ', Value, int(Value->size()));')
-      else
-         output(Indent .. 'return field->WriteValue(target, field, 0x' .. flags .. ', Value, Elements);')
-      end
-   elseif Field.flags has FD_FUNCTION then
-      output(Indent .. 'return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);')
-   elseif Field.flags has FD_STRING then -- Embedded std::string, or std::string_view set-value.
-      local flags = fieldFlagsHex((Field.flags | FD_CPP) & ~FD_POINTER)
-      output(Indent .. f'return field->WriteValue(target, field, 0x{flags}, &Value, 1);')
-   elseif Field.flags has FD_POINTER then
-      local flags = fieldFlagsHex(Field.flags)
-      output(Indent .. f'return field->WriteValue(target, field, 0x{flags}, Value, 1);')
-   elseif Field.flags has (FD_DOUBLE | FD_FLOAT) then
-      output(Indent .. 'return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);')
-   elseif Field.flags has FD_INT64 then
-      output(Indent .. 'return field->WriteValue(target, field, FD_INT64, &Value, 1);')
-   else
-      output(Indent .. 'return field->WriteValue(target, field, FD_INT, &Value, 1);')
-   end
-end
-
-----------------------------------------------------------------------------------------------------------------------
 -- Emit a complete setter body that delegates assignment to FIELD::WriteValue().
 
 function outputFieldWriteSetter(Class:table, Field:table, FidName:str, FieldType:str, Indent:str)
@@ -436,8 +392,39 @@ function outputFieldWriteSetter(Class:table, Field:table, FidName:str, FieldType
 
    outputFieldWriteSignature(Field, FidName, FieldType)
    outputInitialisedCheck(Field, Indent)
-   outputFieldWriteTarget(Class, Field, FidName, Indent)
-   outputFieldWriteValue(Field, Indent)
+
+   output(Indent .. f'auto field = &this->Class->Dictionary[{Field.index}];')
+
+   if Field.flags has FD_UNIT then
+      if Field.flags has (FD_INT|FD_INT64|FD_DOUBLE|FD_FLOAT) then
+         output(Indent .. 'Unit var(Value);')
+         output(Indent .. 'return field->WriteValue(this, field, FD_UNIT, &var, 1);')
+      else
+         -- Pass through as pointer; requires further analysis to determine viability.
+         output(Indent .. 'return field->WriteValue(this, field, FD_POINTER, Value, 1);')
+      end
+   elseif Field.flags has FD_ARRAY then
+      local flags = fieldFlagsHex(Field.flags)
+      if Field.flags has FD_CPP then -- kt::vector
+         output(Indent .. 'return field->WriteValue(this, field, 0x' .. flags .. ', Value, int(Value->size()));')
+      else
+         output(Indent .. 'return field->WriteValue(this, field, 0x' .. flags .. ', Value, Elements);')
+      end
+   elseif Field.flags has FD_FUNCTION then
+      output(Indent .. 'return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);')
+   elseif Field.flags has FD_STRING then -- Embedded std::string, or std::string_view set-value.
+      local flags = fieldFlagsHex((Field.flags | FD_CPP) & ~FD_POINTER)
+      output(Indent .. f'return field->WriteValue(this, field, 0x{flags}, &Value, 1);')
+   elseif Field.flags has FD_POINTER then
+      local flags = fieldFlagsHex(Field.flags)
+      output(Indent .. f'return field->WriteValue(this, field, 0x{flags}, Value, 1);')
+   elseif Field.flags has (FD_DOUBLE | FD_FLOAT) then
+      output(Indent .. 'return field->WriteValue(this, field, FD_DOUBLE, &Value, 1);')
+   elseif Field.flags has FD_INT64 then
+      output(Indent .. 'return field->WriteValue(this, field, FD_INT64, &Value, 1);')
+   else
+      output(Indent .. 'return field->WriteValue(this, field, FD_INT, &Value, 1);')
+   end
 end
 
 ----------------------------------------------------------------------------------------------------------------------

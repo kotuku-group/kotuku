@@ -348,9 +348,8 @@ class objDocument : public Object {
    // Customised field setting
 
    inline ERR setViewport(objVectorViewport * Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[21];
-      return field->WriteValue(target, field, 0x08000301, Value, 1);
+      return field->WriteValue(this, field, 0x08000301, Value, 1);
    }
 
    inline ERR setFocus(objVectorViewport * Value) noexcept {
@@ -370,46 +369,39 @@ class objDocument : public Object {
    }
 
    inline ERR setFlags(const DCF Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setClientScript(OBJECTPTR Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(target, field, 0x08000401, Value, 1);
+      return field->WriteValue(this, field, 0x08000401, Value, 1);
    }
 
    inline ERR setEventCallback(const FUNCTION Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
    }
 
    inline ERR setPath(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setOrigin(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setPageWidth(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[22];
       Unit var(Value);
-      return field->WriteValue(target, field, FD_UNIT, &var, 1);
+      return field->WriteValue(this, field, FD_UNIT, &var, 1);
    }
 
    inline ERR setPretext(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[15];
-      return field->WriteValue(target, field, 0x00804200, &Value, 1);
+      return field->WriteValue(this, field, 0x00804200, &Value, 1);
    }
 
 };

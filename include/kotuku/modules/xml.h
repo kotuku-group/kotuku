@@ -472,27 +472,23 @@ class objXML : public Object {
    // Customised field setting
 
    inline ERR setPath(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setDocType(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setPublic(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setSystem(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setSource(OBJECTPTR Value) noexcept {
@@ -507,15 +503,13 @@ class objXML : public Object {
    }
 
    inline ERR setReadOnly(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setStatement(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[11];
-      return field->WriteValue(target, field, 0x00804320, &Value, 1);
+      return field->WriteValue(this, field, 0x00804320, &Value, 1);
    }
 
 };

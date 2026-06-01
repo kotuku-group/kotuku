@@ -150,15 +150,13 @@ class objSVG : public Object {
    // Customised field setting
 
    inline ERR setTarget(OBJECTPTR Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[13];
-      return field->WriteValue(target, field, 0x08000501, Value, 1);
+      return field->WriteValue(this, field, 0x08000501, Value, 1);
    }
 
    inline ERR setPath(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(target, field, 0x00804300, &Value, 1);
+      return field->WriteValue(this, field, 0x00804300, &Value, 1);
    }
 
    inline ERR setTitle(const std::string_view &Value) noexcept {
@@ -187,15 +185,13 @@ class objSVG : public Object {
    }
 
    inline ERR setFrameRate(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[0];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setFrameCallback(const FUNCTION Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
    }
 
 };

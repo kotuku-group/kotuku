@@ -285,9 +285,8 @@ class objClientSocket : public Object {
    // Customised field setting
 
    inline ERR setState(const NTC Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
 };
@@ -427,27 +426,23 @@ class objProxy : public Object {
    }
 
    inline ERR setPort(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setServerPort(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[11];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setEnabled(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setRecord(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[4];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
 };
@@ -549,9 +544,8 @@ class objNetLookup : public Object {
    }
 
    inline ERR setCallback(const FUNCTION Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
    }
 
 };
@@ -778,9 +772,8 @@ class objNetSocket : public Object {
    }
 
    inline ERR setState(const NTC Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setPort(const int Value) noexcept {
@@ -813,27 +806,23 @@ class objNetSocket : public Object {
    }
 
    inline ERR setHandle(APTR Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(target, field, 0x08000508, Value, 1);
+      return field->WriteValue(this, field, 0x08000508, Value, 1);
    }
 
    inline ERR setFeedback(const FUNCTION Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[13];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
    }
 
    inline ERR setIncoming(const FUNCTION Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
    }
 
    inline ERR setOutgoing(const FUNCTION Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value, 1);
    }
 
 };
@@ -977,39 +966,33 @@ class objNetServer : public objNetSocket {
    // Customised field setting
 
    inline ERR setBacklog(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[4];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setClientLimit(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setSocketLimit(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value, 1);
    }
 
    inline ERR setSSLCertificate(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[0];
-      return field->WriteValue(target, field, 0x00804508, &Value, 1);
+      return field->WriteValue(this, field, 0x00804508, &Value, 1);
    }
 
    inline ERR setSSLPrivateKey(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(target, field, 0x00804508, &Value, 1);
+      return field->WriteValue(this, field, 0x00804508, &Value, 1);
    }
 
    inline ERR setSSLKeyPassword(const std::string_view &Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(target, field, 0x00804508, &Value, 1);
+      return field->WriteValue(this, field, 0x00804508, &Value, 1);
    }
 
 };
