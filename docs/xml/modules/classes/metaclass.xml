@@ -290,7 +290,7 @@
       <name>SubClasses</name>
       <comment>Returns a list of all derived classes of the class.</comment>
       <access read="G">Get</access>
-      <type>ARRAY</type>
+      <type>OBJECTPTR []</type>
       <description>
 <p>This field returns an array listing all active derived classes of the class (classes that have not been loaded are not included).  This feature applies to base-classes only.</p>
       </description>
@@ -341,7 +341,7 @@
       <field name="Name" type="CSTRING">The name of the field, e.g. <code>Width</code></field>
       <field name="GetField" type="APTR"><code>void GetField(*Object, APTR Result);</code></field>
       <field name="SetField" type="APTR"><code>ERR SetField(*Object, APTR Value);</code></field>
-      <field name="Arg" type="MAXINT">Can be a pointer or an integer value</field>
+      <field name="Arg" type="INT64">Can be a pointer or an integer value</field>
       <field name="Flags" type="UINT">Special flags that describe the field</field>
     </struct>
 

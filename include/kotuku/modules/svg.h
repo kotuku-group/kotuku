@@ -79,6 +79,73 @@ class objSVG : public Object {
       return(Action(AC(-2), this, &args));
    }
 
+   // Customised field getting
+
+   inline ERR getTarget(OBJECTPTR &Value) noexcept {
+      Value = this->Target;
+      return ERR::Okay;
+   }
+
+   inline ERR getPath(std::string_view &Value) noexcept {
+      Value = this->Path;
+      return ERR::Okay;
+   }
+
+   inline ERR getTitle(std::string_view &Value) noexcept {
+      Value = this->Title;
+      return ERR::Okay;
+   }
+
+   inline ERR getStatement(std::string_view &Value) noexcept {
+      Value = this->Statement;
+      return ERR::Okay;
+   }
+
+   inline ERR getColour(std::string_view &Value) noexcept {
+      Value = this->Colour;
+      return ERR::Okay;
+   }
+
+   inline ERR getFrame(int &Value) noexcept {
+      Value = this->Frame;
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(SVF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getFrameRate(int &Value) noexcept {
+      Value = this->FrameRate;
+      return ERR::Okay;
+   }
+
+   inline ERR getFrameCallback(FUNCTION &Value) noexcept {
+      auto field = &this->Class->Dictionary[7];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getScene(OBJECTPTR &Value) noexcept {
+      auto field = &this->Class->Dictionary[9];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getViewport(OBJECTPTR &Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+
    // Customised field setting
 
    inline ERR setTarget(OBJECTPTR Value) noexcept {

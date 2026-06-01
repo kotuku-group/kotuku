@@ -226,6 +226,124 @@ class objDocument : public Object {
       return(error);
    }
 
+   // Customised field getting
+
+   inline ERR getDescription(std::string_view &Value) noexcept {
+      Value = this->Description;
+      return ERR::Okay;
+   }
+
+   inline ERR getTitle(std::string_view &Value) noexcept {
+      Value = this->Title;
+      return ERR::Okay;
+   }
+
+   inline ERR getAuthor(std::string_view &Value) noexcept {
+      Value = this->Author;
+      return ERR::Okay;
+   }
+
+   inline ERR getCopyright(std::string_view &Value) noexcept {
+      Value = this->Copyright;
+      return ERR::Okay;
+   }
+
+   inline ERR getKeywords(std::string_view &Value) noexcept {
+      Value = this->Keywords;
+      return ERR::Okay;
+   }
+
+   inline ERR getViewport(objVectorViewport * &Value) noexcept {
+      Value = this->Viewport;
+      return ERR::Okay;
+   }
+
+   inline ERR getFocus(objVectorViewport * &Value) noexcept {
+      Value = this->Focus;
+      return ERR::Okay;
+   }
+
+   inline ERR getView(objVectorViewport * &Value) noexcept {
+      Value = this->View;
+      return ERR::Okay;
+   }
+
+   inline ERR getPage(objVectorViewport * &Value) noexcept {
+      Value = this->Page;
+      return ERR::Okay;
+   }
+
+   inline ERR getTabFocus(OBJECTID &Value) noexcept {
+      Value = this->TabFocusID;
+      return ERR::Okay;
+   }
+
+   inline ERR getEventMask(DEF &Value) noexcept {
+      Value = this->EventMask;
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(DCF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getPageHeight(int &Value) noexcept {
+      Value = this->PageHeight;
+      return ERR::Okay;
+   }
+
+   inline ERR getError(ERR &Value) noexcept {
+      Value = this->Error;
+      return ERR::Okay;
+   }
+
+   inline ERR getEventCallback(FUNCTION &Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getPath(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getOrigin(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getPageWidth(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[22];
+      SetObjectContext(this, field, AC::NIL);
+      Unit var(0, FD_DOUBLE);
+      auto error = field->GetValue(this, &var);
+      if (error IS ERR::Okay) Value = var.Value;
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getWorkingPath(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[13];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+
    // Customised field setting
 
    inline ERR setViewport(objVectorViewport * Value) noexcept {

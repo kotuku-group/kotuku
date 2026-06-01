@@ -257,7 +257,7 @@ static ERR XQUERY_Activate(extXQuery *Self)
       auto stats = mt.getStats();
       log.msg("Blocks allocated: %" PRId64 ", Total Size: %" PRId64 ", Avg Size: %" PRId64 " bytes",
          stats.total_alloc, stats.total_size, stats.avg_size());
-      Self->MemUsage = stats.total_size;
+      Self->MemoryUsage = stats.total_size;
    });
 #endif
 
@@ -343,7 +343,7 @@ static ERR XQUERY_Evaluate(extXQuery *Self, struct xq::Evaluate *Args)
    auto cleanup = kt::Defer([&]() {
       auto stats = mt.getStats();
       log.msg("Memory allocated: %" PRId64 " bytes in %" PRId64 " blocks, Peak usage: %" PRId64 " bytes", stats.total_alloc, stats.total_size, stats.avg_size);
-      Self->MemUsage = stats.total_size;
+      Self->MemoryUsage = stats.total_size;
    });
 #endif
 
@@ -446,7 +446,7 @@ static ERR XQUERY_Init(extXQuery *Self)
    auto cleanup = kt::Defer([&]() {
       auto stats = mt.getStats();
       kt::Log().msg("Memory allocated: %" PRId64 " bytes in %" PRId64 " blocks, Peak usage: %" PRId64 " bytes", stats.total_alloc, stats.total_size, stats.avg_size);
-      Self->MemUsage = stats.total_size;
+      Self->MemoryUsage = stats.total_size;
    });
 #endif
 
@@ -707,7 +707,7 @@ static ERR XQUERY_Search(extXQuery *Self, struct xq::Search *Args)
    auto cleanup = kt::Defer([&]() {
       auto stats = mt.getStats();
       log.msg("Memory allocated: %" PRId64 " bytes in %" PRId64 " blocks, Peak usage: %" PRId64 " bytes", stats.total_alloc, stats.total_size, stats.avg_size);
-      Self->MemUsage = stats.total_size;
+      Self->MemoryUsage = stats.total_size;
    });
 #endif
 
@@ -860,20 +860,10 @@ static ERR GET_Functions(extXQuery *Self, kt::vector<std::string> **Value)
 /*********************************************************************************************************************
 
 -FIELD-
-MemoryUsage: Returns the total amount of memory allocated by the last compilation or evaluation.
+MemoryUsage: The total amount of memory allocated by the last compilation or evaluation.
 
-If the XQuery module has been compiled with ANALYSE_MEMORY_USAGE defined, this field will return the total
+If the XQuery module has been compiled with ANALYSE_MEMORY_USAGE defined, this field will contain the total
 amount of memory (in bytes) allocated during the last compilation or evaluation of the XQuery object.
-
-*********************************************************************************************************************/
-
-static ERR GET_MemoryUsage(extXQuery *Self, int64_t &Value)
-{
-   Value = Self->MemUsage;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 Path: Base path for resolving relative references.
@@ -1086,12 +1076,12 @@ static const FieldArray clFields[] = {
    { "ErrorMsg",        FDF_CPPSTRING|FDF_R },
    { "Path",            FDF_CPPSTRING|FDF_RW },
    { "Statement",       FDF_CPPSTRING|FDF_RW, nullptr, SET_Statement },
-   { "MemoryUsage",     FDF_VIRTUAL|FDF_INT64|FDF_R,          GET_MemoryUsage },
-   { "Result",          FDF_VIRTUAL|FDF_PTR|FDF_STRUCT|FDF_R, GET_Result, nullptr, "XPathValue" },
-   { "ResultString",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_R,      GET_ResultString },
-   { "FeatureFlags",    FDF_VIRTUAL|FDF_INTFLAGS|FDF_R,       GET_FeatureFlags, nullptr, &clXQueryXQF },
-   { "ResultType",      FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_R, GET_ResultType, nullptr, &clXQueryXPVT },
-   { "ResolveVariable", FDF_VIRTUAL|FDF_FUNCTION|FDF_RW,      GET_ResolveVariable, SET_ResolveVariable },
+   { "MemoryUsage",     FDF_INT64|FDF_R },
+   { "Result",          FDF_VIRTUAL|FDF_PTR|FDF_STRUCT|FDF_PURE|FDF_R, GET_Result, nullptr, "XPathValue" },
+   { "ResultString",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_R, GET_ResultString },
+   { "FeatureFlags",    FDF_VIRTUAL|FDF_INTFLAGS|FDF_PURE|FDF_R, GET_FeatureFlags, nullptr, &clXQueryXQF },
+   { "ResultType",      FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_PURE|FDF_R, GET_ResultType, nullptr, &clXQueryXPVT },
+   { "ResolveVariable", FDF_VIRTUAL|FDF_FUNCTION|FDF_PURE|FDF_RW, GET_ResolveVariable, SET_ResolveVariable },
    { "Functions",       FDF_VIRTUAL|FDF_ARRAY|FDF_CPPSTRING|FDF_R, GET_Functions },
    { "Variables",       FDF_VIRTUAL|FDF_ARRAY|FDF_CPPSTRING|FDF_R, GET_Variables },
    END_FIELD

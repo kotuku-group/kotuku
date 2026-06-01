@@ -216,6 +216,7 @@
       <const name="PTR_DOUBLERESULT">Use for pointer-based value results only.</const>
       <const name="PTR_INT64RESULT">Use for pointer-based value results only.</const>
       <const name="PTR_INTRESULT">Use for pointer-based value results only.</const>
+      <const name="PURE">Supplementary, indicates that the Getter function for a field is non-mutating and context free (inc. non-logging).</const>
       <const name="R">Synonym for <code>READ</code></const>
       <const name="READ">CLASSDEF</const>
       <const name="RESOURCE">The referenced struct or pointer is a special resource.  Changes some behaviours, e.g. a resourced struct will use direct value references rather than being copied in Tiri.</const>

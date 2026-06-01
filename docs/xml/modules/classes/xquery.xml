@@ -288,11 +288,11 @@ if (query.ok()) {
 
     <field>
       <name>MemoryUsage</name>
-      <comment>Returns the total amount of memory allocated by the last compilation or evaluation.</comment>
-      <access read="G">Get</access>
+      <comment>The total amount of memory allocated by the last compilation or evaluation.</comment>
+      <access read="R">Read</access>
       <type>INT64</type>
       <description>
-<p>If the XQuery module has been compiled with ANALYSE_MEMORY_USAGE defined, this field will return the total amount of memory (in bytes) allocated during the last compilation or evaluation of the XQuery object.</p>
+<p>If the XQuery module has been compiled with ANALYSE_MEMORY_USAGE defined, this field will contain the total amount of memory (in bytes) allocated during the last compilation or evaluation of the XQuery object.</p>
       </description>
     </field>
 

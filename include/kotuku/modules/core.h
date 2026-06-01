@@ -409,18 +409,18 @@ enum class JET : int {
 #define FD_MUTABLE 0x00000008
 #define FD_STRUCT 0x00000010
 #define FD_ALLOC 0x00000020
-#define FD_VARTAGS 0x00000040
 #define FD_FLAGS 0x00000040
+#define FD_VARTAGS 0x00000040
+#define FD_PTRSIZE 0x00000080
 #define FD_ARRAYSIZE 0x00000080
 #define FD_LOOKUP 0x00000080
-#define FD_PTRSIZE 0x00000080
 #define FD_BUFSIZE 0x00000080
 #define FD_R 0x00000100
 #define FD_READ 0x00000100
 #define FD_RESULT 0x00000100
-#define FD_BUFFER 0x00000200
 #define FD_WRITE 0x00000200
 #define FD_W 0x00000200
+#define FD_BUFFER 0x00000200
 #define FD_RW 0x00000300
 #define FD_I 0x00000400
 #define FD_TAGS 0x00000400
@@ -431,10 +431,11 @@ enum class JET : int {
 #define FD_RESOURCE 0x00002000
 #define FD_CPP 0x00004000
 #define FD_CUSTOM 0x00008000
-#define FD_PRIVATE 0x00010000
 #define FD_SYSTEM 0x00010000
+#define FD_PRIVATE 0x00010000
 #define FD_SYNONYM 0x00020000
 #define FD_UNSIGNED 0x00040000
+#define FD_PURE 0x00100000
 #define FD_SCALED 0x00200000
 #define FD_NORMALISED 0x00200000
 #define FD_WORD 0x00400000
@@ -1751,7 +1752,7 @@ struct FieldArray {
    CSTRING  Name;   // The name of the field, e.g. Width
    APTR     GetField; // void GetField(*Object, APTR Result);
    APTR     SetField; // ERR SetField(*Object, APTR Value);
-   MAXINT   Arg;    // Can be a pointer or an integer value
+   int64_t  Arg;    // Can be a pointer or an integer value
    uint32_t Flags;  // Special flags that describe the field
   template <class G = APTR, class S = APTR, class T = MAXINT> FieldArray(CSTRING pName, uint32_t pFlags, G pGetField = nullptr, S pSetField = nullptr, T pArg = 0) :
      Name(pName), GetField((APTR)pGetField), SetField((APTR)pSetField), Arg((MAXINT)pArg), Flags(pFlags)
@@ -2528,6 +2529,154 @@ class objMetaClass : public Object {
       return(error);
    }
 
+   // Customised field getting
+
+   inline ERR getClassVersion(double &Value) noexcept {
+      Value = this->ClassVersion;
+      return ERR::Okay;
+   }
+
+   inline ERR getFields(const struct FieldArray * &Value, int &Elements) noexcept {
+      auto field = &this->Class->Dictionary[17];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, const struct FieldArray *&, int &))field->GetValue;
+      auto error = get_field(this, Value, Elements);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getDictionary(struct Field * &Value, int &Elements) noexcept {
+      auto field = &this->Class->Dictionary[6];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, struct Field *&, int &))field->GetValue;
+      auto error = get_field(this, Value, Elements);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getClassName(std::string_view &Value) noexcept {
+      Value = this->ClassName;
+      return ERR::Okay;
+   }
+
+   inline ERR getFileExtension(std::string_view &Value) noexcept {
+      Value = this->FileExtension;
+      return ERR::Okay;
+   }
+
+   inline ERR getFileDescription(std::string_view &Value) noexcept {
+      Value = this->FileDescription;
+      return ERR::Okay;
+   }
+
+   inline ERR getFileHeader(std::string_view &Value) noexcept {
+      Value = this->FileHeader;
+      return ERR::Okay;
+   }
+
+   inline ERR getPath(std::string_view &Value) noexcept {
+      Value = this->Path;
+      return ERR::Okay;
+   }
+
+   inline ERR getIcon(std::string_view &Value) noexcept {
+      Value = this->Icon;
+      return ERR::Okay;
+   }
+
+   inline ERR getSize(int &Value) noexcept {
+      Value = this->Size;
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(CLF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getClass(CLASSID &Value) noexcept {
+      Value = this->ClassID;
+      return ERR::Okay;
+   }
+
+   inline ERR getBaseClass(CLASSID &Value) noexcept {
+      Value = this->BaseClassID;
+      return ERR::Okay;
+   }
+
+   inline ERR getOpenCount(int &Value) noexcept {
+      Value = this->OpenCount;
+      return ERR::Okay;
+   }
+
+   inline ERR getCategory(CCF &Value) noexcept {
+      Value = this->Category;
+      return ERR::Okay;
+   }
+
+   inline ERR getMethods(APTR * &Value, int &Elements) noexcept {
+      auto field = &this->Class->Dictionary[19];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
+      auto error = get_field(this, Value, Elements);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getActionTable(APTR * &Value, int &Elements) noexcept {
+      auto field = &this->Class->Dictionary[1];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
+      auto error = get_field(this, Value, Elements);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getLocation(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getModule(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[24];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getObjects(int * &Value, int &Elements) noexcept {
+      auto field = &this->Class->Dictionary[25];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, int *&, int &))field->GetValue;
+      auto error = get_field(this, Value, Elements);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getSubClasses(OBJECTPTR * &Value, int &Elements) noexcept {
+      auto field = &this->Class->Dictionary[15];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, OBJECTPTR *&, int &))field->GetValue;
+      auto error = get_field(this, Value, Elements);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getRootModule(OBJECTPTR &Value) noexcept {
+      auto field = &this->Class->Dictionary[9];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+
    // Customised field setting
 
    inline ERR setClassVersion(const double Value) noexcept {
@@ -2652,6 +2801,47 @@ class objStorageDevice : public Object {
    // Action stubs
 
    inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+   inline ERR getDeviceFlags(DEVICE &Value) noexcept {
+      Value = this->DeviceFlags;
+      return ERR::Okay;
+   }
+
+   inline ERR getDeviceSize(int64_t &Value) noexcept {
+      Value = this->DeviceSize;
+      return ERR::Okay;
+   }
+
+   inline ERR getBytesFree(int64_t &Value) noexcept {
+      Value = this->BytesFree;
+      return ERR::Okay;
+   }
+
+   inline ERR getBytesUsed(int64_t &Value) noexcept {
+      Value = this->BytesUsed;
+      return ERR::Okay;
+   }
+
+   inline ERR getDevice(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[2];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getVolume(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[9];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
@@ -2807,6 +2997,128 @@ class objFile : public Object {
       struct fl::Watch args = { &Callback, Flags };
       return(Action(AC(-10), this, &args));
    }
+
+   // Customised field getting
+
+   inline ERR getPosition(int64_t &Value) noexcept {
+      Value = this->Position;
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(FL &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getBuffer(int8_t * &Value, int &Elements) noexcept {
+      auto field = &this->Class->Dictionary[12];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, int8_t *&, int &))field->GetValue;
+      auto error = get_field(this, Value, Elements);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getDate(APTR &Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getCreated(APTR &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getHandle(int64_t &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getIcon(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[11];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getPath(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getPermissions(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getResolvedPath(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[18];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getSize(int64_t &Value) noexcept {
+      auto field = &this->Class->Dictionary[6];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getTimestamp(int64_t &Value) noexcept {
+      auto field = &this->Class->Dictionary[17];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getLink(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[15];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getUser(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[14];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getGroup(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
@@ -3012,6 +3324,61 @@ class objConfig : public Object {
       return(Action(AC(-10), this, &args));
    }
 
+   // Customised field getting
+
+   inline ERR getPath(std::string_view &Value) noexcept {
+      Value = this->Path;
+      return ERR::Okay;
+   }
+
+   inline ERR getKeyFilter(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getGroupFilter(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getFlags(CNF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getData(APTR &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getTotalGroups(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[6];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getTotalKeys(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[11];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+
    // Customised field setting
 
    inline ERR setPath(const std::string_view &Value) noexcept {
@@ -3130,6 +3497,114 @@ class objScript : public Object {
       if (Result) *Result = args.Result;
       return(error);
    }
+
+   // Customised field getting
+
+   inline ERR getTarget(OBJECTID &Value) noexcept {
+      Value = this->TargetID;
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(SCF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getError(ERR &Value) noexcept {
+      Value = this->Error;
+      return ERR::Okay;
+   }
+
+   inline ERR getCurrentLine(int &Value) noexcept {
+      Value = this->CurrentLine;
+      return ERR::Okay;
+   }
+
+   inline ERR getLineOffset(int &Value) noexcept {
+      Value = this->LineOffset;
+      return ERR::Okay;
+   }
+
+   inline ERR getCacheFile(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[22];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getErrorMessage(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[6];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getWorkingPath(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getLanguage(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getProcedure(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getPath(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getResults(kt::vector<std::string> * &Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, kt::vector<std::string> *&))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getStatement(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[13];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getTotalArgs(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[9];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
@@ -3311,6 +3786,142 @@ class objTask : public Object {
       return(Action(AC(-5), this, &args));
    }
 
+   // Customised field getting
+
+   inline ERR getTimeOut(double &Value) noexcept {
+      Value = this->TimeOut;
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(TSF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getReturnCode(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getProcess(int &Value) noexcept {
+      Value = this->ProcessID;
+      return ERR::Okay;
+   }
+
+   inline ERR getActions(APTR &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getAffinityMask(int64_t &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getParameters(kt::vector<std::string> * &Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, kt::vector<std::string> *&))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getErrorCallback(FUNCTION &Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getExitCallback(FUNCTION &Value) noexcept {
+      auto field = &this->Class->Dictionary[7];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getInputCallback(FUNCTION &Value) noexcept {
+      auto field = &this->Class->Dictionary[14];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getLaunchPath(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[12];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getLocation(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[17];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getName(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[15];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getOutputCallback(FUNCTION &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getPath(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[9];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getProcessPath(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getPriority(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[6];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+
    // Customised field setting
 
    inline ERR setTimeOut(const double Value) noexcept {
@@ -3443,6 +4054,49 @@ class objThread : public Object {
       return(Action(AC(-1), this, &args));
    }
 
+   // Customised field getting
+
+   inline ERR getData(APTR * &Value, int &Elements) noexcept {
+      auto field = &this->Class->Dictionary[6];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
+      auto error = get_field(this, Value, Elements);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getDataSize(int &Value) noexcept {
+      Value = this->DataSize;
+      return ERR::Okay;
+   }
+
+   inline ERR getError(ERR &Value) noexcept {
+      Value = this->Error;
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(THF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getCallback(FUNCTION &Value) noexcept {
+      auto field = &this->Class->Dictionary[2];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getRoutine(FUNCTION &Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+
    // Customised field setting
 
    inline ERR setFlags(const THF Value) noexcept {
@@ -3526,6 +4180,42 @@ class objModule : public Object {
       return(error);
    }
 
+   // Customised field getting
+
+   inline ERR getFunctionList(const struct Function * &Value) noexcept {
+      Value = this->FunctionList;
+      return ERR::Okay;
+   }
+
+   inline ERR getModBase(APTR &Value) noexcept {
+      Value = this->ModBase;
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(MOF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getDefs(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getName(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+
    // Customised field setting
 
    inline ERR setFunctionList(const struct Function * Value) noexcept {
@@ -3598,6 +4288,67 @@ class objTime : public Object {
       if (Info) *Info = args.Info;
       return(error);
    }
+
+   // Customised field getting
+
+   inline ERR getSystemTime(int64_t &Value) noexcept {
+      Value = this->SystemTime;
+      return ERR::Okay;
+   }
+
+   inline ERR getYear(int &Value) noexcept {
+      Value = this->Year;
+      return ERR::Okay;
+   }
+
+   inline ERR getMonth(int &Value) noexcept {
+      Value = this->Month;
+      return ERR::Okay;
+   }
+
+   inline ERR getDay(int &Value) noexcept {
+      Value = this->Day;
+      return ERR::Okay;
+   }
+
+   inline ERR getHour(int &Value) noexcept {
+      Value = this->Hour;
+      return ERR::Okay;
+   }
+
+   inline ERR getMinute(int &Value) noexcept {
+      Value = this->Minute;
+      return ERR::Okay;
+   }
+
+   inline ERR getSecond(int &Value) noexcept {
+      Value = this->Second;
+      return ERR::Okay;
+   }
+
+   inline ERR getDayOfWeek(int &Value) noexcept {
+      Value = this->DayOfWeek;
+      return ERR::Okay;
+   }
+
+   inline ERR getMilliSecond(int &Value) noexcept {
+      Value = this->MilliSecond;
+      return ERR::Okay;
+   }
+
+   inline ERR getMicroSecond(int &Value) noexcept {
+      Value = this->MicroSecond;
+      return ERR::Okay;
+   }
+
+   inline ERR getTimestamp(int64_t &Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
@@ -3763,6 +4514,86 @@ class objCompression : public Object {
       return(error);
    }
 
+   // Customised field getting
+
+   inline ERR getTotalOutput(int64_t &Value) noexcept {
+      Value = this->TotalOutput;
+      return ERR::Okay;
+   }
+
+   inline ERR getOutput(OBJECTID &Value) noexcept {
+      Value = this->OutputID;
+      return ERR::Okay;
+   }
+
+   inline ERR getCompressionLevel(int &Value) noexcept {
+      Value = this->CompressionLevel;
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(CMF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getPermissions(PERMIT &Value) noexcept {
+      Value = this->Permissions;
+      return ERR::Okay;
+   }
+
+   inline ERR getMinOutputSize(int &Value) noexcept {
+      Value = this->MinOutputSize;
+      return ERR::Okay;
+   }
+
+   inline ERR getWindowBits(int &Value) noexcept {
+      Value = this->WindowBits;
+      return ERR::Okay;
+   }
+
+   inline ERR getPath(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[7];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getFeedback(FUNCTION &Value) noexcept {
+      auto field = &this->Class->Dictionary[17];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getPassword(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[12];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getSize(int64_t &Value) noexcept {
+      auto field = &this->Class->Dictionary[9];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getUncompressedSize(int64_t &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+
    // Customised field setting
 
    inline ERR setOutput(OBJECTID Value) noexcept {
@@ -3843,6 +4674,37 @@ class objCompressedStream : public Object {
    // Action stubs
 
    inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+   inline ERR getTotalOutput(int64_t &Value) noexcept {
+      Value = this->TotalOutput;
+      return ERR::Okay;
+   }
+
+   inline ERR getInput(OBJECTPTR &Value) noexcept {
+      Value = this->Input;
+      return ERR::Okay;
+   }
+
+   inline ERR getOutput(OBJECTPTR &Value) noexcept {
+      Value = this->Output;
+      return ERR::Okay;
+   }
+
+   inline ERR getFormat(CF &Value) noexcept {
+      Value = this->Format;
+      return ERR::Okay;
+   }
+
+   inline ERR getSize(int64_t &Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 

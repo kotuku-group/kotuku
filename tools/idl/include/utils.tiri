@@ -175,7 +175,8 @@ end
 global function getMetaFieldDefinition(Field)
    fl = {
       name  = Field.name,
-      flags = Field.flags
+      flags = Field.flags,
+      arg   = Field.arg
    }
 
    getFieldType(fl, Field.flags, Field.name, Field.arg)

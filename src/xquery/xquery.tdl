@@ -26,9 +26,10 @@ module({ name='XQuery', src='xquery.cpp', copyright='Paul Manias © 2025-2026', 
     output     = 'xquery_class_def.cpp',
     references = { 'XQF', 'XPVT', 'XEF' },
     comment    = 'Provides an interface for XQuery evaluation and execution.' }, [[
-    cpp(str) ErrorMsg  # A readable description of the last parse or execution error.
-    cpp(str) Path      # Base path for resolving relative references.
-    cpp(str) Statement # XQuery statements are specified here.
+    cpp(str) ErrorMsg    # A readable description of the last parse or execution error.
+    cpp(str) Path        # Base path for resolving relative references.
+    cpp(str) Statement   # XQuery statements are specified here.
+    large    MemoryUsage # The total amount of memory allocated by the last compilation or evaluation.
   ]])
 
   c_insert([[

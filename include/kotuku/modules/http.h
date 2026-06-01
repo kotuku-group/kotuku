@@ -212,6 +212,197 @@ class objHTTP : public Object {
       else return 0;
    }
 
+   // Customised field getting
+
+   inline ERR getDataTimeout(double &Value) noexcept {
+      Value = this->DataTimeout;
+      return ERR::Okay;
+   }
+
+   inline ERR getConnectTimeout(double &Value) noexcept {
+      Value = this->ConnectTimeout;
+      return ERR::Okay;
+   }
+
+   inline ERR getIndex(int64_t &Value) noexcept {
+      Value = this->Index;
+      return ERR::Okay;
+   }
+
+   inline ERR getContentLength(int64_t &Value) noexcept {
+      Value = this->ContentLength;
+      return ERR::Okay;
+   }
+
+   inline ERR getSize(int64_t &Value) noexcept {
+      Value = this->Size;
+      return ERR::Okay;
+   }
+
+   inline ERR getHost(std::string_view &Value) noexcept {
+      Value = this->Host;
+      return ERR::Okay;
+   }
+
+   inline ERR getPath(std::string_view &Value) noexcept {
+      Value = this->Path;
+      return ERR::Okay;
+   }
+
+   inline ERR getOutputFile(std::string_view &Value) noexcept {
+      Value = this->OutputFile;
+      return ERR::Okay;
+   }
+
+   inline ERR getInputFile(std::string_view &Value) noexcept {
+      Value = this->InputFile;
+      return ERR::Okay;
+   }
+
+   inline ERR getUserAgent(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[6];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getInputObject(OBJECTID &Value) noexcept {
+      Value = this->InputObjectID;
+      return ERR::Okay;
+   }
+
+   inline ERR getOutputObject(OBJECTID &Value) noexcept {
+      Value = this->OutputObjectID;
+      return ERR::Okay;
+   }
+
+   inline ERR getMethod(HTM &Value) noexcept {
+      Value = this->Method;
+      return ERR::Okay;
+   }
+
+   inline ERR getPort(int &Value) noexcept {
+      Value = this->Port;
+      return ERR::Okay;
+   }
+
+   inline ERR getObjectMode(HOM &Value) noexcept {
+      Value = this->ObjectMode;
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(HTF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getStatus(HTS &Value) noexcept {
+      Value = this->Status;
+      return ERR::Okay;
+   }
+
+   inline ERR getError(ERR &Value) noexcept {
+      Value = this->Error;
+      return ERR::Okay;
+   }
+
+   inline ERR getDatatype(DATA &Value) noexcept {
+      Value = this->Datatype;
+      return ERR::Okay;
+   }
+
+   inline ERR getCurrentState(HGS &Value) noexcept {
+      Value = this->CurrentState;
+      return ERR::Okay;
+   }
+
+   inline ERR getProxyServer(std::string_view &Value) noexcept {
+      Value = this->ProxyServer;
+      return ERR::Okay;
+   }
+
+   inline ERR getProxyPort(int &Value) noexcept {
+      Value = this->ProxyPort;
+      return ERR::Okay;
+   }
+
+   inline ERR getBufferSize(int &Value) noexcept {
+      Value = this->BufferSize;
+      return ERR::Okay;
+   }
+
+   inline ERR getContentType(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getIncoming(FUNCTION &Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getLocation(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[34];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getOutgoing(FUNCTION &Value) noexcept {
+      auto field = &this->Class->Dictionary[29];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getRealm(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[7];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getRecvBuffer(int8_t * &Value, int &Elements) noexcept {
+      auto field = &this->Class->Dictionary[0];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, int8_t *&, int &))field->GetValue;
+      auto error = get_field(this, Value, Elements);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getResponseKeys(kt::vector<std::string> * &Value) noexcept {
+      auto field = &this->Class->Dictionary[28];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, kt::vector<std::string> *&))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getStateChanged(FUNCTION &Value) noexcept {
+      auto field = &this->Class->Dictionary[31];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+
    // Customised field setting
 
    inline ERR setDataTimeout(const double Value) noexcept {

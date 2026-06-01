@@ -1,4 +1,5 @@
--- TDL functions such as module(), header(), flags(), c_include(), cpp_include() ...
+-- This file contains the functions that are available for use in TDL files.  If you're looking for internal
+-- functionality, refer to utils.tiri
 
 rx_high_hex        = <{ regex.new([[^0x[8f][0-9abcdef]+]]) }>
 rx_angle_bracket   = <{ regex.new([[^<(.+)>$]]) }>

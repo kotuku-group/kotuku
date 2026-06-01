@@ -137,6 +137,42 @@ class objNetClient : public Object {
 
    inline ERR init() noexcept { return InitObject(this); }
 
+   // Customised field getting
+
+   inline ERR getNext(objNetClient * &Value) noexcept {
+      Value = this->Next;
+      return ERR::Okay;
+   }
+
+   inline ERR getPrev(objNetClient * &Value) noexcept {
+      Value = this->Prev;
+      return ERR::Okay;
+   }
+
+   inline ERR getConnections(objClientSocket * &Value) noexcept {
+      Value = this->Connections;
+      return ERR::Okay;
+   }
+
+   inline ERR getClientData(APTR &Value) noexcept {
+      Value = this->ClientData;
+      return ERR::Okay;
+   }
+
+   inline ERR getTotalConnections(int &Value) noexcept {
+      Value = this->TotalConnections;
+      return ERR::Okay;
+   }
+
+   inline ERR getIP(APTR &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+
    // Customised field setting
 
    inline ERR setClientData(APTR Value) noexcept {
@@ -213,6 +249,39 @@ class objClientSocket : public Object {
       else return 0;
    }
 
+   // Customised field getting
+
+   inline ERR getConnectTime(int64_t &Value) noexcept {
+      Value = this->ConnectTime;
+      return ERR::Okay;
+   }
+
+   inline ERR getPrev(objClientSocket * &Value) noexcept {
+      Value = this->Prev;
+      return ERR::Okay;
+   }
+
+   inline ERR getNext(objClientSocket * &Value) noexcept {
+      Value = this->Next;
+      return ERR::Okay;
+   }
+
+   inline ERR getClient(objNetClient * &Value) noexcept {
+      Value = this->Client;
+      return ERR::Okay;
+   }
+
+   inline ERR getClientData(APTR &Value) noexcept {
+      Value = this->ClientData;
+      return ERR::Okay;
+   }
+
+   inline ERR getState(NTC &Value) noexcept {
+      Value = this->State;
+      return ERR::Okay;
+   }
+
+
    // Customised field setting
 
    inline ERR setState(const NTC Value) noexcept {
@@ -271,6 +340,59 @@ class objProxy : public Object {
    inline ERR findNext() noexcept {
       return(Action(AC(-3), this, nullptr));
    }
+
+   // Customised field getting
+
+   inline ERR getNetworkFilter(std::string_view &Value) noexcept {
+      Value = this->NetworkFilter;
+      return ERR::Okay;
+   }
+
+   inline ERR getGatewayFilter(std::string_view &Value) noexcept {
+      Value = this->GatewayFilter;
+      return ERR::Okay;
+   }
+
+   inline ERR getUsername(std::string_view &Value) noexcept {
+      Value = this->Username;
+      return ERR::Okay;
+   }
+
+   inline ERR getPassword(std::string_view &Value) noexcept {
+      Value = this->Password;
+      return ERR::Okay;
+   }
+
+   inline ERR getProxyName(std::string_view &Value) noexcept {
+      Value = this->ProxyName;
+      return ERR::Okay;
+   }
+
+   inline ERR getServer(std::string_view &Value) noexcept {
+      Value = this->Server;
+      return ERR::Okay;
+   }
+
+   inline ERR getPort(int &Value) noexcept {
+      Value = this->Port;
+      return ERR::Okay;
+   }
+
+   inline ERR getServerPort(int &Value) noexcept {
+      Value = this->ServerPort;
+      return ERR::Okay;
+   }
+
+   inline ERR getEnabled(int &Value) noexcept {
+      Value = this->Enabled;
+      return ERR::Okay;
+   }
+
+   inline ERR getRecord(int &Value) noexcept {
+      Value = this->Record;
+      return ERR::Okay;
+   }
+
 
    // Customised field setting
 
@@ -373,6 +495,45 @@ class objNetLookup : public Object {
       struct nl::BlockingResolveAddress args = { Address };
       return(Action(AC(-4), this, &args));
    }
+
+   // Customised field getting
+
+   inline ERR getClientData(int64_t &Value) noexcept {
+      Value = this->ClientData;
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(NLF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getHostName(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[9];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getCallback(FUNCTION &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getAddresses(APTR * &Value, int &Elements) noexcept {
+      auto field = &this->Class->Dictionary[2];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, APTR *&, int &))field->GetValue;
+      auto error = get_field(this, Value, Elements);
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
@@ -507,6 +668,97 @@ class objNetSocket : public Object {
       struct ns::LeaveMulticastGroup args = { Group };
       return(Action(AC(-6), this, &args));
    }
+
+   // Customised field getting
+
+   inline ERR getClientData(APTR &Value) noexcept {
+      Value = this->ClientData;
+      return ERR::Okay;
+   }
+
+   inline ERR getAddress(std::string_view &Value) noexcept {
+      Value = this->Address;
+      return ERR::Okay;
+   }
+
+   inline ERR getState(NTC &Value) noexcept {
+      auto field = &this->Class->Dictionary[6];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getError(ERR &Value) noexcept {
+      Value = this->Error;
+      return ERR::Okay;
+   }
+
+   inline ERR getPort(int &Value) noexcept {
+      Value = this->Port;
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(NSF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getMsgLimit(int &Value) noexcept {
+      Value = this->MsgLimit;
+      return ERR::Okay;
+   }
+
+   inline ERR getMaxPacketSize(int &Value) noexcept {
+      Value = this->MaxPacketSize;
+      return ERR::Okay;
+   }
+
+   inline ERR getMulticastTTL(int &Value) noexcept {
+      Value = this->MulticastTTL;
+      return ERR::Okay;
+   }
+
+   inline ERR getHandle(APTR &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getFeedback(FUNCTION &Value) noexcept {
+      auto field = &this->Class->Dictionary[13];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getIncoming(FUNCTION &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getOutgoing(FUNCTION &Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getOutQueueSize(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[15];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
@@ -656,6 +908,67 @@ class objNetServer : public objNetSocket {
       struct ns::DisconnectSocket args = { Socket };
       return(Action(AC(-8), this, &args));
    }
+
+   // Customised field getting
+
+   inline ERR getTotalClients(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[7];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getBacklog(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[4];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getClientLimit(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[6];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getSocketLimit(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getSSLCertificate(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[0];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getSSLKeyPassword(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getClients(OBJECTPTR &Value) noexcept {
+      auto field = &this->Class->Dictionary[2];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 

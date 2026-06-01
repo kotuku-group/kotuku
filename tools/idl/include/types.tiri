@@ -125,8 +125,10 @@ global function getFieldType(Def:table, Type:num, CustomName:str, Option:any)
             Def.type = 'APTR []'
          elseif Type has FD_STRUCT then
             Def.type = 'STRUCT []'
+         elseif Type has FD_OBJECT then
+            Def.type = 'OBJECTPTR []'
          else
-            Def.type = 'ARRAY'
+            Def.type = 'UNKNOWN_ARRAY_TYPE'
          end
       end
    elseif Type has FD_STRING then

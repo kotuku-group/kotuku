@@ -369,6 +369,7 @@ global function parseClassFields(Class:table, ClientSpec:str)
             if def and def.synonym != true then
                f = findClassField(Class, def.name) -- Retrieve field parsed from TDL, if defined
                if f then
+                  f.arg     = def.arg
                   f.write   = def.write
                   f.read    = def.read
                   f.flags   = def.flags

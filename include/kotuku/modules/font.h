@@ -113,6 +113,201 @@ class objFont : public Object {
    }
    inline ERR init() noexcept { return InitObject(this); }
 
+   // Customised field getting
+
+   inline ERR getPoint(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getGlyphSpacing(double &Value) noexcept {
+      Value = this->GlyphSpacing;
+      return ERR::Okay;
+   }
+
+   inline ERR getBitmap(objBitmap * &Value) noexcept {
+      Value = this->Bitmap;
+      return ERR::Okay;
+   }
+
+   inline ERR getString(std::string_view &Value) noexcept {
+      Value = this->String;
+      return ERR::Okay;
+   }
+
+   inline ERR getPath(std::string_view &Value) noexcept {
+      Value = this->Path;
+      return ERR::Okay;
+   }
+
+   inline ERR getStyle(std::string_view &Value) noexcept {
+      Value = this->Style;
+      return ERR::Okay;
+   }
+
+   inline ERR getFace(std::string_view &Value) noexcept {
+      Value = this->Face;
+      return ERR::Okay;
+   }
+
+   inline ERR getOutline(struct RGB8 * &Value, int &Elements) noexcept {
+      auto field = &this->Class->Dictionary[23];
+      Elements = 4;
+      Value = (struct RGB8 *)(((int8_t *)this) + field->Offset);
+      return ERR::Okay;
+   }
+
+   inline ERR getUnderline(struct RGB8 * &Value, int &Elements) noexcept {
+      auto field = &this->Class->Dictionary[30];
+      Elements = 4;
+      Value = (struct RGB8 *)(((int8_t *)this) + field->Offset);
+      return ERR::Okay;
+   }
+
+   inline ERR getColour(struct RGB8 * &Value, int &Elements) noexcept {
+      auto field = &this->Class->Dictionary[10];
+      Elements = 4;
+      Value = (struct RGB8 *)(((int8_t *)this) + field->Offset);
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(FTF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getGutter(int &Value) noexcept {
+      Value = this->Gutter;
+      return ERR::Okay;
+   }
+
+   inline ERR getLineSpacing(int &Value) noexcept {
+      Value = this->LineSpacing;
+      return ERR::Okay;
+   }
+
+   inline ERR getX(int &Value) noexcept {
+      Value = this->X;
+      return ERR::Okay;
+   }
+
+   inline ERR getY(int &Value) noexcept {
+      Value = this->Y;
+      return ERR::Okay;
+   }
+
+   inline ERR getTabSize(int &Value) noexcept {
+      Value = this->TabSize;
+      return ERR::Okay;
+   }
+
+   inline ERR getWrapEdge(int &Value) noexcept {
+      Value = this->WrapEdge;
+      return ERR::Okay;
+   }
+
+   inline ERR getFixedWidth(int &Value) noexcept {
+      Value = this->FixedWidth;
+      return ERR::Okay;
+   }
+
+   inline ERR getHeight(int &Value) noexcept {
+      Value = this->Height;
+      return ERR::Okay;
+   }
+
+   inline ERR getLeading(int &Value) noexcept {
+      Value = this->Leading;
+      return ERR::Okay;
+   }
+
+   inline ERR getMaxHeight(int &Value) noexcept {
+      Value = this->MaxHeight;
+      return ERR::Okay;
+   }
+
+   inline ERR getAlign(ALIGN &Value) noexcept {
+      Value = this->Align;
+      return ERR::Okay;
+   }
+
+   inline ERR getAlignWidth(int &Value) noexcept {
+      Value = this->AlignWidth;
+      return ERR::Okay;
+   }
+
+   inline ERR getAlignHeight(int &Value) noexcept {
+      Value = this->AlignHeight;
+      return ERR::Okay;
+   }
+
+   inline ERR getAscent(int &Value) noexcept {
+      Value = this->Ascent;
+      return ERR::Okay;
+   }
+
+   inline ERR getEndX(int &Value) noexcept {
+      Value = this->EndX;
+      return ERR::Okay;
+   }
+
+   inline ERR getEndY(int &Value) noexcept {
+      Value = this->EndY;
+      return ERR::Okay;
+   }
+
+   inline ERR getBold(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[4];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getItalic(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[14];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getLineCount(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getOpacity(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[29];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getWidth(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[35];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getYOffset(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+
    // Customised field setting
 
    inline ERR setPoint(const double Value) noexcept {

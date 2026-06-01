@@ -2463,6 +2463,7 @@ static ResourceManager glNodeManager = {
       <const name="PTR_DOUBLERESULT">Use for pointer-based value results only.</const>
       <const name="PTR_INT64RESULT">Use for pointer-based value results only.</const>
       <const name="PTR_INTRESULT">Use for pointer-based value results only.</const>
+      <const name="PURE">Supplementary, indicates that the Getter function for a field is non-mutating and context free (inc. non-logging).</const>
       <const name="R">Synonym for <code>READ</code></const>
       <const name="READ">CLASSDEF</const>
       <const name="RESOURCE">The referenced struct or pointer is a special resource.  Changes some behaviours, e.g. a resourced struct will use direct value references rather than being copied in Tiri.</const>
@@ -3281,7 +3282,7 @@ static ResourceManager glNodeManager = {
       <field name="Name" type="CSTRING">The name of the field, e.g. <code>Width</code></field>
       <field name="GetField" type="APTR"><code>void GetField(*Object, APTR Result);</code></field>
       <field name="SetField" type="APTR"><code>ERR SetField(*Object, APTR Value);</code></field>
-      <field name="Arg" type="MAXINT">Can be a pointer or an integer value</field>
+      <field name="Arg" type="INT64">Can be a pointer or an integer value</field>
       <field name="Flags" type="UINT">Special flags that describe the field</field>
     </struct>
 

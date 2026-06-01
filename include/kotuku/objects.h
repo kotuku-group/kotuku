@@ -23,6 +23,7 @@
 #define FDF_FUNCTIONPTR (FD_FUNCTION|FD_POINTER)
 #define FDF_STRUCT      FD_STRUCT
 #define FDF_RESOURCE    FD_RESOURCE
+#define FDF_PURE        FD_PURE                 // Getter functionality is pure - no side effects and no logging
 #define FDF_OBJECT      (FD_POINTER|FD_OBJECT)  // Field refers to another object
 #define FDF_OBJECTID    (FD_INT|FD_OBJECT)      // Field refers to another object by ID
 #define FDF_LOCAL       (FD_POINTER|FD_LOCAL)   // Field refers to a local object
